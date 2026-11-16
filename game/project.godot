@@ -3,7 +3,7 @@ config_version=5
 [application]
 
 config/name="MS2Godot"
-run/main_scene="res://field.tscn"
+run/main_scene="res://setup.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
 [display]
