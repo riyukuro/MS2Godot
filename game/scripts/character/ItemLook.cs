@@ -40,6 +40,9 @@ public sealed class ColorPalettes
         return list[index >= 0 && index < list.Count ? index : 0];
     }
 
+    /// <summary>The rows of a palette (empty when unknown).</summary>
+    public IReadOnlyList<(Rgba c0, Rgba c1, Rgba c2)> Rows(int palette) => rows.TryGetValue(palette, out var list) ? list : Array.Empty<(Rgba, Rgba, Rgba)>();
+
     public EquipColor? Equip(int palette, int index) =>
         Get(palette, index) is { } c ? new EquipColor(c.c0, c.c1, c.c2, index, palette) : null;
 

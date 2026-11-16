@@ -89,7 +89,7 @@ public partial class MovieClipNode : Node2D
         if (Timeline?["children"] is JsonArray ch)
             foreach (var c in ch.OrderBy(x => (int)x["depth"]).ThenBy(x => (int)x["first"]))
             {
-                int id = (int)c["id"];
+                int id = c["id"] == null ? -1 : (int)c["id"];
                 var m = UiBuilder.ToTransform(c["matrix"]);
                 double csx = Math.Sqrt(m.X.X * m.X.X + m.X.Y * m.X.Y), csy = Math.Sqrt(m.Y.X * m.Y.X + m.Y.Y * m.Y.Y);
                 var childSym = Scope.Symbol(id);
@@ -101,6 +101,7 @@ public partial class MovieClipNode : Node2D
                     nine9 = true;
                     m = new Transform2D(Vector2.Right, Vector2.Down, m.Origin);
                 }
+                else if (id < 0) node = Movie.BuildClass((string)c["class"], sx * csx, sy * csy);   // placed by class name (an imported library symbol)
                 else node = UiBuilder.Build(Movie, Scope, id, sx * csx, sy * csy, nine?.At(nine.Offset + m.Origin));
                 if (node == null) continue;
                 var child = new Child

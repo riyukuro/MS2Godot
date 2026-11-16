@@ -76,6 +76,11 @@ public static class LayoutJson
             foreach (var inst in abc.Instances) { if (inst.Super != 0) { set.Add(abc.Name(inst.Super)); set.Add(abc.Local(inst.Super)); } }
         }
         foreach (var c in m.Characters.Values) if (c.ClassName != null && c.Kind == CharKind.Sprite && c.Timeline.Frames.Count == 0) set.Add(c.ClassName);
+        // instances placed by class name (PlaceObject3 with a class and no character: imported library symbols)
+        foreach (var tl in m.Characters.Values.Where(c => c.Kind == CharKind.Sprite).Select(c => c.Timeline).Append(m.Root))
+            foreach (var f in tl.Frames)
+                foreach (var op in f)
+                    if (op.Place is { CharacterId: null, ClassName: not null } pl) set.Add(pl.ClassName);
         return set;
     }
 
@@ -245,13 +250,13 @@ public static class LayoutJson
                     continue;
                 }
                 var p = op.Place;
-                if (p.CharacterId != null)
+                if (p.CharacterId != null || (p.ClassName != null && !p.Move))
                 {
                     if (live.Remove(p.Depth, out var old)) old["last"] = f - 1;
                     var o = new JsonObject
                     {
                         ["depth"] = p.Depth, ["id"] = p.CharacterId, ["name"] = p.Name, ["class"] = p.ClassName, ["first"] = f,
-                        ["kind"] = m.Characters.TryGetValue(p.CharacterId.Value, out var ch) ? KindName(ch.Kind) : "missing",
+                        ["kind"] = p.CharacterId == null ? "class" : m.Characters.TryGetValue(p.CharacterId.Value, out var ch) ? KindName(ch.Kind) : "missing",
                         ["matrix"] = Mx(p.Matrix), ["color"] = Cx(p.Color), ["clipDepth"] = p.ClipDepth, ["ratio"] = p.Ratio,
                         ["blend"] = p.BlendMode, ["visible"] = p.Visible, ["cacheAsBitmap"] = p.CacheAsBitmap,
                         ["filters"] = Filters(p.Filters),

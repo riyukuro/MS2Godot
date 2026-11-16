@@ -26,6 +26,37 @@ public sealed record CreateCharacter(byte Gender, short JobGroup, string Name, i
         w.WriteByte(1); w.WriteByte(Gender); w.WriteShort(JobGroup); w.WriteUnicodeString(Name); w.WriteInt(Color0); w.WriteInt(Color1);
         w.WriteShort((short) Items.Length); w.WriteBytes(Items); w.WriteInt(Elapsed);
     }
+    /// <summary>The item block: u8 count, then each <see cref="CreateItem"/>.</summary>
+    public static byte[] EncodeItems(IEnumerable<CreateItem> items) {
+        var list = items.ToList();
+        var w = new ByteWriter();
+        w.WriteByte((byte) list.Count);
+        foreach (var it in list) {
+            int n = CreateItem.AppearanceLength(it.Slot);
+            if ((it.Appearance?.Length ?? 0) != n) throw new ArgumentException($"item {it.Id}: {it.Slot} takes {n} appearance floats");
+            w.WriteInt(it.Id); w.WriteByte((byte) it.Slot);
+            foreach (var c in new[] { it.Color.Primary, it.Color.Secondary, it.Color.Tertiary }) { w.WriteByte(c.B); w.WriteByte(c.G); w.WriteByte(c.R); w.WriteByte(c.A); }
+            w.WriteInt(it.Color.Index); w.WriteInt(it.Color.PaletteId);
+            foreach (var f in it.Appearance) w.WriteFloat(f);
+        }
+        return w.ToArray();
+    }
+
+    /// <summary>Reads back an item block written by <see cref="EncodeItems"/>.</summary>
+    public static List<CreateItem> DecodeItems(byte[] block) {
+        var r = new ByteReader(block, 0);
+        var list = new List<CreateItem>();
+        int n = r.ReadByte();
+        for (int i = 0; i < n; i++) {
+            int id = r.ReadInt(); var slot = (EquipSlot) r.ReadByte(); var color = r.ReadEquipColor();
+            var app = new float[CreateItem.AppearanceLength(slot)];
+            for (int k = 0; k < app.Length; k++) app[k] = r.ReadFloat();
+            list.Add(new CreateItem(id, slot, color, app));
+        }
+        r.ExpectEnd("CreateCharacter items");
+        return list;
+    }
+
     public static CreateCharacter Read(ByteReader r) {
         if (r.ReadByte() != 1) throw new PacketLayoutException("not a create command");
         var p = new CreateCharacter(r.ReadByte(), r.ReadShort(), r.ReadUnicodeString(), r.ReadInt(), r.ReadInt(), null, 0);
@@ -33,6 +64,16 @@ public sealed record CreateCharacter(byte Gender, short JobGroup, string Name, i
         p = p with { Elapsed = r.ReadInt() };
         r.ExpectEnd("CreateCharacter"); return p;
     }
+}
+
+/// <summary>
+/// One item of the create request's item block: i32 item id, u8 equip slot (CItem::FUN_140526c30), then the item's
+/// appearance as its proxy encodes it: the 20 byte equip colour, then 14 floats for hair (back length, back position
+/// 1 and 2, front length, front position 1 and 2), 4 for a face decal, 13 for a cap; nothing for other slots.
+/// </summary>
+public sealed record CreateItem(int Id, EquipSlot Slot, EquipColor Color, float[] Appearance) {
+    public static int AppearanceLength(EquipSlot slot) => slot switch { EquipSlot.HR => 14, EquipSlot.FD => 4, EquipSlot.CP => 13, _ => 0 };
+    public static float[] DefaultAppearance(EquipSlot slot) => new float[AppearanceLength(slot)];
 }
 
 public enum CharacterIdCommand : byte { BeginDelete = 2, CancelDelete = 3, ConfirmDelete = 4 }

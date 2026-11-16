@@ -66,13 +66,16 @@ public sealed class UiMovie
         return root;
     }
 
-    public MovieClipNode BuildClass(string className, double scale = 1)
+    public MovieClipNode BuildClass(string className, double scale = 1) => BuildClass(className, scale, scale);
+
+    public MovieClipNode BuildClass(string className, double sx, double sy)
     {
+        if (className == null) return null;
         foreach (var (key, sc) in library)
             foreach (var (id, sym) in sc.Symbols)
-                if ((string)sym["class"] == className) return UiBuilder.BuildSprite(this, sc, int.Parse(id), scale, scale);
+                if ((string)sym["class"] == className) return UiBuilder.BuildSprite(this, sc, int.Parse(id), sx, sy);
         foreach (var (id, sym) in Scope.Symbols)
-            if ((string)sym["class"] == className) return UiBuilder.BuildSprite(this, Scope, int.Parse(id), scale, scale);
+            if ((string)sym["class"] == className) return UiBuilder.BuildSprite(this, Scope, int.Parse(id), sx, sy);
         return null;
     }
 }

@@ -254,6 +254,17 @@ MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn                  
 MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn -- --shots DIR --clear "#e8c070"   # shots, then quit
 ```
 
+### Character creation (game/ui/create)
+
+`charcreate.tscn` runs character creation the way the client's lobby scene does, offline. The job pick (`uicharactercreateselectdialog`, `JobSelectLogic`) shows the job tabs, name, description and art from `table/charactercreateselect.xml`, with the character list dimmed behind it. Create loads the job's create map from `table/lobbyfield.xml` (the `Character` field for most jobs), places the camera at the field's `Camera0` entity and puts a preview character at `SpawnPointPC0` in its idle pose. The customize page (`uicharactercreatedialog`, `CharacterCreateLogic`) has the gender buttons, seven categories (hair, face, makeup, skin, top, bottom, shoes) with the `table/defaultitems.xml` items for the job and gender as icon tiles, palette colours, random and back. The preview is dressed through `CreateLook`, which calls `StarterLook` and `EquipApplier`. Create asks for a name (up to 12 characters) and builds the CharacterManagement create request with Ms2.Net (`CreateCharacter` plus `CreateItem` for the item block), then prints it. Nothing is sent.
+
+Not ported: the job preview videos (`.usm`), the guide movies and the size, angle and position options of the customize panel, the camera edit overlay, and the client's full name check (banned words).
+
+```
+MS2_DATA=/path/to/Data MS2_NIFXML=/path/to/nif.xml godot-mono --path . res://ui/charcreate.tscn            # job pick, then create
+MS2_DATA=... godot-mono --path . res://ui/charcreate.tscn -- --page create --job 10 --gender female --shots DIR
+```
+
 ## Licence
 
 AGPL-3.0, see [LICENSE](LICENSE). The m2d archive reader is the NuGet package `Maple2.File.Parser.Tadeucci`

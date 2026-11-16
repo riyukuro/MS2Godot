@@ -59,4 +59,23 @@ public class PacketTests {
         Assert.That(StateChange.Read(new ByteReader(Bytes(new StateChange(0, 1, 5, new Vector3(1, 2, 3))))).Position, Is.EqualTo(new Vector3(1, 2, 3)));
         Assert.That(Bytes(new StateChange(1, 0, 5, default)).Length, Is.EqualTo(6));
     }
+
+    [Test] public void CreateItemBlockRoundTrip() {
+        var dye = new EquipColor(new Rgba(1, 2, 3, 255), new Rgba(4, 5, 6, 255), new Rgba(7, 8, 9, 255), 3, 2);
+        var items = new[] {
+            new CreateItem(10200001, EquipSlot.HR, dye, Enumerable.Range(0, 14).Select(i => i * 0.5f).ToArray()),
+            new CreateItem(10400001, EquipSlot.FD, default, new float[4]),
+            new CreateItem(11400001, EquipSlot.CL, dye, Array.Empty<float>()),
+        };
+        var block = CreateCharacter.EncodeItems(items);
+        // count, then per item 4 id + 1 slot + 20 colour + 4 per float
+        Assert.That(block.Length, Is.EqualTo(1 + (25 + 56) + (25 + 16) + 25));
+        Assert.That(block[0], Is.EqualTo(3)); Assert.That(block[5], Is.EqualTo((byte) EquipSlot.HR));
+        var back = CreateCharacter.DecodeItems(block);
+        Assert.That(back.Select(b => (b.Id, b.Slot, b.Color)), Is.EqualTo(items.Select(b => (b.Id, b.Slot, b.Color))));
+        Assert.That(back[0].Appearance, Is.EqualTo(items[0].Appearance));
+        var c = CreateCharacter.Read(new ByteReader(Bytes(new CreateCharacter(1, 10, "Maple", 0, 0, block, 12))));
+        Assert.That(CreateCharacter.DecodeItems(c.Items).Count, Is.EqualTo(3));
+        Assert.Throws<ArgumentException>(() => CreateCharacter.EncodeItems(new[] { new CreateItem(1, EquipSlot.HR, default, new float[2]) }));
+    }
 }
