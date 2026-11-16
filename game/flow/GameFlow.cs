@@ -4,6 +4,7 @@ using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2Godot.Ui;
 using Ms2Godot.Ui.Contracts;
+using Ms2Godot.Ui.Create;
 using Ms2Godot.World;
 
 namespace Ms2Godot.Flow;
@@ -46,7 +47,8 @@ public partial class GameFlow : Node
         Session.Reset();
         Session.GameScene = GameScene;
         UiBridge.ToHost += OnHost;
-        Session.CreateRequested += OnCreated;
+        CharacterCreateScene.CharacterCreated += OnCreated;
+        CharacterCreateScene.Cancelled += OnCreateCancelled;
 
         loadingLayer = new CanvasLayer { Layer = 150, Visible = false };
         var black = new ColorRect { Color = Colors.Black };
@@ -69,7 +71,8 @@ public partial class GameFlow : Node
     public override void _ExitTree()
     {
         UiBridge.ToHost -= OnHost;
-        Session.CreateRequested -= OnCreated;
+        CharacterCreateScene.CharacterCreated -= OnCreated;
+        CharacterCreateScene.Cancelled -= OnCreateCancelled;
         Session.GameScene = null;
         if (instance == this) instance = null;
     }
@@ -85,7 +88,7 @@ public partial class GameFlow : Node
         {
             case State.Login: Change(LoginScene); break;
             case State.Lobby: Change(LobbyScene); break;
-            case State.Create: Change(CreateScene); break;
+            case State.Create: loadingLayer.Visible = false; CharacterCreateScene.Enter(GetTree()); break;
             case State.Loading: BeginLoading(); break;
         }
     }
@@ -115,11 +118,15 @@ public partial class GameFlow : Node
                 Go(State.Loading);
             }
         }
-        else if (Current == State.Create && movie == UICharacterCreateSelectDialogContract.Movie && method == UICharacterCreateSelectDialogContract.ToHost.OnClickPrev)
-            Go(State.Lobby);
     }
 
-    void OnCreated(CreateCharacter request)
+    void OnCreateCancelled()
+    {
+        if (Current == State.Create) Go(State.Lobby);
+    }
+
+    // The create screen only builds the request (nothing is sent); offline, the flow accepts it at once.
+    void OnCreated(CreateCharacter request, byte[] bytes)
     {
         if (Current != State.Create) return;
         var e = Session.Add(request);
@@ -182,6 +189,15 @@ public partial class GameFlow : Node
 
     async Task Frames(int n) { for (int i = 0; i < n; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
     async Task Until(Func<bool> cond, int maxFrames = 3000) { for (int i = 0; i < maxFrames && !cond(); i++) await Frames(1); }
+    // presses the job page's back button (the scene's members are private)
+    void ClickJobBack()
+    {
+        const System.Reflection.BindingFlags f = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+        var scene = GetTree().CurrentScene;
+        var jobs = scene?.GetType().GetField("jobs", f)?.GetValue(scene);
+        var button = jobs?.GetType().GetField("PrevButton")?.GetValue(jobs);
+        typeof(Widget).GetMethod("RaiseClick", f)?.Invoke(button, null);
+    }
     void Shot(string name)
     {
         GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, name));
@@ -206,7 +222,12 @@ public partial class GameFlow : Node
         Press(Godot.Key.Enter);
         await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(180);
         Shot("04_create.png");
-        Session.RaiseCreateRequested(new CreateCharacter(0, 20, "Neutral", 0, 0, Array.Empty<byte>(), 0));   // stands in for the create dialog's Create
+        ClickJobBack();                                                                               // the job page's back button
+        await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(60);
+        for (int i = 0; i < 3; i++) { Press(Godot.Key.Down); await Frames(5); }
+        Press(Godot.Key.Enter);                                                                       // the empty slot again
+        await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(120);
+        OnCreated(new CreateCharacter(0, 20, "Neutral", 0, 0, Array.Empty<byte>(), 0), Array.Empty<byte>());   // stands in for a confirmed name (the event is raised inside the create scene)
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("05_charselect_new_character.png");
         Press(Godot.Key.Enter);                                                                       // start with the new character

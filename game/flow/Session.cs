@@ -17,10 +17,6 @@ public static class Session
     /// <summary>The scene that runs the field in the flow (the HUD over the field); null when a scene runs alone.</summary>
     public static string GameScene;
 
-    /// <summary>Raised by the create screen when it has built its create request (nothing is sent).</summary>
-    public static event Action<CreateCharacter> CreateRequested;
-    public static void RaiseCreateRequested(CreateCharacter request) => CreateRequested?.Invoke(request);
-
     public static void Reset() { AccountId = null; Characters = null; Chosen = null; SelectedIndex = 0; }
 
     /// <summary>The look inputs of the chosen character; PlayerLook uses them over its command line defaults.</summary>

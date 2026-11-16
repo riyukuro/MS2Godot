@@ -407,7 +407,6 @@ public sealed class CharacterCreateLogic
         GD.Print("  " + Convert.ToHexString(bytes));
         ClosePrompt();
         Created?.Invoke(packet, bytes);
-        Flow.Session.RaiseCreateRequested(packet);
         return packet;
     }
 
