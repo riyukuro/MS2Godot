@@ -27,6 +27,8 @@ public sealed class SwfMovie
     public SortedDictionary<int, TagStat> Stats = new();
     public List<string> Problems = new();
     public int AbcBytes;
+    /// <summary>Raw ABC blocks (DoABC tags) in file order.</summary>
+    public List<(string Name, byte[] Data)> AbcBlocks = new();
 
     public static SwfMovie Load(string path) => Parse(File.ReadAllBytes(path));
 
@@ -164,8 +166,8 @@ public sealed class SwfMovie
             case 60: Register(r.U16(), CharKind.Video, code); return 0;
             case 14: Register(r.U16(), CharKind.Sound, code); return 0;
             case 87: Register(r.U16(), CharKind.Binary, code); return 0;
-            case 82: { r.U32(); r.CString(); AbcBytes += r.Remaining; return 1; }
-            case 72: AbcBytes += r.Remaining; return 1;
+            case 82: { r.U32(); var n = r.CString(); AbcBytes += r.Remaining; AbcBlocks.Add((n, r.Bytes(r.Remaining))); return 1; }
+            case 72: AbcBytes += r.Remaining; AbcBlocks.Add(("", r.Bytes(r.Remaining))); return 1;
             case 1000: ReadExporterInfo(r); return 0;
             case 1008: ReadSubImage(r); return 0;
             case 1009: ReadExternalImage(r); return 0;

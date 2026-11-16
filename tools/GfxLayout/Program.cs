@@ -5,10 +5,11 @@ using Ms2.Swf;
 //   GfxLayout <movie> [<movie> ...] [--out DIR] [--data DIR] [--file] [--all]
 // <movie> is a name inside the player's Resource/Gfx.m2d (e.g. uilogindialog or uilogindialog.gfx), or with --file a
 // path to a loose .gfx/.swf. The Data folder comes from --data or the MS2_DATA environment variable.
+// Imported shared symbols that the movie's code uses (component_v1, commonResource ...) are merged under "library"; --no-merge skips that.
 // --all runs every .gfx in Gfx.m2d. --stats prints only the tag coverage. Without --out the JSON goes to standard output.
 
 string data = Environment.GetEnvironmentVariable("MS2_DATA"), outDir = null;
-bool file = false, stats = false, all = false;
+bool file = false, stats = false, all = false, noMerge = false;
 var names = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -19,6 +20,7 @@ for (int i = 0; i < args.Length; i++)
         case "--file": file = true; break;
         case "--stats": stats = true; break;
         case "--all": all = true; break;
+        case "--no-merge": noMerge = true; break;
         case "-h": case "--help": Console.WriteLine("usage: GfxLayout <movie>... [--out DIR] [--data DIR] [--file] [--all] [--stats]"); return 0;
         default: names.Add(args[i]); break;
     }
@@ -45,7 +47,10 @@ foreach (var n in names)
             name = Path.GetFileNameWithoutExtension(entry);
         }
         var movie = SwfMovie.Parse(bytes);
-        var json = LayoutJson.Build(movie, name);
+        Func<string, SwfMovie> loader = null;
+        if (!file && !noMerge)
+            loader = key => { var e = packs.FindByFileName("Resource/Gfx", key + ".gfx"); return e == null ? null : SwfMovie.Parse(packs.Read("Resource/Gfx", e)); };
+        var json = LayoutJson.Build(movie, name, loader);
         var cov = json["coverage"];
         movies++;
         foreach (var (code, st) in movie.Stats)

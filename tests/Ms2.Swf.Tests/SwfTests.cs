@@ -119,6 +119,29 @@ public class GameDataTests
     }
 
     [Test]
+    public void ImportedSymbolsAreMergedIntoTheLibrary()
+    {
+        var p = Packs();
+        var m = Load("uiinventorydialog");
+        var json = LayoutJson.Build(m, "uiinventorydialog", key => { var e = p.FindByFileName("Resource/Gfx", key + ".gfx"); return e == null ? null : SwfMovie.Parse(p.Read("Resource/Gfx", e)); });
+        var lib = (System.Text.Json.Nodes.JsonObject)json["library"];
+        Assert.That(lib, Is.Not.Null);
+        Assert.That(((System.Text.Json.Nodes.JsonObject)lib["component_v1"]["symbols"]).Count, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void AbcOfLoginDialogDecompilesToItsHandlers()
+    {
+        var m = Load("uilogindialog");
+        Assert.That(m.AbcBlocks, Is.Not.Empty);
+        var abc = Ms2.Swf.Abc.AbcFile.Parse(m.AbcBlocks[0].Data);
+        int ci = Enumerable.Range(0, abc.Instances.Length).First(i => abc.ClassName(i).EndsWith("LoginDialog"));
+        var text = new Ms2.Swf.Abc.Decompiler(abc).Class(ci);
+        Assert.That(text, Does.Contain("onConnect"));
+        Assert.That(text, Does.Contain("ExternalInterface.call"));
+    }
+
+    [Test]
     public void EveryMovieInGfxPackParses()
     {
         var p = Packs();

@@ -6,7 +6,8 @@ namespace Ms2.Swf;
 /// <summary>Turns a <see cref="SwfMovie"/> into the layout JSON a UI can be built from. All lengths are pixels.</summary>
 public static class LayoutJson
 {
-    public static JsonObject Build(SwfMovie m, string movieName)
+    /// <param name="loader">resolves an imported movie by name without extension (for example "component_v1"); null skips the library</param>
+    public static JsonObject Build(SwfMovie m, string movieName, Func<string, SwfMovie> loader = null)
     {
         var o = new JsonObject
         {
@@ -49,8 +50,82 @@ public static class LayoutJson
         var named = new JsonArray();
         CollectNamed(m, m.Root, Matrix.Identity, "", 0, named, new HashSet<int>());
         o["namedInstances"] = named;
+        var lib = loader == null ? null : Library(m, loader);
+        if (lib != null && lib.Count > 0) o["library"] = lib;
         o["coverage"] = Coverage(m);
         return o;
+    }
+
+    static readonly HashSet<int> MnOps = new() { 0x4A, 0x5D, 0x5E, 0x5F, 0x60, 0x80, 0x86, 0xB2 };
+
+    /// <summary>Names the movie's code refers to as classes (getlex, new, is, coerce ...) or as string constants, plus the classes of its own symbols.</summary>
+    static HashSet<string> ReferencedNames(SwfMovie m)
+    {
+        var set = new HashSet<string>();
+        foreach (var (_, raw) in m.AbcBlocks)
+        {
+            var abc = Abc.AbcFile.Parse(raw);
+            foreach (var str in abc.Strings) set.Add(str);   // classes are often looked up by name (getDefinitionByName, attachMovie style)
+            foreach (var mi in abc.Methods)
+            {
+                if (mi.Body == null) continue;
+                foreach (var i in Abc.Disasm.Decode(mi.Body.Code))
+                    if (MnOps.Contains(i.Op) && i.A > 0) { set.Add(abc.Name(i.A)); set.Add(abc.Local(i.A)); }
+            }
+            foreach (var inst in abc.Instances) { if (inst.Super != 0) { set.Add(abc.Name(inst.Super)); set.Add(abc.Local(inst.Super)); } }
+        }
+        foreach (var c in m.Characters.Values) if (c.ClassName != null && c.Kind == CharKind.Sprite && c.Timeline.Frames.Count == 0) set.Add(c.ClassName);
+        return set;
+    }
+
+    /// <summary>Symbols of imported movies that this movie uses by class name (it imports them with no asset list), with what they need.</summary>
+    static JsonObject Library(SwfMovie m, Func<string, SwfMovie> loader)
+    {
+        var refs = ReferencedNames(m);
+        var local = new HashSet<string>(m.SymbolClasses.Values.Concat(m.Exports.Values));
+        var lib = new JsonObject();
+        foreach (var g in m.Imports)
+        {
+            var key = Path.GetFileNameWithoutExtension(g.Url);
+            SwfMovie im;
+            try { im = loader(key); } catch { im = null; }
+            if (im == null) continue;
+            var wanted = new Dictionary<string, int>();
+            foreach (var (id, name) in im.SymbolClasses.Concat(im.Exports))
+                if (id != 0 && !local.Contains(name) && (refs.Contains(name) || refs.Contains(name.Substring(name.LastIndexOf('.') + 1)))) wanted[name] = id;
+            if (wanted.Count == 0) continue;
+            var closure = new SortedSet<int>(); var imgIds = new SortedSet<int>();
+            foreach (var id in wanted.Values) Close(im, id, closure, imgIds);
+            var syms = new JsonObject();
+            foreach (var id in closure) if (im.Characters.TryGetValue(id, out var c) && c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button or CharKind.StaticText or CharKind.MorphShape) syms[id.ToString()] = Symbol(im, c);
+            lib[key] = new JsonObject
+            {
+                ["classes"] = new JsonObject(wanted.OrderBy(k => k.Key).Select(k => KeyValuePair.Create(k.Key, (JsonNode)k.Value))),
+                ["images"] = new JsonArray(imgIds.Select(i => im.Characters[i]).Where(c => c.Kind == CharKind.Image).Select(c => (JsonNode)new JsonObject { ["id"] = c.Id, ["file"] = c.ImageFile, ["width"] = c.ImageWidth == 0 ? null : c.ImageWidth, ["height"] = c.ImageHeight == 0 ? null : c.ImageHeight }).ToArray()),
+                ["subImages"] = new JsonArray(imgIds.Select(i => im.Characters[i]).Where(c => c.Kind == CharKind.SubImage).Select(c => (JsonNode)new JsonObject { ["id"] = c.Id, ["image"] = c.AtlasImageId, ["x"] = c.AtlasRect.X, ["y"] = c.AtlasRect.Y, ["w"] = c.AtlasRect.W, ["h"] = c.AtlasRect.H }).ToArray()),
+                ["symbols"] = syms,
+            };
+        }
+        return lib;
+    }
+
+    static void Close(SwfMovie m, int id, SortedSet<int> seen, SortedSet<int> images)
+    {
+        if (!m.Characters.TryGetValue(id, out var c) || !seen.Add(id)) return;
+        switch (c.Kind)
+        {
+            case CharKind.Sprite:
+                foreach (var f in c.Timeline.Frames) foreach (var op in f) if (op.Place?.CharacterId is int cid) Close(m, cid, seen, images);
+                break;
+            case CharKind.Button: foreach (var b in c.Button) Close(m, b.CharacterId, seen, images); break;
+            case CharKind.Shape:
+                if (c.BitmapFills != null) foreach (var b in c.BitmapFills)
+                {
+                    images.Add(b.BitmapId);
+                    if (m.Characters.TryGetValue(b.BitmapId, out var sub) && sub.AtlasImageId is int ai) images.Add(ai);
+                }
+                break;
+        }
     }
 
     static JsonNode Coverage(SwfMovie m)
