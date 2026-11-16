@@ -15,6 +15,9 @@ public static class Travel
     /// <summary>The loading picture the transition shows (Image pack entry), kept over the reload.</summary>
     public static string LoadingImage;
 
+    /// <summary>The loading tip the transition shows, kept over the reload.</summary>
+    public static string LoadingTip;
+
     /// <summary>Scripted proof run state (--sandbox-shots): which leg of the walk runs next.</summary>
     public static int ShotLeg;
 }

@@ -24,7 +24,17 @@ public sealed class FieldNpcs
     readonly Dictionary<string, string> kfmByName = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, (ModelData md, KfmFile kfm, string folder)> models = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<(string, string), Godot.Animation> anims = new();
-    public int Actors, Npcs, Missing;
+    public int Actors, Npcs, Missing, Masked;
+
+    /// <summary>A server stand-in npc: its row, node and where its head is.</summary>
+    public sealed class Placed
+    {
+        public NpcRow Row;
+        public Node3D Root, Body;
+        public float Height;          // top of the model above the root, game units
+        public Vector3 Position => Root.GlobalPosition;
+    }
+    public readonly List<Placed> Spawned = new();
 
     public FieldNpcs(PackSet packs, AssetIndex assets, ModelBuilder builder)
     {
@@ -110,7 +120,7 @@ public sealed class FieldNpcs
     }
 
     /// <summary>Server stand-in: the npcs of the spawn points that spawn on field creation.</summary>
-    public void SpawnNpcs(Node3D parent, FieldMap map, NpcTable table)
+    public void SpawnNpcs(Node3D parent, FieldMap map, NpcTable table, int fieldId = 0, QuestMaskTable masks = null)
     {
         if (kfmByName.Count == 0)
             foreach (var x in packs.List(NpcArchive))
@@ -121,14 +131,41 @@ public sealed class FieldNpcs
             foreach (int id in NpcIds(e))
             {
                 var row = table.Find(id);
+                // CQuestMaskTable::CheckNpc: a masked npc shows only within its quest stretch; a new character has no quests
+                var mask = masks?.Npc(fieldId, id);
+                if (mask != null && !QuestMaskTable.Check(mask, _ => 0)) { Masked++; break; }
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
-                Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles);
+                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles);
+                var body = root.GetNode<Node3D>("Body");
+                Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body) });
                 Npcs++;
                 break;      // one body per point (NpcCount is how many the server keeps alive there)
             }
         }
+    }
+
+    /// <summary>Highest point of the model's meshes (bind pose) above the root.</summary>
+    static float ModelTop(Node3D body)
+    {
+        float top = 0;
+        foreach (var mi in body.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>())
+        {
+            if (mi.Mesh == null) continue;
+            var a = mi.Mesh.GetAabb();
+            var xf = RelativeTo(mi, body.GetParent<Node3D>());
+            for (int i = 0; i < 8; i++) top = Math.Max(top, (xf * a.GetEndpoint(i)).Y);
+        }
+        return top;
+    }
+
+    static Transform3D RelativeTo(Node3D n, Node3D ancestor)
+    {
+        var xf = Transform3D.Identity;
+        for (Node p = n; p != null && p != ancestor; p = p.GetParent())
+            if (p is Node3D q) xf = q.Transform * xf;
+        return xf;
     }
 
     /// <summary>NpcList keys (npc id -> count); without an override, the flat model name carries the id (11000169_).</summary>

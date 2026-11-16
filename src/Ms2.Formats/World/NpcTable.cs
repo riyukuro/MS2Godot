@@ -17,6 +17,12 @@ public sealed class NpcRow
     public string[] MoveActions = Array.Empty<string>();
     public int Gender;
     public float CapsuleHeight = 150f;
+    public float CapsuleRadius = 25f;            // capsule radius (the client's default capsule is 25 x 105)
+    public bool CapsuleIgnore;                   // capsule ignore: the npc's body does not block characters
+    public bool Nametag;                         // environment nametag: the npc shows a name tag
+    public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
+    public string Illust;                        // environment illust: the talk portrait (Resource/Image quest/illust/<illust>.dds)
+    public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
 
@@ -57,6 +63,11 @@ public sealed class NpcTable
                     WalkSpeed = Flt(model, "walkSpeed", 0),
                     RunSpeed = Flt(model, "runSpeed", 0),
                     CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
+                    CapsuleRadius = Flt(env.Element("capsule"), "radius", 25f),
+                    CapsuleIgnore = Int(env.Element("capsule"), "ignore") != 0,
+                    Nametag = Int(env, "nametag") != 0,
+                    Kind = Int(env, "kind"),
+                    Illust = (string)env.Attribute("illust"),
                 };
                 var normal = env.Element("normal");
                 row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -76,6 +87,11 @@ public sealed class NpcTable
             var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
             foreach (var k in x.Descendants("key"))
                 if (int.TryParse((string)k.Attribute("id"), out int id) && rows.TryGetValue(id, out var row) && row.Name == null) row.Name = (string)k.Attribute("name");
+            entry = $"string/{lang}/npctitle.xml";
+            if (!packs.Exists("Xml", entry)) continue;
+            x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+            foreach (var k in x.Descendants("key"))
+                if (int.TryParse((string)k.Attribute("id"), out int id) && rows.TryGetValue(id, out var row) && row.Title == null) row.Title = (string)k.Attribute("name");
         }
     }
 

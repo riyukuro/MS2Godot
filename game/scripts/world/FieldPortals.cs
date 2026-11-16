@@ -33,8 +33,16 @@ public sealed class FieldPortals
     }
 
     public readonly List<Portal> All = new();
+    public int Masked, Hidden;
 
-    public FieldPortals(FieldMap map)
+    /// <summary>
+    /// The portals of <paramref name="map"/>. With <paramref name="masks"/>, the client's quest masks apply as for a fresh character
+    /// (every quest untaken): CQuestMaskTable's questmaskportal rows and the portal's own MaskQuestID / MaskQuestState
+    /// (HasPortalMask), and a portal failing its mask is hidden and disabled (SetShownAndGlow(false, false)). Field 2000499's
+    /// portal 2 is always shown, as in the client. Portals the xblock itself keeps invisible are opened by a trigger or the server,
+    /// so the sandbox keeps them closed.
+    /// </summary>
+    public FieldPortals(FieldMap map, int fieldId = 0, QuestMaskTable masks = null)
     {
         foreach (var e in map.Entities)
         {
@@ -55,6 +63,14 @@ public sealed class FieldPortals
                 Half = new Vec3(dim.X / 2, dim.Y / 2, dim.Z / 2),
                 RotZDeg = e.RotationDeg.Z,
             });
+        }
+        if (masks == null) return;
+        foreach (var p in All)
+        {
+            if (fieldId == 2000499 && p.Id == 2) continue;
+            var m = masks.Portal(fieldId, p.Id) ?? QuestMaskTable.FromEntity(p.Entity.Get("MaskQuestID"), p.Entity.Get("MaskQuestState"));
+            if (m != null && !QuestMaskTable.Check(m, _ => 0)) { p.Visible = false; p.Enabled = false; Masked++; }
+            else if (!p.Visible && p.Enabled) { p.Enabled = false; Hidden++; }
         }
     }
 

@@ -69,6 +69,50 @@ public sealed class KfAnimation
         return keys[^1].q;
     }
 
+    /// <summary>
+    /// TBC (Kochanek-Bartels) quaternion keys: per key the outgoing (a) and incoming (b) squad control points, from the log
+    /// differences to its neighbours weighted by tension, continuity and bias, scaled for uneven key spacing. The end keys use
+    /// themselves as the missing neighbour.
+    /// </summary>
+    static (Quat a, Quat b)[] TbcControls(List<(double t, Quat q)> keys, List<NifStruct> tbc)
+    {
+        int n = keys.Count;
+        var q = keys.Select(k => k.q).ToArray();
+        for (int i = 1; i < n; i++) if (q[i - 1].Dot(q[i]) < 0) q[i] = -q[i];
+        for (int i = 0; i < n; i++) keys[i] = (keys[i].t, q[i]);
+        var o = new (Quat a, Quat b)[n];
+        for (int i = 0; i < n; i++)
+        {
+            var qp = q[Math.Max(0, i - 1)]; var qn = q[Math.Min(n - 1, i + 1)];
+            var dIn = (qp.Conjugate() * q[i]).Log();
+            var dOut = (q[i].Conjugate() * qn).Log();
+            double T = tbc[i]?.Float("t") ?? 0, B = tbc[i]?.Float("b") ?? 0, C = tbc[i]?.Float("c") ?? 0;
+            double dtIn = i > 0 ? keys[i].t - keys[i - 1].t : 0, dtOut = i + 1 < n ? keys[i + 1].t - keys[i].t : 0;
+            double sum = dtIn + dtOut;
+            double adjOut = sum > 0 && i > 0 && i + 1 < n ? 2 * dtOut / sum : 1, adjIn = sum > 0 && i > 0 && i + 1 < n ? 2 * dtIn / sum : 1;
+            var tOut = (dIn * ((1 - T) * (1 + C) * (1 + B) / 2) + dOut * ((1 - T) * (1 - C) * (1 - B) / 2)) * adjOut;
+            var tIn = (dIn * ((1 - T) * (1 - C) * (1 + B) / 2) + dOut * ((1 - T) * (1 + C) * (1 - B) / 2)) * adjIn;
+            o[i] = (q[i] * ((tOut + dOut * -1) * 0.5).Exp(), q[i] * ((dIn + tIn * -1) * 0.5).Exp());
+        }
+        return o;
+    }
+
+    static Quat SquadKeys(List<(double t, Quat q)> keys, (Quat a, Quat b)[] c, double t)
+    {
+        if (t <= keys[0].t) return keys[0].q;
+        if (t >= keys[^1].t) return keys[^1].q;
+        for (int i = 0; i + 1 < keys.Count; i++)
+        {
+            var k0 = keys[i]; var k1 = keys[i + 1];
+            if (k0.t <= t && t <= k1.t)
+            {
+                double span = k1.t - k0.t, u = (t - k0.t) / (span == 0 ? 1.0 : span);
+                return Quat.Slerp(Quat.Slerp(k0.q, k1.q, u), Quat.Slerp(c[i].a, c[i + 1].b, u), 2 * u * (1 - u));
+            }
+        }
+        return keys[^1].q;
+    }
+
     static double[] V3(NifStruct v) => new double[] { v.Float("x"), v.Float("y"), v.Float("z") };
     static double[] Scalar(object o) => new double[] { o is float f ? f : Convert.ToDouble(o) };
 
@@ -77,15 +121,39 @@ public sealed class KfAnimation
     {
         if (g == null || g.IntOr("Num Keys", 0) == 0) return null;
         long it = g.Int("Interpolation");
-        if (it != 1 && it != 2 && it != 5) throw new NotSupportedException("key interpolation " + it);
+        if (it != 1 && it != 2 && it != 3 && it != 5) throw new NotSupportedException("key interpolation " + it);
         var keys = new List<Key>();
+        var tbc = new List<NifStruct>();
         foreach (var k in g.Structs("Keys"))
         {
             var key = new Key { Time = k.Float("Time"), V = conv(k["Value"]) };
             if (it == 2) { key.Fwd = conv(k["Forward"]); key.Bwd = conv(k["Backward"]); }
+            if (it == 3) tbc.Add(k.Struct("TBC"));
             keys.Add(key);
         }
+        if (it == 3) TbcTangents(keys, tbc);
         return keys;
+    }
+
+    /// <summary>TBC (Kochanek-Bartels) keys as Hermite tangents per span, in the quadratic key slots (Bwd out, Fwd in).</summary>
+    static void TbcTangents(List<Key> keys, List<NifStruct> tbc)
+    {
+        int n = keys.Count, dim = keys[0].V.Length;
+        for (int i = 0; i < n; i++)
+        {
+            var p = keys[Math.Max(0, i - 1)].V; var c = keys[i].V; var nx = keys[Math.Min(n - 1, i + 1)].V;
+            double T = tbc[i].Float("t"), B = tbc[i].Float("b"), C = tbc[i].Float("c");
+            double dtIn = i > 0 ? keys[i].Time - keys[i - 1].Time : 0, dtOut = i + 1 < n ? keys[i + 1].Time - keys[i].Time : 0;
+            bool inner = i > 0 && i + 1 < n && dtIn + dtOut > 0;
+            double adjOut = inner ? 2 * dtOut / (dtIn + dtOut) : 1, adjIn = inner ? 2 * dtIn / (dtIn + dtOut) : 1;
+            keys[i].Bwd = new double[dim]; keys[i].Fwd = new double[dim];
+            for (int d = 0; d < dim; d++)
+            {
+                double dIn = c[d] - p[d], dOut = nx[d] - c[d];
+                keys[i].Bwd[d] = ((1 - T) * (1 + C) * (1 + B) / 2 * dIn + (1 - T) * (1 - C) * (1 - B) / 2 * dOut) * adjOut;
+                keys[i].Fwd[d] = ((1 - T) * (1 - C) * (1 + B) / 2 * dIn + (1 - T) * (1 + C) * (1 - B) / 2 * dOut) * adjIn;
+            }
+        }
     }
 
     static double[] VecConv(object o) => V3((NifStruct)o);
@@ -137,6 +205,7 @@ public sealed class KfAnimation
         var data = di >= 0 ? B[(int)di] : null;
         List<Key> keysT = null, keysS = null;
         List<(double, Quat)> keysR = null;
+        (Quat a, Quat b)[] tbcR = null;
         List<Key>[] euler = null;
         if (data != null)
         {
@@ -147,8 +216,10 @@ public sealed class KfAnimation
                     euler = data.Structs("XYZ Rotations").Select(g => KeyGroup(g, Scalar)).ToArray();
                 else
                 {
-                    if (rt != 1 && rt != 5) throw new NotSupportedException("rotation key type " + rt);
-                    keysR = data.Structs("Quaternion Keys").Select(k => ((double)k.Float("Time"), QuatOf(k.Struct("Value")))).ToList();
+                    if (rt != 1 && rt != 3 && rt != 5) throw new NotSupportedException("rotation key type " + rt);
+                    var qk = data.Structs("Quaternion Keys");
+                    keysR = qk.Select(k => ((double)k.Float("Time"), QuatOf(k.Struct("Value")))).ToList();
+                    if (rt == 3) tbcR = TbcControls(keysR, qk.Select(k => k.Struct("TBC")).ToList());
                 }
             }
             keysT = KeyGroup(data.TryGetValue("Translations", out var tg) ? tg as NifStruct : null, VecConv);
@@ -172,6 +243,7 @@ public sealed class KfAnimation
                     // Gamebryo XYZ Euler keys: q = qZ * qY * qX
                     return Quat.FromAxis(2, Ang(2)) * Quat.FromAxis(1, Ang(1)) * Quat.FromAxis(0, Ang(0));
                 };
+            else if (keysR != null && tbcR != null) ch.R = t => SquadKeys(keysR, tbcR, t);
             else if (keysR != null) ch.R = t => SlerpKeys(keysR, t);
             else
             {

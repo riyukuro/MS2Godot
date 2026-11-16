@@ -71,6 +71,29 @@ public readonly record struct Quat(double W, double X, double Y, double Z)
         return q.Normalized();
     }
 
+    public Quat Conjugate() => new(W, -X, -Y, -Z);
+
+    /// <summary>Log of a unit quaternion: (0, axis * half angle).</summary>
+    public Quat Log()
+    {
+        double s = Math.Sqrt(X * X + Y * Y + Z * Z);
+        if (s < 1e-9) return new(0, 0, 0, 0);
+        double a = Math.Atan2(s, W) / s;
+        return new(0, X * a, Y * a, Z * a);
+    }
+
+    /// <summary>Exp of a pure quaternion (0, v): the unit quaternion turning |v| half angle about v.</summary>
+    public Quat Exp()
+    {
+        double a = Math.Sqrt(X * X + Y * Y + Z * Z);
+        if (a < 1e-9) return Identity;
+        double k = Math.Sin(a) / a;
+        return new(Math.Cos(a), X * k, Y * k, Z * k);
+    }
+
+    public static Quat operator +(Quat a, Quat b) => new(a.W + b.W, a.X + b.X, a.Y + b.Y, a.Z + b.Z);
+    public static Quat operator *(Quat a, double s) => new(a.W * s, a.X * s, a.Y * s, a.Z * s);
+
     public static Quat Slerp(Quat q0, Quat q1, double u)
     {
         if (q0.Dot(q1) < 0) q1 = -q1;

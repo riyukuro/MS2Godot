@@ -2,14 +2,17 @@ using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
+using Ms2Godot.Ui;
+using Ms2Godot.Ui.Contracts;
 
 namespace Ms2Godot.World;
 
 /// <summary>
 /// What a field shows besides its static meshes, with no server (offline sandbox): self-animating props (FieldProps), actors and
-/// stand-in npcs (FieldNpcs), and the portals (FieldPortals) with the field move and its loading picture.
+/// stand-in npcs (FieldNpcs) with their name tags, bodies (NpcPresence) and talk (NpcTalk), and the portals (FieldPortals, with
+/// the client's quest masks for a fresh character) with the field move and its loading screen (LoadingProgressLogic).
 /// Field creates it before FieldBuilder runs (FieldBuilder.DrawsInstance hands it the animated models) and starts it once the
-/// player exists. Keys: the action key (Space) in a portal moves to its target field.
+/// player exists. Keys: the action key (Space) in a portal moves to its target field; elsewhere it talks to the npc in front.
 /// User args: --sandbox-shots DIR (scripted walk Tria -> portal -> target field -> back, with screenshots, then quit),
 /// --sandbox-portal ID (the Tria portal that walk uses, default 20), --no-npcs.
 /// </summary>
@@ -25,15 +28,16 @@ public partial class FieldContents : Node3D
     int fieldId;
     bool offline;
 
-    // the loading transition: a full-screen picture over a black backdrop
+    // the loading screen (UILoadingProgress) over the field move
     CanvasLayer overlay;
-    ColorRect black;
-    TextureRect picture;
-    float fade;               // 1 = covered
-    int fadeDir;              // -1 uncovering, +1 covering
-    Action whenCovered;
-    int settleFrames;
+    LoadingProgressLogic loading;
+    int settleFrames = -1;
     bool moving;
+
+    NpcTalk talk;
+    List<FieldNpcs.Placed> spawned = new();
+    int shotNpc;
+    bool actionHeld;
 
     // proof run
     string shotDir;
@@ -65,6 +69,7 @@ public partial class FieldContents : Node3D
             if (args[i] == "--sandbox-shots" && i + 1 < args.Length) shotDir = args[i + 1];
             if (args[i] == "--sandbox-portal" && i + 1 < args.Length) int.TryParse(args[i + 1], out shotPortal);
             if (args[i] == "--no-npcs") npcs = false;
+            if (args[i] == "--sandbox-npc" && i + 1 < args.Length) int.TryParse(args[i + 1], out shotNpc);
         }
         try { fieldId = FieldData.FindByXBlock(packs, fieldName)?.Id ?? 0; } catch { }
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -77,24 +82,55 @@ public partial class FieldContents : Node3D
         fnpcs.PlaceActors(people, map);
         if (offline && npcs)
         {
-            try { fnpcs.SpawnNpcs(people, map, Npcs(packs)); }
+            try { fnpcs.SpawnNpcs(people, map, Npcs(packs), fieldId, offline ? Masks(packs) : null); }
             catch (Exception ex) { GD.PushWarning("npcs: " + ex.Message); }
         }
         long tNpcs = sw.ElapsedMilliseconds;
-        portals = new FieldPortals(map);
+        portals = new FieldPortals(map, fieldId, offline ? Masks(packs) : null);
+        string presence = "";
+        if (offline && fnpcs.Spawned.Count > 0)
+        {
+            try
+            {
+                var constants = Constants(packs);
+                var np = new NpcPresence(constants) { Viewer = player };
+                AddChild(np);
+                np.Build(fnpcs.Spawned, Ui(packs));
+                presence = $"; {np.Bodies} npc bodies, {np.NameTags} name tags";
+                spawned = fnpcs.Spawned;
+                if (player != null) AddChild(talk = new NpcTalk(packs, fnpcs.Spawned, player, constants));
+            }
+            catch (Exception ex) { GD.PushWarning("npc presence: " + ex.Message); }
+        }
         GD.Print($"field contents {fieldName} ({fieldId}): {Props.Built} animated props ({Props.Animated} playing) in {tProps} ms; " +
-                 $"{fnpcs.Actors} actors, {fnpcs.Npcs} npcs, {fnpcs.Missing} without a model in {tNpcs - tProps} ms; {portals.All.Count} portals");
+                 $"{fnpcs.Actors} actors, {fnpcs.Npcs} npcs ({fnpcs.Masked} quest-masked), {fnpcs.Missing} without a model in {tNpcs - tProps} ms; " +
+                 $"{portals.All.Count} portals ({portals.Masked} quest-masked, {portals.Hidden} hidden){presence}");
+        var closed = portals.All.Where(x => !x.Enabled).Select(x => x.Id).OrderBy(x => x).ToList();
+        if (closed.Count > 0) GD.Print($"closed portals: {string.Join(" ", closed)}");
 
         BuildOverlay();
         var move = Travel.Pending;
         Travel.Pending = null;
         if (move != null && player != null) Arrive(move);
-        if (move != null) { fade = 1; fadeDir = -1; settleFrames = 3; }      // uncover once the new field has drawn
+        if (move != null)
+        {
+            // the field is loaded: the loading screen shows 100%, then fades once the new field has drawn
+            ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
+            loading?.Progress(1, 1);
+            settleFrames = 3;
+        }
         if (shotDir != null && player != null) PlanShots();
     }
 
     static NpcTable npcTable;
     static NpcTable Npcs(PackSet packs) => npcTable ??= new NpcTable(packs);
+    static QuestMaskTable maskTable;
+    static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
+    static ClientConstants constantTable;
+    static ClientConstants Constants(PackSet packs) => constantTable ??= new ClientConstants(packs);
+    static UiAssets uiAssets;
+    static UiAssets Ui(PackSet packs) => uiAssets != null && uiAssets.Packs == packs ? uiAssets : uiAssets = new UiAssets(packs);
+    static LoadingTipTable tipTable;
 
     /// <summary>The server's field entry after a portal move: the player stands at the target portal, facing its way.</summary>
     void Arrive(Travel.Move move)
@@ -114,19 +150,32 @@ public partial class FieldContents : Node3D
     {
         overlay = new CanvasLayer { Layer = 100, Name = "Loading" };
         AddChild(overlay);
-        black = new ColorRect { Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
-        black.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        overlay.AddChild(black);
-        picture = new TextureRect
+        try
         {
-            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
-            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        picture.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        black.AddChild(picture);
-        if (Travel.LoadingImage != null) picture.Texture = LoadPicture(Travel.LoadingImage);
-        SetFade(0);
+            loading = new LoadingProgressLogic(Ui(packs));
+            overlay.AddChild(loading.Layer);
+            UiBridge.ToHost += OnLoadingHost;
+        }
+        catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); loading = null; }
+    }
+
+    public override void _ExitTree() => UiBridge.ToHost -= OnLoadingHost;
+
+    void OnLoadingHost(string movie, string name, object[] args)
+    {
+        if (movie == UILoadingProgressContract.Movie && name == UILoadingProgressContract.ToHost.OnFadeInComplete) GD.Print("loading screen closed");
+    }
+
+    /// <summary>
+    /// UILoadingProgress::StartProgress for a field move: the picture (or a screenshot when there is none), a random tip, and the
+    /// keyboard guide for a low-level character (the sandbox's is level 1).
+    /// </summary>
+    void ShowLoading(string image, string tip)
+    {
+        if (loading == null) return;
+        var start = new LoadingProgressLogic.Start { Picture = image != null ? LoadPicture(image) : null, Tip = tip ?? "", ShowGuide = true };
+        if (start.Picture == null) start.ScreenShot = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+        loading.StartProgress(start, GetViewport().GetVisibleRect().Size);
     }
 
     Texture2D LoadPicture(string entry)
@@ -140,11 +189,17 @@ public partial class FieldContents : Node3D
         catch { return null; }
     }
 
-    void SetFade(float f)
+    string PickTip()
     {
-        fade = f;
-        black.Visible = f > 0;
-        black.Modulate = new Color(1, 1, 1, f);
+        try
+        {
+            tipTable ??= new LoadingTipTable(packs, new GameStrings(packs, "en"));
+            var tip = tipTable.Pick(new Random()) ?? "";
+            // $npcName:id$ in a tip is the npc's name
+            return System.Text.RegularExpressions.Regex.Replace(tip, @"\$npcName:(\d+)\$",
+                m => Npcs(packs).Find(int.Parse(m.Groups[1].Value))?.Name ?? "");
+        }
+        catch { return ""; }
     }
 
     /// <summary>PortalAction::vfunc_2 + the server's answer: cover the screen with the target map's loading picture, then load it.</summary>
@@ -159,12 +214,15 @@ public partial class FieldContents : Node3D
             return false;
         }
         moving = true;
+        talk?.End();
         Travel.LoadingImage = new LoadingImageTable(packs).Pick(p.TargetField, new Random());
-        picture.Texture = Travel.LoadingImage != null ? LoadPicture(Travel.LoadingImage) : null;
+        Travel.LoadingTip = PickTip();
         GD.Print($"portal {p.Id} ({p.Entity.Name}) -> field {p.TargetField} {xblock} portal {p.TargetPortal}, loading picture {Travel.LoadingImage}");
-        fadeDir = 1;
-        whenCovered = () =>
+        // the loading screen comes up at once at 0%; the load starts once it has been drawn
+        ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
+        GetTree().CreateTimer(0.15).Timeout += () =>
         {
+            if (shotDir != null) Shot("loading.png");
             Travel.Pending = new Travel.Move(p.TargetField, xblock, p.TargetPortal, fieldId);
             GetTree().ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
         };
@@ -173,23 +231,15 @@ public partial class FieldContents : Node3D
 
     public override void _Process(double delta)
     {
-        if (black == null) return;
-        if (settleFrames > 0) { settleFrames--; return; }
-        if (fadeDir != 0)
+        if (loading == null) return;
+        loading.SetStageSize(GetViewport().GetVisibleRect().Size);
+        if (settleFrames > 0 && --settleFrames == 0)
         {
-            // MS2 covers in about a quarter second and uncovers a little slower once the field is ready
-            float f = Mathf.Clamp(fade + fadeDir * (float)delta / (fadeDir > 0 ? 0.25f : 0.5f), 0, 1);
-            SetFade(f);
-            if (fadeDir > 0 && f >= 1)
-            {
-                fadeDir = 0;
-                if (shotDir != null) Shot("loading.png");
-                var a = whenCovered; whenCovered = null;
-                // one more drawn frame with the picture before the synchronous load
-                if (a != null) GetTree().CreateTimer(0.1).Timeout += a;
-            }
-            else if (fadeDir < 0 && f <= 0) fadeDir = 0;
+            settleFrames = -1;
+            if (shotDir != null) Shot("loading_100.png");
+            loading.StopProgress(true);       // UILoadingProgress::StopProgress: the 500 ms fade
         }
+        loading.Process(delta);
         if (shotWait > 0 && --shotWait == 0) { shotWait = -1; NextStep(true); }
     }
 
@@ -197,7 +247,12 @@ public partial class FieldContents : Node3D
     {
         if (player == null || portals == null || !offline || moving) return;
         if (shotDir != null) { RunSteps((float)delta); return; }
-        if (Input.IsKeyPressed(Key.Space)) TryEnter();
+        bool action = Input.IsKeyPressed(Key.Space);
+        bool pressed = action && !actionHeld;
+        actionHeld = action;
+        if (talk != null && talk.Open) { if (pressed) talk.ActionKey(); return; }
+        if (action && TryEnter()) return;
+        if (pressed) talk?.ActionKey();
     }
 
     bool TryEnter()
@@ -212,6 +267,7 @@ public partial class FieldContents : Node3D
     {
         DirAccess.MakeDirRecursiveAbsolute(shotDir);
         player.ProcessPhysicsPriority = 10;      // after Field (keyboard input) and this node (scripted input)
+        player.ScriptDriven = true;
         int leg = Travel.ShotLeg++;
         if (leg == 0)
         {
@@ -222,6 +278,7 @@ public partial class FieldContents : Node3D
             var front = FieldBuilder.ToGodotPoint(new Vec3(Math.Sin(yaw), -Math.Cos(yaw), 0));
             var target = FieldBuilder.ToGodotPoint(p.Position);
             steps.Enqueue(("settle", 1.5f, null, "1_spawn.png"));
+            PlanTalk();
             steps.Enqueue(("teleport", 0, () => { player.GlobalPosition = target + front * 300 + new Vector3(0, 20, 0); player.Face(-front); return Vector3.Zero; }, null));
             steps.Enqueue(("settle", 1.0f, null, "2_before_portal.png"));
             steps.Enqueue(("walk", 4f, () => target - player.GlobalPosition, null));
@@ -250,6 +307,33 @@ public partial class FieldContents : Node3D
             steps.Enqueue(("settle", 0.6f, null, "8_later.png"));      // the props' controllers move between the two
             steps.Enqueue(("quit", 0, null, null));
         }
+    }
+
+    /// <summary>Proof of the npc presence and talk: stand before an npc with a name tag and a script, talk, page, close, walk into it.</summary>
+    void PlanTalk()
+    {
+        var n = spawned.FirstOrDefault(x => shotNpc != 0 ? x.Row.Id == shotNpc
+            : x.Row.Nametag && x.Row.Friendly == 2 && !x.Row.CapsuleIgnore && x.Row.Illust != null
+              && packs.Exists("Resource/Image", $"quest/illust/{x.Row.Illust.ToLowerInvariant()}.dds"));
+        if (n == null || talk == null) { GD.Print("no npc for the talk shots"); return; }
+        double yaw = n.Root.Rotation.Y;
+        var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+        steps.Enqueue(("teleport", 0, () => { player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0); player.Face(-front); return Vector3.Zero; }, null));
+        steps.Enqueue(("settle", 1.2f, null, "1a_npc_nametag.png"));
+        steps.Enqueue(("teleport", 0, () => { GD.Print($"talkable: {talk.FindTalkable()?.Row.Id}"); talk.ActionKey(); return Vector3.Zero; }, null));
+        steps.Enqueue(("settle", 2.0f, null, "1b_talk.png"));
+        steps.Enqueue(("teleport", 0, () => { talk.ActionKey(); return Vector3.Zero; }, null));
+        steps.Enqueue(("settle", 1.5f, null, "1c_talk_after_action.png"));
+        steps.Enqueue(("teleport", 0, () => { talk.End(); return Vector3.Zero; }, null));
+        steps.Enqueue(("settle", 1.5f, null, "1d_talk_closed.png"));
+        steps.Enqueue(("walk", 2.0f, () => n.Position - player.GlobalPosition, null));
+        steps.Enqueue(("settle", 0.3f, null, "1e_walked_into_npc.png"));
+        steps.Enqueue(("teleport", 0, () =>
+        {
+            var d = player.GlobalPosition - n.Position; d.Y = 0;
+            GD.Print($"walked into npc {n.Row.Id}: stopped {d.Length():0} from its centre (capsule radius {n.Row.CapsuleRadius})");
+            return Vector3.Zero;
+        }, null));
     }
 
     void RunSteps(float dt)

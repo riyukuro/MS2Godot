@@ -103,12 +103,27 @@ The pilot viewer (the player character on a ground plane; keys `1` idle, `2` wal
   spawn point with `IsSpawnOnFieldCreate` set. The npc id comes from `NpcList` or the model name, and the npc plays
   its idle.
 
-`godot-mono --path game -- --sandbox-shots DIR [--sandbox-portal 20]` runs a scripted walk. It goes from Tria into a
-portal and on to the target field, walks off and back into the arrival portal, and returns to Tria. It saves
-screenshots along the way. `--no-npcs` skips the stand-in npcs.
+- Npc presence: each npc gets the client's body capsule (`<capsule radius height ignore>` from the npc table), which
+  blocks the player unless `ignore` is set, and, for rows with `nametag="1"`, the `uinametag` name tag with the npc
+  title, drawn above the model and faded with distance as in the client.
+- Npc talk: Space near an npc picks it the way the client does (friendly 2, then 1; within `TalkableDistance` plus the
+  capsule radius; in front of the player) and opens the `uitalkcinematic` talk window. The sandbox answers for the
+  server: the npc's `<select>` pages (or its first `<script>`, or a neutral line) from `script/npc`, with the portrait
+  from `quest/illust`, the client's Next / Close buttons, page voices, and the npc's talk start and end sounds.
+- Quest masks: npcs and portals are masked as for a fresh character (every quest untaken): the `questmasknpc` and
+  `questmaskportal` tables and a portal's own `MaskQuestID` / `MaskQuestState`. A masked portal is hidden and closed.
+  Portals the field keeps invisible (opened by triggers or the server) stay closed.
+- Loading screen: a portal move shows the `uiloadingprogress` movie in its frame mode: the loading picture (or a
+  screenshot), the top and bottom bars with a random tip from `loadingdescription.xml` and the percent, and the
+  keyboard guide. It shows 0% while the field loads and 100% once it is built, then fades out over 500 ms.
+- Npc animations with TBC rotation keys (key type 3) play.
 
-Not done yet: texture transform, flip and alpha controllers (the portal swirl, water); particle systems; npc name tags
-and collision; quest-masked portals (every enabled portal works); mobs from region spawns; the loading progress movie.
+`godot-mono --path game -- --sandbox-shots DIR [--sandbox-portal 20] [--sandbox-npc ID]` runs a scripted walk. It talks
+to an npc in Tria and walks into it, goes into a portal and on to the target field, walks off and back into the arrival
+portal, and returns to Tria. It saves screenshots along the way. `--no-npcs` skips the stand-in npcs.
+
+Not done yet: texture transform, flip and alpha controllers (the portal swirl, water); particle systems; mobs from
+region spawns; npc talk beyond the first pages (choices, shops, quests).
 
 ### Character look
 
