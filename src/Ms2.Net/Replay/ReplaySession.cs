@@ -1,3 +1,4 @@
+using Ms2.Net.Packets;
 using Ms2.Net.Wire;
 
 namespace Ms2.Net.Replay;
@@ -11,7 +12,8 @@ public sealed class ReplaySession {
     public Exception Error { get; private set; }
     public string Path { get; }
 
-    public ReplaySession(MsbFile file, double speed = 1, double startOffsetSeconds = 0) {
+    public ReplaySession(MsbFile file, double speed = 1, double startOffsetSeconds = 0, Func<int, NpcLayout> npcLayout = null) {
+        if (npcLayout != null) Tracker.NpcLayoutOf = npcLayout;
         Path = file.Path;
         Stream = new ReplayStream(file, speed, startOffsetSeconds);
         Session = new ClientSession(new MapleChannel(Stream));

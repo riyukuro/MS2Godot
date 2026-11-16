@@ -12,6 +12,11 @@ public sealed record UserRemovedEvent(double Time, int ObjectId) : ReplayEvent(T
 /// <summary>One movement record of a player. Position is in the packet's own units (MS2 file coordinates, Z up).</summary>
 public sealed record UserMovedEvent(double Time, int ObjectId, bool IsSelf, Vector3 Position, float YawDegrees, StateSync Record) : ReplayEvent(Time);
 
+public sealed record NpcAddedEvent(double Time, FieldAddNpc Npc) : ReplayEvent(Time);
+public sealed record NpcRemovedEvent(double Time, int ObjectId, bool Dead) : ReplayEvent(Time);
+/// <summary>One npc sync block (position, rotation, animation sequence id, state).</summary>
+public sealed record NpcMovedEvent(double Time, NpcSync Sync) : ReplayEvent(Time);
+
 /// <summary>
 /// Turns packets into field events and keeps the current player table. Fed from the read loop (inbound packets) and from the
 /// recording's own client packets (the local player's movement); events can be drained from another thread.
@@ -24,7 +29,13 @@ public sealed class FieldTracker {
         public FieldAddUser Add;
     }
 
+    public sealed class NpcState { public int ObjectId, NpcId, Moves; public Vector3 Position; public float YawDegrees; }
+
     readonly object gate = new();
+    readonly Dictionary<int, NpcState> npcs = new();
+    /// <summary>The npc table's view of an npc id (boss layout, property tag). Without it every npc reads as a plain one.</summary>
+    public Func<int, NpcLayout> NpcLayoutOf { get; set; } = _ => default;
+    public IReadOnlyList<NpcState> NpcSnapshot() { lock (gate) return npcs.Values.Select(n => new NpcState { ObjectId = n.ObjectId, NpcId = n.NpcId, Moves = n.Moves, Position = n.Position, YawDegrees = n.YawDegrees }).ToList(); }
     readonly Dictionary<int, Actor> actors = new();
     public ConcurrentQueue<ReplayEvent> Events { get; } = new();
     public int SelfObjectId { get; private set; }
@@ -39,7 +50,7 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.RequestFieldEnter: {
                 var e = RequestFieldEnter.Read(p.Reader());
                 if (e.Error != 0) break;
-                lock (gate) { Field = e; actors.Clear(); }
+                lock (gate) { Field = e; actors.Clear(); npcs.Clear(); }
                 Events.Enqueue(new FieldEnterEvent(Time, e));
                 break;
             }
@@ -54,6 +65,29 @@ public sealed class FieldTracker {
                 int id = FieldRemoveUser.Read(p.Reader()).ObjectId;
                 lock (gate) actors.Remove(id);
                 Events.Enqueue(new UserRemovedEvent(Time, id));
+                break;
+            }
+            case Ms2.Net.Inbound.FieldAddNpc: {
+                var n = FieldAddNpc.Read(p.Reader(), NpcLayoutOf);
+                lock (gate) npcs[n.ObjectId] = new NpcState { ObjectId = n.ObjectId, NpcId = n.NpcId, Position = n.Position, YawDegrees = n.Rotation.Z };
+                Events.Enqueue(new NpcAddedEvent(Time, n));
+                break;
+            }
+            case Ms2.Net.Inbound.FieldRemoveNpc:
+            case Ms2.Net.Inbound.FieldDeadNpc: {
+                int id = NpcObjectId.Read(p.Reader()).ObjectId;
+                bool dead = p.Opcode == (ushort) Ms2.Net.Inbound.FieldDeadNpc;
+                if (!dead) lock (gate) npcs.Remove(id);
+                Events.Enqueue(new NpcRemovedEvent(Time, id, dead));
+                break;
+            }
+            case Ms2.Net.Inbound.NpcControl: {
+                NpcControl c;
+                lock (gate) c = NpcControl.Read(p.Reader(), id => npcs.TryGetValue(id, out var st) && NpcLayoutOf(st.NpcId).IsBoss);
+                foreach (var b in c.Blocks) {
+                    lock (gate) { if (!npcs.TryGetValue(b.ObjectId, out var st)) continue; st.Position = b.Position.ToVector3(); st.YawDegrees = b.RotationZ; st.Moves++; }
+                    Events.Enqueue(new NpcMovedEvent(Time, b));
+                }
                 break;
             }
             case Ms2.Net.Inbound.UserSync:

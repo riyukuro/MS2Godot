@@ -14,7 +14,7 @@ namespace Ms2Godot.Net;
 /// the players: spawned from FieldAddUser, moved by UserSync / RideSync (and the recording's own movement packets for the local
 /// player), removed by FieldRemoveUser, at the recorded pace. Every player is a stand-in body (male or female by the packet's gender).
 /// Run: godot --path game res://net/Replay.tscn -- --recording FILE.msb [--speed 1] [--start SEC]
-///      [--field XBLOCK] [--out DIR --shots 10,30,60] [--follow self|NAME|center]
+///      [--field XBLOCK] [--out DIR --shots 10,30,60] [--follow self|NAME|center|npcs]
 /// </summary>
 public partial class ReplayField : Field
 {
@@ -35,6 +35,9 @@ public partial class ReplayField : Field
     ReplaySession replay;
     ModelBuilder modelBuilder;
     EquipApplier equip;
+    NpcLayer npcs;
+    Ms2.Formats.World.NpcTable npcTable;
+    Dictionary<int, List<List<System.Numerics.Vector3>>> npcTruth;
     bool applyEquips = true;
     readonly Dictionary<int, Actor> actors = new();
     readonly Dictionary<byte, (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run, string model)> bodies = new();
@@ -106,10 +109,41 @@ public partial class ReplayField : Field
         // the field build searched map textures only; the character bodies need the character pack's own textures too
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
         equip = new EquipApplier(packs, builder);
+        npcTable = new Ms2.Formats.World.NpcTable(packs);
+        npcs = new NpcLayer(packs, builder, npcTable, this);
         truth = BuildTruth(file);
-        replay = new ReplaySession(file, speed, startOffset);
+        npcTruth = BuildNpcTruth(file, NpcLayoutOf);
+        replay = new ReplaySession(file, speed, startOffset, NpcLayoutOf);
         GD.Print($"replay {System.IO.Path.GetFileName(file.Path)}: {file.Packets.Count} packets, {replay.Stream.Duration:F0}s, field {fieldName}, speed x{speed}");
         replay.Start();
+    }
+
+    NpcLayout NpcLayoutOf(int id) { var r = npcTable.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); }
+
+    static Dictionary<int, List<List<System.Numerics.Vector3>>> BuildNpcTruth(MsbFile f, Func<int, NpcLayout> layout)
+    {
+        var t = new Dictionary<int, List<List<System.Numerics.Vector3>>>(); var npcOf = new Dictionary<int, int>();
+        foreach (var p in f.Packets.Where(p => p.ServerToClient))
+        {
+            var r = new Maple2.PacketLib.Tools.ByteReader(p.Data);
+            switch ((Inbound)p.Opcode)
+            {
+                case Inbound.RequestFieldEnter: if (RequestFieldEnter.Read(r).Error == 0) npcOf.Clear(); break;
+                case Inbound.FieldAddNpc:
+                {
+                    var n = FieldAddNpc.Read(r, layout); npcOf[n.ObjectId] = n.NpcId;
+                    if (!t.TryGetValue(n.ObjectId, out var ls)) t[n.ObjectId] = ls = new();
+                    ls.Add(new List<System.Numerics.Vector3> { n.Position });
+                    break;
+                }
+                case Inbound.FieldRemoveNpc: npcOf.Remove(NpcObjectId.Read(r).ObjectId); break;
+                case Inbound.NpcControl:
+                    foreach (var b in NpcControl.Read(r, id => npcOf.TryGetValue(id, out int nid) && layout(nid).IsBoss).Blocks)
+                        if (npcOf.ContainsKey(b.ObjectId)) t[b.ObjectId][^1].Add(b.Position.ToVector3());
+                    break;
+            }
+        }
+        return t;
     }
 
     // The same events as the tracker, taken straight from the recorded packets, to check what arrives in the scene.
@@ -183,6 +217,9 @@ public partial class ReplayField : Field
                 case UserRemovedEvent rem:
                     if (actors.Remove(rem.ObjectId, out var gone)) gone.Root.QueueFree();
                     break;
+                case NpcAddedEvent na: npcs.Add(na); break;
+                case NpcRemovedEvent nr: npcs.Remove(nr.ObjectId, nr.Dead); break;
+                case NpcMovedEvent nm: npcs.Move(nm); break;
                 case UserMovedEvent mv:
                     if (!actors.TryGetValue(mv.ObjectId, out var a)) break;
                     a.Target = G(mv.Position); a.TargetYaw = mv.YawDegrees; a.Moves++;
@@ -211,6 +248,7 @@ public partial class ReplayField : Field
             string animName = a.Speed < 25 ? "idle" : a.Speed < 220 ? "walk" : "run";
             if (animName != a.Current) { a.Anim.Play(animName, 0.15); a.Current = animName; }
         }
+        npcs.Process(dt);
         UpdateReplayCamera(dt);
         HandleShots();
         if (replay.Completion.IsCompleted && replay.Tracker.Events.IsEmpty && pendingShot < 0 && (shotTimes.Count == 0 || nextShot >= shotTimes.Count) && outDir != null)
@@ -224,9 +262,10 @@ public partial class ReplayField : Field
     {
         Actor target = null;
         if (followName == "self") target = actors.Values.FirstOrDefault(a => a.IsSelf);
-        else if (followName != "center") target = actors.Values.FirstOrDefault(a => a.Name == followName);
+        else if (followName != "center" && followName != "npcs") target = actors.Values.FirstOrDefault(a => a.Name == followName);
         Vector3 focus;
-        if (target != null) focus = target.Root.Position;
+        if (followName == "npcs" && npcs.ActivePosition() is Vector3 np) focus = np;
+        else if (target != null) focus = target.Root.Position;
         else if (actors.Count > 0) focus = actors.Values.Aggregate(Vector3.Zero, (s, a) => s + a.Root.Position) / actors.Count;
         else return;
         focus += new Vector3(0, 60, 0);
@@ -286,10 +325,13 @@ public partial class ReplayField : Field
             if ((expect - a.Target).Length() > 0.01f) { bad++; GD.PrintErr($"MISMATCH {a.Name}: expected {expect} got {a.Target} after {a.Moves} moves, truth has {list.Count}; actual target is truth index {list.FindIndex(q => (G(q) - a.Target).Length() < 0.5f)}; neighbours {string.Join(" ", Enumerable.Range(Math.Max(0, a.Moves - 2), 5).Where(i => i < list.Count).Select(i => G(list[i]).ToString()))}"); }
             maxLag = Mathf.Max(maxLag, (a.Root.Position - a.Target).Length());
         }
+        var (nn, nbad) = npcs.Verify(npcTruth, m => GD.PrintErr(m));
+        GD.Print($"check {when}: {nn} npcs, {nbad} position mismatches");
+        n += nn; bad += nbad;
         checkedActors += n; mismatches += bad;
         GD.Print($"check {when}: {n} players, {bad} position mismatches against the recorded coordinates, bodies trail their target by at most {maxLag:F1} units");
     }
 
-    void ReportChecks() => GD.Print($"equips: {equip.Loaded} item models applied, {equip.NoModelEntry} items without an itemmodel entry, {equip.NoAsset} without a usable asset, {equip.Failed} failed; {equip.MissingIds.Count} distinct ids missing from the local data");
+    void ReportChecks() => GD.Print($"npcs: {npcs.Spawned} spawned ({npcs.NoRow} without a table row, {npcs.NoModel} without a model in the local data: {string.Join(", ", npcs.MissingModels.Take(8))}), {npcs.SequencesPlayed} sequences played, {npcs.SequencesMissing} sequence ids without a kf; equips: {equip.Loaded} item models applied, {equip.NoModelEntry} items without an itemmodel entry, {equip.NoAsset} without a usable asset, {equip.Failed} failed; {equip.MissingIds.Count} distinct ids missing from the local data");
     void ReportChecks2() => GD.Print($"replay done: {checkedActors} player checks, {mismatches} mismatches");
 }

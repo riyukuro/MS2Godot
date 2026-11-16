@@ -71,4 +71,41 @@ public class ReplayTests {
         Assert.That(wall, Is.GreaterThan(rec / 50 * 0.8));
         Assert.That(wall, Is.LessThan(rec / 50 + 3));
     }
+
+    [Test] public async Task NpcPositionsMatchTheRecording() {
+        var file = Recording();
+        string data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set (the npc table decides the packet layout)");
+        using var packs = new Ms2.Formats.Pack.PackSet(data);
+        var table = new Ms2.Formats.World.NpcTable(packs);
+        NpcLayout Layout(int id) { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); }
+        var rs = new ReplaySession(file, speed: double.PositiveInfinity, npcLayout: Layout);
+        await rs.Start();
+        Assert.That(rs.Error, Is.Null);
+
+        var live = new Dictionary<int, (int npc, Vector3 pos, float yaw, int moves)>();
+        int adds = 0;
+        foreach (var p in file.Packets.Where(p => p.ServerToClient)) {
+            var r = new ByteReader(p.Data);
+            switch (p.Opcode) {
+                case 0x16: if (RequestFieldEnter.Read(r).Error == 0) live.Clear(); break;
+                case 0x55: { var n = FieldAddNpc.Read(r, Layout); live[n.ObjectId] = (n.NpcId, n.Position, n.Rotation.Z, 0); adds++; break; }
+                case 0x56: live.Remove(NpcObjectId.Read(r).ObjectId); break;
+                case 0x58: {
+                    var c = NpcControl.Read(r, id => live.TryGetValue(id, out var st) && Layout(st.npc).IsBoss);
+                    foreach (var b in c.Blocks) if (live.TryGetValue(b.ObjectId, out var st)) live[b.ObjectId] = (st.npc, b.Position.ToVector3(), b.RotationZ, st.moves + 1);
+                    break;
+                }
+            }
+        }
+        var got = rs.Tracker.NpcSnapshot().ToDictionary(n => n.ObjectId);
+        TestContext.Out.WriteLine($"{adds} npc adds, {got.Count} npcs left, {got.Values.Sum(n => n.Moves)} moves");
+        Assert.That(got.Keys.OrderBy(x => x), Is.EqualTo(live.Keys.OrderBy(x => x)));
+        foreach (var (id, n) in got) {
+            Assert.That(n.Position, Is.EqualTo(live[id].pos), $"npc {id} position");
+            Assert.That(n.YawDegrees, Is.EqualTo(live[id].yaw), $"npc {id} yaw");
+            Assert.That(n.Moves, Is.EqualTo(live[id].moves), $"npc {id} moves");
+        }
+        Assert.That(rs.Tracker.Events.Count(e => e is NpcAddedEvent), Is.EqualTo(adds));
+    }
 }
