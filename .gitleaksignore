@@ -1,0 +1,2 @@
+# False positive: a string of skill shortcut letters, not a key (renamed in the next commit).
+fe648597df45c15dbd4c4b68bf1d0103f9e431ef:game/ui/HudScene.cs:generic-api-key:190
