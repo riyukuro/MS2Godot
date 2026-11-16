@@ -111,10 +111,19 @@ public partial class ShapeNode : Node2D
 {
     readonly List<(Texture2D Tex, Rect2 Dest, Rect2 Src)> pieces = new();
     readonly NineCtx nine;
+    readonly List<(Color Color, Vector2[] Pts)> paths = new();
 
     public ShapeNode(UiScope scope, JsonObject sym, NineCtx nine = null)
     {
         this.nine = nine;
+        if (sym["paths"] is JsonArray ps)
+            foreach (var p in ps)
+            {
+                var a = (JsonArray)p["pts"];
+                var pts = new Vector2[a.Count / 2];
+                for (int i = 0; i < pts.Length; i++) pts[i] = new Vector2((float)(double)a[2 * i], (float)(double)a[2 * i + 1]);
+                paths.Add((UiBuilder.ParseColor((string)p["fill"], Colors.White), pts));
+            }
         if (sym["bitmaps"] is not JsonArray fills) return;
         foreach (var f in fills)
         {
@@ -138,7 +147,12 @@ public partial class ShapeNode : Node2D
 
     public override void _Draw()
     {
-        if (nine == null) return;
+        foreach (var (color, pts) in paths)
+        {
+            var poly = nine == null ? pts : pts.Select(q => new Vector2(nine.MapX(q.X + nine.Offset.X) - nine.Offset.X, nine.MapY(q.Y + nine.Offset.Y) - nine.Offset.Y)).ToArray();
+            if (Geometry2D.TriangulatePolygon(poly).Length > 0) DrawColoredPolygon(poly, color);
+        }
+        if (nine == null || pieces.Count == 0) return;
         var g = nine.Grid;
         float[] xs = { float.NegativeInfinity, g.Position.X, g.End.X, float.PositiveInfinity };
         float[] ys = { float.NegativeInfinity, g.Position.Y, g.End.Y, float.PositiveInfinity };
@@ -164,7 +178,6 @@ public partial class ShapeNode : Node2D
 public partial class TextNode : Node2D
 {
     public static readonly string[] FontNames = { "Noto Sans CJK KR", "Noto Sans CJK JP", "Noto Sans", "DejaVu Sans", "sans-serif" };
-    static SystemFont font;
     public Label Label;
     public Rect2 Bounds;
     public JsonNode Def;
@@ -174,7 +187,7 @@ public partial class TextNode : Node2D
         Def = sym["text"];
         Bounds = UiBuilder.Rc(sym["bounds"]);
         if (nine != null) Bounds = nine.Map(Bounds);
-        font ??= new SystemFont { FontNames = FontNames, Antialiasing = TextServer.FontAntialiasing.Gray };
+        var font = scope.Assets.FontFor((string)Def["fontClass"]);
         float size = UiBuilder.F(Def["size"], 12);
         float asx = (float)sx, asy = (float)sy;
         Label = new Label

@@ -54,6 +54,7 @@ public sealed class UiMovie
             }, assets);
     }
 
+    public double Fps => Scope.Layout["fps"] == null ? 30 : (double)Scope.Layout["fps"];
     public double StageWidth => (double)Scope.Layout["stage"]["width"];
     public double StageHeight => (double)Scope.Layout["stage"]["height"];
 

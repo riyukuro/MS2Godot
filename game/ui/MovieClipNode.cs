@@ -91,13 +91,13 @@ public partial class MovieClipNode : Node2D
 
     static Color ToColor(JsonNode c) => new((float)(double)c["mul"][0], (float)(double)c["mul"][1], (float)(double)c["mul"][2], (float)(double)c["mul"][3]);
 
-    public void GotoLabel(string label)
+    /// <summary>Goes to a state label. A state plays from its label to the frame before the next label and holds there (CLIK stops at the end of each state); with <paramref name="animate"/> the frames are played at the movie's frame rate.</summary>
+    public void GotoLabel(string label, bool animate = false)
     {
-        // a state plays from its label to the frame before the next label and holds there (CLIK stops at the end of each state)
         if (!Labels.TryGetValue(label, out var f)) return;
         int end = FrameCount - 1;
         foreach (var l in Labels.Values) if (l > f && l - 1 < end) end = l - 1;
-        GotoFrame(end);
+        if (animate && end > f && IsInsideTree()) PlayRange(f, end); else { playing = false; GotoFrame(end); }
     }
 
     public bool HasLabel(string label) => Labels.ContainsKey(label);
@@ -153,6 +153,18 @@ public partial class MovieClipNode : Node2D
     /// <summary>All text nodes named "textField" directly in this clip (one per frame state).</summary>
     public IEnumerable<TextNode> TextFields => Children.Where(c => c.Name == "textField" && c.Node is TextNode).Select(c => (TextNode)c.Node);
 
+    /// <summary>Sets every text child with this instance name (one exists per frame state).</summary>
+    public void SetNamedText(string name, string text)
+    {
+        foreach (var c in Children) if (c.Name == name && c.Node is TextNode t) t.Text = text;
+    }
+
+    public void SetNamedVisible(string name, bool visible)
+    {
+        foreach (var c in Children) if (c.Name == name) c.Last = visible ? int.MaxValue : -1;
+        GotoFrame(Frame);
+    }
+
     public void SetText(string text) { foreach (var t in TextFields) t.Text = text; }
 
     public IEnumerable<MovieClipNode> AllClips()
@@ -172,16 +184,21 @@ public partial class MovieClipNode : Node2D
         return r;
     }
 
-    // simple timeline player (popup animations)
-    int playTo = -1; double playTime; double fps = 60;
-    public void PlayTo(int frame, double framesPerSecond = 60) { playTo = frame; fps = framesPerSecond; playTime = 0; }
+    // timeline player for state tweens and popup animations
+    bool playing; int rangeFrom, rangeTo; double rangeT;
+
+    public void PlayRange(int from, int to)
+    {
+        rangeFrom = from; rangeTo = to; rangeT = 0; playing = true;
+        GotoFrame(from);
+    }
 
     public override void _Process(double delta)
     {
-        if (playTo < 0) return;
-        playTime += delta;
-        int f = (int)(playTime * fps);
-        if (f >= playTo) { GotoFrame(playTo); playTo = -1; SetProcess(false); return; }
+        if (!playing) return;
+        rangeT += delta;
+        int f = rangeFrom + (int)(rangeT * Movie.Fps);
+        if (f >= rangeTo) { GotoFrame(rangeTo); playing = false; return; }
         GotoFrame(f);
     }
 }

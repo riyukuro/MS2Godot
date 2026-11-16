@@ -84,7 +84,7 @@ public sealed class ButtonWidget : Widget
         string state = !Enabled ? "disabled" : Down ? "down" : Hover ? "over" : "up";
         string label = Toggle && Selected ? "selected_" + state : state;
         if (!Node.HasLabel(label)) label = Node.HasLabel(state) ? state : "up";
-        Node.GotoLabel(label);
+        Node.GotoLabel(label, true);
     }
 }
 
@@ -112,7 +112,7 @@ public sealed class TextInputWidget : Widget
         var tf = fieldChild?.Node as TextNode;
         var b = tf?.Bounds ?? Node.Bounds;
         float asx = (float)Node.sx, asy = (float)Node.sy;
-        var font = new SystemFont { FontNames = TextNode.FontNames, Antialiasing = TextServer.FontAntialiasing.Gray };
+        var font = Node.Scope.Assets.FontFor((string)tf?.Def["fontClass"]);
         int size = Math.Max(1, (int)Math.Round(UiBuilder.F(tf?.Def["size"], 12) * asy));
         var empty = new StyleBoxEmpty();
         Edit = new LineEdit

@@ -97,6 +97,7 @@ public sealed class Character
     // shape
     public List<BitmapFill> BitmapFills;
     public Rgba SolidFill;
+    public List<VectorPath> Paths;      // solid-colour vector fills (flattened polygons in pixels)
     // sprite
     public Timeline Timeline;
     // text
@@ -106,11 +107,14 @@ public sealed class Character
     public bool ButtonTrackAsMenu;
     // font / image
     public string FontName;
+    public FontData Font;               // DefineFont2/3 glyph outlines
     public string ImageFile;            // external GFx image file (atlas)
     public int? AtlasImageId;           // sub image: id of the atlas image
     public Rect AtlasRect;              // sub image: region in atlas pixels
     public int ImageWidth, ImageHeight;
 }
+
+public sealed record VectorPath(Rgba Color, float[] Points);
 
 public sealed record BitmapFill(int BitmapId, Matrix Matrix, bool Smooth, bool Repeat);
 
@@ -119,6 +123,7 @@ public sealed class EditText
     public int? FontId;
     public string FontClass;
     public string FontName;
+    public FontData Font;               // DefineFont2/3 glyph outlines
     public double? Size;                // pixels
     public Rgba Color;
     public int? MaxLength;
@@ -140,3 +145,20 @@ public sealed class ButtonRecord
 public sealed class ImportGroup { public string Url; public List<(int Id, string Name)> Assets = new(); }
 
 public sealed class TagStat { public int Parsed; public int Skipped; public int Failed; }
+
+/// <summary>Outline of one glyph: closed contours of points; Off marks quadratic control points. Units are the font's EM square.</summary>
+public sealed class Glyph
+{
+    public ushort Code;
+    public int Advance;
+    public List<List<(int X, int Y, bool On)>> Contours = new();
+}
+
+/// <summary>A DefineFont2/3 font. Y grows downward as in SWF; EmSquare is 20480 for DefineFont3, 1024 for DefineFont2.</summary>
+public sealed class FontData
+{
+    public string Name;
+    public bool Bold, Italic, HasLayout;
+    public int EmSquare = 20480, Ascent, Descent, Leading;
+    public List<Glyph> Glyphs = new();
+}

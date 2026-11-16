@@ -142,6 +142,18 @@ public class GameDataTests
     }
 
     [Test]
+    public void GameFontBuildsATrueTypeFile()
+    {
+        var m = Load("gfxfontlib");
+        var font = m.Characters.Values.First(c => c.Font != null && c.ClassName == "$Font_SD_Neo_3").Font;
+        Assert.That(font.Glyphs.Count, Is.GreaterThan(1000));
+        var ttf = TtfWriter.Build(font);
+        Assert.That(ttf.Take(4).ToArray(), Is.EqualTo(new byte[] { 0, 1, 0, 0 }));
+        Assert.That(System.Text.Encoding.ASCII.GetString(ttf, 12, 4).Length, Is.EqualTo(4));
+        Assert.That(font.Glyphs.Any(g => g.Code == 'A' && g.Contours.Count > 0));
+    }
+
+    [Test]
     public void EveryMovieInGfxPackParses()
     {
         var p = Packs();

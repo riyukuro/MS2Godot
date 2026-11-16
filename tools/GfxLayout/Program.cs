@@ -6,10 +6,11 @@ using Ms2.Swf;
 // <movie> is a name inside the player's Resource/Gfx.m2d (e.g. uilogindialog or uilogindialog.gfx), or with --file a
 // path to a loose .gfx/.swf. The Data folder comes from --data or the MS2_DATA environment variable.
 // Imported shared symbols that the movie's code uses (component_v1, commonResource ...) are merged under "library"; --no-merge skips that.
+// --fonts DIR writes the movie's DefineFont outlines as TrueType files.
 // --all runs every .gfx in Gfx.m2d. --stats prints only the tag coverage. Without --out the JSON goes to standard output.
 
 string data = Environment.GetEnvironmentVariable("MS2_DATA"), outDir = null;
-bool file = false, stats = false, all = false, noMerge = false;
+bool file = false, stats = false, all = false, noMerge = false; string fontsDir = null;
 var names = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -20,6 +21,7 @@ for (int i = 0; i < args.Length; i++)
         case "--file": file = true; break;
         case "--stats": stats = true; break;
         case "--all": all = true; break;
+        case "--fonts": fontsDir = args[++i]; break;
         case "--no-merge": noMerge = true; break;
         case "-h": case "--help": Console.WriteLine("usage: GfxLayout <movie>... [--out DIR] [--data DIR] [--file] [--all] [--stats]"); return 0;
         default: names.Add(args[i]); break;
@@ -50,6 +52,16 @@ foreach (var n in names)
         Func<string, SwfMovie> loader = null;
         if (!file && !noMerge)
             loader = key => { var e = packs.FindByFileName("Resource/Gfx", key + ".gfx"); return e == null ? null : SwfMovie.Parse(packs.Read("Resource/Gfx", e)); };
+        if (fontsDir != null)
+        {
+            Directory.CreateDirectory(fontsDir);
+            foreach (var ch in movie.Characters.Values.Where(c => c.Font != null))
+            {
+                var ttf = TtfWriter.Build(ch.Font);
+                File.WriteAllBytes(Path.Combine(fontsDir, $"{name}_{ch.Id}.ttf"), ttf);
+                Console.Error.WriteLine($"font {ch.Id} \"{ch.Font.Name}\" class {ch.ClassName}: {ch.Font.Glyphs.Count} glyphs, ttf {ttf.Length} bytes");
+            }
+        }
         var json = LayoutJson.Build(movie, name, loader);
         var cov = json["coverage"];
         movies++;

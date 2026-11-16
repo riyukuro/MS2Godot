@@ -38,10 +38,11 @@ public partial class LoginScene : Control
         UiWidgets.ApplyInspector(dialogRoot, UILoginDialogContract.Inspector);
         // movie.alignment(): ALIGN_BOTTOMCENTER of the dialog's bounds (the restored client's shot has the panel 10 px above the bottom edge)
         var dlg = dialogRoot.Children.First(c => c.Node is MovieClipNode).Node as MovieClipNode;
-        dlg.GotoFrame(8);                       // the last frame of the "popup" animation
+        dlg.GotoFrame(8);                       // the last frame of the "popup" animation (played below unless taking shots)
         var bounds = dlg.GlobalBounds();        // canvas rect with the root at the origin
         dialogRoot.Position = new Vector2((size.X - bounds.Size.X) / 2 - bounds.Position.X, size.Y - bounds.End.Y);
         AddChild(dialogRoot);
+        if (shotDir == null) dlg.PlayRange(0, 8);
 
         logic = new LoginDialogLogic(dialogRoot);
         logic.InitData("", false, true, "KR");

@@ -191,6 +191,7 @@ public static class LayoutJson
         {
             case CharKind.Shape:
                 o["fill"] = c.SolidFill?.Hex;
+                if (c.Paths != null) o["paths"] = new JsonArray(c.Paths.Select(pp => (JsonNode)new JsonObject { ["fill"] = pp.Color.Hex, ["pts"] = new JsonArray(pp.Points.Select(v => (JsonNode)Math.Round(v, 2)).ToArray()) }).ToArray());
                 if (c.BitmapFills != null)
                     o["bitmaps"] = new JsonArray(c.BitmapFills.Select(b =>
                     {

@@ -16,6 +16,39 @@ public sealed class UiAssets
     readonly Dictionary<string, Texture2D> textures = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, string> strings = new();
     public string Language = "en";
+    readonly Dictionary<string, Font> fonts = new();
+    Dictionary<string, Character> fontSources;
+    SystemFont fallbackFont;
+
+    /// <summary>System font used where the game font has no glyph (and when gfxfontlib is missing).</summary>
+    public SystemFont Fallback => fallbackFont ??= new SystemFont { FontNames = new[] { "Noto Sans CJK KR", "Noto Sans CJK JP", "Noto Sans", "DejaVu Sans", "sans-serif" }, Antialiasing = TextServer.FontAntialiasing.Gray };
+
+    /// <summary>The game's UI font for a flash font class such as "$Font_SD_Neo_3", built from the glyph outlines in gfxfontlib. Falls back to a system font.</summary>
+    public Font FontFor(string fontClass)
+    {
+        if (string.IsNullOrEmpty(fontClass)) return Fallback;
+        if (fonts.TryGetValue(fontClass, out var f)) return f;
+        Font result = Fallback;
+        try
+        {
+            if (fontSources == null)
+            {
+                fontSources = new Dictionary<string, Character>();
+                var m = SwfMovie.Parse(Packs.Read("Resource/Gfx", "gfxfontlib.gfx"));
+                foreach (var c in m.Characters.Values) if (c.Font != null && c.ClassName != null) fontSources[c.ClassName] = c;
+            }
+            if (fontSources.TryGetValue(fontClass, out var src))
+            {
+                var ff = new FontFile { Data = TtfWriter.Build(src.Font), Antialiasing = TextServer.FontAntialiasing.Gray, Hinting = TextServer.Hinting.None, GenerateMipmaps = false };
+                ff.Fallbacks = new Godot.Collections.Array<Font> { Fallback };
+                result = ff;
+            }
+            else GD.PushWarning($"UI font class {fontClass} not found in gfxfontlib");
+        }
+        catch (Exception e) { GD.PushWarning($"UI font {fontClass}: {e.Message}"); }
+        fonts[fontClass] = result;
+        return result;
+    }
 
     public UiAssets(PackSet packs) { Packs = packs; }
 

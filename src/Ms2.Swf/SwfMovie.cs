@@ -156,7 +156,7 @@ public sealed class SwfMovie
             case 57: case 71: ReadImport(r, code); return 0;
             case 78: { int id = r.U16(); Get(id, CharKind.Other, code).Scale9 = ReadRect(r); return 0; }
             case 86: ReadSceneData(r); return 0;
-            case 48: case 75: { int id = r.U16(); r.U8(); r.U8(); var n = r.String8().TrimEnd('\0'); FontNames[id] = n; Register(id, CharKind.Font, code).FontName = n; return 0; }
+            case 48: case 75: ReadFont(r, code); return 0;
             case 88: { int id = r.U16(); FontNames[id] = r.CString(); return 0; }
             case 10: case 91: Register(r.U16(), CharKind.Font, code); return 0;
             case 6: case 21: case 35: case 90: Register(r.U16(), CharKind.Image, code); return 0;
@@ -323,6 +323,83 @@ public sealed class SwfMovie
         // frame labels are already in the FrameLabel tags; nothing to add
     }
 
+    // ---- fonts ------------------------------------------------------------------------------------------
+
+    void ReadFont(SwfReader r, int code)
+    {
+        int id = r.U16(); int flags = r.U8(); r.U8();
+        var name = r.String8().TrimEnd('\0');
+        FontNames[id] = name;
+        var c = Register(id, CharKind.Font, code); c.FontName = name;
+        var f = new FontData { Name = name, HasLayout = (flags & 0x80) != 0, Bold = (flags & 1) != 0, Italic = (flags & 2) != 0, EmSquare = code == 75 ? 20480 : 1024 };
+        bool wideOffsets = (flags & 8) != 0, wideCodes = (flags & 4) != 0 || code == 75;
+        int n = r.U16();
+        int tableStart = r.Position;
+        var offs = new int[n];
+        for (int i = 0; i < n; i++) offs[i] = wideOffsets ? (int)r.U32() : r.U16();
+        int codeTable = wideOffsets ? (int)r.U32() : r.U16();
+        for (int i = 0; i < n; i++)
+        {
+            var g = new Glyph();
+            var gr = new SwfReader(r.Buffer, tableStart + offs[i], r.End);
+            ReadGlyph(gr, g);
+            f.Glyphs.Add(g);
+        }
+        r.Seek(tableStart + codeTable);
+        for (int i = 0; i < n; i++) f.Glyphs[i].Code = wideCodes ? r.U16() : r.U8();
+        if (f.HasLayout)
+        {
+            f.Ascent = r.S16(); f.Descent = r.S16(); f.Leading = r.S16();
+            for (int i = 0; i < n; i++) f.Glyphs[i].Advance = r.S16();
+        }
+        c.Font = f;
+    }
+
+    /// <summary>Glyph outline: a SHAPE without styles. Curved edges give an off-curve control point then the anchor.</summary>
+    static void ReadGlyph(SwfReader r, Glyph g)
+    {
+        int nf = (int)r.UB(4); r.UB(4);
+        int x = 0, y = 0;
+        List<(int, int, bool)> cur = null;
+        void Flush()
+        {
+            if (cur != null && cur.Count >= 3)
+            {
+                if (cur[^1].Item1 == cur[0].Item1 && cur[^1].Item2 == cur[0].Item2 && cur[^1].Item3) cur.RemoveAt(cur.Count - 1);
+                if (cur.Count >= 3) g.Contours.Add(cur);
+            }
+            cur = null;
+        }
+        while (true)
+        {
+            if (r.UB(1) == 1)
+            {
+                cur ??= new List<(int, int, bool)> { (x, y, true) };
+                if (r.UB(1) == 1)
+                {
+                    int n = (int)r.UB(4) + 2; int dx = 0, dy = 0;
+                    if (r.Bit()) { dx = r.SB(n); dy = r.SB(n); } else if (r.Bit()) dy = r.SB(n); else dx = r.SB(n);
+                    x += dx; y += dy; cur.Add((x, y, true));
+                }
+                else
+                {
+                    int n = (int)r.UB(4) + 2;
+                    int cx = x + r.SB(n), cy = y + r.SB(n); x = cx + r.SB(n); y = cy + r.SB(n);
+                    cur.Add((cx, cy, false)); cur.Add((x, y, true));
+                }
+                continue;
+            }
+            uint fl = r.UB(5);
+            if (fl == 0) break;
+            if ((fl & 1) != 0) { Flush(); int n = (int)r.UB(5); x = r.SB(n); y = r.SB(n); }
+            if ((fl & 2) != 0) r.UB(nf);
+            if ((fl & 4) != 0) r.UB(nf);
+            if ((fl & 8) != 0) r.UB(0);
+            if ((fl & 16) != 0) throw new InvalidDataException("new styles in a glyph");
+        }
+        Flush();
+    }
+
     // ---- GFx extension tags ---------------------------------------------------------------------------------
 
     void ReadExporterInfo(SwfReader r)
@@ -363,53 +440,85 @@ public sealed class SwfMovie
         c.Bounds = ReadRect(r);
         if (ver == 4) { ReadRect(r); r.U8(); }
         c.BitmapFills = new List<BitmapFill>();
-        ReadFillStyles(r, ver, c);
+        var table = new List<Rgba> { null };           // fill style table, 1-based; null for non-solid fills
+        ReadFillStyles(r, ver, c, table);
         ReadLineStyles(r, ver, c);
         int nf = (int)r.UB(4), nl = (int)r.UB(4);
+        // vector fills: every sub path is filled with its right (else left) fill style when that is a solid colour
+        var paths = new List<VectorPath>();
+        var cur = new List<float>();
+        int x = 0, y = 0, f0 = 0, f1 = 0;
+        void Flush()
+        {
+            int fill = f1 != 0 ? f1 : f0;
+            if (cur.Count >= 6 && fill > 0 && fill < table.Count && table[fill] != null)
+                paths.Add(new VectorPath(table[fill], cur.ToArray()));
+            cur.Clear();
+        }
+        void Pt(int px, int py) { cur.Add(px / 20f); cur.Add(py / 20f); }
         while (true)
         {
             if (r.UB(1) == 1)
             {
+                if (cur.Count == 0) Pt(x, y);
                 if (r.UB(1) == 1)       // straight edge
                 {
                     int n = (int)r.UB(4) + 2;
-                    if (r.Bit()) { r.SB(n); r.SB(n); }
-                    else if (r.Bit()) r.SB(n);
-                    else r.SB(n);
+                    int dx = 0, dy = 0;
+                    if (r.Bit()) { dx = r.SB(n); dy = r.SB(n); }
+                    else if (r.Bit()) dy = r.SB(n);
+                    else dx = r.SB(n);
+                    x += dx; y += dy; Pt(x, y);
                 }
-                else { int n = (int)r.UB(4) + 2; r.SB(n); r.SB(n); r.SB(n); r.SB(n); }
+                else
+                {
+                    int n = (int)r.UB(4) + 2;
+                    int cx = x + r.SB(n), cy = y + r.SB(n), ax = cx + r.SB(n), ay = cy + r.SB(n);
+                    for (int k = 1; k <= 6; k++)
+                    {
+                        float t = k / 6f, u = 1 - t;
+                        Pt((int)(u * u * x + 2 * u * t * cx + t * t * ax), (int)(u * u * y + 2 * u * t * cy + t * t * ay));
+                    }
+                    x = ax; y = ay;
+                }
                 continue;
             }
             uint fl = r.UB(5);
             if (fl == 0) break;
-            if ((fl & 1) != 0) { int n = (int)r.UB(5); r.SB(n); r.SB(n); }
-            if ((fl & 2) != 0) r.UB(nf);
-            if ((fl & 4) != 0) r.UB(nf);
+            bool restyle = (fl & (2 | 4 | 16)) != 0;
+            if ((fl & 1) != 0) { Flush(); int n = (int)r.UB(5); x = r.SB(n); y = r.SB(n); }
+            else if (restyle) Flush();
+            if ((fl & 2) != 0) f0 = (int)r.UB(nf);
+            if ((fl & 4) != 0) f1 = (int)r.UB(nf);
             if ((fl & 8) != 0) r.UB(nl);
             if ((fl & 16) != 0)
             {
                 r.Align();
-                ReadFillStyles(r, ver, c);
+                table = new List<Rgba> { null }; f0 = f1 = 0;
+                ReadFillStyles(r, ver, c, table);
                 ReadLineStyles(r, ver, c);
                 nf = (int)r.UB(4); nl = (int)r.UB(4);
             }
         }
+        Flush();
+        if (paths.Count > 0) c.Paths = paths;
         if (c.BitmapFills.Count == 0) c.BitmapFills = null;
     }
 
-    void ReadFillStyles(SwfReader r, int ver, Character c)
+    void ReadFillStyles(SwfReader r, int ver, Character c, List<Rgba> table = null)
     {
         int n = r.U8();
         if (n == 0xFF && ver >= 2) n = r.U16();
-        for (int i = 0; i < n; i++) ReadFillStyle(r, ver, c);
+        for (int i = 0; i < n; i++) ReadFillStyle(r, ver, c, table);
     }
 
-    void ReadFillStyle(SwfReader r, int ver, Character c)
+    void ReadFillStyle(SwfReader r, int ver, Character c, List<Rgba> table = null)
     {
         int t = r.U8();
+        if (t != 0x00) table?.Add(null);
         switch (t)
         {
-            case 0x00: { var col = ver >= 3 ? ReadRgba(r) : ReadRgb(r); c.SolidFill ??= col; break; }
+            case 0x00: { var col = ver >= 3 ? ReadRgba(r) : ReadRgb(r); c.SolidFill ??= col; table?.Add(col); break; }
             case 0x10: case 0x12: case 0x13:
             {
                 ReadMatrix(r);
