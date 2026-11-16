@@ -21,7 +21,7 @@ public sealed class CombatLayer
     readonly List<(Label3D label, float age)> numbers = new();
     readonly List<(Node3D node, float born, float start, float end, List<StandardMaterial3D> mats)> live = new();
     readonly Shader barShader;
-    public int EffectsSpawned, EffectsNoXml, EffectsNoNif, EffectsNotNif, EffectsWithParticles, EffectsFailed, NumbersShown;
+    public int EffectsSpawned, EffectsNoXml, EffectsNoNif, EffectsNotNif, EffectsWithParticles, EffectsFailed, NumbersShown, EffectSounds;
     public readonly HashSet<string> MissingEffects = new();
     public readonly HashSet<string> ParticleEffects = new();
     public bool ShowEffects = true;
@@ -101,7 +101,7 @@ void fragment() {
         return m;
     }
 
-    /// <summary>Plays an effect xml at a place: the nif parts show for their duration; other part kinds (sound...) are ignored.</summary>
+    /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; other part kinds are ignored.</summary>
     public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians)
     {
         if (!ShowEffects || string.IsNullOrEmpty(xmlPath)) return;
@@ -109,6 +109,12 @@ void fragment() {
         if (parts == null) { EffectsNoXml++; MissingEffects.Add(xmlPath); return; }
         foreach (var part in parts)
         {
+            if (part.Type == "soundEvent" && part.SoundEvent != null)
+            {
+                FieldAudio.Instance?.PlayEventAt(part.SoundGroup == null ? part.SoundEvent : part.SoundGroup + "/" + part.SoundEvent, at, part.StartDelay);
+                EffectSounds++;
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }

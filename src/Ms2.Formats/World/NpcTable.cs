@@ -17,6 +17,7 @@ public sealed class NpcRow
     public string[] MoveActions = Array.Empty<string>();
     public int Gender;
     public float CapsuleHeight = 150f;
+    public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
 
     /// <summary>CNpcData::IsBoss: friendly 0 and class 3 or more.</summary>
@@ -50,6 +51,7 @@ public sealed class NpcTable
                     Class = Int(env, "class"),
                     Gender = Int(env, "gender"),
                     PropertyTags = ((string)env.Attribute("propertyTags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
                     Kfm = (string)model?.Attribute("kfm"),
                     Scale = Flt(model, "scale", 1f),
                     WalkSpeed = Flt(model, "walkSpeed", 0),

@@ -9,6 +9,7 @@ public sealed class EffectPart
 {
     public string Type;                  // nif, sound, ...
     public string FilePath;              // for nif: path in Resource/Model/Effect
+    public string SoundGroup, SoundEvent;   // for soundEvent: FEV group path and event name
     public float StartDelay, Duration;
     public float[] Translate = new float[3], Rotation = new float[3];
     public float Scale = 1f;
@@ -35,7 +36,7 @@ public sealed class EffectTable
                 parts = new List<EffectPart>();
                 foreach (var e in x.Descendants("effect"))
                 {
-                    var p = new EffectPart { Type = (string)e.Attribute("type"), FilePath = (string)e.Attribute("filePath"), StartDelay = F((string)e.Attribute("startDelay")), Duration = F((string)e.Attribute("duration")) };
+                    var p = new EffectPart { Type = (string)e.Attribute("type"), FilePath = (string)e.Attribute("filePath"), SoundGroup = (string)e.Attribute("group"), SoundEvent = (string)e.Attribute("event"), StartDelay = F((string)e.Attribute("startDelay")), Duration = F((string)e.Attribute("duration")) };
                     var t = e.Element("transform");
                     if (t != null) { p.Translate = V((string)t.Attribute("translate")); p.Rotation = V((string)t.Attribute("rotation")); p.Scale = F((string)t.Attribute("scale"), 1f); }
                     parts.Add(p);

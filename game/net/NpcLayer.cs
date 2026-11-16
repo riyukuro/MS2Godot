@@ -188,6 +188,8 @@ public sealed class NpcLayer
         if (cur <= 0 && !i.Dead)
         {
             i.Dead = true; Deaths++;
+            var dead = table.Find(i.NpcId)?.SoundDead;
+            if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
             if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
             if (i.Model == null) return;
             KfmFile.Sequence seq = null; Godot.Animation a = null;

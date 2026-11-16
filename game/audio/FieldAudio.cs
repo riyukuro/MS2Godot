@@ -168,6 +168,36 @@ public partial class FieldAudio : Node
         catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); return null; }
     }
 
+    readonly AudioStreamPlayer3D[] voices3d = new AudioStreamPlayer3D[16];
+    int nextVoice3d;
+    readonly Dictionary<string, AudioStreamWav> decoded = new();
+    public int PositionalPlayed;
+
+    /// <summary>
+    /// Play a sound event at a world position (effect soundEvent parts, npc sounds). <paramref name="path"/> is the event name or
+    /// "group/name"; <paramref name="delay"/> seconds later. Attenuation follows the event's 3D distances.
+    /// </summary>
+    public bool PlayEventAt(string path, Vector3 position, float delay = 0)
+    {
+        var clip = library?.ResolveEvent(path);
+        if (clip == null) return false;
+        if (!decoded.TryGetValue(clip.Name, out var wav))
+        {
+            var pcm = MpegDecoder.Decode(clip);
+            decoded[clip.Name] = wav = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
+        }
+        var v = voices3d[nextVoice3d++ % voices3d.Length];
+        if (v == null) { v = voices3d[(nextVoice3d - 1) % voices3d.Length] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; AddChild(v); }
+        v.Stream = wav;
+        v.GlobalPosition = position;
+        v.VolumeDb = Mathf.LinearToDb(clip.Volume);
+        v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
+        v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;
+        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => v.Play(); else v.Play();
+        PositionalPlayed++;
+        return true;
+    }
+
     void PlayClip(SoundClip clip)
     {
         ui.Stream = Stream(MpegDecoder.Decode(clip), false);

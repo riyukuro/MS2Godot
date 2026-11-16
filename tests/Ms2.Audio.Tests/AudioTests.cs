@@ -156,4 +156,12 @@ public class AudioTests
         Assert.That(c.MaxDistance, Is.GreaterThan(c.MinDistance));
         Assert.That(c.MinDistance, Is.GreaterThan(0));
     }
+
+    [Test]
+    public void EffectAndNpcSoundEventsResolve()
+    {
+        var lib = new SoundLibrary(SoundDir());
+        Assert.That(lib.ResolveEvent("MS2Sound/Sound/Skill/HeavyGunner/02200017"), Is.Not.Null, "effect soundEvent");
+        Assert.That(lib.ResolveEvent("ko/Npc/01000022"), Is.Not.Null, "npcSoundStart");
+    }
 }
