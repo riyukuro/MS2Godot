@@ -34,6 +34,10 @@ public sealed class ModelMesh
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, shaderN
+    public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
+    public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
+    public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
+    public Dictionary<string, int> ExtraInts = new();          // NiIntegerExtraData by name (ColorOverrideMapIndex, ...)
 }
 
 /// <summary>
@@ -145,6 +149,68 @@ public sealed class ModelData
         return o;
     }
 
+    /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>
+    static void ReadMaterial(NifFile nif, NifStruct b, ModelMesh mesh)
+    {
+        if (b.TryGetValue("Material Data", out var mdv) && mdv is NifStruct md && md.IntOr("Num Materials", 0) > 0)
+        {
+            long active = md.IntOr("Active Material", -1);
+            var names = md.TryGetValue("Material Name", out var nv) ? nv : null;
+            object pick = names switch
+            {
+                long[] l => l[active >= 0 && active < l.Length ? active : 0],
+                object[] o => o[active >= 0 && active < o.Length ? active : 0],
+                _ => null,
+            };
+            mesh.Material = pick switch
+            {
+                long l => nif.Str(l),
+                NifStruct st when st.TryGetValue("Index", out var ix) && ix is long li => nif.Str(li),
+                _ => null,
+            };
+        }
+        foreach (var e in b.Ints("Extra Data List"))
+        {
+            if (e < 0) continue;
+            var x = nif.Blocks[(int)e];
+            var name = nif.Name((int)e);
+            if (name == null) continue;
+            if (x.Type == "NiFloatExtraData") mesh.ExtraFloats[name] = x.Float("Float Data");
+            else if (x.Type == "NiIntegerExtraData") mesh.ExtraInts[name] = (int)x.Int("Integer Data");
+            else if (x.Type == "NiColorExtraData")
+            {
+                var c = x.Struct("Data");
+                mesh.ExtraColors[name] = new[] { c.Float("r"), c.Float("g"), c.Float("b"), c.Float("a") };
+            }
+        }
+    }
+
+    static bool IsIdentity(Xform x)
+    {
+        if (Math.Abs(x.T.X) + Math.Abs(x.T.Y) + Math.Abs(x.T.Z) > 1e-3 || Math.Abs(x.S - 1) > 1e-4) return false;
+        var id = Xform.Identity.R;
+        for (int i = 0; i < 9; i++) if (Math.Abs(x.R[i] - id[i]) > 1e-4) return false;
+        return true;
+    }
+
+    static void ToRootSpace(ModelMesh m, Xform x)
+    {
+        var o = x.Apply(new Vec3(0, 0, 0));
+        for (int i = 0; i + 2 < m.Positions.Length; i += 3)
+        {
+            var p = x.Apply(new Vec3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2]));
+            m.Positions[i] = (float)p.X; m.Positions[i + 1] = (float)p.Y; m.Positions[i + 2] = (float)p.Z;
+        }
+        if (m.Normals == null) return;
+        for (int i = 0; i + 2 < m.Normals.Length; i += 3)
+        {
+            var n = x.Apply(new Vec3(m.Normals[i], m.Normals[i + 1], m.Normals[i + 2])) - o;
+            double l = Math.Sqrt(n.X * n.X + n.Y * n.Y + n.Z * n.Z);
+            if (l == 0) l = 1;
+            m.Normals[i] = (float)(n.X / l); m.Normals[i + 1] = (float)(n.Y / l); m.Normals[i + 2] = (float)(n.Z / l);
+        }
+    }
+
     public static ModelData Load(NifFile nif)
     {
         var B = nif.Blocks;
@@ -221,6 +287,7 @@ public sealed class ModelData
                     for (int j = 0; j < 4; j++)
                         mesh.Colors[c * 4 + j] = j < col.n ? (float)(col.v[c * col.n + j] * k) : 1f;
             }
+            ReadMaterial(nif, b, mesh);
             mesh.Indices = s["INDEX"].v.Select(x => (int)x).ToArray();
             foreach (var p in b.Ints("Properties"))
             {
@@ -247,6 +314,14 @@ public sealed class ModelData
                 var sk = B[si];
                 if (sk.Int("Skeleton Root") != root) throw new NotSupportedException("skeleton root is not the scene root");
                 var skBones = sk.Ints("Bones");
+                // Vertices are in the skin's bind space; a bone's world transform times its bone transform maps that space
+                // to the scene root. The body's skins use the scene root itself; item skins (clothes) are often offset.
+                var bts = sk.Structs("Bone Transforms");
+                if (bts.Length > 0 && boneOf.TryGetValue((int)skBones[0], out int b0))
+                {
+                    var toRoot = md.Bones[b0].World.Compose(XformOf(bts[0]));
+                    if (!IsIdentity(toRoot)) ToRootSpace(mesh, toRoot);
+                }
                 var pal = s.TryGetValue("BONE_PALETTE", out var pp) ? pp.v.Select(x => (int)x).ToArray()
                                                                      : Enumerable.Range(0, skBones.Length).ToArray();
                 var bones = pal.Select(p => boneOf[(int)skBones[p]]).ToArray();

@@ -183,15 +183,45 @@ public sealed class ModelBuilder
             if (m.Emissive != null) sm.SetShaderParameter("emissive", new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
             return sm;
         }
-        var mat = new StandardMaterial3D { Roughness = 0.8f, Metallic = 0f };
-        if (tex != null) mat.AlbedoTexture = tex;
-        if (m.AlphaTest)
-        {
-            mat.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;
-            mat.AlphaScissorThreshold = 0.5f;
-        }
-        return mat;
+        return CharacterMaterial(m, tex);
     }
+
+    static Shader characterShader;
+
+    /// <summary>
+    /// Character meshes: shaders/character_lit.gdshader with the NIF's material colours and the shader attributes the
+    /// exporter stores as extra data (OverrideColor0..2, FresnelBoost, FresnelExponent, ColorBoost). The dye control map
+    /// is the texture slot named by ColorOverrideMapIndex (shader map 0 by default).
+    /// </summary>
+    ShaderMaterial CharacterMaterial(ModelMesh m, Texture2D tex)
+    {
+        characterShader ??= GD.Load<Shader>("res://shaders/character_lit.gdshader");
+        var sm = new ShaderMaterial { Shader = characterShader };
+        sm.SetShaderParameter("has_tex", tex != null);
+        if (tex != null) sm.SetShaderParameter("base_tex", tex);
+        int ctrlIndex = m.ExtraInts.TryGetValue("ColorOverrideMapIndex", out var ci) ? ci : 0;
+        var ctrl = m.Textures.TryGetValue("shader" + ctrlIndex, out var ctrlName) ? Texture(ctrlName) : null;
+        sm.SetShaderParameter("has_ctrl", ctrl != null);
+        if (ctrl != null) sm.SetShaderParameter("ctrl_tex", ctrl);
+        for (int i = 0; i < 3; i++)
+            if (m.ExtraColors.TryGetValue("OverrideColor" + i, out var c))
+                sm.SetShaderParameter("color" + i, new Vector3(c[0], c[1], c[2]));
+        Vector3 V(float[] a, float d) => a == null ? new Vector3(d, d, d) : new Vector3(a[0], a[1], a[2]);
+        sm.SetShaderParameter("mat_ambient", V(m.Ambient, 1f));
+        sm.SetShaderParameter("mat_diffuse", V(m.Diffuse, 1f));
+        sm.SetShaderParameter("emissive", V(m.Emissive, 0f));
+        sm.SetShaderParameter("fresnel_boost", m.ExtraFloats.GetValueOrDefault("FresnelBoost", 5f));
+        sm.SetShaderParameter("fresnel_exponent", m.ExtraFloats.GetValueOrDefault("FresnelExponent", 4f));
+        sm.SetShaderParameter("color_boost", m.ExtraFloats.GetValueOrDefault("ColorBoost", 1f));
+        sm.SetShaderParameter("skin", IsSkinMaterial(m));
+        bool test = m.AlphaTestOn || m.AlphaTest;
+        sm.SetShaderParameter("alpha_test", test);
+        sm.SetShaderParameter("alpha_ref", m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
+        return sm;
+    }
+
+    /// <summary>Meshes the client gives the player's skin colours (its skin colour walk only touches this material).</summary>
+    public static bool IsSkinMaterial(ModelMesh m) => m.Material == "MS2CharacterSkinMaterial";
 
     Texture2D Texture(string fileName)
     {

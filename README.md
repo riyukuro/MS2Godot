@@ -6,8 +6,8 @@ The project ships no game data. You bring your own MapleStory 2 client; MS2Godot
 run time.
 
 Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_tria`, by default) and places
-the female character at the field's player spawn point. She walks, runs and climbs steps over the field's
-collision.
+the player character at the field's player spawn point, dressed in a new character's starter look. It walks,
+runs and climbs steps over the field's collision.
 
 Controls: WASD or the arrow keys move (relative to the camera), Shift walks instead of running, and the wheel
 zooms.
@@ -45,16 +45,50 @@ event names (the click plays the bank sample `System_Button_click_01` directly).
 
 Known gaps:
 
-- No character customisation (white skin).
 - No swimming.
 - Some banner textures are white.
-- No HDR or bloom pass, so lit areas come out about 10-20% darker than in the client.
+- No bloom pass. The client's is small: a bright pass of max(c - 0.27, 0) / (that + 30) over a quarter-size
+  copy, blurred and added twice to the scene, with no tone mapping. So it does not explain why lit floors come out
+  about 10-20% darker than in the client.
 - No cast shadows on field meshes.
 - No texture animation (the water flipbook).
 - The water shows the inner faces of its stacked cubes.
 
-The earlier pilot viewer (female model, idle and walk on a ground plane; keys `1` idle, `2` walk) is still
-`game/main.tscn`.
+The pilot viewer (the player character on a ground plane; keys `1` idle, `2` walk) is still `game/main.tscn`.
+
+### Character look
+
+`game/scripts/character/` builds the local player:
+
+- `StarterLook` picks the look a new character gets from `table/defaultitems.xml`. That is the first face, hair and
+  ears for the gender, and the job's starter outfit (CL, PA, SH). An item fits a gender by its itemdata
+  `genderLimit`.
+- Colours come from `table/colorpalette.xml`. Each item uses its item model's `defaultColorIndex` row, and the skin
+  uses row 0 of palette 10000.
+- `net/EquipApplier` attaches the items. An item whose itemdata has `tool itemPreset` uses that item's model, as
+  the female copies of the starter outfits do.
+
+Characters are drawn with `game/shaders/character_lit.gdshader`, after the client's MS2 character materials:
+
+- The `_C` control map blends the texture towards three dye colours. Skin parts take the skin colour pair; items
+  take their dye.
+- Lighting uses a squared half-lambert sun term, a Fresnel rim, the sun's ambient colour on the unlit side, and a
+  red scatter band on skin.
+- The light direction comes from the camera.
+- The material values come from the NIF's extra data (`OverrideColor0..2`, `FresnelBoost`, `FresnelExponent`,
+  `ColorBoost`).
+
+Not done: normal and gloss maps, hair anisotropy, face decals (FD), weapons.
+
+Command line, for the field and the viewer:
+
+| argument | effect |
+|---|---|
+| `--gender male\|female` | default female |
+| `--job <code>` | default 10, knight |
+| `--skin-color <row>` | palette row for the skin |
+| `--hair-color <row>` | palette row for the hair |
+| `--eye-color <row>` | palette row for the eyes |
 
 ## Layout
 

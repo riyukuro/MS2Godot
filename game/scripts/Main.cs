@@ -5,7 +5,8 @@ using Ms2.Formats.Pack;
 namespace Ms2Godot;
 
 /// <summary>
-/// Pilot scene: the female body on a ground plane, idle / walk from the player's own Character.m2d.
+/// Pilot scene: the player character (Look.PlayerLook: body, starter look, the same --gender / --job / colour
+/// arguments) on a ground plane, idle / walk from the player's own Character.m2d.
 /// Keys: 1 idle, 2 walk. User args (after --): --shots DIR saves frames of both animations and quits.
 /// </summary>
 public partial class Main : Node3D
@@ -37,14 +38,10 @@ public partial class Main : Node3D
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = new PackSet(data);
         var builder = new ModelBuilder(new NifSpec(nifxml), packs);
-        var md = builder.LoadModel("female/f_body.nif");
-        var character = builder.Build(md, "Female");
+        var (character, anim) = Look.PlayerLook.Build(builder, packs);
         AddChild(character);
-        player = character.GetNode<AnimationPlayer>("Model/AnimationPlayer");
-        var lib = player.GetAnimationLibrary("");
-        lib.AddAnimation("idle", ModelBuilder.BuildAnimation(builder.LoadKf("female/idle_a.kf"), md));
-        lib.AddAnimation("walk", ModelBuilder.BuildAnimation(builder.LoadKf("female/walk_a.kf"), md));
-        GD.Print($"MS2Godot: loaded f_body ({md.Bones.Count} bones, {md.Meshes.Count} meshes) + idle/walk in {sw.ElapsedMilliseconds} ms");
+        player = anim;
+        GD.Print($"MS2Godot: character in {sw.ElapsedMilliseconds} ms");
         player.Play("idle");
 
         if (shotDir != null)

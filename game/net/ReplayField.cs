@@ -108,7 +108,7 @@ public partial class ReplayField : Field
         modelBuilder = builder;
         // the field build searched map textures only; the character bodies need the character pack's own textures too
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
-        equip = new EquipApplier(packs, builder);
+        equip = new EquipApplier(packs, builder) { Palettes = new Look.ColorPalettes(packs) };
         npcTable = new Ms2.Formats.World.NpcTable(packs);
         npcs = new NpcLayer(packs, builder, npcTable, this);
         truth = BuildTruth(file);
@@ -189,7 +189,7 @@ public partial class ReplayField : Field
     {
         var (md, idle, walk, run, model) = Body(e.User.User.Gender);
         var visual = modelBuilder.Build(md, e.User.User.Gender == 0 ? "Male" : "Female");
-        if (applyEquips) equip.Apply(visual, md, e.User.User.Gender, e.User.Equips, e.User.Skin.Primary);
+        if (applyEquips) equip.Apply(visual, md, e.User.User.Gender, e.User.Equips, e.User.Skin.Primary, e.User.Skin.Secondary);
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         var lib = anim.GetAnimationLibrary("");
         lib.AddAnimation("idle", idle); lib.AddAnimation("walk", walk); lib.AddAnimation("run", run);

@@ -13,7 +13,10 @@ namespace Ms2Godot.Net;
 /// FA_EA, HR the body's hair mesh); a cutting/mesh entry hides meshes by name; skinned meshes (clothes, shoes, gloves, face) are bound to the
 /// body skeleton by bone name; rigid meshes (hair, caps, weapons, ears) hang from the body bone of the target node, placed by their own
 /// transform in item space. A later item in a slot replaces an earlier one (the outfit list follows the gear list in the packet).
-/// Not done: item colors (palette), decal items (face makeup), skin color, item animations, cape physics.
+/// Colours: an item's dye (its EquipColor, or the item model's default palette row when the record carries none) goes to the
+/// dye colours of its meshes; the skin colour pair goes to every mesh drawn with the skin material, the body's and the items'
+/// (the client walks the whole character for that material).
+/// Not done: decal items (face makeup), item animations, cape physics.
 /// </summary>
 public sealed class EquipApplier
 {
@@ -33,7 +36,33 @@ public sealed class EquipApplier
         if (!mb.TextureArchives.Contains(ItemArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(ItemArchive).ToArray();
     }
 
+    readonly Dictionary<int, Dictionary<int, int>> presets = new();
+
+    /// <summary>
+    /// The item model of an item: itemdata/{id / 100000}.xml can name another item's model (tool itemPreset, as the
+    /// female copies of the starter outfits do); CItemData loads that model instead.
+    /// </summary>
     XElement FindItem(int id)
+    {
+        int prefix = id / 100000;
+        if (!presets.TryGetValue(prefix, out var byItem))
+        {
+            byItem = new Dictionary<int, int>();
+            string entry = $"itemdata/{prefix}.xml";
+            if (packs.Exists("Xml", entry))
+            {
+                var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+                foreach (var e in x.Root.Elements("item"))
+                    if (int.TryParse((string)e.Attribute("id"), out int i)
+                        && int.TryParse((string)e.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0)
+                        byItem[i] = p;
+            }
+            presets[prefix] = byItem;
+        }
+        return FindModel(byItem.TryGetValue(id, out int preset) ? preset : id);
+    }
+
+    XElement FindModel(int id)
     {
         int prefix = id / 100000;
         if (!docs.TryGetValue(prefix, out var byId))
@@ -71,7 +100,9 @@ public sealed class EquipApplier
         return bySlot.Values.ToList();
     }
 
-    public void Apply(Node3D visual, ModelData body, int gender, IEnumerable<EquipItem> items, Rgba? skinColor = null)
+    public Look.ColorPalettes Palettes;   // optional: default dye of items whose record has no colour
+
+    public void Apply(Node3D visual, ModelData body, int gender, IEnumerable<EquipItem> items, Rgba? skinColor = null, Rgba? skinShade = null)
     {
         var skel = visual.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
         var bodyNodes = skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
@@ -102,27 +133,42 @@ public sealed class EquipApplier
                     var g = (string)c.Attribute("gender");
                     if (g == null || g == gender.ToString()) cut.Add((string)c.Attribute("name"));
                 }
-                added.AddRange(Attach(skel, body, md, asset, item));
+                var made = Attach(skel, body, md, asset, item);
+                if (DyeOf(item, im) is { } dye)
+                    foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
+                added.AddRange(made);
             }
         }
         foreach (var n in bodyNodes) if (cut.Contains(BaseName(n.Name))) n.Visible = false;
         foreach (var n in added) if (cut.Contains((string)n.GetMeta("mesh"))) n.Visible = false;
         if (skinColor is { } sc)
-        {
-            // the skin parts (meshes named *_Skin and the ears) are drawn with a grey-white texture and take the player's skin color
-            var tint = new Color(sc.R / 255f, sc.G / 255f, sc.B / 255f);
             foreach (var n in bodyNodes.Concat(added))
-            {
-                string name = n.HasMeta("mesh") ? (string)n.GetMeta("mesh") : n.Name.ToString();
-                if (!(name.EndsWith("_Skin", StringComparison.OrdinalIgnoreCase) || name.EndsWith("_EA", StringComparison.OrdinalIgnoreCase))) continue;
-                if (n.GetActiveMaterial(0) is StandardMaterial3D sm)
-                {
-                    var copy = (StandardMaterial3D)sm.Duplicate();
-                    copy.AlbedoColor = tint;
-                    n.SetSurfaceOverrideMaterial(0, copy);
-                }
-            }
-        }
+                SetColors(n, true, sc, null, skinShade ?? sc);
+    }
+
+    /// <summary>The record's dye, else the item model's default (customize colorPalette / defaultColorIndex).</summary>
+    EquipColor? DyeOf(EquipItem item, XElement im)
+    {
+        var c = item.Color;
+        if (c.Primary.A != 0 || c.Secondary.A != 0 || c.Tertiary.A != 0) return c;
+        var cust = im.Element("customize");
+        if (Palettes == null || cust == null || (string)cust.Attribute("color") != "1") return null;
+        if (!int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return null;
+        int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);
+        return Palettes.Equip(pal, idx);
+    }
+
+    static Vector3 V(Rgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f);
+
+    /// <summary>Sets the dye colours of a mesh drawn with the character shader: skin=true for the skin material only, false for the rest.</summary>
+    static void SetColors(MeshInstance3D n, bool skin, Rgba? c0, Rgba? c1, Rgba? c2)
+    {
+        if (n.GetActiveMaterial(0) is not ShaderMaterial sm || sm.GetShaderParameter("skin").AsBool() != skin) return;
+        var copy = (ShaderMaterial)sm.Duplicate();
+        if (c0 is { } a) copy.SetShaderParameter("color0", V(a));
+        if (c1 is { } b) copy.SetShaderParameter("color1", V(b));
+        if (c2 is { } c) copy.SetShaderParameter("color2", V(c));
+        n.SetSurfaceOverrideMaterial(0, copy);
     }
 
     static string BaseName(StringName n) => n.ToString();

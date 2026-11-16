@@ -47,11 +47,6 @@ public partial class Field : Node3D
             return;
         }
 
-        // light values for shaders/field_lit.gdshader, filled in by BuildEnvironment
-        RenderingServer.GlobalShaderParameterAdd("ms2_ambient", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.8f, 0.8f, 0.8f));
-        RenderingServer.GlobalShaderParameterAdd("ms2_sun_color", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.8f, 0.8f, 0.8f));
-        RenderingServer.GlobalShaderParameterAdd("ms2_sun_dir", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0, -1, 0));
-
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = new PackSet(data);
         var spec = new NifSpec(nifxml);
@@ -135,7 +130,7 @@ public partial class Field : Node3D
         catch (Exception ex) { GD.PushWarning("mapxblock: " + ex.Message); }
 
         float ambient = 0.8f, sunDim = 0.8f;
-        Color ambientColor = Colors.White, sunColor = Colors.White;
+        Color ambientColor = Colors.White, sunColor = Colors.White, sunAmbient = Colors.Black;
         var sunDir = new Vec3(0, 0, -1);
         foreach (var e in map.Entities)
         {
@@ -149,6 +144,8 @@ public partial class Field : Node3D
             {
                 var c = e.Numbers("DiffuseColor");
                 if (c != null) sunColor = new Color((float)c[0], (float)c[1], (float)c[2]);
+                var a = e.Numbers("AmbientColor");
+                if (a != null) sunAmbient = new Color((float)a[0], (float)a[1], (float)a[2]);
                 sunDim = (float)e.Number("Dimmer", 1);
                 sunDir = e.Transform.Apply(new Vec3(1, 0, 0)) - e.Transform.Apply(new Vec3(0, 0, 0));   // Gamebryo lights shine along +X
             }
@@ -177,17 +174,13 @@ public partial class Field : Node3D
         Vector3 Rgb(Color c, float k) => new(c.R * k, c.G * k, c.B * k);
         RenderingServer.GlobalShaderParameterSet("ms2_ambient", Rgb(ambientColor, ambient));
         RenderingServer.GlobalShaderParameterSet("ms2_sun_color", Rgb(sunColor, sunDim));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_ambient", Rgb(sunAmbient, sunDim));
         RenderingServer.GlobalShaderParameterSet("ms2_sun_dir", d);
     }
 
     void SpawnPlayer(ModelBuilder builder, FieldMap map)
     {
-        var md = builder.LoadModel("female/f_body.nif");
-        var visual = builder.Build(md, "Female");
-        var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
-        var lib = anim.GetAnimationLibrary("");
-        foreach (var (name, kf) in new[] { ("idle", "idle_a"), ("walk", "walk_a"), ("run", "run_a") })
-            lib.AddAnimation(name, ModelBuilder.BuildAnimation(builder.LoadKf($"female/{kf}.kf"), md));
+        var (visual, anim) = Look.PlayerLook.Build(builder, packs);
 
         player = Player.Create(visual, anim);
         var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC")

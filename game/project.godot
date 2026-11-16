@@ -18,3 +18,22 @@ project/assembly_name="MS2Godot"
 [rendering]
 
 rendering_device/driver.linuxbsd="vulkan"
+
+[shader_globals]
+
+ms2_ambient={
+"type": "vec3",
+"value": Vector3(0.8, 0.8, 0.8)
+}
+ms2_sun_color={
+"type": "vec3",
+"value": Vector3(0.8, 0.8, 0.8)
+}
+ms2_sun_ambient={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+ms2_sun_dir={
+"type": "vec3",
+"value": Vector3(0, -1, 0)
+}
