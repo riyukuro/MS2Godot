@@ -331,9 +331,18 @@ MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn -- --shots DIR --
 
 ### Character creation (game/ui/create)
 
-`charcreate.tscn` runs character creation the way the client's lobby scene does, offline. The job pick (`uicharactercreateselectdialog`, `JobSelectLogic`) shows the job tabs, name, description and art from `table/charactercreateselect.xml`, with the character list dimmed behind it. Create loads the job's create map from `table/lobbyfield.xml` (the `Character` field for most jobs), places the camera at the field's `Camera0` entity and puts a preview character at `SpawnPointPC0` in its idle pose. The customize page (`uicharactercreatedialog`, `CharacterCreateLogic`) has the gender buttons, seven categories (hair, face, makeup, skin, top, bottom, shoes) with the `table/defaultitems.xml` items for the job and gender as icon tiles, palette colours, random and back. The preview is dressed through `CreateLook`, which calls `StarterLook` and `EquipApplier`. Create asks for a name (up to 12 characters) and builds the CharacterManagement create request with Ms2.Net (`CreateCharacter` plus `CreateItem` for the item block), then prints it. Nothing is sent.
+`charcreate.tscn` runs character creation the way the client's lobby scene does, offline. The job pick (`uicharactercreateselectdialog`, `JobSelectLogic`) shows the job tabs, name, description and art from `table/charactercreateselect.xml`, with the character list dimmed behind it. Create loads the job's create map from `table/lobbyfield.xml` (the `Character` field for most jobs), places the camera at the field's `Camera0` entity and puts a preview character at `SpawnPointPC0` in its idle pose. The customize page (`uicharactercreatedialog`, `CharacterCreateLogic`) has the gender buttons, seven categories (hair, face, makeup, skin, top, bottom, shoes) with the `table/defaultitems.xml` items for the job and gender as icon tiles, palette colours, random and back. The preview is dressed through `CreateLook`, which calls `StarterLook` and `EquipApplier`. Picking a hair or makeup item that the item model marks as customizable (`<customize scale rotation translation>`) opens the option panel (`CustomOptionPanel`): size sliders from the slot's `<scale>` ranges, the makeup angle, and the position presets from the `<custom>` lists. A new item starts from the client's defaults: a random preset and a random `<scale>` value (`ItemCustomize`, `CustomValues`). Create asks for a name and checks it as the client does. `BanTextChecker` in Ms2.Formats is a port of `CBanTextChecker`: 2 to 12 letters, Hangul counting twice, no spaces or punctuation, then the locale's word tables (`string/<lang>/reserveIDAll.xml`, `reserveIDAny.xml`, `reserveWord.xml`, `banWord.xml`, `startWithWord.xml`, `banWordAll.xml`), with the client's messages. It then builds the CharacterManagement create request with Ms2.Net (`CreateCharacter` plus `CreateItem` for the item block, with the hair and makeup values after the colour) and prints it. Nothing is sent.
 
-Not ported: the job preview videos (`.usm`), the guide movies and the size, angle and position options of the customize panel, the camera edit overlay, and the client's full name check (banned words).
+The game flow uses `CharacterCreateScene`'s static entry and exit:
+- `Enter(tree, startJob)` opens the job pick.
+- `CharacterCreated(packet, bytes)` fires on a confirmed name.
+- `Cancelled` fires on the job page's back button.
+- `CreateFailed(message)` puts a server refusal under the name input.
+
+Not ported:
+- the job preview and guide videos (`.usm`, MPEG-1 in CRI USM)
+- the camera edit overlay
+- size and position changes on the preview: there are no morph weights, no face decals and no pony parts yet; the values only go into the request
 
 ```
 MS2_DATA=/path/to/Data MS2_NIFXML=/path/to/nif.xml godot-mono --path . res://ui/charcreate.tscn            # job pick, then create

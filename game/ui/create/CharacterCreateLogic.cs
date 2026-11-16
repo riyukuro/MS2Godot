@@ -14,7 +14,8 @@ namespace Ms2Godot.Ui.Create;
 /// buildItems / buildColors), item tiles (OnChangeItem), colour tiles (OnChangeColor), random (OnRandom), back to the
 /// job pick (OnSceneLobbySelect) and create (OnCreate: the name prompt, max 12 characters, then the create request).
 /// The request is built with Ms2.Net and handed to <see cref="Created"/>; nothing is sent.
-/// Not ported: the item guide movies and the size / angle / position options of CustomOption, the guide button.
+/// Picking an editable item opens its option panel (<see cref="CustomOptionPanel"/>: size, angle, position presets);
+/// the values go into the request. Not ported: the item guide movies (.usm) and the guide button.
 /// </summary>
 public sealed class CharacterCreateLogic
 {
@@ -36,6 +37,7 @@ public sealed class CharacterCreateLogic
     int category = -1;
     readonly Random rng = new();
     double openTime;
+    readonly CustomOptionPanel options;
 
     /// <summary>The look changed: rebuild the preview character.</summary>
     public event Action LookChanged;
@@ -64,6 +66,8 @@ public sealed class CharacterCreateLogic
         if (RandomButton != null) RandomButton.Click += _ => OnRandom();
         if (BackButton != null) BackButton.Click += _ => { UiBridge.Raise(Movie, C.ToHost.OnSceneLobbySelect); Back?.Invoke(); };
         if (CreateButton != null) CreateButton.Click += _ => OnCreate();
+        options = new CustomOptionPanel(movie, IconAt);
+        options.Changed += () => LookChanged?.Invoke();
 
         for (int i = 0; i < Contents.Length && page != null; i++)
         {
@@ -111,6 +115,7 @@ public sealed class CharacterCreateLogic
         if (gender == look.Gender) return;
         if (raise) UiBridge.Raise(Movie, C.ToHost.OnChangeGender, gender);
         look.Reset(gender, look.JobCode);
+        options.Hide();
         LookChanged?.Invoke();
         BuildCurrentItems();
         // onChangeGenderComplete: initSelectedIndexPageAll + onChangeCategory
@@ -124,6 +129,7 @@ public sealed class CharacterCreateLogic
     {
         UiBridge.Raise(Movie, C.ToHost.OnRandom, look.Gender);
         look.Randomize(rng);
+        options.Hide();
         LookChanged?.Invoke();
         BuildCurrentItems();
         if (category >= 0) { BuildItems(category); BuildColors(category); }
@@ -176,6 +182,7 @@ public sealed class CharacterCreateLogic
             }
         }
         if (raise) UiBridge.Raise(Movie, C.ToHost.OnChangeCategory, 0, index);
+        if (changed) options.Hide();
         BuildItems(index);
         BuildColors(index);
     }
@@ -232,9 +239,11 @@ public sealed class CharacterCreateLogic
     }
 
     /// <summary>The item's slotIcon from itemdata (Resource/Image).</summary>
-    Texture2D Icon(int id)
+    Texture2D Icon(int id) => IconAt(look.IconPath(id));
+
+    /// <summary>A Resource/Image png by its data path (./Data/Resource/Image/...), cached.</summary>
+    Texture2D IconAt(string path)
     {
-        string path = look.IconPath(id);
         if (string.IsNullOrEmpty(path)) return null;
         if (icons.TryGetValue(path, out var t)) return t;
         t = null;
@@ -295,10 +304,11 @@ public sealed class CharacterCreateLogic
         }
     }
 
-    /// <summary>Clicks on the item and colour tiles (TileCacheList INDEX_CHANGE).</summary>
-    public bool OnMouse(InputEventMouseButton mb)
+    /// <summary>Slider drags in the option panel, then clicks on the item and colour tiles (TileCacheList INDEX_CHANGE).</summary>
+    public bool OnMouse(InputEvent e)
     {
-        if (!mb.Pressed || mb.ButtonIndex != MouseButton.Left || category < 0) return false;
+        if (options.OnMouse(e)) return true;
+        if (e is not InputEventMouseButton mb || !mb.Pressed || mb.ButtonIndex != MouseButton.Left || category < 0) return false;
         foreach (var (tile, id) in itemTiles)
             if (tile.IsVisibleInTree() && tile.GetGlobalRect().HasPoint(mb.Position)) { ChangeItem(id); return true; }
         foreach (var (tile, row) in colorTiles)
@@ -311,13 +321,17 @@ public sealed class CharacterCreateLogic
     {
         var slot = CreateLook.CategorySlot[category];
         UiBridge.Raise(Movie, C.ToHost.OnChangeItem, id.ToString());
-        if (slot == EquipSlot.SK) return;
+        if (slot == EquipSlot.SK) { options.Hide(); return; }
         look.Items[slot] = id;
         look.Rows[slot] = look.Palette(id).DefaultRow;
         LookChanged?.Invoke();
         BuildCurrentItems();
         BuildItems(category);
         BuildColors(category);
+        // onChangeItem: an editable item plays its movie (the panel pops up), then the host's buildCustom
+        var custom = look.Customize(id);
+        if (custom.Editable) options.Show(CurrentContent, look.ItemName(id), custom, look.ValuesOf(id));
+        else options.Hide();
     }
 
     /// <summary>OnChangeColor(index): the palette row of the open category.</summary>
@@ -338,6 +352,7 @@ public sealed class CharacterCreateLogic
     Label nameError;
 
     public bool PromptOpen => prompt != null;
+    public CustomOptionPanel Options => options;
 
     /// <summary>OnCreate: the name prompt over the page.</summary>
     public void OnCreate()
@@ -367,6 +382,13 @@ public sealed class CharacterCreateLogic
 
     public void ClosePrompt() { prompt?.QueueFree(); prompt = null; nameEdit = null; nameError = null; }
 
+    /// <summary>The server's refusal of a create request: the name prompt opens again with the message under the input.</summary>
+    public void ShowCreateError(string message)
+    {
+        if (prompt == null) OnCreate();
+        if (nameError != null) nameError.Text = message ?? "";
+    }
+
     /// <summary>Types a name into the open prompt and confirms it (scripted runs).</summary>
     public CreateCharacter Confirm(string name)
     {
@@ -380,7 +402,8 @@ public sealed class CharacterCreateLogic
         packet.Write(w);
         var bytes = w.ToArray();
         GD.Print($"create request (not sent): {packet.Op} {bytes.Length} bytes, gender {packet.Gender}, job {packet.JobGroup}, name \"{name}\", " +
-                 $"items {string.Join(" ", CreateCharacter.DecodeItems(packet.Items).Select(i => $"{i.Slot}:{i.Id}/{i.Color.Index}"))}");
+                 $"items {string.Join(" ", CreateCharacter.DecodeItems(packet.Items).Select(i => $"{i.Slot}:{i.Id}/{i.Color.Index}" +
+                 (i.Appearance.Length > 0 ? "[" + string.Join(",", i.Appearance.Select(f => f.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))) + "]" : "")))}");
         GD.Print("  " + Convert.ToHexString(bytes));
         ClosePrompt();
         Created?.Invoke(packet, bytes);
@@ -388,19 +411,18 @@ public sealed class CharacterCreateLogic
         return packet;
     }
 
+    Ms2.Formats.Text.BanTextChecker nameChecker;
+
     /// <summary>
-    /// The name rules the prompt enforces before the request: not empty (common string 0xd), at most 12 characters (the
-    /// input limit), letters and digits only. The client's full check (FUN_141276a30: banned words, per-locale scripts) is
-    /// not ported; the server has the final word.
+    /// The create dialog's name check (UICharacterCreateDialog::FUN_1418e6430): an empty name gives common string 0xd,
+    /// otherwise FUN_141276a30 runs the client's text checker (BanTextChecker.CheckCharacterName) over the locale's
+    /// word tables; its message is shown under the input. Returns null when the name passes.
     /// </summary>
-    public static string CheckName(string name)
+    public string CheckName(string name)
     {
         name ??= "";
-        if (name.Length == 0) return "Enter a name.";
-        if (name.Length > 12) return "Up to 12 characters.";
-        if (name.Length < 2) return "At least 2 characters.";
-        foreach (char ch in name)
-            if (!char.IsLetterOrDigit(ch)) return "Letters and digits only.";
-        return null;
+        nameChecker ??= Ms2.Formats.Text.BanTextChecker.FromPacks(movie.Assets.Packs, movie.Assets.Language);
+        if (name.Length == 0) return nameChecker.CommonString("s_char_err_input") ?? "Enter a name.";
+        return nameChecker.CheckCharacterName(name, out var message) == 0 ? null : message;
     }
 }

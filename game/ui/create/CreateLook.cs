@@ -29,6 +29,10 @@ public sealed class CreateLook
     public readonly Dictionary<EquipSlot, int> Items = new();        // slot -> item id
     public readonly Dictionary<EquipSlot, int> Rows = new();         // slot -> palette row
     public int SkinRow;
+    /// <summary>The customize values of each item worn so far (the dialog's m_items: a new item starts from vfunc_4).</summary>
+    public readonly Dictionary<int, CustomValues> Custom = new();
+    readonly Dictionary<int, ItemCustomize> customizes = new();
+    readonly Random customRng = new();
 
     public CreateLook(PackSet packs, ColorPalettes palettes, string lang = "en")
     {
@@ -54,6 +58,22 @@ public sealed class CreateLook
 
     /// <summary>The item's slotIcon (itemdata property), a Resource/Image path.</summary>
     public string IconPath(int id) => (string)Find(dataRoots, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("slotIcon");
+
+    /// <summary>The item model's customize options (cached), and the guide movie of its itemdata property.</summary>
+    public ItemCustomize Customize(int id)
+    {
+        if (customizes.TryGetValue(id, out var c)) return c;
+        if (id == SkinItem) return customizes[id] = new ItemCustomize();
+        var movie = (string)Find(dataRoots, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("movie");
+        return customizes[id] = ItemCustomize.Read(Find(modelRoots, "itemmodel", ModelId(id), "ItemModel"), movie);
+    }
+
+    /// <summary>The item's customize values, made as a new item makes them the first time it is worn.</summary>
+    public CustomValues ValuesOf(int id)
+    {
+        if (!Custom.TryGetValue(id, out var v)) Custom[id] = v = CustomValues.New(Customize(id), customRng);
+        return v;
+    }
 
     public int GenderLimit(int id)
     {
@@ -103,14 +123,15 @@ public sealed class CreateLook
     public void Reset(int gender, int jobCode)
     {
         Gender = gender; JobCode = jobCode;
-        Items.Clear(); Rows.Clear(); SkinRow = 0;
+        Items.Clear(); Rows.Clear(); SkinRow = 0; Custom.Clear();
         var (items, _) = StarterLook.Build(packs, palettes, gender, jobCode);
         foreach (var it in items) { Items[it.Slot] = it.Id; Rows[it.Slot] = it.Color.Index; }
     }
 
-    /// <summary>OnRandom: a random item and row for every category.</summary>
+    /// <summary>OnRandom: a random item and row for every category (fresh items, so fresh customize values).</summary>
     public void Randomize(Random rng)
     {
+        Custom.Clear();
         foreach (var slot in new[] { EquipSlot.HR, EquipSlot.FA, EquipSlot.FD, EquipSlot.CL, EquipSlot.PA, EquipSlot.SH })
         {
             var list = SlotItems(slot);
@@ -146,10 +167,10 @@ public sealed class CreateLook
 
     /// <summary>
     /// The create request's item block (UICharacterCreateDialog::FUN_1418e3f50): the shown items, each with its id,
-    /// equip slot and appearance (colour, then the slot's customize floats; created looks keep the item defaults, zero).
+    /// equip slot and appearance (colour, then the slot's customize floats: CHairExtraData / CDecalExtraData::vfunc_5).
     /// </summary>
     public byte[] PacketItems() => CreateCharacter.EncodeItems(Equips().Where(e => e.Slot != EquipSlot.ER)
-        .Select(e => new CreateItem(e.Id, e.Slot, e.Color, CreateItem.DefaultAppearance(e.Slot))));
+        .Select(e => new CreateItem(e.Id, e.Slot, e.Color, ValuesOf(e.Id).Appearance(e.Slot))));
 
     public CreateCharacter Packet(string name, int elapsedSeconds)
     {

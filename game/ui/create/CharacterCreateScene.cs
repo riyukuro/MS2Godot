@@ -25,6 +25,38 @@ public partial class CharacterCreateScene : Field
     static bool argsRead;
     static readonly Random rng = new();
 
+    // ---- entry and exit (the game flow's API; stable) ----
+
+    /// <summary>The scene file the flow changes to.</summary>
+    public const string ScenePath = "res://ui/charcreate.tscn";
+
+    /// <summary>
+    /// Fired once when the player confirms a name that passes the client's check: the CharacterManagement create
+    /// request and its encoded bytes (opcode first). Nothing is sent; the flow sends it and changes scene on the answer.
+    /// Static because the scene reloads itself between the job page and the create page.
+    /// </summary>
+    public static event Action<Ms2.Net.Packets.CreateCharacter, byte[]> CharacterCreated;
+
+    /// <summary>Fired when the player leaves creation from the job page (its back button): return to the character list.</summary>
+    public static event Action Cancelled;
+
+    /// <summary>
+    /// Opens character creation at the job page (UICharacterCreateSelectDialog), with <paramref name="startJob"/> selected
+    /// (0: the table's start job). Clears the page, job and gender a previous visit left; command line args are not read.
+    /// </summary>
+    public static Error Enter(SceneTree tree, int startJob = 0)
+    {
+        page = Page.Select; job = startJob; gender = -1; argsRead = true;
+        return tree.ChangeSceneToFile(ScenePath);
+    }
+
+    /// <summary>The server refused the request: shows its message in the name prompt, which opens again.</summary>
+    public static void CreateFailed(string message) => current?.custom?.ShowCreateError(message);
+
+    static CharacterCreateScene current;
+    public override void _EnterTree() { base._EnterTree(); current = this; }
+    public override void _ExitTree() { if (current == this) current = null; base._ExitTree(); }
+
     PackSet uiPacks;
     CreateTables tables;
     UiAssets assets;
@@ -143,7 +175,7 @@ public partial class CharacterCreateScene : Field
         jobs.InitData(job);
         jobs.Align(size, s);
         jobs.Create += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
-        jobs.Prev += () => GD.Print("job pick: back to the character list");
+        jobs.Prev += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
         mouse = new UiWidgets.MouseRouter(selectRoot);
     }
 
@@ -182,6 +214,7 @@ public partial class CharacterCreateScene : Field
         custom = new CharacterCreateLogic(movie, createRoot, look);
         custom.LookChanged += RebuildPreview;
         custom.Back += () => SwitchTo(Page.Select);
+        custom.Created += (packet, bytes) => CharacterCreated?.Invoke(packet, bytes);
         custom.InitData(gender, job, "Bigleaf  CH.1");
         RebuildPreview();
         mouse = new UiWidgets.MouseRouter(createRoot);
@@ -222,7 +255,7 @@ public partial class CharacterCreateScene : Field
     {
         if (custom?.PromptOpen == true) return;
         mouse?.Handle(e);
-        if (e is InputEventMouseButton mb) custom?.OnMouse(mb);
+        if (e is InputEventMouse m) custom?.OnMouse(m);
         if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter)
         {
             if (jobs != null) jobs.ClickCreate();
@@ -255,9 +288,24 @@ public partial class CharacterCreateScene : Field
             if (frame == 120) Save($"create_gender_{job}.png");
             if (frame == 121) custom.OnRandom();
             if (frame == 150) Save($"create_random_{job}.png");
-            if (frame == 151) { custom.OnCreate(); custom.Confirm("Tester01"); }
-            if (frame == 155) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
+            if (frame == 151) { custom.SelectCategory(2, true); PickEditable(Ms2.Net.Packets.EquipSlot.FD); }
+            if (frame == 152) { custom.Options.SetSlider(0, 0.5f); custom.Options.SetSlider(1, 90); custom.Options.ClickPosition(1); }
+            if (frame == 180) Save($"create_custom_makeup_{job}.png");
+            if (frame == 181) { custom.SelectCategory(0, true); PickEditable(Ms2.Net.Packets.EquipSlot.HR); }
+            if (frame == 182) custom.Options.SetSlider(0, 0.4f);
+            if (frame == 210) Save($"create_custom_hair_{job}.png");
+            if (frame == 211) { custom.OnCreate(); custom.Confirm("Tester01"); }
+            if (frame == 215) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
         }
+    }
+
+    /// <summary>Scripted runs: wear the slot's first editable item, preferring one with position presets.</summary>
+    void PickEditable(Ms2.Net.Packets.EquipSlot slot)
+    {
+        var ids = custom.Look.SlotItems(slot).Where(i => custom.Look.Customize(i).Editable).ToList();
+        int id = ids.FirstOrDefault(i => custom.Look.Customize(i).Positions.Count > 0, ids.FirstOrDefault());
+        if (id != 0) custom.ChangeItem(id);
+        GD.Print($"custom {slot}: item {id}, flags {custom.Look.Customize(id).EditFlags}");
     }
 
     void Save(string name)
