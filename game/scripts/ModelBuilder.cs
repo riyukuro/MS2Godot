@@ -94,7 +94,7 @@ public sealed class ModelBuilder
     }
 
     /// <param name="skin">false: drop bone data (static placement of a skinned prop, drawn in its bind pose)</param>
-    /// <param name="instanceColor">material multiplies the albedo by the MultiMesh instance colour</param>
+    /// <param name="instanceColor">field mesh: the MultiMesh instance colour is the material colour (field_lit shader)</param>
     public ArrayMesh BuildMesh(ModelMesh m, bool skin = true, bool instanceColor = false)
     {
         int nv = m.Positions.Length / 3;
@@ -120,25 +120,71 @@ public sealed class ModelBuilder
             arrays[(int)Mesh.ArrayType.Bones] = m.Joints;
             arrays[(int)Mesh.ArrayType.Weights] = m.Weights;
         }
+        ulong format = 0;
+        if (instanceColor)
+        {
+            // field meshes: second uv set as UV2, vertex colours as CUSTOM0 so that COLOR stays the instance colour
+            if (m.Uvs1 != null)
+            {
+                var uv2 = new Vector2[nv];
+                for (int i = 0; i < nv; i++) uv2[i] = new Vector2(m.Uvs1[i * 2], m.Uvs1[i * 2 + 1]);
+                arrays[(int)Mesh.ArrayType.TexUV2] = uv2;
+            }
+            if (m.Colors != null)
+            {
+                arrays[(int)Mesh.ArrayType.Custom0] = m.Colors;
+                format |= (ulong)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
+            }
+        }
         // file triangles are counter-clockwise (as in the glTF export); Godot's front faces are clockwise
         var idx = (int[])m.Indices.Clone();
         for (int i = 0; i + 2 < idx.Length; i += 3) (idx[i + 1], idx[i + 2]) = (idx[i + 2], idx[i + 1]);
         arrays[(int)Mesh.ArrayType.Index] = idx;
 
         var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, (Mesh.ArrayFormat)format);
         mesh.SurfaceSetMaterial(0, BuildMaterial(m, instanceColor));
         return mesh;
     }
 
+    static Shader fieldShader, fieldBlendShader;
+
+    static Shader FieldShader(bool blend)
+    {
+        if (fieldShader == null)
+        {
+            var code = GD.Load<Shader>("res://shaders/field_lit.gdshader").Code;
+            fieldShader = new Shader { Code = code };
+            int nl = code.IndexOf('\n', code.IndexOf("shader_type")) + 1;
+            fieldBlendShader = new Shader { Code = code.Insert(nl, "#define BLEND\n") };
+        }
+        return blend ? fieldBlendShader : fieldShader;
+    }
+
     Material BuildMaterial(ModelMesh m, bool instanceColor)
     {
-        var mat = new StandardMaterial3D { Roughness = 0.8f, Metallic = 0f, VertexColorUseAsAlbedo = instanceColor };
-        if (m.Textures.TryGetValue("base", out var baseName))
+        Texture2D tex = m.Textures.TryGetValue("base", out var baseName) ? Texture(baseName) : null;
+        if (instanceColor)
         {
-            var tex = Texture(baseName);
-            if (tex != null) mat.AlbedoTexture = tex;
+            // field meshes: Gamebryo-style gamma-space lighting (shaders/field_lit.gdshader)
+            var sm = new ShaderMaterial { Shader = FieldShader(m.AlphaBlendOn) };
+            sm.SetShaderParameter("has_tex", tex != null);
+            if (tex != null) sm.SetShaderParameter("base_tex", tex);
+            var dark = m.Textures.TryGetValue("dark", out var darkName) ? Texture(darkName) : null;
+            sm.SetShaderParameter("has_dark", dark != null);
+            if (dark != null) sm.SetShaderParameter("dark_tex", dark);
+            sm.SetShaderParameter("dark_uv2", m.Uvs1 != null);
+            sm.SetShaderParameter("has_vcolor", m.Colors != null);
+            sm.SetShaderParameter("vcolor_amb_diff", m.VertexColorsAmbDiff);
+            // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
+            bool test = m.AlphaTestOn || (m.AlphaTest && !m.AlphaBlendOn);
+            sm.SetShaderParameter("alpha_test", test);
+            sm.SetShaderParameter("alpha_ref", m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
+            if (m.Emissive != null) sm.SetShaderParameter("emissive", new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
+            return sm;
         }
+        var mat = new StandardMaterial3D { Roughness = 0.8f, Metallic = 0f };
+        if (tex != null) mat.AlbedoTexture = tex;
         if (m.AlphaTest)
         {
             mat.Transparency = BaseMaterial3D.TransparencyEnum.AlphaScissor;

@@ -23,6 +23,16 @@ public sealed class ModelMesh
     public int ParentBone = -1;           // rigid meshes: the NiNode they hang from (-1 = scene root)
     public Xform Local = Xform.Identity;  // rigid meshes: transform relative to ParentBone
     public bool AlphaTest;                // has an NiAlphaProperty
+    public float[] Ambient, Diffuse, Emissive;   // NiMaterialProperty colours (rgb), or null without a material
+    public float[] Colors;                // rgba 0..1 per vertex, or null
+    public float[] Uvs1;                  // second uv set (TEXCOORD1), or null
+    public int AlphaFlags = -1;           // NiAlphaProperty flags, -1 without one
+    public int AlphaThreshold;            // NiAlphaProperty test threshold (0..255)
+    public int VertexColorFlags = -1;     // NiVertexColorProperty flags, -1 without one (inherited from the scene root)
+    public bool AlphaBlendOn => AlphaFlags >= 0 && (AlphaFlags & 1) != 0;
+    public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
+    /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
+    public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, shaderN
 }
 
@@ -201,9 +211,36 @@ public sealed class ModelData
                 }
             }
             if (s.TryGetValue("TEXCOORD", out var uv)) mesh.Uvs = uv.v.Select(x => (float)x).ToArray();
+            if (s.TryGetValue("TEXCOORD1", out var uv1)) mesh.Uvs1 = uv1.v.Select(x => (float)x).ToArray();
+            if (s.TryGetValue("COLOR", out var col) && col.n >= 3)
+            {
+                // byte colours come as 0..255; float colours as 0..1
+                double k = col.v.Length > 0 && col.v.Max() > 1.0 ? 1.0 / 255 : 1.0;
+                mesh.Colors = new float[nv * 4];
+                for (int c = 0; c < nv; c++)
+                    for (int j = 0; j < 4; j++)
+                        mesh.Colors[c * 4 + j] = j < col.n ? (float)(col.v[c * col.n + j] * k) : 1f;
+            }
             mesh.Indices = s["INDEX"].v.Select(x => (int)x).ToArray();
             foreach (var p in b.Ints("Properties"))
-                if (p >= 0 && B[(int)p].Type == "NiAlphaProperty") mesh.AlphaTest = true;
+            {
+                if (p < 0) continue;
+                var prop = B[(int)p];
+                if (prop.Type == "NiAlphaProperty")
+                {
+                    mesh.AlphaTest = true;
+                    mesh.AlphaFlags = (int)prop.Int("Flags");
+                    mesh.AlphaThreshold = (int)prop.IntOr("Threshold", 0);
+                }
+                if (prop.Type == "NiVertexColorProperty") mesh.VertexColorFlags = (int)prop.Int("Flags");
+                if (prop.Type == "NiMaterialProperty")
+                {
+                    float[] Rgb(string k) { var c = prop.Struct(k); return new[] { c.Float("r"), c.Float("g"), c.Float("b") }; }
+                    mesh.Ambient = Rgb("Ambient Color");
+                    mesh.Diffuse = Rgb("Diffuse Color");
+                    mesh.Emissive = Rgb("Emissive Color");
+                }
+            }
 
             if (skinned)
             {

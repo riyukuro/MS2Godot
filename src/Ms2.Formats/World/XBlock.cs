@@ -148,14 +148,17 @@ public sealed class FieldEntity
     public Vec3 RotationDeg => Vector("Rotation");
     public double Scale => Number("Scale", 1);
 
-    /// <summary>Placement transform: R = Rz * Ry * Rx (degrees), uniform scale.</summary>
+    /// <summary>
+    /// Placement transform: R = Rx * Ry * Rz (degrees, counter-clockwise about each axis), uniform scale; the
+    /// order the Gamebryo scene graph service uses for an entity's Rotation property.
+    /// </summary>
     public Xform Transform
     {
         get
         {
             var r = RotationDeg;
             const double d2r = Math.PI / 180;
-            var q = Quat.FromAxis(2, r.Z * d2r) * Quat.FromAxis(1, r.Y * d2r) * Quat.FromAxis(0, r.X * d2r);
+            var q = Quat.FromAxis(0, r.X * d2r) * Quat.FromAxis(1, r.Y * d2r) * Quat.FromAxis(2, r.Z * d2r);
             return new Xform(Position, q.ToMatrix(), Scale);
         }
     }

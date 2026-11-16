@@ -9,18 +9,42 @@ Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_
 the female character at the field's player spawn point. She walks, runs and climbs steps over the field's
 collision.
 
-Controls: WASD or the arrow keys move (relative to the camera), Shift walks instead of running, right mouse drag
-turns the camera, and the wheel zooms.
+Controls: WASD or the arrow keys move (relative to the camera), Shift walks instead of running, and the wheel
+zooms.
+
+The camera follows the client's default field camera: a fixed direction, a field of view, and a pitch and target
+height that change with the zoom distance. The values come from the field's entry in `table/fielddata.xml`, or
+the client's defaults when the entry has none.
 
 The field comes from these packs:
 
 - `Resource/Exported.m2d`: the field entity set (`xblock/<field>.xblock`) and the model defaults (`flat/`).
 - `Resource/asset-web-metadata.m2d`: maps an entity's `urn:llid:` asset id to a model path.
 - `Resource/Model/Map.m2d`: the models, their textures and their PhysX collision meshes.
-- `Xml.m2d`: `mapxblock/<field>.xml` (fog).
+- `Xml.m2d`: `mapxblock/<field>.xml` (fog) and `table/fielddata.xml` (camera).
 
-Cubes without a PhysX mesh get a generated box collider. Known gaps: no character customisation (white skin),
-no swimming, some banner textures are white, and props without PhysX data (such as low fences) have no collision.
+Field meshes are lit with the field's ambient and directional light entities, the way Gamebryo's standard
+material does it: in gamma space, with the entity's material colour, vertex colours and alpha blending from the
+NIF (`game/shaders/field_lit.gdshader`).
+
+Collision follows the client:
+
+- The NIF's own PhysX meshes.
+- For cubes without them, the box the client generates from `GeneratePhysXDimension`.
+- Boxes for `PhysXWhitebox` entities.
+
+Props without PhysX data, such as the low fences, have no collision in the client either, so the character can
+step onto the water surface.
+
+Known gaps:
+
+- No character customisation (white skin).
+- No swimming.
+- Some banner textures are white.
+- No HDR or bloom pass, so lit areas come out about 10-20% darker than in the client.
+- No cast shadows on field meshes.
+- No texture animation (the water flipbook).
+- The water shows the inner faces of its stacked cubes.
 
 The earlier pilot viewer (female model, idle and walk on a ground plane; keys `1` idle, `2` walk) is still
 `game/main.tscn`.

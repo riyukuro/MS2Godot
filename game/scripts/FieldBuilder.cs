@@ -14,7 +14,7 @@ namespace Ms2Godot;
 public sealed class FieldBuilder
 {
     public const string MapArchive = "Resource/Model/Map";
-    const float DefaultMaterialColor = 0.7058824f;     // the flat default; maps to an untinted albedo
+    const float DefaultMaterialColor = 0.7058824f;     // the flat default (= the NIF material's ambient / diffuse)
     const float ChunkSize = 1500f;                     // collider bodies per 10 x 10 cubes
 
     readonly PackSet packs;
@@ -124,7 +124,7 @@ public sealed class FieldBuilder
                 var d = e.Vector("ShapeDimensions");
                 if (d.X > 0 && d.Y > 0 && d.Z > 0)
                 {
-                    // box centred on the entity position, ShapeDimensions = full size (to be checked against PhysX)
+                    // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2
                     var cs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) }, Transform = xf };
                     Chunk(e.Position).AddChild(cs);
                     Whiteboxes++;
@@ -153,14 +153,16 @@ public sealed class FieldBuilder
             }
             else if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
             {
-                // generated cube box, as the server ingest builds it: +-0.75 d wide, 0..1.5 d high, d = 100 by default
+                // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
+                // standing on the entity position, turned by the Z rotation only; scale is ignored
                 var d = e.Vector("GeneratePhysXDimension");
-                var dim = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(100, 100, 100) : new Vector3((float)d.X, (float)d.Y, (float)d.Z) / 1.5f;
-                var size = dim * 1.5f;
+                var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
+                var p = e.Position;
                 Chunk(e.Position).AddChild(new CollisionShape3D
                 {
                     Shape = new BoxShape3D { Size = size },
-                    Transform = xf * new Transform3D(Basis.Identity, new Vector3(0, 0, size.Z / 2)),
+                    Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
+                                                new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2)),
                 });
                 Boxes++;
             }
@@ -184,8 +186,8 @@ public sealed class FieldBuilder
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
                     var c = ents[i].Numbers("MaterialColor");
                     var col = c != null && c.Length >= 3
-                        ? new Color((float)c[0] / DefaultMaterialColor, (float)c[1] / DefaultMaterialColor, (float)c[2] / DefaultMaterialColor)
-                        : Colors.White;
+                        ? new Color((float)c[0], (float)c[1], (float)c[2])
+                        : new Color(DefaultMaterialColor, DefaultMaterialColor, DefaultMaterialColor);
                     mm.SetInstanceColor(i, col);
                 }
                 visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm });

@@ -10,8 +10,9 @@ namespace Ms2Godot;
 
 /// <summary>
 /// Field-walk slice: loads one field (default Tria, 02000001_tw_tria) from the player's data, places the female
-/// character at SpawnPointPC and lets her walk. WASD / arrows move (camera relative), Shift walks, right mouse drag
-/// turns the camera, wheel zooms.
+/// character at SpawnPointPC and lets her walk. WASD / arrows move (camera relative), Shift walks, the wheel zooms.
+/// The camera follows the client's default field camera (CTargetCameraMode): a fixed yaw from the field data, and
+/// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit).
 /// </summary>
 public partial class Field : Node3D
@@ -19,10 +20,12 @@ public partial class Field : Node3D
     PackSet packs;
     Player player;
     Camera3D camera;
-    float camYaw, camPitch = Mathf.DegToRad(45f), camDist = 1250f;
+    FieldCamera cam = new();
+    float camDist;                        // current zoom distance, MinCameraDistance .. cam.Distance
+    const float MinCameraDistance = 400f; // CCameraMode default nearest zoom
     string shotDir;
-    // scripted steps: seconds, input (right, forward), walk, camera yaw change (deg/s), shot file at the end
-    readonly Queue<(float secs, Vector2 input, bool walk, float yawRate, string shot)> script = new();
+    // scripted steps: seconds, input (right, forward), walk, shot file at the end
+    readonly Queue<(float secs, Vector2 input, bool walk, string shot)> script = new();
     float stepTime;
     int shotSettle = -1;
 
@@ -44,6 +47,11 @@ public partial class Field : Node3D
             return;
         }
 
+        // light values for shaders/field_lit.gdshader, filled in by BuildEnvironment
+        RenderingServer.GlobalShaderParameterAdd("ms2_ambient", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.8f, 0.8f, 0.8f));
+        RenderingServer.GlobalShaderParameterAdd("ms2_sun_color", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.8f, 0.8f, 0.8f));
+        RenderingServer.GlobalShaderParameterAdd("ms2_sun_dir", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0, -1, 0));
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = new PackSet(data);
         var spec = new NifSpec(nifxml);
@@ -61,24 +69,28 @@ public partial class Field : Node3D
 
         BuildEnvironment(map, fieldName);
         SpawnPlayer(builder, map);
-        camera = new Camera3D { Fov = 40, Near = 10, Far = 30000, Current = true };
+        try { cam = FieldData.FindByXBlock(packs, fieldName)?.Camera ?? cam; }
+        catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
+        camDist = cam.Distance;
+        // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
+        camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
         AddChild(camera);
         UpdateCamera();
 
         if (shotDir != null)
         {
             DirAccess.MakeDirRecursiveAbsolute(shotDir);
-            script.Enqueue((1.0f, Vector2.Zero, false, 0, "field_spawn.png"));
-            script.Enqueue((1.2f, new Vector2(0, 1), true, 0, "field_walk.png"));
-            script.Enqueue((0.5f, Vector2.Zero, false, 0, null));
-            script.Enqueue((2.0f, new Vector2(0, 1), false, 0, "field_run_fwd.png"));
-            script.Enqueue((2.1f, new Vector2(1, 0), false, 0, "field_run_right.png"));
-            script.Enqueue((0.6f, new Vector2(0, 1), false, 0, "field_stairs_1.png"));
-            script.Enqueue((0.6f, new Vector2(0, 1), false, 0, "field_stairs_2.png"));
-            script.Enqueue((0.8f, new Vector2(0, 1), false, 0, "field_stairs_3.png"));
-            script.Enqueue((3.0f, new Vector2(0, -1), false, 0, "field_run_back.png"));
-            script.Enqueue((3.0f, new Vector2(-1, 0.3f), false, 30, "field_run_left_turn.png"));
-            script.Enqueue((1.0f, Vector2.Zero, false, 0, "field_idle_end.png"));
+            script.Enqueue((1.0f, Vector2.Zero, false, "field_spawn.png"));
+            script.Enqueue((1.2f, new Vector2(0, 1), true, "field_walk.png"));
+            script.Enqueue((0.5f, Vector2.Zero, false, null));
+            script.Enqueue((2.0f, new Vector2(0, 1), false, "field_run_fwd.png"));
+            script.Enqueue((2.1f, new Vector2(1, 0), false, "field_run_right.png"));
+            script.Enqueue((0.6f, new Vector2(0, 1), false, "field_stairs_1.png"));
+            script.Enqueue((0.6f, new Vector2(0, 1), false, "field_stairs_2.png"));
+            script.Enqueue((0.8f, new Vector2(0, 1), false, "field_stairs_3.png"));
+            script.Enqueue((3.0f, new Vector2(0, -1), false, "field_run_back.png"));
+            script.Enqueue((3.0f, new Vector2(-1, 0.3f), false, "field_run_left.png"));
+            script.Enqueue((1.0f, Vector2.Zero, false, "field_idle_end.png"));
         }
     }
 
@@ -140,6 +152,10 @@ public partial class Field : Node3D
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
+        Vector3 Rgb(Color c, float k) => new(c.R * k, c.G * k, c.B * k);
+        RenderingServer.GlobalShaderParameterSet("ms2_ambient", Rgb(ambientColor, ambient));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_color", Rgb(sunColor, sunDim));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_dir", d);
     }
 
     void SpawnPlayer(ModelBuilder builder, FieldMap map)
@@ -162,31 +178,36 @@ public partial class Field : Node3D
         double yaw = (sp?.RotationDeg.Z ?? 0) * Math.PI / 180;
         var face = FieldBuilder.ToGodotPoint(new Vec3(Math.Sin(yaw), -Math.Cos(yaw), 0));
         player.Face(face);
-        camYaw = Mathf.Atan2(-face.X, -face.Z);       // camera behind the character
         player.Anim.Play("idle");
         player.CurrentAnim = "idle";
         GD.Print($"spawn {sp?.Name} ms2 {pos} -> godot {player.SpawnPoint}");
     }
 
+    /// <summary>
+    /// CTargetCameraMode: with t = (distance - nearest) / (farthest - nearest), the angle from the up axis goes from
+    /// 90 (level) at the nearest zoom to vangle at the farthest, and the target height from zoomInHeightOffset to
+    /// zoomOutHeightOffset. Eye = target + (d sin yaw, d cos yaw, d cos pitch) in MS2 axes, yaw = hangle + 180.
+    /// </summary>
     void UpdateCamera()
     {
-        player.CameraYaw = camYaw;
-        var target = player.GlobalPosition + new Vector3(0, 60, 0);
-        var back = new Vector3(Mathf.Sin(camYaw) * Mathf.Cos(camPitch), Mathf.Sin(camPitch), Mathf.Cos(camYaw) * Mathf.Cos(camPitch));
-        camera.LookAtFromPosition(target + back * camDist, target, Vector3.Up);
+        float range = cam.Distance - MinCameraDistance;
+        float t = range > 0 ? Mathf.Min((camDist - MinCameraDistance) / range, 1f) : 1f;
+        float pitch = Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * t);
+        float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * t;
+        float yaw = Mathf.DegToRad(cam.HAngleDeg + 180f);
+        var ms2 = new Vec3(camDist * Math.Sin(yaw), camDist * Math.Cos(yaw), camDist * Math.Cos(pitch));
+        var offset = FieldBuilder.ToGodotPoint(ms2);
+        player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
+        var target = player.GlobalPosition + new Vector3(0, height, 0);
+        camera.LookAtFromPosition(target + offset, target, Vector3.Up);
     }
 
     public override void _UnhandledInput(InputEvent e)
     {
-        if (e is InputEventMouseMotion mm && (mm.ButtonMask & MouseButtonMask.Right) != 0)
-        {
-            camYaw -= mm.Relative.X * 0.005f;
-            camPitch = Mathf.Clamp(camPitch + mm.Relative.Y * 0.005f, Mathf.DegToRad(10), Mathf.DegToRad(80));
-        }
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
-            if (mb.ButtonIndex == MouseButton.WheelUp) camDist = Mathf.Max(200, camDist * 0.9f);
-            if (mb.ButtonIndex == MouseButton.WheelDown) camDist = Mathf.Min(4000, camDist * 1.1f);
+            if (mb.ButtonIndex == MouseButton.WheelUp) camDist = Mathf.Max(MinCameraDistance, camDist - 70f);
+            if (mb.ButtonIndex == MouseButton.WheelDown) camDist = Mathf.Min(cam.Distance, camDist + 70f);
         }
     }
 
@@ -212,7 +233,7 @@ public partial class Field : Node3D
         UpdateCamera();
         if (shotSettle > 0 && --shotSettle == 0)
         {
-            var (_, _, _, _, shot) = script.Dequeue();
+            var (_, _, _, shot) = script.Dequeue();
             var path = System.IO.Path.Combine(shotDir, shot);
             GetViewport().GetTexture().GetImage().SavePng(path);
             GD.Print($"shot {path} pos {player.GlobalPosition} anim {player.CurrentAnim} floor {player.IsOnFloor()}");
@@ -226,10 +247,9 @@ public partial class Field : Node3D
     {
         if (shotSettle > 0) return;           // keep the step's input while the shot settles
         if (script.Count == 0) { player.Input2 = Vector2.Zero; return; }
-        var (secs, input, walk, yawRate, shot) = script.Peek();
+        var (secs, input, walk, shot) = script.Peek();
         player.Input2 = input;
         player.WalkMode = walk;
-        camYaw += Mathf.DegToRad(yawRate) * dt;
         stepTime += dt;
         if (stepTime < secs) return;
         if (shot == null) { script.Dequeue(); stepTime = 0; return; }
