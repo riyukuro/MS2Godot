@@ -187,13 +187,13 @@ public partial class HudScene : Node
             slot.GotoLabel("skill");
             var list = slot.FindClip("m_skillCommon");
             list?.GotoLabel("show");
-            string keys = "QWERASDF12345678";
+            string shortcutLetters = "QWERASDF12345678";
             int n = 0;
             if (list != null)
                 foreach (var c in list.Children.OrderBy(c => c.Def["depth"]?.GetValue<int>() ?? 0))
-                    if (c.Node is MovieClipNode slotClip && slotClip.ClassName == "playerinfo_slot_skill" && n < keys.Length)
+                    if (c.Node is MovieClipNode slotClip && slotClip.ClassName == "playerinfo_slot_skill" && n < shortcutLetters.Length)
                     {
-                        string key = keys[n++].ToString();
+                        string key = shortcutLetters[n++].ToString();
                         var sk = slotClip.FindClip("m_shortcutKey");
                         if (sk != null) foreach (var cl in sk.AllClips()) foreach (var t in cl.TextFields) t.Text = key;
                         slotClip.GotoLabel("up");
