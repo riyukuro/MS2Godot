@@ -17,6 +17,12 @@ public sealed record NpcRemovedEvent(double Time, int ObjectId, bool Dead) : Rep
 /// <summary>One npc sync block (position, rotation, animation sequence id, state).</summary>
 public sealed record NpcMovedEvent(double Time, NpcSync Sync) : ReplayEvent(Time);
 
+public sealed record SkillUsedEvent(double Time, SkillUse Use) : ReplayEvent(Time);
+public sealed record SkillCancelledEvent(double Time, int ActorId, long CastUid) : ReplayEvent(Time);
+public sealed record SkillDamageEvent(double Time, SkillDamage Damage) : ReplayEvent(Time);
+/// <summary>An npc's health from a Stat packet: current and maximum.</summary>
+public sealed record NpcHpEvent(double Time, int ObjectId, long Current, long Max) : ReplayEvent(Time);
+
 /// <summary>
 /// Turns packets into field events and keeps the current player table. Fed from the read loop (inbound packets) and from the
 /// recording's own client packets (the local player's movement); events can be drained from another thread.
@@ -88,6 +94,21 @@ public sealed class FieldTracker {
                     lock (gate) { if (!npcs.TryGetValue(b.ObjectId, out var st)) continue; st.Position = b.Position.ToVector3(); st.YawDegrees = b.RotationZ; st.Moves++; }
                     Events.Enqueue(new NpcMovedEvent(Time, b));
                 }
+                break;
+            }
+            case Ms2.Net.Inbound.SkillUse: Events.Enqueue(new SkillUsedEvent(Time, SkillUse.Read(p.Reader()))); break;
+            case Ms2.Net.Inbound.SkillCancel: { var c = SkillCancel.Read(p.Reader()); Events.Enqueue(new SkillCancelledEvent(Time, c.ActorId, c.CastUid)); break; }
+            case Ms2.Net.Inbound.SkillDamage: {
+                var d = SkillDamage.Read(p.Reader());
+                if (d.Raw == null && d.Targets.Count > 0) Events.Enqueue(new SkillDamageEvent(Time, d));
+                break;
+            }
+            case Ms2.Net.Inbound.Stat: {
+                bool isNpc; int id = BitConverter.ToInt32(p.Body, 0);
+                lock (gate) isNpc = npcs.ContainsKey(id);
+                if (!isNpc) break;                       // player stat packets use another list form
+                var st = NpcStat.Read(p.Reader());
+                if (st.IsHealth) Events.Enqueue(new NpcHpEvent(Time, id, st.Current, st.Max));
                 break;
             }
             case Ms2.Net.Inbound.UserSync:

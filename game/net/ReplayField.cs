@@ -23,6 +23,7 @@ public partial class ReplayField : Field
         public Node3D Root, Visual; public AnimationPlayer Anim;
         public Vector3 Target; public float TargetYaw; public int Moves; public string Name; public bool IsSelf;
         public string Current = "";
+        public byte Gender;
         public Vector3 LastPos; public float Speed; public int Life;
     }
 
@@ -36,6 +37,10 @@ public partial class ReplayField : Field
     ModelBuilder modelBuilder;
     EquipApplier equip;
     NpcLayer npcs;
+    CombatLayer combat;
+    SkillTable skills;
+    readonly Dictionary<(byte, string), Godot.Animation> skillAnims = new();
+    public int SkillUses, SkillNoRow, SkillNoKf, DamageNumbers, SkillAnimsPlayed;
     Ms2.Formats.World.NpcTable npcTable;
     Dictionary<int, List<List<System.Numerics.Vector3>>> npcTruth;
     bool applyEquips = true;
@@ -111,6 +116,9 @@ public partial class ReplayField : Field
         equip = new EquipApplier(packs, builder) { Palettes = new Look.ColorPalettes(packs) };
         npcTable = new Ms2.Formats.World.NpcTable(packs);
         npcs = new NpcLayer(packs, builder, npcTable, this);
+        skills = new SkillTable(packs);
+        combat = new CombatLayer(packs, builder, new EffectTable(packs), this);
+        npcs.Combat = combat;
         truth = BuildTruth(file);
         npcTruth = BuildNpcTruth(file, NpcLayoutOf);
         replay = new ReplaySession(file, speed, startOffset, NpcLayoutOf);
@@ -196,11 +204,77 @@ public partial class ReplayField : Field
         var root = new Node3D { Name = $"Pc{e.User.ObjectId}" };
         root.AddChild(visual);
         AddChild(root);
-        var a = new Actor { Root = root, Visual = visual, Anim = anim, Name = e.User.User.Name, IsSelf = e.IsSelf, Target = G(e.User.Position), TargetYaw = e.User.Rotation.Z };
+        combat.NameTag(root, e.User.User.Name, 135, e.IsSelf ? new Color(0.6f, 0.85f, 1f) : Colors.White);
+        var a = new Actor { Gender = e.User.User.Gender, Root = root, Visual = visual, Anim = anim, Name = e.User.User.Name, IsSelf = e.IsSelf, Target = G(e.User.Position), TargetYaw = e.User.Rotation.Z };
         root.Position = a.Target; a.LastPos = a.Target;
         visual.Rotation = new Vector3(0, Mathf.DegToRad(a.TargetYaw), 0);
         anim.Play("idle"); a.Current = "idle";
         return a;
+    }
+
+    // ---- combat ----
+
+    (Node3D root, float height, float yaw)? Find(int id)
+    {
+        if (actors.TryGetValue(id, out var a)) return (a.Root, 135, a.Visual.Rotation.Y);
+        return npcs.Info(id);
+    }
+
+    Godot.Animation SkillAnim(byte gender, string seq)
+    {
+        if (skillAnims.TryGetValue((gender, seq), out var an)) return an;
+        an = null;
+        string dir = gender == 0 ? "male" : "female", entry = $"{dir}/{seq.ToLowerInvariant()}.kf";
+        try
+        {
+            if (packs.Exists(ModelBuilder.ModelArchive, entry))
+            {
+                an = ModelBuilder.BuildAnimation(modelBuilder.LoadKf(entry), Body(gender).md);
+                an.LoopMode = Godot.Animation.LoopModeEnum.None;
+            }
+        }
+        catch (Exception ex) { GD.PushWarning($"skill kf {entry}: {ex.Message}"); }
+        return skillAnims[(gender, seq)] = an;
+    }
+
+    void OnSkillUse(SkillUse u)
+    {
+        SkillUses++;
+        var motion = skills.Motion(u.SkillId, u.Level, u.Motion);
+        if (motion == null) { SkillNoRow++; return; }
+        var who = Find(u.ActorId);
+        if (who == null) return;
+        if (!string.IsNullOrEmpty(motion.SequenceName))
+        {
+            if (actors.TryGetValue(u.ActorId, out var a))
+            {
+                var an = SkillAnim(a.Gender, motion.SequenceName);
+                if (an == null) SkillNoKf++;
+                else
+                {
+                    var lib = a.Anim.GetAnimationLibrary("");
+                    if (lib.HasAnimation("skill")) lib.RemoveAnimation("skill");
+                    lib.AddAnimation("skill", an);
+                    a.Anim.Play("skill", 0.05, (float)Math.Max(u.Speed, 0.1));
+                    a.Current = "skill"; SkillAnimsPlayed++;
+                }
+            }
+            else npcs.PlaySequence(u.ActorId, motion.SequenceName);
+        }
+        combat.PlayEffect(motion.MotionEffect, who.Value.root.Position, who.Value.yaw);
+    }
+
+    void OnDamage(SkillDamage d)
+    {
+        var motion = d.SkillId != 0 ? skills.Motion(d.SkillId, d.Level, d.Motion) : null;
+        bool hitFx = false;
+        foreach (var t in d.Targets)
+        {
+            var who = Find(t.TargetId);
+            if (who == null) continue;
+            foreach (var h in t.Hits) { combat.Number(who.Value.root.Position + new Vector3(0, who.Value.height + 40, 0), h.Damage, h.Flag); DamageNumbers++; }
+            if (!hitFx && motion != null && motion.HitEffects.Count > 0) { combat.PlayEffect(motion.HitEffects[0], who.Value.root.Position + new Vector3(0, who.Value.height * 0.5f, 0), 0); }
+        }
     }
 
     void Drain()
@@ -217,6 +291,12 @@ public partial class ReplayField : Field
                 case UserRemovedEvent rem:
                     if (actors.Remove(rem.ObjectId, out var gone)) gone.Root.QueueFree();
                     break;
+                case SkillUsedEvent su: OnSkillUse(su.Use); break;
+                case SkillCancelledEvent sc:
+                    if (actors.TryGetValue(sc.ActorId, out var cancelled) && cancelled.Current == "skill") { cancelled.Anim.Stop(); cancelled.Current = ""; }
+                    break;
+                case SkillDamageEvent sd: OnDamage(sd.Damage); break;
+                case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
                 case NpcAddedEvent na: npcs.Add(na); break;
                 case NpcRemovedEvent nr: npcs.Remove(nr.ObjectId, nr.Dead); break;
                 case NpcMovedEvent nm: npcs.Move(nm); break;
@@ -245,15 +325,21 @@ public partial class ReplayField : Field
             float sp = (a.Root.Position - a.LastPos).Length() / Mathf.Max(dt, 1e-4f);
             a.Speed = Mathf.Lerp(a.Speed, sp, Mathf.Min(1f, dt * 8f));
             a.LastPos = a.Root.Position;
+            if (a.Current == "skill")
+            {
+                if (a.Anim.IsPlaying()) continue;      // a skill motion runs to its end, then idle/walk/run take over again
+                a.Current = "";
+            }
             string animName = a.Speed < 25 ? "idle" : a.Speed < 220 ? "walk" : "run";
             if (animName != a.Current) { a.Anim.Play(animName, 0.15); a.Current = animName; }
         }
         npcs.Process(dt);
+        combat.Process(dt);
         UpdateReplayCamera(dt);
         HandleShots();
         if (replay.Completion.IsCompleted && replay.Tracker.Events.IsEmpty && pendingShot < 0 && (shotTimes.Count == 0 || nextShot >= shotTimes.Count) && outDir != null)
         {
-            ReportChecks(); ReportChecks2();
+            ReportChecks(); ReportChecks3(); ReportChecks2();
             GetTree().Quit(mismatches == 0 ? 0 : 3);
         }
     }
@@ -332,6 +418,7 @@ public partial class ReplayField : Field
         GD.Print($"check {when}: {n} players, {bad} position mismatches against the recorded coordinates, bodies trail their target by at most {maxLag:F1} units");
     }
 
-    void ReportChecks() => GD.Print($"npcs: {npcs.Spawned} spawned ({npcs.NoRow} without a table row, {npcs.NoModel} without a model in the local data: {string.Join(", ", npcs.MissingModels.Take(8))}), {npcs.SequencesPlayed} sequences played, {npcs.SequencesMissing} sequence ids without a kf; equips: {equip.Loaded} item models applied, {equip.NoModelEntry} items without an itemmodel entry, {equip.NoAsset} without a usable asset, {equip.Failed} failed; {equip.MissingIds.Count} distinct ids missing from the local data");
+    void ReportChecks() => GD.Print($"combat: {SkillUses} skill uses ({SkillNoRow} without a skill row, {SkillAnimsPlayed} player motions played, {SkillNoKf} without a kf), {DamageNumbers} damage numbers, {npcs.Deaths} npc deaths ({npcs.NoDeathSequence} without a death sequence); effects: {combat.EffectsSpawned} parts shown, {combat.EffectsNoXml} xml missing, {combat.EffectsNoNif} nif missing, {combat.EffectsNotNif} non-nif parts skipped, {combat.EffectsWithParticles} with particle systems (not drawn: {combat.ParticleEffects.Count} distinct), {combat.EffectsFailed} failed to load");
+    void ReportChecks3() => GD.Print($"npcs: {npcs.Spawned} spawned ({npcs.NoRow} without a table row, {npcs.NoModel} without a model in the local data: {string.Join(", ", npcs.MissingModels.Take(8))}), {npcs.SequencesPlayed} sequences played, {npcs.SequencesMissing} sequence ids without a kf; equips: {equip.Loaded} item models applied, {equip.NoModelEntry} items without an itemmodel entry, {equip.NoAsset} without a usable asset, {equip.Failed} failed; {equip.MissingIds.Count} distinct ids missing from the local data");
     void ReportChecks2() => GD.Print($"replay done: {checkedActors} player checks, {mismatches} mismatches");
 }

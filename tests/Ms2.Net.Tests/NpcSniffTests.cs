@@ -15,6 +15,7 @@ public class NpcSniffTests {
         using var packs = new PackSet(data);
         var table = new NpcTable(packs);
         NpcLayout Layout(int id) { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); }
+        int dmgPk = 0, dmgRaw = 0, stats = 0; var dmgModes = new SortedDictionary<int, int>();
         int adds = 0, addsUnknownRow = 0, controls = 0, blocks = 0, removes = 0, dead = 0, bosses = 0;
         var fail = new List<string>();
         var tails = new SortedDictionary<int, int>();
@@ -32,6 +33,8 @@ public class NpcSniffTests {
                             var n = FieldAddNpc.Read(r, Layout); npcOf[n.ObjectId] = n.NpcId; adds++; if (Layout(n.NpcId).IsBoss) bosses++;
                             break;
                         }
+                        case 0x2E: if (npcOf.ContainsKey(BitConverter.ToInt32(p.Data, 0))) { NpcStat.Read(r); stats++; } break;
+                        case 0x3D: { var d = SkillDamage.Read(r); dmgModes[d.Mode] = dmgModes.GetValueOrDefault(d.Mode) + 1; if (d.Raw != null) dmgRaw++; else dmgPk++; break; }
                         case 0x56: NpcObjectId.Read(r); removes++; break;
                         case 0x57: NpcObjectId.Read(r); dead++; break;
                         case 0x58: {
@@ -45,6 +48,7 @@ public class NpcSniffTests {
             }
         }
         TestContext.Out.WriteLine($"FieldAddNpc {adds} decoded ({bosses} bosses), {addsUnknownRow} with an npc id missing from the local table; remove {removes}, dead {dead}; NpcControl {controls} packets, {blocks} blocks; failures {fail.Count}");
+        TestContext.Out.WriteLine($"npc stat packets {stats}; SkillDamage {dmgPk} decoded, {dmgRaw} raw modes; modes: " + string.Join(" ", dmgModes.Select(k => $"{k.Key}:{k.Value}")));
         TestContext.Out.WriteLine("block tail lengths: " + string.Join(" ", tails.Select(k => $"{k.Key}:{k.Value}")));
         foreach (var s in fail.Where(s => s != null)) TestContext.Out.WriteLine("FAIL " + s);
         Assert.That(fail, Is.Empty);

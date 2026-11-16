@@ -16,6 +16,8 @@ public sealed class NpcRow
     public string[] IdleActions = Array.Empty<string>();
     public string[] MoveActions = Array.Empty<string>();
     public int Gender;
+    public float CapsuleHeight = 150f;
+    public string Name;                      // from string/en/npcname.xml (or kr), null when absent
 
     /// <summary>CNpcData::IsBoss: friendly 0 and class 3 or more.</summary>
     public bool IsBoss => Friendly == 0 && Class >= 3;
@@ -52,11 +54,26 @@ public sealed class NpcTable
                     Scale = Flt(model, "scale", 1f),
                     WalkSpeed = Flt(model, "walkSpeed", 0),
                     RunSpeed = Flt(model, "runSpeed", 0),
+                    CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
                 };
                 var normal = env.Element("normal");
                 row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
                 rows[id] = row;
             }
+        }
+        LoadNames(packs);
+    }
+
+    /// <summary>Fills the row names from the string table.</summary>
+    void LoadNames(PackSet packs)
+    {
+        foreach (var lang in new[] { "en", "kr" })
+        {
+            string entry = $"string/{lang}/npcname.xml";
+            if (!packs.Exists("Xml", entry)) continue;
+            var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+            foreach (var k in x.Descendants("key"))
+                if (int.TryParse((string)k.Attribute("id"), out int id) && rows.TryGetValue(id, out var row) && row.Name == null) row.Name = (string)k.Attribute("name");
         }
     }
 

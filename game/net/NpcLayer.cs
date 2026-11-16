@@ -27,7 +27,9 @@ public sealed class NpcLayer
         public Node3D Root, Visual; public AnimationPlayer Player; public Model Model;
         public int NpcId, Life, Moves;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
-        public bool Placeholder;
+        public bool Placeholder, Dead;
+        public float Height = 150;
+        public ShaderMaterial HpMat;
     }
 
     readonly PackSet packs; readonly ModelBuilder mb; readonly NpcTable table; readonly Node3D parent;
@@ -37,6 +39,8 @@ public sealed class NpcLayer
     public int Spawned, NoRow, NoModel, SequencesPlayed, SequencesMissing;
     public readonly HashSet<string> MissingModels = new();
     public int Count => inst.Count;
+    public CombatLayer Combat;
+    public int Deaths, NoDeathSequence;
 
     // kfm name (lower case) -> its entry in the Npc pack; the folder layout differs by id range (NN/NN/NNNNNNNN or NN/NNNNNNNN)
     readonly Dictionary<string, string> kfmEntries = new();
@@ -123,8 +127,15 @@ public sealed class NpcLayer
             i.Visual = new MeshInstance3D { Mesh = new CapsuleMesh { Radius = 30, Height = 120 }, Position = new Godot.Vector3(0, 60, 0) };
             root.AddChild(i.Visual);
         }
+        i.Height = row.CapsuleHeight * row.Scale;
         parent.AddChild(root);
         root.Position = i.Target;
+        if (Combat != null)
+        {
+            bool friendly = row.Friendly != 0;
+            Combat.NameTag(root, row.Name ?? row.Kfm, i.Height, friendly ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.85f, 0.6f));
+            if (n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health) { i.HpMat = Combat.HpBar(root, i.Height); i.HpMat.SetShaderParameter("fill", (float)n.Stats[2].Health / n.Stats[0].Health); }
+        }
         if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
@@ -157,10 +168,50 @@ public sealed class NpcLayer
         }
     }
 
+    public (Node3D root, float height, float yaw)? Info(int id) =>
+        inst.TryGetValue(id, out var i) ? (i.Root, i.Height, i.Placeholder ? 0 : i.Visual.Rotation.Y) : null;
+
+    /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.</summary>
+    public void PlaySequence(int id, string name)
+    {
+        if (!inst.TryGetValue(id, out var i) || i.Model == null || i.Dead) return;
+        var seq = i.Model.Kfm.ByName(name);
+        if (seq != null) Play(i, seq.Id);
+    }
+
+    /// <summary>An hp update: draws the bar once the npc is hurt; at 0 the death sequence plays and the body stays until it is removed.</summary>
+    public void SetHp(int id, long cur, long max)
+    {
+        if (!inst.TryGetValue(id, out var i) || max <= 0) return;
+        if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
+        i.HpMat?.SetShaderParameter("fill", Mathf.Clamp((float)cur / max, 0f, 1f));
+        if (cur <= 0 && !i.Dead)
+        {
+            i.Dead = true; Deaths++;
+            if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
+            if (i.Model == null) return;
+            KfmFile.Sequence seq = null; Godot.Animation a = null;
+            foreach (var cand in new[] { "Dead_A", "Dead_B" }.Select(n => i.Model.Kfm.ByName(n)).Concat(i.Model.Kfm.Sequences.Where(q => q.Name.StartsWith("Dead", StringComparison.OrdinalIgnoreCase))))
+            {
+                if (cand == null) continue;
+                a = Anim(i.Model, cand.Id);
+                if (a != null) { seq = cand; break; }
+            }
+            if (a == null) { NoDeathSequence++; return; }
+            a.LoopMode = Godot.Animation.LoopModeEnum.None;
+            string name = $"s{seq.Id}";
+            var lib = i.Player.GetAnimationLibrary("");
+            if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
+            i.Player.Play(name, 0.1);
+            i.Playing = name; i.Sequence = seq.Id;
+        }
+    }
+
     public void Move(Ms2.Net.Replay.NpcMovedEvent e)
     {
         var b = e.Sync;
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
+        if (i.Dead) { i.Target = G(b.Position.ToVector3()); i.Moves++; return; }       // a dead body keeps its last frame
         i.Target = G(b.Position.ToVector3());
         if (b.Rotates) i.TargetYaw = b.RotationZ;
         i.Moves++;
