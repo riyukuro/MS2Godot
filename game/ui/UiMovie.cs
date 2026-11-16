@@ -54,6 +54,15 @@ public sealed class UiMovie
             }, assets);
     }
 
+    readonly Dictionary<string, UiMovie> externals = new();
+
+    /// <summary>Another movie of the pack loaded whole, for symbols a dialog looks up by name at run time (getDefinitionByName).</summary>
+    public UiMovie External(string name)
+    {
+        if (!externals.TryGetValue(name, out var m)) externals[name] = m = Assets.Movie(name);
+        return m;
+    }
+
     public double Fps => Scope.Layout["fps"] == null ? 30 : (double)Scope.Layout["fps"];
     public double StageWidth => (double)Scope.Layout["stage"]["width"];
     public double StageHeight => (double)Scope.Layout["stage"]["height"];

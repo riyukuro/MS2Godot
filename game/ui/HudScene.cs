@@ -1,5 +1,7 @@
 using Godot;
+using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 
 namespace Ms2Godot.Ui;
 
@@ -17,7 +19,7 @@ public partial class HudScene : Node
     MovieClipNode chat; TextInputWidget chatInput; Label chatLog;
     string shotDir; int frames;
     float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
-    SubViewport mapView; Camera3D mapCam; Node3D player; Control uiRoot;
+    Player player; Control uiRoot;
 
     public override void _Ready()
     {
@@ -37,6 +39,7 @@ public partial class HudScene : Node
         u = UiScale.For(window); stage = UiScale.Stage(window);
 
         Minimap(uiRoot);
+        NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
         Chat(uiRoot);
         Quests(uiRoot);
@@ -61,53 +64,151 @@ public partial class HudScene : Node
     void UpperHud(Control ui)
     {
         var r = Place(ui, "uiupperhuddialog", 1f, Vector2.Zero);
+        // the constructor hides the effects, version and game pad buttons; the client shows one of the game pad pair and the
+        // keyboard/mouse mode pair, and no PC bang buttons outside PC bangs
         Hide(r, "m_searchInput", "m_version", "m_eventText", "m_searchDungeon", "m_pcBangButton", "m_pcBangButtonCn1", "m_pcBangButtonCn2", "m_effectMerat", "m_effectTokenPocket",
-            "m_effectHotTime", "m_gamePadOn", "m_gamePadOff", "m_mouseMode", "m_searchButton");
+            "m_effectHotTime", "m_gamePadOn", "m_mouseMode");
         var bar = r.FindClip("m_noticeButton");
         bar.FindClip("m_time")?.SetNamedText("timeText", DateTime.Now.ToString("HH:mm"));
         bar.FindClip("m_meso")?.SetNamedText("mesoText", data.Mesos.ToString());
         bar.FindClip("m_marat")?.SetNamedText("maratText", data.Merets.ToString());
+        if (bar.FindClip("m_maidStatusButton") is { } maid) { maid.GotoLabel("up"); maid.HideNamed("badge"); }   // the count badge shows only with waiting maid messages
+        ArrangeUpperHud(bar);
     }
 
-    // ---- minimap: the field seen from above, rendered into the frame -------------------------------------------
+    /// <summary>UpperHudDialog.arrangePos: each visible control follows the previous one, by its width (+10) or by a fixed step (+32).</summary>
+    static void ArrangeUpperHud(MovieClipNode d)
+    {
+        MovieClipNode.Child prev = d.Direct("m_time");
+        bool Visible(MovieClipNode.Child c) => c != null && c.Last >= 0 && c.Node.Visible;
+        void AfterWidth(string name, int gap)
+        {
+            var c = d.Direct(name);
+            if (!Visible(c) || prev == null) return;
+            d.SetChildX(c, prev.Base.Origin.X + d.ChildWidth(prev, true) + gap); prev = c;
+        }
+        void After(string name, int gap, bool always = false)
+        {
+            var c = d.Direct(name);
+            if (c == null || prev == null || (!always && !Visible(c))) return;
+            d.SetChildX(c, prev.Base.Origin.X + gap); prev = c;
+        }
+        AfterWidth("m_meso", 10);
+        AfterWidth("m_marat", 10);
+        AfterWidth("m_tokenPocketButton", 10);
+        After("m_maidStatusButton", 32, true);
+        After("m_fishingBookButton", 32, true);
+        After("m_keyboardGuideButton", 32, true);
+        After("m_keyboardMode", 32);
+        After("m_gamePadOff", 32);
+        After("m_searchButton", 32, true);
+    }
+
+    // ---- minimap: the field's illustrated map image, centred on the player ---------------------------------------
+
+    MinimapInfo mapInfo; Control mapClip; TextureRect mapImage; MovieClipNode mapPlayer;
+    static readonly Vector2 MapMaskPos = new(2, 82), MapMaskSize = new(288, 222);   // the movie's map area (m_mask) in movie units
+    const float MapZoom = 1f;       // MinimapDialog m_zoom (0.5 .. 1.5): movie units per image pixel in player-centred mode
 
     void Minimap(Control ui)
     {
         var origin = new Vector2(stage.X - 295, 0);            // the panel's right edge (movie x 295) sits on the stage's right edge
-        // the client's MiniMapViewport renders the field from above into a texture; here a second camera does the same
-        mapView = new SubViewport { Size = new Vector2I((int)(288 * u), (int)(222 * u)), RenderTargetUpdateMode = SubViewport.UpdateMode.Once, TransparentBg = false, HandleInputLocally = false };
-        mapCam = new Camera3D { Projection = Camera3D.ProjectionType.Orthogonal, Size = 2600, Near = 1, Far = 20000, Current = true };
-        mapView.AddChild(mapCam);
-        AddChild(mapView);
-        var tex = new TextureRect { Texture = mapView.GetTexture(), Position = (origin + new Vector2(2, 82)) * u, Size = new Vector2(288, 222) * u, ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, MouseFilter = Control.MouseFilterEnum.Ignore };
-        ui.AddChild(tex);
+        // MinimapDialog loads Image/map/minimap/<field>.dds into m_field under m_mask and keeps the player at the mask's centre;
+        // the client places entities with the projection from mapxblock/<xblock>.xml <minimap>
+        try
+        {
+            var x = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{FieldName()}.xml")));
+            mapInfo = MinimapInfo.Parse(x);
+        }
+        catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
+        var tex = mapInfo == null ? null : assets.ImageFile(mapInfo.ImageEntry);
+        if (tex != null)
+        {
+            mapClip = new Control { Position = (origin + MapMaskPos) * u, Size = MapMaskSize * u, ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore };
+            mapImage = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, Texture = tex, Size = tex.GetSize() * MapZoom * u, MouseFilter = Control.MouseFilterEnum.Ignore };
+            mapClip.AddChild(mapImage);
+            ui.AddChild(mapClip);
+        }
         var r = Place(ui, "uiminimapdialog", 1f, origin);
-        Hide(r, "m_players", "m_controller", "m_resize", "m_sliderani", "m_panel", "m_mask");
+        Hide(r, "m_controller", "m_resize", "m_sliderani", "m_panel", "m_mask", "m_report");    // m_report: reportVisible is off in the reference
         r.FindClip("m_channel")?.SetText($"Ch. {data.Player.Channel}");
         r.FindClip("m_fieldname")?.SetText(data.FieldName);
+        if (tex != null)
+        {
+            mapPlayer = r.Movie.BuildClass("minimap_entity_player", u);
+            if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); }
+        }
     }
 
-    Node3D FindPlayer(Node n)
+    /// <summary>
+    /// UILevelUpPackageWidgetDialog ("Navigator"): an event widget (uieventwidgetdialog) docked by table/alignwidget.xml at the
+    /// top right, offsetX -298, i.e. its right edge on the minimap's left edge. setData: title, reward slot, gauge or reward button.
+    /// </summary>
+    void NavigatorWidget(Control ui)
+    {
+        var r = Place(ui, "uieventwidgetdialog", 1f, Vector2.Zero);
+        var box = r.ContentRect() ?? new Rect2(0, 0, 89, 114);      // the movie draws the dialog mid-stage; dock its box instead
+        r.Position = (new Vector2(stage.X - 298, 0) - new Vector2(box.End.X, box.Position.Y)) * u;
+        var dlg = r.AllClips().FirstOrDefault(c => c.Direct("m_title") != null) ?? r;     // the EventWidgetDialog instance
+        dlg.SetNamedText("m_title", assets.Str("$s_levelup_package_widget"));
+        bool ready = data.NavigatorRewardReady;
+        dlg.SetNamedVisible("m_rewardBtn", ready);
+        dlg.SetNamedVisible("m_effect", ready);
+        dlg.SetNamedVisible("m_gageBar", !ready);
+        var slot = r.FindClip("m_slot");
+        var icon = assets.ImageFile($"item/icon/{data.NavigatorRewardItem}.png");
+        if (slot != null && icon != null)
+        {
+            var b = slot.ContentRect() ?? new Rect2(0, 0, 60, 60);
+            var spr = new Sprite2D { Texture = icon, Centered = false, Position = b.Position, Scale = b.Size / icon.GetSize() };
+            slot.AddChild(spr);
+            if (data.NavigatorRewardCount > 0)
+            {
+                var count = new Label { Text = data.NavigatorRewardCount.ToString(), Position = b.Position + new Vector2(b.Size.X - 20, b.Size.Y - 16), Size = new Vector2(18, 14), HorizontalAlignment = HorizontalAlignment.Right };
+                count.AddThemeFontSizeOverride("font_size", 12);
+                count.AddThemeColorOverride("font_outline_color", Colors.Black); count.AddThemeConstantOverride("outline_size", 3);
+                slot.AddChild(count);
+            }
+        }
+    }
+
+    static string FieldName()
+    {
+        var args = OS.GetCmdlineUserArgs();
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--field") return args[i + 1];
+        return "02000001_tw_tria";
+    }
+
+    Player FindPlayer(Node n)
     {
         if (n is Player p) return p;
         foreach (var c in n.GetChildren()) { var f = FindPlayer(c); if (f != null) return f; }
         return null;
     }
 
+    static Vec3 ToMs2(Vector3 g) => new(g.X, -g.Z, g.Y);
+
     void UpdateMinimap()
     {
-        if (player == null) { player = FindPlayer(this); if (player == null) return; mapView.World3D = GetViewport().World3D; }
-        var p = player.GlobalPosition;
-        mapCam.GlobalPosition = new Vector3(p.X, p.Y + 6000, p.Z);
-        mapCam.RotationDegrees = new Vector3(-90, 0, 0);
-        mapView.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;       // refreshed a few times a second, not every frame
+        if (player == null) { player = FindPlayer(this); if (player == null) return; }
+        var size = mapImage.Texture.GetSize();
+        var p = ToMs2(player.GlobalPosition);
+        var (pu, pv) = mapInfo.ToImage(p);
+        var px = new Vector2((float)pu, (float)pv) * size * MapZoom;           // player in movie units on the scaled image
+        mapImage.Position = (MapMaskSize / 2 - px) * u;
+        if (mapPlayer != null && player.Visual != null)
+        {
+            var (fu, fv) = mapInfo.ToImage(ToMs2(player.GlobalPosition + player.Visual.GlobalBasis.Z * 100));
+            var d = new Vector2((float)(fu - pu), (float)(fv - pv)) * size;
+            if (d.LengthSquared() > 1e-6f) mapPlayer.Rotation = Mathf.Atan2(d.X, -d.Y);       // the arrow art points up
+        }
     }
 
     // ---- chat ---------------------------------------------------------------------------------------------------
 
     void Chat(Control ui)
     {
-        const float f = 0.8f;
+        const float f = 1f;
         var origin = new Vector2(10 - 319 * f, stage.Y - 20 - 402 * f);
         chat = Place(ui, "uimessengerdialog", f, origin);
         Hide(chat, "m_chatEmoticonPreview", "m_superEffect", "m_resize", "m_textOutputMask", "m_textBgColor");
@@ -169,7 +270,7 @@ public partial class HudScene : Node
 
     void Orb(Control ui)
     {
-        const float f = 1.2f;
+        const float f = 1f;
         var r = Place(ui, "uimainplayerinfo", f, new Vector2(stage.X / 2 - 507 * f, stage.Y - 548 * f - 24));
         Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_effect", "m_penalty", "m_hpWarning", "m_job", "m_infinity", "infinity", "m_message", "m_tag", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
         r.FindClip("m_playerInfo")?.GotoLabel("stat_show");          // the stat orb fades in with this label
@@ -235,24 +336,40 @@ public partial class HudScene : Node
     void GameMenu(Control ui)
     {
         var r = Place(ui, "uigamemenudialog", 1f, new Vector2(stage.X - 1182, stage.Y - 600));
-        // the client fills m_menus from the menu table and loads each icon as an image at run time; here the labels sit on flat stand-in tiles
-        string[] labels = { "Character", "Adventure", "Lifestyle", "Community", "Home", "Menu" };
-        Color[] tints = { new(0.9f, 0.5f, 0.2f), new(0.4f, 0.6f, 0.9f), new(0.8f, 0.8f, 0.9f), new(0.3f, 0.6f, 0.9f), new(0.9f, 0.3f, 0.3f), new(0.8f, 0.7f, 0.5f) };
-        var font = assets.FontFor("$Font_SD_Neo_3");
-        float tile = 44 * u, gap = 44 * u;
-        float x0 = (stage.X - 20) * u - labels.Length * (tile + gap), y0 = (stage.Y - 100) * u;
-        for (int i = 0; i < labels.Length; i++)
+        // configUI hides the quest and pet attack buttons; no pet (initPetInfo) and no contract (initContract(true)) for now
+        Hide(r, "m_quest", "m_petInfo", "m_petAttack", "m_contract");
+        var menus = r.FindClip("m_menus");
+        if (menus == null) return;
+        // RefreshMenu -> addMenuEntity per top item; SystemDropDownContainer.addEntity builds the entry class, sets the icon
+        // (getDefinitionByName("export_common_menu_" + layerName) into m_layerBtn and m_layerEffect) and the caption tag
+        foreach (var item in GameMenuTable.TopItems(assets.Table("table/gamemenu.xml"), data.Locale, f => !data.FeaturesOff.Contains(f)))
         {
-            var t = new ColorRect { Color = tints[i], Position = new Vector2(x0 + i * (tile + gap), y0), Size = new Vector2(tile, tile), MouseFilter = Control.MouseFilterEnum.Ignore };
-            ui.AddChild(t);
-            t.AddChild(new Label { Text = labels[i], Position = new Vector2(-6 * u, tile + 1), MouseFilter = Control.MouseFilterEnum.Ignore, LabelSettings = new LabelSettings { Font = font, FontSize = (int)(14 * u), FontColor = Colors.White, OutlineSize = 3, OutlineColor = new Color(0, 0, 0, 0.8f) } });
+            var entry = r.Movie.BuildClass(item.Group ? "UIGameMenuDialog_group" : "UIGameMenuDialog_menu", u);
+            if (entry == null) continue;
+            entry.Name = item.Name;
+            entry.Position = new Vector2(item.Col * 56, 120 - item.Row * 60);
+            menus.AddChild(entry);
+            var btn = entry.FindClip("m_button");
+            if (btn != null)
+            {
+                btn.GotoLabel("up");
+                Hide(btn, "m_notifyUp", "m_notifyCount", "m_notifyNew", "m_notifyRedCircle", "m_eventPopup", "m_hitArea");
+                foreach (var layer in new[] { "m_layerBtn", "m_layerEffect" })
+                {
+                    var holder = btn.FindClip(layer);
+                    if (holder == null) continue;
+                    foreach (var n in holder.GetChildren()) n.QueueFree();
+                    if (assets.Common.BuildClass("export_common_menu_" + item.Name, u) is { } icon) holder.AddChild(icon);
+                }
+            }
+            entry.SetNamedText("tag", assets.Str(item.Caption));
         }
     }
 
     int tick;
     public override void _Process(double delta)
     {
-        if (mapView != null && ++tick % 30 == 1) UpdateMinimap();
+        if (mapImage != null && ++tick % 6 == 1) UpdateMinimap();
         if (shotDir == null) return;
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (++frames == 300)

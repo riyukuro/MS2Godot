@@ -52,6 +52,25 @@ public sealed class UiAssets
 
     public UiAssets(PackSet packs) { Packs = packs; }
 
+    readonly Dictionary<string, UiMovie> movies = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A movie loaded once and shared (library movies such as commonresource).</summary>
+    public UiMovie Movie(string name)
+    {
+        if (!movies.TryGetValue(name, out var m)) movies[name] = m = new UiMovie(this, name);
+        return m;
+    }
+
+    /// <summary>The shared runtime library every dialog can instantiate classes from (commonresource.gfx).</summary>
+    public UiMovie Common => Movie("commonresource");
+
+    /// <summary>A table XML from the Xml pack, e.g. "table/gamemenu.xml" (null when absent).</summary>
+    public System.Xml.Linq.XDocument Table(string entry)
+    {
+        try { return System.Xml.Linq.XDocument.Load(new MemoryStream(Packs.Read("Xml", entry))); }
+        catch (Exception e) { GD.PushWarning($"UI table {entry}: {e.Message}"); return null; }
+    }
+
     public JsonObject LoadLayout(string movie)
     {
         var entry = movie.EndsWith(".gfx") ? movie : movie + ".gfx";
@@ -81,6 +100,30 @@ public sealed class UiAssets
         catch (Exception e) { GD.PushWarning($"UI atlas {file}: {e.Message}"); }
         if (tex == null) GD.PushWarning($"UI atlas {file} not available");
         textures[file] = tex;
+        return tex;
+    }
+
+    /// <summary>A DDS or PNG from Resource/Image.m2d, e.g. "map/minimap/02000001.dds" (null when absent).</summary>
+    public Texture2D ImageFile(string entry)
+    {
+        if (string.IsNullOrEmpty(entry)) return null;
+        var key = "image:" + entry;
+        if (textures.TryGetValue(key, out var t)) return t;
+        Texture2D tex = null;
+        try
+        {
+            var name = Packs.Exists("Resource/Image", entry) ? entry : Packs.FindByFileName("Resource/Image", System.IO.Path.GetFileName(entry));
+            if (name != null)
+            {
+                var bytes = Packs.Read("Resource/Image", name);
+                Image img;
+                if (name.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) { img = new Image(); if (img.LoadPngFromBuffer(bytes) != Error.Ok) img = null; }
+                else img = DdsLoader.Load(bytes);
+                if (img != null) tex = ImageTexture.CreateFromImage(img);
+            }
+        }
+        catch (Exception e) { GD.PushWarning($"image {entry}: {e.Message}"); }
+        textures[key] = tex;
         return tex;
     }
 

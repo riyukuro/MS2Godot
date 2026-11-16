@@ -263,6 +263,20 @@ public static class LayoutJson
                     };
                     live[p.Depth] = o; all.Add(o);
                 }
+                else if (p.ClassName != null && !p.Move)
+                {
+                    // PlaceObject3 by class name only: an instance of a class the movie gets at run time (often from a shared
+                    // library such as commonresource), e.g. the game menu's icon layer "m_layerBtn" of class export_common_menu
+                    if (live.Remove(p.Depth, out var old)) old["last"] = f - 1;
+                    var o = new JsonObject
+                    {
+                        ["depth"] = p.Depth, ["id"] = null, ["name"] = p.Name, ["class"] = p.ClassName, ["first"] = f, ["kind"] = "class",
+                        ["matrix"] = Mx(p.Matrix), ["color"] = Cx(p.Color), ["clipDepth"] = p.ClipDepth, ["ratio"] = p.Ratio,
+                        ["blend"] = p.BlendMode, ["visible"] = p.Visible, ["cacheAsBitmap"] = p.CacheAsBitmap,
+                        ["filters"] = Filters(p.Filters),
+                    };
+                    live[p.Depth] = o; all.Add(o);
+                }
                 else if (live.TryGetValue(p.Depth, out var cur))
                 {
                     // property change of an existing child

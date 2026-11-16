@@ -208,4 +208,24 @@ public partial class TextNode : Node2D
     }
 
     public string Text { get => Label.Text; set => Label.Text = value ?? ""; }
+
+    /// <summary>Width of the current text in the field's own units (AS3 textWidth).</summary>
+    public float TextWidth => Label.LabelSettings.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, Label.LabelSettings.FontSize).X * Label.Scale.X;
+
+    /// <summary>Applies a glow or drop shadow filter as a text outline (flash text in the HUD is mostly drawn with a dark glow).</summary>
+    public void ApplyFilters(JsonNode filters, float scale)
+    {
+        if (filters is not JsonArray fa) return;
+        foreach (var f in fa)
+        {
+            var type = (string)f["type"];
+            if (type is not ("glow" or "dropShadow")) continue;
+            var col = UiBuilder.ParseColor((string)f["color"], Colors.Black);
+            float blur = Math.Max(UiBuilder.F(f["blurX"], 2), UiBuilder.F(f["blurY"], 2));
+            var ls = (LabelSettings)Label.LabelSettings.Duplicate();
+            if (type == "glow") { ls.OutlineSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 4) * scale)); ls.OutlineColor = col; }
+            else { ls.ShadowColor = col; ls.ShadowOffset = new Vector2(1, 1); ls.ShadowSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 3) * scale)); }
+            Label.LabelSettings = ls;
+        }
+    }
 }

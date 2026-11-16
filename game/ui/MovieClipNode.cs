@@ -81,6 +81,26 @@ public partial class MovieClipNode : Node2D
         if (timeline?["labels"] is JsonArray ls) foreach (var l in ls) Labels.TryAdd((string)l["name"], (int)l["frame"]);
     }
 
+    /// <summary>SWF blend modes on a placed child: add / screen / lighten draw additively, multiply and subtract as Godot's; the rest normally.</summary>
+    static void ApplyBlend(Node node, int mode)
+    {
+        CanvasItemMaterial.BlendModeEnum? b = mode switch
+        {
+            3 => CanvasItemMaterial.BlendModeEnum.Mul,
+            4 or 5 or 8 => CanvasItemMaterial.BlendModeEnum.Add,
+            9 => CanvasItemMaterial.BlendModeEnum.Sub,
+            _ => null,
+        };
+        if (b == null) return;
+        var mat = new CanvasItemMaterial { BlendMode = b.Value };
+        void Set(Node n)
+        {
+            if (n is CanvasItem ci && ci.Material == null) ci.Material = mat;
+            foreach (var ch in n.GetChildren()) Set(ch);
+        }
+        Set(node);
+    }
+
     public bool IsA(string cls) => ClassName == cls || Bases.Contains(cls);
 
     public void Build()
@@ -101,7 +121,7 @@ public partial class MovieClipNode : Node2D
                     nine9 = true;
                     m = new Transform2D(Vector2.Right, Vector2.Down, m.Origin);
                 }
-                else if (id < 0) node = Movie.BuildClass((string)c["class"], sx * csx, sy * csy);   // placed by class name (an imported library symbol)
+                else if (id < 0) node = Movie.BuildClass((string)c["class"], sx * csx, sy * csy) ?? Movie.Assets.Common.BuildClass((string)c["class"], sx * csx, sy * csy) ?? new MovieClipNode(Movie, Scope, null, null, sx * csx, sy * csy) { ClassName = (string)c["class"] };   // placed by class name (an imported library symbol)
                 else node = UiBuilder.Build(Movie, Scope, id, sx * csx, sy * csy, nine?.At(nine.Offset + m.Origin));
                 if (node == null) continue;
                 var child = new Child
@@ -131,7 +151,13 @@ public partial class MovieClipNode : Node2D
                 }
                 else if (group != null) group.Inner.AddChild(node);
                 else AddChild(node);
-                if (node is MovieClipNode mc) UiWidgets.Attach(mc);
+                if (node is MovieClipNode mc)
+                {
+                    UiWidgets.Attach(mc);
+                    if (c["filters"] != null) foreach (var sub in mc.AllClips()) foreach (var ch2 in sub.Children) if (ch2.Node is TextNode t2) t2.ApplyFilters(c["filters"], (float)(sy * csy));
+                }
+                else if (node is TextNode tn && c["filters"] != null) tn.ApplyFilters(c["filters"], (float)(sy * csy));
+                if (c["blend"] != null) ApplyBlend(node, (int)c["blend"]);
             }
         GotoFrame(0);
     }
@@ -238,6 +264,52 @@ public partial class MovieClipNode : Node2D
     }
 
     public void SetText(string text) { foreach (var t in TextFields) t.Text = text; }
+
+    /// <summary>A direct child by instance name.</summary>
+    public Child Direct(string name) => Children.FirstOrDefault(c => c.Name == name);
+
+    /// <summary>Moves a direct child's registration point to <paramref name="x"/> (AS3 child.x = x).</summary>
+    public void SetChildX(Child c, float x)
+    {
+        if (c == null) return;
+        var b = c.Base; c.Base = new Transform2D(b.X, b.Y, new Vector2(x, b.Origin.Y));
+        GotoFrame(Frame);
+    }
+
+    /// <summary>
+    /// The bounding box of what is shown at the current frame, in this clip's coordinates (AS3 getBounds(this)).
+    /// With <paramref name="fitText"/> text fields count only as wide as their text plus the 2 px gutters (autoSize).
+    /// </summary>
+    public Rect2? ContentRect(bool fitText = false)
+    {
+        Rect2? r = null;
+        foreach (var c in Children)
+        {
+            if (!(Frame >= c.First && Frame <= c.Last) || !c.Node.Visible || c.IsMask) continue;
+            Rect2? local = c.Node switch
+            {
+                MovieClipNode mc => mc.ContentRect(fitText),
+                TextNode t => fitText ? new Rect2(t.Bounds.Position, new Vector2(t.TextWidth + 4, t.Bounds.Size.Y)) : t.Bounds,
+                _ => c.Def["id"] != null && Scope.Symbol((int)c.Def["id"]) is { } sym ? UiBuilder.Rc(sym["bounds"]) : null,
+            };
+            if (local == null) continue;
+            var xf = c.Node.Transform; var b = local.Value;
+            foreach (var p in new[] { xf * b.Position, xf * new Vector2(b.End.X, b.Position.Y), xf * new Vector2(b.Position.X, b.End.Y), xf * b.End })
+                r = r == null ? new Rect2(p, Vector2.Zero) : r.Value.Expand(p);
+        }
+        return r;
+    }
+
+    /// <summary>A direct child's width as AS3 reports it (bounding box in this clip's coordinates).</summary>
+    public float ChildWidth(Child c, bool fitText = false)
+    {
+        if (c?.Node is MovieClipNode mc && mc.ContentRect(fitText) is { } b)
+        {
+            var xf = new Transform2D(c.Node.Transform.X, c.Node.Transform.Y, Vector2.Zero);
+            return Math.Abs((xf * b.End).X - (xf * b.Position).X);
+        }
+        return c?.Node is TextNode t ? (fitText ? t.TextWidth + 4 : t.Bounds.Size.X) : 0;
+    }
 
     public IEnumerable<MovieClipNode> AllClips()
     {
