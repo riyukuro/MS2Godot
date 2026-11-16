@@ -67,6 +67,7 @@ public partial class Field : Node3D
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
         BuildEnvironment(map, fieldName);
+        GD.Print($"MS2Godot lights: {FieldLights.Add(this, map)}");
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
         AddChild(contents);
         contents.Start(map, fieldName, player, SpawnsLocalPlayer);
@@ -168,7 +169,7 @@ public partial class Field : Node3D
         };
         AddChild(new WorldEnvironment { Environment = env });
         FieldBackdrop.Add(this, env, packs, x);
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000 };
+        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000, LightCullMask = 1u << 19 };   // the shaders apply the sun themselves
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);

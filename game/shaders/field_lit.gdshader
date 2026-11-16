@@ -7,7 +7,8 @@
 // ambient and diffuse. Vertex colours come in CUSTOM0 and replace both when the NIF's
 // NiVertexColorProperty says so. A glow map adds its colour on top. ModelBuilder compiles this three
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
-// (src alpha / one); both blended forms skip the depth write. No cast shadows yet.
+// (src alpha / one); both blended forms skip the depth write. The opaque form is also lit by the field's point and spot
+// lights (FieldLights) through Godot's own lighting; the blended forms are not. No cast shadows yet.
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
 // evenly over flip_period, looping; a uv translation (NiTextureTransformController, translate U or V) moves linearly
 // between its first and last key over the controller's start..stop range, looping.
@@ -18,7 +19,8 @@ render_mode unshaded, blend_add, depth_draw_never;
 #ifdef BLEND
 render_mode unshaded, blend_mix, depth_draw_never;
 #else
-render_mode unshaded;
+render_mode ambient_light_disabled, specular_disabled;
+#define POINT_LIT
 #endif
 #endif
 
@@ -107,7 +109,14 @@ void fragment() {
 		c += texture(glow_tex, UV).rgb;
 	}
 	// the output is written in gamma space by Godot's linear -> sRGB conversion
+#ifdef POINT_LIT
+	// opaque: the sun and ambient stay in the term above (emission); Godot's point and spot lights add on the diffuse
+	EMISSION = to_linear(c);
+	ALBEDO = to_linear(t.rgb * dif);
+	ROUGHNESS = 1.0;
+#else
 	ALBEDO = to_linear(c);
+#endif
 #ifdef BLEND
 	ALPHA = a;
 #endif
