@@ -1,0 +1,91 @@
+using Godot;
+
+namespace Ms2Godot.Movement;
+
+/// <summary>
+/// Click to move (the client's mouse controller, option interface/EnableMouseControl, default off; it also needs feature
+/// 0xaf). Releasing the left button on a cube sets a target; the direction to it is taken once and walked straight, with
+/// no path finding. The move ends when the distance starts growing within 75 of the target, after 15 of growth in
+/// total, when a probe (every 100 ms from 75 up along the facing, 50 long) hits a cube, or on any keyboard direction.
+/// </summary>
+public partial class MouseMove : Node
+{
+    readonly Player player;
+    readonly Camera3D camera;
+    Vector3 dir;                  // world, flat, unit; zero when not moving
+    Vector3 target;
+    float lastDist, growth, probeT;
+
+    public MouseMove(Player player, Camera3D camera)
+    {
+        this.player = player;
+        this.camera = camera;
+        ProcessPhysicsPriority = -5;      // before the player reads its input
+    }
+
+    public override void _UnhandledInput(InputEvent e)
+    {
+        if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mb) return;
+        var from = camera.ProjectRayOrigin(mb.Position);
+        var to = from + camera.ProjectRayNormal(mb.Position) * 20000f;
+        var q = PhysicsRayQueryParameters3D.Create(from, to);
+        q.Exclude = new Godot.Collections.Array<Rid> { player.GetRid() };
+        var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(q);
+        if (hit.Count == 0) return;
+        var p = (Vector3)hit["position"];
+        var n = (Vector3)hit["normal"];
+        if (player.Cubes.CubeAt(p - n) == null) return;     // only cube blocks are picked
+        Go(p);
+    }
+
+    /// <summary>Starts a move to a point (Godot space).</summary>
+    public void Go(Vector3 point)
+    {
+        target = point;
+        var d = point - player.GlobalPosition;
+        d.Y = 0;
+        if (d.LengthSquared() < 1f) return;
+        dir = d.Normalized();
+        lastDist = d.Length();
+        growth = 0;
+        probeT = 0;
+    }
+
+    public bool Moving => dir != Vector3.Zero;
+
+    public override void _PhysicsProcess(double delta)
+    {
+        if (!Moving) { player.MouseInput = Vector2.Zero; return; }
+        if (MoveInput.Read().Move != Vector2.Zero) { Stop(); return; }
+        var d = target - player.GlobalPosition;
+        d.Y = 0;
+        float dist = d.Length();
+        if (dist > lastDist)
+        {
+            if (dist < MoveConfig.MouseArrive) { Stop(); return; }
+            growth += dist - lastDist;
+            if (growth > MoveConfig.MouseGiveUp) { Stop(); return; }
+        }
+        lastDist = dist;
+        probeT += (float)delta;
+        if (probeT >= MoveConfig.MouseProbeEvery && player.State is Player.MoveState.Walk or Player.MoveState.Idle)
+        {
+            probeT = 0;
+            var from = player.GlobalPosition + new Vector3(0, MoveConfig.MouseProbeUp, 0);
+            var q = PhysicsRayQueryParameters3D.Create(from, from + dir * MoveConfig.MouseProbeLen);
+            q.Exclude = new Godot.Collections.Array<Rid> { player.GetRid() };
+            var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(q);
+            if (hit.Count > 0 && player.Cubes.CubeAt((Vector3)hit["position"] - (Vector3)hit["normal"]) != null) { Stop(); return; }
+        }
+        // the world direction as camera relative input
+        var fwd = new Vector3(-Mathf.Sin(player.CameraYaw), 0, -Mathf.Cos(player.CameraYaw));
+        var right = new Vector3(-fwd.Z, 0, fwd.X);
+        player.MouseInput = new Vector2(dir.Dot(right), dir.Dot(fwd));
+    }
+
+    void Stop()
+    {
+        dir = Vector3.Zero;
+        player.MouseInput = Vector2.Zero;
+    }
+}

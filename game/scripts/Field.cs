@@ -73,7 +73,13 @@ public partial class Field : Node3D
         AddChild(contents);
         contents.Start(map, fieldName, player, SpawnsLocalPlayer);
         var hdr = new FieldHdr();
-        try { var fd = FieldData.FindByXBlock(packs, fieldName); cam = fd?.Camera ?? cam; hdr = fd?.Hdr ?? hdr; }
+        try
+        {
+            var fd = FieldData.FindByXBlock(packs, fieldName);
+            cam = fd?.Camera ?? cam;
+            hdr = fd?.Hdr ?? hdr;
+            if (player != null && fd != null) player.CheckClimb = fd.CheckClimb;
+        }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         camDist = cam.Distance;
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
@@ -81,7 +87,7 @@ public partial class Field : Node3D
         var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale };
         camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
         AddChild(camera);
-        if (player != null) UpdateCamera();
+        if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         OnFieldBuilt(builder, map, fieldName);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
         NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // F9 / --nav: navmesh overlay
@@ -190,11 +196,14 @@ public partial class Field : Node3D
         player = Player.Create(visual, anim);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
         player.Climbs = Movement.Climbables.From(map);
+        player.Cubes = Movement.CubeGrid.From(map);
+        Movement.MoveConfig.LoadConstants(packs);
         player.Gravity = Movement.MoveConfig.FieldGravity(map);
         var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC")
               ?? map.Entities.FirstOrDefault(e => e.ModelName.StartsWith("SpawnPointPC"));
         var pos = sp?.Position ?? new Vec3(0, 0, 0);
         player.SpawnPoint = FieldBuilder.ToGodotPoint(pos) + new Vector3(0, 5, 0);
+        player.FallReturnY = (map.Entities.Count > 0 ? (float)map.Entities.Min(e => e.Position.Z) : player.SpawnPoint.Y) - 1500f;
         AddChild(player);
         player.GlobalPosition = player.SpawnPoint;
         // spawn facing: the model's forward is MS2 -Y, turned by the spawn point's Z rotation
@@ -202,6 +211,25 @@ public partial class Field : Node3D
         var face = FieldBuilder.ToGodotPoint(new Vec3(Math.Sin(yaw), -Math.Cos(yaw), 0));
         player.Face(face);
         GD.Print($"spawn {sp?.Name} ms2 {pos} -> godot {player.SpawnPoint}");
+    }
+
+    /// <summary>
+    /// Command line movement options, all off by default as in the client: --mouse-move (interface/EnableMouseControl),
+    /// --gamepad (gamepad/bGamePadUse), --ride RIDING_ID (get on a mount, as a RideOnAction would).
+    /// </summary>
+    void AttachMovementOptions(ModelBuilder builder)
+    {
+        var args = OS.GetCmdlineUserArgs();
+        for (int i = 0; i < args.Length; i++)
+        {
+            if (args[i] == "--mouse-move") AddChild(new Movement.MouseMove(player, camera) { Name = "MouseMove" });
+            if (args[i] == "--gamepad") Movement.MoveInput.GamePad = true;
+            if (args[i] == "--ride" && i + 1 < args.Length && int.TryParse(args[i + 1], out int ride))
+            {
+                try { player.RideOn(Mount.Load(packs, builder, ride)); GD.Print($"riding {ride}"); }
+                catch (Exception ex) { GD.PushWarning($"ride {ride}: {ex.Message}"); }
+            }
+        }
     }
 
     /// <summary>

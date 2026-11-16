@@ -63,7 +63,7 @@ public partial class FootstepSounds : Node
     {
         string name = anim.CurrentAnimation.ToString();
         var speed = new Vector2(body.Velocity.X, body.Velocity.Z).Length();
-        bool moving = speed > 10 && (name.Contains("run") || name.Contains("walk")) && (OnFloor?.Invoke() ?? body.IsOnFloor());
+        bool moving = speed > 10 && !name.StartsWith("swim") && (name.Contains("run") || name.Contains("walk")) && (OnFloor?.Invoke() ?? body.IsOnFloor());
         if (!moving) { lastPos = -1; lastAnim = name; return; }
         double len = anim.CurrentAnimationLength;
         double pos = anim.CurrentAnimationPosition;

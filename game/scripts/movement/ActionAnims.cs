@@ -14,10 +14,12 @@ public sealed class ActionAnims
 {
     public enum Act
     {
-        Idle = 0, JumpDown = 2, JumpLand = 3, JumpUp = 4, JumpFall = 5,
+        Idle = 0, JumpDown = 2, JumpLand = 3, JumpUp = 4, JumpFall = 5, JumpDashDown = 6, JumpDashLand = 7,
         LadderLDown = 8, LadderRDown = 9, LadderDownLand = 10, LadderDownTake = 11, LadderIdle = 12,
         LadderLUp = 13, LadderRUp = 14, LadderUpLand = 15, LadderUpTake = 16,
-        Run = 28, Walk = 29, SpecialJumpUp = 42, SpecialJumpDown = 43,
+        ClimbIdle = 17, ClimbLUp = 18, ClimbLCenter = 19, ClimbLDown = 20, ClimbRUp = 21, ClimbRCenter = 22,
+        ClimbRDown = 23, ClimbUpLand = 24, ClimbUpTake = 25, ClimbDownLand = 26, ClimbDownTake = 27,
+        Run = 28, Walk = 29, PoleUp = 34, PoleDown = 35, PoleIdle = 36, PoleTurn = 37, PoleTake = 38, SpecialJumpUp = 42, SpecialJumpDown = 43,
         WaterIdle = 48, WaterSwim = 49, WaterDash = 50, FallDamage = 63,
     }
 
@@ -35,7 +37,7 @@ public sealed class ActionAnims
     };
 
     // sequences that cycle; the rest play once and hold their last frame
-    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle };
+    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle };
 
     readonly Dictionary<Act, string> names = new();
     public readonly Dictionary<string, KfAnimation> Kf = new();
@@ -46,7 +48,7 @@ public sealed class ActionAnims
     /// <summary>Reads the action table and loads each movement sequence the body has (female/&lt;name&gt;.kf).</summary>
     public static ActionAnims Load(PackSet packs, ModelBuilder builder, ModelData md, AnimationPlayer player, string bodyDir)
     {
-        var aa = new ActionAnims();
+        var aa = new ActionAnims { builder = builder, md = md, player = player, bodyDir = bodyDir };
         var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/pcactiondata.xml")));
         var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");
@@ -72,6 +74,28 @@ public sealed class ActionAnims
             aa.names[a] = key;
         }
         return aa;
+    }
+
+    ModelBuilder builder;
+    ModelData md;
+    AnimationPlayer player;
+    string bodyDir;
+
+    /// <summary>A sequence by its name (the body's &lt;name&gt;.kf), loaded on first use; null when the body has none.</summary>
+    public string Sequence(string seq, bool loop)
+    {
+        if (string.IsNullOrEmpty(seq) || player == null) return null;
+        string key = seq.ToLowerInvariant();
+        var lib = player.GetAnimationLibrary("");
+        if (lib.HasAnimation(key)) return key;
+        KfAnimation kf;
+        try { kf = builder.LoadKf($"{bodyDir}/{key}.kf"); }
+        catch (Exception) { return null; }
+        var anim = ModelBuilder.BuildAnimation(kf, md);
+        anim.LoopMode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
+        lib.AddAnimation(key, anim);
+        Kf[key] = kf;
+        return key;
     }
 
     /// <summary>Time of a text key ("begin", "end", ...) in a sequence, or -1.</summary>

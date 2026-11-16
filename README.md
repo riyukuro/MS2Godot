@@ -157,9 +157,10 @@ Command line, for the field and the viewer:
 ## Movement
 
 `game/scripts/Player.cs` and `game/scripts/movement/` port the local player's controller and states from the
-restored client source (`src/` of the decomp tree). States: idle, walk/run, jump, fall, land, swim and ladder,
-with the action sequences of `table/pcactiondata.xml` (group 0), for example `Jump_Up_A` / `Jump_Up_B`,
-`Jump_Fall_A`, `Jump_Land_A`, `SwimRun_A`, `SwimIdle_A`, `Ladder_Up_Take_A`, `Ladder_L_Up_A`, `Ladder_R_Up_A`.
+restored client source (`src/` of the decomp tree). States: idle, walk/run, jump, fall, land, swim, ladder, rope,
+wall climb, dash and riding, with the action sequences of `table/pcactiondata.xml` (group 0), for example
+`Jump_Up_A` / `Jump_Up_B`, `Jump_Fall_A`, `Jump_Land_A`, `SwimRun_A`, `SwimIdle_A`, `Ladder_L_Up_A`, `Pole_Up_A`,
+`Climb_Up_Land_A`, `Jump_Dash_Land_A`. `Player.State` (MoveState) is public for other code (footsteps skip swimming).
 
 The client keeps PhysX in metres (FromPercent x0.01, ToPercent x100); the numbers below are game units (cm).
 
@@ -187,18 +188,33 @@ The client keeps PhysX in metres (FromPercent x0.01, ToPercent x100); the number
 | Gait rate | animation rate from speed | `client/ms2/pc.cpp:4347` (vfunc_115) |
 | Keys | moveUp 0x30d41, jump 0x493e1, walkPress 0x493ea | `guideentity_1.cpp:99`; `table/default/defaultkey.xml` |
 | Diagonal hold | 50 ms after one key is released | `unnamed/unit_141682f80.cpp:313`, `:~470` |
+| Rope | up key at a rope (models with the Rope mixin and Climbable); hold 20 from the axis, 50 above the segment base; 150 per cycle over 0.4 s after `begin`; left / right turn 2 rad/s after 0.5 s; take 0.2 s | `client/ms2/statemanager.cpp:1206-1400` (StateRope), `client/ms2/pc.cpp` FUN_141659b80 |
+| Wall climb | a side hit while descending in a jump or fall, field checkClimb; snap rays +90 along +X / +Y (58), 28 off the cube face; up / down 300, sideways 150 (ClimbVelocityV / H in `table/constants.xml`), only on MS2CubeProp cubes; over the top up 170 + forward 105 per s | `client/ms2/pc.cpp:3839` (FUN_14165b500), `client/ms2/state.cpp:994-1625` (StateClimb, ClimbOverTop `:1571`) |
+| Dash | 2000 along the facing with gravity; 600 rush, then the `Jump_Dash_Land_A` skid slowing to the `stop` key | `client/ms2/state.cpp:1767-1945` (StateDash) |
+| Riding | `riding/%08d.xml`: kfm from the Npc pack, scale, walk / run / swim speed (m/s), collision box, rideBone + rideTranslation / rideRotation seat, rideAniPC sequences; mount sequences from pcactiondata group 1001 over group 0 | `client/ms2/statemanager.cpp:1076` (StateRide), `client/ms2/rideeinterpolator.cpp:48-101` |
+| Click to move | left button up on a cube: straight line, stops within 75 when the distance grows, after 15 of growth, or a cube ahead (probe +75, 50 every 0.1 s) | `unnamed/unit_140ad1860_mousecontroller.cpp` |
+| Gamepad | left stick analog (walk at 50 % or less), bottom face button jumps | `table/default/defaultxboxkey.xml` (300001), GamePadStickMoveValue in `table/constants.xml` |
 
-Not ported, from the same source:
+Notes and gaps, from the same source:
 
 - No double jump: the client has only the A / B jump variants.
-- Dash (state 0x14) and swim dash (0x1c, SwimDashSpeed 6.4) are not recovered yet; rope (StateRope) is not ported.
-- Climbing onto ledges is skill 20000011 (`FUN_1416788d0`, field CheckClimb), not a movement state.
-- Click-to-move exists in the client (`CMouseController::GetMove`) and is not ported; the gamepad is behind
-  feature 0xb5.
+- No key starts a dash: the server's state sync or a skill does, so here `Player.StartDash()` (and the `dash` script
+  step) is the entry. Swim dash (0x1c, SwimDashSpeed 6.4) is not recovered yet.
+- Wall climbing is skill 20000011 (`FUN_1416788d0`); the skill cast itself and the marker / platform test
+  (`FUN_1417bd6c0`) are skipped.
+- Click to move (`--mouse-move`, the client's interface/EnableMouseControl) and the gamepad (`--gamepad`,
+  gamepad/bGamePadUse, feature 0xb5) are off by default as in the client. Holding the button to steer, the click
+  effect and gamepad keys other than move / jump are not ported; the gamepad is not tested on hardware.
+- `--ride <riding id>` gets on a mount as a RideOnAction would (e.g. 20910001). The runXSpeed sprint (EP cost) and
+  the SP rider sequences are not ported; jump height stays the rider's.
+- Falling out of the field returns to the spawn point 1500 below the lowest entity (the client leaves this to the
+  server).
 
 A scripted run with screenshots: `godot-mono --path game res://field.tscn -- --move-shots <dir>
 [--move-script <file>]`. The default script in `game/scripts/movement/MoveProof.cs` jumps, jumps onto a step,
-walks into the water and swims, climbs a ladder, jumps off and falls; each state change is printed.
+walks into the water and swims, climbs a ladder, jumps off and falls; each state change is printed. Script steps
+`dash`, `click X Y Z`, `ropes N` and `walls R` start a dash, click to move, and list rope segments and climbable cube
+walls near the player (rope columns are in Ellinia, `--field 02000023_tw_ellinia`; climbable walls in Tria).
 
 ## Layout
 

@@ -36,6 +36,8 @@ public sealed class FieldData
     public string XBlock;
     public FieldCamera Camera = new();
     public FieldHdr Hdr = new();
+    /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
+    public bool CheckClimb = true;
 
     /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
     public static FieldData FindByXBlock(PackSet packs, string xblockName)
@@ -56,6 +58,8 @@ public sealed class FieldData
                 Read(cam, "zoomOutHeightOffset", ref o.Camera.ZoomOutHeightOffset);
                 Read(cam, "zoomInHeightOffset", ref o.Camera.ZoomInHeightOffset);
             }
+            var prop = env.Element("property") ?? fd.Element("property");
+            if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
             var fov = env.Element("fov");
             if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
             var hdr = env.Element("hdr");

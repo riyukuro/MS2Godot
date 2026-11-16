@@ -1,3 +1,5 @@
+using System.Xml.Linq;
+using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 
 namespace Ms2Godot.Movement;
@@ -38,8 +40,33 @@ public static class MoveConfig
     // StartJump: v0 = sqrt(2 * (2 * h) * -g), so the apex is 2 h; h = m_f930 (1.0) * JumpHeight stat / 100 (m)
     public const float JumpHeightStat = 100f;
     public const float JumpParam = 100f * JumpHeightStat / 100f;   // h in units (1.0 m)
-    // Client::Constants FallMoveSpeed (constants.xml: 1.0): air speed scale in StateJump / StateFall
-    public const float FallMoveSpeed = 1.0f;
+    // Client::Constants (table/constants.xml, defaults from the client's Define calls), read by LoadConstants
+    public static float FallMoveSpeed = 1.0f;     // air speed scale in StateJump / StateFall
+    public static float ClimbVelocityV = 3.0f;    // StateClimb up / down, m/s
+    public static float ClimbVelocityH = 1.0f;    // StateClimb sideways, m/s
+    public static int GamePadStickMoveValue = 50; // stick percent at or below which the pad walks
+
+    /// <summary>Reads the movement values of table/constants.xml (key / value rows).</summary>
+    public static void LoadConstants(PackSet packs)
+    {
+        try
+        {
+            var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")));
+            foreach (var v in x.Root?.Elements("v") ?? Enumerable.Empty<XElement>())
+            {
+                string k = (string)v.Attribute("key"), val = (string)v.Attribute("value");
+                var ci = System.Globalization.CultureInfo.InvariantCulture;
+                switch (k)
+                {
+                    case "FallMoveSpeed": float.TryParse(val, System.Globalization.NumberStyles.Float, ci, out FallMoveSpeed); break;
+                    case "ClimbVelocityV": float.TryParse(val, System.Globalization.NumberStyles.Float, ci, out ClimbVelocityV); break;
+                    case "ClimbVelocityH": float.TryParse(val, System.Globalization.NumberStyles.Float, ci, out ClimbVelocityH); break;
+                    case "GamePadStickMoveValue": int.TryParse(val, out GamePadStickMoveValue); break;
+                }
+            }
+        }
+        catch (Exception ex) { Godot.GD.PushWarning("constants: " + ex.Message); }
+    }
     // StateJump: a standing jump steered in the air moves at base speed 1.0 m/s
     public const float AirSteerSpeed = 100f;
 
@@ -59,6 +86,24 @@ public static class MoveConfig
     public const float LadderTopProbe = 75f;     // FUN_1417d99e0: ray down from 75 ahead, 500 up
     public const float LadderTopReach = 150f;
     public const float LadderTakeUpTime = 0.15f, LadderTakeDownTime = 0.2f, LadderTakeAirTime = 0.1f, LadderLandTime = 0.2f;
+
+    // StateRope: hands 50 above the rope base, 20 from its axis; 150 per climb cycle over 400 ms / rate from "begin";
+    // left / right turns about the rope at 2 rad/s once the key is held 500 ms; up / down keys after 100 ms
+    public const float RopeGrip = 50f, RopeRadius = 20f, RopeStep = 150f, RopeStepTime = 0.4f, RopeTurnRate = 2f;
+    public const float RopeTakeTime = 0.2f, RopeKeyDelay = 0.1f, RopeTurnDelay = 0.5f, RopeNextUp = 150f, RopeNextDown = 90f;
+
+    // StateDash: 20 m/s along the facing, 600 before it only waits for the ground, slowed to 0 by the landing's "stop" key
+    public const float DashSpeed = 2000f, DashDistance = 600f, DashMinStep = 2f;
+
+    // StateClimb (cube walls): rays 50 long at feet + 54 / 90 / 99; the over-the-top move is (150 + 20) up and 105
+    // forward per second; the side probe is 150 * 0.2 to the side; the jump-in snap reaches 25 + 3 + 30
+    public const float ClimbRay = 50f, ClimbLow = 54f, ClimbHigh = 90f, ClimbTopRay = 99f, ClimbOverUp = 170f, ClimbOverFwd = 105f;
+    public const float ClimbSide = 30f, ClimbSnapReach = 58f, ClimbSnapGap = 28f, ClimbHangCheck = 0.1f, ClimbInputDelay = 0.1f;
+    public const float CubeSize = 150f;
+
+    // CMouseController: arrival when the distance grows and is under 75, give up after 15 of growth; the obstacle
+    // ray (75 up, 50 ahead) every 100 ms
+    public const float MouseArrive = 75f, MouseGiveUp = 15f, MouseProbeUp = 75f, MouseProbeLen = 50f, MouseProbeEvery = 0.1f;
 
     // PCBase::FUN_141675ed0: standing on an entity whose PropCollisionGroup is 8 = water (swim state)
     public const int WaterGroup = 8;

@@ -64,13 +64,35 @@ public sealed class Climbables
         else my.Y += MoveConfig.LadderProbeUp;
         foreach (var l in All)
         {
-            if (l.IsRope) continue;   // rope (StateRope) is not ported
+            if (l.IsRope) continue;   // ladders only; ropes: FindRope
             var b = l.Base;
             if (new Vector2(my.X - b.X, my.Z - b.Z).Length() >= reach) continue;
             if (my.Y < b.Y || my.Y > b.Y + MoveConfig.LadderSpan) continue;
             if (!l.Usable) continue;
             // StateLadder::FUN_1417d8b20: a following segment must have the same rotation
             if (sameYawAs != null && l != sameYawAs && l.YawDeg != sameYawAs.YawDeg) continue;
+            return l;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// PC::FUN_141659b80 for the rope model: side 2 probes 75 below the feet with a 70 reach, any other side
+    /// <paramref name="height"/> above with a 50 reach (90 to take hold, 150 / 90 for the next segment in StateRope).
+    /// </summary>
+    public Climb FindRope(Vector3 feet, int side, float height = 90f)
+    {
+        var my = feet;
+        float reach = MoveConfig.LadderReach;
+        if (side == 2) { my.Y -= MoveConfig.LadderProbeDown; reach = MoveConfig.LadderReachDown; }
+        else my.Y += height;
+        foreach (var l in All)
+        {
+            if (!l.IsRope) continue;
+            var b = l.Base;
+            if (new Vector2(my.X - b.X, my.Z - b.Z).Length() >= reach) continue;
+            if (my.Y < b.Y || my.Y > b.Y + MoveConfig.LadderSpan) continue;
+            if (!l.Usable) continue;
             return l;
         }
         return null;

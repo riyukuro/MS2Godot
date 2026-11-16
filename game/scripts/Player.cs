@@ -13,17 +13,23 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Player : CharacterBody3D
 {
-    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder }
+    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash }
 
     public Node3D Visual;                 // the character root (faces +Z)
     public AnimationPlayer Anim;
     public ActionAnims Anims;
     public Climbables Climbs = new();
+    public CubeGrid Cubes = new();
+    /// <summary>fielddata checkClimb: wall climbing (skill 20000011) is allowed in this field.</summary>
+    public bool CheckClimb = true;
     public Vector3 SpawnPoint;
+    /// <summary>Below this height the player goes back to the spawn point (a stand-in: the return is the server's).</summary>
+    public float FallReturnY = float.NegativeInfinity;
     public float Gravity = MoveConfig.SceneGravity;
 
     // input: x = right, y = forward (camera relative); set from the keyboard, or by a script when ScriptDriven
     public Vector2 Input2;
+    public Vector2 MouseInput;            // click to move (MouseMove), used while there is no other direction
     public bool WalkMode, JumpHeld, ScriptDriven;
     public float CameraYaw;               // radians about +Y; camera forward = (-sin, 0, -cos)
     public string CurrentAnim = "";
@@ -38,7 +44,8 @@ public partial class Player : CharacterBody3D
     float stateTime, airTime, baseSpeed = MoveConfig.RunSpeed, yawDeg, targetYawDeg;
     Vector3 kVel;                         // GameObjectController m_kVelocity (horizontal)
     float fallStartY = float.NaN;         // PCBase m_posC10
-    Vector2 prevInput;
+    Vector2 prevInput, prevRawInput;
+    bool wallHit;                         // PCBase m_unk_c68: a side hit in the air while descending
     bool prevJump;
     float diagHold;
     Vector2 diagDir;
@@ -71,6 +78,7 @@ public partial class Player : CharacterBody3D
         p.SafeMargin = MoveConfig.SkinWidth;
         p.AddChild(new CollisionShape3D
         {
+            Name = "Collision",
             Shape = new CylinderShape3D { Radius = MoveConfig.Radius, Height = MoveConfig.Height },
             Position = new Vector3(0, MoveConfig.Height / 2, 0),
         });
@@ -95,7 +103,7 @@ public partial class Player : CharacterBody3D
     {
         if (dir.LengthSquared() < 1e-6f) return;
         yawDeg = targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
-        Visual.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
+        (Mount?.Visual ?? Visual).Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
     }
 
     Vector3 Forward => new(Mathf.Sin(Mathf.DegToRad(yawDeg)), 0, Mathf.Cos(Mathf.DegToRad(yawDeg)));
@@ -119,7 +127,8 @@ public partial class Player : CharacterBody3D
             WalkMode = k.Walk;
             JumpHeld = k.Jump;
         }
-        var input = DiagonalHold(Input2, dt);
+        var rawInput = Input2 != Vector2.Zero ? Input2 : MouseInput;
+        var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;
         bool upPressed = input.Y > 0 && prevInput.Y <= 0, downPressed = input.Y < 0 && prevInput.Y >= 0;
         prevJump = JumpHeld;
@@ -134,7 +143,7 @@ public partial class Player : CharacterBody3D
         {
             case MoveState.Idle:
                 kVel = Vector3.Zero;
-                if (input.Y > 0 && upPressed && TryLadder(1)) break;
+                if (input.Y > 0 && upPressed && (TryLadder(1) || TryRope(1))) break;
                 if (input.Y < 0 && downPressed && TryLadder(2)) break;
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
                 if (hasInput) { Enter(OnWater ? MoveState.Swim : MoveState.Walk); break; }
@@ -144,12 +153,14 @@ public partial class Player : CharacterBody3D
             case MoveState.Walk:
                 if (OnWater) { Enter(MoveState.Swim); break; }
                 if (InAirFor(MoveConfig.WalkFallDelay)) { Enter(MoveState.Fall); break; }
-                // StateWalk::vfunc_8 order: jump, then the held up / down key on a ladder
+                // StateWalk::vfunc_8 order: pressed up / down (ladder or rope), jump, then the held up / down key on a ladder
+                if (input.Y > 0 && upPressed && (TryLadder(1) || TryRope(1))) break;
+                if (input.Y < 0 && downPressed && TryLadder(2)) break;
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
                 if (input.Y > 0 && TryLadder(1)) break;
                 if (input.Y < 0 && TryLadder(2)) break;
                 if (!hasInput) { Enter(MoveState.Idle); break; }
-                baseSpeed = WalkMode ? MoveConfig.WalkSpeed : MoveConfig.RunSpeed;
+                baseSpeed = Mount != null ? RideSpeed() : WalkMode ? MoveConfig.WalkSpeed : MoveConfig.RunSpeed;
                 kVel = dir * baseSpeed;
                 break;
 
@@ -158,7 +169,7 @@ public partial class Player : CharacterBody3D
                 if (InAirFor(MoveConfig.IdleFallDelay)) { Enter(MoveState.Idle); break; }
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
                 if (!hasInput) { Enter(MoveState.Idle); break; }
-                baseSpeed = MoveConfig.SwimSpeed;
+                baseSpeed = Mount != null ? RideSpeed() : MoveConfig.SwimSpeed;
                 kVel = dir * baseSpeed;
                 break;
 
@@ -170,12 +181,15 @@ public partial class Player : CharacterBody3D
                     jumpDir = dir;
                 }
                 kVel = jumpDir * baseSpeed * MoveConfig.FallMoveSpeed;
-                if (input.Y > 0 && upPressed && stateTime > 0.1f && TryLadder(1)) break;
+                // IsJumpTimeElapsed (50 ms): the up key takes a ladder or rope; else a wall hit starts the climb
+                if (input.Y > 0 && upPressed && stateTime > 0.05f && (TryLadder(1) || TryRope(1))) break;
+                if (TryClimb()) break;
                 break;
 
             case MoveState.Fall:
                 if (hasInput) kVel = dir * baseSpeed * MoveConfig.FallMoveSpeed;
                 if (input.Y > 0 && TryLadder(3)) break;
+                if (TryClimb()) break;
                 if (grounded) Enter(MoveState.Land);
                 break;
 
@@ -191,17 +205,33 @@ public partial class Player : CharacterBody3D
             case MoveState.Ladder:
                 LadderUpdate(input, jumpPressed, dt);
                 break;
-        }
 
-        if (State != MoveState.Ladder)
-        {
-            if (hasInput) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
-            Integrate(dt);
+            case MoveState.Rope:
+                RopeUpdate(rawInput, jumpPressed, dt);
+                break;
+
+            case MoveState.Climb:
+                ClimbUpdate(rawInput, jumpPressed, dt);
+                break;
+
+            case MoveState.Dash:
+                DashUpdate(input, upPressed);
+                break;
         }
+        prevRawInput = rawInput;
+
+        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb))
+        {
+            if (hasInput && State != MoveState.Dash) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
+            var before = GlobalPosition;
+            Integrate(dt);
+            if (State == MoveState.Dash) DashAfterMove(before, dt);
+        }
+        else wallHit = false;
         TurnTowardTargetYaw(dt);
         UpdateAnimation();
 
-        if (GlobalPosition.Y < SpawnPoint.Y - 3000)      // IsFallReturn: back to the spawn point
+        if (GlobalPosition.Y < FallReturnY)              // fell out of the field: back to the spawn point
         {
             GlobalPosition = SpawnPoint;
             Velocity = Vector3.Zero;
@@ -232,6 +262,8 @@ public partial class Player : CharacterBody3D
         var old = State;
         if (old == MoveState.Jump) { jumping = false; baseSpeed = jumpSavedSpeed; }   // StateJump::vfunc_5
         if (old == MoveState.Ladder) ladder = null;
+        if (old == MoveState.Rope) rope = null;
+        if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
         State = s;
         stateTime = 0;
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
@@ -321,6 +353,7 @@ public partial class Player : CharacterBody3D
             if (stepMotion.Length() > 0.01f) TryStepUp(stepMotion);
         }
 
+        wallHit = IsOnWall() && !IsOnFloor() && v.Y < 0;
         if (IsOnFloor())
         {
             airTime = 0;
@@ -363,13 +396,14 @@ public partial class Player : CharacterBody3D
         float diff = Mathf.Wrap(targetYawDeg - yawDeg, -180f, 180f);
         float step = MoveConfig.TurnSpeedDeg * dt;
         yawDeg = Mathf.Abs(diff) <= step ? targetYawDeg : yawDeg + Mathf.Sign(diff) * step;
-        Visual.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
+        (Mount?.Visual ?? Visual).Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
     }
 
     // ---- StateLadder ---------------------------------------------------------------------------------------------------
 
     bool TryLadder(int side)
     {
+        if (Mount != null) return false;
         var l = Climbs.Find(GlobalPosition, side);
         if (l == null) return false;
         Enter(MoveState.Ladder);
@@ -541,6 +575,7 @@ public partial class Player : CharacterBody3D
 
     void UpdateAnimation()
     {
+        if (Mount != null) { RideAnimation(); return; }
         if (Anims == null) return;
         switch (State)
         {
@@ -579,6 +614,15 @@ public partial class Player : CharacterBody3D
                     case Ladder.TakeUp: PlayAct(Act.LadderUpTake); break;
                     case Ladder.TakeDown: PlayAct(Act.LadderDownTake); break;
                 }
+                break;
+            case MoveState.Rope:
+                RopeAnimation();
+                break;
+            case MoveState.Climb:
+                ClimbAnimation();
+                break;
+            case MoveState.Dash:
+                DashAnimation();
                 break;
         }
     }
