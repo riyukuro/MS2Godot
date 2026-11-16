@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Ms2.Net</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Frame cipher and ByteReader/ByteWriter (GPL-3.0, compatible with AGPL-3.0). -->
+    <PackageReference Include="Maple2.PacketLib" Version="1.0.2" />
+  </ItemGroup>
+</Project>
