@@ -21,6 +21,7 @@
 //
 // Not done: face decals.
 shader_type spatial;
+#include "res://shaders/ms2_lights.gdshaderinc"
 render_mode unshaded, cull_back;
 
 global uniform vec3 ms2_ambient;       // scene ambient light colour * dimmer
@@ -113,6 +114,7 @@ void fragment() {
 		float band = max(0.0, smoothstep(-sss_power, 1.0, ndl) - smoothstep(0.0, 1.0, ndl));
 		diffuse += ms2_sun_color * sss_color * band;
 	}
+	diffuse += ms2_point_lights(world_pos, n);
 	diffuse *= color_boost;
 
 	vec3 spec = vec3(0.0);

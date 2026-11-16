@@ -7,12 +7,14 @@
 // ambient and diffuse. Vertex colours come in CUSTOM0 and replace both when the NIF's
 // NiVertexColorProperty says so. A glow map adds its colour on top. ModelBuilder compiles this three
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
-// (src alpha / one); both blended forms skip the depth write. The opaque form is also lit by the field's point and spot
+// (src alpha / one); both blended forms skip the depth write. The field's point and spot lights are added to the
+// diffuse term (ms2_lights.gdshaderinc). The opaque form is also lit by the field's point and spot
 // lights (FieldLights) through Godot's own lighting; the blended forms are not. No cast shadows yet.
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
 // evenly over flip_period, looping; a uv translation (NiTextureTransformController, translate U or V) moves linearly
 // between its first and last key over the controller's start..stop range, looping.
 shader_type spatial;
+#include "res://shaders/ms2_lights.gdshaderinc"
 #ifdef ADD
 render_mode unshaded, blend_add, depth_draw_never;
 #else
@@ -57,10 +59,12 @@ uniform vec4 dark_scroll_key;
 uniform vec2 dark_scroll_range;
 
 varying vec3 world_normal;
+varying vec3 world_pos;
 varying vec4 vcolor;
 
 void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vcolor = has_vcolor ? CUSTOM0 : vec4(1.0);
 }
 
@@ -103,7 +107,7 @@ void fragment() {
 	vec3 amb = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_ambient;
 	vec3 dif = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_diffuse;
 	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
-	vec3 lit = emissive + ms2_ambient * amb + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl));
+	vec3 lit = emissive + ms2_ambient * amb + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl) + ms2_point_lights(world_pos, normalize(world_normal)));
 	vec3 c = lit * t.rgb;
 	if (has_glow) {
 		c += texture(glow_tex, UV).rgb;

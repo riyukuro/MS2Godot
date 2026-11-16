@@ -177,7 +177,7 @@ public partial class Field : Node3D
         };
         AddChild(new WorldEnvironment { Environment = env });
         FieldBackdrop.Add(this, env, packs, x);
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000, LightCullMask = 1u << 19 };   // the shaders apply the sun themselves
+        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000 };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
@@ -202,6 +202,13 @@ public partial class Field : Node3D
         var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC")
               ?? map.Entities.FirstOrDefault(e => e.ModelName.StartsWith("SpawnPointPC"));
         var pos = sp?.Position ?? new Vec3(0, 0, 0);
+        var args = OS.GetCmdlineUserArgs();
+        for (int i = 0; i + 1 < args.Length; i++)
+            if (args[i] == "--spawn")   // x,y,z in field units, for looking at a given spot
+            {
+                var v = args[i + 1].Split(',');
+                pos = new Vec3(double.Parse(v[0], CultureInfo.InvariantCulture), double.Parse(v[1], CultureInfo.InvariantCulture), double.Parse(v[2], CultureInfo.InvariantCulture));
+            }
         player.SpawnPoint = FieldBuilder.ToGodotPoint(pos) + new Vector3(0, 5, 0);
         player.FallReturnY = (map.Entities.Count > 0 ? (float)map.Entities.Min(e => e.Position.Z) : player.SpawnPoint.Y) - 1500f;
         AddChild(player);

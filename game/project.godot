@@ -37,6 +37,14 @@ ms2_sun_specular={
 "type": "vec3",
 "value": Vector3(0.8, 0.8, 0.8)
 }
+ms2_lights={
+"type": "sampler2D",
+"value": ""
+}
+ms2_light_count={
+"type": "float",
+"value": 0.0
+}
 ms2_sun_dir={
 "type": "vec3",
 "value": Vector3(0, -1, 0)
