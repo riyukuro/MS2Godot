@@ -269,6 +269,10 @@ godot-mono --path . -- --shots /some/dir
 
 The pilot viewer: `godot-mono --path . res://main.tscn` (it takes the same `--shots` argument).
 
+Navigation debug overlay: `--nav` (or F9 in the field) draws the field's navigation mesh. `src/Ms2.Navigation` builds it
+with DotRecast (MIT) from the field's collision data, using the same settings as the Maple2 server fork it was adapted
+from (AGPL-3.0, notices in the source files), and caches it under `user://navmesh`.
+
 ## GfxLayout
 
 ```

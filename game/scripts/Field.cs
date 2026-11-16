@@ -13,7 +13,7 @@ namespace Ms2Godot;
 /// character at SpawnPointPC and lets her walk. WASD / arrows move (camera relative), Shift walks, the wheel zooms.
 /// The camera follows the client's default field camera (CTargetCameraMode): a fixed yaw from the field data, and
 /// pitch and target height that move with the zoom distance.
-/// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit).
+/// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).
 /// </summary>
 public partial class Field : Node3D
 {
@@ -38,6 +38,7 @@ public partial class Field : Node3D
             if (args[i] == "--shots") shotDir = args[i + 1];
             if (args[i] == "--field") fieldName = args[i + 1];
         }
+        bool navOn = System.Array.IndexOf(args, "--nav") >= 0;
         if (SpawnsLocalPlayer && World.FieldContents.PendingXBlock != null) fieldName = World.FieldContents.PendingXBlock;   // sandbox portal move
         var data = Settings.DataDir;
         var nifxml = Settings.NifXml;
@@ -83,6 +84,7 @@ public partial class Field : Node3D
         if (player != null) UpdateCamera();
         OnFieldBuilt(builder, map, fieldName);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
+        NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // F9 / --nav: navmesh overlay
 
         if (shotDir != null)
         {
