@@ -5,18 +5,35 @@ A MapleStory 2 client written in Godot 4 (C#). The parity target is the restored
 The project ships no game data. You bring your own MapleStory 2 client; MS2Godot reads its `.m2d` packs at
 run time.
 
-Current state: a pilot. It loads the female character model and its idle and walk animations from
-`Resource/Model/Character.m2d` and plays them on a ground plane. Keys: `1` idle, `2` walk.
+Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_tria`, by default) and places
+the female character at the field's player spawn point. She walks, runs and climbs steps over the field's
+collision.
+
+Controls: WASD or the arrow keys move (relative to the camera), Shift walks instead of running, right mouse drag
+turns the camera, and the wheel zooms.
+
+The field comes from these packs:
+
+- `Resource/Exported.m2d`: the field entity set (`xblock/<field>.xblock`) and the model defaults (`flat/`).
+- `Resource/asset-web-metadata.m2d`: maps an entity's `urn:llid:` asset id to a model path.
+- `Resource/Model/Map.m2d`: the models, their textures and their PhysX collision meshes.
+- `Xml.m2d`: `mapxblock/<field>.xml` (fog).
+
+Cubes without a PhysX mesh get a generated box collider. Known gaps: no character customisation (white skin),
+no swimming, some banner textures are white, and props without PhysX data (such as low fences) have no collision.
+
+The earlier pilot viewer (female model, idle and walk on a ground plane; keys `1` idle, `2` walk) is still
+`game/main.tscn`.
 
 ## Layout
 
 | path | what |
 |---|---|
-| `src/Ms2.Formats` | Class library with no Godot dependency: m2d pack access, a `nif.xml`-driven reader for Gamebryo NIF/KF files (version 30.2.0.3), and the MS2 model conventions (skeleton, skinned meshes, KF animation). |
+| `src/Ms2.Formats` | Class library with no Godot dependency: m2d pack access, a `nif.xml`-driven reader for Gamebryo NIF/KF files (version 30.2.0.3), the MS2 model conventions (skeleton, skinned meshes, KF animation), NIF PhysX collision meshes, asset id lookup, and field entity sets (xblock + flat defaults). |
 | `src/Ms2.Swf` | Class library with no Godot dependency: a Scaleform GFX / SWF reader (CFX, CWS, FWS, GFX) for UI layout: stage, shapes with bitmap fills, sprites and display lists, edit text, buttons, scale9 grids, symbol classes, imports, GFx external images and sub images. `LayoutJson` turns a movie into a JSON layout. |
 | `tools/GfxLayout` | Command line tool that writes that layout JSON for a movie in `Resource/Gfx.m2d`. |
 | `tests/Ms2.Swf.Tests` | NUnit tests. The ones that need game data read `MS2_DATA` and skip when it is unset. |
-| `game/` | The Godot project. It builds `Skeleton3D`, skinned `MeshInstance3D` and `AnimationPlayer` nodes at run time from `Ms2.Formats` data. |
+| `game/` | The Godot project. It builds `Skeleton3D`, skinned `MeshInstance3D` and `AnimationPlayer` nodes at run time from `Ms2.Formats` data, the field as MultiMeshes with static colliders, and the player as a `CharacterBody3D`. |
 
 MS2 is Z-up and Godot is Y-up. Each model sits under a node rotated -90 degrees about X. File units are kept
 1:1 (the female body is about 100 units tall).
@@ -46,11 +63,15 @@ godot-mono --path . --import --headless     # first run only: creates .godot/
 MS2_DATA=/path/to/Data MS2_NIFXML=/path/to/nif.xml godot-mono --path .
 ```
 
-Screenshot mode saves idle and walk frames to a folder and then quits:
+Another field: `godot-mono --path . -- --field <xblock name>` (the file name without `.xblock`).
+
+Screenshot mode runs a scripted walk, saves frames to a folder and then quits:
 
 ```
 godot-mono --path . -- --shots /some/dir
 ```
+
+The pilot viewer: `godot-mono --path . res://main.tscn` (it takes the same `--shots` argument).
 
 ## GfxLayout
 

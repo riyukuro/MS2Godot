@@ -17,7 +17,7 @@ public sealed class NifStruct : Dictionary<string, object>
     public long[] Ints(string k) => this[k] as long[] ?? Array.Empty<long>();
     public float[] Floats(string k) => this[k] as float[] ?? Array.Empty<float>();
     public NifStruct[] Structs(string k) => this[k] is object[] a ? a.Cast<NifStruct>().ToArray() : Array.Empty<NifStruct>();
-    public byte[] Bytes(string k) => (byte[])this[k];
+    public byte[] Bytes(string k) => this[k] switch { byte[] b => b, long[] l => l.Select(x => (byte)x).ToArray(), _ => throw new InvalidCastException(k) };
     public bool Has(string k) => ContainsKey(k);
     public long IntOr(string k, long def) => TryGetValue(k, out var v) && v is long l ? l : def;
 }

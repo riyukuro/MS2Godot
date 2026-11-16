@@ -16,8 +16,12 @@ public sealed class ModelBuilder
     public const string SkeletonName = "Skeleton";
 
     readonly NifSpec spec;
+    public NifSpec Spec => spec;
     readonly PackSet packs;
     readonly Dictionary<string, Texture2D> textures = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Archives searched (in order) for a texture file name.</summary>
+    public string[] TextureArchives = { TextureArchive };
 
     public ModelBuilder(NifSpec spec, PackSet packs) { this.spec = spec; this.packs = packs; }
 
@@ -34,6 +38,8 @@ public sealed class ModelBuilder
     static Quaternion ToGodot(Quat q) => new Quaternion((float)q.X, (float)q.Y, (float)q.Z, (float)q.W).Normalized();
 
     public ModelData LoadModel(string entry) => ModelData.Load(NifFile.Load(spec, packs.Read(ModelArchive, entry)));
+
+    public ModelData LoadModel(string archive, string entry) => ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry)));
 
     public KfAnimation LoadKf(string entry) => KfAnimation.Load(NifFile.Load(spec, packs.Read(ModelArchive, entry)));
 
@@ -87,7 +93,9 @@ public sealed class ModelBuilder
         return root;
     }
 
-    ArrayMesh BuildMesh(ModelMesh m)
+    /// <param name="skin">false: drop bone data (static placement of a skinned prop, drawn in its bind pose)</param>
+    /// <param name="instanceColor">material multiplies the albedo by the MultiMesh instance colour</param>
+    public ArrayMesh BuildMesh(ModelMesh m, bool skin = true, bool instanceColor = false)
     {
         int nv = m.Positions.Length / 3;
         var arrays = new Godot.Collections.Array();
@@ -107,7 +115,7 @@ public sealed class ModelBuilder
             for (int i = 0; i < nv; i++) uv[i] = new Vector2(m.Uvs[i * 2], m.Uvs[i * 2 + 1]);
             arrays[(int)Mesh.ArrayType.TexUV] = uv;
         }
-        if (m.Skinned)
+        if (m.Skinned && skin)
         {
             arrays[(int)Mesh.ArrayType.Bones] = m.Joints;
             arrays[(int)Mesh.ArrayType.Weights] = m.Weights;
@@ -119,13 +127,13 @@ public sealed class ModelBuilder
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-        mesh.SurfaceSetMaterial(0, BuildMaterial(m));
+        mesh.SurfaceSetMaterial(0, BuildMaterial(m, instanceColor));
         return mesh;
     }
 
-    Material BuildMaterial(ModelMesh m)
+    Material BuildMaterial(ModelMesh m, bool instanceColor)
     {
-        var mat = new StandardMaterial3D { Roughness = 0.8f, Metallic = 0f };
+        var mat = new StandardMaterial3D { Roughness = 0.8f, Metallic = 0f, VertexColorUseAsAlbedo = instanceColor };
         if (m.Textures.TryGetValue("base", out var baseName))
         {
             var tex = Texture(baseName);
@@ -143,12 +151,14 @@ public sealed class ModelBuilder
     {
         if (textures.TryGetValue(fileName, out var t)) return t;
         Texture2D tex = null;
-        var entry = packs.FindByFileName(TextureArchive, fileName);
-        if (entry == null) GD.PushWarning($"texture {fileName} not found in {TextureArchive}");
+        string entry = null, archive = null;
+        foreach (var a in TextureArchives)
+            if ((entry = packs.FindByFileName(a, fileName)) != null) { archive = a; break; }
+        if (entry == null) GD.PushWarning($"texture {fileName} not found in {string.Join(", ", TextureArchives)}");
         else
         {
             var img = new Image();
-            var err = img.LoadDdsFromBuffer(packs.Read(TextureArchive, entry));
+            var err = img.LoadDdsFromBuffer(packs.Read(archive, entry));
             if (err != Error.Ok) GD.PushWarning($"texture {entry}: {err}");
             else tex = ImageTexture.CreateFromImage(img);
         }
