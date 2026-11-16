@@ -34,6 +34,8 @@ public partial class ReplayField : Field
     MsbFile file;
     ReplaySession replay;
     ModelBuilder modelBuilder;
+    EquipApplier equip;
+    bool applyEquips = true;
     readonly Dictionary<int, Actor> actors = new();
     readonly Dictionary<byte, (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run, string model)> bodies = new();
     int settle = -1, pendingShot = -1;
@@ -65,6 +67,7 @@ public partial class ReplayField : Field
                         shotFollow.Add(parts.Length > 1 ? parts[1] : null);
                     }
                     break;
+                case "--no-equips": applyEquips = false; break;
                 case "--dist": dist = float.Parse(v, System.Globalization.CultureInfo.InvariantCulture); break;
             }
         }
@@ -102,6 +105,7 @@ public partial class ReplayField : Field
         modelBuilder = builder;
         // the field build searched map textures only; the character bodies need the character pack's own textures too
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
+        equip = new EquipApplier(packs, builder);
         truth = BuildTruth(file);
         replay = new ReplaySession(file, speed, startOffset);
         GD.Print($"replay {System.IO.Path.GetFileName(file.Path)}: {file.Packets.Count} packets, {replay.Stream.Duration:F0}s, field {fieldName}, speed x{speed}");
@@ -151,6 +155,7 @@ public partial class ReplayField : Field
     {
         var (md, idle, walk, run, model) = Body(e.User.User.Gender);
         var visual = modelBuilder.Build(md, e.User.User.Gender == 0 ? "Male" : "Female");
+        if (applyEquips) equip.Apply(visual, md, e.User.User.Gender, e.User.Equips, e.User.Skin.Primary);
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         var lib = anim.GetAnimationLibrary("");
         lib.AddAnimation("idle", idle); lib.AddAnimation("walk", walk); lib.AddAnimation("run", run);
@@ -210,7 +215,7 @@ public partial class ReplayField : Field
         HandleShots();
         if (replay.Completion.IsCompleted && replay.Tracker.Events.IsEmpty && pendingShot < 0 && (shotTimes.Count == 0 || nextShot >= shotTimes.Count) && outDir != null)
         {
-            ReportChecks();
+            ReportChecks(); ReportChecks2();
             GetTree().Quit(mismatches == 0 ? 0 : 3);
         }
     }
@@ -285,5 +290,6 @@ public partial class ReplayField : Field
         GD.Print($"check {when}: {n} players, {bad} position mismatches against the recorded coordinates, bodies trail their target by at most {maxLag:F1} units");
     }
 
-    void ReportChecks() => GD.Print($"replay done: {checkedActors} player checks, {mismatches} mismatches");
+    void ReportChecks() => GD.Print($"equips: {equip.Loaded} item models applied, {equip.NoModelEntry} items without an itemmodel entry, {equip.NoAsset} without a usable asset, {equip.Failed} failed; {equip.MissingIds.Count} distinct ids missing from the local data");
+    void ReportChecks2() => GD.Print($"replay done: {checkedActors} player checks, {mismatches} mismatches");
 }
