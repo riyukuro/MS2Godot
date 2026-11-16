@@ -99,6 +99,18 @@ Movies import shared symbols (`component_v1`, `commonResource`, ...) with an emp
 
 Not decoded: shape outlines (bounds and bitmap fills only), font glyphs, ActionScript bytecode (DoABC is skipped; its size is reported), sounds. Scene movies such as `uiscenelobbyselect` have no display list: they are a document class only, and the layout is in the dialog movies they load.
 
+## UI runtime (game/ui)
+
+`game/ui` builds Scaleform UI movies as Godot nodes from the player's own `Gfx.m2d`: `UiAssets` (layouts via Ms2.Swf, DDS atlases, the flash string table from `Xml.m2d`), `MovieClipNode` (display list, frame labels, frame state), `ShapeNode` (atlas sub-images, nine-sliced inside scale-9 sprites), `TextNode`, and CLIK-like widgets in `UiWidgets` (button states, toggle, checkbox, text input, label). Text uses a system font (Noto Sans CJK / Noto Sans); the game font lives in gfxfontlib glyph data that is not loaded yet. `UiBridge` carries what a dialog tells the game (the movies' `ExternalInterface.call`); nothing touches a network.
+
+`tools/UiContract` writes the C# contract of a movie (callbacks both ways, named instances with their CLIK base, component inspector values) from its ABC, layout and, for the host-called methods, the C++ dialog source: `UiContract uilogindialog --cpp path/to/uilogindialog.cpp --out game/ui/contracts`. `LoginDialogLogic` is the login dialog ported by hand against that contract.
+
+```
+cd game && dotnet build
+MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn                          # Tab, Enter, buttons, checkbox
+MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn -- --shots DIR --clear "#e8c070"   # shots, then quit
+```
+
 ## Licence
 
 AGPL-3.0, see [LICENSE](LICENSE). The m2d archive reader is the NuGet package `Maple2.File.Parser.Tadeucci`

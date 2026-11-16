@@ -39,10 +39,11 @@ public static class LayoutJson
             ["id"] = c.Id, ["image"] = c.AtlasImageId, ["x"] = c.AtlasRect.X, ["y"] = c.AtlasRect.Y, ["w"] = c.AtlasRect.W, ["h"] = c.AtlasRect.H,
         }).ToArray());
 
+        var bases = ClassBases(m);
         var syms = new JsonObject();
         foreach (var c in m.Characters.Values.Where(c => c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button
                      or CharKind.StaticText or CharKind.MorphShape).OrderBy(c => c.Id))
-            syms[c.Id.ToString()] = Symbol(m, c);
+            syms[c.Id.ToString()] = Symbol(m, c, bases);
         o["symbols"] = syms;
         o["fonts"] = new JsonObject(m.FontNames.OrderBy(k => k.Key).Select(k => KeyValuePair.Create(k.Key.ToString(), (JsonNode)k.Value)));
 
@@ -96,8 +97,8 @@ public static class LayoutJson
             if (wanted.Count == 0) continue;
             var closure = new SortedSet<int>(); var imgIds = new SortedSet<int>();
             foreach (var id in wanted.Values) Close(im, id, closure, imgIds);
-            var syms = new JsonObject();
-            foreach (var id in closure) if (im.Characters.TryGetValue(id, out var c) && c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button or CharKind.StaticText or CharKind.MorphShape) syms[id.ToString()] = Symbol(im, c);
+            var syms = new JsonObject(); var ibases = ClassBases(im);
+            foreach (var id in closure) if (im.Characters.TryGetValue(id, out var c) && c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button or CharKind.StaticText or CharKind.MorphShape) syms[id.ToString()] = Symbol(im, c, ibases);
             lib[key] = new JsonObject
             {
                 ["classes"] = new JsonObject(wanted.OrderBy(k => k.Key).Select(k => KeyValuePair.Create(k.Key, (JsonNode)k.Value))),
@@ -162,9 +163,30 @@ public static class LayoutJson
         CharKind.StaticText => "staticText", CharKind.MorphShape => "morph", _ => k.ToString().ToLowerInvariant(),
     };
 
-    static JsonObject Symbol(SwfMovie m, Character c)
+    /// <summary>For each class bound to a symbol: its super class chain from the movie's own ABC (nearest first).</summary>
+    static Dictionary<string, List<string>> ClassBases(SwfMovie m)
     {
-        var o = new JsonObject { ["kind"] = KindName(c.Kind), ["class"] = c.ClassName, ["export"] = c.ExportName, ["bounds"] = Rc(c.Bounds), ["scale9"] = Rc(c.Scale9) };
+        var super = new Dictionary<string, string>();
+        foreach (var (_, raw) in m.AbcBlocks)
+        {
+            var abc = Abc.AbcFile.Parse(raw);
+            foreach (var i in abc.Instances) super[abc.Name(i.Name)] = i.Super == 0 ? null : abc.Name(i.Super);
+        }
+        var r = new Dictionary<string, List<string>>();
+        foreach (var c in m.Characters.Values)
+        {
+            if (c.ClassName == null) continue;
+            var l = new List<string>(); var cur = c.ClassName; int guard = 0;
+            while (cur != null && super.TryGetValue(cur, out var s) && s != null && s != "Object" && guard++ < 32) { l.Add(s); cur = s; }
+            r[c.ClassName] = l;
+        }
+        return r;
+    }
+
+    static JsonObject Symbol(SwfMovie m, Character c, Dictionary<string, List<string>> bases = null)
+    {
+        var o = new JsonObject { ["kind"] = KindName(c.Kind), ["class"] = c.ClassName,
+            ["bases"] = c.ClassName != null && bases != null && bases.TryGetValue(c.ClassName, out var bl) && bl.Count > 0 ? new JsonArray(bl.Select(x => (JsonNode)x).ToArray()) : null, ["export"] = c.ExportName, ["bounds"] = Rc(c.Bounds), ["scale9"] = Rc(c.Scale9) };
         switch (c.Kind)
         {
             case CharKind.Shape:
