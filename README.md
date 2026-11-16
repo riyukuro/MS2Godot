@@ -183,32 +183,51 @@ walks into the water and swims, climbs a ladder, jumps off and falls; each state
 MS2 is Z-up and Godot is Y-up. Each model sits under a node rotated -90 degrees about X. File units are kept
 1:1 (the female body is about 100 units tall).
 
-## Requirements
+## Build and run
 
-- Godot 4.7 .NET edition (`godot-mono`).
-- .NET SDK 10.
-- Your own MapleStory 2 client: the `Data` folder that holds `Resource/Model/*.m2d`.
-- niftools `nif.xml` (BSD), from https://github.com/niftools/nifxml. It is not included in this repository.
-  The reader interprets it at run time.
+You need:
+
+- [Godot 4.7 .NET edition](https://godotengine.org/download) (the "Mono / .NET" download, not the standard one).
+- The .NET SDK 10 (the game project) and .NET SDK 8 (the libraries and tests also target net8.0).
+- Your own MapleStory 2 client: the `Data` folder that holds `Xml.m2d` and `Resource/Model/*.m2d`. The project ships no
+  game data.
+- niftools `nif.xml`, from https://github.com/niftools/nifxml. It is not included here; the first-run screen below can
+  download it. Check its LICENSE (in that repository) for the terms of your copy.
+
+```
+git clone https://github.com/riyukuro/MS2Godot
+cd MS2Godot/game
+dotnet build
+godot-mono --path . --import --headless     # first run only: creates .godot/
+godot-mono --path .
+```
+
+(`godot-mono` is the name of the Godot .NET binary on some distributions; use whatever your install calls it, or open
+`game/project.godot` in the editor and press Play.)
+
+**First run.** When no data folder is configured, the game opens a setup screen. Choose the client's `Data` folder (it
+is checked for `Xml.m2d` and the `Resource/Model` packs), then give it `nif.xml`: either download it (a pinned commit
+of niftools/nifxml, saved with its LICENSE under the game's user data folder) or choose a local file. Start writes
+`user://settings.cfg` and goes on to the field. To skip the screen, configure the paths yourself, see Settings below.
+
+Another field: `godot-mono --path . -- --field <xblock name>` (the file name without `.xblock`).
+
+Export: `game/export_presets.cfg` has Linux and Windows presets. Install the export templates for your Godot version
+(Editor > Manage Export Templates), then `godot-mono --path game --export-release Linux` (or `Windows`); the output goes
+to `build/` (ignored by git). No templates are in the repository. The player still needs their own data and `nif.xml`.
+
+Continuous integration (`.github/workflows/ci.yml`) builds the solution on .NET 8 and 10 and runs the tests; the tests that
+need game data skip there.
 
 ## Settings
 
-The project contains no local paths. Set them in one of these places (checked in this order):
+The project contains no local paths. The paths are looked up in this order:
 
 1. The environment variables `MS2_DATA` (the client's `Data` folder) and `MS2_NIFXML` (the path to `nif.xml`).
 2. `game/local.cfg` (gitignored). Copy it from `game/settings.example.cfg`.
-3. `user://settings.cfg`, the Godot user data folder. It uses the same format.
+3. `user://settings.cfg`, the Godot user data folder. It uses the same format; the setup screen writes it. A `nif.xml`
+   downloaded by the setup screen is at `user://nifxml/nif.xml` and is used when none of the above names one.
 
-## Build and run
-
-```
-cd game
-dotnet build
-godot-mono --path . --import --headless     # first run only: creates .godot/
-MS2_DATA=/path/to/Data MS2_NIFXML=/path/to/nif.xml godot-mono --path .
-```
-
-Another field: `godot-mono --path . -- --field <xblock name>` (the file name without `.xblock`).
 
 Screenshot mode runs a scripted walk, saves frames to a folder and then quits:
 

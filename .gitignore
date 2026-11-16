@@ -16,3 +16,4 @@ nif.xml
 *.kfm
 *.dds
 shots/
+build/
