@@ -29,7 +29,7 @@ public static class LayoutJson
         }).ToArray());
 
         // external images (DDS atlases) and the sub-rectangles that shapes use
-        o["images"] = new JsonArray(m.Characters.Values.Where(c => c.Kind == CharKind.Image).OrderBy(c => c.Id).Select(c => (JsonNode)new JsonObject
+        o["images"] = new JsonArray(m.Characters.Values.Where(c => c.ImageFile != null || c.Kind == CharKind.Image).OrderBy(c => c.Id).Select(c => (JsonNode)new JsonObject
         {
             ["id"] = c.Id, ["file"] = c.ImageFile, ["embedded"] = c.ImageFile == null ? "tag " + c.TagCode : null,
             ["width"] = c.ImageWidth == 0 ? null : c.ImageWidth, ["height"] = c.ImageHeight == 0 ? null : c.ImageHeight,
@@ -102,7 +102,7 @@ public static class LayoutJson
             lib[key] = new JsonObject
             {
                 ["classes"] = new JsonObject(wanted.OrderBy(k => k.Key).Select(k => KeyValuePair.Create(k.Key, (JsonNode)k.Value))),
-                ["images"] = new JsonArray(imgIds.Select(i => im.Characters[i]).Where(c => c.Kind == CharKind.Image).Select(c => (JsonNode)new JsonObject { ["id"] = c.Id, ["file"] = c.ImageFile, ["width"] = c.ImageWidth == 0 ? null : c.ImageWidth, ["height"] = c.ImageHeight == 0 ? null : c.ImageHeight }).ToArray()),
+                ["images"] = new JsonArray(imgIds.Select(i => im.Characters[i]).Where(c => c.ImageFile != null || c.Kind == CharKind.Image).Select(c => (JsonNode)new JsonObject { ["id"] = c.Id, ["file"] = c.ImageFile, ["width"] = c.ImageWidth == 0 ? null : c.ImageWidth, ["height"] = c.ImageHeight == 0 ? null : c.ImageHeight }).ToArray()),
                 ["subImages"] = new JsonArray(imgIds.Select(i => im.Characters[i]).Where(c => c.Kind == CharKind.SubImage).Select(c => (JsonNode)new JsonObject { ["id"] = c.Id, ["image"] = c.AtlasImageId, ["x"] = c.AtlasRect.X, ["y"] = c.AtlasRect.Y, ["w"] = c.AtlasRect.W, ["h"] = c.AtlasRect.H }).ToArray()),
                 ["symbols"] = syms,
             };

@@ -414,7 +414,7 @@ public sealed class SwfMovie
     void ReadExternalImage(SwfReader r)
     {
         // 1009: id, flags, bitmap format, width, height, export name (u8 string), file name (u8 string)
-        var c = Register(r.U16(), CharKind.Image, 1009);
+        var c = Get(r.U16(), CharKind.Image, 1009);   // image ids share the number space with characters: keep a character that has the same id
         r.U16(); r.U16();
         c.ImageWidth = r.U16(); c.ImageHeight = r.U16();
         r.String8();
