@@ -39,6 +39,19 @@ public static class ItemReader {
     /// </summary>
     public static Func<int, ItemExtra?> ExtraOf;
 
+    /// <summary>UgcItemLook (CUgcItemLook::Read): i64 id, file name, item name, u8, i32, i64 account, i64 character, author, i64 creation time, url, u8.</summary>
+    public static void ReadUgcLook(ByteReader r) {
+        r.ReadLong(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
+        r.ReadUnicodeString(); r.ReadLong(); r.ReadUnicodeString(); r.ReadByte();
+    }
+
+    /// <summary>A pet item as FieldAddUser carries it: i32 id, i64 uid, i32 rarity, then the item body with a pet block.</summary>
+    public static EquipItem ReadPetItem(ByteReader r) {
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt(), Slot = EquipSlot.Unknown };
+        ReadBody(r, it, EquipSlot.Unknown, forceExtra: ItemExtra.Pet);
+        return it;
+    }
+
     static bool LooksUgc(ByteReader r) {
         if (r.Available < 10) return false;
         var b = r.Buffer; int p = r.Position;
@@ -57,13 +70,22 @@ public static class ItemReader {
         return it;
     }
 
+    /// <summary>ItemPutOn (CSceneStateGame::OnItemPutOn): i32 object id, i32 item id, i64 uid, u8 slot, i32 rarity, u8 kind, then the item body. Worn by another player, or the local one.</summary>
+    public static (int ObjectId, byte Kind, EquipItem Item) ReadPutOn(ByteReader r) {
+        int obj = r.ReadInt();
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), Slot = (EquipSlot) r.ReadByte(), Rarity = r.ReadInt() };
+        byte kind = r.ReadByte();
+        ReadBody(r, it, it.Slot);
+        return (obj, kind, it);
+    }
+
     public static EquipItem ReadBadge(ByteReader r) {
         var it = new EquipItem { IsBadge = true, BadgeType = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
         ReadBody(r, it, EquipSlot.Unknown, badge: true);
         return it;
     }
 
-    static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false) {
+    static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false, ItemExtra? forceExtra = null) {
         it.Amount = r.ReadInt();
         r.ReadInt(); // -1
         it.CreationTime = r.ReadLong();
@@ -122,11 +144,9 @@ public static class ItemReader {
             else if (type == 11) r.ReadInt();
         }
 
-        switch (badge ? ItemExtra.None : ExtraOf?.Invoke(it.Id) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None)) {
+        switch (forceExtra ?? (badge ? ItemExtra.None : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None)) {
             case ItemExtra.Ugc:
-                // UgcItemLook: i64, 2 strings, u8, i32, i64, i64, string, i64, string, u8
-                r.ReadLong(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
-                r.ReadUnicodeString(); r.ReadLong(); r.ReadUnicodeString(); r.ReadByte();
+                ReadUgcLook(r);
                 // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
                 r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
                 break;

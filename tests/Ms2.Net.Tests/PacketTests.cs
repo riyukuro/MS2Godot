@@ -18,9 +18,9 @@ public class PacketTests {
     }
 
     [Test] public void SelectCharacterLayout() {
-        var bytes = Bytes(new SelectCharacter(0x0102030405060708));
-        Assert.That(bytes, Is.EqualTo(new byte[] { 0, 8, 7, 6, 5, 4, 3, 2, 1 }));
-        Assert.That(SelectCharacter.Read(new ByteReader(bytes)).CharacterId, Is.EqualTo(0x0102030405060708));
+        var bytes = Bytes(new SelectCharacter(0x0102030405060708, 3));
+        Assert.That(bytes, Is.EqualTo(new byte[] { 0, 8, 7, 6, 5, 4, 3, 2, 1, 3, 0 }));
+        Assert.That(SelectCharacter.Read(new ByteReader(bytes)), Is.EqualTo(new SelectCharacter(0x0102030405060708, 3)));
     }
 
     [Test] public void UserSyncOutRoundTripsWithOptionalFields() {
@@ -48,5 +48,15 @@ public class PacketTests {
     [Test] public void TrailingBytesAreAnError() {
         var w = new ByteWriter(); w.WriteInt(1); w.WriteByte(0);
         Assert.Throws<PacketLayoutException>(() => TickRequest.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())));
+    }
+
+    [Test] public void ManagementCommandsRoundTrip() {
+        Assert.That(ManageCharacter.Read(new ByteReader(Bytes(new ManageCharacter(CharacterIdCommand.ConfirmDelete, 9)))), Is.EqualTo(new ManageCharacter(CharacterIdCommand.ConfirmDelete, 9)));
+        Assert.That(RenameCharacter.Read(new ByteReader(Bytes(new RenameCharacter(5, "Neu")))), Is.EqualTo(new RenameCharacter(5, "Neu")));
+        var c = new CreateCharacter(1, 20, "Name", 0x11, 0x22, new byte[] { 1, 2, 3 }, 77);
+        var back = CreateCharacter.Read(new ByteReader(Bytes(c)));
+        Assert.That(back.Name, Is.EqualTo("Name")); Assert.That(back.Items, Is.EqualTo(c.Items)); Assert.That(back.Elapsed, Is.EqualTo(77));
+        Assert.That(StateChange.Read(new ByteReader(Bytes(new StateChange(0, 1, 5, new Vector3(1, 2, 3))))).Position, Is.EqualTo(new Vector3(1, 2, 3)));
+        Assert.That(Bytes(new StateChange(1, 0, 5, default)).Length, Is.EqualTo(6));
     }
 }

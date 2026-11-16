@@ -64,8 +64,25 @@ public sealed class ProxyGameObj {
     public int HomePlotMapId, HomePlotNumber, HomeApartmentNumber; public string HomeName; public int GearScore; public short State;
     public int AchievementCombat, AchievementAdventure, AchievementLifestyle;
 
+    // Command 4 (remove) and 5 (update, flag driven): CSceneStateGame::FUN_14172f500
+    public int UpdateFlags; public byte UpdateKind; public Vector3? UpdatePosition; public short UpdateLevel;
+    public short UpdateJobCode; public int UpdateJob; public string UpdateMotto; public int UpdateGearScore; public short UpdateState;
+
     public static ProxyGameObj Read(ByteReader r) {
         var p = new ProxyGameObj { Command = r.ReadByte() };
+        if (p.Command == 4) { p.ObjectId = r.ReadInt(); r.ExpectEnd("ProxyGameObj.Remove"); return p; }
+        if (p.Command == 5) {
+            p.ObjectId = r.ReadInt();
+            int f = p.UpdateFlags = r.ReadByte();
+            if ((f & 1) != 0) p.UpdateKind = r.ReadByte();
+            if ((f & 2) != 0) p.UpdatePosition = r.ReadVec3();
+            if ((f & 4) != 0) p.UpdateLevel = r.ReadShort();
+            if ((f & 8) != 0) { p.UpdateJobCode = r.ReadShort(); p.UpdateJob = r.ReadInt(); }
+            if ((f & 0x10) != 0) p.UpdateMotto = r.ReadUnicodeString();
+            if ((f & 0x20) != 0) p.UpdateGearScore = r.ReadInt();
+            if ((f & 0x40) != 0) p.UpdateState = r.ReadShort();
+            r.ExpectEnd("ProxyGameObj.Update"); return p;
+        }
         if (p.Command != 3) return p;
         p.ObjectId = r.ReadInt(); p.CharacterId = r.ReadLong(); p.AccountId = r.ReadLong();
         p.Name = r.ReadUnicodeString(); p.Picture = r.ReadUnicodeString(); p.Motto = r.ReadUnicodeString();
@@ -78,8 +95,26 @@ public sealed class ProxyGameObj {
     }
 }
 
+/// <summary>RideOnAction (ReadRideOnAction, commonfiles/rideonaction.cpp): u8 type, i32, i32, bool; type 1 adds i32 item id, i64 uid, a ugc look; type 2 adds i32, i16.</summary>
+public sealed record RideOnAction(byte Type, int RideId, int ObjectId, bool Flag, int ItemId, long ItemUid, int Extra, short ExtraShort) {
+    public static RideOnAction Read(ByteReader r) {
+        byte type = r.ReadByte();
+        if (type > 3) throw new PacketLayoutException($"ride action type {type}");
+        int rideId = r.ReadInt(), obj = r.ReadInt(); bool flag = r.ReadBool();
+        int itemId = 0; long uid = 0; int extra = 0; short es = 0;
+        if (type == 1) { itemId = r.ReadInt(); uid = r.ReadLong(); ItemReader.ReadUgcLook(r); }
+        else if (type == 2) { extra = r.ReadInt(); es = r.ReadShort(); }
+        return new RideOnAction(type, rideId, obj, flag, itemId, uid, extra, es);
+    }
+}
+
+/// <summary>One buff in a FieldAddUser list or an add-buff packet (AdditionalCli::FUN_14096be10): owner header (3 i32), state (i32, i32 end tick?, i32 skill id, i16 level, i32 overlap count, u8), i64 shield value.</summary>
+public sealed record Buff(int OwnerObjectId, int BuffObjectId, int CasterObjectId, int StartTick, int EndTick, int SkillId, short Level, int OverlapCount, byte Enabled, long Shield) {
+    public static Buff Read(ByteReader r) => new(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadShort(), r.ReadInt(), r.ReadByte(), r.ReadLong());
+}
+
 /// <summary>
-/// Inbound 0x17, decoded through the stats block, then the appearance. Not decoded: buffs (when present) and what follows them.
+/// Inbound 0x17, decoded to the last byte (client reader: CSceneStateGame::OnAddUser, scenestategame.cpp).
 /// </summary>
 public sealed class FieldAddUser {
     public int ObjectId;
@@ -90,13 +125,14 @@ public sealed class FieldAddUser {
     /// <summary>The player stats block: 3 sets (total, base, current) of health (i64), attack speed, move speed, mount speed, jump height.</summary>
     public (long Health, int AttackSpeed, int MoveSpeed, int MountSpeed, int JumpHeight)[] Stats = new (long, int, int, int, int)[3];
     public bool InBattle;
+    public RideOnAction Ride; public (int Key, byte Value)[] Passengers = Array.Empty<(int, byte)>();
+    public List<Buff> Buffs = new();
+    public EquipItem Pet;
     public int HeldCubeItemId; public long HeldCubeId;
     public SkinColor Skin; public string Picture;
     public List<EquipItem> Equips = new(); public List<EquipItem> Outfit2 = new(); public List<EquipItem> Badges = new();
     public long SkinTabStart, SkinTabEnd;
     public short BuffCount;
-    /// <summary>The bytes from the buff list on. Decoded only when BuffCount is 0 (Title, Insignia, Pet, premium time follow).</summary>
-    public byte[] Tail;
     public int Title; public short Insignia; public bool InsigniaShown;
     public bool HasPet; public long PremiumTime;
 
@@ -113,11 +149,15 @@ public sealed class FieldAddUser {
         r.ReadByte();
         // HeldCube: i32 item id, i64 id, i64 expiry, bool template (+ ugc look)
         f.HeldCubeItemId = r.ReadInt(); f.HeldCubeId = r.ReadLong(); r.ReadLong();
-        if (r.ReadBool()) throw new PacketLayoutException("held cube with ugc template is not decoded");
+        if (r.ReadBool()) ItemReader.ReadUgcLook(r);
         r.ReadInt();
         f.Skin = new SkinColor(r.ReadRgba(), r.ReadRgba());
         f.Picture = r.ReadUnicodeString();
-        if (r.ReadBool()) throw new PacketLayoutException("riding state is not decoded");
+        if (r.ReadBool()) {
+            f.Ride = RideOnAction.Read(r);
+            f.Passengers = new (int, byte)[r.ReadByte()];
+            for (int i = 0; i < f.Passengers.Length; i++) f.Passengers[i] = (r.ReadInt(), r.ReadByte());
+        }
         r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadInt();
 
         using (var b = r.ReadDeflated()) {
@@ -136,13 +176,13 @@ public sealed class FieldAddUser {
             b.ExpectEnd("FieldAddUser badges");
         }
         f.BuffCount = r.ReadShort();
-        if (f.BuffCount != 0) { f.Tail = r.ReadBytes(r.Available); return f; }
+        for (int i = 0; i < (ushort) f.BuffCount; i++) f.Buffs.Add(Buff.Read(r));
         r.ReadInt(); r.ReadInt(); r.ReadByte();
         r.ReadInt(); r.ReadByte(); r.ReadByte();
         f.Title = r.ReadInt(); f.Insignia = r.ReadShort(); f.InsigniaShown = r.ReadBool();
         r.ReadInt();
         f.HasPet = r.ReadBool();
-        if (f.HasPet) { f.Tail = r.ReadBytes(r.Available); return f; }
+        if (f.HasPet) f.Pet = ItemReader.ReadPetItem(r);
         f.PremiumTime = r.ReadLong(); r.ReadInt(); r.ReadByte(); r.ReadShort();
         r.ExpectEnd("FieldAddUser");
         return f;

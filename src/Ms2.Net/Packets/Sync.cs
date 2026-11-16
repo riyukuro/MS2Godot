@@ -98,3 +98,17 @@ public sealed class UserSyncOut : IOutPacket {
         return p;
     }
 }
+
+/// <summary>Outbound 0x80 (MyPC::SendStateChange): u8 mode (0 = jump, the position follows), u8 argument, i32 server tick, vec3 position when mode is 0.</summary>
+public sealed record StateChange(byte Mode, byte Arg, int ServerTick, Vector3 Position) : IOutPacket {
+    public Outbound Op => Outbound.State;
+    public void Write(ByteWriter w) {
+        w.WriteByte(Mode); w.WriteByte(Arg); w.WriteInt(ServerTick);
+        if (Mode == 0) { w.WriteFloat(Position.X); w.WriteFloat(Position.Y); w.WriteFloat(Position.Z); }
+    }
+    public static StateChange Read(ByteReader r) {
+        byte mode = r.ReadByte(), arg = r.ReadByte(); int tick = r.ReadInt();
+        var p = new StateChange(mode, arg, tick, mode == 0 ? r.ReadVec3() : default);
+        r.ExpectEnd("StateChange"); return p;
+    }
+}

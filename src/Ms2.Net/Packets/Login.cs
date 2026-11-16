@@ -13,7 +13,7 @@ public sealed record ResponseVersion(uint Version = 2525, ushort FeatureLevel = 
     public static ResponseVersion Read(ByteReader r) { var p = new ResponseVersion(r.ReadUInt(), r.ReadUShort(), r.ReadUShort()); r.ExpectEnd("ResponseVersion"); return p; }
 }
 
-/// <summary>Outbound 0x03 (WriteLoginA): u8 type (1 server list, 2 char list), unicode user, unicode password, i16 login type, 16 byte machine id, i32, i32, narrow language.</summary>
+/// <summary>Outbound 0x03, variant A (WriteLoginA), sent by the in-game login dialogs (UILoginDialog, UIServerListDialog) with the typed id and password and a region string: the variant for a private server. u8 type (1 server list, 2 char list), unicode user, unicode password, i16 login type, 16 byte machine id, i32, i32, narrow language.</summary>
 public sealed record ResponseLogin(byte Type, string User, string Password, short LoginType, byte[] MachineId, int MachineValue, int ClientValue, string Language) : IOutPacket {
     public Outbound Op => Outbound.ResponseLogin;
     public void Write(ByteWriter w) {
@@ -29,8 +29,8 @@ public sealed record ResponseLogin(byte Type, string User, string Password, shor
 
 /// <summary>
 /// Outbound 0x03, variant B (WriteLoginB, commonfiles/classobject.cpp): u8 type, unicode user, unicode password (the publisher
-/// token form), i16 login type, i32, 16 byte machine id, i32, i32. Recorded KMS traffic from build 2521 on uses this variant;
-/// the server fork's ResponseLoginData reads variant A.
+/// token form), i16 login type, i32, 16 byte machine id, i32, i32. Sent by CClientPlatformNexonKorea::vfunc_20 (user = passport string,
+/// password = hardware id string): the Nexon Korea platform path, which is why live KMS recordings use it. The server fork reads variant A.
 /// </summary>
 public sealed record ResponseLoginB(byte Type, string User, string Password, short LoginType, int Value, byte[] MachineId, int MachineValue, int ClientValue) : IOutPacket {
     public Outbound Op => Outbound.ResponseLogin;
@@ -96,5 +96,54 @@ public sealed record LoginToGame(byte Error, byte[] Ip, ushort Port, ulong Token
         if (err != 0) return new LoginToGame(err, null, 0, 0, 0, r.Available >= 2 ? r.ReadUnicodeString() : "");
         var p = new LoginToGame(0, r.ReadBytes(4), r.ReadUShort(), r.ReadULong(), r.ReadInt(), "");
         r.ExpectEnd("LoginToGame"); return p;
+    }
+}
+
+/// <summary>
+/// Inbound 0x06 (CNetworkService::OnPingRequest): the i32 is how many of the client's packets the server has seen
+/// (it lets the client drop acknowledged ones from its resend buffer). The answer is a Pong.
+/// </summary>
+public sealed record Ping(int Sequence) {
+    public static Ping Read(ByteReader r) { var p = new Ping(r.ReadInt()); r.ExpectEnd("Ping"); return p; }
+}
+
+/// <summary>Outbound 0x06: the number of frames the client has received on this connection, the handshake frame included (CGameSocket m_sequence).</summary>
+public sealed record Pong(int ReceivedCount) : IOutPacket {
+    public Outbound Op => Outbound.Pong;
+    public void Write(ByteWriter w) => w.WriteInt(ReceivedCount);
+    public static Pong Read(ByteReader r) { var p = new Pong(r.ReadInt()); r.ExpectEnd("Pong"); return p; }
+}
+
+/// <summary>Outbound 0x0B (CNetworkService::SendTimeSyncRequest): i32 sequence.</summary>
+public sealed record RequestTimeSync(int Sequence) : IOutPacket {
+    public Outbound Op => Outbound.RequestTimeSync;
+    public void Write(ByteWriter w) => w.WriteInt(Sequence);
+    public static RequestTimeSync Read(ByteReader r) { var p = new RequestTimeSync(r.ReadInt()); r.ExpectEnd("RequestTimeSync"); return p; }
+}
+
+/// <summary>Outbound 0x14: empty (UICharacterListDialog asks for the server list).</summary>
+public sealed record RequestServerList : IOutPacket {
+    public Outbound Op => Outbound.RequestServerList;
+    public void Write(ByteWriter w) { }
+}
+
+public sealed record ServerListChannelEntry(int ServerId, string Name, byte Characters, (string Address, ushort Port)[] Addresses, int TrafficPercent, ushort[] Channels);
+
+/// <summary>Inbound 0x0B (UIServerListDialog::ReceiveServerList): narrow string (server type name), u8 count, per server: i32 id, name, u8 characters, u16 n x (address, u16 port), i32 traffic percent, u16 n x u16 channel.</summary>
+public sealed record ServerList(string EnvName, List<ServerListChannelEntry> Servers) {
+    public static ServerList Read(ByteReader r) {
+        string env = r.ReadString(); int n = r.ReadByte();
+        var list = new List<ServerListChannelEntry>();
+        for (int i = 0; i < n; i++) {
+            int id = r.ReadInt(); string name = r.ReadUnicodeString(); byte chars = r.ReadByte();
+            var addr = new (string, ushort)[r.ReadUShort()];
+            for (int j = 0; j < addr.Length; j++) addr[j] = (r.ReadUnicodeString(), r.ReadUShort());
+            int traffic = r.ReadInt();
+            var ch = new ushort[r.ReadUShort()];
+            for (int j = 0; j < ch.Length; j++) ch[j] = r.ReadUShort();
+            list.Add(new ServerListChannelEntry(id, name, chars, addr, traffic, ch));
+        }
+        r.ExpectEnd("ServerList");
+        return new ServerList(env, list);
     }
 }

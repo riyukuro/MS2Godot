@@ -5,13 +5,56 @@ using Ms2.Net.Wire;
 
 namespace Ms2.Net.Packets;
 
-/// <summary>Outbound 0x09 CharacterManagement. Command 0 = select (then i64 character id). Create/delete are not typed here.</summary>
-public sealed record SelectCharacter(long CharacterId) : IOutPacket {
+/// <summary>Outbound 0x09 CharacterManagement, command 0 (UIServerListDialog::EnterGame, WriteLoginPing): i64 character id, i16 channel (0 when none was picked).</summary>
+public sealed record SelectCharacter(long CharacterId, short Channel = 0) : IOutPacket {
     public Outbound Op => Outbound.CharacterManagement;
-    public void Write(ByteWriter w) { w.WriteByte(0); w.WriteLong(CharacterId); }
+    public void Write(ByteWriter w) { w.WriteByte(0); w.WriteLong(CharacterId); w.WriteShort(Channel); }
     public static SelectCharacter Read(ByteReader r) {
         if (r.ReadByte() != 0) throw new PacketLayoutException("not a select command");
-        var p = new SelectCharacter(r.ReadLong()); r.ExpectEnd("SelectCharacter"); return p;
+        var p = new SelectCharacter(r.ReadLong(), r.ReadShort()); r.ExpectEnd("SelectCharacter"); return p;
+    }
+}
+
+/// <summary>
+/// Outbound 0x09, command 1 (UICharacterCreateDialog::FUN_1418e3f50, FUN_1401f9f20): u8 gender, i16 job group, name,
+/// i32 skin color 0, i32 skin color 1 (ARGB), i16 length + the shown equips (u8 count, each: i32 item id, u8, then the
+/// item's color/look data, kept raw), i32 elapsed seconds in the dialog.
+/// </summary>
+public sealed record CreateCharacter(byte Gender, short JobGroup, string Name, int Color0, int Color1, byte[] Items, int Elapsed) : IOutPacket {
+    public Outbound Op => Outbound.CharacterManagement;
+    public void Write(ByteWriter w) {
+        w.WriteByte(1); w.WriteByte(Gender); w.WriteShort(JobGroup); w.WriteUnicodeString(Name); w.WriteInt(Color0); w.WriteInt(Color1);
+        w.WriteShort((short) Items.Length); w.WriteBytes(Items); w.WriteInt(Elapsed);
+    }
+    public static CreateCharacter Read(ByteReader r) {
+        if (r.ReadByte() != 1) throw new PacketLayoutException("not a create command");
+        var p = new CreateCharacter(r.ReadByte(), r.ReadShort(), r.ReadUnicodeString(), r.ReadInt(), r.ReadInt(), null, 0);
+        p = p with { Items = r.ReadBytes(r.ReadUShort()) };
+        p = p with { Elapsed = r.ReadInt() };
+        r.ExpectEnd("CreateCharacter"); return p;
+    }
+}
+
+public enum CharacterIdCommand : byte { BeginDelete = 2, CancelDelete = 3, ConfirmDelete = 4 }
+
+/// <summary>Outbound 0x09, commands 2 (start the delete wait), 3 (cancel it), 4 (delete for good): i64 character id.</summary>
+public sealed record ManageCharacter(CharacterIdCommand Command, long CharacterId) : IOutPacket {
+    public Outbound Op => Outbound.CharacterManagement;
+    public void Write(ByteWriter w) { w.WriteByte((byte) Command); w.WriteLong(CharacterId); }
+    public static ManageCharacter Read(ByteReader r) {
+        byte c = r.ReadByte();
+        if (c < 2 || c > 4) throw new PacketLayoutException($"command {c}");
+        var p = new ManageCharacter((CharacterIdCommand) c, r.ReadLong()); r.ExpectEnd("ManageCharacter"); return p;
+    }
+}
+
+/// <summary>Outbound 0x09, command 5 (UICharacterListDialog::SendCharacterManagementMode5): i64 character id, new name.</summary>
+public sealed record RenameCharacter(long CharacterId, string Name) : IOutPacket {
+    public Outbound Op => Outbound.CharacterManagement;
+    public void Write(ByteWriter w) { w.WriteByte(5); w.WriteLong(CharacterId); w.WriteUnicodeString(Name); }
+    public static RenameCharacter Read(ByteReader r) {
+        if (r.ReadByte() != 5) throw new PacketLayoutException("not a rename command");
+        var p = new RenameCharacter(r.ReadLong(), r.ReadUnicodeString()); r.ExpectEnd("RenameCharacter"); return p;
     }
 }
 
