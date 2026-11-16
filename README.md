@@ -139,3 +139,20 @@ MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn -- --shots DIR --
 
 AGPL-3.0, see [LICENSE](LICENSE). The m2d archive reader is the NuGet package `Maple2.File.Parser.Tadeucci`
 (GPL-3.0-or-later).
+
+## Offline replay
+
+`game/net/Replay.tscn` plays a recorded session (MapleShark2 `.msb`, your own local file) through the real receive path, with no socket:
+`ReplayStream` (a synthesized handshake and each recorded server packet as an encrypted frame, released at its recorded time) into
+`MapleChannel` and `ClientSession` into `FieldTracker`. The scene loads the field the recording enters, spawns every player from
+`FieldAddUser` (a stand-in body, male or female by the packet), moves them by `UserSync`/`RideSync` (the local player by the recording's
+own movement packets) and removes them on `FieldRemoveUser`.
+
+```
+godot-mono --path game res://net/Replay.tscn -- --recording FILE.msb [--speed 1] [--start SEC] [--follow self|NAME|center] \
+    [--dist 1000] [--out DIR --shots "SEC[:FOLLOW],SEC,..."]
+```
+
+With `--out` it saves a screenshot when the recording reaches each time, compares every player's position with the recorded coordinates
+(exit code 3 on a mismatch) and quits at the end of the recording. `MS2_REPLAY=FILE.msb dotnet test tests/Ms2.Net.Tests` runs the same
+pipeline without Godot and compares final positions, yaw and move counts with an independent walk over the recording.

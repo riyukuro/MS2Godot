@@ -1,5 +1,6 @@
 using Maple2.PacketLib.Tools;
 using Ms2.Net.Packets;
+using Ms2.Net.Replay;
 using Ms2.Net.Wire;
 using NUnit.Framework;
 

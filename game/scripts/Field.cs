@@ -17,9 +17,9 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Field : Node3D
 {
-    PackSet packs;
-    Player player;
-    Camera3D camera;
+    protected PackSet packs;
+    protected Player player;
+    protected Camera3D camera;
     FieldCamera cam = new();
     float camDist;                        // current zoom distance, MinCameraDistance .. cam.Distance
     const float MinCameraDistance = 400f; // CCameraMode default nearest zoom
@@ -31,7 +31,7 @@ public partial class Field : Node3D
 
     public override void _Ready()
     {
-        string fieldName = "02000001_tw_tria";
+        string fieldName = FieldNameFor("02000001_tw_tria");
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++)
         {
@@ -68,14 +68,15 @@ public partial class Field : Node3D
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
         BuildEnvironment(map, fieldName);
-        SpawnPlayer(builder, map);
+        if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
         try { cam = FieldData.FindByXBlock(packs, fieldName)?.Camera ?? cam; }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         camDist = cam.Distance;
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
         AddChild(camera);
-        UpdateCamera();
+        if (player != null) UpdateCamera();
+        OnFieldBuilt(builder, map, fieldName);
 
         if (shotDir != null)
         {
@@ -93,6 +94,12 @@ public partial class Field : Node3D
             script.Enqueue((1.0f, Vector2.Zero, false, "field_idle_end.png"));
         }
     }
+
+    // Hooks for scenes that build on the field (the replay scene in net/): the field to load, whether the walkable player
+    // exists, and a call once the field, environment and camera are in place.
+    protected virtual string FieldNameFor(string defaultName) => defaultName;
+    protected virtual bool SpawnsLocalPlayer => true;
+    protected virtual void OnFieldBuilt(ModelBuilder builder, FieldMap map, string fieldName) { }
 
     void BuildEnvironment(FieldMap map, string fieldName)
     {

@@ -1,12 +1,20 @@
-namespace Ms2.Net.Tests;
+namespace Ms2.Net.Replay;
 
-/// <summary>Reader for MapleShark2 .msb recordings (local files, never part of the repo). Packet data is the plaintext body after the opcode.</summary>
+/// <summary>One recorded packet (MapleShark2 .msb): plaintext body after the opcode, the sender, and the recorder's timestamp.</summary>
 public sealed class MsbPacket {
-    public ushort Opcode; public bool ServerToClient; public byte[] Data;
+    public ushort Opcode;
+    public bool ServerToClient;
+    public byte[] Data;
+    /// <summary>.NET ticks (100 ns) of the recorder's clock; only differences mean anything.</summary>
+    public long Ticks;
 }
 
+/// <summary>Reader for MapleShark2 .msb recordings. Recordings are the player's own local files and are never part of the repo.</summary>
 public sealed class MsbFile {
-    public string Path; public byte Locale; public uint Build; public string Error;
+    public string Path;
+    public byte Locale;
+    public uint Build;
+    public string Error;
     public List<MsbPacket> Packets = new();
 
     public static MsbFile Read(string path) {
@@ -19,10 +27,11 @@ public sealed class MsbFile {
             r.ReadBytes(r.ReadByte()); r.ReadUInt16();
             f.Locale = r.ReadByte(); f.Build = r.ReadUInt32();
             while (r.BaseStream.Position < r.BaseStream.Length) {
-                r.ReadInt64();
+                long ticks = r.ReadInt64();
                 uint size = r.ReadUInt32();
-                var p = new MsbPacket { Opcode = r.ReadUInt16() };
-                p.ServerToClient = r.ReadByte() == 0; // the flag is the sender as MapleShark sees it: 1 = client (ResponseVersion, op 1, 8 bytes, has flag 1)
+                var p = new MsbPacket { Ticks = ticks, Opcode = r.ReadUInt16() };
+                // the flag is the sender as the recorder sees it: 1 = client (ResponseVersion, op 1, 8 bytes, has flag 1)
+                p.ServerToClient = r.ReadByte() == 0;
                 if (size > r.BaseStream.Length - r.BaseStream.Position) throw new InvalidDataException("size");
                 p.Data = r.ReadBytes((int) size);
                 if (ver < 0x2030) r.ReadBytes(8);
