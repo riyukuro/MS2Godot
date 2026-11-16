@@ -1,0 +1,18 @@
+# Godot / .NET build output
+.godot/
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+
+# local settings (data paths) and anything taken from a game client
+game/local.cfg
+nif.xml
+*.m2d
+*.m2h
+*.nif
+*.kf
+*.kfm
+*.dds
+shots/
