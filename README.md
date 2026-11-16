@@ -9,8 +9,9 @@ Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_
 the player character at the field's player spawn point, dressed in a new character's starter look. It walks,
 runs and climbs steps over the field's collision.
 
-Controls: WASD or the arrow keys move (relative to the camera), Shift walks instead of running, and the wheel
-zooms.
+Controls: the arrow keys (or WASD) move relative to the camera, C or Alt jumps, comma (or Shift) holds walk, and
+the wheel zooms. Keys are ignored while a text field has focus. The movement follows the client; see
+[Movement](#movement).
 
 The camera follows the client's default field camera: a fixed direction, a field of view, and a pitch and target
 height that change with the zoom distance. The values come from the field's entry in `table/fielddata.xml`, or
@@ -51,7 +52,6 @@ language, event groups beyond the event category.
 
 Known gaps:
 
-- No swimming.
 - Some banner textures are white.
 - No bloom pass. The client's is small: a bright pass of max(c - 0.27, 0) / (that + 30) over a quarter-size
   copy, blurred and added twice to the scene, with no tone mapping. So it does not explain why lit floors come out
@@ -95,6 +95,52 @@ Command line, for the field and the viewer:
 | `--skin-color <row>` | palette row for the skin |
 | `--hair-color <row>` | palette row for the hair |
 | `--eye-color <row>` | palette row for the eyes |
+
+## Movement
+
+`game/scripts/Player.cs` and `game/scripts/movement/` port the local player's controller and states from the
+restored client source (`src/` of the decomp tree). States: idle, walk/run, jump, fall, land, swim and ladder,
+with the action sequences of `table/pcactiondata.xml` (group 0), for example `Jump_Up_A` / `Jump_Up_B`,
+`Jump_Fall_A`, `Jump_Land_A`, `SwimRun_A`, `SwimIdle_A`, `Ladder_Up_Take_A`, `Ladder_L_Up_A`, `Ladder_R_Up_A`.
+
+The client keeps PhysX in metres (FromPercent x0.01, ToPercent x100); the numbers below are game units (cm).
+
+| Value | Here | Client source |
+|---|---|---|
+| Capsule radius, height | 25, 105 | `client/ms2/pcbase.cpp:785` (m_unk_620), `unnamed/unit_14123f5b0_gameobjectcontrollerphysxhelpers.cpp:85-99` (height - 2r) |
+| Slope limit | 50 deg | `..._gameobjectcontrollerphysxhelpers.cpp:85-99` (cos 0.87266463) |
+| Step offset, skin | 30, 1 | `..._gameobjectcontrollerphysxhelpers.cpp:85-99` (0.3, 0.01 m) |
+| Collision groups | PC group 2, mask 0x399 (NPC 0x389) | `client/ms2/pc.cpp:804-805`, `client/ms2/pcbase.cpp:917` |
+| Walk, run, swim speed | 120, 350, 350 | `client/ms2/pc.cpp:651-656` (1.2, 3.5, 3.5 m/s); speed stat `pcbase.cpp:2238`, `:2269` |
+| Acceleration | none (speed set each frame) | `client/ms2/pcbase.cpp:1763` (vfunc_68) |
+| Turn rate | 1800 deg/s | `client/ms2/pcbase.cpp:801-802` |
+| Gravity | -4000 (field MS2PhysXScene Gravity x100) | `worldservice_1.cpp:5268` SetGravity; MS2PhysXScene flat default (0,0,-40) |
+| Jump | h = 100 x JumpHeight/100, v0 = sqrt(4 h g), apex 2h = 200 | `client/ms2/pcbase.cpp:1477`, `..._gameobjectcontrollerphysxhelpers.cpp:309-319` (StartJump) |
+| Jump variant | A / B toggled at random | `statejump.cpp` vfunc_4 |
+| Air control | FallMoveSpeed 1.0; standing jump steers at 100 | `placeholder/clientconstants.h:357`, `unit_1402ab440_constantsblocks.cpp:946`; `statejump.cpp` vfunc_3 |
+| Fall animation in a jump | after sqrt(12/34.6) s + apex | `statejump.cpp` vfunc_9; s_fDefaultGravity `..._gameobjectcontrollerphysxhelpers.cpp:28` |
+| Walk / idle to fall | air time > sqrt(3/34.6) s (idle 0.1 s) and > 30 above ground | `statewalk.cpp:326`, `stateidle.cpp:244-283`, `client/ms2/pcbase.cpp:2544` (vfunc_99) |
+| Landing | ray +30, `Jump_Land_A`, moving lands into walk | `stateland.cpp` |
+| Fall damage | fall height sent to the server (damage there) | `client/ms2/pcbase.cpp:~4350` (SendFallDamage) |
+| Swim | standing on PropCollisionGroup 8 | `client/ms2/pcbase.cpp:4328` (FUN_141675ed0) |
+| Ladder search | reach 50 (from top 70), probe +90 (top -75), span 150 | `client/ms2/pc.cpp:3154`, `:3168` (FUN_141659b80) |
+| Ladder climb | 75 per cycle, 0.2 s / rate after text key `begin`; take 0.15 / 0.2 / 0.1 s | `stateladder.cpp` vfunc_4, UpdateClimb, TextKeyEvent |
+| Ladder top exit | ray down from 75 ahead, reach 150 | `stateladder.cpp` FUN_1417d99e0 |
+| Gait rate | animation rate from speed | `client/ms2/pc.cpp:4347` (vfunc_115) |
+| Keys | moveUp 0x30d41, jump 0x493e1, walkPress 0x493ea | `guideentity_1.cpp:99`; `table/default/defaultkey.xml` |
+| Diagonal hold | 50 ms after one key is released | `unnamed/unit_141682f80.cpp:313`, `:~470` |
+
+Not ported, from the same source:
+
+- No double jump: the client has only the A / B jump variants.
+- Dash (state 0x14) and swim dash (0x1c, SwimDashSpeed 6.4) are not recovered yet; rope (StateRope) is not ported.
+- Climbing onto ledges is skill 20000011 (`FUN_1416788d0`, field CheckClimb), not a movement state.
+- Click-to-move exists in the client (`CMouseController::GetMove`) and is not ported; the gamepad is behind
+  feature 0xb5.
+
+A scripted run with screenshots: `godot-mono --path game res://field.tscn -- --move-shots <dir>
+[--move-script <file>]`. The default script in `game/scripts/movement/MoveProof.cs` jumps, jumps onto a step,
+walks into the water and swims, climbs a ladder, jumps off and falls; each state change is printed.
 
 ## Layout
 

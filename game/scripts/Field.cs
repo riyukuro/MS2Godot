@@ -168,9 +168,12 @@ public partial class Field : Node3D
 
     void SpawnPlayer(ModelBuilder builder, FieldMap map)
     {
-        var (visual, anim) = Look.PlayerLook.Build(builder, packs);
+        var (visual, anim, md, bodyDir) = Look.PlayerLook.Build(builder, packs);
 
         player = Player.Create(visual, anim);
+        player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
+        player.Climbs = Movement.Climbables.From(map);
+        player.Gravity = Movement.MoveConfig.FieldGravity(map);
         var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC")
               ?? map.Entities.FirstOrDefault(e => e.ModelName.StartsWith("SpawnPointPC"));
         var pos = sp?.Position ?? new Vec3(0, 0, 0);
@@ -181,8 +184,6 @@ public partial class Field : Node3D
         double yaw = (sp?.RotationDeg.Z ?? 0) * Math.PI / 180;
         var face = FieldBuilder.ToGodotPoint(new Vec3(Math.Sin(yaw), -Math.Cos(yaw), 0));
         player.Face(face);
-        player.Anim.Play("idle");
-        player.CurrentAnim = "idle";
         GD.Print($"spawn {sp?.Name} ms2 {pos} -> godot {player.SpawnPoint}");
     }
 
@@ -217,17 +218,11 @@ public partial class Field : Node3D
     public override void _PhysicsProcess(double delta)
     {
         if (player == null) return;
-        if (shotDir == null)
+        if (shotDir != null)                     // otherwise Player reads the keyboard (Movement.MoveInput)
         {
-            var v = Vector2.Zero;
-            if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) v.Y += 1;
-            if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) v.Y -= 1;
-            if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) v.X += 1;
-            if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left)) v.X -= 1;
-            player.Input2 = v;
-            player.WalkMode = Input.IsKeyPressed(Key.Shift);
+            player.ScriptDriven = true;
+            RunScript((float)delta);
         }
-        else RunScript((float)delta);
     }
 
     public override void _Process(double delta)

@@ -1,4 +1,5 @@
 using Godot;
+using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2Godot.Net;
 
@@ -11,7 +12,7 @@ namespace Ms2Godot.Look;
 /// </summary>
 public static class PlayerLook
 {
-    public static (Node3D visual, AnimationPlayer anim) Build(ModelBuilder builder, PackSet packs)
+    public static (Node3D visual, AnimationPlayer anim, ModelData body, string bodyDir) Build(ModelBuilder builder, PackSet packs)
     {
         int gender = 1, job = 10, skinRow = 0;
         var rows = new Dictionary<string, int>();
@@ -41,6 +42,6 @@ public static class PlayerLook
             GD.Print($"player look: {dir}, job {job}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
         }
         catch (Exception ex) { GD.PushWarning("player look: " + ex.Message); }
-        return (visual, anim);
+        return (visual, anim, md, dir);
     }
 }

@@ -103,9 +103,22 @@ public sealed class FieldBuilder
         var groups = new Dictionary<string, List<FieldEntity>>(StringComparer.OrdinalIgnoreCase);
         var chunks = new Dictionary<(int, int), StaticBody3D>();
 
-        StaticBody3D Chunk(Vec3 p)
+        // colliders of entities with a PropCollisionGroup (8 = water) go to their own bodies, tagged ms2_group
+        var groupChunks = new Dictionary<(int, int, int), StaticBody3D>();
+        StaticBody3D Chunk(Vec3 p, int group = 0)
         {
             var key = ((int)Math.Floor(p.X / ChunkSize), (int)Math.Floor(p.Y / ChunkSize));
+            if (group != 0)
+            {
+                if (!groupChunks.TryGetValue((key.Item1, key.Item2, group), out var gb))
+                {
+                    gb = new StaticBody3D { Name = $"Chunk_{key.Item1}_{key.Item2}_g{group}" };
+                    gb.SetMeta("ms2_group", group);
+                    colliders.AddChild(gb);
+                    groupChunks[(key.Item1, key.Item2, group)] = gb;
+                }
+                return gb;
+            }
             if (!chunks.TryGetValue(key, out var body))
             {
                 body = new StaticBody3D { Name = $"Chunk_{key.Item1}_{key.Item2}" };
@@ -144,11 +157,12 @@ public sealed class FieldBuilder
             }
 
             if (e.Bool("DisableCollision")) continue;
+            int group = (int)e.Number("PropCollisionGroup");
             if (me.Collision.Count > 0)
             {
                 // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
                 foreach (var shp in me.Collision)
-                    Chunk(e.Position).AddChild(new CollisionShape3D { Shape = shp, Transform = xf });
+                    Chunk(e.Position, group).AddChild(new CollisionShape3D { Shape = shp, Transform = xf });
                 Meshes++;
             }
             else if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
@@ -158,7 +172,7 @@ public sealed class FieldBuilder
                 var d = e.Vector("GeneratePhysXDimension");
                 var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
                 var p = e.Position;
-                Chunk(e.Position).AddChild(new CollisionShape3D
+                Chunk(e.Position, group).AddChild(new CollisionShape3D
                 {
                     Shape = new BoxShape3D { Size = size },
                     Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),

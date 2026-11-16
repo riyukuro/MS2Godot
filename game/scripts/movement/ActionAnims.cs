@@ -1,0 +1,102 @@
+using System.Xml.Linq;
+using Godot;
+using Ms2.Formats.Model;
+using Ms2.Formats.Pack;
+
+namespace Ms2Godot.Movement;
+
+/// <summary>
+/// The client's action ids (ActionType, actioncontainer.cpp) and their sequence names from table/pcactiondata.xml
+/// (group 0, the default set). PCBase::vfunc_123(id) resolves an action to its sequence the same way.
+/// Animations are added to the AnimationPlayer under the lower-case sequence name.
+/// </summary>
+public sealed class ActionAnims
+{
+    public enum Act
+    {
+        Idle = 0, JumpDown = 2, JumpLand = 3, JumpUp = 4, JumpFall = 5,
+        LadderLDown = 8, LadderRDown = 9, LadderDownLand = 10, LadderDownTake = 11, LadderIdle = 12,
+        LadderLUp = 13, LadderRUp = 14, LadderUpLand = 15, LadderUpTake = 16,
+        Run = 28, Walk = 29, SpecialJumpUp = 42, SpecialJumpDown = 43,
+        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, FallDamage = 63,
+    }
+
+    static readonly string[] TypeNames =
+    {
+        "IDLE", "BATTLE_IDLE", "JUMP_DOWN", "JUMP_LAND", "JUMP_UP", "JUMP_FALL", "JUMP_DASH_DOWN", "JUMP_DASH_LAND",
+        "LADDER_L_DOWN", "LADDER_R_DOWN", "LADDER_DOWN_LAND", "LADDER_DOWN_TAKE", "LADDER_IDLE", "LADDER_L_UP",
+        "LADDER_R_UP", "LADDER_UP_LAND", "LADDER_UP_TAKE", "CLIMB_IDLE", "CLIMB_L_UP", "CLIMB_L_CENTER", "CLIMB_L_DOWN",
+        "CLIMB_R_UP", "CLIMB_R_CENTER", "CLIMB_R_DOWN", "CLIMB_UP_LAND", "CLIMB_UP_TAKE", "CLIMB_DOWN_LAND",
+        "CLIMB_DOWN_TAKE", "RUN", "WALK", "STUNT_IDLE", "STUNT_WALK", "CRAWL_IDLE", "CRAWL_CRAWLING", "POLE_UP",
+        "POLE_DOWN", "POLE_IDLE", "POLE_TURN", "POLE_TAKE", "BORE", "STUN", "KNOCK_BACK", "SPECIAL_JUMP_UP",
+        "SPECIAL_JUMP_DOWN", "REGEN", "TALK_UP", "TALK_IDLE", "LISTEN_IDLE", "WATER_IDLE", "WATER_SWIM", "WATER_DASH",
+        "REVIVAL", "DEAD", "HIT", "UGC_CRAFT_IDLE", "CRAFT_IDLE", "CRAFT_RUN", "CRAFT_WALK", "CRAFT_JUMP_UP",
+        "CRAFT_JUMP_DOWN", "CRAFT_JUMP_LAND", "FITTING_IDLE", "HOLD_IDLE", "FALL_DAMAGE",
+    };
+
+    // sequences that cycle; the rest play once and hold their last frame
+    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle };
+
+    readonly Dictionary<Act, string> names = new();
+    public readonly Dictionary<string, KfAnimation> Kf = new();
+
+    public string Name(Act a) => names.TryGetValue(a, out var n) ? n : null;
+    public bool Has(Act a) => names.ContainsKey(a);
+
+    /// <summary>Reads the action table and loads each movement sequence the body has (female/&lt;name&gt;.kf).</summary>
+    public static ActionAnims Load(PackSet packs, ModelBuilder builder, ModelData md, AnimationPlayer player, string bodyDir)
+    {
+        var aa = new ActionAnims();
+        var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/pcactiondata.xml")));
+        var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");
+        foreach (var v in group?.Elements("v") ?? Enumerable.Empty<XElement>())
+            table[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();
+
+        var lib = player.GetAnimationLibrary("");
+        foreach (Act a in Enum.GetValues<Act>())
+        {
+            int id = (int)a;
+            if (id >= TypeNames.Length || !table.TryGetValue(TypeNames[id], out var seq) || seq.Length == 0) continue;
+            string key = seq.ToLowerInvariant();
+            if (!lib.HasAnimation(key))
+            {
+                KfAnimation kf;
+                try { kf = builder.LoadKf($"{bodyDir}/{key}.kf"); }
+                catch (Exception) { continue; }        // the body has no such sequence
+                var anim = ModelBuilder.BuildAnimation(kf, md);
+                if (!Looping.Contains(a)) anim.LoopMode = Animation.LoopModeEnum.None;
+                lib.AddAnimation(key, anim);
+                aa.Kf[key] = kf;
+            }
+            aa.names[a] = key;
+        }
+        return aa;
+    }
+
+    /// <summary>Time of a text key ("begin", "end", ...) in a sequence, or -1.</summary>
+    public float TextKey(string anim, string text)
+    {
+        if (anim == null || !Kf.TryGetValue(anim, out var kf)) return -1;
+        foreach (var (t, s) in kf.TextKeys)
+            if (string.Equals(s, text, StringComparison.OrdinalIgnoreCase)) return (float)t;
+        return -1;
+    }
+
+    /// <summary>
+    /// PC::vfunc_115: the walk / run animation rate for a speed a, run speed b and walk speed c; isRun is the
+    /// RUN (1) or WALK (0) sequence choice.
+    /// </summary>
+    public static float GaitRate(float a, float b, float c, out bool isRun)
+    {
+        isRun = true;
+        if (a <= c / 3f) { isRun = false; return 0.2f; }
+        if (a < c) { isRun = false; return 1f - (c - a) / (c * 0.85f); }
+        if (a == c) { isRun = false; return 1f; }
+        if (a < (c + b) / 2.5f) { isRun = false; return 1f - (c - a) / (c * 1.35f); }
+        if (a < b) return 1f - (b - a) / (b * 1.65f);
+        if (a == b) return 1f;
+        if (a < 2f * b) return 1f - (b - a) / (b * 1.25f);
+        return 1.8f;
+    }
+}
