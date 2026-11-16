@@ -25,6 +25,7 @@ public static class PlayerLook
             if (args[i] == "--hair-color" && int.TryParse(args[i + 1], out int h)) rows["HR"] = h;
             if (args[i] == "--eye-color" && int.TryParse(args[i + 1], out int e)) rows["FA"] = e;
         }
+        Flow.Session.ApplyLook(ref gender, ref job);        // the game flow's chosen character
         string dir = gender == 0 ? "male" : "female";
         var md = builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
         var visual = builder.Build(md, gender == 0 ? "Male" : "Female");

@@ -166,7 +166,7 @@ public partial class FieldContents : Node3D
         whenCovered = () =>
         {
             Travel.Pending = new Travel.Move(p.TargetField, xblock, p.TargetPortal, fieldId);
-            GetTree().ChangeSceneToFile("res://field.tscn");
+            GetTree().ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
         };
         return true;
     }

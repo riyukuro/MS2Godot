@@ -41,8 +41,8 @@ public partial class CharacterListScene : Control
         AddChild(root);
 
         logic = new CharacterListLogic(movie, root);
-        var chars = StubCharacterList.Build();
-        logic.BuildCharacterList(chars, 0, 6);
+        var chars = Flow.Session.List();       // the game flow's list (the stub list when this scene runs alone)
+        logic.BuildCharacterList(chars, Flow.Session.SelectedIndex, 6);
         root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_serverName", "Bigleaf  CH.1");
         root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_regionName", "");
         root.FindClip(UICharacterListDialogContract.Instances.M_title)?.SetText(assets.Str("$s_charselect_title"));
