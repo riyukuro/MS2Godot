@@ -13,9 +13,22 @@ public class NavigationTests
     {
         var data = Environment.GetEnvironmentVariable("MS2_DATA");
         var xml = Environment.GetEnvironmentVariable("MS2_NIFXML");
+        if (string.IsNullOrEmpty(xml)) xml = SubmoduleNifXml();
         if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA is not set");
-        if (string.IsNullOrEmpty(xml) || !File.Exists(xml)) Assert.Ignore("MS2_NIFXML is not set");
+        if (string.IsNullOrEmpty(xml) || !File.Exists(xml)) Assert.Ignore("MS2_NIFXML is not set and external/nifxml is not checked out");
         return (new PackSet(data), new NifSpec(xml));
+    }
+
+    /// <summary>external/nifxml/nif.xml of the repo holding the test assembly (git submodule), or null.</summary>
+    static string SubmoduleNifXml()
+    {
+        for (var d = new DirectoryInfo(AppContext.BaseDirectory); d != null; d = d.Parent)
+            if (File.Exists(Path.Combine(d.FullName, "MS2Godot.sln")))
+            {
+                var f = Path.Combine(d.FullName, "external", "nifxml", "nif.xml");
+                return File.Exists(f) ? f : null;
+            }
+        return null;
     }
 
     [Test]

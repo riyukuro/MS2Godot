@@ -4,8 +4,9 @@ namespace Ms2Godot;
 
 /// <summary>
 /// Local paths, never stored in the repo. Order: environment (MS2_DATA, MS2_NIFXML), then res://local.cfg,
-/// then user://settings.cfg (section [paths], keys data and nifxml). The first-run setup screen writes user://settings.cfg;
-/// a nif.xml it downloaded sits at user://nifxml/nif.xml and is used when nothing else names one.
+/// then user://settings.cfg (section [paths], keys data and nifxml). The first-run setup screen writes user://settings.cfg.
+/// When nothing names a nif.xml: the repo's external/nifxml submodule (a source checkout), then the copy the setup
+/// screen downloaded to user://nifxml/nif.xml (exported builds).
 /// </summary>
 public static class Settings
 {
@@ -13,7 +14,19 @@ public static class Settings
     public const string DownloadedNifXml = "user://nifxml/nif.xml";
 
     public static string DataDir => Get("MS2_DATA", "data");
-    public static string NifXml => Get("MS2_NIFXML", "nifxml") ?? (Godot.FileAccess.FileExists(DownloadedNifXml) ? ProjectSettings.GlobalizePath(DownloadedNifXml) : null);
+    public static string NifXml => Get("MS2_NIFXML", "nifxml") ?? SubmoduleNifXml ?? (Godot.FileAccess.FileExists(DownloadedNifXml) ? ProjectSettings.GlobalizePath(DownloadedNifXml) : null);
+
+    /// <summary>external/nifxml/nif.xml next to the Godot project (git submodule), or null when not checked out.</summary>
+    public static string SubmoduleNifXml
+    {
+        get
+        {
+            var res = ProjectSettings.GlobalizePath("res://");
+            if (string.IsNullOrEmpty(res)) return null;
+            var f = System.IO.Path.GetFullPath(System.IO.Path.Combine(res, "..", "external", "nifxml", "nif.xml"));
+            return System.IO.File.Exists(f) ? f : null;
+        }
+    }
 
     /// <summary>Both paths are set and usable.</summary>
     public static bool Ready => DataProblem(DataDir) == null && NifProblem(NifXml) == null;

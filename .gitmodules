@@ -1,0 +1,3 @@
+[submodule "external/nifxml"]
+	path = external/nifxml
+	url = https://github.com/niftools/nifxml.git

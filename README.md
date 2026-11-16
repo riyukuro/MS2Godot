@@ -239,11 +239,13 @@ You need:
 - The .NET SDK 10 (the game project) and .NET SDK 8 (the libraries and tests also target net8.0).
 - Your own MapleStory 2 client: the `Data` folder that holds `Xml.m2d` and `Resource/Model/*.m2d`. The project ships no
   game data.
-- niftools `nif.xml`, from https://github.com/niftools/nifxml. It is not included here; the first-run screen below can
-  download it. Check its LICENSE (in that repository) for the terms of your copy.
+- niftools `nif.xml`, from https://github.com/niftools/nifxml (GPL-3.0). It is a git submodule at `external/nifxml`,
+  pinned to commit 970a623 (the v0.9.x releases lack types the MS2 files need); clone with `--recurse-submodules` or run
+  `git submodule update --init` in an existing clone. Without the submodule, the first-run screen below can download
+  the same commit.
 
 ```
-git clone https://github.com/riyukuro/MS2Godot
+git clone --recurse-submodules https://github.com/riyukuro/MS2Godot
 cd MS2Godot/game
 dotnet build
 godot-mono --path . --import --headless     # first run only: creates .godot/
@@ -262,7 +264,8 @@ Another field: `godot-mono --path . -- --field <xblock name>` (the file name wit
 
 Export: `game/export_presets.cfg` has Linux and Windows presets. Install the export templates for your Godot version
 (Editor > Manage Export Templates), then `godot-mono --path game --export-release Linux` (or `Windows`); the output goes
-to `build/` (ignored by git). No templates are in the repository. The player still needs their own data and `nif.xml`.
+to `build/` (ignored by git). No templates are in the repository. The player still needs their own data, and an exported
+build needs `nif.xml` from the setup screen (the submodule is only used from a source checkout).
 
 Continuous integration (`.github/workflows/ci.yml`) builds the solution on .NET 8 and 10 and runs the tests; the tests that
 need game data skip there.
@@ -273,8 +276,9 @@ The project contains no local paths. The paths are looked up in this order:
 
 1. The environment variables `MS2_DATA` (the client's `Data` folder) and `MS2_NIFXML` (the path to `nif.xml`).
 2. `game/local.cfg` (gitignored). Copy it from `game/settings.example.cfg`.
-3. `user://settings.cfg`, the Godot user data folder. It uses the same format; the setup screen writes it. A `nif.xml`
-   downloaded by the setup screen is at `user://nifxml/nif.xml` and is used when none of the above names one.
+3. `user://settings.cfg`, the Godot user data folder. It uses the same format; the setup screen writes it.
+4. For `nif.xml` only, when none of the above names one: the `external/nifxml` submodule, then the copy the setup screen
+   downloaded to `user://nifxml/nif.xml`.
 
 
 Screenshot mode runs a scripted walk, saves frames to a folder and then quits:
