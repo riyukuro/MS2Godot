@@ -9,6 +9,10 @@ Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_
 the player character at the field's player spawn point, dressed in a new character's starter look. It walks,
 runs and climbs steps over the field's collision.
 
+Game flow (`game/flow/`): setup, then login (any id and password), character select (stub list), create on an empty slot,
+the field's loading picture, and the field with the HUD and the chosen character's job and gender. Esc in the field opens a menu:
+resume, back to character select, quit. `--flow-shots DIR` runs the whole flow by script with a shot per step. Each scene still runs alone.
+
 Controls: the arrow keys (or WASD) move relative to the camera, C or Alt jumps, comma (or Shift) holds walk, and
 the wheel zooms. Keys are ignored while a text field has focus. The movement follows the client; see
 [Movement](#movement).
