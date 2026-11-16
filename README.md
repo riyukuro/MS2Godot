@@ -62,6 +62,32 @@ Known gaps:
 
 The pilot viewer (the player character on a ground plane; keys `1` idle, `2` walk) is still `game/main.tscn`.
 
+### Field contents (offline sandbox)
+
+`game/scripts/world/` adds what a field shows besides its static meshes, with no server:
+
+- Portals: entities with the Portal mixin. The volume follows the client's portal box: `PortalDimension`, turned by the Z
+  rotation only, centred on the position and then moved by `PortalOffset`. As in the client, a portal is an action-key
+  object: standing in an enabled portal and pressing Space moves to `TargetFieldSN`. The field loads behind the target
+  map's loading picture (`table/loadingimage.xml`, a random one of the map's rows and the common rows in their period),
+  and the player stands at `TargetPortalID`, facing its way. The server normally answers that move; the sandbox does it
+  itself.
+- Self-animating props: NIFs with `NiTransformController`s on their nodes (flags, signs, the merchant cart, portal
+  marks) are drawn per entity with a skeleton and a looping animation of the controllers instead of in a MultiMesh.
+  FieldBuilder still builds their collision.
+- Actors (`MS2Actor`): the client places these itself. `KfmAsset` names the npc model and `InitialSequence` its
+  looped sequence.
+- Npc spawn points: in the client, the server spawns these (FieldAddNpc). The sandbox stands in for it: one npc per
+  spawn point with `IsSpawnOnFieldCreate` set. The npc id comes from `NpcList` or the model name, and the npc plays
+  its idle.
+
+`godot-mono --path game -- --sandbox-shots DIR [--sandbox-portal 20]` runs a scripted walk. It goes from Tria into a
+portal and on to the target field, walks off and back into the arrival portal, and returns to Tria. It saves
+screenshots along the way. `--no-npcs` skips the stand-in npcs.
+
+Not done yet: texture transform, flip and alpha controllers (the portal swirl, water); particle systems; npc name tags
+and collision; quest-masked portals (every enabled portal works); mobs from region spawns; the loading progress movie.
+
 ### Character look
 
 `game/scripts/character/` builds the local player:

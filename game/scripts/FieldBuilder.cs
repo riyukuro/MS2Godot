@@ -23,12 +23,18 @@ public sealed class FieldBuilder
 
     public int Instances, MultiMeshes, Boxes, Meshes, Whiteboxes, Missing;
 
+    /// <summary>Optional: true for a model drawn elsewhere per entity (world/FieldProps: self-animating NIFs); its visible
+    /// entities go to <see cref="DrawnElsewhere"/> instead of a MultiMesh. Collision stays here.</summary>
+    public Func<string, NifFile, bool> DrawsInstance;
+    public readonly List<FieldEntity> DrawnElsewhere = new();
+
     sealed class ModelEntry
     {
         public ModelData Data;
         public List<(ModelMesh mesh, Transform3D local)> Meshes = new();
         public Aabb Bounds;              // union of the mesh bounds in model space
         public List<Shape3D> Collision = new();   // cooked PhysX meshes of the NIF, model space
+        public bool Elsewhere;           // DrawsInstance took it
     }
 
     readonly Dictionary<string, ModelEntry> models = new(StringComparer.OrdinalIgnoreCase);
@@ -55,7 +61,7 @@ public sealed class FieldBuilder
             {
                 var nif = NifFile.Load(builder.Spec, packs.Read(archive, entry));
                 var md = ModelData.Load(nif);
-                me = new ModelEntry { Data = md };
+                me = new ModelEntry { Data = md, Elsewhere = DrawsInstance?.Invoke(llid, nif) == true };
                 foreach (var cm in PhysXCollision.Load(nif))
                 {
                     var faces = new Vector3[cm.Triangles.Length];
@@ -150,7 +156,8 @@ public sealed class FieldBuilder
             var me = Model(llid);
             if (me == null) continue;
 
-            if (e.Bool("IsVisible", true))
+            if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
+            else if (e.Bool("IsVisible", true))
             {
                 if (!groups.TryGetValue(llid, out var list)) groups[llid] = list = new List<FieldEntity>();
                 list.Add(e);

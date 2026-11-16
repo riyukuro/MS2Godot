@@ -10,6 +10,8 @@ public sealed class XEntity
 {
     public string Id, ModelName, Name;
     public Dictionary<string, string> Props = new(StringComparer.Ordinal);
+    /// <summary>Every &lt;set index=.. value=..&gt; of a property, in file order (NpcList: npc id -> count).</summary>
+    public Dictionary<string, List<(string index, string value)>> Sets = new(StringComparer.Ordinal);
 }
 
 /// <summary>
@@ -48,7 +50,12 @@ public sealed class XBlock
                     break;
                 case "set":
                     // list properties carry several <set index=..> elements; the first one is kept
-                    if (cur != null && prop != null) cur.Props.TryAdd(prop, r.GetAttribute("value") ?? "");
+                    if (cur != null && prop != null)
+                    {
+                        cur.Props.TryAdd(prop, r.GetAttribute("value") ?? "");
+                        if (!cur.Sets.TryGetValue(prop, out var sets)) cur.Sets[prop] = sets = new();
+                        sets.Add((r.GetAttribute("index"), r.GetAttribute("value") ?? ""));
+                    }
                     break;
             }
         }

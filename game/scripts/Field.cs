@@ -38,6 +38,7 @@ public partial class Field : Node3D
             if (args[i] == "--shots") shotDir = args[i + 1];
             if (args[i] == "--field") fieldName = args[i + 1];
         }
+        if (SpawnsLocalPlayer && World.FieldContents.PendingXBlock != null) fieldName = World.FieldContents.PendingXBlock;   // sandbox portal move
         var data = Settings.DataDir;
         var nifxml = Settings.NifXml;
         if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nifxml))
@@ -56,7 +57,10 @@ public partial class Field : Node3D
         var map = FieldMap.Load(packs, flats, fieldName);
         long tMap = sw.ElapsedMilliseconds;
         var fb = new FieldBuilder(packs, assets, builder);
+        var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
+        fb.DrawsInstance = contents.Props.TakesModel;
         AddChild(fb.Build(map));
+        contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         long tBuild = sw.ElapsedMilliseconds;
         GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes, " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
@@ -64,6 +68,8 @@ public partial class Field : Node3D
 
         BuildEnvironment(map, fieldName);
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
+        AddChild(contents);
+        contents.Start(map, fieldName, player, SpawnsLocalPlayer);
         try { cam = FieldData.FindByXBlock(packs, fieldName)?.Camera ?? cam; }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         camDist = cam.Distance;

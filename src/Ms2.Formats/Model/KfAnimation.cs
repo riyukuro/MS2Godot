@@ -131,6 +131,66 @@ public sealed class KfAnimation
 
     static Quat QuatOf(NifStruct q) => new(q.Float("w"), q.Float("x"), q.Float("y"), q.Float("z"));
 
+    /// <summary>A keyed transform channel (NiTransformData keys, or the constant pose value when a channel has no keys).</summary>
+    static void KeyedChannel(List<NifStruct> B, NifStruct v, long di, KfChannel ch, bool tOn, bool rOn, bool sOn)
+    {
+        var data = di >= 0 ? B[(int)di] : null;
+        List<Key> keysT = null, keysS = null;
+        List<(double, Quat)> keysR = null;
+        List<Key>[] euler = null;
+        if (data != null)
+        {
+            if (data.IntOr("Num Rotation Keys", 0) != 0)
+            {
+                long rt = data.Int("Rotation Type");
+                if (rt == 4)
+                    euler = data.Structs("XYZ Rotations").Select(g => KeyGroup(g, Scalar)).ToArray();
+                else
+                {
+                    if (rt != 1 && rt != 5) throw new NotSupportedException("rotation key type " + rt);
+                    keysR = data.Structs("Quaternion Keys").Select(k => ((double)k.Float("Time"), QuatOf(k.Struct("Value")))).ToList();
+                }
+            }
+            keysT = KeyGroup(data.TryGetValue("Translations", out var tg) ? tg as NifStruct : null, VecConv);
+            keysS = KeyGroup(data.TryGetValue("Scales", out var sg) ? sg as NifStruct : null, Scalar);
+        }
+        if (tOn)
+        {
+            if (keysT != null) ch.T = t => { var a = Lerp(keysT, t); return new Vec3(a[0], a[1], a[2]); };
+            else
+            {
+                var c = V3(v.Struct("Translation"));
+                if (Math.Abs(c[0]) < FltMax) { var cv = new Vec3(c[0], c[1], c[2]); ch.T = _ => cv; }
+            }
+        }
+        if (rOn)
+        {
+            if (euler != null)
+                ch.R = t =>
+                {
+                    double Ang(int i) => euler[i] != null ? Lerp(euler[i], t)[0] : 0.0;
+                    // Gamebryo XYZ Euler keys: q = qZ * qY * qX
+                    return Quat.FromAxis(2, Ang(2)) * Quat.FromAxis(1, Ang(1)) * Quat.FromAxis(0, Ang(0));
+                };
+            else if (keysR != null) ch.R = t => SlerpKeys(keysR, t);
+            else
+            {
+                var r = v.Struct("Rotation");
+                double w = r.Float("w");
+                if (w < FltMax && w > -FltMax) { var q = QuatOf(r); ch.R = _ => q; }
+            }
+        }
+        if (sOn)
+        {
+            if (keysS != null) ch.S = t => Lerp(keysS, t)[0];
+            else
+            {
+                double s = v.Float("Scale");
+                if (Math.Abs(s) < FltMax) ch.S = _ => s;
+            }
+        }
+    }
+
     public static KfAnimation Load(NifFile kf)
     {
         var B = kf.Blocks;
@@ -145,63 +205,7 @@ public sealed class KfAnimation
             var ch = new KfChannel();
             if (e.Type == "NiTransformEvaluator")
             {
-                var v = e.Struct("Value");
-                long di = e.Int("Data");
-                var data = di >= 0 ? B[(int)di] : null;
-                List<Key> keysT = null, keysS = null;
-                List<(double, Quat)> keysR = null;
-                List<Key>[] euler = null;
-                if (data != null)
-                {
-                    if (data.IntOr("Num Rotation Keys", 0) != 0)
-                    {
-                        long rt = data.Int("Rotation Type");
-                        if (rt == 4)
-                            euler = data.Structs("XYZ Rotations").Select(g => KeyGroup(g, Scalar)).ToArray();
-                        else
-                        {
-                            if (rt != 1 && rt != 5) throw new NotSupportedException("rotation key type " + rt);
-                            keysR = data.Structs("Quaternion Keys").Select(k => ((double)k.Float("Time"), QuatOf(k.Struct("Value")))).ToList();
-                        }
-                    }
-                    keysT = KeyGroup(data.TryGetValue("Translations", out var tg) ? tg as NifStruct : null, VecConv);
-                    keysS = KeyGroup(data.TryGetValue("Scales", out var sg) ? sg as NifStruct : null, Scalar);
-                }
-                if (ct[0] != 0)
-                {
-                    if (keysT != null) ch.T = t => { var a = Lerp(keysT, t); return new Vec3(a[0], a[1], a[2]); };
-                    else
-                    {
-                        var c = V3(v.Struct("Translation"));
-                        if (c[0] < FltMax) { var cv = new Vec3(c[0], c[1], c[2]); ch.T = _ => cv; }
-                    }
-                }
-                if (ct[1] != 0)
-                {
-                    if (euler != null)
-                        ch.R = t =>
-                        {
-                            double Ang(int i) => euler[i] != null ? Lerp(euler[i], t)[0] : 0.0;
-                            // Gamebryo XYZ Euler keys: q = qZ * qY * qX
-                            return Quat.FromAxis(2, Ang(2)) * Quat.FromAxis(1, Ang(1)) * Quat.FromAxis(0, Ang(0));
-                        };
-                    else if (keysR != null) ch.R = t => SlerpKeys(keysR, t);
-                    else
-                    {
-                        var r = v.Struct("Rotation");
-                        double w = r.Float("w");
-                        if (w < FltMax && w > -FltMax) { var q = QuatOf(r); ch.R = _ => q; }
-                    }
-                }
-                if (ct[2] != 0)
-                {
-                    if (keysS != null) ch.S = t => Lerp(keysS, t)[0];
-                    else
-                    {
-                        double s = v.Float("Scale");
-                        if (s < FltMax) ch.S = _ => s;
-                    }
-                }
+                KeyedChannel(B, e.Struct("Value"), e.Int("Data"), ch, ct[0] != 0, ct[1] != 0, ct[2] != 0);
             }
             else if (e.Type is "NiBSplineCompTransformEvaluator" or "NiBSplineTransformEvaluator")
             {
@@ -237,7 +241,7 @@ public sealed class KfAnimation
                     else
                     {
                         var c = V3(x.Struct("Translation"));
-                        if (c[0] < FltMax) { var cv = new Vec3(c[0], c[1], c[2]); ch.T = _ => cv; }
+                        if (Math.Abs(c[0]) < FltMax) { var cv = new Vec3(c[0], c[1], c[2]); ch.T = _ => cv; }
                     }
                 }
                 if (ct[1] != 0)
@@ -269,5 +273,57 @@ public sealed class KfAnimation
             foreach (var k in B[(int)tki].Structs("Text Keys"))
                 anim.TextKeys.Add((k.Float("Time"), kf.StrField(k, "Value")));
         return anim;
+    }
+
+    /// <summary>Cycle type of the controllers an animation came from (NiTimeController flags bits 1-2).</summary>
+    public int Cycle;          // 0 loop, 1 reverse (back and forth), 2 clamp
+
+    /// <summary>Block names of transform controller targets that are not NiNodes (rigid meshes).</summary>
+    public HashSet<string> MeshTargets = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The transform controllers stored in a model NIF (NiTransformController on its nodes, as on flags, wheels and
+    /// effect meshes) as one sequence: the node name -> channel, timed from the earliest controller start to the latest
+    /// stop. Returns null when the NIF has no keyed transform controller. Frequency and phase are applied per channel.
+    /// </summary>
+    public static KfAnimation FromControllers(NifFile nif)
+    {
+        var B = nif.Blocks;
+        var ctrls = new List<(NifStruct c, string target, bool mesh)>();
+        foreach (var c in B)
+        {
+            if (c.Type != "NiTransformController" || !c.Has("Target")) continue;
+            long ti = c.Int("Target"), ii = c.IntOr("Interpolator", -1);
+            if (ti < 0 || ii < 0 || B[(int)ii].Type != "NiTransformInterpolator") continue;
+            if (B[(int)ii].IntOr("Data", -1) < 0) continue;                // a constant pose, nothing moves
+            var name = nif.Name((int)ti);
+            if (string.IsNullOrEmpty(name)) continue;
+            ctrls.Add((c, name, B[(int)ti].Type != "NiNode"));
+        }
+        if (ctrls.Count == 0) return null;
+        double start = ctrls.Min(x => (double)x.c.Float("Start Time")), stop = ctrls.Max(x => (double)x.c.Float("Stop Time"));
+        var anim = new KfAnimation { Name = "controllers", Duration = Math.Max(stop - start, 1.0 / 30) };
+        anim.Cycle = (int)((ctrls[0].c.IntOr("Flags", 8) >> 1) & 3);
+        foreach (var (c, target, mesh) in ctrls)
+        {
+            var ip = B[(int)c.Int("Interpolator")];
+            var ch = new KfChannel();
+            KeyedChannel(B, ip.Struct("Transform"), ip.Int("Data"), ch, true, true, true);
+            double freq = c.Float("Frequency"), phase = c.Float("Phase");
+            if (freq <= 0) freq = 1;
+            // the key time for sequence time u (from the earliest start): (u + start) * frequency + phase
+            if (freq != 1 || phase != 0 || start != 0)
+            {
+                var (t0, r0, s0) = (ch.T, ch.R, ch.S);
+                double Map(double u) => (u + start) * freq + phase;
+                if (t0 != null) ch.T = u => t0(Map(u));
+                if (r0 != null) ch.R = u => r0(Map(u));
+                if (s0 != null) ch.S = u => s0(Map(u));
+            }
+            if (ch.T == null && ch.R == null && ch.S == null) continue;
+            anim.Channels[target] = ch;
+            if (mesh) anim.MeshTargets.Add(target);
+        }
+        return anim.Channels.Count == 0 ? null : anim;
     }
 }

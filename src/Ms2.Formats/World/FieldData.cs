@@ -53,6 +53,15 @@ public sealed class FieldData
         return null;
     }
 
+    /// <summary>The xblock name of a field id (its default environment), or null.</summary>
+    public static string XBlockOf(PackSet packs, int fieldId)
+    {
+        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read(Archive, Entry)));
+        var fd = doc.Root.Elements("fieldData").FirstOrDefault(f => (int?)f.Attribute("id") == fieldId);
+        var env = fd?.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+        return (string)env?.Element("xblock")?.Attribute("name");
+    }
+
     static void Read(XElement e, string name, ref float v)
     {
         var a = (string)e.Attribute(name);
