@@ -115,6 +115,7 @@ public class AudioTests
     [Test]
     public void SystemSoundButtonClickIsAnEvent()
     {
+        SoundDir(); // skips without game data
         var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
         var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
         var lib = new SoundLibrary(SoundDir());
@@ -130,6 +131,7 @@ public class AudioTests
     [Test]
     public void FootstepsResolveToCharacterEvents()
     {
+        SoundDir(); // skips without game data
         var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
         var lib = new SoundLibrary(SoundDir());
         var table = new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
