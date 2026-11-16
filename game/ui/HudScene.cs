@@ -135,7 +135,7 @@ public partial class HudScene : Node
         r.FindClip("m_fieldname")?.SetText(data.FieldName);
         if (tex != null)
         {
-            mapPlayer = r.Movie.BuildClass("minimap_entity_player", u);
+            mapPlayer = MinimapEntities.Create(r.Movie, "player", "idle", u);
             if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); }
         }
     }
