@@ -39,6 +39,8 @@ public partial class Field : Node3D
             if (args[i] == "--field") fieldName = args[i + 1];
         }
         bool navOn = System.Array.IndexOf(args, "--nav") >= 0;
+        int questNpc = 0;
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quest-npc") int.TryParse(args[i + 1], out questNpc);
         if (SpawnsLocalPlayer && World.FieldContents.PendingXBlock != null) fieldName = World.FieldContents.PendingXBlock;   // sandbox portal move
         var data = Settings.DataDir;
         var nifxml = Settings.NifXml;
@@ -91,6 +93,7 @@ public partial class Field : Node3D
         OnFieldBuilt(builder, map, fieldName);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
         NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // F9 / --nav: navmesh overlay
+        if (SpawnsLocalPlayer) Quest = World.QuestGuide.Start(this, packs, builder, map, player, hdrFieldId(fieldName), questNpc);   // --quest-npc ID: the quest guide beam
 
         if (shotDir != null)
         {
@@ -116,6 +119,9 @@ public partial class Field : Node3D
     protected virtual void OnFieldBuilt(ModelBuilder builder, FieldMap map, string fieldName) { }
 
     protected FieldAudio Audio;
+    protected World.QuestGuide Quest;
+
+    int hdrFieldId(string fieldName) { try { return FieldData.FindByXBlock(packs, fieldName)?.Id ?? 0; } catch { return 0; } }
 
     void BuildEnvironment(FieldMap map, string fieldName)
     {

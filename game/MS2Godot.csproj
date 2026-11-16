@@ -11,5 +11,6 @@
     <ProjectReference Include="../src/Ms2.Net/Ms2.Net.csproj" />
     <ProjectReference Include="../src/Ms2.Audio/Ms2.Audio.csproj" />
     <ProjectReference Include="../src/Ms2.Navigation/Ms2.Navigation.csproj" />
+    <ProjectReference Include="../src/Ms2.Quest/Ms2.Quest.csproj" />
   </ItemGroup>
 </Project>

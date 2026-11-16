@@ -169,7 +169,7 @@ public sealed class FieldNpcs
     }
 
     /// <summary>NpcList keys (npc id -> count); without an override, the flat model name carries the id (11000169_).</summary>
-    static IEnumerable<int> NpcIds(FieldEntity e)
+    public static IEnumerable<int> NpcIds(FieldEntity e)
     {
         if (e.Raw.Sets.TryGetValue("NpcList", out var sets))
             foreach (var (index, _) in sets)

@@ -125,6 +125,8 @@ portal, and returns to Tria. It saves screenshots along the way. `--no-npcs` ski
 Not done yet: texture transform, flip and alpha controllers (the portal swirl, water); particle systems; mobs from
 region spawns; npc talk beyond the first pages (choices, shops, quests).
 
+The quest navigator (`src/Ms2.Quest`, drawn by `game/scripts/world/QuestGuide.cs`) follows the client: a portal graph across fields (Floyd-Warshall over FieldMetaData.xml), a straight beam from the player toward the target npc, or toward the portal on the way when the npc is in another field, and the distance text. `-- --quest-npc ID` tracks a stand-in quest on that npc (there is no quest data offline).
+
 ### Character look
 
 `game/scripts/character/` builds the local player:
