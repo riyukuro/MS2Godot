@@ -54,7 +54,7 @@ public sealed class ColorPalettes
 /// A new character's look from the player's own Xml pack, as character creation offers it: table/defaultitems.xml lists,
 /// per job code (0 = every job), the items of each slot; an item fits a gender by its itemdata limit genderLimit
 /// (0 male, 1 female, 2 both). The first fitting face, hair and ears of job 0 and the first fitting job outfit
-/// (CL, PA, SH; job 0 when the job lists none) are picked. Colours: each item's itemmodel customize defaultColorIndex
+/// (CL, PA, SH; job 0 when the job lists none) are picked, plus the job's start weapons (table/job.xml startItems). Colours: each item's itemmodel customize defaultColorIndex
 /// in its colorPalette (row 0 without one) unless colorRows names a row for the slot; skin: skinRow of the skin palette.
 /// </summary>
 public static class StarterLook
@@ -77,6 +77,17 @@ public static class StarterLook
             return int.TryParse((string)limit?.Attribute("genderLimit"), out int g) ? g : 2;
         }
 
+        EquipColor ColorOf(int id, string slot)
+        {
+            var data = Find(packs, genders, "itemdata", id, "item");
+            int modelId = int.TryParse((string)data?.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int pre) && pre != 0 ? pre : id;
+            var cust = Find(packs, models, "itemmodel", modelId, "ItemModel")?.Element("customize");
+            if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return default;
+            int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);
+            if (colorRows != null && colorRows.TryGetValue(slot, out int row)) idx = row;
+            return palettes.Equip(pal, idx) ?? default;
+        }
+
         foreach (var slot in Slots)
         {
             IEnumerable<XElement> Candidates(int job) => doc.Root.Elements("key")
@@ -92,19 +103,21 @@ public static class StarterLook
                 if (!int.TryParse((string)it.Attribute("id"), out int id)) continue;
                 int g = GenderOf(id);
                 if (g != 2 && g != gender) continue;
-                var data = Find(packs, genders, "itemdata", id, "item");
-                int modelId = int.TryParse((string)data?.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int pre) && pre != 0 ? pre : id;
-                var model = Find(packs, models, "itemmodel", modelId, "ItemModel");
-                var cust = model?.Element("customize");
-                EquipColor color = default;
-                if (cust != null && (string)cust.Attribute("color") == "1" && int.TryParse((string)cust.Attribute("colorPalette"), out int pal))
-                {
-                    int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);
-                    if (colorRows != null && colorRows.TryGetValue(slot, out int row)) idx = row;
-                    color = palettes.Equip(pal, idx) ?? default;
-                }
-                items.Add(new EquipItem { Id = id, Slot = Enum.Parse<EquipSlot>(slot), Color = color });
+                items.Add(new EquipItem { Id = id, Slot = Enum.Parse<EquipSlot>(slot), Color = ColorOf(id, slot) });
                 break;
+            }
+        }
+        // the job's starting weapons: table/job.xml startItems, each in the slot its itemdata category names (RH, LH)
+        if (packs.Exists("Xml", "table/job.xml"))
+        {
+            var jobs = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/job.xml")).TrimStart('\uFEFF'));
+            var job = jobs.Root.Descendants("job").FirstOrDefault(j => (string)j.Attribute("jobGroupID") == jobCode.ToString());
+            foreach (var part in ((string)job?.Attribute("startItems") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!int.TryParse(part, out int id)) continue;
+                var category = (string)Find(packs, genders, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("category");
+                if (!Enum.TryParse<EquipSlot>(category, out var slot) || items.Any(i => i.Slot == slot)) continue;
+                items.Add(new EquipItem { Id = id, Slot = slot, Color = ColorOf(id, category) });
             }
         }
         return (items, palettes.Skin(skinRow));

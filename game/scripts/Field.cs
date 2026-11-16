@@ -70,11 +70,14 @@ public partial class Field : Node3D
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
         AddChild(contents);
         contents.Start(map, fieldName, player, SpawnsLocalPlayer);
-        try { cam = FieldData.FindByXBlock(packs, fieldName)?.Camera ?? cam; }
+        var hdr = new FieldHdr();
+        try { var fd = FieldData.FindByXBlock(packs, fieldName); cam = fd?.Camera ?? cam; hdr = fd?.Hdr ?? hdr; }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         camDist = cam.Distance;
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
+        var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale };
+        camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
         AddChild(camera);
         if (player != null) UpdateCamera();
         OnFieldBuilt(builder, map, fieldName);
@@ -109,9 +112,10 @@ public partial class Field : Node3D
     {
         Color fog = new(199 / 255f, 237 / 255f, 1f);
         float fogNear = 5276, fogFar = 20000;
+        XDocument x = null;
         try
         {
-            var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", $"mapxblock/{fieldName}.xml")));
+            x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", $"mapxblock/{fieldName}.xml")));
             var f = x.Root?.Element("fog");
             if (f != null)
             {
@@ -124,7 +128,7 @@ public partial class Field : Node3D
         catch (Exception ex) { GD.PushWarning("mapxblock: " + ex.Message); }
 
         float ambient = 0.8f, sunDim = 0.8f;
-        Color ambientColor = Colors.White, sunColor = Colors.White, sunAmbient = Colors.Black;
+        Color ambientColor = Colors.White, sunColor = Colors.White, sunAmbient = Colors.Black, sunSpecular = Colors.White;
         var sunDir = new Vec3(0, 0, -1);
         foreach (var e in map.Entities)
         {
@@ -140,6 +144,8 @@ public partial class Field : Node3D
                 if (c != null) sunColor = new Color((float)c[0], (float)c[1], (float)c[2]);
                 var a = e.Numbers("AmbientColor");
                 if (a != null) sunAmbient = new Color((float)a[0], (float)a[1], (float)a[2]);
+                var sp = e.Numbers("SpecularColor");
+                if (sp != null) sunSpecular = new Color((float)sp[0], (float)sp[1], (float)sp[2]);
                 sunDim = (float)e.Number("Dimmer", 1);
                 sunDir = e.Transform.Apply(new Vec3(1, 0, 0)) - e.Transform.Apply(new Vec3(0, 0, 0));   // Gamebryo lights shine along +X
             }
@@ -161,6 +167,7 @@ public partial class Field : Node3D
             TonemapMode = Godot.Environment.ToneMapper.Linear,
         };
         AddChild(new WorldEnvironment { Environment = env });
+        FieldBackdrop.Add(this, env, packs, x);
         var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000 };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
@@ -169,6 +176,7 @@ public partial class Field : Node3D
         RenderingServer.GlobalShaderParameterSet("ms2_ambient", Rgb(ambientColor, ambient));
         RenderingServer.GlobalShaderParameterSet("ms2_sun_color", Rgb(sunColor, sunDim));
         RenderingServer.GlobalShaderParameterSet("ms2_sun_ambient", Rgb(sunAmbient, sunDim));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_specular", Rgb(sunSpecular, sunDim));
         RenderingServer.GlobalShaderParameterSet("ms2_sun_dir", d);
     }
 

@@ -15,6 +15,7 @@ public sealed class ModelMesh
     public string Name;
     public float[] Positions;             // xyz per vertex, skin space (scene root) for skinned meshes
     public float[] Normals;               // xyz per vertex, or null
+    public float[] Tangents, Binormals;   // xyz per vertex (normal-map tangent frame), or null
     public float[] Uvs;                   // uv per vertex, or null
     public int[] Joints;                  // 4 bone indices per vertex (into ModelData.Bones), skinned only
     public float[] Weights;               // 4 weights per vertex, sum 1, skinned only
@@ -24,6 +25,9 @@ public sealed class ModelMesh
     public Xform Local = Xform.Identity;  // rigid meshes: transform relative to ParentBone
     public bool AlphaTest;                // has an NiAlphaProperty
     public float[] Ambient, Diffuse, Emissive;   // NiMaterialProperty colours (rgb), or null without a material
+    public float[] Specular;              // NiMaterialProperty specular colour (rgb), or null
+    public float Glossiness;              // NiMaterialProperty glossiness (the specular power)
+    public bool SpecularOn;               // an NiSpecularProperty with its enable flag set
     public float[] Colors;                // rgba 0..1 per vertex, or null
     public float[] Uvs1;                  // second uv set (TEXCOORD1), or null
     public int AlphaFlags = -1;           // NiAlphaProperty flags, -1 without one
@@ -33,11 +37,24 @@ public sealed class ModelMesh
     public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
-    public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, shaderN
+    public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, decal0, shaderN
+    public string FlipSlot;               // texture slot an NiFlipController cycles (base, dark, ...), or null
+    public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
+    public float FlipPeriod;
+    public List<TexScroll> Scrolls = new();   // NiTextureTransformController translations
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
     public Dictionary<string, int> ExtraInts = new();          // NiIntegerExtraData by name (ColorOverrideMapIndex, ...)
+}
+
+/// <summary>A looping texture translation: the offset along U (Axis 0) or V (Axis 1) of a slot's uv, linear between keys.</summary>
+public sealed class TexScroll
+{
+    public string Slot;
+    public int Axis;
+    public float Start, Stop;             // controller time range; the keys loop over it
+    public float[] Times, Values;
 }
 
 /// <summary>
@@ -132,7 +149,8 @@ public sealed class ModelData
             if (p < 0 || B[(int)p].Type != "NiTexturingProperty") continue;
             var b = B[(int)p];
             foreach (var (key, slot) in new[] { ("base", "Base Texture"), ("gloss", "Gloss Texture"), ("normal", "Normal Texture"),
-                                                ("glow", "Glow Texture"), ("dark", "Dark Texture"), ("detail", "Detail Texture") })
+                                                ("glow", "Glow Texture"), ("dark", "Dark Texture"), ("detail", "Detail Texture"),
+                                                ("decal0", "Decal 0 Texture") })
             {
                 if (b.IntOr("Has " + slot, 0) == 0 || !b.Has(slot)) continue;
                 long src = b.Struct(slot).Int("Source");
@@ -147,6 +165,59 @@ public sealed class ModelData
                 }
         }
         return o;
+    }
+
+    /// <summary>NiNode and the node subclasses that only change how children are drawn (sorting, billboarding, switching).</summary>
+    static bool IsNode(string type) => type is "NiNode" or "NiSortAdjustNode" or "NiBillboardNode" or "NiSwitchNode" or "NiLODNode";
+
+    static readonly string[] SlotNames = { "base", "dark", "detail", "gloss", "glow", "bump", "normal", "parallax", "decal0" };
+
+    /// <summary>
+    /// The flipbook (NiFlipController) and uv translation (NiTextureTransformController, translate U / V) controllers on the
+    /// mesh's NiTexturingProperty. Only active, looping controllers; time keys of the flipbook are taken as evenly spaced.
+    /// </summary>
+    static void ReadTextureControllers(NifFile nif, NifStruct mb, ModelMesh mesh)
+    {
+        var B = nif.Blocks;
+        foreach (var p in mb.Ints("Properties"))
+        {
+            if (p < 0 || B[(int)p].Type != "NiTexturingProperty") continue;
+            for (long c = B[(int)p].IntOr("Controller", -1), guard = 0; c >= 0 && guard < 16; guard++)
+            {
+                var cb = B[(int)c];
+                c = cb.IntOr("Next Controller", -1);
+                long flags = cb.IntOr("Flags", 0);
+                if ((flags & 8) == 0 || ((flags >> 1) & 3) != 0) continue;   // inactive, or not a loop
+                int slot = (int)cb.IntOr("Texture Slot", 0);
+                string slotName = slot < SlotNames.Length ? SlotNames[slot] : null;
+                float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
+                if (slotName == null || stop <= start) continue;
+                if (cb.Type == "NiFlipController")
+                {
+                    var frames = cb.Ints("Sources").Where(x => x >= 0).Select(x => nif.StrField(B[(int)x], "File Name")).ToArray();
+                    if (frames.Length < 2) continue;
+                    mesh.FlipSlot = slotName;
+                    mesh.FlipFrames = frames;
+                    mesh.FlipPeriod = stop - start;
+                }
+                else if (cb.Type == "NiTextureTransformController")
+                {
+                    long op = cb.IntOr("Operation", -1);
+                    long ip = cb.IntOr("Interpolator", -1);
+                    if (op is not (0 or 1) || ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") continue;
+                    long di = B[(int)ip].IntOr("Data", -1);
+                    if (di < 0) continue;
+                    var keys = B[(int)di].Struct("Data").Structs("Keys");
+                    if (keys.Length == 0) continue;
+                    mesh.Scrolls.Add(new TexScroll
+                    {
+                        Slot = slotName, Axis = (int)op, Start = start, Stop = stop,
+                        Times = keys.Select(k => k.Float("Time")).ToArray(),
+                        Values = keys.Select(k => k.Float("Value")).ToArray(),
+                    });
+                }
+            }
+        }
     }
 
     /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>
@@ -201,14 +272,32 @@ public sealed class ModelData
             var p = x.Apply(new Vec3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2]));
             m.Positions[i] = (float)p.X; m.Positions[i + 1] = (float)p.Y; m.Positions[i + 2] = (float)p.Z;
         }
-        if (m.Normals == null) return;
-        for (int i = 0; i + 2 < m.Normals.Length; i += 3)
+        foreach (var d in new[] { m.Normals, m.Tangents, m.Binormals })
         {
-            var n = x.Apply(new Vec3(m.Normals[i], m.Normals[i + 1], m.Normals[i + 2])) - o;
-            double l = Math.Sqrt(n.X * n.X + n.Y * n.Y + n.Z * n.Z);
-            if (l == 0) l = 1;
-            m.Normals[i] = (float)(n.X / l); m.Normals[i + 1] = (float)(n.Y / l); m.Normals[i + 2] = (float)(n.Z / l);
+            if (d == null) continue;
+            for (int i = 0; i + 2 < d.Length; i += 3)
+            {
+                var n = x.Apply(new Vec3(d[i], d[i + 1], d[i + 2])) - o;
+                double l = Math.Sqrt(n.X * n.X + n.Y * n.Y + n.Z * n.Z);
+                if (l == 0) l = 1;
+                d[i] = (float)(n.X / l); d[i + 1] = (float)(n.Y / l); d[i + 2] = (float)(n.Z / l);
+            }
         }
+    }
+
+    /// <summary>xyz vectors normalised to unit length (zero vectors kept), or null.</summary>
+    static float[] Unit(double[] v, int nv)
+    {
+        if (v == null || v.Length < nv * 3) return null;
+        var o = new float[nv * 3];
+        for (int k = 0; k < nv; k++)
+        {
+            double x = v[k * 3], y = v[k * 3 + 1], z = v[k * 3 + 2];
+            double l = Math.Sqrt(x * x + y * y + z * z);
+            if (l == 0) l = 1;
+            o[k * 3] = (float)(x / l); o[k * 3 + 1] = (float)(y / l); o[k * 3 + 2] = (float)(z / l);
+        }
+        return o;
     }
 
     public static ModelData Load(NifFile nif)
@@ -229,7 +318,7 @@ public sealed class ModelData
         {
             foreach (var k in B[i].Ints("Children"))
             {
-                if (k < 0 || B[(int)k].Type != "NiNode") continue;
+                if (k < 0 || !IsNode(B[(int)k].Type)) continue;
                 var local = XformOf(B[(int)k]);
                 var world = parentWorld.Compose(local);
                 var bone = new ModelBone { Name = nif.Name((int)k) ?? $"blk{k}", Parent = parentBone, Rest = local, World = world };
@@ -265,17 +354,9 @@ public sealed class ModelData
                 Positions = pos.v.Select(x => (float)x).ToArray(),
                 Textures = TexturesOf(nif, i),
             };
-            if (nrm.v != null)
-            {
-                mesh.Normals = new float[nv * 3];
-                for (int k = 0; k < nv; k++)
-                {
-                    double x = nrm.v[k * 3], y = nrm.v[k * 3 + 1], z = nrm.v[k * 3 + 2];
-                    double l = Math.Sqrt(x * x + y * y + z * z);
-                    if (l == 0) l = 1;
-                    mesh.Normals[k * 3] = (float)(x / l); mesh.Normals[k * 3 + 1] = (float)(y / l); mesh.Normals[k * 3 + 2] = (float)(z / l);
-                }
-            }
+            mesh.Normals = Unit(nrm.v, nv);
+            mesh.Tangents = Unit((skinned ? Pick("TANGENT_BP", "TANGENT") : Pick("TANGENT", "TANGENT_BP")).v, nv);
+            mesh.Binormals = Unit((skinned ? Pick("BINORMAL_BP", "BINORMAL") : Pick("BINORMAL", "BINORMAL_BP")).v, nv);
             if (s.TryGetValue("TEXCOORD", out var uv)) mesh.Uvs = uv.v.Select(x => (float)x).ToArray();
             if (s.TryGetValue("TEXCOORD1", out var uv1)) mesh.Uvs1 = uv1.v.Select(x => (float)x).ToArray();
             if (s.TryGetValue("COLOR", out var col) && col.n >= 3)
@@ -288,6 +369,7 @@ public sealed class ModelData
                         mesh.Colors[c * 4 + j] = j < col.n ? (float)(col.v[c * col.n + j] * k) : 1f;
             }
             ReadMaterial(nif, b, mesh);
+            ReadTextureControllers(nif, b, mesh);
             mesh.Indices = s["INDEX"].v.Select(x => (int)x).ToArray();
             foreach (var p in b.Ints("Properties"))
             {
@@ -306,7 +388,10 @@ public sealed class ModelData
                     mesh.Ambient = Rgb("Ambient Color");
                     mesh.Diffuse = Rgb("Diffuse Color");
                     mesh.Emissive = Rgb("Emissive Color");
+                    mesh.Specular = Rgb("Specular Color");
+                    mesh.Glossiness = prop.Float("Glossiness");
                 }
+                if (prop.Type == "NiSpecularProperty") mesh.SpecularOn = (prop.IntOr("Flags", 0) & 1) != 0;
             }
 
             if (skinned)

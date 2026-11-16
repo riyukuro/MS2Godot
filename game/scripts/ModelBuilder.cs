@@ -109,6 +109,20 @@ public sealed class ModelBuilder
             for (int i = 0; i < nv; i++) n[i] = new Vector3(m.Normals[i * 3], m.Normals[i * 3 + 1], m.Normals[i * 3 + 2]);
             arrays[(int)Mesh.ArrayType.Normal] = n;
         }
+        if (m.Normals != null && m.Tangents != null && m.Binormals != null && !instanceColor)
+        {
+            // Godot keeps the tangent and a handedness sign; it rebuilds the binormal as cross(normal, tangent) * sign
+            var t = new float[nv * 4];
+            for (int i = 0; i < nv; i++)
+            {
+                var nn = new Vector3(m.Normals[i * 3], m.Normals[i * 3 + 1], m.Normals[i * 3 + 2]);
+                var tt = new Vector3(m.Tangents[i * 3], m.Tangents[i * 3 + 1], m.Tangents[i * 3 + 2]);
+                var bb = new Vector3(m.Binormals[i * 3], m.Binormals[i * 3 + 1], m.Binormals[i * 3 + 2]);
+                t[i * 4] = tt.X; t[i * 4 + 1] = tt.Y; t[i * 4 + 2] = tt.Z;
+                t[i * 4 + 3] = nn.Cross(tt).Dot(bb) < 0 ? -1f : 1f;
+            }
+            arrays[(int)Mesh.ArrayType.Tangent] = t;
+        }
         if (m.Uvs != null)
         {
             var uv = new Vector2[nv];
@@ -147,9 +161,10 @@ public sealed class ModelBuilder
         return mesh;
     }
 
-    static Shader fieldShader, fieldBlendShader;
+    static Shader fieldShader, fieldBlendShader, fieldAddShader;
 
-    static Shader FieldShader(bool blend)
+    /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE).</summary>
+    static Shader FieldShader(ModelMesh m)
     {
         if (fieldShader == null)
         {
@@ -157,8 +172,10 @@ public sealed class ModelBuilder
             fieldShader = new Shader { Code = code };
             int nl = code.IndexOf('\n', code.IndexOf("shader_type")) + 1;
             fieldBlendShader = new Shader { Code = code.Insert(nl, "#define BLEND\n") };
+            fieldAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n") };
         }
-        return blend ? fieldBlendShader : fieldShader;
+        if (!m.AlphaBlendOn) return fieldShader;
+        return ((m.AlphaFlags >> 5) & 15) == 0 ? fieldAddShader : fieldBlendShader;
     }
 
     Material BuildMaterial(ModelMesh m, bool instanceColor)
@@ -167,13 +184,16 @@ public sealed class ModelBuilder
         if (instanceColor)
         {
             // field meshes: Gamebryo-style gamma-space lighting (shaders/field_lit.gdshader)
-            var sm = new ShaderMaterial { Shader = FieldShader(m.AlphaBlendOn) };
+            var sm = new ShaderMaterial { Shader = FieldShader(m) };
             sm.SetShaderParameter("has_tex", tex != null);
             if (tex != null) sm.SetShaderParameter("base_tex", tex);
             var dark = m.Textures.TryGetValue("dark", out var darkName) ? Texture(darkName) : null;
             sm.SetShaderParameter("has_dark", dark != null);
             if (dark != null) sm.SetShaderParameter("dark_tex", dark);
             sm.SetShaderParameter("dark_uv2", m.Uvs1 != null);
+            var decal = m.Textures.TryGetValue("decal0", out var decalName) ? Texture(decalName) : null;
+            sm.SetShaderParameter("has_decal", decal != null);
+            if (decal != null) sm.SetShaderParameter("decal_tex", decal);
             sm.SetShaderParameter("has_vcolor", m.Colors != null);
             sm.SetShaderParameter("vcolor_amb_diff", m.VertexColorsAmbDiff);
             // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
@@ -181,6 +201,27 @@ public sealed class ModelBuilder
             sm.SetShaderParameter("alpha_test", test);
             sm.SetShaderParameter("alpha_ref", m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
             if (m.Emissive != null) sm.SetShaderParameter("emissive", new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
+            if (m.Ambient != null) sm.SetShaderParameter("mat_ambient", new Vector3(m.Ambient[0], m.Ambient[1], m.Ambient[2]));
+            if (m.Diffuse != null) sm.SetShaderParameter("mat_diffuse", new Vector3(m.Diffuse[0], m.Diffuse[1], m.Diffuse[2]));
+            var glow = m.Textures.TryGetValue("glow", out var glowName) ? Texture(glowName) : null;
+            sm.SetShaderParameter("has_glow", glow != null);
+            if (glow != null) sm.SetShaderParameter("glow_tex", glow);
+            int flipSlot = m.FlipSlot == "base" ? 0 : m.FlipSlot == "dark" ? 1 : -1;
+            var flip = flipSlot >= 0 ? FlipArray(m.FlipFrames) : null;
+            if (flip != null)
+            {
+                sm.SetShaderParameter("flip_tex", flip);
+                sm.SetShaderParameter("flip_slot", flipSlot);
+                sm.SetShaderParameter("flip_count", m.FlipFrames.Length);
+                sm.SetShaderParameter("flip_period", m.FlipPeriod);
+            }
+            foreach (var sc in m.Scrolls)
+            {
+                if (sc.Slot is not ("base" or "dark")) continue;
+                sm.SetShaderParameter(sc.Slot + "_scroll_axis", sc.Axis);
+                sm.SetShaderParameter(sc.Slot + "_scroll_key", new Vector4(sc.Times[0], sc.Times[^1], sc.Values[0], sc.Values[^1]));
+                sm.SetShaderParameter(sc.Slot + "_scroll_range", new Vector2(sc.Start, sc.Stop));
+            }
             return sm;
         }
         return CharacterMaterial(m, tex);
@@ -214,6 +255,20 @@ public sealed class ModelBuilder
         sm.SetShaderParameter("fresnel_exponent", m.ExtraFloats.GetValueOrDefault("FresnelExponent", 4f));
         sm.SetShaderParameter("color_boost", m.ExtraFloats.GetValueOrDefault("ColorBoost", 1f));
         sm.SetShaderParameter("skin", IsSkinMaterial(m));
+        // normal map and specular (on with an enabled NiSpecularProperty; the gloss map scales it; hair adds the
+        // anisotropic term from its tangent map, custom map 1)
+        var normal = m.Tangents != null && m.Textures.TryGetValue("normal", out var nn) ? Texture(nn) : null;
+        sm.SetShaderParameter("has_normal", normal != null);
+        if (normal != null) sm.SetShaderParameter("normal_tex", normal);
+        sm.SetShaderParameter("specular_on", m.SpecularOn && m.Specular != null);
+        sm.SetShaderParameter("mat_specular", V(m.Specular, 0f));
+        sm.SetShaderParameter("spec_power", m.Glossiness > 0 ? m.Glossiness : 1f);
+        var gloss = m.Textures.TryGetValue("gloss", out var gn) ? Texture(gn) : null;
+        sm.SetShaderParameter("has_gloss", gloss != null);
+        if (gloss != null) sm.SetShaderParameter("gloss_tex", gloss);
+        var hair = m.Material == "MS2CharacterHairMaterial" && m.Tangents != null && m.Textures.TryGetValue("shader1", out var hn) ? Texture(hn) : null;
+        sm.SetShaderParameter("has_hair", hair != null);
+        if (hair != null) sm.SetShaderParameter("hair_tex", hair);
         bool test = m.AlphaTestOn || m.AlphaTest;
         sm.SetShaderParameter("alpha_test", test);
         sm.SetShaderParameter("alpha_ref", m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
@@ -222,6 +277,35 @@ public sealed class ModelBuilder
 
     /// <summary>Meshes the client gives the player's skin colours (its skin colour walk only touches this material).</summary>
     public static bool IsSkinMaterial(ModelMesh m) => m.Material == "MS2CharacterSkinMaterial";
+
+    readonly Dictionary<string, Texture2DArray> flipArrays = new();
+
+    /// <summary>A flipbook's frames as one texture array, or null when a frame is missing or the sizes differ.</summary>
+    Texture2DArray FlipArray(string[] frames)
+    {
+        string key = string.Join("|", frames);
+        if (flipArrays.TryGetValue(key, out var arr)) return arr;
+        var images = new Godot.Collections.Array<Image>();
+        foreach (var f in frames)
+        {
+            var img = Texture(f)?.GetImage();
+            if (img == null || (images.Count > 0 && (img.GetSize() != images[0].GetSize() || img.GetFormat() != images[0].GetFormat()
+                                                    || img.HasMipmaps() != images[0].HasMipmaps())))
+            {
+                images.Clear();
+                break;
+            }
+            images.Add(img);
+        }
+        if (images.Count > 0)
+        {
+            arr = new Texture2DArray();
+            if (arr.CreateFromImages(images) != Error.Ok) arr = null;
+        }
+        else arr = null;
+        flipArrays[key] = arr;
+        return arr;
+    }
 
     Texture2D Texture(string fileName)
     {

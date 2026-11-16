@@ -5,7 +5,7 @@ using Ms2.Formats.Pack;
 namespace Ms2.Formats.World;
 
 /// <summary>
-/// The camera part of a field's entry in Xml.m2d : table/fielddata.xml (&lt;environment&gt; without a locale).
+/// The camera and bloom parts of a field's entry in Xml.m2d : table/fielddata.xml (&lt;environment&gt; without a locale).
 /// Unset values keep the client's defaults (CFieldDataCli / CFieldData constructors).
 /// </summary>
 public sealed class FieldCamera
@@ -18,6 +18,15 @@ public sealed class FieldCamera
     public float FovDeg = 40f;                  // <fov value>: vertical field of view
 }
 
+/// <summary>The &lt;hdr&gt; bloom settings (CFieldDataCli defaults when the entry has none).</summary>
+public sealed class FieldHdr
+{
+    public float Threshold = 0.27f;             // bright pass: max(c - threshold, 0)
+    public float Offset = 30f;                  // bright pass: x / (x + offset)
+    public float BloomScale = 2f;               // final: scene + bloomscale * bloom
+    public float GlowScale = 0.1f;              // glow-map share of the bright pass
+}
+
 public sealed class FieldData
 {
     public const string Archive = "Xml";
@@ -26,6 +35,7 @@ public sealed class FieldData
     public int Id;
     public string XBlock;
     public FieldCamera Camera = new();
+    public FieldHdr Hdr = new();
 
     /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
     public static FieldData FindByXBlock(PackSet packs, string xblockName)
@@ -48,6 +58,14 @@ public sealed class FieldData
             }
             var fov = env.Element("fov");
             if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
+            var hdr = env.Element("hdr");
+            if (hdr != null)
+            {
+                Read(hdr, "threshold", ref o.Hdr.Threshold);
+                Read(hdr, "offset", ref o.Hdr.Offset);
+                Read(hdr, "bloomscale", ref o.Hdr.BloomScale);
+                Read(hdr, "glowscale", ref o.Hdr.GlowScale);
+            }
             return o;
         }
         return null;

@@ -133,7 +133,7 @@ public sealed class EquipApplier
                     var g = (string)c.Attribute("gender");
                     if (g == null || g == gender.ToString()) cut.Add((string)c.Attribute("name"));
                 }
-                var made = Attach(skel, body, md, asset, item);
+                var made = Attach(skel, body, md, asset, item, gender);
                 if (DyeOf(item, im) is { } dye)
                     foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
                 added.AddRange(made);
@@ -173,9 +173,51 @@ public sealed class EquipApplier
 
     static string BaseName(StringName n) => n.ToString();
 
-    List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item)
+    /// <summary>The asset's dummy offset for a gender (gender 2 = both), the first one with no animation sequence.</summary>
+    static Transform3D DummyOf(XElement asset, int gender)
+    {
+        foreach (var d in asset.Elements("dummy"))
+        {
+            var g = (string)d.Attribute("gender");
+            if (g != null && g != "2" && g != gender.ToString()) continue;
+            if (!string.IsNullOrEmpty((string)d.Attribute("sequence"))) continue;
+            var node = (string)d.Attribute("targetnode");
+            if (!string.IsNullOrEmpty(node) && node != (string)asset.Attribute("targetnode")) continue;    // for another node (held)
+            var t = Floats((string)d.Attribute("translation"));
+            var r = Floats((string)d.Attribute("rotation"));
+            const double d2r = Math.PI / 180;
+            var q = Quat.FromAxis(0, r[0] * d2r) * Quat.FromAxis(1, r[1] * d2r) * Quat.FromAxis(2, r[2] * d2r);
+            return ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), q.ToMatrix(), 1));
+        }
+        return Transform3D.Identity;
+    }
+
+    static double[] Floats(string s)
+    {
+        var v = new double[3];
+        var parts = (s ?? "").Split(',');
+        for (int i = 0; i < 3 && i < parts.Length; i++)
+            double.TryParse(parts[i], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v[i]);
+        return v;
+    }
+
+    List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender)
     {
         var made = new List<MeshInstance3D>();
+        // Rigid items hang by their self node (Point01): that node of the item lands on the target node, turned and
+        // moved by the asset's dummy for the gender (Euler XYZ degrees, then a translation), as the client's weapon
+        // attach node does. Dummies tied to an animation sequence are left out.
+        string selfName = (string)asset.Attribute("selfnode");
+        var selfInv = Transform3D.Identity;
+        if (selfName != null)
+        {
+            int sb = md.Bones.FindIndex(b => b.Name == selfName);
+            var sm = md.Meshes.FirstOrDefault(x => x.Name == selfName && !x.Skinned);
+            if (sb >= 0) selfInv = ModelBuilder.ToGodot(md.Bones[sb].World).AffineInverse();
+            else if (sm != null)
+                selfInv = ((sm.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[sm.ParentBone].World) : Transform3D.Identity) * ModelBuilder.ToGodot(sm.Local)).AffineInverse();
+        }
+        var dummy = DummyOf(asset, gender);
         Skin skin = null;
         foreach (var m in md.Meshes)
         {
@@ -197,18 +239,20 @@ public sealed class EquipApplier
             }
             else
             {
-                // rigid: hangs from the body bone of the target node, at its own place in item space
+                // rigid: the item's self node sits on the body's target node (a bone, or a rigid body mesh under a bone)
                 string target = (string)asset.Attribute("targetnode") ?? "Bip01 Head";
                 string bone = target;
+                var targetLocal = Transform3D.Identity;     // the target node relative to its bone
                 if (skel.FindBone(bone) < 0)
                 {
                     var bodyMesh = body.Meshes.FirstOrDefault(x => x.Name == target && x.ParentBone >= 0);
                     bone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
+                    if (bodyMesh != null) targetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
                 }
                 var att = new BoneAttachment3D { Name = mi.Name + "_attach", BoneName = bone };
                 skel.AddChild(att);
                 var parentWorld = m.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[m.ParentBone].World) : Transform3D.Identity;
-                mi.Transform = parentWorld * ModelBuilder.ToGodot(m.Local);
+                mi.Transform = targetLocal * dummy * selfInv * parentWorld * ModelBuilder.ToGodot(m.Local);
                 att.AddChild(mi);
             }
             made.Add(mi);

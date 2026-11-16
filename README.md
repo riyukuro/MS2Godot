@@ -25,12 +25,33 @@ The field comes from these packs:
 
 - `Resource/Exported.m2d`: the field entity set (`xblock/<field>.xblock`) and the model defaults (`flat/`).
 - `Resource/asset-web-metadata.m2d`: maps an entity's `urn:llid:` asset id to a model path.
-- `Resource/Model/Map.m2d`: the models, their textures and their PhysX collision meshes.
-- `Xml.m2d`: `mapxblock/<field>.xml` (fog) and `table/fielddata.xml` (camera).
+- `Resource/Model/Map.m2d`: the models, their textures and their PhysX collision meshes; `Effect.m2d` and
+  `Textures.m2d` for textures of effect meshes.
+- `Resource/Image.m2d`: the backdrop pictures (`bg/`).
+- `Xml.m2d`: `mapxblock/<field>.xml` (fog, backdrop) and `table/fielddata.xml` (camera, bloom).
 
 Field meshes are lit with the field's ambient and directional light entities, the way Gamebryo's standard
 material does it: in gamma space, with the entity's material colour, vertex colours and alpha blending from the
-NIF (`game/shaders/field_lit.gdshader`).
+NIF (`game/shaders/field_lit.gdshader`). Details:
+
+- Lighting is not clamped, as in the client's HDR target. The sun's ambient colour lights the side facing away from it.
+- Entities without a `MaterialColor`, such as portals, keep the NIF material's own colours.
+- Glow maps add their colour.
+- The decal slot is drawn over the base (banner emblems).
+- Additive blending is used where the alpha property asks for it.
+- Flipbooks (`NiFlipController`) and uv scrolls (`NiTextureTransformController`) play, as on the water.
+- Fluid cubes (water) are merged into one mesh per model, without the faces two of them share.
+- The `bgDay` picture of the field's mapxblock is the backdrop, as a still image without the client's parallax.
+
+`game/scripts/Ms2Bloom.cs` is the client's bloom, a compositor effect:
+
+1. A quarter-size copy of the scene.
+2. A bright pass, max(c - threshold, 0) / (that + offset).
+3. A horizontal, then a vertical 15-tap Gaussian blur (deviation 3, weights doubled), each into 8-bit targets.
+4. The result is added to the scene, times bloomscale.
+
+The values come from the field's `<hdr>` entry (defaults 0.27, 30, 2). The blur's gain of about 2 per pass is what
+lifts lit floors by 15-20%.
 
 Collision follows the client:
 
@@ -56,13 +77,10 @@ language, event groups beyond the event category.
 
 Known gaps:
 
-- Some banner textures are white.
-- No bloom pass. The client's is small: a bright pass of max(c - 0.27, 0) / (that + 30) over a quarter-size
-  copy, blurred and added twice to the scene, with no tone mapping. So it does not explain why lit floors come out
-  about 10-20% darker than in the client.
-- No cast shadows on field meshes.
-- No texture animation (the water flipbook).
-- The water shows the inner faces of its stacked cubes.
+- No glow-map share in the bloom: the client renders glow-mapped objects into a separate target that adds to the bright
+  pass, which gives signs and portals their halo.
+- No point or spot lights (indoor maps are darker than they should be), no cast shadows on field meshes.
+- No particle systems (`NiPSParticleSystem`).
 
 The pilot viewer (the player character on a ground plane; keys `1` idle, `2` walk) is still `game/main.tscn`.
 
@@ -114,7 +132,17 @@ Characters are drawn with `game/shaders/character_lit.gdshader`, after the clien
 - The material values come from the NIF's extra data (`OverrideColor0..2`, `FresnelBoost`, `FresnelExponent`,
   `ColorBoost`).
 
-Not done: normal and gloss maps, hair anisotropy, face decals (FD), weapons.
+Further material features:
+
+- Normal maps.
+- Blinn-Phong specular from the gloss map, with the NIF's specular colour and glossiness and the sun's specular colour.
+- Anisotropic hair highlights along the tangent map of `MS2CharacterHairMaterial`.
+
+The job's starter weapons come from `table/job.xml` `startItems` (knight: sword and shield). Each item hangs at the
+bone its model asks for (`targetnode`), sheathed: the sword at the hip, the shield on the back. Its node `selfnode`
+sits on that bone after the item's per-gender `dummy` offset.
+
+Not done: face decals (FD), held weapons in battle stance (`Weapon_Hand_*` points).
 
 Command line, for the field and the viewer:
 

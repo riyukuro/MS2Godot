@@ -14,7 +14,6 @@ namespace Ms2Godot;
 public sealed class FieldBuilder
 {
     public const string MapArchive = "Resource/Model/Map";
-    const float DefaultMaterialColor = 0.7058824f;     // the flat default (= the NIF material's ambient / diffuse)
     const float ChunkSize = 1500f;                     // collider bodies per 10 x 10 cubes
 
     readonly PackSet packs;
@@ -42,7 +41,7 @@ public sealed class FieldBuilder
     public FieldBuilder(PackSet packs, AssetIndex assets, ModelBuilder builder)
     {
         this.packs = packs; this.assets = assets; this.builder = builder;
-        builder.TextureArchives = new[] { MapArchive, ModelBuilder.TextureArchive };
+        builder.TextureArchives = new[] { MapArchive, ModelBuilder.TextureArchive, "Resource/Model/Effect" };   // effect meshes (fountains, torches) use Effect.m2d textures
     }
 
     /// <summary>MS2 (x, y, z) -> Godot (x, z, -y).</summary>
@@ -189,10 +188,30 @@ public sealed class FieldBuilder
             }
         }
 
+        // fluid cubes (water, ...) are blended without depth writes, so the faces between two of them would show;
+        // their groups become one merged mesh without the faces that touch another fluid cube
+        var fluidCells = new HashSet<Vector3I>();
+        foreach (var ents in groups.Values)
+            foreach (var e in ents)
+                if (IsFluidCube(e)) fluidCells.Add(CellOf(e));
+
         foreach (var (llid, ents) in groups)
         {
             var me = models[llid];
             int mi = 0;
+            if (ents.All(IsFluidCube))
+            {
+                foreach (var (mesh, local) in me.Meshes)
+                {
+                    visuals.AddChild(new MeshInstance3D
+                    {
+                        Name = $"{ents[0].ModelName}{mi++}",
+                        Mesh = FluidMesh(builder.BuildMesh(mesh, skin: false, instanceColor: true), ents, local, fluidCells),
+                    });
+                    Instances += ents.Count;
+                }
+                continue;
+            }
             foreach (var (mesh, local) in me.Meshes)
             {
                 var mm = new MultiMesh
@@ -205,11 +224,7 @@ public sealed class FieldBuilder
                 for (int i = 0; i < ents.Count; i++)
                 {
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
-                    var c = ents[i].Numbers("MaterialColor");
-                    var col = c != null && c.Length >= 3
-                        ? new Color((float)c[0], (float)c[1], (float)c[2])
-                        : new Color(DefaultMaterialColor, DefaultMaterialColor, DefaultMaterialColor);
-                    mm.SetInstanceColor(i, col);
+                    mm.SetInstanceColor(i, InstanceColor(ents[i]));
                 }
                 visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm });
                 MultiMeshes++;
@@ -217,5 +232,106 @@ public sealed class FieldBuilder
             }
         }
         return world;
+    }
+
+    const float CubeSize = 150f;
+
+    /// <summary>
+    /// The entity's MaterialColor (ambient = diffuse) as the instance colour; without one (effect meshes such as
+    /// portals) alpha 0, and the shader keeps the NIF material's own ambient and diffuse.
+    /// </summary>
+    static Color InstanceColor(FieldEntity e)
+    {
+        var c = e.Numbers("MaterialColor");
+        return c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2]) : new Color(0, 0, 0, 0);
+    }
+
+    static bool IsFluidCube(FieldEntity e) =>
+        e.HasMixin("MS2CubeProp") && e.ModelName.Contains("fluid", StringComparison.OrdinalIgnoreCase);
+
+    static Vector3I CellOf(FieldEntity e)
+    {
+        var p = e.Position;
+        return new((int)Math.Round(p.X / CubeSize), (int)Math.Round(p.Y / CubeSize), (int)Math.Round(p.Z / CubeSize));
+    }
+
+    /// <summary>
+    /// A triangle is hidden when each cube face its centroid lies on (within a few units, so the bevel strips along
+    /// the edges count for both faces) has a fluid cube behind it. d is the centroid relative to the cube centre.
+    /// </summary>
+    static bool Hidden(Vector3 d, Vector3I cell, HashSet<Vector3I> cells)
+    {
+        const float onFace = CubeSize / 2 - 6;
+        bool any = false;
+        for (int axis = 0; axis < 3; axis++)
+        {
+            if (Mathf.Abs(d[axis]) < onFace) continue;
+            var step = Vector3I.Zero;
+            step[axis] = Math.Sign(d[axis]);
+            if (!cells.Contains(cell + step)) return false;
+            any = true;
+        }
+        return any;
+    }
+
+    /// <summary>
+    /// The entities' copies of a cube mesh baked into one mesh (Z-up field space), dropping each triangle that faces a
+    /// neighbouring fluid cell (see Hidden; the cube centre is the entity position + half a cube up). The material
+    /// colour goes to COLOR, as the MultiMesh instance colour would.
+    /// </summary>
+    static ArrayMesh FluidMesh(ArrayMesh src, List<FieldEntity> ents, Transform3D local, HashSet<Vector3I> cells)
+    {
+        var a = src.SurfaceGetArrays(0);
+        var v = a[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+        var n = a[(int)Mesh.ArrayType.Normal].VariantType == Variant.Type.Nil ? null : a[(int)Mesh.ArrayType.Normal].AsVector3Array();
+        var uv = a[(int)Mesh.ArrayType.TexUV].VariantType == Variant.Type.Nil ? null : a[(int)Mesh.ArrayType.TexUV].AsVector2Array();
+        var uv2 = a[(int)Mesh.ArrayType.TexUV2].VariantType == Variant.Type.Nil ? null : a[(int)Mesh.ArrayType.TexUV2].AsVector2Array();
+        var c0 = a[(int)Mesh.ArrayType.Custom0].VariantType == Variant.Type.Nil ? null : a[(int)Mesh.ArrayType.Custom0].AsFloat32Array();
+        var idx = a[(int)Mesh.ArrayType.Index].AsInt32Array();
+
+        var ov = new List<Vector3>(); var on = new List<Vector3>(); var ouv = new List<Vector2>(); var ouv2 = new List<Vector2>();
+        var oc0 = new List<float>(); var ocol = new List<Color>();
+        foreach (var e in ents)
+        {
+            var xf = ModelBuilder.ToGodot(e.Transform) * local;
+            var centre = ModelBuilder.ToGodot(e.Transform).Origin + new Vector3(0, 0, CubeSize / 2);
+            var cell = CellOf(e);
+            var col = InstanceColor(e);
+            for (int t = 0; t + 2 < idx.Length; t += 3)
+            {
+                var d = (xf * v[idx[t]] + xf * v[idx[t + 1]] + xf * v[idx[t + 2]]) / 3 - centre;
+                if (Hidden(d, cell, cells)) continue;
+                for (int k = 0; k < 3; k++)
+                {
+                    int i = idx[t + k];
+                    ov.Add(xf * v[i]);
+                    if (n != null) on.Add((xf.Basis * n[i]).Normalized());
+                    if (uv != null) ouv.Add(uv[i]);
+                    if (uv2 != null) ouv2.Add(uv2[i]);
+                    if (c0 != null) for (int j = 0; j < 4; j++) oc0.Add(c0[i * 4 + j]);
+                    ocol.Add(col);
+                }
+            }
+        }
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = ov.ToArray();
+        if (n != null) arrays[(int)Mesh.ArrayType.Normal] = on.ToArray();
+        if (uv != null) arrays[(int)Mesh.ArrayType.TexUV] = ouv.ToArray();
+        if (uv2 != null) arrays[(int)Mesh.ArrayType.TexUV2] = ouv2.ToArray();
+        arrays[(int)Mesh.ArrayType.Color] = ocol.ToArray();
+        ulong format = 0;
+        if (c0 != null)
+        {
+            arrays[(int)Mesh.ArrayType.Custom0] = oc0.ToArray();
+            format |= (ulong)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
+        }
+        var mesh = new ArrayMesh();
+        if (ov.Count > 0)
+        {
+            mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, (Mesh.ArrayFormat)format);
+            mesh.SurfaceSetMaterial(0, src.SurfaceGetMaterial(0));
+        }
+        return mesh;
     }
 }
