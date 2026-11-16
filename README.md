@@ -36,6 +36,13 @@ Collision follows the client:
 Props without PhysX data, such as the low fences, have no collision in the client either, so the character can
 step onto the water surface.
 
+Sound comes from `Sound/MS2Sound.fev` and the `MS2Sound_*.fsb` banks next to it (FMOD Designer 4 project and FSB5 banks of
+MPEG layer II). `src/Ms2.Audio` reads them without Godot: music cue id (the `<bgm id>` of `table/fielddata.xml`) to bank
+sample, event name to sound definition to bank sample and volume, and decodes the payloads to PCM. The field scene plays the
+field's bgm cue looped (an intro sample plays once first); `game/audio_probe.tscn` is a headless check of that path.
+Not done yet: music parameters and bridge segments, ambient (AMB) entities, 3D events, voice banks per language, UI sound
+event names (the click plays the bank sample `System_Button_click_01` directly).
+
 Known gaps:
 
 - No character customisation (white skin).

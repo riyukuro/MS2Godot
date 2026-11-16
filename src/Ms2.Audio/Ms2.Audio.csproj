@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <RootNamespace>Ms2.Audio</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NLayer" Version="3.0.1" />
+  </ItemGroup>
+</Project>

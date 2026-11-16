@@ -77,6 +77,7 @@ public partial class Field : Node3D
         AddChild(camera);
         if (player != null) UpdateCamera();
         OnFieldBuilt(builder, map, fieldName);
+        StartFieldAudio(data, fieldName);
 
         if (shotDir != null)
         {
@@ -100,6 +101,20 @@ public partial class Field : Node3D
     protected virtual string FieldNameFor(string defaultName) => defaultName;
     protected virtual bool SpawnsLocalPlayer => true;
     protected virtual void OnFieldBuilt(ModelBuilder builder, FieldMap map, string fieldName) { }
+
+    protected FieldAudio Audio;
+
+    // The field's background music (the bgm cue of its fielddata entry), played from the client's own sound banks.
+    void StartFieldAudio(string data, string fieldName)
+    {
+        try
+        {
+            Audio = new FieldAudio { Name = "FieldAudio" };
+            AddChild(Audio);
+            if (Audio.Open(data)) Audio.PlayBgm(FieldAudio.FieldBgmCue(packs, fieldName));
+        }
+        catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); }
+    }
 
     void BuildEnvironment(FieldMap map, string fieldName)
     {
