@@ -12,12 +12,14 @@ public sealed class NifFile
     public List<NifStruct> Blocks = new();
     public List<string> Strings = new();
     public List<int> Roots = new();
+    /// <summary>The file bytes and where each block lies in them (for diagnostics).</summary>
+    public byte[] Raw; public List<(int start, int len)> BlockSpan = new();
 
     static readonly Encoding Latin1 = Encoding.Latin1;
 
     public static NifFile Load(NifSpec spec, byte[] b)
     {
-        var n = new NifFile();
+        var n = new NifFile { Raw = b };
         int nl = Array.IndexOf(b, (byte)'\n');
         n.HeaderLine = Latin1.GetString(b, 0, nl);
         int o = nl + 1;
@@ -50,6 +52,7 @@ public sealed class NifFile
             if (r.Pos != o + sizes[i])
                 throw new InvalidDataException($"block {i} {t}: read {r.Pos - o} of {sizes[i]} bytes");
             n.Blocks.Add(blk);
+            n.BlockSpan.Add((o, (int)sizes[i]));
             o += (int)sizes[i];
         }
         int nr = (int)U32();

@@ -118,6 +118,7 @@ public partial class ReplayField : Field
         npcs = new NpcLayer(packs, builder, npcTable, this);
         skills = new SkillTable(packs);
         combat = new CombatLayer(packs, builder, new EffectTable(packs), this);
+        if (System.Environment.GetEnvironmentVariable("MS2_NOPARTICLES") != null) combat.Particles = false;
         npcs.Combat = combat;
         truth = BuildTruth(file);
         npcTruth = BuildNpcTruth(file, NpcLayoutOf);
@@ -261,7 +262,14 @@ public partial class ReplayField : Field
             }
             else npcs.PlaySequence(u.ActorId, motion.SequenceName);
         }
-        combat.PlayEffect(motion.MotionEffect, who.Value.root.Position, who.Value.yaw);
+        PlayFx(motion.MotionEffect, who.Value.root.Position, who.Value.yaw);
+    }
+
+    void PlayFx(string id, Vector3 at, float yaw)
+    {
+        int before = combat.ParticleSystemsRun;
+        combat.PlayEffect(id, at, yaw);
+        if (System.Environment.GetEnvironmentVariable("MS2_FXLOG") != null && combat.ParticleSystemsRun > before) GD.Print($"fx {id} at {replay.Stream.PlayedSeconds:F1}s systems +{combat.ParticleSystemsRun - before}");
     }
 
     void OnDamage(SkillDamage d)
@@ -273,7 +281,7 @@ public partial class ReplayField : Field
             var who = Find(t.TargetId);
             if (who == null) continue;
             foreach (var h in t.Hits) { combat.Number(who.Value.root.Position + new Vector3(0, who.Value.height + 40, 0), h.Damage, h.Flag); DamageNumbers++; }
-            if (!hitFx && motion != null && motion.HitEffects.Count > 0) { combat.PlayEffect(motion.HitEffects[0], who.Value.root.Position + new Vector3(0, who.Value.height * 0.5f, 0), 0); }
+            if (!hitFx && motion != null && motion.HitEffects.Count > 0) { PlayFx(motion.HitEffects[0], who.Value.root.Position + new Vector3(0, who.Value.height * 0.5f, 0), 0); }
         }
     }
 
@@ -418,7 +426,7 @@ public partial class ReplayField : Field
         GD.Print($"check {when}: {n} players, {bad} position mismatches against the recorded coordinates, bodies trail their target by at most {maxLag:F1} units");
     }
 
-    void ReportChecks() => GD.Print($"combat: {SkillUses} skill uses ({SkillNoRow} without a skill row, {SkillAnimsPlayed} player motions played, {SkillNoKf} without a kf), {DamageNumbers} damage numbers, {npcs.Deaths} npc deaths ({npcs.NoDeathSequence} without a death sequence); effects: {combat.EffectsSpawned} parts shown, {combat.EffectsNoXml} xml missing, {combat.EffectsNoNif} nif missing, {combat.EffectsNotNif} non-nif parts skipped, {combat.EffectsWithParticles} with particle systems (not drawn: {combat.ParticleEffects.Count} distinct), {combat.EffectsFailed} failed to load");
+    void ReportChecks() => GD.Print($"combat: {SkillUses} skill uses ({SkillNoRow} without a skill row, {SkillAnimsPlayed} player motions played, {SkillNoKf} without a kf), {DamageNumbers} damage numbers, {npcs.Deaths} npc deaths ({npcs.NoDeathSequence} without a death sequence); effects: {combat.EffectsSpawned} parts shown, {combat.EffectsNoXml} xml missing, {combat.EffectsNoNif} nif missing, {combat.EffectsNotNif} non-nif parts skipped, {combat.EffectsWithParticles} with particle systems ({combat.ParticleEffects.Count} distinct), {combat.SceneEffects} played as scenes ({combat.ParticleSystemsRun} particle systems, {combat.SceneFallbacks} scene fallbacks, unsupported: {string.Join(",", combat.Unsupported)}), {combat.EffectsFailed} failed to load");
     void ReportChecks3() => GD.Print($"npcs: {npcs.Spawned} spawned ({npcs.NoRow} without a table row, {npcs.NoModel} without a model in the local data: {string.Join(", ", npcs.MissingModels.Take(8))}), {npcs.SequencesPlayed} sequences played, {npcs.SequencesMissing} sequence ids without a kf; equips: {equip.Loaded} item models applied, {equip.NoModelEntry} items without an itemmodel entry, {equip.NoAsset} without a usable asset, {equip.Failed} failed; {equip.MissingIds.Count} distinct ids missing from the local data");
     void ReportChecks2() => GD.Print($"replay done: {checkedActors} player checks, {mismatches} mismatches");
 }

@@ -12,6 +12,7 @@ public sealed class ModelBone
 
 public sealed class ModelMesh
 {
+    public int Block = -1;                // the NiMesh block this came from
     public string Name;
     public float[] Positions;             // xyz per vertex, skin space (scene root) for skinned meshes
     public float[] Normals;               // xyz per vertex, or null
@@ -350,7 +351,7 @@ public sealed class ModelData
             int nv = pos.v.Length / 3;
             var mesh = new ModelMesh
             {
-                Name = nif.Name(i), Skinned = skinned,
+                Name = nif.Name(i), Block = i, Skinned = skinned,
                 Positions = pos.v.Select(x => (float)x).ToArray(),
                 Textures = TexturesOf(nif, i),
             };

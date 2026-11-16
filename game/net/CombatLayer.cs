@@ -21,6 +21,10 @@ public sealed class CombatLayer
     readonly List<(Label3D label, float age)> numbers = new();
     readonly List<(Node3D node, float born, float start, float end, List<StandardMaterial3D> mats)> live = new();
     readonly Shader barShader;
+    readonly Dictionary<string, EffectScene> scenes = new(StringComparer.OrdinalIgnoreCase);
+    public bool Particles = true;
+    public int SceneEffects, ParticleSystemsRun, SceneFallbacks;
+    public readonly HashSet<string> Unsupported = new();
     public int EffectsSpawned, EffectsNoXml, EffectsNoNif, EffectsNotNif, EffectsWithParticles, EffectsFailed, NumbersShown, EffectSounds;
     public readonly HashSet<string> MissingEffects = new();
     public readonly HashSet<string> ParticleEffects = new();
@@ -116,6 +120,7 @@ void fragment() {
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
+            if (Particles && TryScene(part, at, yawRadians)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }
             if (e.Value.particles) { EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
@@ -142,6 +147,35 @@ void fragment() {
             live.Add((holder, 0f, part.StartDelay, part.StartDelay + Mathf.Min(dur, 3f), mats));
             EffectsSpawned++;
         }
+    }
+
+    EffectScene Scene(string nifPath)
+    {
+        string entry = nifPath.Replace('\\', '/').ToLowerInvariant();
+        if (scenes.TryGetValue(entry, out var sc)) return sc;
+        sc = null;
+        if (packs.Exists(EffectArchive, entry))
+        {
+            try { sc = EffectScene.Load(NifFile.Load(mb.Spec, packs.Read(EffectArchive, entry))); foreach (var u in sc.Unsupported) Unsupported.Add(u); }
+            catch (Exception ex) { GD.PushWarning($"effect scene {entry}: {ex.Message}"); SceneFallbacks++; }
+        }
+        return scenes[entry] = sc;
+    }
+
+    /// <summary>Plays an effect part through the scene runtime (particles and controllers); false when the nif could not be read as a scene.</summary>
+    bool TryScene(EffectPart part, Godot.Vector3 at, float yawRadians)
+    {
+        var sc = Scene(part.FilePath);
+        if (sc == null) return false;
+        float dur = part.Duration > 0 ? part.Duration : 0.6f;
+        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Position = at, Rotation = new Godot.Vector3(0, yawRadians, 0), Delay = part.StartDelay };
+        float s = part.Scale <= 0 ? 1 : part.Scale;
+        var q = new Godot.Quaternion(Godot.Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Godot.Quaternion(Godot.Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Godot.Quaternion(Godot.Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
+        inst.FileSpace = new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2]));
+        parent.AddChild(inst);
+        SceneEffects++; EffectsSpawned++;
+        if (sc.Systems.Count > 0) { ParticleSystemsRun += sc.Systems.Count; EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
+        return true;
     }
 
     public void Process(float dt)

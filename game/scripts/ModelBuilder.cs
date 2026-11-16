@@ -307,7 +307,7 @@ public sealed class ModelBuilder
         return arr;
     }
 
-    Texture2D Texture(string fileName)
+    public Texture2D Texture(string fileName)
     {
         if (textures.TryGetValue(fileName, out var t)) return t;
         Texture2D tex = null;

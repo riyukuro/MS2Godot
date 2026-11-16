@@ -384,7 +384,7 @@ godot-mono --path game res://net/Replay.tscn -- --recording FILE.msb [--speed 1]
     [--dist 1000] [--out DIR --shots "SEC[:FOLLOW],SEC,..."]
 ```
 
-Combat in the replay: skill uses play the skill's motion on the body (skill xml sequence name -> the body's kf or the npc's kfm sequence) and its effect nif, damage numbers float over targets, npcs get name tags and an hp bar that follows the Stat packets, and an npc at 0 hp plays its death sequence until it is removed. Effects are drawn from NiMesh geometry only (additive, faded over the effect's duration); particle systems are not drawn.
+Combat in the replay: skill uses play the skill's motion on the body (skill xml sequence name -> the body's kf or the npc's kfm sequence) and its effect nif, damage numbers float over targets, npcs get name tags and an hp bar that follows the Stat packets, and an npc at 0 hp plays its death sequence until it is removed. Effects are played as scenes: NiMesh geometry with its alpha, uv-scroll, flipbook and transform controllers, and NiPS particle systems simulated on the CPU (MultiMesh quads). Material-colour and morph-weight controllers are not played.
 
 With `--out` it saves a screenshot when the recording reaches each time, compares every player's position with the recorded coordinates
 (exit code 3 on a mismatch) and quits at the end of the recording. `MS2_REPLAY=FILE.msb dotnet test tests/Ms2.Net.Tests` runs the same

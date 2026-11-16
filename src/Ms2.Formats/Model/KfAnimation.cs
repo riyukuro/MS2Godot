@@ -263,6 +263,79 @@ public sealed class KfAnimation
         }
     }
 
+    /// <summary>The transform channel of an evaluator or interpolator block (NiTransformEvaluator / NiTransformInterpolator / the B-spline ones); null for other types.</summary>
+    public static KfChannel ChannelOf(NifFile kf, NifStruct e)
+    {
+        var B = kf.Blocks;
+        var ct = e.TryGetValue("Channel Types", out _) ? e.Ints("Channel Types") : new long[] { 1, 1, 1 };
+        var ch = new KfChannel();
+        if (e.Type == "NiTransformEvaluator" || e.Type == "NiTransformInterpolator")
+        {
+            var v = e.TryGetValue("Value", out var vv) ? (NifStruct)vv : e.Struct("Transform");
+            KeyedChannel(B, v, e.Int("Data"), ch, ct[0] != 0, ct[1] != 0, ct[2] != 0);
+        }
+        else if (e.Type is "NiBSplineCompTransformEvaluator" or "NiBSplineTransformEvaluator")
+        {
+            bool comp = e.Type == "NiBSplineCompTransformEvaluator";
+            long di = e.Int("Data"), bi = e.Int("Basis Data");
+            var data = di >= 0 ? B[(int)di] : null;
+            int nq = bi >= 0 ? (int)B[(int)bi].Int("Num Control Points") : 0;
+            double t0 = e.Float("Start Time"), t1 = e.Float("End Time");
+            double span = t1 - t0 == 0 ? 1.0 : t1 - t0;
+            var x = e.Struct("Transform");
+
+            Func<double, double[]> Mk(long handle, int dim, string offKey, string halfKey)
+            {
+                var cps = new double[nq * dim];
+                if (comp)
+                {
+                    var raw = data.Ints("Compact Control Points");
+                    double off = e.Float(offKey), half = e.Float(halfKey);
+                    for (int i = 0; i < cps.Length; i++) cps[i] = off + half * raw[handle + i] / 32767.0;
+                }
+                else
+                {
+                    var raw = data.Floats("Float Control Points");
+                    for (int i = 0; i < cps.Length; i++) cps[i] = raw[handle + i];
+                }
+                return t => BSpline(cps, nq, (t - t0) / span, dim);
+            }
+
+            if (ct[0] != 0)
+            {
+                long h = e.Int("Translation Handle");
+                if (h != Invalid) { var f = Mk(h, 3, "Translation Offset", "Translation Half Range"); ch.T = t => { var a = f(t); return new Vec3(a[0], a[1], a[2]); }; }
+                else
+                {
+                    var c = V3(x.Struct("Translation"));
+                    if (Math.Abs(c[0]) < FltMax) { var cv = new Vec3(c[0], c[1], c[2]); ch.T = _ => cv; }
+                }
+            }
+            if (ct[1] != 0)
+            {
+                long h = e.Int("Rotation Handle");
+                if (h != Invalid) { var f = Mk(h, 4, "Rotation Offset", "Rotation Half Range"); ch.R = t => { var a = f(t); return new Quat(a[0], a[1], a[2], a[3]).Normalized(); }; }
+                else
+                {
+                    var r = x.Struct("Rotation");
+                    if (Math.Abs(r.Float("w")) < FltMax) { var q = QuatOf(r); ch.R = _ => q; }
+                }
+            }
+            if (ct[2] != 0)
+            {
+                long h = e.Int("Scale Handle");
+                if (h != Invalid) { var f = Mk(h, 1, "Scale Offset", "Scale Half Range"); ch.S = t => f(t)[0]; }
+                else
+                {
+                    double s = x.Float("Scale");
+                    if (Math.Abs(s) < FltMax) ch.S = _ => s;
+                }
+            }
+        }
+        else return null;
+        return ch.T != null || ch.R != null || ch.S != null ? ch : null;
+    }
+
     public static KfAnimation Load(NifFile kf)
     {
         var B = kf.Blocks;
@@ -273,72 +346,8 @@ public sealed class KfAnimation
             if (ei < 0) continue;
             var e = B[(int)ei];
             var node = kf.StrField(e, "Node Name");
-            var ct = e.Ints("Channel Types");
-            var ch = new KfChannel();
-            if (e.Type == "NiTransformEvaluator")
-            {
-                KeyedChannel(B, e.Struct("Value"), e.Int("Data"), ch, ct[0] != 0, ct[1] != 0, ct[2] != 0);
-            }
-            else if (e.Type is "NiBSplineCompTransformEvaluator" or "NiBSplineTransformEvaluator")
-            {
-                bool comp = e.Type == "NiBSplineCompTransformEvaluator";
-                long di = e.Int("Data"), bi = e.Int("Basis Data");
-                var data = di >= 0 ? B[(int)di] : null;
-                int nq = bi >= 0 ? (int)B[(int)bi].Int("Num Control Points") : 0;
-                double t0 = e.Float("Start Time"), t1 = e.Float("End Time");
-                double span = t1 - t0 == 0 ? 1.0 : t1 - t0;
-                var x = e.Struct("Transform");
-
-                Func<double, double[]> Mk(long handle, int dim, string offKey, string halfKey)
-                {
-                    var cps = new double[nq * dim];
-                    if (comp)
-                    {
-                        var raw = data.Ints("Compact Control Points");
-                        double off = e.Float(offKey), half = e.Float(halfKey);
-                        for (int i = 0; i < cps.Length; i++) cps[i] = off + half * raw[handle + i] / 32767.0;
-                    }
-                    else
-                    {
-                        var raw = data.Floats("Float Control Points");
-                        for (int i = 0; i < cps.Length; i++) cps[i] = raw[handle + i];
-                    }
-                    return t => BSpline(cps, nq, (t - t0) / span, dim);
-                }
-
-                if (ct[0] != 0)
-                {
-                    long h = e.Int("Translation Handle");
-                    if (h != Invalid) { var f = Mk(h, 3, "Translation Offset", "Translation Half Range"); ch.T = t => { var a = f(t); return new Vec3(a[0], a[1], a[2]); }; }
-                    else
-                    {
-                        var c = V3(x.Struct("Translation"));
-                        if (Math.Abs(c[0]) < FltMax) { var cv = new Vec3(c[0], c[1], c[2]); ch.T = _ => cv; }
-                    }
-                }
-                if (ct[1] != 0)
-                {
-                    long h = e.Int("Rotation Handle");
-                    if (h != Invalid) { var f = Mk(h, 4, "Rotation Offset", "Rotation Half Range"); ch.R = t => { var a = f(t); return new Quat(a[0], a[1], a[2], a[3]).Normalized(); }; }
-                    else
-                    {
-                        var r = x.Struct("Rotation");
-                        if (Math.Abs(r.Float("w")) < FltMax) { var q = QuatOf(r); ch.R = _ => q; }
-                    }
-                }
-                if (ct[2] != 0)
-                {
-                    long h = e.Int("Scale Handle");
-                    if (h != Invalid) { var f = Mk(h, 1, "Scale Offset", "Scale Half Range"); ch.S = t => f(t)[0]; }
-                    else
-                    {
-                        double s = x.Float("Scale");
-                        if (Math.Abs(s) < FltMax) ch.S = _ => s;
-                    }
-                }
-            }
-            else continue;
-            if (ch.T != null || ch.R != null || ch.S != null) anim.Channels[node] = ch;
+            var ch = ChannelOf(kf, e);
+            if (ch != null) anim.Channels[node] = ch;
         }
         long tki = seq.Int("Text Keys");
         if (tki >= 0)
