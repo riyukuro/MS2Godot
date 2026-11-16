@@ -2,6 +2,7 @@ using System.Xml.Linq;
 using Godot;
 using Ms2.Audio;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 
 namespace Ms2Godot;
 
@@ -14,7 +15,13 @@ public partial class FieldAudio : Node
 {
     public const string UiClickWave = "System_Button_click_01";   // MS2Sound_System.fsb, the client's button click
 
+    public static FieldAudio Instance { get; private set; }
+
     SoundLibrary library;
+    SystemSoundTable systemSounds;
+    public SoundLibrary Library => library;
+    public AmbientSounds Ambient { get; set; }
+    public FootstepSounds Footsteps { get; private set; }
     AudioStreamPlayer music;
     AudioStreamPlayer ui;
     MusicPlan plan;
@@ -25,8 +32,9 @@ public partial class FieldAudio : Node
     public double MusicPosition => music?.GetPlaybackPosition() ?? 0;
 
     /// <summary>The Data/Sound folder under the client's Data folder; null when there is none.</summary>
-    public bool Open(string dataDir)
+    public bool Open(string dataDir, PackSet packs = null)
     {
+        Instance = this;
         var dir = System.IO.Path.Combine(dataDir, "Sound");
         if (!System.IO.File.Exists(System.IO.Path.Combine(dir, "MS2Sound.fev")))
         {
@@ -36,6 +44,9 @@ public partial class FieldAudio : Node
         var sw = System.Diagnostics.Stopwatch.StartNew();
         library = new SoundLibrary(dir);
         GD.Print($"audio: MS2Sound.fev read in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks, {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events, {library.Fev.CueIds.Count()} music cues");
+        if (packs != null)
+            try { systemSounds = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml"))); }
+            catch (Exception ex) { GD.PushWarning("audio: systemsound.xml: " + ex.Message); }
         music = new AudioStreamPlayer { Name = "Music" };
         ui = new AudioStreamPlayer { Name = "Ui" };
         AddChild(music);
@@ -121,13 +132,40 @@ public partial class FieldAudio : Node
         return true;
     }
 
-    /// <summary>The button click.</summary>
-    public bool PlayUiClick()
+    /// <summary>
+    /// A UI sound by the client's key (table/systemsound.xml: button_click, dialog_open, dialog_close, ...), played as the
+    /// event the table names. Returns false when the key has no sound.
+    /// </summary>
+    public bool PlayUi(string key)
     {
-        var clip = library?.FindSample("MS2Sound_System", UiClickWave);
-        if (clip == null) return false;
-        PlayClip(clip);
-        return true;
+        var path = systemSounds?.Resolve(key);
+        return path != null && PlayEvent(path);
+    }
+
+    public bool PlayUiClick() => PlayUi("button_click");
+
+    /// <summary>The field's sound: bgm cue, ambient sound entities and, when a player is given, footsteps. Never throws.</summary>
+    public static FieldAudio Start(Node parent, string dataDir, PackSet packs, string fieldName, FieldMap map, CharacterBody3D player = null, AnimationPlayer anim = null)
+    {
+        try
+        {
+            var a = new FieldAudio { Name = "FieldAudio" };
+            parent.AddChild(a);
+            if (!a.Open(dataDir, packs)) return a;
+            a.PlayBgm(FieldBgmCue(packs, fieldName));
+            a.Ambient = new AmbientSounds(a.library);
+            a.AddChild(a.Ambient);
+            a.Ambient.Build(map);
+            GD.Print($"audio: {a.Ambient.Count} ambient sound entities");
+            if (player != null && anim != null)
+            {
+                var ground = new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
+                a.Footsteps = new FootstepSounds(a.library, ground, map, player, anim);
+                a.AddChild(a.Footsteps);
+            }
+            return a;
+        }
+        catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); return null; }
     }
 
     void PlayClip(SoundClip clip)

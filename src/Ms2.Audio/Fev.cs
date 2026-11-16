@@ -40,8 +40,11 @@ public sealed class MusicCue
 public sealed class FevEvent
 {
     public string Name;
+    public string Category;   // event category the record sits in: "effect", "environment", "UISound", "npcVoice/..."
     public float Volume = 1f;
+    public float MinDistance, MaxDistance;   // 3D attenuation (0 when the record has none)
     public List<int> Defs = new();
+    public List<float> DefVolumes = new();   // the sound's own volume (parallel to Defs)
 }
 
 /// <summary>
@@ -58,13 +61,14 @@ public sealed class FevProject
     readonly List<SoundDef> defs = new();
     readonly Dictionary<int, int> cueToTheme = new();
     readonly Dictionary<int, List<MusicSegment>> themeSegments = new();
-    readonly Dictionary<string, FevEvent> events = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<string, List<FevEvent>> events = new(StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyList<string> Banks => banks;
     public IReadOnlyList<SoundDef> Defs => defs;
     public IReadOnlyCollection<int> CueIds => cueToTheme.Keys;
-    public int EventCount => events.Count;
+    public int EventCount => events.Values.Sum(l => l.Count);
     public IEnumerable<string> EventNames => events.Keys;
+    public IReadOnlyList<FevEvent> EventsNamed(string name) => events.TryGetValue(name, out var l) ? l : Array.Empty<FevEvent>();
 
     public static FevProject Load(string path)
     {
@@ -253,15 +257,16 @@ public sealed class FevProject
         return r >= 0 ? lgcy + r : -1;
     }
 
-    // Events: record start (8, name index, guid[16], volume) in the area before the definitions; the sounds of an event are
-    // the (1, 2, 0xffff, 0, 1, 4, def index) layers that follow, up to the next event record. Only events named by a decimal
-    // id are read (every event of the client is).
+    // Events: a record starts with (flag 8 or 0x10, name index, guid[16], volume) in the area before the definitions; the flag
+    // follows the event's category string (length-prefixed). The sound definitions an event plays are the u32 definition
+    // indices that are preceded by (u16 4) or (u32 1) and followed by (u16 0, sound volume float), later in the record, up to the next event record. Only
+    // events named by a decimal id are read (every event of the client is). The same name can occur in several groups.
     void ReadEvents()
     {
         var starts = new List<(int pos, string name)>();
-        for (int i = lgcy; i + 24 < defsStart; i++)
+        for (int i = lgcy + 8; i + 24 < defsStart; i++)
         {
-            if (d[i] != 8 || d[i + 1] != 0 || d[i + 2] != 0 || d[i + 3] != 0 || d[i + 6] != 0 || d[i + 7] != 0) continue;
+            if ((d[i] != 8 && d[i] != 0x10) || d[i + 1] != 0 || d[i + 2] != 0 || d[i + 3] != 0 || d[i + 6] != 0 || d[i + 7] != 0) continue;
             int n = d[i + 4] | d[i + 5] << 8;
             if (n == 0 || n >= strr.Length) continue;
             var s = strr[n];
@@ -272,22 +277,43 @@ public sealed class FevProject
         }
         for (int e = 0; e < starts.Count; e++)
         {
-            if (events.ContainsKey(starts[e].name)) continue;
-            int from = starts[e].pos + 24;
-            int to = e + 1 < starts.Count ? starts[e + 1].pos : Math.Min(defsStart, from + 4000);
-            var ev = new FevEvent { Name = starts[e].name, Volume = BitConverter.ToSingle(d, starts[e].pos + 24) };
+            int pos = starts[e].pos;
+            int from = pos + 24 + 100;   // the volume block before the sound list holds 1.0 floats too
+            int to = e + 1 < starts.Count ? starts[e + 1].pos : Math.Min(defsStart, pos + 4000);
+            var ev = new FevEvent { Name = starts[e].name, Category = CategoryBefore(pos), Volume = BitConverter.ToSingle(d, pos + 24) };
             if (!(ev.Volume >= 0 && ev.Volume <= 8)) ev.Volume = 1f;
-            for (int i = from; i + 18 <= to; i++)
+            if (d[pos] == 8)
             {
-                if (d[i] == 1 && d[i + 1] == 0 && d[i + 2] == 0 && d[i + 3] == 0 && d[i + 4] == 2 && d[i + 5] == 0 && d[i + 6] == 0xff && d[i + 7] == 0xff
-                    && d[i + 8] == 0 && d[i + 9] == 0 && d[i + 10] == 1 && d[i + 11] == 0 && d[i + 12] == 4 && d[i + 13] == 0)
-                {
-                    int ord = U32(i + 14);
-                    if (ord >= 0 && ord < defs.Count) ev.Defs.Add(ord);
-                }
+                float a = BitConverter.ToSingle(d, pos + 24 + 36), b = BitConverter.ToSingle(d, pos + 24 + 44);
+                if (a > 0 && b > 0 && a < 1e6 && b < 1e6) { ev.MinDistance = Math.Min(a, b); ev.MaxDistance = Math.Max(a, b); }
             }
-            if (ev.Defs.Count > 0) events[ev.Name] = ev;
+            for (int i = from; i + 10 <= to; i++)
+            {
+                if (d[i + 4] != 0 || d[i + 5] != 0) continue;
+                if (!((d[i - 2] == 4 && d[i - 1] == 0) || U32(i - 4) == 1)) continue;   // layer sound (u16 4, index) or simple sound (1, index)
+                float v = BitConverter.ToSingle(d, i + 6);
+                if (!(v > 0 && v <= 4)) continue;
+                int ord = U32(i);
+                if (ord >= 0 && ord < defs.Count && defs[ord].Entries.Count > 0 && !ev.Defs.Contains(ord)) { ev.Defs.Add(ord); ev.DefVolumes.Add(v); }
+            }
+            if (ev.Defs.Count == 0) continue;
+            if (!events.TryGetValue(ev.Name, out var l)) events[ev.Name] = l = new();
+            l.Add(ev);
         }
+    }
+
+    string CategoryBefore(int flagPos)
+    {
+        if (flagPos < 4 || d[flagPos - 1] != 0) return "";
+        for (int len = 2; len < 48; len++)
+        {
+            int o = flagPos - len - 4;
+            if (o < lgcy || U32(o) != len) continue;
+            bool ok = true;
+            for (int k = 0; k < len - 1; k++) if (d[o + 4 + k] < 0x20 || d[o + 4 + k] > 0x7e) { ok = false; break; }
+            if (ok) return Encoding.ASCII.GetString(d, o + 4, len - 1);
+        }
+        return "";
     }
 
     public MusicCue GetMusicCue(int cueId)
@@ -298,5 +324,23 @@ public sealed class FevProject
         return c;
     }
 
-    public FevEvent FindEvent(string name) => events.TryGetValue(name, out var e) ? e : null;
+    /// <summary>
+    /// An event by name. Names repeat across groups, so a group path (e.g. "MS2Sound/Sound/system") picks the category the client
+    /// puts that group's events in: system -> UISound, voice -> npcVoice, AMB -> environment, anything else -> the first
+    /// "effect" event.
+    /// </summary>
+    public FevEvent FindEvent(string name, string group = null)
+    {
+        if (!events.TryGetValue(name, out var l)) return null;
+        if (l.Count == 1) return l[0];
+        string want = "effect";
+        if (group != null)
+        {
+            var g = group.ToLowerInvariant();
+            if (g.EndsWith("/system")) want = "UISound";
+            else if (g.Contains("/voice")) want = "npcVoice";
+            else if (g.EndsWith("/amb") || g.Contains("/amb/")) want = "environment";
+        }
+        return l.FirstOrDefault(e => e.Category.StartsWith(want, StringComparison.OrdinalIgnoreCase)) ?? l[0];
+    }
 }

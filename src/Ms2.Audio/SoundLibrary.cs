@@ -11,6 +11,7 @@ public sealed class SoundClip
     public int LoopStartSample = -1;
     public int LoopEndSample = -1;
     public float Volume = 1f;
+    public float MinDistance, MaxDistance;   // 3D events: attenuation range in world units (0 = not 3D)
 }
 
 /// <summary>What PlayMusic(cue) resolves to: the sounds in play order. Loop is the last one; intro (if any) plays once before it.</summary>
@@ -29,6 +30,7 @@ public sealed class SoundLibrary
 {
     public FevProject Fev { get; }
     readonly string dir;
+    Dictionary<string, string> files;
     readonly Dictionary<string, Fsb5> banks = new(StringComparer.OrdinalIgnoreCase);
 
     public SoundLibrary(string soundDir)
@@ -41,11 +43,9 @@ public sealed class SoundLibrary
     public Fsb5 Bank(string name)
     {
         if (banks.TryGetValue(name, out var b)) return b;
+        files ??= Directory.GetFiles(dir, "*.fsb").ToDictionary(f => Path.GetFileName(f), f => f, StringComparer.OrdinalIgnoreCase);   // the data is Windows-cased
         foreach (var suffix in new[] { "", "_Kor_def", "_en" })
-        {
-            var p = Path.Combine(dir, name + suffix + ".fsb");
-            if (File.Exists(p)) return banks[name] = new Fsb5(p);
-        }
+            if (files.TryGetValue(name + suffix + ".fsb", out var p)) return banks[name] = new Fsb5(p);
         throw new FileNotFoundException("bank not found: " + name);
     }
 
@@ -76,20 +76,25 @@ public sealed class SoundLibrary
     }
 
     /// <summary>
-    /// An event by name to the sound it plays: the first sound definition's first wave (the client picks among a definition's
-    /// waves at random), at event volume times the wave's weight.
+    /// An event to the sound it plays: the first sound definition's waves (the client picks among a definition's waves at
+    /// random) at the event's volume. <paramref name="path"/> is the event name, or a full "MS2Sound/Sound/group/name" path.
     /// </summary>
-    public SoundClip ResolveEvent(string eventName, Random rng = null)
+    public SoundClip ResolveEvent(string path, Random rng = null)
     {
-        var ev = Fev.FindEvent(eventName);
+        int cut = path.LastIndexOf('/');
+        string name = cut < 0 ? path : path[(cut + 1)..];
+        string group = cut < 0 ? null : path[..cut];
+        var ev = Fev.FindEvent(name, group);
         if (ev == null) return null;
         rng ??= Random.Shared;
         var def = Fev.Defs[ev.Defs[0]];
         var waves = def.Entries.Where(e => e.Kind == 0).ToList();
         if (waves.Count == 0) return null;
-        var w = waves[rng.Next(waves.Count)];
-        var clip = FromWave(w);
-        if (clip != null) clip.Volume = ev.Volume;
+        var clip = FromWave(waves[rng.Next(waves.Count)]);
+        if (clip == null) return null;
+        clip.Volume = ev.Volume * ev.DefVolumes[0];
+        clip.MinDistance = ev.MinDistance;
+        clip.MaxDistance = ev.MaxDistance;
         return clip;
     }
 

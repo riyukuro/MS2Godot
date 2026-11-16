@@ -13,5 +13,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/Ms2.Audio/Ms2.Audio.csproj" />
+    <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
   </ItemGroup>
 </Project>

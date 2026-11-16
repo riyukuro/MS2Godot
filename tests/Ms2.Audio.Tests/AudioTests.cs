@@ -111,4 +111,47 @@ public class AudioTests
         Assert.That(s.Channels, Is.EqualTo(2));
         Assert.That(s.Frequency, Is.EqualTo(44100));
     }
+
+    [Test]
+    public void SystemSoundButtonClickIsAnEvent()
+    {
+        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
+        var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
+        var lib = new SoundLibrary(SoundDir());
+        var click = table.Resolve("button_click");
+        Assert.That(click, Is.EqualTo("MS2Sound/Sound/system/02000002"));
+        var clip = lib.ResolveEvent(click);
+        Assert.That(clip.Name, Is.EqualTo("System_Button_click_01"));
+        Assert.That(lib.ResolveEvent(table.Resolve("dialog_open")).Name, Does.StartWith("System_defaultDialog_open"));
+        Assert.That(lib.ResolveEvent(table.Resolve("dialog_close")).Name, Does.StartWith("System_defaultDialog_close"));
+        TestContext.WriteLine($"button_click -> {clip.Name} volume {clip.Volume:F2}");
+    }
+
+    [Test]
+    public void FootstepsResolveToCharacterEvents()
+    {
+        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
+        var lib = new SoundLibrary(SoundDir());
+        var table = new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
+        foreach (var ground in new[] { "default", "grass", "rock" })
+            foreach (var action in new[] { "walk", "run0", "run1", "land" })
+            {
+                var evs = table.Pick(ground, action, new Random(1));
+                var names = evs.Select(e => lib.ResolveEvent(e)?.Name ?? "?").ToList();
+                TestContext.WriteLine($"{ground}/{action}: {string.Join(", ", evs)} -> {string.Join(", ", names)}");
+                Assert.That(names, Does.Not.Contain("?"));
+            }
+        Assert.That(table.Pick("grass", "run0", new Random(1)), Is.Not.Empty);
+    }
+
+    [Test]
+    public void AmbientEventsCarryDistances()
+    {
+        var lib = new SoundLibrary(SoundDir());
+        var c = lib.ResolveEvent("MS2Sound/Sound/AMB/11100003");
+        Assert.That(c, Is.Not.Null);
+        TestContext.WriteLine($"AMB 11100003 -> {c.Name} volume {c.Volume:F2} min {c.MinDistance} max {c.MaxDistance}");
+        Assert.That(c.MaxDistance, Is.GreaterThan(c.MinDistance));
+        Assert.That(c.MinDistance, Is.GreaterThan(0));
+    }
 }

@@ -38,10 +38,16 @@ step onto the water surface.
 
 Sound comes from `Sound/MS2Sound.fev` and the `MS2Sound_*.fsb` banks next to it (FMOD Designer 4 project and FSB5 banks of
 MPEG layer II). `src/Ms2.Audio` reads them without Godot: music cue id (the `<bgm id>` of `table/fielddata.xml`) to bank
-sample, event name to sound definition to bank sample and volume, and decodes the payloads to PCM. The field scene plays the
-field's bgm cue looped (an intro sample plays once first); `game/audio_probe.tscn` is a headless check of that path.
-Not done yet: music parameters and bridge segments, ambient (AMB) entities, 3D events, voice banks per language, UI sound
-event names (the click plays the bank sample `System_Button_click_01` directly).
+sample, event path to sound definition to bank sample, volume and 3D range, and decodes the payloads to PCM. `game/audio` plays:
+
+- the field's bgm cue, looped (an intro sample plays once first);
+- the field's sound entities (flat mixin `MS2Sound`, `soundEventID`) as looped positional sounds with the event's min / max distance;
+- footsteps: the ground cube's `MapAttribute` selects `groundeffect/<ground>.xml`, the action (walk, run0, run1, land) the sound
+  events. The player's KF files carry no footstep text keys, so steps run at two per animation cycle;
+- UI sounds by the client's key (`table/systemsound.xml`: `FieldAudio.Instance.PlayUi("button_click")`, `dialog_open`, ...).
+
+`game/audio_probe.tscn` is a headless check of these paths. Not done yet: music parameters and bridge segments, voice banks per
+language, event groups beyond the event category.
 
 Known gaps:
 
