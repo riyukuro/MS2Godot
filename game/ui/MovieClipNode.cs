@@ -7,6 +7,35 @@ namespace Ms2Godot.Ui;
 /// A flash sprite: children follow the display-list lifespans of its timeline; <see cref="GotoFrame"/> and
 /// <see cref="GotoLabel"/> choose which are visible and where. Widgets (button, checkbox, text input) attach to it.
 /// </summary>
+/// <summary>Clips its content to the (axis aligned) rectangle of a flash mask shape, following the mask when code moves or scales it.</summary>
+public partial class MaskGroup : Control
+{
+    public readonly Node2D Inner = new();
+    readonly MovieClipNode.Child mask;
+
+    public MaskGroup(MovieClipNode.Child mask)
+    {
+        this.mask = mask;
+        ClipContents = true; MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(Inner);
+        Update();
+    }
+
+    public void Update()
+    {
+        var xf = mask.Node.Transform;
+        var b = mask.MaskBounds;
+        var pts = new[] { xf * b.Position, xf * new Vector2(b.End.X, b.Position.Y), xf * new Vector2(b.Position.X, b.End.Y), xf * b.End };
+        var r = new Rect2(pts[0], Vector2.Zero);
+        foreach (var p in pts) r = r.Expand(p);
+        if (!mask.Node.Visible) r = new Rect2(-100000, -100000, 200000, 200000);   // mask not on the stage: no clipping
+        Position = r.Position; Size = r.Size;
+        Inner.Position = -r.Position;
+    }
+
+    public override void _Process(double delta) => Update();
+}
+
 public partial class MovieClipNode : Node2D
 {
     public sealed class Child
@@ -17,6 +46,9 @@ public partial class MovieClipNode : Node2D
         public int First, Last = int.MaxValue;
         public Transform2D Base;
         public Color BaseColor = Colors.White;
+        public Transform2D? Override;      // set by code (bar fill masks)
+        public bool IsMask;
+        public Rect2 MaskBounds;
         public bool Static9;              // drawn by a Scale9Node: ignores later matrix moves
         public List<(int Frame, Transform2D? M, Color? C, bool? Visible)> Moves = new();
     }
@@ -53,8 +85,9 @@ public partial class MovieClipNode : Node2D
 
     public void Build()
     {
+        MaskGroup group = null; int groupEnd = 0;
         if (Timeline?["children"] is JsonArray ch)
-            foreach (var c in ch)
+            foreach (var c in ch.OrderBy(x => (int)x["depth"]).ThenBy(x => (int)x["first"]))
             {
                 int id = (int)c["id"];
                 var m = UiBuilder.ToTransform(c["matrix"]);
@@ -83,7 +116,20 @@ public partial class MovieClipNode : Node2D
                         child.Moves.Add(((int)mo["frame"], t, mo["color"] != null ? ToColor(mo["color"]) : null, mo["visible"] == null ? null : (bool)mo["visible"]));
                     }
                 Children.Add(child);
-                AddChild(node);
+                int depth = (int)c["depth"];
+                if (group != null && depth > groupEnd) group = null;
+                if (c["clipDepth"] != null)
+                {
+                    // a mask: its rectangle clips the following depths; the mask itself is not drawn
+                    child.IsMask = true; child.MaskBounds = UiBuilder.Rc(childSym?["bounds"]);
+                    var holder = new Node2D { Visible = false };
+                    holder.AddChild(node);
+                    group = new MaskGroup(child);
+                    groupEnd = (int)c["clipDepth"];
+                    AddChild(group); group.AddChild(holder);
+                }
+                else if (group != null) group.Inner.AddChild(node);
+                else AddChild(node);
                 if (node is MovieClipNode mc) UiWidgets.Attach(mc);
             }
         GotoFrame(0);
@@ -98,6 +144,24 @@ public partial class MovieClipNode : Node2D
         int end = FrameCount - 1;
         foreach (var l in Labels.Values) if (l > f && l - 1 < end) end = l - 1;
         if (animate && end > f && IsInsideTree()) PlayRange(f, end); else { playing = false; GotoFrame(end); }
+    }
+
+    /// <summary>The child named <paramref name="name"/> in this clip or, failing that, in any clip below it.</summary>
+    public Child ChildNamed(string name)
+    {
+        foreach (var c in AllClips()) { var ch = c.Children.FirstOrDefault(x => x.Name == name); if (ch != null) return ch; }
+        return null;
+    }
+
+    /// <summary>Takes every child with this instance name, anywhere below, off the stage.</summary>
+    public void HideNamed(string name)
+    {
+        foreach (var c in AllClips().ToList())
+        {
+            bool any = false;
+            foreach (var ch in c.Children) if (ch.Name == name) { ch.Last = -1; any = true; }
+            if (any) c.GotoFrame(c.Frame);
+        }
     }
 
     public bool HasLabel(string label) => Labels.ContainsKey(label);
@@ -119,7 +183,7 @@ public partial class MovieClipNode : Node2D
                 if (cc != null) col = cc.Value;
                 if (v != null) vis = v.Value;
             }
-            c.Node.Transform = m;
+            c.Node.Transform = c.Override ?? m;
             c.Node.Modulate = col;
             if (!vis) c.Node.Visible = false;
         }
@@ -147,6 +211,13 @@ public partial class MovieClipNode : Node2D
                 var r = FindFrom(mc, segs, i);
                 if (r != null) return r;
             }
+        if (i == 0 || segs.Length == 1)      // a lone name: search the named sub clips too
+            foreach (var c in n.Children)
+                if (c.Name != null && c.Name != segs[i] && c.Node is MovieClipNode mc)
+                {
+                    var r = FindFrom(mc, segs, i);
+                    if (r != null) return r;
+                }
         return null;
     }
 
