@@ -373,6 +373,13 @@ public sealed class ModelBuilder
         string entry = null, archive = null;
         foreach (var a in TextureArchives)
             if ((entry = packs.FindByFileName(a, fileName)) != null) { archive = a; break; }
+        // Packed raster assets are .dds only; a NIF embeds the source name (.psd/.tga), which resolves to the same base name as .dds.
+        if (entry == null && !fileName.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
+        {
+            var dds = System.IO.Path.ChangeExtension(fileName, ".dds");
+            foreach (var a in TextureArchives)
+                if ((entry = packs.FindByFileName(a, dds)) != null) { archive = a; break; }
+        }
         if (entry == null) GD.PushWarning($"texture {fileName} not found in {string.Join(", ", TextureArchives)}");
         else
         {
