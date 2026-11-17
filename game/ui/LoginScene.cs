@@ -123,6 +123,18 @@ public partial class LoginScene : Control
         LoginBackground.Play(bg, forShots);
     }
 
+    /// <summary>
+    /// The login background as it is when the character select opens over it: the login dialog gone (the client
+    /// pops it down before the list opens), one frame drawn, then kept.
+    /// </summary>
+    public async System.Threading.Tasks.Task<ImageTexture> CaptureBackdrop()
+    {
+        if (dialogRoot != null) dialogRoot.Visible = false;
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        return ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+    }
+
     public override void _Input(InputEvent e)
     {
         mouse?.Handle(e);

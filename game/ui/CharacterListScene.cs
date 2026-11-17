@@ -39,6 +39,7 @@ public partial class CharacterListScene : LobbyFieldScene
     int mapId;
     string shotDir;
     Vector2I? resizeTo;
+    bool enterShots;
     int frames;
 
     /// <summary>The list is built and takes input (no lobby change under way).</summary>
@@ -65,6 +66,7 @@ public partial class CharacterListScene : LobbyFieldScene
     protected override string FieldNameFor(string defaultName)
     {
         var args = OS.GetCmdlineUserArgs();
+        enterShots = args.Contains("--enter");
         for (int i = 0; i + 1 < args.Length; i++)
         {
             if (args[i] == "--shots") shotDir = args[i + 1];
@@ -88,9 +90,16 @@ public partial class CharacterListScene : LobbyFieldScene
         layer = new CanvasLayer { Name = "UI" };
         AddChild(layer);
 
-        BuildList();
+        // the dialog opens with its popup (CharacterListDialog.buildCharacterList -> popup) when the select scene is
+        // entered; a map change keeps the open dialog (only the field is loaded again)
+        bool reselect = reselecting;
+        reselecting = false;
+        bool popup = !reselect && (shotDir == null || enterShots);
+        BuildList(popup);
         PreviewSelected();
-        StartCrossfade();
+        var fade = AddCrossfade(reselect ? null : EnterFrom);
+        EnterFrom = null;
+        StartAfterFirstFrame(popup, fade);
         // the client sizes every movie to the back buffer: on a window resize the open dialogs align again
         // (UIDialog::vfunc_43 -> alignment), as on the login screen
         GetViewport().SizeChanged += QueueRelayout;
@@ -112,12 +121,15 @@ public partial class CharacterListScene : LobbyFieldScene
         bool mouseOn = logic.MouseEnabled;
         layer.RemoveChild(root);
         root.QueueFree();
-        BuildList();
+        BuildList(false);
         logic.MouseEnabled = mouseOn;
     }
 
-    /// <summary>uicharacterlistdialog for the current window, filled from the flow's list (CharacterListDialog.buildCharacterList).</summary>
-    void BuildList()
+    /// <summary>
+    /// uicharacterlistdialog for the current window, filled from the flow's list (CharacterListDialog.buildCharacterList).
+    /// With <paramref name="popup"/> it plays its popup; otherwise it is put at the popup's end.
+    /// </summary>
+    void BuildList(bool popup)
     {
         var window = GetViewport().GetVisibleRect().Size;    // window pixels (LobbyLayout.UseWindowPixels)
         float u = UiScale.For(window);
@@ -129,16 +141,22 @@ public partial class CharacterListScene : LobbyFieldScene
         layer.AddChild(root);
 
         logic = new CharacterListLogic(movie, root);
-        // CharacterListDialog.buildCharacterList -> popup: the dialog and m_title play their popup
+        // CharacterListDialog.buildCharacterList -> popup: LobbyDialog.popup gotoAndPlay("popup") on the dialog,
+        // m_title.gotoAndPlay("popup"), btnsPopup(m_btns)
         logic.BuildCharacterList(Flow.Session.List(), Flow.Session.SelectedIndex, 6, data, assets.ImageFile);
-        (LobbyLayout.Dialog(root).Node as MovieClipNode)?.GotoLabel("popup");
-        root.FindClip(UICharacterListDialogContract.Instances.M_title)?.GotoLabel("popup");
+        // with popup: held at the popup's first frame until PlayPopup
+        foreach (var clip in PopupClips())
+            if (popup && clip.Labels.TryGetValue("popup", out int first)) clip.GotoFrame(first); else clip.GotoLabel("popup");
+        SetBtnsAlpha(popup ? 0 : 1);
+        // UICharacterListDialog::OnLoadComplete: m_deleteAccount is hidden (vfunc_4(0)) unless the DeleteAccount feature
+        // is on; feature.xml has it at KR level 100, over the Live server level (feature_setting.xml Live KR 78)
+        if (!LobbyFeatures.IsEnabled(uiPacks ?? packs, "DeleteAccount") && root.ChildNamed("m_deleteAccount") is { } del) { del.Hidden = true; RefreshHolder("m_deleteAccount"); }
         root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_serverName", "Bigleaf  CH.1");
         root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_regionName", "");
         root.FindClip(UICharacterListDialogContract.Instances.M_title)?.SetText(assets.Str("$s_charselect_title"));
         // region and event extras the host attaches on demand (attachHealthGameCN, attachBurningLevelupDescBtn, ...)
         foreach (var name in new[] { UICharacterListDialogContract.Instances.M_healthGameCN, UICharacterListDialogContract.Instances.M_characterCraeteShutdownCN, UICharacterListDialogContract.Instances.M_burningEventDescBtn })
-            if (root.FindClip(name) is { } extra) extra.Visible = false;
+            if (root.ChildNamed(name) is { } extra) { extra.Hidden = true; RefreshHolder(name); }   // kept over the popup's frames
         mouse = new UiWidgets.MouseRouter(root);
 
     }
@@ -189,6 +207,39 @@ public partial class CharacterListScene : LobbyFieldScene
         else CrossfadeReload();
     }
 
+    /// <summary>The dialog (charlist_dialog) and m_title: both play their "popup" label.</summary>
+    IEnumerable<MovieClipNode> PopupClips()
+    {
+        if (LobbyLayout.Dialog(root).Node is MovieClipNode dlg) yield return dlg;
+        if (root.FindClip(UICharacterListDialogContract.Instances.M_title) is { } title) yield return title;
+    }
+
+    /// <summary>The clip a named placement sits in, at its frame again (a placement's Hidden / BaseColor changed).</summary>
+    MovieClipNode RefreshHolder(string name)
+    {
+        var holder = root.AllClips().FirstOrDefault(c => c.Children.Any(ch => ch.Name == name));
+        holder?.GotoFrame(holder.Frame);
+        return holder;
+    }
+
+    /// <summary>m_btns (the exit and option buttons) is placed at alpha 0; btnsPopup tweens it in.</summary>
+    void SetBtnsAlpha(float a)
+    {
+        if (root.ChildNamed("m_btns") is not { } btns) return;
+        btns.BaseColor = new Color(btns.BaseColor, a);
+        RefreshHolder("m_btns");
+    }
+
+    /// <summary>
+    /// CharacterListDialog.popup: LobbyDialog.popup gotoAndPlay("popup"), m_title.gotoAndPlay("popup") and
+    /// LobbyDialog.btnsPopup(m_btns, 500): m_btns visible, then a Tween of its alpha to 1 over 500 ms (no ease: linear).
+    /// </summary>
+    void PlayPopup()
+    {
+        foreach (var clip in PopupClips()) clip.GotoLabel("popup", true);
+        root.CreateTween().TweenMethod(Callable.From<float>(SetBtnsAlpha), 0f, 1f, 0.5);
+    }
+
     /// <summary>The same select map: the field stays, the preview is replaced (PreviewSelectedCharacter) and input comes back.</summary>
     void SwapPreview()
     {
@@ -198,6 +249,9 @@ public partial class CharacterListScene : LobbyFieldScene
 
     /// <summary>The frame on screen when the map changes; the next scene fades it out over its own first frames.</summary>
     static ImageTexture fadeFrom;
+    static bool reselecting;
+    /// <summary>The login backdrop the select scene is entered from (set by the flow); the new field fades in over it.</summary>
+    public static ImageTexture EnterFrom;
     /// <summary>Crossfade length, from the restored client's 10 fps strip of a job change (about 0.4-0.5 s).</summary>
     const double CrossfadeSeconds = 0.45;
 
@@ -210,6 +264,7 @@ public partial class CharacterListScene : LobbyFieldScene
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         if (!IsInsideTree()) return;
         fadeFrom = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+        reselecting = true;
         Reload();
     }
 
@@ -220,13 +275,16 @@ public partial class CharacterListScene : LobbyFieldScene
     }
 
     double fadeStart = -1;
-    /// <summary>The kept frame of the previous map over the new field, faded out.</summary>
-    void StartCrossfade()
+    /// <summary>
+    /// The kept frame (the previous map, or the login backdrop) over the new field, under the dialog: the restored client
+    /// crossfades the old map or the login background into the new map with no black frame.
+    /// </summary>
+    TextureRect AddCrossfade(ImageTexture enter)
     {
-        var from = fadeFrom;
+        var from = fadeFrom ?? enter;
         fadeFrom = null;
-        if (from == null) return;
-        var top = new CanvasLayer { Name = "Crossfade", Layer = 100 };
+        if (from == null) return null;
+        var top = new CanvasLayer { Name = "Crossfade", Layer = layer.Layer - 1 };
         var rect = new TextureRect
         {
             Texture = from, Size = GetViewport().GetVisibleRect().Size,
@@ -235,9 +293,23 @@ public partial class CharacterListScene : LobbyFieldScene
         };
         top.AddChild(rect);
         AddChild(top);
+        return rect;
+    }
+
+    /// <summary>
+    /// The popup and the crossfade start once the new scene has been drawn: the frame that builds the field takes long,
+    /// and its time would otherwise be taken off the start of both.
+    /// </summary>
+    async void StartAfterFirstFrame(bool popup, TextureRect fade)
+    {
+        if (!popup && fade == null) return;
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        if (!IsInsideTree()) return;
+        if (popup) PlayPopup();
+        if (fade == null) return;
         var tween = CreateTween();
-        tween.TweenProperty(rect, "modulate:a", 0f, CrossfadeSeconds);
-        tween.TweenCallback(Callable.From(top.QueueFree));
+        tween.TweenProperty(fade, "modulate:a", 0f, CrossfadeSeconds);
+        tween.TweenCallback(Callable.From(fade.GetParent().QueueFree));
         fadeStart = Time.GetTicksMsec() / 1000.0;
     }
 
@@ -257,6 +329,7 @@ public partial class CharacterListScene : LobbyFieldScene
     /// <summary>Shots step, kept over the reloads of a map change.</summary>
     static int shotStep;
     bool midSaved;
+    double enterT, enterNext;
 
     public override void _Process(double delta)
     {
@@ -267,6 +340,14 @@ public partial class CharacterListScene : LobbyFieldScene
         {
             midSaved = true;
             Save($"charselect_{shotStep}_crossfade.png");
+        }
+        if (enterShots)
+        {
+            // --enter: the popup, a shot every 133 ms (every 4th frame at 30 fps) from the first frame, then quit
+            enterT += delta;
+            if (enterT >= enterNext) { Save($"enter_{(int)Math.Round(enterNext * 1000):D4}ms.png"); enterNext += 0.133; }
+            if (enterNext > 2.0) GetTree().Quit();
+            return;
         }
         if (frames == 60) Save($"charselect_{shotStep}_{Flow.Session.SelectedIndex}.png");
         if (resizeTo != null)

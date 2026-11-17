@@ -89,10 +89,22 @@ public partial class GameFlow : Node
         switch (next)
         {
             case State.Login: Change(LoginScene); break;
-            case State.Lobby: Change(LobbyScene); break;
+            case State.Lobby:
+                if (GetTree().CurrentScene is Ui.LoginScene login) EnterLobbyFrom(login);
+                else Change(LobbyScene);
+                break;
             case State.Create: loadingLayer.Visible = false; CharacterCreateScene.Enter(GetTree()); break;
             case State.Loading: BeginLoading(); break;
         }
+    }
+
+    /// <summary>From the login screen: its background is kept for the select scene to crossfade from (CharacterListScene.EnterFrom).</summary>
+    async void EnterLobbyFrom(Ui.LoginScene login)
+    {
+        var backdrop = await login.CaptureBackdrop();
+        if (Current != State.Lobby) return;
+        Ui.CharacterListScene.EnterFrom = backdrop;
+        Change(LobbyScene);
     }
 
     void Change(string path)
