@@ -20,7 +20,7 @@ namespace Ms2Godot.Ui;
 /// 100; the options dialog's m_damageEffectAlphaStep slider sends it again with "setAlpha"). There are no game options
 /// here, so the default: 1.</item>
 /// <item>Size (alignment): scaled by stage width / m_defaultSize and stage height / m_defaultSize, m_defaultSize = m_eff's
-/// width (1200), and centred, so m_eff covers the whole screen.</item>
+/// width (1200), and centred, so m_eff covers the movie's whole viewport, one pixel past the window on every side.</item>
 /// <item>Art: plain timelines at the movie's 60 fps with no frame script, so every clip loops: the entity (70 frames,
 /// m_eff 1 -> 0.80 -> 1), m_eff's two cross-fading vignettes (200 frames), m_backEff's drifting layers (490 frames) and
 /// its additive (blend 8) pulse, 70 frames from alpha 0.398 down to 0.078 and back. One pulse is 70 frames, 1.17 s.</item>
@@ -47,8 +47,12 @@ public sealed partial class DamageEffect : CanvasLayer
         try { node = new UiMovie(ui, "uidamageeffect").BuildClass("dmgeff_entity_effect"); }
         catch (Exception e) { GD.PushWarning("damage effect movie: " + e.Message); }
         if (node == null) return;
-        node.Scale = new Vector2(window.X / DefaultSize, window.Y / DefaultSize);
-        node.Position = window / 2;
+        // alignment: setActualScale(stageWidth / m_defaultSize, stageHeight / m_defaultSize), x = stageWidth * 0.5,
+        // y = stageHeight * 0.5, in stage units; the movie is drawn at the UI scale
+        float u = UiScale.For(window);
+        var stage = UiScale.MovieStage(window);
+        node.Scale = new Vector2(stage.X / DefaultSize, stage.Y / DefaultSize) * u;
+        node.Position = stage * 0.5f * u;
         foreach (var c in node.AllClips()) c.Loop();
         node.Visible = false;
         AddChild(node);
