@@ -76,6 +76,7 @@ public partial class MovieClipNode : Node2D
     public MovieClipNode(UiMovie movie, UiScope scope, JsonObject timeline, JsonObject symbol, double sx, double sy, NineCtx nine = null)
     {
         this.nine = nine;
+        SetProcess(false);     // idle until PlayRange/Loop starts a timeline (see _Process)
         Movie = movie; Scope = scope; Timeline = timeline; Symbol = symbol; this.sx = sx; this.sy = sy;
         ClassName = (string)symbol?["class"];
         if (symbol?["bases"] is JsonArray b) foreach (var x in b) Bases.Add((string)x);
@@ -175,7 +176,7 @@ public partial class MovieClipNode : Node2D
         if (!Labels.TryGetValue(label, out var f)) return;
         int end = FrameCount - 1;
         foreach (var l in Labels.Values) if (l > f && l - 1 < end) end = l - 1;
-        if (animate && end > f && IsInsideTree()) PlayRange(f, end); else { playing = false; GotoFrame(end); }
+        if (animate && end > f && IsInsideTree()) PlayRange(f, end); else { playing = false; SetProcess(false); GotoFrame(end); }
     }
 
     /// <summary>The child named <paramref name="name"/> in this clip or, failing that, in any clip below it.</summary>
@@ -350,6 +351,7 @@ public partial class MovieClipNode : Node2D
     public void PlayRange(int from, int to)
     {
         rangeFrom = from; rangeTo = to; rangeT = 0; playing = true; looping = false;
+        SetProcess(true);      // the next frame ticks, as if _Process had always run
         GotoFrame(from);
     }
 
@@ -366,11 +368,11 @@ public partial class MovieClipNode : Node2D
 
     public override void _Process(double delta)
     {
-        if (!playing) return;
+        if (!playing) { SetProcess(false); return; }
         rangeT += delta;
         if (looping) { GotoFrame((int)(rangeT * Movie.Fps) % FrameCount); return; }
         int f = rangeFrom + (int)(rangeT * Movie.Fps);
-        if (f >= rangeTo) { GotoFrame(rangeTo); playing = false; return; }
+        if (f >= rangeTo) { GotoFrame(rangeTo); playing = false; SetProcess(false); return; }
         GotoFrame(f);
     }
 }
