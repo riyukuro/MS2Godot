@@ -82,9 +82,16 @@ public partial class Player
     /// </summary>
     const uint ClimbGroups = 0x201;
 
+    /// <summary>StateClimb::FUN_1417bda60's top-of-wall rays set m_groups = 1: group 0 only, so a cube (group 9) or water
+    /// (group 8) above the hands is no more wall there.</summary>
+    const uint TopGroups = 1;
+
+    /// <summary>CPhysXHelper::GetGroundDistance casts on 0x389: groups 0, 3, 7, 8 and 9 (water included).</summary>
+    const uint GroundGroups = 0x389;
+
     /// <summary>The nearest hit of a ray on a collider whose PropCollisionGroup bit is in <paramref name="groups"/>
     /// (a collider without one is group 0); the client's CastRay passes the groups to raycastAllShapes.</summary>
-    (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups = uint.MaxValue)
+    (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups)
     {
         var q = PhysicsRayQueryParameters3D.Create(from, from + dir.Normalized() * len);
         q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
@@ -219,16 +226,16 @@ public partial class Player
         switch (csub)
         {
             case ClimbSub.Down or ClimbSub.DownLeft or ClimbSub.DownRight:
-                ProbeGround();
-                if (GroundDistance <= 5f) { csub = ClimbSub.DownLand; return; }
+                // GetGroundDistance(feet, 5): ground within 5 under the feet
+                if (Ray(GlobalPosition, Vector3.Down, 5f, GroundGroups) != null) { csub = ClimbSub.DownLand; return; }
                 break;
             case ClimbSub.Up or ClimbSub.UpLeft or ClimbSub.UpRight:
                 if (HasClimbableWallAhead())
                 {
-                    // rays at +99, and 5 to either side along MS2 x, find more wall: keep climbing
+                    // rays at +99, and 5 to either side along MS2 x, find more group-0 wall: keep climbing
                     var o = GlobalPosition + new Vector3(0, MoveConfig.ClimbTopRay, 0);
-                    if (Ray(o, Forward, MoveConfig.ClimbRay) != null || Ray(o + Vector3.Right * 5f, Forward, MoveConfig.ClimbRay) != null
-                        || Ray(o + Vector3.Left * 5f, Forward, MoveConfig.ClimbRay) != null) return;
+                    if (Ray(o, Forward, MoveConfig.ClimbRay, TopGroups) != null || Ray(o + Vector3.Right * 5f, Forward, MoveConfig.ClimbRay, TopGroups) != null
+                        || Ray(o + Vector3.Left * 5f, Forward, MoveConfig.ClimbRay, TopGroups) != null) return;
                     csub = ClimbSub.OverTop;
                     return;
                 }
@@ -291,14 +298,15 @@ public partial class Player
     }
     bool climbRestart;
 
-    /// <summary>ClimbOverTop: onto the ground found from 1 + 2 above the hands and 52 ahead (150 down at most).</summary>
+    /// <summary>ClimbOverTop: onto the ground GetGroundDistance finds from 1 + 2 above the hands and 52 ahead (150 down at
+    /// most). Its forward ray record (0x201, 77) only gives that point; it is never cast.</summary>
     void ClimbOverTop()
     {
         var pos = GlobalPosition;
         var origin = pos + new Vector3(0, MoveConfig.ClimbHigh + 1f + 2f, 0);
         var probe = origin + Forward * 52f;
         float dist = 0;
-        if (Ray(probe, Vector3.Down, 150f) is var (hp, _)) dist = probe.Y - hp.Y - 2f;
+        if (Ray(probe, Vector3.Down, 150f, GroundGroups) is var (hp, _)) dist = probe.Y - hp.Y - 2f;
         GlobalPosition = new Vector3(pos.X, probe.Y - dist, pos.Z);
         Enter(MoveState.Idle);
     }
