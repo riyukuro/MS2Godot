@@ -129,6 +129,7 @@ public partial class CharacterCreateScene : Field
         var up = FieldBuilder.ToGodotPoint(t.Apply(new Vec3(0, 1, 0))) - eye;
         camera.Fov = (float)e.Number("FOV", 40);
         camera.Near = 10;
+        RasterOrigin();   // the frustum window follows the new near plane and FOV
         camera.LookAtFromPosition(eye, eye + dir.Normalized(), up.LengthSquared() > 1e-6f ? up.Normalized() : Vector3.Up);
         GD.Print($"camera {e.Name}: eye {eye} dir {dir.Normalized()} fov {camera.Fov}");
     }

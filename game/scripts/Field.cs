@@ -596,9 +596,10 @@ public partial class Field : Node3D
     /// aspect W/H, no half-pixel term), and D3D9 puts pixel centres on whole coordinates, where Vulkan puts them at +0.5: the
     /// client's world lands half a pixel right and down of the same projection here. The same frustum, as a Frustum
     /// projection whose window is moved half a pixel left and up, reproduces that raster. Fov stays the client's value, and
-    /// the client-side uses of the frustum (NearPlaneBlocked) keep the symmetric one.
+    /// the client-side uses of the frustum (NearPlaneBlocked) keep the symmetric one. The window follows the camera's
+    /// current Near and Fov: a scene that changes either after the field camera is made calls this again.
     /// </summary>
-    void RasterOrigin()
+    protected void RasterOrigin()
     {
         float h = GetViewport().GetTexture().GetHeight();
         if (h <= 0) return;
