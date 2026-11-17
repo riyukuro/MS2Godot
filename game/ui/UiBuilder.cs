@@ -223,7 +223,48 @@ public partial class TextNode : Node2D
         }
         else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
         Label.PivotOffset = Vector2.Zero;
-        AddChild(Label);
+        AddChild(lineShift);
+        lineShift.AddChild(Label);
+        Label.Draw += AlignLine;
+    }
+
+    public TextNode() { }
+
+    readonly Node2D lineShift = new();
+
+    /// <summary>
+    /// Scaleform places a centred or right-aligned line by its exact width: the sum of the glyph advances, each rounded to a
+    /// twip (ParagraphFormatter, advance = IRound(advance * Scale), width = the running sum), at
+    /// Max(0, IRound(width / 2 - lineWidth / 2)) or Max(0, IRound(width) - lineWidth) in the text rect (FinalizeLine). A Godot
+    /// label aligns by the line's size rounded up to a whole pixel (TextServer shaped_text_get_size) and truncates the offset
+    /// to a whole pixel (Label::_get_line_rect: int(width - lineWidth) / 2, int(width - lineWidth)). The label is shifted by
+    /// the difference, so the line sits where the client's does. A label of more than one line keeps Godot's placement: the
+    /// shift is one per label, not per line.
+    /// </summary>
+    void AlignLine()
+    {
+        float dx = 0;
+        var align = Label.HorizontalAlignment;
+        if ((align == HorizontalAlignment.Center || align == HorizontalAlignment.Right) && Label.GetLineCount() == 1)
+        {
+            string line = Label.Text.TrimEnd(' ', '\t', '\n', '\r');
+            var first = Label.GetCharacterBounds(0);
+            if (line.Length > 0 && first.Size.Y > 0)
+            {
+                var ls = Label.LabelSettings;
+                var tl = new TextLine();
+                tl.AddString(line, ls.Font, ls.FontSize);
+                double sum = 0;
+                foreach (Godot.Collections.Dictionary g in TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid()))
+                    sum += (float)g["advance"] * (int)g["repeat"];
+                tl.Dispose();
+                float twip = 1 / (20 * Label.Scale.X);          // a twip of the field in label pixels
+                float room = Label.Size.X - (float)sum;
+                float at = Math.Max(0, MathF.Round((align == HorizontalAlignment.Center ? room / 2 : room) / twip) * twip);
+                dx = (at - first.Position.X) * Label.Scale.X;   // field units
+            }
+        }
+        if (lineShift.Position.X != dx) Callable.From(() => lineShift.Position = new Vector2(dx, 0)).CallDeferred();
     }
 
     /// <summary>Screen pixels per label pixel: the glyphs are rasterized at the ramp size and drawn scaled by this.</summary>
