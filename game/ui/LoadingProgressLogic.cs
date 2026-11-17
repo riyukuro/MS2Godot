@@ -8,6 +8,10 @@ namespace Ms2Godot.Ui;
 /// for its frame mode: a clear screen (loadingprogress_whitekbg), the loading picture fitted to the stage, the top and bottom
 /// bars stretched to the stage width (the bottom one holds the tip and the percent text) and, for low levels, the keyboard guide
 /// centred above the bottom bar. With no picture the frame shows a screenshot of the game, stretched to the stage.
+/// Without the frame (startProgress showFrame false: UILoadingProgress::vfunc_52 is false on the login and character select
+/// scenes, and UILoadingProgressLobby, the lobby's loading screen, always passes false) the picture or the screenshot is
+/// stretched to the stage (loadCompleteScreenShot / setScreenShotContent), with no clear screen, bars or guide, and the small
+/// loading badge (loadingprogress_loading, a Progressbar) sits in the stage's bottom right corner with the percent.
 /// <see cref="StopProgress"/> fades it out over 500 ms, then raises OnFadeInComplete.
 /// The movie is drawn at the UI scale like every other movie (<see cref="UiScale"/>: CUIService::OnDeviceReset sets it for all
 /// movies with GFxManager::SetMoviesScale), so its stage is <see cref="UiScale.MovieStage"/> and the guide (1208 wide in the
@@ -22,14 +26,15 @@ public sealed class LoadingProgressLogic
         public string Tip = "";
         public bool ShowGuide;             // showGuide with showGuideType "keyboard"
         public bool ShowMove;              // the move-channel message instead of the tip
+        public bool ShowFrame = true;      // showFrame (UILoadingProgress::vfunc_52); false: the picture stretched and the badge
     }
 
     /// <summary>Everything the movie draws; the host adds it to a CanvasLayer.</summary>
     public readonly Node2D Layer = new() { Name = "LoadingProgress" };
-    readonly MovieClipNode clear, top, bottom, guide;
+    readonly MovieClipNode clear, top, bottom, guide, badge;
     readonly Vector2 topSize, bottomSize;
     readonly Sprite2D picture = new() { Centered = false };
-    bool screenShot;
+    bool screenShot, showFrame = true;
     double fadeT = -1;
     Vector2 stage;
     public bool Active { get; private set; }
@@ -41,6 +46,7 @@ public sealed class LoadingProgressLogic
         top = movie.BuildClass("loadingprogress_bg_top");
         bottom = movie.BuildClass("loadingprogress_bg_bottom");
         guide = movie.BuildClass("export_keyboard_guide");
+        badge = movie.BuildClass("loadingprogress_loading");       // the constructor's m_progressBar
         // the guide's key labels (export_keyboard_guide_label, a CLIK Label) get their text from the symbol's inspector values
         // (__setProp___idN__export_keyboard_guide_Layer1_0 in component_v1): $s_keyboard_guide_z ... _period
         if (guide != null)
@@ -54,17 +60,36 @@ public sealed class LoadingProgressLogic
         }
         topSize = top?.Bounds.Size ?? Vector2.One;
         bottomSize = bottom?.Bounds.Size ?? Vector2.One;
-        foreach (var n in new Node2D[] { clear, picture, top, bottom, guide }) if (n != null) { Layer.AddChild(n); n.Visible = false; }
+        foreach (var n in new Node2D[] { clear, picture, top, bottom, guide, badge }) if (n != null) { Layer.AddChild(n); n.Visible = false; }
     }
 
-    /// <summary>startProgress(info) in frame mode (showFrame true, useFadeOut true), for a window of <paramref name="window"/> pixels.</summary>
+    /// <summary>startProgress(info) (useFadeOut true), for a window of <paramref name="window"/> pixels.</summary>
     public void StartProgress(Start s, Vector2 window)
     {
         SetWindow(window);
         fadeT = -1;
         Layer.Modulate = Colors.White;
+        showFrame = s.ShowFrame;
         screenShot = s.Picture == null;
         picture.Texture = s.Picture ?? s.ScreenShot;
+        if (!showFrame)
+        {
+            // the else branch: the picture goes through loadCompleteScreenShot either way; m_progressBar.textField.text = "0%",
+            // addChild(m_progressBar), m_progressBar.alignment(). (showMove's centre message, loadingprogress_bg_center, is
+            // not shown: no caller here passes showMove.)
+            foreach (var n in new Node2D[] { clear, top, bottom, guide }) if (n != null) n.Visible = false;
+            picture.Visible = true;
+            if (badge != null)
+            {
+                badge.Visible = true;
+                badge.SetNamedText("textField", "0%");
+                LoopFill(badge);
+            }
+            Layout();
+            Active = true;
+            return;
+        }
+        if (badge != null) badge.Visible = false;
         foreach (var n in new Node2D[] { clear, picture, top, bottom }) if (n != null) n.Visible = true;
         if (guide != null) guide.Visible = s.ShowGuide;
         bottom?.SetNamedText("infoText", s.ShowMove ? "$s_loading_movechannel_message" : s.Tip ?? "");
@@ -73,8 +98,14 @@ public sealed class LoadingProgressLogic
         Active = true;
     }
 
-    /// <summary>onStageResize, for a window of <paramref name="window"/> pixels.</summary>
-    public void SetStageSize(Vector2 window) { SetWindow(window); if (Active) Layout(); }
+    /// <summary>onStageResize, for a window of <paramref name="window"/> pixels: only a new stage size lays the screen out again
+    /// (the badge's Progressbar.alignment runs on Event.RESIZE, so it keeps its place while its fill animates).</summary>
+    public void SetStageSize(Vector2 window)
+    {
+        var before = stage;
+        SetWindow(window);
+        if (Active && stage != before) Layout();
+    }
 
     void SetWindow(Vector2 window)
     {
@@ -84,8 +115,32 @@ public sealed class LoadingProgressLogic
         stage = UiScale.MovieStage(window);
     }
 
+    /// <summary>
+    /// The badge's animated fill (its one nested sprite with a timeline: the shine moving under the hexagon mask). That sprite
+    /// has no stop() and no frame labels, so Flash plays it from the badge's creation and wraps from its last frame to its
+    /// first for as long as it is on the stage (a timeline without a stop() action advances one frame per movie frame and
+    /// loops). Only this gauge's sprite is started; other movies' clips keep their own players.
+    /// </summary>
+    static void LoopFill(MovieClipNode badge)
+    {
+        foreach (var c in badge.Children)
+            if (c.Node is MovieClipNode mc && mc.FrameCount > 1 && !mc.FrameScripts) mc.Loop();
+    }
+
     void Layout()
     {
+        if (!showFrame)
+        {
+            if (picture.Texture != null) { picture.Scale = stage / picture.Texture.GetSize(); picture.Position = Vector2.Zero; }   // setScreenShotContent
+            if (badge != null)
+            {
+                // Progressbar.alignment: x = stageWidth - width - m_marginX, y = stageHeight - height - m_marginY (10 each);
+                // (the badge's origin is placed; width / height are its bounds on the current frame)
+                var size = (badge.ContentRect() ?? badge.Bounds).Size;
+                badge.Position = new Vector2(stage.X - size.X - 10, stage.Y - size.Y - 10);
+            }
+            return;
+        }
         // setClearScreen: the clear screen fills the stage, the bars take the stage width and keep their aspect
         if (clear != null) Fit(clear, clear.Bounds, new Rect2(Vector2.Zero, stage));
         if (top != null)
@@ -139,14 +194,6 @@ public sealed class LoadingProgressLogic
         return new Rect2((stage.X - w) * 0.5f, (stage.Y - h) * 0.3f, w, h);
     }
 
-    /// <summary>The same in window pixels for a window of <paramref name="window"/> pixels: the movie stage at the UI scale.</summary>
-    public static Rect2 LocalImageRectInWindow(Vector2 picture, Vector2 window)
-    {
-        float k = UiScale.For(window);
-        var r = LocalImageRect(picture, UiScale.MovieStage(window));
-        return new Rect2(UiScale.MovieOrigin + r.Position * k, r.Size * k);
-    }
-
     /// <summary>Places a clip so its bounds fill <paramref name="to"/> (the AS3 width / height setters).</summary>
     static void Fit(Node2D n, Rect2 bounds, Rect2 to)
     {
@@ -159,7 +206,9 @@ public sealed class LoadingProgressLogic
     public void Progress(double count, double total)
     {
         if (!Active || total <= 0) return;
-        bottom?.SetNamedText("percentText", $"{(uint)(count / total * 100)}%");
+        string text = $"{(uint)(count / total * 100)}%";
+        if (showFrame) bottom?.SetNamedText("percentText", text);
+        else badge?.SetNamedText("textField", text);
     }
 
     /// <summary>stopProgress(fade): a 500 ms fade (alphaTween(500, 0)) or at once.</summary>
@@ -184,7 +233,8 @@ public sealed class LoadingProgressLogic
     {
         fadeT = -1;
         Active = false;
-        foreach (var n in new Node2D[] { clear, picture, top, bottom, guide }) if (n != null) n.Visible = false;
+        foreach (var n in new Node2D[] { clear, picture, top, bottom, guide, badge }) if (n != null) n.Visible = false;
+        badge?.SetNamedText("textField", "0%");                           // onCompleteFadeOut: m_progressBar.release()
         picture.Texture = null;
         Layer.Modulate = Colors.White;
         UiBridge.Raise(UILoadingProgressContract.Movie, UILoadingProgressContract.ToHost.OnFadeInComplete);

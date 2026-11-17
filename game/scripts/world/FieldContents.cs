@@ -197,7 +197,8 @@ public partial class FieldContents : Node3D
             overlay.AddChild(cover.Layer);
         }
         catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); carried = (overlay, null); return true; }
-        var start = new LoadingProgressLogic.Start { Picture = Travel.LoadingImage != null ? LoadPicture(packs, Travel.LoadingImage) : null, Tip = Travel.LoadingTip ?? "", ShowGuide = true };
+        // the first entry is the lobby's loading screen (UILoadingProgressLobby: vfunc_52 false, no frame)
+        var start = new LoadingProgressLogic.Start { Picture = Travel.LoadingImage != null ? LoadPicture(packs, Travel.LoadingImage) : null, Tip = Travel.LoadingTip ?? "", ShowGuide = true, ShowFrame = false };
         if (start.Picture == null) start.ScreenShot = ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage());
         cover.StartProgress(start, root.GetViewport().GetVisibleRect().Size);
         shownCover = cover;

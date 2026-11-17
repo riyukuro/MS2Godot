@@ -164,8 +164,9 @@ public partial class GameFlow : Node
     }
 
     /// <summary>
-    /// The first entry's picture as UILoadingProgress places it (the same movie as a field move): setLocalImageContent on the
-    /// movie stage, so a wide window crops the picture to its width instead of showing bars. The layer is in the viewport's
+    /// The first entry's picture as the lobby's loading screen places it (UILoadingProgressLobby, no frame): stretched to the
+    /// movie stage (setScreenShotContent), the stage being drawn from <see cref="UiScale.MovieOrigin"/> at the UI scale. The
+    /// field's own cover (the same screen, with the badge) takes over once it is up. The layer is in the viewport's
     /// (content-scaled) units; the rule is in window pixels, as the client's movie scale comes from the window width.
     /// </summary>
     void PlacePicture()
@@ -175,7 +176,7 @@ public partial class GameFlow : Node
         var window = (Vector2)GetWindow().Size;
         var units = GetViewport().GetVisibleRect().Size;
         if (window.X <= 0 || window.Y <= 0) return;
-        var r = LoadingProgressLogic.LocalImageRectInWindow(picture.Texture.GetSize(), window);
+        var r = new Rect2(UiScale.MovieOrigin, UiScale.MovieStage(window) * UiScale.For(window));
         var toUnits = units / window;
         picture.Position = r.Position * toUnits;
         picture.Size = r.Size * toUnits;
