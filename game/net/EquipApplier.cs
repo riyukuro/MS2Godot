@@ -207,8 +207,10 @@ public sealed class EquipApplier
         // Rigid items hang by their self node (Point01): that node of the item lands on the target node, turned and
         // moved by the asset's dummy for the gender (Euler XYZ degrees, then a translation), as the client's weapon
         // attach node does. Dummies tied to an animation sequence are left out.
+        // When the item has no node of that name (hair: selfnode "HR", the item's nodes are HR0, HR1), each mesh's own
+        // parent node is its self node: the item's nodes carry the same transform as the body's HR mesh.
         string selfName = (string)asset.Attribute("selfnode");
-        var selfInv = Transform3D.Identity;
+        Transform3D? selfInv = null;
         if (selfName != null)
         {
             int sb = md.Bones.FindIndex(b => b.Name == selfName);
@@ -252,7 +254,9 @@ public sealed class EquipApplier
                 var att = new BoneAttachment3D { Name = mi.Name + "_attach", BoneName = bone };
                 skel.AddChild(att);
                 var parentWorld = m.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[m.ParentBone].World) : Transform3D.Identity;
-                mi.Transform = targetLocal * dummy * selfInv * parentWorld * ModelBuilder.ToGodot(m.Local);
+                // a declared self node that is not in the item (hair) falls back to the mesh's parent node; no selfnode keeps identity
+                var selfFallback = selfName != null ? parentWorld.AffineInverse() : Transform3D.Identity;
+                mi.Transform = targetLocal * dummy * (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 att.AddChild(mi);
             }
             made.Add(mi);
