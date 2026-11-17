@@ -22,6 +22,16 @@ public sealed partial class MinimapPlaces : Node2D
         "guild", "party", "interact", "npc", "shop", "taxi", "triggerobject", "text",
     };
 
+    /// <summary>
+    /// UIMinimapDialog::BuildShowAttributes: the layers the minimap options toggle and their default state (the friendly npc
+    /// layer starts off). The dialog sends them as showentity and MinimapDialogMax.showEntities sets each layer's visible to
+    /// state != 0. The player's saved iconCheck options would override them; there are none here.
+    /// </summary>
+    public static readonly Dictionary<string, bool> ShowDefaults = new()
+    {
+        ["shop"] = true, ["friendly"] = false, ["taming_pet"] = true, ["portal"] = true, ["buddy"] = true, ["pc"] = true, ["text"] = true,
+    };
+
     readonly UiMovie movie;
     readonly MinimapInfo info;
     readonly PackSet packs;
@@ -35,7 +45,7 @@ public sealed partial class MinimapPlaces : Node2D
     {
         this.movie = movie; this.info = info; this.packs = packs; this.imageSize = imageSize; this.u = u;
         Name = "MinimapPlaces";
-        foreach (var l in LayerOrder) { var n = new Node2D { Name = l }; layers[l] = n; AddChild(n); }
+        foreach (var l in LayerOrder) { var n = new Node2D { Name = l, Visible = ShowDefaults.GetValueOrDefault(l, true) }; layers[l] = n; AddChild(n); }
     }
 
     public MinimapPlaces() { }
