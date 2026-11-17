@@ -51,6 +51,7 @@ public partial class MovieClipNode : Node2D
         public Transform2D Base;
         public Color BaseColor = Colors.White;
         public Transform2D? Override;      // set by code (bar fill masks)
+        public bool Hidden;                // set by code (AS3 visible = false): kept over timeline moves
         public bool IsMask;
         public Rect2 MaskBounds;
         public bool Static9;              // drawn by a Scale9Node: ignores later matrix moves
@@ -221,7 +222,7 @@ public partial class MovieClipNode : Node2D
             }
             c.Node.Transform = c.Override ?? m;
             c.Node.Modulate = col;
-            if (!vis) c.Node.Visible = false;
+            if (!vis || c.Hidden) c.Node.Visible = false;
         }
         foreach (var g in maskGroups) g.Update();
     }

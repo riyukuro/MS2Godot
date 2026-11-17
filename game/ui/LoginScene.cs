@@ -35,6 +35,8 @@ public partial class LoginScene : Control
         var stage = UiScale.MovieStage(window);
         RenderingServer.SetDefaultClearColor(clear);
 
+        AddBackground(window, args.Contains("--flow-shots") || shotDir != null);
+
         var movie = new UiMovie(assets, UILoginDialogContract.Movie);
         dialogRoot = movie.BuildRoot(u);
         dialogRoot.Scale = new Vector2(u, u);
@@ -56,6 +58,22 @@ public partial class LoginScene : Control
         logic.InitData("", false, true, "KR");
         mouse = new UiWidgets.MouseRouter(dialogRoot);
         UiBridge.ToHost += (m, n, a) => { };
+    }
+
+    /// <summary>
+    /// The backdrop (LoginBackground): this month's movie from table/loginbgbgm.xml, picked at random as the client does,
+    /// or the month's first one for shots (repeatable). Shots show it settled: the title on its last frame, the intro gone.
+    /// </summary>
+    void AddBackground(Vector2 window, bool forShots)
+    {
+        var url = LoginBackground.Select(assets.Table("table/loginbgbgm.xml"), DateTime.Now.Month, n => forShots ? 0 : (int)(GD.Randi() % (uint)n));
+        if (string.IsNullOrEmpty(url)) return;
+        MovieClipNode bg;
+        try { bg = new UiMovie(assets, LoginBackground.MovieName(url)).BuildRoot(); }
+        catch (Exception e) { GD.PushWarning($"login backdrop {url}: {e.Message}"); return; }
+        LoginBackground.Fit(bg, window);
+        AddChild(bg);
+        LoginBackground.Play(bg, forShots);
     }
 
     public override void _Input(InputEvent e)
