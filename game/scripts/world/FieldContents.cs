@@ -139,6 +139,8 @@ public partial class FieldContents : Node3D
     public FieldPortals Portals => portals;
     public IReadOnlyList<FieldNpcs.Placed> SpawnedNpcs => spawned;
     public int FieldId => fieldId;
+    /// <summary>The field's world objects (the minimap's taxi station and tagged objects).</summary>
+    public FieldMap Map => map;
     static QuestMaskTable maskTable;
     static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
     static ClientConstants constantTable;

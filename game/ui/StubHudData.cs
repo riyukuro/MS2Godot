@@ -11,6 +11,12 @@ public sealed class StubHudData
     public long Mesos = 0, Merets = 0;
     public string FieldName = "DP-kr Tria";
     public string Locale = "KR";
+    /// <summary>The fields whose taxi station the player has found (the login packet's list, OnTaxi adds to it). The
+    /// reference run had found Tria's: its minimap shows the station enabled.</summary>
+    public HashSet<int> FoundTaxis = new() { 2000001 };
+    /// <summary>The field's interact objects' state from the server (1 = reactable). The reference run's extract station
+    /// shows on its minimap, which only state 1 allows.</summary>
+    public int InteractState = 1;
     /// <summary>Features the server has switched off (the reference run had no cash shop, Meret Market or job change quest).</summary>
     /// <summary>The level-up package quest's reward in the "Navigator" widget (item id, count) and its progress: the gauge
     /// shows while current &lt; max, the reward button once it is reached.</summary>

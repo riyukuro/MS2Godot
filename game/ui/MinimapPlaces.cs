@@ -65,7 +65,13 @@ public sealed partial class MinimapPlaces : Node2D
     readonly float u;
     readonly Dictionary<string, Node2D> layers = new();
     bool built;
-    public int Portals, Npcs, Labels;
+    public int Portals, Npcs, Labels, Objects;
+
+    /// <summary>The player's level (the taxi's best-driver icon) and the server's found-taxi fields (its enabled frame).</summary>
+    public int PlayerLevel;
+    public IReadOnlyCollection<int> FoundTaxis = Array.Empty<int>();
+    /// <summary>The interact objects' state as the server sends it (1 = reactable; 0 before any packet).</summary>
+    public int InteractState;
 
     public MinimapPlaces(UiMovie movie, MinimapInfo info, PackSet packs, Vector2 imageSize, float u, Node2D guideRoot, Rect2 mask)
     {
@@ -109,8 +115,29 @@ public sealed partial class MinimapPlaces : Node2D
             if (!e.Visible || !n.Root.Visible) continue;
             if (Add(e, FieldPortals.ToMs2(n.Position))) Npcs++;
         }
-        GD.Print($"minimap places: {Portals} portals, {Npcs} npcs, {Labels} labels");
+        // BuildTaxi, when the field has a taxi station: the first world object of the MS2TaxiStation model, at its Position
+        if (icons.HasTaxi(fc.FieldId) && fc.Map?.Entities.FirstOrDefault(e => IsModel(e, "MS2TaxiStation")) is { } taxi)
+        {
+            int bestLevel = (int)new ClientConstants(packs).Float("TaxiCallBestDriverLevel", 25);
+            if (Add(MinimapIcons.Taxi(FoundTaxis.Contains(fc.FieldId), PlayerLevel >= bestLevel), taxi.Position)) Objects++;
+        }
+        // BuildNamed: the interact objects (CInteractObject, a world object with an interactID), with the server's state
+        foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2InteractObject")) ?? Enumerable.Empty<FieldEntity>())
+        {
+            int id = (int)e.Number("interactID");
+            var (icon, type) = id > 0 ? icons.InteractRow(packs, id) : ("", 0);
+            if (MinimapIcons.Named(icon, type, InteractState) is not { } named || !named.Visible) continue;
+            if (Add(named, e.Position)) Objects++;
+        }
+        // BuildMapObjects: every world object of the MS2Minimap model
+        foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2Minimap")) ?? Enumerable.Empty<FieldEntity>())
+            if (Add(MinimapIcons.MapObject(e.Get("MinimapIconFrame")), e.Position)) Objects++;
+        GD.Print($"minimap places: {Portals} portals, {Npcs} npcs, {Objects} objects, {Labels} labels");
     }
+
+    /// <summary>WorldService's model lists match an entity whose model is the list's model or has it as a mixin.</summary>
+    static bool IsModel(FieldEntity e, string model) =>
+        string.Equals(e.ModelName, model, StringComparison.OrdinalIgnoreCase) || e.HasMixin(model);
 
     /// <summary>createEntity (and createEntityText when it has a label, createGuideArrow for showguide) at the entity's map position.</summary>
     bool Add(MinimapIcons.Entity e, Vec3 world, bool showGuide = false)

@@ -20,6 +20,7 @@ public sealed class MinimapIcons
 
     readonly Dictionary<int, List<int>> fieldNpcs = new();
     readonly HashSet<int> indoor = new();
+    readonly HashSet<int> taxiFields = new();
     readonly Dictionary<string, string> mapNames, functionNames;
     readonly NpcTable npcs;
 
@@ -41,7 +42,11 @@ public sealed class MinimapIcons
         foreach (var entry in new[] { "table/fieldmetadata.xml", "table/kr/fieldmetadata.xml" })
         {
             if (!packs.Exists("Xml", entry)) continue;
-            foreach (var n in GameStrings.Parse(packs.Read("Xml", entry)).Root!.Elements("npc"))
+            var root = GameStrings.Parse(packs.Read("Xml", entry)).Root!;
+            // <taxiStation field= IsHomePrivilege=/>: the fields with a taxi station (CFieldMetaTable m_taxi)
+            foreach (var t in root.Elements("taxiStation"))
+                if (int.TryParse((string)t.Attribute("field"), out int tf)) taxiFields.Add(tf);
+            foreach (var n in root.Elements("npc"))
             {
                 if (!int.TryParse((string)n.Attribute("id"), out int id) || npcs.Find(id) == null) continue;
                 foreach (var f in n.Elements("field"))
@@ -110,6 +115,54 @@ public sealed class MinimapIcons
         foreach (var id in list)
             if (npcs.Find(id) is { } r && HasNpcMinimapInfo(r)) return r;
         return null;
+    }
+
+    /// <summary>CTaxiManager::FUN_14085f6e0: the field has a taxi station (fieldmetadata taxiStation), so BuildTaxi runs.</summary>
+    public bool HasTaxi(int fieldId) => taxiFields.Contains(fieldId);
+
+    /// <summary>
+    /// UIMinimapEntityTaxi::Initialize: frame enabled when the field is in the server's found-taxi list, else disabled; icon
+    /// taxibest when the player's level reaches TaxiCallBestDriverLevel (FUN_141b71c00), else taxi; layer taxi. Its name
+    /// (s_word_taxistation) is only the tooltip: showtext stays off. The home-privilege branch (IsHomePrivilege) is not read.
+    /// </summary>
+    public static Entity Taxi(bool found, bool best) => new(best ? "taxibest" : "taxi", found ? "enabled" : "disabled", "taxi", null, true, false);
+
+    Dictionary<int, (string icon, int type)> interactRows;
+
+    /// <summary>The interact object row (table/interactobject.xml): its display minimapIcon ("" when none) and type.</summary>
+    public (string icon, int type) InteractRow(PackSet packs, int interactId)
+    {
+        if (interactRows == null)
+        {
+            interactRows = new Dictionary<int, (string, int)>();
+            const string entry = "table/interactobject.xml";
+            if (packs.Exists("Xml", entry))
+                foreach (var row in GameStrings.Parse(packs.Read("Xml", entry)).Root!.Elements("interact"))
+                    if (int.TryParse((string)row.Attribute("id"), out int id))
+                    {
+                        int.TryParse((string)row.Attribute("type"), out int type);
+                        interactRows.TryAdd(id, ((string)row.Element("display")?.Attribute("minimapIcon") ?? "", type));
+                    }
+        }
+        return interactRows.GetValueOrDefault(interactId, ("", 0));
+    }
+
+    /// <summary>
+    /// AddNamedObject + UpdateNamed for an interact object that is not a quest target: none without a minimap icon; icon =
+    /// the row's minimapIcon, layer interact, no frame, shown when the object's state is 1 (reactable). A watchtower
+    /// (type 9) takes the watchtower layer, is always shown and gets frame enabled (state 0) or disabled
+    /// (UpdateNamedFrame). The name (string table 0x10) is only the tooltip.
+    /// </summary>
+    public static Entity Named(string icon, int type, int state) =>
+        string.IsNullOrEmpty(icon) ? null
+        : type == 9 ? new Entity(icon, state == 0 ? "enabled" : "disabled", "watchtower", null, true, false)
+        : new Entity(icon, "", "interact", null, state == 1, false);
+
+    /// <summary>BuildMapObjects: a world object tagged MS2Minimap; icon and frame = its MinimapIconFrame lower-cased, layer interact.</summary>
+    public static Entity MapObject(string iconFrame)
+    {
+        var icon = (iconFrame ?? "").ToLowerInvariant();
+        return new Entity(icon, icon, "interact", null, true, false);
     }
 
     /// <summary>CPortal::FUN_14169c5f0: the portal icon by type (the dungeon room's boss and time-up variants are not read).</summary>
