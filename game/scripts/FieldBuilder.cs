@@ -210,10 +210,11 @@ public sealed class FieldBuilder
                         Chunk(e.Position, group).AddChild(new CollisionShape3D { Shape = shp, Transform = xf });
                     Meshes++;
                 }
-                else if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
+                if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
                 {
                     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
-                    // standing on the entity position, turned by the Z rotation only; scale is ignored
+                    // standing on the entity position, turned by the Z rotation only; scale is ignored.
+                    // Built whether or not the NIF has its own PhysX meshes (cube load reads only GeneratePhysX)
                     var d = e.Vector("GeneratePhysXDimension");
                     var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
                     var p = e.Position;
