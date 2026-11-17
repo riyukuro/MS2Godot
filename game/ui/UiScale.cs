@@ -30,6 +30,20 @@ public static class UiScale
 
     /// <summary>Stage size in stage units, the space movies place themselves in.</summary>
     public static Vector2 Stage(Vector2 window, float option = 1f) => window / For(window, option);
+
+    /// <summary>
+    /// GFxMovie::vfunc_7 (gfxmovie.cpp:146) gives every movie a viewport one pixel larger than the window on every side:
+    /// (-1, -1, w + 2, h + 2). A movie's stage origin is drawn at <see cref="MovieOrigin"/> in the window.
+    /// </summary>
+    public static readonly Vector2 MovieOrigin = new(-1, -1);
+
+    /// <summary>
+    /// The stage a movie sees in AS3 (Stage.stageWidth / stageHeight): the viewport (w + 2, h + 2) at the movie scale.
+    /// Stage::stageWidthGet / stageHeightGet return the visible frame rect's size cast to SInt32, so it is truncated:
+    /// 1837 x 1034 for a 1280 x 720 window.
+    /// </summary>
+    public static Vector2 MovieStage(Vector2 window, float option = 1f) =>
+        ((window + new Vector2(2, 2)) / For(window, option)).Floor();
 }
 
 /// <summary>Input focus for the rest of the game: movement code should ignore the keyboard while a text box has focus.</summary>

@@ -37,6 +37,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
     {
         Name = "PlayerNameTag";
         Layer = 5;                       // with the npcs' tags (NpcPresence), under the HUD
+        Offset = UiScale.MovieOrigin;    // the movie's viewport origin (GFxMovie::vfunc_7); vfunc_6 maps the screen point straight to stage units
         offset = constants.Float("OffsetPcNametag", 30);
         var (r, g, b) = constants.Color("NameTagColorMyPC", (1f, 0.812f, 0.106f));
         var color = new Color(r, g, b);

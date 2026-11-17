@@ -32,7 +32,7 @@ public sealed partial class NpcPresence : CanvasLayer
     public Node3D Viewer;
     public int Bodies, NameTags;
 
-    public NpcPresence(ClientConstants constants) { this.constants = constants; Name = "NpcPresence"; Layer = 5; }
+    public NpcPresence(ClientConstants constants) { this.constants = constants; Name = "NpcPresence"; Layer = 5; Offset = UiScale.MovieOrigin; }
     public NpcPresence() { }
 
     public void Build(IEnumerable<FieldNpcs.Placed> npcs, UiAssets ui)
