@@ -36,6 +36,8 @@ public sealed class FieldData
     public string XBlock;
     public FieldCamera Camera = new();
     public FieldHdr Hdr = new();
+    /// <summary>&lt;shadow simpleshadow&gt;: the alpha of the simple ground shadows (CFieldDataCli default 0.5).</summary>
+    public float SimpleShadow = 0.5f;
     /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
     public bool CheckClimb = true;
 
@@ -62,6 +64,8 @@ public sealed class FieldData
             if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
             var fov = env.Element("fov");
             if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
+            var sh = env.Element("shadow");
+            if (sh != null) Read(sh, "simpleshadow", ref o.SimpleShadow);
             var hdr = env.Element("hdr");
             if (hdr != null)
             {

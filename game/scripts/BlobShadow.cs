@@ -1,34 +1,58 @@
 using Godot;
+using Ms2.Formats.Pack;
 
 namespace Ms2Godot;
 
 /// <summary>
-/// The simple shadow of a character, npc or monster (the client's CObjectShadow, shadow levels 1 and 2 of table/graphicOption
-/// for myPC, PC and monster at every quality but the lowest): a soft dark disc on the ground below the actor, found by a ray
-/// down from it, shrinking and fading as the actor leaves the ground. The strength is the field's simpleshadow value (default 0.5).
+/// The simple shadow of a character, npc or monster: the client's CObjectShadow. A square of side <c>radius</c> centred on the
+/// ground point below the owner, textured with Shadow.dds, laid along the ground normal and lifted by a small offset (3 for
+/// players, 1 for npcs), alpha-blended black with alpha = the field's simpleshadow (default 0.5) times a height fade: the
+/// square and its alpha shrink to half at 400 units above the ground. The ground is found with a ray straight down from the
+/// owner; with no hit the shadow is hidden. (Quality levels at which the shadow-map shadow replaces it are not modelled.)
 /// </summary>
 public partial class BlobShadow : MeshInstance3D
 {
-    public static float Strength = 0.5f;
+    public const string Archive = "Resource/Image";
+    public const string Entry = "effect/shadow.dds";
+    public const float FadeHeight = 400f, FadeScale = 0.5f;
 
-    float radius;
-    CollisionObject3D self;
+    /// <summary>&lt;shadow simpleshadow&gt; of the field.</summary>
+    public static float Strength = 0.5f;
+    static Texture2D texture;
     static Shader shader;
+
+    float radius, lift;
+    CollisionObject3D self;
     ShaderMaterial mat;
 
-    public static BlobShadow Add(Node3D owner, float radius)
+    /// <summary>Loads Shadow.dds from the client's image archive.</summary>
+    public static void Load(PackSet packs)
     {
-        if (OS.GetEnvironment("MS2_NOSHADOW") == "1") return null;   // before shots
+        if (texture != null) return;
+        try
+        {
+            var img = new Image();
+            if (img.LoadDdsFromBuffer(packs.Read(Archive, Entry)) == Error.Ok) { texture = ImageTexture.CreateFromImage(img); }
+        }
+        catch (Exception ex) { GD.PushWarning("shadow texture: " + ex.Message); }
+    }
+
+    public static BlobShadow Add(Node3D owner, float radius, float lift = 3f)
+    {
+        if (OS.GetEnvironment("MS2_NOSHADOW") == "1" || radius <= 0 || texture == null) return null;   // before shots
         shader ??= GD.Load<Shader>("res://shaders/blob_shadow.gdshader");
         var s = new BlobShadow
         {
             Name = "Shadow",
             radius = radius,
+            lift = lift,
             TopLevel = true,
             CastShadow = ShadowCastingSetting.Off,
-            Mesh = new QuadMesh { Size = new Vector2(2, 2), Orientation = PlaneMesh.OrientationEnum.Y },
+            // CObjectShadow vertices (0,0) (0,1) (1,1) (1,0), centred: a unit square, corners at +-0.5
+            Mesh = new QuadMesh { Size = new Vector2(1, 1), Orientation = PlaneMesh.OrientationEnum.Y },
         };
         s.mat = new ShaderMaterial { Shader = shader };
+        s.mat.SetShaderParameter("shadow_tex", texture);
         s.MaterialOverride = s.mat;
         s.self = owner as CollisionObject3D;
         owner.AddChild(s);
@@ -45,9 +69,15 @@ public partial class BlobShadow : MeshInstance3D
         if (hit.Count == 0) { Visible = false; return; }
         Visible = true;
         var p = (Vector3)hit["position"];
-        float air = Mathf.Max(owner.GlobalPosition.Y - p.Y, 0);
-        float k = 1f / (1f + air / 400f);
-        GlobalTransform = new Transform3D(Basis.Identity.Scaled(Vector3.One * radius * k), p + Vector3.Up * 12);
-        mat.SetShaderParameter("strength", Strength * k);
+        var n = ((Vector3)hit["normal"]).Normalized();
+        float dist = Mathf.Max(owner.GlobalPosition.Y - p.Y, 0);
+        float fade = 1f - Mathf.Clamp(dist / FadeHeight, 0f, 1f) * (1f - FadeScale);
+        // orient: local up along the ground normal, keep a fixed heading
+        var x = (Vector3.Right - n * n.Dot(Vector3.Right)).Normalized();
+        var basis = new Basis(x, n, x.Cross(n)).Scaled(Vector3.One * radius * fade);
+        // + 10: the client lifts by 3 on a depth buffer with its bias; Godot z-fights at the camera distance without more
+        GlobalTransform = new Transform3D(basis, p + n * (lift + 10f));
+        mat.SetShaderParameter("strength", Strength * fade);
+
     }
 }

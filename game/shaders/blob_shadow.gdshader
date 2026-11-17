@@ -1,18 +1,12 @@
-// The simple ground shadow of a character (the client's CObjectShadow): a soft dark disc on the ground under the actor.
-// The quad is 2 x 2 in the ground plane, so the local position is the distance from the centre.
+// The simple ground shadow of a character (the client's CObjectShadow): Shadow.dds on a quad lying on the ground,
+// black material, alpha = texture alpha * simpleshadow * height fade; alpha blended, no depth write, no fog.
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled;
 
+uniform sampler2D shadow_tex : filter_linear, repeat_disable;
 uniform float strength = 0.5;
 
-varying vec2 local;
-
-void vertex() {
-	local = VERTEX.xz;
-}
-
 void fragment() {
-	float d = length(local);
 	ALBEDO = vec3(0.0);
-	ALPHA = strength * (1.0 - smoothstep(0.3, 1.0, d));
+	ALPHA = texture(shadow_tex, UV).a * strength;
 }

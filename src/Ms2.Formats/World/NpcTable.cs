@@ -12,6 +12,7 @@ public sealed class NpcRow
     public string[] PropertyTags = Array.Empty<string>();
     public string Kfm;                       // model name, e.g. 02010001_Stan
     public float Scale = 1f;
+    public float ShadowScale;                // <model shadowScale>: radius of the simple ground shadow (0 = none)
     public float WalkSpeed, RunSpeed;
     public string[] IdleActions = Array.Empty<string>();
     public string[] MoveActions = Array.Empty<string>();
@@ -62,6 +63,7 @@ public sealed class NpcTable
                     SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
                     Kfm = (string)model?.Attribute("kfm"),
                     Scale = Flt(model, "scale", 1f),
+                    ShadowScale = Flt(model, "shadowScale", 0f),
                     WalkSpeed = Flt(model, "walkSpeed", 0),
                     RunSpeed = Flt(model, "runSpeed", 0),
                     CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),

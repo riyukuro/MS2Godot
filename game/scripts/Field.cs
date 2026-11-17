@@ -53,6 +53,7 @@ public partial class Field : Node3D
             return;
         }
 
+        GlowPass.Wanted = OS.GetEnvironment("MS2_NOGLOW") != "1";   // glow twins are built only for a field with the glow pass
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = new PackSet(data);
         var spec = new NifSpec(nifxml);
@@ -82,6 +83,7 @@ public partial class Field : Node3D
             var fd = FieldData.FindByXBlock(packs, fieldName);
             cam = fd?.Camera ?? cam;
             hdr = fd?.Hdr ?? hdr;
+            if (fd != null) BlobShadow.Strength = fd.SimpleShadow;
             if (player != null && fd != null) player.CheckClimb = fd.CheckClimb;
         }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
@@ -203,7 +205,8 @@ public partial class Field : Node3D
         var (visual, anim, md, bodyDir) = Look.PlayerLook.Build(builder, packs);
 
         player = Player.Create(visual, anim);
-        BlobShadow.Add(player, 45);
+        BlobShadow.Load(packs);
+        BlobShadow.Add(player, 100f);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
         player.Climbs = Movement.Climbables.From(map);
         player.Cubes = Movement.CubeGrid.From(map);

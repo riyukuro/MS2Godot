@@ -40,6 +40,7 @@ public sealed class FieldNpcs
     public FieldNpcs(PackSet packs, AssetIndex assets, ModelBuilder builder)
     {
         this.packs = packs; this.assets = assets; this.builder = builder;
+        BlobShadow.Load(packs);
         if (!builder.TextureArchives.Contains(NpcArchive)) builder.TextureArchives = builder.TextureArchives.Append(NpcArchive).ToArray();
     }
 
@@ -81,7 +82,7 @@ public sealed class FieldNpcs
         return anims[slot] = a;
     }
 
-    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null)
+    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0)
     {
         var body = builder.Build(m.md, name.ValidateNodeName());
         var root = new Node3D { Name = body.Name };
@@ -91,7 +92,7 @@ public sealed class FieldNpcs
         // the model faces MS2 -Y; the entity's Z rotation turns it (as the player spawn: yaw about Godot +Y)
         body.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg ?? (float)e.RotationDeg.Z), 0);
         body.Scale = new Vector3(scale, scale, scale);
-        BlobShadow.Add(root, Math.Max(25f, ShadowRadius(body) * scale));
+        BlobShadow.Add(root, shadowRadius, 1f);
         parent.AddChild(root);
         var player = body.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         foreach (var s in sequences)
@@ -139,7 +140,7 @@ public sealed class FieldNpcs
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
-                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles);
+                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale);
                 var body = root.GetNode<Node3D>("Body");
                 Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body) });
                 Npcs++;
@@ -178,25 +179,13 @@ public sealed class FieldNpcs
             if (m == null) { Missing++; GD.Print($"mob {id} ({row.Kfm}): no model"); continue; }
             var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
             float yaw = e.Bool("UseRotAsSpawnDir") ? (float)e.RotationDeg.Z : 0;
-            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw);
+            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw, row.ShadowScale);
             var body = root.GetNode<Node3D>("Body");
             Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body), Mob = true });
             Mobs++;
         }
     }
 
-    /// <summary>Half the widest horizontal extent of the model meshes (bind pose), game units.</summary>
-    static float ShadowRadius(Node3D body)
-    {
-        float r = 0;
-        foreach (var mi in body.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>())
-        {
-            if (mi.Mesh == null) continue;
-            var a = mi.Mesh.GetAabb();
-            r = Math.Max(r, Math.Max(a.Size.X, a.Size.Z) * 0.5f);
-        }
-        return Math.Min(r * 1.15f, 200f);
-    }
 
     /// <summary>Highest point of the model's meshes (bind pose) above the root.</summary>
     static float ModelTop(Node3D body)

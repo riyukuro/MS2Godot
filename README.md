@@ -77,7 +77,7 @@ language, event groups beyond the event category.
 
 Known gaps:
 
-- Glow maps feed the bloom through a separate half-size target (signs get their halo); the combination in the bright pass is inferred. Characters and mobs get a soft blob shadow; field meshes still have no sun shadow map.
+- Glow maps feed the bloom through a separate half-size target (signs get their halo); the combination in the bright pass is inferred. Characters and mobs get the client's ground shadow quad (Shadow.dds); field meshes still have no sun shadow map.
 - No point or spot lights (indoor maps are darker than they should be), no cast shadows on field meshes.
 - No particle systems (`NiPSParticleSystem`).
 

@@ -112,6 +112,7 @@ public sealed class FieldProps
                 skel.AddChild(inst);
                 meshPaths.TryAdd(m.Name ?? "", $"{ModelBuilder.SkeletonName}/m{mi}");
             }
+            builder.AddGlowTwin(inst, m, m.Skinned ? skin : null);
         }
         var player = new AnimationPlayer { Name = "AnimationPlayer" };
         model.AddChild(player);

@@ -84,6 +84,7 @@ public sealed class ModelBuilder
                 mi.Transform = ToGodot(m.Local);
                 skel.AddChild(mi);
             }
+            AddGlowTwin(mi, m, m.Skinned ? skin : null);
         }
 
         var player = new AnimationPlayer { Name = "AnimationPlayer" };
@@ -159,6 +160,15 @@ public sealed class ModelBuilder
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, (Mesh.ArrayFormat)format);
         mesh.SurfaceSetMaterial(0, BuildMaterial(m, instanceColor));
         return mesh;
+    }
+
+    /// <summary>A mesh with a glow map also joins the glow pass: a twin on the glow layer sharing its mesh, parent and skin.</summary>
+    public void AddGlowTwin(MeshInstance3D mi, ModelMesh m, Skin skin)
+    {
+        if (!GlowPass.Wanted || GlowMaterial(m) is not { } gm) return;
+        var g = new MeshInstance3D { Name = mi.Name + "_glow", Mesh = mi.Mesh, Layers = GlowPass.Bit, MaterialOverride = gm, Transform = mi.Transform, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+        mi.GetParent().AddChild(g);
+        if (skin != null) { g.Skin = skin; g.Skeleton = ".."; }
     }
 
     static Shader glowShader;

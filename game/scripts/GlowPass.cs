@@ -9,6 +9,8 @@ namespace Ms2Godot;
 /// </summary>
 public partial class GlowPass : SubViewport
 {
+    /// <summary>Set by a field before it builds models: meshes with a glow map get a twin on the glow layer.</summary>
+    public static bool Wanted;
     public const int Layer = 20;
     public const uint Bit = 1u << (Layer - 1);
     public const uint MainMask = 0xFFFFFu & ~Bit;
