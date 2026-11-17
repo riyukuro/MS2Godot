@@ -58,20 +58,30 @@ public sealed class NineCtx
 
     public NineCtx At(Vector2 offset) => new() { Grid = Grid, Bounds = Bounds, Sx = Sx, Sy = Sy, Offset = offset };
 
-    public float MapX(float x)
-    {
-        float bw = Bounds.Size.X, W = bw * Sx, k = (W - (bw - Grid.Size.X)) / Math.Max(Grid.Size.X, 0.001f);
-        if (x <= Grid.Position.X) return x;
-        if (x >= Grid.End.X) return x + (W - bw);
-        return Grid.Position.X + (x - Grid.Position.X) * k;
-    }
+    public float MapX(float x) => Map1(x, Bounds.Position.X, Bounds.Size.X, Grid.Position.X, Grid.End.X, Grid.Size.X, Bounds.Size.X * Sx);
 
-    public float MapY(float y)
+    public float MapY(float y) => Map1(y, Bounds.Position.Y, Bounds.Size.Y, Grid.Position.Y, Grid.End.Y, Grid.Size.Y, Bounds.Size.Y * Sy);
+
+    /// <summary>
+    /// One axis of Scale9GridInfo's cell matrices: the bounds (b1, length bw) are drawn <paramref name="size"/> long; the
+    /// margins before g1 and after g2 keep their length and the grid takes the rest. Margins that would overlap (together
+    /// longer than the size) both shrink by their sum over the size plus 0.05, which leaves the grid a sliver.
+    /// </summary>
+    static float Map1(float x, float b1, float bw, float g1, float g2, float gw, float size)
     {
-        float bh = Bounds.Size.Y, H = bh * Sy, k = (H - (bh - Grid.Size.Y)) / Math.Max(Grid.Size.Y, 0.001f);
-        if (y <= Grid.Position.Y) return y;
-        if (y >= Grid.End.Y) return y + (H - bh);
-        return Grid.Position.Y + (y - Grid.Position.Y) * k;
+        float m1 = g1 - b1, m2 = b1 + bw - g2, s = size == 0 ? 0.001f : size, d = m1 / s + m2 / s;
+        if (d <= 1)
+        {
+            if (x <= g1) return x;
+            if (x >= g2) return x + (size - bw);
+            return g1 + (x - g1) * ((size - (bw - gw)) / Math.Max(gw, 0.001f));
+        }
+        d += 0.05f;
+        float l = m1 / d, r = m2 / d;
+        // written as the unshrunk value plus the shrink's correction, so the bounds' own edges land where they did
+        if (x <= g1) return m1 > 0 ? x - (x - b1) * (1 - l / m1) : x;
+        if (x >= g2) return x + (size - bw) + (m2 > 0 ? (b1 + bw - x) * (1 - r / m2) : 0);
+        return b1 + l + (x - g1) * (s - l - r) / Math.Max(gw, 0.001f);
     }
 
     /// <summary>A rect given in the current node's space, mapped, in the current node's space.</summary>
