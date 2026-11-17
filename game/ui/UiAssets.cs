@@ -17,7 +17,6 @@ public sealed class UiAssets
     readonly Dictionary<string, string> strings = new();
     public string Language = "en";
     readonly Dictionary<string, Font> fonts = new();
-    Dictionary<string, Character> fontSources;
     SystemFont fallbackFont;
 
     /// <summary>System font used where the game font has no glyph (and when gfxfontlib is missing).</summary>
@@ -31,15 +30,10 @@ public sealed class UiAssets
         Font result = Fallback;
         try
         {
-            if (fontSources == null)
+            var data = FontBytes(fontClass);
+            if (data != null)
             {
-                fontSources = new Dictionary<string, Character>();
-                var m = SwfMovie.Parse(Packs.Read("Resource/Gfx", "gfxfontlib.gfx"));
-                foreach (var c in m.Characters.Values) if (c.Font != null && c.ClassName != null) fontSources[c.ClassName] = c;
-            }
-            if (fontSources.TryGetValue(fontClass, out var src))
-            {
-                var ff = new FontFile { Data = TtfWriter.Build(src.Font), Antialiasing = TextServer.FontAntialiasing.Gray, Hinting = TextServer.Hinting.None, GenerateMipmaps = false };
+                var ff = new FontFile { Data = data, Antialiasing = TextServer.FontAntialiasing.Gray, Hinting = TextServer.Hinting.None, GenerateMipmaps = false };
                 ff.Fallbacks = new Godot.Collections.Array<Font> { Fallback };
                 result = ff;
             }
@@ -48,6 +42,23 @@ public sealed class UiAssets
         catch (Exception e) { GD.PushWarning($"UI font {fontClass}: {e.Message}"); }
         fonts[fontClass] = result;
         return result;
+    }
+
+    // The TTF of a flash font class, built from the glyph outlines in the shared font library. Pure, so it is built once per
+    // pack set and a prefetch may build it on another thread; a weak key keeps the cache from outliving the pack set.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<byte[]>>> fontData = new();
+
+    byte[] FontBytes(string fontClass)
+    {
+        var packs = Packs;
+        return fontData.GetOrCreateValue(packs).GetOrAdd(fontClass, k => new Lazy<byte[]>(() =>
+        {
+            var lib = Dependency("gfxfontlib");
+            if (lib == null) return null;
+            foreach (var c in lib.Characters.Values)
+                if (c.Font != null && c.ClassName == k) return TtfWriter.Build(c.Font);
+            return null;
+        })).Value;
     }
 
     public UiAssets(PackSet packs) { Packs = packs; }
@@ -90,7 +101,7 @@ public sealed class UiAssets
     public static void Prefetch(PackSet packs, params string[] keys)
     {
         var ui = new UiAssets(packs);
-        System.Threading.Tasks.Task.Run(() => { foreach (var k in keys) try { ui.Dependency(k); } catch { } });
+        System.Threading.Tasks.Task.Run(() => { foreach (var k in keys) try { ui.Dependency(k); } catch { } try { ui.FontBytes("$Font_SD_Neo_1"); } catch { } });
     }
 
     public JsonObject LoadLayout(string movie)
