@@ -39,11 +39,11 @@ public static class LayoutJson
             ["id"] = c.Id, ["image"] = c.AtlasImageId, ["x"] = c.AtlasRect.X, ["y"] = c.AtlasRect.Y, ["w"] = c.AtlasRect.W, ["h"] = c.AtlasRect.H,
         }).ToArray());
 
-        var bases = ClassBases(m);
+        var bases = ClassBases(m); var scripted = FrameScriptClasses(m);
         var syms = new JsonObject();
         foreach (var c in m.Characters.Values.Where(c => c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button
                      or CharKind.StaticText or CharKind.MorphShape).OrderBy(c => c.Id))
-            syms[c.Id.ToString()] = Symbol(m, c, bases);
+            syms[c.Id.ToString()] = Symbol(m, c, bases, scripted);
         o["symbols"] = syms;
         o["fonts"] = new JsonObject(m.FontNames.OrderBy(k => k.Key).Select(k => KeyValuePair.Create(k.Key.ToString(), (JsonNode)k.Value)));
 
@@ -102,8 +102,8 @@ public static class LayoutJson
             if (wanted.Count == 0) continue;
             var closure = new SortedSet<int>(); var imgIds = new SortedSet<int>();
             foreach (var id in wanted.Values) Close(im, id, closure, imgIds);
-            var syms = new JsonObject(); var ibases = ClassBases(im);
-            foreach (var id in closure) if (im.Characters.TryGetValue(id, out var c) && c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button or CharKind.StaticText or CharKind.MorphShape) syms[id.ToString()] = Symbol(im, c, ibases);
+            var syms = new JsonObject(); var ibases = ClassBases(im); var iscripted = FrameScriptClasses(im);
+            foreach (var id in closure) if (im.Characters.TryGetValue(id, out var c) && c.Kind is CharKind.Shape or CharKind.Sprite or CharKind.EditText or CharKind.Button or CharKind.StaticText or CharKind.MorphShape) syms[id.ToString()] = Symbol(im, c, ibases, iscripted);
             lib[key] = new JsonObject
             {
                 ["classes"] = new JsonObject(wanted.OrderBy(k => k.Key).Select(k => KeyValuePair.Create(k.Key, (JsonNode)k.Value))),
@@ -188,10 +188,32 @@ public static class LayoutJson
         return r;
     }
 
-    static JsonObject Symbol(SwfMovie m, Character c, Dictionary<string, List<string>> bases = null)
+    /// <summary>
+    /// The classes whose constructor calls addFrameScript (the frameN methods Flash compiles a timeline's frame code into).
+    /// A sprite with none of them has no frame code: it never stops, so once placed it plays its frames over and over.
+    /// </summary>
+    static HashSet<string> FrameScriptClasses(SwfMovie m)
+    {
+        var set = new HashSet<string>();
+        foreach (var (_, raw) in m.AbcBlocks)
+        {
+            var abc = Abc.AbcFile.Parse(raw);
+            foreach (var inst in abc.Instances)
+            {
+                var body = inst.Init >= 0 && inst.Init < abc.Methods.Length ? abc.Methods[inst.Init].Body : null;
+                if (body == null) continue;
+                foreach (var i in Abc.Disasm.Decode(body.Code))
+                    if ((i.Op == 0x46 || i.Op == 0x4F) && abc.Local(i.A) == "addFrameScript") { set.Add(abc.Name(inst.Name)); break; }
+            }
+        }
+        return set;
+    }
+
+    static JsonObject Symbol(SwfMovie m, Character c, Dictionary<string, List<string>> bases = null, HashSet<string> scripted = null)
     {
         var o = new JsonObject { ["kind"] = KindName(c.Kind), ["class"] = c.ClassName,
             ["bases"] = c.ClassName != null && bases != null && bases.TryGetValue(c.ClassName, out var bl) && bl.Count > 0 ? new JsonArray(bl.Select(x => (JsonNode)x).ToArray()) : null, ["export"] = c.ExportName, ["bounds"] = Rc(c.Bounds), ["scale9"] = Rc(c.Scale9) };
+        if (c.Kind == CharKind.Sprite && c.ClassName != null && scripted != null && scripted.Contains(c.ClassName)) o["frameScripts"] = true;
         switch (c.Kind)
         {
             case CharKind.Shape:

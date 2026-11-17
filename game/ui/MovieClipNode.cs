@@ -63,6 +63,8 @@ public partial class MovieClipNode : Node2D
     public int SymbolId;
     public string ClassName;
     public List<string> Bases = new();
+    /// <summary>The symbol's class has frame code (addFrameScript); without it the timeline never stops.</summary>
+    public bool FrameScripts;
     public Widget Widget;
     public Rect2 Bounds;
     public int Frame { get; private set; }
@@ -80,6 +82,7 @@ public partial class MovieClipNode : Node2D
         Movie = movie; Scope = scope; Timeline = timeline; Symbol = symbol; this.sx = sx; this.sy = sy;
         ClassName = (string)symbol?["class"];
         if (symbol?["bases"] is JsonArray b) foreach (var x in b) Bases.Add((string)x);
+        FrameScripts = (bool?)symbol?["frameScripts"] ?? false;
         Bounds = UiBuilder.Rc(symbol?["bounds"]);
         if (nine != null && symbol?["scale9"] != null) Bounds = nine.Map(Bounds);
         FrameCount = timeline == null ? 1 : (int)(timeline["frames"] ?? 1);

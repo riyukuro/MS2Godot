@@ -17,6 +17,9 @@ public static class MinimapEntities
         if (e == null) return null;
         if (!string.IsNullOrEmpty(frame) && e.HasLabel(frame)) e.GotoLabel(frame);
         e.HideNamed("m_hitarea");            // l4.hitArea = m_hitarea; m_hitarea.visible = false
+        // The clips inside the icon are placed playing, and one without frame code never stops: it loops (the player's
+        // pulse, 80 frames; the portal's turning swirl, minimap_entity_normalportal, 180 frames).
+        foreach (var c in e.AllClips().Skip(1)) if (!c.FrameScripts) c.Loop();
         if (inFieldNpc) e.Modulate = new Godot.Color(1, 1, 1, 0.7f);     // getEntityAlpha
         return e;
     }
