@@ -311,7 +311,7 @@ public sealed class NxController
                 point.Y < Mathf.Min(a.Y, Mathf.Min(b.Y, c.Y)) - eps || point.Y > Mathf.Max(a.Y, Mathf.Max(b.Y, c.Y)) + eps ||
                 point.Z < Mathf.Min(a.Z, Mathf.Min(b.Z, c.Z)) - eps || point.Z > Mathf.Max(a.Z, Mathf.Max(b.Z, c.Z)) + eps)
                 continue;
-            var n = (b - a).Cross(c - a);
+            var n = (c - a).Cross(b - a);                                       // the shape holds (v0, v2, v1)
             if (n.LengthSquared() < 1e-12f) continue;
             n = n.Normalized();
             if (ClosestOnTriangle(point, a, b, c).DistanceTo(point) > eps) continue;
