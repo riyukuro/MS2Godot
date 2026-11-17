@@ -210,11 +210,7 @@ public partial class Player
                 break;
         }
         var key = Anims?.Sequence(pc, true);
-        if (key != null && key != CurrentAnim)
-        {
-            Anim.Play(key, 0.15);
-            CurrentAnim = key;
-        }
+        if (key != null && key != CurrentAnim) PlaySequence(key, 1f, false);
     }
 
     /// <summary>RideeInterpolator each frame, after the mount's pose: the rider on the seat.</summary>

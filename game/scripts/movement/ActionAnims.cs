@@ -45,10 +45,35 @@ public sealed class ActionAnims
     public string Name(Act a) => names.TryGetValue(a, out var n) ? n : null;
     public bool Has(Act a) => names.ContainsKey(a);
 
+    // the body's actor file (female/female.kfm, male/male.kfm: the KFM whose model is the f_body / m_body we load) and its
+    // sequence ids by the lower-case kf name, which is the AnimationPlayer key
+    KfmFile kfm;
+    readonly Dictionary<string, int> seqIds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The KFM transition NiActorManager takes from one sequence to the next (NiKFMTool::GetTransition(cur, desired),
+    /// NiActorManager.cpp:624), or null when either sequence is not in the body's KFM.
+    /// </summary>
+    public KfmFile.Transition Transition(string from, string to)
+    {
+        if (kfm == null || from == null || to == null || !seqIds.TryGetValue(from, out int a) || !seqIds.TryGetValue(to, out int b)) return null;
+        return kfm.GetTransition(a, b);
+    }
+
+    /// <summary>The KFM's DEFAULT_NONSYNC transition (the one a row without its own transition uses).</summary>
+    public KfmFile.Transition DefaultTransition => kfm?.DefaultNonSync;
+
     /// <summary>Reads the action table and loads each movement sequence the body has (female/&lt;name&gt;.kf).</summary>
     public static ActionAnims Load(PackSet packs, ModelBuilder builder, ModelData md, AnimationPlayer player, string bodyDir)
     {
         var aa = new ActionAnims { builder = builder, md = md, player = player, bodyDir = bodyDir };
+        string kfmEntry = $"{bodyDir}/{bodyDir}.kfm";
+        if (packs.Exists(ModelBuilder.ModelArchive, kfmEntry))
+        {
+            aa.kfm = KfmFile.Load(packs.Read(ModelBuilder.ModelArchive, kfmEntry));
+            foreach (var sq in aa.kfm.Sequences)
+                aa.seqIds.TryAdd(Path.GetFileNameWithoutExtension(sq.KfPath.Replace('\\', '/')), sq.Id);
+        }
         var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/pcactiondata.xml")));
         var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");

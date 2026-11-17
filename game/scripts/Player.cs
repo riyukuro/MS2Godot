@@ -268,6 +268,7 @@ public partial class Player : CharacterBody3D
         }
         else wallHit = false;
         TurnTowardTargetYaw(dt);
+        TickBlendHold(dt);
         UpdateAnimation();
 
         if (GlobalPosition.Y < FallReturnY)              // fell out of the field: back to the spawn point
@@ -688,11 +689,46 @@ public partial class Player : CharacterBody3D
     {
         var name = Anims?.Name(a);
         if (name == null || !Anim.HasAnimation(name)) return;
-        if (name != CurrentAnim || restart)
+        if (name != CurrentAnim || restart) PlaySequence(name, speed, restart);
+    }
+
+    // a BLEND transition's destination stays on its first frame until the blend ends: the time left, and the rate it then plays at
+    float blendHold = -1, blendHoldSpeed = 1;
+
+    /// <summary>
+    /// Changes the body's sequence the way NiActorManager does when the target animation changes: it takes the KFM's
+    /// transition from the current sequence to the new one (NiKFMTool::GetTransition, NiActorManager.cpp:624). A row with no
+    /// transition of its own uses the file's DEFAULT_NONSYNC one (NiKFMTool::ReadBinary, NiKFMTool.cpp:1459-1466), BLEND 0.1
+    /// in female.kfm and male.kfm; the jump's up to down and down to land rows are BLEND 0.00001, a cut.
+    /// A BLEND with no blend pairs starts at once (NiActorManager.cpp:673-724, BlendFromSequence over the duration).
+    /// NiControllerSequence::StartBlend (NiControllerSequence.cpp:1096-1117) activates the destination as a transition that
+    /// holds its start frame (TRANSDEST, m_bHoldDestFrame) while the source plays on and eases out. When the blend ends the
+    /// destination starts from that frame (NiControllerSequence.cpp:389-406). A CROSSFADE plays both. The same sequence
+    /// again with restart, and the first sequence, start with no blend.
+    /// </summary>
+    public void PlaySequence(string name, float speed, bool restart)
+    {
+        var tr = string.IsNullOrEmpty(CurrentAnim) || name == CurrentAnim ? null : Anims?.Transition(CurrentAnim, name) ?? Anims?.DefaultTransition;
+        blendHold = -1;
+        if (tr == null) Anim.Play(name, 0, speed);
+        else if (tr.Type == Ms2.Formats.Model.KfmFile.TransitionType.Blend)
         {
-            Anim.Play(name, 0.15, speed);
-            if (restart) Anim.Seek(0, true);
-            CurrentAnim = name;
+            Anim.Play(name, tr.Duration, 0);
+            blendHold = tr.Duration; blendHoldSpeed = speed;
         }
+        else Anim.Play(name, tr.Duration, speed);
+        if (restart) Anim.Seek(0, true);
+        CurrentAnim = name;
+    }
+
+    /// <summary>The end of a BLEND: the held destination starts from its first frame at its rate.</summary>
+    void TickBlendHold(float dt)
+    {
+        if (blendHold < 0) return;
+        blendHold -= dt;
+        if (blendHold > 0) return;
+        blendHold = -1;
+        Anim.Play(CurrentAnim, 0, blendHoldSpeed);
+        Anim.Seek(0, true);
     }
 }
