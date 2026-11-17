@@ -81,12 +81,15 @@ public static class LobbyLayout
 
     /// <summary>
     /// btnsAlignment(btn, getUIScale, height, x, y) with (x, y) the stage's bottom left in the dialog's units: the button's
-    /// origin 18 * scale in from the left and its <paramref name="height"/> plus 12 * scale up from the bottom.
+    /// origin 18 * scale in from the left and its <paramref name="height"/> plus 12 * scale up from the bottom. Height, x and y
+    /// are the method's int parameters (a3, a4, a5; with a stage, x and y are (int) of the globalToLocal point), so the AS3
+    /// coercion truncates each toward zero before the sums.
     /// </summary>
     public static Vector2 BtnsAlignment(Vector2 bottomLeft, float height, Vector2 stage)
     {
         float g = AsUiScale(stage);
-        return new Vector2(bottomLeft.X + AsRound(18 * g), bottomLeft.Y - height - AsRound(12 * g));
+        int x = (int)bottomLeft.X, y = (int)bottomLeft.Y, h = (int)height;
+        return new Vector2(x + AsRound(18 * g), y - h - AsRound(12 * g));
     }
 
     /// <summary>
