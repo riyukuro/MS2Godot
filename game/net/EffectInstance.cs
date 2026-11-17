@@ -17,7 +17,7 @@ public sealed partial class EffectInstance : Node3D
     {
         public ParticleSystemDef Def; public MultiMeshInstance3D Node; public MultiMesh MM; public ShaderMaterial Mat;
         public Vector3[] Pos, Vel; public float[] Age, Life, Size, Rot, RotSpeed, Frame0; public int Count;
-        public double[] Accum;
+        public double[] Accum; public float[] Buf;
     }
 
     readonly EffectScene scene; readonly ModelBuilder mb;
@@ -192,6 +192,8 @@ void fragment() {
     float R() => (float)rng.NextDouble();
     float Spread(float v) => v * (2 * R() - 1);
 
+    const float FarSq = 12000f * 12000f;
+
     void Advance(float dt)
     {
         t += dt;
@@ -229,14 +231,18 @@ void fragment() {
             }
         }
 
+        // beyond the draw distance (camera far 18000, fog out at 20000 in most fields) nothing of a particle system shows: skip the simulation
+        if (camLocal.LengthSquared() > FarSq) { foreach (var ps in systems) ps.MM.VisibleInstanceCount = 0; return; }
         foreach (var ps in systems) Step(ps, dt, camLocal);
     }
+
+    readonly List<(Vector3 axis, float pct)> drags = new();
 
     void Step(PSys ps, float dt, Vector3 camLocal)
     {
         var d = ps.Def;
         // forces on at this time
-        Vector3 accel = Vector3.Zero; var drags = new List<(Vector3 axis, float pct)>();
+        Vector3 accel = Vector3.Zero; drags.Clear();
         foreach (var f in d.Forces)
         {
             bool on = f.Active;
@@ -274,6 +280,7 @@ void fragment() {
             }
         // draw
         var up = Vector3.Back;
+        var buf = ps.Buf ??= new float[ps.Pos.Length * 20];
         for (int i = 0; i < ps.Count; i++)
         {
             float n = ps.Age[i] / ps.Life[i];
@@ -301,16 +308,21 @@ void fragment() {
                 float c = Mathf.Cos(ps.Rot[i]), s = Mathf.Sin(ps.Rot[i]);
                 b = new Basis((right * c + upv * s) * size, (upv * c - right * s) * size, toCam);
             }
-            ps.MM.SetInstanceTransform(i, new Transform3D(b, pos));
-            ps.MM.SetInstanceColor(i, color);
+            // one buffer write per system instead of three engine calls per particle: 12 transform floats (rows), colour, custom data
+            int o = i * 20;
+            buf[o] = b.X.X; buf[o + 1] = b.Y.X; buf[o + 2] = b.Z.X; buf[o + 3] = pos.X;
+            buf[o + 4] = b.X.Y; buf[o + 5] = b.Y.Y; buf[o + 6] = b.Z.Y; buf[o + 7] = pos.Y;
+            buf[o + 8] = b.X.Z; buf[o + 9] = b.Y.Z; buf[o + 10] = b.Z.Z; buf[o + 11] = pos.Z;
+            buf[o + 12] = color.R; buf[o + 13] = color.G; buf[o + 14] = color.B; buf[o + 15] = color.A;
             float frame = ps.Frame0[i];
             if (d.NumFrames > 1)
             {
                 float u = Mathf.Clamp((n - (float)d.InitialTime) / Mathf.Max((float)(d.FinalTime - d.InitialTime), 1e-4f), 0f, 1f);
                 frame = (ps.Frame0[i] + Mathf.Floor(u * d.NumFrames * (d.PingPong ? 1 : 0.999f))) % Mathf.Max(d.FramesAcross * d.FramesDown, 1);
             }
-            ps.MM.SetInstanceCustomData(i, new Color(frame, 0, 0, 0));
+            buf[o + 16] = frame; buf[o + 17] = 0; buf[o + 18] = 0; buf[o + 19] = 0;
         }
+        if (ps.Count > 0) ps.MM.Buffer = buf;
         ps.MM.VisibleInstanceCount = ps.Count;
     }
 
