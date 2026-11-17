@@ -1,8 +1,13 @@
+using System.Buffers.Text;
 using System.IO.Compression;
+using System.Numerics;
+using System.Security.Cryptography;
 using System.Reflection;
 using Microsoft.Win32.SafeHandles;
 using Maple2.File.IO;
 using Maple2.File.IO.Crypto.Common;
+using Maple2.File.IO.Crypto.Keys;
+using Maple2.File.IO.Crypto.Stream;
 
 namespace Ms2.Formats.Pack;
 
@@ -93,6 +98,45 @@ public sealed class PackSet : IDisposable
     static MethodInfo decrypt;
     static bool noDecrypt;
 
+    // The package's AES entries are base64 text of a CTR-style stream: keystream block i is AES-ECB(key) of the 128-bit
+    // big-endian counter iv + i (CipherKeys.GetKeyAndIV gives key and iv), xored over the decoded bytes. The package makes one
+    // transform call and one 16-byte array per block and runs over the base64 length (a third more blocks than bytes). Here
+    // the same standard AES (System.Security.Cryptography.Aes, AES-NI) makes exactly the needed blocks in one call and the
+    // xor is vectorized. Returns null for anything else (not an AES entry, any exception): the package's decrypt then runs.
+    internal static long FastAesHits, FastAesMisses;
+
+    static byte[] FastAes(IPackFileHeader h, Encryption flag, byte[] src)
+    {
+        try
+        {
+            if (((uint)flag & 0xee000000) != 0xee000000) return null;
+            CipherKeys.GetKeyAndIV(h.Version, (uint)h.CompressedFileSize, out var key, out var iv);
+            if (key == null || iv == null || iv.Length != 16 || (key.Length != 16 && key.Length != 24 && key.Length != 32)) return null;
+            var dec = new byte[Base64.GetMaxDecodedFromUtf8Length(src.Length)];
+            if (Base64.DecodeFromUtf8(src, dec, out var used, out var written) != System.Buffers.OperationStatus.Done || used != src.Length) return null;
+            if (written != dec.Length) Array.Resize(ref dec, written);
+            int blocks = (written + 15) / 16;
+            var ks = new byte[blocks * 16];
+            for (int b = 0; b < blocks; b++)
+            {
+                iv.CopyTo(ks, b * 16);
+                for (int k = 15; k >= 0 && ++iv[k] == 0; k--) { }
+            }
+            using (var aes = Aes.Create())
+            {
+                aes.Key = key;
+                aes.EncryptEcb(ks, ks, PaddingMode.None);
+            }
+            int i = 0, vs = Vector<byte>.Count;
+            for (; i + vs <= written; i += vs)
+                (new Vector<byte>(dec, i) ^ new Vector<byte>(ks, i)).CopyTo(dec, i);
+            for (; i < written; i++) dec[i] ^= ks[i];
+            Interlocked.Increment(ref FastAesHits);
+            return dec;
+        }
+        catch (Exception) { Interlocked.Increment(ref FastAesMisses); return null; }
+    }
+
     byte[] ReadPlain(Archive a, PackFileEntry e)
     {
         var h = e.FileHeader;
@@ -115,9 +159,11 @@ public sealed class PackSet : IDisposable
                 {
                     a.Handle ??= File.OpenHandle(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                     if (RandomAccess.Read(a.Handle, buf, (long)h.Offset) != buf.Length) return Fallback(a, e);
-                    var flag = (Encryption)((uint)h.BufferFlag & ~ZlibFlag);   // the package's decrypt, without its inflate
-                    plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
                 }
+                var flag = (Encryption)((uint)h.BufferFlag & ~ZlibFlag);   // the package's decrypt, without its inflate
+                plain = FastAes(h, flag, buf);
+                if (plain == null)
+                    lock (gate) plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
                 if (((uint)h.BufferFlag & ZlibFlag) != ZlibFlag) return plain.Length == (int)h.FileSize ? plain : Fallback(a, e);
                 var output = new byte[(int)h.FileSize];
                 using var z = new ZLibStream(new MemoryStream(plain, false), CompressionMode.Decompress);
