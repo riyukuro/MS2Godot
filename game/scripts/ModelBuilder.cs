@@ -187,7 +187,7 @@ public sealed class ModelBuilder
         return sm;
     }
 
-    static Shader fieldShader, fieldBlendShader, fieldAddShader;
+    static Shader fieldShader, fieldBlendShader, fieldAddShader, fieldShellShader;
 
     /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE).</summary>
     static Shader FieldShader(ModelMesh m)
@@ -199,9 +199,31 @@ public sealed class ModelBuilder
             int nl = code.IndexOf('\n', code.IndexOf("shader_type")) + 1;
             fieldBlendShader = new Shader { Code = code.Insert(nl, "#define BLEND\n") };
             fieldAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n") };
+            fieldShellShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define SHELL\n") };
         }
         if (!m.AlphaBlendOn) return fieldShader;
         return ((m.AlphaFlags >> 5) & 15) == 0 ? fieldAddShader : fieldBlendShader;
+    }
+
+    /// <summary>
+    /// A blended fluid cube mesh as the client's alpha shell. FUN_1413fa4c0 turns on the z-buffer write of a fluid cube and
+    /// marks it into shell group 1 (AlphaShellComposite::MarkScene); Ms2RenderListProcessor hands those meshes to the
+    /// group's AlphaShellComposite, whose vfunc_0 draws every shell first with the blend set to ZERO / ONE (depth only,
+    /// z test LESSEQUAL) and then again with its own blend. Only the nearest fluid surface of each pixel gets colour.
+    /// Here the first pass is the SHELL form of the field shader and the mesh's own blended material is its next pass.
+    /// Godot sorts a next pass by its render priority, not right after its source, so the colour pass gets priority 1: the
+    /// depth passes of every fluid mesh come before any fluid colour, as in the composite. Not the client's order: the
+    /// composite is sorted among the other alpha objects at the mean depth of its shells (AlphaShellComposite::Update),
+    /// while here the fluid colour comes after every blended object of priority 0.
+    /// </summary>
+    public static void MakeFluidShell(ArrayMesh mesh)
+    {
+        if (mesh.GetSurfaceCount() == 0 || mesh.SurfaceGetMaterial(0) is not ShaderMaterial colour) return;
+        var shell = (ShaderMaterial)colour.Duplicate();
+        shell.Shader = fieldShellShader;
+        colour.RenderPriority = 1;
+        shell.NextPass = colour;
+        mesh.SurfaceSetMaterial(0, shell);
     }
 
     Material BuildMaterial(ModelMesh m, bool instanceColor)

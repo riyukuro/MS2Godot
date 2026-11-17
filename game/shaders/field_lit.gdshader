@@ -7,7 +7,8 @@
 // ambient and diffuse. Vertex colours come in CUSTOM0 and replace both when the NIF's
 // NiVertexColorProperty says so. A glow map adds its colour on top. ModelBuilder compiles this three
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
-// (src alpha / one); both blended forms skip the depth write. The field's point and spot lights are added to the
+// (src alpha / one); both blended forms skip the depth write. A fourth form, SHELL (with BLEND), is the depth-only
+// first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell). The field's point and spot lights are added to the
 // diffuse term (ms2_lights.gdshaderinc). The opaque form is also lit by the field's point and spot
 // lights (FieldLights) through Godot's own lighting; the blended forms are not. No cast shadows yet.
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
@@ -15,6 +16,9 @@
 // between its first and last key over the controller's start..stop range, looping.
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
+#ifdef SHELL
+render_mode unshaded, blend_mix, depth_draw_always;
+#else
 #ifdef ADD
 render_mode unshaded, blend_add, depth_draw_never;
 #else
@@ -23,6 +27,7 @@ render_mode unshaded, blend_mix, depth_draw_never;
 #else
 render_mode ambient_light_disabled, specular_disabled;
 #define POINT_LIT
+#endif
 #endif
 #endif
 
@@ -131,5 +136,8 @@ void fragment() {
 #endif
 #ifdef BLEND
 	ALPHA = a;
+#endif
+#ifdef SHELL
+	ALPHA = 0.0;
 #endif
 }
