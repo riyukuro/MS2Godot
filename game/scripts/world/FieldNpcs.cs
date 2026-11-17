@@ -102,6 +102,9 @@ public sealed class FieldNpcs
         body.Scale = new Vector3(scale, scale, scale);
         BlobShadow.Add(root, shadowRadius, 1f);
         parent.AddChild(root);
+        // the npc keeps animating while off screen (observed, not cited): no per-npc off-screen pause was found in the client.
+        // The update gate found is COptimizer::IsUpdateEnabled (optimizer.cpp:639), a global switch (both m_nUpdateOn flags)
+        // read by the ground-effect and magic code, not a visibility test.
         var player = body.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         foreach (var s in sequences)
         {
