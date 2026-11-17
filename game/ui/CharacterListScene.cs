@@ -17,9 +17,10 @@ namespace Ms2Godot.Ui;
 /// stands at its spawn point dressed in its equips (UICharacterListDialog::PreviewCharacter -> FUN_14107b7e0).
 /// uicharacterlistdialog (built from the player's own Gfx.m2d) runs on top, filled from the game flow's list (the stub
 /// list when the scene runs alone).
-/// Selecting another character goes through OnSelectCharacter -> EnterSelectScene -> EnterSelectMode, which loads the
-/// select map of the new character's job; the preview follows once the map is in (CSceneStateMulti vfunc_1 ->
-/// PreviewSelectedCharacter). Here every selection change reloads the scene.
+/// Selecting another character goes through OnSelectCharacter -> EnterSelectScene -> EnterSelectMode -> LoadMap of the
+/// new character's select map; the preview follows once the map is in (CSceneStateMulti vfunc_1 ->
+/// PreviewSelectedCharacter). As the restored client shows it: on the same map the field stays and only the character
+/// is swapped (a hard cut); on another map the old frame crossfades into the new field; the selected row again does nothing.
 /// Start / Enter / a double click start the game (OnGameStart) or begin character creation on an empty slot (OnCreatePC).
 /// Args after `--`: --shots DIR renders shots and quits; with --resize WxH the window is resized after the first shot and
 /// a second one taken.
@@ -89,6 +90,7 @@ public partial class CharacterListScene : LobbyFieldScene
 
         BuildList();
         PreviewSelected();
+        StartCrossfade();
         // the client sizes every movie to the back buffer: on a window resize the open dialogs align again
         // (UIDialog::vfunc_43 -> alignment), as on the login screen
         GetViewport().SizeChanged += QueueRelayout;
@@ -167,22 +169,76 @@ public partial class CharacterListScene : LobbyFieldScene
     void OnHost(string movieName, string method, object[] a)
     {
         if (movieName != UICharacterListDialogContract.Movie || method != UICharacterListDialogContract.ToHost.OnSelectCharacter) return;
-        // OnSelectCharacter(charSN): m_188 = the character of that id (none for an empty slot); a change turns the dialog's
-        // input off (FUN_1412761e0(m_30, 0), m_180) and posts 0x4c8 -> EnterSelectScene -> EnterSelectMode, which loads the
-        // select map of the new selection's job group again (WorldService::LoadMap only skips a map still loading), and
-        // the preview comes with the loaded map. Here the scene reloads.
+        // UICharacterListDialog OnSelectCharacter(charSN): m_188 = the character of that id (none for an empty slot). Only
+        // `spPrev != m_188 || (m_188 == 0 && m_220 == 0)` goes on: the selected character clicked again does nothing.
+        // Otherwise the dialog's input goes off (FUN_1412761e0(m_30, 0), m_180 = 1, back on in PreviewCharacter) and 0x4c8
+        // is posted -> EnterSelectScene -> EnterSelectMode -> WorldService::LoadMap(select map, 1, 0).
         var list = Flow.Session.List();
         string sn = a.Length > 0 ? a[0] as string : null;
         int index = list.FindIndex(c => c.User.CharacterId.ToString() == sn);
+        var prev = Selected();
+        var next = index >= 0 ? list[index] : null;
+        if (next != null && ReferenceEquals(prev, next)) return;
         Flow.Session.SelectedIndex = index >= 0 ? index : logic.SelectedIndex;
         logic.MouseEnabled = false;
-        CallDeferred(MethodName.Reload);
+        // The restored client (front-end captures, clips 1_b/1_d/1_g): on the select map already up the field is not loaded
+        // again and keeps animating, and the new character appears in one frame (a hard cut); on another job's map the old
+        // map and character crossfade into the new ones, with no black frame and no loading screen.
+        int nextMap = tables?.SelectMap(SelectedJobGroup()) ?? -1;
+        if (tables != null && nextMap == mapId) CallDeferred(MethodName.SwapPreview);
+        else CrossfadeReload();
+    }
+
+    /// <summary>The same select map: the field stays, the preview is replaced (PreviewSelectedCharacter) and input comes back.</summary>
+    void SwapPreview()
+    {
+        PreviewSelected();
+        logic.MouseEnabled = true;
+    }
+
+    /// <summary>The frame on screen when the map changes; the next scene fades it out over its own first frames.</summary>
+    static ImageTexture fadeFrom;
+    /// <summary>Crossfade length, from the restored client's 10 fps strip of a job change (about 0.4-0.5 s).</summary>
+    const double CrossfadeSeconds = 0.45;
+
+    /// <summary>
+    /// Another map: the frame with the new highlight is kept (rendered once more, so the moved highlight is in it), the scene
+    /// is loaded again on the new map, and the kept frame fades out over it.
+    /// </summary>
+    async void CrossfadeReload()
+    {
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        if (!IsInsideTree()) return;
+        fadeFrom = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+        Reload();
     }
 
     void Reload()
     {
         uiPacks?.Dispose();
         GetTree().ReloadCurrentScene();
+    }
+
+    double fadeStart = -1;
+    /// <summary>The kept frame of the previous map over the new field, faded out.</summary>
+    void StartCrossfade()
+    {
+        var from = fadeFrom;
+        fadeFrom = null;
+        if (from == null) return;
+        var top = new CanvasLayer { Name = "Crossfade", Layer = 100 };
+        var rect = new TextureRect
+        {
+            Texture = from, Size = GetViewport().GetVisibleRect().Size,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        top.AddChild(rect);
+        AddChild(top);
+        var tween = CreateTween();
+        tween.TweenProperty(rect, "modulate:a", 0f, CrossfadeSeconds);
+        tween.TweenCallback(Callable.From(top.QueueFree));
+        fadeStart = Time.GetTicksMsec() / 1000.0;
     }
 
     public override void _Input(InputEvent e)
@@ -198,12 +254,21 @@ public partial class CharacterListScene : LobbyFieldScene
         }
     }
 
+    /// <summary>Shots step, kept over the reloads of a map change.</summary>
+    static int shotStep;
+    bool midSaved;
+
     public override void _Process(double delta)
     {
         base._Process(delta);
         if (shotDir == null || logic == null) return;
         frames++;
-        if (frames == 60) Save($"charselect_{Flow.Session.SelectedIndex}.png");
+        if (!midSaved && fadeStart >= 0 && Time.GetTicksMsec() / 1000.0 - fadeStart >= 0.2)
+        {
+            midSaved = true;
+            Save($"charselect_{shotStep}_crossfade.png");
+        }
+        if (frames == 60) Save($"charselect_{shotStep}_{Flow.Session.SelectedIndex}.png");
         if (resizeTo != null)
         {
             // --resize WxH: the window resized after the scene is up, then one shot
@@ -211,13 +276,24 @@ public partial class CharacterListScene : LobbyFieldScene
             if (frames == 90) { Save($"charselect_resized_{resizeTo.Value.X}x{resizeTo.Value.Y}.png"); GetTree().Quit(); }
             return;
         }
+        if (frames != 61 && frames != 120 && frames != 180) return;
+        // 0 -> 1 (another job's map: crossfade), 1 -> 3 (the first empty slot, map 2: crossfade), 3 -> 4 (another empty
+        // slot on the same map: no reload), 4 again (the selected row: nothing), then quit
         if (frames == 61)
         {
-            // each selection loads its lobby map again: 0 -> 1 (another job's map), 1 -> 3 (the first empty slot), then quit
-            if (Flow.Session.SelectedIndex == 0) logic.Select(1, true);
-            else if (Flow.Session.SelectedIndex == 1) logic.Select(3, true);
+            int step = shotStep++;
+            if (step == 0) logic.Select(1, true);
+            else if (step == 1) logic.Select(3, true);
+            else if (step == 2) { GD.Print($"same map: scene {GetInstanceId()}"); logic.Select(4, true); }
             else GetTree().Quit();
         }
+        else if (frames == 120 && shotStep == 3)
+        {
+            GD.Print($"same map: scene {GetInstanceId()} after the select (no reload)");
+            Save($"charselect_3_{Flow.Session.SelectedIndex}.png");
+            logic.Select(4, true);
+        }
+        else if (frames == 180 && shotStep == 3) { Save("charselect_3_reclick.png"); GetTree().Quit(); }
     }
 
     void Save(string name)
