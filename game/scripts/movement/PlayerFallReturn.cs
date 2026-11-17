@@ -74,7 +74,8 @@ public partial class Player
     /// TrafficLimitMs old (IsRecordDue, state.cpp:411-423). A new record is made when the feet first go below the world
     /// box's floor (forced), when there is none, or when the state, the move direction (m_pos98) or the target yaw changed or a second
     /// passed since the current one; an unsent current record goes out first, except that a walk record left for another
-    /// state goes out in one packet with the new record. Not modelled: m_b15d5 and the state's own vfunc_22 test.
+    /// state goes out in one packet with the new record. The state's own test (vfunc_22, StateVfunc22) also makes one: a
+    /// walk makes a record every frame. Not modelled: m_b15d5.
     /// </summary>
     void StateSync(float dt)
     {
@@ -94,7 +95,8 @@ public partial class Player
             fallMarked = true;
             force = true;
         }
-        if (!(force || current == null || State != current.State || moveDir != current.Dir || syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw))
+        if (!(force || current == null || State != current.State || moveDir != current.Dir || syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw
+              || StateVfunc22()))
             return;
         bool flushAfter = false;
         if (current != null)
@@ -115,6 +117,33 @@ public partial class Player
         QueueCurrent();                                                              // FUN_1417b7670
         current = rec;
         if (flushAfter) Flush();
+    }
+
+    double swimRideTick;                  // StateSwim m_nMode: the tick of its last new record, set on entering (stateswim.cpp:92)
+
+    /// <summary>
+    /// The current state's vfunc_22(spCur), the last test of the new-record condition (mypc.cpp:2311). State::vfunc_22 is 0
+    /// (state.cpp:732). StateWalk's is always 1 (statewalk.cpp:392-395), so every walking frame makes a record and the
+    /// unsent one before it goes out. StateSwim's is 1 once a second while riding (stateswim.cpp:273-288); its other test,
+    /// and those of StateIdle (stateidle.cpp:510) and StateJump (statejump.cpp:346), compare the record's sub-state, which
+    /// this model's states do not change, so they are 0.
+    /// </summary>
+    bool StateVfunc22()
+    {
+        switch (State)
+        {
+            case MoveState.Walk:
+                return true;
+            case MoveState.Swim:
+                if (Mount != null && syncClock - swimRideTick >= 1.0)
+                {
+                    swimRideTick = syncClock;
+                    return true;
+                }
+                return false;
+            default:
+                return false;
+        }
     }
 
     /// <summary>FUN_1417b7720 (optimize mode): an unsent current record joins the packet and stays current.</summary>

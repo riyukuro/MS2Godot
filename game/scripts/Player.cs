@@ -311,6 +311,7 @@ public partial class Player : CharacterBody3D
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
         State = s;
         stateTime = 0;
+        if (s == MoveState.Swim) swimRideTick = syncClock;                   // StateSwim::vfunc_4: m_nMode = the server tick
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();
         if (s == MoveState.Land) Landed?.Invoke();
