@@ -28,6 +28,7 @@ public partial class HudScene : Node
     TargetFrame target;                     // UIUpperHpBar
     DamageText damageText;
     PlayerHpBar playerBar;
+    DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
 
     public override void _Ready()
     {
@@ -47,6 +48,8 @@ public partial class HudScene : Node
         u = UiScale.For(window); stage = UiScale.MovieStage(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
         var constants = new ClientConstants(assets.Packs);
+        AddChild(damageEffect = new DamageEffect(assets, constants, window));                             // UIDamageEffect
+        damageEffect.Hp(data.Player.HpCurrent, data.Player.HpMax);
         var nameTag = new PlayerNameTag(assets, constants, data.Player.Name, window);                     // the own PC's UINameTag
         AddChild(nameTag);
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
