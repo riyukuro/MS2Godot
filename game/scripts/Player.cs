@@ -391,6 +391,10 @@ public partial class Player : CharacterBody3D
         {
             // FUN_1412407f0: dz = g * fallTime * dt + g dt^2 / 2
             v.Y = Gravity * airTime + 0.5f * Gravity * dt;
+            // and m_kVelocity * dt only when bMove = vfunc_99(0) && the state's move is ZERO (pcbase.cpp:1782): StateFall
+            // moves by ZERO (statefall.cpp:158-159), so it drifts only after 100 ms of falling, more than 0.3 m above the
+            // ground and not touching down (pcbase.cpp:2544-2556). StopJump's timer reset holds a warp's first frames.
+            if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
         }
         Velocity = v;
 
