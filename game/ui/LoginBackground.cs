@@ -38,19 +38,34 @@ public static class LoginBackground
     public static string MovieName(string url) => System.IO.Path.GetFileNameWithoutExtension(url ?? "").ToLowerInvariant();
 
     /// <summary>
-    /// Background.onResizeNoScroll on a stage of <paramref name="window"/> pixels for the loaded movie
-    /// <paramref name="content"/> (unscaled): its first child's m_size (1920 x 1200) is scaled uniformly to cover the
-    /// stage (by height when m_size is wider than the stage, else by width) and centred.
+    /// The loaded movie's unscaled sizes onResizeNoScroll reads: a1.width / height (Flash counts m_size, hidden or not)
+    /// and m_size's size in the title sprite. Taken once, before <see cref="Play"/> hides m_size.
     /// </summary>
-    public static void Fit(MovieClipNode content, Vector2 window)
+    public readonly record struct Measure(Vector2 Raw, Vector2 MSize);
+
+    public static Measure Measured(MovieClipNode content)
+    {
+        var ms = Title(content)?.ChildNamed("m_size")?.Node as MovieClipNode;
+        var raw = content.ContentRect()?.Size ?? new Vector2(1920, 1200);
+        var msSize = ms != null ? ms.Bounds.Size * new Vector2(ms.Transform.X.Length(), ms.Transform.Y.Length()) : raw;
+        return new Measure(raw, msSize);
+    }
+
+    /// <summary>
+    /// Background.onResizeNoScroll on a stage of <paramref name="window"/> pixels for the loaded movie
+    /// <paramref name="content"/>: its first child's m_size (1920 x 1200) is scaled uniformly to cover the
+    /// stage (by height when m_size is wider than the stage, else by width) and centred. It runs on load (loadComplete)
+    /// and on every window resize (GFxMovieBackground::vfunc_16 invokes onResize), with the movie at its current scale.
+    /// </summary>
+    public static void Fit(MovieClipNode content, Vector2 window) => Fit(content, window, Measured(content));
+
+    public static void Fit(MovieClipNode content, Vector2 window, Measure m)
     {
         uint l4 = (uint)window.Y, l5 = (uint)window.X;                  // stageHeight, stageWidth
-        var ms = Title(content)?.ChildNamed("m_size")?.Node as MovieClipNode;
-        // a1.width / height: the loaded movie's bounds as Flash counts them, m_size included (call before Play hides it)
-        var raw = content.ContentRect()?.Size ?? new Vector2(1920, 1200);
-        // l9 = m_size: its width / height in the title sprite (a1 is still unscaled: scaleX = scaleY = 1)
-        var msSize = ms != null ? ms.Bounds.Size * new Vector2(ms.Transform.X.Length(), ms.Transform.Y.Length()) : raw;
-        uint l2 = (uint)Math.Ceiling(msSize.X), l3 = (uint)Math.Ceiling(msSize.Y);
+        var s = content.Scale;                                          // a1.scaleX / scaleY
+        var raw = m.Raw * s;                                            // a1.width / height
+        // l9 = m_size: ceil(l9.width * a1.scaleX), ceil(l9.height * a1.scaleY)
+        uint l2 = (uint)Math.Ceiling(m.MSize.X * s.X), l3 = (uint)Math.Ceiling(m.MSize.Y * s.Y);
         uint l11 = l2, l12 = l3;
         uint l13 = (uint)Math.Ceiling(raw.Y), l14 = (uint)Math.Ceiling(raw.X);
         if (l5 != l11 || l4 != l12)
@@ -71,10 +86,10 @@ public static class LoginBackground
             }
         }
         // a1.width = ceil(l14), a1.height = ceil(l13): the scale that gives those sizes
-        var scale = new Vector2(l14 / raw.X, l13 / raw.Y);
+        var scale = new Vector2(l14 / m.Raw.X, l13 / m.Raw.Y);
         content.Scale = scale;
         // x / y from l9.getRect(this): m_size's size at that scale, centred on the stage
-        content.Position = new Vector2((l5 - msSize.X * scale.X) * 0.5f, (l4 - msSize.Y * scale.Y) * 0.5f);
+        content.Position = new Vector2((l5 - m.MSize.X * scale.X) * 0.5f, (l4 - m.MSize.Y * scale.Y) * 0.5f);
     }
 
     /// <summary>

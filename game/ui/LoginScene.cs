@@ -7,17 +7,19 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The first UI scene: the login backdrop (uiscenelogin) and the login dialog (uilogindialog) built from the player's
 /// own Gfx.m2d. Tab and Enter work, the Login button raises the contract callback (printed, no network).
-/// Args after `--`: --shots DIR renders a default and a demo shot (hover, typed id) and quits.
+/// Args after `--`: --shots DIR renders a default and a demo shot (hover, typed id) and quits; with --resize WxH the window
+/// is then resized and a third shot taken.
 /// </summary>
 public partial class LoginScene : Control
 {
     UiAssets assets;
-    MovieClipNode dialogRoot;
+    MovieClipNode dialogRoot, background;
+    LoginBackground.Measure backgroundSize;
     LoginDialogLogic logic;
     UiWidgets.MouseRouter mouse;
     string shotDir;
+    Vector2I? resizeTo;
     int frames;
-    int stage;
 
     public override void _EnterTree() => LobbyLayout.UseWindowPixels(this);
 
@@ -25,18 +27,63 @@ public partial class LoginScene : Control
     {
         var args = OS.GetCmdlineUserArgs();
         Color clear = new Color(0.1f, 0.1f, 0.12f);
-        for (int i = 0; i + 1 < args.Length; i++) { if (args[i] == "--shots") shotDir = args[i + 1]; if (args[i] == "--clear") clear = Color.FromHtml(args[i + 1]); }
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "--shots") shotDir = args[i + 1];
+            if (args[i] == "--clear") clear = Color.FromHtml(args[i + 1]);
+            if (args[i] == "--resize" && args[i + 1].Split('x') is [var w, var h] && int.TryParse(w, out int rw) && int.TryParse(h, out int rh)) resizeTo = new Vector2I(rw, rh);
+        }
         var data = Settings.DataDir;
         if (string.IsNullOrEmpty(data)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
 
         assets = new UiAssets(new PackSet(data));
         var window = GetViewportRect().Size;    // window pixels (LobbyLayout.UseWindowPixels)
-        float u = UiScale.For(window);
-        var stage = UiScale.MovieStage(window);
         RenderingServer.SetDefaultClearColor(clear);
 
         AddBackground(window, args.Contains("--flow-shots") || shotDir != null);
+        BuildDialog(window, shotDir == null);
+        logic.InitData("", false, true, "KR");
+        UiBridge.ToHost += (m, n, a) => { };
+        // the client sizes every movie to the back buffer: on a window resize the backdrop runs onResize
+        // (GFxMovieBackground::vfunc_16) and the open dialogs align again (UIDialog::vfunc_43 -> alignment)
+        GetViewport().SizeChanged += QueueRelayout;
+    }
 
+    public override void _ExitTree() => GetViewport().SizeChanged -= QueueRelayout;
+
+    bool relayoutQueued;
+    void QueueRelayout()
+    {
+        if (relayoutQueued) return;
+        relayoutQueued = true;
+        CallDeferred(MethodName.Relayout);
+    }
+
+    /// <summary>The backdrop fitted again, the dialog built again at the new UI scale with what the player had entered.</summary>
+    void Relayout()
+    {
+        relayoutQueued = false;
+        if (!IsInsideTree()) return;
+        var window = GetViewportRect().Size;
+        if (background != null) LoginBackground.Fit(background, window, backgroundSize);
+        var old = logic;
+        var oldRoot = dialogRoot;
+        BuildDialog(window, false);
+        logic.IdInput.Text = old.IdInput.Text;
+        logic.PasswordInput.Text = old.PasswordInput.Text;
+        logic.PasswordInput.Edit.Secret = old.PasswordInput.Edit.Secret;
+        logic.SaveIdButton.SetSelected(old.SaveIdButton.Selected, false);
+        logic.LocaleNameBox.SetSelected(old.LocaleNameBox.Selected, false);
+        if (old.PasswordInput.Focused) logic.PasswordInput.Focus(); else logic.IdInput.Focus();
+        RemoveChild(oldRoot);
+        oldRoot.QueueFree();
+    }
+
+    /// <summary>uilogindialog at the UI scale of a window of <paramref name="window"/> pixels, aligned (LoginDialog.alignment).</summary>
+    void BuildDialog(Vector2 window, bool popup)
+    {
+        float u = UiScale.For(window);
+        var stage = UiScale.MovieStage(window);
         var movie = new UiMovie(assets, UILoginDialogContract.Movie);
         dialogRoot = movie.BuildRoot(u);
         dialogRoot.Scale = new Vector2(u, u);
@@ -52,12 +99,10 @@ public partial class LoginScene : Control
         LobbyLayout.Place(dialogRoot, new Vector2((stage.X - size.X) * 0.5f, stage.Y - size.Y + dy), u);   // Align.computePosition
         dlg.GotoFrame(8);                       // the last frame of the "popup" animation (played below unless taking shots)
         AddChild(dialogRoot);
-        if (shotDir == null) dlg.PlayRange(0, 8);
+        if (popup) dlg.PlayRange(0, 8);
 
         logic = new LoginDialogLogic(dialogRoot);
-        logic.InitData("", false, true, "KR");
         mouse = new UiWidgets.MouseRouter(dialogRoot);
-        UiBridge.ToHost += (m, n, a) => { };
     }
 
     /// <summary>
@@ -71,7 +116,9 @@ public partial class LoginScene : Control
         MovieClipNode bg;
         try { bg = new UiMovie(assets, LoginBackground.MovieName(url)).BuildRoot(); }
         catch (Exception e) { GD.PushWarning($"login backdrop {url}: {e.Message}"); return; }
-        LoginBackground.Fit(bg, window);
+        backgroundSize = LoginBackground.Measured(bg);
+        LoginBackground.Fit(bg, window, backgroundSize);
+        background = bg;
         AddChild(bg);
         LoginBackground.Play(bg, forShots);
     }
@@ -103,7 +150,13 @@ public partial class LoginScene : Control
         }
         if (frames == 11) { logic.OnTabKey(); GD.Print($"Tab: id focused={logic.IdInput.Focused}, password focused={logic.PasswordInput.Focused}"); }
         if (frames == 12) { logic.OnTabKey(); GD.Print($"Tab: id focused={logic.IdInput.Focused}, password focused={logic.PasswordInput.Focused}"); logic.OnEnterKey(); }
-        if (frames == 18) { Save("login_demo.png"); GetTree().Quit(); }
+        if (frames == 18)
+        {
+            Save("login_demo.png");
+            if (resizeTo == null) GetTree().Quit();
+            else GetWindow().Size = resizeTo.Value;          // the window resized after the scene is up
+        }
+        if (frames == 40) { Save($"login_resized_{resizeTo?.X}x{resizeTo?.Y}.png"); GetTree().Quit(); }
     }
 
     void Save(string name)
