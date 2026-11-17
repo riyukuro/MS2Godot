@@ -247,6 +247,8 @@ walls near the player (rope columns are in Ellinia, `--field 02000023_tw_ellinia
 | `tools/GfxLayout` | Command line tool that writes that layout JSON for a movie in `Resource/Gfx.m2d`. |
 | `src/Ms2.Swf/Abc` | ABC (ActionScript 3 bytecode) reader: constant pool, multinames, classes, traits, method bodies, opcode decoder, and a rough decompiler to pseudo C#. |
 | `tools/AbcProbe` | `stats` (opcode histogram, classes, external references, shared code over every movie), `dump <movie>` (pseudo C# of the classes), `decompile-all`. |
+| `src/Ms2.Video` | Class library with no Godot dependency: a CRI USM demuxer (`UsmFile`, `UtfTable`) and an MPEG-1 video decoder (`Mpeg1Decoder`, ported from pl_mpeg) that gives YUV 4:2:0 frames; `UsmVideo` and `VideoPlayback` play a movie against a clock. |
+| `tests/Ms2.Video.Tests` | NUnit tests on hand-built streams, plus client movie tests that skip without `MS2_DATA`. |
 | `tests/Ms2.Swf.Tests` | NUnit tests. The ones that need game data read `MS2_DATA` and skip when it is unset. |
 | `game/` | The Godot project. It builds `Skeleton3D`, skinned `MeshInstance3D` and `AnimationPlayer` nodes at run time from `Ms2.Formats` data, the field as MultiMeshes with static colliders, and the player as a `CharacterBody3D`. |
 
@@ -353,7 +355,7 @@ MS2_DATA=/path/to/Data godot-mono --path . res://ui/login.tscn -- --shots DIR --
 
 ### Character creation (game/ui/create)
 
-`charcreate.tscn` runs character creation the way the client's lobby scene does, offline. The job pick (`uicharactercreateselectdialog`, `JobSelectLogic`) shows the job tabs, name, description and art from `table/charactercreateselect.xml`, with the character list dimmed behind it. Create loads the job's create map from `table/lobbyfield.xml` (the `Character` field for most jobs), places the camera at the field's `Camera0` entity and puts a preview character at `SpawnPointPC0` in its idle pose. The customize page (`uicharactercreatedialog`, `CharacterCreateLogic`) has the gender buttons, seven categories (hair, face, makeup, skin, top, bottom, shoes) with the `table/defaultitems.xml` items for the job and gender as icon tiles, palette colours, random and back. The preview is dressed through `CreateLook`, which calls `StarterLook` and `EquipApplier`. Picking a hair or makeup item that the item model marks as customizable (`<customize scale rotation translation>`) opens the option panel (`CustomOptionPanel`): size sliders from the slot's `<scale>` ranges, the makeup angle, and the position presets from the `<custom>` lists. A new item starts from the client's defaults: a random preset and a random `<scale>` value (`ItemCustomize`, `CustomValues`). Create asks for a name and checks it as the client does. `BanTextChecker` in Ms2.Formats is a port of `CBanTextChecker`: 2 to 12 letters, Hangul counting twice, no spaces or punctuation, then the locale's word tables (`string/<lang>/reserveIDAll.xml`, `reserveIDAny.xml`, `reserveWord.xml`, `banWord.xml`, `startWithWord.xml`, `banWordAll.xml`), with the client's messages. It then builds the CharacterManagement create request with Ms2.Net (`CreateCharacter` plus `CreateItem` for the item block, with the hair and makeup values after the colour) and prints it. Nothing is sent.
+`charcreate.tscn` runs character creation the way the client's lobby scene does, offline. The job pick (`uicharactercreateselectdialog`, `JobSelectLogic`) shows the job tabs, name, description and art from `table/charactercreateselect.xml`, with the character list dimmed behind it. It plays the job's preview movie (`jobPreview_<code>.usm`) looped in the info panel, as the movie's `setMovieAndPlay` does. Create loads the job's create map from `table/lobbyfield.xml` (the `Character` field for most jobs), places the camera at the field's `Camera0` entity and puts a preview character at `SpawnPointPC0` in its idle pose. The customize page (`uicharactercreatedialog`, `CharacterCreateLogic`) has the gender buttons, seven categories (hair, face, makeup, skin, top, bottom, shoes) with the `table/defaultitems.xml` items for the job and gender as icon tiles, palette colours, random and back. The preview is dressed through `CreateLook`, which calls `StarterLook` and `EquipApplier`. Picking a hair or makeup item that the item model marks as customizable (`<customize scale rotation translation>`) opens the option panel (`CustomOptionPanel`): size sliders from the slot's `<scale>` ranges, the makeup angle, and the position presets from the `<custom>` lists. A new item starts from the client's defaults: a random preset and a random `<scale>` value (`ItemCustomize`, `CustomValues`). Create asks for a name and checks it as the client does. `BanTextChecker` in Ms2.Formats is a port of `CBanTextChecker`: 2 to 12 letters, Hangul counting twice, no spaces or punctuation, then the locale's word tables (`string/<lang>/reserveIDAll.xml`, `reserveIDAny.xml`, `reserveWord.xml`, `banWord.xml`, `startWithWord.xml`, `banWordAll.xml`), with the client's messages. It then builds the CharacterManagement create request with Ms2.Net (`CreateCharacter` plus `CreateItem` for the item block, with the hair and makeup values after the colour) and prints it. Nothing is sent.
 
 The game flow uses `CharacterCreateScene`'s static entry and exit:
 - `Enter(tree, startJob)` opens the job pick.
@@ -362,7 +364,7 @@ The game flow uses `CharacterCreateScene`'s static entry and exit:
 - `CreateFailed(message)` puts a server refusal under the name input.
 
 Not ported:
-- the job preview and guide videos (`.usm`, MPEG-1 in CRI USM)
+- the guide videos of the option panel
 - the camera edit overlay
 - size and position changes on the preview: there are no morph weights, no face decals and no pony parts yet; the values only go into the request
 
@@ -371,10 +373,35 @@ MS2_DATA=/path/to/Data MS2_NIFXML=/path/to/nif.xml godot-mono --path . res://ui/
 MS2_DATA=... godot-mono --path . res://ui/charcreate.tscn -- --page create --job 10 --gender female --shots DIR
 ```
 
+## Video (src/Ms2.Video)
+
+The client's movies are CRI USM files in `Resource/Movie/{Common,Item,Emotion}.m2d` (371 files; `PackSet` reads their
+XOR-stored entries). `UsmFile` demuxes the chunks: the `CRID` directory, then per stream a `@UTF` header table
+(`VIDEO_HDRINFO`: size, `framerate_n / framerate_d`, `total_frames`, `mpeg_dcprec`) and the data payloads. Every
+`@SFV` stream is MPEG-1 video from TMPGEnc with 11-bit intra DC precision. The stream says so in its user data
+(`IDCPREC`), which plain MPEG-1 decoders ignore. `Mpeg1Decoder` is pl_mpeg's video decoder in C#, extended with the DC
+precision and with the last reference frame after trailing B frames, so it returns the header's frame count. 44 of the
+371 files (the 1080p story movies and some item movies) also carry `@SFA` ADX audio, which is not decoded.
+
+In the game, `VideoPlayerNode` (game/video) plays a movie by file name, as `VideoPlayer.play` does. A worker thread
+decodes ahead (`VideoPlayback`). Each new frame's Y, Cb and Cr planes go up as three L8 textures, and
+`shaders/yuv_video.gdshader` converts them (BT.601). The clock is the header's frame rate.
+
+```
+var player = new VideoPlayerNode { Size = new Vector2(320, 240) };
+parent.AddChild(player);
+player.Play(packs, "jobPreview_80.usm", loop: true);    // false if the movie is missing
+player.Finished += ...;                                  // end of a non-looping movie
+```
+
 ## Licence
 
 AGPL-3.0, see [LICENSE](LICENSE). The m2d archive reader is the NuGet package `Maple2.File.Parser.Tadeucci`
 (GPL-3.0-or-later).
+
+Third-party code in the source tree:
+- `src/Ms2.Video/Mpeg1`: a C# port of the MPEG-1 video decoder of [pl_mpeg](https://github.com/phoboslab/pl_mpeg)
+  by Dominic Szablewski (MIT). The files keep its licence header.
 
 ## Offline replay
 

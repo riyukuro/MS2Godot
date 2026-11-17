@@ -171,7 +171,7 @@ public partial class CharacterCreateScene : Field
         selectRoot.Position = Vector2.Zero;
         UiWidgets.ApplyInspector(selectRoot, UICharacterCreateSelectDialogContract.Inspector);
         layer.AddChild(selectRoot);
-        jobs = new JobSelectLogic(movie, selectRoot, tables);
+        jobs = new JobSelectLogic(movie, selectRoot, tables, uiPacks);
         jobs.InitData(job);
         jobs.Align(size, s);
         jobs.Create += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
@@ -275,7 +275,8 @@ public partial class CharacterCreateScene : Field
             if (frame == 45) Save("create_jobselect.png");
             if (frame == 46) jobs.ChangeTab(0, true);
             if (frame == 75) Save("create_jobselect_knight.png");
-            if (frame == 76) jobs.ClickCreate();
+            if (frame == 160) { Save("create_jobselect_video.png"); GD.Print($"job video {jobs.Player?.MovieName}: {jobs.Player?.Video?.Width}x{jobs.Player?.Video?.Height} at {jobs.Player?.Video?.FrameRate} fps, t {jobs.Player?.Time:F2} s"); }
+            if (frame == 161) jobs.ClickCreate();
         }
         else
         {
