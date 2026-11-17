@@ -169,7 +169,9 @@ public sealed class Decompiler
             switch (t.Kind)
             {
                 case TraitKind.Slot:
-                    sb.Append("  public ").Append(st).Append(TypeName(t.TypeName)).Append(' ').Append(n).AppendLine(";"); declared.Add(n); break;
+                    sb.Append("  public ").Append(st).Append(TypeName(t.TypeName)).Append(' ').Append(n);
+                    if (t.ValueIndex != 0) sb.Append(" = ").Append(Const(t.ValueKind, t.ValueIndex));    // the slot's default value
+                    sb.AppendLine(";"); declared.Add(n); break;
                 case TraitKind.Const:
                     sb.Append("  public ").Append(st).Append(TypeName(t.TypeName)).Append(' ').Append(n);
                     if (t.ValueIndex != 0) sb.Append(" = ").Append(Const(t.ValueKind, t.ValueIndex));
