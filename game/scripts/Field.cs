@@ -21,7 +21,9 @@ public partial class Field : Node3D
     public const string Group = "field";
     public Field() { AddToGroup(Group); }
 
-    readonly RayQuery occRay = new();
+    // CTargetCameraMode / CHomeCameraMode's near-plane test casts with RayCastFromPoint (targetcameramode.cpp:763-771,
+    // homecameramode.cpp:617-625), which is CPhysXHelper::CastRay (physxhelper.cpp:433-449): one-sided on mesh triangles
+    readonly RayQuery occRay = RayQuery.CastRay();
     protected PackSet packs;
     protected Player player;
     protected Camera3D camera;
