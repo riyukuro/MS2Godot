@@ -105,8 +105,8 @@ public sealed partial class DamageText : CanvasLayer
     {
         if (movie == null) return false;
         camera ??= GetViewport().GetCamera3D();
-        field ??= Find<Field>(GetTree().Root);
-        player ??= Find<Player>(GetTree().Root);
+        field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
+        player ??= GetTree().GetFirstNodeInGroup(Player.Group) as Player;
         if (player != null && pcModel == null)
         {
             pcDummies = EffectDummyTable.Load(packs).Pc(player.Gender);
@@ -282,11 +282,4 @@ public sealed partial class DamageText : CanvasLayer
 
     /// <summary>FUN_1412762d0, as for the name tags (<see cref="PlayerNameTag.PitchShift"/>).</summary>
     float PitchShift(Vector3 anchor) => PlayerNameTag.PitchShift(field, anchor);
-
-    static T Find<T>(Node n) where T : Node
-    {
-        if (n is T t) return t;
-        foreach (var c in n.GetChildren()) if (Find<T>(c) is { } f) return f;
-        return null;
-    }
 }

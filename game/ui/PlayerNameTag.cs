@@ -70,8 +70,8 @@ public sealed partial class PlayerNameTag : CanvasLayer
         if (node == null) return;
         if (player == null || field == null)
         {
-            field ??= Find<Field>(GetTree().Root);
-            player ??= Find<Player>(GetTree().Root);
+            field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
+            player ??= GetTree().GetFirstNodeInGroup(Player.Group) as Player;
             if (player == null || field == null) return;
             dummies = EffectDummyTable.Load(packs).Pc(player.Gender);
             model = player.Visual?.GetNodeOrNull<Node3D>("Model");
@@ -102,12 +102,5 @@ public sealed partial class PlayerNameTag : CanvasLayer
         float d = new Vector2(anchor.X - eye.X, anchor.Z - eye.Z).Length();
         float r = d > Field.MinCameraDistance ? Field.MinCameraDistance / d : 1f;
         return Mathf.Floor((-40f + 70f * pitch / 90f) * r);
-    }
-
-    static T Find<T>(Node n) where T : Node
-    {
-        if (n is T t) return t;
-        foreach (var c in n.GetChildren()) if (Find<T>(c) is { } f) return f;
-        return null;
     }
 }

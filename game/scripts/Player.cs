@@ -13,6 +13,10 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Player : CharacterBody3D
 {
+    /// <summary>The scene-tree group every player joins, so the HUD finds one without walking the tree.</summary>
+    public const string Group = "player";
+    public Player() { AddToGroup(Group); }
+
     public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash }
 
     public Node3D Visual;                 // the character root (faces +Z)

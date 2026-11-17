@@ -17,6 +17,10 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Field : Node3D
 {
+    /// <summary>The scene-tree group every field joins, so the HUD finds it without walking the tree.</summary>
+    public const string Group = "field";
+    public Field() { AddToGroup(Group); }
+
     readonly RayQuery occRay = new();
     protected PackSet packs;
     protected Player player;

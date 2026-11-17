@@ -168,7 +168,7 @@ public sealed partial class NpcPresence : CanvasLayer
     {
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
-        field ??= FindField(GetTree().Root);
+        field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
         // every frame: the range, facing and fade tests with the npc where it is now, then the tag at its head
         var eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
         foreach (var t in tags)
@@ -193,12 +193,5 @@ public sealed partial class NpcPresence : CanvasLayer
             p.Y += (barOffset + Shift(a)) * u;
             b.Update(p);
         }
-    }
-
-    static Field FindField(Node n)
-    {
-        if (n is Field f) return f;
-        foreach (var c in n.GetChildren()) if (FindField(c) is { } g) return g;
-        return null;
     }
 }

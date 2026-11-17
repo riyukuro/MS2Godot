@@ -21,7 +21,7 @@ public static class DummyWorld
     /// <summary>The dummy's world transform under a parent at <paramref name="parentWorld"/>, turning with a target (the model root) at <paramref name="targetRotate"/> (null: none).</summary>
     public static Xform Resolve(EffectDummy d, Xform parentWorld, double[] targetRotate)
     {
-        var own = EulerXyz(d.Rotation.X, d.Rotation.Y, d.Rotation.Z);
+        var own = Own(d);
         var t = new Vec3(d.Translate.X, d.Translate.Y, d.Translate.Z);
         var parent = d.ApplyLocalScale ? parentWorld : parentWorld with { S = 1 };
         if (!d.ApplyWorldTransform)
@@ -38,6 +38,22 @@ public static class DummyWorld
         }
         return world;
     }
+
+    /// <summary>
+    /// The row's own rotation, EulerXyz of its degrees, kept per row with the degrees it was made from (a row's fields can
+    /// be parsed over), so a dummy resolved every frame does not rebuild it. The same values as computing it each time; the
+    /// array is shared, so it is read-only like every Xform.R.
+    /// </summary>
+    static double[] Own(EffectDummy d)
+    {
+        if (ownCache.TryGetValue(d, out var c) && c.Degrees == d.Rotation) return c.R;
+        var r = EulerXyz(d.Rotation.X, d.Rotation.Y, d.Rotation.Z);
+        ownCache.AddOrUpdate(d, new OwnRotation(d.Rotation, r));
+        return r;
+    }
+
+    sealed record OwnRotation(System.Numerics.Vector3 Degrees, double[] R);
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<EffectDummy, OwnRotation> ownCache = new();
 
     /// <summary>
     /// The world transform of the named dummy of <paramref name="rows"/> on a model whose root is at <paramref name="root"/>:
