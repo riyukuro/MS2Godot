@@ -250,7 +250,6 @@ public partial class Field : Node3D
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         // the awaiter belongs to the tree, not to the field: a field freed meanwhile (its scene changed) stops its load here
         if (!IsInstanceValid(this) || !IsInsideTree()) throw new OperationCanceledException();
-        World.FieldContents.TickCover();
         frameClock.Restart();
     }
 

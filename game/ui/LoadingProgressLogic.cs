@@ -15,9 +15,13 @@ namespace Ms2Godot.Ui;
 /// <see cref="StopProgress"/> fades it out over 500 ms, then raises OnFadeInComplete.
 /// The movie is drawn at the UI scale like every other movie (<see cref="UiScale"/>: CUIService::OnDeviceReset sets it for all
 /// movies with GFxManager::SetMoviesScale), so its stage is <see cref="UiScale.MovieStage"/> and the guide (1208 wide in the
-/// movie) takes about 843 pixels of a 1280 window, as the client's does.
+/// movie) takes about 843 pixels of a 1280 window, as the client's does. That scale and the stage come from the window's own
+/// pixel size, with whatever content scale the root window applies at the time taken back out (<see cref="Fit"/>): the screen
+/// lives at the tree root across a field change, while the HUD scene turns the root's canvas_items stretch off and on as it
+/// enters and leaves the tree, so a size read from the visible rect is right on some frames and 1.46 times too large on
+/// others (a 1920 x 1050 window over the 1280 x 720 design size).
 /// </summary>
-public sealed class LoadingProgressLogic
+public sealed partial class LoadingProgressLogic
 {
     public sealed class Start
     {
@@ -30,7 +34,7 @@ public sealed class LoadingProgressLogic
     }
 
     /// <summary>Everything the movie draws; the host adds it to a CanvasLayer.</summary>
-    public readonly Node2D Layer = new() { Name = "LoadingProgress" };
+    public readonly Node2D Layer;
     readonly MovieClipNode clear, top, bottom, guide, badge;
     readonly Vector2 topSize, bottomSize;
     readonly Sprite2D picture = new() { Centered = false };
@@ -41,6 +45,7 @@ public sealed class LoadingProgressLogic
 
     public LoadingProgressLogic(UiAssets assets)
     {
+        Layer = new StageLayer(Fit) { Name = "LoadingProgress" };
         var movie = new UiMovie(assets, UILoadingProgressContract.Movie);
         clear = movie.BuildClass("loadingprogress_whitekbg");
         top = movie.BuildClass("loadingprogress_bg_top");
@@ -63,10 +68,10 @@ public sealed class LoadingProgressLogic
         foreach (var n in new Node2D[] { clear, picture, top, bottom, guide, badge }) if (n != null) { Layer.AddChild(n); n.Visible = false; }
     }
 
-    /// <summary>startProgress(info) (useFadeOut true), for a window of <paramref name="window"/> pixels.</summary>
-    public void StartProgress(Start s, Vector2 window)
+    /// <summary>startProgress(info) (useFadeOut true).</summary>
+    public void StartProgress(Start s)
     {
-        SetWindow(window);
+        Fit();
         fadeT = -1;
         Layer.Modulate = Colors.White;
         showFrame = s.ShowFrame;
@@ -99,21 +104,35 @@ public sealed class LoadingProgressLogic
         Active = true;
     }
 
-    /// <summary>onStageResize, for a window of <paramref name="window"/> pixels: only a new stage size lays the screen out again
-    /// (the badge's Progressbar.alignment runs on Event.RESIZE, so it keeps its place while its fill animates).</summary>
-    public void SetStageSize(Vector2 window)
+    /// <summary>
+    /// The movie's place on the window, every frame and whenever the root viewport changes size: the UI scale and the stage
+    /// (UiScale) for the window's pixel size, drawn through the inverse of the root's final transform (its canvas_items
+    /// stretch, Viewport.get_final_transform) so the screen keeps that size whether the stretch is on or off. Only a new stage
+    /// size lays the screen out again (onStageResize; the badge's Progressbar.alignment runs on Event.RESIZE, so it keeps its
+    /// place while its fill animates).
+    /// </summary>
+    void Fit()
     {
+        var root = (Engine.GetMainLoop() as SceneTree)?.Root;
+        if (root == null) return;
+        Vector2 window = root.Size;
+        float k = UiScale.For(window);
+        Layer.Transform = root.GetFinalTransform().AffineInverse() * new Transform2D(0, new Vector2(k, k), 0, UiScale.MovieOrigin);
         var before = stage;
-        SetWindow(window);
+        stage = UiScale.MovieStage(window);
         if (Active && stage != before) Layout();
     }
 
-    void SetWindow(Vector2 window)
+    /// <summary>The movie's root node: it fits the movie to the window each frame and on the root viewport's size_changed.</summary>
+    sealed partial class StageLayer : Node2D
     {
-        float k = UiScale.For(window);
-        Layer.Scale = new Vector2(k, k);
-        Layer.Position = UiScale.MovieOrigin;
-        stage = UiScale.MovieStage(window);
+        readonly Action fit;
+        public StageLayer(Action fit) { this.fit = fit; }
+        public StageLayer() { }
+        public override void _EnterTree() { GetTree().Root.SizeChanged += OnSize; fit?.Invoke(); }
+        public override void _ExitTree() => GetTree().Root.SizeChanged -= OnSize;
+        void OnSize() => fit?.Invoke();
+        public override void _Process(double delta) => fit?.Invoke();
     }
 
     /// <summary>

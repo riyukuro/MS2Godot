@@ -204,7 +204,7 @@ public partial class FieldContents : Node3D
         // the first entry is the lobby's loading screen (UILoadingProgressLobby: vfunc_52 false, no frame)
         var start = new LoadingProgressLogic.Start { Picture = Travel.LoadingImage != null ? LoadPicture(packs, Travel.LoadingImage) : null, Tip = Travel.LoadingTip ?? "", ShowGuide = true, ShowFrame = false };
         if (start.Picture == null) start.ScreenShot = ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage());
-        cover.StartProgress(start, root.GetViewport().GetVisibleRect().Size);
+        cover.StartProgress(start);
         shownCover = cover;
         carried = (overlay, cover);
         return true;
@@ -238,13 +238,6 @@ public partial class FieldContents : Node3D
 
     /// <summary>True while a loading screen is carried for the field being built (one started by CoverLoad or a portal move's).</summary>
     public static bool Covered => carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay);
-
-    /// <summary>While the field loads: the carried loading screen's own per-frame work (its stage size), nothing else.</summary>
-    public static void TickCover()
-    {
-        if (carried.Overlay == null || !GodotObject.IsInstanceValid(carried.Overlay) || !carried.Overlay.IsInsideTree()) return;
-        carried.Loading?.SetStageSize(carried.Overlay.GetViewport().GetVisibleRect().Size);
-    }
 
     /// <summary>While the field loads: the entity count on the carried loading screen (UILoadingProgress::SetProgress).</summary>
     public static void CoverProgress(int count, int total)
@@ -293,7 +286,7 @@ public partial class FieldContents : Node3D
         if (loading == null) return;
         var start = new LoadingProgressLogic.Start { Picture = image != null ? LoadPicture(image) : null, Tip = tip ?? "", ShowGuide = true };
         if (start.Picture == null) start.ScreenShot = screenShot ?? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
-        loading.StartProgress(start, GetViewport().GetVisibleRect().Size);
+        loading.StartProgress(start);
         shownCover = loading;
     }
 
@@ -392,7 +385,6 @@ public partial class FieldContents : Node3D
     public override void _Process(double delta)
     {
         if (loading == null) return;
-        loading.SetStageSize(GetViewport().GetVisibleRect().Size);
         if (settleFrames > 0 && --settleFrames == 0)
         {
             settleFrames = -1;
