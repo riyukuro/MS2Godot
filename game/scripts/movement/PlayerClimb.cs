@@ -19,6 +19,8 @@ public partial class Player
     }
     ClimbSub csub;
     bool climbAltUp, climbAltSide, climbUpLanded;
+    /// <summary>Where the client's capsule feet would be after a down-phase move our cylinder could not finish (null: at ours).</summary>
+    Vector3? climbCheckFeet;
     float climbInputT, climbHangT;
     Vector2 climbInput;
 
@@ -74,6 +76,7 @@ public partial class Player
         climbInputT = 0;
         climbHangT = 0;
         climbUpLanded = false;
+        climbCheckFeet = null;
     }
 
     /// <summary>
@@ -161,6 +164,8 @@ public partial class Player
     void ClimbMoveByPhase(float dt)
     {
         float v = MoveConfig.ClimbVelocityV * 100f, h = MoveConfig.ClimbVelocityH * 100f;
+        climbCheckFeet = null;
+        float wantY = GlobalPosition.Y - v * dt;
         switch (csub)
         {
             case ClimbSub.Up: ClimbUp(v, dt); break;
@@ -182,7 +187,43 @@ public partial class Player
                 }
                 break;
         }
+        if (csub is ClimbSub.Down or ClimbSub.DownLeft or ClimbSub.DownRight && GlobalPosition.Y > wantY + 0.01f)
+            climbCheckFeet = CapsuleFeetOnRim(wantY);
     }
+
+    /// <summary>
+    /// The client's body is a capsule (r 25): its round bottom clears an edge that our flat-bottomed cylinder's rim
+    /// rests on. When a down-phase move stopped short on such an edge (an up-facing support under the rim, none under the
+    /// axis), the feet where the capsule would be: max(the move's target, support - (r - sqrt(r^2 - d^2))), d = the
+    /// support's nearest horizontal distance from the axis. Null when the axis itself is supported (a floor, a step).
+    /// </summary>
+    Vector3? CapsuleFeetOnRim(float wantY)
+    {
+        var feet = GlobalPosition;
+        var col = new KinematicCollision3D();
+        if (!TestMove(GlobalTransform, Vector3.Down * 0.5f, col) || col.GetNormal().Y < 0.7f) return null;
+        if (Support(feet) is not null) return null;
+        float r = MoveConfig.Radius, best = float.MaxValue, top = 0;
+        for (int k = 0; k < 8; k++)
+        {
+            var dir = new Vector3(Mathf.Cos(k * Mathf.Pi / 4), 0, Mathf.Sin(k * Mathf.Pi / 4));
+            if (Support(feet + dir * (r - 0.1f)) is not { } y) continue;
+            float lo = 0, hi = r - 0.1f;               // unsupported at lo, supported at hi
+            for (int i = 0; i < 10; i++)
+            {
+                float mid = (lo + hi) / 2;
+                if (Support(feet + dir * mid) is { } ym) { hi = mid; y = ym; } else lo = mid;
+            }
+            if (hi < best) { best = hi; top = y; }
+        }
+        if (best == float.MaxValue) return null;
+        float clear = r - Mathf.Sqrt(r * r - best * best);
+        return new Vector3(feet.X, Mathf.Max(wantY, top - clear), feet.Z);
+    }
+
+    /// <summary>The top of what the body stands on at this point of the feet plane (a short ray down, every group), or null.</summary>
+    float? Support(Vector3 p) =>
+        Ray(p + Vector3.Up * MoveConfig.SkinWidth * 2, Vector3.Down, MoveConfig.SkinWidth * 4, uint.MaxValue) is var (h, _) ? h.Y : null;
 
     void ClimbUp(float v, float dt)
     {
@@ -226,11 +267,13 @@ public partial class Player
     /// <summary>StateClimb::FUN_1417bda60: the bottom, the top of the wall, or still a wall ahead.</summary>
     void ClimbCheck()
     {
+        // the down checks run at the capsule's feet when the cylinder stopped short on a rim (CapsuleFeetOnRim)
+        var feet = climbCheckFeet ?? GlobalPosition;
         switch (csub)
         {
             case ClimbSub.Down or ClimbSub.DownLeft or ClimbSub.DownRight:
                 // GetGroundDistance(feet, 5): ground within 5 under the feet
-                if (Ray(GlobalPosition, Vector3.Down, 5f, GroundGroups) != null) { csub = ClimbSub.DownLand; return; }
+                if (Ray(feet, Vector3.Down, 5f, GroundGroups) != null) { csub = ClimbSub.DownLand; return; }
                 break;
             case ClimbSub.Up or ClimbSub.UpLeft or ClimbSub.UpRight:
                 if (HasClimbableWallAhead())
@@ -247,7 +290,7 @@ public partial class Player
                 return;
         }
         // FUN_1417bd310: a wall at +54 keeps the climb (facing its normal); none drops into StateFall
-        if (Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) is var (_, n)) FaceNow(-n);
+        if (Ray(feet + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) is var (_, n)) FaceNow(-n);
         else Enter(MoveState.Fall);
     }
 
