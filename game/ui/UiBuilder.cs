@@ -194,6 +194,7 @@ public partial class TextNode : Node2D
         // to the screen size with linear filtering, unsnapped; the label does the same: font size = ramp, scale = screen / ramp
         float screen = size * asy, ramp = RampSize(screen);
         RasterScale = screen / ramp;
+        ScreenScale = asy;
         Label = new Label
         {
             Position = new Vector2(Bounds.Position.X * asx, Bounds.Position.Y * asy),
@@ -309,21 +310,96 @@ public partial class TextNode : Node2D
         while (ls.FontSize > 1 && ls.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, ls.FontSize).X > room) ls.FontSize--;
     }
 
-    /// <summary>Applies a glow or drop shadow filter as a text outline (flash text in the HUD is mostly drawn with a dark glow).</summary>
+    /// <summary>
+    /// A text field's drop shadow or glow, drawn the way Scaleform draws it: TextFilter::LoadFilterDesc takes the filter into the
+    /// field's shadow (a later shadow / glow replaces one with no colour or no distance), and the glyph cache rasterizes it
+    /// per glyph (GlyphCache::RasterizeShadow): the outline at the shadow ramp size with gamma 0.4, blurred by BlurX on both
+    /// axes (recursive gaussian, sigma = radius / 2), strengthened around 8 and offset by angle and distance. The label's
+    /// shadow is the glyph grown by size / 4 pixels a side, so its size is the width that model gives outside the glyph edge.
+    /// </summary>
     public void ApplyFilters(JsonNode filters, float scale)
     {
         if (filters is not JsonArray fa) return;
+        JsonNode shadow = null;
         foreach (var f in fa)
         {
-            var type = (string)f["type"];
-            if (type is not ("glow" or "dropShadow")) continue;
-            var col = UiBuilder.ParseColor((string)f["color"], Colors.Black);
-            float blur = Math.Max(UiBuilder.F(f["blurX"], 2), UiBuilder.F(f["blurY"], 2));
-            var ls = (LabelSettings)Label.LabelSettings.Duplicate();
-            // sizes in screen pixels; the label draws in its ramp-size pixels, RasterScale screen pixels each
-            if (type == "glow") { ls.OutlineSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 4) * scale / RasterScale)); ls.OutlineColor = col; }
-            else { ls.ShadowColor = col; ls.ShadowOffset = new Vector2(1, 1) / RasterScale; ls.ShadowSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 3) * scale / RasterScale)); }
-            Label.LabelSettings = ls;
+            if ((string)f["type"] is not ("glow" or "dropShadow")) continue;
+            if (shadow == null || UiBuilder.ParseColor((string)shadow["color"], Colors.Transparent).A == 0 || UiBuilder.F(shadow["distance"], 0) == 0) shadow = f;
         }
+        if (shadow == null) return;
+        float screen = UiBuilder.F(Def["size"], 12) * ScreenScale, k = ShadowRampSize(screen) / screen;
+        float radius = UiBuilder.F(shadow["blurX"], 0) * scale * k, strength = UiBuilder.F(shadow["strength"], 1);
+        float ring = ShadowRing(radius, strength) / k;                                       // screen pixels a side
+        float dist = UiBuilder.F(shadow["distance"], 0) * scale, angle = UiBuilder.F(shadow["angle"], 0);
+        var ls = (LabelSettings)Label.LabelSettings.Duplicate();
+        ls.ShadowColor = UiBuilder.ParseColor((string)shadow["color"], Colors.Black);
+        ls.ShadowOffset = new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * dist / RasterScale;
+        ls.ShadowSize = Math.Max(0, (int)Math.Round(4 * ring / RasterScale));
+        Label.LabelSettings = ls;
+    }
+
+    /// <summary>Screen pixels per field unit (the field's accumulated scale).</summary>
+    public float ScreenScale = 1;
+
+    /// <summary>GlyphCache::SnapShadowSizeToRamp: the next ramp step at or above the whole screen size (no quarter added).</summary>
+    static float ShadowRampSize(float screenSize)
+    {
+        int size = (int)Math.Floor(screenSize);
+        if (size > 255) return 255;
+        foreach (int step in FontSizeRamp) if (step >= size) return Math.Max(1, step);
+        return 255;
+    }
+
+    static readonly Dictionary<(float, float), float> rings = new();
+
+    /// <summary>
+    /// Width a side, in shadow raster pixels, of a Scaleform glyph shadow outside a 2 pixel stem: coverage ^ 0.4, the recursive
+    /// blur (Young / van Vliet, as GlyphCache::recursiveBlur) and strengthenImage around bias 8, summed as coverage.
+    /// </summary>
+    static float ShadowRing(float radius, float strength)
+    {
+        radius = MathF.Round(radius, 3); strength = MathF.Round(strength, 3);
+        if (rings.TryGetValue((radius, strength), out var cached)) return cached;
+        const int n = 64, x0 = 30, stem = 2;
+        var line = new float[n];
+        for (int x = x0; x < x0 + stem; x++) line[x] = 255;
+        int bias = 0;
+        if (radius > 0) { line = Blur(line, radius); bias = 8; }
+        if (strength <= 1) bias = 0;
+        float sum = 0;
+        for (int x = 0; x < n; x++)
+        {
+            if (x >= x0 && x < x0 + stem) continue;
+            float v = Math.Clamp((int)((line[x] - bias) * strength + 0.5f) + bias, 0, 255);
+            sum += v / 255f;
+        }
+        return rings[(radius, strength)] = sum / 2;
+    }
+
+    static float[] Blur(float[] img, float radius)
+    {
+        radius = Math.Max(radius, 0.62f);
+        int n = img.Length, pad = (int)MathF.Ceiling(radius) + 3;
+        float s = radius * 0.5f;
+        float q = s < 2.5f ? 3.97156f - 4.14554f * MathF.Sqrt(1 - 0.26891f * s) : 0.98711f * s - 0.9633f, q2 = q * q, q3 = q2 * q;
+        float b0 = 1 / (1.57825f + 2.44413f * q + 1.4281f * q2 + 0.422205f * q3);
+        float b2 = 2.44413f * q + 2.85619f * q2 + 1.26661f * q3, b3 = -1.4281f * q2 - 1.26661f * q3, b4 = 0.422205f * q3;
+        float b1 = 1 - (b2 + b3 + b4) * b0; b2 *= b0; b3 *= b0; b4 *= b0;
+        var fw = new float[n + 2 * pad];
+        float a1, a2 = 0, a3 = 0, a4 = 0;
+        for (int x = 0; x < n + pad; x++)
+        {
+            a1 = b1 * (x < n ? img[x] : 0) + b2 * a2 + b3 * a3 + b4 * a4;
+            fw[x + pad] = a1; a4 = a3; a3 = a2; a2 = a1;
+        }
+        var outp = new float[n];
+        a2 = a3 = a4 = 0;
+        for (int x = n + 2 * pad - 1; x >= 0; x--)
+        {
+            a1 = b1 * fw[x] + b2 * a2 + b3 * a3 + b4 * a4;
+            a4 = a3; a3 = a2; a2 = a1;
+            if (x >= pad && x < n + pad) outp[x - pad] = (int)(a1 + 0.5f);
+        }
+        return outp;
     }
 }

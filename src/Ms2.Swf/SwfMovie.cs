@@ -231,19 +231,22 @@ public sealed class SwfMovie
         {
             int t = r.U8();
             string name = t < FilterNames.Length ? FilterNames[t] : "unknown" + t;
-            string color = null; double bx = 0, by = 0;
+            string color = null; double bx = 0, by = 0, angle = 0, dist = 0, strength = 1; int flags = 1;
             switch (t)
             {
-                case 0: color = ReadRgba(r).Hex; bx = r.Fixed16(); by = r.Fixed16(); r.Skip(4 + 4 + 2 + 1); break;
-                case 1: bx = r.Fixed16(); by = r.Fixed16(); r.Skip(1); break;
-                case 2: color = ReadRgba(r).Hex; bx = r.Fixed16(); by = r.Fixed16(); r.Skip(2 + 1); break;
+                case 0: color = ReadRgba(r).Hex; bx = r.Fixed16(); by = r.Fixed16(); angle = r.Fixed16(); dist = r.Fixed16(); strength = r.Fixed8(); flags = r.U8(); break;
+                case 1: bx = r.Fixed16(); by = r.Fixed16(); flags = r.U8() >> 3; break;
+                case 2: color = ReadRgba(r).Hex; bx = r.Fixed16(); by = r.Fixed16(); strength = r.Fixed8(); flags = r.U8(); break;
                 case 3: color = ReadRgba(r).Hex; r.Skip(4); bx = r.Fixed16(); by = r.Fixed16(); r.Skip(4 + 4 + 2 + 1); break;
                 case 4: case 7: { int c = r.U8(); r.Skip(c * 5); bx = r.Fixed16(); by = r.Fixed16(); r.Skip(4 + 4 + 2 + 1); break; }
                 case 5: { int mx = r.U8(), my = r.U8(); r.Skip(8 + 4 * mx * my + 4 + 1); break; }
                 case 6: r.Skip(80); break;
                 default: throw new InvalidDataException("filter type " + t);
             }
-            list.Add(new FilterInfo(name, color, bx, by));
+            // drop shadow / glow flags: inner 0x80, knockout 0x40, composite source 0x20, passes in the low 5 bits (blur: passes << 3)
+            if (t is 0 or 2) list.Add(new FilterInfo(name, color, bx, by, angle, dist, strength, flags & 0x1f, (flags & 0x80) != 0, (flags & 0x40) != 0));
+            else if (t == 1) list.Add(new FilterInfo(name, color, bx, by, Passes: flags & 0x1f));
+            else list.Add(new FilterInfo(name, color, bx, by));
         }
         return list;
     }

@@ -297,7 +297,9 @@ public static class LayoutJson
     }
 
     static JsonNode Filters(List<FilterInfo> f) => f == null ? null :
-        new JsonArray(f.Select(x => (JsonNode)new JsonObject { ["type"] = x.Type, ["color"] = x.Color, ["blurX"] = x.BlurX == 0 ? null : R(x.BlurX), ["blurY"] = x.BlurY == 0 ? null : R(x.BlurY) }).ToArray());
+        new JsonArray(f.Select(x => (JsonNode)new JsonObject { ["type"] = x.Type, ["color"] = x.Color, ["blurX"] = x.BlurX == 0 ? null : R(x.BlurX), ["blurY"] = x.BlurY == 0 ? null : R(x.BlurY),
+            ["angle"] = x.Angle == 0 ? null : R(x.Angle), ["distance"] = x.Distance == 0 ? null : R(x.Distance), ["strength"] = x.Strength == 1 ? null : R(x.Strength),
+            ["passes"] = x.Passes == 1 ? null : x.Passes, ["inner"] = x.Inner ? true : null, ["knockout"] = x.Knockout ? true : null }).ToArray());
 
     /// <summary>Named instances reachable from the root through named children, in stage coordinates (first frame they appear).</summary>
     static void CollectNamed(SwfMovie m, Timeline tl, Matrix parent, string path, int depth, JsonArray into, HashSet<int> stack)

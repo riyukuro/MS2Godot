@@ -47,7 +47,9 @@ public sealed record Rgba(byte R, byte G, byte B, byte A)
     public string Hex => A == 255 ? $"#{R:x2}{G:x2}{B:x2}" : $"#{R:x2}{G:x2}{B:x2}{A:x2}";
 }
 
-public sealed record FilterInfo(string Type, string Color, double BlurX, double BlurY);
+/// <summary>A PlaceObject3 filter. Angle in radians, distance in pixels, strength as a multiplier; Passes is the blur quality.</summary>
+public sealed record FilterInfo(string Type, string Color, double BlurX, double BlurY, double Angle = 0, double Distance = 0,
+                                double Strength = 1, int Passes = 1, bool Inner = false, bool Knockout = false);
 
 /// <summary>One PlaceObject/PlaceObject2/PlaceObject3 record.</summary>
 public sealed class Placement
