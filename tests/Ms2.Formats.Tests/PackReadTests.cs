@@ -58,10 +58,12 @@ public class PackReadTests
             }
         }
         TestContext.Out.WriteLine($"skipped {skipped}");
-        TestContext.Out.WriteLine($"entries {total}, fast {PackSet.FastAesHits}, fallback {PackSet.FastAesMisses}");
+        TestContext.Out.WriteLine($"entries {total}, fast {PackSet.FastAesHits}, AES misses {PackSet.FastAesMisses}, package fallbacks {PackSet.Fallbacks}");
         Assert.That(total, Is.GreaterThanOrEqualTo(5000));
         Assert.That(PackSet.FastAesHits, Is.GreaterThan(0));
+        // every route off the fast path is counted (a null from the AES route for any reason, any read that ends in GetBytes)
         Assert.That(PackSet.FastAesMisses, Is.EqualTo(0));
+        Assert.That(PackSet.Fallbacks, Is.EqualTo(0));
     }
 
     /// <summary>Archives opened side by side by Prefetch (and by reads from several threads at once) hold the same entries and bytes as opened one by one.</summary>

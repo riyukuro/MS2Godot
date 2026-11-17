@@ -121,17 +121,21 @@ public sealed class PackSet : IDisposable
     // transform call and one 16-byte array per block and runs over the base64 length (a third more blocks than bytes). Here
     // the same standard AES (System.Security.Cryptography.Aes, AES-NI) makes exactly the needed blocks in one call and the
     // xor is vectorized. Returns null for anything else (not an AES entry, any exception): the package's decrypt then runs.
-    internal static long FastAesHits, FastAesMisses;
+    // FastAesMisses counts every entry the platform-AES route did not decrypt (a null return for any reason); Fallbacks every
+    // read that ended in the package's GetBytes. Zero of both over a test run means every entry took the fast path.
+    internal static long FastAesHits, FastAesMisses, Fallbacks;
+
+    static byte[] Miss() { Interlocked.Increment(ref FastAesMisses); return null; }
 
     static byte[] FastAes(IPackFileHeader h, Encryption flag, byte[] src)
     {
         try
         {
-            if (((uint)flag & 0xee000000) != 0xee000000) return null;
+            if (((uint)flag & 0xee000000) != 0xee000000) return Miss();
             CipherKeys.GetKeyAndIV(h.Version, (uint)h.CompressedFileSize, out var key, out var iv);
-            if (key == null || iv == null || iv.Length != 16 || (key.Length != 16 && key.Length != 24 && key.Length != 32)) return null;
+            if (key == null || iv == null || iv.Length != 16 || (key.Length != 16 && key.Length != 24 && key.Length != 32)) return Miss();
             var dec = new byte[Base64.GetMaxDecodedFromUtf8Length(src.Length)];
-            if (Base64.DecodeFromUtf8(src, dec, out var used, out var written) != System.Buffers.OperationStatus.Done || used != src.Length) return null;
+            if (Base64.DecodeFromUtf8(src, dec, out var used, out var written) != System.Buffers.OperationStatus.Done || used != src.Length) return Miss();
             if (written != dec.Length) Array.Resize(ref dec, written);
             int blocks = (written + 15) / 16;
             var ks = new byte[blocks * 16];
@@ -152,7 +156,7 @@ public sealed class PackSet : IDisposable
             Interlocked.Increment(ref FastAesHits);
             return dec;
         }
-        catch (Exception) { Interlocked.Increment(ref FastAesMisses); return null; }
+        catch (Exception) { return Miss(); }
     }
 
     byte[] ReadPlain(Archive a, PackFileEntry e)
@@ -196,6 +200,7 @@ public sealed class PackSet : IDisposable
 
     byte[] Fallback(Archive a, PackFileEntry e)
     {
+        Interlocked.Increment(ref Fallbacks);
         lock (gate) return a.Reader.GetBytes(e);
     }
 
