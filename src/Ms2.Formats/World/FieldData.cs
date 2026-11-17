@@ -40,6 +40,9 @@ public sealed class FieldData
     public float SimpleShadow = 0.5f;
     /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
     public bool CheckClimb = true;
+    /// <summary>&lt;ui instancingGrid&gt;: the hardware-instancing cell edge (CFieldDataCli m_nInstancingGrid, default 0 = one cell);
+    /// WorldService::FUN_141bc72f0 hands it to HardwareInstancingService::SetCellSize before BuildInstancings.</summary>
+    public int InstancingGrid;
 
     /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
     public static FieldData FindByXBlock(PackSet packs, string xblockName)
@@ -62,6 +65,7 @@ public sealed class FieldData
             }
             var prop = env.Element("property") ?? fd.Element("property");
             if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
+            if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
             var fov = env.Element("fov");
             if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
             var sh = env.Element("shadow");

@@ -20,7 +20,9 @@ public sealed class FieldBuilder
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
 
-    public int Instances, MultiMeshes, Boxes, Meshes, Whiteboxes, Missing, OwnShells;
+    public int Instances, MultiMeshes, Boxes, Meshes, Whiteboxes, Missing, OwnShells, SplitObjects;
+    /// <summary>The field's &lt;ui instancingGrid&gt; (FieldData.InstancingGrid): the instancing cell edge, 0 = one cell.</summary>
+    public int InstancingGrid { get; set; }
 
     /// <summary>
     /// How far behind its colour an own-group shell twin sorts (game units): Godot sorts the alpha list by priority, then by
@@ -207,8 +209,40 @@ public sealed class FieldBuilder
             // blended mesh's depth-only shell as a twin instance sorted just behind its colour, so it comes right before it
             var shell = ShellOf(ents[0]);
             var ownBlended = new List<MultiMesh>();
+            // a plain group's blended meshes draw as the client's alpha objects: one per instancing batch, one per other copy
+            var objects = shell == Shell.None ? AlphaObjects(ents) : null;
+            if (objects != null && objects.Count < 2) objects = null;
             foreach (var (mesh, local) in me.Meshes)
             {
+                if (objects != null && mesh.AlphaBlendOn)
+                {
+                    var shared = builder.BuildMesh(mesh, skin: false, instanceColor: true);
+                    var glow = builder.GlowMaterial(mesh);
+                    for (int k = 0; k < objects.Count; k++)
+                    {
+                        var obj = objects[k];
+                        var om = new MultiMesh
+                        {
+                            TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
+                            UseColors = true,
+                            Mesh = shared,
+                            InstanceCount = obj.Count,
+                        };
+                        for (int i = 0; i < obj.Count; i++)
+                        {
+                            om.SetInstanceTransform(i, ModelBuilder.ToGodot(obj[i].Transform) * local);
+                            om.SetInstanceColor(i, InstanceColor(obj[i]));
+                        }
+                        visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                        if (glow != null)
+                            visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}_glow", Multimesh = om, Layers = GlowPass.Bit, MaterialOverride = glow, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                        MultiMeshes++;
+                        Instances += obj.Count;
+                    }
+                    SplitObjects += objects.Count;
+                    mi++;
+                    continue;
+                }
                 var mm = new MultiMesh
                 {
                     TransformFormat = MultiMesh.TransformFormatEnum.Transform3D,
@@ -304,6 +338,39 @@ public sealed class FieldBuilder
             ShadowCasters++;
         }
         shadowBake.Clear();
+    }
+
+    /// <summary>
+    /// The client's alpha objects for the copies of one plain (non-shell) model, in placement order. Only an entity with
+    /// UseInstancing is batched (HardwareInstancingService::BuildInstancings); it joins the first batch whose
+    /// Unk_MeshInstancingConfig::Equals matches: IsCastingShadow, IsReceivingShadow, the instancing cell (the shell flag
+    /// skips it; plain batches always compare it) and MaterialColor (GetEntityColor, exact float compare). A batch of one is
+    /// dropped and draws as its entity. Every other copy is its own entity, whose meshes go to the alpha list one by one
+    /// (MS2RenderListProcessor::PreRenderProcessList), so each blended mesh of each object is one draw sorted at its own box.
+    /// Not modelled: the nearby-light list (FUN_1413d7160) that Equals also compares. It tests
+    /// |light.Position - scene.WorldTranslate| &lt;= light.Range + scene.WorldBound.Radius, and the client's live NiBound
+    /// radius is not available here, so such batches stay together (an under-split, 46 objects in 44 groups over all fields).
+    /// Null when a copy is kind A (placed IsHighPrioAlphaObject or Fluid on an instanced copy): those stay one draw.
+    /// </summary>
+    List<List<FieldEntity>> AlphaObjects(List<FieldEntity> ents)
+    {
+        var objects = new List<List<FieldEntity>>();
+        var batches = new Dictionary<(int, int, int, Color, bool, bool), List<FieldEntity>>();
+        foreach (var e in ents)
+        {
+            if (!e.Bool("UseInstancing")) { objects.Add(new List<FieldEntity> { e }); continue; }
+            if (e.Bool("IsHighPrioAlphaObject") || e.Get("CubeType") == "Fluid") return null;
+            var p = e.Position;
+            var c = e.Numbers("MaterialColor");
+            var colour = c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2]) : new Color(0.70588237f, 0.70588237f, 0.70588237f);
+            // Unk_InstancingCell: (int)pos / nCellSize per axis, all zero when the field sets no instancingGrid
+            int g = InstancingGrid;
+            var key = (g != 0 ? (int)(float)p.X / g : 0, g != 0 ? (int)(float)p.Y / g : 0, g != 0 ? (int)(float)p.Z / g : 0,
+                       colour, e.Bool("IsCastingShadow", true), e.Bool("IsReceivingShadow", true));
+            if (!batches.TryGetValue(key, out var list)) { batches[key] = list = new List<FieldEntity>(); objects.Add(list); }
+            list.Add(e);
+        }
+        return objects;
     }
 
     /// <summary>

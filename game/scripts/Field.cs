@@ -65,14 +65,17 @@ public partial class Field : Node3D
         var flats = new FlatLibrary(packs);
         var map = FieldMap.Load(packs, flats, fieldName);
         long tMap = sw.ElapsedMilliseconds;
-        var fb = new FieldBuilder(packs, assets, builder);
+        FieldData fd = null;
+        try { fd = FieldData.FindByXBlock(packs, fieldName); }
+        catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
+        var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0 };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
         AddChild(fb.Build(map));
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         long tBuild = sw.ElapsedMilliseconds;
-        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells), " +
+        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}), " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
@@ -82,15 +85,10 @@ public partial class Field : Node3D
         AddChild(contents);
         contents.Start(map, fieldName, player, SpawnsLocalPlayer);
         var hdr = new FieldHdr();
-        try
-        {
-            var fd = FieldData.FindByXBlock(packs, fieldName);
-            cam = fd?.Camera ?? cam;
-            hdr = fd?.Hdr ?? hdr;
-            if (fd != null) BlobShadow.Strength = fd.SimpleShadow;
-            if (player != null && fd != null) player.CheckClimb = fd.CheckClimb;
-        }
-        catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
+        cam = fd?.Camera ?? cam;
+        hdr = fd?.Hdr ?? hdr;
+        if (fd != null) BlobShadow.Strength = fd.SimpleShadow;
+        if (player != null && fd != null) player.CheckClimb = fd.CheckClimb;
         camDist = cam.Distance;
         try
         {
