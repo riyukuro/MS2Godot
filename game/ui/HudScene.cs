@@ -482,7 +482,59 @@ public partial class HudScene : Node
                         slotClip.GotoLabel("up");
                         foreach (var cl in slotClip.AllClips()) foreach (var t in cl.TextFields) if (t.Text != key) t.Text = "";
                     }
+            // the action slots in m_commonExpansion: pick up, attack, jump (slotIndex 22-24 on Z X C), each with a customBG
+            if (list?.FindClip("m_commonExpansion") is { } expansion)
+            {
+                var actions = new[] { ("__id26_", "slot_skill_itempickup", "Z"), ("__id27_", "slot_skill_fight", "X"), ("__id28_", "slot_skill_jump", "C") };
+                foreach (var (name, bg, key) in actions)
+                    if (expansion.FindClip(name) is { } slotClip)
+                    {
+                        slotClip.GotoLabel("up");
+                        foreach (var cl in slotClip.AllClips()) foreach (var t in cl.TextFields) t.Text = "";
+                        if (slotClip.FindClip("m_shortcutKey") is { } sk) foreach (var cl in sk.AllClips()) foreach (var t in cl.TextFields) t.Text = key;
+                        CustomBG(r.Movie, slotClip, bg);
+                    }
+            }
+            // the skill expansion slots: the default key table puts Insert Home Page Up over Delete End Page Dn; the captions
+            // are the key names (string/<lang>/keyname.xml by key id)
+            if (list?.FindClip("m_skillExpansion") is { } skillExt)
+            {
+                var names = assets.Table($"string/{assets.Language}/keyname.xml")?.Root?.Elements("key")
+                    .GroupBy(k => (string)k.Attribute("id")).ToDictionary(g => g.Key, g => (string)g.First().Attribute("name"));
+                string[] keyIds = { "128", "120", "122", "129", "125", "127" };
+                var extSlots = skillExt.Children.Where(c => c.Node is MovieClipNode m && m.ClassName == "playerinfo_slot_skill")
+                    .OrderBy(c => Math.Round(c.Base.Origin.Y)).ThenBy(c => c.Base.Origin.X).Select(c => (MovieClipNode)c.Node).ToList();
+                for (int i = 0; i < extSlots.Count && i < keyIds.Length; i++)
+                {
+                    var slotClip = extSlots[i];
+                    slotClip.GotoLabel("up");
+                    foreach (var cl in slotClip.AllClips()) foreach (var t in cl.TextFields) t.Text = "";
+                    string key = names?.GetValueOrDefault(keyIds[i]) ?? "";
+                    if (slotClip.FindClip("m_shortcutKey") is { } sk) foreach (var cl in sk.AllClips()) foreach (var t in cl.TextFields) t.Text = key;
+                }
+            }
+            // BaseSlot.clearSlot: no charge gauge on an empty slot
+            foreach (var cl in slot.AllClips().Where(c => c.ClassName == "playerinfo_slot_skill").ToList()) cl.SetNamedVisible("m_recharge", false);
+            // UIMainPlayerInfo::SetShortkeyPageNumber(key table page + 1) -> setShortkeyPageNumber -> m_page.m_pageNum
+            foreach (var cl in slot.AllClips().Where(c => c.Direct("m_pageNum") != null).ToList()) cl.SetNamedText("m_pageNum", "1");
         }
+    }
+
+    /// <summary>
+    /// The slot's customBG setter: hides m_bg and adds the named class to m_bgLayer at (-1, -1), sized to
+    /// m_bgLayer.width - 2 by m_bgLayer.height - 2 (in the slot's units, set on the child).
+    /// </summary>
+    void CustomBG(UiMovie movie, MovieClipNode slotClip, string className)
+    {
+        if (slotClip.Direct("m_bgLayer") is not { } layerChild || layerChild.Node is not MovieClipNode layer) return;
+        if (movie.BuildClass(className, u) is not { } bg) return;
+        slotClip.SetNamedVisible("m_bg", false);
+        float lw = slotClip.ChildWidth(layerChild), lh = lw;     // m_bgLayer is square (60 x 60 at its scale)
+        if (layer.ContentRect() is { } lb && lb.Size.X > 0) lh = lw * lb.Size.Y / lb.Size.X;
+        var b = bg.ContentRect() ?? new Rect2(0, 0, 60, 60);
+        bg.Position = new Vector2(-1, -1);
+        if (b.Size.X > 0 && b.Size.Y > 0) bg.Scale = new Vector2((lw - 2) / b.Size.X, (lh - 2) / b.Size.Y);
+        layer.AddChild(bg);
     }
 
     /// <summary>The bar fill is clipped by m_mask, a rectangle the movie scales to the value (bottom up).</summary>
