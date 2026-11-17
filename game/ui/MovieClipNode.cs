@@ -24,16 +24,20 @@ public partial class MaskGroup : Control
     public void Update()
     {
         var xf = mask.Node.Transform;
+        bool visible = mask.Node.Visible;
+        if (applied && xf == lastXf && visible == lastVisible) return;     // nothing moved: no property writes
+        applied = true; lastXf = xf; lastVisible = visible;
         var b = mask.MaskBounds;
-        var pts = new[] { xf * b.Position, xf * new Vector2(b.End.X, b.Position.Y), xf * new Vector2(b.Position.X, b.End.Y), xf * b.End };
-        var r = new Rect2(pts[0], Vector2.Zero);
-        foreach (var p in pts) r = r.Expand(p);
-        if (!mask.Node.Visible) r = new Rect2(-100000, -100000, 200000, 200000);   // mask not on the stage: no clipping
+        var r = new Rect2(xf * b.Position, Vector2.Zero);
+        r = r.Expand(xf * new Vector2(b.End.X, b.Position.Y)).Expand(xf * new Vector2(b.Position.X, b.End.Y)).Expand(xf * b.End);
+        if (!visible) r = new Rect2(-100000, -100000, 200000, 200000);   // mask not on the stage: no clipping
         Position = r.Position; Size = r.Size;
         Inner.Position = -r.Position;
     }
 
-    public override void _Process(double delta) => Update();
+    // The mask's transform and visibility change only in MovieClipNode.GotoFrame (timeline moves, Override, SetChildX,
+    // HideNamed all end there), which calls Update for its groups; nothing has to run per frame.
+    bool applied, lastVisible; Transform2D lastXf;
 }
 
 public partial class MovieClipNode : Node2D
@@ -146,6 +150,7 @@ public partial class MovieClipNode : Node2D
                     var holder = new Node2D { Visible = false };
                     holder.AddChild(node);
                     group = new MaskGroup(child);
+                    maskGroups.Add(group);
                     groupEnd = (int)c["clipDepth"];
                     AddChild(group); group.AddChild(holder);
                 }
@@ -214,7 +219,10 @@ public partial class MovieClipNode : Node2D
             c.Node.Modulate = col;
             if (!vis) c.Node.Visible = false;
         }
+        foreach (var g in maskGroups) g.Update();
     }
+
+    readonly List<MaskGroup> maskGroups = new();
 
     /// <summary>Instance by AS3 path ("m_dialog.m_inputID"); unnamed sprite children are searched through.</summary>
     public MovieClipNode FindClip(string path)
