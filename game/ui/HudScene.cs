@@ -705,6 +705,8 @@ public partial class HudScene : Node
             AlignDialog(r, gmBody, 8, gb.Size, 5, -(ExpBarLift - 6 + AdventureBarLift));
         // configUI hides the quest and pet attack buttons; no pet (initPetInfo) and no contract (initContract(true)) for now
         Hide(r, "m_quest", "m_petInfo", "m_petAttack", "m_contract");
+        // OnLoadComplete -> LoadRenderTarget: the face portrait (faceView) in m_renderTarget
+        if (DialogBody(r) is { } faceBody) PortraitView.Attach(faceBody, faceBody.Direct("m_renderTarget"), assets.Packs, Settings.NifXml);
         var menus = r.FindClip("m_menus");
         if (menus == null) return;
         // RefreshMenu -> addMenuEntity per top item; SystemDropDownContainer.addEntity builds the entry class, sets the icon
