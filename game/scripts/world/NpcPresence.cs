@@ -10,7 +10,9 @@ namespace Ms2Godot.World;
 ///   npc's position, in collision group 4; it blocks the local player unless the row sets capsule ignore.
 /// - The name tag (UINameTag, the uinametag movie's NameTag): only for rows with nametag="1"; the name and, on the line above,
 ///   the npc title (npctitle.xml), font size 18 in NameTagColorFriendly. It sits OffsetNpcNametag above the model's top, is
-///   drawn in screen space, fully opaque up to 700 away, fading to 40% at 1500 and hidden beyond.
+///   drawn in screen space, fully opaque up to 700 away, fading to 40% at 1500 and hidden beyond. Like every movie the tag is
+///   drawn at the UI scale (UiScale), and NameTag.setData centres m_name vertically (TextFieldEx VALIGN_CENTER), as for the
+///   local player's tag (PlayerNameTag).
 /// </summary>
 public sealed partial class NpcPresence : CanvasLayer
 {
@@ -24,6 +26,7 @@ public sealed partial class NpcPresence : CanvasLayer
     readonly List<Tag> tags = new();
     readonly ClientConstants constants;
     float tagOffset;
+    float u = 1;                          // the movies' draw scale (UiScale)
     Camera3D camera;
     /// <summary>The local player: the fade distance is measured from it (the sandbox camera sits further back than the client's).</summary>
     public Node3D Viewer;
@@ -37,6 +40,7 @@ public sealed partial class NpcPresence : CanvasLayer
         tagOffset = constants.Float("OffsetNpcNametag", 260);
         var (r, g, b) = constants.Color("NameTagColorFriendly", (0.635f, 1f, 0.549f));
         var color = new Color(r, g, b);
+        if (IsInsideTree()) u = UiScale.For(GetViewport().GetVisibleRect().Size);
         UiMovie movie = null;
         try { movie = new UiMovie(ui, "uinametag"); } catch (Exception e) { GD.PushWarning("name tag movie: " + e.Message); }
         foreach (var n in npcs)
@@ -59,12 +63,16 @@ public sealed partial class NpcPresence : CanvasLayer
 
     void AddTag(FieldNpcs.Placed n, UiMovie movie, Color color)
     {
-        var node = movie.BuildClass("NameTag") ?? movie.BuildClass("UINameTag");
+        var node = movie.BuildClass("NameTag", u) ?? movie.BuildClass("UINameTag", u);
         if (node == null) return;
-        // setData {name, guild = title, visibleSymbol false, fontSize 18, fontColor}: no symbol or skin for npcs
+        // setData {name, guild = title, visibleSymbol false, fontSize 18, fontColor}: no symbol or skin for npcs; m_name is
+        // already size 18 and is centred vertically (VALIGN_CENTER)
         foreach (var hide in new[] { "m_symbol", "m_bgSkin" }) node.SetNamedVisible(hide, false);
-        SetLabel(node.FindClip("m_name"), n.Row.Name, 18, color);
+        var nameClip = node.FindClip("m_name");
+        SetLabel(nameClip, n.Row.Name, null, color);
+        foreach (var c in nameClip?.AllClips() ?? []) foreach (var t in c.TextFields) t.AlignCenter();
         SetLabel(node.FindClip("m_guild"), n.Row.Title ?? "", null, color);
+        node.Scale = new Vector2(u, u);
         AddChild(node);
         tags.Add(new Tag { Npc = n, Node = node });
         NameTags++;
