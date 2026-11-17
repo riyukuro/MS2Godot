@@ -238,7 +238,7 @@ public sealed partial class DamageText : CanvasLayer
                 e.CanJump = false;
             }
             stage.Y += PitchShift(e.Pos) * u;
-            w.Position = stage.Round();
+            w.Position = UiScale.StagePoint(stage, u);
             float s = DistanceScale(e.Pos);
             w.Scale = new Vector2(s * u, s * u);
             w.Visible = true;
@@ -265,7 +265,7 @@ public sealed partial class DamageText : CanvasLayer
             }
             var stage = camera.UnprojectPosition(p);
             stage.Y += PitchShift(p) * u;            // + PCBase::m_f178 = OffsetPcDamagenumber, 0
-            w.Position = stage.Round();
+            w.Position = UiScale.StagePoint(stage, u);
             w.Scale = new Vector2(u, u);             // FUN_141914c40: 1 for the own PC
             w.Visible = true;
         }

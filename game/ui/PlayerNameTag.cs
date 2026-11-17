@@ -85,7 +85,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
         if (!on) return;
         var p = camera.UnprojectPosition(anchor);
         p.Y += (offset + HeightAdjust(anchor)) * u;      // vfunc_6 works in stage units: screen point / u, then the shifts
-        node.Position = p.Round();
+        node.Position = UiScale.StagePoint(p, u);
     }
 
     /// <summary>The own PC's Eff_UI point this frame (its position when the dummy is missing), null before the player is found.</summary>

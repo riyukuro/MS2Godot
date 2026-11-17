@@ -38,6 +38,15 @@ public static class UiScale
     public static readonly Vector2 MovieOrigin = new(-1, -1);
 
     /// <summary>
+    /// A point set with ASDisplayObject::SetPositionFloat, given in window pixels at the movie scale <paramref name="u"/>:
+    /// AS3ValueObjectInterface::SetDisplayInfo stores x and y as int(floor(v * 20)) twips of the stage, so the clip keeps
+    /// the fraction down to 1/20 of a stage unit; it is not rounded to whole pixels.
+    /// </summary>
+    public static Vector2 StagePoint(Vector2 p, float u) => new(Twips(p.X, u), Twips(p.Y, u));
+
+    static float Twips(float v, float u) => (float)(Math.Floor((double)(v / u) * 20.0) / 20.0) * u;
+
+    /// <summary>
     /// The stage a movie sees in AS3 (Stage.stageWidth / stageHeight): the viewport (w + 2, h + 2) at the movie scale.
     /// Stage::stageWidthGet / stageHeightGet return the visible frame rect's size cast to SInt32, so it is truncated:
     /// 1837 x 1034 for a 1280 x 720 window.

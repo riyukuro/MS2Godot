@@ -182,7 +182,7 @@ public sealed partial class NpcPresence : CanvasLayer
             t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
             var p = camera.UnprojectPosition(head);
             p.Y += (tagOffset + Shift(head)) * u;
-            t.Node.Position = p.Round();
+            t.Node.Position = UiScale.StagePoint(p, u);
         }
         foreach (var b in bars.Values)
         {
@@ -191,7 +191,7 @@ public sealed partial class NpcPresence : CanvasLayer
             if (camera.IsPositionBehind(a)) { b.Update(null); continue; }
             var p = camera.UnprojectPosition(a);
             p.Y += (barOffset + Shift(a)) * u;
-            b.Update(p);                          // float origin, as SetPositionFloat
+            b.Update(p);
         }
     }
 

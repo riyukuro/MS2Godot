@@ -39,7 +39,7 @@ public sealed class HpBarClip
         node.Visible = true;
         if (needsOpen) { Open(rank); dirty = true; }
         if (dirty) { SetWidth(friendly, cur, max); dirty = false; }
-        node.Position = screen;
+        node.Position = UiScale.StagePoint(screen, u);   // SetPositionFloat (uihpbar.cpp:171, 480, 618)
     }
 
     bool Build()
