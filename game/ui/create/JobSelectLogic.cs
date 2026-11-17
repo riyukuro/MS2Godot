@@ -85,8 +85,11 @@ public sealed class JobSelectLogic
         SizePlayer();
     }
 
-    /// <summary>OnLoadComplete -> initData(arrTab, selectedTabIndex, selectedJobData).</summary>
-    public void InitData(int startJob)
+    /// <summary>
+    /// OnLoadComplete -> initData(arrTab, selectedTabIndex, selectedJobData). Without <paramref name="show"/> the page is
+    /// put straight at the end of its "show" state (a relayout of a page already open).
+    /// </summary>
+    public void InitData(int startJob, bool show = true)
     {
         foreach (var b in buttons) { b.Clip.GetParent()?.RemoveChild(b.Clip); b.Clip.QueueFree(); }
         buttons.Clear();
@@ -113,8 +116,8 @@ public sealed class JobSelectLogic
             buttons.Add((clip, w, jobs[i], i));
         }
         ChangeTab(selectedTab, false);
-        content.GotoLabel("show", true);
-        root.FindClip(C.Instances.M_fullBg)?.GotoLabel("show", true);
+        content.GotoLabel("show", show);
+        root.FindClip(C.Instances.M_fullBg)?.GotoLabel("show", show);
     }
 
     /// <summary>CharacterCreateJobButton.data: name, enabled (m_bg "_job*10" or "_dis"), event mark.</summary>

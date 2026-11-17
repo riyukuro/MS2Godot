@@ -55,7 +55,12 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     static CharacterCreateScene current;
     public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); current = this; }
-    public override void _ExitTree() { if (current == this) current = null; base._ExitTree(); }
+    public override void _ExitTree()
+    {
+        if (current == this) current = null;
+        if (layer != null) GetViewport().SizeChanged -= QueueRelayout;
+        base._ExitTree();
+    }
 
     PackSet uiPacks;
     CreateTables tables;
@@ -68,6 +73,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
     ModelBuilder builder;
     FieldMap map;
     string shotDir;
+    Vector2I? resizeTo;
     int frame;
 
     protected override string FieldNameFor(string defaultName)
@@ -83,7 +89,11 @@ public partial class CharacterCreateScene : LobbyFieldScene
                 if (args[i] == "--gender") gender = args[i + 1].StartsWith("m", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             }
         }
-        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--shots") shotDir = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "--shots") shotDir = args[i + 1];
+            if (args[i] == "--resize" && args[i + 1].Split('x') is [var w, var h] && int.TryParse(w, out int rw) && int.TryParse(h, out int rh)) resizeTo = new Vector2I(rw, rh);
+        }
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
         uiPacks = new PackSet(Settings.DataDir);
         tables = new CreateTables(uiPacks);
@@ -104,6 +114,30 @@ public partial class CharacterCreateScene : LobbyFieldScene
         AddChild(layer);
         if (page == Page.Select) BuildSelect();
         else BuildCreate();
+        // the client sizes every movie to the back buffer: on a window resize the open dialogs align again
+        // (UIDialog::vfunc_43 -> alignment), as on the login screen and the character list
+        GetViewport().SizeChanged += QueueRelayout;
+    }
+
+    bool relayoutQueued;
+    void QueueRelayout()
+    {
+        if (relayoutQueued) return;
+        relayoutQueued = true;
+        CallDeferred(MethodName.Relayout);
+    }
+
+    /// <summary>The open page built again at the new window's UI scale, in the state the player left it.</summary>
+    void Relayout()
+    {
+        relayoutQueued = false;
+        if (!IsInsideTree()) return;
+        bool optionsOpen = custom?.Options.Visible == true;     // read while the old page is still in the tree
+        foreach (var old in new[] { listRoot, selectRoot, createRoot })
+            if (old != null) { layer.RemoveChild(old); old.QueueFree(); }
+        listRoot = selectRoot = createRoot = null;
+        if (jobs != null) BuildSelect(jobs.SelectedJob);
+        else if (custom != null) BuildCreate(custom, optionsOpen);
     }
 
     /// <summary>The window in pixels (LobbyLayout.UseWindowPixels), its UI scale and movie stage (LobbyLayout).</summary>
@@ -115,7 +149,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     // ---- job pick ----
 
-    void BuildSelect()
+    /// <summary>The job page; <paramref name="relayoutJob"/> (not 0) rebuilds a page already open on that job.</summary>
+    void BuildSelect(int relayoutJob = 0)
     {
         var (_, u, stage) = Screen();
         // the character list stays behind, dimmed by the job page's m_fullBg
@@ -146,7 +181,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         UiWidgets.ApplyInspector(selectRoot, UICharacterCreateSelectDialogContract.Inspector);
         layer.AddChild(selectRoot);
         jobs = new JobSelectLogic(movie, selectRoot, tables, uiPacks);
-        jobs.InitData(job);
+        jobs.InitData(relayoutJob != 0 ? relayoutJob : job, show: relayoutJob == 0);
         jobs.Align(stage, r);
         jobs.Create += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
         jobs.Prev += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
@@ -156,7 +191,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     // ---- create ----
 
-    void BuildCreate()
+    /// <summary>The create page; with <paramref name="old"/> it is rebuilt over that page's look and state.</summary>
+    void BuildCreate(CharacterCreateLogic old = null, bool optionsOpen = false)
     {
         var (_, u, stage) = Screen();
         var movie = new UiMovie(assets, UICharacterCreateDialogContract.Movie);
@@ -182,13 +218,17 @@ public partial class CharacterCreateScene : LobbyFieldScene
             guide.Override = new Transform2D(0, LobbyLayout.BtnsAlignment(LobbyLayout.StageBottomLeftInDialog(at, r, stage), guideH, stage));
             createRoot.GotoFrame(createRoot.Frame);
         }
-        var look = new CreateLook(packs, new ColorPalettes(packs));
+        var look = old?.Look ?? new CreateLook(packs, new ColorPalettes(packs));
         custom = new CharacterCreateLogic(movie, createRoot, look);
         custom.LookChanged += RebuildPreview;
         custom.Back += () => SwitchTo(Page.Select);
         custom.Created += (packet, bytes) => CharacterCreated?.Invoke(packet, bytes);
-        custom.InitData(gender, job, "Bigleaf  CH.1");
-        RebuildPreview();
+        if (old != null) custom.Restore(old, "Bigleaf  CH.1", optionsOpen);
+        else
+        {
+            custom.InitData(gender, job, "Bigleaf  CH.1");
+            RebuildPreview();
+        }
         mouse = new UiWidgets.MouseRouter(createRoot);
     }
 
@@ -244,6 +284,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         base._Process(delta);
         if (shotDir == null) return;
         frame++;
+        if (resizeTo is { } to) { ResizeShots(to); return; }
         if (page == Page.Select)
         {
             if (frame == 45) Save("create_jobselect.png");
@@ -272,6 +313,24 @@ public partial class CharacterCreateScene : LobbyFieldScene
             if (frame == 211) { custom.OnCreate(); custom.Confirm("Tester01"); }
             if (frame == 215) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
         }
+    }
+
+    /// <summary>
+    /// --resize WxH: the page in a changed state (job page: the neighbour tab clicked; create page: the makeup category with
+    /// an editable item and its option panel open, and the name prompt open with a name typed), one shot, then the window
+    /// resized and a second shot.
+    /// </summary>
+    void ResizeShots(Vector2I to)
+    {
+        string name = page == Page.Select ? "create_jobselect" : $"create_page_{job}";
+        if (frame == 45)
+        {
+            if (page == Page.Select) ClickAt(jobs.TabClips.ElementAt(jobs.NeighbourTab).GetGlobalTransform() * new Vector2(87, 55));
+            else { custom.SelectCategory(2, true); PickEditable(Ms2.Net.Packets.EquipSlot.FD); custom.OnCreate(); custom.PromptText = "Tester01"; }
+        }
+        if (frame == 90) Save($"{name}_before.png");
+        if (frame == 91) GetWindow().Size = to;
+        if (frame == 150) { Save($"{name}_resized_{to.X}x{to.Y}.png"); packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
     }
 
     /// <summary>Scripted runs: wear the slot's first editable item, preferring one with position presets.</summary>

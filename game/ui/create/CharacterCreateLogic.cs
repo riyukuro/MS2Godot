@@ -102,6 +102,35 @@ public sealed class CharacterCreateLogic
         root.FindClip(C.Instances.M_title)?.GotoLabel("popup", true);
     }
 
+    /// <summary>
+    /// The page built again over a page already open (a window resize: the client keeps the dialog and aligns it again):
+    /// the same look, category, option panel (<paramref name="optionsOpen"/>: it was showing) and name prompt, with no popup
+    /// or open animation and no host events.
+    /// </summary>
+    public void Restore(CharacterCreateLogic old, string serverName, bool optionsOpen)
+    {
+        openTime = old.openTime;
+        SetGenderButtons(look.Gender);
+        content.SetNamedText("m_serverName", serverName ?? "");
+        content.SetNamedText("m_regionName", "");
+        BuildCurrentItems();
+        category = -1;
+        SelectCategory(Math.Max(old.category, 0), false, false);
+        if (optionsOpen && CreateLook.CategorySlot[category] is var slot && look.Items.TryGetValue(slot, out int id) && look.Customize(id).Editable)
+            options.Show(CurrentContent, look.ItemName(id), look.Customize(id), look.ValuesOf(id), false);
+        dialog.GotoLabel("popup");
+        root.FindClip(C.Instances.M_title)?.GotoLabel("popup");
+        if (old.prompt != null)
+        {
+            string text = old.nameEdit?.Text ?? "", error = old.nameError?.Text ?? "";
+            old.ClosePrompt();
+            OpenPrompt();
+            nameEdit.Text = text;
+            nameEdit.CaretColumn = text.Length;
+            nameError.Text = error;
+        }
+    }
+
     void SetGenderButtons(int gender)
     {
         male?.SetSelected(gender == 0, false);
@@ -184,7 +213,7 @@ public sealed class CharacterCreateLogic
     static Color ToColor(Rgba c) => new(c.R / 255f, c.G / 255f, c.B / 255f, 1f);
 
     /// <summary>CharacterCreatePage.onChangeCategory: the chosen content opens, the buttons below it move down.</summary>
-    public void SelectCategory(int index, bool raise)
+    public void SelectCategory(int index, bool raise, bool animate = true)
     {
         if (index < 0 || index >= categories.Count) return;
         bool changed = index != category;
@@ -197,7 +226,7 @@ public sealed class CharacterCreateLogic
             if (cont != null)
             {
                 cont.Visible = i == index;
-                if (i == index && changed) cont.GotoLabel("_open", true);
+                if (i == index && changed) cont.GotoLabel("_open", animate);
             }
         }
         if (raise) UiBridge.Raise(Movie, C.ToHost.OnChangeCategory, 0, index);
@@ -371,12 +400,19 @@ public sealed class CharacterCreateLogic
     Label nameError;
 
     public bool PromptOpen => prompt != null;
+    /// <summary>The name typed in the open prompt (scripted runs).</summary>
+    public string PromptText { get => nameEdit?.Text; set { if (nameEdit != null) { nameEdit.Text = value; nameEdit.CaretColumn = value.Length; } } }
     public CustomOptionPanel Options => options;
 
     /// <summary>OnCreate: the name prompt over the page.</summary>
     public void OnCreate()
     {
         UiBridge.Raise(Movie, C.ToHost.OnCreate);
+        OpenPrompt();
+    }
+
+    void OpenPrompt()
+    {
         if (prompt != null) return;
         var layer = root.GetParent();
         var size = root.GetViewportRect().Size;

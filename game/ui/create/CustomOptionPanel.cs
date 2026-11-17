@@ -57,7 +57,7 @@ public sealed class CustomOptionPanel
     }
 
     /// <summary>onChangeItem with an editable item: playMovie (popup with the name) and the host's buildCustom(flags, data).</summary>
-    public void Show(MovieClipNode content, string itemName, ItemCustomize c, CustomValues v)
+    public void Show(MovieClipNode content, string itemName, ItemCustomize c, CustomValues v, bool animate = true)
     {
         var holder = content?.FindClip("m_movie");
         var custom = holder?.FindClip("m_custom");
@@ -66,7 +66,7 @@ public sealed class CustomOptionPanel
         if (shown != holder) { Hide(); shown = holder; shownContent = content; }
         Clear();
         content.SetNamedVisible("m_movie", true);
-        holder.GotoLabel("popup", true);
+        holder.GotoLabel("popup", animate);
         custom.SetNamedText("m_name", itemName ?? "");
         custom.SetNamedVisible("m_moviedummy", false);
 
