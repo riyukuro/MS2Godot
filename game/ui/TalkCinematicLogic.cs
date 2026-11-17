@@ -53,6 +53,7 @@ public sealed class TalkCinematicLogic
         Show(container, "m_rNpc", false);
         Show(container, "m_imagePlate", false);
         Clear();
+        Show(script, "m_scrollBar", false);
         body.GotoFrame(0);
         container.GotoFrame(0);
     }
@@ -85,7 +86,10 @@ public sealed class TalkCinematicLogic
         SetTyping(p.Script ?? "");
         SetButton(p.Button);
         if (!string.IsNullOrEmpty(p.Npc)) SetNpc(p.Npc);
-        // TypingText.start() completes at once, and with no reward TalkScript.onScriptComplete -> onButtonPlay
+        UpdateScript();
+        // TypingText.start() completes at once; TalkScript.onScriptComplete shows the scroll bar only for an overflowing
+        // script, and with no reward goes on to onButtonPlay
+        Show(script, "m_scrollBar", showScrollBar);
         UiBridge.Raise(UITalkCinematicContract.Movie, UITalkCinematicContract.ToHost.OnTalkComplete);
     }
 
@@ -179,8 +183,26 @@ public sealed class TalkCinematicLogic
 
     // ---- TalkScript ----
 
+    bool showScrollBar;
+
+    /// <summary>
+    /// TalkScript.updateScript: the script box is 230 tall (five 46 lines); content taller than that gives the bar
+    /// ceil((height - 230) / 46) positions and m_showScrollBar. The bar itself is hidden here and only shown by onScriptComplete,
+    /// so a script that fits (every paged npc line) never shows it.
+    /// </summary>
+    void UpdateScript()
+    {
+        const float box = 230, lineHeight = 46;
+        var field = script.FindClip("m_container.typingText")?.TextFields.FirstOrDefault();
+        float height = field == null || field.Text == "" ? 0 : field.FlashTextHeight() + 5;   // calculateActualHeight: y + textHeight + 5
+        int positions = height > box ? (int)Math.Ceiling((height - box) / lineHeight) : 0;
+        Show(script, "m_scrollBar", false);
+        showScrollBar = positions != 0;
+    }
+
     void Clear()
     {
+        showScrollBar = false;
         SetTyping("");
         Show(script, "m_buttons", false);
     }
