@@ -84,6 +84,8 @@ public partial class FieldContents : Node3D
         {
             try { fnpcs.SpawnNpcs(people, map, Npcs(packs), fieldId, offline ? Masks(packs) : null); }
             catch (Exception ex) { GD.PushWarning("npcs: " + ex.Message); }
+            try { fnpcs.SpawnMobs(people, map, Npcs(packs), Regions(packs), fieldId); }
+            catch (Exception ex) { GD.PushWarning("mobs: " + ex.Message); }
         }
         long tNpcs = sw.ElapsedMilliseconds;
         portals = new FieldPortals(map, fieldId, offline ? Masks(packs) : null);
@@ -98,12 +100,12 @@ public partial class FieldContents : Node3D
                 np.Build(fnpcs.Spawned, Ui(packs));
                 presence = $"; {np.Bodies} npc bodies, {np.NameTags} name tags";
                 spawned = fnpcs.Spawned;
-                if (player != null) AddChild(talk = new NpcTalk(packs, fnpcs.Spawned, player, constants));
+                if (player != null) AddChild(talk = new NpcTalk(packs, fnpcs.Spawned.Where(x => !x.Mob).ToList(), player, constants));
             }
             catch (Exception ex) { GD.PushWarning("npc presence: " + ex.Message); }
         }
         GD.Print($"field contents {fieldName} ({fieldId}): {Props.Built} animated props ({Props.Animated} playing) in {tProps} ms; " +
-                 $"{fnpcs.Actors} actors, {fnpcs.Npcs} npcs ({fnpcs.Masked} quest-masked), {fnpcs.Missing} without a model in {tNpcs - tProps} ms; " +
+                 $"{fnpcs.Actors} actors, {fnpcs.Npcs} npcs ({fnpcs.Masked} quest-masked), {fnpcs.Mobs} mobs, {fnpcs.Missing} without a model in {tNpcs - tProps} ms; " +
                  $"{portals.All.Count} portals ({portals.Masked} quest-masked, {portals.Hidden} hidden){presence}");
         var closed = portals.All.Where(x => !x.Enabled).Select(x => x.Id).OrderBy(x => x).ToList();
         if (closed.Count > 0) GD.Print($"closed portals: {string.Join(" ", closed)}");
@@ -125,6 +127,8 @@ public partial class FieldContents : Node3D
     static NpcTable npcTable;
     /// <summary>The npc table, loaded once per run.</summary>
     public static NpcTable Npcs(PackSet packs) => npcTable ??= new NpcTable(packs);
+    static RegionSpawnTable regionTable;
+    static RegionSpawnTable Regions(PackSet packs) => regionTable ??= new RegionSpawnTable(packs);
 
     /// <summary>The field's portals (with the quest masks) and spawned npcs, for the HUD's minimap; null until Start.</summary>
     public FieldPortals Portals => portals;

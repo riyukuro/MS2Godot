@@ -32,6 +32,7 @@ public sealed class FieldNpcs
         public NpcRow Row;
         public Node3D Root, Body;
         public float Height;          // top of the model above the root, game units
+        public bool Mob;              // a region spawn monster (not talkable)
         public Vector3 Position => Root.GlobalPosition;
     }
     public readonly List<Placed> Spawned = new();
@@ -80,7 +81,7 @@ public sealed class FieldNpcs
         return anims[slot] = a;
     }
 
-    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences)
+    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null)
     {
         var body = builder.Build(m.md, name.ValidateNodeName());
         var root = new Node3D { Name = body.Name };
@@ -88,7 +89,7 @@ public sealed class FieldNpcs
         root.AddChild(body);
         root.Position = FieldBuilder.ToGodotPoint(e.Position);
         // the model faces MS2 -Y; the entity's Z rotation turns it (as the player spawn: yaw about Godot +Y)
-        body.Rotation = new Vector3(0, Mathf.DegToRad((float)e.RotationDeg.Z), 0);
+        body.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg ?? (float)e.RotationDeg.Z), 0);
         body.Scale = new Vector3(scale, scale, scale);
         parent.AddChild(root);
         var player = body.GetNode<AnimationPlayer>("Model/AnimationPlayer");
@@ -143,6 +144,43 @@ public sealed class FieldNpcs
                 Npcs++;
                 break;      // one body per point (NpcCount is how many the server keeps alive there)
             }
+        }
+    }
+
+    public int Mobs;
+
+    /// <summary>
+    /// Server stand-in: monsters of the field's region spawns (MS2RegionSpawn entities). The field's mapspawntag row for the
+    /// entity's SpawnPointID names tags; the npcs those tags pick (npcregionspawndata, FindSpawnResult) are drawn by weight, one
+    /// per point, idle in place. Facing is the entity's Z rotation only when UseRotAsSpawnDir is set, else 0. Fields with no rows (towns) get none.
+    /// </summary>
+    public void SpawnMobs(Node3D parent, FieldMap map, NpcTable table, RegionSpawnTable spawns, int fieldId)
+    {
+        if (fieldId == 0 || !spawns.HasRegions(fieldId)) return;
+        if (kfmByName.Count == 0)
+            foreach (var x in packs.List(NpcArchive))
+                if (x.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)) kfmByName.TryAdd(Path.GetFileNameWithoutExtension(x), x);
+        foreach (var e in map.Entities)
+        {
+            if (!e.HasMixin("MS2RegionSpawnBase") || !int.TryParse(e.Get("SpawnPointID"), out int spawnId)) continue;
+            var region = spawns.Find(fieldId, spawnId);
+            if (region == null || region.Population <= 0) continue;
+            var cands = spawns.Candidates(region).Where(c => table.Find(c.NpcId)?.Kfm != null).ToList();
+            if (cands.Count == 0) continue;
+            // the server draws by weight at runtime; the stand-in draws once per point, repeatably
+            var rng = new Random(fieldId * 100003 + spawnId);
+            int pick = rng.Next(cands.Sum(c => Math.Max(1, c.Weight)));
+            int id = cands[^1].NpcId;
+            foreach (var c in cands) { pick -= Math.Max(1, c.Weight); if (pick < 0) { id = c.NpcId; break; } }
+            var row = table.Find(id);
+            var m = kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
+            if (m == null) { Missing++; GD.Print($"mob {id} ({row.Kfm}): no model"); continue; }
+            var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
+            float yaw = e.Bool("UseRotAsSpawnDir") ? (float)e.RotationDeg.Z : 0;
+            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw);
+            var body = root.GetNode<Node3D>("Body");
+            Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body), Mob = true });
+            Mobs++;
         }
     }
 
