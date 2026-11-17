@@ -17,7 +17,7 @@ sealed class RayQuery
     /// <summary>
     /// A stand-in for CPhysXHelper::CastRay (physxhelper.cpp:187-232): scene raycastAllShapes, which has no cull option.
     /// A triangle mesh is double-sided for rays only with NX_MESH_DOUBLE_SIDED (Nxp.h:247), and NiPhysXMeshDesc copies
-    /// its Mesh Flags into NxTriangleMeshShapeDesc::meshFlags (ToTriMeshDesc, NiPhysXMeshDesc.cpp:244 and :350). Every
+    /// its Mesh Flags into the triangle mesh desc's meshFlags (ToTriMeshDesc, NiPhysXMeshDesc.cpp:359). Every
     /// NiPhysXMeshDesc in the game data has Mesh Flags 0 (a survey of the fields' NIFs, not something the code fixes), so a
     /// ray passes through a mesh triangle from behind. The field's mesh shapes are one-sided in the PhysX winding.
     /// </summary>
