@@ -8,7 +8,7 @@ namespace Ms2Godot;
 /// The client's HDR bloom, as a compositor effect after transparents. The client's chain (BloomRenderStep and the final
 /// scene pass) works on its gamma-space HDR scene target:
 ///  1. average each 4x4 block into a quarter-size target;
-///  2. bright pass: x = max(c - threshold, 0), keep x / (x + offset) in an 8-bit target (the glow-map term is not done);
+///  2. bright pass: x = max(c - threshold, 0), keep x / (x + offset) in an 8-bit target (glow target added after the compression: GlowPass);
 ///  3. two 15-tap Gaussian blurs (deviation 3, every weight doubled), horizontal then vertical, 8-bit targets; both
 ///     step by 1 / quarter width, so the vertical step is a fraction of a texel on a wide screen;
 ///  4. final: scene + bloomscale * bloom.
@@ -18,11 +18,12 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Ms2Bloom : CompositorEffect
 {
+    public GlowPass Glow;
     public float Threshold = 0.27f, Offset = 30f, BloomScale = 2f;
 
     RenderingDevice rd;
     readonly Rid[] shaders = new Rid[3], pipes = new Rid[3];
-    Rid sampler, bright, blurH, blurV;
+    Rid sampler, bright, blurH, blurV, black;
     Vector2I quarter;
 
     const string Code = @"
@@ -35,6 +36,7 @@ vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4
 #if MODE == 0
 layout(rgba16f, set = 0, binding = 0) uniform restrict readonly image2D scene;
 layout(rgba8, set = 0, binding = 1) uniform restrict writeonly image2D dst;
+layout(set = 0, binding = 2) uniform sampler2D glow;
 void main() {
 	ivec2 q = ivec2(gl_GlobalInvocationID.xy);
 	if (any(greaterThanEqual(q, imageSize(dst)))) return;
@@ -44,7 +46,8 @@ void main() {
 		for (int x = 0; x < 4; x++)
 			s += to_gamma(imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb);
 	vec3 b = max(s / 16.0 - pc.threshold, vec3(0.0));
-	imageStore(dst, q, vec4(b / (b + pc.offset), 1.0));
+	vec3 g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).rgb;   // the glow target (GlowPass), added after the compression
+	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g, vec3(1.0)), 1.0));
 }
 #elif MODE == 1
 layout(set = 0, binding = 0) uniform sampler2D src;
@@ -102,6 +105,7 @@ void main() {
             shaders[m] = rd.ShaderCreateFromSpirV(spirv);
             pipes[m] = rd.ComputePipelineCreate(shaders[m]);
         }
+        black = rd.TextureCreate(new RDTextureFormat { Format = RenderingDevice.DataFormat.R8G8B8A8Unorm, Width = 1, Height = 1, UsageBits = RenderingDevice.TextureUsageBits.SamplingBit | RenderingDevice.TextureUsageBits.CanUpdateBit }, new RDTextureView(), new Array<byte[]> { new byte[4] });
         sampler = rd.SamplerCreate(new RDSamplerState
         {
             MinFilter = RenderingDevice.SamplerFilter.Linear,
@@ -174,7 +178,8 @@ void main() {
         for (uint view = 0; view < buffers.GetViewCount(); view++)
         {
             var color = buffers.GetColorLayer(view);
-            Run(0, q, Vector2.Zero, Image(0, color), Image(1, bright));
+            var glowTex = Glow != null && IsInstanceValid(Glow) ? Glow.Texture() : default;
+            Run(0, q, Vector2.Zero, Image(0, color), Image(1, bright), Sampled(2, glowTex.IsValid ? glowTex : black));
             Run(1, q, new Vector2(texel, 0), Sampled(0, bright), Image(1, blurH));
             Run(1, q, new Vector2(0, texel), Sampled(0, blurH), Image(1, blurV));
             Run(2, size, Vector2.Zero, Image(0, color), Sampled(1, blurV));
@@ -189,6 +194,7 @@ void main() {
             for (int m = 0; m < 3; m++)
                 if (shaders[m].IsValid) rd.FreeRid(shaders[m]);   // frees the pipeline too
             if (sampler.IsValid) rd.FreeRid(sampler);
+            if (black.IsValid) rd.FreeRid(black);
         }
     }
 }

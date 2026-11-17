@@ -161,6 +161,22 @@ public sealed class ModelBuilder
         return mesh;
     }
 
+    static Shader glowShader;
+
+    /// <summary>The glow pass material of a mesh with a glow map (shaders/field_glow), or null.</summary>
+    public Material GlowMaterial(ModelMesh m)
+    {
+        if (!m.Textures.TryGetValue("glow", out var glowName) || Texture(glowName) is not { } glow) return null;
+        glowShader ??= GD.Load<Shader>("res://shaders/field_glow.gdshader");
+        var sm = new ShaderMaterial { Shader = glowShader };
+        var tex = m.Textures.TryGetValue("base", out var baseName) ? Texture(baseName) : null;
+        sm.SetShaderParameter("has_tex", tex != null);
+        if (tex != null) sm.SetShaderParameter("base_tex", tex);
+        sm.SetShaderParameter("glow_tex", glow);
+        sm.SetShaderParameter("alpha_test", m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
+        return sm;
+    }
+
     static Shader fieldShader, fieldBlendShader, fieldAddShader;
 
     /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE).</summary>

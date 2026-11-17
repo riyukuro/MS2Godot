@@ -91,6 +91,7 @@ public sealed class FieldNpcs
         // the model faces MS2 -Y; the entity's Z rotation turns it (as the player spawn: yaw about Godot +Y)
         body.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg ?? (float)e.RotationDeg.Z), 0);
         body.Scale = new Vector3(scale, scale, scale);
+        BlobShadow.Add(root, Math.Max(25f, ShadowRadius(body) * scale));
         parent.AddChild(root);
         var player = body.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         foreach (var s in sequences)
@@ -182,6 +183,19 @@ public sealed class FieldNpcs
             Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body), Mob = true });
             Mobs++;
         }
+    }
+
+    /// <summary>Half the widest horizontal extent of the model meshes (bind pose), game units.</summary>
+    static float ShadowRadius(Node3D body)
+    {
+        float r = 0;
+        foreach (var mi in body.FindChildren("*", nameof(MeshInstance3D), true, false).OfType<MeshInstance3D>())
+        {
+            if (mi.Mesh == null) continue;
+            var a = mi.Mesh.GetAabb();
+            r = Math.Max(r, Math.Max(a.Size.X, a.Size.Z) * 0.5f);
+        }
+        return Math.Min(r * 1.15f, 200f);
     }
 
     /// <summary>Highest point of the model's meshes (bind pose) above the root.</summary>

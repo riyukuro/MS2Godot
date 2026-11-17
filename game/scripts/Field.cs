@@ -90,6 +90,7 @@ public partial class Field : Node3D
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
         var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale };
         camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
+        if (OS.GetEnvironment("MS2_NOGLOW") != "1") bloom.Glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
         AddChild(camera);
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         OnFieldBuilt(builder, map, fieldName);
@@ -202,6 +203,7 @@ public partial class Field : Node3D
         var (visual, anim, md, bodyDir) = Look.PlayerLook.Build(builder, packs);
 
         player = Player.Create(visual, anim);
+        BlobShadow.Add(player, 45);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
         player.Climbs = Movement.Climbables.From(map);
         player.Cubes = Movement.CubeGrid.From(map);

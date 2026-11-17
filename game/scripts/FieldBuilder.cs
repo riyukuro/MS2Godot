@@ -227,6 +227,8 @@ public sealed class FieldBuilder
                     mm.SetInstanceColor(i, InstanceColor(ents[i]));
                 }
                 visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm });
+                if (builder.GlowMaterial(mesh) is { } gm)
+                    visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm });
                 MultiMeshes++;
                 Instances += ents.Count;
             }
