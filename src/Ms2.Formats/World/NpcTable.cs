@@ -28,11 +28,22 @@ public sealed class NpcRow
     public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
+    public bool HpBar;                           // environment hpBar (NpcDataCli, default false): the npc has a head hp bar
+    /// <summary>The npc's effect dummies: the default rows with the npc's &lt;effectdummy&gt; merged in (EffectDummyTable.MergeNpc).</summary>
+    public IReadOnlyList<EffectDummy> EffectDummies = Array.Empty<EffectDummy>();
 
     /// <summary>CNpcData::IsBoss: friendly 0 and class 3 or more.</summary>
     public bool IsBoss => Friendly == 0 && Class >= 3;
     /// <summary>Property tag 5.</summary>
-    public bool HasDamagedHpBarTag => PropertyTags.Contains("damaged_hp_upper_hp_bar");
+    public bool HasDamagedHpBarTag => HasTag("damaged_hp_upper_hp_bar");
+    /// <summary>Property tag 1: the head hp bar uses rank 10.</summary>
+    public bool BigHpBar => HasTag("big_hp_bar");
+    /// <summary>Property tag 2: the head hp bar is shown from spawn.</summary>
+    public bool AlwaysDisplayHpBar => HasTag("always_display_hp_bar");
+    /// <summary>A property tag, matched as the client's tag parser does (CompareNoCase).</summary>
+    public bool HasTag(string tag) => PropertyTags.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
+    /// <summary>The npc's effect dummy of this name (exact case), or null.</summary>
+    public EffectDummy Dummy(string name) => EffectDummyTable.Find(EffectDummies, name);
 }
 
 /// <summary>All npc rows of the player's data, read lazily from the Xml pack.</summary>
@@ -41,46 +52,58 @@ public sealed class NpcTable
     readonly Dictionary<int, NpcRow> rows = new();
     public int Count => rows.Count;
 
-    public NpcTable(PackSet packs)
+    public NpcTable(PackSet packs) : this(packs, EffectDummyTable.Load(packs)) { }
+
+    public NpcTable(PackSet packs, EffectDummyTable effectDummies)
     {
+        var dummies = effectDummies?.Default ?? Array.Empty<EffectDummy>();
         foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("npcdata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
         {
             XDocument x;
             try { x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')); } catch { continue; }
             foreach (var n in x.Descendants("npc"))
-            {
-                if (!int.TryParse((string)n.Attribute("id"), out int id)) continue;
-                var env = n.Element("environment");
-                if (env == null) continue;
-                var model = env.Element("model");
-                var row = new NpcRow
-                {
-                    Id = id,
-                    Friendly = Int(env, "friendly"),
-                    Class = Int(env, "class"),
-                    Gender = Int(env, "gender"),
-                    PropertyTags = ((string)env.Attribute("propertyTags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
-                    SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
-                    Kfm = (string)model?.Attribute("kfm"),
-                    Scale = Flt(model, "scale", 1f),
-                    ShadowScale = Flt(model, "shadowScale", 0f),
-                    WalkSpeed = Flt(model, "walkSpeed", 0),
-                    RunSpeed = Flt(model, "runSpeed", 0),
-                    CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
-                    CapsuleRadius = Flt(env.Element("capsule"), "radius", 25f),
-                    CapsuleIgnore = Int(env.Element("capsule"), "ignore") != 0,
-                    Nametag = Int(env, "nametag") != 0,
-                    Kind = Int(env, "kind"),
-                    Illust = (string)env.Attribute("illust"),
-                    Minimap = (string)env.Attribute("minimap") is not ("0" or "false" or "False"),      // CNpcData: true unless set off
-                    MinimapIcon = (string)env.Attribute("minimapIconName"),
-                };
-                var normal = env.Element("normal");
-                row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                rows[id] = row;
-            }
+                if (ParseRow(n, dummies) is { } row) rows[row.Id] = row;
         }
         LoadNames(packs);
+    }
+
+    /// <summary>
+    /// One &lt;npc id&gt; element of an npcdata file: its &lt;environment&gt; read into a row, with the default effect dummies
+    /// merged with the npc's own; null without an id or an environment.
+    /// </summary>
+    public static NpcRow ParseRow(XElement n, IReadOnlyList<EffectDummy> defaultDummies)
+    {
+        if (!int.TryParse((string)n.Attribute("id"), out int id)) return null;
+        var env = n.Element("environment");
+        if (env == null) return null;
+        var model = env.Element("model");
+        var row = new NpcRow
+        {
+            Id = id,
+            Friendly = Int(env, "friendly"),
+            Class = Int(env, "class"),
+            Gender = Int(env, "gender"),
+            PropertyTags = ((string)env.Attribute("propertyTags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
+            Kfm = (string)model?.Attribute("kfm"),
+            Scale = Flt(model, "scale", 1f),
+            ShadowScale = Flt(model, "shadowScale", 0f),
+            WalkSpeed = Flt(model, "walkSpeed", 0),
+            RunSpeed = Flt(model, "runSpeed", 0),
+            CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
+            CapsuleRadius = Flt(env.Element("capsule"), "radius", 25f),
+            CapsuleIgnore = Int(env.Element("capsule"), "ignore") != 0,
+            Nametag = Int(env, "nametag") != 0,
+            Kind = Int(env, "kind"),
+            Illust = (string)env.Attribute("illust"),
+            Minimap = (string)env.Attribute("minimap") is not ("0" or "false" or "False"),      // CNpcData: true unless set off
+            MinimapIcon = (string)env.Attribute("minimapIconName"),
+            HpBar = EffectDummy.Bool(env, "hpBar", false),
+            EffectDummies = EffectDummyTable.MergeNpc(defaultDummies, env),
+        };
+        var normal = env.Element("normal");
+        row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return row;
     }
 
     /// <summary>Fills the row names from the string table.</summary>
