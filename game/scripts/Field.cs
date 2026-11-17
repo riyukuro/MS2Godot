@@ -102,6 +102,8 @@ public partial class Field : Node3D
         catch (Exception ex) { GD.PushWarning("constants: " + ex.Message); }
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
+        RasterOrigin();
+        GetViewport().SizeChanged += RasterOrigin;
         var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale, GlowScale = hdr.GlowScale };
         camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
         if (OS.GetEnvironment("MS2_NOGLOW") != "1") bloom.Glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
@@ -422,6 +424,24 @@ public partial class Field : Node3D
         offset = FieldBuilder.ToGodotPoint(ms2);
         look = player.GlobalPosition + new Vector3(0, height, 0);
         eye = look + offset;
+    }
+
+    /// <summary>
+    /// The client draws the world with D3D9 (NiDX9Renderer::Do_SetCameraData: CameraService's symmetric frustum, vertical FOV,
+    /// aspect W/H, no half-pixel term), and D3D9 puts pixel centres on whole coordinates, where Vulkan puts them at +0.5: the
+    /// client's world lands half a pixel right and down of the same projection here. The same frustum, as a Frustum
+    /// projection whose window is moved half a pixel left and up, reproduces that raster. Fov stays the client's value, and
+    /// the client-side uses of the frustum (NearPlaneBlocked) keep the symmetric one.
+    /// </summary>
+    void RasterOrigin()
+    {
+        float h = GetViewport().GetTexture().GetHeight();
+        if (h <= 0) return;
+        float size = 2f * camera.Near * Mathf.Tan(Mathf.DegToRad(camera.Fov) * 0.5f);   // the near-plane height (keep height)
+        float px = size / h;
+        camera.Projection = Camera3D.ProjectionType.Frustum;
+        camera.Size = size;
+        camera.FrustumOffset = new Vector2(-0.5f * px, 0.5f * px);
     }
 
     /// <summary>The client's nine points of the near plane (corners, edge midpoints between them) each cast to the target

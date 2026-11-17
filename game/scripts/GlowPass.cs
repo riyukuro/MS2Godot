@@ -34,6 +34,7 @@ public partial class GlowPass : SubViewport
         cam.GlobalTransform = src.GlobalTransform;
         cam.Fov = src.Fov; cam.Near = src.Near; cam.Far = src.Far;
         cam.KeepAspect = src.KeepAspect;
+        cam.Projection = src.Projection; cam.Size = src.Size; cam.FrustumOffset = src.FrustumOffset;   // the main camera's raster origin, in near-plane units
     }
 
     /// <summary>The target as a rendering device texture (render thread).</summary>
