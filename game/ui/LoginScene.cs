@@ -40,15 +40,15 @@ public partial class LoginScene : Control
         dialogRoot.Scale = new Vector2(u, u);
         UiWidgets.ApplyInspector(dialogRoot, UILoginDialogContract.Inspector);
         var dlg = (MovieClipNode)LobbyLayout.Dialog(dialogRoot).Node;   // login_dialog: the LoginDialog
-        dlg.GotoFrame(8);                       // the last frame of the "popup" animation (played below unless taking shots)
         // LoginDialog.alignment: no applyScale (CommonPath.flash is false, set by Main.addedToStage), so the dialog is drawn
-        // at the UI scale only. Its place is Align.alignment(this, ALIGN_BOTTOMCENTER, 0, round(-39 * getUIScale)) on this's
-        // runtime width / height; our symbol bounds (-60.9, -26.6, 460 x 237.6) are a union over the timeline and put the
-        // panel 43 px left of centre with that rule, where the restored client centres it about 10 px above the bottom edge.
-        // Until the runtime bounds are known, the bounds are centred and their bottom put on the stage's bottom, which
-        // gives the restored client's place.
-        var b = dlg.Bounds;
-        LobbyLayout.Place(dialogRoot, new Vector2((stage.X - b.Size.X) * 0.5f - b.Position.X, stage.Y - b.End.Y), u);
+        // at the UI scale only, at Align.alignment(this, ALIGN_BOTTOMCENTER, 0, round(-39 * getUIScale(stage))). That runs
+        // on the first frame of the "popup" animation, where this.width / height is m_dialog at 0.8 from the origin
+        // (340.8 x 176), not its size once the popup has played (426 x 220 from (-43.5, -19)).
+        dlg.GotoFrame(0);
+        var size = dlg.ContentRect()?.Size ?? Vector2.Zero;
+        int dy = (int)LobbyLayout.AsRound(-39 * LobbyLayout.AsUiScale(stage));
+        LobbyLayout.Place(dialogRoot, new Vector2((stage.X - size.X) * 0.5f, stage.Y - size.Y + dy), u);   // Align.computePosition
+        dlg.GotoFrame(8);                       // the last frame of the "popup" animation (played below unless taking shots)
         AddChild(dialogRoot);
         if (shotDir == null) dlg.PlayRange(0, 8);
 
