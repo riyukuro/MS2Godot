@@ -188,6 +188,7 @@ public partial class TextNode : Node2D
         Bounds = UiBuilder.Rc(sym["bounds"]);
         if (nine != null) Bounds = nine.Map(Bounds);
         var font = scope.Assets.FontFor((string)Def["fontClass"]);
+        lineRatios = scope.Assets.LineRatios((string)Def["fontClass"]);
         float size = UiBuilder.F(Def["size"], 12);
         float asx = (float)sx, asy = (float)sy;
         // Scaleform's glyph cache rasterizes plain text (no readability AA) once at a ramp size and draws that raster scaled
@@ -318,16 +319,28 @@ public partial class TextNode : Node2D
     }
 
     /// <summary>
-    /// Flash line metrics in the field's own units: a line is <c>size</c> tall and the next starts <c>1.075 * size</c>
-    /// below it (measured on the reference: textHeight 16 and a 17.2 advance at size 16). Sets the label's line spacing
-    /// to that advance and returns AS3 textHeight.
+    /// Scaleform line metrics in the field's own units (ParagraphFormatter::FinalizeLine): a line is
+    /// IRound(ascent + descent) tall in twips, the next starts IRound(lineHeight + leading) below it, the leading being the
+    /// field's own when its format sets one and the font's otherwise, and the text is as tall as the last line's offset
+    /// plus its height (DocView::Format). Ascent, descent and leading are the font's DefineFont layout at the field's size.
     /// </summary>
+    (float Height, float Advance) LineMetrics()
+    {
+        float size = UiBuilder.F(Def["size"], 12);
+        float leading = Def["leading"] != null ? UiBuilder.F(Def["leading"], 0) : size * lineRatios.Leading;
+        float height = MathF.Round(size * lineRatios.Height * 20) / 20;
+        return (height, height + MathF.Round(leading * 20) / 20);
+    }
+
+    (float Height, float Leading) lineRatios = (1, 0);
+
+    /// <summary>Sets the label's line spacing to the Scaleform line advance and returns AS3 textHeight.</summary>
     public float FlashTextHeight()
     {
-        float size = UiBuilder.F(Def["size"], 12), advance = 1.075f * size;
+        var (height, advance) = LineMetrics();
         var ls = Label.LabelSettings;
         ls.LineSpacing = advance / Label.Scale.Y - ls.Font.GetHeight(ls.FontSize);
-        return size + (NumLines - 1) * advance;
+        return height + (NumLines - 1) * advance;
     }
 
     /// <summary>
@@ -337,11 +350,12 @@ public partial class TextNode : Node2D
     /// </summary>
     public void AlignBottom()
     {
-        float size = UiBuilder.F(Def["size"], 12), advance = 1.075f * size, room = Bounds.Size.Y - 4;
+        var (lineHeight, advance) = LineMetrics();
+        float room = Bounds.Size.Y - 4;
         FlashTextHeight();
-        int lines = NumLines, fit = Math.Max(1, 1 + (int)Math.Floor((room - size) / advance));
+        int lines = NumLines, fit = Math.Max(1, 1 + (int)Math.Floor((room - lineHeight) / advance));
         int shown = Math.Min(lines, fit);
-        float height = size + (shown - 1) * advance;
+        float height = lineHeight + (shown - 1) * advance;
         Label.MaxLinesVisible = shown;
         Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y + BaselineShift + Math.Max(0, room - height));
     }

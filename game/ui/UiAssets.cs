@@ -74,6 +74,20 @@ public sealed class UiAssets
         return Fallback.GetAscent(100) / 100f;
     }
 
+    /// <summary>
+    /// The font's line height (ascent + descent) and leading per pixel of font size, from the DefineFont2/3 layout as
+    /// AscentRatio reads it; the system fallback's own height and no leading when the class is not in gfxfontlib.
+    /// </summary>
+    public (float Height, float Leading) LineRatios(string fontClass)
+    {
+        var lib = string.IsNullOrEmpty(fontClass) ? null : Dependency("gfxfontlib");
+        if (lib != null)
+            foreach (var c in lib.Characters.Values)
+                if (c.Font != null && c.ClassName == fontClass && c.Font.HasLayout && c.Font.Ascent > 0)
+                    return ((float)(c.Font.Ascent + c.Font.Descent) / c.Font.EmSquare, (float)c.Font.Leading / c.Font.EmSquare);
+        return ((Fallback.GetAscent(100) + Fallback.GetDescent(100)) / 100f, 0);
+    }
+
     public UiAssets(PackSet packs) { Packs = packs; }
 
     readonly Dictionary<string, UiMovie> movies = new(StringComparer.OrdinalIgnoreCase);
