@@ -49,6 +49,7 @@ public sealed class FieldBuilder
         public List<(ModelMesh mesh, Transform3D local)> Meshes = new();
         public Aabb Bounds;              // union of the mesh bounds in model space
         public List<Shape3D> Collision = new();   // cooked PhysX meshes of the NIF, model space
+        public List<Shape3D> Overlap = new();     // the same meshes for the overlap tests (TwoSidedSpace), by index
         public bool Elsewhere;           // DrawsInstance took it
     }
 
@@ -92,7 +93,12 @@ public sealed class FieldBuilder
                         int v = cm.Triangles[i - i % 3 + (3 - i % 3) % 3] * 3;     // 0, 2, 1 of each triangle
                         faces[i] = new Vector3(cm.Vertices[v], cm.Vertices[v + 1], cm.Vertices[v + 2]);
                     }
-                    if (faces.Length >= 3) me.Collision.Add(new ConcavePolygonShape3D { Data = faces, BackfaceCollision = false });
+                    if (faces.Length < 3) continue;
+                    me.Collision.Add(new ConcavePolygonShape3D { Data = faces, BackfaceCollision = false });
+                    // checkOverlapCapsule has no sides: a triangle mesh counts from either side, and a convex shape is a
+                    // solid volume, so a capsule wholly inside a hull overlaps it
+                    me.Overlap.Add(cm.Convex ? new ConvexPolygonShape3D { Points = faces }
+                                             : new ConcavePolygonShape3D { Data = faces, BackfaceCollision = true });
                 }
                 bool first = true;
                 foreach (var m in md.Meshes)
@@ -228,10 +234,10 @@ public sealed class FieldBuilder
                 if (me.Collision.Count > 0)
                 {
                     // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
-                    foreach (var shp in me.Collision)
+                    for (int i = 0; i < me.Collision.Count; i++)
                     {
-                        Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D { Shape = shp, Transform = xf }));
-                        if (shp is ConcavePolygonShape3D { BackfaceCollision: false } mesh) twoSided.Add(mesh, xf);
+                        Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D { Shape = me.Collision[i], Transform = xf }));
+                        twoSided.Add(me.Overlap[i], xf);
                     }
                     Meshes++;
                 }

@@ -4,11 +4,12 @@ using Godot;
 namespace Ms2Godot;
 
 /// <summary>
-/// The field's triangle meshes again, double-sided, in a physics space of their own that only overlap tests query.
-/// PhysX's NxScene::checkOverlapCapsule is a plain shape intersection with no sides, while the CCT's sweeps and the
-/// raycasts take the mesh triangles one-sided (see FieldBuilder.Model and RayQuery.CastRay). A Godot concave shape is one
-/// or the other for every query, so the one-sided shapes stay in the world and these copies answer the overlap tests.
-/// Built off the tree with the field; the space and its body exist while the node is in the tree.
+/// The field's NIF collision meshes again, in a physics space of their own that only overlap tests query. PhysX's
+/// NxScene::checkOverlapCapsule is a plain shape intersection with no sides, while the CCT's sweeps and the raycasts take
+/// the mesh and hull triangles one-sided (see FieldBuilder.Model and RayQuery.CastRay). A Godot concave shape is one or
+/// the other for every query, so the one-sided shapes stay in the world and these copies (double-sided triangle meshes,
+/// solid convex hulls; one per NIF mesh, shared by its placements) answer the overlap tests. Built off the tree with the
+/// field; the space and its body exist while the node is in the tree.
 /// </summary>
 public sealed partial class TwoSidedSpace : Node3D
 {
@@ -18,9 +19,13 @@ public sealed partial class TwoSidedSpace : Node3D
     readonly PhysicsShapeQueryParameters3D query = new();
     Rid space, body;
 
-    /// <summary>A double-sided copy of a one-sided mesh shape, at <paramref name="xform"/> in this node's space.</summary>
-    public void Add(ConcavePolygonShape3D oneSided, Transform3D xform) =>
-        shapes.Add((new ConcavePolygonShape3D { Data = oneSided.Data, BackfaceCollision = true }, xform));
+    /// <summary>A mesh's overlap shape placed at <paramref name="xform"/> in this node's space.</summary>
+    public void Add(Shape3D shape, Transform3D xform) => shapes.Add((shape, xform));
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationPredelete) shapes.Clear();
+    }
 
     public override void _EnterTree()
     {
