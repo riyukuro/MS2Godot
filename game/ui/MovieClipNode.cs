@@ -12,6 +12,7 @@ public partial class MaskGroup : Control
 {
     public readonly Node2D Inner = new();
     readonly MovieClipNode.Child mask;
+    public MovieClipNode.Child Mask => mask;
 
     public MaskGroup(MovieClipNode.Child mask)
     {
@@ -33,6 +34,59 @@ public partial class MaskGroup : Control
         if (!visible) r = new Rect2(-100000, -100000, 200000, 200000);   // mask not on the stage: no clipping
         Position = r.Position; Size = r.Size;
         Inner.Position = -r.Position;
+        if (outline != null)
+        {
+            outline.Xf = Inner.Transform * xf;
+            outline.On = visible;
+            outline.ClipChildren = visible ? ClipChildrenMode.Only : ClipChildrenMode.Disabled;
+            outline.QueueRedraw();
+        }
+    }
+
+    MaskOutline outline;
+
+    /// <summary>
+    /// Clips to the mask shape's own outline instead of its bounding box: a SWF mask (a placed shape with a clip depth) shows
+    /// the depths above it only where the shape is filled, whatever its fill's alpha (Scaleform draws the mask into the
+    /// stencil). The shape's paths are filled white under the mask's transform and clip the group's children
+    /// (CanvasItem.clip_children); the box clip stays around it. A mask without vector paths keeps its box.
+    /// </summary>
+    public void UseOutline(JsonArray paths)
+    {
+        if (outline != null || paths == null || paths.Count == 0) return;
+        outline = new MaskOutline(paths);
+        RemoveChild(Inner);
+        AddChild(outline);
+        outline.AddChild(Inner);
+        applied = false;
+        Update();
+    }
+
+    sealed partial class MaskOutline : Node2D
+    {
+        readonly List<Vector2[]> polys = new();
+        public Transform2D Xf = Transform2D.Identity;
+        public bool On = true;
+
+        public MaskOutline(JsonArray paths)
+        {
+            foreach (var p in paths)
+            {
+                var a = (JsonArray)p["pts"];
+                var pts = new Vector2[a.Count / 2];
+                for (int i = 0; i < pts.Length; i++) pts[i] = new Vector2((float)(double)a[2 * i], (float)(double)a[2 * i + 1]);
+                if (Geometry2D.TriangulatePolygon(pts).Length > 0) polys.Add(pts);
+            }
+        }
+
+        public MaskOutline() { }
+
+        public override void _Draw()
+        {
+            if (!On) return;
+            DrawSetTransformMatrix(Xf);
+            foreach (var pts in polys) DrawColoredPolygon(pts, Colors.White);
+        }
     }
 
     // The mask's transform and visibility change only in MovieClipNode.GotoFrame (timeline moves, Override, SetChildX,
@@ -228,6 +282,14 @@ public partial class MovieClipNode : Node2D
     }
 
     readonly List<MaskGroup> maskGroups = new();
+
+    /// <summary>Every mask group in this clip and the clips below it clips to its shape's outline (MaskGroup.UseOutline).</summary>
+    public void UseShapeMasks()
+    {
+        foreach (var clip in AllClips())
+            foreach (var g in clip.maskGroups)
+                g.UseOutline(clip.Scope.Symbol((int)g.Mask.Def["id"])?["paths"] as JsonArray);
+    }
 
     /// <summary>Instance by AS3 path ("m_dialog.m_inputID"); unnamed sprite children are searched through.</summary>
     public MovieClipNode FindClip(string path)

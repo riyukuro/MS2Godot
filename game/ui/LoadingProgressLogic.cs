@@ -63,6 +63,8 @@ public sealed partial class LoadingProgressLogic
                     foreach (var c in clip.Children)
                         if (c.Name == "textField" && c.Node is TextNode tf) tf.AlignCenter();
         }
+        // the masks in the bottom bar's hexagon and the badge are outlines, not their bounding boxes
+        foreach (var n in new[] { bottom, badge }) n?.UseShapeMasks();
         topSize = top?.Bounds.Size ?? Vector2.One;
         bottomSize = bottom?.Bounds.Size ?? Vector2.One;
         foreach (var n in new Node2D[] { clear, picture, top, bottom, guide, badge }) if (n != null) { Layer.AddChild(n); n.Visible = false; }
@@ -88,13 +90,14 @@ public sealed partial class LoadingProgressLogic
             {
                 badge.Visible = true;
                 badge.SetNamedText("textField", "0%");
-                LoopFill(badge);
+                LoopTimelines(badge);
             }
             Layout();
             Active = true;
             return;
         }
         if (badge != null) badge.Visible = false;
+        if (bottom != null) LoopTimelines(bottom);
         foreach (var n in new Node2D[] { clear, picture, top, bottom }) if (n != null) n.Visible = true;
         if (guide != null) guide.Visible = s.ShowGuide;
         // startProgress: m_progressInfoText.htmlText = the move-channel message or the tip
@@ -136,14 +139,16 @@ public sealed partial class LoadingProgressLogic
     }
 
     /// <summary>
-    /// The badge's animated fill (its one nested sprite with a timeline: the shine moving under the hexagon mask). That sprite
-    /// has no stop() and no frame labels, so Flash plays it from the badge's creation and wraps from its last frame to its
-    /// first for as long as it is on the stage (a timeline without a stop() action advances one frame per movie frame and
-    /// loops). Only this gauge's sprite is started; other movies' clips keep their own players.
+    /// The hexagon's running shine: the badge (loadingprogress_loading, sprite 11) and the bottom bar (loadingprogress_bg_bottom,
+    /// sprite 30 at depth 4) each hold one nested sprite with a 120-frame timeline, the gold glint (sprite 8) turning once
+    /// around under a mask of the hexagon's rim (shape 5 / 27, clip depth 4 / 5). The sprite has no stop() and no frame
+    /// labels, so Flash plays it from its creation and wraps from its last frame to its first for as long as it is on the
+    /// stage. Nothing drives it from the load: progress() only writes the percent text (Progressbar.progress,
+    /// LoadingProgress.progress), so it runs the same at 0% and at 100%.
     /// </summary>
-    static void LoopFill(MovieClipNode badge)
+    static void LoopTimelines(MovieClipNode clip)
     {
-        foreach (var c in badge.Children)
+        foreach (var c in clip.Children)
             if (c.Node is MovieClipNode mc && mc.FrameCount > 1 && !mc.FrameScripts) mc.Loop();
     }
 
