@@ -29,6 +29,8 @@ render_mode ambient_light_disabled, specular_disabled;
 global uniform vec3 ms2_ambient;     // ambient light colour * dimmer
 global uniform vec3 ms2_sun_color;   // directional light colour * dimmer
 global uniform vec3 ms2_sun_ambient; // directional light ambient colour * dimmer
+global uniform vec3 ms2_hfog_color; // height fog colour (gamma space)
+global uniform vec3 ms2_hfog;       // height fog: upper height, lower height, density at and below the lower height (0 = none)
 global uniform vec3 ms2_sun_dir;     // world direction the light travels
 
 uniform sampler2D base_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -112,11 +114,17 @@ void fragment() {
 	if (has_glow) {
 		c += texture(glow_tex, UV).rgb;
 	}
+	// Height fog (mapxblock heightfog): a standard height blend, none above `upper`, full density at and below `lower`.
+	// The exact client curve is not recoverable from the on-disk shaders; the numbers are the map's own.
+	float hf = ms2_hfog.z * (1.0 - smoothstep(ms2_hfog.y, ms2_hfog.x, world_pos.y));
+#ifndef ADD
+	c = mix(c, ms2_hfog_color, hf);
+#endif
 	// the output is written in gamma space by Godot's linear -> sRGB conversion
 #ifdef POINT_LIT
 	// opaque: the sun and ambient stay in the term above (emission); Godot's point and spot lights add on the diffuse
 	EMISSION = to_linear(c);
-	ALBEDO = to_linear(t.rgb * dif);
+	ALBEDO = to_linear(t.rgb * dif) * (1.0 - hf);
 	ROUGHNESS = 1.0;
 #else
 	ALBEDO = to_linear(c);

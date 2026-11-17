@@ -148,6 +148,22 @@ public partial class Field : Node3D
         }
         catch (Exception ex) { GD.PushWarning("mapxblock: " + ex.Message); }
 
+        // mapxblock heightfog: colour, upper, lower, percentage (a standard height blend in field_lit)
+        RenderingServer.GlobalShaderParameterSet("ms2_hfog", Vector3.Zero);
+        if (x?.Root?.Element("heightfog") is { } hfog)
+        {
+            try
+            {
+                var hc = ((string)hfog.Attribute("color")).Split(',').Select(s => float.Parse(s, CultureInfo.InvariantCulture) / 255f).ToArray();
+                float up = float.Parse((string)hfog.Attribute("upper"), CultureInfo.InvariantCulture);
+                float lo = float.Parse((string)hfog.Attribute("lower"), CultureInfo.InvariantCulture);
+                float pct = float.Parse((string)hfog.Attribute("percentage"), CultureInfo.InvariantCulture) / 100f;
+                RenderingServer.GlobalShaderParameterSet("ms2_hfog_color", new Vector3(hc[0], hc[1], hc[2]));
+                RenderingServer.GlobalShaderParameterSet("ms2_hfog", new Vector3(up, lo, Mathf.Clamp(pct, 0f, 1f)));
+            }
+            catch (Exception ex) { GD.PushWarning("heightfog: " + ex.Message); }
+        }
+
         float ambient = 0.8f, sunDim = 0.8f;
         Color ambientColor = Colors.White, sunColor = Colors.White, sunAmbient = Colors.Black, sunSpecular = Colors.White;
         var sunDir = new Vec3(0, 0, -1);

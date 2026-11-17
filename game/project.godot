@@ -37,6 +37,14 @@ ms2_sun_specular={
 "type": "vec3",
 "value": Vector3(0.8, 0.8, 0.8)
 }
+ms2_hfog_color={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
+ms2_hfog={
+"type": "vec3",
+"value": Vector3(0, 0, 0)
+}
 ms2_lights={
 "type": "sampler2D",
 "value": ""
