@@ -71,15 +71,33 @@ public sealed class UiAssets
         catch (Exception e) { GD.PushWarning($"UI table {entry}: {e.Message}"); return null; }
     }
 
+    // Movies a layout depends on (the font library, shared components) are parsed once per pack set and shared by every
+    // layout that names them; the parse is pure, so a prefetch may run it on another thread.
+    // The cache lives and dies with its pack set (a weak key), so a pack set of an earlier field is never kept alive by it.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SwfMovie>>> dependencies = new();
+
+    public SwfMovie Dependency(string key)
+    {
+        var packs = Packs;
+        return dependencies.GetOrCreateValue(packs).GetOrAdd(key, k => new Lazy<SwfMovie>(() =>
+        {
+            var e = packs.FindByFileName("Resource/Gfx", k + ".gfx");
+            return e == null ? null : SwfMovie.Parse(packs.Read("Resource/Gfx", e));
+        })).Value;
+    }
+
+    /// <summary>Parses the shared dependency movies on a worker thread while the field loads.</summary>
+    public static void Prefetch(PackSet packs, params string[] keys)
+    {
+        var ui = new UiAssets(packs);
+        System.Threading.Tasks.Task.Run(() => { foreach (var k in keys) try { ui.Dependency(k); } catch { } });
+    }
+
     public JsonObject LoadLayout(string movie)
     {
         var entry = movie.EndsWith(".gfx") ? movie : movie + ".gfx";
         var m = SwfMovie.Parse(Packs.Read("Resource/Gfx", entry));
-        return LayoutJson.Build(m, movie, key =>
-        {
-            var e = Packs.FindByFileName("Resource/Gfx", key + ".gfx");
-            return e == null ? null : SwfMovie.Parse(Packs.Read("Resource/Gfx", e));
-        });
+        return LayoutJson.Build(m, movie, Dependency);
     }
 
     /// <summary>The DDS atlas next to a movie, e.g. "UILoginDialog_I1.dds". Null when missing.</summary>

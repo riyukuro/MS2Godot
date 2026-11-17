@@ -17,3 +17,5 @@ nif.xml
 *.dds
 shots/
 build/
+shots_*/
+game/shots_*/
