@@ -307,7 +307,9 @@ public partial class Player : CharacterBody3D
 
     void NoteHit(GodotObject collider)
     {
-        if (collider is CharacterBody3D) return;
+        // onShapeHit (0x140cfade0) sets the entity of a touched shape, or clears it when the shape has no entity; a touched
+        // controller goes to onControllerHit (0x140cfaec0), which only keeps the other controller
+        if (collider is CharacterBody3D || collider is Node c && c.HasMeta(MoveConfig.ControllerMeta)) return;
         hitGroup = collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
     }
 

@@ -110,6 +110,9 @@ public static class MoveConfig
 
     // PCBase::FUN_141675ed0: standing on an entity whose PropCollisionGroup is 8 = water (swim state)
     public const int WaterGroup = 8;
+    /// <summary>Meta on a body that stands in for another character controller (an npc capsule): NxCharacter reports a
+    /// touch on it to onControllerHit, which leaves GameObjectControllerHitReport's entity alone.</summary>
+    public const string ControllerMeta = "ms2_controller";
     // Unk_PCMove::UpdateMoveDirection: a diagonal is kept for 50 ms after one of its keys is released
     public const float DiagonalHold = 0.05f;
 }
