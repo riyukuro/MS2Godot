@@ -38,6 +38,8 @@ public class PackReadTests
         if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
         var packs = new PackSet(data);
         var rnd = new Random(11);
+        // the counters are static and other tests read through PackSet too: this test checks only what its own reads add
+        long hits0 = PackSet.FastAesHits, misses0 = PackSet.FastAesMisses, fallbacks0 = PackSet.Fallbacks;
         int total = 0, skipped = 0;
         var files = Directory.GetFiles(data, "*.m2d", SearchOption.AllDirectories);
         Assert.That(files, Is.Not.Empty);
@@ -58,12 +60,13 @@ public class PackReadTests
             }
         }
         TestContext.Out.WriteLine($"skipped {skipped}");
-        TestContext.Out.WriteLine($"entries {total}, fast {PackSet.FastAesHits}, AES misses {PackSet.FastAesMisses}, package fallbacks {PackSet.Fallbacks}");
+        long hits = PackSet.FastAesHits - hits0, misses = PackSet.FastAesMisses - misses0, fallbacks = PackSet.Fallbacks - fallbacks0;
+        TestContext.Out.WriteLine($"entries {total}, fast {hits}, AES misses {misses}, package fallbacks {fallbacks}");
         Assert.That(total, Is.GreaterThanOrEqualTo(5000));
-        Assert.That(PackSet.FastAesHits, Is.GreaterThan(0));
+        Assert.That(hits, Is.GreaterThan(0));
         // every route off the fast path is counted (a null from the AES route for any reason, any read that ends in GetBytes)
-        Assert.That(PackSet.FastAesMisses, Is.EqualTo(0));
-        Assert.That(PackSet.Fallbacks, Is.EqualTo(0));
+        Assert.That(misses, Is.EqualTo(0));
+        Assert.That(fallbacks, Is.EqualTo(0));
     }
 
     /// <summary>Archives opened side by side by Prefetch (and by reads from several threads at once) hold the same entries and bytes as opened one by one.</summary>
