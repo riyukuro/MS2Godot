@@ -11,7 +11,8 @@ namespace Ms2Godot.Ui;
 /// size, tinted with the shadow colour, under the face and offset by angle and distance.
 /// It is a child of the field's label drawn behind it, and the glyphs sit where the label's own layout puts them: the pen
 /// position of each glyph cluster is the label's character bounds (Label.GetCharacterBounds, the label's shaped lines), the
-/// baseline is the label's (line top plus the line ascent, centred in the font height, floored as the face is). A line's
+/// baseline is the label's (line top plus the line ascent, centred in the font height, floored as the face is). A line the
+/// face draws at its own exact x (TextNode.LineDx, LineFace) moves its shadow with it. A line's
 /// glyph ids, fonts and in-cluster advances come from that line's text shaped with the label's font and size.
 /// The glyph rasters are cached by (font, shadow ramp size, glyph, blur, strength): the colour is a draw-time tint, not a key.
 /// </summary>
@@ -63,12 +64,12 @@ public partial class GlyphShadow : Node2D
             if (top.Size.Y <= 0) { i++; continue; }                     // a line break, or a line the label does not show
             int j = i + 1;
             while (j < n) { var r = label.GetCharacterBounds(j); if (r.Size.Y <= 0 || r.Position.Y != top.Position.Y) break; j++; }
-            DrawLine(ts, label, font, fontSize, fontH, string.Concat(cps.GetRange(i, j - i)), i, top.Position.Y, ramp, rb, k);
+            DrawLine(ts, label, font, fontSize, fontH, string.Concat(cps.GetRange(i, j - i)), i, top.Position.Y, text.LineDx(i), ramp, rb, k);
             i = j;
         }
     }
 
-    void DrawLine(TextServer ts, Label label, Font font, int fontSize, float fontH, string line, int first, float lineTop, int ramp, float rb, float k)
+    void DrawLine(TextServer ts, Label label, Font font, int fontSize, float fontH, string line, int first, float lineTop, float dx, int ramp, float rb, float k)
     {
         var tl = new TextLine();
         tl.AddString(line, font, fontSize);
@@ -93,7 +94,7 @@ public partial class GlyphShadow : Node2D
                 if (e.Texture != null)
                 {
                     var o = (Vector2)g["offset"];
-                    var at = new Vector2(pen + o.X, MathF.Floor(baseline + o.Y)) + e.Origin * k + offset;
+                    var at = new Vector2(pen + dx + o.X, MathF.Floor(baseline + o.Y)) + e.Origin * k + offset;
                     DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
                     drawn.Add(e.Texture);
                 }

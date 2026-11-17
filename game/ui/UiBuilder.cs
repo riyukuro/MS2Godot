@@ -227,45 +227,103 @@ public partial class TextNode : Node2D
         AddChild(lineShift);
         lineShift.AddChild(Label);
         Label.Draw += AlignLine;
+        face = new LineFace(this);
+        Label.AddChild(face);
     }
 
     public TextNode() { }
 
     readonly Node2D lineShift = new();
+    LineFace face;
 
     /// <summary>
-    /// Scaleform places a centred or right-aligned line by its exact width: the sum of the glyph advances, each rounded to a
-    /// twip (ParagraphFormatter, advance = IRound(advance * Scale), width = the running sum), at
-    /// Max(0, IRound(width / 2 - lineWidth / 2)) or Max(0, IRound(width) - lineWidth) in the text rect (FinalizeLine). A Godot
-    /// label aligns by the line's size rounded up to a whole pixel (TextServer shaped_text_get_size) and truncates the offset
-    /// to a whole pixel (Label::_get_line_rect: int(width - lineWidth) / 2, int(width - lineWidth)). The label is shifted by
-    /// the difference, so the line sits where the client's does. A label of more than one line keeps Godot's placement: the
-    /// shift is one per label, not per line.
+    /// Scaleform places every centred or right-aligned line by its exact width: the sum of the glyph advances, each rounded
+    /// to a twip (ParagraphFormatter, advance = IRound(advance * Scale), width = the running sum), at
+    /// Max(0, IRound(width / 2 - lineWidth / 2)) or Max(0, IRound(width) - lineWidth) in the text rect (FinalizeLine, once
+    /// per line: at each word wrap and at the paragraph end). A Godot label aligns by the line's size rounded up to a whole
+    /// pixel (TextServer shaped_text_get_size) and truncates the offset to a whole pixel (Label::_get_line_rect:
+    /// int(width - lineWidth) / 2, int(width - lineWidth)). A one-line label is shifted by the difference. A label of more
+    /// lines hides its own face and LineFace draws each line's glyphs where the label puts them plus that line's
+    /// difference; GlyphShadow follows the same per-line difference. A label that draws a plain shadow or an outline of its
+    /// own keeps Godot's placement past one line (hiding its face would hide those too).
     /// </summary>
     void AlignLine()
     {
         float dx = 0;
         var align = Label.HorizontalAlignment;
-        if ((align == HorizontalAlignment.Center || align == HorizontalAlignment.Right) && Label.GetLineCount() == 1)
+        var ls = Label.LabelSettings;
+        bool exact = align == HorizontalAlignment.Center || align == HorizontalAlignment.Right;
+        int lines = exact ? Label.GetLineCount() : 0;
+        bool perLine = lines > 1 && ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
+        lineDx.Clear();
+        if (exact && lines == 1)
         {
-            string line = Label.Text.TrimEnd(' ', '\t', '\n', '\r');
             var first = Label.GetCharacterBounds(0);
-            if (line.Length > 0 && first.Size.Y > 0)
-            {
-                var ls = Label.LabelSettings;
-                var tl = new TextLine();
-                tl.AddString(line, ls.Font, ls.FontSize);
-                double sum = 0;
-                foreach (Godot.Collections.Dictionary g in TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid()))
-                    sum += (float)g["advance"] * (int)g["repeat"];
-                tl.Dispose();
-                float twip = 1 / (20 * Label.Scale.X);          // a twip of the field in label pixels
-                float room = Label.Size.X - (float)sum;
-                float at = Math.Max(0, MathF.Round((align == HorizontalAlignment.Center ? room / 2 : room) / twip) * twip);
+            if (first.Size.Y > 0 && ClientLineX(Label.Text, align) is float at)
                 dx = (at - first.Position.X) * Label.Scale.X;   // field units
-            }
         }
+        else if (perLine)
+            foreach (var (start, _, _, text) in LabelLines(Label))
+                if (ClientLineX(text, align) is float at)
+                    lineDx[start] = at - Label.GetCharacterBounds(start).Position.X;   // label pixels
         if (lineShift.Position.X != dx) Callable.From(() => lineShift.Position = new Vector2(dx, 0)).CallDeferred();
+        var self = new Color(1, 1, 1, perLine ? 0 : 1);
+        if (Label.SelfModulate != self) Callable.From(() => Label.SelfModulate = self).CallDeferred();
+        face?.QueueRedraw();
+    }
+
+    /// <summary>The client's x of a line's first glyph in label pixels (FinalizeLine), null for an empty line.</summary>
+    float? ClientLineX(string text, HorizontalAlignment align)
+    {
+        string line = text.TrimEnd(' ', '\t', '\n', '\r');
+        if (line.Length == 0) return null;
+        var ls = Label.LabelSettings;
+        var tl = new TextLine();
+        tl.AddString(line, ls.Font, ls.FontSize);
+        double sum = 0;
+        foreach (Godot.Collections.Dictionary g in TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid()))
+            sum += (float)g["advance"] * (int)g["repeat"];
+        tl.Dispose();
+        float twip = 1 / (20 * Label.Scale.X);          // a twip of the field in label pixels
+        float room = Label.Size.X - (float)sum;
+        return Math.Max(0, MathF.Round((align == HorizontalAlignment.Center ? room / 2 : room) / twip) * twip);
+    }
+
+    readonly Dictionary<int, float> lineDx = new();
+
+    /// <summary>
+    /// The x the client puts a drawn line at relative to the label's own, in label pixels, for the line starting at code
+    /// point <paramref name="start"/> (0 when the label keeps its own placement).
+    /// </summary>
+    public float LineDx(int start) => lineDx.TryGetValue(start, out float d) ? d : 0;
+
+    /// <summary>True while the label's own face is hidden and LineFace draws it.</summary>
+    public bool FaceByLine => lineDx.Count > 0;
+
+    /// <summary>
+    /// The label's shown lines: the code point range (the label's own character positions count code points), the line's
+    /// top in label pixels and its text, grouped from the character bounds the way the label lays the lines out
+    /// (characters it does not show have no bounds).
+    /// </summary>
+    public static List<(int Start, int End, float Top, string Text)> LabelLines(Label label)
+    {
+        var res = new List<(int, int, float, string)>();
+        string t = label.Text;
+        var at = new List<int>();                  // code point -> UTF-16 index
+        for (int c = 0; c < t.Length; c += char.IsSurrogatePair(t, c) ? 2 : 1) at.Add(c);
+        int n = label.VisibleCharacters >= 0 ? Math.Min(at.Count, label.VisibleCharacters) : at.Count;
+        int i = 0;
+        while (i < n)
+        {
+            var top = label.GetCharacterBounds(i);
+            if (top.Size.Y <= 0) { i++; continue; }
+            int j = i + 1;
+            while (j < n) { var r = label.GetCharacterBounds(j); if (r.Size.Y <= 0 || r.Position.Y != top.Position.Y) break; j++; }
+            int a = at[i], b = j < at.Count ? at[j] : t.Length;
+            res.Add((i, j, top.Position.Y, t.Substring(a, b - a)));
+            i = j;
+        }
+        return res;
     }
 
     /// <summary>Screen pixels per label pixel: the glyphs are rasterized at the ramp size and drawn scaled by this.</summary>
