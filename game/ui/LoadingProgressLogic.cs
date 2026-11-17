@@ -106,12 +106,9 @@ public sealed class LoadingProgressLogic
             if (screenShot) picture.Scale = stage / sz;                        // setScreenShotContent
             else
             {
-                // setLocalImageContent: a narrow stage fits 90% of its height, a wide one its width; centred, 30% down
-                float w, h;
-                if (stage.X / stage.Y < 1.3f) { h = stage.Y * 0.9f; w = sz.X * (h / sz.Y); }
-                else { w = stage.X; h = sz.Y * (w / sz.X); }
-                picture.Scale = new Vector2(w / sz.X, h / sz.Y);
-                picture.Position = new Vector2((stage.X - w) * 0.5f, (stage.Y - h) * 0.3f);
+                var r = LocalImageRect(sz, stage);
+                picture.Scale = r.Size / sz;
+                picture.Position = r.Position;
             }
             if (screenShot) picture.Position = Vector2.Zero;
         }
@@ -127,6 +124,27 @@ public sealed class LoadingProgressLogic
             if (l3 < 0) pos.Y += l3 + 20;
             guide.Position = pos;
         }
+    }
+
+    /// <summary>
+    /// setLocalImageContent: where the loading picture goes on the stage. A narrow stage (width / height under 1.3) fits 90% of
+    /// its height, a wider one its width (so the picture is cropped, never letterboxed); centred across, 30% of the spare
+    /// height above it.
+    /// </summary>
+    public static Rect2 LocalImageRect(Vector2 picture, Vector2 stage)
+    {
+        float w, h;
+        if (stage.X / stage.Y < 1.3f) { h = stage.Y * 0.9f; w = picture.X * (h / picture.Y); }
+        else { w = stage.X; h = picture.Y * (w / picture.X); }
+        return new Rect2((stage.X - w) * 0.5f, (stage.Y - h) * 0.3f, w, h);
+    }
+
+    /// <summary>The same in window pixels for a window of <paramref name="window"/> pixels: the movie stage at the UI scale.</summary>
+    public static Rect2 LocalImageRectInWindow(Vector2 picture, Vector2 window)
+    {
+        float k = UiScale.For(window);
+        var r = LocalImageRect(picture, UiScale.MovieStage(window));
+        return new Rect2(UiScale.MovieOrigin + r.Position * k, r.Size * k);
     }
 
     /// <summary>Places a clip so its bounds fill <paramref name="to"/> (the AS3 width / height setters).</summary>

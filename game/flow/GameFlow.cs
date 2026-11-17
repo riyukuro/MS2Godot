@@ -54,8 +54,8 @@ public partial class GameFlow : Node
         var black = new ColorRect { Color = Colors.Black };
         black.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         loadingLayer.AddChild(black);
-        picture = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered };
-        picture.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        // placed per frame by PlacePicture (the loading movie's setLocalImageContent), not stretched by anchors
+        picture = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale };
         black.AddChild(picture);
         AddChild(loadingLayer);
 
@@ -159,12 +159,32 @@ public partial class GameFlow : Node
         Travel.Pending = xblock == null ? null : new Travel.Move(map, xblock, 0, 0);
         GD.Print($"flow: loading map {map} ({xblock ?? "default field"}), picture {Travel.LoadingImage}");
         loadingLayer.Visible = true;
+        PlacePicture();
         loadingFrames = 0;                           // the picture draws for a few frames before the scene change blocks
+    }
+
+    /// <summary>
+    /// The first entry's picture as UILoadingProgress places it (the same movie as a field move): setLocalImageContent on the
+    /// movie stage, so a wide window crops the picture to its width instead of showing bars. The layer is in the viewport's
+    /// (content-scaled) units; the rule is in window pixels, as the client's movie scale comes from the window width.
+    /// </summary>
+    void PlacePicture()
+    {
+        if (picture.Texture == null) { picture.Visible = false; return; }
+        picture.Visible = true;
+        var window = (Vector2)GetWindow().Size;
+        var units = GetViewport().GetVisibleRect().Size;
+        if (window.X <= 0 || window.Y <= 0) return;
+        var r = LoadingProgressLogic.LocalImageRectInWindow(picture.Texture.GetSize(), window);
+        var toUnits = units / window;
+        picture.Position = r.Position * toUnits;
+        picture.Size = r.Size * toUnits;
     }
 
     public override void _Process(double delta)
     {
         if (loadingFrames < 0) return;
+        PlacePicture();
         loadingFrames++;
         if (loadingFrames == 4) GetTree().ChangeSceneToFile(GameScene);
         else if (loadingFrames > 4 && GetTree().CurrentScene?.SceneFilePath == GameScene && loadingFrames > 8)
