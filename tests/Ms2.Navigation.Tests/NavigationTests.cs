@@ -65,7 +65,7 @@ public class NavigationTests
     public void TriaBuildsCachesAndFindsPath()
     {
         var (packs, spec) = Data();
-        var assets = new AssetIndex(packs);
+        var assets = AssetIndex.For(packs);
         var flats = new FlatLibrary(packs);
         var dir = Path.Combine(Path.GetTempPath(), "ms2nav-test-" + Guid.NewGuid().ToString("N"));
         try
