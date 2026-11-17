@@ -25,7 +25,7 @@ namespace Ms2Godot.Ui;
 public sealed partial class PortraitView : Node2D
 {
     const int ImageWidth = 92, ImageHeight = 106, RenderWidth = 91;
-    const float Fov = 40f, Near = 10f, Far = 100000f, HeadRaise = 25f, Distance = 130f;
+    const float Fov = 40f, Near = 10f, Far = 100000f, HeadRaise = 25f, Distance = 130f, LightDimmer = 0.9f;
 
     SubViewport view;
     Camera3D camera;
@@ -82,9 +82,40 @@ public sealed partial class PortraitView : Node2D
             skeleton = copy.GetNode<Skeleton3D>($"Model/{ModelBuilder.SkeletonName}");
             head = skeleton.FindBone("Bip01 Head");
             if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
+            OwnLights(copy);
             return head >= 0;
         }
         catch (Exception ex) { GD.PushWarning("portrait: " + ex.Message); return false; }
+    }
+
+    /// <summary>
+    /// UIPortrait::vfunc_14 lights the copy with its own pair, both dimmed by the 0.9 CreatePortrait passes: a directional
+    /// light with diffuse and specular (1, 1, 1) and ambient (0, 0, 0), and an ambient light with ambient (1, 1, 1).
+    /// vfunc_11 attaches only these two to the copy's roots, so no field light reaches it. The light's direction needs
+    /// nothing here: SetSunDirection(camera direction) is what character_lit already takes from the camera that draws it.
+    /// </summary>
+    static void OwnLights(Node n)
+    {
+        const float dim = LightDimmer;
+        if (n is GeometryInstance3D g && UsesCharacterShader(g))
+        {
+            g.SetInstanceShaderParameter("own_lights", 1f);
+            g.SetInstanceShaderParameter("own_ambient", new Vector3(dim, dim, dim));
+            g.SetInstanceShaderParameter("own_sun_color", new Vector3(dim, dim, dim));
+            g.SetInstanceShaderParameter("own_sun_ambient", Vector3.Zero);
+            g.SetInstanceShaderParameter("own_sun_specular", new Vector3(dim, dim, dim));
+        }
+        foreach (var c in n.GetChildren()) OwnLights(c);
+    }
+
+    static bool UsesCharacterShader(GeometryInstance3D g)
+    {
+        if (g.MaterialOverride is ShaderMaterial o) return IsCharacter(o);
+        if (g is not MeshInstance3D mi || mi.Mesh == null) return false;
+        for (int i = 0; i < mi.Mesh.GetSurfaceCount(); i++)
+            if ((mi.GetSurfaceOverrideMaterial(i) ?? mi.Mesh.SurfaceGetMaterial(i)) is ShaderMaterial sm && IsCharacter(sm)) return true;
+        return false;
+        static bool IsCharacter(ShaderMaterial m) => m.Shader?.ResourcePath == "res://shaders/character_lit.gdshader";
     }
 
     public override void _Process(double delta)

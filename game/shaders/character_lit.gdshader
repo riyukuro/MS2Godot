@@ -29,6 +29,14 @@ global uniform vec3 ms2_sun_color;     // directional light diffuse colour * dim
 global uniform vec3 ms2_sun_ambient;   // directional light ambient colour * dimmer
 global uniform vec3 ms2_sun_specular;  // directional light specular colour * dimmer
 
+// An instance lit by its own light pair instead of the field's lights (the game menu portrait: UIPortrait::vfunc_14
+// attaches a directional and an ambient light to the copy it renders). With own_lights 0, the default, nothing changes.
+instance uniform float own_lights = 0.0;
+instance uniform vec3 own_ambient = vec3(0.0);
+instance uniform vec3 own_sun_color = vec3(0.0);
+instance uniform vec3 own_sun_ambient = vec3(0.0);
+instance uniform vec3 own_sun_specular = vec3(0.0);
+
 uniform sampler2D base_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D ctrl_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_tex = false;
@@ -108,13 +116,18 @@ void fragment() {
 	float half_lambert = pow(0.5 * dot(l, n) + 0.5, 2.0);
 	float fresnel = fresnel_boost * pow(1.0 - abs(dot(n, v)), fresnel_exponent);
 	float intensity = half_lambert + max(0.0, -dot(rim_dir, n)) * fresnel;
-	vec3 diffuse = ms2_sun_color * intensity + ms2_sun_ambient * (1.0 - intensity);
+	bool own = own_lights > 0.5;
+	vec3 sun_color = own ? own_sun_color : ms2_sun_color;
+	vec3 sun_ambient = own ? own_sun_ambient : ms2_sun_ambient;
+	vec3 diffuse = sun_color * intensity + sun_ambient * (1.0 - intensity);
 	if (skin) {
 		float ndl = dot(l, n);
 		float band = max(0.0, smoothstep(-sss_power, 1.0, ndl) - smoothstep(0.0, 1.0, ndl));
-		diffuse += ms2_sun_color * sss_color * band;
+		diffuse += sun_color * sss_color * band;
 	}
-	diffuse += ms2_point_lights(world_pos, n);
+	if (!own) {
+		diffuse += ms2_point_lights(world_pos, n);
+	}
 	diffuse *= color_boost;
 
 	vec3 spec = vec3(0.0);
@@ -129,9 +142,9 @@ void fragment() {
 		}
 		if (half_lambert <= 0.0) s = 0.0;
 		vec3 g = has_gloss ? texture(gloss_tex, UV).rgb : vec3(1.0);
-		spec = ms2_sun_specular * s * mat_specular * g;
+		spec = (own ? own_sun_specular : ms2_sun_specular) * s * mat_specular * g;
 	}
 
-	vec3 lit = clamp(emissive + ms2_ambient * mat_ambient + diffuse * mat_diffuse, 0.0, 1.0);
+	vec3 lit = clamp(emissive + (own ? own_ambient : ms2_ambient) * mat_ambient + diffuse * mat_diffuse, 0.0, 1.0);
 	ALBEDO = to_linear(lit * t.rgb + spec);
 }
