@@ -206,6 +206,7 @@ public sealed class FieldBuilder
             // shells (FUN_1413fa4c0): the shared group draws through ModelBuilder.MakeFluidShell; an own group draws each
             // blended mesh's depth-only shell as a twin instance sorted just behind its colour, so it comes right before it
             var shell = ShellOf(ents[0]);
+            var ownBlended = new List<MultiMesh>();
             foreach (var (mesh, local) in me.Meshes)
             {
                 var mm = new MultiMesh
@@ -220,6 +221,7 @@ public sealed class FieldBuilder
                 {
                     visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_shell", Multimesh = mm, MaterialOverride = depthOnly, SortingOffset = -OwnShellSortOffset, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
                     OwnShells++;
+                    ownBlended.Add(mm);
                 }
                 for (int i = 0; i < ents.Count; i++)
                 {
@@ -235,6 +237,14 @@ public sealed class FieldBuilder
                     visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
                 MultiMeshes++;
                 Instances += ents.Count;
+            }
+            // an own composite is one slot of the client's alpha list (all its shells, then all its colour): with more than one
+            // blended mesh, they share one box, so every shell sorts at the same centre, just behind every colour
+            if (ownBlended.Count > 1)
+            {
+                var box = ownBlended[0].GetAabb();
+                foreach (var b in ownBlended) box = box.Merge(b.GetAabb());
+                foreach (var b in ownBlended) b.CustomAabb = box;
             }
         }
         FlushShadowCells(visuals);

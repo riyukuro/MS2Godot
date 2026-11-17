@@ -211,16 +211,19 @@ public sealed class ModelBuilder
     /// group's AlphaShellComposite, whose vfunc_0 draws every shell first with the blend set to ZERO / ONE (depth only,
     /// z test LESSEQUAL) and then again with its own blend. Only the nearest fluid surface of each pixel gets colour.
     /// Here the first pass is the SHELL form of the field shader and the mesh's own blended material is its next pass.
-    /// Godot sorts a next pass by its render priority, not right after its source, so the colour pass gets priority 1: the
-    /// depth passes of every fluid mesh come before any fluid colour, as in the composite. Not the client's order: the
-    /// composite is sorted among the other alpha objects at the mean depth of its shells (AlphaShellComposite::Update),
-    /// while here the fluid colour comes after every blended object of priority 0.
+    /// Every fluid is kind A: MeshInstancing::Init stamps DAT_143ae51d0 when FUN_1413fa390 (IsHighPrioAlphaObject or CubeType
+    /// "Fluid") holds, and AlphaShellComposite::Update then adds FUN_141b71c50 (far distance x 10000) to the composite's key.
+    /// CompareAlpha draws the largest key first, so the whole fluid composite draws before every unbiased transparent
+    /// object. Godot sorts on render priority before depth, so the shell pass gets priority -2 and the colour pass -1:
+    /// every fluid depth pass, then every fluid colour, then every other transparent (priority 0). Not modelled: the
+    /// planar depth (Godot sorts by radial distance) and a kind-A own composite that the client sorts among the fluid.
     /// </summary>
     public static void MakeFluidShell(ArrayMesh mesh)
     {
         if (ShellMaterial(mesh) is not { } shell) return;
         var colour = (ShaderMaterial)mesh.SurfaceGetMaterial(0);
-        colour.RenderPriority = 1;
+        shell.RenderPriority = -2;
+        colour.RenderPriority = -1;
         shell.NextPass = colour;
         mesh.SurfaceSetMaterial(0, shell);
     }
