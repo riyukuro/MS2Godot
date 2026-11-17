@@ -13,6 +13,8 @@ namespace Ms2Godot.Ui;
 /// above both). They keep their size whatever the map's zoom (getEntityScale).
 /// It sits on the map image (so it moves with it and is clipped by the map mask) and fills itself in once the field's
 /// contents exist; the portals come with the sandbox's quest masks applied.
+/// A portal is sent with showguide (UIMinimapEntity::SetFromPortal and UIMinimapDialog::UpdatePortal set m_showGuide), so it
+/// also gets a guide arrow (createGuideArrow) that onUpdateGuide puts on the mask's edge while the portal is outside it.
 /// </summary>
 public sealed partial class MinimapPlaces : Node2D
 {
@@ -32,6 +34,30 @@ public sealed partial class MinimapPlaces : Node2D
         ["shop"] = true, ["friendly"] = false, ["taming_pet"] = true, ["portal"] = true, ["buddy"] = true, ["pc"] = true, ["text"] = true,
     };
 
+    /// <summary>MinimapDialogMax.m_guidearrow: the guide arrow frame for an entity's layer; other layers get no arrow.</summary>
+    static readonly Dictionary<string, string> GuideFrames = new()
+    {
+        ["player"] = "player", ["portal"] = "_portal", ["party"] = "_party", ["quest_epic"] = "_quest", ["quest_world"] = "_quest",
+        ["quest_repeat"] = "_quest", ["quest_event"] = "_quest", ["questportal"] = "_questportal",
+    };
+
+    /// <summary>MinimapDialogMax.arrowhalfheight (the slot's default value).</summary>
+    const float ArrowHalfHeight = 9;
+
+    sealed class Guide
+    {
+        public MovieClipNode Clip, Target;
+        public MovieClipNode.Child Arrow, Text;
+        public Vector2 At;          // the target on the map image, in pixels
+        public Rect2 Hit;           // the target's hitArea in its own coordinates
+        public float Width;         // the label's autoSize width
+        public float Height;
+    }
+
+    readonly List<Guide> guides = new();
+    readonly Node2D guideRoot;      // m_guide: in the movie root at the mask's top left, above the map
+    readonly Rect2 mask;            // m_mask in the movie root
+
     readonly UiMovie movie;
     readonly MinimapInfo info;
     readonly PackSet packs;
@@ -41,8 +67,9 @@ public sealed partial class MinimapPlaces : Node2D
     bool built;
     public int Portals, Npcs, Labels;
 
-    public MinimapPlaces(UiMovie movie, MinimapInfo info, PackSet packs, Vector2 imageSize, float u)
+    public MinimapPlaces(UiMovie movie, MinimapInfo info, PackSet packs, Vector2 imageSize, float u, Node2D guideRoot, Rect2 mask)
     {
+        this.guideRoot = guideRoot; this.mask = mask;
         this.movie = movie; this.info = info; this.packs = packs; this.imageSize = imageSize; this.u = u;
         Name = "MinimapPlaces";
         foreach (var l in LayerOrder) { var n = new Node2D { Name = l, Visible = ShowDefaults.GetValueOrDefault(l, true) }; layers[l] = n; AddChild(n); }
@@ -52,7 +79,7 @@ public sealed partial class MinimapPlaces : Node2D
 
     public override void _Process(double delta)
     {
-        if (built) return;
+        if (built) { UpdateGuides(); return; }
         var fc = Find(GetTree().Root);
         if (fc?.Portals == null) return;
         built = true;
@@ -74,7 +101,7 @@ public sealed partial class MinimapPlaces : Node2D
         {
             var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));
             if (e == null || !e.Visible) continue;
-            if (Add(e, p.Position)) Portals++;
+            if (Add(e, p.Position, showGuide: true)) Portals++;
         }
         foreach (var n in fc.SpawnedNpcs)
         {
@@ -85,8 +112,8 @@ public sealed partial class MinimapPlaces : Node2D
         GD.Print($"minimap places: {Portals} portals, {Npcs} npcs, {Labels} labels");
     }
 
-    /// <summary>createEntity (and createEntityText when it has a label) at the entity's map position.</summary>
-    bool Add(MinimapIcons.Entity e, Vec3 world)
+    /// <summary>createEntity (and createEntityText when it has a label, createGuideArrow for showguide) at the entity's map position.</summary>
+    bool Add(MinimapIcons.Entity e, Vec3 world, bool showGuide = false)
     {
         var (iu, iv) = info.ToImage(world);
         var at = new Vector2((float)iu * imageSize.X, (float)iv * imageSize.Y);
@@ -108,7 +135,107 @@ public sealed partial class MinimapPlaces : Node2D
                 Labels++;
             }
         }
+        if (showGuide) AddGuide(e, icon, at);
         return true;
+    }
+
+    /// <summary>
+    /// createGuideArrow(layer, entity, guideName or name): a minimap_guide_arrow whose m_arrow and m_text go to the layer's
+    /// m_guidearrow frame; m_text (a CLIK Label) gets autoSize "left" and the name, and the arrow starts hidden. It is added
+    /// at the bottom of m_guide (on top only for questportal).
+    /// </summary>
+    void AddGuide(MinimapIcons.Entity e, MovieClipNode icon, Vector2 at)
+    {
+        if (guideRoot == null || !GuideFrames.TryGetValue(e.Layer, out var frame)) return;
+        var clip = movie.BuildClass("minimap_guide_arrow", u);
+        var arrow = clip?.Direct("m_arrow");
+        var text = clip?.Direct("m_text");
+        if (arrow?.Node is not MovieClipNode am || text?.Node is not MovieClipNode tm) return;
+        if (am.Labels.TryGetValue(frame, out var af)) am.GotoFrame(af);
+        if (tm.Labels.TryGetValue(frame, out var tf)) tm.GotoFrame(tf);
+        // Label.calculateWidth: ceil(textWidth + left + right + 5) with the field's constraint margins; the field is placed
+        // at x 2 with a 100 wide rect from x -2 in the 100 wide label, so left 2 and right -2 cancel. Its text is centred,
+        // and the field spans the label's width, so the text sits in the middle of it.
+        float width = 0, height = 16;
+        foreach (var t in tm.TextFields)
+        {
+            t.Text = e.Label ?? "";
+            var lb = t.Label;
+            lb.AutowrapMode = TextServer.AutowrapMode.Off;
+            lb.ClipText = false;
+            lb.HorizontalAlignment = HorizontalAlignment.Center;
+            width = MathF.Ceiling(t.TextWidth + 5);
+            height = t.Bounds.Size.Y;
+            var w = lb.GetMinimumSize().X;
+            float cx = width / 2 - t.Position.X;            // the field's centre in the text node's coordinates
+            lb.Size = new Vector2(w, lb.Size.Y);
+            lb.Position = new Vector2(cx - w * lb.Scale.X / 2, lb.Position.Y);
+        }
+        var hit = icon.Direct("m_hitarea") is { } h && h.Def?["id"] != null && icon.Scope.Symbol((int)h.Def["id"]) is { } hs
+            ? h.Base * UiBuilder.Rc(hs["bounds"]) : icon.ContentRect() ?? new Rect2();
+        clip.Visible = false;
+        guideRoot.AddChild(clip);
+        if (frame != "_questportal") guideRoot.MoveChild(clip, 0);
+        guides.Add(new Guide { Clip = clip, Target = icon, Arrow = arrow, Text = text, At = at, Hit = hit, Width = width, Height = height });
+    }
+
+    /// <summary>
+    /// MinimapDialogMax.onUpdateGuide (player-centred mode). A guide whose target's hitArea does not meet the mask rect is
+    /// shown: the arrow turns towards the target and sits where the line from the mask's centre to the target leaves the
+    /// mask (moved arrowhalfheight inwards), its label beside it on the inner side and kept inside the mask; otherwise hidden.
+    /// </summary>
+    void UpdateGuides()
+    {
+        if (guides.Count == 0 || GetParent() is not Control image) return;
+        var center = mask.Position + mask.Size / 2;
+        var half = mask.Size / 2;
+        float maxDeg = Mathf.RadToDeg(MathF.Atan2(mask.Size.Y, mask.Size.X));      // m_degree
+        float ahh = ArrowHalfHeight;
+        foreach (var g in guides)
+        {
+            // the target in the movie root: the map image's top left is the mask's, plus the image's scroll
+            var t = mask.Position + (image.Position + g.At) / u;
+            var hit = new Rect2(t + g.Hit.Position, g.Hit.Size);
+            if (mask.Intersects(hit)) { g.Clip.Visible = false; continue; }
+            float dx = t.X - center.X, dy = t.Y - center.Y;
+            bool lft = dx < 0, up = dy < 0;
+            float slope = dy / dx;
+            float deg = MathF.Abs(MathF.Atan(slope) * (180 / MathF.PI));
+            if (lft) deg = 180 - deg;
+            if (up) deg = -deg;
+            float ad = MathF.Abs(deg);
+            Vector2 p, off, tp;
+            if (maxDeg < ad && 180 - maxDeg > ad)
+            {
+                // top or bottom edge
+                tp.X = -g.Width * 0.5f;
+                if (up) { p.Y = center.Y - half.Y; off.Y = ahh; tp.Y = ahh; }
+                else { p.Y = center.Y + half.Y; off.Y = -ahh; tp.Y = -ahh - g.Height + 2; }
+                off.X = lft ? ahh : -ahh;
+                p.X = (p.Y - center.Y) / slope + center.X;
+            }
+            else
+            {
+                tp.Y = -g.Height - ahh + 2;
+                if (lft) { p.X = center.X - half.X; off.X = ahh; tp.X = -ahh; }
+                else { p.X = center.X + half.X; off.X = -ahh; tp.X = -g.Width + ahh; }
+                off.Y = up ? ahh : -ahh;
+                p.Y = slope * (p.X - center.X) + center.Y;
+            }
+            var pos = p - mask.Position + off;          // m_guide sits at the mask's top left
+            // the label's field rect in the root, with the label's width and height, kept inside the mask
+            var r = new Rect2(mask.Position + pos + tp, g.Width, g.Height);
+            if (r.Position.X < mask.Position.X) tp.X += mask.Position.X - r.Position.X;
+            else if (r.End.X > mask.End.X) tp.X -= r.End.X - mask.End.X;
+            if (r.Position.Y < mask.Position.Y) tp.Y = ahh;
+            else if (r.End.Y > mask.End.Y) tp.Y = -ahh - g.Height + 2;
+            g.Clip.Position = pos;
+            var rot = Transform2D.Identity.Rotated(Mathf.DegToRad(deg));
+            g.Arrow.Override = rot; g.Arrow.Node.Transform = rot;
+            var tx = new Transform2D(0, tp);
+            g.Text.Override = tx; g.Text.Node.Transform = tx;
+            g.Clip.Visible = true;
+        }
     }
 
     /// <summary>textField.autoSize = "center": the field grows to fit its text on a single line around its centre.</summary>

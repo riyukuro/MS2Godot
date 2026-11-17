@@ -157,7 +157,10 @@ public partial class HudScene : Node
         {
             mapPlayer = MinimapEntities.Create(r.Movie, "player", "idle", u);
             if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); }
-            mapImage.AddChild(new MinimapPlaces(r.Movie, mapInfo, assets.Packs, mapImage.Size, u));     // portals and npcs (MinimapPlaces.cs)
+            // m_guide: the guide arrows' layer, above the map and its entities, at the mask's top left and not clipped by it
+            var guide = new Node2D { Name = "m_guide", Position = MapMaskPos };
+            r.AddChild(guide);
+            mapImage.AddChild(new MinimapPlaces(r.Movie, mapInfo, assets.Packs, mapImage.Size, u, guide, new Rect2(MapMaskPos, MapMaskSize)));     // portals and npcs (MinimapPlaces.cs)
         }
     }
 
