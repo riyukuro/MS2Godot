@@ -322,7 +322,13 @@ public partial class Player : CharacterBody3D
         if (s == MoveState.Swim) swimRideTick = syncClock;                   // StateSwim::vfunc_4: m_nMode = the server tick
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();
-        if (s == MoveState.Land) Landed?.Invoke();
+        if (s == MoveState.Land)
+        {
+            // StateLand::vfunc_4 (stateland.cpp:76-104): the ground's "land" effects, then on water (the hit report's
+            // entity is kind 8, PCBase::FUN_141675ed0) straight on to StateIdle
+            Landed?.Invoke();
+            if (OnWater) Enter(MoveState.Idle);
+        }
     }
 
     /// <summary>
@@ -489,7 +495,7 @@ public partial class Player : CharacterBody3D
             airTime = 0;
             fallTimerRunning = false;
             // (the climb's moves leave the jump and the state to the climb states)
-            if (dt > 0 && jumping && jumpTime > dt) { jumping = false; Enter(OnWater ? MoveState.Idle : MoveState.Land); }
+            if (dt > 0 && jumping && jumpTime > dt) { jumping = false; Enter(MoveState.Land); }   // StateJump::vfunc_3: vfunc_59(4)
         }
         else if (fallTimerRunning) airTime += dt;
     }
