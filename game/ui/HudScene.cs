@@ -25,6 +25,8 @@ public partial class HudScene : Node
     string shotDir; int frames;
     float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
     Player player; Control uiRoot;
+    TargetFrame target;                     // UIUpperHpBar
+    DamageText damageText;
 
     public override void _Ready()
     {
@@ -44,11 +46,13 @@ public partial class HudScene : Node
         u = UiScale.For(window); stage = UiScale.MovieStage(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
         AddChild(new PlayerNameTag(assets, new ClientConstants(assets.Packs), data.Player.Name, window));     // the own PC's UINameTag
+        AddChild(damageText = new DamageText(assets, window));                // UIDamageText
 
         NoticeTab(uiRoot);
         Minimap(uiRoot);
         NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
+        target = new TargetFrame(assets, uiRoot, u, stage);
         Chat(uiRoot);
         Quests(uiRoot);
         Orb(uiRoot);
@@ -827,6 +831,7 @@ public partial class HudScene : Node
     public override void _Process(double delta)
     {
         if (mapImage != null && ++tick % 6 == 1) UpdateMinimap();
+        target?.Process(delta);
         if (shotDir == null) return;
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (++frames == 300)

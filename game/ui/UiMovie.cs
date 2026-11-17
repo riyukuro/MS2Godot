@@ -83,17 +83,23 @@ public sealed class UiMovie
     {
         foreach (var sc in library.Values.Prepend(Scope))
             foreach (var (id, sym) in sc.Symbols)
-                if ((string)sym["class"] == className)
-                {
-                    NineCtx ctx = null;
-                    if (sym["scale9"] != null && sym["bounds"] != null)
-                    {
-                        var b = UiBuilder.Rc(sym["bounds"]);
-                        ctx = new NineCtx { Grid = UiBuilder.Rc(sym["scale9"]), Bounds = b, Sx = w / Math.Max(b.Size.X, 0.001f), Sy = h / Math.Max(b.Size.Y, 0.001f) };
-                    }
-                    return UiBuilder.BuildSprite(this, sc, int.Parse(id), scale, scale, ctx);
-                }
+                if ((string)sym["class"] == className) return BuildSized(sc, int.Parse(id), sym, scale, w, h);
         return null;
+    }
+
+    /// <summary><see cref="BuildClassSized"/> for a symbol of this movie by id (an instance's own symbol).</summary>
+    public MovieClipNode BuildSymbolSized(int id, double scale, float w, float h) =>
+        Scope.Symbol(id) is { } sym ? BuildSized(Scope, id, sym, scale, w, h) : null;
+
+    MovieClipNode BuildSized(UiScope sc, int id, JsonNode sym, double scale, float w, float h)
+    {
+        NineCtx ctx = null;
+        if (sym["scale9"] != null && sym["bounds"] != null)
+        {
+            var b = UiBuilder.Rc(sym["bounds"]);
+            ctx = new NineCtx { Grid = UiBuilder.Rc(sym["scale9"]), Bounds = b, Sx = w / Math.Max(b.Size.X, 0.001f), Sy = h / Math.Max(b.Size.Y, 0.001f) };
+        }
+        return UiBuilder.BuildSprite(this, sc, id, scale, scale, ctx);
     }
 
     public MovieClipNode BuildClass(string className, double sx, double sy)

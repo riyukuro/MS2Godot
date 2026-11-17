@@ -147,6 +147,24 @@ public class EffectDummyTests
         Assert.That(NpcTable.ParseRow(XElement.Parse("<npc id='9' />"), DefaultRows()), Is.Null);
     }
 
+    /// <summary>The target frame's row fields: level (1 when absent), class (1 when absent), race and the hidden level tag.</summary>
+    [Test]
+    public void NpcRowReadsLevelClassAndRace()
+    {
+        var row = NpcTable.ParseRow(XElement.Parse("""
+            <npc id="5"><environment level="12" class="3" raceString="Plant" propertyTags="Hide_HpBar_Level" /></npc>
+            """), DefaultRows());
+        Assert.That((row.Level, row.Class, row.Race, row.HideHpBarLevel, row.HpBarLevel), Is.EqualTo((12, 3, 2, true, 0)));
+        var plain = NpcTable.ParseRow(XElement.Parse("<npc id='6'><environment raceString='robot' /></npc>"), DefaultRows());
+        Assert.That((plain.Level, plain.Class, plain.Race, plain.HpBarLevel), Is.EqualTo((1, 1, 0, 1)));
+        var names = new Dictionary<string, string> { ["plant"] = "Leafy", ["animal"] = "Furry" };
+        Assert.That(NpcTable.RaceName(names, row.Race), Is.EqualTo("Leafy"));
+        Assert.That(NpcTable.RaceName(names, NpcTable.ParseRace("ANIMAL")), Is.EqualTo("Furry"));
+        Assert.That(NpcTable.RaceName(names, NpcTable.ParseRace("bug")), Is.Null, "a race the table lacks");
+        Assert.That(NpcTable.RaceName(names, 0), Is.Null);
+        Assert.That(NpcTable.ParseRace("creature"), Is.EqualTo(12));
+    }
+
     /// <summary>The player's data, when present: the UI dummy of the default and player tables.</summary>
     [Test]
     public void GameTablesHaveAUiDummy()

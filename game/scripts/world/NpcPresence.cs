@@ -24,6 +24,7 @@ public sealed partial class NpcPresence : CanvasLayer
     sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; public Vector3 Root, Head; public bool On; }
 
     readonly List<Tag> tags = new();
+    readonly Dictionary<FieldNpcs.Placed, NpcHpBar> bars = new();
     readonly ClientConstants constants;
     float tagOffset;
     float u = 1;                          // the movies' draw scale (UiScale)
@@ -31,6 +32,35 @@ public sealed partial class NpcPresence : CanvasLayer
     /// <summary>The local player: the fade distance is measured from it (the sandbox camera sits further back than the client's).</summary>
     public Node3D Viewer;
     public int Bodies, NameTags;
+    /// <summary>The npcs <see cref="Build"/> was given.</summary>
+    public IReadOnlyList<FieldNpcs.Placed> Npcs = Array.Empty<FieldNpcs.Placed>();
+
+    /// <summary>The world point the npc's name tag, HP bar and damage numbers hang from (see the class summary).</summary>
+    public Vector3 Anchor(FieldNpcs.Placed n) => n.Root.GlobalPosition + new Vector3(0, n.Height + tagOffset, 0);
+
+    /// <summary>CNpc::vfunc_66: the npc's battle stance; entering it makes the HP bar active with the current HP.</summary>
+    public void Stance(FieldNpcs.Placed n, bool battle, long cur, long max)
+    {
+        if (battle && bars.TryGetValue(n, out var b) && !b.Dead) b.Activate(cur, max);
+    }
+
+    /// <summary>PCBase::vfunc_112 on the npc: a damage record; one by the local player shows the HP bar.</summary>
+    public void Damaged(FieldNpcs.Placed n, bool byLocalPlayer)
+    {
+        if (bars.TryGetValue(n, out var b) && !b.Shown) b.Shown = byLocalPlayer;
+    }
+
+    /// <summary>OnStat with the HP (vfunc_74).</summary>
+    public void Stat(FieldNpcs.Placed n, long cur, long max)
+    {
+        if (bars.TryGetValue(n, out var b)) b.Stat(cur, max);
+    }
+
+    /// <summary>The npc died: its HP bar hides.</summary>
+    public void Died(FieldNpcs.Placed n)
+    {
+        if (bars.TryGetValue(n, out var b)) b.Dead = true;
+    }
 
     public NpcPresence(ClientConstants constants) { this.constants = constants; Name = "NpcPresence"; Layer = 5; Offset = UiScale.MovieOrigin; }
     public NpcPresence() { }
@@ -41,13 +71,18 @@ public sealed partial class NpcPresence : CanvasLayer
         var (r, g, b) = constants.Color("NameTagColorFriendly", (0.635f, 1f, 0.549f));
         var color = new Color(r, g, b);
         if (IsInsideTree()) u = UiScale.For(GetViewport().GetVisibleRect().Size);
-        UiMovie movie = null;
+        UiMovie movie = null, barMovie = null;
         try { movie = new UiMovie(ui, "uinametag"); } catch (Exception e) { GD.PushWarning("name tag movie: " + e.Message); }
+        try { barMovie = new UiMovie(ui, "uihpbar"); } catch (Exception e) { GD.PushWarning("hp bar movie: " + e.Message); }
         foreach (var n in npcs)
         {
             if (!n.Row.CapsuleIgnore) AddBody(n);
             if (n.Row.Nametag && movie != null && !string.IsNullOrEmpty(n.Row.Name)) AddTag(n, movie, color);
         }
+        // the bars after the tags: which of the two the client draws on top is not known (both are separate movies)
+        foreach (var n in npcs)
+            if (n.Row.HpBar && barMovie != null) bars[n] = new NpcHpBar(n, barMovie, u, this);
+        Npcs = npcs.ToList();
     }
 
     void AddBody(FieldNpcs.Placed n)
@@ -110,7 +145,7 @@ public sealed partial class NpcPresence : CanvasLayer
             if (refresh)
             {
                 t.Root = t.Npc.Root.GlobalPosition;
-                t.Head = t.Root + new Vector3(0, t.Npc.Height + tagOffset, 0);
+                t.Head = Anchor(t.Npc);
                 float d = eye.DistanceTo(t.Root);
                 bool on = d <= HideDistance && !camera.IsPositionBehind(t.Head);
                 if (on != t.On) { t.On = on; t.Node.Visible = on; }
@@ -121,6 +156,12 @@ public sealed partial class NpcPresence : CanvasLayer
                 }
             }
             if (t.On) t.Node.Position = camera.UnprojectPosition(t.Head).Round();
+        }
+        foreach (var b in bars.Values)
+        {
+            if (!b.Active) continue;
+            var a = Anchor(b.Npc);
+            b.Update(camera.IsPositionBehind(a) ? null : camera.UnprojectPosition(a).Round());
         }
     }
 }

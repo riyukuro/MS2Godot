@@ -8,7 +8,7 @@ namespace Ms2.Formats.World;
 public sealed class NpcRow
 {
     public int Id;
-    public int Friendly, Class;
+    public int Friendly, Class = 1;
     public string[] PropertyTags = Array.Empty<string>();
     public string Kfm;                       // model name, e.g. 02010001_Stan
     public float Scale = 1f;
@@ -29,6 +29,8 @@ public sealed class NpcRow
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
     public bool HpBar;                           // environment hpBar (NpcDataCli, default false): the npc has a head hp bar
+    public int Level = 1;                        // environment level (CNpcData m_nLevel, 1 when absent)
+    public int Race;                             // environment raceString as CNpcData reads it (ParseRace), 0 when absent or unknown
     /// <summary>The npc's effect dummies: the default rows with the npc's &lt;effectdummy&gt; merged in (EffectDummyTable.MergeNpc).</summary>
     public IReadOnlyList<EffectDummy> EffectDummies = Array.Empty<EffectDummy>();
 
@@ -42,6 +44,10 @@ public sealed class NpcRow
     public bool AlwaysDisplayHpBar => HasTag("always_display_hp_bar");
     /// <summary>A property tag, matched as the client's tag parser does (CompareNoCase).</summary>
     public bool HasTag(string tag) => PropertyTags.Any(t => t.Equals(tag, StringComparison.OrdinalIgnoreCase));
+    /// <summary>Property tag 3: the target frame shows "?" for the level.</summary>
+    public bool HideHpBarLevel => HasTag("hide_hpbar_level");
+    /// <summary>CNpc::vfunc_79, the level on the target frame: 0 (shown as "?") with <see cref="HideHpBarLevel"/>, else the level.</summary>
+    public int HpBarLevel => HideHpBarLevel ? 0 : Level;
     /// <summary>The npc's effect dummy of this name (exact case), or null.</summary>
     public EffectDummy Dummy(string name) => EffectDummyTable.Find(EffectDummies, name);
 }
@@ -81,7 +87,7 @@ public sealed class NpcTable
         {
             Id = id,
             Friendly = Int(env, "friendly"),
-            Class = Int(env, "class"),
+            Class = (string)env.Attribute("class") is { } cls && int.TryParse(cls, out var c) ? c : 1,     // CNpcData m_nClass, 1 when absent
             Gender = Int(env, "gender"),
             PropertyTags = ((string)env.Attribute("propertyTags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
@@ -99,12 +105,32 @@ public sealed class NpcTable
             Minimap = (string)env.Attribute("minimap") is not ("0" or "false" or "False"),      // CNpcData: true unless set off
             MinimapIcon = (string)env.Attribute("minimapIconName"),
             HpBar = EffectDummy.Bool(env, "hpBar", false),
+            Level = (string)env.Attribute("level") is { } lv && ushort.TryParse(lv, out var l) ? l : 1,
+            Race = ParseRace((string)env.Attribute("raceString")),
             EffectDummies = EffectDummyTable.MergeNpc(defaultDummies, env),
         };
         var normal = env.Element("normal");
         row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return row;
     }
+
+    /// <summary>The race names by <see cref="NpcRow.Race"/>, also the ids of the race name string table (racename.xml).</summary>
+    public static readonly string[] RaceKeys = { null, "unknown", "plant", "animal", "bug", "mystic", "spirit", "fairy", "combine", "undead", "devil", "machine", "creature" };
+
+    /// <summary>The npc data's raceString (FUN_14021c7c0): one of <see cref="RaceKeys"/> in any case, else 0.</summary>
+    public static int ParseRace(string value)
+    {
+        if (value == null) return 0;
+        for (int i = 1; i < RaceKeys.Length; i++) if (value.Equals(RaceKeys[i], StringComparison.OrdinalIgnoreCase)) return i;
+        return 0;
+    }
+
+    /// <summary>
+    /// The target frame's type text (UIUpperHpBar, string table 17 "raceName" by the npc's race): the race's name in
+    /// racename.xml, or null for race 0 or a race the table lacks.
+    /// </summary>
+    public static string RaceName(IReadOnlyDictionary<string, string> raceNames, int race) =>
+        race > 0 && race < RaceKeys.Length && raceNames != null && raceNames.TryGetValue(RaceKeys[race], out var n) ? n : null;
 
     /// <summary>Fills the row names from the string table.</summary>
     void LoadNames(PackSet packs)
