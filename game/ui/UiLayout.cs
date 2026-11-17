@@ -11,7 +11,7 @@ namespace Ms2Godot.Ui;
 public static class UiLayout
 {
     [Flags]
-    public enum Edge { Left = 1, Right = 2, Top = 4, Bottom = 8, All = 15 }
+    public enum Edge { Left = 1, Right = 2, Top = 4, Bottom = 8, All = 15, CenterH = 16 }
 
     /// <summary>
     /// ASDisplayObject::vfunc_2(mode, dx, dy): 0 centre, 1 top centre, 2 bottom centre, 3 left, 4 right, 5 absolute,
@@ -72,6 +72,7 @@ public static class UiLayout
             float bw = UiBuilder.F(b?["w"], 0) * a, bh = UiBuilder.F(b?["h"], 0) * d;
             if (e.Edges.HasFlag(Edge.Left) && e.Edges.HasFlag(Edge.Right)) { if (bw > 0) m["a"] = (double)(a * (bw + dw) / bw); }
             else if (e.Edges.HasFlag(Edge.Right)) m["x"] = (double)(x + dw);
+            else if (e.Edges.HasFlag(Edge.CenterH)) m["x"] = (double)(x + dw / 2);
             if (e.Edges.HasFlag(Edge.Top) && e.Edges.HasFlag(Edge.Bottom)) { if (bh > 0) m["d"] = (double)(d * (bh + dh) / bh); }
             else if (e.Edges.HasFlag(Edge.Bottom)) m["y"] = (double)(y + dh);
         }

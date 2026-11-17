@@ -20,7 +20,8 @@ public partial class HudScene : Node
     MovieClipNode chat; TextInputWidget chatInput; TextNode chatLog;
     /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
     /// (DAT_1439f8cd0 - 2) = 19 + 19 with feature 0xbd (the adventure level bar) on.</summary>
-    const float BottomBars = (21 - 2) + (21 - 2);
+    const float BottomBars = ExpBarLift + AdventureBarLift;
+    const float ExpBarLift = 21 - 2, AdventureBarLift = 21 - 2;
     string shotDir; int frames;
     float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
     Player player; Control uiRoot;
@@ -49,6 +50,7 @@ public partial class HudScene : Node
         Quests(uiRoot);
         Orb(uiRoot);
         ExpBar(uiRoot);
+        AdventureBar(uiRoot);
         GameMenu(uiRoot);
     }
 
@@ -62,6 +64,19 @@ public partial class HudScene : Node
         var holder = new Node2D(); holder.AddChild(root); parent.AddChild(holder);
         return root;
     }
+
+    /// <summary>
+    /// ASDisplayObject::vfunc_2(mode, dx, dy) on the dialog instance <paramref name="body"/> in a built root: the dialog's
+    /// registration point goes to the aligned spot, with <paramref name="size"/> its AS3 width and height (truncated).
+    /// </summary>
+    void AlignDialog(MovieClipNode root, MovieClipNode body, int mode, Vector2 size, float dx, float dy)
+    {
+        var reg = UiLayout.Align(mode, stage, new Vector2((int)size.X, (int)size.Y), dx, dy);
+        root.Position = (reg - body.Position) * u;
+    }
+
+    /// <summary>The dialog instance a HUD movie's root timeline places (its first clip).</summary>
+    static MovieClipNode DialogBody(MovieClipNode root) => root.Children.Select(c => c.Node).OfType<MovieClipNode>().FirstOrDefault();
 
     static void Hide(MovieClipNode root, params string[] names) { foreach (var n in names) root.HideNamed(n); }
 
@@ -419,8 +434,10 @@ public partial class HudScene : Node
     void Orb(Control ui)
     {
         const float f = 1f;
-        var r = Place(ui, "uimainplayerinfo", f, new Vector2(stage.X / 2 - 507 * f, stage.Y - 548 * f - 24));
-        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_effect", "m_penalty", "m_hpWarning", "m_job", "m_infinity", "infinity", "m_message", "m_tag", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
+        var r = Place(ui, "uimainplayerinfo", f, Vector2.Zero);
+        // UIMainPlayerInfo::vfunc_43: vfunc_2(2, 0, -(FUN_1418dd0c0() + FUN_1418dd110())); MainPlayerInfo is 705 x 193
+        if (DialogBody(r) is { } body) AlignDialog(r, body, 2, new Vector2(705, 193), 0, -BottomBars);
+        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_effect", "m_penalty", "m_hpWarning", "m_job", "m_infinity", "infinity", "m_message", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
         r.FindClip("m_playerInfo")?.GotoLabel("stat_show");          // the stat orb fades in with this label
         var stat = r.FindClip("m_playerInfo.m_stat");
         SetBar(stat.FindClip("m_hp"), data.HpRatio);
@@ -428,7 +445,8 @@ public partial class HudScene : Node
         stat.SetNamedText("m_curHp", data.Player.HpCurrent.ToString()); stat.SetNamedText("m_maxHp", data.Player.HpMax.ToString());
         stat.SetNamedText("m_curSp", data.SpCurrent.ToString()); stat.SetNamedText("m_maxSp", data.SpMax.ToString());
         stat.SetNamedText("hpTxt", "Health"); stat.SetNamedText("spTxt", "Spirit");
-        r.SetNamedText("m_tag", $"LV {data.Player.Level} {StubCharacterList.JobNames.GetValueOrDefault(data.Player.Job, "Beginner")} {data.Player.Name}");
+        // MainPlayerInfo.setData: m_tag = "LV " + level + " " + jobName + " " + name (m_rideeName.m_tag stays with its hidden parent)
+        r.FindClip("m_playerInfo")?.SetNamedText("m_tag", $"LV {data.Player.Level} {StubCharacterList.JobNames.GetValueOrDefault(data.Player.Job, "Beginner")} {data.Player.Name}");
 
         // slots: playerinfo_dialog_slot shows its "skill" label; the skill list is a fixed grid of 16 slot components (Q W E R / A S D F, 1 2 3 4 / 5 6 7 8)
         if (r.FindClip("m_slot") is { } slot)
@@ -479,11 +497,45 @@ public partial class HudScene : Node
         }
     }
 
+    /// <summary>
+    /// UIAdventureLevelExpBar (feature 0xbd): AdventureLevelExpBar.alignment puts it top centre at
+    /// stageHeight - expBarHeight - m_bg.height, i.e. on top of the EXP bar; its width is the stage width and Constraints
+    /// reflow the background, the bar and the point text. setPoint shows the percentage with a " %" suffix.
+    /// </summary>
+    void AdventureBar(Control ui)
+    {
+        var m = new UiMovie(assets, "uiadventurelevelexpbar");
+        var sym = UiLayout.SymbolOfClass(m, "adventure_expbar_entity_body", out _);
+        if (sym == null) return;
+        const float bgW = 1920, bgH = 21;
+        UiLayout.Reflow(m, "adventure_expbar_entity_body", new Vector2(bgW, bgH), new Vector2(stage.X, bgH),
+            ("m_bg", UiLayout.Edge.Left | UiLayout.Edge.Right), ("m_notPenaltyBg", UiLayout.Edge.Left | UiLayout.Edge.Right),
+            ("m_point", UiLayout.Edge.CenterH), ("m_bar", UiLayout.Edge.Left | UiLayout.Edge.Right));
+        var root = m.BuildRoot(u);
+        root.Scale = new Vector2(u, u);
+        var holder = new Node2D(); holder.AddChild(root); ui.AddChild(holder);
+        var body = DialogBody(root);
+        if (body == null) return;
+        root.Position = (new Vector2(0, stage.Y - ExpBarLift - bgH) - body.Position) * u;
+        // setPoint: the not-penalty bar shows only past the current value; the bar fills to the value (0 for now)
+        Hide(root, "m_notPenaltyBar", "m_notPenaltyPin", "m_notPenaltyBg", "m_tooltipPoint");
+        body.FindClip("m_point")?.SetNamedText("textField", $"{data.AdventureExpPercent:0.00} %");
+        if (body.FindClip("m_bar") is { } bar && bar.ChildNamed("m_mask") is { } mask)
+        {
+            mask.Override = new Transform2D(new Vector2((float)Math.Max((stage.X - 8) * data.AdventureExpPercent / 100.0, 0.0001), 0), new Vector2(0, 1), mask.Base.Origin);
+            bar.GotoFrame(bar.Frame);
+        }
+    }
+
     // ---- game menu ---------------------------------------------------------------------------------------------------
 
     void GameMenu(Control ui)
     {
-        var r = Place(ui, "uigamemenudialog", 1f, new Vector2(stage.X - 1182, stage.Y - 600));
+        var r = Place(ui, "uigamemenudialog", 1f, Vector2.Zero);
+        // UIGameMenuDialog::vfunc_43: vfunc_2(8, 5, -(FUN_1418dd0c0() - 6 + FUN_1418dd110())) with feature 0xbd on; the
+        // dialog's size is UIComponent's, the instance's bounds when it was built (CLIK resets the scale to 1)
+        if (DialogBody(r) is { } gmBody && UiLayout.SymbolOfClass(r.Movie, "UIGameMenuDialog", out _)?["bounds"] is JsonNode gb)
+            AlignDialog(r, gmBody, 8, new Vector2(UiBuilder.F(gb["w"], 498), UiBuilder.F(gb["h"], 208)), 5, -(ExpBarLift - 6 + AdventureBarLift));
         // configUI hides the quest and pet attack buttons; no pet (initPetInfo) and no contract (initContract(true)) for now
         Hide(r, "m_quest", "m_petInfo", "m_petAttack", "m_contract");
         var menus = r.FindClip("m_menus");
