@@ -84,10 +84,14 @@ public sealed class NpcScriptTable
     /// (ReplaceValueWords, CCinematicComponent::vfunc_5 when the page is shown) with <paramref name="playerName"/> for
     /// $MyPCName. Both depend only on the tables and the name, so running them together here gives the same text.
     /// </summary>
+    ReservedWords Words => words ??= new ReservedWords(gameText, id => strings.TryGetValue(unchecked((long)id), out var v) ? v : "");
+
+    /// <summary>FUN_1401aa6a0: the npc's "title name" (string tables 19 and 2), or the name alone when it has no title.</summary>
+    public string NpcDisplayName(int npcId) => Words.NpcDisplayName(npcId);
+
     public string Resolve(string text, string playerName)
     {
         if (string.IsNullOrEmpty(text)) return "";
-        words ??= new ReservedWords(gameText, id => strings.TryGetValue(unchecked((long)id), out var v) ? v : "");
-        return words.ReplaceValueWords(words.ReplaceObjectWords(text), playerName).Replace("\\n", "\n");
+        return Words.ReplaceValueWords(Words.ReplaceObjectWords(text), playerName).Replace("\\n", "\n");
     }
 }

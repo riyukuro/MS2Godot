@@ -91,12 +91,16 @@ public sealed partial class NpcTalk : Node
         if (s != null && s.RandomPick && contents.Count > 1) contents = new List<NpcScriptTable.Content> { contents[Random.Shared.Next(contents.Count)] };
         var list = new List<TalkCinematicLogic.Page>();
         string illust = IllustPath(row.Illust);
+        // CCinematicComponent::vfunc_5: the speaker is FUN_1401aa6a0 of the talk npc ("title name"); no npc script sets
+        // speakerNpc, myTalk or otherNpcTalk, and an npc spawned here has no owner (CNpc::vfunc_128, m_nE48), whose own name
+        // would be used instead
+        string speaker = st.NpcDisplayName(row.Id);
         foreach (var c in contents)
         {
-            list.Add(new TalkCinematicLogic.Page { Npc = row.Name ?? "", Script = st.Resolve(c.Text, PlayerName), LeftIllust = c.Illust != null ? IllustPath(c.Illust) : illust });
+            list.Add(new TalkCinematicLogic.Page { Npc = speaker, Script = st.Resolve(c.Text, PlayerName), LeftIllust = c.Illust != null ? IllustPath(c.Illust) : illust });
             voices.Add(c.VoiceId);
         }
-        if (list.Count == 0) { list.Add(new TalkCinematicLogic.Page { Npc = row.Name ?? "", Script = "...", LeftIllust = illust }); voices.Add(null); }
+        if (list.Count == 0) { list.Add(new TalkCinematicLogic.Page { Npc = speaker, Script = "...", LeftIllust = illust }); voices.Add(null); }
         for (int i = 0; i < list.Count; i++)
             list[i].Button = common(i + 1 < list.Count ? "s_quest_talk_progress" : "s_quest_talk_end") ?? "";
         return list;
