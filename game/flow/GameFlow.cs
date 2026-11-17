@@ -187,14 +187,17 @@ public partial class GameFlow : Node
         PlacePicture();
         loadingFrames++;
         if (loadingFrames == 4) GetTree().ChangeSceneToFile(GameScene);
-        else if (loadingFrames > 4 && GetTree().CurrentScene?.SceneFilePath == GameScene
-                 && (World.FieldContents.CoverUp || Field.LoadComplete))
+        else if (loadingFrames > 4 && GetTree().CurrentScene?.SceneFilePath == GameScene)
         {
             // the field's own cover (same picture) is up and drawn this frame, or the field is already built: hand over
-            loadingLayer.Visible = false;
-            loadingFrames = -1;
-            Current = State.Game;
-            GD.Print("flow: Loading -> Game");
+            if (loadingLayer.Visible && (World.FieldContents.CoverUp || Field.LoadComplete)) loadingLayer.Visible = false;
+            // the game state (the ESC menu) starts with the built field, as when the field was built in one frame
+            if (!loadingLayer.Visible && Field.LoadComplete)
+            {
+                loadingFrames = -1;
+                Current = State.Game;
+                GD.Print("flow: Loading -> Game");
+            }
         }
     }
 

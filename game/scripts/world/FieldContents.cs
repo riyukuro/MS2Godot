@@ -181,6 +181,7 @@ public partial class FieldContents : Node3D
     /// </summary>
     public static bool CoverLoad(PackSet packs, Node any)
     {
+        coverOwner = any;
         if (carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay)) return false;
         carried = default;
         if (Travel.Pending == null) return false;
@@ -202,6 +203,21 @@ public partial class FieldContents : Node3D
         shownCover = cover;
         carried = (overlay, cover);
         return true;
+    }
+
+    static Node coverOwner;
+
+    /// <summary>
+    /// A field freed before it adopted its loading screen (its scene changed during the load) takes the screen down with
+    /// it, unless a newer field load has taken the screen over (CoverLoad).
+    /// </summary>
+    public static void ReleaseCover(Node owner)
+    {
+        if (coverOwner != owner) return;
+        coverOwner = null;
+        if (carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay)) carried.Overlay.QueueFree();
+        carried = default;
+        shownCover = null;
     }
 
     /// <summary>True while a loading screen is carried for the field being built (one started by CoverLoad or a portal move's).</summary>

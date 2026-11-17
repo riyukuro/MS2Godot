@@ -34,10 +34,15 @@ public partial class Field : Node3D
     public override async void _Ready()
     {
         try { await LoadField(); }
+        catch (OperationCanceledException)   // freed while it loaded (NextFrame)
+        {
+            abandon?.Invoke();
+            World.FieldContents.ReleaseCover(this);
+        }
         catch (Exception ex)
         {
             GD.PushError("field load: " + ex);
-            if (!IsLoaded) EndLoad();               // what was built is shown, as when the build ran in one frame
+            if (IsInstanceValid(this) && !IsLoaded) EndLoad();   // what was built is shown, as when the build ran in one frame
         }
     }
 
@@ -87,6 +92,11 @@ public partial class Field : Node3D
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
+        abandon = () =>   // what a stopped load holds off the tree
+        {
+            fb.Abandon();
+            if (GodotObject.IsInstanceValid(contents) && contents.GetParent() == null) contents.Free();
+        };
         int shownPct = -1;
         contents.Load.Changed += (c, t) =>
         {
@@ -118,6 +128,7 @@ public partial class Field : Node3D
         // its colliders are back in the physics space for what follows (the camera's near-plane test in its first placement).
         Restore();
         AddChild(contents);
+        abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer);
         var hdr = new FieldHdr();
         cam = fd?.Camera ?? cam;
@@ -213,6 +224,7 @@ public partial class Field : Node3D
         frameClock.Restart();
     }
     bool coverStarted, staged;
+    Action abandon;
 
     /// <summary>Gives the frame back once this frame's share of the load has run; the field stays hidden meanwhile. Only
     /// behind a loading screen: a field built without one (no move: the character creation scene, a replay, a dev run)
@@ -227,6 +239,8 @@ public partial class Field : Node3D
     {
         HideLayers();
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        // the awaiter belongs to the tree, not to the field: a field freed meanwhile (its scene changed) stops its load here
+        if (!IsInstanceValid(this) || !IsInsideTree()) throw new OperationCanceledException();
         World.FieldContents.TickCover();
         frameClock.Restart();
     }

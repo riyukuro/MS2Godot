@@ -130,6 +130,7 @@ public sealed class FieldBuilder
         World = null;
         Load?.Begin(map.Entities.Count);
         var world = new Node3D { Name = "World", Transform = ZupToYup };
+        building = world;
         var visuals = new Node3D { Name = "Visuals" };
         var colliders = new Node3D { Name = "Colliders" };
         world.AddChild(visuals);
@@ -326,6 +327,16 @@ public sealed class FieldBuilder
         }
         FlushShadowCells(visuals);
         World = world;
+        building = null;
+    }
+
+    Node3D building;
+    /// <summary>Frees the world of a <see cref="BuildSteps"/> sequence left unfinished (its field was freed meanwhile):
+    /// it is not in the tree, so nothing else frees it.</summary>
+    public void Abandon()
+    {
+        if (building != null && GodotObject.IsInstanceValid(building)) building.Free();
+        building = null;
     }
 
     /// <summary>Edge of a shadow caster cell, game units.</summary>
