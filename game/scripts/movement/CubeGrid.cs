@@ -23,7 +23,8 @@ public sealed class CubeGrid
             if (e.HasMixin("MS2CubeProp"))
             {
                 var p = new Vector3((float)e.Position.X, (float)e.Position.Y, (float)e.Position.Z);
-                g.cubes[Key(p)] = p;
+                // FUN_1410c1330: a cell that already holds a cube refuses the next one (the first cube placed is kept)
+                g.cubes.TryAdd(Key(p), p);
             }
         return g;
     }
