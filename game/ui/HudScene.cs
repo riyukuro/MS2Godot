@@ -491,13 +491,44 @@ public partial class HudScene : Node
         UpdateChatScroll();
         chatInput = new TextInputWidget { Node = chat.FindClip("m_textInput") };
         chatInput.Init();
+        // UIMessenger::FUN_141a11e30, Return with the input focused: an empty (trimmed) line only releases the input, any
+        // other line is submitted and then the input is released (FUN_141a12260)
         chatInput.Edit.TextSubmitted += text =>
         {
-            if (text.Trim().Length == 0) return;
-            AddChatLine($"{data.Player.Name}: {text}");
-            chatInput.Edit.Text = "";
+            if (text.Trim().Length > 0) AddChatLine($"{data.Player.Name}: {text.Trim()}");
+            ReleaseChat();
         };
         GroupChat(ui);
+    }
+
+    /// <summary>
+    /// UIMessenger::vfunc_13, the messenger's keys while it is shown. Return (DIK_RETURN) with the input not focused
+    /// focuses it with the caret after its text (FUN_141a11e30: SetFocused, FocusAndSetSelection(length, length)); with
+    /// it focused the LineEdit submits (TextSubmitted above). Escape with the input focused releases it
+    /// (FUN_141a12260) and is used up, so it does not reach the game menu; unfocused, it is left to the rest.
+    /// </summary>
+    public override void _Input(InputEvent e)
+    {
+        if (chatInput?.Edit == null || chat == null || !chat.IsVisibleInTree()) return;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
+        if (k.Keycode == Key.Enter && !chatInput.Focused && !UiFocus.IsTyping)
+        {
+            chatInput.Focus();
+            chatInput.Edit.CaretColumn = chatInput.Length;
+            GetViewport().SetInputAsHandled();
+        }
+        else if (k.Keycode == Key.Escape && chatInput.Focused)
+        {
+            ReleaseChat();
+            GetViewport().SetInputAsHandled();
+        }
+    }
+
+    /// <summary>UIMessenger::FUN_141a12260: the input loses the focus and its text is cleared.</summary>
+    void ReleaseChat()
+    {
+        chatInput.Edit.ReleaseFocus();
+        chatInput.Edit.Text = "";
     }
 
     /// <summary>The log keeps the last lines in view (TextAreaEx position = maxScrollV after each append).</summary>
