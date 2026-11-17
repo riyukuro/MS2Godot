@@ -17,6 +17,8 @@ public static class MoveConfig
     public const float SlopeLimitDeg = 50f;      // slopeLimit = cos(0.87266463 rad)
     public const float StepOffset = 30f;         // stepOffset = 0.3 m
     public const float SkinWidth = 1f;           // skinWidth = 0.01 m
+    /// <summary>The body's Godot safe margin: the skin is in the shape, so the margin is Godot's smallest (its default).</summary>
+    public const float ShapeMargin = 0.001f;
 
     // PC ctor: m_unk_180 / m_unk_190 = (turn 1800, walk 1.2, run 3.5, swim 3.5) m/s
     public const float WalkSpeed = 120f;

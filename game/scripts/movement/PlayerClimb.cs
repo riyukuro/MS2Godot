@@ -203,12 +203,13 @@ public partial class Player
         var col = new KinematicCollision3D();
         if (!TestMove(GlobalTransform, Vector3.Down * 0.5f, col) || col.GetNormal().Y < 0.7f) return null;
         if (Support(feet) is not null) return null;
-        float r = MoveConfig.Radius, best = float.MaxValue, top = 0;
+        float r = MoveConfig.Radius, rs = r + MoveConfig.SkinWidth, best = float.MaxValue, top = 0;
         for (int k = 0; k < 8; k++)
         {
+            // under the body's rim, which is the capsule grown by the skin
             var dir = new Vector3(Mathf.Cos(k * Mathf.Pi / 4), 0, Mathf.Sin(k * Mathf.Pi / 4));
-            if (Support(feet + dir * (r - 0.1f)) is not { } y) continue;
-            float lo = 0, hi = r - 0.1f;               // unsupported at lo, supported at hi
+            if (Support(feet + dir * (rs - 0.1f)) is not { } y) continue;
+            float lo = 0, hi = rs - 0.1f;              // unsupported at lo, supported at hi
             for (int i = 0; i < 10; i++)
             {
                 float mid = (lo + hi) / 2;
@@ -217,7 +218,6 @@ public partial class Player
             if (hi < best) { best = hi; top = y; }
         }
         if (best == float.MaxValue) return null;
-        float rs = r + MoveConfig.SkinWidth;            // NxCharacter keeps the capsule a skin width off the edge
         float clear = r - Mathf.Sqrt(rs * rs - best * best);
         return new Vector3(feet.X, Mathf.Max(wantY, top - clear), feet.Z);
     }

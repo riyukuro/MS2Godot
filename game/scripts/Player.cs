@@ -79,13 +79,15 @@ public partial class Player : CharacterBody3D
         // no snap: NxCharacter's down pass only undoes the auto-step's lift (SweepTest::moveCharacter, DownVector -= StepOffset),
         // so the body follows a floor that drops away by no more than the frame's own fall (dz, Integrate), and falls off the rest
         p.FloorSnapLength = 0;
-        p.SafeMargin = MoveConfig.SkinWidth;
+        // the shape is the client's volume grown by the skin on every side, since NxCharacter's sweeps stop one skin short of a
+        // contact (CharacterController.cpp, SweepTest::DoSweepTest): the feet rest on floor + skin (RestOnFloor) and walls stop
+        // radius + skin away; so Godot's own margin is kept at its minimum, which is also its least floor snap
+        p.SafeMargin = MoveConfig.ShapeMargin;
         p.AddChild(new CollisionShape3D
         {
             Name = "Collision",
-            // the bottom reaches one skin width below the feet, so the body rests with its feet on floor + skin (RestOnFloor)
-            Shape = new CylinderShape3D { Radius = MoveConfig.Radius, Height = MoveConfig.Height + MoveConfig.SkinWidth },
-            Position = new Vector3(0, (MoveConfig.Height - MoveConfig.SkinWidth) / 2, 0),
+            Shape = new CylinderShape3D { Radius = MoveConfig.Radius + MoveConfig.SkinWidth, Height = MoveConfig.Height + 2 * MoveConfig.SkinWidth },
+            Position = new Vector3(0, MoveConfig.Height / 2, 0),
         });
         p.AddChild(visual);
         return p;
@@ -315,10 +317,10 @@ public partial class Player : CharacterBody3D
         for (int i = 0; i < GetSlideCollisionCount(); i++)
             NoteHit(GetSlideCollision(i).GetCollider());
         if (dy >= 0) return;
-        // the down pass: the frame's drop, plus the step offset it undoes when the move had a side part
-        float down = -dy + (wantedHoriz.LengthSquared() > 0 ? MoveConfig.StepOffset : 0);
+        // the down pass reaches only the frame's drop dz (DownVector -= StepOffset undoes the auto-step's lift), and the move has
+        // already gone down by it: what the pass touched is what the body now stands on, within the contact tolerance
         var col = new KinematicCollision3D();
-        if (TestMove(GlobalTransform, Vector3.Down * Mathf.Max(down, 2 * SafeMargin), col)) NoteHit(col.GetCollider());
+        if (TestMove(GlobalTransform, Vector3.Down * (2 * SafeMargin), col)) NoteHit(col.GetCollider());
     }
 
     void NoteHit(GodotObject collider)
@@ -378,7 +380,7 @@ public partial class Player : CharacterBody3D
         // NxCharacter (SweepTest::moveCharacter): every move with a side part goes up by the step offset, sideways, then
         // down, unless it moves upward; so any riser under the step offset is climbed, whatever the approach angle.
         if (v.Y <= 0 && IsOnWall() && wantedHoriz.Length() > 0.01f && StepPath(start, wantedHoriz) is { } stepped &&
-            stepped.Origin.Y > GlobalPosition.Y + 1f)
+            stepped.Origin.Y > GlobalPosition.Y + StepMinRise)
             GlobalTransform = stepped;
         if (!jumping && IsOnFloor()) RestOnFloor();
         UpdateHitReport(wantedHoriz, v.Y * dt);
@@ -401,7 +403,7 @@ public partial class Player : CharacterBody3D
     /// The client's feet rest one skin width above the floor: NxCharacter keeps the capsule skinWidth (0.01 m,
     /// GameObjectController::CreateController) off what it stands on, and GetFeetPosition (0x14123fd90) is the capsule
     /// centre less radius + half the cylinder part, with no skin term. The body's shape reaches SkinWidth below the
-    /// feet, and MoveAndSlide leaves it up to its safe margin above the floor, so it is lowered onto the contact here.
+    /// feet, and MoveAndSlide can leave it a hair above the floor (its safe margin), so it is lowered onto the contact here.
     /// </summary>
     void RestOnFloor()
     {
@@ -410,9 +412,13 @@ public partial class Player : CharacterBody3D
             GlobalPosition += col.GetTravel();
     }
 
+    /// <summary>The least rise a step path must gain to be taken. The client's auto-step climbs any riser under the step offset,
+    /// down to a seam a hair high between two meshes (0.05 at the 84000035 ramp top), which the body now meets with no margin.</summary>
+    const float StepMinRise = 0.01f;
+
     void TryStepUp(Vector3 horiz)
     {
-        if (StepPath(GlobalTransform, horiz) is { } t && t.Origin.Y > GlobalPosition.Y + 1f) GlobalTransform = t;
+        if (StepPath(GlobalTransform, horiz) is { } t && t.Origin.Y > GlobalPosition.Y + StepMinRise) GlobalTransform = t;
     }
 
     /// <summary>The up / side / down passes of NxCharacter's move from <paramref name="t0"/>: the up pass is cut short by a
@@ -440,6 +446,9 @@ public partial class Player : CharacterBody3D
         }
         if (!TestMove(t, Vector3.Down * rise * 1.5f, col)) return null;
         if (col.GetNormal().Y < Mathf.Cos(FloorMaxAngle)) return null;
+        // the riser is where the down pass touched, whose feet rest a skin above it: a sweep along a wall the rim touches can
+        // stop short of the floor it started on, which is no step
+        if (col.GetPosition().Y + MoveConfig.SkinWidth < t0.Origin.Y + StepMinRise) return null;
         return t.Translated(col.GetTravel());
     }
 
