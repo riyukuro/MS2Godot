@@ -39,14 +39,15 @@ public partial class Field : Node3D
     public override async void _Ready()
     {
         try { await LoadField(); }
-        catch (OperationCanceledException)   // freed while it loaded (NextFrame)
+        catch (OperationCanceledException)   // freed while it loaded (NextFrame); _ExitTree has dropped its move and cover
         {
             abandon?.Invoke();
-            World.FieldContents.ReleaseCover(this);
         }
         catch (Exception ex)
         {
             GD.PushError("field load: " + ex);
+            // a loading screen this load carried but never adopted would stay over the field, and its move would be taken by the next load
+            World.FieldContents.AbandonLoad(this, loadMove);
             if (IsInstanceValid(this) && !IsLoaded) EndLoad();   // what was built is shown, as when the build ran in one frame
         }
     }
@@ -225,12 +226,14 @@ public partial class Field : Node3D
         loadVisible = Visible;
         ProcessMode = ProcessModeEnum.Disabled;     // no process, physics or input below the field while it builds
         Visible = false;
+        loadMove = World.Travel.Pending;
         coverStarted = World.FieldContents.CoverLoad(packs, this);
         staged = World.FieldContents.Covered;
         frameClock.Restart();
     }
     bool coverStarted, staged;
     Action abandon;
+    World.Travel.Move loadMove;   // the move this load took (FieldContents.Start consumes it)
 
     /// <summary>Gives the frame back once this frame's share of the load has run; the field stays hidden meanwhile. Only
     /// behind a loading screen: a field built without one (no move: the character creation scene, a replay, a dev run)
@@ -256,6 +259,14 @@ public partial class Field : Node3D
     {
         foreach (var n in FindChildren("*", nameof(CanvasLayer), true, false))
             if (n is CanvasLayer l && l.Visible) { l.Visible = false; hiddenLayers.Add(l); }
+    }
+
+    /// <summary>A field that leaves the tree while it loads (its scene changed) drops the move and the loading screen it
+    /// took here, before the next scene's field starts its own load in the same scene change (its awaiter only stops it
+    /// on the next frame).</summary>
+    public override void _ExitTree()
+    {
+        if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
     }
 
     bool began, restored;

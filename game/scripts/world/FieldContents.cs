@@ -221,8 +221,19 @@ public partial class FieldContents : Node3D
         if (coverOwner != owner) return;
         coverOwner = null;
         if (carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay)) carried.Overlay.QueueFree();
+        if (shownCover != null && shownCover == carried.Loading) shownCover = null;   // an adopted screen is the field's own
         carried = default;
-        shownCover = null;
+    }
+
+    /// <summary>
+    /// A field load that stopped before Start (an error in the build, or the field left the tree meanwhile): the loading
+    /// screen it carried comes down (ReleaseCover) and the move it took is dropped, so the next field load (character
+    /// creation's included) does not take that move and its cover; a move or screen a newer load has taken is left alone.
+    /// </summary>
+    public static void AbandonLoad(Node owner, Travel.Move move)
+    {
+        if (move != null && ReferenceEquals(Travel.Pending, move)) Travel.Pending = null;
+        ReleaseCover(owner);
     }
 
     /// <summary>True while a loading screen is carried for the field being built (one started by CoverLoad or a portal move's).</summary>
