@@ -384,8 +384,8 @@ public partial class Player : CharacterBody3D
     }
 
     /// <summary>The up / side / down passes of NxCharacter's move from <paramref name="t0"/>: the up pass is cut short by a
-    /// ceiling, the side pass slides along what it hits, the down pass must land on a walkable floor no higher than the step
-    /// offset above the start (constrainedClimbingMode). Null when it does not.</summary>
+    /// ceiling, the side pass slides along what it hits, the down pass must land on a walkable floor (the slope limit). The
+    /// client's controller is CLIMB_EASY, so there is no constrainedClimbingMode height test. Null when it does not land.</summary>
     Transform3D? StepPath(Transform3D t0, Vector3 horiz)
     {
         var col = new KinematicCollision3D();
@@ -407,7 +407,7 @@ public partial class Player : CharacterBody3D
             rem -= n * rem.Dot(n);
         }
         if (!TestMove(t, Vector3.Down * rise * 1.5f, col)) return null;
-        if (col.GetNormal().Y < Mathf.Cos(FloorMaxAngle) || col.GetPosition().Y > t0.Origin.Y + rise) return null;
+        if (col.GetNormal().Y < Mathf.Cos(FloorMaxAngle)) return null;
         return t.Translated(col.GetTravel());
     }
 

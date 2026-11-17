@@ -43,12 +43,12 @@ public partial class Player
         var origin = GlobalPosition + new Vector3(0, MoveConfig.ClimbHigh, 0);
         foreach (var d in dirs)
         {
-            if (Ray(origin, d, MoveConfig.ClimbSnapReach) is not var (_, n1)) continue;
-            if (Ray(origin, -n1, MoveConfig.ClimbSnapReach) is not var (p2, n2)) continue;
+            if (Ray(origin, d, MoveConfig.ClimbSnapReach, ClimbGroups) is not var (_, n1)) continue;
+            if (Ray(origin, -n1, MoveConfig.ClimbSnapReach, ClimbGroups) is not var (p2, n2)) continue;
             if (Cubes.CubeAt(p2 - n2) == null) continue;
             var target = p2 + n2 * MoveConfig.ClimbSnapGap - new Vector3(0, MoveConfig.ClimbHigh, 0);
             // PC::FUN_14165c090: a wall ahead at +54 along the current facing, and room for the body
-            if (Ray(target + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay) == null || Overlaps(target)) continue;
+            if (Ray(target + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) == null || Overlaps(target)) continue;
             GlobalPosition = target;
             FaceNow(-n2);
             return true;
@@ -76,17 +76,33 @@ public partial class Player
         climbUpLanded = false;
     }
 
-    (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len)
+    /// <summary>
+    /// StateClimb::FUN_1417bc010: the PhysX collision groups the climb rays test, 0x201 = groups 0 and 9 (cubes and
+    /// props). Group 8 (water) is not among them, so a fluid cube is no climbing wall.
+    /// </summary>
+    const uint ClimbGroups = 0x201;
+
+    /// <summary>The nearest hit of a ray on a collider whose PropCollisionGroup bit is in <paramref name="groups"/>
+    /// (a collider without one is group 0); the client's CastRay passes the groups to raycastAllShapes.</summary>
+    (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups = uint.MaxValue)
     {
         var q = PhysicsRayQueryParameters3D.Create(from, from + dir.Normalized() * len);
         q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
-        if (hit.Count == 0) return null;
-        return ((Vector3)hit["position"], (Vector3)hit["normal"]);
+        var space = GetWorld3D().DirectSpaceState;
+        for (int i = 0; i < 16; i++)
+        {
+            var hit = space.IntersectRay(q);
+            if (hit.Count == 0) return null;
+            var col = hit["collider"].AsGodotObject() as Node;
+            int group = col != null && col.HasMeta("ms2_group") ? (int)col.GetMeta("ms2_group") : 0;
+            if ((groups & (1u << group)) != 0) return ((Vector3)hit["position"], (Vector3)hit["normal"]);
+            q.Exclude.Add((Rid)hit["rid"]);
+        }
+        return null;
     }
 
     bool IsCubeRay(Vector3 from, Vector3 dir, float len) =>
-        Ray(from, dir, len) is var (p, n) && Cubes.CubeAt(p - n) != null;
+        Ray(from, dir, len, ClimbGroups) is var (p, n) && Cubes.CubeAt(p - n) != null;
 
     // the facing as the client compares it: exactly +-1 on an axis after the snap (MS2 axes)
     bool FacingNegYOrNegX()
@@ -195,7 +211,7 @@ public partial class Player
         }
     }
 
-    bool IsWallInFront() => Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbHigh, 0), Forward, MoveConfig.ClimbRay) != null;
+    bool IsWallInFront() => Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbHigh, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) != null;
 
     /// <summary>StateClimb::FUN_1417bda60: the bottom, the top of the wall, or still a wall ahead.</summary>
     void ClimbCheck()
@@ -221,14 +237,14 @@ public partial class Player
                 return;
         }
         // FUN_1417bd310: a wall at +54 keeps the climb (facing its normal); none drops into StateFall
-        if (Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay) is var (_, n)) FaceNow(-n);
+        if (Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) is var (_, n)) FaceNow(-n);
         else Enter(MoveState.Fall);
     }
 
     /// <summary>HasClimbableWallAhead: a cube with no cube on it, whose top the hands (feet + 90) reach.</summary>
     bool HasClimbableWallAhead()
     {
-        if (Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay) is not var (p, n)) return false;
+        if (Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbLow, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) is not var (p, n)) return false;
         if (Cubes.CubeAt(p - n) is not { } wall) return false;
         if (Cubes.Neighbour(wall, 0, 0, 1) != null) return false;
         var top = Cubes.Position(wall);
