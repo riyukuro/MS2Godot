@@ -363,6 +363,7 @@ public partial class HudScene : Node
             chatLog.Label.ClipText = true;
             chatLog.Text = "";
         }
+        UpdateChatScroll();
         chatInput = new TextInputWidget { Node = chat.FindClip("m_textInput") };
         chatInput.Init();
         chatInput.Edit.TextSubmitted += text =>
@@ -384,6 +385,53 @@ public partial class HudScene : Node
         l.LinesSkipped = 0;
         l.Text = string.Join("\n", chatLines);
         l.LinesSkipped = Math.Max(0, l.GetLineCount() - l.GetVisibleLineCount());
+        UpdateChatScroll();
+    }
+
+    MovieClipNode chatThumb;
+
+    /// <summary>
+    /// m_scrollBar (messenger_scrollbar : ScrollBarEx, scrollTarget m_textOutput) as CLIK draws it. ScrollIndicator.draw takes
+    /// the field's scroll state: setScrollProperties(bottomScrollV - scrollV, 1, maxScrollV), position scrollV.
+    /// ScrollBar.updateThumbPosition hides the thumb when (position - min) / (max - min) is NaN (nothing to scroll) or max
+    /// is not positive. The arrows are enabled only with the thumb shown and room to move that way, and the track is
+    /// enabled likewise (it is authored at alpha 0). ScrollBarEx.updateThumb sizes the thumb to page / (max - min + page) of
+    /// the track, between minThumbSize 10 and maxThumbSize 20, and it sits at round(fraction * (track - thumb)) below the
+    /// track's top. The bar is placed with a 9-slice grid (y 30..40 of 2..70), so the arrows keep their size at the ends
+    /// and the track (authored y 25, height 22) takes the stretch.
+    /// </summary>
+    void UpdateChatScroll()
+    {
+        if (chatLog == null || chat?.Direct("m_scrollBar") is not { Node: MovieClipNode bar } barChild) return;
+        var l = chatLog.Label;
+        int total = l.GetLineCount(), visible = Math.Max(1, l.GetVisibleLineCount());
+        int scrollV = l.LinesSkipped + 1;
+        int maxScrollV = Math.Max(1, total - visible + 1);
+        int bottomScrollV = Math.Min(total, scrollV + visible - 1);
+        double page = bottomScrollV - scrollV, min = 1, max = maxScrollV, pos = scrollV;
+        double frac = (pos - min) / (max - min);
+        bool thumbOn = !(double.IsNaN(frac) || double.IsNaN(page) || max <= 0 || double.IsInfinity(max));
+        bool on = thumbOn;      // enabled is true (__setProp_m_scrollBar)
+        void State(string name, bool enabled) { if (bar.Direct(name)?.Node is MovieClipNode b) b.GotoLabel(enabled ? "up" : "disabled"); }
+        State("upArrow", on && pos > min);
+        State("downArrow", on && pos < max);
+        State("track", on);
+        if (bar.Direct("thumb") is { } authored) { authored.Last = -1; bar.GotoFrame(bar.Frame); }
+        chatThumb?.QueueFree(); chatThumb = null;
+        if (!thumbOn) return;
+        float d = UiBuilder.F(barChild.Def?["matrix"]?["d"], 1);
+        float trackY = 2 * d + 23, trackH = 68 * d - 46;          // the track between the arrows, in the bar's drawn space
+        double span = Math.Max(1, max - min + page);
+        double th = Math.Max(10, Math.Min(trackH, page / span * trackH));
+        th = Math.Min(th, 20);
+        float thumbH = (float)th;
+        double y = Math.Round(frac * (trackH - thumbH) + trackY);
+        y = Math.Max(trackY, Math.Min(trackY + trackH - thumbH, y));
+        chatThumb = chat.Movie.BuildClassSized("btn_chat_scrollbar", u, 22, thumbH);
+        if (chatThumb == null) return;
+        chatThumb.GotoLabel("up");
+        chatThumb.Position = new Vector2(6, (float)y);
+        bar.AddChild(chatThumb);
     }
 
     /// <summary>
