@@ -27,15 +27,15 @@ public partial class FieldAudio : Node
     MusicPlan plan;
 
     /// <summary>Music category volume, the client's CSoundEventMgr::m_fNowMusicVolume, multiplied onto the FEV-authored cue
-    /// volume. The client sets it from the sound options (FUN_14125fe20: SetCategoryVolume(2, GetCategoryVolume(sound, 2)),
-    /// gameoptionstruct.cpp), bgmSoundStep * mainSoundStep / 100; a fresh install reads them from
-    /// table/default/defaultgameoption.xml (CGameOption::LoadGameOption), see <see cref="OptionMusicVolume"/>. Open sets it.</summary>
+    /// volume. The client sets it from the sound options (FUN_14125fe20, gameoptionstruct.cpp:2727: SetCategoryVolume(2, GetCategoryVolume(sound, 2)),
+    /// gameoptionstruct.cpp:2757), bgmSoundStep * mainSoundStep / 100; a fresh install reads them from
+    /// table/default/defaultgameoption.xml (CGameOption::LoadGameOption, gameoption.cpp:1720), see <see cref="OptionMusicVolume"/>. Open sets it.</summary>
     public float MusicVolume { get; set; } = 1f;
 
     /// <summary>
-    /// GetCategoryVolume(sound, 2) (gameoptionstruct.cpp) for the default options: the &lt;sound&gt; element's bgmSoundStep times
-    /// mainSoundStep over 100, each clamped to 0..10 as LoadGameOptionSound does; an attribute that is not there stays at the
-    /// reset value 0 (FUN_14125f740). Null when the file cannot be read.
+    /// GetCategoryVolume(sound, 2) (gameoptionstruct.cpp:2757) for the default options: the &lt;sound&gt; element's bgmSoundStep times
+    /// mainSoundStep over 100, each clamped to 0..10 as LoadGameOptionSound (gameoptionstruct.cpp:2632) does; an attribute that is not there stays at the
+    /// reset value 0 (FUN_14125f740, gameoptionstruct.cpp:2612). Null when the file cannot be read.
     /// </summary>
     public static float? OptionMusicVolume(string xml)
     {
