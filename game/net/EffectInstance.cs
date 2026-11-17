@@ -84,8 +84,11 @@ void fragment() {
     public EffectInstance(EffectScene scene, ModelBuilder mb, float duration, int seed)
     {
         this.scene = scene; this.mb = mb; rng = new Random(seed);
-        emitUntil = duration > 0 ? duration : Mathf.Max((float)scene.Duration, 0.3f);
-        life = emitUntil + 1.2f;
+        // The client removes an effect once the game time passes start + duration (CEffect::vfunc_9, OnTick), with no tail
+        // and no fade: a fade-out runs only when the effect is faded on request. A zero duration takes the longest
+        // controller end time of the loaded nif (CNifEffect::vfunc_3).
+        emitUntil = duration > 0 ? duration : (float)scene.Duration;
+        life = emitUntil;
         world = new Transform3D[scene.Nodes.Count]; done = new bool[scene.Nodes.Count];
         AddChild(z);
         foreach (var em in scene.Meshes)

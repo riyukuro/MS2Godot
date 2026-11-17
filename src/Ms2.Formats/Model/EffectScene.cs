@@ -277,8 +277,14 @@ public sealed class EffectScene
                 }
                 break;
             case "NiAlphaController":
-                if (meshOf.TryGetValue((int)target, out var am)) { am.Alpha = Curve(n, interp); am.AlphaCtl = ctl; }
+            {
+                // The client finds alpha controllers on the material property as well as on the object
+                // (HasAlphaControllerProperty walks the property's controllers): a property's controller fades every mesh using it.
+                var f = Curve(n, interp);
+                if (meshOf.TryGetValue((int)target, out var am)) { am.Alpha = f; am.AlphaCtl = ctl; }
+                else foreach (var m in meshesWithProperty((int)target)) { m.Alpha = f; m.AlphaCtl = ctl; }
                 break;
+            }
             case "NiMaterialColorController":
                 if (ColorCurve(n, interp) is { } cc)
                     foreach (var m in meshesWithProperty((int)target)) m.Colors.Add(new ColorAnim { Target = (int)c.IntOr("Target Color", 1), Curve = cc, Ctl = ctl });
