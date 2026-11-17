@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Reflection;
+using Microsoft.Win32.SafeHandles;
 using Maple2.File.IO;
 using Maple2.File.IO.Crypto.Common;
 
@@ -21,6 +22,7 @@ public sealed class PackSet : IDisposable
         public string Path;
         public Dictionary<string, PackFileEntry> ByName;
         public Dictionary<string, string> ByBaseName;     // lower-case file name -> entry name (first wins)
+        public SafeFileHandle Handle;                     // the archive file, opened on the first read of its own
     }
 
     static PackSet session;
@@ -81,6 +83,55 @@ public sealed class PackSet : IDisposable
         if (!a.ByName.TryGetValue(entry.Replace('\\', '/'), out var e))
             throw new FileNotFoundException($"{entry} not in {archive}");
         if (((uint)e.FileHeader.BufferFlag & XorFlag) == XorFlag) return ReadXor(a, e);
+        return ReadPlain(a, e);
+    }
+
+    // M2dReader.GetBytes allocates about six times the entry's size on the way (copies of the encrypted block, the
+    // decrypted block, a growing inflate buffer). The same bytes come from the package's own decrypt (which is kept: the
+    // cipher is not reimplemented here) over exactly the entry's encoded bytes, then an inflate into a buffer of the
+    // exact size. Anything unexpected falls back to GetBytes, which is the baseline.
+    static MethodInfo decrypt;
+    static bool noDecrypt;
+
+    byte[] ReadPlain(Archive a, PackFileEntry e)
+    {
+        var h = e.FileHeader;
+        try
+        {
+            if (!noDecrypt)
+            {
+                decrypt ??= typeof(M2dReader).Assembly.GetType("Maple2.File.IO.Crypto.CryptoManager")
+                    ?.GetMethod("Decrypt", BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static);
+                var ps = decrypt?.GetParameters();
+                if (ps == null || ps.Length != 5 || ps[0].ParameterType != typeof(PackVersion) || ps[1].ParameterType != typeof(uint)
+                    || ps[2].ParameterType != typeof(uint) || ps[3].ParameterType != typeof(Encryption) || ps[4].ParameterType != typeof(byte[]))
+                    noDecrypt = true;
+            }
+            if (!noDecrypt && h.EncodedFileSize > 0 && h.FileSize <= int.MaxValue)
+            {
+                var buf = new byte[h.EncodedFileSize];
+                byte[] plain;
+                lock (gate)
+                {
+                    a.Handle ??= File.OpenHandle(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                    if (RandomAccess.Read(a.Handle, buf, (long)h.Offset) != buf.Length) return Fallback(a, e);
+                    var flag = (Encryption)((uint)h.BufferFlag & ~ZlibFlag);   // the package's decrypt, without its inflate
+                    plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
+                }
+                if (((uint)h.BufferFlag & ZlibFlag) != ZlibFlag) return plain.Length == (int)h.FileSize ? plain : Fallback(a, e);
+                var output = new byte[(int)h.FileSize];
+                using var z = new ZLibStream(new MemoryStream(plain, false), CompressionMode.Decompress);
+                z.ReadExactly(output);
+                if (z.Read(new byte[1], 0, 1) != 0) return Fallback(a, e);
+                return output;
+            }
+        }
+        catch (Exception) { }
+        return Fallback(a, e);
+    }
+
+    byte[] Fallback(Archive a, PackFileEntry e)
+    {
         lock (gate) return a.Reader.GetBytes(e);
     }
 
@@ -124,7 +175,7 @@ public sealed class PackSet : IDisposable
     {
         lock (gate)
         {
-            foreach (var a in open.Values) a.Reader.Dispose();
+            foreach (var a in open.Values) { a.Reader.Dispose(); a.Handle?.Dispose(); }
             open.Clear();
         }
     }
