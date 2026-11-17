@@ -31,6 +31,8 @@ public partial class FieldContents : Node3D
     // the loading screen (UILoadingProgress) over the field move
     CanvasLayer overlay;
     LoadingProgressLogic loading;
+    /// <summary>The cover of a field move under way, held by the tree root across the scene change (see <see cref="Enter"/>).</summary>
+    static (CanvasLayer Overlay, LoadingProgressLogic Loading) carried;
     int settleFrames = -1;
     bool moving;
 
@@ -110,14 +112,15 @@ public partial class FieldContents : Node3D
         var closed = portals.All.Where(x => !x.Enabled).Select(x => x.Id).OrderBy(x => x).ToList();
         if (closed.Count > 0) GD.Print($"closed portals: {string.Join(" ", closed)}");
 
-        BuildOverlay();
+        bool adopted = BuildOverlay();
         var move = Travel.Pending;
         Travel.Pending = null;
         if (move != null && player != null) Arrive(move);
         if (move != null)
         {
-            // the field is loaded: the loading screen shows 100%, then fades once the new field has drawn
-            ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
+            // the field is loaded: the loading screen shows 100%, then fades once the new field has drawn. A portal move's
+            // cover was started before the move and is still up; a move without one (first entry) starts it here.
+            if (!adopted) ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
             loading?.Progress(1, 1);
             settleFrames = 3;
         }
@@ -163,8 +166,18 @@ public partial class FieldContents : Node3D
         GD.Print($"arrived at portal {p.Id} ({p.Entity.Name}) from field {move.FromFieldId}, ms2 {p.Position}");
     }
 
-    void BuildOverlay()
+    /// <summary>The loading screen layer; true when it is the cover a field move carried over from the previous field.</summary>
+    bool BuildOverlay()
     {
+        if (carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay))
+        {
+            (overlay, loading) = carried;
+            carried = default;
+            overlay.Reparent(this, false);
+            UiBridge.ToHost += OnLoadingHost;
+            return loading != null;
+        }
+        carried = default;
         overlay = new CanvasLayer { Layer = 100, Name = "Loading" };
         AddChild(overlay);
         try
@@ -174,6 +187,7 @@ public partial class FieldContents : Node3D
             UiBridge.ToHost += OnLoadingHost;
         }
         catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); loading = null; }
+        return false;
     }
 
     public override void _ExitTree() => UiBridge.ToHost -= OnLoadingHost;
@@ -241,6 +255,16 @@ public partial class FieldContents : Node3D
         {
             if (shotDir != null) Shot("loading.png");
             Travel.Pending = new Travel.Move(p.TargetField, xblock, p.TargetPortal, fieldId);
+            // The client's loading screen (UILoadingProgress) is a UI object CUIService registers once (uiservice.cpp:2337),
+            // not part of the field: StartProgress at the move (FUN_141adb900), StopProgress after the load, the same movie
+            // on screen all the way through the field change. So the cover leaves this field for the tree root, as the
+            // flow's first-entry cover (GameFlow's loading layer) does, and the next field takes it over; freed with
+            // this scene, the screen would show the empty clear colour while the next field builds.
+            if (overlay != null && loading != null)
+            {
+                overlay.Reparent(GetTree().Root, false);
+                carried = (overlay, loading);
+            }
             GetTree().ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
         };
         return true;
