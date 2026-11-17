@@ -3,6 +3,7 @@ using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
+using Ms2.Quest;
 
 namespace Ms2Godot.Ui;
 
@@ -632,14 +633,16 @@ public partial class HudScene : Node
     /// UIQuestGuideDialog with only the field mission entity: the dialog aligns top right at (0, 330)
     /// (CAlignmentInfo(6, 0, 330) in its constructor, x = stage width - ceil(dialog width)). qg_dialog_body places
     /// m_topContainer at x -1, and addMission puts a qg_mission_entity at x -1 inside it, so the entity sits at dialog x - 2.
-    /// FieldMissionGuideEntity.setType("field") / setData run as below.
+    /// FieldMissionGuideEntity.setType("field") / setData run as below. AddMission adds the entity only when the field has
+    /// missions (FUN_141aaddb0 returns false for none), so a field without them shows no panel.
     /// </summary>
     void Quests(Control ui)
     {
+        var goals = FieldMissionGoals();
+        if (goals.Count == 0) return;
         var m = new UiMovie(assets, "uiquestguidedialog");
         var sym = UiLayout.SymbolOfClass(m, "qg_mission_entity", out _);
         if (sym == null) return;
-        var goals = data.FieldMissionGoals;
 
         // addCondition: a qg_label_condition per goal at y = m_container.height + 3, height = textHeight + 5
         var labels = new List<(MovieClipNode Node, float Y)>();
@@ -648,7 +651,7 @@ public partial class HudScene : Node
         {
             var l = m.BuildClass("qg_label_condition", u);
             if (l == null) break;
-            l.SetNamedText("textField", text);
+            l.SetHtmlText(text);                                           // addCondition: l2.htmlText = text
             float h = (l.TextFields.FirstOrDefault()?.FlashTextHeight() ?? 16) + 5;
             float y = contH + 3;
             if (labels.Count == 0) top = y;
@@ -677,12 +680,33 @@ public partial class HudScene : Node
 
         // the stars: the last goals.Length of mission1..5, "off" until the goal is met
         for (int i = 1; i <= 5; i++) panel.SetNamedVisible("mission" + i, false);
-        for (int i = 0; i < goals.Length && i < 5; i++)
+        for (int i = 0; i < goals.Count && i < 5; i++)
         {
-            string name = "mission" + (5 - goals.Length + i + 1);
+            string name = "mission" + (5 - goals.Count + i + 1);
             panel.SetNamedVisible(name, true);
             panel.FindClip(name)?.GotoLabel(goals[i].Satisfied ? "on" : "off");
         }
+    }
+
+    static FieldMissions fieldMissions;     // the quest and description tables, read once (6,780 quest files)
+    static FieldMeta fieldMeta;
+
+    /// <summary>
+    /// FUN_141aaddb0's conditions for this field: the field mission quests of the field (or of its parent field), each
+    /// condition's text with its count, unmet. The quest packet state is not here yet, so no goal is met and every count
+    /// is 0 (FUN_1416e6900 without a CQuest).
+    /// </summary>
+    List<(string Text, bool Satisfied)> FieldMissionGoals()
+    {
+        try
+        {
+            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale,
+                f => !data.FeaturesOff.Contains(f));
+            fieldMeta ??= FieldMeta.Load(assets.Packs);
+            int id = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+            return fieldMissions.Goals(id, f => fieldMeta.ParentFields.TryGetValue(f, out int p) ? p : null);
+        }
+        catch (Exception e) { GD.PushWarning("field missions: " + e.Message); return new(); }
     }
 
     /// <summary>qg_dialog_body's width: the dialog's AS3 width when only the mission entity shows.</summary>

@@ -23,12 +23,6 @@ public sealed class StubHudData
     /// shows while current &lt; max, the reward button once it is reached.</summary>
     public int NavigatorRewardItem = 20300327, NavigatorRewardCount = 1;
     public int NavigatorCurrent = 1, NavigatorMax = 5;
-    /// <summary>The field mission panel ("field" type): the map's exploration goals and whether each is met.</summary>
-    public (string Text, bool Satisfied)[] FieldMissionGoals =
-    {
-        ("Stub goal one, long enough to wrap onto a second line (0/1)", false), ("Stub goal two (0/1)", false),
-        ("Stub goal three (0/1)", false), ("Stub goal four (0/5)", false), ("Stub goal five (0/10)", false),
-    };
     public HashSet<string> FeaturesOff = new() { "LapentaFrontierQuest" };
 
     public double HpRatio => Player.HpMax == 0 ? 0 : (double)Player.HpCurrent / Player.HpMax;
