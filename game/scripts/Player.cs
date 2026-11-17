@@ -277,13 +277,15 @@ public partial class Player : CharacterBody3D
     /// <summary>PCBase::vfunc_99: in the air for longer than the delay and more than 0.3 m above the ground.</summary>
     bool InAirFor(float delay) => airTime > delay && GroundDistance > MoveConfig.FallMinHeight && !IsOnFloor();
 
+    /// <summary>
+    /// PCBase::vfunc_93, run each frame by PC::vfunc_53: 0 while the controller is on the ground; else
+    /// RayCastFixedDirection from the feet (vfunc_18 = GameObjectController::GetFeetPosition) straight down with length 0,
+    /// which CastRay makes unlimited, on the default groups 0x389; FLT_MAX when it hits nothing.
+    /// </summary>
     void ProbeGround()
     {
-        var from = GlobalPosition + new Vector3(0, 5, 0);
-        var q = PhysicsRayQueryParameters3D.Create(from, from + new Vector3(0, -5000, 0));
-        q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
-        GroundDistance = hit.Count == 0 ? float.MaxValue : GlobalPosition.Y - ((Vector3)hit["position"]).Y;
+        if (IsOnFloor()) { GroundDistance = 0; return; }
+        GroundDistance = Ray(GlobalPosition, Vector3.Down, MoveConfig.UnlimitedRay, GroundGroups) is var (p, _) ? GlobalPosition.Y - p.Y : float.MaxValue;
     }
 
     /// <summary>

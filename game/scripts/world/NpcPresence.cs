@@ -7,7 +7,7 @@ namespace Ms2Godot.World;
 /// <summary>
 /// What the client adds to every npc it spawns, here for the sandbox's stand-in npcs:
 /// - The body capsule (CNpc::vfunc_124 -> NxCapsuleController): &lt;capsule radius height&gt; from the npc table, standing on the
-///   npc's position; it blocks the local player unless the row sets capsule ignore.
+///   npc's position, in collision group 4; it blocks the local player unless the row sets capsule ignore.
 /// - The name tag (UINameTag, the uinametag movie's NameTag): only for rows with nametag="1"; the name and, on the line above,
 ///   the npc title (npctitle.xml), font size 18 in NameTagColorFriendly. It sits OffsetNpcNametag above the model's top, is
 ///   drawn in screen space, fully opaque up to 700 away, fading to 40% at 1500 and hidden beyond.
@@ -15,6 +15,9 @@ namespace Ms2Godot.World;
 public sealed partial class NpcPresence : CanvasLayer
 {
     const float HideDistance = 1500, OpaqueDistance = 700;
+
+    /// <summary>CNpc::vfunc_126: the body's PhysX collision group, 4 (5 with capsule ignore, which gets no body here).</summary>
+    const int NpcGroup = 4;
 
     sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; public Vector3 Root, Head; public bool On; }
 
@@ -47,6 +50,7 @@ public sealed partial class NpcPresence : CanvasLayer
     {
         float radius = Math.Max(1, n.Row.CapsuleRadius), height = Math.Max(2 * radius, n.Row.CapsuleHeight);
         var body = new StaticBody3D { Name = "Capsule" };
+        body.SetMeta("ms2_group", NpcGroup);
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = radius, Height = height }, Position = new Vector3(0, height / 2, 0) });
         n.Root.AddChild(body);
         Bodies++;

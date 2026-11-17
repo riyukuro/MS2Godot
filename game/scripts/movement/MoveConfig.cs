@@ -75,6 +75,9 @@ public static class MoveConfig
     public static readonly float WalkFallDelay = MathF.Round(MathF.Sqrt(3f / -DefaultGravityM) * 1000f) / 1000f;
     public const float IdleFallDelay = 0.1f;
     public const float FallMinHeight = 30f;
+
+    /// <summary>A ray the client casts with length 0 (CPhysXHelper::CastRay: unlimited); longer than any field.</summary>
+    public const float UnlimitedRay = 1000000f;
     // StateJump::vfunc_9: the fall animation after sqrt(12 / |g|) s + the apex time
     public static readonly float JumpFallAnimDelay = MathF.Round(MathF.Sqrt(12f / -DefaultGravityM) * 1000f) / 1000f;
 

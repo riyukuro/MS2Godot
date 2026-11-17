@@ -94,7 +94,9 @@ public partial class Player
     (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups)
     {
         var q = PhysicsRayQueryParameters3D.Create(from, from + dir.Normalized() * len);
-        q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
+        // the Exclude getter hands back a copy: grow our own array and set it again after each skipped body
+        var exclude = new Godot.Collections.Array<Rid> { GetRid() };
+        q.Exclude = exclude;
         var space = GetWorld3D().DirectSpaceState;
         for (int i = 0; i < 16; i++)
         {
@@ -103,7 +105,8 @@ public partial class Player
             var col = hit["collider"].AsGodotObject() as Node;
             int group = col != null && col.HasMeta("ms2_group") ? (int)col.GetMeta("ms2_group") : 0;
             if ((groups & (1u << group)) != 0) return ((Vector3)hit["position"], (Vector3)hit["normal"]);
-            q.Exclude.Add((Rid)hit["rid"]);
+            exclude.Add((Rid)hit["rid"]);
+            q.Exclude = exclude;
         }
         return null;
     }
