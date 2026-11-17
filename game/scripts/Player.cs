@@ -35,7 +35,8 @@ public partial class Player : CharacterBody3D
     public string CurrentAnim = "";
 
     public MoveState State { get; private set; } = MoveState.Idle;
-    public bool OnWater { get; private set; }
+    /// <summary>PCBase::FUN_141675ed0: the entity in the controller's hit report is water (kind 8).</summary>
+    public bool OnWater => hitGroup == MoveConfig.WaterGroup;
     public float GroundDistance { get; private set; }
     /// <summary>The last landing's drop (the height the client sends in StateFallDamage; the server applies damage).</summary>
     public float LastFallHeight { get; private set; }
@@ -43,6 +44,7 @@ public partial class Player : CharacterBody3D
 
     float stateTime, airTime, baseSpeed = MoveConfig.RunSpeed, yawDeg, targetYawDeg;
     Vector3 kVel;                         // GameObjectController m_kVelocity (horizontal)
+    int hitGroup = -1;                    // GameObjectControllerHitReport m_entity: its collision group, -1 = none
     float fallStartY = float.NaN;         // PCBase m_posC10
     Vector2 prevInput, prevRawInput;
     bool wallHit;                         // PCBase m_unk_c68: a side hit in the air while descending
@@ -96,6 +98,7 @@ public partial class Player : CharacterBody3D
         Velocity = Vector3.Zero;
         airTime = 0;
         fallStartY = float.NaN;
+        hitGroup = -1;                    // FUN_1416629d0 clears the hit report after placing the PC
         Enter(MoveState.Idle);
     }
 
@@ -166,7 +169,7 @@ public partial class Player : CharacterBody3D
 
             case MoveState.Swim:
                 if (!OnWater && grounded) { Enter(MoveState.Idle); break; }
-                if (InAirFor(MoveConfig.IdleFallDelay)) { Enter(MoveState.Idle); break; }
+                if (InAirFor(MoveConfig.IdleFallDelay)) { hitGroup = -1; Enter(MoveState.Idle); break; }   // StateSwim::vfunc_8 clears the report
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
                 if (!hasInput) { Enter(MoveState.Idle); break; }
                 baseSpeed = Mount != null ? RideSpeed() : MoveConfig.SwimSpeed;
@@ -262,7 +265,7 @@ public partial class Player : CharacterBody3D
     {
         var old = State;
         if (old == MoveState.Jump) { jumping = false; baseSpeed = jumpSavedSpeed; }   // StateJump::vfunc_5
-        if (old == MoveState.Ladder) ladder = null;
+        if (old == MoveState.Ladder) { ladder = null; hitGroup = -1; }   // StateLadder::vfunc_5 clears the hit report
         if (old == MoveState.Rope) rope = null;
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
         State = s;
@@ -280,12 +283,30 @@ public partial class Player : CharacterBody3D
         var q = PhysicsRayQueryParameters3D.Create(from, from + new Vector3(0, -5000, 0));
         q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
         var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
-        if (hit.Count == 0) { GroundDistance = float.MaxValue; OnWater = false; return; }
-        GroundDistance = GlobalPosition.Y - ((Vector3)hit["position"]).Y;
-        var col = hit["collider"].AsGodotObject() as Node;
-        int group = col != null && col.HasMeta("ms2_group") ? (int)col.GetMeta("ms2_group") : 0;
-        // PCBase::FUN_141675ed0: the entity in the controller's hit report is water
-        OnWater = group == MoveConfig.WaterGroup && GroundDistance < 2 * MoveConfig.SkinWidth + 1;
+        GroundDistance = hit.Count == 0 ? float.MaxValue : GlobalPosition.Y - ((Vector3)hit["position"]).Y;
+    }
+
+    /// <summary>
+    /// GameObjectControllerHitReport::onShapeHit keeps the entity of the last shape the controller touched; NxCharacter
+    /// reports the hits of the side and down passes of a move (not the up pass of the auto-step), so after a move with
+    /// a down part it is what the body stands on, else the last thing it ran into. It stays until cleared. Another
+    /// controller goes to onControllerHit and leaves it alone.
+    /// </summary>
+    void UpdateHitReport(Vector3 wantedHoriz, float dy)
+    {
+        for (int i = 0; i < GetSlideCollisionCount(); i++)
+            NoteHit(GetSlideCollision(i).GetCollider());
+        if (dy >= 0) return;
+        // the down pass: the frame's drop, plus the step offset it undoes when the move had a side part
+        float down = -dy + (wantedHoriz.LengthSquared() > 0 ? MoveConfig.StepOffset : 0);
+        var col = new KinematicCollision3D();
+        if (TestMove(GlobalTransform, Vector3.Down * Mathf.Max(down, 2 * SafeMargin), col)) NoteHit(col.GetCollider());
+    }
+
+    void NoteHit(GodotObject collider)
+    {
+        if (collider is CharacterBody3D) return;
+        hitGroup = collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
     }
 
     // ---- GameObjectController: jump and fall integration -------------------------------------------------------------
@@ -341,6 +362,7 @@ public partial class Player : CharacterBody3D
         if (v.Y <= 0 && IsOnWall() && wantedHoriz.Length() > 0.01f && StepPath(start, wantedHoriz) is { } stepped &&
             stepped.Origin.Y > GlobalPosition.Y + 1f)
             GlobalTransform = stepped;
+        UpdateHitReport(wantedHoriz, v.Y * dt);
 
         wallHit = IsOnWall() && !IsOnFloor() && v.Y < 0;
         if (IsOnFloor())
