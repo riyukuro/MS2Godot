@@ -54,4 +54,16 @@ public class EffectColorTests
         Assert.That(found, Is.GreaterThan(0));
         Assert.That(animated, Is.GreaterThan(0));
     }
+
+    /// <summary>The arrow's material is all zero (black); what it shows comes from its glow map, which adds on top of the lit colour.</summary>
+    [Test]
+    public void QuestArrowHasAGlowMapAndNoColour()
+    {
+        var (packs, spec) = Env();
+        var sc = EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, "etc/eff_quest_navigation.nif")));
+        var arrow = sc.Meshes.First(m => m.Mesh.Name == "Pyramid01").Mesh;
+        Assert.That(arrow.Colors, Is.Null);
+        Assert.That(arrow.Textures.ContainsKey("glow"));
+        Assert.That(arrow.Diffuse.Concat(arrow.Emissive).All(v => v == 0));
+    }
 }

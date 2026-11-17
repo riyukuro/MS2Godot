@@ -38,6 +38,8 @@ public sealed partial class EffectInstance : Node3D
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
 uniform sampler2D tex : source_color, repeat_enable, filter_linear;
 uniform bool has_tex = true;
+uniform sampler2D glow_tex : source_color, repeat_enable, filter_linear;
+uniform bool has_glow = false;
 uniform vec2 uv_off = vec2(0.0);
 uniform vec2 uv_scale = vec2(1.0);
 uniform float uv_rot = 0.0;
@@ -48,7 +50,9 @@ void fragment() {
     float c = cos(uv_rot), s = sin(uv_rot);
     uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) * uv_scale + 0.5 + uv_off;
     vec4 t = has_tex ? texture(tex, uv) : vec4(1.0);
-    ALBEDO = t.rgb * tint.rgb;
+    vec3 col = t.rgb * tint.rgb;
+    if (has_glow) col += texture(glow_tex, uv).rgb;   // a glow map adds its colour whatever the material colour is
+    ALBEDO = col;
     ALPHA = clamp(t.a * tint.a * alpha, 0.0, 1.0);
 }";
     static readonly string PartCode = @"shader_type spatial;
@@ -87,6 +91,7 @@ void fragment() {
             ms.Base = m.Textures.TryGetValue("base", out var bn) ? mb.Texture(bn) : (m.Textures.TryGetValue("shader0", out var s0) ? mb.Texture(s0) : null);
             mat.SetShaderParameter("has_tex", ms.Base != null);
             if (ms.Base != null) mat.SetShaderParameter("tex", ms.Base);
+            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt) { mat.SetShaderParameter("has_glow", true); mat.SetShaderParameter("glow_tex", gt); }
             ms.Add = add;
             if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter("tint", Tint(em, 0, add));
             if (em.Flip != null) ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
