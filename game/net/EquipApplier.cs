@@ -204,12 +204,14 @@ public sealed class EquipApplier
     List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender)
     {
         var made = new List<MeshInstance3D>();
-        // Rigid items hang by their self node (Point01): that node of the item lands on the target node, turned and
-        // moved by the asset's dummy for the gender (Euler XYZ degrees, then a translation), as the client's weapon
-        // attach node does. Dummies tied to an animation sequence are left out.
-        // When the item has no node of that name (hair: selfnode "HR", the item's nodes are HR0, HR1), each mesh's own
-        // parent node is its self node: the item's nodes carry the same transform as the body's HR mesh.
+        // Rigid items, as the client attaches them: the item's self nodes are every node whose name starts with the
+        // asset's selfnode, outermost first (CP, CPA; HR0 and HR1 for "HR"; the scene root itself when it is named).
+        // Each one hangs under an attach node on the target node and keeps its own local transform, so a node that
+        // carries the head-relative offset (CP, HR0) keeps it. The attach node is turned and moved by the asset's dummy
+        // for the gender (Euler XYZ degrees, then a translation); dummies tied to an animation sequence are left out.
+        // A replace item whose target is not a body node (hair on "HR") hangs on Bip01 Head instead.
         string selfName = (string)asset.Attribute("selfnode");
+        bool replace = (string)asset.Attribute("replace") == "1";
         Transform3D? selfInv = null;
         if (selfName != null)
         {
@@ -245,7 +247,10 @@ public sealed class EquipApplier
                 string target = (string)asset.Attribute("targetnode") ?? "Bip01 Head";
                 string bone = target;
                 var targetLocal = Transform3D.Identity;     // the target node relative to its bone
-                if (skel.FindBone(bone) < 0)
+                var rel = SelfRelative(md, m, selfName);
+                if (skel.FindBone(bone) < 0 && replace && rel != null)
+                    bone = "Bip01 Head";
+                else if (skel.FindBone(bone) < 0)
                 {
                     var bodyMesh = body.Meshes.FirstOrDefault(x => x.Name == target && x.ParentBone >= 0);
                     bone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
@@ -254,13 +259,35 @@ public sealed class EquipApplier
                 var att = new BoneAttachment3D { Name = mi.Name + "_attach", BoneName = bone };
                 skel.AddChild(att);
                 var parentWorld = m.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[m.ParentBone].World) : Transform3D.Identity;
-                // a declared self node that is not in the item (hair) falls back to the mesh's parent node; no selfnode keeps identity
+                // a mesh outside the self nodes keeps the earlier placement: on the self node's frame, or on its own parent
+                // node when the declared self node is not in the item; no selfnode keeps identity
                 var selfFallback = selfName != null ? parentWorld.AffineInverse() : Transform3D.Identity;
-                mi.Transform = targetLocal * dummy * (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
+                mi.Transform = rel is { } r ? targetLocal * dummy * r
+                    : targetLocal * dummy * (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 att.AddChild(mi);
             }
             made.Add(mi);
         }
         return made;
+    }
+
+    /// <summary>
+    /// A rigid mesh relative to its self node's attach point (the client's self-node collection): the outermost node on
+    /// the mesh's path, the mesh included, whose name starts with selfName keeps its local transform and carries the
+    /// rest. Null when no node on the path matches.
+    /// </summary>
+    static Transform3D? SelfRelative(ModelData md, ModelMesh m, string selfName)
+    {
+        if (string.IsNullOrEmpty(selfName)) return null;
+        var local = ModelBuilder.ToGodot(m.Local);
+        var parentWorld = m.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[m.ParentBone].World) : Transform3D.Identity;
+        if (md.RootName == selfName) return ModelBuilder.ToGodot(md.RootLocal) * parentWorld * local;
+        int top = -1;
+        for (int b = m.ParentBone; b >= 0; b = md.Bones[b].Parent)
+            if (md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal)) top = b;
+        if (top >= 0)
+            return ModelBuilder.ToGodot(md.Bones[top].Rest) * ModelBuilder.ToGodot(md.Bones[top].World).AffineInverse() * parentWorld * local;
+        if (m.Name != null && m.Name.StartsWith(selfName, StringComparison.Ordinal)) return local;
+        return null;
     }
 }
