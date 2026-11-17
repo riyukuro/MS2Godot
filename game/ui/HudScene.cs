@@ -288,17 +288,20 @@ public partial class HudScene : Node
     }
 
     /// <summary>
-    /// UILevelUpPackageWidgetDialog ("Navigator"): an event widget (uieventwidgetdialog) docked by table/alignwidget.xml at the
-    /// top right, offsetX -298, i.e. its right edge on the minimap's left edge. setData: title, reward slot, gauge or reward button.
+    /// UILevelUpPackageWidgetDialog ("Navigator", type name LevelUpPackageWidget): an event widget (uieventwidgetdialog).
+    /// table/alignwidget.xml holds it in the alignType 6 widget at offsetX -298, so opening it requests the align layout
+    /// (UISwfEntity::FUN_1422dc450 / vfunc_19) instead of its own default place (UIEventWidgetDialog::vfunc_43, top left at
+    /// (0, 60)). UIAlignWidget::LayoutEntities -> UISwfEntity::vfunc_44 -> ASDisplayObject::vfunc_2(6, -298, 0): x = stage width
+    /// - (int)width - 298, y = 0, with the widget's width from AS3 (EventWidgetDialog.get_width = m_dragBar.width). The widgets
+    /// listed before it take their width off the offset only while shown; none is here. setData: title, reward slot, gauge or
+    /// reward button.
     /// </summary>
     void NavigatorWidget(Control ui)
     {
         var r = Place(ui, "uieventwidgetdialog", 1f, Vector2.Zero);
         var dlg = r.AllClips().FirstOrDefault(c => c.Direct("m_title") != null) ?? r;     // the EventWidgetDialog instance
-        // the movie draws the dialog mid-stage: dock its registration point instead, top right with offsetX -298, where the
-        // dialog's width is m_dragBar.width (EventWidgetDialog.get_width)
-        float w = dlg.ChildWidth(dlg.Direct("m_dragBar"));
-        if (w <= 0) w = 70;
+        // the movie draws the dialog mid-stage: dock its registration point instead (SetPositionInt of the dialog)
+        int w = (int)dlg.ChildWidth(dlg.Direct("m_dragBar"));
         r.Position = (new Vector2(stage.X - 298 - w, 0) - dlg.Position) * u;
         dlg.SetNamedText("m_title", assets.Str("$s_levelup_package_widget"));
         if (dlg.Direct("m_title")?.Node is TextNode title) title.ShrinkToFit();     // TextFieldEx.setTextAutoSize(SHRINK)
