@@ -10,13 +10,15 @@ namespace Ms2.Formats.World;
 /// the whole text as it is then.</item>
 /// <item>Object words (ReplaceObjectWords), run on npc script text when it is loaded (CScriptContent::vfunc_2 and its
 /// distractors): $script (the script string), $map, $item, $skill, $npcName, $npcTitle, $npcFunction and $achieve (string
-/// tables 3, 1, 4, 2, 19, 10 and 24), $npc ("title name", or the name when the npc has no title), $pp and $pp2.</item>
+/// tables 3, 1, 4, 2, 19, 10 and 24), $npc ("title name", or the name when the npc has no title), $pp and $pp2, and the plural words $itemPlural,
+/// $npcPlural and $npcNamePlural: in Korean, Japanese and Chinese (CGameOption m_language 0, 1, 3) the same as $item, $npc
+/// and $npcName; in any other language the plural tables (62 itemNamePlural, 61 npcNamePlural; $npcPlural is "title
+/// plural", FUN_141700820).</item>
 /// <item>Value words (ReplaceValueWords), run when the page is shown (CCinematicComponent::vfunc_5): $MyPCName, $male,
 /// $female, $pp, $ppr and $pp2.</item>
 /// </list>
 /// Arguments are read as the client does: _wtoi (the leading digits, so "11000001[gender:1]" is 11000001) and, for $script,
-/// _wcstoui64. A missing string is empty. Words whose formatter is not ported here ($itemPlural, $npcPlural,
-/// $npcNamePlural, $dungeonTitle, $quest, $maview, $externalWeb, $petCollectGroup, $masteryRecipe, $job; the value words
+/// _wcstoui64. A missing string is empty. Words whose formatter is not ported here ($dungeonTitle, $quest, $maview, $externalWeb, $petCollectGroup, $masteryRecipe, $job; the value words
 /// $MyPCHp, $MyPCLevel, $paneltyPrice, the roulette words and $key) stay as they are.
 /// </summary>
 public sealed class ReservedWords
@@ -28,6 +30,7 @@ public sealed class ReservedWords
     readonly Func<ulong, string> script;
     readonly Dictionary<string, Dictionary<int, string>> tables = new(StringComparer.Ordinal);
     readonly Dictionary<string, Word> objectWords;
+    readonly bool singular;
 
     /// <param name="text">The string tables.</param>
     /// <param name="script">The script strings (CScriptTable::GetScript), null for none.</param>
@@ -35,6 +38,8 @@ public sealed class ReservedWords
     {
         this.text = text;
         this.script = script;
+        // the language of the first string table language (FUN_140652030: 0 KR, 1 JP, 2 EN, 3 CN, 4 FR, 5 DE, 6 PT, 7 ES)
+        singular = (text?.Languages.FirstOrDefault() ?? "").ToLowerInvariant() is "kr" or "jp" or "cn";
         objectWords = new(StringComparer.Ordinal)
         {
             ["$item"] = (_, a, _) => Lookup("itemname", Atoi(a)),
@@ -48,6 +53,9 @@ public sealed class ReservedWords
             ["$pp2"] = Pp2,
             ["$achieve"] = (_, a, _) => Atoi(a) == 0 ? "" : Lookup("achievename", Atoi(a)),
             ["$script"] = (_, a, _) => ParseUInt64(a) == 0 ? "" : script?.Invoke(ParseUInt64(a)) ?? "",
+            ["$itemPlural"] = (_, a, _) => Lookup(singular ? "itemname" : "itemnameplural", Atoi(a)),
+            ["$npcPlural"] = (_, a, _) => singular ? NpcDisplayName(Atoi(a)) : NpcDisplayName(Atoi(a), "npcnameplural"),
+            ["$npcNamePlural"] = (_, a, _) => Lookup(singular ? "npcname" : "npcnameplural", Atoi(a)),
         };
     }
 
@@ -209,9 +217,12 @@ public sealed class ReservedWords
     }
 
     /// <summary>FUN_1401aa6a0: "&lt;title&gt; &lt;name&gt;" (string tables 19 and 2), or the name alone when the npc has no title.</summary>
-    public string NpcDisplayName(int id)
+    public string NpcDisplayName(int id) => NpcDisplayName(id, "npcname");
+
+    /// <summary>FUN_1401aa6a0 with the name from <paramref name="names"/> (FUN_141700820 takes it from npcNamePlural).</summary>
+    string NpcDisplayName(int id, string names)
     {
-        string title = Lookup("npctitle", id), name = Lookup("npcname", id);
+        string title = Lookup("npctitle", id), name = Lookup(names, id);
         return title.Length != 0 ? $"{title} {name}" : name;
     }
 
