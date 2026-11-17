@@ -12,6 +12,7 @@ namespace Ms2Godot;
 /// </summary>
 public partial class VideoPlayerNode : Node2D
 {
+    static readonly StringName TexCb = "tex_cb", TexCr = "tex_cr";
     /// <summary>The client's movie archives (CommonPath.movie "..\Movie\" plus the file name).</summary>
     static readonly string[] Archives = { "Resource/Movie/Common", "Resource/Movie/Item", "Resource/Movie/Emotion" };
     static Shader shader;
@@ -121,8 +122,8 @@ public partial class VideoPlayerNode : Node2D
             material = new ShaderMaterial { Shader = shader };
             Material = material;
         }
-        material.SetShaderParameter("tex_cb", cbTex);
-        material.SetShaderParameter("tex_cr", crTex);
+        material.SetShaderParameter(TexCb, cbTex);
+        material.SetShaderParameter(TexCr, crTex);
         picW = f.Width; picH = f.Height;
         QueueRedraw();
     }

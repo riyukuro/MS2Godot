@@ -3,6 +3,13 @@ using Ms2.Formats.Model;
 
 namespace Ms2Godot.Net;
 
+/// <summary>The effect shader's parameter names, allocated once: a string literal passed to SetShaderParameter makes a new finalizable StringName on every call.</summary>
+static class FxParam
+{
+    public static readonly StringName HasTex = "has_tex", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
+        Frames = "frames", Alpha = "alpha", UvOff = "uv_off", UvScale = "uv_scale", UvRot = "uv_rot";
+}
+
 /// <summary>
 /// A playing effect NIF: its node tree with the transform controllers, its static meshes with the alpha, uv-scroll and flipbook controllers, and its
 /// particle systems simulated on the CPU (emitters, gravity and drag forces, size / color keys over the particle's age, grow and shrink ramps)
@@ -89,11 +96,11 @@ void fragment() {
             bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
             var mat = new ShaderMaterial { Shader = add ? Sh(ref meshAdd, MeshCode, "blend_add") : Sh(ref meshMix, MeshCode, "blend_mix") };
             ms.Base = m.Textures.TryGetValue("base", out var bn) ? mb.Texture(bn) : (m.Textures.TryGetValue("shader0", out var s0) ? mb.Texture(s0) : null);
-            mat.SetShaderParameter("has_tex", ms.Base != null);
-            if (ms.Base != null) mat.SetShaderParameter("tex", ms.Base);
-            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt) { mat.SetShaderParameter("has_glow", true); mat.SetShaderParameter("glow_tex", gt); }
+            mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
+            if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
+            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt) { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt); }
             ms.Add = add;
-            if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter("tint", Tint(em, 0, add));
+            if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter(FxParam.Tint, Tint(em, 0, add));
             if (em.Flip != null) ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
             ms.Mat = mat;
             ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false), MaterialOverride = mat, Name = m.Name ?? "mesh" };
@@ -109,9 +116,9 @@ void fragment() {
             ps.Accum = new double[d.Emitters.Count];
             var mat = new ShaderMaterial { Shader = d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
             var tex = d.Texture != null ? mb.Texture(d.Texture) : null;
-            mat.SetShaderParameter("has_tex", tex != null);
-            if (tex != null) mat.SetShaderParameter("tex", tex);
-            mat.SetShaderParameter("frames", new Vector2(d.FramesAcross, d.FramesDown));
+            mat.SetShaderParameter(FxParam.HasTex, tex != null);
+            if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
+            mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
             ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = n, VisibleInstanceCount = 0,
                 Mesh = new QuadMesh { Size = Vector2.One, Material = mat }, CustomAabb = new Aabb(new Vector3(-5000, -5000, -5000), new Vector3(10000, 10000, 10000)) };
@@ -208,8 +215,8 @@ void fragment() {
             var nd = scene.Nodes[d.Node];
             ms.Node.Transform = World(d.Node, t, camLocal);
             ms.Node.Visible = !nd.Culled;
-            if (d.Colors.Count > 0) ms.Mat.SetShaderParameter("tint", Tint(d, t, ms.Add));
-            if (d.Alpha != null) ms.Mat.SetShaderParameter("alpha", (float)d.Alpha(d.AlphaCtl.Local(t)));
+            if (d.Colors.Count > 0) ms.Mat.SetShaderParameter(FxParam.Tint, Tint(d, t, ms.Add));
+            if (d.Alpha != null) ms.Mat.SetShaderParameter(FxParam.Alpha, (float)d.Alpha(d.AlphaCtl.Local(t)));
             if (d.Uv.Count > 0)
             {
                 Vector2 off = Vector2.Zero, sc = Vector2.One; float rot = 0;
@@ -218,7 +225,7 @@ void fragment() {
                     float v = (float)op.Curve(op.Ctl.Local(t));
                     switch (op.Operation) { case 0: off.X += v; break; case 1: off.Y += v; break; case 2: rot += v; break; case 3: sc.X = v; break; case 4: sc.Y = v; break; }
                 }
-                ms.Mat.SetShaderParameter("uv_off", off); ms.Mat.SetShaderParameter("uv_scale", sc); ms.Mat.SetShaderParameter("uv_rot", rot);
+                ms.Mat.SetShaderParameter(FxParam.UvOff, off); ms.Mat.SetShaderParameter(FxParam.UvScale, sc); ms.Mat.SetShaderParameter(FxParam.UvRot, rot);
             }
             if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
             {
@@ -227,7 +234,7 @@ void fragment() {
                                                : (int)Math.Floor((lt - d.Flip.Ctl.Start) / Math.Max(d.Flip.Ctl.Stop - d.Flip.Ctl.Start, 1e-6) * ms.Flip.Length);
                 idx = Math.Clamp(idx, 0, ms.Flip.Length - 1);
                 var tex = ms.Flip[idx];
-                if (tex != null) ms.Mat.SetShaderParameter("tex", tex);
+                if (tex != null) ms.Mat.SetShaderParameter(FxParam.Tex, tex);
             }
         }
 

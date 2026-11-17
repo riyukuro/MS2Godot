@@ -12,6 +12,7 @@ namespace Ms2Godot;
 /// </summary>
 public partial class BlobShadow : MeshInstance3D
 {
+    static readonly StringName StrengthParam = "strength";
     public const string Archive = "Resource/Image";
     public const string Entry = "effect/shadow.dds";
     public const float FadeHeight = 400f, FadeScale = 0.5f;
@@ -95,6 +96,6 @@ public partial class BlobShadow : MeshInstance3D
         var basis = new Basis(x, n, x.Cross(n)).Scaled(Vector3.One * radius * fade);
         // + 10: the client lifts by 3 on a depth buffer with its bias; Godot z-fights at the camera distance without more
         GlobalTransform = new Transform3D(basis, p + n * (lift + 10f));
-        mat.SetShaderParameter("strength", Strength * fade);
+        mat.SetShaderParameter(StrengthParam, Strength * fade);
     }
 }
