@@ -59,7 +59,7 @@ public sealed class GroundEffectTable
         if (text != null)
         {
             g = new(StringComparer.OrdinalIgnoreCase);
-            foreach (var a in XDocument.Parse(text).Root.Elements("action"))
+            foreach (var a in XDocument.Parse(text.TrimStart('\uFEFF')).Root.Elements("action"))
             {
                 var type = (string)a.Attribute("type");
                 if (type == null) continue;
@@ -89,7 +89,7 @@ public sealed class GroundEffectTable
         l = new();
         var text = readText("effect/" + file.ToLowerInvariant().Replace('\\', '/'));
         if (text != null)
-            foreach (var e in XDocument.Parse(text).Descendants("effect"))
+            foreach (var e in XDocument.Parse(text.TrimStart('\uFEFF')).Descendants("effect"))
                 if (string.Equals((string)e.Attribute("type"), "soundEvent", StringComparison.OrdinalIgnoreCase) && e.Attribute("event") != null)
                     l.Add(((string)e.Attribute("group") ?? "") + "/" + (string)e.Attribute("event"));
         return effectSounds[file] = l;
