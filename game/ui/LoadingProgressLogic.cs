@@ -9,6 +9,9 @@ namespace Ms2Godot.Ui;
 /// bars stretched to the stage width (the bottom one holds the tip and the percent text) and, for low levels, the keyboard guide
 /// centred above the bottom bar. With no picture the frame shows a screenshot of the game, stretched to the stage.
 /// <see cref="StopProgress"/> fades it out over 500 ms, then raises OnFadeInComplete.
+/// The movie is drawn at the UI scale like every other movie (<see cref="UiScale"/>: CUIService::OnDeviceReset sets it for all
+/// movies with GFxManager::SetMoviesScale), so its stage is <see cref="UiScale.MovieStage"/> and the guide (1208 wide in the
+/// movie) takes about 843 pixels of a 1280 window, as the client's does.
 /// </summary>
 public sealed class LoadingProgressLogic
 {
@@ -38,15 +41,26 @@ public sealed class LoadingProgressLogic
         top = movie.BuildClass("loadingprogress_bg_top");
         bottom = movie.BuildClass("loadingprogress_bg_bottom");
         guide = movie.BuildClass("export_keyboard_guide");
+        // the guide's key labels (export_keyboard_guide_label, a CLIK Label) get their text from the symbol's inspector values
+        // (__setProp___idN__export_keyboard_guide_Layer1_0 in component_v1): $s_keyboard_guide_z ... _period
+        if (guide != null)
+        {
+            UiWidgets.ApplyInspector(guide, UILoadingProgressContract.Library.Export_keyboard_guide);
+            // export_keyboard_guide_label.frame1: TextFieldEx.setVerticalAlign(textField, VALIGN_CENTER)
+            foreach (var clip in guide.AllClips())
+                if (clip.Widget is LabelWidget)
+                    foreach (var c in clip.Children)
+                        if (c.Name == "textField" && c.Node is TextNode tf) tf.AlignCenter();
+        }
         topSize = top?.Bounds.Size ?? Vector2.One;
         bottomSize = bottom?.Bounds.Size ?? Vector2.One;
         foreach (var n in new Node2D[] { clear, picture, top, bottom, guide }) if (n != null) { Layer.AddChild(n); n.Visible = false; }
     }
 
-    /// <summary>startProgress(info) in frame mode (showFrame true, useFadeOut true).</summary>
-    public void StartProgress(Start s, Vector2 stageSize)
+    /// <summary>startProgress(info) in frame mode (showFrame true, useFadeOut true), for a window of <paramref name="window"/> pixels.</summary>
+    public void StartProgress(Start s, Vector2 window)
     {
-        stage = stageSize;
+        SetWindow(window);
         fadeT = -1;
         Layer.Modulate = Colors.White;
         screenShot = s.Picture == null;
@@ -59,8 +73,16 @@ public sealed class LoadingProgressLogic
         Active = true;
     }
 
-    /// <summary>onStageResize.</summary>
-    public void SetStageSize(Vector2 size) { stage = size; if (Active) Layout(); }
+    /// <summary>onStageResize, for a window of <paramref name="window"/> pixels.</summary>
+    public void SetStageSize(Vector2 window) { SetWindow(window); if (Active) Layout(); }
+
+    void SetWindow(Vector2 window)
+    {
+        float k = UiScale.For(window);
+        Layer.Scale = new Vector2(k, k);
+        Layer.Position = UiScale.MovieOrigin;
+        stage = UiScale.MovieStage(window);
+    }
 
     void Layout()
     {
@@ -75,7 +97,7 @@ public sealed class LoadingProgressLogic
         if (bottom != null)
         {
             float h = bottomSize.Y * (stage.X / bottomSize.X);
-            bottomY = stage.Y - h;
+            bottomY = stage.Y - h;                                           // Align.alignment(ALIGN_BOTTOMCENTER): the y setter
             Fit(bottom, bottom.Bounds, new Rect2(0, bottomY, stage.X, h));
         }
         if (picture.Texture != null)
@@ -95,12 +117,15 @@ public sealed class LoadingProgressLogic
         }
         if (guide != null && guide.Visible)
         {
-            // setInputGuide: centred on the stage, lifted to stay 20 clear of the bottom bar
-            var b = guide.Bounds;
-            var pos = (stage - b.Size) * 0.5f - b.Position;
-            float over = bottomY - (pos.Y + b.Position.Y + b.Size.Y);
-            if (over < 0) pos.Y += over - 20;
-            guide.Position = pos.Round();
+            // setInputGuide: Align.alignment(ALIGN_CENTER) puts the guide's origin at ((stage - size) / 2); then
+            // l3 = int(m_progressBgBottom.y - int(y + height)) and, if l3 < 0, y += l3 + 20: the guide is raised by its overlap
+            // with the bottom bar less 20, so it still covers the bar's top 20 (as on the client: the panel's bottom edge
+            // passes the bar's dark band)
+            var size = guide.Bounds.Size;
+            var pos = (stage - size) * 0.5f;
+            int l3 = (int)(bottomY - (int)(pos.Y + size.Y));
+            if (l3 < 0) pos.Y += l3 + 20;
+            guide.Position = pos;
         }
     }
 
