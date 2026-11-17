@@ -313,12 +313,28 @@ public partial class Player : CharacterBody3D
         if (old == MoveState.Ladder) { ladder = null; ClearHitReport(); }   // StateLadder::vfunc_5 clears the hit report
         if (old == MoveState.Rope) rope = null;
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
+        if (old is MoveState.Ladder or MoveState.Climb) StopJump();                // StateLadder / StateClimb::vfunc_5
         State = s;
         stateTime = 0;
+        // StateLadder::vfunc_4 (stateladder.cpp:143), StateRope::vfunc_4 (statemanager.cpp:1225), StateClimb::vfunc_4
+        // (state.cpp:1054), StateDash::vfunc_4 (state.cpp:1789)
+        if (s is MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Dash) StopJump();
         if (s == MoveState.Swim) swimRideTick = syncClock;                   // StateSwim::vfunc_4: m_nMode = the server tick
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();
         if (s == MoveState.Land) Landed?.Invoke();
+    }
+
+    /// <summary>
+    /// GameObjectController::StopJump (@0x141240730, gameobjectcontrollerphysxhelpers.cpp:331-336): no jump, no controller
+    /// velocity, and the fall timer reset (Timer::Reset, period 0; the next move off the ground starts it again).
+    /// </summary>
+    void StopJump()
+    {
+        jumping = false;
+        kVel = Vector3.Zero;
+        airTime = 0;
+        fallTimerRunning = false;
     }
 
     /// <summary>PCBase::vfunc_99: in the air for longer than the delay and more than 0.3 m above the ground.</summary>
@@ -355,6 +371,9 @@ public partial class Player : CharacterBody3D
 
     void StartJump(Vector3 dir, bool hasInput, int sub)
     {
+        // the old state's vfunc_5 runs first, then StateJump::vfunc_4: StopJump, then StartJump (statejump.cpp:126-128)
+        Enter(MoveState.Jump);
+        StopJump();
         // StateJump::vfunc_4: the jump variant
         if (sub == 0x25)
         {
@@ -373,7 +392,6 @@ public partial class Player : CharacterBody3D
         jumpTime = 0;
         jumpH = 0;
         jumping = true;
-        Enter(MoveState.Jump);
     }
 
     void Integrate(float dt)
