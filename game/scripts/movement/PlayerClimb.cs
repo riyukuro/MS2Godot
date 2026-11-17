@@ -91,7 +91,7 @@ public partial class Player
 
     /// <summary>The nearest hit of a ray on a collider whose PropCollisionGroup bit is in <paramref name="groups"/>
     /// (a collider without one is group 0); the client's CastRay passes the groups to raycastAllShapes.</summary>
-    readonly RayQuery rayQ = new();
+    readonly RayQuery rayQ = RayQuery.CastRay();
 
     (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups)
     {

@@ -632,15 +632,27 @@ public partial class Player : CharacterBody3D
             var next = Climbs.Find(pos, 2, ladder);
             if (next == null)
             {
-                float groundY = pos.Y - GroundDistance;
-                if (GroundDistance < float.MaxValue && pos.Y - move <= groundY)
+                // stateladder.cpp:433-463: GetGroundDistance from the feet each frame (length 0 = unlimited, groups 0x389,
+                // physxhelper.cpp:475-489). On a hit: the landing when this step reaches the hit, lifted to 1 above it only
+                // if the feet are already below; else a fall once the step passes the ladder's base. No hit: the landing
+                // only when the feet are at the base (IsNearlyEqual, 1e-6), and the climb goes on otherwise.
+                if (Ray(pos, Vector3.Down, MoveConfig.UnlimitedRay, GroundGroups) is var (hit, _))
+                {
+                    if (pos.Y - move <= hit.Y)
+                    {
+                        lsub = Ladder.DownLand;
+                        if (pos.Y < hit.Y) GlobalPosition = new Vector3(pos.X, hit.Y + 1f, pos.Z);
+                        PlayAct(Act.LadderDownLand, restart: true);
+                        return;
+                    }
+                    if (pos.Y - move <= ladder.Position.Y) { Enter(MoveState.Fall); return; }
+                }
+                else if (Mathf.Abs(pos.Y - ladder.Position.Y) < 1e-6f)
                 {
                     lsub = Ladder.DownLand;
-                    GlobalPosition = new Vector3(pos.X, groundY + 1f, pos.Z);
                     PlayAct(Act.LadderDownLand, restart: true);
                     return;
                 }
-                if (pos.Y - move <= ladder.Position.Y) { Enter(MoveState.Fall); return; }
             }
             else ladder = next;
             GlobalPosition = pos - new Vector3(0, move, 0);
@@ -648,7 +660,7 @@ public partial class Player : CharacterBody3D
 
     }
 
-    readonly RayQuery topRay = new();
+    readonly RayQuery topRay = RayQuery.CastRay();
 
     Vector3? TopPoint()
     {

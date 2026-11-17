@@ -14,6 +14,19 @@ sealed class RayQuery
     public readonly Godot.Collections.Array<Rid> Ex = new();
     public PhysicsRayQueryParameters3D Query => query;
 
+    /// <summary>
+    /// A stand-in for CPhysXHelper::CastRay (physxhelper.cpp:187-232): scene raycastAllShapes, which has no cull option.
+    /// A triangle mesh is double-sided for rays only with NX_MESH_DOUBLE_SIDED (Nxp.h:247), and NiPhysXMeshDesc copies
+    /// its Mesh Flags into NxTriangleMeshShapeDesc::meshFlags (NiPhysXMeshDesc.cpp:235-245), 0 on MS2's meshes, so a ray
+    /// passes through a mesh triangle from behind. The field's mesh shapes are one-sided in the PhysX winding.
+    /// </summary>
+    public static RayQuery CastRay()
+    {
+        var r = new RayQuery();
+        r.query.HitBackFaces = false;
+        return r;
+    }
+
     public PhysicsRayQueryParameters3D Set(Vector3 from, Vector3 to, Rid exclude)
     {
         query.From = from; query.To = to;
