@@ -22,8 +22,8 @@ public partial class Field : Node3D
     protected Camera3D camera;
     FieldCamera cam = new();
     float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
-    float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57), a wheel step goes back to the distance's own
-    float camDist;                        // current zoom distance, MinCameraDistance .. cam.Distance
+    float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57); a distance change goes back to the distance's own
+    float camDist;                        // m_50: zoom distance, MinCameraDistance .. cam.Distance + PlayerHeight
     const float MinCameraDistance = 400f; // CCameraMode default nearest zoom
     string shotDir;
     // scripted steps: seconds, input (right, forward), walk, shot file at the end
@@ -288,22 +288,74 @@ public partial class Field : Node3D
     void UpdateCamera(double dt = 0)
     {
         var ms2yaw = Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw;
-        var target = player.GlobalPosition;
-        Vector3 eye = Vector3.Zero, look = Vector3.Zero, offset = Vector3.Zero;
-        float maxDist = cam.Distance + PlayerHeight;
-        // CTargetCameraMode::vfunc_38 / vfunc_8: while the near plane is blocked the eye is pushed outward in steps of 10
-        // (the client repeats the step up to 100 times a frame), the angle following the distance.
-        float d = camDist;
-        for (int i = 0; i < 100; i++)
+        Vector3 eye, look, offset;
+        Vector3? prevLook = camLook, prevEye = placedEye;
+        // CTargetCameraMode::vfunc_8: one pass, plus another while the target outruns the eye's step or while the shown
+        // view is blocked, at most 100; every pass eases the shown camera again with the frame's time.
+        int passes = 1;
+        for (int i = 0; i < passes && i < 100; i++)
         {
-            Place(d, ms2yaw, out eye, out look, out offset);
-            if (d >= maxDist || !NearPlaneBlocked(eye, look)) break;
-            d = Mathf.Min(d + 10f, maxDist);
+            Place(camDist, ms2yaw, out eye, out look, out offset);
+            if (!camVelActive || placedEye == null) placedEye = eye;
+            if (Mathf.Abs(camVel) >= 5f)
+            {
+                camVelActive = true;
+                if (!camBlocked) camVel *= 0.9f;
+                var pos = placedEye.Value + (look - placedEye.Value).Normalized() * camVel;
+                if (Planar(prevLook ?? look, look) > Planar(prevEye ?? pos, pos)) passes++;
+                float maxDist = cam.Distance + PlayerHeight;
+                bool outside = camDist < MinCameraDistance || camDist > maxDist;
+                SetCameraDistance(pos, look, !(outside && ((camVel > 0 && camDist > maxDist) || (camVel < 0 && camDist < MinCameraDistance))));
+                Place(camDist, ms2yaw, out eye, out look, out offset);
+                placedEye = eye;
+            }
+            else if (camVelActive)
+            {
+                camVel = 0;
+                camVelActive = false;
+                placedEye = eye;                               // vfunc_37
+            }
+            // the zoom action (one frame per wheel step): m_84 += x * min(dt, 1/15) * 2000, within +-150
+            if (i == 0 && zoomInput != 0)
+            {
+                camVel = Mathf.Clamp(camVel + zoomInput * (float)Math.Min(dt, 1.0 / 15) * 2000f, -150f, 150f);
+                zoomInput = 0;
+            }
+            player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
+            var ideal = Transform3D.Identity.LookingAt(look - placedEye.Value, Vector3.Up);
+            ideal.Origin = placedEye.Value;
+            var shown = EaseCamera(ideal, (float)dt);
+            camera.GlobalTransform = shown;
+            // vfunc_39: the near plane of the SHOWN camera; while blocked the next pass pushes the eye out by 10
+            camBlocked = NearPlaneBlocked(shown, look);
+            if (camBlocked) { camVel = -10f; passes++; }
+            camLook = look;
         }
-        player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
-        var ideal = Transform3D.Identity.LookingAt(look - eye, Vector3.Up);
-        ideal.Origin = eye;
-        camera.GlobalTransform = EaseCamera(ideal, (float)dt);
+    }
+
+    // CTargetCameraMode distance state: camDist is m_50 (the eye's distance from the target in the ground plane), camVel
+    // m_84 (+ toward the target), camVelActive m_88, camBlocked m_f4; placedEye is m_d8's position, camLook m_78.
+    float camVel;
+    bool camVelActive, camBlocked;
+    int zoomInput;
+    Vector3? placedEye, camLook;
+
+    static float Planar(Vector3 a, Vector3 b) => new Vector2(a.X - b.X, a.Z - b.Z).Length();
+
+    /// <summary>CTargetCameraMode::FUN_14183bfd0: the distance becomes the eye's ground-plane distance from the target,
+    /// within nearest .. farthest + player height when clamped. A step that crosses the farthest zoom (m_54) stops on it
+    /// and ends the motion; the angle and height then follow the distance.</summary>
+    void SetCameraDistance(Vector3 pos, Vector3 look, bool clamp)
+    {
+        float prev = camDist;
+        camDist = Planar(look, pos);
+        if (clamp) camDist = Mathf.Clamp(camDist, MinCameraDistance, cam.Distance + PlayerHeight);
+        if ((camVel < 0 && camDist > cam.Distance && prev < cam.Distance) || (camVel > 0 && prev > cam.Distance && camDist < cam.Distance))
+        {
+            camDist = cam.Distance;
+            camVel = 0;
+        }
+        camPitch = null;
     }
 
     // CTargetCameraMode::vfunc_39: the shown camera (m_c0) follows the one placed above (m_d8). Each frame it closes
@@ -353,7 +405,9 @@ public partial class Field : Node3D
         float range = cam.Distance - MinCameraDistance;
         float t = range > 0 ? Mathf.Min((dist - MinCameraDistance) / range, 1f) : 1f;
         float pitch = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * t);
-        float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * t;
+        // vfunc_27: the height follows the distance past the farthest zoom too (only the angle is capped)
+        float th = range > 0 ? (dist - MinCameraDistance) / range : 1f;
+        float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * th;
         var ms2 = new Vec3(dist * Math.Sin(yaw), dist * Math.Cos(yaw), dist * Math.Cos(pitch));
         offset = FieldBuilder.ToGodotPoint(ms2);
         look = player.GlobalPosition + new Vector3(0, height, 0);
@@ -362,11 +416,12 @@ public partial class Field : Node3D
 
     /// <summary>The client's nine points of the near plane (corners, edge midpoints between them) each cast to the target
     /// and back; a hit both ways, or a hit from the target side alone, means the view is blocked.</summary>
-    bool NearPlaneBlocked(Vector3 eye, Vector3 look)
+    bool NearPlaneBlocked(Transform3D pose, Vector3 look)
     {
-        var fwd = (look - eye).Normalized();
-        var right = fwd.Cross(Vector3.Up).Normalized();
-        var up = right.Cross(fwd);
+        var eye = pose.Origin;
+        var fwd = -pose.Basis.Z.Normalized();
+        var right = pose.Basis.X.Normalized();
+        var up = pose.Basis.Y.Normalized();
         float near = camera.Near, tan = Mathf.Tan(Mathf.DegToRad(camera.Fov) * 0.5f);
         float asp = GetViewport().GetVisibleRect().Size.Aspect();
         var c = eye + fwd * near;
@@ -399,9 +454,10 @@ public partial class Field : Node3D
     {
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
-            if (mb.ButtonIndex == MouseButton.WheelUp || mb.ButtonIndex == MouseButton.WheelDown) camPitch = null;
-            if (mb.ButtonIndex == MouseButton.WheelUp) camDist = Mathf.Max(MinCameraDistance, camDist - 70f);
-            if (mb.ButtonIndex == MouseButton.WheelDown) camDist = Mathf.Min(cam.Distance, camDist + 70f);
+            // Unk_PCMove::IsActionKeyDown: wheel forward reads as zoom in (300008), back as zoom out (300009), for the one
+            // frame whose mouse delta holds it; zoom in wins when both come in one frame
+            if (mb.ButtonIndex == MouseButton.WheelUp) zoomInput = 1;
+            if (mb.ButtonIndex == MouseButton.WheelDown && zoomInput != 1) zoomInput = -1;
         }
     }
 
