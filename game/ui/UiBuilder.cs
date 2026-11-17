@@ -212,6 +212,32 @@ public partial class TextNode : Node2D
     /// <summary>Width of the current text in the field's own units (AS3 textWidth).</summary>
     public float TextWidth => Label.LabelSettings.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, Label.LabelSettings.FontSize).X * Label.Scale.X;
 
+    /// <summary>Lines the text wraps to at the field width (AS3 numLines).</summary>
+    public int NumLines
+    {
+        get
+        {
+            if (Label.AutowrapMode == TextServer.AutowrapMode.Off) return Math.Max(1, Label.Text.Split('\n').Length);
+            var ls = Label.LabelSettings;
+            var p = new TextParagraph { Width = Label.Size.X, BreakFlags = TextServer.LineBreakFlag.Mandatory | TextServer.LineBreakFlag.WordBound | TextServer.LineBreakFlag.Adaptive };
+            p.AddString(Label.Text, ls.Font, ls.FontSize);
+            return Math.Max(1, p.GetLineCount());
+        }
+    }
+
+    /// <summary>
+    /// Flash line metrics in the field's own units: a line is <c>size</c> tall and the next starts <c>1.075 * size</c>
+    /// below it (measured on the reference: textHeight 16 and a 17.2 advance at size 16). Sets the label's line spacing
+    /// to that advance and returns AS3 textHeight.
+    /// </summary>
+    public float FlashTextHeight()
+    {
+        float size = UiBuilder.F(Def["size"], 12), advance = 1.075f * size;
+        var ls = Label.LabelSettings;
+        ls.LineSpacing = advance / Label.Scale.Y - ls.Font.GetHeight(ls.FontSize);
+        return size + (NumLines - 1) * advance;
+    }
+
     /// <summary>Applies a glow or drop shadow filter as a text outline (flash text in the HUD is mostly drawn with a dark glow).</summary>
     public void ApplyFilters(JsonNode filters, float scale)
     {

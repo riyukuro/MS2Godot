@@ -15,6 +15,12 @@ public sealed class StubHudData
     /// <summary>The level-up package quest's reward in the "Navigator" widget (item id, count) and whether it can be claimed.</summary>
     public int NavigatorRewardItem = 20300327, NavigatorRewardCount = 1;
     public bool NavigatorRewardReady = true;
+    /// <summary>The field mission panel ("field" type): the map's exploration goals and whether each is met.</summary>
+    public (string Text, bool Satisfied)[] FieldMissionGoals =
+    {
+        ("Stub goal one, long enough to wrap onto a second line (0/1)", false), ("Stub goal two (0/1)", false),
+        ("Stub goal three (0/1)", false), ("Stub goal four (0/5)", false), ("Stub goal five (0/10)", false),
+    };
     public HashSet<string> FeaturesOff = new() { "CashShop", "MeratMarket", "LapentaFrontierQuest" };
 
     public double HpRatio => Player.HpMax == 0 ? 0 : (double)Player.HpCurrent / Player.HpMax;

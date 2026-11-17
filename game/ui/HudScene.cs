@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
@@ -332,25 +333,66 @@ public partial class HudScene : Node
         root.GotoFrame(root.Frame);
     }
 
-    // ---- quest guide: the field mission panel with stub goals ---------------------------------------------------
+    // ---- quest guide: the field mission panel ---------------------------------------------------------------------
 
+    /// <summary>
+    /// UIQuestGuideDialog with only the field mission entity: the dialog aligns top right at (0, 330)
+    /// (CAlignmentInfo(6, 0, 330) in its constructor); addMission puts a qg_mission_entity at x -1 in m_topContainer and
+    /// FieldMissionGuideEntity.setType("field") / setData run as below.
+    /// </summary>
     void Quests(Control ui)
     {
         var m = new UiMovie(assets, "uiquestguidedialog");
+        var sym = UiLayout.SymbolOfClass(m, "qg_mission_entity", out _);
+        if (sym == null) return;
+        var goals = data.FieldMissionGoals;
+
+        // addCondition: a qg_label_condition per goal at y = m_container.height + 3, height = textHeight + 5
+        var labels = new List<(MovieClipNode Node, float Y)>();
+        float contH = 0, top = 0;
+        foreach (var (text, _) in goals)
+        {
+            var l = m.BuildClass("qg_label_condition", u);
+            if (l == null) break;
+            l.SetNamedText("textField", text);
+            float h = (l.TextFields.FirstOrDefault()?.FlashTextHeight() ?? 16) + 5;
+            float y = contH + 3;
+            if (labels.Count == 0) top = y;
+            labels.Add((l, y));
+            contH = y + h - top;            // DisplayObject.height: the children's bounds, from the first label's top
+        }
+
+        // m_bg.height = m_container.y + m_container.height + 15, set before the build so the 9-slice grid rebuilds
+        var children = sym["timeline"]?["children"] as JsonArray;
+        var bgDef = children?.OfType<JsonObject>().FirstOrDefault(c => (string)c["name"] == "m_bg");
+        var contDef = children?.OfType<JsonObject>().FirstOrDefault(c => (string)c["name"] == "m_container");
+        float contY = UiBuilder.F(contDef?["matrix"]?["y"], 34);
+        if (bgDef?["matrix"] is JsonObject bm && m.Scope.Symbol((int)bgDef["id"])?["bounds"] is JsonNode bb)
+            bm["d"] = (double)((contY + contH + 15) / UiBuilder.F(bb["h"], 37));
+
         var panel = m.BuildClass("qg_mission_entity", u);
         if (panel == null) return;
-        panel.Scale = new Vector2(u, u); panel.Position = new Vector2(stage.X - 298, 350) * u;
+        var at = UiLayout.Align(6, stage, new Vector2(QuestGuideWidth, 0), 0, 330) + new Vector2(-1, 0);
+        panel.Scale = new Vector2(u, u); panel.Position = at * u;
         var holder = new Node2D(); holder.AddChild(panel); ui.AddChild(holder);
-        panel.SetNamedText("m_chapterName", "Exploration Goals");
-        Hide(panel, "m_toggle");
-        string[] goals = { "Stub goal one (0/1)", "Stub goal two (0/1)", "Stub goal three (0/3)", "Stub goal four (0/5)" };
-        var font = assets.FontFor("$Font_SD_Neo_1");
-        for (int i = 0; i < goals.Length; i++)
+        panel.SetNamedText("m_chapterName", assets.Str("$s_questguide_mission_field"));
+        panel.FindClip("m_toggle")?.GotoLabel("up");                       // _toggle false: expanded, shows "-"
+
+        var cont = panel.FindClip("m_container");
+        foreach (var (l, y) in labels) { l.Position = new Vector2(0, y); cont?.AddChild(l); }
+
+        // the stars: the last goals.Length of mission1..5, "off" until the goal is met
+        for (int i = 1; i <= 5; i++) panel.SetNamedVisible("mission" + i, false);
+        for (int i = 0; i < goals.Length && i < 5; i++)
         {
-            var l = new Label { Text = goals[i], Position = new Vector2(12, 36 + i * 18), MouseFilter = Control.MouseFilterEnum.Ignore, Scale = Vector2.One, LabelSettings = new LabelSettings { Font = font, FontSize = 13, FontColor = new Color(0.9f, 0.9f, 0.9f) } };
-            var h = new Node2D { Position = Vector2.Zero }; panel.AddChild(h); h.AddChild(l);
+            string name = "mission" + (5 - goals.Length + i + 1);
+            panel.SetNamedVisible(name, true);
+            panel.FindClip(name)?.GotoLabel(goals[i].Satisfied ? "on" : "off");
         }
     }
+
+    /// <summary>qg_dialog_body's width: the dialog's AS3 width when only the mission entity shows.</summary>
+    const float QuestGuideWidth = 298;
 
     // ---- HP/SP orb and the skill slots ----------------------------------------------------------------------------
 
