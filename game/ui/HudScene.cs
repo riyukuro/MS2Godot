@@ -43,6 +43,7 @@ public partial class HudScene : Node
         var window = new Vector2(1280, 720);
         u = UiScale.For(window); stage = UiScale.Stage(window);
 
+        NoticeTab(uiRoot);
         Minimap(uiRoot);
         NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
@@ -210,6 +211,21 @@ public partial class HudScene : Node
                 (slot.FindClip("m_iconOption") ?? slot).AddChild(count);
             }
         }
+    }
+
+    /// <summary>
+    /// UINoticeDialog, the web notice banner, closed: OnLoadComplete plays "hideComplete", which parks m_mainWindow off
+    /// the left edge so only its m_showButton tab shows. vfunc_43 aligns it with vfunc_2(3, 0, 0): left, vertically
+    /// centred at the dialog's AS3 height (UIComponent's, the instance bounds).
+    /// </summary>
+    void NoticeTab(Control ui)
+    {
+        var r = Place(ui, "uinoticedialog", 1f, Vector2.Zero);
+        if (DialogBody(r) is not { } body) return;
+        body.GotoLabel("hideComplete");
+        body.FindClip("m_mainWindow.m_showButton")?.GotoLabel("up");
+        var b = UiLayout.SymbolOfClass(r.Movie, "UINoticeDialog", out _)?["bounds"];
+        AlignDialog(r, body, 3, new Vector2(UiBuilder.F(b?["w"], 905), UiBuilder.F(b?["h"], 1600)), 0, 0);
     }
 
     static string FieldName()
