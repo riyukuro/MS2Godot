@@ -23,6 +23,20 @@ public sealed class PackSet : IDisposable
         public Dictionary<string, string> ByBaseName;     // lower-case file name -> entry name (first wins)
     }
 
+    static PackSet session;
+    static readonly object sessionLock = new();
+
+    /// <summary>The pack set of this session: the client opens its archives once and keeps them across map changes, so every field
+    /// load of the same Data folder gets the same one. It holds only the archive index, the open readers and pure-data caches.</summary>
+    public static PackSet Shared(string dataDir)
+    {
+        lock (sessionLock)
+        {
+            if (session == null || !string.Equals(session.DataDir, dataDir, StringComparison.Ordinal)) session = new PackSet(dataDir);
+            return session;
+        }
+    }
+
     public PackSet(string dataDir)
     {
         if (!Directory.Exists(Path.Combine(dataDir, "Resource")))

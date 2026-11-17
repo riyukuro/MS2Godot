@@ -55,7 +55,7 @@ public partial class Field : Node3D
 
         GlowPass.Wanted = OS.GetEnvironment("MS2_NOGLOW") != "1";   // glow twins are built only for a field with the glow pass
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        packs = new PackSet(data);
+        packs = PackSet.Shared(data);
         AssetIndex.Prefetch(packs);
         World.FieldContents.Prefetch(packs);   // the npc and region spawn tables
         Ui.UiAssets.Prefetch(packs, "gfxfontlib", "commonNameTag", "component_v1");   // shared UI movie parses overlap the field build

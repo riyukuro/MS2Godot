@@ -36,7 +36,7 @@ public partial class Main : Node3D
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        packs = new PackSet(data);
+        packs = PackSet.Shared(data);
         var builder = new ModelBuilder(new NifSpec(nifxml), packs);
         var (character, anim, _, _) = Look.PlayerLook.Build(builder, packs);
         AddChild(character);
