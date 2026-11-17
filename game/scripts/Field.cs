@@ -67,6 +67,7 @@ public partial class Field : Node3D
         fb.DrawsInstance = contents.Props.TakesModel;
         AddChild(fb.Build(map));
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
+        AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         long tBuild = sw.ElapsedMilliseconds;
         GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes, " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
@@ -90,7 +91,7 @@ public partial class Field : Node3D
         camDist = cam.Distance;
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
-        var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale };
+        var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale, GlowScale = hdr.GlowScale };
         camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
         if (OS.GetEnvironment("MS2_NOGLOW") != "1") bloom.Glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
         AddChild(camera);

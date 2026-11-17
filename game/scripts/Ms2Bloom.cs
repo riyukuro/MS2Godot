@@ -19,7 +19,7 @@ namespace Ms2Godot;
 public partial class Ms2Bloom : CompositorEffect
 {
     public GlowPass Glow;
-    public float Threshold = 0.27f, Offset = 30f, BloomScale = 2f;
+    public float Threshold = 0.27f, Offset = 30f, BloomScale = 2f, GlowScale = 0.1f;
 
     RenderingDevice rd;
     readonly Rid[] shaders = new Rid[3], pipes = new Rid[3];
@@ -28,7 +28,7 @@ public partial class Ms2Bloom : CompositorEffect
 
     const string Code = @"
 layout(local_size_x = 8, local_size_y = 8) in;
-layout(push_constant, std430) uniform Params { vec2 step_uv; float threshold; float offset; float scale; float pad0; float pad1; float pad2; } pc;
+layout(push_constant, std430) uniform Params { vec2 step_uv; float threshold; float offset; float scale; float glow_scale; float pad1; float pad2; } pc;
 
 vec3 to_gamma(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }
 vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
@@ -47,7 +47,7 @@ void main() {
 			s += to_gamma(imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb);
 	vec3 b = max(s / 16.0 - pc.threshold, vec3(0.0));
 	vec3 g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).rgb;   // the glow target (GlowPass), added after the compression
-	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g, vec3(1.0)), 1.0));
+	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g * pc.glow_scale, vec3(1.0)), 1.0));
 }
 #elif MODE == 1
 layout(set = 0, binding = 0) uniform sampler2D src;
@@ -148,7 +148,7 @@ void main() {
     void Run(int mode, Vector2I size, Vector2 step, params RDUniform[] uniforms)
     {
         var set = UniformSetCacheRD.GetCache(shaders[mode], 0, new Array<RDUniform>(uniforms));
-        var pc = new float[] { step.X, step.Y, Threshold, Offset, BloomScale, 0, 0, 0 };
+        var pc = new float[] { step.X, step.Y, Threshold, Offset, BloomScale, GlowScale, 0, 0 };
         var bytes = new byte[pc.Length * 4];
         Buffer.BlockCopy(pc, 0, bytes, 0, bytes.Length);
         long list = rd.ComputeListBegin();

@@ -26,6 +26,8 @@ public sealed class FieldBuilder
     /// entities go to <see cref="DrawnElsewhere"/> instead of a MultiMesh. Collision stays here.</summary>
     public Func<string, NifFile, bool> DrawsInstance;
     public readonly List<FieldEntity> DrawnElsewhere = new();
+    /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
+    public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
 
     sealed class ModelEntry
     {
@@ -155,7 +157,8 @@ public sealed class FieldBuilder
             var me = Model(llid);
             if (me == null) continue;
 
-            if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
+            if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
+            else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
             else if (e.Bool("IsVisible", true))
             {
                 if (!groups.TryGetValue(llid, out var list)) groups[llid] = list = new List<FieldEntity>();
