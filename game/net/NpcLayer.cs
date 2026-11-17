@@ -55,6 +55,12 @@ public sealed class NpcLayer
 
     static Godot.Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
 
+    /// <summary>
+    /// Where the client puts an npc from a packet position: CSceneStateGame::OnFieldAddNpc (@0x141718cf0) and
+    /// CNpc::ApplySyncBlock (@0x1410918e0) both raise the packet z by <see cref="World.FieldNpcs.PacketLift"/> before placing it.
+    /// </summary>
+    static Godot.Vector3 Placed(System.Numerics.Vector3 p) => G(p) + new Godot.Vector3(0, World.FieldNpcs.PacketLift, 0);
+
     Model ModelFor(NpcRow row)
     {
         if (row == null) return null;
@@ -110,7 +116,7 @@ public sealed class NpcLayer
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };
-        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = G(n.Position), TargetYaw = n.Rotation.Z };
+        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z };
         if (model != null)
         {
             i.Visual = mb.Build(model.Data, row.Kfm);
@@ -213,8 +219,8 @@ public sealed class NpcLayer
     {
         var b = e.Sync;
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
-        if (i.Dead) { i.Target = G(b.Position.ToVector3()); i.Moves++; return; }       // a dead body keeps its last frame
-        i.Target = G(b.Position.ToVector3());
+        if (i.Dead) { i.Target = Placed(b.Position.ToVector3()); i.Moves++; return; }       // a dead body keeps its last frame
+        i.Target = Placed(b.Position.ToVector3());
         if (b.Rotates) i.TargetYaw = b.RotationZ;
         i.Moves++;
         if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence);
@@ -243,7 +249,7 @@ public sealed class NpcLayer
         {
             if (!truth.TryGetValue(id, out var lifeList) || i.Life >= lifeList.Count) { bad++; continue; }
             var list = lifeList[i.Life]; n++;
-            var expect = G(list[Math.Min(i.Moves, list.Count - 1)]);
+            var expect = Placed(list[Math.Min(i.Moves, list.Count - 1)]);
             if ((expect - i.Target).Length() > 0.01f) { bad++; log($"MISMATCH npc {id}: expected {expect} got {i.Target} after {i.Moves} blocks"); }
         }
         return (n, bad);

@@ -18,6 +18,14 @@ public sealed class FieldNpcs
 {
     public const string NpcArchive = "Resource/Model/Npc";
 
+    /// <summary>
+    /// The client raises a server npc's packet z by 4 before placing it: CSceneStateGame::OnFieldAddNpc (@0x141718cf0,
+    /// kPos.z += 4.0f) and CNpc::ApplySyncBlock (@0x1410918e0, ptPos.z + 4.0f), then vfunc_19 sets the entity and its
+    /// controller's feet there (PCBase::vfunc_19). Pets get the same in OnFieldAddPet (@0x141719a60). The stand-in spawns
+    /// below are the server's npcs, so they stand at the spawn point's z + 4; field actors are client-side and do not.
+    /// </summary>
+    public const float PacketLift = 4f;
+
     readonly PackSet packs;
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
@@ -82,13 +90,13 @@ public sealed class FieldNpcs
         return anims[slot] = a;
     }
 
-    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0)
+    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0, float lift = 0)
     {
         var body = builder.Build(m.md, name.ValidateNodeName());
         var root = new Node3D { Name = body.Name };
         body.Name = "Body";
         root.AddChild(body);
-        root.Position = FieldBuilder.ToGodotPoint(e.Position);
+        root.Position = FieldBuilder.ToGodotPoint(e.Position) + new Vector3(0, lift, 0);
         // the model faces MS2 -Y; the entity's Z rotation turns it (as the player spawn: yaw about Godot +Y)
         body.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg ?? (float)e.RotationDeg.Z), 0);
         body.Scale = new Vector3(scale, scale, scale);
@@ -149,7 +157,7 @@ public sealed class FieldNpcs
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
-                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale);
+                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, PacketLift);
                 var body = root.GetNode<Node3D>("Body");
                 Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body) });
                 Npcs++;
@@ -188,7 +196,7 @@ public sealed class FieldNpcs
             if (m == null) { Missing++; GD.Print($"mob {id} ({row.Kfm}): no model"); continue; }
             var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
             float yaw = e.Bool("UseRotAsSpawnDir") ? (float)e.RotationDeg.Z : 0;
-            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw, row.ShadowScale);
+            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw, row.ShadowScale, PacketLift);
             var body = root.GetNode<Node3D>("Body");
             Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body), Mob = true });
             Mobs++;
