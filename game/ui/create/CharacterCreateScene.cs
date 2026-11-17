@@ -201,7 +201,7 @@ public partial class CharacterCreateScene : Field
         // CharacterCreateDialog.alignment: the dialog at the centre right for m_bg (applyScale(m_bg)), then
         // btnsAlignment(m_guide, getUIScale, m_guide.height, globalToLocal(0, stageHeight)): the guide button at the
         // stage's bottom left
-        float guideH = createRoot.FindClip("m_guide") is { } g ? LobbyLayout.SizeInDialog(g, createRoot.Scale.X).Y : 0;
+        float guideH = createRoot.FindClip("m_guide") is { } g ? LobbyLayout.AsHeight(g) : 0;
         var (at, r) = LobbyLayout.CenterRightOfBg(createRoot, createRoot.FindClip("m_content.m_bg"), stage, u);
         if (createRoot.ChildNamed("m_guide") is { } guide)
         {

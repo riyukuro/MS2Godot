@@ -74,7 +74,7 @@ public sealed class JobSelectLogic
             bg.Override = new Transform2D(new Vector2((stage.X + 2) / r / w, 0), new Vector2(0, (stage.Y + 2) / r / h), Vector2.Zero);
         }
         if (root.ChildNamed("m_prev") is { } prev && prev.Node is MovieClipNode prevClip)
-            prev.Override = new Transform2D(0, LobbyLayout.BtnsAlignment(new Vector2(0, inDialog.Y), prevClip.Bounds.Size.Y, stage));
+            prev.Override = new Transform2D(0, LobbyLayout.BtnsAlignment(new Vector2(0, inDialog.Y), LobbyLayout.AsHeight(prevClip), stage));
         foreach (var clip in root.AllClips()) clip.GotoFrame(clip.Frame);
         SizePlayer();
     }

@@ -59,6 +59,13 @@ public static class LobbyLayout
     public static Vector2 SizeInDialog(MovieClipNode clip, float rootScale) => clip.GlobalBounds().Size / rootScale;
 
     /// <summary>
+    /// AS3 height of an unscaled clip in its parent: what it shows at its current frame. The lobby buttons
+    /// (component_v1 export_icon_btn_lobby) are 84 high on "up"; their symbol bounds (-29, -32, 140 x 140) also hold the
+    /// over / down glow.
+    /// </summary>
+    public static float AsHeight(MovieClipNode clip) => clip.ContentRect()?.Size.Y ?? clip.Bounds.Size.Y;
+
+    /// <summary>
     /// CharacterListDialog.alignment / CharacterCreateDialog.alignment: applyScale(m_bg) (LobbyDialog.applyScale,
     /// getLobbyRatioY), then the dialog at ALIGN_CENTERRIGHT of the stage for m_bg's size times that scale.
     /// Returns the dialog's position on the stage and its scale.
@@ -89,7 +96,7 @@ public static class LobbyLayout
     /// </summary>
     public static void AlignCharacterList(MovieClipNode root, Vector2 stage, float u)
     {
-        float exitH = root.FindClip("m_btns.m_exit") is { } exit ? SizeInDialog(exit, root.Scale.X).Y : 0;
+        float exitH = root.FindClip("m_btns.m_exit") is { } exit ? AsHeight(exit) : 0;
         var (at, r) = CenterRightOfBg(root, root.FindClip("m_content.m_bg"), stage, u);
         if (root.ChildNamed("m_btns") is { } btns)
         {
