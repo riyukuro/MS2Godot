@@ -209,8 +209,19 @@ public partial class Player : CharacterBody3D
                     jumpDir = dir;
                 }
                 kVel = jumpDir * baseSpeed * MoveConfig.FallMoveSpeed;
-                // IsJumpTimeElapsed (50 ms): the up key takes a ladder or rope; else a wall hit starts the climb
-                if (input.Y > 0 && upPressed && stateTime > 0.05f && (TryLadder(1) || TryRope(1))) break;
+                // StateJump::vfunc_8: nothing before IsJumpTimeElapsed (50 ms). A pressed up key takes a ladder or rope
+                // (FUN_141659af0(1)), else a wall hit starts the climb.
+                if (stateTime <= 0.05f) break;
+                if (input.Y > 0 && upPressed)
+                {
+                    if (TryLadder(1) || TryRope(1)) break;
+                    if (TryClimb()) break;
+                    break;
+                }
+                // FUN_1417d6620: unless the jump had no input and is still rising, a ladder in reach with the up key
+                // held (FUN_141659af0(0): IsActionKeyDown for the ladder, a rope needs the press) is taken from the air
+                // (StateLadder sub 0); else a wall hit starts the climb
+                if ((jumpHadInput || jumpTime >= jumpApex) && input.Y > 0 && TryLadder(3)) break;
                 if (TryClimb()) break;
                 break;
 
