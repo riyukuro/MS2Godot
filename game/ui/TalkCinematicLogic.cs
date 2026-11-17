@@ -207,10 +207,11 @@ public sealed class TalkCinematicLogic
         Show(script, "m_buttons", false);
     }
 
+    /// <summary>TalkScript.setScript: this.typingText.htmlText = script (the strings mark colour with FONT tags).</summary>
     void SetTyping(string text)
     {
         var typing = script.FindClip("m_container.typingText");
-        typing?.SetText(text);
+        typing?.SetHtmlText(text);
     }
 
     void SetNpc(string name)

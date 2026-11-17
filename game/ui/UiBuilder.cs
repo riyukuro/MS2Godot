@@ -264,7 +264,9 @@ public partial class TextNode : Node2D
         var ls = Label.LabelSettings;
         bool exact = align == HorizontalAlignment.Center || align == HorizontalAlignment.Right;
         int lines = exact ? Label.GetLineCount() : 0;
-        bool perLine = lines > 1 && ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
+        bool plainFace = ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
+        bool perLine = lines > 1 && plainFace;
+        colored = runColors != null && plainFace;
         lineDx.Clear();
         if (exact && lines == 1)
         {
@@ -277,7 +279,7 @@ public partial class TextNode : Node2D
                 if (ClientLineX(text, align) is float at)
                     lineDx[start] = at - Label.GetCharacterBounds(start).Position.X;   // label pixels
         if (lineShift.Position.X != dx) Callable.From(() => lineShift.Position = new Vector2(dx, 0)).CallDeferred();
-        var self = new Color(1, 1, 1, perLine ? 0 : 1);
+        var self = new Color(1, 1, 1, perLine || colored ? 0 : 1);
         if (Label.SelfModulate != self) Callable.From(() => Label.SelfModulate = self).CallDeferred();
         face?.QueueRedraw();
     }
@@ -307,8 +309,10 @@ public partial class TextNode : Node2D
     /// </summary>
     public float LineDx(int start) => lineDx.TryGetValue(start, out float d) ? d : 0;
 
-    /// <summary>True while the label's own face is hidden and LineFace draws it.</summary>
-    public bool FaceByLine => lineDx.Count > 0;
+    /// <summary>True while the label's own face is hidden and LineFace draws it (lines at their own x, or html colours).</summary>
+    public bool FaceByLine => lineDx.Count > 0 || colored;
+
+    bool colored;
 
     /// <summary>
     /// The label's shown lines: the code point range (the label's own character positions count code points), the line's
@@ -367,7 +371,25 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => Label.Text; set => Label.Text = value ?? ""; }
+    public string Text { get => Label.Text; set { runColors = null; Label.Text = value ?? ""; } }
+
+    /// <summary>
+    /// AS3 htmlText = <paramref name="html"/>: the text without its markup (FlashHtml), each run in its FONT colour. The label
+    /// lays the text out as it does plain text; LineFace draws its glyphs in their colours.
+    /// </summary>
+    public void SetHtml(string html)
+    {
+        var (text, colors) = FlashHtml.Parse(html);
+        runColors = Array.Exists(colors, c => c != null) ? colors : null;
+        Label.Text = text;
+        Label.QueueRedraw();
+    }
+
+    Color?[] runColors;
+
+    /// <summary>The colour LineFace draws the code point at <paramref name="index"/> in: its FONT colour, else the field's.</summary>
+    public Color GlyphColor(int index) =>
+        runColors != null && index >= 0 && index < runColors.Length && runColors[index] is Color c ? c : Label.LabelSettings.FontColor;
 
     /// <summary>Width of the current text in the field's own units (AS3 textWidth).</summary>
     public float TextWidth => Label.LabelSettings.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, Label.LabelSettings.FontSize).X * Label.Scale.X;

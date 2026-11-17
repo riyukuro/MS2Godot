@@ -141,7 +141,7 @@ public sealed class JobSelectLogic
         var info = root.FindClip(C.Instances.M_content_m_jobInfo);
         string label = "_" + job.JobCode * 10;
         info?.SetNamedText("m_name", job.Name);
-        if (info?.Children.FirstOrDefault(c => c.Name == "m_desc")?.Node is TextNode desc) FlashHtml.Set(desc, job.Desc);
+        if (info?.Children.FirstOrDefault(c => c.Name == "m_desc")?.Node is TextNode desc) { desc.SetHtml(job.Desc); desc.FlashTextHeight(); }   // Scaleform line advance
         info?.FindClip("m_icon")?.GotoLabel(label);
         root.FindClip(C.Instances.M_content_m_jobImage)?.GotoLabel(label);
         SetMovieAndPlay(job.Movie);
@@ -188,42 +188,6 @@ public sealed class JobSelectLogic
         root.FindClip(C.Instances.M_fullBg)?.GotoLabel("hide", true);
         player?.Stop();
         Create?.Invoke(SelectedJob);
-    }
-}
-
-/// <summary>The few html tags the game's strings use (FONT color, BR, B) shown with a RichTextLabel over a movie text field.</summary>
-public static class FlashHtml
-{
-    public static void Set(TextNode t, string html)
-    {
-        var rich = t.GetNodeOrNull<RichTextLabel>("Html");
-        if (rich == null)
-        {
-            var l = t.Label;
-            rich = new RichTextLabel
-            {
-                Name = "Html", BbcodeEnabled = true, FitContent = false, ScrollActive = false, MouseFilter = Control.MouseFilterEnum.Ignore,
-                Position = l.Position, Size = l.Size, Scale = l.Scale, AutowrapMode = TextServer.AutowrapMode.WordSmart,
-            };
-            rich.AddThemeFontOverride("normal_font", l.LabelSettings.Font);
-            rich.AddThemeFontSizeOverride("normal_font_size", l.LabelSettings.FontSize);
-            rich.AddThemeColorOverride("default_color", l.LabelSettings.FontColor);
-            rich.AddThemeConstantOverride("line_separation", 0);
-            t.AddChild(rich);
-            l.Visible = false;
-        }
-        rich.Text = ToBbcode(html ?? "");
-    }
-
-    public static string ToBbcode(string html)
-    {
-        var s = html.Replace("\\n", "\n").Replace("[", "[lb]");
-        s = System.Text.RegularExpressions.Regex.Replace(s, "<FONT[^>]*color=['\"]?(#[0-9A-Fa-f]{6})['\"]?[^>]*>", "[color=$1]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        s = System.Text.RegularExpressions.Regex.Replace(s, "</FONT>", "[/color]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        s = System.Text.RegularExpressions.Regex.Replace(s, "<BR\\s*/?>", "\n", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        s = System.Text.RegularExpressions.Regex.Replace(s, "</?B>", m => m.Value.StartsWith("</") ? "[/b]" : "[b]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        s = System.Text.RegularExpressions.Regex.Replace(s, "<[^>]+>", "");
-        return s.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&amp;", "&");
     }
 }
 
