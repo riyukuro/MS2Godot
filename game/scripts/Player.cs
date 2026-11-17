@@ -52,6 +52,8 @@ public partial class Player : CharacterBody3D
     int hitGroup = -1;                    // GameObjectControllerHitReport m_entity: its collision group, -1 = none
     NxController nx;
     NxController.Hit nxHit;               // GameObjectController m_nCollisionFlags of the last move
+    bool fallTimerRunning;                // GameObjectController m_kFallTimer is running (airTime is its elapsed time)
+    bool moveShapeHit;                    // GameObjectControllerHitReport m_bHit: ClearHit before the move, set by onShapeHit
     float fallStartY = float.NaN;         // PCBase m_posC10
     Vector2 prevInput, prevRawInput;
     bool wallHit;                         // PCBase m_unk_c68: a side hit in the air while descending
@@ -81,7 +83,8 @@ public partial class Player : CharacterBody3D
 
     public static Player Create(Node3D visual, AnimationPlayer anim)
     {
-        var p = new Player { Name = "Player", Visual = visual, Anim = anim };
+        // PC::vfunc_10: SetGroups(0x399), the groups the controller's moves collide with
+        var p = new Player { Name = "Player", Visual = visual, Anim = anim, CollisionMask = MoveConfig.PcGroups };
         // GameObjectController::CreateController: radius 25 and a capsule part of the height less two radii; the feet
         // (GetFeetPosition) are the capsule's bottom, and the sweep keeps them one skin above what they stand on
         var collision = new CollisionShape3D
@@ -105,6 +108,7 @@ public partial class Player : CharacterBody3D
         kVel = Vector3.Zero;
         Velocity = Vector3.Zero;
         airTime = 0;
+        fallTimerRunning = false;
         fallStartY = float.NaN;
         hitGroup = -1;                    // FUN_1416629d0 clears the hit report after placing the PC
         Enter(MoveState.Idle);
@@ -320,6 +324,7 @@ public partial class Player : CharacterBody3D
         // onShapeHit (0x140cfade0) sets the entity of a touched shape, or clears it when the shape has no entity; a touched
         // controller goes to onControllerHit (0x140cfaec0), which only keeps the other controller
         if (collider is CharacterBody3D || collider is Node c && c.HasMeta(MoveConfig.ControllerMeta)) return;
+        moveShapeHit = true;
         hitGroup = collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
     }
 
@@ -367,24 +372,58 @@ public partial class Player : CharacterBody3D
         Velocity = v;
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
-        nxHit = nx.Move(v * dt);
+        ControllerMove(v * dt, dt);
 
         wallHit = (nxHit & NxController.Hit.Sides) != 0 && !Grounded && v.Y < 0;
-        if (Grounded)
-        {
-            airTime = 0;
-            // GameObjectController::Move: a hit below stops the jump (StateJump then goes to StateLand)
-            if (jumping && jumpTime > dt) { jumping = false; Enter(OnWater ? MoveState.Idle : MoveState.Land); }
-        }
-        else airTime += dt;
         if ((nxHit & NxController.Hit.Up) != 0 && jumping && jumpTime < jumpApex)
         {
             // the controller stays under the ceiling until the jump curve comes back down
         }
     }
 
-    /// <summary>vfunc_68 with no gravity: a controller move by <paramref name="delta"/> (the climb's moves).</summary>
-    void ControllerMove(Vector3 delta) => nxHit = nx.Move(delta);
+    /// <summary>
+    /// GameObjectController::Move (@0x14123ff80, gameobjectcontrollerphysxhelpers.cpp:213-292): the controller's move by
+    /// <paramref name="delta"/> without the ignored groups, then what it does with the result. A move that only hit
+    /// something above, or only landed and touched another controller, leaves group 4 (the npcs) out of the next moves;
+    /// a landing stops the jump and the fall timer unless that ignore is on (or the body stands against a controller),
+    /// and the ignore ends on a landing clear of every shape. So a body landing on an npc keeps its fall and drops through
+    /// it the next frame. The climb's moves (vfunc_68 with no gravity) pass <paramref name="dt"/> 0: they do not advance
+    /// the fall time.
+    /// </summary>
+    void ControllerMove(Vector3 delta, float dt = 0)
+    {
+        moveShapeHit = false;                                                       // m_hitReport.ClearHit()
+        nxHit = nx.Move(delta);
+        bool other = nx.HitController;
+        if (nxHit == NxController.Hit.Up) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;                    // :231
+        if (nxHit == NxController.Hit.Down && other) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;         // :233
+        bool stop = false;
+        if ((nxHit & NxController.Hit.Down) != 0)
+        {
+            bool onController = false;
+            if ((nxHit & NxController.Hit.Sides) != 0 && other)
+            {
+                onController = true;                                                // :239-247
+                if (moveShapeHit) stop = true;
+            }
+            if (nx.IgnoreGroups != 0 && !other)
+            {
+                if (nx.Overlaps()) stop = true;                                     // :249-276
+                else nx.IgnoreGroups = 0;
+            }
+            if (nx.IgnoreGroups == 0 && !onController) stop = true;                 // :278-283
+        }
+        else fallTimerRunning = true;                                               // :287-288, StartInfinite if not running
+        if (stop)
+        {
+            // StopJump (@0x141240730): the jump ends and the fall timer is reset (StateJump then goes to StateLand)
+            airTime = 0;
+            fallTimerRunning = false;
+            // (the climb's moves leave the jump and the state to the climb states)
+            if (dt > 0 && jumping && jumpTime > dt) { jumping = false; Enter(OnWater ? MoveState.Idle : MoveState.Land); }
+        }
+        else if (fallTimerRunning) airTime += dt;
+    }
 
     /// <summary>PCBase::SendFallDamage: the height from the fall start to the landing; skipped on water.</summary>
     void SendFallDamage()

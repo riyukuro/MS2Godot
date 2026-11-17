@@ -113,6 +113,13 @@ public static class MoveConfig
     /// <summary>Meta on a body that stands in for another character controller (an npc capsule): NxCharacter reports a
     /// touch on it to onControllerHit, which leaves GameObjectControllerHitReport's entity alone.</summary>
     public const string ControllerMeta = "ms2_controller";
+    /// <summary>
+    /// PhysX collision groups as Godot collision layer bits (bit n = group n). The field's shapes stay on layer 1 (group 0);
+    /// an npc capsule is group 4 (CNpc::vfunc_126 @0x1410916a0). The PC sweeps with 0x399 (PC::vfunc_10 SetGroups,
+    /// pc.cpp:805), which holds groups 0 and 4. GameObjectController::Move takes group 4 (0x10) out of the sweep after an
+    /// UP-only move or a DOWN-only move that touched another controller (@0x14123ff80).
+    /// </summary>
+    public const uint NpcLayer = 1u << 4, PcGroups = 0x399, ControllerHitIgnore = 0x10;
     // Unk_PCMove::UpdateMoveDirection: a diagonal is kept for 50 ms after one of its keys is released
     public const float DiagonalHold = 0.05f;
 }

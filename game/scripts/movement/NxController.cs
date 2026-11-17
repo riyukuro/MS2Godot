@@ -29,6 +29,13 @@ public sealed class NxController
     /// <summary>ShapeHitCallback: a shape (not another controller) the side or down pass touched, in the order touched.</summary>
     public System.Action<GodotObject> ShapeHit;
 
+    /// <summary>Groups (collision layer bits) left out of the sweep: GameObjectController m_nIgnoreGroups.</summary>
+    public uint IgnoreGroups;
+
+    /// <summary>onControllerHit (0x140cfaec0) in the last move: the side or down pass touched another controller (the up
+    /// pass runs with the callbacks off, :1036).</summary>
+    public bool HitController { get; private set; }
+
     // SweepTest state
     bool validateCallback, walkExperiment, normalizeResponse, hitNonWalkable, validTri;
     Vector3 touchedNormal;
@@ -43,6 +50,7 @@ public sealed class NxController
     public Hit Move(Vector3 disp)
     {
         var backup = body.GlobalPosition;
+        HitController = false;
         walkExperiment = false;
         var flags = MoveCharacter(disp);
         if (hitNonWalkable)
@@ -135,6 +143,7 @@ public sealed class NxController
             {
                 // another character controller: UserHitCallback, which leaves the shape hit report alone; a first down hit
                 // on one gets more iterations so the body slides off it (:891-903)
+                if (validateCallback) HitController = true;
                 if (downPass && nbCollisions == 0) maxIter += 9;
             }
             else
@@ -168,6 +177,23 @@ public sealed class NxController
         target = current + tangent * amplitude;
     }
 
+    /// <summary>
+    /// GameObjectController::Move's checkOverlapCapsule(capsule, NX_ALL_SHAPES, 0xffffffff): the body's own shape where it
+    /// stands, against every shape but its own (setCollision(false) around the test), with no skin.
+    /// </summary>
+    public bool Overlaps()
+    {
+        var q = new PhysicsShapeQueryParameters3D
+        {
+            Shape = shapeNode.Shape,
+            Transform = new Transform3D(Basis.Identity, body.GlobalPosition) * shapeNode.Transform,
+            CollisionMask = uint.MaxValue,
+            Exclude = new Godot.Collections.Array<Rid> { body.GetRid() },
+            Margin = 0,
+        };
+        return body.GetWorld3D().DirectSpaceState.IntersectShape(q, 1).Count > 0;
+    }
+
     static bool IsController(GodotObject o) =>
         o is CharacterBody3D || o is Node n && n.HasMeta(MoveConfig.ControllerMeta);
 
@@ -190,7 +216,7 @@ public sealed class NxController
         var q = new PhysicsShapeQueryParameters3D
         {
             Shape = shapeNode.Shape,
-            CollisionMask = body.CollisionMask,
+            CollisionMask = body.CollisionMask & ~IgnoreGroups,                  // move(disp, m_nGroups & ~m_nIgnoreGroups)
             Exclude = new Godot.Collections.Array<Rid> { body.GetRid() },
             Margin = 0,
         };
