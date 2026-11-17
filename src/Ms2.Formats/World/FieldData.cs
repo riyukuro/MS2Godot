@@ -44,10 +44,15 @@ public sealed class FieldData
     /// WorldService::FUN_141bc72f0 hands it to HardwareInstancingService::SetCellSize before BuildInstancings.</summary>
     public int InstancingGrid;
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
+
+    /// <summary>The parsed table, once per pack set: a pack entry never changes, the callers only read the tree, and FieldData results are built fresh from it.</summary>
+    static XDocument Doc(PackSet packs) => docs.GetValue(packs, p => XDocument.Parse(System.Text.Encoding.UTF8.GetString(p.Read(Archive, Entry))));
+
     /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
     public static FieldData FindByXBlock(PackSet packs, string xblockName)
     {
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read(Archive, Entry)));
+        var doc = Doc(packs);
         foreach (var fd in doc.Root.Elements("fieldData"))
         {
             var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
@@ -86,7 +91,7 @@ public sealed class FieldData
     /// <summary>The xblock name of a field id (its default environment), or null.</summary>
     public static string XBlockOf(PackSet packs, int fieldId)
     {
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read(Archive, Entry)));
+        var doc = Doc(packs);
         var fd = doc.Root.Elements("fieldData").FirstOrDefault(f => (int?)f.Attribute("id") == fieldId);
         var env = fd?.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
         return (string)env?.Element("xblock")?.Attribute("name");
