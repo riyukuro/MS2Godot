@@ -173,7 +173,8 @@ public sealed class PackSet : IDisposable
                     || ps[2].ParameterType != typeof(uint) || ps[3].ParameterType != typeof(Encryption) || ps[4].ParameterType != typeof(byte[]))
                     noDecrypt = true;
             }
-            if (!noDecrypt && h.EncodedFileSize > 0 && h.FileSize <= int.MaxValue)
+            // an empty entry goes to the package reader, whatever it does with it (none in the KMS2 archives: 0 of 210645)
+            if (!noDecrypt && h.EncodedFileSize > 0 && h.FileSize > 0 && h.FileSize <= int.MaxValue)
             {
                 var buf = new byte[h.EncodedFileSize];
                 byte[] plain;
