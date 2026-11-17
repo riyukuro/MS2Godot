@@ -52,8 +52,9 @@ public sealed class NxController
         return q;
     }
 
-    /// <summary>ShapeHitCallback: a shape (not another controller) the side or down pass touched, in the order touched.</summary>
-    public System.Action<GodotObject> ShapeHit;
+    /// <summary>ShapeHitCallback: a shape (not another controller) the side or down pass touched, in the order touched,
+    /// as its body and the body's shape index.</summary>
+    public System.Action<GodotObject, int> ShapeHit;
 
     /// <summary>Groups (collision layer bits) left out of the sweep: GameObjectController m_nIgnoreGroups.</summary>
     public uint IgnoreGroups;
@@ -175,7 +176,7 @@ public sealed class NxController
             else
             {
                 if (c.Mesh) { validTri = true; touchedNormal = c.FaceNormal; }
-                if (validateCallback && c.Collider != null) ShapeHit?.Invoke(c.Collider);
+                if (validateCallback && c.Collider != null) ShapeHit?.Invoke(c.Collider, c.Shape);
             }
             nbCollisions++;
             if (c.Distance > skin) current += dir * (c.Distance - skin);      // :925-928, stop one skin short along the move
@@ -223,7 +224,8 @@ public sealed class NxController
         public readonly Vector3 Normal, FaceNormal;
         public readonly GodotObject Collider;
         public readonly bool Mesh;
-        public Contact(float d, Vector3 n, GodotObject c, bool mesh, Vector3 face) { Distance = d; Normal = n; Collider = c; Mesh = mesh; FaceNormal = face; }
+        public readonly int Shape;
+        public Contact(float d, Vector3 n, GodotObject c, bool mesh, Vector3 face, int shape = -1) { Distance = d; Normal = n; Collider = c; Mesh = mesh; FaceNormal = face; Shape = shape; }
     }
 
     /// <summary>
@@ -289,7 +291,7 @@ public sealed class NxController
         var collider = GodotObject.InstanceFromId((ulong)info["collider_id"]);
         bool mesh = PhysicsServer3D.ShapeGetType(PhysicsServer3D.BodyGetShape(rid, shapeIdx)) == PhysicsServer3D.ShapeType.ConcavePolygon;
         var face = mesh ? FaceNormal(rid, shapeIdx, point, dir) ?? normal : normal;
-        return new Contact(safe, normal, collider, mesh, face);
+        return new Contact(safe, normal, collider, mesh, face, shapeIdx);
     }
 
     /// <summary>

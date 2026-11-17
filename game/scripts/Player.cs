@@ -26,8 +26,12 @@ public partial class Player : CharacterBody3D
     /// <summary>fielddata checkClimb: wall climbing (skill 20000011) is allowed in this field.</summary>
     public bool CheckClimb = true;
     public Vector3 SpawnPoint;
-    /// <summary>Below this height the player goes back to the spawn point (a stand-in: the return is the server's).</summary>
-    public float FallReturnY = float.NegativeInfinity;
+    /// <summary>
+    /// WorldService m_boundsMin / m_boundsMax (+0x820 / +0x82c): the box spanned by the field's MS2Bounding entities' positions
+    /// (worldservice_1.cpp:10394-10405), in field units and axes (Z up). Unbounded until the field sets it.
+    /// </summary>
+    public Vector3 BoundsMin = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+    public Vector3 BoundsMax = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
     public float Gravity = MoveConfig.SceneGravity;
 
     // input: x = right, y = forward (camera relative); set from the keyboard, or by a script when ScriptDriven
@@ -112,7 +116,7 @@ public partial class Player : CharacterBody3D
         airTime = 0;
         fallTimerRunning = false;
         fallStartY = float.NaN;
-        hitGroup = -1;                    // FUN_1416629d0 clears the hit report after placing the PC
+        ClearHitReport();                 // FUN_1416629d0 clears the hit report after placing the PC
         Enter(MoveState.Idle);
     }
 
@@ -196,7 +200,7 @@ public partial class Player : CharacterBody3D
 
             case MoveState.Swim:
                 if (!OnWater && grounded) { Enter(MoveState.Idle); break; }
-                if (InAirFor(MoveConfig.IdleFallDelay)) { hitGroup = -1; Enter(MoveState.Idle); break; }   // StateSwim::vfunc_8 clears the report
+                if (InAirFor(MoveConfig.IdleFallDelay)) { ClearHitReport(); Enter(MoveState.Idle); break; }   // StateSwim::vfunc_8 clears the report
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
                 if (!hasInput) { Enter(MoveState.Idle); break; }
                 baseSpeed = Mount != null ? RideSpeed() : MoveConfig.SwimSpeed;
@@ -273,12 +277,7 @@ public partial class Player : CharacterBody3D
         TickBlendHold(dt);
         UpdateAnimation();
 
-        if (GlobalPosition.Y < FallReturnY)              // fell out of the field: back to the spawn point
-        {
-            GlobalPosition = SpawnPoint;
-            Velocity = Vector3.Zero;
-            Enter(MoveState.Idle);
-        }
+        StateSync(dt);                                   // the state sync and, offline, the server's out-of-bounds return
         PoseRideBox();
     }
 
@@ -305,7 +304,7 @@ public partial class Player : CharacterBody3D
     {
         var old = State;
         if (old == MoveState.Jump) { jumping = false; baseSpeed = jumpSavedSpeed; }   // StateJump::vfunc_5
-        if (old == MoveState.Ladder) { ladder = null; hitGroup = -1; }   // StateLadder::vfunc_5 clears the hit report
+        if (old == MoveState.Ladder) { ladder = null; ClearHitReport(); }   // StateLadder::vfunc_5 clears the hit report
         if (old == MoveState.Rope) rope = null;
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
         State = s;
@@ -335,13 +334,14 @@ public partial class Player : CharacterBody3D
     /// a down part it is what the body stands on, else the last thing it ran into. It stays until cleared. Another
     /// controller goes to onControllerHit and leaves it alone.
     /// </summary>
-    void NoteHit(GodotObject collider)
+    void NoteHit(GodotObject collider, int shape)
     {
         // onShapeHit (0x140cfade0) sets the entity of a touched shape, or clears it when the shape has no entity; a touched
         // controller goes to onControllerHit (0x140cfaec0), which only keeps the other controller
         if (collider is CharacterBody3D || collider is Node c && c.HasMeta(MoveConfig.ControllerMeta)) return;
         moveShapeHit = true;
         hitGroup = collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
+        hitFallReturn = FallReturnEntity(collider, shape);
     }
 
     // ---- GameObjectController: jump and fall integration -------------------------------------------------------------
@@ -388,13 +388,34 @@ public partial class Player : CharacterBody3D
         Velocity = v;
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
-        ControllerMove(v * dt, dt);
+        MoveStep(v * dt, dt);
 
         wallHit = (nxHit & NxController.Hit.Sides) != 0 && !Grounded && v.Y < 0;
         if ((nxHit & NxController.Hit.Up) != 0 && jumping && jumpTime < jumpApex)
         {
             // the controller stays under the ceiling until the jump curve comes back down
         }
+    }
+
+    /// <summary>
+    /// PCBase::vfunc_68 (@0x14166e100, pcbase.cpp:1820-1866): the controller's move, then the world box. Feet left outside
+    /// the box's x or y sides, or above its top, take the frame's move back on those axes (WorldService::FUN_141bd36f0
+    /// @0x141bd36f0, worldservice_1.cpp:7072-7083: there is no test against the floor, and the up/down part is dropped while
+    /// the move goes down) with one more controller move. A mount moves the same body, as the client's Ridee is a PCBase.
+    /// </summary>
+    void MoveStep(Vector3 delta, float dt = 0)
+    {
+        ControllerMove(delta, dt);
+        var p = GlobalPosition;                                                     // field axes: x, -z, y
+        float fx = p.X, fy = -p.Z, fz = p.Y;
+        var mask = Vector3.Zero;
+        if (fx < BoundsMin.X || !(fx <= BoundsMax.X)) mask.X = 1;
+        if (fy < BoundsMin.Y || !(fy <= BoundsMax.Y)) mask.Z = 1;
+        if (!(fz <= BoundsMax.Z)) mask.Y = 1;
+        if (mask.Y != 0 && delta.Y < 0) mask.Y = 0;
+        if (mask == Vector3.Zero) return;
+        var slide = -delta * mask;
+        if (slide != Vector3.Zero) ControllerMove(slide);
     }
 
     /// <summary>

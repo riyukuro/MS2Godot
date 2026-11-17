@@ -15,6 +15,8 @@ public sealed class FieldBuilder
 {
     public const string MapArchive = "Resource/Model/Map";
     const float ChunkSize = 1500f;                     // collider bodies per 10 x 10 cubes
+    /// <summary>Meta on a collision shape of a fall-return cube: the entity's index in the field (see the collision pass).</summary>
+    public const string FallReturnMeta = "ms2_fall_return";
 
     readonly PackSet packs;
     readonly AssetIndex assets;
@@ -165,8 +167,10 @@ public sealed class FieldBuilder
             return body;
         }
 
+        int entityIndex = -1;
         foreach (var e in map.Entities)
         {
+            entityIndex++;
             yield return 0;                             // (before the entity: its paths may end with continue)
             bool grouped = false;
             try
@@ -203,11 +207,20 @@ public sealed class FieldBuilder
 
                 if (e.Bool("DisableCollision")) continue;
                 int group = (int)e.Number("PropCollisionGroup");
+                // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
+                // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
+                // entity, so the hit report and the ground ray can name it (both actors of a cube are the same entity)
+                bool fallReturn = e.HasMixin("MS2CubeProp") && e.Bool("IsFallReturn") && (group == 9 || group == 8);
+                CollisionShape3D Tag(CollisionShape3D cs)
+                {
+                    if (fallReturn) cs.SetMeta(FallReturnMeta, entityIndex);
+                    return cs;
+                }
                 if (me.Collision.Count > 0)
                 {
                     // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
                     foreach (var shp in me.Collision)
-                        Chunk(e.Position, group).AddChild(new CollisionShape3D { Shape = shp, Transform = xf });
+                        Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D { Shape = shp, Transform = xf }));
                     Meshes++;
                 }
                 if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
@@ -218,12 +231,12 @@ public sealed class FieldBuilder
                     var d = e.Vector("GeneratePhysXDimension");
                     var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
                     var p = e.Position;
-                    Chunk(e.Position, group).AddChild(new CollisionShape3D
+                    Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D
                     {
                         Shape = new BoxShape3D { Size = size },
                         Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
                                                     new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2)),
-                    });
+                    }));
                     Boxes++;
                 }
             }

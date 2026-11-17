@@ -396,7 +396,21 @@ public partial class Field : Node3D
                 pos = new Vec3(double.Parse(v[0], CultureInfo.InvariantCulture), double.Parse(v[1], CultureInfo.InvariantCulture), double.Parse(v[2], CultureInfo.InvariantCulture));
             }
         player.SpawnPoint = FieldBuilder.ToGodotPoint(pos) + new Vector3(0, 5, 0);
-        player.FallReturnY = (map.Entities.Count > 0 ? (float)map.Entities.Min(e => e.Position.Z) : player.SpawnPoint.Y) - 1500f;
+        // WorldService's world box (worldservice_1.cpp:10394-10405): grown by every MS2Bounding entity's position
+        var bounds = map.Entities.Where(e => e.ModelName == "MS2Bounding" || e.HasMixin("MS2Bounding")).Select(e => e.Position).ToList();
+        if (bounds.Count > 0)
+        {
+            player.BoundsMin = new Vector3((float)bounds.Min(b => b.X), (float)bounds.Min(b => b.Y), (float)bounds.Min(b => b.Z));
+            player.BoundsMax = new Vector3((float)bounds.Max(b => b.X), (float)bounds.Max(b => b.Y), (float)bounds.Max(b => b.Z));
+        }
+        // the server's bounding prism (kms2525 MapEntityMapper.cs:162-174, MapEntityStorage.cs:105-113): the first two
+        // MS2Bounding entities in the xblock's order span x/y; base = the lower z, height = the z distance; a third is ignored
+        if (bounds.Count >= 2)
+        {
+            Vec3 a = bounds[0], b = bounds[1];
+            player.PrismMin = new Vector3((float)Math.Min(a.X, b.X), (float)Math.Min(a.Y, b.Y), (float)Math.Min(a.Z, b.Z));
+            player.PrismMax = new Vector3((float)Math.Max(a.X, b.X), (float)Math.Max(a.Y, b.Y), (float)Math.Min(a.Z, b.Z) + (float)Math.Abs(b.Z - a.Z));
+        }
         AddChild(player);
         player.GlobalPosition = player.SpawnPoint;
         // spawn facing: the model's forward is MS2 -Y, turned by the spawn point's Z rotation

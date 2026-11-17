@@ -202,7 +202,7 @@ public partial class Player
     /// <summary>vfunc_68 with no gravity (the last argument 1): the controller's move, sliding along what it hits.</summary>
     void ClimbMove(Vector3 delta)
     {
-        if (delta != Vector3.Zero) ControllerMove(delta);
+        if (delta != Vector3.Zero) MoveStep(delta);
     }
 
     bool IsWallInFront() => Ray(GlobalPosition + new Vector3(0, MoveConfig.ClimbHigh, 0), Forward, MoveConfig.ClimbRay, ClimbGroups) != null;
