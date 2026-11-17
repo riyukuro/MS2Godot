@@ -25,7 +25,7 @@ public sealed partial class NpcPresence : CanvasLayer
     /// <summary>CNpc::vfunc_126: the body's PhysX collision group, 4 (5 with capsule ignore, which gets no body here).</summary>
     const int NpcGroup = 4;
 
-    sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; public Vector3 Root, Head; public bool On; }
+    sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; }
 
     readonly List<Tag> tags = new();
     readonly Dictionary<FieldNpcs.Placed, NpcHpBar> bars = new();
@@ -164,40 +164,25 @@ public sealed partial class NpcPresence : CanvasLayer
             }
     }
 
-    // The range and facing test (and the fade) are re-evaluated a few times a second; a tag in range only follows its head
-    // on screen every frame. An npc's position is read once per refresh instead of every frame.
-    int frame;
-    const int RefreshEvery = 4;
-
     public override void _Process(double delta)
     {
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
         field ??= FindField(GetTree().Root);
-        bool refresh = frame++ % RefreshEvery == 0;
-        Vector3 eye = default;
-        if (refresh) eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
+        // every frame: the range, facing and fade tests with the npc where it is now, then the tag at its head
+        var eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
         foreach (var t in tags)
         {
-            if (refresh)
-            {
-                t.Root = t.Npc.Root.GlobalPosition;
-                t.Head = Anchor(t.Npc);
-                float d = eye.DistanceTo(t.Root);
-                bool on = d <= HideDistance && !camera.IsPositionBehind(t.Head);
-                if (on != t.On) { t.On = on; t.Node.Visible = on; }
-                if (on)
-                {
-                    float alpha = d <= OpaqueDistance ? 1f : ((HideDistance - d) * 0.05f + 40f) / 100f;
-                    t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
-                }
-            }
-            if (t.On)
-            {
-                var p = camera.UnprojectPosition(t.Head);
-                p.Y += (tagOffset + Shift(t.Head)) * u;
-                t.Node.Position = p.Round();
-            }
+            var head = Anchor(t.Npc);
+            float d = eye.DistanceTo(t.Npc.Root.GlobalPosition);
+            bool on = d <= HideDistance && !camera.IsPositionBehind(head);
+            t.Node.Visible = on;
+            if (!on) continue;
+            float alpha = d <= OpaqueDistance ? 1f : ((HideDistance - d) * 0.05f + 40f) / 100f;
+            t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
+            var p = camera.UnprojectPosition(head);
+            p.Y += (tagOffset + Shift(head)) * u;
+            t.Node.Position = p.Round();
         }
         foreach (var b in bars.Values)
         {
