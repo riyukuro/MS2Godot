@@ -92,7 +92,8 @@ public sealed class LoadingProgressLogic
         if (badge != null) badge.Visible = false;
         foreach (var n in new Node2D[] { clear, picture, top, bottom }) if (n != null) n.Visible = true;
         if (guide != null) guide.Visible = s.ShowGuide;
-        bottom?.SetNamedText("infoText", s.ShowMove ? "$s_loading_movechannel_message" : s.Tip ?? "");
+        // startProgress: m_progressInfoText.htmlText = the move-channel message or the tip
+        bottom?.SetNamedHtml("infoText", s.ShowMove ? "$s_loading_movechannel_message" : s.Tip ?? "");
         bottom?.SetNamedText("percentText", "0%");
         Layout();
         Active = true;

@@ -281,6 +281,12 @@ public partial class MovieClipNode : Node2D
     /// <summary>AS3 htmlText on this clip's text fields (TextNode.SetHtml).</summary>
     public void SetHtmlText(string html) { foreach (var t in TextFields) t.SetHtml(html); }
 
+    /// <summary>A named child text field's htmlText (AS3 clip.name.htmlText = html).</summary>
+    public void SetNamedHtml(string name, string html)
+    {
+        foreach (var c in Children) if (c.Name == name && c.Node is TextNode t) t.SetHtml(html);
+    }
+
     /// <summary>A direct child by instance name.</summary>
     public Child Direct(string name) => Children.FirstOrDefault(c => c.Name == name);
 
