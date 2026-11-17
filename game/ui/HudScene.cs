@@ -648,19 +648,67 @@ public partial class HudScene : Node
 
     // ---- EXP bar (from the movie) ----------------------------------------------------------------------------------
 
+    /// <summary>
+    /// ExpBar (expbar_entity_body). Its width is the stage width, and configUI's Constraints (REFLOW) stretch m_bg, m_restBg
+    /// and m_bar and keep m_point centred. setSize gives m_bar.m_fullwidth = m_bg.width - 6, and setExp fills the status bar
+    /// (StatusBar.setValue: the mask width is fullwidth x cur / max, at least 1). makeSplit and onStatusChange lay out the
+    /// ticks, m_split and the gain effect (<see cref="BarSplits"/>).
+    /// </summary>
     void ExpBar(Control ui)
     {
-        var r = Place(ui, "uiexpbar", 1f, new Vector2(0, stage.Y - 237));
+        var m = new UiMovie(assets, "uiexpbar");
+        const float bgW = 1920, bgH = 21;
+        UiLayout.Reflow(m, "expbar_entity_body", new Vector2(bgW, bgH), new Vector2(stage.X, bgH),
+            ("m_bg", UiLayout.Edge.Left | UiLayout.Edge.Right), ("m_restBg", UiLayout.Edge.Left | UiLayout.Edge.Right),
+            ("m_point", UiLayout.Edge.CenterH), ("m_bar", UiLayout.Edge.Left | UiLayout.Edge.Right));
+        var r = m.BuildRoot(u);
+        r.Scale = new Vector2(u, u); r.Position = new Vector2(0, stage.Y - 237) * u;
+        var holder = new Node2D(); holder.AddChild(r); ui.AddChild(holder);
         Hide(r, "m_restBar", "m_restPin", "m_restBg");
         var body = r.FindClip("__id0_");
-        body?.FindClip("m_point")?.SetNamedText("textField", $"{data.ExpPercent:0.00}%");
-        var bar = body?.FindClip("m_bar");
-        var mask = bar?.ChildNamed("m_mask");
-        if (mask != null)
+        if (body == null) return;
+        body.FindClip("m_point")?.SetNamedText("textField", $"{data.ExpPercent:0.00}%");
+        float full = stage.X - 6;                                            // setSize: m_bg.width - 6
+        float tail = SetBarValue(body, full, data.ExpPercent);
+        BarSplits(body, "expbar_status_split", full, tail);
+    }
+
+    /// <summary>
+    /// StatusBar.setValue(cur, 100, false) on the body's m_bar: the mask is <paramref name="full"/> x cur / 100 wide, at least 1.
+    /// Returns StatusBar.getTailPosition: the mask width as an unsigned int, or full once it reaches full + 2.
+    /// </summary>
+    static float SetBarValue(MovieClipNode body, float full, double percent)
+    {
+        float w = (float)Math.Max(full * percent / 100.0, 1);
+        if (body.FindClip("m_bar") is { } bar && bar.ChildNamed("m_mask") is { } mask)
         {
-            mask.Override = new Transform2D(new Vector2((float)(1912 * data.ExpPercent / 100.0), 0), new Vector2(0, 1), mask.Base.Origin);
+            mask.Override = new Transform2D(new Vector2(w, 0), new Vector2(0, 1), mask.Base.Origin);
             bar.GotoFrame(bar.Frame);
         }
+        float t = (uint)w;                                                    // AS3: uint l2, (l2 - 2) compared as a Number
+        return t - 2 < full ? t : (int)full;
+    }
+
+    /// <summary>
+    /// ExpBar / AdventureLevelExpBar.makeSplit: a <paramref name="splitClass"/> at 0.1 .. 0.9 x m_fullwidth, y 2, each added
+    /// at numChildren - 1 (under the top child, m_point). onStatusChange: m_split.x = tail + 2, m_eff.x = tail - 80, and
+    /// m_eff plays from frame 1. It is export_effect_particle1, whose frame 60 script stops it on its empty last frame, so
+    /// it plays once when the value is set and then shows nothing.
+    /// </summary>
+    static void BarSplits(MovieClipNode body, string splitClass, float full, float tail)
+    {
+        var top = body.Children.LastOrDefault(c => !c.IsMask)?.Node;
+        foreach (var f in new[] { 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9 })
+        {
+            if (body.Movie.BuildClass(splitClass, body.sx, body.sy) is not { } split) break;
+            split.Position = new Vector2((float)(full * f), 2);
+            body.AddChild(split);
+            if (top != null && top.GetParent() == body) body.MoveChild(split, top.GetIndex());
+        }
+        body.SetChildX(body.Direct("m_split"), tail + 2);
+        var eff = body.Direct("m_eff");
+        body.SetChildX(eff, tail - 80);
+        if (eff?.Node is MovieClipNode particle && particle.FrameCount > 1) particle.PlayRange(0, particle.FrameCount - 1);
     }
 
     /// <summary>
@@ -686,11 +734,9 @@ public partial class HudScene : Node
         // setPoint: the not-penalty bar shows only past the current value; the bar fills to the value (0 for now)
         Hide(root, "m_notPenaltyBar", "m_notPenaltyPin", "m_notPenaltyBg", "m_tooltipPoint");
         body.FindClip("m_point")?.SetNamedText("textField", $"{data.AdventureExpPercent:0.00} %");
-        if (body.FindClip("m_bar") is { } bar && bar.ChildNamed("m_mask") is { } mask)
-        {
-            mask.Override = new Transform2D(new Vector2((float)Math.Max((stage.X - 8) * data.AdventureExpPercent / 100.0, 0.0001), 0), new Vector2(0, 1), mask.Base.Origin);
-            bar.GotoFrame(bar.Frame);
-        }
+        float full = stage.X - 6;                                            // setSize: m_bg.width - 6
+        float tail = SetBarValue(body, full, data.AdventureExpPercent);
+        BarSplits(body, "adventure_expbar_status_split", full, tail);
     }
 
     // ---- game menu ---------------------------------------------------------------------------------------------------
