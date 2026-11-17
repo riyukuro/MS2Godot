@@ -1017,12 +1017,25 @@ public partial class HudScene : Node
         }
     }
 
-    int tick;
+    /// <summary>
+    /// UIMinimapDialog::vfunc_15 refreshes the local player's place on the minimap when m_timer474.Check(60) passes
+    /// (Unk_IntervalTimer::Check: the first time at once, then on the first frame at least 60 ms after the last refresh,
+    /// re-armed to that frame's tick). Time of the last refresh in ms, 0 before the first.
+    /// </summary>
+    ulong minimapLast;
+    bool MinimapTimer()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (minimapLast != 0 && now - minimapLast < 60) return false;
+        minimapLast = now;
+        return true;
+    }
+
     public override void _Process(double delta)
     {
         if (chatLog != null) FlushChat();
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
-        if (mapImage != null && ++tick % 6 == 1) UpdateMinimap();
+        if (mapImage != null && MinimapTimer()) UpdateMinimap();
         target?.Process(delta);
         if (shotDir == null) return;
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
