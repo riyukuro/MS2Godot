@@ -601,9 +601,10 @@ public partial class HudScene : Node
     {
         var r = Place(ui, "uigamemenudialog", 1f, Vector2.Zero);
         // UIGameMenuDialog::vfunc_43: vfunc_2(8, 5, -(FUN_1418dd0c0() - 6 + FUN_1418dd110())) with feature 0xbd on; the
-        // dialog's size is UIComponent's, the instance's bounds when it was built (CLIK resets the scale to 1)
-        if (DialogBody(r) is { } gmBody && UiLayout.SymbolOfClass(r.Movie, "UIGameMenuDialog", out _)?["bounds"] is JsonNode gb)
-            AlignDialog(r, gmBody, 8, new Vector2(UiBuilder.F(gb["w"], 498), UiBuilder.F(gb["h"], 208)), 5, -(ExpBarLift - 6 + AdventureBarLift));
+        // dialog's size is UIComponent's, the bounds shown at its first frame when it was built (before configUI hides
+        // m_quest). Those are 498 x 195: the symbol's 208.5 height also counts m_quest's glow on its later frames.
+        if (DialogBody(r) is { } gmBody && gmBody.ContentRect() is { } gb)
+            AlignDialog(r, gmBody, 8, gb.Size, 5, -(ExpBarLift - 6 + AdventureBarLift));
         // configUI hides the quest and pet attack buttons; no pet (initPetInfo) and no contract (initContract(true)) for now
         Hide(r, "m_quest", "m_petInfo", "m_petAttack", "m_contract");
         var menus = r.FindClip("m_menus");
@@ -617,6 +618,7 @@ public partial class HudScene : Node
             entry.Name = item.Name;
             entry.Position = new Vector2(item.Col * 56, 120 - item.Row * 60);
             menus.AddChild(entry);
+            menus.MoveChild(entry, 0);                                  // addChildAt(entry, 0): a later entry draws under the earlier ones
             var btn = entry.FindClip("m_button");
             if (btn != null)
             {
@@ -630,7 +632,8 @@ public partial class HudScene : Node
                     if (assets.Common.BuildClass("export_common_menu_" + item.Name, u) is { } icon) holder.AddChild(icon);
                 }
             }
-            entry.SetNamedText("tag", assets.Str(item.Caption));
+            // setMenuTag: tag.text, then TextFieldEx.setVerticalAlign(tag, VALIGN_BOTTOM)
+            if (entry.Children.FirstOrDefault(c => c.Name == "tag")?.Node is TextNode tag) { tag.Text = assets.Str(item.Caption); tag.AlignBottom(); }
         }
     }
 

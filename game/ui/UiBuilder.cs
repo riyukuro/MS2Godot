@@ -202,7 +202,13 @@ public partial class TextNode : Node2D
         };
         // label sits in unscaled units: position uses the scaled rect, the node scale cancels the accumulated scale
         Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y - 0.12f * size);   // Noto's line box sits lower than the flash font's
-        Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy);
+        // a word-wrapped field wraps inside its 2 px gutters (Scaleform's text rect is the field less 2 on each side)
+        if (Label.AutowrapMode != TextServer.AutowrapMode.Off)
+        {
+            Label.Position += new Vector2(2, 0);
+            Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy);
+        }
+        else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy);
         Label.PivotOffset = Vector2.Zero;
         AddChild(Label);
     }
@@ -218,6 +224,7 @@ public partial class TextNode : Node2D
         get
         {
             if (Label.AutowrapMode == TextServer.AutowrapMode.Off) return Math.Max(1, Label.Text.Split('\n').Length);
+            if (Label.IsInsideTree()) return Math.Max(1, Label.GetLineCount());       // the label's own wrap, so the count matches what is drawn
             var ls = Label.LabelSettings;
             var p = new TextParagraph { Width = Label.Size.X, BreakFlags = TextServer.LineBreakFlag.Mandatory | TextServer.LineBreakFlag.WordBound | TextServer.LineBreakFlag.Adaptive };
             p.AddString(Label.Text, ls.Font, ls.FontSize);
@@ -236,6 +243,22 @@ public partial class TextNode : Node2D
         var ls = Label.LabelSettings;
         ls.LineSpacing = advance / Label.Scale.Y - ls.Font.GetHeight(ls.FontSize);
         return size + (NumLines - 1) * advance;
+    }
+
+    /// <summary>
+    /// TextFieldEx.setVerticalAlign(VALIGN_BOTTOM): the lines that fit the text rect (the field less its 2 px gutters) end on
+    /// its bottom edge, in flash line metrics; the lines past them are not shown (a 3-line caption in a 2-line field shows
+    /// its first 2 lines where a 2-line caption sits).
+    /// </summary>
+    public void AlignBottom()
+    {
+        float size = UiBuilder.F(Def["size"], 12), advance = 1.075f * size, room = Bounds.Size.Y - 4;
+        FlashTextHeight();
+        int lines = NumLines, fit = Math.Max(1, 1 + (int)Math.Floor((room - size) / advance));
+        int shown = Math.Min(lines, fit);
+        float height = size + (shown - 1) * advance;
+        Label.MaxLinesVisible = shown;
+        Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y - 0.12f * size + Math.Max(0, room - height));
     }
 
     /// <summary>Scaleform TEXTAUTOSZ_SHRINK: lowers the font size until the text fits the field width (2 px gutters).</summary>

@@ -22,7 +22,7 @@ public sealed class StubHudData
         ("Stub goal one, long enough to wrap onto a second line (0/1)", false), ("Stub goal two (0/1)", false),
         ("Stub goal three (0/1)", false), ("Stub goal four (0/5)", false), ("Stub goal five (0/10)", false),
     };
-    public HashSet<string> FeaturesOff = new() { "CashShop", "MeratMarket", "LapentaFrontierQuest" };
+    public HashSet<string> FeaturesOff = new() { "LapentaFrontierQuest" };
 
     public double HpRatio => Player.HpMax == 0 ? 0 : (double)Player.HpCurrent / Player.HpMax;
     public double SpRatio => SpMax == 0 ? 0 : (double)SpCurrent / SpMax;
