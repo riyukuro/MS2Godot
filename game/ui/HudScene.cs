@@ -137,6 +137,7 @@ public partial class HudScene : Node
         {
             mapPlayer = MinimapEntities.Create(r.Movie, "player", "idle", u);
             if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); }
+            mapImage.AddChild(new MinimapPlaces(r.Movie, mapInfo, assets.Packs, mapImage.Size, u));     // portals and npcs (MinimapPlaces.cs)
         }
     }
 

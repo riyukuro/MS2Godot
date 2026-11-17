@@ -21,6 +21,8 @@ public sealed class NpcRow
     public bool CapsuleIgnore;                   // capsule ignore: the npc's body does not block characters
     public bool Nametag;                         // environment nametag: the npc shows a name tag
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
+    public bool Minimap = true;                  // environment minimap: shown on the minimap
+    public string MinimapIcon;                   // environment minimapIconName: the minimap icon class suffix, when set
     public string Illust;                        // environment illust: the talk portrait (Resource/Image quest/illust/<illust>.dds)
     public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
@@ -68,6 +70,8 @@ public sealed class NpcTable
                     Nametag = Int(env, "nametag") != 0,
                     Kind = Int(env, "kind"),
                     Illust = (string)env.Attribute("illust"),
+                    Minimap = (string)env.Attribute("minimap") is not ("0" or "false" or "False"),      // CNpcData: true unless set off
+                    MinimapIcon = (string)env.Attribute("minimapIconName"),
                 };
                 var normal = env.Element("normal");
                 row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

@@ -123,7 +123,13 @@ public partial class FieldContents : Node3D
     }
 
     static NpcTable npcTable;
-    static NpcTable Npcs(PackSet packs) => npcTable ??= new NpcTable(packs);
+    /// <summary>The npc table, loaded once per run.</summary>
+    public static NpcTable Npcs(PackSet packs) => npcTable ??= new NpcTable(packs);
+
+    /// <summary>The field's portals (with the quest masks) and spawned npcs, for the HUD's minimap; null until Start.</summary>
+    public FieldPortals Portals => portals;
+    public IReadOnlyList<FieldNpcs.Placed> SpawnedNpcs => spawned;
+    public int FieldId => fieldId;
     static QuestMaskTable maskTable;
     static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
     static ClientConstants constantTable;

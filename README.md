@@ -117,6 +117,11 @@ The pilot viewer (the player character on a ground plane; keys `1` idle, `2` wal
   screenshot), the top and bottom bars with a random tip from `loadingdescription.xml` and the percent, and the
   keyboard guide. It shows 0% while the field loads and 100% once it is built, then fades out over 500 ms.
 - Npc animations with TBC rotation keys (key type 3) play.
+- Minimap places (HUD): the field's portals and spawned npcs on the minimap as the client's minimap builds them. Npcs
+  get their minimap icon (`minimapIconName`, or by boss class or function kind, else friendly / enemy). Portals get
+  their icon and the target map's name as a label. A portal into an indoor field instead shows the icon of that
+  field's function npc (`fieldmetadata.xml`, `npcfunctionname.xml`). Portals hidden by `MinimapIconVisible` or by the
+  quest masks are left out.
 
 `godot-mono --path game -- --sandbox-shots DIR [--sandbox-portal 20] [--sandbox-npc ID]` runs a scripted walk. It talks
 to an npc in Tria and walks into it, goes into a portal and on to the target field, walks off and back into the arrival
