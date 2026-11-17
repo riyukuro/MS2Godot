@@ -153,7 +153,8 @@ public partial class Field : Node3D
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
         RasterOrigin();
-        GetViewport().SizeChanged += RasterOrigin;
+        rasterSource = GetViewport();
+        rasterSource.SizeChanged += RasterOrigin;
         var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale, GlowScale = hdr.GlowScale };
         camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
         if (OS.GetEnvironment("MS2_NOGLOW") != "1") bloom.Glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
@@ -266,7 +267,12 @@ public partial class Field : Node3D
     public override void _ExitTree()
     {
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
+        // the root viewport outlives the field: a size change during the scene change (the HUD scene restoring the window's
+        // content scale mode as it leaves) must not reach a field that is no longer in the tree
+        if (rasterSource != null) { rasterSource.SizeChanged -= RasterOrigin; rasterSource = null; }
     }
+
+    Viewport rasterSource;          // the viewport whose size_changed moves the projection window, while connected
 
     bool began, restored;
     void Restore()

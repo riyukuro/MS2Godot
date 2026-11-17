@@ -47,7 +47,8 @@ public partial class HudScene : Node
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         BuildHud();
-        GetViewport().SizeChanged += () => { if (!relayoutQueued) { relayoutQueued = true; CallDeferred(MethodName.Relayout); } };
+        sizeSource = GetViewport();
+        sizeSource.SizeChanged += QueueRelayout;
     }
 
     Window.ContentScaleModeEnum outerScaleMode;
@@ -63,7 +64,24 @@ public partial class HudScene : Node
         GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
     }
 
-    public override void _ExitTree() => GetWindow().ContentScaleMode = outerScaleMode;
+    /// <summary>
+    /// Leaving the tree: the size handler is dropped first, because restoring the window's content scale mode emits the root
+    /// viewport's size_changed at once, while this scene and its field are already on their way out.
+    /// </summary>
+    public override void _ExitTree()
+    {
+        if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
+        GetWindow().ContentScaleMode = outerScaleMode;
+    }
+
+    Viewport sizeSource;            // the viewport whose size_changed relays the HUD out, while connected
+
+    void QueueRelayout()
+    {
+        if (relayoutQueued) return;
+        relayoutQueued = true;
+        CallDeferred(MethodName.Relayout);
+    }
 
     CanvasLayer hudLayer; Node[] worldUi = System.Array.Empty<Node>();   // the HUD layer and the world-anchored UI layers
     PortraitView portrait;          // the menu's face portrait, handed to the next build on a relayout
@@ -78,6 +96,7 @@ public partial class HudScene : Node
     void Relayout()
     {
         relayoutQueued = false;
+        if (!IsInsideTree()) return;     // queued before the scene left the tree
         string typed = chatInput?.Edit.Text;
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();

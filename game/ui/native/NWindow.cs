@@ -29,11 +29,23 @@ public partial class NWindow : Control
     bool closing, dragging;
     Vector2 dragFrom;
 
+    Viewport sizeSource;            // the viewport whose size_changed aligns the window, while in the tree
+
+    public override void _EnterTree()
+    {
+        sizeSource = GetViewport();
+        sizeSource.SizeChanged += Alignment;
+    }
+
+    public override void _ExitTree()
+    {
+        if (sizeSource != null) { sizeSource.SizeChanged -= Alignment; sizeSource = null; }
+    }
+
     public override void _Ready()
     {
         MouseFilter = MouseFilterEnum.Pass;
         Alignment();
-        GetViewport().SizeChanged += Alignment;
         if (!DragBar.IsEmpty && GetNodeOrNull<Control>(DragBar) is { } bar) bar.GuiInput += DragInput;
         if (!CloseButton.IsEmpty && GetNodeOrNull<NButton>(CloseButton) is { } close) close.Click += () => EmitSignal(SignalName.CloseDialog);
         if (OpenOnReady) StartOpen();
