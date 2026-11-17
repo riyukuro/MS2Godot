@@ -152,14 +152,34 @@ public partial class HudScene : Node
     void NavigatorWidget(Control ui)
     {
         var r = Place(ui, "uieventwidgetdialog", 1f, Vector2.Zero);
-        var box = r.ContentRect() ?? new Rect2(0, 0, 89, 114);      // the movie draws the dialog mid-stage; dock its box instead
-        r.Position = (new Vector2(stage.X - 298, 0) - new Vector2(box.End.X, box.Position.Y)) * u;
         var dlg = r.AllClips().FirstOrDefault(c => c.Direct("m_title") != null) ?? r;     // the EventWidgetDialog instance
+        // the movie draws the dialog mid-stage: dock its registration point instead, top right with offsetX -298, where the
+        // dialog's width is m_dragBar.width (EventWidgetDialog.get_width)
+        float w = dlg.ChildWidth(dlg.Direct("m_dragBar"));
+        if (w <= 0) w = 70;
+        r.Position = (new Vector2(stage.X - 298 - w, 0) - dlg.Position) * u;
         dlg.SetNamedText("m_title", assets.Str("$s_levelup_package_widget"));
-        bool ready = data.NavigatorRewardReady;
+        if (dlg.Direct("m_title")?.Node is TextNode title) title.ShrinkToFit();     // TextFieldEx.setTextAutoSize(SHRINK)
+        // EventWidgetDialog.setData: below max the gauge shows "text" and m_gage.width = current / max * (m_back.width - 4)
+        int cur = data.NavigatorCurrent, max = data.NavigatorMax;
+        bool ready = cur >= max;
         dlg.SetNamedVisible("m_rewardBtn", ready);
         dlg.SetNamedVisible("m_effect", ready);
         dlg.SetNamedVisible("m_gageBar", !ready);
+        if (!ready && dlg.FindClip("m_gageBar") is { } gage)
+        {
+            gage.SetNamedText("m_text", $"{cur}/{max}");
+            if (gage.Direct("m_gage") is { } fill && gage.Direct("m_back") is { } back)
+            {
+                // authored widths: the symbol's bounds times the placed x scale
+                float DefWidth(MovieClipNode.Child c) =>
+                    UiBuilder.F(r.Movie.Scope.Symbol((int)c.Def["id"])?["bounds"]?["w"], 0) * Math.Abs(UiBuilder.F(c.Def["matrix"]?["a"], 1));
+                float full = DefWidth(back) - 4, fw = DefWidth(fill);
+                var t = fill.Base;
+                if (fw > 0) fill.Override = new Transform2D(t.X * (full * cur / max / fw), t.Y, t.Origin);
+                gage.GotoFrame(gage.Frame);
+            }
+        }
         var slot = r.FindClip("m_slot");
         var icon = assets.ImageFile($"item/icon/{data.NavigatorRewardItem}.png");
         if (slot != null && icon != null)
@@ -167,12 +187,12 @@ public partial class HudScene : Node
             var b = slot.ContentRect() ?? new Rect2(0, 0, 60, 60);
             var spr = new Sprite2D { Texture = icon, Centered = false, Position = b.Position, Scale = b.Size / icon.GetSize() };
             slot.AddChild(spr);
-            if (data.NavigatorRewardCount > 0)
+            // BaseSlot.setItemCount: an export_slot_itemcount at (0, 39) in m_iconOption, its textField holding the count
+            if (data.NavigatorRewardCount > 0 && r.Movie.BuildClass("export_slot_itemcount", u) is { } count)
             {
-                var count = new Label { Text = data.NavigatorRewardCount.ToString(), Position = b.Position + new Vector2(b.Size.X - 20, b.Size.Y - 16), Size = new Vector2(18, 14), HorizontalAlignment = HorizontalAlignment.Right };
-                count.AddThemeFontSizeOverride("font_size", 12);
-                count.AddThemeColorOverride("font_outline_color", Colors.Black); count.AddThemeConstantOverride("outline_size", 3);
-                slot.AddChild(count);
+                foreach (var c in count.AllClips()) foreach (var t in c.TextFields) t.Text = data.NavigatorRewardCount.ToString();
+                count.Position = new Vector2(0, 39);
+                (slot.FindClip("m_iconOption") ?? slot).AddChild(count);
             }
         }
     }

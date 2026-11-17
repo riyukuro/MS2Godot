@@ -238,6 +238,14 @@ public partial class TextNode : Node2D
         return size + (NumLines - 1) * advance;
     }
 
+    /// <summary>Scaleform TEXTAUTOSZ_SHRINK: lowers the font size until the text fits the field width (2 px gutters).</summary>
+    public void ShrinkToFit()
+    {
+        var ls = Label.LabelSettings;
+        float room = (Bounds.Size.X - 4) / Label.Scale.X;
+        while (ls.FontSize > 1 && ls.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, ls.FontSize).X > room) ls.FontSize--;
+    }
+
     /// <summary>Applies a glow or drop shadow filter as a text outline (flash text in the HUD is mostly drawn with a dark glow).</summary>
     public void ApplyFilters(JsonNode filters, float scale)
     {

@@ -12,9 +12,10 @@ public sealed class StubHudData
     public string FieldName = "DP-kr Tria";
     public string Locale = "KR";
     /// <summary>Features the server has switched off (the reference run had no cash shop, Meret Market or job change quest).</summary>
-    /// <summary>The level-up package quest's reward in the "Navigator" widget (item id, count) and whether it can be claimed.</summary>
+    /// <summary>The level-up package quest's reward in the "Navigator" widget (item id, count) and its progress: the gauge
+    /// shows while current &lt; max, the reward button once it is reached.</summary>
     public int NavigatorRewardItem = 20300327, NavigatorRewardCount = 1;
-    public bool NavigatorRewardReady = true;
+    public int NavigatorCurrent = 1, NavigatorMax = 5;
     /// <summary>The field mission panel ("field" type): the map's exploration goals and whether each is met.</summary>
     public (string Text, bool Satisfied)[] FieldMissionGoals =
     {
