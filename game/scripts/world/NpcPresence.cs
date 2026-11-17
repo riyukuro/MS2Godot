@@ -9,7 +9,8 @@ namespace Ms2Godot.World;
 /// - The body capsule (CNpc::vfunc_124 -> NxCapsuleController): &lt;capsule radius height&gt; from the npc table, standing on the
 ///   npc's position, in collision group 4; it blocks the local player unless the row sets capsule ignore.
 /// - The name tag (UINameTag, the uinametag movie's NameTag): only for rows with nametag="1"; the name and, on the line above,
-///   the npc title (npctitle.xml), font size 18 in NameTagColorFriendly. It sits OffsetNpcNametag above the model's top, is
+///   the npc title (npctitle.xml), font size 18, in the colour NpcRow.TagColorKey picks (friendly, or by class for hostile
+///   npcs; NameTagColorDead once a hostile npc dies). It sits OffsetNpcNametag above the model's top, is
 ///   drawn in screen space, fully opaque up to 700 away, fading to 40% at 1500 and hidden beyond. Like every movie the tag is
 ///   drawn at the UI scale (UiScale), and NameTag.setData centres m_name vertically (TextFieldEx VALIGN_CENTER), as for the
 ///   local player's tag (PlayerNameTag).
@@ -56,10 +57,35 @@ public sealed partial class NpcPresence : CanvasLayer
         if (bars.TryGetValue(n, out var b)) b.Stat(cur, max);
     }
 
-    /// <summary>The npc died: its HP bar hides.</summary>
+    /// <summary>The npc died: its HP bar hides, and a hostile npc's name tag turns NameTagColorDead.</summary>
     public void Died(FieldNpcs.Placed n)
     {
         if (bars.TryGetValue(n, out var b)) b.Dead = true;
+        var color = TagColor(n.Row, true);
+        foreach (var t in tags)
+            if (t.Npc == n)
+                foreach (var clip in new[] { t.Node.FindClip("m_name"), t.Node.FindClip("m_guild") })
+                    foreach (var c in clip?.AllClips() ?? [])
+                        foreach (var f in c.TextFields) f.Label.LabelSettings.FontColor = color;
+    }
+
+    /// <summary>
+    /// The name tag colour (CNpc's per-frame update, NpcRow.TagColorKey) from the colour constants, black for the colour 0.
+    /// CNpc::vfunc_122 (hostile to the local player) stands in as friendly 0: every row with friendly set gets
+    /// NameTagColorFriendly either way.
+    /// </summary>
+    Color TagColor(NpcRow row, bool dead)
+    {
+        var key = row.TagColorKey(hostile: row.Friendly == 0, dead);
+        if (key == null) return Colors.Black;
+        var (r, g, b) = constants.Color(key, key switch
+        {
+            "NameTagColorMob" => (1f, 0.545f, 0.545f),
+            "NameTagColorNamed" or "NameTagColorBoss" => (1f, 0f, 0f),
+            "NameTagColorDead" => (0.741f, 0.741f, 0.741f),
+            _ => (0.635f, 1f, 0.549f),
+        });
+        return new Color(r, g, b);
     }
 
     public NpcPresence(ClientConstants constants) { this.constants = constants; Name = "NpcPresence"; Layer = 5; Offset = UiScale.MovieOrigin; }
@@ -68,8 +94,6 @@ public sealed partial class NpcPresence : CanvasLayer
     public void Build(IEnumerable<FieldNpcs.Placed> npcs, UiAssets ui)
     {
         tagOffset = constants.Float("OffsetNpcNametag", 260);
-        var (r, g, b) = constants.Color("NameTagColorFriendly", (0.635f, 1f, 0.549f));
-        var color = new Color(r, g, b);
         if (IsInsideTree()) u = UiScale.For(GetViewport().GetVisibleRect().Size);
         UiMovie movie = null, barMovie = null;
         try { movie = new UiMovie(ui, "uinametag"); } catch (Exception e) { GD.PushWarning("name tag movie: " + e.Message); }
@@ -77,7 +101,7 @@ public sealed partial class NpcPresence : CanvasLayer
         foreach (var n in npcs)
         {
             if (!n.Row.CapsuleIgnore) AddBody(n);
-            if (n.Row.Nametag && movie != null && !string.IsNullOrEmpty(n.Row.Name)) AddTag(n, movie, color);
+            if (n.Row.Nametag && movie != null && !string.IsNullOrEmpty(n.Row.Name)) AddTag(n, movie, TagColor(n.Row, false));
         }
         // the bars after the tags: which of the two the client draws on top is not known (both are separate movies)
         foreach (var n in npcs)

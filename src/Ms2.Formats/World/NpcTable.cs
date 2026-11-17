@@ -48,6 +48,24 @@ public sealed class NpcRow
     public bool HideHpBarLevel => HasTag("hide_hpbar_level");
     /// <summary>CNpc::vfunc_79, the level on the target frame: 0 (shown as "?") with <see cref="HideHpBarLevel"/>, else the level.</summary>
     public int HpBarLevel => HideHpBarLevel ? 0 : Level;
+    /// <summary>
+    /// NpcDataCli::GetClassConstant, the name tag colour of the row: NameTagColorFriendly for friendly rows, else by class:
+    /// 1 NameTagColorMob, 3 and 7 NameTagColorNamed, 4 and 6 NameTagColorBoss; null for any other class (the colour 0).
+    /// </summary>
+    public string ClassColorKey => Friendly != 0 ? "NameTagColorFriendly" : Class switch
+    {
+        1 => "NameTagColorMob",
+        3 or 7 => "NameTagColorNamed",
+        4 or 6 => "NameTagColorBoss",
+        _ => null,
+    };
+
+    /// <summary>
+    /// CNpc's per-frame name tag colour: an npc hostile to the local player (CNpc::vfunc_122) shows NameTagColorDead once
+    /// dead, else <see cref="ClassColorKey"/>; any other npc shows NameTagColorFriendly.
+    /// </summary>
+    public string TagColorKey(bool hostile, bool dead) => !hostile ? "NameTagColorFriendly" : dead ? "NameTagColorDead" : ClassColorKey;
+
     /// <summary>The npc's effect dummy of this name (exact case), or null.</summary>
     public EffectDummy Dummy(string name) => EffectDummyTable.Find(EffectDummies, name);
 }

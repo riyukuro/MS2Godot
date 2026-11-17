@@ -165,6 +165,22 @@ public class EffectDummyTests
         Assert.That(NpcTable.ParseRace("creature"), Is.EqualTo(12));
     }
 
+    /// <summary>The name tag colour key: friendly rows, then the class, and the hostile / dead pick.</summary>
+    [Test]
+    public void NpcRowPicksTagColour()
+    {
+        NpcRow Row(string env) => NpcTable.ParseRow(XElement.Parse($"<npc id='4'><environment {env} /></npc>"), DefaultRows());
+        Assert.That(Row("friendly='2' class='5'").ClassColorKey, Is.EqualTo("NameTagColorFriendly"));
+        Assert.That(Row("").ClassColorKey, Is.EqualTo("NameTagColorMob"), "class 1 when absent");
+        Assert.That((Row("class='3'").ClassColorKey, Row("class='7'").ClassColorKey), Is.EqualTo(("NameTagColorNamed", "NameTagColorNamed")));
+        Assert.That((Row("class='4'").ClassColorKey, Row("class='6'").ClassColorKey), Is.EqualTo(("NameTagColorBoss", "NameTagColorBoss")));
+        Assert.That((Row("class='2'").ClassColorKey, Row("class='5'").ClassColorKey), Is.EqualTo(((string)null, (string)null)));
+        var mob = Row("class='1'");
+        Assert.That(mob.TagColorKey(hostile: true, dead: false), Is.EqualTo("NameTagColorMob"));
+        Assert.That(mob.TagColorKey(hostile: true, dead: true), Is.EqualTo("NameTagColorDead"));
+        Assert.That(mob.TagColorKey(hostile: false, dead: true), Is.EqualTo("NameTagColorFriendly"));
+    }
+
     /// <summary>The player's data, when present: the UI dummy of the default and player tables.</summary>
     [Test]
     public void GameTablesHaveAUiDummy()
