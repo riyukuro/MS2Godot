@@ -153,25 +153,29 @@ public partial class FieldAudio : Node
     /// <summary>The field's sound: bgm cue, ambient sound entities and, when a player is given, footsteps. Never throws.</summary>
     public static FieldAudio Start(Node parent, string dataDir, PackSet packs, string fieldName, FieldMap map, CharacterBody3D player = null, AnimationPlayer anim = null)
     {
+        FieldAudio a = null;
         try
         {
-            var a = new FieldAudio { Name = "FieldAudio" };
+            a = new FieldAudio { Name = "FieldAudio" };
             parent.AddChild(a);
+            if (player != null && anim != null)
+            {
+                // the ground effects of a step or a landing play whether or not there is a sound bank (CGroundEffectDataManager::
+                // PlayEffects inserts the effect files through CEffectService, groundeffectdata.cpp:275-305); the bank adds the sounds
+                var ground = new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
+                a.Footsteps = new FootstepSounds(null, ground, map, player, anim);
+                a.AddChild(a.Footsteps);
+            }
             if (!a.Open(dataDir, packs)) return a;
+            if (a.Footsteps != null) a.Footsteps.Library = a.library;
             a.PlayBgm(FieldBgmCue(packs, fieldName));
             a.Ambient = new AmbientSounds(a.library);
             a.AddChild(a.Ambient);
             a.Ambient.Build(map);
             GD.Print($"audio: {a.Ambient.Count} ambient sound entities");
-            if (player != null && anim != null)
-            {
-                var ground = new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
-                a.Footsteps = new FootstepSounds(a.library, ground, map, player, anim);
-                a.AddChild(a.Footsteps);
-            }
             return a;
         }
-        catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); return null; }
+        catch (Exception ex) { GD.PushWarning("audio: " + ex.Message); return a; }   // the footsteps' ground effects stay
     }
 
     readonly AudioStreamPlayer3D[] voices3d = new AudioStreamPlayer3D[16];

@@ -15,7 +15,9 @@ public partial class FootstepSounds : Node
 {
     const float Cell = 150f;   // cube size of the field's ground entities
 
-    readonly SoundLibrary library;
+    SoundLibrary library;
+    /// <summary>The sound bank; null plays the steps' effect files only.</summary>
+    public SoundLibrary Library { get => library; set => library = value; }
     readonly GroundEffectTable table;
     readonly CharacterBody3D body;
     readonly AnimationPlayer anim;
@@ -96,6 +98,7 @@ public partial class FootstepSounds : Node
         stepCount++;
         var files = table.PickFiles(LastGround, action, rng);
         foreach (var f in files) EffectFile?.Invoke(f);
+        if (library == null) return;
         foreach (var ev in files.SelectMany(table.SoundsOf))
         {
             var clip = library.ResolveEvent(ev, rng);
