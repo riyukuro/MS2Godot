@@ -38,6 +38,7 @@ public partial class HudScene : Node
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
 
+        xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         var layer = new CanvasLayer { Layer = 10 };
         AddChild(layer);
@@ -151,7 +152,7 @@ public partial class HudScene : Node
         // the client places entities with the projection from mapxblock/<xblock>.xml <minimap>
         try
         {
-            var x = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{FieldName()}.xml")));
+            var x = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{xblock}.xml")));
             mapInfo = MinimapInfo.Parse(x);
         }
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
@@ -167,7 +168,7 @@ public partial class HudScene : Node
         Hide(r, "m_controller", "m_resize", "m_sliderani", "m_report");    // m_report: reportVisible is off in the reference
         if (r.FindClip("m_maxpanel") is { } maxPanel) Hide(maxPanel, "m_panel", "m_mask");     // the map panel's own (the list row keeps its panel)
         r.FindClip("m_channel")?.SetText($"Ch. {data.Player.Channel}");
-        r.FindClip("m_fieldname")?.SetText(data.FieldName);
+        r.FindClip("m_fieldname")?.SetText(MapName());
         MinimapPlayers(r);
         if (tex != null)
         {
@@ -277,11 +278,32 @@ public partial class HudScene : Node
         AlignDialog(r, body, 3, new Vector2(UiBuilder.F(b?["w"], 905), UiBuilder.F(b?["h"], 1600)), 0, 0);
     }
 
-    static string FieldName()
+    /// <summary>The xblock of the field this scene runs: a portal move's target (the scene reloads per move), else --field.</summary>
+    string xblock;
+
+    static string ArgField()
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--field") return args[i + 1];
-        return "02000001_tw_tria";
+        return null;
+    }
+
+    /// <summary>
+    /// The minimap's field name (UIMinimapDialog::BuildUIData "fieldname", CubeMapInformationService::FUN_1410c3330): a house's
+    /// name, else WorldService m_290, which the field load sets to the mapname string of the map id
+    /// (CStringTable::FUN_141811980(3, mapId), worldservice_1.cpp:3317).
+    /// </summary>
+    string MapName()
+    {
+        try
+        {
+            var fd = FieldData.FindByXBlock(assets.Packs, xblock);
+            if (fd != null && new GameStrings(assets.Packs, "en").Table("mapname", "name") is { } names
+                && (names.TryGetValue(fd.Id.ToString(), out var n) || names.TryGetValue(fd.Id.ToString("D8"), out n)))
+                return n;
+        }
+        catch (Exception e) { GD.PushWarning("map name: " + e.Message); }
+        return data.FieldName;
     }
 
     Player FindPlayer(Node n)
