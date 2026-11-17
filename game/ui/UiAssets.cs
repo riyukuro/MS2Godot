@@ -61,6 +61,19 @@ public sealed class UiAssets
         })).Value;
     }
 
+    /// <summary>
+    /// The font's ascent per pixel of font size, as Scaleform lays out a line: DefineFont2/3 Ascent over its EM square
+    /// (GFx reads the DefineFont3 ascent / 20 into a 1024 EM). The system fallback's own ascent when the class is not in gfxfontlib.
+    /// </summary>
+    public float AscentRatio(string fontClass)
+    {
+        var lib = string.IsNullOrEmpty(fontClass) ? null : Dependency("gfxfontlib");
+        if (lib != null)
+            foreach (var c in lib.Characters.Values)
+                if (c.Font != null && c.ClassName == fontClass && c.Font.HasLayout && c.Font.Ascent > 0) return (float)c.Font.Ascent / c.Font.EmSquare;
+        return Fallback.GetAscent(100) / 100f;
+    }
+
     public UiAssets(PackSet packs) { Packs = packs; }
 
     readonly Dictionary<string, UiMovie> movies = new(StringComparer.OrdinalIgnoreCase);

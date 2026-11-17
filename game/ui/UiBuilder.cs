@@ -205,7 +205,12 @@ public partial class TextNode : Node2D
             Scale = new Vector2(RasterScale / asx, RasterScale / asy), Text = scope.Assets.Str((string)Def["initial"] ?? ""),
         };
         // label sits in unscaled units: position uses the scaled rect, the node scale cancels the accumulated scale
-        Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y - 0.12f * size);   // Noto's line box sits lower than the flash font's
+        // Scaleform puts the first baseline at the text rect top (field less its 2 px gutter) plus the line's font ascent
+        // (DocView line format: BaseLineOffset = MaxFontAscent = font ascent * size / EM). Godot puts it at the label top plus
+        // its line box: the line is as tall as the whole fallback chain and the primary font's line sits centred in it (whole
+        // pixels of the label's raster size; measured on rendered labels). The label is moved by the difference.
+        BaselineShift = 2 + scope.Assets.AscentRatio((string)Def["fontClass"]) * size - GodotBaseline(font, (int)ramp) * RasterScale / asy;
+        Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y + BaselineShift);
         // a word-wrapped field wraps inside its 2 px gutters (Scaleform's text rect is the field less 2 on each side)
         if (Label.AutowrapMode != TextServer.AutowrapMode.Off)
         {
@@ -219,6 +224,19 @@ public partial class TextNode : Node2D
 
     /// <summary>Screen pixels per label pixel: the glyphs are rasterized at the ramp size and drawn scaled by this.</summary>
     public float RasterScale = 1;
+
+    /// <summary>Distance from a Godot label's top to its first baseline, for text in the font's primary face.</summary>
+    static float GodotBaseline(Font font, int fontSize)
+    {
+        var rids = font.GetRids();
+        if (rids.Count == 0) return font.GetAscent(fontSize);
+        var ts = TextServerManager.GetPrimaryInterface();
+        float asc = (float)ts.FontGetAscent(rids[0], fontSize), desc = (float)ts.FontGetDescent(rids[0], fontSize);
+        return asc + MathF.Floor((font.GetHeight(fontSize) - asc - desc) / 2);
+    }
+
+    /// <summary>Label top relative to the field top, in field units, that puts Godot's first baseline on Scaleform's.</summary>
+    public float BaselineShift;
 
     static readonly int[] FontSizeRamp = { 0, 0, 2, 4, 6, 8, 12, 16, 18, 22, 26, 32, 36, 40, 45, 50, 56, 64, 72, 80, 90, 108, 128, 147, 168, 194, 222, 256 };
 
@@ -280,7 +298,7 @@ public partial class TextNode : Node2D
         int shown = Math.Min(lines, fit);
         float height = size + (shown - 1) * advance;
         Label.MaxLinesVisible = shown;
-        Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y - 0.12f * size + Math.Max(0, room - height));
+        Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y + BaselineShift + Math.Max(0, room - height));
     }
 
     /// <summary>Scaleform TEXTAUTOSZ_SHRINK: lowers the font size until the text fits the field width (2 px gutters).</summary>
