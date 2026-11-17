@@ -77,6 +77,25 @@ public sealed class UiMovie
 
     public MovieClipNode BuildClass(string className, double scale = 1) => BuildClass(className, scale, scale);
 
+    /// <summary>A class instance after setSize(w, h) (CLIK resets the scale to 1): a 9-slice symbol rebuilds its grid at
+    /// that size; without a grid the clip is built as is.</summary>
+    public MovieClipNode BuildClassSized(string className, double scale, float w, float h)
+    {
+        foreach (var sc in library.Values.Prepend(Scope))
+            foreach (var (id, sym) in sc.Symbols)
+                if ((string)sym["class"] == className)
+                {
+                    NineCtx ctx = null;
+                    if (sym["scale9"] != null && sym["bounds"] != null)
+                    {
+                        var b = UiBuilder.Rc(sym["bounds"]);
+                        ctx = new NineCtx { Grid = UiBuilder.Rc(sym["scale9"]), Bounds = b, Sx = w / Math.Max(b.Size.X, 0.001f), Sy = h / Math.Max(b.Size.Y, 0.001f) };
+                    }
+                    return UiBuilder.BuildSprite(this, sc, int.Parse(id), scale, scale, ctx);
+                }
+        return null;
+    }
+
     public MovieClipNode BuildClass(string className, double sx, double sy)
     {
         if (className == null) return null;

@@ -16,7 +16,10 @@ public partial class HudScene : Node
     UiAssets assets;
     readonly StubHudData data = new();
     readonly List<string> chatLines = new();
-    MovieClipNode chat; TextInputWidget chatInput; Label chatLog;
+    MovieClipNode chat; TextInputWidget chatInput; TextNode chatLog;
+    /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
+    /// (DAT_1439f8cd0 - 2) = 19 + 19 with feature 0xbd (the adventure level bar) on.</summary>
+    const float BottomBars = (21 - 2) + (21 - 2);
     string shotDir; int frames;
     float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
     Player player; Control uiRoot;
@@ -205,26 +208,77 @@ public partial class HudScene : Node
         }
     }
 
-    // ---- chat ---------------------------------------------------------------------------------------------------
+    // ---- chat: uimessengerdialog sized and placed from table/default/defaultmessenger0.xml ----------------------------
 
+    /// <summary>
+    /// The chat window as UIMessenger builds it (uimessenger.cpp): vfunc_54 reads the window's width/height, alignType and
+    /// offsets and its tabs from the option file (the default one: table/default/defaultmessenger0.xml), AddTab fills the
+    /// tab bar, SetSizeInt runs MessengerDialog's Constraints reflow (configUI), and vfunc_43 aligns it with vfunc_2.
+    /// SetBackgroundAlpha drives m_panel.alpha; the log is m_textOutput (AppendHtml).
+    /// </summary>
     void Chat(Control ui)
     {
-        const float f = 1f;
-        var origin = new Vector2(10 - 319 * f, stage.Y - 20 - 402 * f);
-        chat = Place(ui, "uimessengerdialog", f, origin);
-        Hide(chat, "m_chatEmoticonPreview", "m_superEffect", "m_resize", "m_textOutputMask", "m_textBgColor");
-        if (chat.FindClip("m_subject") is { } subject) subject.SetText("Local");
-        if (chat.FindClip("m_buttonBar") is { } bar) { int n = 0; foreach (var c in bar.AllClips()) foreach (var t in c.TextFields) t.Text = n++ == 0 ? "Main" : "Combat"; }
-        // log: a translucent panel with a label over the movie's log area (the movie's own output field is driven by the client's chat service)
-        var area = new Rect2((origin + new Vector2(362, 160) * f) * u, new Vector2(491, 206) * f * u);
-        ui.AddChild(new ColorRect { Color = new Color(0, 0, 0, 0.5f), Position = area.Position, Size = area.Size, MouseFilter = Control.MouseFilterEnum.Ignore });
-        chatLog = new Label
+        var cfg = assets.Table("table/default/defaultmessenger0.xml")?.Root;
+        float A(string n, float d) => float.TryParse((string)cfg?.Attribute(n), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : d;
+        var size = new Vector2(A("width", 408), A("height", 270));
+        var tabs = cfg?.Elements("Tab").ToList() ?? new();
+        var screen = tabs.FirstOrDefault()?.Element("PanelSetting")?.Element("Screen");
+        float bgAlpha = float.TryParse((string)screen?.Attribute("backgroundAlpha"), out var ba) ? ba : 50;
+        float fontSize = float.TryParse((string)screen?.Attribute("fontSize"), out var fs) ? fs : 16;
+
+        var movie = new UiMovie(assets, "uimessengerdialog");
+        UiLayout.ResetRootScale(movie, "messenger_dialog");
+        // MessengerDialog.configUI constraints; the authored dialog is 350 x 270
+        UiLayout.Reflow(movie, "messenger_dialog", new Vector2(350, 270), size,
+            ("m_panel", UiLayout.Edge.All), ("m_textBgColor", UiLayout.Edge.All), ("m_textOutput", UiLayout.Edge.All), ("m_textOutputMask", UiLayout.Edge.All),
+            ("m_resize", UiLayout.Edge.Top | UiLayout.Edge.Right), ("m_emotion", UiLayout.Edge.Bottom | UiLayout.Edge.Right),
+            ("m_subject", UiLayout.Edge.Left | UiLayout.Edge.Bottom), ("m_superEffect", UiLayout.Edge.Left | UiLayout.Edge.Bottom),
+            ("m_textInput", UiLayout.Edge.Left | UiLayout.Edge.Right | UiLayout.Edge.Bottom), ("m_buttonBar", UiLayout.Edge.Left | UiLayout.Edge.Right | UiLayout.Edge.Top),
+            ("m_scrollBar", UiLayout.Edge.Left | UiLayout.Edge.Top | UiLayout.Edge.Bottom),
+            ("m_chatEmoticonOpen", UiLayout.Edge.Bottom | UiLayout.Edge.Right), ("m_chatEmoticonPreview", UiLayout.Edge.Bottom | UiLayout.Edge.Right));
+        var root = movie.BuildRoot(u);
+        root.Scale = new Vector2(u, u);
+        var holder = new Node2D(); holder.AddChild(root); ui.AddChild(holder);
+        var dlgChild = root.Children.FirstOrDefault(c => c.Node is MovieClipNode m && m.ClassName == "messenger_dialog");
+        if (dlgChild == null) return;
+        chat = (MovieClipNode)dlgChild.Node;
+        // UIComponent resets the authored scale; vfunc_43 aligns the window (alignType 7 = bottom left, offsetY -38 =
+        // above the two bottom bars, FUN_1418dd0c0 + FUN_1418dd110)
+        var pos = UiLayout.Align((int)A("alignType", 7), stage, size, A("offsetX", 0), A("offsetY", -BottomBars));
+        dlgChild.Base = new Transform2D(Vector2.Right, Vector2.Down, pos);
+        root.GotoFrame(root.Frame);
+        // the emoticon preview opens on demand and the super chat effect shows only for super world chat
+        Hide(chat, "m_chatEmoticonPreview", "m_superEffect");
+        // SetBackgroundAlpha -> backgroundAlpha(a): m_panel.alpha = a / 100 (replaces the authored 0.3)
+        if (chat.Direct("m_panel") is { } panel) { panel.BaseColor = new Color(panel.BaseColor, bgAlpha / 100f); chat.GotoFrame(chat.Frame); }
+        // the talk target dropdown shows the first target not hidden (FUN_141a14110); in the field that is the local
+        // talk, labelled $s_talkpanelsetting_social (uimessenger.cpp:4567)
+        if (chat.FindClip("m_subject") is { } subject) subject.SetText(assets.Str("$s_talkpanelsetting_social"));
+        // AddTab: one messenger_rclickDropdown per tab (buttonWidth 62, spacing 1) on the bar at m_buttonBar; index 0 selected
+        if (chat.Direct("m_buttonBar") is { } barChild)
         {
-            Position = area.Position + new Vector2(4, 0), Size = area.Size - new Vector2(8, 4), VerticalAlignment = VerticalAlignment.Bottom, AutowrapMode = TextServer.AutowrapMode.WordSmart, ClipText = true,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-            LabelSettings = new LabelSettings { Font = assets.FontFor("$Font_SD_Neo_1"), FontSize = 12, FontColor = Colors.White, OutlineSize = 2, OutlineColor = new Color(0, 0, 0, 0.8f) },
-        };
-        ui.AddChild(chatLog);
+            barChild.Node.Visible = false; barChild.Last = -1;
+            for (int i = 0; i < tabs.Count; i++)
+            {
+                var tab = movie.BuildClassSized("messenger_rclickDropdown", u, 62, 24);
+                if (tab == null) continue;
+                tab.Position = barChild.Base.Origin + new Vector2(i * (62 + 1), 0);
+                tab.HideNamed("m_alime");
+                tab.GotoLabel(i == 0 ? "selected_up" : "up");
+                tab.SetNamedText("textField", assets.Str((string)tabs[i].Attribute("tabName")));
+                chat.AddChild(tab);
+            }
+            chat.GotoFrame(chat.Frame);
+        }
+        chatLog = chat.FindClip("m_textOutput")?.TextFields.FirstOrDefault();
+        if (chatLog != null)
+        {
+            var ls = (LabelSettings)chatLog.Label.LabelSettings.Duplicate();
+            ls.FontSize = Math.Max(1, (int)Math.Round(ls.FontSize * fontSize / UiBuilder.F(chatLog.Def["size"], 16)));
+            chatLog.Label.LabelSettings = ls;
+            chatLog.Label.ClipText = true;
+            chatLog.Text = "";
+        }
         chatInput = new TextInputWidget { Node = chat.FindClip("m_textInput") };
         chatInput.Init();
         chatInput.Edit.TextSubmitted += text =>
@@ -233,18 +287,49 @@ public partial class HudScene : Node
             AddChatLine($"{data.Player.Name}: {text}");
             chatInput.Edit.Text = "";
         };
-        AddChatLine("Welcome to MapleStory 2.");
-        // the group chat button above the window
-        var btn = new ColorRect { Color = new Color(0.1f, 0.12f, 0.15f, 0.9f), Position = (origin + new Vector2(319, 110) * f) * u, Size = new Vector2(70, 32) * u, MouseFilter = Control.MouseFilterEnum.Ignore };
-        ui.AddChild(btn);
-        btn.AddChild(new Label { Text = "Group Chat", Position = new Vector2(4, 8) * u, MouseFilter = Control.MouseFilterEnum.Ignore, LabelSettings = new LabelSettings { Font = assets.FontFor("$Font_SD_Neo_3"), FontSize = (int)(11 * u / 0.67f), FontColor = Colors.White } });
+        GroupChat(ui);
     }
 
+    /// <summary>The log keeps the last lines in view (TextAreaEx position = maxScrollV after each append).</summary>
     void AddChatLine(string line)
     {
+        if (chatLog == null) return;
         chatLines.Add(line);
-        if (chatLines.Count > 12) chatLines.RemoveAt(0);
-        chatLog.Text = string.Join("\n", chatLines);
+        if (chatLines.Count > 100) chatLines.RemoveAt(0);
+        var l = chatLog.Label;
+        l.LinesSkipped = 0;
+        l.Text = string.Join("\n", chatLines);
+        l.LinesSkipped = Math.Max(0, l.GetLineCount() - l.GetVisibleLineCount());
+    }
+
+    /// <summary>
+    /// UIGroupMessengerBrowser (uigroupmessengerbrowser): vfunc_43 aligns it bottom left at offset (0, -300); with no group
+    /// chat setData([]) leaves only the insert button (btn_group_chat_a, label $s_groupmessenger_addbutton) in m_container
+    /// at (6, 25). m_background and m_line fade in only under the mouse (configUI tweens them to alpha 0).
+    /// </summary>
+    void GroupChat(Control ui)
+    {
+        var movie = new UiMovie(assets, "uigroupmessengerbrowser");
+        var root = movie.BuildRoot(u);
+        root.Scale = new Vector2(u, u);
+        var holder = new Node2D(); holder.AddChild(root); ui.AddChild(holder);
+        var dlgChild = root.Children.FirstOrDefault(c => c.Node is MovieClipNode m && m.ClassName == "group_messenger_browser_dialog");
+        if (dlgChild == null) return;
+        var dlg = (MovieClipNode)dlgChild.Node;
+        var btn = movie.BuildClass("btn_group_chat_a", u);
+        if (btn != null)
+        {
+            btn.Position = new Vector2(6, 25);
+            btn.GotoLabel("up");
+            btn.SetNamedText("textField", assets.Str("$s_groupmessenger_addbutton"));
+            dlg.AddChild(btn);
+        }
+        foreach (var n in new[] { "m_background", "m_line" })
+            if (dlg.Direct(n) is { } c) { c.BaseColor = new Color(c.BaseColor, 0); }
+        dlg.GotoFrame(dlg.Frame);
+        var box = dlg.ContentRect() ?? new Rect2(0, 0, 131, 94);
+        dlgChild.Base = new Transform2D(Vector2.Right, Vector2.Down, UiLayout.Align(7, stage, box.Size, 0, -300));
+        root.GotoFrame(root.Frame);
     }
 
     // ---- quest guide: the field mission panel with stub goals ---------------------------------------------------

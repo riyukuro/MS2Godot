@@ -159,6 +159,7 @@ public static class UiWidgets
         Widget w = null;
         if (n.IsA("scaleform.clik.controls.CheckBox")) w = new ButtonWidget { Toggle = true, IsCheckBox = true };
         else if (n.IsA("scaleform.clik.controls.Button")) w = new ButtonWidget();
+        else if (n.IsA("scaleform.clik.controls.TextArea")) return;      // multi-line text areas (chat log) show their own text field
         else if (n.IsA("scaleform.clik.controls.TextInput")) w = new TextInputWidget();
         else if (n.IsA("scaleform.clik.controls.Label")) w = new LabelWidget();
         if (w == null) return;

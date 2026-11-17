@@ -293,6 +293,12 @@ public partial class MovieClipNode : Node2D
                 _ => c.Def["id"] != null && Scope.Symbol((int)c.Def["id"]) is { } sym ? UiBuilder.Rc(sym["bounds"]) : null,
             };
             if (local == null) continue;
+            // a 9-slice child is built at its placed size with a unit matrix: its symbol bounds take the placed scale
+            if (c.Static9 && c.Def["matrix"] is JsonObject m9 && c.Def["id"] != null && Scope.Symbol((int)c.Def["id"])?["bounds"] is { } sb)
+            {
+                var r9 = UiBuilder.Rc(sb);
+                local = new Rect2(r9.Position, r9.Size * new Vector2(Math.Abs(UiBuilder.F(m9["a"], 1)), Math.Abs(UiBuilder.F(m9["d"], 1))));
+            }
             var xf = c.Node.Transform; var b = local.Value;
             foreach (var p in new[] { xf * b.Position, xf * new Vector2(b.End.X, b.Position.Y), xf * new Vector2(b.Position.X, b.End.Y), xf * b.End })
                 r = r == null ? new Rect2(p, Vector2.Zero) : r.Value.Expand(p);
