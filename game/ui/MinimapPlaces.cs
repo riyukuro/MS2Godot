@@ -86,18 +86,11 @@ public sealed partial class MinimapPlaces : Node2D
     public override void _Process(double delta)
     {
         if (built) { UpdateGuides(); return; }
-        var fc = Find(GetTree().Root);
+        var fc = GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;   // the first in tree order, as a walk finds
         if (fc?.Portals == null) return;
         built = true;
         try { Build(fc); }
         catch (Exception e) { GD.PushWarning("minimap places: " + e.Message); }
-    }
-
-    static FieldContents Find(Node n)
-    {
-        if (n is FieldContents f) return f;
-        foreach (var c in n.GetChildren()) if (Find(c) is { } r) return r;
-        return null;
     }
 
     void Build(FieldContents fc)

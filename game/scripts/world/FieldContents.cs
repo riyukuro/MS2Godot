@@ -54,10 +54,14 @@ public partial class FieldContents : Node3D
     {
         this.packs = packs; this.builder = builder; this.assets = assets;
         Name = "FieldContents";
+        AddToGroup(Group);
         Props = new FieldProps(builder);
     }
 
     public FieldContents() { }      // Godot needs a parameterless constructor for the type
+
+    /// <summary>The scene-tree group every field's contents node joins, so the HUD finds it without walking the tree.</summary>
+    public const string Group = "field_contents";
 
     /// <summary>The xblock to load: the pending sandbox move's target, or null.</summary>
     public static string PendingXBlock => Travel.Pending?.XBlock;
