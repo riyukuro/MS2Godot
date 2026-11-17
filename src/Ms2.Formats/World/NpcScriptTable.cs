@@ -37,9 +37,12 @@ public sealed class NpcScriptTable
     readonly Dictionary<long, string> strings = new();
     public int Count => npcs.Count;
     public int StringCount => strings.Count;
+    readonly GameStrings gameText;
+    ReservedWords words;
 
     public NpcScriptTable(PackSet packs, GameStrings text)
     {
+        gameText = text;
         foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("script/npc/npcscript", StringComparison.OrdinalIgnoreCase)
                                                              && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n))
         {
@@ -74,20 +77,17 @@ public sealed class NpcScriptTable
 
     public Npc Find(int npcId) => npcs.GetValueOrDefault(npcId);
 
-    /// <summary>"$script:0831180407000001$" (and plain text) -> the string, with $MyPCName$ filled in.</summary>
+    /// <summary>
+    /// The text of a content as the talk window shows it: the object words (CReservedWordTable::ReplaceObjectWords, which
+    /// the client runs when it loads the content, CScriptContent::vfunc_2), so "$script:0831180407000001$" becomes its
+    /// string and the $map, $npcName, $item ... words in that string their names; then the value words
+    /// (ReplaceValueWords, CCinematicComponent::vfunc_5 when the page is shown) with <paramref name="playerName"/> for
+    /// $MyPCName. Both depend only on the tables and the name, so running them together here gives the same text.
+    /// </summary>
     public string Resolve(string text, string playerName)
     {
         if (string.IsNullOrEmpty(text)) return "";
-        string s = text;
-        const string tag = "$script:";
-        int i;
-        while ((i = s.IndexOf(tag, StringComparison.Ordinal)) >= 0)
-        {
-            int j = s.IndexOf('$', i + tag.Length);
-            if (j < 0) break;
-            var id = s[(i + tag.Length)..j];
-            s = s[..i] + (long.TryParse(id, out long n) && strings.TryGetValue(n, out var v) ? v : "") + s[(j + 1)..];
-        }
-        return s.Replace("$MyPCName$", playerName).Replace("\\n", "\n");
+        words ??= new ReservedWords(gameText, id => strings.TryGetValue(unchecked((long)id), out var v) ? v : "");
+        return words.ReplaceValueWords(words.ReplaceObjectWords(text), playerName).Replace("\\n", "\n");
     }
 }
