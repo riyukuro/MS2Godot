@@ -26,6 +26,15 @@ public sealed class NxController
     readonly float skin = MoveConfig.SkinWidth;
     readonly float slopeLimit = Mathf.Cos(Mathf.DegToRad(MoveConfig.SlopeLimitDeg));
 
+    /// <summary>
+    /// Bodies this controller's sweeps pass through: the body's own kinematic box (a mount's), which starts inside its capsule.
+    /// SweepCapsuleBox reports no hit for an initial overlap (CharacterController.cpp:366-374, d == 0 returns false).
+    /// </summary>
+    public Rid IgnoreBody;
+
+    Godot.Collections.Array<Rid> Excluded() =>
+        IgnoreBody.IsValid ? new Godot.Collections.Array<Rid> { body.GetRid(), IgnoreBody } : new Godot.Collections.Array<Rid> { body.GetRid() };
+
     /// <summary>ShapeHitCallback: a shape (not another controller) the side or down pass touched, in the order touched.</summary>
     public System.Action<GodotObject> ShapeHit;
 
@@ -217,7 +226,7 @@ public sealed class NxController
         {
             Shape = shapeNode.Shape,
             CollisionMask = body.CollisionMask & ~IgnoreGroups,                  // move(disp, m_nGroups & ~m_nIgnoreGroups)
-            Exclude = new Godot.Collections.Array<Rid> { body.GetRid() },
+            Exclude = Excluded(),
             Margin = 0,
         };
         var local = shapeNode.Transform;

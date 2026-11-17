@@ -16,7 +16,10 @@ public sealed class RideData
     public bool EnableSwim;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
     public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump;
+    /// <summary>RideeData::Collision (@0x140783800): the box size, 100 each when absent (ctor @0x1407836e0), and whether the
+    /// mount carries the kinematic box (Ridee::MakeNxBoxController).</summary>
     public float Width = 100, Depth = 100, Height = 100;
+    public bool Physic;
 
     public static RideData Load(PackSet packs, int id)
     {
@@ -51,11 +54,23 @@ public sealed class RideData
             d.Width = F(c, "width", 100);
             d.Depth = F(c, "depth", 100);
             d.Height = F(c, "height", 100);
+            d.Physic = QueryBool((string)c.Attribute("physic"), false);
         }
         return d;
     }
 
     static string Or(string a, string b) => string.IsNullOrEmpty(a) ? b : a;
+
+    /// <summary>TiXmlElement::QueryBoolAttribute: StringEqual (a case-insensitive prefix test) on true / yes / 1 and
+    /// false / no / 0; anything else, or an empty value, leaves the default.</summary>
+    static bool QueryBool(string v, bool def)
+    {
+        if (string.IsNullOrEmpty(v)) return def;
+        bool Is(string tag) => v.StartsWith(tag, StringComparison.OrdinalIgnoreCase);
+        if (Is("true") || Is("yes") || Is("1")) return true;
+        if (Is("false") || Is("no") || Is("0")) return false;
+        return def;
+    }
 
     static float F(XElement e, string name, float def) =>
         float.TryParse((string)e.Attribute(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : def;

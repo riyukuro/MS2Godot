@@ -98,13 +98,16 @@ public sealed class Mount
 
 /// <summary>
 /// Riding: the rider sits in StateRide (0x21) on the mount's seat while the mount runs the movement states with the
-/// riding row's speeds (walkSpeed, runSpeed, swimSpeed in m/s) and its collision box. The jump height stays the rider's.
+/// riding row's speeds (walkSpeed, runSpeed, swimSpeed in m/s). The jump height stays the rider's.
+/// The mount (Ridee) is a PCBase with its own controller of the PC's size: Ridee::FUN_1417043a0 (@0x1417043a0) sets the
+/// model size to (25, 105) and PCBase::vfunc_10 creates the capsule from it, with collision group 2 and groups 0x399
+/// (Ridee::vfunc_10 @0x141704750), the same as PC::vfunc_10's. So the body keeps the player's capsule and controller.
+/// The row's &lt;collision&gt; box is not the mount's movement shape: with physic set it is a kinematic box other actors meet.
 /// </summary>
 public partial class Player
 {
     public Mount Mount { get; private set; }
-    Shape3D footShape;
-    Vector3 footShapePos;
+    AnimatableBody3D rideBox;
 
     /// <summary>RideOnAction: get on the mount (its visual takes the facing; the rider goes onto the seat).</summary>
     public void RideOn(Mount m)
@@ -114,12 +117,10 @@ public partial class Player
         Mount = m;
         AddChild(m.Visual);
         m.Visual.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
-        var col = GetNode<CollisionShape3D>("Collision");
-        footShape = col.Shape;
-        footShapePos = col.Position;
-        // the PhysX box of <collision width depth height>
-        col.Shape = new BoxShape3D { Size = new Vector3(m.Data.Width, m.Data.Height, m.Data.Depth) };
-        col.Position = new Vector3(0, m.Data.Height / 2, 0);
+        // Ridee::vfunc_10: the mount is placed at the rider's position raised by 25 (a rider on a breakable's marker goes to
+        // the breakable's top + 10 first), and takes the rider's hit-report entity, which the one body already has
+        GlobalPosition += Vector3.Up * 25f;
+        if (m.Data.Physic) MakeRideBox(m.Data);
         baseSpeed = RideSpeed();
         Enter(MoveState.Idle);
     }
@@ -130,12 +131,43 @@ public partial class Player
         RemoveChild(Mount.Visual);
         Mount.Visual.QueueFree();
         Mount = null;
-        var col = GetNode<CollisionShape3D>("Collision");
-        col.Shape = footShape;
-        col.Position = footShapePos;
+        ReleaseRideBox();
         Visual.Transform = new Transform3D(new Basis(Vector3.Up, Mathf.DegToRad(yawDeg)), Vector3.Zero);
         baseSpeed = MoveConfig.RunSpeed;
         Enter(MoveState.Idle);
+    }
+
+    /// <summary>
+    /// Ridee::MakeNxBoxController (@0x141707e60), only for &lt;collision physic="true"&gt;: a kinematic actor with one box shape
+    /// of half extents (width, depth, height) * 0.01 * 0.5 m, i.e. half the row's size in game units, in shape group 0.
+    /// </summary>
+    void MakeRideBox(RideData d)
+    {
+        rideBox = new AnimatableBody3D { Name = "RideBox", TopLevel = true, SyncToPhysics = false };
+        // NxBoxShapeDesc dimensions (x width, y depth, z height), Z-up: width along x, height up, depth along the facing
+        rideBox.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(d.Width, d.Height, d.Depth) } });
+        AddChild(rideBox);
+        PoseRideBox();
+        nx.IgnoreBody = rideBox.GetRid();
+    }
+
+    /// <summary>Ridee::FUN_1417082c0 (@0x1417082c0): the box actor is released.</summary>
+    void ReleaseRideBox()
+    {
+        if (rideBox == null) return;
+        nx.IgnoreBody = default;
+        RemoveChild(rideBox);
+        rideBox.QueueFree();
+        rideBox = null;
+    }
+
+    /// <summary>Ridee::vfunc_53 (@0x1417079f0) each frame: the box at the mount's position, its centre half its height plus
+    /// 0.2 m up, turned by the mount's Z rotation.</summary>
+    void PoseRideBox()
+    {
+        if (rideBox == null || Mount == null) return;
+        rideBox.GlobalTransform = new Transform3D(new Basis(Vector3.Up, Mathf.DegToRad(yawDeg)),
+            GlobalPosition + Vector3.Up * (Mount.Data.Height / 2 + 20f));
     }
 
     float RideSpeed() => Mount == null ? MoveConfig.RunSpeed

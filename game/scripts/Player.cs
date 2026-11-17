@@ -265,6 +265,7 @@ public partial class Player : CharacterBody3D
             Velocity = Vector3.Zero;
             Enter(MoveState.Idle);
         }
+        PoseRideBox();
     }
 
     /// <summary>Unk_PCMove::UpdateMoveDirection: releasing one key of a diagonal keeps the diagonal for 50 ms.</summary>
