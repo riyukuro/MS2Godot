@@ -105,6 +105,8 @@ public partial class LiveSession : Node
     {
         if (entry == null) return;
         remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
+        remote.Tracker.Profile = game.Profile;
+        field.TreeExiting += () => { remote = null; };   // the field is freed: its tracker stops filling Events
         GD.Print("live: remote layer ready");
     }
 
@@ -150,10 +152,9 @@ public partial class LiveSession : Node
         {
             if (game == null) return;
             var pk = new UserSyncOut { SyncNumber = syncNumber, ServerTick = game.Session.ServerTick, ClientTick = game.Session.ElapsedMs };   // state.cpp:491-493: GetServerTick, then GetElapsedTime
-            int t = pk.ClientTick;
-            foreach (var r in records) pk.Records.Add((r, t));
+            foreach (var r in records) pk.Records.Add(r);
             Send(pk);
-            var l = records[^1];
+            var l = records[^1].Record;
             GD.Print($"live: UserSync sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
         };
         player.StateChangeOut += (mode, arg, pos) =>
@@ -162,6 +163,7 @@ public partial class LiveSession : Node
             Send(new StateChange(mode, arg, game.Session.ServerTick, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));   // mypc.cpp:3661: GetServerTick
             GD.Print($"live: State sent, mode {mode} arg {arg}");
         };
+        player.ServerTick = () => game?.Session.ServerTick ?? 0;
     }
 
     public override void _Process(double delta)

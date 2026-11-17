@@ -50,8 +50,12 @@ public sealed class FieldTracker {
 
     public IReadOnlyList<Actor> Snapshot() { lock (gate) return actors.Values.Select(a => new Actor { ObjectId = a.ObjectId, Name = a.Name, Gender = a.Gender, IsSelf = a.IsSelf, Position = a.Position, YawDegrees = a.YawDegrees, Moves = a.Moves, Add = a.Add }).ToList(); }
 
+    /// <summary>The wire numbering the packets arrive in (the connection's profile).</summary>
+    public ProtocolProfile Profile = ProtocolProfile.Kms2525;
+
     public void Inbound(RawPacket p) {
-        switch ((Ms2.Net.Inbound) p.Opcode) {
+        if (!Profile.TryInbound(p.Opcode, out var op)) return;
+        switch (op) {
             case Ms2.Net.Inbound.ServerEnter: SelfObjectId = ServerEnter.Read(p.Reader()).ObjectId; break;
             case Ms2.Net.Inbound.RequestFieldEnter: {
                 var e = RequestFieldEnter.Read(p.Reader());
@@ -82,7 +86,7 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.FieldRemoveNpc:
             case Ms2.Net.Inbound.FieldDeadNpc: {
                 int id = NpcObjectId.Read(p.Reader()).ObjectId;
-                bool dead = p.Opcode == (ushort) Ms2.Net.Inbound.FieldDeadNpc;
+                bool dead = op == Ms2.Net.Inbound.FieldDeadNpc;
                 if (!dead) lock (gate) npcs.Remove(id);
                 Events.Enqueue(new NpcRemovedEvent(Time, id, dead));
                 break;

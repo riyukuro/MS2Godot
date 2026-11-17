@@ -28,7 +28,8 @@ public sealed class ClientSession {
 
     int serverTickBase, localTickBase, timeSyncSeq;
     /// <summary>True once the server has sent a time sync (SetServerTickBase has been called).</summary>
-    public bool HasServerTick { get; private set; }
+    volatile bool hasServerTick;   // written last by the net thread, after the two bases
+    public bool HasServerTick => hasServerTick;
 
     /// <summary>
     /// CMainSystem::GetServerTick (mainsystem.cpp:312): local tick - m_dwLocalTickBase + m_iServerTickBase. The base is set by
@@ -43,7 +44,7 @@ public sealed class ClientSession {
         if (cmd == 2) return true;
         if (cmd > 1) return false;
         int time = r.ReadInt();
-        serverTickBase = time; localTickBase = ElapsedMs; HasServerTick = true;
+        serverTickBase = time; localTickBase = ElapsedMs; hasServerTick = true;   // volatile write publishes the bases
         return cmd == 1;
     }
 
