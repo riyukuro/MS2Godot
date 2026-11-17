@@ -201,12 +201,38 @@ public partial class FieldContents : Node3D
     /// UILoadingProgress::StartProgress for a field move: the picture (or a screenshot when there is none), a random tip, and the
     /// keyboard guide for a low-level character (the sandbox's is level 1).
     /// </summary>
-    void ShowLoading(string image, string tip)
+    void ShowLoading(string image, string tip, Texture2D screenShot = null)
     {
         if (loading == null) return;
         var start = new LoadingProgressLogic.Start { Picture = image != null ? LoadPicture(image) : null, Tip = tip ?? "", ShowGuide = true };
-        if (start.Picture == null) start.ScreenShot = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+        if (start.Picture == null) start.ScreenShot = screenShot ?? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
         loading.StartProgress(start, GetViewport().GetVisibleRect().Size);
+    }
+
+    /// <summary>
+    /// The loading screen over a screenshot of this field, then <paramref name="then"/>. The client's screenshot is the scene
+    /// without the UI: UILoadingProgress::FUN_1419e07a0 copies GetScreenshotBuffer(1), the GFx manager's render buffer
+    /// (GFxManager::GetRenderBuffer), into its background texture when the movie asks for img://...:screenShot, and every
+    /// HUD, name tag and prompt is a GFx movie. Ours are canvas layers, so they are hidden for the one frame captured.
+    /// </summary>
+    void ShowLoadingOverField(string tip, Action then)
+    {
+        var hidden = new List<CanvasLayer>();
+        void Hide(Node n)
+        {
+            if (n is CanvasLayer c && c.Layer >= 0 && c.Visible) { c.Visible = false; hidden.Add(c); }
+            foreach (var ch in n.GetChildren()) Hide(ch);
+        }
+        Hide(GetTree().Root);
+        void Captured()
+        {
+            RenderingServer.FramePostDraw -= Captured;
+            var shot = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+            foreach (var c in hidden) if (IsInstanceValid(c)) c.Visible = true;
+            ShowLoading(null, tip, shot);
+            then();
+        }
+        RenderingServer.FramePostDraw += Captured;
     }
 
     Texture2D LoadPicture(string entry)
@@ -246,12 +272,16 @@ public partial class FieldContents : Node3D
         }
         moving = true;
         talk?.End();
-        Travel.LoadingImage = new LoadingImageTable(packs).Pick(p.TargetField, new Random());
+        // UILoadingProgress::GetLoadingImagePath: a picture of the target map, or a screenshot of this field (see PickForMove)
+        Travel.LoadingImage = new LoadingImageTable(packs).PickForMove(p.TargetField, fieldId, new Random());
         Travel.LoadingTip = PickTip();
-        GD.Print($"portal {p.Id} ({p.Entity.Name}) -> field {p.TargetField} {xblock} portal {p.TargetPortal}, loading picture {Travel.LoadingImage}");
+        GD.Print($"portal {p.Id} ({p.Entity.Name}) -> field {p.TargetField} {xblock} portal {p.TargetPortal}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
         // the loading screen comes up at once at 0%; the load starts once it has been drawn
-        ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
-        GetTree().CreateTimer(0.15).Timeout += () =>
+        if (Travel.LoadingImage != null) { ShowLoading(Travel.LoadingImage, Travel.LoadingTip); Go(); }
+        else ShowLoadingOverField(Travel.LoadingTip, Go);
+        return true;
+
+        void Go() => GetTree().CreateTimer(0.15).Timeout += () =>
         {
             if (shotDir != null) Shot("loading.png");
             Travel.Pending = new Travel.Move(p.TargetField, xblock, p.TargetPortal, fieldId);
@@ -267,7 +297,6 @@ public partial class FieldContents : Node3D
             }
             GetTree().ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
         };
-        return true;
     }
 
     public override void _Process(double delta)
