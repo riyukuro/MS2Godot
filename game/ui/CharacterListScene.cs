@@ -18,6 +18,8 @@ public partial class CharacterListScene : Control
     string shotDir;
     int frames;
 
+    public override void _EnterTree() => LobbyLayout.UseWindowPixels(this);
+
     public override void _Ready()
     {
         var args = OS.GetCmdlineUserArgs();
@@ -27,15 +29,14 @@ public partial class CharacterListScene : Control
         if (string.IsNullOrEmpty(data)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         RenderingServer.SetDefaultClearColor(clear);
         assets = new UiAssets(new PackSet(data));
-        var size = GetViewportRect().Size;
-        float s = size.Y / 1200f;
+        var window = GetViewportRect().Size;    // window pixels (LobbyLayout.UseWindowPixels)
+        float u = UiScale.For(window);
 
         var movie = new UiMovie(assets, UICharacterListDialogContract.Movie);
-        root = movie.BuildRoot(s);
-        root.Scale = new Vector2(s, s);
-        // the dialog is aligned to the right edge of the 1920 wide design space, top aligned
-        root.Position = new Vector2(size.X - 1920f * s, -35f);
+        root = movie.BuildRoot(u);
+        root.Scale = new Vector2(u, u);
         UiWidgets.ApplyInspector(root, UICharacterListDialogContract.Inspector);
+        LobbyLayout.AlignCharacterList(root, UiScale.MovieStage(window), u);
         var dlg = root.Children.First(c => c.Node is MovieClipNode).Node as MovieClipNode;
         dlg.GotoLabel("popup");
         AddChild(root);

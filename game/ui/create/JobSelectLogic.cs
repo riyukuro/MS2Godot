@@ -54,24 +54,27 @@ public sealed class JobSelectLogic
     /// <paramref name="scale"/> pixels per stage unit (root at the screen origin): m_content (its m_size box, 2400 x 1200)
     /// is centred, m_fullBg covers the whole screen and m_prev sits at the bottom left corner.
     /// </summary>
-    public void Align(Vector2 screen, float scale)
+    /// <summary>
+    /// CharacterCreateSelect.alignment on a stage of <paramref name="stage"/> units, the dialog scaled by the lobby ratio
+    /// <paramref name="r"/> (applyScale): m_content centred on the stage, m_fullBg from the stage origin over the stage plus 2,
+    /// and btnsAlignment(m_prev, getUIScale, m_prev.height, globalToLocal(0, stageHeight)) at the bottom left. All in the
+    /// dialog's units (stage / r).
+    /// </summary>
+    public void Align(Vector2 stage, float r)
     {
-        var stage = screen / scale;
-        const float SizeW = 2400, SizeH = 1200;     // m_size: 240 x 120 at scale 10
+        var inDialog = stage / r;
+        const float SizeW = 2400, SizeH = 1200;     // m_content.getSize(): m_size, 240 x 120 at scale 10
         if (root.ChildNamed(C.Instances.M_content) is { } c)
-            c.Override = new Transform2D(0, new Vector2((stage.X - SizeW) / 2, (stage.Y - SizeH) / 2));
+            c.Override = new Transform2D(0, new Vector2((inDialog.X - SizeW) / 2, (inDialog.Y - SizeH) / 2));
         if (root.ChildNamed(C.Instances.M_fullBg) is { } bg && bg.Node is MovieClipNode bgClip)
         {
             var b = bgClip.Bounds;
             float w = b.Size.X > 0 ? b.Size.X : 1922.073f, h = b.Size.Y > 0 ? b.Size.Y : 1082.034f;
-            bg.Override = new Transform2D(new Vector2((stage.X + 2) / w, 0), new Vector2(0, (stage.Y + 2) / h), new Vector2(-1, -1));
+            // globalToLocal(0, 0) is the dialog's origin; width (stageWidth + 2) / actualScaleX, height likewise
+            bg.Override = new Transform2D(new Vector2((stage.X + 2) / r / w, 0), new Vector2(0, (stage.Y + 2) / r / h), Vector2.Zero);
         }
         if (root.ChildNamed("m_prev") is { } prev && prev.Node is MovieClipNode prevClip)
-        {
-            // btnsAlignment: the button's bottom left at the stage's bottom left, 20 in
-            float ph = prevClip.Bounds.Size.Y > 0 ? prevClip.Bounds.End.Y : 70;
-            prev.Override = new Transform2D(0, new Vector2(20, stage.Y - 20 - ph));
-        }
+            prev.Override = new Transform2D(0, LobbyLayout.BtnsAlignment(new Vector2(0, inDialog.Y), prevClip.Bounds.Size.Y, stage));
         foreach (var clip in root.AllClips()) clip.GotoFrame(clip.Frame);
         SizePlayer();
     }

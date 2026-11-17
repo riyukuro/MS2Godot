@@ -54,7 +54,7 @@ public partial class CharacterCreateScene : Field
     public static void CreateFailed(string message) => current?.custom?.ShowCreateError(message);
 
     static CharacterCreateScene current;
-    public override void _EnterTree() { base._EnterTree(); current = this; }
+    public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); current = this; }
     public override void _ExitTree() { if (current == this) current = null; base._ExitTree(); }
 
     PackSet uiPacks;
@@ -133,26 +133,26 @@ public partial class CharacterCreateScene : Field
         GD.Print($"camera {e.Name}: eye {eye} dir {dir.Normalized()} fov {camera.Fov}");
     }
 
-    /// <summary>
-    /// Pixels per stage unit of the lobby dialogs. The restored client at 1280 x 720 draws the job page and the character
-    /// list at 0.694 (measured on its job pick: six 177 wide tabs span 737 pixels), the height over 1037.5 stage units.
-    /// </summary>
-    static float LobbyScale(Vector2 screen) => screen.Y / 1037.5f;
+    /// <summary>The window in pixels (LobbyLayout.UseWindowPixels), its UI scale and movie stage (LobbyLayout).</summary>
+    (Vector2 Window, float U, Vector2 Stage) Screen()
+    {
+        var window = GetViewport().GetVisibleRect().Size;
+        return (window, UiScale.For(window), UiScale.MovieStage(window));
+    }
 
     // ---- job pick ----
 
     void BuildSelect()
     {
-        var size = GetViewport().GetVisibleRect().Size;
+        var (_, u, stage) = Screen();
         // the character list stays behind, dimmed by the job page's m_fullBg
         try
         {
-            float ls = LobbyScale(size);
             var listMovie = new UiMovie(assets, UICharacterListDialogContract.Movie);
-            listRoot = listMovie.BuildRoot(ls);
-            listRoot.Scale = new Vector2(ls, ls);
-            listRoot.Position = new Vector2(size.X - 1920f * ls, -35f * ls / (size.Y / 1200f));
+            listRoot = listMovie.BuildRoot(u);
+            listRoot.Scale = new Vector2(u, u);
             UiWidgets.ApplyInspector(listRoot, UICharacterListDialogContract.Inspector);
+            LobbyLayout.AlignCharacterList(listRoot, stage, u);
             (listRoot.Children.First(c => c.Node is MovieClipNode).Node as MovieClipNode)?.GotoLabel("popup");
             layer.AddChild(listRoot);
             var list = new CharacterListLogic(listMovie, listRoot);
@@ -164,16 +164,17 @@ public partial class CharacterCreateScene : Field
         }
         catch (Exception ex) { GD.PushWarning("character list: " + ex.Message); }
 
-        float s = LobbyScale(size);
         var movie = new UiMovie(assets, UICharacterCreateSelectDialogContract.Movie);
-        selectRoot = movie.BuildRoot(s);
-        selectRoot.Scale = new Vector2(s, s);
-        selectRoot.Position = Vector2.Zero;
+        selectRoot = movie.BuildRoot(u);
+        // CharacterCreateSelect.alignment: applyScale -> LobbyDialog.applyScale (getLobbyRatioY); the dialog stays at the
+        // stage origin, its content is centred inside it (JobSelectLogic.Align)
+        float r = LobbyLayout.LobbyRatio(stage);
+        LobbyLayout.Place(selectRoot, Vector2.Zero, u, r);
         UiWidgets.ApplyInspector(selectRoot, UICharacterCreateSelectDialogContract.Inspector);
         layer.AddChild(selectRoot);
         jobs = new JobSelectLogic(movie, selectRoot, tables, uiPacks);
         jobs.InitData(job);
-        jobs.Align(size, s);
+        jobs.Align(stage, r);
         jobs.Create += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
         jobs.Prev += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
         mouse = new UiWidgets.MouseRouter(selectRoot);
@@ -183,11 +184,10 @@ public partial class CharacterCreateScene : Field
 
     void BuildCreate()
     {
-        var size = GetViewport().GetVisibleRect().Size;
-        float s = LobbyScale(size);
+        var (_, u, stage) = Screen();
         var movie = new UiMovie(assets, UICharacterCreateDialogContract.Movie);
-        createRoot = movie.BuildRoot(s);
-        createRoot.Scale = new Vector2(s, s);
+        createRoot = movie.BuildRoot(u);
+        createRoot.Scale = new Vector2(u, u);
         UiWidgets.ApplyInspector(createRoot, UICharacterCreateDialogContract.Inspector);
         layer.AddChild(createRoot);
         // the add-blend sparkles (m_eff, the title strips) draw as black boxes without blend modes: leave them out
@@ -198,17 +198,15 @@ public partial class CharacterCreateScene : Field
                 if (ch.Def?["blend"] is { } b && (int)b == 8) { ch.Last = -1; any = true; }
             if (any) clip.GotoFrame(clip.Frame);
         }
-        // CharacterCreateDialog.alignment: m_bg at the centre right of the screen
-        var bg = createRoot.FindClip("m_content.m_bg")?.GlobalBounds();
-        createRoot.Position = bg is { } r && r.Size.X > 0
-            ? new Vector2(size.X - r.End.X, (size.Y - r.Size.Y) / 2 - r.Position.Y)
-            : new Vector2(size.X - 1920f * s, 0);
-        // btnsAlignment: the guide button at the screen's bottom left, 20 in
-        if (createRoot.ChildNamed("m_guide") is { } guide && guide.Node is MovieClipNode guideClip && guideClip.GetParent() is Node2D guideParent)
+        // CharacterCreateDialog.alignment: the dialog at the centre right for m_bg (applyScale(m_bg)), then
+        // btnsAlignment(m_guide, getUIScale, m_guide.height, globalToLocal(0, stageHeight)): the guide button at the
+        // stage's bottom left
+        float guideH = createRoot.FindClip("m_guide") is { } g ? LobbyLayout.SizeInDialog(g, createRoot.Scale.X).Y : 0;
+        var (at, r) = LobbyLayout.CenterRightOfBg(createRoot, createRoot.FindClip("m_content.m_bg"), stage, u);
+        if (createRoot.ChildNamed("m_guide") is { } guide)
         {
-            var local = guideParent.GetGlobalTransform().AffineInverse() * new Vector2(20 * s, size.Y - 20 * s);
-            guide.Override = new Transform2D(0, local - new Vector2(0, guideClip.Bounds.End.Y));
-            (guideParent as MovieClipNode)?.GotoFrame((guideParent as MovieClipNode).Frame);
+            guide.Override = new Transform2D(0, LobbyLayout.BtnsAlignment(LobbyLayout.StageBottomLeftInDialog(at, r, stage), guideH, stage));
+            createRoot.GotoFrame(createRoot.Frame);
         }
         var look = new CreateLook(packs, new ColorPalettes(packs));
         custom = new CharacterCreateLogic(movie, createRoot, look);

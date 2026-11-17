@@ -19,6 +19,8 @@ public partial class LoginScene : Control
     int frames;
     int stage;
 
+    public override void _EnterTree() => LobbyLayout.UseWindowPixels(this);
+
     public override void _Ready()
     {
         var args = OS.GetCmdlineUserArgs();
@@ -28,19 +30,25 @@ public partial class LoginScene : Control
         if (string.IsNullOrEmpty(data)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
 
         assets = new UiAssets(new PackSet(data));
-        var size = GetViewportRect().Size;
-        float uiScale = size.Y / 1024f;     // what Common.getUIScale gave in the restored client's 1280x720 shot (dialog 292 px wide)
+        var window = GetViewportRect().Size;    // window pixels (LobbyLayout.UseWindowPixels)
+        float u = UiScale.For(window);
+        var stage = UiScale.MovieStage(window);
         RenderingServer.SetDefaultClearColor(clear);
 
         var movie = new UiMovie(assets, UILoginDialogContract.Movie);
-        dialogRoot = movie.BuildRoot(uiScale);
-        dialogRoot.Scale = new Vector2(uiScale, uiScale);
+        dialogRoot = movie.BuildRoot(u);
+        dialogRoot.Scale = new Vector2(u, u);
         UiWidgets.ApplyInspector(dialogRoot, UILoginDialogContract.Inspector);
-        // movie.alignment(): ALIGN_BOTTOMCENTER of the dialog's bounds (the restored client's shot has the panel 10 px above the bottom edge)
-        var dlg = dialogRoot.Children.First(c => c.Node is MovieClipNode).Node as MovieClipNode;
+        var dlg = (MovieClipNode)LobbyLayout.Dialog(dialogRoot).Node;   // login_dialog: the LoginDialog
         dlg.GotoFrame(8);                       // the last frame of the "popup" animation (played below unless taking shots)
-        var bounds = dlg.GlobalBounds();        // canvas rect with the root at the origin
-        dialogRoot.Position = new Vector2((size.X - bounds.Size.X) / 2 - bounds.Position.X, size.Y - bounds.End.Y);
+        // LoginDialog.alignment: no applyScale (CommonPath.flash is false, set by Main.addedToStage), so the dialog is drawn
+        // at the UI scale only. Its place is Align.alignment(this, ALIGN_BOTTOMCENTER, 0, round(-39 * getUIScale)) on this's
+        // runtime width / height; our symbol bounds (-60.9, -26.6, 460 x 237.6) are a union over the timeline and put the
+        // panel 43 px left of centre with that rule, where the restored client centres it about 10 px above the bottom edge.
+        // Until the runtime bounds are known, the bounds are centred and their bottom put on the stage's bottom, which
+        // gives the restored client's place.
+        var b = dlg.Bounds;
+        LobbyLayout.Place(dialogRoot, new Vector2((stage.X - b.Size.X) * 0.5f - b.Position.X, stage.Y - b.End.Y), u);
         AddChild(dialogRoot);
         if (shotDir == null) dlg.PlayRange(0, 8);
 
