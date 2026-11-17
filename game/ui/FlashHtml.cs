@@ -4,31 +4,49 @@ using Godot;
 namespace Ms2Godot.Ui;
 
 /// <summary>
-/// A Flash text field's htmlText as a TextNode shows it (TextNode.SetHtml): the text without its markup and the colour of
-/// each code point. The game's strings mark colour with FONT color, which nests (a closing FONT goes back to the colour
-/// around it), and break lines with BR. Entities are decoded. The other tags (B, I, U, FONT size, P, A, IMG, LI,
-/// TEXTFORMAT) are dropped and their text is kept, in the field's own face. A string with no tag and no entity is the
-/// text itself.
+/// One code point's text format from htmlText: its FONT colour (null: the field's own), bold, italic and underline, and its
+/// FONT size (null: the field's own).
+/// </summary>
+public readonly record struct GlyphStyle(Color? Color, bool Bold, bool Italic, bool Underline, float? Size)
+{
+    public bool IsPlain => Color == null && !Bold && !Italic && !Underline && Size == null;
+}
+
+/// <summary>
+/// A Flash text field's htmlText as a TextNode shows it (TextNode.SetHtml), parsed the way Scaleform's StyledText::ParseHtml
+/// does it (sfr_render_05i.cpp): the text without its markup and each code point's text format.
+/// <list type="bullet">
+/// <item>Every element but the empty ones (BR, SBR, TAB) opens a stack entry holding the format around it. B, I and U set
+/// bold, italic and underline; FONT sets COLOR (#RRGGBB) and SIZE (a whole number, 0 or more). An end tag closes the top
+/// entry when the names match and is ignored otherwise, except that an unmatched end P or LI closes everything up to its
+/// own element.</item>
+/// <item>BR is a line break in a multiline field only; TAB is a tab.</item>
+/// <item>In a multiline field a P opened while another P is open starts a new line, an LI starts one unless its paragraph is
+/// still empty, and the end of a P (not an empty P element) or of an LI ends the line.</item>
+/// <item>Entities are decoded.</item>
+/// </list>
+/// The game's strings write a line break as a literal backslash-n; it is a line break here as in the strings the client
+/// shows. A string with no tag and no entity is the text itself.
 /// </summary>
 public static class FlashHtml
 {
-    /// <summary>
-    /// The text and, per code point, the FONT colour it is in (null: the field's own colour). The game's strings write a
-    /// line break as a literal backslash-n; it is a line break here as in the strings the client shows.
-    /// </summary>
-    public static (string Text, Color?[] Colors) Parse(string html)
+    /// <summary>The text and, per code point, the text format it is in.</summary>
+    public static (string Text, GlyphStyle[] Styles) Parse(string html, bool multiline = true)
     {
         html = (html ?? "").Replace("\\n", "\n");
         var text = new StringBuilder(html.Length);
-        var colors = new List<Color?>(html.Length);
-        var fonts = new Stack<Color?>();
-        Color? current = null;
+        var styles = new List<GlyphStyle>(html.Length);
+        var stack = new List<(string Name, GlyphStyle Around)>();
+        var current = default(GlyphStyle);
+        int openP = 0;
         void Add(char c)
         {
             if (char.IsLowSurrogate(c) && text.Length > 0 && char.IsHighSurrogate(text[^1])) { text.Append(c); return; }
             text.Append(c);
-            colors.Add(current);
+            styles.Add(current);
         }
+        void NewLine() { if (multiline) Add('\n'); }
+        bool ParagraphEmpty() => text.Length == 0 || text[^1] == '\n';
         for (int i = 0; i < html.Length; i++)
         {
             char c = html[i];
@@ -46,7 +64,7 @@ public static class FlashHtml
             }
             Add(c);
         }
-        return (text.ToString(), colors.ToArray());
+        return (text.ToString(), styles.ToArray());
 
         void Tag(string body)
         {
@@ -55,30 +73,68 @@ public static class FlashHtml
             int n = 0;
             while (n < rest.Length && char.IsLetter(rest[n])) n++;
             string name = rest[..n].ToUpperInvariant();
-            if (name == "FONT")
+            bool selfClosing = !closing && rest.TrimEnd().EndsWith('/');
+            if (closing) { End(name, false); return; }
+            switch (name)
             {
-                if (closing) current = fonts.Count > 0 ? fonts.Pop() : null;
-                else { fonts.Push(current); current = Attribute(rest[n..], "color") is { } hex && ParseHex(hex) is Color col ? col : current; }
+                case "BR": case "SBR": NewLine(); return;
+                case "TAB": Add('\t'); return;
             }
-            else if (!closing && (name == "BR" || name == "SBR")) Add('\n');
+            stack.Add((name, current));
+            switch (name)
+            {
+                case "B": current = current with { Bold = true }; break;
+                case "I": current = current with { Italic = true }; break;
+                case "U": current = current with { Underline = true }; break;
+                case "FONT":
+                    if (Attribute(rest[n..], "color") is { } hex && ParseHex(hex) is Color col) current = current with { Color = col };
+                    if (Attribute(rest[n..], "size") is { } sz && int.TryParse(sz.Trim(), out int size) && size >= 0) current = current with { Size = size };
+                    break;
+                case "P":
+                    if (openP > 0) NewLine();                               // a P inside an open P starts a paragraph
+                    openP++;
+                    break;
+                case "LI":
+                    if (!ParagraphEmpty()) NewLine();
+                    break;
+            }
+            if (selfClosing) End(name, true);
+        }
+
+        // SGMLPS_END_ELEMENT / SGMLPS_EMPTY_ELEMENT_FINISHED
+        void End(string name, bool emptyElement)
+        {
+            if (stack.Count == 0) return;
+            if (stack[^1].Name != name)
+            {
+                if (!((name == "P" || name == "LI") && openP > 0)) return;     // a mismatched end tag is ignored
+                while (stack.Count > 0 && stack[^1].Name != name) stack.RemoveAt(stack.Count - 1);
+                if (stack.Count == 0) return;
+            }
+            current = stack[^1].Around;
+            stack.RemoveAt(stack.Count - 1);
+            if (name == "P") { openP--; if (!emptyElement) NewLine(); }   // an empty P element makes no paragraph
+            else if (name == "LI") NewLine();
         }
     }
 
-    /// <summary>The text with its markup taken out (Parse without the colours).</summary>
-    public static string Plain(string html) => Parse(html).Text;
+    /// <summary>The text with its markup taken out (Parse without the formats).</summary>
+    public static string Plain(string html, bool multiline = true) => Parse(html, multiline).Text;
 
     static string Attribute(string attrs, string name)
     {
-        var m = System.Text.RegularExpressions.Regex.Match(attrs, "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+))",
+        var m = System.Text.RegularExpressions.Regex.Match(attrs, "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>/]+))",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if (!m.Success) return null;
         return m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
     }
 
+    /// <summary>COLOR="#RRGGBB" (the client parses the colour only after a '#').</summary>
     static Color? ParseHex(string hex)
     {
         hex = hex.Trim();
-        if (hex.StartsWith('#')) hex = hex[1..];
+        if (!hex.StartsWith('#')) return null;
+        hex = hex[1..];
         if (hex.Length != 6 || !uint.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out uint rgb)) return null;
         return Color.Color8((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
     }

@@ -90,11 +90,13 @@ public partial class GlyphShadow : Node2D
             }
             if (index != 0)
             {
-                var e = Get((Rid)g["font_rid"], ramp, index, rb, strength);
+                var style = text.StyleAt(first + start);
+                var (frid, shift) = FauxStyle.Font(font, (Rid)g["font_rid"], style.Bold, style.Italic, fontSize, text.DescentRatio * fontSize);
+                var e = Get(frid, ramp, index, rb, strength);
                 if (e.Texture != null)
                 {
                     var o = (Vector2)g["offset"];
-                    var at = new Vector2(pen + dx + o.X, MathF.Floor(baseline + o.Y)) + e.Origin * k + offset;
+                    var at = new Vector2(pen + dx + o.X, MathF.Floor(baseline + o.Y)) + shift + e.Origin * k + offset;
                     DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
                     drawn.Add(e.Texture);
                 }

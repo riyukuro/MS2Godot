@@ -199,6 +199,7 @@ public partial class TextNode : Node2D
         if (nine != null) Bounds = nine.Map(Bounds);
         var font = scope.Assets.FontFor((string)Def["fontClass"]);
         lineRatios = scope.Assets.LineRatios((string)Def["fontClass"]);
+        DescentRatio = lineRatios.Height - scope.Assets.AscentRatio((string)Def["fontClass"]);
         float size = UiBuilder.F(Def["size"], 12);
         float asx = (float)sx, asy = (float)sy;
         // Scaleform's glyph cache rasterizes plain text (no readability AA) once at a ramp size and draws that raster scaled
@@ -266,7 +267,7 @@ public partial class TextNode : Node2D
         int lines = exact ? Label.GetLineCount() : 0;
         bool plainFace = ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
         bool perLine = lines > 1 && plainFace;
-        colored = runColors != null && plainFace;
+        colored = runStyles != null && plainFace;
         lineDx.Clear();
         if (exact && lines == 1)
         {
@@ -371,25 +372,35 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => Label.Text; set { runColors = null; Label.Text = value ?? ""; } }
+    public string Text { get => Label.Text; set { runStyles = null; Label.Text = value ?? ""; } }
 
     /// <summary>
-    /// AS3 htmlText = <paramref name="html"/>: the text without its markup (FlashHtml), each run in its FONT colour. The label
-    /// lays the text out as it does plain text; LineFace draws its glyphs in their colours.
+    /// AS3 htmlText = <paramref name="html"/>: the text without its markup (FlashHtml, with the field's multiline flag), each
+    /// run in its text format. The label lays the text out as it does plain text, in the field's size (a FONT size is parsed
+    /// but not laid out); LineFace draws its glyphs in their colours, bold, italic and underline.
     /// </summary>
     public void SetHtml(string html)
     {
-        var (text, colors) = FlashHtml.Parse(html);
-        runColors = Array.Exists(colors, c => c != null) ? colors : null;
+        var (text, styles) = FlashHtml.Parse(html, Def?["multiline"] is JsonNode ml ? (bool)ml : true);
+        runStyles = Array.Exists(styles, s => !s.IsPlain) ? styles : null;
         Label.Text = text;
         Label.QueueRedraw();
     }
 
-    Color?[] runColors;
+    GlyphStyle[] runStyles;
+
+    /// <summary>The text format of the code point at <paramref name="index"/> (the field's own when it has none).</summary>
+    public GlyphStyle StyleAt(int index) =>
+        runStyles != null && index >= 0 && index < runStyles.Length ? runStyles[index] : default;
 
     /// <summary>The colour LineFace draws the code point at <paramref name="index"/> in: its FONT colour, else the field's.</summary>
-    public Color GlyphColor(int index) =>
-        runColors != null && index >= 0 && index < runColors.Length && runColors[index] is Color c ? c : Label.LabelSettings.FontColor;
+    public Color GlyphColor(int index) => StyleAt(index).Color ?? Label.LabelSettings.FontColor;
+
+    /// <summary>
+    /// The font's descent per pixel of font size (DefineFont layout: the line height less the ascent), the faux italic pivot and
+    /// the underline offset (LineFace).
+    /// </summary>
+    public float DescentRatio;
 
     /// <summary>Width of the current text in the field's own units (AS3 textWidth).</summary>
     public float TextWidth => Label.LabelSettings.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, Label.LabelSettings.FontSize).X * Label.Scale.X;
