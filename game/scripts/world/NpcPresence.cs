@@ -16,7 +16,7 @@ public sealed partial class NpcPresence : CanvasLayer
 {
     const float HideDistance = 1500, OpaqueDistance = 700;
 
-    sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; }
+    sealed class Tag { public FieldNpcs.Placed Npc; public MovieClipNode Node; public Vector2 Size; public Vector3 Root, Head; public bool On; }
 
     readonly List<Tag> tags = new();
     readonly ClientConstants constants;
@@ -80,21 +80,34 @@ public sealed partial class NpcPresence : CanvasLayer
             }
     }
 
+    // The range and facing test (and the fade) are re-evaluated a few times a second; a tag in range only follows its head
+    // on screen every frame. An npc's position is read once per refresh instead of every frame.
+    int frame;
+    const int RefreshEvery = 4;
+
     public override void _Process(double delta)
     {
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
-        var eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
+        bool refresh = frame++ % RefreshEvery == 0;
+        Vector3 eye = default;
+        if (refresh) eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
         foreach (var t in tags)
         {
-            var head = t.Npc.Root.GlobalPosition + new Vector3(0, t.Npc.Height + tagOffset, 0);
-            float d = eye.DistanceTo(t.Npc.Root.GlobalPosition);
-            bool on = d <= HideDistance && !camera.IsPositionBehind(head);
-            t.Node.Visible = on;
-            if (!on) continue;
-            t.Node.Position = camera.UnprojectPosition(head).Round();
-            float alpha = d <= OpaqueDistance ? 1f : ((HideDistance - d) * 0.05f + 40f) / 100f;
-            t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
+            if (refresh)
+            {
+                t.Root = t.Npc.Root.GlobalPosition;
+                t.Head = t.Root + new Vector3(0, t.Npc.Height + tagOffset, 0);
+                float d = eye.DistanceTo(t.Root);
+                bool on = d <= HideDistance && !camera.IsPositionBehind(t.Head);
+                if (on != t.On) { t.On = on; t.Node.Visible = on; }
+                if (on)
+                {
+                    float alpha = d <= OpaqueDistance ? 1f : ((HideDistance - d) * 0.05f + 40f) / 100f;
+                    t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
+                }
+            }
+            if (t.On) t.Node.Position = camera.UnprojectPosition(t.Head).Round();
         }
     }
 }
