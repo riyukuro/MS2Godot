@@ -129,7 +129,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
             (listRoot.Children.First(c => c.Node is MovieClipNode).Node as MovieClipNode)?.GotoLabel("popup");
             layer.AddChild(listRoot);
             var list = new CharacterListLogic(listMovie, listRoot);
-            list.BuildCharacterList(Array.Empty<Ms2.Net.Packets.CharacterEntry>(), 0, 6);
+            list.BuildCharacterList(Array.Empty<Ms2.Net.Packets.CharacterEntry>(), 0, 6, new LobbyCharacterData(packs, assets.Language), assets.ImageFile);
             listRoot.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_serverName", "Bigleaf  CH.1");
             listRoot.FindClip(UICharacterListDialogContract.Instances.M_title)?.SetText(assets.Str("$s_charselect_title"));
             foreach (var name in new[] { UICharacterListDialogContract.Instances.M_healthGameCN, UICharacterListDialogContract.Instances.M_characterCraeteShutdownCN, UICharacterListDialogContract.Instances.M_burningEventDescBtn })

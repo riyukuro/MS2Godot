@@ -108,7 +108,7 @@ public partial class GameFlow : Node
         }
         else if (Current == State.Lobby && movie == UICharacterListDialogContract.Movie)
         {
-            if (method == UICharacterListDialogContract.ToHost.OnSelectCharacter && a.Length > 0) Session.SelectedIndex = Convert.ToInt32(a[0]);
+            if (method == UICharacterListDialogContract.ToHost.OnSelectCharacter) { }   // the character select scene keeps Session.SelectedIndex
             else if (method == UICharacterListDialogContract.ToHost.OnCreatePC) Go(State.Create);
             else if (method == UICharacterListDialogContract.ToHost.OnGameStart && a.Length > 0)
             {
@@ -129,7 +129,14 @@ public partial class GameFlow : Node
     void OnCreated(CreateCharacter request, byte[] bytes)
     {
         if (Current != State.Create) return;
-        var e = Session.Add(request);
+        int subJob1 = 0;
+        try
+        {
+            using var packs = new PackSet(Settings.DataDir);
+            subJob1 = new Ui.Create.CreateTables(packs).SubJob1(request.JobGroup);
+        }
+        catch (Exception ex) { GD.PushWarning("flow create: " + ex.Message); }
+        var e = Session.Add(request, subJob1);
         Session.SelectedIndex = Session.List().IndexOf(e);
         Go(State.Lobby);
     }
@@ -235,6 +242,7 @@ public partial class GameFlow : Node
         Input.ParseInputEvent(new InputEventKey { Keycode = k, PhysicalKeycode = k, Pressed = false });
     }
     bool InScene(string path) => GetTree().CurrentScene?.SceneFilePath == path;
+    Task LobbyReady() => Until(() => GetTree().CurrentScene is Ui.CharacterListScene { ListReady: true });
 
     async Task Script()
     {
@@ -243,15 +251,15 @@ public partial class GameFlow : Node
         UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);     // the Login button
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("02_charselect.png");
-        for (int i = 0; i < 3; i++) { Press(Godot.Key.Down); await Frames(5); }                      // the empty slot
+        for (int i = 0; i < 3; i++) { Press(Godot.Key.Down); await Frames(5); await LobbyReady(); }   // the empty slot (another job's lobby map reloads the scene)
         Shot("03_charselect_empty_slot.png");
         Press(Godot.Key.Enter);
         await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(180);
         Shot("04_create.png");
         ClickJobBack();                                                                               // the job page's back button
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(60);
-        for (int i = 0; i < 3; i++) { Press(Godot.Key.Down); await Frames(5); }
-        Press(Godot.Key.Enter);                                                                       // the empty slot again
+        await LobbyReady();
+        Press(Godot.Key.Enter);                                                                       // the empty slot, still selected
         await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(120);
         OnCreated(new CreateCharacter(0, 20, "Neutral", 0, 0, Array.Empty<byte>(), 0), Array.Empty<byte>());   // stands in for a confirmed name (the event is raised inside the create scene)
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
@@ -266,7 +274,7 @@ public partial class GameFlow : Node
         menu.BackButton.EmitSignal(BaseButton.SignalName.Pressed);
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("09_back_at_charselect.png");
-        Press(Godot.Key.Up); await Frames(5); Press(Godot.Key.Enter);
+        Press(Godot.Key.Up); await Frames(5); await LobbyReady(); Press(Godot.Key.Enter);
         await Until(() => Current == State.Game); await Frames(240);
         Shot("10_field_second_entry.png");
         Press(Godot.Key.Escape); await Frames(10);

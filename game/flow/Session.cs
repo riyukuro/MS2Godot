@@ -27,20 +27,30 @@ public static class Session
         job = Chosen.User.JobCode;
     }
 
+    static Rgba Color(int argb) => new((byte)argb, (byte)(argb >> 8), (byte)(argb >> 16), (byte)(argb >> 24));
+
     /// <summary>The list the character select shows.</summary>
     public static List<CharacterEntry> List() => Characters ??= StubCharacterList.Build();
 
-    /// <summary>A new character from a create request, in the first free slot.</summary>
-    public static CharacterEntry Add(CreateCharacter r)
+    /// <summary>
+    /// A new character from a create request, in the first free slot: the job group it asked for, and as its job the group's
+    /// first job (table/job.xml subJob1, as the create preview uses JobTable::GetSubJob1; <paramref name="subJob1"/>).
+    /// </summary>
+    public static CharacterEntry Add(CreateCharacter r, int subJob1 = 0)
     {
         var e = new CharacterEntry
         {
             User = new UserBlock
             {
-                CharacterId = 2000 + List().Count, Name = r.Name, Level = 1, Job = r.JobGroup, JobCode = r.JobGroup,
+                CharacterId = 2000 + List().Count, Name = r.Name, Level = 1, Job = subJob1, JobCode = r.JobGroup,
                 MapA = 02000001, Gender = r.Gender, CreationTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Skin = new SkinColor(Color(r.Color0), Color(r.Color1)),
             },
         };
+        // the look the player made: the request's items, as the list entry's equips
+        if (r.Items is { Length: > 0 })
+            foreach (var it in CreateCharacter.DecodeItems(r.Items))
+                e.Equips.Add(new EquipItem { Id = it.Id, Slot = it.Slot, Color = it.Color, Appearance = it.Appearance ?? Array.Empty<float>() });
         List().Add(e);
         return e;
     }

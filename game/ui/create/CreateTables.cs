@@ -111,6 +111,13 @@ public sealed class CreateTables
     /// <summary>LobbyFieldTable::GetSelectMap (job 0 counts as 1).</summary>
     public int SelectMap(int jobCode) => selectMap.TryGetValue(jobCode == 0 ? 1 : jobCode, out int m) ? m : selectMap.GetValueOrDefault(1);
 
+    /// <summary>JobTable::GetSubJob1: table/job.xml subJob1 of the job group (0 when the table has none).</summary>
+    public int SubJob1(int jobGroup)
+    {
+        var job = Xml("table/job.xml")?.Root.Descendants("job").FirstOrDefault(j => (string)j.Attribute("jobGroupID") == jobGroup.ToString(CultureInfo.InvariantCulture));
+        return int.TryParse((string)job?.Attribute("subJob1"), out int s) ? s : 0;
+    }
+
     /// <summary>The xblock name of a map id (table/fielddata.xml, the environment without a locale).</summary>
     public string XBlockOf(int mapId)
     {
