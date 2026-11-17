@@ -206,14 +206,19 @@ public sealed class NxController
 
     /// <summary>
     /// GameObjectController::Move's checkOverlapCapsule(capsule, NX_ALL_SHAPES, 0xffffffff): the body's own shape where it
-    /// stands, against every shape but its own (setCollision(false) around the test), with no skin.
+    /// stands, against every shape but its own (setCollision(false) around the test), with no skin. The test has no sides,
+    /// so the field's one-sided mesh triangles count from behind too (<see cref="TwoSidedSpace"/>).
     /// </summary>
     public bool Overlaps()
     {
         var q = Query(uint.MaxValue, false);
         q.Transform = new Transform3D(Basis.Identity, body.GlobalPosition) * shapeNode.Transform;
-        return body.GetWorld3D().DirectSpaceState.IntersectShape(q, 1).Count > 0;
+        var world = body.GetWorld3D();
+        return world.DirectSpaceState.IntersectShape(q, 1).Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform);
     }
+
+    /// <summary>The body's shape with the body at <paramref name="at"/> against the field's mesh triangles from either side.</summary>
+    public bool OverlapsMeshes(Transform3D at) => TwoSidedSpace.Overlaps(body.GetWorld3D(), shapeNode.Shape, at * shapeNode.Transform);
 
     static bool IsController(GodotObject o) =>
         o is CharacterBody3D || o is Node n && n.HasMeta(MoveConfig.ControllerMeta);

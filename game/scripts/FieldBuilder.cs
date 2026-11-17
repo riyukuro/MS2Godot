@@ -143,6 +143,8 @@ public sealed class FieldBuilder
         var colliders = new Node3D { Name = "Colliders" };
         world.AddChild(visuals);
         world.AddChild(colliders);
+        var twoSided = new TwoSidedSpace { Name = "TwoSided" };
+        colliders.AddChild(twoSided);
 
         // key: the llid, plus the shell group and, for an own-group shell, the instancing batch (see ShellOf / BatchKey)
         var groups = new Dictionary<string, List<FieldEntity>>(StringComparer.OrdinalIgnoreCase);
@@ -226,7 +228,10 @@ public sealed class FieldBuilder
                 {
                     // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
                     foreach (var shp in me.Collision)
+                    {
                         Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D { Shape = shp, Transform = xf }));
+                        if (shp is ConcavePolygonShape3D { BackfaceCollision: false } mesh) twoSided.Add(mesh, xf);
+                    }
                     Meshes++;
                 }
                 if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))

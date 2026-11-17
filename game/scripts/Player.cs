@@ -675,8 +675,10 @@ public partial class Player : CharacterBody3D
 
     bool Overlaps(Vector3 feet)
     {
+        // GameObjectController::IsCapsuleOverlapping (gameobjectcontrollerphysxhelpers.cpp:538-558) is checkOverlapCapsule,
+        // which has no sides
         var t = new Transform3D(Basis.Identity, feet + new Vector3(0, 2, 0));
-        return TestMove(t, Vector3.Up * 0.1f);
+        return TestMove(t, Vector3.Up * 0.1f) || nx.OverlapsMeshes(t);
     }
 
     // ---- animation -----------------------------------------------------------------------------------------------------
