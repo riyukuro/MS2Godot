@@ -617,12 +617,12 @@ public partial class Player : CharacterBody3D
 
     }
 
+    readonly RayQuery topRay = new();
+
     Vector3? TopPoint()
     {
         var from = GlobalPosition + Forward * MoveConfig.LadderTopProbe + new Vector3(0, 500, 0);
-        var q = PhysicsRayQueryParameters3D.Create(from, from + new Vector3(0, -1000, 0));
-        q.Exclude = new Godot.Collections.Array<Rid> { GetRid() };
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(topRay.Set(from, from + new Vector3(0, -1000, 0), GetRid()));
         return hit.Count == 0 ? null : (Vector3)hit["position"];
     }
 

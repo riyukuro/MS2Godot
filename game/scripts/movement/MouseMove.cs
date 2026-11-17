@@ -10,6 +10,7 @@ namespace Ms2Godot.Movement;
 /// </summary>
 public partial class MouseMove : Node
 {
+    readonly RayQuery ray = new();
     readonly Player player;
     readonly Camera3D camera;
     Vector3 dir;                  // world, flat, unit; zero when not moving
@@ -28,9 +29,7 @@ public partial class MouseMove : Node
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mb) return;
         var from = camera.ProjectRayOrigin(mb.Position);
         var to = from + camera.ProjectRayNormal(mb.Position) * 20000f;
-        var q = PhysicsRayQueryParameters3D.Create(from, to);
-        q.Exclude = new Godot.Collections.Array<Rid> { player.GetRid() };
-        var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(q);
+        var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));
         if (hit.Count == 0) return;
         var p = (Vector3)hit["position"];
         var n = (Vector3)hit["normal"];
@@ -72,9 +71,7 @@ public partial class MouseMove : Node
         {
             probeT = 0;
             var from = player.GlobalPosition + new Vector3(0, MoveConfig.MouseProbeUp, 0);
-            var q = PhysicsRayQueryParameters3D.Create(from, from + dir * MoveConfig.MouseProbeLen);
-            q.Exclude = new Godot.Collections.Array<Rid> { player.GetRid() };
-            var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(q);
+            var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, from + dir * MoveConfig.MouseProbeLen, player.GetRid()));
             if (hit.Count > 0 && player.Cubes.CubeAt((Vector3)hit["position"] - (Vector3)hit["normal"]) != null) { Stop(); return; }
         }
         // the world direction as camera relative input

@@ -91,12 +91,13 @@ public partial class Player
 
     /// <summary>The nearest hit of a ray on a collider whose PropCollisionGroup bit is in <paramref name="groups"/>
     /// (a collider without one is group 0); the client's CastRay passes the groups to raycastAllShapes.</summary>
+    readonly RayQuery rayQ = new();
+
     (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups)
     {
-        var q = PhysicsRayQueryParameters3D.Create(from, from + dir.Normalized() * len);
         // the Exclude getter hands back a copy: grow our own array and set it again after each skipped body
-        var exclude = new Godot.Collections.Array<Rid> { GetRid() };
-        q.Exclude = exclude;
+        var q = rayQ.Set(from, from + dir.Normalized() * len, GetRid());
+        var exclude = rayQ.Ex;
         var space = GetWorld3D().DirectSpaceState;
         for (int i = 0; i < 16; i++)
         {

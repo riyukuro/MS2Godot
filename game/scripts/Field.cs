@@ -17,6 +17,7 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Field : Node3D
 {
+    readonly RayQuery occRay = new();
     protected PackSet packs;
     protected Player player;
     protected Camera3D camera;
@@ -603,20 +604,17 @@ public partial class Field : Node3D
         p[4] = (p[0] + p[3]) * 0.5f; p[5] = (p[0] + p[1]) * 0.5f; p[6] = (p[0] + p[2]) * 0.5f;
         p[7] = (p[1] + p[3]) * 0.5f; p[8] = (p[2] + p[3]) * 0.5f;
         var space = GetWorld3D().DirectSpaceState;
-        var skip = new Godot.Collections.Array<Rid> { player.GetRid() };
+        var skip = player.GetRid();
         foreach (var from in p)
         {
-            var q = PhysicsRayQueryParameters3D.Create(from, look); q.Exclude = skip;
-            var hit = space.IntersectRay(q);
+            var hit = space.IntersectRay(occRay.Set(from, look, skip));
             if (hit.Count == 0)
             {
-                var b = PhysicsRayQueryParameters3D.Create(look, from); b.Exclude = skip;
-                if (space.IntersectRay(b).Count > 0) return true;
+                if (space.IntersectRay(occRay.Set(look, from, skip)).Count > 0) return true;
             }
             else
             {
-                var b = PhysicsRayQueryParameters3D.Create((Vector3)hit["position"], from); b.Exclude = skip;
-                if (space.IntersectRay(b).Count > 0) return true;
+                if (space.IntersectRay(occRay.Set((Vector3)hit["position"], from, skip)).Count > 0) return true;
             }
         }
         return false;

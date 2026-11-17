@@ -32,8 +32,25 @@ public sealed class NxController
     /// </summary>
     public Rid IgnoreBody;
 
-    Godot.Collections.Array<Rid> Excluded() =>
-        IgnoreBody.IsValid ? new Godot.Collections.Array<Rid> { body.GetRid(), IgnoreBody } : new Godot.Collections.Array<Rid> { body.GetRid() };
+    // One query and one exclude list for this controller, reused: a new RefCounted query and Array per sweep is finalizable
+    // garbage on every physics tick. Query() sets every field the callers vary (the rest stay at a fresh query's defaults),
+    // so a cast gives the result a new query would.
+    readonly PhysicsShapeQueryParameters3D shapeQuery = new();
+    readonly Godot.Collections.Array<Rid> excludeList = new();
+
+    PhysicsShapeQueryParameters3D Query(uint mask, bool ignoreBody)
+    {
+        excludeList.Clear();
+        excludeList.Add(body.GetRid());
+        if (ignoreBody && IgnoreBody.IsValid) excludeList.Add(IgnoreBody);
+        var q = shapeQuery;
+        q.Shape = shapeNode.Shape;
+        q.CollisionMask = mask;
+        q.Exclude = excludeList;
+        q.Margin = 0;
+        q.Motion = Vector3.Zero;
+        return q;
+    }
 
     /// <summary>ShapeHitCallback: a shape (not another controller) the side or down pass touched, in the order touched.</summary>
     public System.Action<GodotObject> ShapeHit;
@@ -192,14 +209,8 @@ public sealed class NxController
     /// </summary>
     public bool Overlaps()
     {
-        var q = new PhysicsShapeQueryParameters3D
-        {
-            Shape = shapeNode.Shape,
-            Transform = new Transform3D(Basis.Identity, body.GlobalPosition) * shapeNode.Transform,
-            CollisionMask = uint.MaxValue,
-            Exclude = new Godot.Collections.Array<Rid> { body.GetRid() },
-            Margin = 0,
-        };
+        var q = Query(uint.MaxValue, false);
+        q.Transform = new Transform3D(Basis.Identity, body.GlobalPosition) * shapeNode.Transform;
         return body.GetWorld3D().DirectSpaceState.IntersectShape(q, 1).Count > 0;
     }
 
@@ -222,13 +233,7 @@ public sealed class NxController
     Contact? Sweep(Vector3 from, Vector3 dir, float length)
     {
         var space = body.GetWorld3D().DirectSpaceState;
-        var q = new PhysicsShapeQueryParameters3D
-        {
-            Shape = shapeNode.Shape,
-            CollisionMask = body.CollisionMask & ~IgnoreGroups,                  // move(disp, m_nGroups & ~m_nIgnoreGroups)
-            Exclude = Excluded(),
-            Margin = 0,
-        };
+        var q = Query(body.CollisionMask & ~IgnoreGroups, true);                // move(disp, m_nGroups & ~m_nIgnoreGroups)
         var local = shapeNode.Transform;
         float safe = 0, unsafeD = length;
         bool hit = false;
