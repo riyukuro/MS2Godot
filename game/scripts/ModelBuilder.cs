@@ -389,7 +389,10 @@ public sealed class ModelBuilder
         string entry = null, archive = null;
         foreach (var a in TextureArchives)
             if ((entry = packs.FindByFileName(a, fileName)) != null) { archive = a; break; }
-        // Packed raster assets are .dds only; a NIF embeds the source name (.psd/.tga), which resolves to the same base name as .dds.
+        // Packed raster assets are .dds only; a NIF embeds the source name (.psd/.tga), looked up here under the same base name as
+        // .dds. Observed in the data, not cited: no client code that maps a NIF texture name to .dds was found (the Gamebryo
+        // NiSourceTexture and file-system sources are not in the decomp; textureutil.cpp GetImageConverter disables the NIF
+        // image reader); the only extension swap found is Scaleform's UI image loader (sfr_gfx_02e.cpp).
         if (entry == null && !fileName.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
         {
             var dds = System.IO.Path.ChangeExtension(fileName, ".dds");

@@ -205,11 +205,17 @@ public sealed class EquipApplier
     {
         var made = new List<MeshInstance3D>();
         // Rigid items, as the client attaches them: the item's self nodes are every node whose name starts with the
-        // asset's selfnode, outermost first (CP, CPA; HR0 and HR1 for "HR"; the scene root itself when it is named).
-        // Each one hangs under an attach node on the target node and keeps its own local transform, so a node that
-        // carries the head-relative offset (CP, HR0) keeps it. The attach node is turned and moved by the asset's dummy
-        // for the gender (Euler XYZ degrees, then a translation); dummies tied to an animation sequence are left out.
-        // A replace item whose target is not a body node (hair on "HR") hangs on Bip01 Head instead.
+        // asset's selfnode, the outermost on each path (CP, CPA; HR0 and HR1 for "HR"; a node named exactly selfnode
+        // too): FUN_141422110, itemugcmesh.cpp:295-320 (GetObjectByName, then a breadth-first walk that stops at the
+        // first prefix match). Each one hangs under an attach node on the target node ("Equip_Attach_Transform" + part
+        // name, CreateAttachNode, equipmodel.cpp:1165) and keeps its own local transform (CNifModel::vfunc_12,
+        // nifmodel.cpp:232-249), so a node that carries the head-relative offset (CP, HR0) keeps it. The attach node is
+        // turned and moved by the asset's dummy for the gender (Euler XYZ degrees, then a translation); dummies tied to an
+        // animation sequence are left out (observed, not cited).
+        // A replace item whose target is not a body node (hair on "HR") hangs on Bip01 Head instead. Observed rule, not
+        // the client's: CNifModel::vfunc_13 (nifmodel.cpp:260-283) attaches the self nodes of any replace="1" asset to
+        // Bip01 Head (to the NIF root when the asset's ani is set) when CEquipment::FUN_1411e99a0 allows it; it does not
+        // test whether the target is a body node.
         string selfName = (string)asset.Attribute("selfnode");
         bool replace = (string)asset.Attribute("replace") == "1";
         Transform3D? selfInv = null;
