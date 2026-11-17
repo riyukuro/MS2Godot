@@ -145,13 +145,32 @@ public sealed class CharacterCreateLogic
             int id = look.Items.GetValueOrDefault(slot);
             string name = slot == EquipSlot.SK ? look.ItemName(CreateLook.SkinItem) : id == 0 ? "" : look.ItemName(id);
             btn.SetNamedText("m_item", name);
-            var swatch = btn.FindClip("m_color");
-            var color = SwatchOf(slot);
-            if (swatch != null)
+            SetColor(btn, SwatchOf(slot));
+        }
+    }
+
+    /// <summary>
+    /// CharacterCreateCategoryButton.setColor(argb, visible): m_color.m_colorBG gets the colour as its colorTransform and
+    /// m_color shows only with a colour. Values a script sets stay over the button's state frames (Flash stops the timeline
+    /// driving them), so they go on the placements, not the nodes the next GotoFrame resets.
+    /// </summary>
+    static void SetColor(MovieClipNode btn, Color? color)
+    {
+        foreach (var clip in btn.AllClips().ToList())
+        {
+            bool any = false;
+            foreach (var swatch in clip.Children.Where(ch => ch.Name == "m_color"))
             {
-                swatch.Visible = color != null;
-                if (color is { } c) swatch.Modulate = c;
+                any = true;
+                swatch.Hidden = color == null;
+                if (color is not { } c || swatch.Node is not MovieClipNode sw) continue;
+                foreach (var bg in sw.AllClips())
+                {
+                    foreach (var fill in bg.Children.Where(ch => ch.Name == "m_colorBG")) fill.BaseColor = c;
+                    bg.GotoFrame(bg.Frame);
+                }
             }
+            if (any) clip.GotoFrame(clip.Frame);
         }
     }
 
