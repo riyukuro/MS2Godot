@@ -1,0 +1,70 @@
+using Ms2.Net.Packets;
+using Ms2.Net.Wire;
+
+namespace Ms2.Net;
+
+/// <summary>Outbound 0xB0 (CNetworkService::SendServerEnter, networkservice.cpp:594): one i32, the client language. Only the login server reads it (it answers with the lists again); the game flow does not need it.</summary>
+public sealed record ServerEnterRequest(int Language = 0) : IOutPacket {
+    public Outbound Op => Outbound.ServerEnter;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) => w.WriteInt(Language);
+}
+
+/// <summary>What the game server sent from the key check up to the field enter request.</summary>
+public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field);
+
+/// <summary>
+/// Select and migration: CharacterManagement select on the login connection, LoginToGame, a new connection to the game endpoint,
+/// RequestKey answered with ResponseKey, then packets are read until RequestFieldEnter. Plain data out, no Godot types.
+/// </summary>
+public sealed class GameClient {
+    /// <summary>Select command byte: UIServerListDialog writes 0 then the character id and channel (uiserverlistdialog.cpp:638-640, Unk_SlEnterRequest i64 + channel); the server's Command.Select is 0 (CharacterManagementHandler.cs:35). The Encode1(2) in uicharacterlistdialog.cpp:1529 is the delete request (server Delete = 2).</summary>
+    public const byte SelectCommand = 0;
+
+    static async Task<RawPacket> NextAsync(TcpTransport t, int timeoutMs, CancellationToken ct) {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (true) {
+            ct.ThrowIfCancellationRequested();
+            if (t.Incoming.TryDequeue(out var p)) return p;
+            if (t.IsClosed) throw new IOException("connection closed", t.Failure);
+            if (Environment.TickCount64 > deadline) throw new TimeoutException("no packet");
+            await Task.Delay(5, ct);
+        }
+    }
+
+    /// <summary>On the logged-in login connection: select a character and return the game endpoint. The login connection is left to the caller (the server closes it).</summary>
+    public static async Task<LoginToGame> SelectAsync(TcpTransport login, long characterId, short channel = 0, int timeoutMs = 15000, CancellationToken ct = default) {
+        await login.SendAsync(new SelectCharacter(characterId, channel), ct);
+        while (true) {
+            var p = await NextAsync(login, timeoutMs, ct);
+            if (p.Opcode == (ushort) Inbound.LoginToGame) return LoginToGame.Read(p.Reader());
+            if (p.Opcode == (ushort) Inbound.MoveResult) throw new InvalidDataException("select refused, move error " + MoveResult.Read(p.Reader()).Error);
+        }
+    }
+
+    /// <summary>Connects to the game endpoint (host overrides the address in the packet when given), answers RequestKey and reads up to RequestFieldEnter.
+    /// The key is account id, then the token as the two i32 the client writes (WriteLoginEnter, classobject.cpp:260-266: token1 is the low half), the same 8 bytes as a little-endian u64.</summary>
+    public static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(LoginToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default) {
+        if (!go.Ok) throw new InvalidOperationException("LoginToGame error " + go.Error + " " + go.Message);
+        var game = new TcpTransport();
+        try {
+            await game.ConnectAsync(host ?? go.Address.ToString(), go.Port, ct);
+            ServerEnter enter = null; SyncNumber sync = null;
+            while (true) {
+                var p = await NextAsync(game, timeoutMs, ct);
+                switch ((Inbound) p.Opcode) {
+                    case Inbound.RequestKey:
+                        await game.SendAsync(new ResponseKey(accountId, go.Token, machineId), ct); break;
+                    case Inbound.MoveResult: {
+                        var m = MoveResult.Read(p.Reader());
+                        if (m.Error != 0) throw new InvalidDataException("game server refused the key, move error " + m.Error);
+                        break;
+                    }
+                    case Inbound.ServerEnter: enter = ServerEnter.Read(p.Reader()); break;
+                    case Inbound.SyncNumber: sync = SyncNumber.Read(p.Reader()); break;
+                    case Inbound.RequestFieldEnter:
+                        return (new GameEntry(enter, sync, RequestFieldEnter.Read(p.Reader())), game);
+                }
+            }
+        } catch { game.Dispose(); throw; }
+    }
+}
