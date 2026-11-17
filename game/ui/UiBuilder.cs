@@ -212,8 +212,11 @@ public partial class TextNode : Node2D
         // pixels of the label's raster size; measured on rendered labels). The label is moved by the difference.
         BaselineShift = 2 + scope.Assets.AscentRatio((string)Def["fontClass"]) * size - GodotBaseline(font, (int)ramp) * RasterScale / asy;
         Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y + BaselineShift);
-        // a word-wrapped field wraps inside its 2 px gutters (Scaleform's text rect is the field less 2 on each side)
-        if (Label.AutowrapMode != TextServer.AutowrapMode.Off)
+        // Scaleform lays every line out in the field less its 2 px gutters (DocView::SetViewRect / Format:
+        // textRect.Contract(GFX_TEXT_GUTTER, GFX_TEXT_GUTTER)): a word-wrapped field wraps inside them, a left-aligned line
+        // starts 2 px in and a right-aligned one ends 2 px in. A centred unwrapped line has the same centre either way, so
+        // it keeps the whole field.
+        if (Label.AutowrapMode != TextServer.AutowrapMode.Off || Label.HorizontalAlignment != HorizontalAlignment.Center)
         {
             Label.Position += new Vector2(2, 0);
             Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy) / RasterScale;
