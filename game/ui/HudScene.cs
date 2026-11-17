@@ -110,7 +110,7 @@ public partial class HudScene : Node
         AddChild(nameTag);
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
-        AddChild(damageText = new DamageText(assets, window));                // UIDamageText
+        AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
         worldUi = new Node[] { damageEffect, nameTag, playerBar, damageText };
 
         NoticeTab(uiRoot);
