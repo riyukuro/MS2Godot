@@ -46,7 +46,7 @@ public partial class Player
     /// <summary>One StateSyncObject: the synced fields this model needs, its age and whether it went out.</summary>
     sealed class SyncRecord
     {
-        public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw;
+        public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw, CamYaw;
         public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
     }
 
@@ -139,7 +139,7 @@ public partial class Player
             // StateSyncObject::FUN_1408356c0 writes the position as three int16 (CByteBuffer::WriteVector3Short, stream.cpp:127)
             Pos = new Vector3((short)feet.X, (short)feet.Y, (short)(feet.Z + 0.0001f)), Marked = marked,
             Cell = marked ? CellKey(feet) : int.MaxValue,
-            State = State, Dir = moveDir, Yaw = targetYawDeg, Made = syncClock,
+            State = State, Dir = moveDir, Yaw = targetYawDeg, BodyYaw = yawDeg, CamYaw = Mathf.RadToDeg(CameraYaw), Made = syncClock,
         };
         QueueCurrent();                                                              // FUN_1417b7670
         current = rec;
@@ -192,12 +192,7 @@ public partial class Player
         if (Live)
         {
             var list = new System.Collections.Generic.List<Ms2.Net.Packets.StateSync>(queued.Count);
-            foreach (var q in queued)
-                list.Add(new Ms2.Net.Packets.StateSync
-                {
-                    State = StateId(q.State), Position = new Ms2.Net.Packets.Vector3S((short)q.Pos.X, (short)q.Pos.Y, (short)q.Pos.Z),
-                    Rotation = (short)(q.Yaw * 10f), SyncNumber = q.Cell,
-                });
+            foreach (var q in queued) list.Add(LiveRecord(q));
             queued.Clear();
             StateSyncOut?.Invoke(list);
             return;
@@ -205,6 +200,32 @@ public partial class Player
         var last = queued[^1];
         queued.Clear();
         ServerStateSync(last.Pos, last.Marked);
+    }
+
+    /// <summary>
+    /// The wire record of a sync (StateSyncObject::vfunc_1, statesyncobject.cpp:113-146), filled as MyPC builds it (mypc.cpp:2324-2332):
+    /// SubState = FUN_14166cc80 (the state's sub id: StateJump::vfunc_4 starts a ground jump at 0x21, statejump.cpp:105; the other states
+    /// here use 0); Rotation = m_dir2c.z (vfunc_20, the body's direction); Animation = m_nDirFlags, from m_vel3c = m_pos98, the move
+    /// direction, packed by FUN_140836250 (statesyncobject.cpp:202-220: x -1/0/1 = 0/1/2, y -1/0/1 = +4/+8/+12, else 0x80 and the two
+    /// floats follow); Speed = m_pos48 = m_posBF4, the camera's FUN_140af8290 (mypc.cpp:2292), here the camera yaw in z; Unknown1 =
+    /// m_n54 = CameraMgr::GetModeType (the default third-person view, 0); Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime, 0.
+    /// The move direction is in game axes (x, -z godot, y godot).
+    /// </summary>
+    Ms2.Net.Packets.StateSync LiveRecord(SyncRecord q)
+    {
+        float vx = q.Dir.X, vy = -q.Dir.Z;
+        var rec = new Ms2.Net.Packets.StateSync
+        {
+            State = StateId(q.State), SubState = (byte)(q.State == MoveState.Jump ? 0x21 : 0),
+            Position = new Ms2.Net.Packets.Vector3S((short)q.Pos.X, (short)q.Pos.Y, (short)q.Pos.Z),
+            Rotation = (short)(q.BodyYaw * 10f), Rotation2 = (short)(q.Yaw * 10f), SyncNumber = q.Cell,
+            Speed = new Ms2.Net.Packets.Vector3S(0, 0, (short)q.CamYaw), Unknown1 = 0, Unknown3 = 0,
+        };
+        static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
+        int ax = Axis(vx), ay = Axis(vy);
+        if (ax >= 0 && ay >= 0) rec.Animation = (byte)(ax + 4 * (ay + 1));
+        else { rec.Animation = 0x80; rec.Float1 = vx; rec.Float2 = vy; }
+        return rec;
     }
 
     /// <summary>The fall-return entity of the first shape straight below the feet on groups 0x389, or -1.</summary>
