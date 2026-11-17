@@ -490,7 +490,8 @@ public partial class HudScene : Node
 
     /// <summary>
     /// UIQuestGuideDialog with only the field mission entity: the dialog aligns top right at (0, 330)
-    /// (CAlignmentInfo(6, 0, 330) in its constructor); addMission puts a qg_mission_entity at x -1 in m_topContainer and
+    /// (CAlignmentInfo(6, 0, 330) in its constructor, x = stage width - ceil(dialog width)). qg_dialog_body places
+    /// m_topContainer at x -1, and addMission puts a qg_mission_entity at x -1 inside it, so the entity sits at dialog x - 2.
     /// FieldMissionGuideEntity.setType("field") / setData run as below.
     /// </summary>
     void Quests(Control ui)
@@ -525,7 +526,7 @@ public partial class HudScene : Node
 
         var panel = m.BuildClass("qg_mission_entity", u);
         if (panel == null) return;
-        var at = UiLayout.Align(6, stage, new Vector2(QuestGuideWidth, 0), 0, 330) + new Vector2(-1, 0);
+        var at = UiLayout.Align(6, stage, new Vector2(QuestGuideWidth, 0), 0, 330) + new Vector2(-2, 0);   // m_topContainer -1, entity -1
         panel.Scale = new Vector2(u, u); panel.Position = at * u;
         var holder = new Node2D(); holder.AddChild(panel); ui.AddChild(holder);
         panel.SetNamedText("m_chapterName", assets.Str("$s_questguide_mission_field"));
