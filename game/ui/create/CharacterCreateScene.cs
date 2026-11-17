@@ -150,7 +150,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
         jobs.Align(stage, r);
         jobs.Create += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
         jobs.Prev += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
-        mouse = new UiWidgets.MouseRouter(selectRoot);
+        // the job tabs are renderers m_tab / m_tab2 build from initData; a click on one is onChangeTab -> changeTab
+        mouse = new UiWidgets.MouseRouter(selectRoot) { Extra = () => jobs.TabClips };
     }
 
     // ---- create ----
@@ -231,6 +232,13 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     // ---- scripted shots ----
 
+    void ClickAt(Vector2 at)
+    {
+        _Input(new InputEventMouseMotion { Position = at });
+        _Input(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at });
+        _Input(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at });
+    }
+
     public override void _Process(double delta)
     {
         base._Process(delta);
@@ -239,8 +247,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (page == Page.Select)
         {
             if (frame == 45) Save("create_jobselect.png");
-            if (frame == 46) jobs.ChangeTab(0, true);
-            if (frame == 75) Save("create_jobselect_knight.png");
+            if (frame == 46) ClickAt(jobs.TabClips.ElementAt(jobs.NeighbourTab).GetGlobalTransform() * new Vector2(87, 55));   // the selected tab's neighbour in its bar, through the mouse
+            if (frame == 75) Save("create_jobselect_clicked.png");
             if (frame == 160) { Save("create_jobselect_video.png"); GD.Print($"job video {jobs.Player?.MovieName}: {jobs.Player?.Video?.Width}x{jobs.Player?.Video?.Height} at {jobs.Player?.Video?.FrameRate} fps, t {jobs.Player?.Time:F2} s"); }
             if (frame == 161) jobs.ClickCreate();
         }

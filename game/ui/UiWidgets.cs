@@ -203,12 +203,30 @@ public static class UiWidgets
         ButtonWidget hover, pressed;
         public MouseRouter(MovieClipNode root) { this.root = root; }
 
+        /// <summary>
+        /// Clips built at run time and added below the root outside its placements (renderers a list or bar makes from
+        /// data, e.g. the job tabs); they are tested after the placed clips, as they draw on top of their holder.
+        /// </summary>
+        public Func<IEnumerable<MovieClipNode>> Extra;
+
         ButtonWidget Pick(Vector2 p)
         {
             ButtonWidget hit = null;
-            foreach (var c in root.AllClips())
-                if (c.Widget is ButtonWidget b && b.Enabled && c.IsVisibleInTree() && c.GlobalBounds().HasPoint(p)) hit = b;   // later = on top
+            var clips = Extra == null ? root.AllClips() : root.AllClips().Concat(Extra().SelectMany(x => x.AllClips()));
+            foreach (var c in clips)
+                if (c.Widget is ButtonWidget b && b.Enabled && c.IsVisibleInTree() && Hits(c, p)) hit = b;   // later = on top
             return hit;
+        }
+
+        /// <summary>
+        /// Whether a button takes the mouse at a canvas point: what its current frame shows there, masked content only inside
+        /// its mask shape (<see cref="MovieClipNode.HitTest"/>); a clip with nothing shown keeps its bounds.
+        /// </summary>
+        static bool Hits(MovieClipNode c, Vector2 p)
+        {
+            var xf = c.GetGlobalTransform();
+            if (c.ContentRect() == null || Mathf.IsZeroApprox(xf.Determinant())) return c.GlobalBounds().HasPoint(p);
+            return c.HitTest(xf.AffineInverse() * p);
         }
 
         public void Handle(InputEvent e)

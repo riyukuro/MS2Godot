@@ -44,6 +44,22 @@ public partial class MaskGroup : Control
     MaskOutline outline;
 
     /// <summary>
+    /// Whether the mask shows a point given in the coordinates of the clip that holds the group, as the drawing clips: no
+    /// clipping while the mask is off the stage; otherwise inside the mask's box, and with an outline (not nested) inside
+    /// one of the shape's polygons under the mask's transform.
+    /// </summary>
+    public bool Shows(Vector2 p)
+    {
+        if (!mask.Node.Visible) return true;
+        var xf = mask.Node.Transform;
+        var b = mask.MaskBounds;
+        var r = new Rect2(xf * b.Position, Vector2.Zero);
+        r = r.Expand(xf * new Vector2(b.End.X, b.Position.Y)).Expand(xf * new Vector2(b.Position.X, b.End.Y)).Expand(xf * b.End);
+        if (!r.HasPoint(p)) return false;
+        return outline == null || Mathf.IsZeroApprox(xf.Determinant()) || outline.Contains(xf.AffineInverse() * p);
+    }
+
+    /// <summary>
     /// Clips to the mask shape's own outline instead of its bounding box: a SWF mask (a placed shape with a clip depth) shows
     /// the depths above it only where the shape is filled, whatever its fill's alpha (Scaleform draws the mask into the
     /// stencil). The shape's paths are filled white under the mask's transform and clip the group's children
@@ -123,6 +139,9 @@ public partial class MaskGroup : Control
 
         public MaskOutline() { }
 
+        /// <summary>A point in the mask shape's coordinates is inside a polygon the outline fills (always, while nested: the box alone clips then).</summary>
+        public bool Contains(Vector2 p) => nested || polys.Any(pts => Geometry2D.IsPointInPolygon(p, pts));
+
         public override void _Draw()
         {
             if (!Shown || nested) return;
@@ -150,6 +169,7 @@ public partial class MovieClipNode : Node2D
         public bool Hidden;                // set by code (AS3 visible = false): kept over timeline moves
         public bool IsMask;
         public Rect2 MaskBounds;
+        public MaskGroup MaskedBy;         // the mask group whose clip depth covers this child
         public bool Static9;              // drawn by a Scale9Node: ignores later matrix moves
         public List<(int Frame, Transform2D? M, Color? C, bool? Visible)> Moves = new();
     }
@@ -256,7 +276,7 @@ public partial class MovieClipNode : Node2D
                     groupEnd = (int)c["clipDepth"];
                     AddChild(group); group.AddChild(holder);
                 }
-                else if (group != null) group.Inner.AddChild(node);
+                else if (group != null) { group.Inner.AddChild(node); child.MaskedBy = group; }
                 else AddChild(node);
                 if (node is MovieClipNode mc)
                 {
@@ -405,24 +425,50 @@ public partial class MovieClipNode : Node2D
         foreach (var c in Children)
         {
             if (!(Frame >= c.First && Frame <= c.Last) || !c.Node.Visible || c.IsMask) continue;
-            Rect2? local = c.Node switch
-            {
-                MovieClipNode mc => mc.ContentRect(fitText),
-                TextNode t => fitText ? new Rect2(t.Bounds.Position, new Vector2(t.TextWidth + 4, t.Bounds.Size.Y)) : t.Bounds,
-                _ => c.Def["id"] != null && Scope.Symbol((int)c.Def["id"]) is { } sym ? UiBuilder.Rc(sym["bounds"]) : null,
-            };
-            if (local == null) continue;
-            // a 9-slice child is built at its placed size with a unit matrix: its symbol bounds take the placed scale
-            if (c.Static9 && c.Def["matrix"] is JsonObject m9 && c.Def["id"] != null && Scope.Symbol((int)c.Def["id"])?["bounds"] is { } sb)
-            {
-                var r9 = UiBuilder.Rc(sb);
-                local = new Rect2(r9.Position, r9.Size * new Vector2(Math.Abs(UiBuilder.F(m9["a"], 1)), Math.Abs(UiBuilder.F(m9["d"], 1))));
-            }
-            var xf = c.Node.Transform; var b = local.Value;
+            if (ChildRect(c, fitText) is not { } b) continue;
+            var xf = c.Node.Transform;
             foreach (var p in new[] { xf * b.Position, xf * new Vector2(b.End.X, b.Position.Y), xf * new Vector2(b.Position.X, b.End.Y), xf * b.End })
                 r = r == null ? new Rect2(p, Vector2.Zero) : r.Value.Expand(p);
         }
         return r;
+    }
+
+    /// <summary>A shown child's box in its own coordinates (null when it has none).</summary>
+    Rect2? ChildRect(Child c, bool fitText)
+    {
+        Rect2? local = c.Node switch
+        {
+            MovieClipNode mc => mc.ContentRect(fitText),
+            TextNode t => fitText ? new Rect2(t.Bounds.Position, new Vector2(t.TextWidth + 4, t.Bounds.Size.Y)) : t.Bounds,
+            _ => c.Def["id"] != null && Scope.Symbol((int)c.Def["id"]) is { } sym ? UiBuilder.Rc(sym["bounds"]) : null,
+        };
+        // a 9-slice child is built at its placed size with a unit matrix: its symbol bounds take the placed scale
+        if (local != null && c.Static9 && c.Def["matrix"] is JsonObject m9 && c.Def["id"] != null && Scope.Symbol((int)c.Def["id"])?["bounds"] is { } sb)
+        {
+            var r9 = UiBuilder.Rc(sb);
+            local = new Rect2(r9.Position, r9.Size * new Vector2(Math.Abs(UiBuilder.F(m9["a"], 1)), Math.Abs(UiBuilder.F(m9["d"], 1))));
+        }
+        return local;
+    }
+
+    /// <summary>
+    /// Whether a point (this clip's coordinates) falls on what the current frame shows: a shown child's box, and for a
+    /// child under a mask only where the mask shows it, by the same shape the drawing clips to (<see cref="MaskGroup.Shows"/>).
+    /// Flash hit-tests the displayed content, masked content inside its mask only; the symbol's bounds over all frames reach
+    /// over neighbours (the job tabs' selected-state shine is 576 wide under a 174 wide mask).
+    /// </summary>
+    public bool HitTest(Vector2 p)
+    {
+        foreach (var c in Children)
+        {
+            if (!(Frame >= c.First && Frame <= c.Last) || !c.Node.Visible || c.IsMask) continue;
+            if (c.MaskedBy is { } g && !g.Shows(p)) continue;
+            var t = c.Node.Transform;
+            if (Mathf.IsZeroApprox(t.Determinant())) continue;          // scaled to nothing: shows nothing
+            var local = t.AffineInverse() * p;
+            if (c.Node is MovieClipNode mc ? mc.HitTest(local) : ChildRect(c, false) is { } b && b.HasPoint(local)) return true;
+        }
+        return false;
     }
 
     /// <summary>A direct child's width as AS3 reports it (bounding box in this clip's coordinates).</summary>

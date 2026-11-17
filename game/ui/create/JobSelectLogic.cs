@@ -24,10 +24,16 @@ public sealed class JobSelectLogic
     VideoPlayerNode player;
     readonly List<(MovieClipNode Clip, ButtonWidget Button, CreateTables.Job Job, int Index)> buttons = new();
     public int SelectedJob { get; private set; }
+    int selectedIndex = -1;
+    /// <summary>The tab next to the selected one in the same bar (tabs alternate between the two bars): for the shots.</summary>
+    public int NeighbourTab => selectedIndex >= 2 ? selectedIndex - 2 : selectedIndex + 2;
     public ButtonWidget CreateButton, PrevButton;
     /// <summary>onClickCreate(jobCode): the page pops down and the create page opens with the job.</summary>
     public event Action<int> Create;
     public event Action Prev;
+
+    /// <summary>The tab renderers initData made (CLIK ButtonBar renderers: not placements of the movie).</summary>
+    public IEnumerable<MovieClipNode> TabClips => buttons.Select(b => b.Clip);
 
     /// <summary>The preview movie player (null until a job with a movie is shown).</summary>
     public VideoPlayerNode Player => player;
@@ -102,7 +108,8 @@ public sealed class JobSelectLogic
             if (w != null) w.Toggle = true;          // CLIK ButtonBar renderers toggle
             SetButtonData(clip, w, jobs[i]);
             int index = i;
-            if (w != null) w.Click += _ => ChangeTab(index, true);
+            // ButtonBar: a click on the selected tab keeps it selected and changes nothing (no change event)
+            if (w != null) w.Click += _ => { if (index == selectedIndex) w.SetSelected(true, false); else ChangeTab(index, true); };
             buttons.Add((clip, w, jobs[i], i));
         }
         ChangeTab(selectedTab, false);
@@ -127,6 +134,7 @@ public sealed class JobSelectLogic
     public void ChangeTab(int index, bool raise)
     {
         if (index < 0 || index >= buttons.Count) return;
+        selectedIndex = index;
         foreach (var b in buttons) b.Button?.SetSelected(b.Index == index, false);
         var job = buttons[index].Job;
         SelectedJob = job.JobCode;
