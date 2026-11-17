@@ -125,13 +125,22 @@ public partial class LiveSession : Node
     {
         if (entry == null || answered) return;
         answered = true;
-        _ = game.SendAsync(new ResponseFieldEnter(entry.Field.FieldKey));
+        Send(new ResponseFieldEnter(entry.Field.FieldKey));
         BindPlayer();
         GD.Print($"live: ResponseFieldEnter sent, fieldKey {entry.Field.FieldKey}");
     }
 
     /// <summary>Movement out: the player's record packets and state changes become UserSync (0x12) and State (0x80); its offline
     /// server emulation turns off. The cadence and content are the player's own (PlayerFallReturn.StateSync), not a second copy.</summary>
+    /// <summary>Fire-and-forget send whose failure is logged (an unmapped op under the profile, a closed socket) instead of going unobserved.</summary>
+    void Send(Ms2.Net.Wire.IOutPacket pk)
+    {
+        var g = game;
+        if (g == null) return;
+        g.SendAsync(pk).ContinueWith(t => GD.PushWarning($"live: send {pk.GetType().Name} failed: {t.Exception?.GetBaseException().Message}"),
+            System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
+    }
+
     void BindPlayer()
     {
         player = GetTree().Root.FindChild("Player", true, false) as Player;
@@ -140,17 +149,17 @@ public partial class LiveSession : Node
         player.StateSyncOut += records =>
         {
             if (game == null) return;
-            var pk = new UserSyncOut { SyncNumber = syncNumber, ServerTick = game.Session.ElapsedMs, ClientTick = game.Session.ElapsedMs };
+            var pk = new UserSyncOut { SyncNumber = syncNumber, ServerTick = game.Session.ServerTick, ClientTick = game.Session.ElapsedMs };   // state.cpp:491-493: GetServerTick, then GetElapsedTime
             int t = pk.ClientTick;
             foreach (var r in records) pk.Records.Add((r, t));
-            _ = game.SendAsync(pk);
+            Send(pk);
             var l = records[^1];
             GD.Print($"live: UserSync sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
         };
         player.StateChangeOut += (mode, arg, pos) =>
         {
             if (game == null) return;
-            _ = game.SendAsync(new StateChange(mode, arg, game.Session.ElapsedMs, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+            Send(new StateChange(mode, arg, game.Session.ServerTick, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));   // mypc.cpp:3661: GetServerTick
             GD.Print($"live: State sent, mode {mode} arg {arg}");
         };
     }
@@ -162,34 +171,34 @@ public partial class LiveSession : Node
         {
             try
             {
-                bool own = p.Opcode == (ushort)Inbound.Stat && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
+                bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
                 if (own) ApplyStat(PlayerStat.Read(p.Reader()));
                 else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
                 if (own) { }
-                else if (p.Opcode == (ushort)Inbound.FieldAddUser)
+                else if (game.Is(p, Inbound.FieldAddUser))
                 {
                     var u = FieldAddUser.Read(p.Reader());
                     bool self = u.User.CharacterId == entry.Enter.CharacterId;
                     if (self) selfObject = u.ObjectId;
                     GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
                 }
-                else if (p.Opcode == (ushort)Inbound.SyncNumber)
+                else if (game.Is(p, Inbound.SyncNumber))
                 {
                     syncNumber = SyncNumber.Read(p.Reader()).Number;
                     player?.OnSyncNumber();
                     GD.Print($"live: SyncNumber {syncNumber}");
                 }
-                else if (p.Opcode == (ushort)Inbound.UserMoveByPortal)
+                else if (game.Is(p, Inbound.UserMoveByPortal))
                 {
                     var m = UserMoveByPortal.Read(p.Reader());
                     GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
-                    if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z);
+                    if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z, m.IsPortal);
                 }
                 else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
             catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
         }
-        if (game.IsClosed) { GD.PushWarning("live: game connection closed"); game.Dispose(); game = null; }
+        if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
 
     /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>

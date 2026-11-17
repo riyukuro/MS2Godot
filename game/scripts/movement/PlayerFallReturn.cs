@@ -80,7 +80,10 @@ public partial class Player
     static int CellKey(Vector3 p) => ((int)(p.X / 150f) & 0xFF) | (((int)(p.Y / 150f) & 0xFF) << 8) | (((int)(p.Z / 150f) & 0xFF) << 16);
 
     /// <summary>The server's MoveByPortal (live): the warp runs at the next frame through UserMoveByPortal.</summary>
-    public void ServerMoveByPortal(Vector3 pos, float rotZ) { portal = pos; portalRot = rotZ; }
+    /// <summary>The last MoveByPortal's IsPortal: the client's bFlyCamera (mypc.cpp:2774-2788 plays the camera fly-by to the new position
+    /// when the camera is in mode 2 and it is set). The fly-by itself is not built yet; the flag is kept for it.</summary>
+    public bool PortalFlyCamera { get; private set; }
+    public void ServerMoveByPortal(Vector3 pos, float rotZ, bool isPortal = false) { portal = pos; portalRot = rotZ; PortalFlyCamera = isPortal; }
 
     /// <summary>CNetworkService::OnSyncNumber: the local controller's records are cleared (the number itself lives in the session).</summary>
     public void OnSyncNumber() { current = null; queued.Clear(); }
