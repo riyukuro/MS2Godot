@@ -72,12 +72,14 @@ public partial class Field : Node3D
         var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0 };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
+        fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
         var fieldWorld = fb.Build(map);
         AddChild(fieldWorld);
         AddChild(new AlphaSort(fb.AlphaEntries, fieldWorld));   // the client's alpha key on the field's blended draws
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         long tBuild = sw.ElapsedMilliseconds;
+        GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
         GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}), " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");

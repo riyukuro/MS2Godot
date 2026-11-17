@@ -36,6 +36,8 @@ public sealed class FieldBuilder
     public readonly List<FieldEntity> DrawnElsewhere = new();
     /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
+    /// <summary>Optional: the field load's entity count, bumped as each entity of the set is placed (see <see cref="World.LoadCount"/>).</summary>
+    public World.LoadCount Load;
     /// <summary>The blended draws with the client's alpha key, for <see cref="AlphaSort"/>.</summary>
     public readonly List<AlphaSort.Entry> AlphaEntries = new();
 
@@ -111,6 +113,7 @@ public sealed class FieldBuilder
 
     public Node3D Build(FieldMap map)
     {
+        Load?.Begin(map.Entities.Count);
         var world = new Node3D { Name = "World", Transform = ZupToYup };
         var visuals = new Node3D { Name = "Visuals" };
         var colliders = new Node3D { Name = "Colliders" };
@@ -148,59 +151,65 @@ public sealed class FieldBuilder
 
         foreach (var e in map.Entities)
         {
-            var xf = ModelBuilder.ToGodot(e.Transform);
-
-            if (e.ModelName is "PhysXWhitebox" or "MS2PhysXWhitebox")
+            bool grouped = false;
+            try
             {
-                var d = e.Vector("ShapeDimensions");
-                if (d.X > 0 && d.Y > 0 && d.Z > 0)
+                var xf = ModelBuilder.ToGodot(e.Transform);
+
+                if (e.ModelName is "PhysXWhitebox" or "MS2PhysXWhitebox")
                 {
-                    // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2
-                    var cs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) }, Transform = xf };
-                    Chunk(e.Position).AddChild(cs);
-                    Whiteboxes++;
+                    var d = e.Vector("ShapeDimensions");
+                    if (d.X > 0 && d.Y > 0 && d.Z > 0)
+                    {
+                        // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2
+                        var cs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) }, Transform = xf };
+                        Chunk(e.Position).AddChild(cs);
+                        Whiteboxes++;
+                    }
+                    continue;
                 }
-                continue;
-            }
 
-            var llid = e.Get("NifAsset");
-            if (llid == null || !llid.StartsWith("urn:llid:")) continue;
-            var me = Model(llid);
-            if (me == null) continue;
+                var llid = e.Get("NifAsset");
+                if (llid == null || !llid.StartsWith("urn:llid:")) continue;
+                var me = Model(llid);
+                if (me == null) continue;
 
-            if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
-            else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
-            else if (e.Bool("IsVisible", true))
-            {
-                var key = BatchKey(llid, e);
-                if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
-                list.Add(e);
-            }
-
-            if (e.Bool("DisableCollision")) continue;
-            int group = (int)e.Number("PropCollisionGroup");
-            if (me.Collision.Count > 0)
-            {
-                // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
-                foreach (var shp in me.Collision)
-                    Chunk(e.Position, group).AddChild(new CollisionShape3D { Shape = shp, Transform = xf });
-                Meshes++;
-            }
-            else if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
-            {
-                // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
-                // standing on the entity position, turned by the Z rotation only; scale is ignored
-                var d = e.Vector("GeneratePhysXDimension");
-                var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
-                var p = e.Position;
-                Chunk(e.Position, group).AddChild(new CollisionShape3D
+                if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
+                else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
+                else if (e.Bool("IsVisible", true))
                 {
-                    Shape = new BoxShape3D { Size = size },
-                    Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
-                                                new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2)),
-                });
-                Boxes++;
+                    var key = BatchKey(llid, e);
+                    if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
+                    list.Add(e);
+                    grouped = true;            // counted when its group is placed
+                }
+
+                if (e.Bool("DisableCollision")) continue;
+                int group = (int)e.Number("PropCollisionGroup");
+                if (me.Collision.Count > 0)
+                {
+                    // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
+                    foreach (var shp in me.Collision)
+                        Chunk(e.Position, group).AddChild(new CollisionShape3D { Shape = shp, Transform = xf });
+                    Meshes++;
+                }
+                else if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
+                {
+                    // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
+                    // standing on the entity position, turned by the Z rotation only; scale is ignored
+                    var d = e.Vector("GeneratePhysXDimension");
+                    var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
+                    var p = e.Position;
+                    Chunk(e.Position, group).AddChild(new CollisionShape3D
+                    {
+                        Shape = new BoxShape3D { Size = size },
+                        Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
+                                                    new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2)),
+                    });
+                    Boxes++;
+                }
             }
+            finally { if (!grouped) Load?.Add(); }      // nothing of it is left to place
         }
 
         foreach (var (key, ents) in groups)
@@ -296,6 +305,7 @@ public sealed class FieldBuilder
                 foreach (var b in ownBlended) box = box.Merge(b.GetAabb());
                 foreach (var b in ownBlended) b.CustomAabb = box;
             }
+            Load?.Add(ents.Count);                      // the group's entities are placed
         }
         FlushShadowCells(visuals);
         return world;

@@ -34,6 +34,8 @@ public partial class FieldContents : Node3D
     /// <summary>The cover of a field move under way, held by the tree root across the scene change (see <see cref="Enter"/>).</summary>
     static (CanvasLayer Overlay, LoadingProgressLogic Loading) carried;
     int settleFrames = -1;
+    /// <summary>The field build's entity count (the client's GetBlockInfo count / total), shown by the loading screen.</summary>
+    public LoadCount Load;
     bool moving;
 
     NpcTalk talk;
@@ -121,7 +123,7 @@ public partial class FieldContents : Node3D
             // the field is loaded: the loading screen shows 100%, then fades once the new field has drawn. A portal move's
             // cover was started before the move and is still up; a move without one (first entry) starts it here.
             if (!adopted) ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
-            loading?.Progress(1, 1);
+            if (Load != null && Load.Total > 0) loading?.Progress(Load.Count, Load.Total); else loading?.Progress(1, 1);
             settleFrames = 3;
         }
         if (shotDir != null && player != null) PlanShots();
