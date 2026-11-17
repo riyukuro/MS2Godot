@@ -20,7 +20,13 @@ public sealed class FieldBuilder
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
 
-    public int Instances, MultiMeshes, Boxes, Meshes, Whiteboxes, Missing;
+    public int Instances, MultiMeshes, Boxes, Meshes, Whiteboxes, Missing, OwnShells;
+
+    /// <summary>
+    /// How far behind its colour an own-group shell twin sorts (game units): Godot sorts the alpha list by priority, then by
+    /// instance depth, with an unstable sort, so the twin has to be strictly deeper to be drawn right before its colour.
+    /// </summary>
+    const float OwnShellSortOffset = 0.05f;
 
     /// <summary>Optional: true for a model drawn elsewhere per entity (world/FieldProps: self-animating NIFs); its visible
     /// entities go to <see cref="DrawnElsewhere"/> instead of a MultiMesh. Collision stays here.</summary>
@@ -107,6 +113,7 @@ public sealed class FieldBuilder
         world.AddChild(visuals);
         world.AddChild(colliders);
 
+        // key: the llid, plus the shell group and, for an own-group shell, the instancing batch (see ShellOf / BatchKey)
         var groups = new Dictionary<string, List<FieldEntity>>(StringComparer.OrdinalIgnoreCase);
         var chunks = new Dictionary<(int, int), StaticBody3D>();
 
@@ -161,7 +168,8 @@ public sealed class FieldBuilder
             else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
             else if (e.Bool("IsVisible", true))
             {
-                if (!groups.TryGetValue(llid, out var list)) groups[llid] = list = new List<FieldEntity>();
+                var key = BatchKey(llid, e);
+                if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
                 list.Add(e);
             }
 
@@ -191,12 +199,13 @@ public sealed class FieldBuilder
             }
         }
 
-        foreach (var (llid, ents) in groups)
+        foreach (var (key, ents) in groups)
         {
-            var me = models[llid];
+            var me = models[key.Split('\n')[0]];
             int mi = 0;
-            // fluid cubes draw their whole mesh as alpha shells (FUN_1413fa4c0 marks them; see ModelBuilder.MakeFluidShell)
-            bool fluid = ents.All(IsFluidCube);
+            // shells (FUN_1413fa4c0): the shared group draws through ModelBuilder.MakeFluidShell; an own group draws each
+            // blended mesh's depth-only shell as a twin instance sorted just behind its colour, so it comes right before it
+            var shell = ShellOf(ents[0]);
             foreach (var (mesh, local) in me.Meshes)
             {
                 var mm = new MultiMesh
@@ -206,7 +215,12 @@ public sealed class FieldBuilder
                     Mesh = builder.BuildMesh(mesh, skin: false, instanceColor: true),
                     InstanceCount = ents.Count,
                 };
-                if (fluid && mesh.AlphaBlendOn) ModelBuilder.MakeFluidShell((ArrayMesh)mm.Mesh);
+                if (shell == Shell.Shared && mesh.AlphaBlendOn) ModelBuilder.MakeFluidShell((ArrayMesh)mm.Mesh);
+                if (shell == Shell.Own && mesh.AlphaBlendOn && ModelBuilder.ShellMaterial((ArrayMesh)mm.Mesh) is { } depthOnly)
+                {
+                    visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_shell", Multimesh = mm, MaterialOverride = depthOnly, SortingOffset = -OwnShellSortOffset, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                    OwnShells++;
+                }
                 for (int i = 0; i < ents.Count; i++)
                 {
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
@@ -292,6 +306,35 @@ public sealed class FieldBuilder
         return c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2]) : new Color(0, 0, 0, 0);
     }
 
-    static bool IsFluidCube(FieldEntity e) =>
-        e.HasMixin("MS2CubeProp") && e.ModelName.Contains("fluid", StringComparison.OrdinalIgnoreCase);
+    enum Shell { None, Shared, Own }
+
+    /// <summary>
+    /// The alpha shell group of a placed entity. Only hardware-instanced entities get one: HardwareInstancingService
+    /// instances an entity with UseInstancing, MeshInstancing::Init reads its UseShellRender, and RefreshRootAndSource then
+    /// runs FUN_1413fa4c0 on the batch's source entity: z write on, AlphaShellComposite::MarkScene with group 1 (one
+    /// composite shared by every such batch) when FUN_1413fa390 holds, else a group of its own. FUN_1413fa390 is
+    /// IsHighPrioAlphaObject || CubeType == "Fluid" on the source, which CreateEntity makes from the model alone, so it
+    /// reads the flat defaults, not the placed entity's overrides.
+    /// </summary>
+    static Shell ShellOf(FieldEntity e)
+    {
+        if (!e.Bool("UseInstancing") || !e.Bool("UseShellRender")) return Shell.None;
+        var flat = e.Flat?.Props;
+        bool highPrio = flat != null && flat.TryGetValue("IsHighPrioAlphaObject", out var h) && (h.Equals("True", StringComparison.OrdinalIgnoreCase) || h == "1");
+        bool fluid = flat != null && flat.TryGetValue("CubeType", out var c) && c == "Fluid";
+        return highPrio || fluid ? Shell.Shared : Shell.Own;
+    }
+
+    /// <summary>
+    /// The draw group of a placed entity: its llid, split by shell group; an own-group shell further by the instancing batch.
+    /// Unk_MeshInstancingConfig::Equals matches a shell batch (UseShellRender) on the asset, IsCastingShadow,
+    /// IsReceivingShadow and MaterialColor, and not on the instancing cell. Its nearby-light list (FUN_1413d7160) splits
+    /// batches too; that is not modelled here.
+    /// </summary>
+    static string BatchKey(string llid, FieldEntity e) => ShellOf(e) switch
+    {
+        Shell.Shared => llid + "\n1",
+        Shell.Own => $"{llid}\n2\n{e.Get("MaterialColor")}\n{e.Bool("IsCastingShadow", true)}\n{e.Bool("IsReceivingShadow", true)}",
+        _ => llid,
+    };
 }

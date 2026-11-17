@@ -72,7 +72,7 @@ public partial class Field : Node3D
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         long tBuild = sw.ElapsedMilliseconds;
-        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes, " +
+        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells), " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 

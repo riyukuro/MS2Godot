@@ -218,12 +218,20 @@ public sealed class ModelBuilder
     /// </summary>
     public static void MakeFluidShell(ArrayMesh mesh)
     {
-        if (mesh.GetSurfaceCount() == 0 || mesh.SurfaceGetMaterial(0) is not ShaderMaterial colour) return;
-        var shell = (ShaderMaterial)colour.Duplicate();
-        shell.Shader = fieldShellShader;
+        if (ShellMaterial(mesh) is not { } shell) return;
+        var colour = (ShaderMaterial)mesh.SurfaceGetMaterial(0);
         colour.RenderPriority = 1;
         shell.NextPass = colour;
         mesh.SurfaceSetMaterial(0, shell);
+    }
+
+    /// <summary>The depth-only SHELL form of a blended field mesh's material (colour unchanged, depth written), or null.</summary>
+    public static ShaderMaterial ShellMaterial(ArrayMesh mesh)
+    {
+        if (mesh.GetSurfaceCount() == 0 || mesh.SurfaceGetMaterial(0) is not ShaderMaterial colour) return null;
+        var shell = (ShaderMaterial)colour.Duplicate();
+        shell.Shader = fieldShellShader;
+        return shell;
     }
 
     Material BuildMaterial(ModelMesh m, bool instanceColor)
