@@ -34,8 +34,6 @@ public partial class TextNode
         /// label (Label::get_character_bounds: a cluster's glyph with a glyph id, or a space).</summary>
         public int End { get; init; }
         public bool Bounded { get; init; }
-        /// <summary>The x LineFace and GlyphShadow draw the glyph at, label pixels from the line's x.</summary>
-        public float DrawPen { get; init; }
     }
 
     /// <summary>One laid out line: its code point range, top and baseline in label pixels and its glyphs (pens without the
@@ -54,10 +52,9 @@ public partial class TextNode
         public float LabelX;
         public (float Width, float Ratio) Width;
         public string Text;
-        /// <summary>The label's own glyphs of the line (its paragraph's shaped line), pens from the line's x.</summary>
+        /// <summary>The label's own glyphs of the line (its paragraph's shaped line), pens from the line's x; LineFace and
+        /// GlyphShadow draw these as the label does (Label::draw_glyph: each glyph repeat times, one advance apart).</summary>
         public readonly List<PlacedGlyph> Shaped = new();
-        /// <summary>The glyphs LineFace and GlyphShadow draw, at DrawPen.</summary>
-        public readonly List<PlacedGlyph> Glyphs = new();
     }
 
     List<LayoutLine> layout;
@@ -148,7 +145,6 @@ public partial class TextNode
                 line.Ascent = fasc + ascMove;
                 line.Pitch = asc + dsc + spacing + advMove;
                 line.Width = PlaceGlyphs(line, ts, lrid, ramp, pstart);
-                DrawnGlyphs(line, ts, font, ramp);
                 line.LabelX = LabelLineX((float)ts.ShapedTextGetSize(lrid).X * line.Width.Ratio);
                 res.Add(line);
                 ts.FreeRid(lrid);
@@ -252,33 +248,6 @@ public partial class TextNode
             shaped += advance * repeat;
         }
         return (pen, shaped > 0 ? pen / shaped : 1);
-    }
-
-    /// <summary>
-    /// The glyphs LineFace and GlyphShadow draw for <paramref name="line"/>: its text shaped on its own (each run at its
-    /// shaping size), a glyph starting a cluster at the character position the label gives its first code point (the first
-    /// of the label's glyphs with a position of its own whose cluster holds it), any other after the glyph before it.
-    /// </summary>
-    void DrawnGlyphs(LayoutLine line, TextServer ts, Font font, int ramp)
-    {
-        var tl = new TextLine();
-        foreach (var (a, b) in Runs(line.Start, line.End)) tl.AddString(Substring(a, b), font, ShapeSize(SizeAt(a)));
-        float pen = 0;
-        foreach (Dictionary g in ts.ShapedTextGetGlyphs(tl.GetRid()))
-        {
-            int index = line.Start + (int)g["start"], at = Math.Min(index, codePoints.Length - 1), count = (int)g["count"], repeat = (int)g["repeat"];
-            float size = SizeAt(at), labelSize = LabelSize(size);
-            float k = labelSize / ShapeSize(size);
-            int raster = size == FieldSize ? ramp : (int)RampSize(size * ScreenScale);
-            if (count > 0)
-                foreach (var h in line.Shaped)
-                    if (h.Bounded && index >= h.Index && index < h.End) { pen = h.Pen; break; }
-            float advance = (float)g["advance"] * k;
-            line.Glyphs.Add(new PlacedGlyph(index, count, (Rid)g["font_rid"], (long)g["index"], raster, labelSize / raster,
-                pen, (Vector2)g["offset"] * k, advance, repeat, labelSize) { DrawPen = pen });
-            pen += advance * repeat;
-        }
-        tl.Dispose();
     }
 
     /// <summary>

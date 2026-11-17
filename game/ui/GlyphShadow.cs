@@ -10,7 +10,7 @@ namespace Ms2Godot.Ui;
 /// (strengthenImage: int((v - 8) * strength + 0.5) + 8, clamped; no bias at strength 1 or less) and drawn scaled to the screen
 /// size, tinted with the shadow colour, under the face and offset by angle and distance.
 /// It is a child of the field's label drawn behind it, and the glyphs sit where TextNode.Layout puts them (the label's own
-/// layout for text with no FONT size): the pen of each glyph cluster is the label's character position, the baseline is
+/// layout for text with no FONT size): each glyph of the label's shaped line at the label's own pen for it, repeat times, the baseline is
 /// the line's (line top plus the line ascent, floored as the face is), and each glyph has its run's size. A line the face
 /// draws at its own exact x (LayoutLine.Dx, LineFace) moves its shadow with it.
 /// The glyph rasters are cached by (font, shadow ramp size, glyph, blur, strength): the colour is a draw-time tint, not a key.
@@ -45,7 +45,7 @@ public partial class GlyphShadow : Node2D
         var font = ls.Font;
         foreach (var line in text.ShownLines())
         {
-            foreach (var g in line.Glyphs)
+            foreach (var g in line.Shaped)
             {
                 if (text.Hidden(g) || g.Glyph == 0) continue;
                 // the glyph's run size on the screen, its shadow ramp, the raster blur in shadow pixels and label pixels per shadow pixel
@@ -56,9 +56,12 @@ public partial class GlyphShadow : Node2D
                 var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Size, text.DescentRatio * g.Size);
                 var e = Get(frid, ramp, g.Glyph, rb, strength);
                 if (e.Texture == null) continue;
-                float pen = line.LabelX + g.DrawPen + line.Dx;
-                var at = new Vector2(pen + g.Offset.X, MathF.Floor(line.Baseline + g.Offset.Y)) + shift + e.Origin * k + offset;
-                DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
+                float pen = line.LabelX + g.Pen + line.Dx;
+                for (int r = 0; r < g.Repeat; r++)
+                {
+                    var at = new Vector2(pen + r * g.Advance + g.Offset.X, MathF.Floor(line.Baseline + g.Offset.Y)) + shift + e.Origin * k + offset;
+                    DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
+                }
                 drawn.Add(e.Texture);
             }
         }

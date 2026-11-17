@@ -7,8 +7,8 @@ namespace Ms2Godot.Ui;
 /// The face of a text field's label drawn line by line, for a label of more than one line whose lines Scaleform places
 /// each at its own exact x (TextNode.AlignLine): the label's own face is hidden and this draws the same glyphs where the
 /// label lays them out, each line moved by its own x (LayoutLine.Dx). The lines and glyphs are TextNode.Layout's: each
-/// glyph at its run's size, drawn from that size's raster scaled to it, the pen of each glyph cluster the label's
-/// character position and the baseline the line top plus the line ascent (as GlyphShadow places its glyphs); for text
+/// glyph at its run's size, drawn from that size's raster scaled to it, at the label's own pen for it (each glyph of the
+/// label's shaped line, repeat times, as Label::draw_glyph places them) and the baseline the line top plus the line ascent (as GlyphShadow places its glyphs); for text
 /// with no FONT size, drawn with no move, it is the label's own face, pixel for pixel. A label showing htmlText formats
 /// (TextNode.SetHtml) is drawn here too, each glyph in its run's colour, faux
 /// bold and faux italic (FauxStyle), and each underlined run with its line. It draws nothing while the label shows its own
@@ -38,10 +38,10 @@ public partial class LineFace : Node2D
             // the underline run being built: its start x, y, length and colour (a change of colour or underline closes it)
             float ulX = 0, ulY = 0, ulLen = 0;
             Color? ulColor = null;
-            foreach (var g in line.Glyphs)
+            foreach (var g in line.Shaped)
             {
                 if (text.Hidden(g)) continue;
-                float pen = line.LabelX + g.DrawPen + line.Dx;
+                float pen = line.LabelX + g.Pen + line.Dx;
                 var style = text.StyleAt(g.Index);
                 var color = text.GlyphColor(g.Index);
                 float descent = text.DescentRatio * g.Size;
@@ -58,7 +58,8 @@ public partial class LineFace : Node2D
                     // the glyph from its run's raster, scaled to the run's size
                     var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Raster, text.DescentRatio * g.Raster);
                     Scale(ref scale, g.Scale);
-                    ts.FontDrawGlyph(frid, canvas, g.Raster, new Vector2(pen + g.Offset.X, baseline + g.Offset.Y) / g.Scale + shift, g.Glyph, color);
+                    for (int r = 0; r < g.Repeat; r++)
+                        ts.FontDrawGlyph(frid, canvas, g.Raster, new Vector2(pen + r * g.Advance + g.Offset.X, baseline + g.Offset.Y) / g.Scale + shift, g.Glyph, color);
                 }
             }
             if (ulColor is Color last) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, last); }
