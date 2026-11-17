@@ -67,8 +67,8 @@ public static class StarterLook
         var items = new List<EquipItem>();
         if (!packs.Exists("Xml", "table/defaultitems.xml")) return (items, palettes.Skin(0));
         var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/defaultitems.xml")).TrimStart('﻿'));
-        var genders = new Dictionary<int, XElement>();      // itemdata file prefix -> root
-        var models = new Dictionary<int, XElement>();
+        var genders = ItemFiles(packs, "itemdata");      // itemdata file prefix -> root
+        var models = ItemFiles(packs, "itemmodel");
 
         int GenderOf(int id)
         {
@@ -123,11 +123,22 @@ public static class StarterLook
         return (items, palettes.Skin(skinRow));
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<string, Dictionary<int, XElement>>> files = new();
+
+    /// <summary>The parsed {dir}/{prefix}.xml roots of a pack set, kept across calls: a pack entry never changes and callers only read the trees.</summary>
+    static Dictionary<int, XElement> ItemFiles(PackSet packs, string dir)
+    {
+        var all = files.GetValue(packs, _ => new());
+        lock (all) { if (!all.TryGetValue(dir, out var d)) all[dir] = d = new(); return d; }
+    }
+
     /// <summary>An element with the given id in Xml.m2d {dir}/{id / 100000}.xml (itemdata and itemmodel are split that way).</summary>
     static XElement Find(PackSet packs, Dictionary<int, XElement> cache, string dir, int id, string element)
     {
         int prefix = id / 100000;
-        if (!cache.TryGetValue(prefix, out var root))
+        XElement root;
+        lock (cache)
+        if (!cache.TryGetValue(prefix, out root))
         {
             string entry = $"{dir}/{prefix}.xml";
             root = packs.Exists("Xml", entry)
