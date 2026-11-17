@@ -15,9 +15,8 @@ namespace Ms2Godot.World;
 /// <item>Shown (m_b8) once the local player damages the npc (PCBase::vfunc_112); others' hits never show it.</item>
 /// <item>Drawn by <see cref="HpBarClip"/>: rank = the row's class (10 with big_hp_bar), label friendly for rows with
 /// friendly 1, else hostile.</item>
-/// <item>Place: the npc's anchor on screen, plus OffsetNpcHpbar and the camera shift in stage units. OffsetNpcHpbar
-/// equals OffsetNpcNametag (5 and 5 in the client's constants) and both get the same camera shift, so the bar goes
-/// where the npc's name tag goes (<see cref="NpcPresence"/> places both from one anchor).</item>
+/// <item>Place: the npc's Eff_UI point on screen, plus OffsetNpcHpbar and the camera shift in stage units, the same
+/// anchor and shift as the npc's name tag (<see cref="NpcPresence"/> places both).</item>
 /// </list>
 /// </summary>
 public sealed class NpcHpBar

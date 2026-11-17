@@ -10,10 +10,13 @@ namespace Ms2Godot.World;
 ///   npc's position, in collision group 4; it blocks the local player unless the row sets capsule ignore.
 /// - The name tag (UINameTag, the uinametag movie's NameTag): only for rows with nametag="1"; the name and, on the line above,
 ///   the npc title (npctitle.xml), font size 18, in the colour NpcRow.TagColorKey picks (friendly, or by class for hostile
-///   npcs; NameTagColorDead once a hostile npc dies). It sits OffsetNpcNametag above the model's top, is
-///   drawn in screen space, fully opaque up to 700 away, fading to 40% at 1500 and hidden beyond. Like every movie the tag is
-///   drawn at the UI scale (UiScale), and NameTag.setData centres m_name vertically (TextFieldEx VALIGN_CENTER), as for the
-///   local player's tag (PlayerNameTag).
+///   npcs; NameTagColorDead once a hostile npc dies). It is drawn in screen space, fully opaque up to 700 away, fading to
+///   40% at 1500 and hidden beyond. Like every movie the tag is drawn at the UI scale (UiScale), and NameTag.setData
+///   centres m_name vertically (TextFieldEx VALIGN_CENTER), as for the local player's tag (PlayerNameTag).
+/// - Place of the tag and the HP bar: both hang from the npc's "Eff_UI" effect dummy (UIHudEntity::Entity::vfunc_10; the
+///   npc's position when the model has none). On screen, in stage units, the tag moves down by PCBase::vfunc_89 =
+///   m_f16c + m_f170 and the bar by m_f164 + m_f174; the CNpc ctor sets m_f16c = OffsetNpcNametag, m_f164 = OffsetNpcHpbar
+///   and both others to 0 (5 and 5 in the client's constants). Then both get FUN_1412762d0, the camera-pitch shift.
 /// </summary>
 public sealed partial class NpcPresence : CanvasLayer
 {
@@ -27,8 +30,9 @@ public sealed partial class NpcPresence : CanvasLayer
     readonly List<Tag> tags = new();
     readonly Dictionary<FieldNpcs.Placed, NpcHpBar> bars = new();
     readonly ClientConstants constants;
-    float tagOffset;
-    float u = 1;                          // the movies' draw scale (UiScale)
+    float tagOffset, barOffset;
+    Field field;
+    float u = 1;                         // the movies' draw scale (UiScale)
     Camera3D camera;
     /// <summary>The local player: the fade distance is measured from it (the sandbox camera sits further back than the client's).</summary>
     public Node3D Viewer;
@@ -36,8 +40,15 @@ public sealed partial class NpcPresence : CanvasLayer
     /// <summary>The npcs <see cref="Build"/> was given.</summary>
     public IReadOnlyList<FieldNpcs.Placed> Npcs = Array.Empty<FieldNpcs.Placed>();
 
-    /// <summary>The world point the npc's name tag, HP bar and damage numbers hang from (see the class summary).</summary>
-    public Vector3 Anchor(FieldNpcs.Placed n) => n.Root.GlobalPosition + new Vector3(0, n.Height + tagOffset, 0);
+    /// <summary>The npc's Eff_UI point, which its name tag and HP bar hang from; its position when the model has no such dummy.</summary>
+    public Vector3 Anchor(FieldNpcs.Placed n) => Dummy(n, "Eff_UI") ?? n.Root.GlobalPosition;
+
+    /// <summary>The world point of one of the npc's effect dummies (on its model root, "Scene Root" in the files), null without it.</summary>
+    public static Vector3? Dummy(FieldNpcs.Placed n, string name) =>
+        DummyAnchor.Point(n.Row.EffectDummies, name, n.Body?.GetNodeOrNull<Node3D>("Model"), "Scene Root");
+
+    /// <summary>FUN_1412762d0 for a hud entity at <paramref name="anchor"/> (0 before the field is found).</summary>
+    public float Shift(Vector3 anchor) => field == null ? 0 : PlayerNameTag.PitchShift(field, anchor);
 
     /// <summary>CNpc::vfunc_66: the npc's battle stance; entering it makes the HP bar active with the current HP.</summary>
     public void Stance(FieldNpcs.Placed n, bool battle, long cur, long max)
@@ -93,7 +104,8 @@ public sealed partial class NpcPresence : CanvasLayer
 
     public void Build(IEnumerable<FieldNpcs.Placed> npcs, UiAssets ui)
     {
-        tagOffset = constants.Float("OffsetNpcNametag", 260);
+        tagOffset = constants.Float("OffsetNpcNametag", 260);   // the defaults are the client's constants block
+        barOffset = constants.Float("OffsetNpcHpbar", 120);
         if (IsInsideTree()) u = UiScale.For(GetViewport().GetVisibleRect().Size);
         UiMovie movie = null, barMovie = null;
         try { movie = new UiMovie(ui, "uinametag"); } catch (Exception e) { GD.PushWarning("name tag movie: " + e.Message); }
@@ -161,6 +173,7 @@ public sealed partial class NpcPresence : CanvasLayer
     {
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
+        field ??= FindField(GetTree().Root);
         bool refresh = frame++ % RefreshEvery == 0;
         Vector3 eye = default;
         if (refresh) eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
@@ -179,13 +192,28 @@ public sealed partial class NpcPresence : CanvasLayer
                     t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
                 }
             }
-            if (t.On) t.Node.Position = camera.UnprojectPosition(t.Head).Round();
+            if (t.On)
+            {
+                var p = camera.UnprojectPosition(t.Head);
+                p.Y += (tagOffset + Shift(t.Head)) * u;
+                t.Node.Position = p.Round();
+            }
         }
         foreach (var b in bars.Values)
         {
             if (!b.Active) continue;
             var a = Anchor(b.Npc);
-            b.Update(camera.IsPositionBehind(a) ? null : camera.UnprojectPosition(a));   // float origin, as SetPositionFloat
+            if (camera.IsPositionBehind(a)) { b.Update(null); continue; }
+            var p = camera.UnprojectPosition(a);
+            p.Y += (barOffset + Shift(a)) * u;
+            b.Update(p);                          // float origin, as SetPositionFloat
         }
+    }
+
+    static Field FindField(Node n)
+    {
+        if (n is Field f) return f;
+        foreach (var c in n.GetChildren()) if (FindField(c) is { } g) return g;
+        return null;
     }
 }

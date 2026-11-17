@@ -22,9 +22,8 @@ namespace Ms2Godot.Ui;
 /// RemoveAni frame.</item>
 /// <item>Scale: 1 when the point is no farther from the camera than the player, else 0.5 + 0.5 x clamp((2500 - d) / 2500)
 /// with d its distance to the player; recover numbers on the own PC are always 1.</item>
-/// <item>Place: the screen point in stage units, plus FUN_1412762d0 (the camera-pitch shift) for the own PC's numbers. An
-/// npc's numbers hang from <see cref="NpcPresence.Anchor"/> plus the npc's Eff_Damage - Eff_UI dummy delta: the anchor
-/// the npc's name tag and HP bar share stands in for the Eff_UI point and its shifts.</item>
+/// <item>Place: the target's "Eff_Damage" dummy (its position without one) on screen in stage units, plus FUN_1412762d0
+/// (the camera-pitch shift); a follower adds PCBase::m_f178 too, OffsetPcDamagenumber (0 in the client's constants).</item>
 /// </list>
 /// </summary>
 public sealed partial class DamageText : CanvasLayer
@@ -57,7 +56,6 @@ public sealed partial class DamageText : CanvasLayer
         public bool CanJump = true;
         public double Start = -1;
         public Clip Clip;
-        public bool OwnPc;
     }
 
     readonly UiMovie movie;
@@ -66,12 +64,10 @@ public sealed partial class DamageText : CanvasLayer
     readonly Dictionary<object, int> normalIndex = new(), followerIndex = new();
     readonly List<Clip> clips = new();
     readonly Ms2.Formats.Pack.PackSet packs;
-    readonly Dictionary<NpcRow, Vector3> npcDelta = new();
     double now;                        // ms
     Camera3D camera;
     Field field;
     Player player;
-    NpcPresence npcs;
     IReadOnlyList<EffectDummy> pcDummies;
     Node3D pcModel;
 
@@ -91,9 +87,8 @@ public sealed partial class DamageText : CanvasLayer
     public void OnNpc(FieldNpcs.Placed n, long value, int grade)
     {
         if (grade != 0 || !Ready()) return;
-        if (npcs == null) return;
-        var p = npcs.Anchor(n) + NpcDelta(n);
-        Spawn(n, p, null, "Monster", value.ToString(), NpcNormal, false);
+        var p = NpcPresence.Dummy(n, "Eff_Damage") ?? n.Root.GlobalPosition;
+        Spawn(n, p, null, "Monster", value.ToString(), NpcNormal);
     }
 
     /// <summary>A hit (grade 0) or a heal (grade 5) on the own PC.</summary>
@@ -102,8 +97,8 @@ public sealed partial class DamageText : CanvasLayer
         if (!Ready() || player == null) return;
         var point = PcPoint();
         if (point == null) return;
-        if (grade == 0) Spawn(player, point.Value, null, "User", Math.Abs(value).ToString(), PcNormal, true);
-        else if (grade == 5) Spawn(player, point.Value, PcPoint, "Recover", "+" + Math.Abs(value), Recover, true);
+        if (grade == 0) Spawn(player, point.Value, null, "User", Math.Abs(value).ToString(), PcNormal);
+        else if (grade == 5) Spawn(player, point.Value, PcPoint, "Recover", "+" + Math.Abs(value), Recover);
     }
 
     bool Ready()
@@ -112,7 +107,6 @@ public sealed partial class DamageText : CanvasLayer
         camera ??= GetViewport().GetCamera3D();
         field ??= Find<Field>(GetTree().Root);
         player ??= Find<Player>(GetTree().Root);
-        npcs ??= Find<NpcPresence>(GetTree().Root);
         if (player != null && pcModel == null)
         {
             pcDummies = EffectDummyTable.Load(packs).Pc(player.Gender);
@@ -124,23 +118,12 @@ public sealed partial class DamageText : CanvasLayer
     /// <summary>The own PC's Eff_Damage point, its position when the dummy is missing.</summary>
     Vector3? PcPoint() => player == null ? null : DummyAnchor.Point(pcDummies, "Eff_Damage", pcModel, player.RootName) ?? player.GlobalPosition;
 
-    /// <summary>The npc's Eff_Damage point less its Eff_UI point (Eff_Damage hangs under Eff_UI, which hangs under the model root).</summary>
-    Vector3 NpcDelta(FieldNpcs.Placed n)
-    {
-        if (npcDelta.TryGetValue(n.Row, out var d)) return d;
-        var model = n.Body?.GetNodeOrNull<Node3D>("Model");
-        var dmg = DummyAnchor.Point(n.Row.EffectDummies, "Eff_Damage", model, "Scene Root");
-        var ui = DummyAnchor.Point(n.Row.EffectDummies, "Eff_UI", model, "Scene Root");
-        d = dmg is { } a && ui is { } b ? a - b : Vector3.Zero;
-        return npcDelta[n.Row] = d;
-    }
-
-    void Spawn(object owner, Vector3 pos, Func<Vector3?> follow, string set, string text, Ani ani, bool ownPc)
+    void Spawn(object owner, Vector3 pos, Func<Vector3?> follow, string set, string text, Ani ani)
     {
         if (camera.IsPositionBehind(pos)) return;       // world -> screen failed: nothing is created
         var clip = Build(set, text, ani);
         if (clip == null) return;
-        var e = new Entry { Owner = owner, Pos = pos, Follow = follow, Clip = clip, OwnPc = ownPc };
+        var e = new Entry { Owner = owner, Pos = pos, Follow = follow, Clip = clip };
         bool follower = follow != null;
         var counters = follower ? followerIndex : normalIndex;
         e.Index = counters.TryGetValue(owner, out var i) ? (i + 1) % MaxIndex : 0;
@@ -254,7 +237,7 @@ public sealed partial class DamageText : CanvasLayer
                 e.State = 1;
                 e.CanJump = false;
             }
-            if (e.OwnPc) stage.Y += PitchShift(e.Pos) * u;
+            stage.Y += PitchShift(e.Pos) * u;
             w.Position = stage.Round();
             float s = DistanceScale(e.Pos);
             w.Scale = new Vector2(s * u, s * u);
@@ -281,7 +264,7 @@ public sealed partial class DamageText : CanvasLayer
                 e.CanJump = false;
             }
             var stage = camera.UnprojectPosition(p);
-            stage.Y += PitchShift(p) * u;            // PCBase::m_f178 is taken as 0
+            stage.Y += PitchShift(p) * u;            // + PCBase::m_f178 = OffsetPcDamagenumber, 0
             w.Position = stage.Round();
             w.Scale = new Vector2(u, u);             // FUN_141914c40: 1 for the own PC
             w.Visible = true;
@@ -297,15 +280,8 @@ public sealed partial class DamageText : CanvasLayer
         return 0.5f + 0.5f * Mathf.Clamp((Distance - p.DistanceTo(player.GlobalPosition)) / Distance, 0, 1);
     }
 
-    /// <summary>FUN_1412762d0, as for the own name tag (<see cref="PlayerNameTag"/>).</summary>
-    float PitchShift(Vector3 anchor)
-    {
-        if (field?.CameraEye is not { } eye) return 0;
-        float pitch = Mathf.Clamp(Mathf.RadToDeg(field.CameraPitch), 0, 90);
-        float d = new Vector2(anchor.X - eye.X, anchor.Z - eye.Z).Length();
-        float r = d > Field.MinCameraDistance ? Field.MinCameraDistance / d : 1f;
-        return Mathf.Floor((-40f + 70f * pitch / 90f) * r);
-    }
+    /// <summary>FUN_1412762d0, as for the name tags (<see cref="PlayerNameTag.PitchShift"/>).</summary>
+    float PitchShift(Vector3 anchor) => PlayerNameTag.PitchShift(field, anchor);
 
     static T Find<T>(Node n) where T : Node
     {

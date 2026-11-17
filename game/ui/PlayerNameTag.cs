@@ -92,9 +92,12 @@ public sealed partial class PlayerNameTag : CanvasLayer
     public Vector3? Anchor { get; private set; }
 
     /// <summary>FUN_1412762d0: the zoom-dependent shift of a hud entity at <paramref name="anchor"/>.</summary>
-    public float HeightAdjust(Vector3 anchor)
+    public float HeightAdjust(Vector3 anchor) => PitchShift(field, anchor);
+
+    /// <summary>FUN_1412762d0 for any hud entity (name tags, HP bars, damage numbers) at <paramref name="anchor"/>.</summary>
+    public static float PitchShift(Field field, Vector3 anchor)
     {
-        if (field.CameraEye is not { } eye) return 0;
+        if (field?.CameraEye is not { } eye) return 0;
         float pitch = Mathf.Clamp(Mathf.RadToDeg(field.CameraPitch), 0, 90);
         float d = new Vector2(anchor.X - eye.X, anchor.Z - eye.Z).Length();
         float r = d > Field.MinCameraDistance ? Field.MinCameraDistance / d : 1f;
