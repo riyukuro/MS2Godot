@@ -13,6 +13,7 @@ public enum Inbound : ushort {
     LoginResult = 0x0A,
     ServerList = 0x0B,
     CharacterList = 0x0C,
+    CharacterCreate = 0x46,
     MoveResult = 0x0D,
     LoginToGame = 0x0E,
     ResponseTimeSync = 0x11,

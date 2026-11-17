@@ -17,6 +17,12 @@ public class PacketTests {
         Assert.That(ResponseLoginB.Read(new ByteReader(Bytes(b))).Value, Is.EqualTo(5));
     }
 
+    [Test] public void CharacterCreateAnswerReads() {
+        var w = new ByteWriter(); w.WriteByte(3); w.WriteUnicodeString("name taken");
+        var a = CharacterCreateAnswer.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(a.Kind, Is.EqualTo((byte) 3)); Assert.That(a.Message, Is.EqualTo("name taken"));
+    }
+
     [Test] public void SelectCharacterLayout() {
         var bytes = Bytes(new SelectCharacter(0x0102030405060708, 3));
         Assert.That(bytes, Is.EqualTo(new byte[] { 0, 8, 7, 6, 5, 4, 3, 2, 1, 3, 0 }));

@@ -100,6 +100,7 @@ public sealed partial class RemoteLayer : Node3D
                 case UserMovedEvent mv:
                     if (!users.TryGetValue(mv.ObjectId, out var r)) break;
                     r.Target = G(mv.Position); r.TargetYaw = mv.YawDegrees;
+                    if (++movedSeen <= 3 || movedSeen % 100 == 0) GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}");
                     break;
                 case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
                 case NpcAddedEvent na: npcs.Add(na); NpcsAdded++; break;
@@ -108,6 +109,8 @@ public sealed partial class RemoteLayer : Node3D
             }
         }
     }
+
+    int movedSeen;
 
     public override void _Process(double delta)
     {

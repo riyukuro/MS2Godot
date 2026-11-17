@@ -51,6 +51,11 @@ public partial class CharacterCreateScene : LobbyFieldScene
     }
 
     /// <summary>The server refused the request: shows its message in the name prompt, which opens again.</summary>
+    /// <summary>Scripted runs: types the name into the open create screen and confirms it.</summary>
+    public static void ConfirmScripted(string name) => current?.custom?.Confirm(name);
+    /// <summary>Scripted runs: the job page's Create button for its selected job (jobs.Create), which opens the look page.</summary>
+    public static void PickJobScripted() { var c = current; if (c?.jobs != null && page == Page.Select) { gender = rng.Next(2); c.SwitchTo(Page.Create); } }
+    public static bool OnCreatePage => current != null && page == Page.Create && current.custom != null;
     public static void CreateFailed(string message) => current?.custom?.ShowCreateError(message);
 
     static CharacterCreateScene current;

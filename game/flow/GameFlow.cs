@@ -155,6 +155,17 @@ public partial class GameFlow : Node
     void OnCreated(CreateCharacter request, byte[] bytes)
     {
         if (Current != State.Create) return;
+        if (Net.LiveSession.Instance is { } live)
+        {
+            if (live.Busy) return;
+            _ = live.CreateAsync(request).ContinueWith(t =>
+            {
+                if (t.Result == null) return;       // refused: the create screen stays
+                Session.SelectedIndex = Session.List().Count - 1;
+                CallDeferred(nameof(DeferredGo), (int)State.Lobby);
+            });
+            return;
+        }
         int subJob1 = 0;
         try
         {

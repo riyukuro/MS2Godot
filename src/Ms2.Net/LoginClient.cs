@@ -21,6 +21,27 @@ public sealed class LoginClient {
     // (CMachineIDManager::GetValue = m_n18, machineidmanager.cpp:58-61); i32 DAT_143ab2858 (:593, filled by the server's bypass key packet, networkservice.cpp:892, else 0);
     // the language code string (FUN_140652030(GetLanguage()), :595; the code depends on the client language setting and is not resolved here).
     // The server reads only up to the machine id (LoginHandler.cs:36-40), so the trailing fields do not change the outcome.
+    /// <summary>Sends a create request on the logged-in connection and waits for the answer: the new entry (CharacterList AppendEntry) or the refusal (0x46).
+    /// Throws <see cref="CharacterCreateRefused"/> for a refusal.</summary>
+    public async Task<CharacterEntry> CreateAsync(CreateCharacter request, int timeoutMs = 15000, CancellationToken ct = default) {
+        await transport.SendAsync(request, ct);
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (true) {
+            ct.ThrowIfCancellationRequested();
+            if (!transport.Incoming.TryDequeue(out var p)) {
+                if (transport.IsClosed) throw new IOException("login connection closed", transport.Failure);
+                if (Environment.TickCount64 > deadline) throw new TimeoutException("character create timed out");
+                await Task.Delay(5, ct);
+                continue;
+            }
+            if (transport.Is(p, Inbound.CharacterCreate)) { var a = CharacterCreateAnswer.Read(p.Reader()); throw new CharacterCreateRefused(a.Kind, a.Message); }
+            if (transport.Is(p, Inbound.CharacterList)) {
+                var m = CharacterListMessage.Read(p.Reader());
+                if (m.Command == CharacterListCommand.AppendEntry && m.Entries.Count > 0) return m.Entries[0];
+            }
+        }
+    }
+
     readonly TcpTransport transport;
     public LoginClient(TcpTransport transport) { this.transport = transport; }
 
@@ -59,4 +80,9 @@ public sealed class LoginClient {
             }
         }
     }
+}
+
+public sealed class CharacterCreateRefused : Exception {
+    public byte Kind { get; }
+    public CharacterCreateRefused(byte kind, string message) : base($"character create refused, kind {kind} {message}") { Kind = kind; }
 }

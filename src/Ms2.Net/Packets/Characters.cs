@@ -215,6 +215,13 @@ public sealed class CharacterEntry {
     }
 }
 
+/// <summary>Inbound 0x46, the create refusal (UICharacterCreateDialog::OnCreateCharacterAnswer, uicameraeditdialog.cpp:1608; server CharacterListPacket.CreateError):
+/// u8 error kind, unicode message. The client picks its text by kind (1, 6, 8, 9, 10, 11, 12 ...). A create that works sends no 0x46: the server answers
+/// with CharMaxCount (0xB8, networkservice.cpp:1069) and a CharacterList AppendEntry (LoginSession.CreateCharacter).</summary>
+public sealed record CharacterCreateAnswer(byte Kind, string Message) {
+    public static CharacterCreateAnswer Read(ByteReader r) { var p = new CharacterCreateAnswer(r.ReadByte(), r.ReadUnicodeString()); r.ExpectEnd("CharacterCreateAnswer"); return p; }
+}
+
 public enum CharacterListCommand : byte { List = 0, AppendEntry = 1, DeleteEntry = 2, StartList = 3, EndList = 4, BeginDelete = 5, CancelDelete = 6, NameChanged = 7 }
 
 /// <summary>Inbound 0x0C: u8 command, then per command. Entries are filled for List and AppendEntry; other commands keep their fields in Raw.</summary>

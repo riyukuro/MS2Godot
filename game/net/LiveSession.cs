@@ -73,6 +73,22 @@ public partial class LiveSession : Node
         finally { Busy = false; }
     }
 
+    /// <summary>The create screen's request goes to the login server; the new character joins the list. Null (logged) when the server refuses.</summary>
+    public async Task<CharacterEntry> CreateAsync(CreateCharacter request)
+    {
+        Busy = true;
+        try
+        {
+            var e = await new LoginClient(login).CreateAsync(request);
+            Session.Characters.Add(e);
+            GD.Print($"live: character created: {e.User.Name} id {e.User.CharacterId}");
+            return e;
+        }
+        catch (CharacterCreateRefused ex) { GD.PushWarning("live: " + ex.Message); return null; }
+        catch (Exception ex) { GD.PushWarning("live: create failed: " + ex.Message); return null; }
+        finally { Busy = false; }
+    }
+
     /// <summary>Select the character and migrate to the game server, up to RequestFieldEnter. The chosen character's map becomes the server's.</summary>
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
@@ -148,6 +164,7 @@ public partial class LiveSession : Node
         player = GetTree().Root.FindChild("Player", true, false) as Player;
         if (player == null) { GD.PushWarning("live: no player to send movement for"); return; }
         player.Live = true;
+        player.ServerTick = () => game?.Session.ServerTick ?? 0;
         player.StateSyncOut += records =>
         {
             if (game == null) return;
@@ -163,7 +180,6 @@ public partial class LiveSession : Node
             Send(new StateChange(mode, arg, game.Session.ServerTick, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));   // mypc.cpp:3661: GetServerTick
             GD.Print($"live: State sent, mode {mode} arg {arg}");
         };
-        player.ServerTick = () => game?.Session.ServerTick ?? 0;
     }
 
     public override void _Process(double delta)
@@ -214,7 +230,19 @@ public partial class LiveSession : Node
         UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
         await Until(() => flow.Current == GameFlow.State.Lobby && tree.CurrentScene?.SceneFilePath == GameFlow.LobbyScene, 600); await Frames(30);
         if (flow.Current != GameFlow.State.Lobby) { GD.PushWarning("live: no character list"); tree.Quit(1); return; }
-        var first = Session.List().FirstOrDefault();
+        string newName = System.Environment.GetEnvironmentVariable("MS2_LIVE_CREATE");   // create this character first (slice 6), then enter with it
+        if (!string.IsNullOrEmpty(newName))
+        {
+            UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnCreatePC);
+            await Until(() => flow.Current == GameFlow.State.Create && tree.CurrentScene?.SceneFilePath == GameFlow.CreateScene, 600); await Frames(120);
+            int before = Session.List().Count;
+            Ms2Godot.Ui.Create.CharacterCreateScene.PickJobScripted();
+            await Frames(10); await Until(() => Ms2Godot.Ui.Create.CharacterCreateScene.OnCreatePage, 600); await Frames(60);
+            Ms2Godot.Ui.Create.CharacterCreateScene.ConfirmScripted(newName);
+            await Until(() => flow.Current == GameFlow.State.Lobby && Session.List().Count > before, 600); await Frames(60);
+            if (Session.List().Count <= before) { GD.PushWarning("live: create did not add a character"); tree.Quit(1); return; }
+        }
+        var first = newName != null && newName != "" ? Session.List().Last() : Session.List().FirstOrDefault();
         if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }
         UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, first.User.CharacterId.ToString());
         await Until(() => flow.Current == GameFlow.State.Game);
