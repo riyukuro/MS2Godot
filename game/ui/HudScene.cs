@@ -17,7 +17,12 @@ public partial class HudScene : Node
 {
     UiAssets assets;
     readonly StubHudData data = new();
-    readonly List<string> chatLines = new();
+    /// <summary>
+    /// UIMessengerBrowser's chat log (m_logs, the last m_18c = 500 lines), the lines the output field holds (m_194 of them)
+    /// and the lines not yet in it (m_pendingLogs).
+    /// </summary>
+    readonly List<string> chatLogs = new(), chatShown = new(), chatPending = new();
+    const int ChatLogMax = 500, ChatShownMax = 600, ChatRebuildPending = 10;     // m_18c, m_190, m_198 (UIMessengerBrowser ctor)
     MovieClipNode chat; TextInputWidget chatInput; TextNode chatLog;
     /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
     /// (DAT_1439f8cd0 - 2) = 19 + 19 with feature 0xbd (the adventure level bar) on.</summary>
@@ -79,7 +84,7 @@ public partial class HudScene : Node
         mapImage = null; mapPlayer = null; mapArrow = null; mapClip = null;
         BuildHud();
         if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
-        if (chatLines.Count > 0) ShowChatLines();
+        if (chatShown.Count > 0) ShowChatLines();
     }
 
     /// <summary>
@@ -532,12 +537,30 @@ public partial class HudScene : Node
         chatInput.Edit.Text = "";
     }
 
-    /// <summary>The log keeps the last lines in view (TextAreaEx position = maxScrollV after each append).</summary>
+    /// <summary>UIMessengerBrowser::FUN_141a26e00: the line joins the log (the oldest goes past 500) and the pending lines.</summary>
     void AddChatLine(string line)
     {
         if (chatLog == null) return;
-        chatLines.Add(line);
-        if (chatLines.Count > 100) chatLines.RemoveAt(0);
+        chatLogs.Add(line);
+        chatPending.Add(line);
+        if (chatLogs.Count > ChatLogMax) chatLogs.RemoveAt(0);
+    }
+
+    /// <summary>
+    /// UIMessengerBrowser::vfunc_15, once a frame: 10 or more pending lines, or more than 600 in the field with them, rebuild
+    /// the field from the log (FUN_141a27bf0, ReselectCurrentTab: the last 500); otherwise they are appended
+    /// (FlushPendingLogs). The log keeps the last lines in view (TextAreaEx position = maxScrollV after each append).
+    /// </summary>
+    void FlushChat()
+    {
+        if (chatPending.Count == 0) return;
+        if (chatPending.Count >= ChatRebuildPending || chatShown.Count + chatPending.Count > ChatShownMax)
+        {
+            chatShown.Clear();
+            chatShown.AddRange(chatLogs);
+        }
+        else chatShown.AddRange(chatPending);
+        chatPending.Clear();
         ShowChatLines();
     }
 
@@ -546,7 +569,7 @@ public partial class HudScene : Node
         if (chatLog == null) return;
         var l = chatLog.Label;
         l.LinesSkipped = 0;
-        l.Text = string.Join("\n", chatLines);
+        l.Text = string.Join("\n", chatShown);
         l.LinesSkipped = Math.Max(0, l.GetLineCount() - l.GetVisibleLineCount());
         UpdateChatScroll();
     }
@@ -992,6 +1015,7 @@ public partial class HudScene : Node
     int tick;
     public override void _Process(double delta)
     {
+        if (chatLog != null) FlushChat();
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (mapImage != null && ++tick % 6 == 1) UpdateMinimap();
         target?.Process(delta);
