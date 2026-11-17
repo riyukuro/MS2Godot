@@ -132,7 +132,7 @@ public sealed class LoadingProgressLogic
     {
         if (!showFrame)
         {
-            if (picture.Texture != null) { picture.Scale = stage / picture.Texture.GetSize(); picture.Position = Vector2.Zero; }   // setScreenShotContent
+            if (picture.Texture != null) { picture.Scale = stage / picture.Texture.GetSize(); picture.Position = ScreenShotPosition(picture.Texture.GetSize(), stage); }
             if (badge != null)
             {
                 // Progressbar.alignment: x = stageWidth - width - m_marginX, y = stageHeight - height - m_marginY (10 each);
@@ -166,7 +166,7 @@ public sealed class LoadingProgressLogic
                 picture.Scale = r.Size / sz;
                 picture.Position = r.Position;
             }
-            if (screenShot) picture.Position = Vector2.Zero;
+            if (screenShot) picture.Position = ScreenShotPosition(sz, stage);
         }
         if (guide != null && guide.Visible)
         {
@@ -181,6 +181,15 @@ public sealed class LoadingProgressLogic
             guide.Position = pos;
         }
     }
+
+    /// <summary>
+    /// setScreenShotContent: the picture is stretched to the stage (stageWidth x stageHeight), then placed at
+    /// (getContentsPosition(width, stageWidth), getContentsPosition(height, stageHeight)) with its size before the stretch.
+    /// getContentsPosition(a, b) returns b / a, or 1 when they are equal, so the picture sits at the scale ratio (about
+    /// (1.4, 1.4) for a 1280 x 720 shot on a 1837 x 1034 stage), not at the stage origin.
+    /// </summary>
+    public static Vector2 ScreenShotPosition(Vector2 picture, Vector2 stage) =>
+        new(picture.X != stage.X ? stage.X / picture.X : 1, picture.Y != stage.Y ? stage.Y / picture.Y : 1);
 
     /// <summary>
     /// setLocalImageContent: where the loading picture goes on the stage. A narrow stage (width / height under 1.3) fits 90% of
