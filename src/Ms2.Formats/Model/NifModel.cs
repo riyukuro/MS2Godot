@@ -23,6 +23,7 @@ public sealed class ModelMesh
     public int[] Indices;                 // triangle list, file winding
     public bool Skinned;
     public int ParentBone = -1;           // rigid meshes: the NiNode they hang from (-1 = scene root)
+    public float[] Bound;                 // the NiMesh "Bounding Sphere" (its model bound): centre xyz, radius; null if absent
     public Xform Local = Xform.Identity;  // rigid meshes: transform relative to ParentBone
     public bool AlphaTest;                // has an NiAlphaProperty
     public float[] Ambient, Diffuse, Emissive;   // NiMaterialProperty colours (rgb), or null without a material
@@ -70,6 +71,13 @@ public sealed class ModelData
     public List<ModelMesh> Meshes = new();
 
     public int BoneIndex(string name) => Bones.FindIndex(b => b.Name == name);
+
+    /// <summary>An NiMesh's stored "Bounding Sphere" (NiBound: Center, Radius), the model bound Gamebryo keeps for it.</summary>
+    static float[] BoundOf(NifStruct b)
+    {
+        if (!b.TryGetValue("Bounding Sphere", out var v) || v is not NifStruct bs || !bs.TryGetValue("Center", out var cv) || cv is not NifStruct c) return null;
+        return new[] { c.Float("x"), c.Float("y"), c.Float("z"), bs.Float("Radius") };
+    }
 
     static Xform XformOf(NifStruct b)
     {
@@ -354,6 +362,7 @@ public sealed class ModelData
                 Name = nif.Name(i), Block = i, Skinned = skinned,
                 Positions = pos.v.Select(x => (float)x).ToArray(),
                 Textures = TexturesOf(nif, i),
+                Bound = BoundOf(B[i]),
             };
             mesh.Normals = Unit(nrm.v, nv);
             mesh.Tangents = Unit((skinned ? Pick("TANGENT_BP", "TANGENT") : Pick("TANGENT", "TANGENT_BP")).v, nv);

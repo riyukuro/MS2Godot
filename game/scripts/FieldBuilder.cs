@@ -36,6 +36,8 @@ public sealed class FieldBuilder
     public readonly List<FieldEntity> DrawnElsewhere = new();
     /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
+    /// <summary>The blended draws with the client's alpha key, for <see cref="AlphaSort"/>.</summary>
+    public readonly List<AlphaSort.Entry> AlphaEntries = new();
 
     sealed class ModelEntry
     {
@@ -233,9 +235,15 @@ public sealed class FieldBuilder
                             om.SetInstanceTransform(i, ModelBuilder.ToGodot(obj[i].Transform) * local);
                             om.SetInstanceColor(i, InstanceColor(obj[i]));
                         }
-                        visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                        var on = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                        visuals.AddChild(on);
+                        SortAsObject(on, mesh, obj, local);
                         if (glow != null)
-                            visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}_glow", Multimesh = om, Layers = GlowPass.Bit, MaterialOverride = glow, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                        {
+                            var gn = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}_glow", Multimesh = om, Layers = GlowPass.Bit, MaterialOverride = glow, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                            visuals.AddChild(gn);
+                            SortAsObject(gn, mesh, obj, local);
+                        }
                         MultiMeshes++;
                         Instances += obj.Count;
                     }
@@ -253,7 +261,9 @@ public sealed class FieldBuilder
                 if (shell == Shell.Shared && mesh.AlphaBlendOn) ModelBuilder.MakeFluidShell((ArrayMesh)mm.Mesh);
                 if (shell == Shell.Own && mesh.AlphaBlendOn && ModelBuilder.ShellMaterial((ArrayMesh)mm.Mesh) is { } depthOnly)
                 {
-                    visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_shell", Multimesh = mm, MaterialOverride = depthOnly, SortingOffset = -OwnShellSortOffset, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                    var sn = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_shell", Multimesh = mm, MaterialOverride = depthOnly, SortingOffset = -OwnShellSortOffset, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                    visuals.AddChild(sn);
+                    AlphaEntries.Add(new AlphaSort.Entry { Node = sn, Composite = true, Extra = -OwnShellSortOffset });
                     OwnShells++;
                     ownBlended.Add(mm);
                 }
@@ -265,10 +275,16 @@ public sealed class FieldBuilder
                 // the sun's shadow: a MultiMesh is culled as a whole, and its box spans the field, so as one caster every copy is drawn
                 // again in every shadow cascade. The shadow casters are per-cell twins (tight boxes, culled per cascade); the visible
                 // instances stay one MultiMesh per mesh. A blended mesh (water, glass, effects) and the glow twin cast none.
-                visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                visuals.AddChild(node);
                 if (!mesh.AlphaBlendOn) AddShadowCells(visuals, ents[0].ModelName, mesh, mm.Mesh, ents, local);
+                else SortBlended(node, mesh, shell, ents, local);
                 if (builder.GlowMaterial(mesh) is { } gm)
-                    visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                {
+                    var gn = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                    visuals.AddChild(gn);
+                    if (mesh.AlphaBlendOn) SortBlended(gn, mesh, shell, ents, local);
+                }
                 MultiMeshes++;
                 Instances += ents.Count;
             }
@@ -371,6 +387,24 @@ public sealed class FieldBuilder
             list.Add(e);
         }
         return objects;
+    }
+
+    /// <summary>An unsplit blended node: a plain object keyed by its bound, or a shell composite keyed by its centre (radius 0).</summary>
+    void SortBlended(GeometryInstance3D node, ModelMesh mesh, Shell shell, List<FieldEntity> members, Transform3D local)
+    {
+        if (shell == Shell.None) SortAsObject(node, mesh, members, local);
+        else AlphaEntries.Add(new AlphaSort.Entry { Node = node, Composite = true });
+    }
+
+    /// <summary>
+    /// A plain alpha object's key: the client's NiMesh world bound over its members, in member order (AlphaSort.WorldBound).
+    /// The client's member order is ascending EntityID; placement order is used here (the sequential-ID reading).
+    /// </summary>
+    void SortAsObject(GeometryInstance3D node, ModelMesh mesh, List<FieldEntity> members, Transform3D local)
+    {
+        if (mesh.Bound == null) { AlphaEntries.Add(new AlphaSort.Entry { Node = node, Composite = true }); return; }
+        var (c, r) = AlphaSort.WorldBound(mesh.Bound, members.Select(e => ModelBuilder.ToGodot(e.Transform) * local));
+        AlphaEntries.Add(new AlphaSort.Entry { Node = node, Center = c, Radius = r, Bound = mesh.Bound });
     }
 
     /// <summary>
