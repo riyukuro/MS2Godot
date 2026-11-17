@@ -208,8 +208,19 @@ public partial class Player
     {
         current = null; queued.Clear();                                             // ClearRecords / Ridee::ResetStateController
         fallMarked = false;                                                         // m_b15d6 = false
-        Enter(Mount == null ? MoveState.Fall : MoveState.Idle);                    // vfunc_59(5) / spRidee->vfunc_59(1)
-        fallStartY = float.NaN;                                                     // FUN_141676060(ZERO): m_posC10 = ZERO
+        // FUN_141676060(ZERO) (mypc.cpp:2749, pcbase.cpp:3644-3653) clears the fall start (forwarded to a ridee) before the
+        // ridee's vfunc_59(1) (mypc.cpp:2774), so a mount's Idle sends no fall damage (SendFallDamage bails on ZERO,
+        // pcbase.cpp:4352); on foot StateFall::vfunc_4 sets the fall start on entry, and the clear comes after it
+        if (Mount != null)
+        {
+            fallStartY = float.NaN;
+            Enter(MoveState.Idle);                                                  // spRidee->vfunc_59(1)
+        }
+        else
+        {
+            Enter(MoveState.Fall);                                                  // vfunc_59(5)
+            fallStartY = float.NaN;                                                 // FUN_141676060(ZERO): m_posC10 = ZERO
+        }
         GlobalPosition = new Vector3(pos.X, pos.Z, -pos.Y);                         // field (x, y, z) -> Godot (x, z, -y)
         float r = Mathf.DegToRad(rotZ);
         Face(new Vector3(Mathf.Sin(r), 0, Mathf.Cos(r)));                           // forward (sin z, -cos z) in MS2 axes

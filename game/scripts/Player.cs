@@ -28,10 +28,11 @@ public partial class Player : CharacterBody3D
     public Vector3 SpawnPoint;
     /// <summary>
     /// WorldService m_boundsMin / m_boundsMax (+0x820 / +0x82c): the box spanned by the field's MS2Bounding entities' positions
-    /// (worldservice_1.cpp:10394-10405), in field units and axes (Z up). Unbounded until the field sets it.
+    /// (worldservice_1.cpp:10394-10405), in field units and axes (Z up). Before any MS2Bounding it is inverted, min FLT_MAX
+    /// and max -FLT_MAX (worldservice_1.cpp:320-321, reset at 10125-10126), so the box test masks every axis.
     /// </summary>
-    public Vector3 BoundsMin = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
-    public Vector3 BoundsMax = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+    public Vector3 BoundsMin = new(float.MaxValue, float.MaxValue, float.MaxValue);
+    public Vector3 BoundsMax = new(-float.MaxValue, -float.MaxValue, -float.MaxValue);
     public float Gravity = MoveConfig.SceneGravity;
 
     // input: x = right, y = forward (camera relative); set from the keyboard, or by a script when ScriptDriven
@@ -389,9 +390,10 @@ public partial class Player : CharacterBody3D
         Velocity = v;
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
-        MoveStep(v * dt, dt);
+        var firstHit = MoveStep(v * dt, dt);
 
-        wallHit = (nxHit & NxController.Hit.Sides) != 0 && !Grounded && v.Y < 0;
+        // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)
+        wallHit = (firstHit & NxController.Hit.Sides) != 0 && (firstHit & NxController.Hit.Down) == 0 && v.Y < 0;
         if ((nxHit & NxController.Hit.Up) != 0 && jumping && jumpTime < jumpApex)
         {
             // the controller stays under the ceiling until the jump curve comes back down
@@ -404,9 +406,10 @@ public partial class Player : CharacterBody3D
     /// @0x141bd36f0, worldservice_1.cpp:7072-7083: there is no test against the floor, and the up/down part is dropped while
     /// the move goes down) with one more controller move. A mount moves the same body, as the client's Ridee is a PCBase.
     /// </summary>
-    void MoveStep(Vector3 delta, float dt = 0)
+    NxController.Hit MoveStep(Vector3 delta, float dt = 0)
     {
         ControllerMove(delta, dt);
+        var first = nxHit;
         var p = GlobalPosition;                                                     // field axes: x, -z, y
         float fx = p.X, fy = -p.Z, fz = p.Y;
         var mask = Vector3.Zero;
@@ -414,9 +417,10 @@ public partial class Player : CharacterBody3D
         if (fy < BoundsMin.Y || !(fy <= BoundsMax.Y)) mask.Z = 1;
         if (!(fz <= BoundsMax.Z)) mask.Y = 1;
         if (mask.Y != 0 && delta.Y < 0) mask.Y = 0;
-        if (mask == Vector3.Zero) return;
+        if (mask == Vector3.Zero) return first;
         var slide = -delta * mask;
         if (slide != Vector3.Zero) ControllerMove(slide);
+        return first;
     }
 
     /// <summary>

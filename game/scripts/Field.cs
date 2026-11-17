@@ -397,12 +397,15 @@ public partial class Field : Node3D
                 pos = new Vec3(double.Parse(v[0], CultureInfo.InvariantCulture), double.Parse(v[1], CultureInfo.InvariantCulture), double.Parse(v[2], CultureInfo.InvariantCulture));
             }
         player.SpawnPoint = FieldBuilder.ToGodotPoint(pos) + new Vector3(0, 5, 0);
-        // WorldService's world box (worldservice_1.cpp:10394-10405): grown by every MS2Bounding entity's position
+        // WorldService's world box: reset inverted (worldservice_1.cpp:10125-10126), then grown by every MS2Bounding entity's
+        // position (worldservice_1.cpp:10394-10405); a field without one keeps the inverted box
         var bounds = map.Entities.Where(e => e.ModelName == "MS2Bounding" || e.HasMixin("MS2Bounding")).Select(e => e.Position).ToList();
-        if (bounds.Count > 0)
+        player.BoundsMin = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+        player.BoundsMax = new Vector3(-float.MaxValue, -float.MaxValue, -float.MaxValue);
+        foreach (var b in bounds)
         {
-            player.BoundsMin = new Vector3((float)bounds.Min(b => b.X), (float)bounds.Min(b => b.Y), (float)bounds.Min(b => b.Z));
-            player.BoundsMax = new Vector3((float)bounds.Max(b => b.X), (float)bounds.Max(b => b.Y), (float)bounds.Max(b => b.Z));
+            player.BoundsMin = player.BoundsMin.Min(new Vector3((float)b.X, (float)b.Y, (float)b.Z));
+            player.BoundsMax = player.BoundsMax.Max(new Vector3((float)b.X, (float)b.Y, (float)b.Z));
         }
         // the server's bounding prism (kms2525 MapEntityMapper.cs:162-174, MapEntityStorage.cs:105-113): the first two
         // MS2Bounding entities in the xblock's order span x/y; base = the lower z, height = the z distance; a third is ignored
