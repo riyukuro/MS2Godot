@@ -21,7 +21,8 @@ namespace Ms2Godot.Ui;
 /// select map of the new character's job; the preview follows once the map is in (CSceneStateMulti vfunc_1 ->
 /// PreviewSelectedCharacter). Here every selection change reloads the scene.
 /// Start / Enter / a double click start the game (OnGameStart) or begin character creation on an empty slot (OnCreatePC).
-/// Args after `--`: --shots DIR renders shots and quits.
+/// Args after `--`: --shots DIR renders shots and quits; with --resize WxH the window is resized after the first shot and
+/// a second one taken.
 /// </summary>
 public partial class CharacterListScene : LobbyFieldScene
 {
@@ -36,13 +37,19 @@ public partial class CharacterListScene : LobbyFieldScene
     ModelBuilder builder;
     int mapId;
     string shotDir;
+    Vector2I? resizeTo;
     int frames;
 
     /// <summary>The list is built and takes input (no lobby change under way).</summary>
     public bool ListReady => logic != null && logic.MouseEnabled;
 
     public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); UiBridge.ToHost += OnHost; }
-    public override void _ExitTree() { UiBridge.ToHost -= OnHost; base._ExitTree(); }
+    public override void _ExitTree()
+    {
+        UiBridge.ToHost -= OnHost;
+        if (layer != null) GetViewport().SizeChanged -= QueueRelayout;
+        base._ExitTree();
+    }
 
     static CharacterEntry Selected()
     {
@@ -57,7 +64,11 @@ public partial class CharacterListScene : LobbyFieldScene
     protected override string FieldNameFor(string defaultName)
     {
         var args = OS.GetCmdlineUserArgs();
-        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--shots") shotDir = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++)
+        {
+            if (args[i] == "--shots") shotDir = args[i + 1];
+            if (args[i] == "--resize" && args[i + 1].Split('x') is [var w, var h] && int.TryParse(w, out int rw) && int.TryParse(h, out int rh)) resizeTo = new Vector2I(rw, rh);
+        }
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
         uiPacks = new PackSet(Settings.DataDir);
         tables = new CreateTables(uiPacks);
@@ -76,6 +87,36 @@ public partial class CharacterListScene : LobbyFieldScene
         layer = new CanvasLayer { Name = "UI" };
         AddChild(layer);
 
+        BuildList();
+        PreviewSelected();
+        // the client sizes every movie to the back buffer: on a window resize the open dialogs align again
+        // (UIDialog::vfunc_43 -> alignment), as on the login screen
+        GetViewport().SizeChanged += QueueRelayout;
+    }
+
+    bool relayoutQueued;
+    void QueueRelayout()
+    {
+        if (relayoutQueued) return;
+        relayoutQueued = true;
+        CallDeferred(MethodName.Relayout);
+    }
+
+    /// <summary>The list built again at the new window's UI scale, on the same selection and mouse state.</summary>
+    void Relayout()
+    {
+        relayoutQueued = false;
+        if (!IsInsideTree() || root == null) return;
+        bool mouseOn = logic.MouseEnabled;
+        layer.RemoveChild(root);
+        root.QueueFree();
+        BuildList();
+        logic.MouseEnabled = mouseOn;
+    }
+
+    /// <summary>uicharacterlistdialog for the current window, filled from the flow's list (CharacterListDialog.buildCharacterList).</summary>
+    void BuildList()
+    {
         var window = GetViewport().GetVisibleRect().Size;    // window pixels (LobbyLayout.UseWindowPixels)
         float u = UiScale.For(window);
         var movie = new UiMovie(assets, UICharacterListDialogContract.Movie);
@@ -97,7 +138,7 @@ public partial class CharacterListScene : LobbyFieldScene
         foreach (var name in new[] { UICharacterListDialogContract.Instances.M_healthGameCN, UICharacterListDialogContract.Instances.M_characterCraeteShutdownCN, UICharacterListDialogContract.Instances.M_burningEventDescBtn })
             if (root.FindClip(name) is { } extra) extra.Visible = false;
         mouse = new UiWidgets.MouseRouter(root);
-        PreviewSelected();
+
     }
 
     /// <summary>
@@ -163,6 +204,13 @@ public partial class CharacterListScene : LobbyFieldScene
         if (shotDir == null || logic == null) return;
         frames++;
         if (frames == 60) Save($"charselect_{Flow.Session.SelectedIndex}.png");
+        if (resizeTo != null)
+        {
+            // --resize WxH: the window resized after the scene is up, then one shot
+            if (frames == 61) GetWindow().Size = resizeTo.Value;
+            if (frames == 90) { Save($"charselect_resized_{resizeTo.Value.X}x{resizeTo.Value.Y}.png"); GetTree().Quit(); }
+            return;
+        }
         if (frames == 61)
         {
             // each selection loads its lobby map again: 0 -> 1 (another job's map), 1 -> 3 (the first empty slot), then quit
