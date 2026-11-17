@@ -112,6 +112,14 @@ public partial class Field : Node3D
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         OnFieldBuilt(builder, map, fieldName);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
+        if (player != null && Audio?.Footsteps is { } steps)
+        {
+            // the ground's effect files of a step or a landing: the sound parts play in FootstepSounds, the nif parts here
+            var ground = new World.GroundEffects(packs, builder);
+            AddChild(ground);
+            steps.EffectFile = f => ground.Play(f, player.GlobalPosition, player.Visual?.GlobalRotation.Y ?? 0);
+            player.Landed += steps.Land;
+        }
         NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // F9 / --nav: navmesh overlay
         if (SpawnsLocalPlayer) Quest = World.QuestGuide.Start(this, packs, builder, map, player, hdrFieldId(fieldName), questNpc);   // --quest-npc ID: the quest guide beam
 

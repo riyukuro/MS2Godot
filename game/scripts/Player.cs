@@ -46,6 +46,8 @@ public partial class Player : CharacterBody3D
     /// <summary>The last landing's drop (the height the client sends in StateFallDamage; the server applies damage).</summary>
     public float LastFallHeight { get; private set; }
     public event Action<float> FallDamageHeight;
+    /// <summary>StateLand::vfunc_4 (stateland.cpp:94): the landing plays the ground's "land" effects (CGroundEffectDataManager::PlayEffects).</summary>
+    public event Action Landed;
 
     float stateTime, airTime, baseSpeed = MoveConfig.RunSpeed, yawDeg, targetYawDeg;
     Vector3 kVel;                         // GameObjectController m_kVelocity (horizontal)
@@ -310,6 +312,7 @@ public partial class Player : CharacterBody3D
         stateTime = 0;
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();
+        if (s == MoveState.Land) Landed?.Invoke();
     }
 
     /// <summary>PCBase::vfunc_99: in the air for longer than the delay and more than 0.3 m above the ground.</summary>

@@ -35,6 +35,8 @@ public partial class FootstepSounds : Node
     public string LastGround { get; private set; } = "default";
     public string LastAction { get; private set; } = "";
     public int Steps => stepCount;
+    /// <summary>Called with every effect file a step picks, for its visual parts (the sounds play here).</summary>
+    public Action<string> EffectFile;
 
     public FootstepSounds(SoundLibrary library, GroundEffectTable table, FieldMap map, CharacterBody3D body, AnimationPlayer anim)
     {
@@ -92,7 +94,9 @@ public partial class FootstepSounds : Node
         LastGround = GroundAt(body.GlobalPosition);
         LastAction = action;
         stepCount++;
-        foreach (var ev in table.Pick(LastGround, action, rng))
+        var files = table.PickFiles(LastGround, action, rng);
+        foreach (var f in files) EffectFile?.Invoke(f);
+        foreach (var ev in files.SelectMany(table.SoundsOf))
         {
             var clip = library.ResolveEvent(ev, rng);
             if (clip == null) continue;

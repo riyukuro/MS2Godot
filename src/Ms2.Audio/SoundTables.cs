@@ -81,7 +81,8 @@ public sealed class GroundEffectTable
         return g;
     }
 
-    List<string> SoundsOf(string file)
+    /// <summary>The sound event paths (group/event) of an effect file's soundEvent parts.</summary>
+    public List<string> SoundsOf(string file)
     {
         if (string.IsNullOrEmpty(file)) return new();
         if (effectSounds.TryGetValue(file, out var l)) return l;
@@ -95,7 +96,13 @@ public sealed class GroundEffectTable
     }
 
     /// <summary>The sound event paths a step of the given action plays on the given ground (falls back to "default" for an unknown ground).</summary>
-    public List<string> Pick(string ground, string action, Random rng = null)
+    public List<string> Pick(string ground, string action, Random rng = null) => PickFiles(ground, action, rng).SelectMany(SoundsOf).ToList();
+
+    /// <summary>
+    /// CGroundEffectDataManager::GetEffectFiles: one effect file per &lt;effects&gt; block of the action, picked by percent (the
+    /// visual one and the sound one, e.g. default_e_land.xml and default_s_land.xml), "default" for an unknown ground.
+    /// </summary>
+    public List<string> PickFiles(string ground, string action, Random rng = null)
     {
         rng ??= Random.Shared;
         var g = Ground(string.IsNullOrEmpty(ground) ? "default" : ground) ?? Ground("default");
@@ -112,7 +119,7 @@ public sealed class GroundEffectTable
                 int r = rng.Next(total);
                 for (; pick < b.Percents.Count - 1 && r >= b.Percents[pick]; pick++) r -= b.Percents[pick];
             }
-            result.AddRange(SoundsOf(b.Files[pick]));
+            if (!string.IsNullOrEmpty(b.Files[pick])) result.Add(b.Files[pick]);
         }
         return result;
     }
