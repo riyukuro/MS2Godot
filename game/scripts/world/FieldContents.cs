@@ -333,11 +333,13 @@ public partial class FieldContents : Node3D
     {
         try
         {
-            tipTable ??= new LoadingTipTable(packs, new GameStrings(packs, "en"));
-            var tip = tipTable.Pick(new Random()) ?? "";
-            // $npcName:id$ in a tip is the npc's name
-            return System.Text.RegularExpressions.Regex.Replace(tip, @"\$npcName:(\d+)\$",
-                m => Npcs(packs).Find(int.Parse(m.Groups[1].Value))?.Name ?? "");
+            // the tips' words are resolved as the table loads them (no tip uses $script, so no script table is needed)
+            if (tipTable == null)
+            {
+                var text = new GameStrings(packs, "en");
+                tipTable = new LoadingTipTable(packs, text, new ReservedWords(text, null));
+            }
+            return tipTable.Pick(new Random()) ?? "";
         }
         catch { return ""; }
     }
