@@ -131,11 +131,20 @@ public sealed class UiAssets
         System.Threading.Tasks.Task.Run(() => { foreach (var k in keys) try { ui.Dependency(k); } catch { } try { ui.FontBytes("$Font_SD_Neo_1"); } catch { } });
     }
 
+    // A movie's layout is parsed once per pack set, like the dependency movies above, and every load gets its own copy of
+    // that template: the parse is pure, so the copy is what a fresh parse would give. The template itself is never handed
+    // out, so nothing a build or a dialog does to its layout reaches the next load. The movie is still built on each load.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<JsonObject>>> layouts = new();
+
     public JsonObject LoadLayout(string movie)
     {
-        var entry = movie.EndsWith(".gfx") ? movie : movie + ".gfx";
-        var m = SwfMovie.Parse(Packs.Read("Resource/Gfx", entry));
-        return LayoutJson.Build(m, movie, Dependency);
+        var packs = Packs;
+        var template = layouts.GetOrCreateValue(packs).GetOrAdd(movie, k => new Lazy<JsonObject>(() =>
+        {
+            var entry = k.EndsWith(".gfx") ? k : k + ".gfx";
+            return LayoutJson.Build(SwfMovie.Parse(packs.Read("Resource/Gfx", entry)), k, Dependency);
+        })).Value;
+        return (JsonObject)template.DeepClone();
     }
 
     /// <summary>The DDS atlas next to a movie, e.g. "UILoginDialog_I1.dds". Null when missing.</summary>
