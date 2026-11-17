@@ -84,14 +84,15 @@ public sealed class FieldBuilder
                     // its front only unless it carries TCF_DOUBLE_SIDED (NxUtilLib.h:17-24, the flags getTriangle fills,
                     // CharacterControllerCallbacks.cpp:173), and no MS2 NiPhysXMeshDesc sets NX_MESH_DOUBLE_SIDED (Mesh
                     // Flags 0), so a triangle mesh is one-sided: a capsule inside a closed prop's volume touches none of
-                    // it. A convex shape is solid either way.
+                    // it. A convex shape's hull triangles go to the sweeps with edge flags 7 and no TCF_DOUBLE_SIDED
+                    // (outputConvexToStream, CharacterControllerCallbacks.cpp:367), so they are one-sided too.
                     var faces = new Vector3[cm.Triangles.Length];
                     for (int i = 0; i < faces.Length; i++)
                     {
                         int v = cm.Triangles[i - i % 3 + (3 - i % 3) % 3] * 3;     // 0, 2, 1 of each triangle
                         faces[i] = new Vector3(cm.Vertices[v], cm.Vertices[v + 1], cm.Vertices[v + 2]);
                     }
-                    if (faces.Length >= 3) me.Collision.Add(new ConcavePolygonShape3D { Data = faces, BackfaceCollision = cm.Convex });
+                    if (faces.Length >= 3) me.Collision.Add(new ConcavePolygonShape3D { Data = faces, BackfaceCollision = false });
                 }
                 bool first = true;
                 foreach (var m in md.Meshes)
