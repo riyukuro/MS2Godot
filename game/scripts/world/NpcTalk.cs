@@ -97,7 +97,7 @@ public sealed partial class NpcTalk : Node
         string speaker = st.NpcDisplayName(row.Id);
         foreach (var c in contents)
         {
-            list.Add(new TalkCinematicLogic.Page { Npc = speaker, Script = st.Resolve(c.Text, PlayerName), LeftIllust = c.Illust != null ? IllustPath(c.Illust) : illust });
+            list.Add(new TalkCinematicLogic.Page { Npc = speaker, Script = st.Resolve(c.Text, PlayerName, player?.Gender), LeftIllust = c.Illust != null ? IllustPath(c.Illust) : illust });
             voices.Add(c.VoiceId);
         }
         if (list.Count == 0) { list.Add(new TalkCinematicLogic.Page { Npc = speaker, Script = "...", LeftIllust = illust }); voices.Add(null); }

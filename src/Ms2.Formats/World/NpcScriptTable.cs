@@ -82,16 +82,16 @@ public sealed class NpcScriptTable
     /// the client runs when it loads the content, CScriptContent::vfunc_2), so "$script:0831180407000001$" becomes its
     /// string and the $map, $npcName, $item ... words in that string their names; then the value words
     /// (ReplaceValueWords, CCinematicComponent::vfunc_5 when the page is shown) with <paramref name="playerName"/> for
-    /// $MyPCName. Both depend only on the tables and the name, so running them together here gives the same text.
+    /// $MyPCName and <paramref name="playerGender"/> (0 male, 1 female) for $male and $female. Both depend only on the tables and the name, so running them together here gives the same text.
     /// </summary>
     ReservedWords Words => words ??= new ReservedWords(gameText, id => strings.TryGetValue(unchecked((long)id), out var v) ? v : "");
 
     /// <summary>FUN_1401aa6a0: the npc's "title name" (string tables 19 and 2), or the name alone when it has no title.</summary>
     public string NpcDisplayName(int npcId) => Words.NpcDisplayName(npcId);
 
-    public string Resolve(string text, string playerName)
+    public string Resolve(string text, string playerName, int? playerGender = null)
     {
         if (string.IsNullOrEmpty(text)) return "";
-        return Words.ReplaceValueWords(Words.ReplaceObjectWords(text), playerName).Replace("\\n", "\n");
+        return Words.ReplaceValueWords(Words.ReplaceObjectWords(text), playerName, playerGender).Replace("\\n", "\n");
     }
 }

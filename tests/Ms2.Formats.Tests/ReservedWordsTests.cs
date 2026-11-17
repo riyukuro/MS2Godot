@@ -69,6 +69,21 @@ public class ReservedWordsTests
     }
 
     [Test]
+    public void GenderWordPicksThePlayersForm()
+    {
+        var rw = new ReservedWords(null, null);
+        Assert.That(rw.ReplaceValueWords("a $male:Sir,female:Madam$ b", "P", 0), Is.EqualTo("a Sir b"));
+        Assert.That(rw.ReplaceValueWords("a $male:Sir,female:Madam$ b", "P", 1), Is.EqualTo("a Madam b"));
+        Assert.That(rw.ReplaceValueWords("$female:x,male:y$", "P", 1), Is.EqualTo("x"));
+        // the word name is looked up as written; the parts inside compare without case
+        Assert.That(rw.ReplaceValueWords("$MALE:y$", "P", 0), Is.EqualTo("$MALE:y$"));
+        Assert.That(rw.ReplaceValueWords("$male:a,FEMALE:b$", "P", 1), Is.EqualTo("b"));
+        Assert.That(rw.ReplaceValueWords("$male:y$", "P", 1), Is.EqualTo(""));
+        Assert.That(rw.ReplaceValueWords("$male:a:b,female:c$", "P", 0), Is.EqualTo(""));
+        Assert.That(rw.ReplaceValueWords("$male:Sir,female:Madam$", null, null), Is.EqualTo(""));
+    }
+
+    [Test]
     public void NumbersParseLikeTheCrt()
     {
         Assert.That(ReservedWords.Atoi(" -12ab"), Is.EqualTo(-12));

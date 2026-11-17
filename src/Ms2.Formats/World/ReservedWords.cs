@@ -11,13 +11,13 @@ namespace Ms2.Formats.World;
 /// <item>Object words (ReplaceObjectWords), run on npc script text when it is loaded (CScriptContent::vfunc_2 and its
 /// distractors): $script (the script string), $map, $item, $skill, $npcName, $npcTitle, $npcFunction and $achieve (string
 /// tables 3, 1, 4, 2, 19, 10 and 24), $npc ("title name", or the name when the npc has no title), $pp and $pp2.</item>
-/// <item>Value words (ReplaceValueWords), run when the page is shown (CCinematicComponent::vfunc_5): $MyPCName, $pp, $ppr
-/// and $pp2.</item>
+/// <item>Value words (ReplaceValueWords), run when the page is shown (CCinematicComponent::vfunc_5): $MyPCName, $male,
+/// $female, $pp, $ppr and $pp2.</item>
 /// </list>
 /// Arguments are read as the client does: _wtoi (the leading digits, so "11000001[gender:1]" is 11000001) and, for $script,
 /// _wcstoui64. A missing string is empty. Words whose formatter is not ported here ($itemPlural, $npcPlural,
 /// $npcNamePlural, $dungeonTitle, $quest, $maview, $externalWeb, $petCollectGroup, $masteryRecipe, $job; the value words
-/// $male/$female, $MyPCHp, $MyPCLevel, $paneltyPrice, the roulette words and $key) stay as they are.
+/// $MyPCHp, $MyPCLevel, $paneltyPrice, the roulette words and $key) stay as they are.
 /// </summary>
 public sealed class ReservedWords
 {
@@ -54,14 +54,36 @@ public sealed class ReservedWords
     /// <summary>ReplaceObjectWords.</summary>
     public string ReplaceObjectWords(string s) => Replace(s, objectWords);
 
-    /// <summary>ReplaceValueWords, with the local player's name for $MyPCName (empty without a player).</summary>
-    public string ReplaceValueWords(string s, string playerName) => Replace(s, new Dictionary<string, Word>(StringComparer.Ordinal)
+    /// <summary>ReplaceValueWords, with the local player's name for $MyPCName and gender (0 male, 1 female) for $male and
+    /// $female (Rw_Gender: empty without a player, a null gender).</summary>
+    public string ReplaceValueWords(string s, string playerName, int? playerGender = null) => Replace(s, new Dictionary<string, Word>(StringComparer.Ordinal)
     {
         ["$MyPCName"] = (_, _, _) => playerName ?? "",
+        ["$male"] = (t, _, _) => Gender(t, playerGender),
+        ["$female"] = (t, _, _) => Gender(t, playerGender),
         ["$ppr"] = Ppr,
         ["$pp"] = Ppr,
         ["$pp2"] = Pp2,
     });
+
+    /// <summary>
+    /// Rw_Gender ($male, $female): the token without its "$" is split at ","; of the parts that split at ":" into exactly
+    /// two, "male:x" (any case) picks x for gender 0 and "female:y" picks y for gender 1, the last pick winning. Empty when
+    /// nothing is picked or there is no player.
+    /// </summary>
+    public static string Gender(string token, int? gender)
+    {
+        if (gender == null) return "";
+        string pick = "";
+        foreach (var item in Split(token.Replace("$", ""), ","))
+        {
+            var parts = Split(item, ":");
+            if (parts.Length != 2) continue;
+            if (string.Equals(parts[0], "male", StringComparison.OrdinalIgnoreCase)) { if (gender == 0) pick = parts[1]; }
+            else if (string.Equals(parts[0], "female", StringComparison.OrdinalIgnoreCase) && gender == 1) pick = parts[1];
+        }
+        return pick;
+    }
 
     /// <summary>FUN_1416fc320: the scan over the text with one word map.</summary>
     public static string Replace(string s, IReadOnlyDictionary<string, Word> words)
