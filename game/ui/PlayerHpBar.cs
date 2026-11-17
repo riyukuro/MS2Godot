@@ -106,6 +106,6 @@ public sealed partial class PlayerHpBar : CanvasLayer
         var p = camera.UnprojectPosition(anchor);
         p.Y += (offset + tag.HeightAdjust(anchor)) * u;
         if (dirty && period > 0) timerLeft = period;   // vfunc_6 restarts the timer when it redraws the width
-        clip.Draw(p.Round(), 1, true, cur, max, ref dirty);
+        clip.Draw(p, 1, true, cur, max, ref dirty);    // SetPositionFloat: the origin is not snapped to whole pixels
     }
 }

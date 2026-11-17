@@ -185,7 +185,7 @@ public sealed partial class NpcPresence : CanvasLayer
         {
             if (!b.Active) continue;
             var a = Anchor(b.Npc);
-            b.Update(camera.IsPositionBehind(a) ? null : camera.UnprojectPosition(a).Round());
+            b.Update(camera.IsPositionBehind(a) ? null : camera.UnprojectPosition(a));   // float origin, as SetPositionFloat
         }
     }
 }
