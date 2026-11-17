@@ -235,6 +235,8 @@ public partial class Field : Node3D
         var (visual, anim, md, bodyDir) = Look.PlayerLook.Build(builder, packs);
 
         player = Player.Create(visual, anim);
+        player.Gender = bodyDir == "male" ? 0 : 1;
+        player.RootName = md.RootName;
         BlobShadow.Load(packs);
         BlobShadow.Add(player, 100f);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);

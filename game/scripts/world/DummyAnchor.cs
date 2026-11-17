@@ -1,0 +1,43 @@
+using Godot;
+using Ms2.Formats.Model;
+using Ms2.Formats.World;
+
+namespace Ms2Godot.World;
+
+/// <summary>
+/// Effect dummies on a built model (ModelBuilder.Build: the "Model" node is the model's root, turned from the file's Z-up to
+/// Y-up): the model root's transform in the client's Z-up world, and a dummy's world point (DummyWorld) back in Godot.
+/// </summary>
+public static class DummyAnchor
+{
+    /// <summary>
+    /// Undoes the Model node's turn: Godot (Y-up) world to the client's Z-up world, (x, y, z) to (x, -z, y), the inverse of
+    /// FieldBuilder.ToGodotPoint. Written out, as a turn by an angle of pi / 2 leaves cos = -4.4e-8, which moves a point
+    /// 3000 up by 1e-4 sideways.
+    /// </summary>
+    static readonly Transform3D ToClient = new(new Basis(new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, -1, 0)), Vector3.Zero);
+
+    /// <summary>A node's global transform as a client-world transform (rotation, uniform scale, translate).</summary>
+    public static Xform ClientWorld(Node3D node)
+    {
+        var t = ToClient * node.GlobalTransform;
+        var b = t.Basis;
+        double s = b.Column0.Length();
+        if (s == 0) s = 1;
+        Vector3 c0 = b.Column0 / (float)s, c1 = b.Column1 / (float)s, c2 = b.Column2 / (float)s;
+        var r = new double[] { c0.X, c1.X, c2.X, c0.Y, c1.Y, c2.Y, c0.Z, c1.Z, c2.Z };
+        return new Xform(new Vec3(t.Origin.X, t.Origin.Y, t.Origin.Z), r, s);
+    }
+
+    /// <summary>
+    /// The Godot world point of the dummy <paramref name="name"/> of <paramref name="rows"/> on the model whose root node is
+    /// <paramref name="model"/> (named <paramref name="rootName"/> in its file); null when the dummy or its parent is missing.
+    /// Parents other than the root and the rows themselves are not looked up.
+    /// </summary>
+    public static Vector3? Point(IReadOnlyList<EffectDummy> rows, string name, Node3D model, string rootName)
+    {
+        if (model == null || rows == null) return null;
+        if (DummyWorld.Find(rows, name, ClientWorld(model), rootName) is not { } w) return null;
+        return FieldBuilder.ToGodotPoint(w.T);
+    }
+}

@@ -11,8 +11,9 @@ namespace Ms2Godot.Ui;
 /// <item>Data (UINameTag::Entity::FUN_141a5ff60, setData): the name, the guild as "&lt;guild&gt;" (none here), visibleSymbol
 /// and visibleName from the game options, no symbol (no field symbol, PvP team or name tag item), font size and colour, no
 /// skin.</item>
-/// <item>Anchor (UIHudEntity::Entity::vfunc_10): the actor's "Eff_UI" node, a pceffectdummy on Scene Root at (0, 0, 170)
-/// for both genders.</item>
+/// <item>Anchor (UIHudEntity::Entity::vfunc_10): the world point of the actor's "Eff_UI" node, the player's row of
+/// Table/pcEffectDummy.xml for its gender placed by DummyWorld (on Scene Root at (0, 0, 170) in the data, straight up the
+/// world); the actor's position when it has no such node.</item>
 /// <item>Place (vfunc_6): the anchor's screen point times the movie scale (into stage units), plus vfunc_9 =
 /// PCBase::vfunc_89 = OffsetPcNametag (m_f16c) + m_f170 (0 unless set) down, plus FUN_1412762d0(anchor); the movie is drawn
 /// at the UI scale (UiScale), so the shifts and the clip shrink with it on a window under 1920 wide.</item>
@@ -24,13 +25,14 @@ namespace Ms2Godot.Ui;
 /// </summary>
 public sealed partial class PlayerNameTag : CanvasLayer
 {
-    const float EffUiHeight = 170;
-
     readonly MovieClipNode node;
     readonly float offset;
+    readonly Ms2.Formats.Pack.PackSet packs;
+    IReadOnlyList<EffectDummy> dummies;  // the player's effect dummies (gender row of the pc table)
+    Node3D model;                        // the player's model root node
     float u = 1;                         // the movies' draw scale (UiScale)
     Field field;
-    Node3D player;
+    Player player;
     Camera3D camera;
 
     public PlayerNameTag(UiAssets ui, ClientConstants constants, string name, Vector2 window)
@@ -39,6 +41,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
         Layer = 5;                       // with the npcs' tags (NpcPresence), under the HUD
         Offset = UiScale.MovieOrigin;    // the movie's viewport origin (GFxMovie::vfunc_7); vfunc_6 maps the screen point straight to stage units
         offset = constants.Float("OffsetPcNametag", 30);
+        packs = ui.Packs;
         var (r, g, b) = constants.Color("NameTagColorMyPC", (1f, 0.812f, 0.106f));
         var color = new Color(r, g, b);
         try
@@ -70,10 +73,12 @@ public sealed partial class PlayerNameTag : CanvasLayer
             field ??= Find<Field>(GetTree().Root);
             player ??= Find<Player>(GetTree().Root);
             if (player == null || field == null) return;
+            dummies = EffectDummyTable.Load(packs).Pc(player.Gender);
+            model = player.Visual?.GetNodeOrNull<Node3D>("Model");
         }
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
-        var anchor = player.GlobalPosition + new Vector3(0, EffUiHeight, 0);
+        var anchor = DummyAnchor.Point(dummies, "Eff_UI", model, player.RootName) ?? player.GlobalPosition;
         bool on = !camera.IsPositionBehind(anchor);
         node.Visible = on;
         if (!on) return;

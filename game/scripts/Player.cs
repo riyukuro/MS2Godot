@@ -16,6 +16,9 @@ public partial class Player : CharacterBody3D
     public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash }
 
     public Node3D Visual;                 // the character root (faces +Z)
+    /// <summary>The body's gender (0 male, 1 female) and its model root node name, for the player's effect dummies.</summary>
+    public int Gender = 1;
+    public string RootName;
     public AnimationPlayer Anim;
     public ActionAnims Anims;
     public Climbables Climbs = new();
