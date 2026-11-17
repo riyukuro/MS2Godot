@@ -103,17 +103,21 @@ public sealed partial class MinimapPlaces : Node2D
     void Build(FieldContents fc)
     {
         var icons = new MinimapIcons(packs, FieldContents.Npcs(packs), new GameStrings(packs, "en"));
-        foreach (var p in fc.Portals.All)
-        {
-            var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));
-            if (e == null || !e.Visible) continue;
-            if (Add(e, p.Position, showGuide: true)) Portals++;
-        }
+        // BuildEntities (uiminimapentity.cpp:2900-2938): every proxy that is not a portal first (AddProxy), then the portals,
+        // then the taxi, telescope, return point, named objects, triggers and map objects. Entities stack in a layer by when
+        // they were added, and an indoor portal draws its npc's icon in the npc layer (FUN_141a44c00), so the npcs go under
+        // the portals. The order inside each group is the server's object ids through a hash map, not reproduced here.
         foreach (var n in fc.SpawnedNpcs)
         {
             var e = MinimapIcons.Npc(n.Row);
             if (!e.Visible || !n.Root.Visible) continue;
             if (Add(e, FieldPortals.ToMs2(n.Position))) Npcs++;
+        }
+        foreach (var p in fc.Portals.All)
+        {
+            var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));
+            if (e == null || !e.Visible) continue;
+            if (Add(e, p.Position, showGuide: true)) Portals++;
         }
         // BuildTaxi, when the field has a taxi station: the first world object of the MS2TaxiStation model, at its Position
         if (icons.HasTaxi(fc.FieldId) && fc.Map?.Entities.FirstOrDefault(e => IsModel(e, "MS2TaxiStation")) is { } taxi)
