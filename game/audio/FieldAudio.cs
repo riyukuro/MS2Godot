@@ -26,6 +26,11 @@ public partial class FieldAudio : Node
     AudioStreamPlayer ui;
     MusicPlan plan;
 
+    /// <summary>Music category volume, the client's CSoundEventMgr::m_fNowMusicVolume (sound options
+    /// slider), multiplied onto the FEV-authored cue volume. The client default is 1.0 (full); we start
+    /// lower so background music does not dominate. Settable to drive a volume slider later.</summary>
+    public float MusicVolume { get; set; } = 0.5f;
+
     public int BgmCue { get; private set; }
     public string BgmName => plan?.Loop.Name;
     public bool MusicPlaying => music != null && music.Playing;
@@ -101,7 +106,7 @@ public partial class FieldAudio : Node
         loopPcm = loop;
         if (intro != null) { music.Stream = Stream(intro, false); music.Finished += OnMusicFinished; chained = true; }
         else music.Stream = Stream(loop, true);
-        music.VolumeDb = Mathf.LinearToDb(p.Loop.Volume);
+        music.VolumeDb = Mathf.LinearToDb(p.Loop.Volume * MusicVolume);
         music.Play();
         GD.Print($"audio: bgm cue {p.Cue} -> {(intro != null ? p.Intro.Name + " + " : "")}{p.Loop.Name} ({loop.Seconds:F1} s, {loop.Rate} Hz, {loop.Channels} ch), playing={music.Playing}");
     }
