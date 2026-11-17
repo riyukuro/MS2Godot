@@ -76,7 +76,9 @@ public partial class Player : CharacterBody3D
     {
         var p = new Player { Name = "Player", Visual = visual, Anim = anim };
         p.FloorMaxAngle = Mathf.DegToRad(MoveConfig.SlopeLimitDeg);
-        p.FloorSnapLength = MoveConfig.StepOffset;
+        // no snap: NxCharacter's down pass only undoes the auto-step's lift (SweepTest::moveCharacter, DownVector -= StepOffset),
+        // so the body follows a floor that drops away by no more than the frame's own fall (dz, Integrate), and falls off the rest
+        p.FloorSnapLength = 0;
         p.SafeMargin = MoveConfig.SkinWidth;
         p.AddChild(new CollisionShape3D
         {
@@ -362,13 +364,11 @@ public partial class Player : CharacterBody3D
             float h = jumpV0 * jumpTime + 0.5f * Gravity * jumpTime * jumpTime;
             v.Y = (h - jumpH) / dt;
             jumpH = h;
-            FloorSnapLength = 0;
         }
         else
         {
             // FUN_1412407f0: dz = g * fallTime * dt + g dt^2 / 2
             v.Y = Gravity * airTime + 0.5f * Gravity * dt;
-            FloorSnapLength = MoveConfig.StepOffset;
         }
         Velocity = v;
 
