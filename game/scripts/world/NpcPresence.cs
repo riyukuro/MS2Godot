@@ -70,7 +70,7 @@ public sealed partial class NpcPresence : CanvasLayer
         NameTags++;
     }
 
-    static void SetLabel(MovieClipNode label, string text, int? size, Color color)
+    internal static void SetLabel(MovieClipNode label, string text, int? size, Color color)
     {
         if (label == null) return;
         foreach (var c in label.AllClips())

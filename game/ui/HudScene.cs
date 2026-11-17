@@ -42,6 +42,7 @@ public partial class HudScene : Node
         layer.AddChild(uiRoot);
         var window = new Vector2(1280, 720);
         u = UiScale.For(window); stage = UiScale.Stage(window);
+        AddChild(new PlayerNameTag(assets, new ClientConstants(assets.Packs), data.Player.Name, window));     // the own PC's UINameTag
 
         NoticeTab(uiRoot);
         Minimap(uiRoot);

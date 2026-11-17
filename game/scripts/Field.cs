@@ -24,7 +24,7 @@ public partial class Field : Node3D
     float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
     float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57); a distance change goes back to the distance's own
     float camDist;                        // m_50: zoom distance, MinCameraDistance .. cam.Distance + PlayerHeight
-    const float MinCameraDistance = 400f; // CCameraMode default nearest zoom
+    public const float MinCameraDistance = 400f; // CCameraMode default nearest zoom (m_58)
     string shotDir;
     // scripted steps: seconds, input (right, forward), walk, shot file at the end
     readonly Queue<(float secs, Vector2 input, bool walk, string shot)> script = new();
@@ -398,6 +398,11 @@ public partial class Field : Node3D
         return (shownCam = new Transform3D(new Basis(side, up, view), shown.Origin + t * gap)).Value;
     }
 
+    /// <summary>CTargetCameraMode m_6c: the camera's angle from the up axis in radians, as last placed.</summary>
+    public float CameraPitch { get; private set; } = Mathf.Pi / 2;
+    /// <summary>The camera mode's position (m_setting.m_c = m_c0.m_pos): the placed eye before the shown camera's easing.</summary>
+    public Vector3? CameraEye => placedEye;
+
     const float PlayerHeight = 150f;            // CTargetCameraMode m_b4 (the player's height, added to the farthest zoom)
 
     void Place(float dist, float yaw, out Vector3 eye, out Vector3 look, out Vector3 offset)
@@ -405,6 +410,7 @@ public partial class Field : Node3D
         float range = cam.Distance - MinCameraDistance;
         float t = range > 0 ? Mathf.Min((dist - MinCameraDistance) / range, 1f) : 1f;
         float pitch = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * t);
+        CameraPitch = pitch;
         // vfunc_27: the height follows the distance past the farthest zoom too (only the angle is capped)
         float th = range > 0 ? (dist - MinCameraDistance) / range : 1f;
         float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * th;

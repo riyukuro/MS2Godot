@@ -302,6 +302,16 @@ public partial class TextNode : Node2D
         Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y + BaselineShift + Math.Max(0, room - height));
     }
 
+    /// <summary>
+    /// TextFieldEx.setVerticalAlign(VALIGN_CENTER): the lines sit centred in the text rect (the field less its 2 px gutters),
+    /// in flash line metrics; text taller than the rect starts at its top.
+    /// </summary>
+    public void AlignCenter()
+    {
+        float room = Bounds.Size.Y - 4, height = FlashTextHeight();
+        Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y + BaselineShift + Math.Max(0, (room - height) / 2));
+    }
+
     /// <summary>Scaleform TEXTAUTOSZ_SHRINK: lowers the font size until the text fits the field width (2 px gutters).</summary>
     public void ShrinkToFit()
     {
