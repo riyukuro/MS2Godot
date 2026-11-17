@@ -322,10 +322,9 @@ public partial class TextNode : Node2D
 
     /// <summary>
     /// A text field's drop shadow or glow, drawn the way Scaleform draws it: TextFilter::LoadFilterDesc takes the filter into the
-    /// field's shadow (a later shadow / glow replaces one with no colour or no distance), and the glyph cache rasterizes it
-    /// per glyph (GlyphCache::RasterizeShadow): the outline at the shadow ramp size with gamma 0.4, blurred by BlurX on both
-    /// axes (recursive gaussian, sigma = radius / 2), strengthened around 8 and offset by angle and distance. The label's
-    /// shadow is the glyph grown by size / 4 pixels a side, so its size is the width that model gives outside the glyph edge.
+    /// field's shadow (a later shadow / glow replaces one with no colour or no distance). A blurred one (BlurX &gt; 0) is the glyph
+    /// cache's per-glyph shadow (GlyphCache::RasterizeShadow, see GlyphShadow), the label then draws no shadow of its own; an
+    /// unblurred one is the glyph's hard copy offset by angle and distance, the label's plain shadow.
     /// </summary>
     public void ApplyFilters(JsonNode filters, float scale)
     {
@@ -337,22 +336,37 @@ public partial class TextNode : Node2D
             if (shadow == null || UiBuilder.ParseColor((string)shadow["color"], Colors.Transparent).A == 0 || UiBuilder.F(shadow["distance"], 0) == 0) shadow = f;
         }
         if (shadow == null) return;
-        float screen = UiBuilder.F(Def["size"], 12) * ScreenScale, k = ShadowRampSize(screen) / screen;
-        float radius = UiBuilder.F(shadow["blurX"], 0) * scale * k, strength = UiBuilder.F(shadow["strength"], 1);
-        float ring = ShadowRing(radius, strength) / k;                                       // screen pixels a side
+        float blur = UiBuilder.F(shadow["blurX"], 0), strength = UiBuilder.F(shadow["strength"], 1);
         float dist = UiBuilder.F(shadow["distance"], 0) * scale, angle = UiBuilder.F(shadow["angle"], 0);
+        var color = UiBuilder.ParseColor((string)shadow["color"], Colors.Black);
+        var offset = new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * dist / RasterScale;
         var ls = (LabelSettings)Label.LabelSettings.Duplicate();
-        ls.ShadowColor = UiBuilder.ParseColor((string)shadow["color"], Colors.Black);
-        ls.ShadowOffset = new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * dist / RasterScale;
-        ls.ShadowSize = Math.Max(0, (int)Math.Round(4 * ring / RasterScale));
+        ls.ShadowSize = 0;
+        Shadow?.QueueFree();
+        Shadow = null;
+        if (blur > 0)
+        {
+            ls.ShadowColor = Colors.Transparent;
+            ls.ShadowOffset = Vector2.Zero;
+            Shadow = new GlyphShadow(this, color, blur * scale, strength, offset);
+            Label.AddChild(Shadow);
+        }
+        else
+        {
+            ls.ShadowColor = color;
+            ls.ShadowOffset = offset;
+        }
         Label.LabelSettings = ls;
     }
+
+    /// <summary>The field's blurred shadow, if it has one.</summary>
+    public GlyphShadow Shadow;
 
     /// <summary>Screen pixels per field unit (the field's accumulated scale).</summary>
     public float ScreenScale = 1;
 
     /// <summary>GlyphCache::SnapShadowSizeToRamp: the next ramp step at or above the whole screen size (no quarter added).</summary>
-    static float ShadowRampSize(float screenSize)
+    internal static float ShadowRampSize(float screenSize)
     {
         int size = (int)Math.Floor(screenSize);
         if (size > 255) return 255;
@@ -360,33 +374,10 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    static readonly Dictionary<(float, float), float> rings = new();
-
     /// <summary>
-    /// Width a side, in shadow raster pixels, of a Scaleform glyph shadow outside a 2 pixel stem: coverage ^ 0.4, the recursive
-    /// blur (Young / van Vliet, as GlyphCache::recursiveBlur) and strengthenImage around bias 8, summed as coverage.
+    /// GlyphCache::recursiveBlur on one row: the Young / van Vliet recursive gaussian, sigma = radius / 2, rounded to bytes.
     /// </summary>
-    static float ShadowRing(float radius, float strength)
-    {
-        radius = MathF.Round(radius, 3); strength = MathF.Round(strength, 3);
-        if (rings.TryGetValue((radius, strength), out var cached)) return cached;
-        const int n = 64, x0 = 30, stem = 2;
-        var line = new float[n];
-        for (int x = x0; x < x0 + stem; x++) line[x] = 255;
-        int bias = 0;
-        if (radius > 0) { line = Blur(line, radius); bias = 8; }
-        if (strength <= 1) bias = 0;
-        float sum = 0;
-        for (int x = 0; x < n; x++)
-        {
-            if (x >= x0 && x < x0 + stem) continue;
-            float v = Math.Clamp((int)((line[x] - bias) * strength + 0.5f) + bias, 0, 255);
-            sum += v / 255f;
-        }
-        return rings[(radius, strength)] = sum / 2;
-    }
-
-    static float[] Blur(float[] img, float radius)
+    internal static float[] Blur(float[] img, float radius)
     {
         radius = Math.Max(radius, 0.62f);
         int n = img.Length, pad = (int)MathF.Ceiling(radius) + 3;
