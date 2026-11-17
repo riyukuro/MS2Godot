@@ -84,7 +84,7 @@ hold 0.5 -1 0
 shot 09_swim
 hold 0.8
 shot 10_swim_idle
-tp 2100 -3800 2855 0
+tp 2100 -3849 2855 0
 hold 0.3
 until Ladder 1 up
 hold 0.2 up

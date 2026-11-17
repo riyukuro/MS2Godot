@@ -48,13 +48,13 @@ public partial class Player
         {
             case DashSub.Rush:
                 if (moved.Length() < MoveConfig.DashMinStep) { Enter(MoveState.Idle); return; }
-                if (IsOnFloor() && stateTime > dt) { DashSkid(); return; }
+                if (Grounded && stateTime > dt) { DashSkid(); return; }
                 var d = GlobalPosition - dashFrom;
                 d.Y = 0;
                 if (d.Length() >= MoveConfig.DashDistance) dsub = DashSub.Far;
                 break;
             case DashSub.Far:
-                if (IsOnFloor()) DashSkid();
+                if (Grounded) DashSkid();
                 break;
             case DashSub.Skid:
             {

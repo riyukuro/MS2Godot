@@ -8,8 +8,8 @@ namespace Ms2Godot;
 /// The local player (CharacterBody3D, Y-up, game units). Movement follows the client's actor states (StateIdle,
 /// StateWalk, StateJump, StateFall, StateLand, StateSwim, StateLadder) on top of the PhysX capsule controller
 /// (GameObjectController); the numbers are in <see cref="MoveConfig"/>.
-/// The body is a flat-bottomed cylinder: Godot has no controller step offset, so a step-up test runs after a
-/// blocked move, and a capsule's round bottom slides back off a 30 riser edge.
+/// The body is the client's capsule, moved by the client's own controller sweep (<see cref="NxController"/>), not by
+/// MoveAndSlide.
 /// </summary>
 public partial class Player : CharacterBody3D
 {
@@ -41,6 +41,8 @@ public partial class Player : CharacterBody3D
     /// <summary>PCBase::FUN_141675ed0: the entity in the controller's hit report is water (kind 8).</summary>
     public bool OnWater => hitGroup == MoveConfig.WaterGroup;
     public float GroundDistance { get; private set; }
+    /// <summary>The last controller move touched something below (NXCC_COLLISION_DOWN).</summary>
+    public bool Grounded => (nxHit & NxController.Hit.Down) != 0;
     /// <summary>The last landing's drop (the height the client sends in StateFallDamage; the server applies damage).</summary>
     public float LastFallHeight { get; private set; }
     public event Action<float> FallDamageHeight;
@@ -48,6 +50,8 @@ public partial class Player : CharacterBody3D
     float stateTime, airTime, baseSpeed = MoveConfig.RunSpeed, yawDeg, targetYawDeg;
     Vector3 kVel;                         // GameObjectController m_kVelocity (horizontal)
     int hitGroup = -1;                    // GameObjectControllerHitReport m_entity: its collision group, -1 = none
+    NxController nx;
+    NxController.Hit nxHit;               // GameObjectController m_nCollisionFlags of the last move
     float fallStartY = float.NaN;         // PCBase m_posC10
     Vector2 prevInput, prevRawInput;
     bool wallHit;                         // PCBase m_unk_c68: a side hit in the air while descending
@@ -78,20 +82,16 @@ public partial class Player : CharacterBody3D
     public static Player Create(Node3D visual, AnimationPlayer anim)
     {
         var p = new Player { Name = "Player", Visual = visual, Anim = anim };
-        p.FloorMaxAngle = Mathf.DegToRad(MoveConfig.SlopeLimitDeg);
-        // no snap: NxCharacter's down pass only undoes the auto-step's lift (SweepTest::moveCharacter, DownVector -= StepOffset),
-        // so the body follows a floor that drops away by no more than the frame's own fall (dz, Integrate), and falls off the rest
-        p.FloorSnapLength = 0;
-        // the shape is the client's volume grown by the skin on every side, since NxCharacter's sweeps stop one skin short of a
-        // contact (CharacterController.cpp, SweepTest::DoSweepTest): the feet rest on floor + skin (RestOnFloor) and walls stop
-        // radius + skin away; so Godot's own margin is kept at its minimum, which is also its least floor snap
-        p.SafeMargin = MoveConfig.ShapeMargin;
-        p.AddChild(new CollisionShape3D
+        // GameObjectController::CreateController: radius 25 and a capsule part of the height less two radii; the feet
+        // (GetFeetPosition) are the capsule's bottom, and the sweep keeps them one skin above what they stand on
+        var collision = new CollisionShape3D
         {
             Name = "Collision",
-            Shape = new CylinderShape3D { Radius = MoveConfig.Radius + MoveConfig.SkinWidth, Height = MoveConfig.Height + 2 * MoveConfig.SkinWidth },
+            Shape = new CapsuleShape3D { Radius = MoveConfig.Radius, Height = MoveConfig.Height },
             Position = new Vector3(0, MoveConfig.Height / 2, 0),
-        });
+        };
+        p.AddChild(collision);
+        p.nx = new NxController(p, collision) { ShapeHit = p.NoteHit };
         p.AddChild(visual);
         return p;
     }
@@ -159,7 +159,7 @@ public partial class Player : CharacterBody3D
         prevInput = input;
         var dir = WorldDir(input);
         bool hasInput = dir != Vector3.Zero;
-        bool grounded = IsOnFloor();
+        bool grounded = Grounded;
         ProbeGround();
         stateTime += dt;
 
@@ -296,7 +296,7 @@ public partial class Player : CharacterBody3D
     }
 
     /// <summary>PCBase::vfunc_99: in the air for longer than the delay and more than 0.3 m above the ground.</summary>
-    bool InAirFor(float delay) => airTime > delay && GroundDistance > MoveConfig.FallMinHeight && !IsOnFloor();
+    bool InAirFor(float delay) => airTime > delay && GroundDistance > MoveConfig.FallMinHeight && !Grounded;
 
     /// <summary>
     /// PCBase::vfunc_93, run each frame by PC::vfunc_53: 0 while the controller is on the ground; else
@@ -305,7 +305,7 @@ public partial class Player : CharacterBody3D
     /// </summary>
     void ProbeGround()
     {
-        if (IsOnFloor()) { GroundDistance = 0; return; }
+        if (Grounded) { GroundDistance = 0; return; }
         GroundDistance = Ray(GlobalPosition, Vector3.Down, MoveConfig.UnlimitedRay, GroundGroups) is var (p, _) ? GlobalPosition.Y - p.Y : float.MaxValue;
     }
 
@@ -315,17 +315,6 @@ public partial class Player : CharacterBody3D
     /// a down part it is what the body stands on, else the last thing it ran into. It stays until cleared. Another
     /// controller goes to onControllerHit and leaves it alone.
     /// </summary>
-    void UpdateHitReport(Vector3 wantedHoriz, float dy)
-    {
-        for (int i = 0; i < GetSlideCollisionCount(); i++)
-            NoteHit(GetSlideCollision(i).GetCollider());
-        if (dy >= 0) return;
-        // the down pass reaches only the frame's drop dz (DownVector -= StepOffset undoes the auto-step's lift), and the move has
-        // already gone down by it: what the pass touched is what the body now stands on, within the contact tolerance
-        var col = new KinematicCollision3D();
-        if (TestMove(GlobalTransform, Vector3.Down * (2 * SafeMargin), col)) NoteHit(col.GetCollider());
-    }
-
     void NoteHit(GodotObject collider)
     {
         // onShapeHit (0x140cfade0) sets the entity of a touched shape, or clears it when the shape has no entity; a touched
@@ -377,83 +366,25 @@ public partial class Player : CharacterBody3D
         }
         Velocity = v;
 
-        var start = GlobalTransform;
-        var wantedHoriz = new Vector3(v.X, 0, v.Z) * dt;
-        MoveAndSlide();
-        // NxCharacter (SweepTest::moveCharacter): every move with a side part goes up by the step offset, sideways, then
-        // down, unless it moves upward; so any riser under the step offset is climbed, whatever the approach angle.
-        if (v.Y <= 0 && IsOnWall() && wantedHoriz.Length() > 0.01f && StepPath(start, wantedHoriz) is { } stepped &&
-            stepped.Origin.Y > GlobalPosition.Y + StepMinRise)
-            GlobalTransform = stepped;
-        if (!jumping && IsOnFloor()) RestOnFloor();
-        UpdateHitReport(wantedHoriz, v.Y * dt);
+        // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
+        nxHit = nx.Move(v * dt);
 
-        wallHit = IsOnWall() && !IsOnFloor() && v.Y < 0;
-        if (IsOnFloor())
+        wallHit = (nxHit & NxController.Hit.Sides) != 0 && !Grounded && v.Y < 0;
+        if (Grounded)
         {
             airTime = 0;
             // GameObjectController::Move: a hit below stops the jump (StateJump then goes to StateLand)
             if (jumping && jumpTime > dt) { jumping = false; Enter(OnWater ? MoveState.Idle : MoveState.Land); }
         }
         else airTime += dt;
-        if (IsOnCeiling() && jumping && jumpTime < jumpApex)
+        if ((nxHit & NxController.Hit.Up) != 0 && jumping && jumpTime < jumpApex)
         {
             // the controller stays under the ceiling until the jump curve comes back down
         }
     }
 
-    /// <summary>
-    /// The client's feet rest one skin width above the floor: NxCharacter keeps the capsule skinWidth (0.01 m,
-    /// GameObjectController::CreateController) off what it stands on, and GetFeetPosition (0x14123fd90) is the capsule
-    /// centre less radius + half the cylinder part, with no skin term. The body's shape reaches SkinWidth below the
-    /// feet, and MoveAndSlide can leave it a hair above the floor (its safe margin), so it is lowered onto the contact here.
-    /// </summary>
-    void RestOnFloor()
-    {
-        var col = new KinematicCollision3D();
-        if (TestMove(GlobalTransform, Vector3.Down * (2 * SafeMargin), col, 0.001f) && col.GetNormal().Y >= Mathf.Cos(FloorMaxAngle))
-            GlobalPosition += col.GetTravel();
-    }
-
-    /// <summary>The least rise a step path must gain to be taken. The client's auto-step climbs any riser under the step offset,
-    /// down to a seam a hair high between two meshes (0.05 at the 84000035 ramp top), which the body now meets with no margin.</summary>
-    const float StepMinRise = 0.01f;
-
-    void TryStepUp(Vector3 horiz)
-    {
-        if (StepPath(GlobalTransform, horiz) is { } t && t.Origin.Y > GlobalPosition.Y + StepMinRise) GlobalTransform = t;
-    }
-
-    /// <summary>The up / side / down passes of NxCharacter's move from <paramref name="t0"/>: the up pass is cut short by a
-    /// ceiling, the side pass slides along what it hits, the down pass must land on a walkable floor (the slope limit). The
-    /// client's controller is CLIMB_EASY, so there is no constrainedClimbingMode height test. Null when it does not land.</summary>
-    Transform3D? StepPath(Transform3D t0, Vector3 horiz)
-    {
-        var col = new KinematicCollision3D();
-        var up = Vector3.Up * (MoveConfig.StepOffset + 2 * SafeMargin);   // a 30 riser must pass with the margin
-        var t = TestMove(t0, up, col) ? t0.Translated(col.GetTravel()) : t0.Translated(up);
-        float rise = t.Origin.Y - t0.Origin.Y;
-        if (rise < 1f) return null;
-        var rem = horiz;
-        for (int i = 0; i < 4 && rem.LengthSquared() > 1e-4f; i++)
-        {
-            if (!TestMove(t, rem, col)) { t = t.Translated(rem); break; }
-            t = t.Translated(col.GetTravel());
-            var n = col.GetNormal();
-            n.Y = 0;
-            if (n.LengthSquared() < 1e-6f) break;
-            n = n.Normalized();
-            rem = col.GetRemainder();
-            rem.Y = 0;
-            rem -= n * rem.Dot(n);
-        }
-        if (!TestMove(t, Vector3.Down * rise * 1.5f, col)) return null;
-        if (col.GetNormal().Y < Mathf.Cos(FloorMaxAngle)) return null;
-        // the riser is where the down pass touched, whose feet rest a skin above it: a sweep along a wall the rim touches can
-        // stop short of the floor it started on, which is no step
-        if (col.GetPosition().Y + MoveConfig.SkinWidth < t0.Origin.Y + StepMinRise) return null;
-        return t.Translated(col.GetTravel());
-    }
+    /// <summary>vfunc_68 with no gravity: a controller move by <paramref name="delta"/> (the climb's moves).</summary>
+    void ControllerMove(Vector3 delta) => nxHit = nx.Move(delta);
 
     /// <summary>PCBase::SendFallDamage: the height from the fall start to the landing; skipped on water.</summary>
     void SendFallDamage()

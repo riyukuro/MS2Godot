@@ -521,7 +521,7 @@ public partial class Field : Node3D
             var (_, _, _, shot) = script.Dequeue();
             var path = System.IO.Path.Combine(shotDir, shot);
             GetViewport().GetTexture().GetImage().SavePng(path);
-            GD.Print($"shot {path} pos {player.GlobalPosition} anim {player.CurrentAnim} floor {player.IsOnFloor()}");
+            GD.Print($"shot {path} pos {player.GlobalPosition} anim {player.CurrentAnim} floor {player.Grounded}");
             shotSettle = -1;
             stepTime = 0;
             if (script.Count == 0) { packs.Dispose(); GetTree().Quit(0); }
