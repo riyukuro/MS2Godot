@@ -566,6 +566,8 @@ public partial class HudScene : Node
         StatBar(stat.FindClip("m_hp"), data.HpRatio);
         StatBar(stat.FindClip("m_sp"), data.SpRatio);
         stat.SetNamedVisible("m_hpWarning", data.HpRatio <= 0.3);     // StatInfo.setHP: shown at cur / max <= 0.3
+        // m_hpWarning (sym 367) is a plain 40-frame clip with no script: it loops, alpha 0.051 -> 0.398 at f20 -> 0.051
+        if (stat.Direct("m_hpWarning")?.Node is MovieClipNode warning) warning.Loop();
         // StatInfo.initStat -> setEP(cur, cur, max): pips below uint(cur / max * 6) play "normal", the rest "empty" (calcFrame)
         if (stat.FindClip("m_ep") is { } ep)
         {

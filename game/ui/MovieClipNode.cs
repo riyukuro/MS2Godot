@@ -345,16 +345,30 @@ public partial class MovieClipNode : Node2D
     // timeline player for state tweens and popup animations
     bool playing; int rangeFrom, rangeTo; double rangeT;
 
+    bool looping;
+
     public void PlayRange(int from, int to)
     {
-        rangeFrom = from; rangeTo = to; rangeT = 0; playing = true;
+        rangeFrom = from; rangeTo = to; rangeT = 0; playing = true; looping = false;
         GotoFrame(from);
+    }
+
+    /// <summary>
+    /// Plays the whole timeline over and over at the movie's frame rate: a plain MovieClip with no frame script (no stop())
+    /// runs on from its last frame back to frame 0.
+    /// </summary>
+    public void Loop()
+    {
+        if (FrameCount < 2) return;
+        PlayRange(0, FrameCount - 1);
+        looping = true;
     }
 
     public override void _Process(double delta)
     {
         if (!playing) return;
         rangeT += delta;
+        if (looping) { GotoFrame((int)(rangeT * Movie.Fps) % FrameCount); return; }
         int f = rangeFrom + (int)(rangeT * Movie.Fps);
         if (f >= rangeTo) { GotoFrame(rangeTo); playing = false; return; }
         GotoFrame(f);
