@@ -6,10 +6,11 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The face of a text field's label drawn line by line, for a label of more than one line whose lines Scaleform places
 /// each at its own exact x (TextNode.AlignLine): the label's own face is hidden and this draws the same glyphs where the
-/// label lays them out, each line moved by TextNode.LineDx. A line is its text shaped with the label's font and size,
-/// the pen of each glyph cluster is the label's character bounds and the baseline is the line top plus the line ascent
-/// centred in the font height (as GlyphShadow places its glyphs); drawn with no move it is the label's own face, pixel
-/// for pixel. A label showing htmlText formats (TextNode.SetHtml) is drawn here too, each glyph in its run's colour, faux
+/// label lays them out, each line moved by its own x (LayoutLine.Dx). The lines and glyphs are TextNode.Layout's: each
+/// glyph at its run's size, drawn from that size's raster scaled to it, the pen of each glyph cluster the label's
+/// character position and the baseline the line top plus the line ascent (as GlyphShadow places its glyphs); for text
+/// with no FONT size, drawn with no move, it is the label's own face, pixel for pixel. A label showing htmlText formats
+/// (TextNode.SetHtml) is drawn here too, each glyph in its run's colour, faux
 /// bold and faux italic (FauxStyle), and each underlined run with its line. It draws nothing while the label shows its own
 /// face.
 /// </summary>
@@ -28,55 +29,49 @@ public partial class LineFace : Node2D
         var ls = label.LabelSettings;
         if (ls?.Font == null || string.IsNullOrEmpty(label.Text)) return;
         var font = ls.Font;
-        int fontSize = ls.FontSize;
-        float fontH = (float)font.GetHeight(fontSize);
-        float descent = text.DescentRatio * fontSize;
         var ts = TextServerManager.GetPrimaryInterface();
         var canvas = GetCanvasItem();
-        foreach (var (start, _, top, line) in TextNode.LabelLines(label))
+        float scale = 1;                         // the draw transform's scale: label pixels per raster pixel
+        foreach (var line in text.ShownLines())
         {
-            float dx = text.LineDx(start);
-            var tl = new TextLine();
-            tl.AddString(line, font, fontSize);
-            var rid = tl.GetRid();
-            float asc = (float)ts.ShapedTextGetAscent(rid), dsc = (float)ts.ShapedTextGetDescent(rid);
-            if (asc + dsc < fontH) asc += (fontH - (asc + dsc)) / 2;
-            float baseline = top + asc, pen = 0;
-            // the underline run being built: its start x, length and colour (a change of colour or underline closes it)
-            float ulX = 0, ulLen = 0;
+            float baseline = line.Baseline;
+            // the underline run being built: its start x, y, length and colour (a change of colour or underline closes it)
+            float ulX = 0, ulY = 0, ulLen = 0;
             Color? ulColor = null;
-            foreach (Dictionary g in ts.ShapedTextGetGlyphs(rid))
+            foreach (var g in line.Glyphs)
             {
-                int first = (int)g["start"], count = (int)g["count"], repeat = (int)g["repeat"];
-                long index = (long)g["index"];
-                float advance = (float)g["advance"];
-                int at = start + first;
-                if (count > 0)
-                {
-                    var b = label.GetCharacterBounds(at);
-                    if (b.Size.Y > 0) pen = b.Position.X;
-                }
-                var style = text.StyleAt(at);
-                var color = text.GlyphColor(at);
+                if (text.Hidden(g)) continue;
+                float pen = line.LabelX + g.DrawPen + line.Dx;
+                var style = text.StyleAt(g.Index);
+                var color = text.GlyphColor(g.Index);
+                float descent = text.DescentRatio * g.Size;
                 Color? underline = style.Underline ? color : null;
                 if (underline != ulColor)
                 {
-                    if (ulColor is Color uc) Underline(ulX, baseline + descent / 2, ulLen, uc);
-                    ulX = pen + dx; ulLen = advance * repeat;
+                    if (ulColor is Color uc) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, uc); }
+                    ulX = pen; ulY = baseline + descent / 2; ulLen = g.Advance * g.Repeat;
                 }
-                else if (underline != null) ulLen += advance * repeat;
+                else if (underline != null) ulLen += g.Advance * g.Repeat;
                 ulColor = underline;
-                if (index != 0)
+                if (g.Glyph != 0)
                 {
-                    var o = (Vector2)g["offset"];
-                    var (frid, shift) = FauxStyle.Font(font, (Rid)g["font_rid"], style.Bold, style.Italic, fontSize, descent);
-                    ts.FontDrawGlyph(frid, canvas, (long)g["font_size"], new Vector2(pen + dx + o.X, baseline + o.Y) + shift, index, color);
+                    // the glyph from its run's raster, scaled to the run's size
+                    var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Raster, text.DescentRatio * g.Raster);
+                    Scale(ref scale, g.Scale);
+                    ts.FontDrawGlyph(frid, canvas, g.Raster, new Vector2(pen + g.Offset.X, baseline + g.Offset.Y) / g.Scale + shift, g.Glyph, color);
                 }
-                pen += advance * repeat;
             }
-            if (ulColor is Color last) Underline(ulX, baseline + descent / 2, ulLen, last);
-            tl.Dispose();
+            if (ulColor is Color last) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, last); }
         }
+        Scale(ref scale, 1);
+    }
+
+    /// <summary>Draws what follows scaled by <paramref name="to"/> (the label's own pixels at 1).</summary>
+    void Scale(ref float current, float to)
+    {
+        if (current == to) return;
+        current = to;
+        DrawSetTransformMatrix(Transform2D.Identity.Scaled(new Vector2(to, to)));
     }
 
     /// <summary>

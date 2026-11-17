@@ -9,11 +9,10 @@ namespace Ms2Godot.Ui;
 /// blur, blurred by the recursive gaussian on rows then columns with BlurY = BlurX, strengthened around bias 8
 /// (strengthenImage: int((v - 8) * strength + 0.5) + 8, clamped; no bias at strength 1 or less) and drawn scaled to the screen
 /// size, tinted with the shadow colour, under the face and offset by angle and distance.
-/// It is a child of the field's label drawn behind it, and the glyphs sit where the label's own layout puts them: the pen
-/// position of each glyph cluster is the label's character bounds (Label.GetCharacterBounds, the label's shaped lines), the
-/// baseline is the label's (line top plus the line ascent, centred in the font height, floored as the face is). A line the
-/// face draws at its own exact x (TextNode.LineDx, LineFace) moves its shadow with it. A line's
-/// glyph ids, fonts and in-cluster advances come from that line's text shaped with the label's font and size.
+/// It is a child of the field's label drawn behind it, and the glyphs sit where TextNode.Layout puts them (the label's own
+/// layout for text with no FONT size): the pen of each glyph cluster is the label's character position, the baseline is
+/// the line's (line top plus the line ascent, floored as the face is), and each glyph has its run's size. A line the face
+/// draws at its own exact x (LayoutLine.Dx, LineFace) moves its shadow with it.
 /// The glyph rasters are cached by (font, shadow ramp size, glyph, blur, strength): the colour is a draw-time tint, not a key.
 /// </summary>
 public partial class GlyphShadow : Node2D
@@ -44,66 +43,25 @@ public partial class GlyphShadow : Node2D
         var ls = label.LabelSettings;
         if (ls?.Font == null || string.IsNullOrEmpty(label.Text) || color.A <= 0) return;
         var font = ls.Font;
-        int fontSize = ls.FontSize;
-        float screen = fontSize * text.RasterScale;
-        int ramp = (int)TextNode.ShadowRampSize(screen);
-        float rb = blur * ramp / screen, k = fontSize / (float)ramp;    // raster blur in shadow pixels; label pixels per shadow pixel
-        float fontH = (float)font.GetHeight(fontSize);
-        var ts = TextServerManager.GetPrimaryInterface();
-
-        // code points: Godot positions count UTF-32 characters
-        var cps = new List<string>();
-        for (int c = 0; c < label.Text.Length; c += char.IsSurrogatePair(label.Text, c) ? 2 : 1)
-            cps.Add(char.IsSurrogatePair(label.Text, c) ? label.Text.Substring(c, 2) : label.Text.Substring(c, 1));
-        int n = label.VisibleCharacters >= 0 ? Math.Min(cps.Count, label.VisibleCharacters) : cps.Count;
-
-        int i = 0;
-        while (i < n)
+        foreach (var line in text.ShownLines())
         {
-            var top = label.GetCharacterBounds(i);
-            if (top.Size.Y <= 0) { i++; continue; }                     // a line break, or a line the label does not show
-            int j = i + 1;
-            while (j < n) { var r = label.GetCharacterBounds(j); if (r.Size.Y <= 0 || r.Position.Y != top.Position.Y) break; j++; }
-            DrawLine(ts, label, font, fontSize, fontH, string.Concat(cps.GetRange(i, j - i)), i, top.Position.Y, text.LineDx(i), ramp, rb, k);
-            i = j;
-        }
-    }
-
-    void DrawLine(TextServer ts, Label label, Font font, int fontSize, float fontH, string line, int first, float lineTop, float dx, int ramp, float rb, float k)
-    {
-        var tl = new TextLine();
-        tl.AddString(line, font, fontSize);
-        var rid = tl.GetRid();
-        float asc = (float)ts.ShapedTextGetAscent(rid), dsc = (float)ts.ShapedTextGetDescent(rid);
-        if (asc + dsc < fontH) asc += (fontH - (asc + dsc)) / 2;
-        float baseline = lineTop + asc;
-        float pen = 0;
-        foreach (Dictionary g in ts.ShapedTextGetGlyphs(rid))
-        {
-            int start = (int)g["start"], count = (int)g["count"], repeat = (int)g["repeat"];
-            long index = (long)g["index"];
-            float advance = (float)g["advance"];
-            if (count > 0)
+            foreach (var g in line.Glyphs)
             {
-                var b = label.GetCharacterBounds(first + start);
-                if (b.Size.Y > 0) pen = b.Position.X;
+                if (text.Hidden(g) || g.Glyph == 0) continue;
+                // the glyph's run size on the screen, its shadow ramp, the raster blur in shadow pixels and label pixels per shadow pixel
+                float screen = g.Size * text.RasterScale;
+                int ramp = (int)TextNode.ShadowRampSize(screen);
+                float rb = blur * ramp / screen, k = g.Size / ramp;
+                var style = text.StyleAt(g.Index);
+                var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Size, text.DescentRatio * g.Size);
+                var e = Get(frid, ramp, g.Glyph, rb, strength);
+                if (e.Texture == null) continue;
+                float pen = line.LabelX + g.DrawPen + line.Dx;
+                var at = new Vector2(pen + g.Offset.X, MathF.Floor(line.Baseline + g.Offset.Y)) + shift + e.Origin * k + offset;
+                DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
+                drawn.Add(e.Texture);
             }
-            if (index != 0)
-            {
-                var style = text.StyleAt(first + start);
-                var (frid, shift) = FauxStyle.Font(font, (Rid)g["font_rid"], style.Bold, style.Italic, fontSize, text.DescentRatio * fontSize);
-                var e = Get(frid, ramp, index, rb, strength);
-                if (e.Texture != null)
-                {
-                    var o = (Vector2)g["offset"];
-                    var at = new Vector2(pen + dx + o.X, MathF.Floor(baseline + o.Y)) + shift + e.Origin * k + offset;
-                    DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
-                    drawn.Add(e.Texture);
-                }
-            }
-            pen += advance * repeat;
         }
-        tl.Dispose();
     }
 
     readonly struct Entry

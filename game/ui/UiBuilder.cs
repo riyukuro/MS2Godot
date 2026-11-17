@@ -199,7 +199,8 @@ public partial class TextNode : Node2D
         if (nine != null) Bounds = nine.Map(Bounds);
         var font = scope.Assets.FontFor((string)Def["fontClass"]);
         lineRatios = scope.Assets.LineRatios((string)Def["fontClass"]);
-        DescentRatio = lineRatios.Height - scope.Assets.AscentRatio((string)Def["fontClass"]);
+        AscentRatio = scope.Assets.AscentRatio((string)Def["fontClass"]);
+        DescentRatio = lineRatios.Height - AscentRatio;
         float size = UiBuilder.F(Def["size"], 12);
         float asx = (float)sx, asy = (float)sy;
         // Scaleform's glyph cache rasterizes plain text (no readability AA) once at a ramp size and draws that raster scaled
@@ -264,82 +265,63 @@ public partial class TextNode : Node2D
         var align = Label.HorizontalAlignment;
         var ls = Label.LabelSettings;
         bool exact = align == HorizontalAlignment.Center || align == HorizontalAlignment.Right;
-        int lines = exact ? Label.GetLineCount() : 0;
+        var all = Layout();
+        int lines = exact ? all.Count : 0;
         bool plainFace = ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
         bool perLine = lines > 1 && plainFace;
         colored = runStyles != null && plainFace;
-        lineDx.Clear();
+        perLineDx = false;
+        foreach (var l in all) l.Dx = 0;
         if (exact && lines == 1)
         {
-            var first = Label.GetCharacterBounds(0);
-            if (first.Size.Y > 0 && ClientLineX(Label.Text, align) is float at)
-                dx = (at - first.Position.X) * Label.Scale.X;   // field units
+            if (CharX(all[0], 0) is float first && ClientLineX(all[0], align) is float at)
+                dx = (at - first) * Label.Scale.X;   // field units
         }
         else if (perLine)
-            foreach (var (start, _, _, text) in LabelLines(Label))
-                if (ClientLineX(text, align) is float at)
-                    lineDx[start] = at - Label.GetCharacterBounds(start).Position.X;   // label pixels
+            foreach (var l in ShownLines())
+                if ((Label.VisibleCharacters < 0 || l.Start < Label.VisibleCharacters) && CharX(l) is float first && ClientLineX(l, align, true) is float at)
+                {
+                    l.Dx = at - first;   // label pixels
+                    perLineDx = true;
+                }
         if (lineShift.Position.X != dx) Callable.From(() => lineShift.Position = new Vector2(dx, 0)).CallDeferred();
         var self = new Color(1, 1, 1, perLine || colored ? 0 : 1);
         if (Label.SelfModulate != self) Callable.From(() => Label.SelfModulate = self).CallDeferred();
         face?.QueueRedraw();
     }
 
-    /// <summary>The client's x of a line's first glyph in label pixels (FinalizeLine), null for an empty line.</summary>
-    float? ClientLineX(string text, HorizontalAlignment align)
+    /// <summary>
+    /// The client's x of a line's first glyph in label pixels (FinalizeLine), null for an empty line: the line's shown
+    /// characters less its trailing spaces, each run shaped at its own size, give LineWidthWithoutTrailingSpaces.
+    /// </summary>
+    float? ClientLineX(LayoutLine line, HorizontalAlignment align, bool visible = false)
     {
-        string line = text.TrimEnd(' ', '\t', '\n', '\r');
-        if (line.Length == 0) return null;
-        var ls = Label.LabelSettings;
-        var tl = new TextLine();
-        tl.AddString(line, ls.Font, ls.FontSize);
+        int end = visible && Label.VisibleCharacters >= 0 ? Math.Min(line.End, Label.VisibleCharacters) : line.End;
+        while (end > line.Start && CodePointAt(end - 1) is ' ' or '\t' or '\n' or '\r') end--;
+        if (end <= line.Start) return null;
         double sum = 0;
-        foreach (Godot.Collections.Dictionary g in TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid()))
-            sum += (float)g["advance"] * (int)g["repeat"];
-        tl.Dispose();
+        foreach (var (a, b) in Runs(line.Start, end))
+        {
+            float size = SizeAt(a);
+            var tl = new TextLine();
+            tl.AddString(Substring(a, b), Label.LabelSettings.Font, ShapeSize(size));
+            double run = 0;
+            foreach (Godot.Collections.Dictionary g in TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid()))
+                run += (float)g["advance"] * (int)g["repeat"];
+            tl.Dispose();
+            sum += run * (LabelSize(size) / ShapeSize(size));
+        }
         float twip = 1 / (20 * Label.Scale.X);          // a twip of the field in label pixels
         float room = Label.Size.X - (float)sum;
         return Math.Max(0, MathF.Round((align == HorizontalAlignment.Center ? room / 2 : room) / twip) * twip);
     }
 
-    readonly Dictionary<int, float> lineDx = new();
+    bool perLineDx;
 
-    /// <summary>
-    /// The x the client puts a drawn line at relative to the label's own, in label pixels, for the line starting at code
-    /// point <paramref name="start"/> (0 when the label keeps its own placement).
-    /// </summary>
-    public float LineDx(int start) => lineDx.TryGetValue(start, out float d) ? d : 0;
-
-    /// <summary>True while the label's own face is hidden and LineFace draws it (lines at their own x, or html colours).</summary>
-    public bool FaceByLine => lineDx.Count > 0 || colored;
+    /// <summary>True while the label's own face is hidden and LineFace draws it (lines at their own x, or html colours and sizes).</summary>
+    public bool FaceByLine => perLineDx || colored;
 
     bool colored;
-
-    /// <summary>
-    /// The label's shown lines: the code point range (the label's own character positions count code points), the line's
-    /// top in label pixels and its text, grouped from the character bounds the way the label lays the lines out
-    /// (characters it does not show have no bounds).
-    /// </summary>
-    public static List<(int Start, int End, float Top, string Text)> LabelLines(Label label)
-    {
-        var res = new List<(int, int, float, string)>();
-        string t = label.Text;
-        var at = new List<int>();                  // code point -> UTF-16 index
-        for (int c = 0; c < t.Length; c += char.IsSurrogatePair(t, c) ? 2 : 1) at.Add(c);
-        int n = label.VisibleCharacters >= 0 ? Math.Min(at.Count, label.VisibleCharacters) : at.Count;
-        int i = 0;
-        while (i < n)
-        {
-            var top = label.GetCharacterBounds(i);
-            if (top.Size.Y <= 0) { i++; continue; }
-            int j = i + 1;
-            while (j < n) { var r = label.GetCharacterBounds(j); if (r.Size.Y <= 0 || r.Position.Y != top.Position.Y) break; j++; }
-            int a = at[i], b = j < at.Count ? at[j] : t.Length;
-            res.Add((i, j, top.Position.Y, t.Substring(a, b - a)));
-            i = j;
-        }
-        return res;
-    }
 
     /// <summary>Screen pixels per label pixel: the glyphs are rasterized at the ramp size and drawn scaled by this.</summary>
     public float RasterScale = 1;
@@ -372,17 +354,18 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => Label.Text; set { runStyles = null; Label.Text = value ?? ""; } }
+    public string Text { get => Label.Text; set { runStyles = null; HasSizedRuns = false; Label.Text = value ?? ""; } }
 
     /// <summary>
     /// AS3 htmlText = <paramref name="html"/>: the text without its markup (FlashHtml, with the field's multiline flag), each
-    /// run in its text format. The label lays the text out as it does plain text, in the field's size (a FONT size is parsed
-    /// but not laid out); LineFace draws its glyphs in their colours, bold, italic and underline.
+    /// run in its text format. Each run is laid out at its FONT size (TextNode.Layout, ParagraphFormatter's per-run layout);
+    /// LineFace draws its glyphs in their colours, sizes, bold, italic and underline.
     /// </summary>
     public void SetHtml(string html)
     {
         var (text, styles) = FlashHtml.Parse(html, Def?["multiline"] is JsonNode ml ? (bool)ml : true);
         runStyles = Array.Exists(styles, s => !s.IsPlain) ? styles : null;
+        HasSizedRuns = Array.Exists(styles, s => s.Size is float z && z != FieldSize);
         Label.Text = text;
         Label.QueueRedraw();
     }
@@ -411,7 +394,7 @@ public partial class TextNode : Node2D
         get
         {
             if (Label.AutowrapMode == TextServer.AutowrapMode.Off) return Math.Max(1, Label.Text.Split('\n').Length);
-            if (Label.IsInsideTree()) return Math.Max(1, Label.GetLineCount());       // the label's own wrap, so the count matches what is drawn
+            if (Label.IsInsideTree() || HasSizedRuns) return Math.Max(1, Layout().Count);   // the lines as drawn (the label's own wrap at the field's size)
             var ls = Label.LabelSettings;
             var p = new TextParagraph { Width = Label.Size.X, BreakFlags = TextServer.LineBreakFlag.Mandatory | TextServer.LineBreakFlag.WordBound | TextServer.LineBreakFlag.Adaptive };
             p.AddString(Label.Text, ls.Font, ls.FontSize);
@@ -441,7 +424,7 @@ public partial class TextNode : Node2D
         var (height, advance) = LineMetrics();
         var ls = Label.LabelSettings;
         ls.LineSpacing = advance / Label.Scale.Y - ls.Font.GetHeight(ls.FontSize);
-        return height + (NumLines - 1) * advance;
+        return height + (NumLines - 1) * advance + SizedHeightMove();
     }
 
     /// <summary>
