@@ -196,7 +196,7 @@ public partial class Player : CharacterBody3D
                 // StateWalk::vfunc_8 order: pressed up / down (ladder or rope), jump, then the held up / down key on a ladder
                 if (input.Y > 0 && upPressed && (TryLadder(1) || TryRope(1))) break;
                 if (input.Y < 0 && downPressed && TryLadder(2)) break;
-                if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
+                if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25, dir * baseSpeed); break; }
                 if (input.Y > 0 && TryLadder(1)) break;
                 if (input.Y < 0 && TryLadder(2)) break;
                 if (!hasInput) { Enter(MoveState.Idle); break; }
@@ -207,7 +207,7 @@ public partial class Player : CharacterBody3D
             case MoveState.Swim:
                 if (!OnWater && grounded) { Enter(MoveState.Idle); break; }
                 if (InAirFor(MoveConfig.IdleFallDelay)) { ClearHitReport(); Enter(MoveState.Idle); break; }   // StateSwim::vfunc_8 clears the report
-                if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
+                if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25, dir * baseSpeed); break; }
                 if (!hasInput) { Enter(MoveState.Idle); break; }
                 baseSpeed = Mount != null ? RideSpeed() : MoveConfig.SwimSpeed;
                 kVel = dir * baseSpeed;
@@ -375,7 +375,12 @@ public partial class Player : CharacterBody3D
 
     // ---- GameObjectController: jump and fall integration -------------------------------------------------------------
 
-    void StartJump(Vector3 dir, bool hasInput, int sub)
+    /// <param name="frameVel">the velocity the old state's update moves by this frame. CStateManager::Update runs the state's
+    /// vfunc_3 (StateWalk's sets m_kVelocity = direction * speed and moves, statewalk.cpp:205-209) before the transitions
+    /// that start the jump (statemanager.cpp:232); GameObjectController::StartJump's m_kVelocity = m_vDir
+    /// (gameobjectcontrollerphysxhelpers.cpp:315) is replaced by StateJump::vfunc_3's SetKVelocity (statejump.cpp:206)
+    /// before the next move. Our frame takes the transition first, so the jump frame moves by this.</param>
+    void StartJump(Vector3 dir, bool hasInput, int sub, Vector3 frameVel = default)
     {
         // the old state's vfunc_5 runs first, then StateJump::vfunc_4: StopJump, then StartJump (statejump.cpp:126-128)
         Enter(MoveState.Jump);
@@ -398,6 +403,7 @@ public partial class Player : CharacterBody3D
         jumpTime = 0;
         jumpH = 0;
         jumping = true;
+        kVel = frameVel;
     }
 
     void Integrate(float dt)
