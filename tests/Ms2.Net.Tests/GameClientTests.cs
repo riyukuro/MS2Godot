@@ -33,9 +33,9 @@ public class GameClientTests {
         Assert.That(op, Is.EqualTo((ushort) Outbound.CharacterManagement));
         var r = new ByteReader(body);
         Assert.That(r.ReadByte(), Is.EqualTo(GameClient.SelectCommand)); Assert.That(r.ReadLong(), Is.EqualTo(20000000000)); Assert.That(r.ReadShort(), Is.EqualTo(1));
-        await s.WriteAsync(LoginToGameFrame(srv, new byte[] { 127, 0, 0, 1 }, 20603, 0x1122334455667788UL, 2000001));
+        await s.WriteAsync(LoginToGameFrame(srv, new byte[] { 127, 0, 0, 1 }, 20003, 0x1122334455667788UL, 2000001));
         var go = await sel.WaitAsync(TimeSpan.FromSeconds(10));
-        Assert.That(go.Ok); Assert.That(go.Port, Is.EqualTo(20603)); Assert.That(go.Token, Is.EqualTo(0x1122334455667788UL)); Assert.That(go.MapId, Is.EqualTo(2000001));
+        Assert.That(go.Ok); Assert.That(go.Port, Is.EqualTo(20003)); Assert.That(go.Token, Is.EqualTo(0x1122334455667788UL)); Assert.That(go.MapId, Is.EqualTo(2000001));
         l.Stop();
     }
 
@@ -114,7 +114,7 @@ public class GameClientTests {
         Assert.That(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()).ReadInt(), Is.EqualTo(3));
     }
 
-    /// <summary>Opt-in: MS2_LIVE_LOGIN=host:port, MS2_LIVE_ACCOUNT=user:password (without the region code), MS2_LIVE_EXPECT=characterId,mapId,x,y,z read from the server's database.</summary>
+    /// <summary>Opt-in: MS2_LIVE_LOGIN=host:port, MS2_LIVE_ACCOUNT=user:password (without the region code), MS2_LIVE_EXPECT=characterId,mapId[,x,y,z]: id and map from the server database, the position only when known.</summary>
     [Test] public async Task LiveServerReachesFieldEnter() {
         var addr = Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"); var acct = Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
         if (string.IsNullOrEmpty(addr) || string.IsNullOrEmpty(acct)) Assert.Ignore("MS2_LIVE_LOGIN / MS2_LIVE_ACCOUNT not set");
@@ -132,7 +132,9 @@ public class GameClientTests {
             Assert.That(e.Enter.CharacterId, Is.EqualTo(ch.User.CharacterId));
             var ex = Environment.GetEnvironmentVariable("MS2_LIVE_EXPECT")?.Split(',');
             if (ex != null) {
+                Assert.That(long.Parse(ex[0]), Is.EqualTo(ch.User.CharacterId));
                 Assert.That(e.Field.MapId, Is.EqualTo(int.Parse(ex[1])));
+                if (ex.Length < 5) return; // the character row has no position: the spawn comes from the map
                 var p = e.Field.Position;
                 Assert.That(p.X, Is.EqualTo(float.Parse(ex[2], System.Globalization.CultureInfo.InvariantCulture)).Within(1));
                 Assert.That(p.Y, Is.EqualTo(float.Parse(ex[3], System.Globalization.CultureInfo.InvariantCulture)).Within(1));
