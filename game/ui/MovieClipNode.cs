@@ -12,7 +12,6 @@ public partial class MaskGroup : Control
 {
     public readonly Node2D Inner = new();
     readonly MovieClipNode.Child mask;
-    public MovieClipNode.Child Mask => mask;
 
     public MaskGroup(MovieClipNode.Child mask)
     {
@@ -37,9 +36,8 @@ public partial class MaskGroup : Control
         if (outline != null)
         {
             outline.Xf = Inner.Transform * xf;
-            outline.On = visible;
-            outline.ClipChildren = visible ? ClipChildrenMode.Only : ClipChildrenMode.Disabled;
-            outline.QueueRedraw();
+            outline.Shown = visible;
+            outline.Apply();
         }
     }
 
@@ -49,11 +47,12 @@ public partial class MaskGroup : Control
     /// Clips to the mask shape's own outline instead of its bounding box: a SWF mask (a placed shape with a clip depth) shows
     /// the depths above it only where the shape is filled, whatever its fill's alpha (Scaleform draws the mask into the
     /// stencil). The shape's paths are filled white under the mask's transform and clip the group's children
-    /// (CanvasItem.clip_children); the box clip stays around it. A mask without vector paths keeps its box.
+    /// (CanvasItem.clip_children); the box clip stays around it. A mask without vector paths (a sprite) keeps its box, and so
+    /// does one whose only path is its own bounding rectangle, which the box already clips to exactly.
     /// </summary>
     public void UseOutline(JsonArray paths)
     {
-        if (outline != null || paths == null || paths.Count == 0) return;
+        if (outline != null || paths == null || paths.Count == 0 || IsBoundsRect(paths, mask.MaskBounds)) return;
         outline = new MaskOutline(paths);
         RemoveChild(Inner);
         AddChild(outline);
@@ -62,11 +61,54 @@ public partial class MaskGroup : Control
         Update();
     }
 
+    /// <summary>
+    /// True when the paths are one polygon that traces the axis-aligned rectangle <paramref name="bounds"/>: every edge runs
+    /// along a side of it and all four corners are among its points (extra points on a side change nothing).
+    /// </summary>
+    static bool IsBoundsRect(JsonArray paths, Rect2 bounds)
+    {
+        if (paths.Count != 1 || paths[0]?["pts"] is not JsonArray a || a.Count < 8) return false;
+        var pts = new Vector2[a.Count / 2];
+        for (int i = 0; i < pts.Length; i++) pts[i] = new Vector2((float)(double)a[2 * i], (float)(double)a[2 * i + 1]);
+        bool Left(Vector2 q) => Mathf.IsEqualApprox(q.X, bounds.Position.X);
+        bool Right(Vector2 q) => Mathf.IsEqualApprox(q.X, bounds.End.X);
+        bool Top(Vector2 q) => Mathf.IsEqualApprox(q.Y, bounds.Position.Y);
+        bool Bottom(Vector2 q) => Mathf.IsEqualApprox(q.Y, bounds.End.Y);
+        int corners = 0;
+        for (int i = 0; i < pts.Length; i++)
+        {
+            Vector2 p = pts[i], q = pts[(i + 1) % pts.Length];
+            bool side = (Left(p) && Left(q)) || (Right(p) && Right(q)) || (Top(p) && Top(q)) || (Bottom(p) && Bottom(q)) || p.IsEqualApprox(q);
+            if (!side) return false;
+            if ((Left(p) || Right(p)) && (Top(p) || Bottom(p))) corners |= (Left(p) ? 1 : 2) << (Top(p) ? 0 : 2);
+        }
+        return corners == 15;
+    }
+
     sealed partial class MaskOutline : Node2D
     {
         readonly List<Vector2[]> polys = new();
         public Transform2D Xf = Transform2D.Identity;
-        public bool On = true;
+        public bool Shown = true;          // the mask is on the stage
+        bool nested;                       // inside another outline: clips by its group's box alone
+
+        /// <summary>
+        /// Godot cannot nest clip_children (a clipping item under another draws its own polygon instead of clipping), so an
+        /// outline inside another one, a mask in masked content, leaves the clipping to its group's box.
+        /// </summary>
+        public override void _EnterTree()
+        {
+            nested = false;
+            for (var n = GetParent(); n != null; n = n.GetParent())
+                if (n is MaskOutline o && !o.nested) { nested = true; break; }
+            Apply();
+        }
+
+        public void Apply()
+        {
+            ClipChildren = Shown && !nested ? ClipChildrenMode.Only : ClipChildrenMode.Disabled;
+            QueueRedraw();
+        }
 
         public MaskOutline(JsonArray paths)
         {
@@ -83,7 +125,7 @@ public partial class MaskGroup : Control
 
         public override void _Draw()
         {
-            if (!On) return;
+            if (!Shown || nested) return;
             DrawSetTransformMatrix(Xf);
             foreach (var pts in polys) DrawColoredPolygon(pts, Colors.White);
         }
@@ -204,11 +246,12 @@ public partial class MovieClipNode : Node2D
                 if (group != null && depth > groupEnd) group = null;
                 if (c["clipDepth"] != null)
                 {
-                    // a mask: its rectangle clips the following depths; the mask itself is not drawn
+                    // a mask: its shape clips the following depths; the mask itself is not drawn
                     child.IsMask = true; child.MaskBounds = UiBuilder.Rc(childSym?["bounds"]);
                     var holder = new Node2D { Visible = false };
                     holder.AddChild(node);
                     group = new MaskGroup(child);
+                    group.UseOutline(childSym?["paths"] as JsonArray);
                     maskGroups.Add(group);
                     groupEnd = (int)c["clipDepth"];
                     AddChild(group); group.AddChild(holder);
@@ -282,14 +325,6 @@ public partial class MovieClipNode : Node2D
     }
 
     readonly List<MaskGroup> maskGroups = new();
-
-    /// <summary>Every mask group in this clip and the clips below it clips to its shape's outline (MaskGroup.UseOutline).</summary>
-    public void UseShapeMasks()
-    {
-        foreach (var clip in AllClips())
-            foreach (var g in clip.maskGroups)
-                g.UseOutline(clip.Scope.Symbol((int)g.Mask.Def["id"])?["paths"] as JsonArray);
-    }
 
     /// <summary>Instance by AS3 path ("m_dialog.m_inputID"); unnamed sprite children are searched through.</summary>
     public MovieClipNode FindClip(string path)

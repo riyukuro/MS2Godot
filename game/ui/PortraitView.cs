@@ -20,7 +20,8 @@ namespace Ms2Godot.Ui;
 /// </list>
 /// The client's frustum is 0.312384 / 0.36397 wide for a 92 x 106 image, about 1.1% narrower than square pixels give.
 /// So the view renders 91 x 106 at the same vertical field of view (91 / 106 x 0.36397 = 0.31247) and is drawn
-/// stretched to 92 x 106. The image goes 1:1 into m_renderTarget and is clipped by the movie's mask shape over it.
+/// stretched to 92 x 106. The image goes 1:1 into m_renderTarget and is clipped by the movie's mask shape over it (its
+/// MaskGroup outline).
 /// </summary>
 public sealed partial class PortraitView : Node2D
 {
@@ -46,18 +47,9 @@ public sealed partial class PortraitView : Node2D
         bool reused = reuse != null && IsInstanceValid(reuse) && pv.Adopt(reuse);
         if (!reused && !pv.BuildModel(packs, nifXml)) return null;
 
-        // the mask: the masking child whose clip depth covers the target's depth
-        int depth = (int)target.Def["depth"];
-        var mask = body.Children.FirstOrDefault(c => c.IsMask && (int)c.Def["depth"] < depth && (int)c.Def["clipDepth"] >= depth);
-        Node2D holder = pv;
-        if (mask != null && body.Scope.Symbol((int)mask.Def["id"]) is { } sym && sym["paths"] is System.Text.Json.Nodes.JsonArray paths)
-        {
-            var clip = new MaskShape(paths) { ClipChildren = ClipChildrenMode.Only, Transform = rt.Transform.AffineInverse() * mask.Node.Transform };
-            pv.AddChild(clip);
-            holder = new Node2D { Transform = clip.Transform.AffineInverse() };
-            clip.AddChild(holder);
-        }
-        holder.AddChild(new Sprite2D
+        // the movie's mask over the target (the masking child whose clip depth covers its depth) clips it by its shape
+        // (MaskGroup's outline), so the image goes in as it is
+        pv.AddChild(new Sprite2D
         {
             Texture = pv.view.GetTexture(), Centered = false, Scale = new Vector2((float)ImageWidth / RenderWidth, 1f),
             TextureFilter = TextureFilterEnum.Linear,
@@ -140,28 +132,5 @@ public sealed partial class PortraitView : Node2D
         var target = (skeleton.GlobalTransform * skeleton.GetBoneGlobalPose(head)).Origin + new Vector3(0, HeadRaise, 0);
         var forward = copy.GlobalBasis.Z.Normalized();          // the model faces +Z (MS2 -Y)
         camera.LookAtFromPosition(target + forward * Distance, target, Vector3.Up);
-    }
-
-    /// <summary>The mask's own outline (the movie's clip shape), drawn opaque so it clips its children by shape.</summary>
-    sealed partial class MaskShape : Node2D
-    {
-        readonly List<Vector2[]> polys = new();
-
-        public MaskShape(System.Text.Json.Nodes.JsonArray paths)
-        {
-            foreach (var p in paths)
-            {
-                var a = (System.Text.Json.Nodes.JsonArray)p["pts"];
-                var pts = new Vector2[a.Count / 2];
-                for (int i = 0; i < pts.Length; i++) pts[i] = new Vector2((float)(double)a[2 * i], (float)(double)a[2 * i + 1]);
-                polys.Add(pts);
-            }
-        }
-
-        public override void _Draw()
-        {
-            foreach (var pts in polys)
-                if (Geometry2D.TriangulatePolygon(pts).Length > 0) DrawColoredPolygon(pts, Colors.White);
-        }
     }
 }

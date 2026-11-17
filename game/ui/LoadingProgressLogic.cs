@@ -63,8 +63,6 @@ public sealed partial class LoadingProgressLogic
                     foreach (var c in clip.Children)
                         if (c.Name == "textField" && c.Node is TextNode tf) tf.AlignCenter();
         }
-        // the masks in the bottom bar's hexagon and the badge are outlines, not their bounding boxes
-        foreach (var n in new[] { bottom, badge }) n?.UseShapeMasks();
         topSize = top?.Bounds.Size ?? Vector2.One;
         bottomSize = bottom?.Bounds.Size ?? Vector2.One;
         foreach (var n in new Node2D[] { clear, picture, top, bottom, guide, badge }) if (n != null) { Layer.AddChild(n); n.Visible = false; }
