@@ -88,6 +88,30 @@ public sealed class CharacterListLogic
             rows.Add(row);
         }
         Select(Math.Clamp(selected, 0, rows.Count - 1), false);
+        UpdateScrollBar();
+    }
+
+    /// <summary>
+    /// m_scroll (export_scroll : ScrollBarEx, scrollTarget m_charlist). CoreList.updateScrollBar sets
+    /// setScrollProperties(totalRows, 0, rows - totalRows) at scroll position 0; TileCacheList.calculateRendererTotal gives
+    /// totalRows = floor((743 + 1) / (92 + 1)) = 8 (list height 100 x 7.43, rowHeight 92, rendererSpacing.y 1).
+    /// ScrollBar.updateThumbPosition hides the thumb when (position - min) / (max - min) is NaN or max is not positive, and
+    /// enables the arrows and the track only with the thumb shown and room to move that way. The list here holds MaxRow rows,
+    /// all in view, so the thumb is hidden and both arrows are disabled.
+    /// </summary>
+    void UpdateScrollBar()
+    {
+        if (root.FindClip("m_content.m_scroll") is not { } bar) return;
+        const int TotalRows = 8;
+        double min = 0, max = rows.Count - TotalRows, pos = 0;
+        double frac = (pos - min) / (max - min);
+        bool thumbOn = !(double.IsNaN(frac) || max <= 0 || double.IsInfinity(max));
+        void State(string name, bool on) { if (bar.Direct(name)?.Node is MovieClipNode b && b.HasLabel("up")) b.GotoLabel(on ? "up" : "disabled"); }
+        State("upArrow", thumbOn && pos > min);
+        State("downArrow", thumbOn && pos < max);
+        State("track", thumbOn);
+        bar.SetNamedVisible("thumb", thumbOn);
+        bar.GotoFrame(bar.Frame);
     }
 
     /// <summary>

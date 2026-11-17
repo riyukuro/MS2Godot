@@ -246,6 +246,14 @@ public partial class MovieClipNode : Node2D
                     nine9 = true;
                     m = new Transform2D(Vector2.Right, Vector2.Down, m.Origin);
                 }
+                else if (id < 0 && Movie.BuildClassNine((string)c["class"], sx, csx, csy) is { } sliced)
+                {
+                    // a class placement of a 9-slice symbol (e.g. a CLIK ScrollBar stretched along its list): sliced by the
+                    // symbol's grid as a placement by id is, so its end parts (the arrows) keep their size
+                    node = sliced;
+                    nine9 = true;
+                    m = new Transform2D(Vector2.Right, Vector2.Down, m.Origin);
+                }
                 else if (id < 0) node = Movie.BuildClass((string)c["class"], sx * csx, sy * csy) ?? Movie.Assets.Common.BuildClass((string)c["class"], sx * csx, sy * csy) ?? new MovieClipNode(Movie, Scope, null, null, sx * csx, sy * csy) { ClassName = (string)c["class"] };   // placed by class name (an imported library symbol)
                 else node = UiBuilder.Build(Movie, Scope, id, sx * csx, sy * csy, nine?.At(nine.Offset + m.Origin));
                 if (node == null) continue;

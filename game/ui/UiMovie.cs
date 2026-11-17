@@ -102,6 +102,25 @@ public sealed class UiMovie
         return UiBuilder.BuildSprite(this, sc, id, scale, scale, ctx);
     }
 
+    /// <summary>
+    /// A class placement drawn at (<paramref name="csx"/>, <paramref name="csy"/>): when the class symbol (looked up as
+    /// <see cref="BuildClass(string, double, double)"/> does) is a sprite with a 9-slice grid, it is built at that size with
+    /// the grid, as Scaleform slices the nested clips of a scaled scale9 sprite; otherwise null.
+    /// </summary>
+    public MovieClipNode BuildClassNine(string className, double scale, double csx, double csy)
+    {
+        if (className == null || (Math.Abs(csx - 1) <= 1e-3 && Math.Abs(csy - 1) <= 1e-3)) return null;
+        foreach (var sc in library.Values.Append(Scope))
+            foreach (var (id, sym) in sc.Symbols)
+                if ((string)sym["class"] == className)
+                {
+                    if (sym["scale9"] == null || sym["bounds"] == null || (string)sym["kind"] != "sprite") return null;
+                    var b = UiBuilder.Rc(sym["bounds"]);
+                    return BuildSized(sc, int.Parse(id), sym, scale, b.Size.X * (float)csx, b.Size.Y * (float)csy);
+                }
+        return null;
+    }
+
     public MovieClipNode BuildClass(string className, double sx, double sy)
     {
         if (className == null) return null;
