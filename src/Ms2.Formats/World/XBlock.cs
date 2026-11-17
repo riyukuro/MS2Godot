@@ -137,17 +137,50 @@ public sealed class FieldEntity
         return v != null && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : def;
     }
 
+    // Parsed once per key: the same string always gives the same doubles, and Position / Rotation / Scale are read
+    // several times per entity. The returned array is shared, so callers read it and never write it.
+    Dictionary<string, double[]> numbers;
+
     public double[] Numbers(string key)
     {
         var v = Get(key);
         if (v == null) return null;
-        return v.Split(',').Select(s => double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 0).ToArray();
+        numbers ??= new Dictionary<string, double[]>(4, StringComparer.Ordinal);
+        if (numbers.TryGetValue(key, out var cached)) return cached;
+        var a = new double[CountFields(v)];
+        FillFields(v, a);
+        numbers[key] = a;
+        return a;
     }
 
     public Vec3 Vector(string key, Vec3 def = default)
     {
-        var a = Numbers(key);
-        return a != null && a.Length >= 3 ? new Vec3(a[0], a[1], a[2]) : def;
+        var v = Get(key);
+        if (v == null) return def;
+        // the first three fields without allocating: the same values Numbers(key) holds
+        Span<double> f = stackalloc double[3];
+        return FillFields(v, f) >= 3 ? new Vec3(f[0], f[1], f[2]) : def;
+    }
+
+    static int CountFields(string v)
+    {
+        int n = 1;
+        foreach (var c in v) if (c == ',') n++;
+        return n;
+    }
+
+    /// <summary>Parses the comma-separated fields in order into dst (as many as fit); a field that does not parse is 0.</summary>
+    static int FillFields(string v, Span<double> dst)
+    {
+        int n = 0, start = 0;
+        while (start <= v.Length && n < dst.Length)
+        {
+            int end = v.IndexOf(',', start);
+            if (end < 0) end = v.Length;
+            dst[n++] = double.TryParse(v.AsSpan(start, end - start).Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : 0;
+            start = end + 1;
+        }
+        return n;
     }
 
     public Vec3 Position => Vector("Position");
