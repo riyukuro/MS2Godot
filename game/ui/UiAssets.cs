@@ -211,6 +211,26 @@ public sealed class UiAssets
 /// <summary>DDS reader for the UI atlases: uncompressed channel-mask formats are decoded here, block-compressed ones go through Godot.</summary>
 public static class DdsLoader
 {
+    /// <summary>One channel mask: its shift and bit width, measured once per file instead of once per pixel.</summary>
+    readonly struct Channel
+    {
+        readonly uint mask; readonly int shift, width;
+        public Channel(uint m)
+        {
+            mask = m; shift = 0; width = 0;
+            if (m == 0) return;
+            while ((m >> shift & 1) == 0) shift++;
+            while ((m >> (shift + width) & 1) != 0) width++;
+        }
+        /// <summary>The channel as 8 bits: the top 8 bits of a wider field, a narrower one scaled to 0..255 (255 without a mask).</summary>
+        public byte Get(uint px)
+        {
+            if (mask == 0) return 255;
+            uint v = (px & mask) >> shift;
+            return (byte)(width >= 8 ? v >> (width - 8) : v * 255 / ((1u << width) - 1));
+        }
+    }
+
     public static Image Load(byte[] d)
     {
         if (d.Length < 128 || d[0] != 'D' || d[1] != 'D' || d[2] != 'S') return null;
@@ -222,10 +242,23 @@ public static class DdsLoader
         if (bits != 32 && bits != 24 && bits != 16 && bits != 8) return null;
         int bpp = bits / 8, stride = w * bpp;
         var rgba = new byte[w * h * 4];
-        int Shift(uint m) { if (m == 0) return 0; int s = 0; while ((m >> s & 1) == 0) s++; return s; }
-        int Width(uint m) { int s = Shift(m), n = 0; while ((m >> (s + n) & 1) != 0) n++; return n; }
-        byte Ex(uint px, uint m) { if (m == 0) return 255; int n = Width(m); uint v = (px & m) >> Shift(m); return (byte)(n >= 8 ? v >> (n - 8) : v * 255 / ((1u << n) - 1)); }
-        bool lum = (pfFlags & 0x20000) != 0;
+        var r = new Channel(rm); var g = new Channel(gm); var b = new Channel(bm); var a = new Channel(am);
+        bool alphaOnly = bits == 8 && (pfFlags & 2) != 0 && rm == 0;
+        bool lum = (pfFlags & 0x20000) != 0, hasAlpha = (pfFlags & 1) != 0;
+        if (!alphaOnly && !lum && bits == 32 && rm == 0x00ff0000 && gm == 0x0000ff00 && bm == 0x000000ff && (am == 0xff000000 || !hasAlpha))
+        {
+            // A8R8G8B8 / X8R8G8B8, the usual atlas: every channel is a whole byte, so this is a byte swizzle
+            for (int y = 0; y < h; y++)
+            {
+                int o = 128 + y * stride, q = y * w * 4;
+                for (int x = 0; x < w; x++, o += 4, q += 4)
+                {
+                    rgba[q] = d[o + 2]; rgba[q + 1] = d[o + 1]; rgba[q + 2] = d[o];
+                    rgba[q + 3] = hasAlpha ? d[o + 3] : (byte)255;
+                }
+            }
+            return Image.CreateFromData(w, h, false, Image.Format.Rgba8, rgba);
+        }
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
@@ -233,10 +266,10 @@ public static class DdsLoader
                 uint px = 0;
                 for (int k = 0; k < bpp; k++) px |= (uint)d[o + k] << (8 * k);
                 int q = (y * w + x) * 4;
-                if (bits == 8 && (pfFlags & 2) != 0 && rm == 0) { rgba[q] = rgba[q + 1] = rgba[q + 2] = 255; rgba[q + 3] = (byte)px; continue; }   // alpha only
-                if (lum) { var l = Ex(px, rm); rgba[q] = rgba[q + 1] = rgba[q + 2] = l; rgba[q + 3] = am != 0 ? Ex(px, am) : (byte)255; continue; }
-                rgba[q] = Ex(px, rm); rgba[q + 1] = Ex(px, gm); rgba[q + 2] = Ex(px, bm);
-                rgba[q + 3] = (pfFlags & 1) != 0 ? Ex(px, am) : (byte)255;
+                if (alphaOnly) { rgba[q] = rgba[q + 1] = rgba[q + 2] = 255; rgba[q + 3] = (byte)px; continue; }
+                if (lum) { var l = r.Get(px); rgba[q] = rgba[q + 1] = rgba[q + 2] = l; rgba[q + 3] = am != 0 ? a.Get(px) : (byte)255; continue; }
+                rgba[q] = r.Get(px); rgba[q + 1] = g.Get(px); rgba[q + 2] = b.Get(px);
+                rgba[q + 3] = hasAlpha ? a.Get(px) : (byte)255;
             }
         return Image.CreateFromData(w, h, false, Image.Format.Rgba8, rgba);
     }
