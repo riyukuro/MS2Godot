@@ -533,7 +533,7 @@ public partial class HudScene : Node
         var r = Place(ui, "uimainplayerinfo", f, Vector2.Zero);
         // UIMainPlayerInfo::vfunc_43: vfunc_2(2, 0, -(FUN_1418dd0c0() + FUN_1418dd110())); MainPlayerInfo is 705 x 193
         if (DialogBody(r) is { } body) AlignDialog(r, body, 2, new Vector2(705, 193), 0, -BottomBars);
-        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_effect", "m_penalty", "m_hpWarning", "m_job", "m_infinity", "infinity", "m_message", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
+        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_penalty", "m_hpWarning", "m_infinity", "infinity", "m_message", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
         r.FindClip("m_playerInfo")?.GotoLabel("stat_show");          // the stat orb fades in with this label
         var stat = r.FindClip("m_playerInfo.m_stat");
         SetBar(stat.FindClip("m_hp"), data.HpRatio);
@@ -542,6 +542,24 @@ public partial class HudScene : Node
         stat.SetNamedText("m_curSp", data.SpCurrent.ToString()); stat.SetNamedText("m_maxSp", data.SpMax.ToString());
         stat.SetNamedText("hpTxt", "Health"); stat.SetNamedText("spTxt", "Spirit");
         // MainPlayerInfo.setData: m_tag = "LV " + level + " " + jobName + " " + name (m_rideeName.m_tag stays with its hidden parent)
+        // StatInfo.initStat: setJob(jobCode) sends m_job.icon and m_job.battle.icon to "_" + jobCode, and setBattle(battle)
+        // plays m_job.battle from "normal" (out of battle), which fades the battle icon out and stops on its last frame.
+        // jobCode is the sub job (uimainplayerinfo.cpp:1405): 100 Knight, 200 Berserker ... 1100 Soul Binder; the stub
+        // numbers its jobs 1, 10, 20 ... 100.
+        int jobCode = data.Player.Job <= 1 ? 100 : (data.Player.Job / 10 + 1) * 100;
+        static void StopAt(MovieClipNode.Child c, string label)       // gotoAndStop(label): the label's own frame
+        {
+            if (c?.Node is MovieClipNode m && m.Labels.TryGetValue(label, out int f)) m.GotoFrame(f);
+        }
+        if (stat?.Direct("m_job")?.Node is MovieClipNode job)
+        {
+            StopAt(job.Direct("icon"), "_" + jobCode);
+            if (job.Direct("battle")?.Node is MovieClipNode battle)
+            {
+                StopAt(battle.Direct("icon"), "_" + jobCode);
+                battle.GotoLabel("normal");                           // gotoAndPlay("normal") runs to the stop() on frame 29
+            }
+        }
         r.FindClip("m_playerInfo")?.SetNamedText("m_tag", $"LV {data.Player.Level} {StubCharacterList.JobNames.GetValueOrDefault(data.Player.Job, "Beginner")} {data.Player.Name}");
 
         // slots: playerinfo_dialog_slot shows its "skill" label; the skill list is a fixed grid of 16 slot components (Q W E R / A S D F, 1 2 3 4 / 5 6 7 8)
