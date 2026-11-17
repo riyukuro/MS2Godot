@@ -190,15 +190,19 @@ public partial class TextNode : Node2D
         var font = scope.Assets.FontFor((string)Def["fontClass"]);
         float size = UiBuilder.F(Def["size"], 12);
         float asx = (float)sx, asy = (float)sy;
+        // Scaleform's glyph cache rasterizes plain text (no readability AA) once at a ramp size and draws that raster scaled
+        // to the screen size with linear filtering, unsnapped; the label does the same: font size = ramp, scale = screen / ramp
+        float screen = size * asy, ramp = RampSize(screen);
+        RasterScale = screen / ramp;
         Label = new Label
         {
             Position = new Vector2(Bounds.Position.X * asx, Bounds.Position.Y * asy),
-            Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy),
+            Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale,
             HorizontalAlignment = (string)Def["align"] switch { "center" => HorizontalAlignment.Center, "right" => HorizontalAlignment.Right, _ => HorizontalAlignment.Left },
             VerticalAlignment = VerticalAlignment.Top, ClipText = false, MouseFilter = Control.MouseFilterEnum.Ignore,
             AutowrapMode = (bool)(Def["wordWrap"] ?? false) ? TextServer.AutowrapMode.WordSmart : TextServer.AutowrapMode.Off,
-            LabelSettings = new LabelSettings { Font = font, FontSize = Math.Max(1, (int)Math.Round(size * asy)), FontColor = UiBuilder.ParseColor((string)Def["color"], Colors.Black) },
-            Scale = new Vector2(1f / asx, 1f / asy), Text = scope.Assets.Str((string)Def["initial"] ?? ""),
+            LabelSettings = new LabelSettings { Font = font, FontSize = (int)ramp, FontColor = UiBuilder.ParseColor((string)Def["color"], Colors.Black) },
+            Scale = new Vector2(RasterScale / asx, RasterScale / asy), Text = scope.Assets.Str((string)Def["initial"] ?? ""),
         };
         // label sits in unscaled units: position uses the scaled rect, the node scale cancels the accumulated scale
         Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y - 0.12f * size);   // Noto's line box sits lower than the flash font's
@@ -206,11 +210,29 @@ public partial class TextNode : Node2D
         if (Label.AutowrapMode != TextServer.AutowrapMode.Off)
         {
             Label.Position += new Vector2(2, 0);
-            Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy);
+            Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy) / RasterScale;
         }
-        else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy);
+        else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
         Label.PivotOffset = Vector2.Zero;
         AddChild(Label);
+    }
+
+    /// <summary>Screen pixels per label pixel: the glyphs are rasterized at the ramp size and drawn scaled by this.</summary>
+    public float RasterScale = 1;
+
+    static readonly int[] FontSizeRamp = { 0, 0, 2, 4, 6, 8, 12, 16, 18, 22, 26, 32, 36, 40, 45, 50, 56, 64, 72, 80, 90, 108, 128, 147, 168, 194, 222, 256 };
+
+    /// <summary>
+    /// Scaleform GlyphCache::SnapFontSizeToRamp: the whole screen size goes up a quarter (rounded up), then up to the next
+    /// ramp step (255 cap). The cache rasterizes non-readability text at this size (GetCachedFontSize without OptRead).
+    /// </summary>
+    public static float RampSize(float screenSize)
+    {
+        int size = (int)Math.Floor(screenSize);
+        size += (size + 3) >> 2;
+        if (size > 255) return 255;
+        foreach (int step in FontSizeRamp) if (step >= size) return Math.Max(1, step);
+        return 255;
     }
 
     public string Text { get => Label.Text; set => Label.Text = value ?? ""; }
@@ -280,8 +302,9 @@ public partial class TextNode : Node2D
             var col = UiBuilder.ParseColor((string)f["color"], Colors.Black);
             float blur = Math.Max(UiBuilder.F(f["blurX"], 2), UiBuilder.F(f["blurY"], 2));
             var ls = (LabelSettings)Label.LabelSettings.Duplicate();
-            if (type == "glow") { ls.OutlineSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 4) * scale)); ls.OutlineColor = col; }
-            else { ls.ShadowColor = col; ls.ShadowOffset = new Vector2(1, 1); ls.ShadowSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 3) * scale)); }
+            // sizes in screen pixels; the label draws in its ramp-size pixels, RasterScale screen pixels each
+            if (type == "glow") { ls.OutlineSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 4) * scale / RasterScale)); ls.OutlineColor = col; }
+            else { ls.ShadowColor = col; ls.ShadowOffset = new Vector2(1, 1) / RasterScale; ls.ShadowSize = Math.Max(1, (int)Math.Round(Math.Min(blur, 3) * scale / RasterScale)); }
             Label.LabelSettings = ls;
         }
     }
