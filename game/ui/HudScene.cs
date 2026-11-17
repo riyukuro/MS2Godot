@@ -27,6 +27,7 @@ public partial class HudScene : Node
     Player player; Control uiRoot;
     TargetFrame target;                     // UIUpperHpBar
     DamageText damageText;
+    PlayerHpBar playerBar;
 
     public override void _Ready()
     {
@@ -45,7 +46,11 @@ public partial class HudScene : Node
         var window = new Vector2(1280, 720);
         u = UiScale.For(window); stage = UiScale.MovieStage(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
-        AddChild(new PlayerNameTag(assets, new ClientConstants(assets.Packs), data.Player.Name, window));     // the own PC's UINameTag
+        var constants = new ClientConstants(assets.Packs);
+        var nameTag = new PlayerNameTag(assets, constants, data.Player.Name, window);                     // the own PC's UINameTag
+        AddChild(nameTag);
+        AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
+        playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
         AddChild(damageText = new DamageText(assets, window));                // UIDamageText
 
         NoticeTab(uiRoot);

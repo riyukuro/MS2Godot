@@ -79,6 +79,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
         var anchor = DummyAnchor.Point(dummies, "Eff_UI", model, player.RootName) ?? player.GlobalPosition;
+        Anchor = anchor;
         bool on = !camera.IsPositionBehind(anchor);
         node.Visible = on;
         if (!on) return;
@@ -87,8 +88,11 @@ public sealed partial class PlayerNameTag : CanvasLayer
         node.Position = p.Round();
     }
 
+    /// <summary>The own PC's Eff_UI point this frame (its position when the dummy is missing), null before the player is found.</summary>
+    public Vector3? Anchor { get; private set; }
+
     /// <summary>FUN_1412762d0: the zoom-dependent shift of a hud entity at <paramref name="anchor"/>.</summary>
-    float HeightAdjust(Vector3 anchor)
+    public float HeightAdjust(Vector3 anchor)
     {
         if (field.CameraEye is not { } eye) return 0;
         float pitch = Mathf.Clamp(Mathf.RadToDeg(field.CameraPitch), 0, 90);
