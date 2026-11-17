@@ -50,12 +50,14 @@ public sealed class TcpTransport : IDisposable {
 
     public Task SendAsync(IOutPacket packet, CancellationToken ct = default) => Channel.SendAsync(packet, ct);
 
-    /// <summary>Cancels the read loop and closes the socket. Safe to call twice.</summary>
+    /// <summary>Cancels the read loop and closes the socket without waiting for the read task (safe on the main thread). Safe to call twice.</summary>
     public void Dispose() {
         if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+        Volatile.Write(ref closed, 1);   // closed for the caller now; the read task ends on its own
         cts.Cancel();
         tcp.Dispose();   // unblocks a pending read
-        try { run?.Wait(2000); } catch { }
-        cts.Dispose();
+        // no wait: the read task ends by itself (its socket is closed) and releases the token source then
+        if (run == null || run.IsCompleted) cts.Dispose();
+        else run.ContinueWith(_ => cts.Dispose(), TaskScheduler.Default);
     }
 }

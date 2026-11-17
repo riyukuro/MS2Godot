@@ -112,3 +112,15 @@ public sealed record StateChange(byte Mode, byte Arg, int ServerTick, Vector3 Po
         r.ExpectEnd("StateChange"); return p;
     }
 }
+
+/// <summary>
+/// Inbound 0x5F (the server's PortalPacket.MoveByPortal, PortalPacket.cs:88-96): i32 object id, vec3 position, vec3 rotation, bool isPortal.
+/// The server adds 25 to the position's z before sending. For the own object the client's CSceneStateGame::OnUserMoveByPortal
+/// (scenestategame.cpp:5775-5786) warps through MyPC::FUN_141528e50 (mypc.cpp:2738-2791).
+/// </summary>
+public sealed record UserMoveByPortal(int ObjectId, Vector3 Position, Vector3 Rotation, bool IsPortal) {
+    public static UserMoveByPortal Read(ByteReader r) {
+        var p = new UserMoveByPortal(r.ReadInt(), r.ReadVec3(), r.ReadVec3(), r.ReadBool());
+        r.ExpectEnd("UserMoveByPortal"); return p;
+    }
+}

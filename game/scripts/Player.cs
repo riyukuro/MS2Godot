@@ -311,7 +311,7 @@ public partial class Player : CharacterBody3D
     void Enter(MoveState s)
     {
         var old = State;
-        if (old == MoveState.Jump) { jumping = false; baseSpeed = jumpSavedSpeed; }   // StateJump::vfunc_5
+        if (old == MoveState.Jump) { jumping = false; baseSpeed = jumpSavedSpeed; StateChangeOut?.Invoke(1, 6, new Vector3(GlobalPosition.X, -GlobalPosition.Z, GlobalPosition.Y)); }   // StateJump::vfunc_5 (statejump.cpp:157: SendStateChange(1, 6))
         if (old == MoveState.Ladder) { ladder = null; ClearHitReport(); }   // StateLadder::vfunc_5 clears the hit report
         if (old == MoveState.Rope) rope = null;
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
@@ -407,6 +407,7 @@ public partial class Player : CharacterBody3D
         jumpH = 0;
         jumping = true;
         kVel = frameVel;
+        StateChangeOut?.Invoke(0, 6, new Vector3(GlobalPosition.X, -GlobalPosition.Z, GlobalPosition.Y));   // StateJump::vfunc_4 (statejump.cpp:134: SendStateChange(0, 6) with the position)
     }
 
     void Integrate(float dt)

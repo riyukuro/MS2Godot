@@ -26,6 +26,9 @@ public partial class LiveSession : Node
     long accountId;
     GameEntry entry;
     string host;
+    int selfObject = -1;     // the own FieldAddUser object id
+    byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
+    Player player;           // the own player, once the field is built
     bool answered;           // ResponseFieldEnter sent for this entry
     public bool Busy { get; private set; }
 
@@ -75,6 +78,7 @@ public partial class LiveSession : Node
             (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host);
             login.Dispose(); login = null;
             answered = false;
+            syncNumber = entry.Sync?.Number ?? 0;
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
             GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");
@@ -100,7 +104,33 @@ public partial class LiveSession : Node
         if (entry == null || answered) return;
         answered = true;
         _ = game.SendAsync(new ResponseFieldEnter(entry.Field.FieldKey));
+        BindPlayer();
         GD.Print($"live: ResponseFieldEnter sent, fieldKey {entry.Field.FieldKey}");
+    }
+
+    /// <summary>Movement out: the player's record packets and state changes become UserSync (0x12) and State (0x80); its offline
+    /// server emulation turns off. The cadence and content are the player's own (PlayerFallReturn.StateSync), not a second copy.</summary>
+    void BindPlayer()
+    {
+        player = GetTree().Root.FindChild("Player", true, false) as Player;
+        if (player == null) { GD.PushWarning("live: no player to send movement for"); return; }
+        player.Live = true;
+        player.StateSyncOut += records =>
+        {
+            if (game == null) return;
+            var pk = new UserSyncOut { SyncNumber = syncNumber, ServerTick = game.Session.ElapsedMs, ClientTick = game.Session.ElapsedMs };
+            int t = pk.ClientTick;
+            foreach (var r in records) pk.Records.Add((r, t));
+            _ = game.SendAsync(pk);
+            var l = records[^1];
+            GD.Print($"live: UserSync sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
+        };
+        player.StateChangeOut += (mode, arg, pos) =>
+        {
+            if (game == null) return;
+            _ = game.SendAsync(new StateChange(mode, arg, game.Session.ElapsedMs, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));
+            GD.Print($"live: State sent, mode {mode} arg {arg}");
+        };
     }
 
     public override void _Process(double delta)
@@ -114,7 +144,20 @@ public partial class LiveSession : Node
                 {
                     var u = FieldAddUser.Read(p.Reader());
                     bool self = u.User.CharacterId == entry.Enter.CharacterId;
+                    if (self) selfObject = u.ObjectId;
                     GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
+                }
+                else if (p.Opcode == (ushort)Inbound.SyncNumber)
+                {
+                    syncNumber = SyncNumber.Read(p.Reader()).Number;
+                    player?.OnSyncNumber();
+                    GD.Print($"live: SyncNumber {syncNumber}");
+                }
+                else if (p.Opcode == (ushort)Inbound.UserMoveByPortal)
+                {
+                    var m = UserMoveByPortal.Read(p.Reader());
+                    GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
+                    if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z);
                 }
                 else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
@@ -137,7 +180,10 @@ public partial class LiveSession : Node
         var first = Session.List().FirstOrDefault();
         if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }
         UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, first.User.CharacterId.ToString());
-        await Until(() => flow.Current == GameFlow.State.Game); await Frames(120);
+        await Until(() => flow.Current == GameFlow.State.Game);
+        // MS2_LIVE_HOLD: seconds to stay in the field (a movement script runs meanwhile)
+        int hold = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_HOLD"), out var hs) ? hs : 2;
+        await Frames(60 * hold);
         bool ok = flow.Current == GameFlow.State.Game;
         GD.Print(ok ? "live: auto run done" : "live: auto run failed");
         tree.Quit(ok ? 0 : 1);

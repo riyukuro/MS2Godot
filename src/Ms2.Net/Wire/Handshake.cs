@@ -4,7 +4,7 @@ namespace Ms2.Net.Wire;
 
 /// <summary>The server's first frame, sent in the clear: u16 seqbase, i32 len, then u16 op=1, u32 version, u32 riv, u32 siv, u32 blockIV, u8 patch.</summary>
 public readonly record struct Handshake(uint Version, uint ServerRecvIv, uint ServerSendIv, uint BlockIv, byte PatchType) {
-    public const uint ClientVersion = 2525; // 0x9dd, CNetworkService::OnRequestVersion checks it
+    public static uint ClientVersion => ProtocolProfile.Default.Version; // 0x9dd, CNetworkService::OnRequestVersion checks it
 
     public static bool TryParse(ReadOnlySpan<byte> frame, out Handshake hs, out int consumed) {
         hs = default; consumed = 0;

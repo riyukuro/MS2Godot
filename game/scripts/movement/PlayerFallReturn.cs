@@ -47,7 +47,7 @@ public partial class Player
     sealed class SyncRecord
     {
         public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw;
-        public double Made; public float Time; public bool Sent;
+        public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
     }
 
     int hitFallReturn = -1;               // the hit report's entity when it is a fall-return cube (FieldBuilder.FallReturnMeta), else -1
@@ -58,6 +58,32 @@ public partial class Player
     Vector3 moveDir;                      // GameObject m_pos98: the move direction (the state's GetMoveDirection), not the body's velocity
     Vector3 lastGround;                   // kms2525 FieldPlayer.LastGroundPosition: default (0, 0, 0) until a marked sync
     Vector3? portal;                      // the server's MoveByPortal, delivered at the next frame like a packet
+    float portalRot;                      // its rotation z (degrees)
+
+    /// <summary>Live mode (opt-in, Ms2.Net session): the records and state changes go out as real packets and the kms2525 emulation
+    /// (ServerStateSync) stays off; the server's MoveByPortal and SyncNumber arrive through ServerMoveByPortal / OnSyncNumber.</summary>
+    public bool Live;
+    /// <summary>The queued records of one StateLocalController::vfunc_0 packet, in order (live only).</summary>
+    public event Action<System.Collections.Generic.List<Ms2.Net.Packets.StateSync>> StateSyncOut;
+    /// <summary>MyPC::SendStateChange (mypc.cpp:3655-3666): mode, argument and the feet position in field units (live only).</summary>
+    public event Action<byte, byte, Vector3> StateChangeOut;
+
+    /// <summary>The client's state id (gostate.h) of a move state, for the sync record's first byte.</summary>
+    static byte StateId(MoveState s) => s switch
+    {
+        MoveState.Idle => 1, MoveState.Walk => 2, MoveState.Land => 4, MoveState.Fall => 5, MoveState.Jump => 6,
+        MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, _ => 1,
+    };
+
+    /// <summary>The cube cell key of a field position (ugcmapdata_1.cpp:270-280): (int)(p / 150) per axis packed x | y &lt;&lt; 8 | z &lt;&lt; 16.
+    /// The client takes the cell of the hit prop's position; the feet cell is used here (the server only tests != int.MaxValue).</summary>
+    static int CellKey(Vector3 p) => ((int)(p.X / 150f) & 0xFF) | (((int)(p.Y / 150f) & 0xFF) << 8) | (((int)(p.Z / 150f) & 0xFF) << 16);
+
+    /// <summary>The server's MoveByPortal (live): the warp runs at the next frame through UserMoveByPortal.</summary>
+    public void ServerMoveByPortal(Vector3 pos, float rotZ) { portal = pos; portalRot = rotZ; }
+
+    /// <summary>CNetworkService::OnSyncNumber: the local controller's records are cleared (the number itself lives in the session).</summary>
+    public void OnSyncNumber() { current = null; queued.Clear(); }
 
     /// <summary>The server's last ground position (field units), for probes.</summary>
     public Vector3 LastGround => lastGround;
@@ -82,7 +108,7 @@ public partial class Player
         if (portal is { } to)                                                       // CSceneStateGame::OnUserMoveByPortal
         {
             portal = null;
-            UserMoveByPortal(to, 0f);
+            UserMoveByPortal(to, portalRot); portalRot = 0f;
         }
         syncClock += dt;
         if (current != null) current.Time += dt;                                    // FUN_1417b76b0
@@ -112,6 +138,7 @@ public partial class Player
         {
             // StateSyncObject::FUN_1408356c0 writes the position as three int16 (CByteBuffer::WriteVector3Short, stream.cpp:127)
             Pos = new Vector3((short)feet.X, (short)feet.Y, (short)(feet.Z + 0.0001f)), Marked = marked,
+            Cell = marked ? CellKey(feet) : int.MaxValue,
             State = State, Dir = moveDir, Yaw = targetYawDeg, Made = syncClock,
         };
         QueueCurrent();                                                              // FUN_1417b7670
@@ -162,6 +189,19 @@ public partial class Player
     {
         QueueCurrent();
         if (queued.Count == 0) return;
+        if (Live)
+        {
+            var list = new System.Collections.Generic.List<Ms2.Net.Packets.StateSync>(queued.Count);
+            foreach (var q in queued)
+                list.Add(new Ms2.Net.Packets.StateSync
+                {
+                    State = StateId(q.State), Position = new Ms2.Net.Packets.Vector3S((short)q.Pos.X, (short)q.Pos.Y, (short)q.Pos.Z),
+                    Rotation = (short)(q.Yaw * 10f), SyncNumber = q.Cell,
+                });
+            queued.Clear();
+            StateSyncOut?.Invoke(list);
+            return;
+        }
         var last = queued[^1];
         queued.Clear();
         ServerStateSync(last.Pos, last.Marked);

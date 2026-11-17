@@ -85,10 +85,13 @@ public sealed class MapleChannel {
 
     void Consume(int n) { Buffer.BlockCopy(buf, n, buf, 0, have - n); have -= n; }
 
+    /// <summary>The opcode numbers this channel speaks.</summary>
+    public ProtocolProfile Profile { get; set; } = ProtocolProfile.Default;
+
     /// <summary>Encrypts and sends one packet. Callable from several threads: the iv advances per frame, so encrypt and write stay in order.</summary>
     public async Task SendAsync(Outbound op, Action<ByteWriter> body = null, CancellationToken ct = default) {
         var w = new ByteWriter();
-        w.WriteShort((short) op);
+        w.WriteShort((short) Profile.Number(op));
         body?.Invoke(w);
         await sendLock.WaitAsync(ct);
         try {

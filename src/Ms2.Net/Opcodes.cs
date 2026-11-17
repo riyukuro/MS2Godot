@@ -42,6 +42,7 @@ public enum Inbound : ushort {
     NpcControl = 0x58,
     InteractNpc = 0x59,
     Buff = 0x47,
+    UserMoveByPortal = 0x5F,
     StateFallDamage = 0x65,
     ProxyGameObj = 0x7E,
     RideSync = 0x7A,
