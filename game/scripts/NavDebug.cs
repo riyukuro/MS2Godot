@@ -17,6 +17,7 @@ public partial class NavDebug : Node3D
 {
     PackSet packs; AssetIndex assets; NifSpec spec; FlatLibrary flats; string xblock;
     Task<FieldNavigation> loading;
+    readonly System.Threading.CancellationTokenSource cancel = new();
     MeshInstance3D drawn;
     public FieldNavigation Navigation { get; private set; }
 
@@ -25,7 +26,8 @@ public partial class NavDebug : Node3D
         var n = new NavDebug { Name = "NavDebug", packs = packs, assets = assets, spec = spec, flats = flats, xblock = xblock, Visible = false };
         parent.AddChild(n);
         var dir = ProjectSettings.GlobalizePath("user://navmesh");
-        n.loading = Task.Run(() => FieldNavigation.Load(packs, assets, spec, flats, xblock, dir));
+        var cancel = n.cancel.Token;
+        n.loading = Task.Run(() => FieldNavigation.Load(packs, assets, spec, flats, xblock, dir, cancel), cancel);
         if (on) n.Toggle();
         return n;
     }
@@ -36,6 +38,9 @@ public partial class NavDebug : Node3D
     }
 
     public void Toggle() => Visible = !Visible;
+
+    // the field is gone: a build not yet in Recast is dropped
+    public override void _ExitTree() => cancel.Cancel();
 
     /// <summary>The load finished: the navmesh, or none (no navigation geometry, or the load failed).</summary>
     public bool Loaded => loading.IsCompleted;
@@ -54,6 +59,7 @@ public partial class NavDebug : Node3D
     public override void _Process(double delta)
     {
         if (!Visible || !loading.IsCompleted || drawn != null) return;
+        if (loading.IsCanceled) return;
         if (loading.IsFaulted) { GD.PushWarning("navmesh: " + loading.Exception?.GetBaseException().Message); drawn = new MeshInstance3D(); AddChild(drawn); return; }
         Navigation = loading.Result;
         drawn = new MeshInstance3D { Name = "NavMesh" };

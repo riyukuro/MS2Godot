@@ -13,6 +13,9 @@ namespace Ms2.Navigation;
 public static class NavMeshBuilder
 {
     /// <summary>Single-tile navmesh from the field geometry; null when nothing walkable came out.</summary>
+    /// <summary>Keep Recast's intermediate results (memory only; the navmesh is the same either way).</summary>
+    public static bool KeepInterResults = false;
+
     public static DtNavMesh Build(NavGeometry g)
     {
         if (g.Empty) return null;
@@ -35,8 +38,9 @@ public static class NavMeshBuilder
         var areas = Flags(g, cfg, verts);
         RcRasterizations.RasterizeTriangles(ctx, verts, tris, areas, tris.Length / 3, solid, bcfg.cfg.WalkableClimb);
 
-        var res = new RcBuilder().Build(ctx, bcfg.tileX, bcfg.tileZ, geom, bcfg.cfg, solid, keepInterResults: true);
-        if (res.SolidHeightfiled == null || res.Mesh == null) return null;
+        // the intermediate heightfields are not kept: only the poly and detail meshes go into the navmesh
+        var res = new RcBuilder().Build(ctx, bcfg.tileX, bcfg.tileZ, geom, bcfg.cfg, solid, keepInterResults: KeepInterResults);
+        if (res.Mesh == null) return null;
 
         var pm = res.Mesh; var dm = res.MeshDetail;
         for (int i = 0; i < pm.npolys; i++) pm.flags[i] = 1;
@@ -78,14 +82,22 @@ public static class NavMeshBuilder
         return a;
     }
 
+    /// <summary>Writes the navmesh through a temporary file of its own, so two writers of one path never share it.</summary>
     public static void Save(DtNavMesh mesh, string path)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
-        var tmp = path + ".tmp";
-        using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write))
-        using (var bw = new BinaryWriter(fs))
-            new DtMeshSetWriter().Write(bw, mesh, RcByteOrder.LITTLE_ENDIAN, true);
-        File.Move(tmp, path, true);
+        var tmp = $"{path}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var fs = new FileStream(tmp, FileMode.CreateNew, FileAccess.Write))
+            using (var bw = new BinaryWriter(fs))
+                new DtMeshSetWriter().Write(bw, mesh, RcByteOrder.LITTLE_ENDIAN, true);
+            File.Move(tmp, path, true);
+        }
+        finally
+        {
+            if (File.Exists(tmp)) File.Delete(tmp);
+        }
     }
 
     public static DtNavMesh Load(string path)

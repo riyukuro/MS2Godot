@@ -25,25 +25,58 @@ public sealed class FieldNavigation
         query = new DtNavMeshQuery(mesh);
     }
 
+    // one build at a time: a build is seconds of CPU, and a build waiting for its turn is dropped once its field is gone
+    static readonly SemaphoreSlim building = new(1, 1);
+
     /// <summary>
-    /// Loads the field's navmesh from <paramref name="cacheDir"/> or builds and stores it. The cache key is the
-    /// build version plus a hash of the field's xblock; null when the field has no navigation geometry.
+    /// Loads the field's navmesh from <paramref name="cacheDir"/> or builds and stores it; null when the field has no
+    /// navigation geometry. The cache key hashes everything the build reads: the navigation geometry itself (so the
+    /// xblock, the flat defaults, the NIF collision and the geometry rules), the build settings, the DotRecast version
+    /// and NavConfig.Version (the builder's own rules). Cancelling drops the build at its next step; a build already in
+    /// Recast runs to its end and is still cached.
     /// </summary>
-    public static FieldNavigation Load(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir)
+    public static FieldNavigation Load(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir,
+        CancellationToken cancel = default)
     {
-        var raw = packs.Read(Ms2.Formats.World.XBlock.Archive, $"xblock/{xblock.ToLowerInvariant()}.xblock");
-        var key = Convert.ToHexString(SHA1.HashData(raw))[..12].ToLowerInvariant();
-        var path = Path.Combine(cacheDir, $"{xblock}.v{NavConfig.Version}.{key}.navmesh");
-        if (File.Exists(path))
-        {
-            try { return new FieldNavigation(xblock, NavMeshBuilder.Load(path)); }
-            catch { /* damaged: rebuild */ }
-        }
         var map = FieldMap.Load(packs, flats, xblock);
-        var mesh = NavMeshBuilder.Build(NavGeometry.Build(packs, assets, spec, map));
-        if (mesh == null) return null;
-        NavMeshBuilder.Save(mesh, path);
-        return new FieldNavigation(xblock, mesh);
+        var geometry = NavGeometry.Build(packs, assets, spec, map);
+        if (geometry.Empty) return null;
+        cancel.ThrowIfCancellationRequested();
+        var path = Path.Combine(cacheDir, $"{xblock}.v{NavConfig.Version}.{Key(geometry)}.navmesh");
+        if (Cached(xblock, path) is { } hit) return hit;
+        building.Wait(cancel);
+        try
+        {
+            if (Cached(xblock, path) is { } built) return built;                     // built by the load before this one
+            cancel.ThrowIfCancellationRequested();
+            var mesh = NavMeshBuilder.Build(geometry);
+            if (mesh == null) return null;
+            try { NavMeshBuilder.Save(mesh, path); }
+            catch { /* not cached: the mesh still serves this visit */ }
+            return new FieldNavigation(xblock, mesh);
+        }
+        finally { building.Release(); }
+    }
+
+    static FieldNavigation Cached(string xblock, string path)
+    {
+        if (!File.Exists(path)) return null;
+        try { return new FieldNavigation(xblock, NavMeshBuilder.Load(path)); }
+        catch { return null; /* damaged: rebuild */ }
+    }
+
+    /// <summary>The cache key: a hash of the geometry's vertices, triangles and areas, the build settings and DotRecast's version.</summary>
+    static string Key(NavGeometry g)
+    {
+        using var h = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        h.AppendData(System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(g.Verts)));
+        h.AppendData(System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(g.Tris)));
+        h.AppendData(System.Runtime.InteropServices.MemoryMarshal.AsBytes(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(g.Areas)));
+        var s = NavConfig.BuildSettings();
+        var text = string.Join(";", typeof(RcNavMeshBuildSettings).GetFields().OrderBy(f => f.Name).Select(f => $"{f.Name}={Convert.ToString(f.GetValue(s), System.Globalization.CultureInfo.InvariantCulture)}"))
+            + $";vpp={NavConfig.VertsPerPoly};dotrecast={typeof(DtNavMesh).Assembly.GetName().Version}";
+        h.AppendData(System.Text.Encoding.UTF8.GetBytes(text));
+        return Convert.ToHexString(h.GetHashAndReset())[..16].ToLowerInvariant();
     }
 
     public static FieldNavigation FromMesh(string xblock, DtNavMesh mesh) => new(xblock, mesh);
