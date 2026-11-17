@@ -161,14 +161,12 @@ public partial class CharacterCreateScene : LobbyFieldScene
             listRoot.Scale = new Vector2(u, u);
             UiWidgets.ApplyInspector(listRoot, UICharacterListDialogContract.Inspector);
             LobbyLayout.AlignCharacterList(listRoot, stage, u);
-            (listRoot.Children.First(c => c.Node is MovieClipNode).Node as MovieClipNode)?.GotoLabel("popup");
             layer.AddChild(listRoot);
+            // the select scene's dialog as it was when the job page opened over it (UICharacterListDialog::OnEndPopdown
+            // 0x620001c -> SelectCreateJob): the flow's characters with the selected one, at the popup's end
             var list = new CharacterListLogic(listMovie, listRoot);
-            list.BuildCharacterList(Array.Empty<Ms2.Net.Packets.CharacterEntry>(), 0, 6, new LobbyCharacterData(packs, assets.Language), assets.ImageFile);
-            listRoot.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_serverName", "Bigleaf  CH.1");
-            listRoot.FindClip(UICharacterListDialogContract.Instances.M_title)?.SetText(assets.Str("$s_charselect_title"));
-            foreach (var name in new[] { UICharacterListDialogContract.Instances.M_healthGameCN, UICharacterListDialogContract.Instances.M_characterCraeteShutdownCN, UICharacterListDialogContract.Instances.M_burningEventDescBtn })
-                if (listRoot.FindClip(name) is { } extra) extra.Visible = false;
+            list.BuildCharacterList(Flow.Session.List(), Flow.Session.SelectedIndex, 6, new LobbyCharacterData(packs, assets.Language), assets.ImageFile);
+            list.ShowDialog(assets, uiPacks ?? packs, popup: false);
         }
         catch (Exception ex) { GD.PushWarning("character list: " + ex.Message); }
 

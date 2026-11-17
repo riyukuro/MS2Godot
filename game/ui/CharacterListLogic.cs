@@ -1,4 +1,5 @@
 using Godot;
+using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2Godot.Ui.Contracts;
 
@@ -210,4 +211,58 @@ public sealed class CharacterListLogic
 
     /// <summary>CharacterListDialog.onEnterKey: clickStart on the selected row.</summary>
     public void OnEnterKey() => ClickStart();
+
+    /// <summary>
+    /// The dialog as the select scene shows it after buildCharacterList: with <paramref name="popup"/> the dialog and
+    /// m_title are held at the popup's first frame until <see cref="PlayPopup"/>, otherwise put at its end; the server
+    /// line, the title and the features the host sets (UICharacterListDialog::OnLoadComplete).
+    /// </summary>
+    public void ShowDialog(UiAssets assets, PackSet features, bool popup)
+    {
+        foreach (var clip in PopupClips())
+            if (popup && clip.Labels.TryGetValue("popup", out int first)) clip.GotoFrame(first); else clip.GotoLabel("popup");
+        SetBtnsAlpha(popup ? 0 : 1);
+        // UICharacterListDialog::OnLoadComplete: m_deleteAccount is hidden (vfunc_4(0)) unless the DeleteAccount feature
+        // is on; feature.xml has it at KR level 100, over the Live server level (feature_setting.xml Live KR 78)
+        if (!LobbyFeatures.IsEnabled(features, "DeleteAccount") && root.ChildNamed("m_deleteAccount") is { } del) { del.Hidden = true; RefreshHolder("m_deleteAccount"); }
+        root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_serverName", "Bigleaf  CH.1");
+        root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_regionName", "");
+        root.FindClip(UICharacterListDialogContract.Instances.M_title)?.SetText(assets.Str("$s_charselect_title"));
+        // region and event extras the host attaches on demand (attachHealthGameCN, attachBurningLevelupDescBtn, ...)
+        foreach (var name in new[] { UICharacterListDialogContract.Instances.M_healthGameCN, UICharacterListDialogContract.Instances.M_characterCraeteShutdownCN, UICharacterListDialogContract.Instances.M_burningEventDescBtn })
+            if (root.ChildNamed(name) is { } extra) { extra.Hidden = true; RefreshHolder(name); }   // kept over the popup's frames
+    }
+
+    /// <summary>The dialog (charlist_dialog) and m_title: both play their "popup" label.</summary>
+    IEnumerable<MovieClipNode> PopupClips()
+    {
+        if (LobbyLayout.Dialog(root).Node is MovieClipNode dlg) yield return dlg;
+        if (root.FindClip(UICharacterListDialogContract.Instances.M_title) is { } title) yield return title;
+    }
+
+    /// <summary>The clip a named placement sits in, at its frame again (a placement's Hidden / BaseColor changed).</summary>
+    MovieClipNode RefreshHolder(string name)
+    {
+        var holder = root.AllClips().FirstOrDefault(c => c.Children.Any(ch => ch.Name == name));
+        holder?.GotoFrame(holder.Frame);
+        return holder;
+    }
+
+    /// <summary>m_btns (the exit and option buttons) is placed at alpha 0; btnsPopup tweens it in.</summary>
+    public void SetBtnsAlpha(float a)
+    {
+        if (root.ChildNamed("m_btns") is not { } btns) return;
+        btns.BaseColor = new Color(btns.BaseColor, a);
+        RefreshHolder("m_btns");
+    }
+
+    /// <summary>
+    /// CharacterListDialog.popup: LobbyDialog.popup gotoAndPlay("popup"), m_title.gotoAndPlay("popup") and
+    /// LobbyDialog.btnsPopup(m_btns, 500): m_btns visible, then a Tween of its alpha to 1 over 500 ms (no ease: linear).
+    /// </summary>
+    public void PlayPopup()
+    {
+        foreach (var clip in PopupClips()) clip.GotoLabel("popup", true);
+        root.CreateTween().TweenMethod(Callable.From<float>(SetBtnsAlpha), 0f, 1f, 0.5);
+    }
 }
