@@ -57,6 +57,7 @@ public partial class Field : Node3D
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = PackSet.Shared(data);
         AssetIndex.Prefetch(packs);
+        packs.Prefetch("Resource/Exported", "Resource/Model/Map", "Resource/Model/Effect", "Resource/Model/Npc", "Resource/Model/Textures", "Resource/Image", "Resource/Model/Character", "Resource/Model/Item");   // every field's build opens these; their indexes open side by side
         World.FieldContents.Prefetch(packs);   // the npc and region spawn tables
         Ui.UiAssets.Prefetch(packs, "gfxfontlib", "commonNameTag", "component_v1");   // shared UI movie parses overlap the field build
         var spec = new NifSpec(nifxml);

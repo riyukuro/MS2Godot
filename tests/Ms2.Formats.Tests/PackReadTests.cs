@@ -63,4 +63,43 @@ public class PackReadTests
         Assert.That(PackSet.FastAesHits, Is.GreaterThan(0));
         Assert.That(PackSet.FastAesMisses, Is.EqualTo(0));
     }
+
+    /// <summary>Archives opened side by side by Prefetch (and by reads from several threads at once) hold the same entries and bytes as opened one by one.</summary>
+    [Test]
+    public void ArchivesOpenedSideBySideReadTheSameAsOneByOne()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var names = new[] { "Resource/Exported", "Resource/Model/Map", "Resource/Model/Effect", "Resource/Model/Npc", "Resource/Image", "Xml" }
+            .Where(n => File.Exists(Path.Combine(data, n + ".m2d"))).ToArray();
+        Assert.That(names, Is.Not.Empty);
+        var serial = new PackSet(data);
+        var side = new PackSet(data);
+        side.Prefetch(names);
+        side.Prefetch(names);   // a second request while the first is still opening
+        foreach (var n in names)
+        {
+            var want = serial.List(n).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            var got = side.List(n).OrderBy(x => x, StringComparer.Ordinal).ToList();
+            Assert.That(got, Is.EqualTo(want), n);
+            var pick = want.Where((_, i) => i % Math.Max(1, want.Count / 12) == 0).Take(12);
+            Parallel.ForEach(pick, e => Assert.That(side.Read(n, e), Is.EqualTo(serial.Read(n, e)), $"{n}: {e}"));
+        }
+    }
+
+    [Test]
+    public void PrefetchOfAMissingArchiveLeavesTheReadToReport()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2pf-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(dir, "Resource"));
+        try
+        {
+            var packs = new PackSet(dir);
+            packs.Prefetch("Resource/Nope", "Resource/Nope");
+            Thread.Sleep(100);
+            Assert.Throws<FileNotFoundException>(() => packs.Read("Resource/Nope", "a.txt"));
+            Assert.Throws<FileNotFoundException>(() => packs.List("Resource/Nope"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }

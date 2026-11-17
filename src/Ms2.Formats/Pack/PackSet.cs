@@ -54,13 +54,21 @@ public sealed class PackSet : IDisposable
     /// <param name="archive">archive path relative to the Data folder without extension, e.g. "Resource/Model/Character"</param>
     Archive Get(string archive)
     {
+        // The index of one archive takes tens of milliseconds to open. It is built under a lock of its own, so other
+        // archives open (and open ones are read) meanwhile; the pack set's lock is held only for the table lookups.
+        object mine;
         lock (gate)
         {
-            if (open.TryGetValue(archive, out var a)) return a;
+            if (open.TryGetValue(archive, out var done)) return done;
+            if (!opening.TryGetValue(archive, out mine)) opening[archive] = mine = new object();
+        }
+        lock (mine)
+        {
+            lock (gate) if (open.TryGetValue(archive, out var done)) return done;
             var path = Path.Combine(DataDir, archive.Replace('\\', '/') + ".m2d");
             if (!File.Exists(path)) throw new FileNotFoundException("archive not found", path);
             var r = new M2dReader(path);
-            a = new Archive
+            var a = new Archive
             {
                 Reader = r,
                 Path = path,
@@ -73,9 +81,19 @@ public sealed class PackSet : IDisposable
                 a.ByName[name] = e;
                 a.ByBaseName.TryAdd(Path.GetFileName(name), name);
             }
-            open[archive] = a;
+            lock (gate) open[archive] = a;
             return a;
         }
+    }
+
+    readonly Dictionary<string, object> opening = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Opens the named archives on background threads, side by side, so later reads find them open. A name that
+    /// is missing or fails to open is left for the read that needs it to report.</summary>
+    public void Prefetch(params string[] archives)
+    {
+        foreach (var name in archives)
+            System.Threading.Tasks.Task.Run(() => { try { Get(name); } catch (Exception) { } });
     }
 
     public IEnumerable<string> List(string archive) => Get(archive).ByName.Keys;
