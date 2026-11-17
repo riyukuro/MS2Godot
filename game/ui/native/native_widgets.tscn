@@ -1,0 +1,62 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://ui/native/NativeWidgetsScene.cs" id="1"]
+[ext_resource type="Script" path="res://ui/native/NWindow.cs" id="2"]
+[ext_resource type="Script" path="res://ui/native/NSkin.cs" id="3"]
+[ext_resource type="Script" path="res://ui/native/NScrollingList.cs" id="4"]
+[ext_resource type="Script" path="res://ui/native/NScrollBar.cs" id="5"]
+[ext_resource type="Script" path="res://ui/native/NButton.cs" id="6"]
+[ext_resource type="Script" path="res://ui/native/NCheckBox.cs" id="7"]
+
+[node name="NativeWidgets" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1")
+
+[node name="Window" type="Control" parent="."]
+size = Vector2(320, 420)
+mouse_filter = 2
+script = ExtResource("2")
+AlignTo = 1
+DragBar = NodePath("bg")
+CloseButton = NodePath("Close")
+
+[node name="bg" type="Control" parent="Window"]
+size = Vector2(320, 420)
+script = ExtResource("3")
+Movie = "component_v1"
+Symbol = "export_bg_black"
+
+[node name="Close" type="Control" parent="Window"]
+position = Vector2(282, 6)
+script = ExtResource("6")
+Movie = "component_v1"
+Skin = "export_btn_close_y"
+
+[node name="List" type="Control" parent="Window"]
+position = Vector2(14, 44)
+size = Vector2(268, 290)
+script = ExtResource("4")
+ScrollBar = NodePath("../Scroll")
+
+[node name="Scroll" type="Control" parent="Window"]
+position = Vector2(284, 44)
+size = Vector2(24, 290)
+script = ExtResource("5")
+
+[node name="Check" type="Control" parent="Window"]
+position = Vector2(14, 346)
+script = ExtResource("7")
+Movie = "component_v1"
+Skin = "export_checkbox_white"
+Text = "Check box"
+
+[node name="Ok" type="Control" parent="Window"]
+position = Vector2(180, 368)
+script = ExtResource("6")
+Movie = "component_v1"
+Skin = "export_btn_type_a"
+Text = "OK"
