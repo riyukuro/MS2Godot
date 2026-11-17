@@ -7,7 +7,13 @@ namespace Ms2Godot.World;
 /// </summary>
 public static class Travel
 {
-    public sealed record Move(int FieldId, string XBlock, int PortalId, int FromFieldId);
+    public sealed record Move(int FieldId, string XBlock, int PortalId, int FromFieldId)
+    {
+        /// <summary>A server-given arrival (live mode): the player stands at this point (ms2 coordinates), facing RotZDeg; FieldKey answers RequestFieldEnter.</summary>
+        public Ms2.Formats.Model.Vec3? At { get; init; }
+        public double RotZDeg { get; init; }
+        public int FieldKey { get; init; }
+    }
 
     /// <summary>The move in progress; consumed by the field scene that loads it.</summary>
     public static Move Pending;

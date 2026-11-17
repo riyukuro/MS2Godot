@@ -64,7 +64,9 @@ public partial class GameFlow : Node
         menu.BackToSelect += () => Go(State.Lobby);
         menu.Quit += () => GetTree().Quit(0);
 
+        Net.LiveSession.Attach(this);
         Go(State.Login);
+        if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = Script(); }
     }
 
@@ -103,6 +105,11 @@ public partial class GameFlow : Node
     {
         if (Current == State.Login && movie == UILoginDialogContract.Movie && method == UILoginDialogContract.ToHost.OnConnect)
         {
+            if (Net.LiveSession.Instance is { } live)
+            {
+                if (!live.Busy) _ = live.LoginAsync().ContinueWith(t => { if (t.Result) CallDeferred(nameof(DeferredGo), (int)State.Lobby); });
+                return;
+            }
             Session.AccountId = "player";           // stub login: any id and password are accepted
             Go(State.Lobby);
         }
@@ -115,10 +122,17 @@ public partial class GameFlow : Node
                 var chosen = Session.List().FirstOrDefault(c => c.User.CharacterId.ToString() == (string)a[0]);
                 if (chosen == null) return;
                 Session.Chosen = chosen;
+                if (Net.LiveSession.Instance is { } live)
+                {
+                    if (!live.Busy) _ = live.EnterAsync(chosen).ContinueWith(t => { if (t.Result) CallDeferred(nameof(DeferredGo), (int)State.Loading); });
+                    return;
+                }
                 Go(State.Loading);
             }
         }
     }
+
+    void DeferredGo(int state) => Go((State)state);
 
     void OnCreateCancelled()
     {
@@ -164,6 +178,7 @@ public partial class GameFlow : Node
         catch (Exception ex) { GD.PushWarning("flow loading: " + ex.Message); }
         // the field scene reads this: the chosen character's field (Tria when the data has no such map), no portal
         Travel.Pending = xblock == null ? null : new Travel.Move(map, xblock, 0, 0);
+        Travel.Pending = Net.LiveSession.Decorate(Travel.Pending);
         GD.Print($"flow: loading map {map} ({xblock ?? "default field"}), picture {Travel.LoadingImage}");
         loadingLayer.Visible = true;
         PlacePicture();
@@ -205,6 +220,7 @@ public partial class GameFlow : Node
                 loadingFrames = -1;
                 Current = State.Game;
                 GD.Print("flow: Loading -> Game");
+                Net.LiveSession.Instance?.FieldLoaded();
             }
         }
     }

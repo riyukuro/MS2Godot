@@ -161,6 +161,15 @@ public partial class FieldContents : Node3D
     /// <summary>The server's field entry after a portal move: the player stands at the target portal, facing its way.</summary>
     void Arrive(Travel.Move move)
     {
+        if (move.At is { } at)
+        {
+            var spot = FieldBuilder.ToGodotPoint(at) + new Vector3(0, 5, 0);
+            player.GlobalPosition = spot; player.SpawnPoint = spot; player.Velocity = Vector3.Zero;
+            double a = move.RotZDeg * Math.PI / 180;
+            player.Face(FieldBuilder.ToGodotPoint(new Vec3(Math.Sin(a), -Math.Cos(a), 0)));
+            GD.Print($"arrived at the server's position, ms2 {at}");
+            return;
+        }
         var p = portals.ById(move.PortalId);
         if (p == null) { GD.Print($"arrival portal {move.PortalId} not in this field; staying at the spawn point"); return; }
         var pos = FieldBuilder.ToGodotPoint(p.Position) + new Vector3(0, 5, 0);

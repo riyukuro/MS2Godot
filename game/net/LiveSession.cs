@@ -1,0 +1,145 @@
+using Godot;
+using Ms2.Formats.Model;
+using Ms2.Net;
+using Ms2.Net.Packets;
+using Ms2Godot.Flow;
+using Ms2Godot.Ui;
+using Ms2Godot.Ui.Contracts;
+using Ms2Godot.World;
+
+namespace Ms2Godot.Net;
+
+/// <summary>
+/// The opt-in live mode: the login, character list, select and field entry run against a real server instead of the offline
+/// stubs. Off unless MS2_LIVE_LOGIN (host:port of the login server) and MS2_LIVE_ACCOUNT (user:password) are set; offline stays
+/// the default and nothing here runs then. MS2_LIVE_AUTO=1 drives the screens by itself (first character, no input), for a
+/// headless run. The transports only queue packets on their network thread; this node drains them in _Process.
+/// </summary>
+public partial class LiveSession : Node
+{
+    public static bool Enabled => !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"))
+                                  && !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT"));
+    public static LiveSession Instance { get; private set; }
+
+    readonly byte[] machine = new byte[16];
+    TcpTransport login, game;
+    long accountId;
+    GameEntry entry;
+    string host;
+    bool answered;           // ResponseFieldEnter sent for this entry
+    public bool Busy { get; private set; }
+
+    public static void Attach(Node parent)
+    {
+        if (!Enabled || Instance != null) return;
+        parent.AddChild(Instance = new LiveSession { Name = "LiveSession", ProcessMode = ProcessModeEnum.Always });
+    }
+
+    public override void _ExitTree()
+    {
+        game?.Dispose(); login?.Dispose();
+        if (Instance == this) Instance = null;
+    }
+
+    /// <summary>Login and the character list; the list replaces the stub list. False when the server refuses.</summary>
+    public async Task<bool> LoginAsync()
+    {
+        Busy = true;
+        try
+        {
+            var hp = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN").Split(':');
+            var up = System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT").Split(':', 2);
+            host = hp[0];
+            login?.Dispose();
+            login = new TcpTransport();
+            // the real client appends its region code to the id
+            var o = await new LoginClient(login).LoginAsync(host, int.Parse(hp[1]), up[0] + "KR", up.Length > 1 ? up[1] : "", machine);
+            if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); return false; }
+            accountId = o.Result.AccountId;
+            Session.AccountId = up[0];
+            Session.Characters = o.Characters.ToList();
+            GD.Print($"live: logged in, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");
+            return true;
+        }
+        catch (Exception ex) { GD.PushWarning("live: login failed: " + ex.Message); return false; }
+        finally { Busy = false; }
+    }
+
+    /// <summary>Select the character and migrate to the game server, up to RequestFieldEnter. The chosen character's map becomes the server's.</summary>
+    public async Task<bool> EnterAsync(CharacterEntry chosen)
+    {
+        Busy = true;
+        try
+        {
+            var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
+            (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host);
+            login.Dispose(); login = null;
+            answered = false;
+            var f = entry.Field;
+            chosen.User.MapA = f.MapId;
+            GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");
+            return true;
+        }
+        catch (Exception ex) { GD.PushWarning("live: enter failed: " + ex.Message); return false; }
+        finally { Busy = false; }
+    }
+
+    /// <summary>The server's arrival (position, rotation, field key) on the move the flow built for the chosen map.</summary>
+    public static Travel.Move Decorate(Travel.Move m)
+    {
+        var f = Instance?.entry?.Field;
+        if (m == null || f == null) return m;
+        return m with { At = new Vec3(f.Position.X, f.Position.Y, f.Position.Z), RotZDeg = f.Rotation.Z, FieldKey = f.FieldKey };
+    }
+
+    /// <summary>The field is built and shown: ResponseFieldEnter(field key) goes out. The client sends it when the map's entities are all created
+    /// (CubeMapInformationService::FUN_1410cf5c0, cubemapinformationservice_3.cpp:5701-5705: the pending entity set is empty, then
+    /// COutPacket ResponseFieldEnter with the world's field key).</summary>
+    public void FieldLoaded()
+    {
+        if (entry == null || answered) return;
+        answered = true;
+        _ = game.SendAsync(new ResponseFieldEnter(entry.Field.FieldKey));
+        GD.Print($"live: ResponseFieldEnter sent, fieldKey {entry.Field.FieldKey}");
+    }
+
+    public override void _Process(double delta)
+    {
+        if (game == null) return;
+        while (game.Incoming.TryDequeue(out var p))
+        {
+            try
+            {
+                if (p.Opcode == (ushort)Inbound.FieldAddUser)
+                {
+                    var u = FieldAddUser.Read(p.Reader());
+                    bool self = u.User.CharacterId == entry.Enter.CharacterId;
+                    GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
+                }
+                else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
+            }
+            catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
+        }
+        if (game.IsClosed) { GD.PushWarning("live: game connection closed"); game.Dispose(); game = null; }
+    }
+
+    /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>
+    public static async Task AutoDrive(GameFlow flow)
+    {
+        if (System.Environment.GetEnvironmentVariable("MS2_LIVE_AUTO") != "1") return;
+        var tree = flow.GetTree();
+        async Task Frames(int n) { for (int i = 0; i < n; i++) await flow.ToSignal(tree, SceneTree.SignalName.ProcessFrame); }
+        async Task Until(Func<bool> c, int max = 6000) { for (int i = 0; i < max && !c(); i++) await Frames(1); }
+        await Until(() => tree.CurrentScene?.SceneFilePath == GameFlow.LoginScene); await Frames(30);
+        UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
+        await Until(() => flow.Current == GameFlow.State.Lobby && tree.CurrentScene?.SceneFilePath == GameFlow.LobbyScene, 600); await Frames(30);
+        if (flow.Current != GameFlow.State.Lobby) { GD.PushWarning("live: no character list"); tree.Quit(1); return; }
+        var first = Session.List().FirstOrDefault();
+        if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }
+        UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, first.User.CharacterId.ToString());
+        await Until(() => flow.Current == GameFlow.State.Game); await Frames(120);
+        bool ok = flow.Current == GameFlow.State.Game;
+        GD.Print(ok ? "live: auto run done" : "live: auto run failed");
+        tree.Quit(ok ? 0 : 1);
+    }
+}
