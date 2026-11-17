@@ -242,11 +242,12 @@ public partial class Player : CharacterBody3D
     /// <summary>Unk_PCMove::UpdateMoveDirection: releasing one key of a diagonal keeps the diagonal for 50 ms.</summary>
     Vector2 DiagonalHold(Vector2 input, float dt)
     {
-        if (prevInput.X != 0 && prevInput.Y != 0 && input != prevInput && input != Vector2.Zero &&
-            (input.X == prevInput.X || input.Y == prevInput.Y))
+        // armed by the raw key transition (last frame's keys, not this hold's own output), so it runs once for 50 ms
+        if (prevRawInput.X != 0 && prevRawInput.Y != 0 && input != prevRawInput && input != Vector2.Zero &&
+            (input.X == prevRawInput.X || input.Y == prevRawInput.Y))
         {
             diagHold = MoveConfig.DiagonalHold;
-            diagDir = prevInput;
+            diagDir = prevRawInput;
         }
         if (diagHold > 0)
         {
