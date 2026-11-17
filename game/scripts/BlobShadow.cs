@@ -59,18 +59,36 @@ public partial class BlobShadow : MeshInstance3D
         return s;
     }
 
+    // One query and one exclude list per shadow, reused: a new RefCounted query, Array and result Dictionary every frame
+    // for every character was most of the managed frame time. The ground under an owner that has not moved does not change
+    // either, so a still owner re-casts only now and then (a moving owner every frame).
+    PhysicsRayQueryParameters3D query;
+    Vector3 lastPos = new(float.NaN, 0, 0);
+    int idleFrames;
+    const int RecastEvery = 90;
+    const float MovedSq = 1f;
+
     public override void _Process(double delta)
     {
         var owner = GetParent<Node3D>();
-        var from = owner.GlobalPosition + Vector3.Up * 60;
-        var q = PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 4000);
-        if (self != null) q.Exclude = new Godot.Collections.Array<Rid> { self.GetRid() };
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(q);
+        var pos = owner.GlobalPosition;
+        if (pos.DistanceSquaredTo(lastPos) < MovedSq && ++idleFrames < RecastEvery) return;
+        idleFrames = 0;
+        lastPos = pos;
+        var from = pos + Vector3.Up * 60;
+        if (query == null)
+        {
+            query = PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 4000);
+            if (self != null) query.Exclude = new Godot.Collections.Array<Rid> { self.GetRid() };
+        }
+        query.From = from;
+        query.To = from + Vector3.Down * 4000;
+        var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
         if (hit.Count == 0) { Visible = false; return; }
         Visible = true;
         var p = (Vector3)hit["position"];
         var n = ((Vector3)hit["normal"]).Normalized();
-        float dist = Mathf.Max(owner.GlobalPosition.Y - p.Y, 0);
+        float dist = Mathf.Max(pos.Y - p.Y, 0);
         float fade = 1f - Mathf.Clamp(dist / FadeHeight, 0f, 1f) * (1f - FadeScale);
         // orient: local up along the ground normal, keep a fixed heading
         var x = (Vector3.Right - n * n.Dot(Vector3.Right)).Normalized();
@@ -78,6 +96,5 @@ public partial class BlobShadow : MeshInstance3D
         // + 10: the client lifts by 3 on a depth buffer with its bias; Godot z-fights at the camera distance without more
         GlobalTransform = new Transform3D(basis, p + n * (lift + 10f));
         mat.SetShaderParameter("strength", Strength * fade);
-
     }
 }
