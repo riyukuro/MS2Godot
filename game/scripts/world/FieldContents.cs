@@ -125,10 +125,15 @@ public partial class FieldContents : Node3D
     }
 
     static NpcTable npcTable;
-    /// <summary>The npc table, loaded once per run.</summary>
-    public static NpcTable Npcs(PackSet packs) => npcTable ??= new NpcTable(packs);
+    static readonly object tableLock = new();
+    /// <summary>The npc table, loaded once per run (a prefetch may be building it; the lock makes the caller wait for it).</summary>
+    public static NpcTable Npcs(PackSet packs) { lock (tableLock) return npcTable ??= new NpcTable(packs); }
     static RegionSpawnTable regionTable;
-    static RegionSpawnTable Regions(PackSet packs) => regionTable ??= new RegionSpawnTable(packs);
+    static RegionSpawnTable Regions(PackSet packs) { lock (tableLock) return regionTable ??= new RegionSpawnTable(packs); }
+
+    /// <summary>Parses the npc and region spawn tables on a worker thread while the field builds (pure data, no engine objects).</summary>
+    public static void Prefetch(PackSet packs)
+        => System.Threading.Tasks.Task.Run(() => { try { Npcs(packs); Regions(packs); } catch { } });
 
     /// <summary>The field's portals (with the quest masks) and spawned npcs, for the HUD's minimap; null until Start.</summary>
     public FieldPortals Portals => portals;
