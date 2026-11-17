@@ -8,7 +8,8 @@ namespace Ms2Godot.World;
 /// An npc's head HP bar (UIHpBar::Entity, the uihpbar movie's hpbar_entity_HPBar), for rows with hpBar="1".
 /// <list type="bullet">
 /// <item>Active (m_4c) once the npc enters battle stance (CNpc::vfunc_66 with a stance, FUN_141992180), or from spawn
-/// for property tag 2 always_display_hp_bar, which is also shown from spawn. Leaving the stance changes nothing: an npc
+/// for property tag 2 always_display_hp_bar, which is also shown from spawn with its spawn HP (CNpc::vfunc_12; the offline
+/// stand-in spawns at the row's stat hp, full). Leaving the stance changes nothing: an npc
 /// bar has no time-out (the full-HP 2000 ms period of FUN_141992230 is set for PCs only, and hides nothing, see
 /// <see cref="Ms2Godot.Ui.PlayerHpBar"/>), it goes only with the npc's death or removal, or while its anchor is behind the
 /// camera.</item>
@@ -31,7 +32,9 @@ public sealed class NpcHpBar
     {
         Npc = npc;
         clip = new HpBarClip(movie, u, parent);
-        if (npc.Row.AlwaysDisplayHpBar) { Shown = true; Activate(cur, max); }
+        // CNpc::vfunc_12 (@0x14108f710): a property tag 2 npc's bar is shown and set from its HP stat (current, max) at spawn.
+        // Those stats come with the server's FieldAddNpc; the offline stand-in spawns the npc whole, at its stat hp.
+        if (npc.Row.AlwaysDisplayHpBar) { Shown = true; Activate(npc.Row.Hp, npc.Row.Hp); }
     }
 
     /// <summary>The rank of the bar (FUN_141992680): the row's class, 10 with big_hp_bar.</summary>

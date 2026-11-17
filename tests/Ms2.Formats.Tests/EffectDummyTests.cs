@@ -147,16 +147,17 @@ public class EffectDummyTests
         Assert.That(NpcTable.ParseRow(XElement.Parse("<npc id='9' />"), DefaultRows()), Is.Null);
     }
 
-    /// <summary>The target frame's row fields: level (1 when absent), class (1 when absent), race and the hidden level tag.</summary>
+    /// <summary>The target frame's row fields: level (1 when absent), class (1 when absent), race, the hidden level tag and the stat hp.</summary>
     [Test]
     public void NpcRowReadsLevelClassAndRace()
     {
         var row = NpcTable.ParseRow(XElement.Parse("""
-            <npc id="5"><environment level="12" class="3" raceString="Plant" propertyTags="Hide_HpBar_Level" /></npc>
+            <npc id="5"><environment level="12" class="3" raceString="Plant" propertyTags="Hide_HpBar_Level"><stat hp="1500" asp="100" /></environment></npc>
             """), DefaultRows());
         Assert.That((row.Level, row.Class, row.Race, row.HideHpBarLevel, row.HpBarLevel), Is.EqualTo((12, 3, 2, true, 0)));
         var plain = NpcTable.ParseRow(XElement.Parse("<npc id='6'><environment raceString='robot' /></npc>"), DefaultRows());
         Assert.That((plain.Level, plain.Class, plain.Race, plain.HpBarLevel), Is.EqualTo((1, 1, 0, 1)));
+        Assert.That((row.Hp, plain.Hp), Is.EqualTo((1500L, 0L)));                 // stat hp, 0 without a stat block
         var names = new Dictionary<string, string> { ["plant"] = "Leafy", ["animal"] = "Furry" };
         Assert.That(NpcTable.RaceName(names, row.Race), Is.EqualTo("Leafy"));
         Assert.That(NpcTable.RaceName(names, NpcTable.ParseRace("ANIMAL")), Is.EqualTo("Furry"));

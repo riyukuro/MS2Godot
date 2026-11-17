@@ -30,6 +30,7 @@ public sealed class NpcRow
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
     public bool HpBar;                           // environment hpBar (NpcDataCli, default false): the npc has a head hp bar
     public int Level = 1;                        // environment level (CNpcData m_nLevel, 1 when absent)
+    public long Hp;                              // environment stat hp (CNpcData m_stat.m_aBase, NpcData::Load FirstChild("stat"); 0 when absent)
     public int Race;                             // environment raceString as CNpcData reads it (ParseRace), 0 when absent or unknown
     /// <summary>The npc's effect dummies: the default rows with the npc's &lt;effectdummy&gt; merged in (EffectDummyTable.MergeNpc).</summary>
     public IReadOnlyList<EffectDummy> EffectDummies = Array.Empty<EffectDummy>();
@@ -124,6 +125,7 @@ public sealed class NpcTable
             MinimapIcon = (string)env.Attribute("minimapIconName"),
             HpBar = EffectDummy.Bool(env, "hpBar", false),
             Level = (string)env.Attribute("level") is { } lv && ushort.TryParse(lv, out var l) ? l : 1,
+            Hp = long.TryParse((string)env.Element("stat")?.Attribute("hp"), out var hp) ? hp : 0,
             Race = ParseRace((string)env.Attribute("raceString")),
             EffectDummies = EffectDummyTable.MergeNpc(defaultDummies, env),
         };
