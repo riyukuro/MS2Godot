@@ -106,6 +106,9 @@ public sealed class JobSelectLogic
             if (clip == null) break;
             clip.Position = new Vector2(slot * (ButtonWidth + Spacing), 0);
             bar.AddChild(clip);
+            // the clips inside a tab are placed playing, and one without frame code never stops: the selected states'
+            // glow (a 120-frame clip of additive layers placed from selected_up on) pulses
+            foreach (var c in clip.AllClips().Skip(1)) if (!c.FrameScripts) c.Loop();
             UiWidgets.Attach(clip);
             var w = clip.Widget as ButtonWidget;
             if (w != null) w.Toggle = true;          // CLIK ButtonBar renderers toggle
