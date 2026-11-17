@@ -288,6 +288,7 @@ public partial class Field : Node3D
     void UpdateCamera(double dt = 0)
     {
         var ms2yaw = Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw;
+        CameraYaw = ms2yaw;
         Vector3 eye, look, offset;
         Vector3? prevLook = camLook, prevEye = placedEye;
         // CTargetCameraMode::vfunc_8: one pass, plus another while the target outruns the eye's step or while the shown
@@ -402,6 +403,9 @@ public partial class Field : Node3D
     public float CameraPitch { get; private set; } = Mathf.Pi / 2;
     /// <summary>The camera mode's position (m_setting.m_c = m_c0.m_pos): the placed eye before the shown camera's easing.</summary>
     public Vector3? CameraEye => placedEye;
+    /// <summary>CTargetCameraMode m_68: the camera's yaw in radians (hangle + 180 plus the Ctrl+arrow turn); the eye sits at
+    /// (d sin yaw, d cos yaw) from the target in MS2 axes.</summary>
+    public float CameraYaw { get; private set; }
 
     const float PlayerHeight = 150f;            // CTargetCameraMode m_b4 (the player's height, added to the farthest zoom)
 

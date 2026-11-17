@@ -109,6 +109,19 @@ public partial class Player : CharacterBody3D
         (Mount?.Visual ?? Visual).Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
     }
 
+    /// <summary>
+    /// PCBase::vfunc_20().z: the facing as an MS2 Z rotation in degrees (forward = (sin z, -cos z) in MS2 axes); while riding
+    /// it is the ridee's (pcbase.cpp:952), whose visual takes the facing here.
+    /// </summary>
+    public float FacingRotZ
+    {
+        get
+        {
+            var f = (Mount?.Visual ?? Visual)?.GlobalBasis.Z ?? Forward;     // godot forward; MS2 (x, -z)
+            return Mathf.RadToDeg(Mathf.Atan2(f.X, f.Z));
+        }
+    }
+
     Vector3 Forward => new(Mathf.Sin(Mathf.DegToRad(yawDeg)), 0, Mathf.Cos(Mathf.DegToRad(yawDeg)));
 
     /// <summary>PCBase::CalcMoveDirection: input y along the camera's flat forward, x along its side, unit length.</summary>

@@ -127,7 +127,7 @@ public partial class HudScene : Node
 
     // ---- minimap: the field's illustrated map image, centred on the player ---------------------------------------
 
-    MinimapInfo mapInfo; Control mapClip; TextureRect mapImage; MovieClipNode mapPlayer;
+    MinimapInfo mapInfo; Control mapClip; TextureRect mapImage; MovieClipNode mapPlayer, mapArrow;
     static readonly Vector2 MapMaskPos = new(2, 82), MapMaskSize = new(288, 222);   // the movie's map area (m_mask) in movie units
     const float MapZoom = 1f;       // MinimapDialog m_zoom (0.5 .. 1.5): movie units per image pixel in player-centred mode
 
@@ -159,7 +159,7 @@ public partial class HudScene : Node
         if (tex != null)
         {
             mapPlayer = MinimapEntities.Create(r.Movie, "player", "idle", u);
-            if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); }
+            if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); mapArrow = mapPlayer.Direct("m_arrow")?.Node as MovieClipNode; }
             // m_guide: the guide arrows' layer, above the map and its entities, at the mask's top left and not clipped by it
             var guide = new Node2D { Name = "m_guide", Position = MapMaskPos };
             r.AddChild(guide);
@@ -280,6 +280,24 @@ public partial class HudScene : Node
 
     static Vec3 ToMs2(Vector3 g) => new(g.X, -g.Z, g.Y);
 
+    /// <summary>
+    /// UIMinimapDialog::GetPlayerHeading, the rotation RefreshPlayer gives the player entity's m_arrow (its art points east, to
+    /// the right of the dot): FUN_14166dad0((0, -1, 0), side) - vfunc_20().z + 90, with side = -dir x Z and dir the camera
+    /// mode's rotation (MyPC::vfunc_67 / Ridee: m_posBF4 = camera m_setting.m_18) rebuilt and flattened (PCBase::vfunc_67).
+    /// For the target camera that is the horizontal view direction (-sin yaw, -cos yaw), which works out to
+    /// 270 - yaw - rot.z: 270 (up) while the player faces away from the camera, turning with the camera. rot.z is the
+    /// ridee's while riding.
+    /// </summary>
+    static float PlayerHeading(float cameraYawDeg, float rotZ) => Mathf.PosMod(270f - cameraYawDeg - rotZ, 360f);
+
+    Field field;
+    static Field FindField(Node n)
+    {
+        if (n is Field f) return f;
+        foreach (var c in n.GetChildren()) if (FindField(c) is { } r) return r;
+        return null;
+    }
+
     void UpdateMinimap()
     {
         if (player == null) { player = FindPlayer(this); if (player == null) return; }
@@ -288,11 +306,10 @@ public partial class HudScene : Node
         var (pu, pv) = mapInfo.ToImage(p);
         var px = new Vector2((float)pu, (float)pv) * size * MapZoom;           // player in movie units on the scaled image
         mapImage.Position = (MapMaskSize / 2 - px) * u;
-        if (mapPlayer != null && player.Visual != null)
+        if (mapArrow != null && player.Visual != null)
         {
-            var (fu, fv) = mapInfo.ToImage(ToMs2(player.GlobalPosition + player.Visual.GlobalBasis.Z * 100));
-            var d = new Vector2((float)(fu - pu), (float)(fv - pv)) * size;
-            if (d.LengthSquared() > 1e-6f) mapPlayer.Rotation = Mathf.Atan2(d.X, -d.Y);       // the arrow art points up
+            field ??= player.GetParent() as Field ?? FindField(this);
+            if (field != null) mapArrow.RotationDegrees = PlayerHeading(Mathf.RadToDeg(field.CameraYaw), player.FacingRotZ);
         }
     }
 
