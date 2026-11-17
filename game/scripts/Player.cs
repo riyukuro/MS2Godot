@@ -333,26 +333,14 @@ public partial class Player : CharacterBody3D
         }
         Velocity = v;
 
-        var before = GlobalPosition;
+        var start = GlobalTransform;
         var wantedHoriz = new Vector3(v.X, 0, v.Z) * dt;
         MoveAndSlide();
-        var moved = GlobalPosition - before;
-        moved.Y = 0;
-        if (IsOnFloor() && IsOnWall() && wantedHoriz.Length() > 0.01f && moved.Length() < wantedHoriz.Length() * 0.5f)
-        {
-            // slide the step motion along walls taller than a step, so a riser in a corner can still be climbed
-            var stepMotion = wantedHoriz;
-            for (int i = 0; i < GetSlideCollisionCount(); i++)
-            {
-                var c = GetSlideCollision(i);
-                var n = c.GetNormal();
-                if (Mathf.Abs(n.Y) > 0.3f || c.GetPosition().Y < GlobalPosition.Y + MoveConfig.StepOffset + 2 * SafeMargin) continue;
-                n.Y = 0;
-                n = n.Normalized();
-                if (stepMotion.Dot(n) < 0) stepMotion -= n * stepMotion.Dot(n);
-            }
-            if (stepMotion.Length() > 0.01f) TryStepUp(stepMotion);
-        }
+        // NxCharacter (SweepTest::moveCharacter): every move with a side part goes up by the step offset, sideways, then
+        // down, unless it moves upward; so any riser under the step offset is climbed, whatever the approach angle.
+        if (v.Y <= 0 && IsOnWall() && wantedHoriz.Length() > 0.01f && StepPath(start, wantedHoriz) is { } stepped &&
+            stepped.Origin.Y > GlobalPosition.Y + 1f)
+            GlobalTransform = stepped;
 
         wallHit = IsOnWall() && !IsOnFloor() && v.Y < 0;
         if (IsOnFloor())
@@ -370,15 +358,35 @@ public partial class Player : CharacterBody3D
 
     void TryStepUp(Vector3 horiz)
     {
-        var t = GlobalTransform;
-        var up = Vector3.Up * (MoveConfig.StepOffset + 2 * SafeMargin);   // a 30 riser must pass with the margin
+        if (StepPath(GlobalTransform, horiz) is { } t && t.Origin.Y > GlobalPosition.Y + 1f) GlobalTransform = t;
+    }
+
+    /// <summary>The up / side / down passes of NxCharacter's move from <paramref name="t0"/>: the up pass is cut short by a
+    /// ceiling, the side pass slides along what it hits, the down pass must land on a walkable floor no higher than the step
+    /// offset above the start (constrainedClimbingMode). Null when it does not.</summary>
+    Transform3D? StepPath(Transform3D t0, Vector3 horiz)
+    {
         var col = new KinematicCollision3D();
-        if (TestMove(t, up, col)) return;
-        var raised = t.Translated(up);
-        if (TestMove(raised, horiz, col)) return;
-        var ahead = raised.Translated(horiz);
-        if (TestMove(ahead, -up * 1.5f, col) && (col.GetNormal().Y > Mathf.Cos(FloorMaxAngle) || col.GetPosition().Y > t.Origin.Y + 1))
-            GlobalTransform = ahead.Translated(col.GetTravel());
+        var up = Vector3.Up * (MoveConfig.StepOffset + 2 * SafeMargin);   // a 30 riser must pass with the margin
+        var t = TestMove(t0, up, col) ? t0.Translated(col.GetTravel()) : t0.Translated(up);
+        float rise = t.Origin.Y - t0.Origin.Y;
+        if (rise < 1f) return null;
+        var rem = horiz;
+        for (int i = 0; i < 4 && rem.LengthSquared() > 1e-4f; i++)
+        {
+            if (!TestMove(t, rem, col)) { t = t.Translated(rem); break; }
+            t = t.Translated(col.GetTravel());
+            var n = col.GetNormal();
+            n.Y = 0;
+            if (n.LengthSquared() < 1e-6f) break;
+            n = n.Normalized();
+            rem = col.GetRemainder();
+            rem.Y = 0;
+            rem -= n * rem.Dot(n);
+        }
+        if (!TestMove(t, Vector3.Down * rise * 1.5f, col)) return null;
+        if (col.GetNormal().Y < Mathf.Cos(FloorMaxAngle) || col.GetPosition().Y > t0.Origin.Y + rise) return null;
+        return t.Translated(col.GetTravel());
     }
 
     /// <summary>PCBase::SendFallDamage: the height from the fall start to the landing; skipped on water.</summary>
