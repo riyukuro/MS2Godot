@@ -1,9 +1,11 @@
 using System.Threading.Tasks;
 using Godot;
 using Ms2.Formats.Model;
+using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Quest;
+using Ms2Godot.Net;
 
 namespace Ms2Godot.World;
 
@@ -23,7 +25,7 @@ public partial class QuestGuide : Node3D
     FieldPortals portals; NpcTable npcs; TraceStrings strings;
     Task<(FieldMeta meta, QuestMapGraph graph)> loading;
     (FieldMeta meta, QuestMapGraph graph)? ready;
-    Node3D beam; Label label;
+    EffectInstance beam; Label label;
     readonly List<(Vec3 pos, int id)> spawns = new();
     double dbg;
     public TraceResult Last { get; private set; }
@@ -41,11 +43,9 @@ public partial class QuestGuide : Node3D
         parent.AddChild(g);
         try
         {
-            g.beam = builder.Build(builder.LoadModel(EffectArchive, BeamEntry), "QuestBeam");
-            // the NIF's own material fades in through an animated alpha controller we do not play yet: draw it as a flat tinted shape
-            var mat = new StandardMaterial3D { ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = new Color(1f, 0.85f, 0.2f, 0.8f),
-                Transparency = BaseMaterial3D.TransparencyEnum.Alpha, CullMode = BaseMaterial3D.CullModeEnum.Disabled };
-            foreach (var n in g.beam.FindChildren("*", "MeshInstance3D", true, false)) ((MeshInstance3D)n).MaterialOverride = mat;
+            // the effect scene runtime plays the NIF's own controllers (animated alpha); the long duration keeps it looping while tracked
+            var scene = EffectScene.Load(NifFile.Load(builder.Spec, packs.Read(EffectArchive, BeamEntry)));
+            g.beam = new EffectInstance(scene, builder, 1e7f, 1) { FileSpace = Transform3D.Identity };
             g.beam.Visible = false;
             g.AddChild(g.beam);
         }
