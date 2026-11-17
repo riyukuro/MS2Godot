@@ -299,7 +299,6 @@ public sealed class FieldBuilder
                         MultiMeshes++;
                         Instances += obj.Count;
                     }
-                    AddShadowCells(visuals, ents[0].ModelName, shared, ents, local);   // the copies cast as the one MultiMesh did
                     SplitObjects += objects.Count;
                     mi++;
                     continue;
@@ -327,10 +326,12 @@ public sealed class FieldBuilder
                 }
                 // the sun's shadow: a MultiMesh is culled as a whole, and its box spans the field, so as one caster every copy is drawn
                 // again in every shadow cascade. The shadow casters are per-cell twins (tight boxes, culled per cascade); the visible
-                // instances stay one MultiMesh per mesh. Blended meshes cast too, as the drawn MultiMesh did; the glow twin casts none.
+                // instances stay one MultiMesh per mesh. A blended mesh gets none: its BLEND/ADD (depth_draw_never) or SHELL material
+                // is transparent, and Godot leaves transparent materials out of the shadow pass (observed: Henesys, Ellinia and Tria
+                // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 visuals.AddChild(node);
-                AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents, local);
+                if (!mesh.AlphaBlendOn) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents, local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
                 if (builder.GlowMaterial(mesh) is { } gm)
                 {
