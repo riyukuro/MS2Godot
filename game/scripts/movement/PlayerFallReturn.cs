@@ -210,7 +210,7 @@ public partial class Player
     /// SubState = FUN_14166cc80 (the state's sub id: StateJump::vfunc_4 starts a ground jump at 0x21, statejump.cpp:105; the other states
     /// here use 0); Rotation = m_dir2c.z (vfunc_20, the body's direction); Animation = m_nDirFlags, from m_vel3c = m_pos98, the move
     /// direction, packed by FUN_140836250 (statesyncobject.cpp:202-220: x -1/0/1 = 0/1/2, y -1/0/1 = +4/+8/+12, else 0x80 and the two
-    /// floats follow); Speed = m_pos48 = m_posBF4, the camera's FUN_140af8290 (mypc.cpp:2292), here the camera yaw in z; Unknown1 =
+    /// floats follow); Speed = m_pos48 = m_posBF4, the camera's FUN_140af8290 (mypc.cpp:2292), APPROXIMATION, not a cite: the content of FUN_140af8290 is not read, the camera yaw goes in z; Unknown1 =
     /// m_n54 = CameraMgr::GetModeType (the default third-person view, 0); Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime, 0.
     /// The move direction is in game axes (x, -z godot, y godot).
     /// </summary>
@@ -222,7 +222,7 @@ public partial class Player
             State = StateId(q.State), SubState = (byte)(q.State == MoveState.Jump ? 0x21 : 0),
             Position = new Ms2.Net.Packets.Vector3S((short)q.Pos.X, (short)q.Pos.Y, (short)q.Pos.Z),
             Rotation = (short)(q.BodyYaw * 10f), Rotation2 = (short)(q.Yaw * 10f), SyncNumber = q.Cell,
-            Speed = new Ms2.Net.Packets.Vector3S(0, 0, (short)q.CamYaw), Unknown1 = 0, Unknown3 = 0,
+            Speed = new Ms2.Net.Packets.Vector3S(0, 0, (short)q.CamYaw), /* camera field: approximation, see LiveRecord doc */ Unknown1 = 0, Unknown3 = 0,
         };
         static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
         int ax = Axis(vx), ay = Axis(vy);
