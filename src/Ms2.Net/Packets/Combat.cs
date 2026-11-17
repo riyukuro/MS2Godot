@@ -103,3 +103,28 @@ public sealed record NpcStat(int ObjectId, byte Flag, byte Stat, long[] Values, 
         }
     }
 }
+
+/// <summary>
+/// Inbound 0x2E for a player (CSceneStateGame::OnStat, scenestategame.cpp:9424, then PCBase::vfunc_90): i32 object id, u8 command (0), u8 count.
+/// Writer: StatsPacket.Update(entity, attributes) / Init in the kms2525 server. count 35 (BASIC_TOTAL) = Init: every attribute in index order without
+/// the id byte; otherwise count x (u8 attribute, total, base, current), i64 for Health (4), i32 for the rest.
+/// </summary>
+public sealed record PlayerStat(int ObjectId, IReadOnlyDictionary<byte, long[]> Values) {
+    public const int Total = 35, Health = 4, Spirit = 7, Stamina = 10;
+    public static PlayerStat Read(ByteReader r) {
+        int id = r.ReadInt(); r.ReadByte(); int count = r.ReadByte();
+        var d = new Dictionary<byte, long[]>();
+        for (int n = 0; n < count; n++) {
+            byte a = count == Total ? (byte) n : r.ReadByte();
+            var v = new long[3];
+            for (int i = 0; i < 3; i++) v[i] = a == Health ? r.ReadLong() : (uint) r.ReadInt();
+            d[a] = v;
+        }
+        r.ExpectEnd("PlayerStat");
+        return new PlayerStat(id, d);
+    }
+    public bool TryGet(byte attribute, out long total, out long current) {
+        if (Values.TryGetValue(attribute, out var v)) { total = v[0]; current = v[2]; return true; }
+        total = current = 0; return false;
+    }
+}

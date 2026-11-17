@@ -16,7 +16,7 @@ namespace Ms2Godot.Ui;
 public partial class HudScene : Node
 {
     UiAssets assets;
-    readonly StubHudData data = new();
+    readonly StubHudData data = StubHudData.Instance;
     /// <summary>
     /// UIMessengerBrowser's chat log (m_logs, the last m_18c = 500 lines), the lines the output field holds (m_194 of them)
     /// and the lines not yet in it (m_pendingLogs).

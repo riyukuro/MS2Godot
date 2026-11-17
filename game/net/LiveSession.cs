@@ -20,6 +20,8 @@ public partial class LiveSession : Node
     public static bool Enabled => !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"))
                                   && !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT"));
     public static LiveSession Instance { get; private set; }
+    /// <summary>A live session is running: the field's offline npcs, mobs and portal walking stay off; the server's replace them.</summary>
+    public static bool Active => Instance != null;
 
     readonly byte[] machine = new byte[16];
     TcpTransport login, game;
@@ -29,6 +31,7 @@ public partial class LiveSession : Node
     int selfObject = -1;     // the own FieldAddUser object id
     byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
     Player player;           // the own player, once the field is built
+    RemoteLayer remote;      // the other players and npcs, once the field is built
     bool answered;           // ResponseFieldEnter sent for this entry
     public bool Busy { get; private set; }
 
@@ -36,10 +39,12 @@ public partial class LiveSession : Node
     {
         if (!Enabled || Instance != null) return;
         parent.AddChild(Instance = new LiveSession { Name = "LiveSession", ProcessMode = ProcessModeEnum.Always });
+        Field.Built += Instance.OnFieldBuilt;
     }
 
     public override void _ExitTree()
     {
+        Field.Built -= OnFieldBuilt;
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
     }
@@ -96,6 +101,23 @@ public partial class LiveSession : Node
         return m with { At = new Vec3(f.Position.X, f.Position.Y, f.Position.Z), RotZDeg = f.Rotation.Z, FieldKey = f.FieldKey };
     }
 
+    void OnFieldBuilt(Field field, ModelBuilder builder)
+    {
+        if (entry == null) return;
+        remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
+        GD.Print("live: remote layer ready");
+    }
+
+    /// <summary>The own Stat (0x2E; CSceneStateGame::OnStat, scenestategame.cpp:9424): health, spirit and stamina reach the HUD data.</summary>
+    void ApplyStat(PlayerStat st)
+    {
+        var hud = StubHudData.Instance;
+        if (st.TryGet(PlayerStat.Health, out long hm, out long hc)) { hud.Player.HpMax = (int)hm; hud.Player.HpCurrent = (int)hc; }
+        if (st.TryGet(PlayerStat.Spirit, out long sm, out long sc)) { hud.SpMax = (int)sm; hud.SpCurrent = (int)sc; }
+        if (st.TryGet(PlayerStat.Stamina, out long em, out long ec)) { hud.EpMax = (int)em; hud.EpCurrent = (int)ec; }
+        GD.Print($"live: Stat hp {hud.Player.HpCurrent}/{hud.Player.HpMax} sp {hud.SpCurrent}/{hud.SpMax} ep {hud.EpCurrent}/{hud.EpMax} ({st.Values.Count} attribute(s))");
+    }
+
     /// <summary>The field is built and shown: ResponseFieldEnter(field key) goes out. The client sends it when the map's entities are all created
     /// (CubeMapInformationService::FUN_1410cf5c0, cubemapinformationservice_3.cpp:5701-5705: the pending entity set is empty, then
     /// COutPacket ResponseFieldEnter with the world's field key).</summary>
@@ -140,7 +162,11 @@ public partial class LiveSession : Node
         {
             try
             {
-                if (p.Opcode == (ushort)Inbound.FieldAddUser)
+                bool own = p.Opcode == (ushort)Inbound.Stat && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
+                if (own) ApplyStat(PlayerStat.Read(p.Reader()));
+                else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
+                if (own) { }
+                else if (p.Opcode == (ushort)Inbound.FieldAddUser)
                 {
                     var u = FieldAddUser.Read(p.Reader());
                     bool self = u.User.CharacterId == entry.Enter.CharacterId;

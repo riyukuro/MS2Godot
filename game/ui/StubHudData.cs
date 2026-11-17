@@ -5,6 +5,8 @@ namespace Ms2Godot.Ui;
 /// <summary>HUD numbers until the field packets feed them: the player is a Ms2.Net <see cref="UserBlock"/> (the same block FieldAddUser carries).</summary>
 public sealed class StubHudData
 {
+    /// <summary>The one HUD data set: the HUD scenes read it and live mode writes the server's numbers into it.</summary>
+    public static StubHudData Instance { get; } = new();
     public UserBlock Player = new() { CharacterId = 1001, Name = "Player", Level = 21, Job = 1, JobCode = 1, HpMax = 981, HpCurrent = 981, Channel = 1, GearScore = 0 };
     public int SpMax = 100, SpCurrent = 100;
     public int EpMax = 120, EpCurrent = 120;

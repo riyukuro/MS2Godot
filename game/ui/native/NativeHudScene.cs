@@ -11,7 +11,7 @@ namespace Ms2Godot.Ui.Native;
 /// </summary>
 public partial class NativeHudScene : Node
 {
-    readonly StubHudData data = new();
+    readonly StubHudData data = StubHudData.Instance;
     string shotDir; int frames;
     NGameMenu menu;
 

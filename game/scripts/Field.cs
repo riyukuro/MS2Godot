@@ -137,7 +137,7 @@ public partial class Field : Node3D
         Restore();
         AddChild(contents);
         abandon = null;
-        contents.Start(map, fieldName, player, SpawnsLocalPlayer);
+        contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
         var hdr = new FieldHdr();
         cam = fd?.Camera ?? cam;
         hdr = fd?.Hdr ?? hdr;
@@ -163,6 +163,7 @@ public partial class Field : Node3D
         AddChild(camera);
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         OnFieldBuilt(builder, map, fieldName);
+        Built?.Invoke(this, builder);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
         if (player != null && Audio?.Footsteps is { } steps)
         {
@@ -300,6 +301,9 @@ public partial class Field : Node3D
     protected virtual string FieldNameFor(string defaultName) => defaultName;
     protected virtual bool SpawnsLocalPlayer => true;
     protected virtual void OnFieldBuilt(ModelBuilder builder, FieldMap map, string fieldName) { }
+    /// <summary>Raised after the field is built (live mode adds its remote players and npcs here).</summary>
+    public static event Action<Field, ModelBuilder> Built;
+    public PackSet Packs => packs;
 
     protected FieldAudio Audio;
     protected World.QuestGuide Quest;
