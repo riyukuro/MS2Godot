@@ -66,6 +66,7 @@ public partial class HudScene : Node
     public override void _ExitTree() => GetWindow().ContentScaleMode = outerScaleMode;
 
     CanvasLayer hudLayer; Node[] worldUi = System.Array.Empty<Node>();   // the HUD layer and the world-anchored UI layers
+    PortraitView portrait;          // the menu's face portrait, handed to the next build on a relayout
     bool relayoutQueued;
 
     /// <summary>
@@ -982,7 +983,7 @@ public partial class HudScene : Node
         // configUI hides the quest and pet attack buttons; no pet (initPetInfo) and no contract (initContract(true)) for now
         Hide(r, "m_quest", "m_petInfo", "m_petAttack", "m_contract");
         // OnLoadComplete -> LoadRenderTarget: the face portrait (faceView) in m_renderTarget
-        if (DialogBody(r) is { } faceBody) PortraitView.Attach(faceBody, faceBody.Direct("m_renderTarget"), assets.Packs, Settings.NifXml);
+        if (DialogBody(r) is { } faceBody) portrait = PortraitView.Attach(faceBody, faceBody.Direct("m_renderTarget"), assets.Packs, Settings.NifXml, portrait);
         var menus = r.FindClip("m_menus");
         if (menus == null) return;
         // RefreshMenu -> addMenuEntity per top item; SystemDropDownContainer.addEntity builds the entry class, sets the icon

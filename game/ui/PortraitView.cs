@@ -34,13 +34,17 @@ public sealed partial class PortraitView : Node2D
     int head = -1;
 
     /// <summary>Builds the portrait into <paramref name="target"/> (m_renderTarget), clipped by the mask child of
-    /// <paramref name="body"/> that covers it. Null when the model cannot be built.</summary>
-    public static PortraitView Attach(MovieClipNode body, MovieClipNode.Child target, PackSet packs, string nifXml)
+    /// <paramref name="body"/> that covers it. Null when the model cannot be built. With <paramref name="reuse"/> (the
+    /// portrait of the previous build, on a HUD relayout) its render view, copy and camera move over instead of being
+    /// built again: the client keeps the portrait PC across a resize (CreatePortraitPC runs when the own user is added), so
+    /// its idle runs on.</summary>
+    public static PortraitView Attach(MovieClipNode body, MovieClipNode.Child target, PackSet packs, string nifXml, PortraitView reuse = null)
     {
         if (target?.Node is not MovieClipNode rt || string.IsNullOrEmpty(nifXml)) return null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var pv = new PortraitView { Name = "PortraitView" };
-        if (!pv.BuildModel(packs, nifXml)) return null;
+        bool reused = reuse != null && IsInstanceValid(reuse) && pv.Adopt(reuse);
+        if (!reused && !pv.BuildModel(packs, nifXml)) return null;
 
         // the mask: the masking child whose clip depth covers the target's depth
         int depth = (int)target.Def["depth"];
@@ -59,8 +63,19 @@ public sealed partial class PortraitView : Node2D
             TextureFilter = TextureFilterEnum.Linear,
         });
         rt.AddChild(pv);
-        GD.Print($"portrait: built in {sw.ElapsedMilliseconds} ms");
+        GD.Print($"portrait: {(reused ? "reused" : "built")} in {sw.ElapsedMilliseconds} ms");
         return pv;
+    }
+
+    /// <summary>Takes over <paramref name="old"/>'s render view and model; the old portrait no longer drives the camera.</summary>
+    bool Adopt(PortraitView old)
+    {
+        if (old.view == null || !IsInstanceValid(old.view) || old.head < 0) return false;
+        view = old.view; camera = old.camera; copy = old.copy; skeleton = old.skeleton; head = old.head;
+        old.RemoveChild(view);
+        AddChild(view);
+        old.view = null; old.head = -1;
+        return true;
     }
 
     bool BuildModel(PackSet packs, string nifXml)
