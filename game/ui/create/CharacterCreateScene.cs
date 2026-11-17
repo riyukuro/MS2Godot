@@ -16,7 +16,7 @@ namespace Ms2Godot.Ui.Create;
 /// A change of field reloads this scene (the page, job and gender carry over in static state).
 /// User args (after --): --page select|create, --job CODE, --gender male|female, --shots DIR (scripted shots, then quit).
 /// </summary>
-public partial class CharacterCreateScene : Field
+public partial class CharacterCreateScene : LobbyFieldScene
 {
     enum Page { Select, Create }
 
@@ -67,12 +67,8 @@ public partial class CharacterCreateScene : Field
     UiWidgets.MouseRouter mouse, listMouse;
     ModelBuilder builder;
     FieldMap map;
-    Node3D preview;
-    Vector3 spawnPos, spawnFace = Vector3.Back;
     string shotDir;
     int frame;
-
-    protected override bool SpawnsLocalPlayer => false;
 
     protected override string FieldNameFor(string defaultName)
     {
@@ -100,14 +96,7 @@ public partial class CharacterCreateScene : Field
     protected override void OnFieldBuilt(ModelBuilder builder, FieldMap map, string fieldName)
     {
         this.builder = builder; this.map = map;
-        PlaceCamera(map);
-        var sp = map.Entities.FirstOrDefault(e => e.ModelName == "SpawnPointPC");
-        if (sp != null)
-        {
-            spawnPos = FieldBuilder.ToGodotPoint(sp.Position);
-            double yaw = sp.RotationDeg.Z * Math.PI / 180;
-            spawnFace = FieldBuilder.ToGodotPoint(new Vec3(Math.Sin(yaw), -Math.Cos(yaw), 0));
-        }
+        PlaceLobby(map);
         GD.Print($"character create: {page} page, field {fieldName}, job {job}, gender {gender}");
 
         assets = new UiAssets(packs);
@@ -115,23 +104,6 @@ public partial class CharacterCreateScene : Field
         AddChild(layer);
         if (page == Page.Select) BuildSelect();
         else BuildCreate();
-    }
-
-    /// <summary>The field's Camera0 entity: a Gamebryo camera looks along its local +X with +Y up; the FOV is vertical.</summary>
-    void PlaceCamera(FieldMap map)
-    {
-        var e = map.Entities.FirstOrDefault(x => x.ModelName == "Camera" && x.Name == "Camera0") ?? map.Entities.FirstOrDefault(x => x.ModelName == "Camera");
-        if (e == null || camera == null) return;
-        var t = e.Transform;
-        var origin = t.Apply(new Vec3(0, 0, 0));
-        var eye = FieldBuilder.ToGodotPoint(origin);
-        var dir = FieldBuilder.ToGodotPoint(t.Apply(new Vec3(1, 0, 0))) - eye;
-        var up = FieldBuilder.ToGodotPoint(t.Apply(new Vec3(0, 1, 0))) - eye;
-        camera.Fov = (float)e.Number("FOV", 40);
-        camera.Near = 10;
-        RasterOrigin();   // the frustum window follows the new near plane and FOV
-        camera.LookAtFromPosition(eye, eye + dir.Normalized(), up.LengthSquared() > 1e-6f ? up.Normalized() : Vector3.Up);
-        GD.Print($"camera {e.Name}: eye {eye} dir {dir.Normalized()} fov {camera.Fov}");
     }
 
     /// <summary>The window in pixels (LobbyLayout.UseWindowPixels), its UI scale and movie stage (LobbyLayout).</summary>
@@ -223,16 +195,11 @@ public partial class CharacterCreateScene : Field
     {
         if (custom == null) return;
         gender = custom.Look.Gender;
-        preview?.QueueFree();
+        ClearPreview();
         try
         {
             var (visual, anim) = custom.Look.Build(builder);
-            preview = new Node3D { Name = "Preview" };
-            preview.AddChild(visual);
-            AddChild(preview);
-            preview.GlobalPosition = spawnPos;
-            visual.Rotation = new Vector3(0, Mathf.Atan2(spawnFace.X, spawnFace.Z), 0);
-            anim.Play("idle");
+            ShowPreview(visual, anim);
         }
         catch (Exception ex) { GD.PushWarning("preview: " + ex.Message); }
     }
