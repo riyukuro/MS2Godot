@@ -150,9 +150,11 @@ public partial class HudScene : Node
             ui.AddChild(mapClip);
         }
         var r = Place(ui, "uiminimapdialog", 1f, origin);
-        Hide(r, "m_controller", "m_resize", "m_sliderani", "m_panel", "m_mask", "m_report");    // m_report: reportVisible is off in the reference
+        Hide(r, "m_controller", "m_resize", "m_sliderani", "m_report");    // m_report: reportVisible is off in the reference
+        if (r.FindClip("m_maxpanel") is { } maxPanel) Hide(maxPanel, "m_panel", "m_mask");     // the map panel's own (the list row keeps its panel)
         r.FindClip("m_channel")?.SetText($"Ch. {data.Player.Channel}");
         r.FindClip("m_fieldname")?.SetText(data.FieldName);
+        MinimapPlayers(r);
         if (tex != null)
         {
             mapPlayer = MinimapEntities.Create(r.Movie, "player", "idle", u);
@@ -161,6 +163,33 @@ public partial class HudScene : Node
             var guide = new Node2D { Name = "m_guide", Position = MapMaskPos };
             r.AddChild(guide);
             mapImage.AddChild(new MinimapPlaces(r.Movie, mapInfo, assets.Packs, mapImage.Size, u, guide, new Rect2(MapMaskPos, MapMaskSize)));     // portals and npcs (MinimapPlaces.cs)
+        }
+    }
+
+    /// <summary>
+    /// The minimap's player row (m_players, MinimapDialogPlayers). UIMinimapDialog::AddProxy sends createPlayer for every
+    /// other player and for the player itself, with BuildPlayerData's imgpath: the character's UGC profile image, or
+    /// CommonResource m_strDefaultProfileImagePath (table/commonResource.xml DEFAULT_PROFILE_IMAGE_PATH) when it has none
+    /// (ugcimagepath.cpp FUN_141028be0). BuildEntities ends with buildPlayers, which fills m_playerlist (a TileCacheList of
+    /// minimap_renderer_players, 42 x 42, spacing 1, no padding, at the list's top left) and shows the row. The player here
+    /// has no profile image and is alone in the field. ProfileRenderer loads the image into m_profile and sizes it to the
+    /// renderer less twice m_profile's offset (configUI, Common.loadCompleteImage).
+    /// </summary>
+    void MinimapPlayers(MovieClipNode r)
+    {
+        var players = r.FindClip("m_players");
+        var list = players?.Direct("m_playerlist");
+        var path = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value");
+        const string imageRoot = "./Data/Resource/Image/";
+        var tex = path != null && path.StartsWith(imageRoot, StringComparison.OrdinalIgnoreCase) ? assets.ImageFile(path[imageRoot.Length..]) : null;
+        var item = list == null ? null : r.Movie.BuildClass("minimap_renderer_players", u);
+        if (item == null) return;
+        item.Position = list.Base.Origin;                       // the first tile at the list's top left (padding 0)
+        players.AddChild(item);
+        if (tex != null && item.Direct("m_profile") is { Node: MovieClipNode profile } pc)
+        {
+            var size = (item.Bounds.Size == Vector2.Zero ? new Vector2(42, 42) : item.Bounds.Size) - pc.Base.Origin * 2;     // m_imgwidth, m_imgheight
+            profile.AddChild(new Sprite2D { Texture = tex, Centered = false, Scale = size / tex.GetSize() });
         }
     }
 
