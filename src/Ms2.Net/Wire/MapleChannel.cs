@@ -35,7 +35,7 @@ public sealed class MapleChannel {
     /// <summary>Reads the plain handshake frame and sets up both ciphers.</summary>
     public async Task<Handshake> ReadHandshakeAsync(CancellationToken ct = default) {
         while (true) {
-            if (Handshake.TryParse(buf.AsSpan(0, have), out var hs, out int used)) {
+            if (Handshake.TryParse(buf.AsSpan(0, have), out var hs, out int used, Profile)) {
                 Consume(used);
                 Hello = hs;
                 (enc, dec) = hs.CreateCiphers();

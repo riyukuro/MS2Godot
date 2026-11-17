@@ -4,16 +4,18 @@ namespace Ms2.Net.Wire;
 
 /// <summary>The server's first frame, sent in the clear: u16 seqbase, i32 len, then u16 op=1, u32 version, u32 riv, u32 siv, u32 blockIV, u8 patch.</summary>
 public readonly record struct Handshake(uint Version, uint ServerRecvIv, uint ServerSendIv, uint BlockIv, byte PatchType) {
-    public static uint ClientVersion => ProtocolProfile.Default.Version; // 0x9dd, CNetworkService::OnRequestVersion checks it
+    /// <summary>The client version a channel answers the hello with (CNetworkService::OnRequestVersion checks it): the channel's profile, not the default.</summary>
+    public static uint ClientVersion(ProtocolProfile profile) => profile.Version;
 
-    public static bool TryParse(ReadOnlySpan<byte> frame, out Handshake hs, out int consumed) {
+    public static bool TryParse(ReadOnlySpan<byte> frame, out Handshake hs, out int consumed, ProtocolProfile profile = null) {
+        profile ??= ProtocolProfile.Default;
         hs = default; consumed = 0;
         if (frame.Length < 6) return false;
         int len = BitConverter.ToInt32(frame.Slice(2, 4));
         if (len < 0 || len > 1024) throw new InvalidDataException($"handshake length {len}");
         if (frame.Length < 6 + len) return false;
         var p = frame.Slice(6, len);
-        if (len < 19 || BitConverter.ToUInt16(p) != (ushort) Inbound.RequestVersion) throw new InvalidDataException("not a RequestVersion frame");
+        if (len < 19 || !profile.Is(BitConverter.ToUInt16(p), Inbound.RequestVersion)) throw new InvalidDataException("not a RequestVersion frame");
         hs = new Handshake(BitConverter.ToUInt32(p.Slice(2)), BitConverter.ToUInt32(p.Slice(6)), BitConverter.ToUInt32(p.Slice(10)),
             BitConverter.ToUInt32(p.Slice(14)), p[18]);
         consumed = 6 + len;

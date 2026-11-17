@@ -42,7 +42,7 @@ public sealed class LoginClient {
                 await Task.Delay(5, ct);
                 continue;
             }
-            switch ((Inbound) p.Opcode) {
+            if (transport.OpOf(p) is Inbound lop) switch (lop) {
                 case Inbound.RequestLogin:
                     await transport.SendAsync(new ResponseLogin(CharacterListType, user, password, 0, machineId, 0, 0, "en"), ct);
                     break;

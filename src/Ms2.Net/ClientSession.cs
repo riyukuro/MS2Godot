@@ -1,3 +1,4 @@
+using Maple2.PacketLib.Tools;
 using System.Diagnostics;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
@@ -22,7 +23,29 @@ public sealed class ClientSession {
     public int ReceivedCount { get; private set; }
 
     public MapleChannel Channel => channel;
+    /// <summary>CMainSystem::GetElapsedTime: milliseconds since this client started (the second tick of UserSync).</summary>
     public int ElapsedMs => (int) clock.ElapsedMilliseconds;
+
+    int serverTickBase, localTickBase, timeSyncSeq;
+    /// <summary>True once the server has sent a time sync (SetServerTickBase has been called).</summary>
+    public bool HasServerTick { get; private set; }
+
+    /// <summary>
+    /// CMainSystem::GetServerTick (mainsystem.cpp:312): local tick - m_dwLocalTickBase + m_iServerTickBase. The base is set by
+    /// OnTimeSyncResponse (networkservice.cpp, SetServerTickBase mainsystem.cpp:350) from the tick the server sends
+    /// (kms2525 TimeSyncPacket.cs writes Environment.TickCount). Before the first sync it is the elapsed time.
+    /// </summary>
+    public int ServerTick => HasServerTick ? ElapsedMs - localTickBase + serverTickBase : ElapsedMs;
+
+    /// <summary>Applies a time sync command (ResponseTimeSync body); returns true when the client must answer with a RequestTimeSync.</summary>
+    public bool ApplyTimeSync(ByteReader r) {
+        byte cmd = r.ReadByte();
+        if (cmd == 2) return true;
+        if (cmd > 1) return false;
+        int time = r.ReadInt();
+        serverTickBase = time; localTickBase = ElapsedMs; HasServerTick = true;
+        return cmd == 1;
+    }
 
     public ClientSession(MapleChannel channel) { this.channel = channel; }
 
@@ -30,12 +53,12 @@ public sealed class ClientSession {
     public async Task RunAsync(CancellationToken ct = default, ResponseVersion hello = null) {
         await channel.ReadHandshakeAsync(ct);
         ReceivedCount = 1;
-        await channel.SendAsync(hello ?? new ResponseVersion(), ct);
+        await channel.SendAsync(hello ?? new ResponseVersion(Handshake.ClientVersion(channel.Profile)), ct);
         while (!ct.IsCancellationRequested) {
             var p = await channel.ReadPacketAsync(ct);
             ReceivedCount++;
             lock (OpcodeCounts) OpcodeCounts[p.Opcode] = OpcodeCounts.GetValueOrDefault(p.Opcode) + 1;
-            switch ((Inbound) p.Opcode) {
+            if (channel.Profile.TryInbound(p.Opcode, out var op)) switch (op) {
                 case Inbound.Ping:
                     Ping.Read(p.Reader());
                     await channel.SendAsync(new Pong(ReceivedCount), ct);
@@ -45,6 +68,9 @@ public sealed class ClientSession {
                     break;
                 case Inbound.RequestClientTickSync:
                     await channel.SendAsync(new ResponseClientTickSync(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
+                    break;
+                case Inbound.ResponseTimeSync:
+                    if (ApplyTimeSync(p.Reader())) await channel.SendAsync(new RequestTimeSync(++timeSyncSeq), ct);
                     break;
             }
             PacketReceived?.Invoke(p);

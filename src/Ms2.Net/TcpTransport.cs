@@ -21,10 +21,18 @@ public sealed class TcpTransport : IDisposable {
     /// <summary>Received packets in arrival order; TryDequeue from the consumer thread.</summary>
     public ConcurrentQueue<RawPacket> Incoming { get; } = new();
 
-    /// <summary>Set once the read loop has ended (stream closed, error or Dispose); null for a clean Dispose.</summary>
+    /// <summary>The read loop's error when it ended on its own (stream closed by the peer, socket error, bad frame); null while open, after a
+    /// clean Dispose, and when Dispose raced the error (the loop then ends by cancellation or a disposed socket, which is not a failure).
+    /// <see cref="IsClosed"/> is true after either, and as soon as Dispose is called.</summary>
     public Exception Failure { get; private set; }
     public bool IsClosed => Volatile.Read(ref closed) != 0;
     public event Action Closed;
+
+    /// <summary>The opcode numbers this connection speaks (the channel's profile).</summary>
+    public ProtocolProfile Profile => session?.Channel.Profile ?? ProtocolProfile.Default;
+    /// <summary>The named inbound op of a packet under this connection's profile; null for a number the profile does not know.</summary>
+    public Inbound? OpOf(RawPacket p) => Profile.TryInbound(p.Opcode, out var op) ? op : null;
+    public bool Is(RawPacket p, Inbound op) => Profile.Is(p.Opcode, op);
 
     public ClientSession Session => session;
     public MapleChannel Channel => session?.Channel;
@@ -41,7 +49,7 @@ public sealed class TcpTransport : IDisposable {
     async Task RunAsync(MapleChannel channel) {
         try { await session.RunAsync(cts.Token); }
         catch (OperationCanceledException) { }
-        catch (Exception e) when (!cts.IsCancellationRequested) { Failure = e; }
+        catch (Exception e) { if (!cts.IsCancellationRequested && Volatile.Read(ref disposed) == 0) Failure = e; }   // after Dispose the socket error is expected: swallowed here, so the task never faults
         finally {
             Volatile.Write(ref closed, 1);
             try { Closed?.Invoke(); } catch { }
@@ -58,6 +66,6 @@ public sealed class TcpTransport : IDisposable {
         tcp.Dispose();   // unblocks a pending read
         // no wait: the read task ends by itself (its socket is closed) and releases the token source then
         if (run == null || run.IsCompleted) cts.Dispose();
-        else run.ContinueWith(_ => cts.Dispose(), TaskScheduler.Default);
+        else run.ContinueWith(t => { _ = t.Exception; cts.Dispose(); }, TaskScheduler.Default);   // reads t.Exception: RunAsync swallows its errors, but an unobserved one must never reach UnobservedTaskException
     }
 }

@@ -36,8 +36,8 @@ public sealed class GameClient {
         await login.SendAsync(new SelectCharacter(characterId, channel), ct);
         while (true) {
             var p = await NextAsync(login, timeoutMs, ct);
-            if (p.Opcode == (ushort) Inbound.LoginToGame) return LoginToGame.Read(p.Reader());
-            if (p.Opcode == (ushort) Inbound.MoveResult) throw new InvalidDataException("select refused, move error " + MoveResult.Read(p.Reader()).Error);
+            if (login.Is(p, Inbound.LoginToGame)) return LoginToGame.Read(p.Reader());
+            if (login.Is(p, Inbound.MoveResult)) throw new InvalidDataException("select refused, move error " + MoveResult.Read(p.Reader()).Error);
         }
     }
 
@@ -51,7 +51,7 @@ public sealed class GameClient {
             ServerEnter enter = null; SyncNumber sync = null;
             while (true) {
                 var p = await NextAsync(game, timeoutMs, ct);
-                switch ((Inbound) p.Opcode) {
+                if (game.OpOf(p) is Inbound gop) switch (gop) {
                     case Inbound.RequestKey:
                         await game.SendAsync(new ResponseKey(accountId, go.Token, machineId), ct); break;
                     case Inbound.MoveResult: {
