@@ -31,7 +31,17 @@ public partial class Field : Node3D
     float stepTime;
     int shotSettle = -1;
 
-    public override void _Ready()
+    public override async void _Ready()
+    {
+        try { await LoadField(); }
+        catch (Exception ex)
+        {
+            GD.PushError("field load: " + ex);
+            if (!IsLoaded) EndLoad();               // what was built is shown, as when the build ran in one frame
+        }
+    }
+
+    async System.Threading.Tasks.Task LoadField()
     {
         string fieldName = FieldNameFor("02000001_tw_tria");
         var args = OS.GetCmdlineUserArgs();
@@ -56,6 +66,8 @@ public partial class Field : Node3D
         GlowPass.Wanted = OS.GetEnvironment("MS2_NOGLOW") != "1";   // glow twins are built only for a field with the glow pass
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = PackSet.Shared(data);
+        BeginLoad();
+        if (coverStarted) await NextFrame();         // the new loading screen enters the tree and is drawn before the build
         AssetIndex.Prefetch(packs);
         packs.Prefetch("Resource/Exported", "Resource/Model/Map", "Resource/Model/Effect", "Resource/Model/Npc", "Resource/Model/Textures", "Resource/Image", "Resource/Model/Character", "Resource/Model/Item");   // every field's build opens these; their indexes open side by side
         World.FieldContents.Prefetch(packs);   // the npc and region spawn tables
@@ -64,8 +76,10 @@ public partial class Field : Node3D
         var builder = new ModelBuilder(spec, packs);
         var assets = AssetIndex.For(packs);
         var flats = new FlatLibrary(packs);
+        await Budget();
         var map = FieldMap.Load(packs, flats, fieldName);
         long tMap = sw.ElapsedMilliseconds;
+        await Budget();
         FieldData fd = null;
         try { fd = FieldData.FindByXBlock(packs, fieldName); }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
@@ -73,20 +87,36 @@ public partial class Field : Node3D
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
-        var fieldWorld = fb.Build(map);
+        int shownPct = -1;
+        contents.Load.Changed += (c, t) =>
+        {
+            int pct = t > 0 ? (int)((double)c / t * 100) : 0;
+            if (pct != shownPct) { shownPct = pct; World.FieldContents.CoverProgress(c, t); }
+        };
+        await Budget();
+        foreach (var _ in fb.BuildSteps(map)) await Budget();
+        var fieldWorld = fb.World;
         AddChild(fieldWorld);
         AddChild(new AlphaSort(fb.AlphaEntries, fieldWorld));   // the client's alpha key on the field's blended draws
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         long tBuild = sw.ElapsedMilliseconds;
+        await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
         GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}), " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
         BuildEnvironment(map, fieldName);
+        await Budget();
         GD.Print($"MS2Godot lights: {FieldLights.Add(this, map)}");
+        await Budget();
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
+        await Budget();
+        // From here to the end of the load, one frame: FieldContents.Start adopts the loading screen into the field, so no
+        // frame is drawn between it and Loaded. The field is enabled again first, as it was throughout the one-frame build:
+        // its colliders are back in the physics space for what follows (the camera's near-plane test in its first placement).
+        Restore();
         AddChild(contents);
         contents.Start(map, fieldName, player, SpawnsLocalPlayer);
         var hdr = new FieldHdr();
@@ -140,6 +170,91 @@ public partial class Field : Node3D
             script.Enqueue((3.0f, new Vector2(-1, 0.3f), false, "field_run_left.png"));
             script.Enqueue((1.0f, Vector2.Zero, false, "field_idle_end.png"));
         }
+        EndLoad();
+    }
+
+    // ---- the field load across frames, behind the loading screen ----------------------------------------------------
+    //
+    // The client builds the world over several frames while the loading screen keeps drawing: LoadMap pauses the scene
+    // graph's update (MS2SceneGraphService::SetPauseUpdate(1)) and requests the block (WorldService m_state 2), the
+    // entities enter the world as their NIFs finish loading on the asset loader thread (each OwnedEntityEnterWorld moves
+    // the loading percent), and at elr_EntityCreationCompleted (m_state 4) FUN_141bcda90 runs the field's one-shot setup
+    // and resumes the update; IsLoadingComplete (FUN_141bcfbd0) is m_state 4 with m_2b4. Godot creates nodes on the main
+    // thread only, so here the build gives the frame back whenever it has run BudgetMs: the same steps in the same order,
+    // with the field hidden and paused (process, physics and input off, colliders out of the physics space, its canvas
+    // layers hidden) at every frame boundary. The last frame enables and shows it again, runs FieldContents.Start and the
+    // camera, HUD and audio setup, and raises Loaded (LoadComplete), so everything after the world build runs in one frame
+    // as before. The loading screen is not in the field while it loads (FieldContents.CoverLoad), so hiding the field
+    // never hides it.
+
+    /// <summary>Main-thread time a field load takes per frame before it gives the frame back.</summary>
+    const long BudgetMs = 10;
+    readonly System.Diagnostics.Stopwatch frameClock = new();
+    ProcessModeEnum loadProcessMode;
+    bool loadVisible;
+    readonly List<CanvasLayer> hiddenLayers = new();
+
+    /// <summary>True once the field is built (the client's IsLoadingComplete); false while a field load is under way.</summary>
+    public static bool LoadComplete { get; private set; }
+    /// <summary>Raised once, when the whole field is built and shown.</summary>
+    public event Action Loaded;
+    public bool IsLoaded { get; private set; }
+
+    void BeginLoad()
+    {
+        LoadComplete = false;
+        began = true;
+        loadProcessMode = ProcessMode;
+        loadVisible = Visible;
+        ProcessMode = ProcessModeEnum.Disabled;     // no process, physics or input below the field while it builds
+        Visible = false;
+        coverStarted = World.FieldContents.CoverLoad(packs, this);
+        staged = World.FieldContents.Covered;
+        frameClock.Restart();
+    }
+    bool coverStarted, staged;
+
+    /// <summary>Gives the frame back once this frame's share of the load has run; the field stays hidden meanwhile. Only
+    /// behind a loading screen: a field built without one (no move: the character creation scene, a replay, a dev run)
+    /// is built in one frame as before, with nothing drawn until it is whole.</summary>
+    async System.Threading.Tasks.Task Budget()
+    {
+        if (!staged || frameClock.ElapsedMilliseconds < BudgetMs) return;
+        await NextFrame();
+    }
+
+    async System.Threading.Tasks.Task NextFrame()
+    {
+        HideLayers();
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        World.FieldContents.TickCover();
+        frameClock.Restart();
+    }
+
+    /// <summary>A Node3D's visibility does not reach canvas layers: the field's own (the backdrop) are hidden one by one.</summary>
+    void HideLayers()
+    {
+        foreach (var n in FindChildren("*", nameof(CanvasLayer), true, false))
+            if (n is CanvasLayer l && l.Visible) { l.Visible = false; hiddenLayers.Add(l); }
+    }
+
+    bool began, restored;
+    void Restore()
+    {
+        if (!began || restored) return;
+        restored = true;
+        foreach (var l in hiddenLayers) if (IsInstanceValid(l)) l.Visible = true;
+        hiddenLayers.Clear();
+        Visible = loadVisible;
+        ProcessMode = loadProcessMode;
+    }
+
+    void EndLoad()
+    {
+        Restore();
+        IsLoaded = true;
+        LoadComplete = true;
+        Loaded?.Invoke();
     }
 
     // Hooks for scenes that build on the field (the replay scene in net/): the field to load, whether the walkable player

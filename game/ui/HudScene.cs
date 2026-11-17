@@ -937,6 +937,7 @@ public partial class HudScene : Node
     int tick;
     public override void _Process(double delta)
     {
+        if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (mapImage != null && ++tick % 6 == 1) UpdateMinimap();
         target?.Process(delta);
         if (shotDir == null) return;

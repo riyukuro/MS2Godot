@@ -187,9 +187,11 @@ public partial class GameFlow : Node
         PlacePicture();
         loadingFrames++;
         if (loadingFrames == 4) GetTree().ChangeSceneToFile(GameScene);
-        else if (loadingFrames > 4 && GetTree().CurrentScene?.SceneFilePath == GameScene && loadingFrames > 8)
+        else if (loadingFrames > 4 && GetTree().CurrentScene?.SceneFilePath == GameScene
+                 && (World.FieldContents.CoverUp || Field.LoadComplete))
         {
-            loadingLayer.Visible = false;            // the field's own cover (same picture) fades out from here
+            // the field's own cover (same picture) is up and drawn this frame, or the field is already built: hand over
+            loadingLayer.Visible = false;
             loadingFrames = -1;
             Current = State.Game;
             GD.Print("flow: Loading -> Game");

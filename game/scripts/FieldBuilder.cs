@@ -113,6 +113,21 @@ public sealed class FieldBuilder
 
     public Node3D Build(FieldMap map)
     {
+        foreach (var _ in BuildSteps(map)) { }
+        return World;
+    }
+
+    /// <summary>The finished field from <see cref="BuildSteps"/>.</summary>
+    public Node3D World { get; private set; }
+
+    /// <summary>
+    /// <see cref="Build"/> in steps: it yields after each entity of the first pass and after each instancing group, so a
+    /// caller can spread the build over frames (Field: the field load behind the loading screen). The nodes are built off
+    /// the tree; <see cref="World"/> holds the result once the sequence ends.
+    /// </summary>
+    public IEnumerable<int> BuildSteps(FieldMap map)
+    {
+        World = null;
         Load?.Begin(map.Entities.Count);
         var world = new Node3D { Name = "World", Transform = ZupToYup };
         var visuals = new Node3D { Name = "Visuals" };
@@ -151,6 +166,7 @@ public sealed class FieldBuilder
 
         foreach (var e in map.Entities)
         {
+            yield return 0;                             // (before the entity: its paths may end with continue)
             bool grouped = false;
             try
             {
@@ -306,9 +322,10 @@ public sealed class FieldBuilder
                 foreach (var b in ownBlended) b.CustomAabb = box;
             }
             Load?.Add(ents.Count);                      // the group's entities are placed
+            yield return 0;
         }
         FlushShadowCells(visuals);
-        return world;
+        World = world;
     }
 
     /// <summary>Edge of a shadow caster cell, game units.</summary>

@@ -168,6 +168,59 @@ public partial class FieldContents : Node3D
         GD.Print($"arrived at portal {p.Id} ({p.Entity.Name}) from field {move.FromFieldId}, ms2 {p.Position}");
     }
 
+    /// <summary>The loading screen last started (by <see cref="CoverLoad"/> or a portal move), while it is up.</summary>
+    static LoadingProgressLogic shownCover;
+    /// <summary>True while a field's loading screen covers the screen (GameFlow hands its first-entry picture over to it).</summary>
+    public static bool CoverUp => shownCover != null && shownCover.Active && GodotObject.IsInstanceValid(shownCover.Layer) && shownCover.Layer.IsVisibleInTree();
+
+    /// <summary>
+    /// The start of a field load: the loading screen comes up before the field is built (WorldService::FUN_141bbc1d0 puts
+    /// up LoadBackgroundMovie before EntityWorldManager::LoadMap). A portal move's cover is already up and carried at the
+    /// tree root. A move without one (first entry) starts it here with the move's picture and tip, at the tree root, outside
+    /// the field that is being built and kept hidden. Start adopts it either way (BuildOverlay). No move, no loading screen. True when it started one here.
+    /// </summary>
+    public static bool CoverLoad(PackSet packs, Node any)
+    {
+        if (carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay)) return false;
+        carried = default;
+        if (Travel.Pending == null) return false;
+        var root = any.GetTree().Root;
+        var overlay = new CanvasLayer { Layer = 100, Name = "Loading" };
+        // the root is busy while the scene that holds the field enters it: the layer goes in at the end of this frame's
+        // process, before the frame is drawn (the field waits a frame for it)
+        root.CallDeferred(Node.MethodName.AddChild, overlay);
+        LoadingProgressLogic cover;
+        try
+        {
+            cover = new LoadingProgressLogic(Ui(packs));
+            overlay.AddChild(cover.Layer);
+        }
+        catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); carried = (overlay, null); return true; }
+        var start = new LoadingProgressLogic.Start { Picture = Travel.LoadingImage != null ? LoadPicture(packs, Travel.LoadingImage) : null, Tip = Travel.LoadingTip ?? "", ShowGuide = true };
+        if (start.Picture == null) start.ScreenShot = ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage());
+        cover.StartProgress(start, root.GetViewport().GetVisibleRect().Size);
+        shownCover = cover;
+        carried = (overlay, cover);
+        return true;
+    }
+
+    /// <summary>True while a loading screen is carried for the field being built (one started by CoverLoad or a portal move's).</summary>
+    public static bool Covered => carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay);
+
+    /// <summary>While the field loads: the carried loading screen's own per-frame work (its stage size), nothing else.</summary>
+    public static void TickCover()
+    {
+        if (carried.Overlay == null || !GodotObject.IsInstanceValid(carried.Overlay) || !carried.Overlay.IsInsideTree()) return;
+        carried.Loading?.SetStageSize(carried.Overlay.GetViewport().GetVisibleRect().Size);
+    }
+
+    /// <summary>While the field loads: the entity count on the carried loading screen (UILoadingProgress::SetProgress).</summary>
+    public static void CoverProgress(int count, int total)
+    {
+        if (carried.Overlay == null || !GodotObject.IsInstanceValid(carried.Overlay)) return;
+        carried.Loading?.Progress(count, total);
+    }
+
     /// <summary>The loading screen layer; true when it is the cover a field move carried over from the previous field.</summary>
     bool BuildOverlay()
     {
@@ -209,6 +262,7 @@ public partial class FieldContents : Node3D
         var start = new LoadingProgressLogic.Start { Picture = image != null ? LoadPicture(image) : null, Tip = tip ?? "", ShowGuide = true };
         if (start.Picture == null) start.ScreenShot = screenShot ?? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
         loading.StartProgress(start, GetViewport().GetVisibleRect().Size);
+        shownCover = loading;
     }
 
     /// <summary>
@@ -237,7 +291,9 @@ public partial class FieldContents : Node3D
         RenderingServer.FramePostDraw += Captured;
     }
 
-    Texture2D LoadPicture(string entry)
+    Texture2D LoadPicture(string entry) => LoadPicture(packs, entry);
+
+    static Texture2D LoadPicture(PackSet packs, string entry)
     {
         try
         {
