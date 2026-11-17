@@ -91,8 +91,9 @@ public partial class FieldAudio : Node
         Unchain();
         System.Threading.Tasks.Task.Run(() =>
         {
-            var intro = p.Intro != null ? MpegDecoder.Decode(p.Intro) : null;
-            var loop = MpegDecoder.Decode(p.Loop);
+            var intro = p.Intro != null ? SafeDecode.Decode(p.Intro) : null;
+            var loop = SafeDecode.Decode(p.Loop);
+            if (loop == null) return;   // undecodable loop: the cue stays silent (warning logged)
             Callable.From(() => StartMusic(p, intro, loop)).CallDeferred();
         });
         return true;
@@ -188,9 +189,10 @@ public partial class FieldAudio : Node
         if (clip == null) return false;
         if (!decoded.TryGetValue(clip.Name, out var wav))
         {
-            var pcm = MpegDecoder.Decode(clip);
-            decoded[clip.Name] = wav = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
+            var pcm = SafeDecode.Decode(clip);
+            decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
         }
+        if (wav == null) return false;
         var v = voices3d[nextVoice3d++ % voices3d.Length];
         if (v == null) { v = voices3d[(nextVoice3d - 1) % voices3d.Length] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; AddChild(v); }
         v.Stream = wav;
@@ -205,7 +207,9 @@ public partial class FieldAudio : Node
 
     void PlayClip(SoundClip clip)
     {
-        ui.Stream = Stream(MpegDecoder.Decode(clip), false);
+        var pcm = SafeDecode.Decode(clip);
+        if (pcm == null) return;
+        ui.Stream = Stream(pcm, false);
         ui.VolumeDb = Mathf.LinearToDb(clip.Volume);
         ui.Play();
     }

@@ -39,8 +39,8 @@ public partial class AmbientSounds : Node3D
             Count++;
             Log.Add($"{e.Name} at {pos} -> {id} = {clip.Name} vol {clip.Volume:F2} range {min}..{max}");
             var key = clip.Name;
-            if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() => MpegDecoder.Decode(clip));
-            task.ContinueWith(t => Callable.From(() => Start(player, t.Result)).CallDeferred());
+            if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() => SafeDecode.Decode(clip));
+            task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; Callable.From(() => Start(player, pcm)).CallDeferred(); });
         }
     }
 

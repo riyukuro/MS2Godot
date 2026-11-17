@@ -102,9 +102,10 @@ public partial class FootstepSounds : Node
             if (clip == null) continue;
             if (!decoded.TryGetValue(clip.Name, out var wav))
             {
-                var pcm = MpegDecoder.Decode(clip);
-                decoded[clip.Name] = wav = new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
+                var pcm = SafeDecode.Decode(clip);
+                decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
             }
+            if (wav == null) continue;
             var v = voices[nextVoice++ % voices.Length];
             v.Stream = wav;
             v.VolumeDb = Mathf.LinearToDb(clip.Volume);
