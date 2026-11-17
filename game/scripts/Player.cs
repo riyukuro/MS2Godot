@@ -81,8 +81,9 @@ public partial class Player : CharacterBody3D
         p.AddChild(new CollisionShape3D
         {
             Name = "Collision",
-            Shape = new CylinderShape3D { Radius = MoveConfig.Radius, Height = MoveConfig.Height },
-            Position = new Vector3(0, MoveConfig.Height / 2, 0),
+            // the bottom reaches one skin width below the feet, so the body rests with its feet on floor + skin (RestOnFloor)
+            Shape = new CylinderShape3D { Radius = MoveConfig.Radius, Height = MoveConfig.Height + MoveConfig.SkinWidth },
+            Position = new Vector3(0, (MoveConfig.Height - MoveConfig.SkinWidth) / 2, 0),
         });
         p.AddChild(visual);
         return p;
@@ -379,6 +380,7 @@ public partial class Player : CharacterBody3D
         if (v.Y <= 0 && IsOnWall() && wantedHoriz.Length() > 0.01f && StepPath(start, wantedHoriz) is { } stepped &&
             stepped.Origin.Y > GlobalPosition.Y + 1f)
             GlobalTransform = stepped;
+        if (!jumping && IsOnFloor()) RestOnFloor();
         UpdateHitReport(wantedHoriz, v.Y * dt);
 
         wallHit = IsOnWall() && !IsOnFloor() && v.Y < 0;
@@ -393,6 +395,19 @@ public partial class Player : CharacterBody3D
         {
             // the controller stays under the ceiling until the jump curve comes back down
         }
+    }
+
+    /// <summary>
+    /// The client's feet rest one skin width above the floor: NxCharacter keeps the capsule skinWidth (0.01 m,
+    /// GameObjectController::CreateController) off what it stands on, and GetFeetPosition (0x14123fd90) is the capsule
+    /// centre less radius + half the cylinder part, with no skin term. The body's shape reaches SkinWidth below the
+    /// feet, and MoveAndSlide leaves it up to its safe margin above the floor, so it is lowered onto the contact here.
+    /// </summary>
+    void RestOnFloor()
+    {
+        var col = new KinematicCollision3D();
+        if (TestMove(GlobalTransform, Vector3.Down * (2 * SafeMargin), col, 0.001f) && col.GetNormal().Y >= Mathf.Cos(FloorMaxAngle))
+            GlobalPosition += col.GetTravel();
     }
 
     void TryStepUp(Vector3 horiz)

@@ -194,7 +194,7 @@ public partial class Player
     /// <summary>
     /// The client's body is a capsule (r 25): its round bottom clears an edge that our flat-bottomed cylinder's rim
     /// rests on. When a down-phase move stopped short on such an edge (an up-facing support under the rim, none under the
-    /// axis), the feet where the capsule would be: max(the move's target, support - (r - sqrt(r^2 - d^2))), d = the
+    /// axis), the feet where the capsule would be: max(the move's target, support - (r - sqrt((r + skin)^2 - d^2))), d = the
     /// support's nearest horizontal distance from the axis. Null when the axis itself is supported (a floor, a step).
     /// </summary>
     Vector3? CapsuleFeetOnRim(float wantY)
@@ -217,7 +217,8 @@ public partial class Player
             if (hi < best) { best = hi; top = y; }
         }
         if (best == float.MaxValue) return null;
-        float clear = r - Mathf.Sqrt(r * r - best * best);
+        float rs = r + MoveConfig.SkinWidth;            // NxCharacter keeps the capsule a skin width off the edge
+        float clear = r - Mathf.Sqrt(rs * rs - best * best);
         return new Vector3(feet.X, Mathf.Max(wantY, top - clear), feet.Z);
     }
 
