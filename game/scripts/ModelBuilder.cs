@@ -110,17 +110,33 @@ public sealed class ModelBuilder
             for (int i = 0; i < nv; i++) n[i] = new Vector3(m.Normals[i * 3], m.Normals[i * 3 + 1], m.Normals[i * 3 + 2]);
             arrays[(int)Mesh.ArrayType.Normal] = n;
         }
-        if (m.Normals != null && m.Tangents != null && m.Binormals != null && !instanceColor)
+        if (!instanceColor)
         {
-            // Godot keeps the tangent and a handedness sign; it rebuilds the binormal as cross(normal, tangent) * sign
+            // character_lit reads TANGENT/BINORMAL, so every surface it draws needs a tangent array (Godot warns otherwise).
+            // Godot keeps the tangent and a handedness sign; it rebuilds the binormal as cross(normal, tangent) * sign.
+            // Meshes without the NIF's tangent frame get a placeholder frame; their normal map and hair term stay off
+            // (CharacterMaterial gates both on m.Tangents).
             var t = new float[nv * 4];
             for (int i = 0; i < nv; i++)
             {
-                var nn = new Vector3(m.Normals[i * 3], m.Normals[i * 3 + 1], m.Normals[i * 3 + 2]);
-                var tt = new Vector3(m.Tangents[i * 3], m.Tangents[i * 3 + 1], m.Tangents[i * 3 + 2]);
-                var bb = new Vector3(m.Binormals[i * 3], m.Binormals[i * 3 + 1], m.Binormals[i * 3 + 2]);
-                t[i * 4] = tt.X; t[i * 4 + 1] = tt.Y; t[i * 4 + 2] = tt.Z;
-                t[i * 4 + 3] = nn.Cross(tt).Dot(bb) < 0 ? -1f : 1f;
+                Vector3 tt;
+                float w = 1f;
+                if (m.Tangents != null)
+                {
+                    tt = new Vector3(m.Tangents[i * 3], m.Tangents[i * 3 + 1], m.Tangents[i * 3 + 2]);
+                    if (m.Normals != null && m.Binormals != null)
+                    {
+                        var nn = new Vector3(m.Normals[i * 3], m.Normals[i * 3 + 1], m.Normals[i * 3 + 2]);
+                        var bb = new Vector3(m.Binormals[i * 3], m.Binormals[i * 3 + 1], m.Binormals[i * 3 + 2]);
+                        w = nn.Cross(tt).Dot(bb) < 0 ? -1f : 1f;
+                    }
+                }
+                else
+                {
+                    var nn = m.Normals != null ? new Vector3(m.Normals[i * 3], m.Normals[i * 3 + 1], m.Normals[i * 3 + 2]) : Vector3.Up;
+                    tt = nn.Cross(Mathf.Abs(nn.Y) < 0.9f ? Vector3.Up : Vector3.Right).Normalized();
+                }
+                t[i * 4] = tt.X; t[i * 4 + 1] = tt.Y; t[i * 4 + 2] = tt.Z; t[i * 4 + 3] = w;
             }
             arrays[(int)Mesh.ArrayType.Tangent] = t;
         }
