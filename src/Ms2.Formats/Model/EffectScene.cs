@@ -43,8 +43,12 @@ public sealed class EffectNode
 public sealed class UvOp { public int Operation; public Func<double, double> Curve; public TimeCtl Ctl; }
 public sealed class FlipAnim { public string[] Sources; public Func<double, double> Curve; public TimeCtl Ctl; }
 
+/// <summary>An animated NiMaterialProperty colour (NiMaterialColorController): Target 0 ambient, 1 diffuse, 2 specular, 3 emissive (self illumination).</summary>
+public sealed class ColorAnim { public int Target; public Func<double, double[]> Curve; public TimeCtl Ctl; }
+
 public sealed class EffectMesh
 {
+    public List<ColorAnim> Colors = new();
     public ModelMesh Mesh; public int Node;
     public Func<double, double> Alpha; public TimeCtl AlphaCtl;
     public List<UvOp> Uv = new();
@@ -158,6 +162,41 @@ public sealed class EffectScene
         };
     }
 
+    /// <summary>An rgb curve from an NiPoint3Interpolator (NiPosData) or NiColorInterpolator (NiColorData); null without keys or a pose.</summary>
+    static Func<double, double[]> ColorCurve(NifFile n, long interp)
+    {
+        if (interp < 0) return null;
+        var B = n.Blocks; var e = B[(int)interp];
+        double[] Rgb(object o) => o is NifStruct s ? new[] { (double)s.Float(s.ContainsKey("x") ? "x" : "r"), s.Float(s.ContainsKey("y") ? "y" : "g"), s.Float(s.ContainsKey("z") ? "z" : "b") } : null;
+        var pose = e.TryGetValue("Value", out var pv) ? Rgb(pv) : null;
+        if (pose != null && (double.IsNaN(pose[0]) || pose[0] < -1e20)) pose = null;       // the invalid-pose marker
+        long di = e.IntOr("Data", -1);
+        if (di < 0 || !B[(int)di].TryGetValue("Data", out var g) || g is not NifStruct grp || grp.IntOr("Num Keys", 0) == 0)
+            return pose == null ? null : _ => pose;
+        long it = grp.Int("Interpolation");
+        var keys = new List<(double t, double[] v, double[] f, double[] b)>();
+        foreach (var k in grp.Structs("Keys"))
+            keys.Add((k.Float("Time"), Rgb(k["Value"]), it == 2 ? Rgb(k["Forward"]) : null, it == 2 ? Rgb(k["Backward"]) : null));
+        return t =>
+        {
+            if (t <= keys[0].t) return keys[0].v;
+            if (t >= keys[^1].t) return keys[^1].v;
+            for (int i = 0; i + 1 < keys.Count; i++)
+            {
+                var a = keys[i]; var b = keys[i + 1];
+                if (t < a.t || t > b.t) continue;
+                if (it == 5) return a.v;
+                double span = b.t - a.t, u = (t - a.t) / (span == 0 ? 1 : span);
+                var r = new double[3];
+                for (int c = 0; c < 3; c++)
+                    r[c] = it == 2 ? (2 * u * u * u - 3 * u * u + 1) * a.v[c] + (u * u * u - 2 * u * u + u) * a.b[c] + (-2 * u * u * u + 3 * u * u) * b.v[c] + (u * u * u - u * u) * b.f[c]
+                                   : a.v[c] * (1 - u) + b.v[c] * u;        // TBC keys fall back to linear
+                return r;
+            }
+            return keys[^1].v;
+        };
+    }
+
     static Vec3 V3(NifStruct s) => new(s.Float("x"), s.Float("y"), s.Float("z"));
 
     public static EffectScene Load(NifFile n)
@@ -239,6 +278,10 @@ public sealed class EffectScene
                 break;
             case "NiAlphaController":
                 if (meshOf.TryGetValue((int)target, out var am)) { am.Alpha = Curve(n, interp); am.AlphaCtl = ctl; }
+                break;
+            case "NiMaterialColorController":
+                if (ColorCurve(n, interp) is { } cc)
+                    foreach (var m in meshesWithProperty((int)target)) m.Colors.Add(new ColorAnim { Target = (int)c.IntOr("Target Color", 1), Curve = cc, Ctl = ctl });
                 break;
             case "NiTextureTransformController":
                 foreach (var m in meshesWithProperty((int)target)) if (Curve(n, interp) is { } f) m.Uv.Add(new UvOp { Operation = (int)c.IntOr("Operation", 0), Curve = f, Ctl = ctl });

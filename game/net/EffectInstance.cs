@@ -11,7 +11,7 @@ namespace Ms2Godot.Net;
 /// </summary>
 public sealed partial class EffectInstance : Node3D
 {
-    sealed class MeshState { public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Texture2D Base; }
+    sealed class MeshState { public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Texture2D Base; public bool Add; }
 
     sealed class PSys
     {
@@ -87,7 +87,8 @@ void fragment() {
             ms.Base = m.Textures.TryGetValue("base", out var bn) ? mb.Texture(bn) : (m.Textures.TryGetValue("shader0", out var s0) ? mb.Texture(s0) : null);
             mat.SetShaderParameter("has_tex", ms.Base != null);
             if (ms.Base != null) mat.SetShaderParameter("tex", ms.Base);
-            if (m.Diffuse != null && !add) mat.SetShaderParameter("tint", new Color(m.Diffuse[0] * 1.0f, m.Diffuse[1], m.Diffuse[2]));
+            ms.Add = add;
+            if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter("tint", Tint(em, 0, add));
             if (em.Flip != null) ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
             ms.Mat = mat;
             ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false), MaterialOverride = mat, Name = m.Name ?? "mesh" };
@@ -114,6 +115,23 @@ void fragment() {
             systems.Add(ps);
         }
         Advance(0);
+    }
+
+    /// <summary>The unlit colour of a mesh at effect time t: the material's emissive plus diffuse (clamped), with NiMaterialColorController keys applied.
+    /// Without any colour an additive mesh stays white (as before).</summary>
+    static Color Tint(EffectMesh em, double t, bool add)
+    {
+        var m = em.Mesh;
+        double[] dif = m.Diffuse?.Select(v => (double)v).ToArray() ?? new double[] { 1, 1, 1 };
+        double[] emi = m.Emissive?.Select(v => (double)v).ToArray() ?? new double[3];
+        foreach (var a in em.Colors)
+        {
+            var v = a.Curve(a.Ctl.Local(t));
+            if (a.Target == 1) dif = v; else if (a.Target == 3) emi = v;
+        }
+        double r = Math.Min(1, dif[0] + emi[0]), g = Math.Min(1, dif[1] + emi[1]), b = Math.Min(1, dif[2] + emi[2]);
+        if (add && r + g + b < 1e-4) return Colors.White;
+        return new Color((float)r, (float)g, (float)b);
     }
 
     public override void _Process(double delta)
@@ -183,6 +201,7 @@ void fragment() {
             var nd = scene.Nodes[d.Node];
             ms.Node.Transform = World(d.Node, t, camLocal);
             ms.Node.Visible = !nd.Culled;
+            if (d.Colors.Count > 0) ms.Mat.SetShaderParameter("tint", Tint(d, t, ms.Add));
             if (d.Alpha != null) ms.Mat.SetShaderParameter("alpha", (float)d.Alpha(d.AlphaCtl.Local(t)));
             if (d.Uv.Count > 0)
             {
