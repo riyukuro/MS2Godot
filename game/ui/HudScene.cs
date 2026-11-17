@@ -192,6 +192,7 @@ public partial class HudScene : Node
 
     MinimapInfo mapInfo; Control mapClip; TextureRect mapImage; MovieClipNode mapPlayer, mapArrow;
     static readonly Vector2 MapMaskPos = new(2, 82), MapMaskSize = new(288, 222);   // the movie's map area (m_mask) in movie units
+    const int BgAlpha = 30;         // UIMinimapDialog::BuildUIData: bgAlpha for a dialog without saved data
     const float MapZoom = 1f;       // MinimapDialog m_zoom (0.5 .. 1.5): movie units per image pixel in player-centred mode
 
     void Minimap(Control ui)
@@ -211,11 +212,30 @@ public partial class HudScene : Node
             mapClip = new Control { Position = (origin + MapMaskPos) * u, Size = MapMaskSize * u, ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore };
             mapImage = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, Texture = tex, Size = tex.GetSize() * MapZoom * u, MouseFilter = Control.MouseFilterEnum.Ignore };
             mapClip.AddChild(mapImage);
-            ui.AddChild(mapClip);
         }
         var r = Place(ui, "uiminimapdialog", 1f, origin);
         Hide(r, "m_controller", "m_resize", "m_sliderani", "m_report");    // m_report: reportVisible is off in the reference
-        if (r.FindClip("m_maxpanel") is { } maxPanel) Hide(maxPanel, "m_panel", "m_mask");     // the map panel's own (the list row keeps its panel)
+        var maxPanel = r.FindClip("m_maxpanel");
+        if (maxPanel != null) Hide(maxPanel, "m_mask");     // the map panel's mask: mapClip clips the map instead
+        // initData -> setAlpha(bgAlpha, mapAlpha) -> MinimapDialogMax.changePanelAlpha(bgAlpha * 0.01): m_panel.alpha, with
+        // UIMinimapDialog::BuildUIData's bgAlpha 30 for a dialog without saved data (mapAlpha 100 leaves the map opaque)
+        if (maxPanel?.Direct("m_panel") is { } panel) { panel.BaseColor = new Color(panel.BaseColor, BgAlpha / 100f); maxPanel.GotoFrame(maxPanel.Frame); }
+        if (mapClip != null)
+        {
+            // MinimapDialogMax's display list is m_frame, m_panel, m_mask over m_field (the map) and m_entities, then m_guide:
+            // the map draws above the panel, so it goes into m_maxpanel right after m_panel, held at the screen scale
+            if (maxPanel?.Direct("m_panel")?.Node is { } panelNode && panelNode.GetParent() is Node2D host)
+            {
+                var t = Transform2D.Identity;                    // the panel's parent in the root's movie units
+                for (Node n = host; n != r && n is Node2D n2; n = n.GetParent()) t = n2.Transform * t;
+                var sc = t.Scale * u;
+                mapClip.Position = t.AffineInverse() * MapMaskPos;
+                mapClip.Scale = new Vector2(1 / sc.X, 1 / sc.Y);
+                host.AddChild(mapClip);
+                host.MoveChild(mapClip, panelNode.GetIndex() + 1);
+            }
+            else { ui.AddChild(mapClip); ui.MoveChild(mapClip, r.GetParent().GetIndex()); }     // under the movie, as before
+        }
         r.FindClip("m_channel")?.SetText($"Ch. {data.Player.Channel}");
         r.FindClip("m_fieldname")?.SetText(MapName());
         MinimapPlayers(r);
