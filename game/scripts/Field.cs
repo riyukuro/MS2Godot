@@ -91,6 +91,14 @@ public partial class Field : Node3D
         }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         camDist = cam.Distance;
+        try
+        {
+            var k = new ClientConstants(packs);
+            looseFinal = k.Float("CameraFinalLoose", looseFinal);
+            looseNow = k.Float("CameraCurrentLoose", looseNow);
+            looseUpdate = k.Float("CameraUpdateLoose", looseUpdate);
+        }
+        catch (Exception ex) { GD.PushWarning("constants: " + ex.Message); }
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
         camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
         var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale, GlowScale = hdr.GlowScale };
@@ -276,7 +284,7 @@ public partial class Field : Node3D
     /// 90 (level) at the nearest zoom to vangle at the farthest, and the target height from zoomInHeightOffset to
     /// zoomOutHeightOffset. Eye = target + (d sin yaw, d cos yaw, d cos pitch) in MS2 axes, yaw = hangle + 180.
     /// </summary>
-    void UpdateCamera()
+    void UpdateCamera(double dt = 0)
     {
         var ms2yaw = Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw;
         var target = player.GlobalPosition;
@@ -292,7 +300,49 @@ public partial class Field : Node3D
             d = Mathf.Min(d + 10f, maxDist);
         }
         player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
-        camera.LookAtFromPosition(eye, look, Vector3.Up);
+        var ideal = Transform3D.Identity.LookingAt(look - eye, Vector3.Up);
+        ideal.Origin = eye;
+        camera.GlobalTransform = EaseCamera(ideal, (float)dt);
+    }
+
+    // CTargetCameraMode::vfunc_39: the shown camera (m_c0) follows the one placed above (m_d8). Each frame it closes
+    // t = dt * distance * loose of the eye's gap, plus a blend that grows over 3 s ((e^5x - 1) / (e^5 - 1)) once within
+    // 10 units, and takes the placed camera when t > 1 or the gap is nil. The rotation goes the same t of the way by
+    // its view and up axes (CCameraMode::FUN_140afdec0). loose (m_a0) starts at CameraCurrentLoose and moves toward
+    // CameraFinalLoose (m_9c) at CameraUpdateLoose (m_a4) a second; the client reads them in the CTargetCameraMode
+    // constructor unscaled, the camera-speed option at its default (100 %) leaves them so.
+    float looseFinal = 0.08f, looseNow = 0.002f, looseUpdate = 0.03f;
+    Transform3D? shownCam;
+    bool camBlending;
+    float camBlendTime;
+
+    Transform3D EaseCamera(Transform3D placed, float dt)
+    {
+        if (shownCam is not { } shown || dt <= 0) return (shownCam = placed).Value;
+        var gap = placed.Origin - shown.Origin;
+        float dist = gap.Length(), blend = 0;
+        if (camBlending)
+        {
+            if (dist >= 10f) camBlending = false;
+            else
+            {
+                camBlendTime += dt;
+                if (camBlendTime >= 3f) { blend = 1f; camBlending = false; }
+                else blend = (Mathf.Exp(camBlendTime / 3f * 5f) - 1f) / 147.41316f;
+            }
+        }
+        else if (!Mathf.IsZeroApprox(dist) && dist <= 10f) { camBlending = true; camBlendTime = 0; }
+        if (Mathf.IsZeroApprox(dist)) return (shownCam = placed).Value;
+        float speed = Mathf.Abs(looseUpdate) * dt;
+        if (looseNow != looseFinal)
+            looseNow = Mathf.Abs(looseNow - looseFinal) < speed ? looseFinal : looseNow + (looseNow > looseFinal ? -speed : speed);
+        float t = dt * dist * looseNow + blend;
+        if (t > 1f) return (shownCam = placed).Value;
+        var view = (shown.Basis.Z + t * (placed.Basis.Z - shown.Basis.Z)).Normalized();
+        var up = (shown.Basis.Y + t * (placed.Basis.Y - shown.Basis.Y)).Normalized();
+        var side = up.Cross(view).Normalized();
+        up = view.Cross(side).Normalized();
+        return (shownCam = new Transform3D(new Basis(side, up, view), shown.Origin + t * gap)).Value;
     }
 
     const float PlayerHeight = 150f;            // CTargetCameraMode m_b4 (the player's height, added to the farthest zoom)
@@ -376,7 +426,7 @@ public partial class Field : Node3D
             if (Input.IsKeyPressed(Key.Up)) camPitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
             if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
         }
-        UpdateCamera();
+        UpdateCamera(delta);
         if (shotSettle > 0 && --shotSettle == 0)
         {
             var (_, _, _, shot) = script.Dequeue();
