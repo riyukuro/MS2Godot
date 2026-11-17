@@ -11,6 +11,9 @@ public sealed class NifStruct : Dictionary<string, object>
 {
     public string Type;
 
+    public NifStruct() { }
+    public NifStruct(int capacity) : base(capacity) { }
+
     public long Int(string k) => this[k] switch { long l => l, float f => (long)f, _ => throw new InvalidCastException(k) };
     public float Float(string k) => this[k] switch { float f => f, long l => l, _ => throw new InvalidCastException(k) };
     public NifStruct Struct(string k) => (NifStruct)this[k];
@@ -122,19 +125,23 @@ public sealed class NifReader
             case "Version": return spec.Version;
             case "User Version": return spec.UserVersion;
         }
-        if (name.StartsWith("BS Header")) return spec.BsVersion;
-        if (name.StartsWith("#ARG")) return args[name.Trim('#')];
+        if (name.StartsWith("BS Header", StringComparison.Ordinal)) return spec.BsVersion;
+        if (name.StartsWith("#ARG", StringComparison.Ordinal)) return args[name.Trim('#')];
         object cur = d;
-        foreach (var k in name.Split('\\'))
-            cur = cur is NifStruct s && s.TryGetValue(k, out var v) ? v : 0L;
+        if (name.IndexOf('\\') < 0)
+            cur = d.TryGetValue(name, out var v0) ? v0 : 0L;
+        else
+            foreach (var k in name.Split('\\'))
+                cur = cur is NifStruct s && s.TryGetValue(k, out var v) ? v : 0L;
         return ToNum(cur);
     }
 
     public NifStruct Struct(string name, string tmpl, Dictionary<string, double> args, string btype)
     {
-        var d = new NifStruct { Type = name };
+        var fields = spec.Fields(name);
+        var d = new NifStruct(fields.Count) { Type = name };
         Func<string, double> get = nm => Lookup(d, args, spec, nm);
-        foreach (var a in spec.Fields(name))
+        foreach (var a in fields)
         {
             if (a.OnlyT != null && !spec.IsA(btype, a.OnlyT)) continue;
             if (a.ExcludeT != null && spec.IsA(btype, a.ExcludeT)) continue;
@@ -156,9 +163,15 @@ public sealed class NifReader
                     int[] widths;
                     var st = spec.Storage(t);
                     if (IsBasic(st) && d.TryGetValue(a.WidthName, out var wl) && wl is long[] arr)
-                        widths = arr.Select(x => (int)x).ToArray();
+                    {
+                        widths = new int[arr.Length];
+                        for (int i = 0; i < widths.Length; i++) widths[i] = (int)arr[i];
+                    }
                     else
-                        widths = Enumerable.Repeat((int)a.Width.Eval(get), n).ToArray();
+                    {
+                        widths = new int[n];
+                        Array.Fill(widths, (int)a.Width.Eval(get));
+                    }
                     var rows = new object[widths.Length];
                     for (int i = 0; i < rows.Length; i++) rows[i] = Value(t, ft, sub, widths[i], a.Binary, btype);
                     v = rows;
