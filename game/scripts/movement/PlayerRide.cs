@@ -134,6 +134,9 @@ public partial class Player
         ReleaseRideBox();
         Visual.Transform = new Transform3D(new Basis(Vector3.Up, Mathf.DegToRad(yawDeg)), Vector3.Zero);
         baseSpeed = MoveConfig.RunSpeed;
+        // PCBase::vfunc_121 clears the jump, the controller velocity and the fall timer before the state change
+        // (pcbase.cpp:3408)
+        StopJump();
         Enter(MoveState.Idle);
     }
 
