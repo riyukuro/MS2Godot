@@ -40,12 +40,60 @@ public partial class HudScene : Node
 
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
-        var layer = new CanvasLayer { Layer = 10 };
+        BuildHud();
+        GetViewport().SizeChanged += () => { if (!relayoutQueued) { relayoutQueued = true; CallDeferred(MethodName.Relayout); } };
+    }
+
+    Window.ContentScaleModeEnum outerScaleMode;
+
+    /// <summary>
+    /// The field draws to the whole window, as the client's back buffer is the window's client area and every movie's
+    /// viewport is that render target (GFxMovie::vfunc_6 / vfunc_7). So the project's 1280 x 720 canvas stretch (which
+    /// letterboxes) is off while this scene runs, and the HUD lays itself out for the window instead (BuildHud).
+    /// </summary>
+    public override void _EnterTree()
+    {
+        outerScaleMode = GetWindow().ContentScaleMode;
+        GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+    }
+
+    public override void _ExitTree() => GetWindow().ContentScaleMode = outerScaleMode;
+
+    CanvasLayer hudLayer; Node[] worldUi = System.Array.Empty<Node>();   // the HUD layer and the world-anchored UI layers
+    bool relayoutQueued;
+
+    /// <summary>
+    /// The window was resized. The client resets the device on WM_SIZE (GFxMovieEventHandler: OnDeviceLost, then
+    /// GFxService::vfunc_17 on restore), and GFxManager::ResizeMovies gives every movie the new render target size
+    /// (GFxMovie::vfunc_7) and sends SceneResize, so each dialog aligns itself to the new stage. Here the HUD is built
+    /// again at the new size; the chat log and the typed text are kept.
+    /// </summary>
+    void Relayout()
+    {
+        relayoutQueued = false;
+        string typed = chatInput?.Edit.Text;
+        hudLayer?.QueueFree();
+        foreach (var n in worldUi) n.QueueFree();
+        chat = null; chatInput = null; chatLog = null; chatThumb = null; target = null;
+        mapImage = null; mapPlayer = null; mapArrow = null; mapClip = null;
+        BuildHud();
+        if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
+        if (chatLines.Count > 0) ShowChatLines();
+    }
+
+    /// <summary>
+    /// Lays the HUD out for the window. The client draws its movies into the whole back buffer: every movie's viewport is the
+    /// active render target's size (GFxMovie::vfunc_6 / vfunc_7, GFxManager::ResizeMovies), one pixel larger on every side,
+    /// with no letterbox and no fixed design size; the dialogs align themselves on the stage that gives (UiScale).
+    /// </summary>
+    void BuildHud()
+    {
+        var layer = hudLayer = new CanvasLayer { Layer = 10 };
         AddChild(layer);
         uiRoot = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         layer.AddChild(uiRoot);
-        var window = new Vector2(1280, 720);
+        var window = GetViewport().GetVisibleRect().Size;
         u = UiScale.For(window); stage = UiScale.MovieStage(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
         var constants = new ClientConstants(assets.Packs);
@@ -56,6 +104,7 @@ public partial class HudScene : Node
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
         AddChild(damageText = new DamageText(assets, window));                // UIDamageText
+        worldUi = new Node[] { damageEffect, nameTag, playerBar, damageText };
 
         NoticeTab(uiRoot);
         Minimap(uiRoot);
@@ -437,6 +486,12 @@ public partial class HudScene : Node
         if (chatLog == null) return;
         chatLines.Add(line);
         if (chatLines.Count > 100) chatLines.RemoveAt(0);
+        ShowChatLines();
+    }
+
+    void ShowChatLines()
+    {
+        if (chatLog == null) return;
         var l = chatLog.Label;
         l.LinesSkipped = 0;
         l.Text = string.Join("\n", chatLines);
