@@ -199,8 +199,6 @@ void fragment() {
     float R() => (float)rng.NextDouble();
     float Spread(float v) => v * (2 * R() - 1);
 
-    const float FarSq = 12000f * 12000f;
-
     void Advance(float dt)
     {
         t += dt;
@@ -238,8 +236,6 @@ void fragment() {
             }
         }
 
-        // beyond the draw distance (camera far 18000, fog out at 20000 in most fields) nothing of a particle system shows: skip the simulation
-        if (camLocal.LengthSquared() > FarSq) { foreach (var ps in systems) ps.MM.VisibleInstanceCount = 0; return; }
         foreach (var ps in systems) Step(ps, dt, camLocal);
     }
 
