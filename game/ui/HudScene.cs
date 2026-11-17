@@ -366,7 +366,8 @@ public partial class HudScene : Node
     /// <summary>
     /// The minimap's field name (UIMinimapDialog::BuildUIData "fieldname", CubeMapInformationService::FUN_1410c3330): a house's
     /// name, else WorldService m_290, which the field load sets to the mapname string of the map id
-    /// (CStringTable::FUN_141811980(3, mapId), worldservice_1.cpp:3317).
+    /// (CStringTable::FUN_141811980(3, mapId), worldservice_1.cpp:3317). A map id the table lacks, or a table that cannot be
+    /// read, gives an empty string (stringtable.cpp FUN_141811980: the failed Lookup leaves the text empty).
     /// </summary>
     string MapName()
     {
@@ -378,7 +379,7 @@ public partial class HudScene : Node
                 return n;
         }
         catch (Exception e) { GD.PushWarning("map name: " + e.Message); }
-        return data.FieldName;
+        return "";
     }
 
     Player FindPlayer(Node n)
