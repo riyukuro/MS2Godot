@@ -556,11 +556,18 @@ public partial class HudScene : Node
         var r = Place(ui, "uimainplayerinfo", f, Vector2.Zero);
         // UIMainPlayerInfo::vfunc_43: vfunc_2(2, 0, -(FUN_1418dd0c0() + FUN_1418dd110())); MainPlayerInfo is 705 x 193
         if (DialogBody(r) is { } body) AlignDialog(r, body, 2, new Vector2(705, 193), 0, -BottomBars);
-        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_penalty", "m_hpWarning", "m_infinity", "infinity", "m_message", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
+        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_penalty", "m_infinity", "infinity", "m_message", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
         r.FindClip("m_playerInfo")?.GotoLabel("stat_show");          // the stat orb fades in with this label
         var stat = r.FindClip("m_playerInfo.m_stat");
-        SetBar(stat.FindClip("m_hp"), data.HpRatio);
-        SetBar(stat.FindClip("m_sp"), data.SpRatio);
+        StatBar(stat.FindClip("m_hp"), data.HpRatio);
+        StatBar(stat.FindClip("m_sp"), data.SpRatio);
+        stat.SetNamedVisible("m_hpWarning", data.HpRatio <= 0.3);     // StatInfo.setHP: shown at cur / max <= 0.3
+        // StatInfo.initStat -> setEP(cur, cur, max): pips below uint(cur / max * 6) play "normal", the rest "empty" (calcFrame)
+        if (stat.FindClip("m_ep") is { } ep)
+        {
+            uint n = (uint)((double)data.EpCurrent / data.EpMax * 6);
+            for (int i = 0; i < 6; i++) ep.FindClip("gauge" + i)?.GotoLabel(i < n ? "normal" : "empty");
+        }
         stat.SetNamedText("m_curHp", data.Player.HpCurrent.ToString()); stat.SetNamedText("m_maxHp", data.Player.HpMax.ToString());
         stat.SetNamedText("m_curSp", data.SpCurrent.ToString()); stat.SetNamedText("m_maxSp", data.SpMax.ToString());
         stat.SetNamedText("hpTxt", "Health"); stat.SetNamedText("spTxt", "Spirit");
@@ -658,14 +665,24 @@ public partial class HudScene : Node
         layer.AddChild(bg);
     }
 
-    /// <summary>The bar fill is clipped by m_mask, a rectangle the movie scales to the value (bottom up).</summary>
-    static void SetBar(MovieClipNode bar, double ratio)
+    /// <summary>
+    /// StatusBar.setValue for the orb's vertical bars (m_fullwidth 152, m_vertical): m_mask.height = max(1, 152 x cur / max)
+    /// from its own origin (the bar is placed turned 180 degrees, so it fills from the bottom); onChangeHp/onChangeSp then put
+    /// "line" at y = getTailPosition() + 5 (the mask height as uint, or 152 once it is within 2 of it).
+    /// </summary>
+    static void StatBar(MovieClipNode bar, double ratio)
     {
-        var mask = bar?.ChildNamed("m_mask");
+        var mask = bar?.Direct("m_mask");
         if (mask == null) return;
+        const float full = 152;
+        float h = Math.Max(1f, full * (float)ratio);
         var b = mask.MaskBounds; var baseT = mask.Base;
-        float a = baseT.X.X, y0 = baseT.Origin.Y, x0 = baseT.Origin.X;
-        mask.Override = new Transform2D(new Vector2(a, 0), new Vector2(0, (float)Math.Max(ratio, 0.0001)), new Vector2(x0, y0 + b.Size.Y * (float)(1 - ratio)));
+        mask.Override = new Transform2D(baseT.X, new Vector2(0, h / b.Size.Y), baseT.Origin);
+        if (bar.Direct("line") is { } line)
+        {
+            uint tail = (uint)h; int t = tail - 2 < full ? (int)tail : (int)full;
+            line.Base = new Transform2D(line.Base.X, line.Base.Y, new Vector2(line.Base.Origin.X, t + 5));
+        }
         bar.GotoFrame(bar.Frame);
     }
 
