@@ -111,13 +111,16 @@ public sealed class TextInputWidget : Widget
         var fieldChild = Node.Children.FirstOrDefault(c => c.Name == "textField" && c.Node is TextNode);
         var tf = fieldChild?.Node as TextNode;
         var b = tf?.Bounds ?? Node.Bounds;
+        // the field's bounds are in its own space: place them through the field's placement in the symbol (messenger_textInput
+        // puts textField at x 150, y 8; CLIK TextInput keeps that margin, constraints on textField with Constraints.ALL)
+        if (fieldChild != null) b = new Rect2(fieldChild.Base * b.Position, b.Size);
         float asx = (float)Node.sx, asy = (float)Node.sy;
         var font = Node.Scope.Assets.FontFor((string)tf?.Def["fontClass"]);
         int size = Math.Max(1, (int)Math.Round(UiBuilder.F(tf?.Def["size"], 12) * asy));
         var empty = new StyleBoxEmpty();
         Edit = new LineEdit
         {
-            Position = new Vector2(b.Position.X, b.Position.Y - 0.3f * UiBuilder.F(tf?.Def["size"], 12)), Size = new Vector2(b.Size.X * asx, b.Size.Y * asy), Scale = new Vector2(1f / asx, 1f / asy),
+            Position = b.Position, Size = new Vector2(b.Size.X * asx, b.Size.Y * asy), Scale = new Vector2(1f / asx, 1f / asy),
             Flat = true, CaretBlink = true, ContextMenuEnabled = false, SelectAllOnFocus = false,
         };
         foreach (var s in new[] { "normal", "focus", "read_only" }) Edit.AddThemeStyleboxOverride(s, empty);
@@ -128,6 +131,11 @@ public sealed class TextInputWidget : Widget
         Edit.AddThemeColorOverride("caret_color", col);
         Edit.AddThemeColorOverride("selection_color", new Color(0.3f, 0.5f, 0.9f, 0.6f));
         Edit.AddThemeConstantOverride("minimum_character_width", 1);
+        // a flash text field draws its line from the top 2-unit gutter, which centres a single line in the field; a LineEdit
+        // centres its line in its own height, which its font makes taller than the field, so centre that height on the field
+        float h = Math.Max(Edit.GetCombinedMinimumSize().Y, b.Size.Y * asy);
+        Edit.Size = new Vector2(Edit.Size.X, h);
+        Edit.Position = new Vector2(b.Position.X, b.Position.Y + (b.Size.Y - h / asy) / 2);
         Edit.FocusEntered += () => Node.GotoLabel("focused");
         Edit.FocusExited += () => Node.GotoLabel("default");
         if (fieldChild != null) fieldChild.Node.Visible = false;
