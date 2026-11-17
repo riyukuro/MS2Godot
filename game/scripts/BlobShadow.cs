@@ -53,7 +53,7 @@ public partial class BlobShadow : MeshInstance3D
             Mesh = new QuadMesh { Size = new Vector2(1, 1), Orientation = PlaneMesh.OrientationEnum.Y },
         };
         s.mat = new ShaderMaterial { Shader = shader };
-        s.mat.SetShaderParameter("shadow_tex", texture);
+        s.mat.SetShaderParameter(ShaderParam.ShadowTex, texture);
         s.MaterialOverride = s.mat;
         s.self = owner as CollisionObject3D;
         owner.AddChild(s);

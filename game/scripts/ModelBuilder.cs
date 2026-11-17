@@ -180,10 +180,10 @@ public sealed class ModelBuilder
         glowShader ??= GD.Load<Shader>("res://shaders/field_glow.gdshader");
         var sm = new ShaderMaterial { Shader = glowShader };
         var tex = m.Textures.TryGetValue("base", out var baseName) ? Texture(baseName) : null;
-        sm.SetShaderParameter("has_tex", tex != null);
-        if (tex != null) sm.SetShaderParameter("base_tex", tex);
-        sm.SetShaderParameter("glow_tex", glow);
-        sm.SetShaderParameter("alpha_test", m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
+        sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
+        if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
+        sm.SetShaderParameter(ShaderParam.GlowTex, glow);
+        sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
         return sm;
     }
 
@@ -244,35 +244,35 @@ public sealed class ModelBuilder
         {
             // field meshes: Gamebryo-style gamma-space lighting (shaders/field_lit.gdshader)
             var sm = new ShaderMaterial { Shader = FieldShader(m) };
-            sm.SetShaderParameter("has_tex", tex != null);
-            if (tex != null) sm.SetShaderParameter("base_tex", tex);
+            sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
+            if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
             var dark = m.Textures.TryGetValue("dark", out var darkName) ? Texture(darkName) : null;
-            sm.SetShaderParameter("has_dark", dark != null);
-            if (dark != null) sm.SetShaderParameter("dark_tex", dark);
-            sm.SetShaderParameter("dark_uv2", m.Uvs1 != null);
+            sm.SetShaderParameter(ShaderParam.HasDark, dark != null);
+            if (dark != null) sm.SetShaderParameter(ShaderParam.DarkTex, dark);
+            sm.SetShaderParameter(ShaderParam.DarkUv2, m.Uvs1 != null);
             var decal = m.Textures.TryGetValue("decal0", out var decalName) ? Texture(decalName) : null;
-            sm.SetShaderParameter("has_decal", decal != null);
-            if (decal != null) sm.SetShaderParameter("decal_tex", decal);
-            sm.SetShaderParameter("has_vcolor", m.Colors != null);
-            sm.SetShaderParameter("vcolor_amb_diff", m.VertexColorsAmbDiff);
+            sm.SetShaderParameter(ShaderParam.HasDecal, decal != null);
+            if (decal != null) sm.SetShaderParameter(ShaderParam.DecalTex, decal);
+            sm.SetShaderParameter(ShaderParam.HasVcolor, m.Colors != null);
+            sm.SetShaderParameter(ShaderParam.VcolorAmbDiff, m.VertexColorsAmbDiff);
             // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
             bool test = m.AlphaTestOn || (m.AlphaTest && !m.AlphaBlendOn);
-            sm.SetShaderParameter("alpha_test", test);
-            sm.SetShaderParameter("alpha_ref", m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
-            if (m.Emissive != null) sm.SetShaderParameter("emissive", new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
-            if (m.Ambient != null) sm.SetShaderParameter("mat_ambient", new Vector3(m.Ambient[0], m.Ambient[1], m.Ambient[2]));
-            if (m.Diffuse != null) sm.SetShaderParameter("mat_diffuse", new Vector3(m.Diffuse[0], m.Diffuse[1], m.Diffuse[2]));
+            sm.SetShaderParameter(ShaderParam.AlphaTest, test);
+            sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
+            if (m.Emissive != null) sm.SetShaderParameter(ShaderParam.Emissive, new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
+            if (m.Ambient != null) sm.SetShaderParameter(ShaderParam.MatAmbient, new Vector3(m.Ambient[0], m.Ambient[1], m.Ambient[2]));
+            if (m.Diffuse != null) sm.SetShaderParameter(ShaderParam.MatDiffuse, new Vector3(m.Diffuse[0], m.Diffuse[1], m.Diffuse[2]));
             var glow = m.Textures.TryGetValue("glow", out var glowName) ? Texture(glowName) : null;
-            sm.SetShaderParameter("has_glow", glow != null);
-            if (glow != null) sm.SetShaderParameter("glow_tex", glow);
+            sm.SetShaderParameter(ShaderParam.HasGlow, glow != null);
+            if (glow != null) sm.SetShaderParameter(ShaderParam.GlowTex, glow);
             int flipSlot = m.FlipSlot == "base" ? 0 : m.FlipSlot == "dark" ? 1 : -1;
             var flip = flipSlot >= 0 ? FlipArray(m.FlipFrames) : null;
             if (flip != null)
             {
-                sm.SetShaderParameter("flip_tex", flip);
-                sm.SetShaderParameter("flip_slot", flipSlot);
-                sm.SetShaderParameter("flip_count", m.FlipFrames.Length);
-                sm.SetShaderParameter("flip_period", m.FlipPeriod);
+                sm.SetShaderParameter(ShaderParam.FlipTex, flip);
+                sm.SetShaderParameter(ShaderParam.FlipSlot, flipSlot);
+                sm.SetShaderParameter(ShaderParam.FlipCount, m.FlipFrames.Length);
+                sm.SetShaderParameter(ShaderParam.FlipPeriod, m.FlipPeriod);
             }
             foreach (var sc in m.Scrolls)
             {
@@ -297,40 +297,40 @@ public sealed class ModelBuilder
     {
         characterShader ??= GD.Load<Shader>("res://shaders/character_lit.gdshader");
         var sm = new ShaderMaterial { Shader = characterShader };
-        sm.SetShaderParameter("has_tex", tex != null);
-        if (tex != null) sm.SetShaderParameter("base_tex", tex);
+        sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
+        if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
         int ctrlIndex = m.ExtraInts.TryGetValue("ColorOverrideMapIndex", out var ci) ? ci : 0;
         var ctrl = m.Textures.TryGetValue("shader" + ctrlIndex, out var ctrlName) ? Texture(ctrlName) : null;
-        sm.SetShaderParameter("has_ctrl", ctrl != null);
-        if (ctrl != null) sm.SetShaderParameter("ctrl_tex", ctrl);
+        sm.SetShaderParameter(ShaderParam.HasCtrl, ctrl != null);
+        if (ctrl != null) sm.SetShaderParameter(ShaderParam.CtrlTex, ctrl);
         for (int i = 0; i < 3; i++)
             if (m.ExtraColors.TryGetValue("OverrideColor" + i, out var c))
-                sm.SetShaderParameter("color" + i, new Vector3(c[0], c[1], c[2]));
+                sm.SetShaderParameter(ShaderParam.Color[i], new Vector3(c[0], c[1], c[2]));
         Vector3 V(float[] a, float d) => a == null ? new Vector3(d, d, d) : new Vector3(a[0], a[1], a[2]);
-        sm.SetShaderParameter("mat_ambient", V(m.Ambient, 1f));
-        sm.SetShaderParameter("mat_diffuse", V(m.Diffuse, 1f));
-        sm.SetShaderParameter("emissive", V(m.Emissive, 0f));
-        sm.SetShaderParameter("fresnel_boost", m.ExtraFloats.GetValueOrDefault("FresnelBoost", 5f));
-        sm.SetShaderParameter("fresnel_exponent", m.ExtraFloats.GetValueOrDefault("FresnelExponent", 4f));
-        sm.SetShaderParameter("color_boost", m.ExtraFloats.GetValueOrDefault("ColorBoost", 1f));
-        sm.SetShaderParameter("skin", IsSkinMaterial(m));
+        sm.SetShaderParameter(ShaderParam.MatAmbient, V(m.Ambient, 1f));
+        sm.SetShaderParameter(ShaderParam.MatDiffuse, V(m.Diffuse, 1f));
+        sm.SetShaderParameter(ShaderParam.Emissive, V(m.Emissive, 0f));
+        sm.SetShaderParameter(ShaderParam.FresnelBoost, m.ExtraFloats.GetValueOrDefault("FresnelBoost", 5f));
+        sm.SetShaderParameter(ShaderParam.FresnelExponent, m.ExtraFloats.GetValueOrDefault("FresnelExponent", 4f));
+        sm.SetShaderParameter(ShaderParam.ColorBoost, m.ExtraFloats.GetValueOrDefault("ColorBoost", 1f));
+        sm.SetShaderParameter(ShaderParam.Skin, IsSkinMaterial(m));
         // normal map and specular (on with an enabled NiSpecularProperty; the gloss map scales it; hair adds the
         // anisotropic term from its tangent map, custom map 1)
         var normal = m.Tangents != null && m.Textures.TryGetValue("normal", out var nn) ? Texture(nn) : null;
-        sm.SetShaderParameter("has_normal", normal != null);
-        if (normal != null) sm.SetShaderParameter("normal_tex", normal);
-        sm.SetShaderParameter("specular_on", m.SpecularOn && m.Specular != null);
-        sm.SetShaderParameter("mat_specular", V(m.Specular, 0f));
-        sm.SetShaderParameter("spec_power", m.Glossiness > 0 ? m.Glossiness : 1f);
+        sm.SetShaderParameter(ShaderParam.HasNormal, normal != null);
+        if (normal != null) sm.SetShaderParameter(ShaderParam.NormalTex, normal);
+        sm.SetShaderParameter(ShaderParam.SpecularOn, m.SpecularOn && m.Specular != null);
+        sm.SetShaderParameter(ShaderParam.MatSpecular, V(m.Specular, 0f));
+        sm.SetShaderParameter(ShaderParam.SpecPower, m.Glossiness > 0 ? m.Glossiness : 1f);
         var gloss = m.Textures.TryGetValue("gloss", out var gn) ? Texture(gn) : null;
-        sm.SetShaderParameter("has_gloss", gloss != null);
-        if (gloss != null) sm.SetShaderParameter("gloss_tex", gloss);
+        sm.SetShaderParameter(ShaderParam.HasGloss, gloss != null);
+        if (gloss != null) sm.SetShaderParameter(ShaderParam.GlossTex, gloss);
         var hair = m.Material == "MS2CharacterHairMaterial" && m.Tangents != null && m.Textures.TryGetValue("shader1", out var hn) ? Texture(hn) : null;
-        sm.SetShaderParameter("has_hair", hair != null);
-        if (hair != null) sm.SetShaderParameter("hair_tex", hair);
+        sm.SetShaderParameter(ShaderParam.HasHair, hair != null);
+        if (hair != null) sm.SetShaderParameter(ShaderParam.HairTex, hair);
         bool test = m.AlphaTestOn || m.AlphaTest;
-        sm.SetShaderParameter("alpha_test", test);
-        sm.SetShaderParameter("alpha_ref", m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
+        sm.SetShaderParameter(ShaderParam.AlphaTest, test);
+        sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
         return sm;
     }
 

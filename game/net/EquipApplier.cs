@@ -163,11 +163,11 @@ public sealed class EquipApplier
     /// <summary>Sets the dye colours of a mesh drawn with the character shader: skin=true for the skin material only, false for the rest.</summary>
     static void SetColors(MeshInstance3D n, bool skin, Rgba? c0, Rgba? c1, Rgba? c2)
     {
-        if (n.GetActiveMaterial(0) is not ShaderMaterial sm || sm.GetShaderParameter("skin").AsBool() != skin) return;
+        if (n.GetActiveMaterial(0) is not ShaderMaterial sm || sm.GetShaderParameter(ShaderParam.Skin).AsBool() != skin) return;
         var copy = (ShaderMaterial)sm.Duplicate();
-        if (c0 is { } a) copy.SetShaderParameter("color0", V(a));
-        if (c1 is { } b) copy.SetShaderParameter("color1", V(b));
-        if (c2 is { } c) copy.SetShaderParameter("color2", V(c));
+        if (c0 is { } a) copy.SetShaderParameter(ShaderParam.Color0, V(a));
+        if (c1 is { } b) copy.SetShaderParameter(ShaderParam.Color1, V(b));
+        if (c2 is { } c) copy.SetShaderParameter(ShaderParam.Color2, V(c));
         n.SetSurfaceOverrideMaterial(0, copy);
     }
 

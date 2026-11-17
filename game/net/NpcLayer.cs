@@ -140,7 +140,7 @@ public sealed class NpcLayer
         {
             bool friendly = row.Friendly != 0;
             Combat.NameTag(root, row.Name ?? row.Kfm, i.Height, friendly ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.85f, 0.6f));
-            if (n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health) { i.HpMat = Combat.HpBar(root, i.Height); i.HpMat.SetShaderParameter("fill", (float)n.Stats[2].Health / n.Stats[0].Health); }
+            if (n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health) { i.HpMat = Combat.HpBar(root, i.Height); i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health); }
         }
         if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
@@ -190,7 +190,7 @@ public sealed class NpcLayer
     {
         if (!inst.TryGetValue(id, out var i) || max <= 0) return;
         if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
-        i.HpMat?.SetShaderParameter("fill", Mathf.Clamp((float)cur / max, 0f, 1f));
+        i.HpMat?.SetShaderParameter(ShaderParam.Fill, Mathf.Clamp((float)cur / max, 0f, 1f));
         if (cur <= 0 && !i.Dead)
         {
             i.Dead = true; Deaths++;

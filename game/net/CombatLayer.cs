@@ -68,7 +68,7 @@ void fragment() {
     public ShaderMaterial HpBar(Node3D owner, float height)
     {
         var mat = new ShaderMaterial { Shader = barShader };
-        mat.SetShaderParameter("fill", 1.0f);
+        mat.SetShaderParameter(ShaderParam.Fill, 1.0f);
         var mi = new MeshInstance3D { Mesh = new QuadMesh { Size = new Vector2(90, 9) }, MaterialOverride = mat, Position = new Godot.Vector3(0, height + 55, 0), Name = "HpBar" };
         owner.AddChild(mi);
         return mat;
