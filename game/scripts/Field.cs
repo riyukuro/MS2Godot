@@ -164,7 +164,8 @@ public partial class Field : Node3D
             steps.EffectFile = f => ground.Play(f, player.GlobalPosition, player.Visual?.GlobalRotation.Y ?? 0);
             player.Landed += steps.Land;
         }
-        NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // F9 / --nav: navmesh overlay
+        var nav = NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // the navmesh; F9 / --nav: its overlay
+        if (player != null) player.ValidPosition = nav.ValidPosition;
         if (SpawnsLocalPlayer) Quest = World.QuestGuide.Start(this, packs, builder, map, player, hdrFieldId(fieldName), questNpc);   // --quest-npc ID: the quest guide beam
 
         if (shotDir != null)

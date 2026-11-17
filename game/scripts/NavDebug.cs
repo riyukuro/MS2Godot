@@ -8,9 +8,10 @@ using Ms2.Navigation;
 namespace Ms2Godot;
 
 /// <summary>
-/// Debug draw of the field's navmesh (F9 toggles; --nav starts it on). The mesh comes from Ms2.Navigation, built on first
-/// use in a worker thread and cached under user://navmesh. Navmesh units are metres with Y up; the game's world is 100 times
-/// that with the same axes, so a vertex is drawn at 100 x its navmesh position.
+/// The field's navmesh: loaded at field load in a worker thread (built on first use and cached under user://navmesh), for
+/// the server's position test (ValidPosition) and the debug draw (F9 toggles; --nav starts it on). The mesh comes from
+/// Ms2.Navigation. Navmesh units are metres with Y up; the game's world is 100 times that with the same axes, so a vertex
+/// is drawn at 100 x its navmesh position.
 /// </summary>
 public partial class NavDebug : Node3D
 {
@@ -23,6 +24,8 @@ public partial class NavDebug : Node3D
     {
         var n = new NavDebug { Name = "NavDebug", packs = packs, assets = assets, spec = spec, flats = flats, xblock = xblock, Visible = false };
         parent.AddChild(n);
+        var dir = ProjectSettings.GlobalizePath("user://navmesh");
+        n.loading = Task.Run(() => FieldNavigation.Load(packs, assets, spec, flats, xblock, dir));
         if (on) n.Toggle();
         return n;
     }
@@ -32,19 +35,25 @@ public partial class NavDebug : Node3D
         if (e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F9 }) Toggle();
     }
 
-    public void Toggle()
+    public void Toggle() => Visible = !Visible;
+
+    /// <summary>The load finished: the navmesh, or none (no navigation geometry, or the load failed).</summary>
+    public bool Loaded => loading.IsCompleted;
+
+    /// <summary>
+    /// kms2525 FieldManager.ValidPosition (FieldManager.cs:373-398): FindNearestPoly around the point with extents (2, 4, 2)
+    /// and the crowd's filter 0 (Navigation.cs:28-32: include all flags, exclude DISABLED; FieldNavigation's filter) finds
+    /// a polygon. Field units. False while there is no navmesh: the server has none to find a polygon on either.
+    /// </summary>
+    public bool ValidPosition(Vector3 p)
     {
-        Visible = !Visible;
-        if (Visible && loading == null)
-        {
-            var dir = ProjectSettings.GlobalizePath("user://navmesh");
-            loading = Task.Run(() => FieldNavigation.Load(packs, assets, spec, flats, xblock, dir));
-        }
+        if (!loading.IsCompletedSuccessfully || loading.Result == null) return false;
+        return loading.Result.ValidPosition(p.X, p.Y, p.Z);
     }
 
     public override void _Process(double delta)
     {
-        if (loading == null || !loading.IsCompleted || drawn != null) return;
+        if (!Visible || !loading.IsCompleted || drawn != null) return;
         if (loading.IsFaulted) { GD.PushWarning("navmesh: " + loading.Exception?.GetBaseException().Message); drawn = new MeshInstance3D(); AddChild(drawn); return; }
         Navigation = loading.Result;
         drawn = new MeshInstance3D { Name = "NavMesh" };

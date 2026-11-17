@@ -168,6 +168,7 @@ public partial class Player : CharacterBody3D
         prevJump = JumpHeld;
         prevInput = input;
         var dir = WorldDir(input);
+        moveDir = dir;                    // GameObject m_pos98: each state stores its move buffer's direction (StateFall::vfunc_8 etc.)
         bool hasInput = dir != Vector3.Zero;
         bool grounded = Grounded;
         ProbeGround();

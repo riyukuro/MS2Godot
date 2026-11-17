@@ -58,6 +58,18 @@ public sealed class FieldNavigation
         return NavConfig.FromNav(near);
     }
 
+    /// <summary>
+    /// The server's position test (kms2525 FieldManager.ValidPosition / FindNearestPoly, FieldManager.cs:373-398): a point
+    /// with a NaN or infinite axis fails; else FindNearestPoly with extents (2, 4, 2) and the crowd's filter 0 must
+    /// succeed with a non-zero polygon. Map space.
+    /// </summary>
+    public bool ValidPosition(double x, double y, double z)
+    {
+        if (!double.IsFinite(x) || !double.IsFinite(y) || !double.IsFinite(z)) return false;
+        var p = NavConfig.ToNav(x, y, z);
+        return query.FindNearestPoly(p, Ext, filter, out long r, out _, out _).Succeeded() && r != 0;
+    }
+
     /// <summary>Straight-path corners from a to b over the navmesh (map space), or null when no route exists.</summary>
     public List<(double x, double y, double z)> FindPath(double ax, double ay, double az, double bx, double by, double bz)
     {
