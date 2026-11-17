@@ -210,6 +210,7 @@ public sealed class FieldBuilder
                     {
                         Name = $"{ents[0].ModelName}{mi++}",
                         Mesh = FluidMesh(builder.BuildMesh(mesh, skin: false, instanceColor: true), ents, local, fluidCells),
+                        CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
                     });
                     Instances += ents.Count;
                 }
@@ -229,14 +230,74 @@ public sealed class FieldBuilder
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
                     mm.SetInstanceColor(i, InstanceColor(ents[i]));
                 }
-                visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm });
+                // the sun's shadow: a MultiMesh is culled as a whole, and its box spans the field, so as one caster every copy is drawn
+                // again in every shadow cascade. The shadow casters are per-cell twins (tight boxes, culled per cascade); the visible
+                // instances stay one MultiMesh per mesh. A blended mesh (water, glass, effects) and the glow twin cast none.
+                visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
+                if (!mesh.AlphaBlendOn) AddShadowCells(visuals, ents[0].ModelName, mesh, mm.Mesh, ents, local);
                 if (builder.GlowMaterial(mesh) is { } gm)
-                    visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm });
+                    visuals.AddChild(new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off });
                 MultiMeshes++;
                 Instances += ents.Count;
             }
         }
+        FlushShadowCells(visuals);
         return world;
+    }
+
+    /// <summary>Edge of a shadow caster cell, game units.</summary>
+    const float ShadowCell = 3000f;
+    public int ShadowCasters;
+
+    /// <summary>Opaque shadow casters baked per cell: positions and indices only, one mesh (one draw) per cell.</summary>
+    readonly Dictionary<(int, int, int), (List<Vector3> v, List<int> i)> shadowBake = new();
+
+    static (int, int, int) CellKey(FieldEntity e) =>
+        ((int)Math.Floor(e.Position.X / ShadowCell), (int)Math.Floor(e.Position.Y / ShadowCell), (int)Math.Floor(e.Position.Z / ShadowCell));
+
+    void AddShadowCells(Node parent, string name, ModelMesh src, Mesh mesh, List<FieldEntity> ents, Transform3D local)
+    {
+        if (!src.AlphaTestOn && !src.AlphaTest)
+        {
+            // no cut-outs: the shadow needs the triangles only, so every model of a cell shares one baked mesh
+            var arrays = mesh.SurfaceGetArrays(0);
+            var verts = arrays[(int)Mesh.ArrayType.Vertex].AsVector3Array();
+            var idx = arrays[(int)Mesh.ArrayType.Index].AsInt32Array();
+            foreach (var e in ents)
+            {
+                var key = CellKey(e);
+                if (!shadowBake.TryGetValue(key, out var bake)) shadowBake[key] = bake = (new List<Vector3>(), new List<int>());
+                var xf = ModelBuilder.ToGodot(e.Transform) * local;
+                int baseIndex = bake.v.Count;
+                foreach (var v in verts) bake.v.Add(xf * v);
+                foreach (var i in idx) bake.i.Add(baseIndex + i);
+            }
+            return;
+        }
+        foreach (var cell in ents.GroupBy(CellKey))
+        {
+            var list = cell.ToList();
+            var mm = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, Mesh = mesh, InstanceCount = list.Count };
+            for (int i = 0; i < list.Count; i++) mm.SetInstanceTransform(i, ModelBuilder.ToGodot(list[i].Transform) * local);
+            parent.AddChild(new MultiMeshInstance3D { Name = name + "_shadow", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.ShadowsOnly });
+            ShadowCasters++;
+        }
+    }
+
+    void FlushShadowCells(Node parent)
+    {
+        foreach (var (key, bake) in shadowBake)
+        {
+            var arrays = new Godot.Collections.Array();
+            arrays.Resize((int)Mesh.ArrayType.Max);
+            arrays[(int)Mesh.ArrayType.Vertex] = bake.v.ToArray();
+            arrays[(int)Mesh.ArrayType.Index] = bake.i.ToArray();
+            var am = new ArrayMesh();
+            am.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+            parent.AddChild(new MeshInstance3D { Name = $"shadow_{key.Item1}_{key.Item2}_{key.Item3}", Mesh = am, CastShadow = GeometryInstance3D.ShadowCastingSetting.ShadowsOnly });
+            ShadowCasters++;
+        }
+        shadowBake.Clear();
     }
 
     const float CubeSize = 150f;

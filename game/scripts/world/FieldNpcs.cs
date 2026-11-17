@@ -103,6 +103,15 @@ public sealed class FieldNpcs
             player.Play("idle");
             break;
         }
+        // an npc off screen stops animating (no pose or skin update): the enabler pauses the player until the box is in view
+        float top = ModelTop(body);
+        float reach = Math.Max(top, 100f) * 1.2f;
+        root.AddChild(new VisibleOnScreenEnabler3D
+        {
+            Name = "OnScreen",
+            Aabb = new Aabb(new Vector3(-reach / 2, -reach * 0.1f, -reach / 2), new Vector3(reach, reach * 1.2f, reach)),
+            EnableNodePath = new NodePath("../Body/Model/AnimationPlayer"),
+        });
         return root;
     }
 
