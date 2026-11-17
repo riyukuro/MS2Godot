@@ -21,6 +21,8 @@ public partial class Field : Node3D
     protected Player player;
     protected Camera3D camera;
     FieldCamera cam = new();
+    float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
+    float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57), a wheel step goes back to the distance's own
     float camDist;                        // current zoom distance, MinCameraDistance .. cam.Distance
     const float MinCameraDistance = 400f; // CCameraMode default nearest zoom
     string shotDir;
@@ -252,22 +254,77 @@ public partial class Field : Node3D
     /// </summary>
     void UpdateCamera()
     {
-        float range = cam.Distance - MinCameraDistance;
-        float t = range > 0 ? Mathf.Min((camDist - MinCameraDistance) / range, 1f) : 1f;
-        float pitch = Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * t);
-        float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * t;
-        float yaw = Mathf.DegToRad(cam.HAngleDeg + 180f);
-        var ms2 = new Vec3(camDist * Math.Sin(yaw), camDist * Math.Cos(yaw), camDist * Math.Cos(pitch));
-        var offset = FieldBuilder.ToGodotPoint(ms2);
+        var ms2yaw = Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw;
+        var target = player.GlobalPosition;
+        Vector3 eye = Vector3.Zero, look = Vector3.Zero, offset = Vector3.Zero;
+        float maxDist = cam.Distance + PlayerHeight;
+        // CTargetCameraMode::vfunc_38 / vfunc_8: while the near plane is blocked the eye is pushed outward in steps of 10
+        // (the client repeats the step up to 100 times a frame), the angle following the distance.
+        float d = camDist;
+        for (int i = 0; i < 100; i++)
+        {
+            Place(d, ms2yaw, out eye, out look, out offset);
+            if (d >= maxDist || !NearPlaneBlocked(eye, look)) break;
+            d = Mathf.Min(d + 10f, maxDist);
+        }
         player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
-        var target = player.GlobalPosition + new Vector3(0, height, 0);
-        camera.LookAtFromPosition(target + offset, target, Vector3.Up);
+        camera.LookAtFromPosition(eye, look, Vector3.Up);
+    }
+
+    const float PlayerHeight = 150f;            // CTargetCameraMode m_b4 (the player's height, added to the farthest zoom)
+
+    void Place(float dist, float yaw, out Vector3 eye, out Vector3 look, out Vector3 offset)
+    {
+        float range = cam.Distance - MinCameraDistance;
+        float t = range > 0 ? Mathf.Min((dist - MinCameraDistance) / range, 1f) : 1f;
+        float pitch = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * t);
+        float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * t;
+        var ms2 = new Vec3(dist * Math.Sin(yaw), dist * Math.Cos(yaw), dist * Math.Cos(pitch));
+        offset = FieldBuilder.ToGodotPoint(ms2);
+        look = player.GlobalPosition + new Vector3(0, height, 0);
+        eye = look + offset;
+    }
+
+    /// <summary>The client's nine points of the near plane (corners, edge midpoints between them) each cast to the target
+    /// and back; a hit both ways, or a hit from the target side alone, means the view is blocked.</summary>
+    bool NearPlaneBlocked(Vector3 eye, Vector3 look)
+    {
+        var fwd = (look - eye).Normalized();
+        var right = fwd.Cross(Vector3.Up).Normalized();
+        var up = right.Cross(fwd);
+        float near = camera.Near, tan = Mathf.Tan(Mathf.DegToRad(camera.Fov) * 0.5f);
+        float asp = GetViewport().GetVisibleRect().Size.Aspect();
+        var c = eye + fwd * near;
+        Vector3 hx = right * near * tan * asp, hy = up * near * tan;
+        var p = new Vector3[9];
+        p[0] = c - hx + hy; p[1] = c + hx + hy; p[2] = c - hx - hy; p[3] = c + hx - hy;
+        p[4] = (p[0] + p[3]) * 0.5f; p[5] = (p[0] + p[1]) * 0.5f; p[6] = (p[0] + p[2]) * 0.5f;
+        p[7] = (p[1] + p[3]) * 0.5f; p[8] = (p[2] + p[3]) * 0.5f;
+        var space = GetWorld3D().DirectSpaceState;
+        var skip = new Godot.Collections.Array<Rid> { player.GetRid() };
+        foreach (var from in p)
+        {
+            var q = PhysicsRayQueryParameters3D.Create(from, look); q.Exclude = skip;
+            var hit = space.IntersectRay(q);
+            if (hit.Count == 0)
+            {
+                var b = PhysicsRayQueryParameters3D.Create(look, from); b.Exclude = skip;
+                if (space.IntersectRay(b).Count > 0) return true;
+            }
+            else
+            {
+                var b = PhysicsRayQueryParameters3D.Create((Vector3)hit["position"], from); b.Exclude = skip;
+                if (space.IntersectRay(b).Count > 0) return true;
+            }
+        }
+        return false;
     }
 
     public override void _UnhandledInput(InputEvent e)
     {
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
+            if (mb.ButtonIndex == MouseButton.WheelUp || mb.ButtonIndex == MouseButton.WheelDown) camPitch = null;
             if (mb.ButtonIndex == MouseButton.WheelUp) camDist = Mathf.Max(MinCameraDistance, camDist - 70f);
             if (mb.ButtonIndex == MouseButton.WheelDown) camDist = Mathf.Min(cam.Distance, camDist + 70f);
         }
@@ -286,6 +343,15 @@ public partial class Field : Node3D
     public override void _Process(double delta)
     {
         if (player == null) return;
+        if (Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
+        {
+            float step = (float)Math.Min(delta, 1.0 / 15);
+            if (Input.IsKeyPressed(Key.Left)) camYaw += step;
+            if (Input.IsKeyPressed(Key.Right)) camYaw -= step;
+            float pitch0 = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * Mathf.Min((camDist - MinCameraDistance) / Math.Max(cam.Distance - MinCameraDistance, 1f), 1f));
+            if (Input.IsKeyPressed(Key.Up)) camPitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
+            if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
+        }
         UpdateCamera();
         if (shotSettle > 0 && --shotSettle == 0)
         {
