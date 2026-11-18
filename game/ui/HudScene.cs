@@ -1049,7 +1049,13 @@ public partial class HudScene : Node
         var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
         Func<long> now = () => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (me.ToPcInfo(now()) == null) { GD.Print("character: the live session has no own character yet"); return; }
-        var c = new Ms2.Ui.Hud.MyInfoController { Record = () => me.ToPcInfo(now()), StatPoints = me.StatPoints, ServerTime = now };
+        var c = new Ms2.Ui.Hud.MyInfoController
+        {
+            Record = () => me.ToPcInfo(now()), StatPoints = me.StatPoints, ServerTime = now,
+            Inventory = live != null ? live.Inventory : OfflineInventory(),
+            ActionKeyDown = ActionKeyDown,
+        };
+        c.SystemNotice += key => GD.Print($"character: system notice {key}: {hudModel.Tables.Common(key)}");
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"character: {name} is not sent (display only)");
@@ -1066,6 +1072,30 @@ public partial class HudScene : Node
         myInfo = c; myInfoMovie = m;
         uiRoot.AddChild(m);
     }
+
+    /// <summary>
+    /// CKeyTable::IsActionKeyDown (keytable.cpp:1037): any key bound to the action is held. The bound keys are DirectInput codes
+    /// (<see cref="GodotKeyOfDik"/>). The input gate (IsKeyDownGated) is not modelled.
+    /// </summary>
+    bool ActionKeyDown(int action) =>
+        hudModel.Keys.KeysOfAction(action).Any(k => GodotKeyOfDik(k) is { } g && Input.IsPhysicalKeyPressed(g));
+
+    /// <summary>The DirectInput keyboard codes (DIK_*, dinput.h) as Godot physical keys; null for a code not here.</summary>
+    static Key? GodotKeyOfDik(int dik) => dik switch
+    {
+        0x01 => Key.Escape, >= 0x02 and <= 0x0a => Key.Key1 + (dik - 0x02), 0x0b => Key.Key0, 0x0c => Key.Minus, 0x0d => Key.Equal,
+        0x0e => Key.Backspace, 0x0f => Key.Tab, 0x10 => Key.Q, 0x11 => Key.W, 0x12 => Key.E, 0x13 => Key.R, 0x14 => Key.T,
+        0x15 => Key.Y, 0x16 => Key.U, 0x17 => Key.I, 0x18 => Key.O, 0x19 => Key.P, 0x1a => Key.Bracketleft, 0x1b => Key.Bracketright,
+        0x1c => Key.Enter, 0x1d => Key.Ctrl, 0x1e => Key.A, 0x1f => Key.S, 0x20 => Key.D, 0x21 => Key.F, 0x22 => Key.G, 0x23 => Key.H,
+        0x24 => Key.J, 0x25 => Key.K, 0x26 => Key.L, 0x27 => Key.Semicolon, 0x28 => Key.Apostrophe, 0x29 => Key.Quoteleft,
+        0x2a => Key.Shift, 0x2b => Key.Backslash, 0x2c => Key.Z, 0x2d => Key.X, 0x2e => Key.C, 0x2f => Key.V, 0x30 => Key.B,
+        0x31 => Key.N, 0x32 => Key.M, 0x33 => Key.Comma, 0x34 => Key.Period, 0x35 => Key.Slash, 0x36 => Key.Shift,
+        0x37 => Key.KpMultiply, 0x38 => Key.Alt, 0x39 => Key.Space, 0x3a => Key.Capslock,
+        >= 0x3b and <= 0x44 => Key.F1 + (dik - 0x3b), 0x57 => Key.F11, 0x58 => Key.F12,
+        0x9d => Key.Ctrl, 0xb8 => Key.Alt, 0xc8 => Key.Up, 0xd0 => Key.Down, 0xcb => Key.Left, 0xcd => Key.Right,
+        0xc7 => Key.Home, 0xcf => Key.End, 0xc9 => Key.Pageup, 0xd1 => Key.Pagedown, 0xd2 => Key.Insert, 0xd3 => Key.Delete,
+        _ => null,
+    };
 
     // ---- inventory: uiinventorydialog run by its own ActionScript, UIInventoryDialog's C++ side as InventoryController --
 
@@ -1102,6 +1132,7 @@ public partial class HudScene : Node
             MaxSlots = Ms2Godot.Net.BagSlotTable.LoadMax(assets.Packs),
             Wearer = () => me?.ToPcInfo(now()),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
+            ActionKeyDown = ActionKeyDown,
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
