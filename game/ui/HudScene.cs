@@ -1088,11 +1088,16 @@ public partial class HudScene : Node
         var live = Ms2Godot.Net.LiveSession.Instance;
         var view = live != null ? live.Inventory : OfflineInventory();
         if (view == null) { GD.Print("inventory: the live session has no bag yet"); return; }
+        // the hover compares with the own character's equipment (MyPC); Shift is CUIService m_n128 (either Shift key)
+        var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+        Func<long> now = () => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var c = new Ms2.Ui.Hud.InventoryController
         {
             View = view,
             BaseSlots = Ms2Godot.Net.BagSlotTable.Load(assets.Packs),
             MaxSlots = Ms2Godot.Net.BagSlotTable.LoadMax(assets.Packs),
+            Wearer = () => me?.ToPcInfo(now()),
+            ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
