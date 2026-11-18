@@ -61,7 +61,8 @@ public sealed class ItemOptions {
 /// :28), then the options (int id -> value).</summary>
 public sealed class ItemEnchant {
     public int Level, Charge; public byte Version;
-    public long HistoryItemId; public int Attempts, Failures; public bool HistoryEnabled; public int FailStack;
+    /// <summary>HistoryEnabled: the history ctor sets enabled to true (itemenchantinfo.cpp:18); a read replaces it.</summary>
+    public long HistoryItemId; public int Attempts, Failures; public bool HistoryEnabled = true; public int FailStack;
     public readonly Dictionary<int, int> Options = new();
 }
 
