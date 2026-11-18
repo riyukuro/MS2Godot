@@ -39,7 +39,7 @@ public sealed class InventoryController : UiController, IInventoryBinding
     public event Action<int> ToggleDialog;
     /// <summary>A button whose client path sends a request or opens a part not here (by its callback name): OnClickSort,
     /// onClickSlotExpand, onClickOpenBank, onClickItemOption, onClickItemMerge, onClickItemEnchantTransform,
-    /// onClickUnlimitedEnchant, onClickItemRemakeOption, OnItemSearch, notifySlotUse.</summary>
+    /// onClickUnlimitedEnchant, onClickItemRemakeOption, OnItemSearch, notifySlotUse, notifySlotDragEnd (a drop off the bag).</summary>
     public event Action<string> Button;
 
     /// <summary>m_1f0 (BuildTabList @0x14199d1c0): the tab buttons in order, by name and tab.</summary>
@@ -252,6 +252,7 @@ public sealed class InventoryController : UiController, IInventoryBinding
             case "onclickitemsocketandgem": ToggleDialog?.Invoke(0x4f0a); return true;
             case "onclickitemenchant": ToggleDialog?.Invoke(0x4e91); return true;           // OnClickItemEnchant @0x14199aaa0
             case "onclicksort": OnClickSort(); return true;
+            case "notifyslotdragend": return SlotDragEnd(args);
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
             case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand": case "notifyslotuse":
                 Button?.Invoke(name); return true;
@@ -260,6 +261,38 @@ public sealed class InventoryController : UiController, IInventoryBinding
                 Button?.Invoke(name); return false;
         }
         return false;
+    }
+
+    /// <summary>The bag slot index of a slot name of the shown bag, -1 for another name.</summary>
+    int SlotIndexOf(object name) =>
+        name is string n && n.StartsWith(BagName + ".", StringComparison.Ordinal) && int.TryParse(n.AsSpan(BagName.Length + 1), out int i)
+        && i >= 0 && i < slotCount ? i : -1;
+
+    /// <summary>
+    /// NotifyDragSlot::SlotDragEnd (@0x1423025d0) for a drag from this bag (main.gfx's onEndDragAlertModel sends the dragged
+    /// slot's binding and the drop target's): fewer than two arguments or no source name does nothing; a source that is not
+    /// a slot of this bag is not handled here. Dropped on the same slot: vfunc_12, the slot pushed again. Dropped on another
+    /// slot of the bag: that slot's InvenSlot::vfunc_18 (invenslot.cpp:1141) with an InvenSlot source: the move request
+    /// (mode 3: the source slot's item uid, 0 for an empty cell as m_nItemUid, and the target's index), then the source's
+    /// vfunc_10 (pushed again: nothing moves until the server's item packets do). Dropped elsewhere (another dialog's slot
+    /// or no slot): the client's vfunc_12 / vfunc_17 by FUN_1422aeed0(2) (vfunc_17 is the drop-the-item path, vfunc_26)
+    /// are not ported: the slot is pushed again and the callback raised. The item sound (PlayItemSoundByUid) and the
+    /// source's vfunc_21 (its sound, FUN_14199bc00) are not here.
+    /// </summary>
+    bool SlotDragEnd(object[] args)
+    {
+        if (args.Length < 2 || args[0] is not string src) return true;
+        int from = SlotIndexOf(src);
+        if (from < 0) return true;
+        int to = SlotIndexOf(args[1]);
+        if (to < 0) { Host.Push(SlotName(from)); Button?.Invoke("notifySlotDragEnd"); return true; }
+        if (to != from)
+        {
+            long uid = View?.ItemAt(View.Tab, from)?.Uid ?? 0;
+            View?.RequestMove?.Invoke(uid, (short)to);
+        }
+        Host.Push(SlotName(from));
+        return true;
     }
 
     /// <summary>The message box text GetStringCommon(0x2a1) (commonstringtable.cpp:2289).</summary>

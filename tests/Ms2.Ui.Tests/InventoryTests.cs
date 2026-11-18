@@ -245,4 +245,27 @@ public class InventoryTests
         Assert.That(c.GetSlotTooltip("InventoryDialog.999"), Is.Null);
         Assert.That(c.GetSlotTooltip("Other.0"), Is.Null);
     }
+
+    [Test]
+    public void ADropOnAnotherSlotSendsTheMoveOnly()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var (h, c, book) = Load(model);
+        int material = c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Tab == 3).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", material);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var sent = new List<(long, short)>(); c.View.RequestMove = (u, s) => sent.Add((u, s));
+        var raised = new List<string>(); c.Button += raised.Add;
+        Assert.That(c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", "InventoryDialog.4" }), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (3L, (short)4) }), "mode 3: the dragged item's uid and the target index");
+        Assert.That(c.View.ItemAt(c.View.Tab, 0)?.Uid, Is.EqualTo(3L), "nothing moves until the server says so");
+        c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", "InventoryDialog.0" });
+        c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0" });
+        c.OnCallback("notifySlotDragEnd", new object[] { "QuickSlot.1", "InventoryDialog.4" });
+        Assert.That(sent, Has.Count.EqualTo(1), "the same slot, one argument or another bag's source send nothing");
+        c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", null });
+        Assert.That((sent.Count, raised.Last()), Is.EqualTo((1, "notifySlotDragEnd")), "a drop off the bag is not ported: raised");
+    }
 }
