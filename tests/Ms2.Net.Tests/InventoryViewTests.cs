@@ -84,6 +84,15 @@ public class InventoryViewTests {
         Assert.That(new ItemInventoryMoveRequest(1, 2).Op, Is.EqualTo(Outbound.RequestItemInventory));
     }
 
+    [Test] public void TheEquipRequestsAreTheClients() {
+        var w = new ByteWriter(); new ItemEquipRequest(0x0102030405060708, 5, 2).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 0, 8, 7, 6, 5, 4, 3, 2, 1, 5, 2 }));
+        w = new ByteWriter(); new ItemUnequipRequest(0x0102030405060708).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 1, 8, 7, 6, 5, 4, 3, 2, 1 }));
+        Assert.That(new ItemEquipRequest(1, 2, 0).Op, Is.EqualTo(Outbound.ItemEquip));
+        Assert.That((ushort)Outbound.ItemEquip, Is.EqualTo(0x16));
+    }
+
     [Test] public void SortWithAnExpiredItemWaitsForTheBoxAnswer() {
         var b = Book(); var v = new InventoryView(b) { ServerTime = () => 1000 }; var sent = new List<(int, bool)>(); v.RequestSort = (t, s) => sent.Add((t, s));
         b.Apply(new ItemMessage.Add(It(30000001, 1, 0))); b.Apply(new ItemMessage.Add(new EquipItem { Id = 30000002, Uid = 2, InventorySlot = 1, Amount = 1, ExpiryTime = 2000 }));

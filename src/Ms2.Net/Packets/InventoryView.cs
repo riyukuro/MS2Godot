@@ -47,6 +47,11 @@ public sealed class InventoryView {
     /// <summary>The move request (<see cref="ItemInventoryMoveRequest"/>, InvenSlot::vfunc_18): (item uid, target slot index). Set by the owner of
     /// the connection; the item stays where it is until the server's item packets move it.</summary>
     public Action<long, short> RequestMove { get; set; }
+    /// <summary>The equip request (<see cref="ItemEquipRequest"/>, Unk_Inventory::RequestEquipItem): (item uid, equip slot, layer mode), the mode
+    /// already mapped as FUN_1401fb870 does. Set by the owner of the connection; nothing is worn until the server's equip packets say so.</summary>
+    public Action<long, byte, byte> RequestEquip { get; set; }
+    /// <summary>The unequip request (<see cref="ItemUnequipRequest"/>, Unk_Inventory::RequestUnequipItem): the worn item's uid.</summary>
+    public Action<long> RequestUnequip { get; set; }
     public int Pending => pending;
     /// <summary>m_1a8: the tab button index of each tab (-1 = the tab has no button and is skipped); identity until the UI tells.</summary>
     public int[] TabButtons { get; set; } = Enumerable.Range(0, ItemBook.Tabs).ToArray();

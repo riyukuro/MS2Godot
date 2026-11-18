@@ -31,6 +31,21 @@ public sealed record ItemInventoryMoveRequest(long Uid, short Slot) : IOutPacket
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(3); w.WriteLong(Uid); w.WriteShort(Slot); }
 }
 
+/// <summary>Outbound 0x16 (SendOp::ItemEquip) mode 0: Unk_Inventory::RequestEquipItem (inventory.cpp:1238), u8 0 then the payload as
+/// FUN_1401fb760 writes it: i64 the item's uid, u8 the equip slot, u8 the layer mode (FUN_1401fb870: 0 / 1, and 2 only with feature 142,
+/// else 1; any other value 0). The client equips nothing itself: the server's equip packets do.</summary>
+public sealed record ItemEquipRequest(long Uid, byte Slot, byte Mode) : IOutPacket {
+    public Outbound Op => Outbound.ItemEquip;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(0); w.WriteLong(Uid); w.WriteByte(Slot); w.WriteByte(Mode); }
+}
+
+/// <summary>Outbound 0x16 (SendOp::ItemEquip) mode 1: Unk_Inventory::RequestUnequipItem (inventory.cpp:1293), u8 1 then FUN_1401fb910's
+/// i64 the worn item's uid.</summary>
+public sealed record ItemUnequipRequest(long Uid) : IOutPacket {
+    public Outbound Op => Outbound.ItemEquip;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(1); w.WriteLong(Uid); }
+}
+
 /// <summary>What the game server sent from the key check up to the field enter request.</summary>
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
     /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>
