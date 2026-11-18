@@ -195,4 +195,25 @@ public class MyInfoTests
         Assert.That(rf, Is.Not.Null);
         TestContext.WriteLine(Rt.ToString(h.Get(rf.Call(remain, Array.Empty<object>()), "text")));
     }
+
+    [Test]
+    public void AdvancedShowsTheStatLabels()
+    {
+        Packs();
+        var (h, c, _, errors) = Load();
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("hide"));
+        h.Invoke(h.Entity, "onDetailInfo", new object[] { null });
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(1000 + i * 16); }
+        Assert.That(errors, Is.Empty);
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("show"));
+        var manager = h.Child("m_statLabelManager");
+        // a container's child 0 is its m_background; StatLabelContainer.getStatLabel puts labelIndex n on the next one
+        string Cell(int container, int label, string field) =>
+            Rt.ToString(h.Get(h.Get(h.Invoke(h.Invoke(manager, "getChildAt", container), "getChildAt", label + 1), field), "text"));
+        Assert.That((Cell(0, 0, "m_statName"), Cell(0, 0, "m_statValue")), Is.EqualTo((c.Model.Tables.StatName(4), "2100")));
+        Assert.That((Cell(0, 3, "m_statName"), Cell(0, 3, "m_statValue")), Is.EqualTo((c.Model.Tables.StatName(0), "48")));
+        Assert.That(Cell(0, 7, "m_statValue"), Is.EqualTo(c.Model.Tables.Common("s_common_percent").Replace("{0}", "120.0")), "a rate stat");
+        Assert.That(Cell(0, 8, "m_statName"), Is.EqualTo(c.Model.Tables.Common("s_pc_info_name_shield")));
+        Assert.That(Cell(2, 0, "m_statValue"), Is.EqualTo("41"), "defense");
+    }
 }
