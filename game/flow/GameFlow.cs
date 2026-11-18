@@ -119,7 +119,7 @@ public partial class GameFlow : Node
         {
             if (Net.LiveSession.Instance is { } live)
             {
-                if (!live.Busy) _ = live.LoginAsync().ContinueWith(t => { if (t.Result) CallDeferred(nameof(DeferredGo), (int)State.Lobby); });
+                if (!live.Busy) LoginLive(live);
                 return;
             }
             Session.AccountId = "player";           // stub login: any id and password are accepted
@@ -135,7 +135,7 @@ public partial class GameFlow : Node
                 var list = Session.List();
                 var victim = Session.SelectedIndex >= 0 && Session.SelectedIndex < list.Count ? list[Session.SelectedIndex] : null;
                 if (victim == null || Net.LiveSession.Instance is not { } live) return;
-                if (!live.Busy) _ = live.DeleteAsync(victim).ContinueWith(t => { if (t.Result is { Command: Ms2.Net.Packets.CharacterListCommand.DeleteEntry, Error: 0 }) CallDeferred(nameof(DeferredGo), (int)State.Lobby); });
+                if (!live.Busy) DeleteLive(live, victim);
             }
             else if (method == UICharacterListDialogContract.ToHost.OnGameStart && a.Length > 0)
             {
@@ -144,7 +144,7 @@ public partial class GameFlow : Node
                 Session.Chosen = chosen;
                 if (Net.LiveSession.Instance is { } live)
                 {
-                    if (!live.Busy) _ = live.EnterAsync(chosen).ContinueWith(t => { if (t.Result) CallDeferred(nameof(DeferredGo), (int)State.Loading); });
+                    if (!live.Busy) EnterLive(live, chosen);
                     return;
                 }
                 Go(State.Loading);
@@ -153,6 +153,56 @@ public partial class GameFlow : Node
     }
 
     void DeferredGo(int state) => Go((State)state);
+
+    // The live requests are awaited, so the continuation runs on Godot's context and may touch the session and the scene tree.
+    async void LoginLive(Net.LiveSession live)
+    {
+        if (await live.LoginAsync()) Go(State.Lobby);
+    }
+
+    async void DeleteLive(Net.LiveSession live, CharacterEntry victim)
+    {
+        var m = await live.DeleteAsync(victim);
+        if (m is { Command: CharacterListCommand.DeleteEntry, Error: 0 }) Go(State.Lobby);
+    }
+
+    async void EnterLive(Net.LiveSession live, CharacterEntry chosen)
+    {
+        if (await live.EnterAsync(chosen)) Go(State.Loading);
+    }
+
+    /// <summary>OnCreateCharacterAnswer: a refusal shows the message its kind picks (the create screen stays).</summary>
+    async void CreateLive(Net.LiveSession live, CreateCharacter request)
+    {
+        var e = await live.CreateAsync(request);
+        if (e == null)
+        {
+            if (live.LastRefusal is { } r) ShowNotice(Net.CreateRefusalText.For(r.Kind, r.Message, CommonStrings()));
+            return;
+        }
+        Session.SelectedIndex = Session.List().Count - 1;
+        Go(State.Lobby);
+    }
+
+    Func<string, string> commonStrings;
+    Func<string, string> CommonStrings()
+    {
+        if (commonStrings != null) return commonStrings;
+        try { using var packs = new PackSet(Settings.DataDir); commonStrings = new GameStrings(packs, "en").Common(); }
+        catch (Exception ex) { GD.PushWarning("flow strings: " + ex.Message); commonStrings = _ => null; }
+        return commonStrings;
+    }
+
+    /// <summary>ShowMessageBox / UIMessageBox::UpdateErrorMessage: one box with the text and an OK button.</summary>
+    void ShowNotice(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        var box = new AcceptDialog { DialogText = text, Title = "", Exclusive = true };
+        box.Confirmed += box.QueueFree;
+        box.Canceled += box.QueueFree;
+        AddChild(box);
+        box.PopupCentered();
+    }
 
     void OnCreateCancelled()
     {
@@ -165,13 +215,9 @@ public partial class GameFlow : Node
         if (Current != State.Create) return;
         if (Net.LiveSession.Instance is { } live)
         {
-            if (live.Busy) return;
-            _ = live.CreateAsync(request).ContinueWith(t =>
-            {
-                if (t.Result == null) return;       // refused: the create screen stays
-                Session.SelectedIndex = Session.List().Count - 1;
-                CallDeferred(nameof(DeferredGo), (int)State.Lobby);
-            });
+            // UICharacterCreateDialog::OnCreate / FUN_1418e6430 return at once unless m_nState == 1; the request sets it to 3
+            // until the answer (uicameraeditdialog.cpp:1719, 2123, 2141), so a second click while one is pending does nothing.
+            if (!live.Busy) CreateLive(live, request);
             return;
         }
         int subJob1 = 0;

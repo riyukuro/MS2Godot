@@ -34,6 +34,8 @@ public partial class LiveSession : Node
     RemoteLayer remote;      // the other players and npcs, once the field is built
     bool answered;           // ResponseFieldEnter sent for this entry
     public bool Busy { get; private set; }
+    /// <summary>The last create the server refused (null after a create that went through).</summary>
+    public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
     {
@@ -77,6 +79,7 @@ public partial class LiveSession : Node
     public async Task<CharacterEntry> CreateAsync(CreateCharacter request)
     {
         Busy = true;
+        LastRefusal = null;
         try
         {
             var e = await new LoginClient(login).CreateAsync(request);
@@ -84,7 +87,7 @@ public partial class LiveSession : Node
             GD.Print($"live: character created: {e.User.Name} id {e.User.CharacterId}");
             return e;
         }
-        catch (CharacterCreateRefused ex) { GD.PushWarning("live: " + ex.Message); return null; }
+        catch (CharacterCreateRefused ex) { GD.PushWarning("live: " + ex.Message); LastRefusal = ex; return null; }
         catch (Exception ex) { GD.PushWarning("live: create failed: " + ex.Message); return null; }
         finally { Busy = false; }
     }
