@@ -80,11 +80,16 @@ public partial class As3View : Node2D
     /// <summary>Milliseconds all movie views spent in _Process (ticks and display-list sync), and in the ticks alone, since the last reset (frame-time runs).</summary>
     public static double SpentMs, TickMs;
 
+    /// <summary>MS2_PERF: called once with the time of the next _Process (ticks and display-list sync), then cleared.</summary>
+    public Action<double> NextProcessMs;
+
     public override void _Process(double delta)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         Advance(delta);
-        SpentMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        double ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        SpentMs += ms;
+        if (NextProcessMs is { } report) { NextProcessMs = null; report(ms); }
     }
 
     void Advance(double delta)

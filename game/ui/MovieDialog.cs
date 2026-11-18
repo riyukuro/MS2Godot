@@ -71,10 +71,25 @@ public partial class MovieDialog : Node2D
     {
         SetProcess(false);
         if (openPerf == null) return;
-        // the first frame after the open: the time until this node is processed (the view's first sync and draw follow it)
-        openPerf.Extra("to-first-frame", System.Diagnostics.Stopwatch.GetElapsedTime(openedAt).TotalMilliseconds);
-        openPerf.Done();
+        // the first frame after the open: the time until this node is processed; the view (a child, processed after it)
+        // then ticks and syncs its display list ("first-sync"), and the frame is drawn ("to-drawn": from the end of that
+        // sync to the frame's post-draw, the whole frame's draw, not this dialog's alone)
+        var perf = openPerf;
         openPerf = null;
+        perf.Extra("to-first-frame", System.Diagnostics.Stopwatch.GetElapsedTime(openedAt).TotalMilliseconds);
+        view.NextProcessMs = ms =>
+        {
+            perf.Extra("first-sync", ms);
+            long synced = System.Diagnostics.Stopwatch.GetTimestamp();
+            Action drawn = null;
+            drawn = () =>
+            {
+                RenderingServer.FramePostDraw -= drawn;
+                perf.Extra("to-drawn", System.Diagnostics.Stopwatch.GetElapsedTime(synced).TotalMilliseconds);
+                perf.Done();
+            };
+            RenderingServer.FramePostDraw += drawn;
+        };
     }
 
     void Resize(Vector2 window)
