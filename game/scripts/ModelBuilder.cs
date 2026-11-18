@@ -227,7 +227,7 @@ public sealed class ModelBuilder
         return sm;
     }
 
-    static Shader fieldShader, fieldBlendShader, fieldAddShader, fieldShellShader;
+    static Shader fieldShader, fieldBlendShader, fieldAddShader, fieldShellShader, fieldFadeShader, fieldFadeAddShader;
 
     /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE).</summary>
     static Shader FieldShader(ModelMesh m)
@@ -240,6 +240,8 @@ public sealed class ModelBuilder
             fieldBlendShader = new Shader { Code = code.Insert(nl, "#define BLEND\n") };
             fieldAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n") };
             fieldShellShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define SHELL\n") };
+            fieldFadeShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define FADE\n") };
+            fieldFadeAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n#define FADE\n") };
         }
         if (!m.AlphaBlendOn) return fieldShader;
         return ((m.AlphaFlags >> 5) & 15) == 0 ? fieldAddShader : fieldBlendShader;
@@ -266,6 +268,36 @@ public sealed class ModelBuilder
         colour.RenderPriority = -1;
         shell.NextPass = colour;
         mesh.SurfaceSetMaterial(0, shell);
+    }
+
+    /// <summary>
+    /// The faded form of a field mesh's colour material (TransparencyMaterial::FUN_141860140): blending on with the mesh's
+    /// own NiAlphaProperty blend (an additive one stays additive; a mesh without one gets a default property, source alpha /
+    /// inverse source alpha) and the depth write on. The caller sets its alpha with <see cref="SetFade"/>.
+    /// </summary>
+    public static ShaderMaterial FadeMaterial(ShaderMaterial colour, ModelMesh m)
+    {
+        FieldShader(m);
+        var fade = (ShaderMaterial)colour.Duplicate();
+        fade.Shader = m.AlphaBlendOn && ((m.AlphaFlags >> 5) & 15) == 0 ? fieldFadeAddShader : fieldFadeShader;
+        // only the property's own test flag tests: the 0.5 cut-out BuildMaterial gives an untested property would cut the
+        // faded alpha (texture alpha times the fade) away
+        fade.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn);
+        // the mesh's own NiVertexColorProperty is swapped for one with source mode 3 (TransparencyMaterial::FUN_141860140,
+        // TransparencyStandardMaterial::vfunc_2); an inherited one is left as it is
+        fade.SetShaderParameter(ShaderParam.FadeVcSwap, m.VertexColorFlags >= 0);
+        return fade;
+    }
+
+    /// <summary>
+    /// TransparencyStandardMaterial::vfunc_4 (0x141860bf0): the material alpha becomes the mesh's own NiMaterialProperty
+    /// alpha (1 without one) times the fade, and when the NiAlphaProperty tests alpha (flag 0x200) its reference becomes
+    /// (int)(fade * reference) &amp; 0xff.
+    /// </summary>
+    public static void SetFade(ShaderMaterial fade, ModelMesh m, float alpha)
+    {
+        fade.SetShaderParameter(ShaderParam.FadeAlpha, m.MaterialAlpha * alpha);
+        if (m.AlphaTestOn) fade.SetShaderParameter(ShaderParam.AlphaRef, ((int)(alpha * m.AlphaThreshold) & 0xff) / 255f);
     }
 
     /// <summary>The depth-only SHELL form of a blended field mesh's material (colour unchanged, depth written), or null.</summary>

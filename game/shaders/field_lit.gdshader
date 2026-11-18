@@ -19,6 +19,15 @@ shader_type spatial;
 #ifdef SHELL
 render_mode unshaded, blend_mix, depth_draw_always;
 #else
+#ifdef FADE
+// a prop faded out by BGTransparencyMgr (world/FieldFade): TransparencyMaterial::FUN_141860140 turns blending on (the
+// mesh's own NiAlphaProperty cloned, or a default one) and the z-buffer write on
+#ifdef ADD
+render_mode unshaded, blend_add, depth_draw_always;
+#else
+render_mode unshaded, blend_mix, depth_draw_always;
+#endif
+#else
 #ifdef ADD
 render_mode unshaded, blend_add, depth_draw_never;
 #else
@@ -27,6 +36,7 @@ render_mode unshaded, blend_mix, depth_draw_never;
 #else
 render_mode ambient_light_disabled, specular_disabled;
 #define POINT_LIT
+#endif
 #endif
 #endif
 #endif
@@ -49,6 +59,13 @@ uniform bool has_vcolor = false;     // CUSTOM0 holds rgba vertex colours
 uniform bool vcolor_amb_diff = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
+uniform float fade_alpha = 1.0;     // FADE: the NiMaterialProperty alpha TransparencyStandardMaterial sets (vfunc_4)
+// FADE: the mesh has its own NiVertexColorProperty, which TransparencyMaterial::FUN_141860140 swaps for a new one that
+// TransparencyStandardMaterial::vfunc_2 sets to source mode 3, lighting E_A_D. The engine's descriptor takes mode 3 as
+// AMBDIFFEMISSIVE 3 (0x141de4a60, only with vertex colours), and its colour setup (0x141d8e600) then takes the ambient from
+// the vertex colours and the diffuse and emissive from the material; the opacity is split from the diffuse, so it is the
+// material alpha, not the vertex alpha.
+uniform bool fade_vc_swap = false;
 uniform vec3 emissive = vec3(0.0);
 uniform vec3 mat_ambient = vec3(0.7058824);
 uniform vec3 mat_diffuse = vec3(0.7058824);
@@ -108,11 +125,23 @@ void fragment() {
 		t.rgb *= sample_slot(dark_tex, 1, duv).rgb;
 	}
 	float a = t.a * vcolor.a;
+#ifdef FADE
+	if (fade_vc_swap) {
+		a = t.a;
+	}
+	a *= fade_alpha;    // the faded material alpha; alpha_ref is the test reference scaled the same way
+#endif
 	if (alpha_test && a < alpha_ref) {
 		discard;
 	}
 	vec3 amb = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_ambient;
 	vec3 dif = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_diffuse;
+#ifdef FADE
+	if (fade_vc_swap) {
+		amb = has_vcolor ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_ambient;
+		dif = COLOR.a > 0.5 ? COLOR.rgb : mat_diffuse;
+	}
+#endif
 	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
 	vec3 lit = emissive + ms2_ambient * amb + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl) + ms2_point_lights(world_pos, normalize(world_normal)));
 	vec3 c = lit * t.rgb;

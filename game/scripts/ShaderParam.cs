@@ -8,6 +8,8 @@ static class ShaderParam
     public static readonly StringName
         AlphaRef = "alpha_ref",
         AlphaTest = "alpha_test",
+        FadeAlpha = "fade_alpha",
+        FadeVcSwap = "fade_vc_swap",
         BaseTex = "base_tex",
         Color0 = "color0",
         Color1 = "color1",

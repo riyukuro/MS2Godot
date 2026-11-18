@@ -44,6 +44,26 @@ public sealed class FieldBuilder
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
     /// <summary>Optional: the field load's entity count, bumped as each entity of the set is placed (see <see cref="World.LoadCount"/>).</summary>
     public World.LoadCount Load;
+    /// <summary>One drawn copy of a mesh of an entity: instance <see cref="Index"/> of <see cref="Mm"/>.</summary>
+    public sealed class FadeDraw { public MultiMesh Mm; public int Index; public ModelMesh Mesh; public Node3D Parent; }
+    /// <summary>The draws of every entity BGTransparencyMgr can fade (<see cref="IsFadeTarget"/>), for world/FieldFade.</summary>
+    public readonly Dictionary<FieldEntity, List<FadeDraw>> FadeDraws = new();
+
+    /// <summary>
+    /// WorldService::FUN_141bbfe30 (worldservice_1.cpp:3638-3659) records an entity for BGTransparencyMgr when its model
+    /// contains MS2MapProperties (0x2ea80520) and its Transparency (0x9004569a) is true, unless the hardware instancing
+    /// service lists it as excluded; only an entity made at run time by MS2EntityManagerService::CreateEntity is put on that
+    /// list (ms2entitymanagerservice.cpp:166-167), never a field's own entity.
+    /// </summary>
+    public static bool IsFadeTarget(FieldEntity e) => e.HasMixin("MS2MapProperties") && e.Bool("Transparency");
+
+    void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent)
+    {
+        if (!IsFadeTarget(e)) return;
+        if (!FadeDraws.TryGetValue(e, out var list)) FadeDraws[e] = list = new List<FadeDraw>();
+        list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent });
+    }
+
     /// <summary>The blended draws with the client's alpha key, for <see cref="AlphaSort"/>.</summary>
     public readonly List<AlphaSort.Entry> AlphaEntries = new();
 
@@ -308,6 +328,7 @@ public sealed class FieldBuilder
                         {
                             om.SetInstanceTransform(i, ModelBuilder.ToGodot(obj[i].Transform) * local);
                             om.SetInstanceColor(i, InstanceColor(obj[i]));
+                            AddFadeDraw(obj[i], om, i, mesh, visuals);
                         }
                         var on = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                         visuals.AddChild(on);
@@ -345,6 +366,7 @@ public sealed class FieldBuilder
                 {
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
                     mm.SetInstanceColor(i, InstanceColor(ents[i]));
+                    AddFadeDraw(ents[i], mm, i, mesh, visuals);
                 }
                 // the sun's shadow: a MultiMesh is culled as a whole, and its box spans the field, so as one caster every copy is drawn
                 // again in every shadow cascade. The shadow casters are per-cell twins (tight boxes, culled per cascade); the visible

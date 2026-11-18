@@ -32,6 +32,7 @@ public sealed class ModelMesh
     public float[] Ambient, Diffuse, Emissive;   // NiMaterialProperty colours (rgb), or null without a material
     public float[] Specular;              // NiMaterialProperty specular colour (rgb), or null
     public float Glossiness;              // NiMaterialProperty glossiness (the specular power)
+    public float MaterialAlpha = 1f;      // NiMaterialProperty alpha (1 without a material)
     public bool SpecularOn;               // an NiSpecularProperty with its enable flag set
     public float[] Colors;                // rgba 0..1 per vertex, or null
     public float[] Uvs1;                  // second uv set (TEXCOORD1), or null
@@ -455,6 +456,7 @@ public sealed class ModelData
                     mesh.Emissive = Rgb("Emissive Color");
                     mesh.Specular = Rgb("Specular Color");
                     mesh.Glossiness = prop.Float("Glossiness");
+                    mesh.MaterialAlpha = prop.Float("Alpha");
                 }
                 if (prop.Type == "NiSpecularProperty") mesh.SpecularOn = (prop.IntOr("Flags", 0) & 1) != 0;
             }

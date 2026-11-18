@@ -30,6 +30,8 @@ public partial class Field : Node3D
     protected PackSet packs;
     protected Player player;
     protected Camera3D camera;
+    /// <summary>The prop fade between the player and the camera (BGTransparencyMgr).</summary>
+    public World.FieldFade Fade { get; private set; }
     FieldCamera cam = new();
     float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
     float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57); a distance change goes back to the distance's own
@@ -119,6 +121,8 @@ public partial class Field : Node3D
         var fieldWorld = fb.World;
         AddChild(fieldWorld);
         AddChild(new AlphaSort(fb.AlphaEntries, fieldWorld));   // the client's alpha key on the field's blended draws
+        Fade = new World.FieldFade(fb.FadeDraws, () => player?.GlobalPosition, () => camera);   // BGTransparencyMgr
+        AddChild(Fade);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         long tBuild = sw.ElapsedMilliseconds;
