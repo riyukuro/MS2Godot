@@ -78,6 +78,7 @@ public class AsDisplayObject : AsEventDispatcher
     public void MarkChanged(bool deep = false)
     {
         Changes++;
+        if (Class?.Runtime is { } rt) rt.DisplayMarks++;
         marks |= deep ? Marks.Own | Marks.Subtree | Marks.Deep : Marks.Own | Marks.Subtree;
         for (var p = Parent ?? MarkOwner; p != null && (p.marks & Marks.Subtree) == 0; p = p.Parent ?? p.MarkOwner) p.marks |= Marks.Subtree;
     }

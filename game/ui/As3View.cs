@@ -95,6 +95,10 @@ public partial class As3View : Node2D
     public static double SyncMs;
     public static long Ticks;
 
+    /// <summary>Milliseconds all movie views spent in the 50 ms mouse-over sample (with the covered retest) and in the mouse
+    /// moves they took, since the start (frame-time runs).</summary>
+    public static double MouseMs;
+
     /// <summary>MS2_PERF: called once with the time of the next _Process (ticks and display-list sync), then cleared.</summary>
     public Action<double> NextProcessMs;
 
@@ -121,7 +125,9 @@ public partial class As3View : Node2D
         }
         caretTime += delta;
         Sync();
+        long m0 = System.Diagnostics.Stopwatch.GetTimestamp();
         SampleMouseOver();
+        MouseMs += System.Diagnostics.Stopwatch.GetElapsedTime(m0).TotalMilliseconds;
     }
 
     // ---- display list sync -------------------------------------------------------------------------------------
@@ -139,14 +145,15 @@ public partial class As3View : Node2D
         var gx = IsInsideTree() ? GetGlobalTransform() : Transform;
         bool deep = full || gx.X != viewXf.X || gx.Y != viewXf.Y;
         full = false; viewXf = gx;
+        if (deep) moves++;
         // a script mask's polygons are mapped through the mask's and the masked object's ancestors, which mark neither
         // the masked object nor always this stage (a mask out of the display list): after any mark anywhere the masked
         // objects are walked (those marks are this view's own: they are not counted as changes for the other views)
         if (AsDisplayObject.Changes != changesSeen && scriptMasked.Count > 0)
         {
-            long changes = AsDisplayObject.Changes;
+            long changes = AsDisplayObject.Changes, own = Player.RT.DisplayMarks;
             foreach (var e in scriptMasked) e.Obj.MarkChanged();
-            AsDisplayObject.Changes = changes;
+            AsDisplayObject.Changes = changes; Player.RT.DisplayMarks = own;
         }
         var stage = Player.Stage;
         if (deep || stage.ChangedBelow)
@@ -583,16 +590,21 @@ public partial class As3View : Node2D
         lastMouseTest = now;
         // a view leaving the tree (a scene change) has no viewport: no sample
         if (!IsInsideTree() || GetViewport() is not { } vp) { MouseOverUi = false; return; }
-        sampledAt = vp.GetMousePosition();
-        var p = StagePoint(sampledAt);
+        var p = StagePoint(vp.GetMousePosition());
         MouseOverUi = IsVisibleInTree() && Player.HitTestShapes(p.X, p.Y);
-        // Flag_NeedMouseUpdate: a display list changed (any movie's: one of them may now cover the mouse), so the mouse's
-        // top-most entity is found again at its last position (a drag keeps its own)
-        if (AsDisplayObject.Changes != retestChanges && !Player.Dragging && Player.MouseActivated)
-        {
-            retestChanges = AsDisplayObject.Changes;
-            Player.MouseRetest(CoveredAt(ViewportPoint(Player.MouseX, Player.MouseY), vp));
-        }
+        // Flag_NeedMouseUpdate (set after each advanced frame, sfr_gfx_01i.cpp:4107): the mouse's top-most entity is found
+        // again at its last position (a drag keeps its own). The answer can only differ when this movie's display objects
+        // were marked (its runtime's DisplayMarks; the script-mask re-marks after other movies' marks are not counted), the
+        // view moved on screen, or another movie's object came over the mouse or left it, so only then is it searched again.
+        if (Player.Dragging || !Player.MouseActivated) return;
+        bool covered = Covered(vp);
+        long marks = Player.RT.DisplayMarks;
+        if (marks == retestMarks && moves == retestMoves && covered == retestCovered) return;
+        retestMarks = marks; retestMoves = moves; retestCovered = covered;
+        Retests++;
+        long r0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Player.MouseRetest(covered);
+        RetestMs += System.Diagnostics.Stopwatch.GetElapsedTime(r0).TotalMilliseconds;
     }
 
     // ---- the movies' one stage ---------------------------------------------------------------------------------------
@@ -600,15 +612,16 @@ public partial class As3View : Node2D
     // The client's dialogs are all in main.gfx's one stage (GFxMovieMain), so a dialog over another one takes the mouse
     // from it: the top-most entity is the upper dialog's object, and what the mouse was over below rolls out (the
     // TooltipManager's ROLL_OUT then destroys its tooltip). Here each movie has its own stage, so a view told that another
-    // movie's object is over the mouse (CoveredAt) gives its player no top-most entity there. The tooltip movie (no input,
+    // movie's object is over the mouse (Covered) gives its player no top-most entity there. The tooltip movie (no input,
     // its own movie in the client too) covers nothing.
 
     static readonly HashSet<As3View> inTree = new();
-    Vector2 sampledAt = new(float.NaN, float.NaN);         // the viewport point of the last MouseOverUi sample
-    long retestChanges = -1;                                // AsDisplayObject.Changes at the last retest
-
-    /// <summary>A stage point in viewport units (through the canvas layer the view is drawn in).</summary>
-    Vector2 ViewportPoint(double x, double y) => GetGlobalTransformWithCanvas() * new Vector2((float)x, (float)y);
+    long moves;                                             // the syncs that found the view moved on screen (a deep sync)
+    long retestMarks = -1, retestMoves;                     // DisplayMarks and moves at the last retest
+    /// <summary>The mouse retests all movie views made since the start, and the milliseconds they took (frame-time runs).</summary>
+    public static long Retests;
+    public static double RetestMs;
+    bool retestCovered;                                     // whether another movie covered the point at the last retest
 
     /// <summary>Whether the view takes the mouse: in the tree, shown, its input on.</summary>
     bool TakesMouse => Player != null && IsInsideTree() && IsVisibleInTree() && IsProcessingUnhandledInput();
@@ -620,19 +633,13 @@ public partial class As3View : Node2D
         return a != b ? a > b : IsGreaterThan(other);
     }
 
-    /// <summary>Whether the view's shapes are at a viewport point (the last sample's answer when the point is the same).</summary>
-    bool HitsAt(Vector2 viewport)
-    {
-        if (viewport.DistanceSquaredTo(sampledAt) < 0.25f) return MouseOverUi;
-        var p = StagePoint(viewport);
-        return Player.HitTestShapes(p.X, p.Y);
-    }
-
-    /// <summary>Whether another view's shapes are over this view at a viewport point.</summary>
-    bool CoveredAt(Vector2 viewport, Viewport vp)
+    /// <summary>Whether another view drawn over this one had its shapes under the mouse at its last 50 ms sample
+    /// (<see cref="MouseOverUi"/>, CUIService's hit test): no hit test of its own, so a view that covers nothing costs a
+    /// flag read.</summary>
+    bool Covered(Viewport vp)
     {
         foreach (var v in inTree)
-            if (v != this && v.TakesMouse && v.GetViewport() == vp && v.DrawnOver(this) && v.HitsAt(viewport)) return true;
+            if (v != this && v.MouseOverUi && v.TakesMouse && v.GetViewport() == vp && v.DrawnOver(this)) return true;
         return false;
     }
 
@@ -704,10 +711,12 @@ public partial class As3View : Node2D
         {
             case InputEventMouseMotion mm:
             {
+                long m0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 var p = StagePoint(mm.Position);
                 Player.MouseMove(p.X, p.Y);
+                if (MouseOverUi) CoverBelow(mm.Position);
+                MouseMs += System.Diagnostics.Stopwatch.GetElapsedTime(m0).TotalMilliseconds;
                 if (!MouseOverUi) return;
-                CoverBelow(mm.Position);
                 break;
             }
             case InputEventMouseButton mb:

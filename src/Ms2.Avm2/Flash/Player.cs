@@ -8,6 +8,9 @@ namespace Ms2.Avm2
     {
         /// <summary>The player running this runtime's movie (display list, frames, input); null for a bare runtime.</summary>
         public Flash.Player Player;
+        /// <summary>Counts the marks made on this runtime's display objects (<see cref="Flash.AsDisplayObject.MarkChanged"/>):
+        /// a movie whose count did not move has the same display list.</summary>
+        public long DisplayMarks;
     }
 }
 
@@ -1041,7 +1044,8 @@ namespace Ms2.Avm2.Flash
         /// </summary>
         void MouseEv(AsInteractiveObject t, string type, AsObject related = null, int delta = 0, int button = 0)
         {
-            if (t == null) return;
+            // no listener on the target or its ancestors (the capture and bubble path): nothing would see it (as Send)
+            if (t == null || !t.willTrigger(type)) return;
             var (lx, ly) = t.GlobalToLocal(MouseX, MouseY);
             bool bubbles = type is not ("rollOver" or "rollOut");
             RT.Guard(type, () =>

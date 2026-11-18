@@ -14,7 +14,9 @@ public static class PerfLog
     const int FrameWindow = 100;
 
     static int frames;
-    static double sum, worst, spent0, ticks0;   // As3View.SpentMs and TickMs at the window start
+    static double sum, worst, spent0, ticks0, mouse0;   // As3View.SpentMs, TickMs and MouseMs at the window start
+    static long retests0;                               // As3View.Retests at the window start
+    static double retestMs0;                            // As3View.RetestMs at the window start
     // As3View.Sync time and movie ticks at the last frame; the window's frames with a movie tick and without, and their sync time
     static double syncLast; static long tickLast;
     static int tickFrames; static double syncTick, syncIdle;
@@ -72,6 +74,7 @@ public static class PerfLog
               $"alloc {(GC.GetTotalAllocatedBytes() - allocated) / 1048576.0 / (sum / 1000.0):0.0} MB/s, " +
               $"process {Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000:0.00} ms, draw calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}, " +
               $"movie views {(As3View.SpentMs - spent0) / frames:0.00} ms (ticks {(As3View.TickMs - ticks0) / frames:0.00} ms), " +
+              $"mouse {(As3View.MouseMs - mouse0) / frames:0.000} ms/frame ({As3View.Retests - retests0} retests, {(As3View.RetestMs - retestMs0) / frames:0.000} ms/frame), " +
               $"sync {(syncTick + syncIdle) / frames:0.000} ms/frame, frames without a movie tick {100.0 * (frames - tickFrames) / frames:0}% " +
               $"(sync {(frames > tickFrames ? syncIdle / (frames - tickFrames) : 0):0.000} ms; with a tick {(tickFrames > 0 ? syncTick / tickFrames : 0):0.000} ms)");
         Reset();
@@ -82,7 +85,7 @@ public static class PerfLog
         frames = 0; sum = 0; worst = 0;
         gc0 = GC.CollectionCount(0); gc1 = GC.CollectionCount(1); gc2 = GC.CollectionCount(2);
         allocated = GC.GetTotalAllocatedBytes();
-        spent0 = As3View.SpentMs; ticks0 = As3View.TickMs;
+        spent0 = As3View.SpentMs; ticks0 = As3View.TickMs; mouse0 = As3View.MouseMs; retests0 = As3View.Retests; retestMs0 = As3View.RetestMs;
         tickFrames = 0; syncTick = syncIdle = 0;
     }
 
