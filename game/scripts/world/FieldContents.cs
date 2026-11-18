@@ -481,8 +481,17 @@ public partial class FieldContents : Node3D
         steps.Enqueue(("settle", 1.2f, null, "1a_npc_nametag.png"));
         steps.Enqueue(("teleport", 0, () => { GD.Print($"talkable: {talk.FindTalkable()?.Row.Id}"); talk.ActionKey(); return Vector3.Zero; }, null));
         steps.Enqueue(("settle", 2.0f, null, "1b_talk.png"));
-        steps.Enqueue(("teleport", 0, () => { talk.ActionKey(); return Vector3.Zero; }, null));
-        steps.Enqueue(("settle", 1.5f, null, "1c_talk_after_action.png"));
+        // the action key through the pages (a choice page picks its first choice), a shot of each, up to 12
+        for (int k = 1; k <= 12; k++)
+        {
+            int at = k;
+            steps.Enqueue(("teleport", 0, () =>
+            {
+                if (talk.Open) { talk.ActionKey(); GD.Print($"talk page {at}: script {talk.ScriptId} page {talk.Page + 1}"); }
+                return Vector3.Zero;
+            }, null));
+            steps.Enqueue(("settle", 0.8f, null, $"1c_talk_page{at:00}.png"));
+        }
         steps.Enqueue(("teleport", 0, () => { talk.End(); return Vector3.Zero; }, null));
         steps.Enqueue(("settle", 1.5f, null, "1d_talk_closed.png"));
         steps.Enqueue(("walk", 2.0f, () => n.Position - player.GlobalPosition, null));
