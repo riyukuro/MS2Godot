@@ -229,6 +229,13 @@ public sealed class GameTables
 
     GameStrings strings;
     Dictionary<string, string> skillNames, slotNames, skillDescs;
+    /// <summary>CStringTable::FUN_141811980(13, id): string table 13 "categoryName", a shop tab's name (CShopCategoryTable
+    /// TabInfo::GetName, shopcategorytable.cpp:152); "" when unknown.</summary>
+    public string CategoryName(int id) => Lazy(ref categoryNames, "categoryname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    /// <summary>CStringTable::FUN_141811980(0x53, id): string table 83 "stringShopTitle", a shop's title by shop id; "" when unknown.</summary>
+    public string ShopTitle(int id) => Lazy(ref shopTitles, "stringshoptitle", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> categoryNames, shopTitles;
+
     Dictionary<string, string> Lazy(ref Dictionary<string, string> d, string table, string attr)
         => d ??= strings?.Table(table, attr) ?? new Dictionary<string, string>();
     /// <summary>The token caps by currency (GetCurrencyAmountAndCap, uicommon.cpp): Client::Constants HonorTokenMax,

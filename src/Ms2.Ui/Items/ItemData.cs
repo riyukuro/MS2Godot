@@ -165,6 +165,8 @@ public sealed class ItemData
     public bool IsGemstone => Type == 0xd;                     // FUN_14053d840 (:1038)
     public bool IsLapenshard => Type == 0x15;                  // IsLapenshardType (:1050)
     public bool IsPieceItem => Type == 0x1b;                   // :1068
+    /// <summary>GetMaidId (:1163): the npc a type 6 / subtype 7 item summons, else 0; HasMaidId (:713) is its being set.</summary>
+    public int MaidId => Type == 6 && Subtype == 7 ? Param2 : 0;
     public bool IsCashItem => ItemGroup == 4;                  // :1280
     public bool HasSkinType => SkinType != 0;                  // :756
     /// <summary>:564: not type 1, and more than one per slot.</summary>
@@ -289,5 +291,35 @@ public sealed class ItemDataTable
             files[file] = rows;
         }
         return rows.TryGetValue(id, out var d) ? d : null;
+    }
+
+    Dictionary<int, uint> textColors;
+
+    /// <summary>
+    /// GetTextColor (itemdatatable.cpp:399): a grade's name colour, 0xffffff for a grade without one. LoadTextColor (:1032)
+    /// reads table/itemdata.xml's &lt;Text id color="r,g,b"&gt; through FUN_14028c0d0, which gives 0xffRRGGBB.
+    /// </summary>
+    public uint TextColor(int grade)
+    {
+        if (textColors == null)
+        {
+            textColors = new();
+            if (packs != null && packs.Exists("Xml", "table/itemdata.xml"))
+                foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/itemdata.xml")).Root.Elements("Text"))
+                {
+                    int.TryParse((string)e.Attribute("id"), out int id);
+                    textColors[id] = Rgb((string)e.Attribute("color") ?? "");
+                }
+        }
+        return textColors.TryGetValue(grade, out var c) ? c : 0xffffff;
+    }
+
+    /// <summary>FUN_14028c0d0 (commonutil): "r,g,b" as 0xffRRGGBB (atoi of each part); 0 unless there are three parts.</summary>
+    static uint Rgb(string text)
+    {
+        var parts = text.Split(',');
+        if (parts.Length != 3) return 0;
+        static int Atoi(string s) { int i = 0, n = 0; s = s.TrimStart(); bool neg = false; if (i < s.Length && (s[i] == '-' || s[i] == '+')) neg = s[i++] == '-'; while (i < s.Length && char.IsAsciiDigit(s[i])) n = n * 10 + (s[i++] - '0'); return neg ? -n : n; }
+        return 0xff000000u | (uint)(Atoi(parts[0]) & 0xff) << 16 | (uint)(Atoi(parts[1]) & 0xff) << 8 | (uint)(Atoi(parts[2]) & 0xff);
     }
 }
