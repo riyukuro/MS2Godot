@@ -22,6 +22,13 @@ public partial class As3View : Node2D
     int gen;
     double frameTime, caretTime;
     readonly TextCaret caret = new();
+
+    public override void _Notification(int what)
+    {
+        // the caret is in the tree only on a focused field's holder, and goes with it; without a focus it is out of the
+        // tree and goes with the view
+        if (what == NotificationPredelete && IsInstanceValid(caret) && caret.GetParent() == null) caret.Free();
+    }
     /// <summary>Advance the movie's frames in _Process (off for scripted captures that tick by hand).</summary>
     public bool AutoPlay = true;
 
