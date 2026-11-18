@@ -167,7 +167,14 @@ public partial class CharacterListScene : LobbyFieldScene
             anim.GetAnimationLibrary("").AddAnimation("idle", ModelBuilder.BuildAnimation(builder.LoadKf($"{dir}/idle_a.kf"), md));
             var equip = new EquipApplier(packs, builder) { Palettes = new ColorPalettes(packs) };
             equip.Apply(visual, md, g, e.Equips, e.User.Skin.Primary, e.User.Skin.Secondary);
-            ShowPreview(visual, anim);
+            // the job's select pose (CHARACTER_SELECT_BORE, then CHARACTER_SELECT_BORE_IDLE for good), else the idle
+            var pose = SelectPose.For(packs, e.User.JobCode, g);
+            if (pose != null && SelectPosePlayer.AddSequences(pose, anim, builder, md, dir))
+            {
+                ShowPreview(visual, null);
+                visual.AddChild(new SelectPosePlayer(pose, anim, visual.GetNode<Node3D>("Model"), builder, packs));
+            }
+            else ShowPreview(visual, anim);
         }
         catch (Exception ex) { GD.PushWarning("character select preview: " + ex.Message); }
     }
