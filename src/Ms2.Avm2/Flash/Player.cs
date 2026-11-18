@@ -442,6 +442,7 @@ namespace Ms2.Avm2.Flash
             var todo = later.ToArray(); later.Clear();
             foreach (var a in todo) RT.Guard("deferred", a);
             SendBroadcast("enterFrame");
+            UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
             RT.Guard("advance", () => Advance(Stage));
             SendBroadcast("frameConstructed");
             RunFrameScripts();
@@ -1016,6 +1017,7 @@ namespace Ms2.Avm2.Flash
         public void MouseMove(double x, double y)
         {
             MouseX = x; MouseY = y;
+            UpdateDrag();               // Stage::PropagateMouseEvent: a mouse move drags what is being dragged
             var t = MouseTarget(x, y);
             if (t != over)
             {
@@ -1029,12 +1031,17 @@ namespace Ms2.Avm2.Flash
                     for (int i = chain.Count - 1; i >= 0; i--) MouseEv(chain[i], "rollOver", old);
                 }
             }
-            MouseEv(t, "mouseMove");
+            MouseEv(t ?? (AsInteractiveObject)Stage, "mouseMove");
         }
 
         static bool Contains(AsDisplayObject a, AsDisplayObject b) { for (var o = b; o != null; o = o.Parent) if (o == a) return true; return false; }
 
         AsInteractiveObject pressed;
+        /// <summary>
+        /// The left button. MovieRoot::GenerateMouseEvents (sfr_as3_17.cpp:7035) sends the mouse up, the wheel and the mouse
+        /// move to the top-most entity, or to the stage when there is none (topmostEntitySafe), so a release over nothing
+        /// still reaches the stage's listeners (DragManager's MOUSE_UP).
+        /// </summary>
         public void MouseButton(bool down)
         {
             MouseDown = down;
@@ -1049,13 +1056,13 @@ namespace Ms2.Avm2.Flash
             }
             else
             {
-                MouseEv(t, "mouseUp");
+                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseUp");
                 if (t != null && t == pressed) MouseEv(t, "click");
                 pressed = null;
             }
         }
 
-        public void Wheel(int delta) => MouseEv(MouseTarget(MouseX, MouseY), "mouseWheel", null, delta);
+        public void Wheel(int delta) => MouseEv(MouseTarget(MouseX, MouseY) ?? (AsInteractiveObject)Stage, "mouseWheel", null, delta);
 
         /// <summary>A key from the host: keyDown/keyUp to the focus (or the stage); Tab moves focus; typed characters go to an input field.</summary>
         public void Key(uint keyCode, uint charCode, bool down, bool shift = false, bool ctrl = false)
@@ -1174,6 +1181,13 @@ namespace Ms2.Avm2.Flash
         internal void StopDrag(AsSprite s) { if (dragging == s) dragging = null; }
         /// <summary>A sprite is being dragged (startDrag until stopDrag): it follows the mouse wherever the mouse is.</summary>
         public bool Dragging => dragging != null;
+        /// <summary>The sprite being dragged, or null.</summary>
+        public AsSprite DraggedSprite => dragging;
+        /// <summary>
+        /// InteractiveObject::DoMouseDrag (sfr_gfx_06b.cpp:167): the dragged sprite at the mouse in its parent's space plus the
+        /// centre delta, clamped to the bounds. Called on every mouse move (Stage::PropagateMouseEvent, sfr_as3_18.cpp:4486)
+        /// and every frame (AvmSprite::AdvanceFrame, sfr_as3_16z.cpp:632).
+        /// </summary>
         public void UpdateDrag()
         {
             if (dragging == null) return;

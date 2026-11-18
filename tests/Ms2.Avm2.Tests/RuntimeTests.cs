@@ -68,6 +68,37 @@ public class RuntimeTests
     }
 
     [Test]
+    public void ADraggedSpriteFollowsTheMouseAndAReleaseOverNothingReachesTheStage()
+    {
+        var (rt, p) = Empty();
+        var s = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        s.graphics.beginFill(0xffffff); s.graphics.drawRect(0, 0, 40, 40);
+        s.x = 100; s.y = 50;
+        p.Stage.addChild(s);
+        p.MouseMove(110, 60);
+        s.startDrag();
+        // InteractiveObject::DoMouseDrag on a mouse move (Stage::PropagateMouseEvent) and on a frame (AvmSprite::AdvanceFrame)
+        p.MouseMove(310, 160);
+        Assert.That((s.x, s.y), Is.EqualTo((300.0, 150.0)), "the grab point kept");
+        p.MouseX = 210; p.MouseY = 60;
+        p.Tick();
+        Assert.That((s.x, s.y), Is.EqualTo((200.0, 50.0)));
+        s.stopDrag();
+        p.MouseMove(500, 500);
+        Assert.That((s.x, s.y), Is.EqualTo((200.0, 50.0)), "not after stopDrag");
+
+        // MovieRoot::GenerateMouseEvents: mouse up, wheel and move go to the stage when nothing is under the mouse
+        var seen = new List<string>();
+        foreach (var type in new[] { "mouseUp", "mouseMove", "mouseWheel" })
+            p.Call(p.Stage, "addEventListener", new object[] { type, new AsPlainFunction(rt, new NativeMethod(type, (_, a) => { seen.Add(type); return Rt.Undef; })) });
+        p.MouseMove(700, 500);
+        p.MouseButton(true);
+        p.MouseButton(false);
+        p.Wheel(3);
+        Assert.That(seen, Is.EqualTo(new[] { "mouseMove", "mouseUp", "mouseWheel" }));
+    }
+
+    [Test]
     public void DropTargetIsTheTopmostEntityUnderTheMouseOtherThanTheDraggedSprite()
     {
         // Sprite::dropTargetGet -> MovieImpl::GetTopMostEntity(mouse, 0, testAll true, ignore the dragged sprite)
