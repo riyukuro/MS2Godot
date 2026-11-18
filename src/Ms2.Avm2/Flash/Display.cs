@@ -320,10 +320,18 @@ public class AsContainer : AsInteractiveObject
         if (i < 0) throw RT.ArgumentError("Error #2025: The supplied DisplayObject must be a child of the caller.");
         return i;
     }
+    /// <summary>
+    /// GFx DisplayObjectContainer::setChildIndex @0x142452d20 (sfr_as3_07.cpp:4408): a negative index is 0, then
+    /// AvmDisplayObjContainer::SetChildIndex (sfr_as3_19.cpp:3017) moves the child only when the index is below the child
+    /// count and the child is in this container's list; else nothing, where Flash Player throws ArgumentError 2025 or
+    /// RangeError 2006. ShopPriceButton.updatePrice calls it on its strike line with the line itself as the child. A null
+    /// child keeps the error it had (the thunk's null handling is not read).
+    /// </summary>
     [As] public void setChildIndex(AsDisplayObject child, int index)
     {
-        if (child?.Parent != this) throw RT.ArgumentError("Error #2025: The supplied DisplayObject must be a child of the caller.");
-        if (index < 0 || index >= Children.Count) throw RT.RangeError("Error #2006: The supplied index is out of bounds.");
+        if (child == null) throw RT.ArgumentError("Error #2025: The supplied DisplayObject must be a child of the caller.");
+        if (index < 0) index = 0;
+        if (index >= Children.Count || child.Parent != this) return;
         Children.Remove(child); Children.Insert(index, child);
     }
     [As] public void swapChildren(AsDisplayObject a, AsDisplayObject b)

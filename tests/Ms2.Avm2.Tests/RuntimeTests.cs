@@ -49,6 +49,25 @@ public class RuntimeTests
     }
 
     [Test]
+    public void SetChildIndexIgnoresANonChildAndAnIndexPastTheEnd()
+    {
+        // GFx setChildIndex: a negative index is 0; a non-child or an index at or past the count is a no-op, no error
+        var (rt, p) = Empty();
+        var sprite = rt.GetClass("flash.display.Sprite");
+        var a = (AsContainer)sprite.Construct();
+        var b = (AsDisplayObject)sprite.Construct();
+        var c = (AsDisplayObject)sprite.Construct();
+        p.Stage.addChild(a);
+        a.addChild(b); a.addChild(c);
+        var s = (AsContainer)c;
+        Assert.DoesNotThrow(() => s.setChildIndex(c, 0));
+        Assert.DoesNotThrow(() => a.setChildIndex(b, 2));
+        Assert.That((a.getChildIndex(b), a.getChildIndex(c)), Is.EqualTo((0, 1)));
+        a.setChildIndex(c, -3);
+        Assert.That((a.getChildIndex(c), a.getChildIndex(b)), Is.EqualTo((0, 1)));
+    }
+
+    [Test]
     public void VisibleSetterKeepsTimelineMoves()
     {
         // a clip whose alpha the timeline animates 0 -> 0.5 -> 1, with the placement's visible flag on
