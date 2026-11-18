@@ -167,7 +167,7 @@ public partial class FieldContents : Node3D
     static QuestMaskTable maskTable;
     static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
     static ClientConstants constantTable;
-    static ClientConstants Constants(PackSet packs) => constantTable ??= new ClientConstants(packs);
+    static ClientConstants Constants(PackSet packs) => constantTable ??= Ms2.Ui.FeatureElements.Constants(packs);
     static UiAssets uiAssets;
     static UiAssets Ui(PackSet packs) => uiAssets != null && uiAssets.Packs == packs ? uiAssets : uiAssets = new UiAssets(packs);
     static LoadingTipTable tipTable;

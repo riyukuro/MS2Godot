@@ -71,7 +71,7 @@ public sealed class WorldMapTable
         var t = new WorldMapTable { ParentField = parentField ?? (_ => null) };
         t.LoadContinents(packs);
         t.LoadFields(packs);
-        var k = new ClientConstants(packs);
+        var k = FeatureElements.Constants(packs);
         t.LoadWorldMapFiles(packs, (int)k.Float("WorldMapAdjustTileX", -15), (int)k.Float("WorldMapAdjustTileY", -35));
         t.LoadFieldTiles(mapName);
         return t;

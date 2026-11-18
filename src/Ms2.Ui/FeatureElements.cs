@@ -54,6 +54,10 @@ public static class FeatureElements
         return byKey.Values.OrderBy(v => v.Index).Select(v => v.Elem).ToList();
     }
 
+    /// <summary>Common::Constants with the client's row pick: each key's &lt;v&gt; by <see cref="Collect"/> (FUN_14028faa0).</summary>
+    public static Ms2.Formats.World.ClientConstants Constants(PackSet packs) =>
+        new(packs, root => Collect(packs, root, "v", "key"));
+
     /// <summary>CFeatureManager::SelectFeatureElement: <paramref name="a"/> or <paramref name="b"/>.</summary>
     static XElement Fold(PackSet packs, XElement a, XElement b)
     {

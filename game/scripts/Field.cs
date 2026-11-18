@@ -146,7 +146,7 @@ public partial class Field : Node3D
         camDist = cam.Distance;
         try
         {
-            var k = new ClientConstants(packs);
+            var k = Ms2.Ui.FeatureElements.Constants(packs);
             looseFinal = k.Float("CameraFinalLoose", looseFinal);
             looseNow = k.Float("CameraCurrentLoose", looseNow);
             looseUpdate = k.Float("CameraUpdateLoose", looseUpdate);

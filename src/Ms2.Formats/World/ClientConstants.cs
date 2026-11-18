@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Xml.Linq;
 using Ms2.Formats.Pack;
 
 namespace Ms2.Formats.World;
@@ -11,15 +12,20 @@ public sealed class ClientConstants
 {
     readonly Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
 
-    public ClientConstants(PackSet packs)
+    /// <summary>
+    /// Common::Constants::LoadFiles (unit_1402ab440_constantsblocks.cpp:1354) reads each file's &lt;ms2&gt; through
+    /// FUN_14028faa0(root, "v", "key"): one row per key, picked by locale and feature, and sets each picked row's value.
+    /// <paramref name="rows"/> is that pick (Ms2.Ui FeatureElements.Constants passes it).
+    /// </summary>
+    public ClientConstants(PackSet packs, Func<XElement, IEnumerable<XElement>> rows)
     {
         foreach (var entry in new[] { "table/constants.xml", "table/colorconstants.xml" })
         {
             if (!packs.Exists("Xml", entry)) continue;
-            foreach (var v in GameStrings.Parse(packs.Read("Xml", entry)).Descendants("v"))
+            var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+            if (root == null || root.Name != "ms2") continue;
+            foreach (var v in rows(root))
             {
-                var loc = (string)v.Attribute("locale");
-                if (!string.IsNullOrEmpty(loc) && loc != "KR") continue;
                 var k = (string)v.Attribute("key");
                 if (k != null) values[k] = (string)v.Attribute("value");
             }

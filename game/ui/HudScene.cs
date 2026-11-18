@@ -192,7 +192,7 @@ public partial class HudScene : Node, IUiStageHost
         var window = GetViewport().GetVisibleRect().Size;
         u = UiScale.For(window); stage = UiScale.MovieStage(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
-        var constants = new ClientConstants(assets.Packs);
+        var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
         AddChild(damageEffect = new DamageEffect(assets, constants, window));                             // UIDamageEffect
         damageEffect.Hp(data.Player.HpCurrent, data.Player.HpMax);
         var nameTag = new PlayerNameTag(assets, constants, data.Player.Name, window);                     // the own PC's UINameTag
@@ -555,7 +555,7 @@ public partial class HudScene : Node, IUiStageHost
         void Place(MinimapIcons.Entity e, Vec3 at) { if (e != null) marks.Add(new() { Entity = e, Position = () => at }); }
         if (icons.HasTaxi(fc.FieldId) && fc.Map?.Entities.FirstOrDefault(e => IsModel(e, "MS2TaxiStation")) is { } taxi)
         {
-            int bestLevel = (int)new ClientConstants(assets.Packs).Float("TaxiCallBestDriverLevel", 25);
+            int bestLevel = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("TaxiCallBestDriverLevel", 25);
             Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), data.Player.Level >= bestLevel), taxi.Position);
         }
         foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2InteractObject")) ?? Enumerable.Empty<FieldEntity>())
@@ -768,7 +768,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         catch (Exception e) { GD.PushWarning("field missions: " + e.Message); }
         var meta = fieldMeta;
-        var constants = new ClientConstants(assets.Packs);
+        var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
         var inputs = new QuestButtonInputs
         {
             FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
@@ -1385,7 +1385,7 @@ public partial class HudScene : Node, IUiStageHost
             Categories = new Ms2.Ui.Shop.ShopCategoryTable(assets.Packs),
             Npcs = World.FieldContents.Npcs(assets.Packs),
             ServerTime = Now,
-            ShopSeedResetTime = (int)new ClientConstants(assets.Packs).Float("ShopSeedResetTime", 0),
+            ShopSeedResetTime = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("ShopSeedResetTime", 0),
         };
         c.Request += (name, _) => GD.Print($"shop: {name} is not sent (display only)");
         c.OpenDialog += id => GD.Print($"shop: dialog 0x{id:x} is not in this HUD");

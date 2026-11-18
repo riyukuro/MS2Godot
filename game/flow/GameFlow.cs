@@ -181,7 +181,7 @@ public partial class GameFlow : Node
         try
         {
             using var packs = new PackSet(Settings.DataDir);
-            var c = new ClientConstants(packs);
+            var c = Ms2.Ui.FeatureElements.Constants(packs);
             k = ((int)c.Float("CharacterDestroyDivisionLevel", 20), (uint)c.Float("CharacterDestroyWaitSecond", 86400));
         }
         catch (Exception ex) { GD.PushWarning("flow constants: " + ex.Message); k = (20, 86400); }
