@@ -21,6 +21,8 @@ public sealed class EquipItem {
     public bool IsBadge;
     /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
     public short InventorySlot;
+    /// <summary>CItem::m_2c (IsNew 0x1405268f0, SetNew 0x1405268d0; ctor default 0). Set only by OnItemInventory mode 7 (scenestategame.cpp:2844); cleared by InvenSlot::vfunc_14 0x141406a60 / vfunc_20 0x141408cd0 and the tab clear FUN_14199be00.</summary>
+    public bool IsNew;
 }
 
 /// <summary>The blocks CItem::ReadFromStream reads after the item status, in this order: ugc, gem (a badge), custom music score, pet.</summary>

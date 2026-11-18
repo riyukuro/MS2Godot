@@ -62,6 +62,7 @@ public enum Outbound : ushort {
     Pong = 0x06,
     CharacterManagement = 0x09,
     ResponseHeartbeat = 0x0A,
+    RequestItemInventory = 0x17,
     RequestTimeSync = 0x0B,
     ResponseClientTickSync = 0x0C,
     ResponseFieldEnter = 0x10,

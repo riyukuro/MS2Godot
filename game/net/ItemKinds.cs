@@ -13,13 +13,13 @@ namespace Ms2Godot.Net;
 public sealed class ItemKinds
 {
     readonly PackSet packs;
-    readonly Dictionary<int, Dictionary<int, (int Type, bool Skin, bool Ucc, uint SlotMax)>> files = new();
+    readonly Dictionary<int, Dictionary<int, (int Type, bool Skin, bool Ucc, uint SlotMax, string SlotIcon)>> files = new();
     HashSet<int> customNotes;
     public ItemKinds(PackSet packs) { this.packs = packs; }
 
     static XDocument Doc(PackSet p, string entry) => XDocument.Parse(Encoding.UTF8.GetString(p.Read("Xml", entry)).TrimStart('﻿'));
 
-    (int Type, bool Skin, bool Ucc, uint SlotMax)? Row(int id)
+    (int Type, bool Skin, bool Ucc, uint SlotMax, string SlotIcon)? Row(int id)
     {
         int prefix = id / 100000;
         if (!files.TryGetValue(prefix, out var rows))
@@ -36,7 +36,7 @@ public sealed class ItemKinds
                     int.TryParse((string)prop?.Attribute("type"), out int type);
                     int.TryParse((string)prop?.Attribute("skinType"), out int skin);
                     uint slotMax = uint.TryParse((string)prop?.Attribute("slotMax"), out uint sm) ? Math.Min(sm, 99999u) : 1;   // CItemProperty: default 1, capped at 99999
-                    rows[i] = (type, skin != 0, !string.IsNullOrEmpty((string)env.Descendants("ucc").FirstOrDefault()?.Attribute("mesh")), slotMax);
+                    rows[i] = (type, skin != 0, !string.IsNullOrEmpty((string)env.Descendants("ucc").FirstOrDefault()?.Attribute("mesh")), slotMax, (string)prop?.Attribute("slotIcon") ?? "");
                 }
             files[prefix] = rows;
         }
@@ -67,6 +67,9 @@ public sealed class ItemKinds
         if (r.Type == 0xb) x |= ItemExtra.Pet;
         return x;
     }
+
+    /// <summary>The icon path of the item's data (CItemData::GetIconPath itemdata.cpp:2070): property@slotIcon through <see cref="ItemIcon"/>; null for an unknown item.</summary>
+    public string IconPath(int id) => Row(id) is { } r ? ItemIcon.Path(id, r.SlotIcon) : null;
 
     /// <summary>Whether the item id has item data (CItem::FUN_140523c40 fails without it).</summary>
     public bool Known(int id) => Row(id) != null;

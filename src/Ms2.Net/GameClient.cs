@@ -15,6 +15,12 @@ public sealed record GlobalFactorRequest : IOutPacket {
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { }
 }
 
+/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 8: UIInventoryDialog::SendRequestItemInventory 0x14199c230 (uiinventorydialog.cpp:1598): u8 8, u8 tab, bool stack. Asks the server to send one tab (answered by ItemInventory LoadTab). A read request, sent only when the inventory view switches tab.</summary>
+public sealed record ItemInventoryTabRequest(byte Tab, bool Stack) : IOutPacket {
+    public Outbound Op => Outbound.RequestItemInventory;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(8); w.WriteByte(Tab); w.WriteBool(Stack); }
+}
+
 /// <summary>What the game server sent from the key check up to the field enter request.</summary>
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
     /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>

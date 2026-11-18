@@ -41,6 +41,8 @@ public partial class LiveSession : Node
     public readonly QuestBook Quests = new();
     /// <summary>The item inventory from the ItemInventory packets (OnItemInventory); live only.</summary>
     public readonly ItemBook Items = new();
+    /// <summary>The inventory dialog model over Items; a UI binds it. Its tab switch sends RequestItemInventory (read request, 0x14199c230) and nothing else does.</summary>
+    public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
     public CharacterCreateRefused LastRefusal { get; private set; }
 
@@ -180,6 +182,7 @@ public partial class LiveSession : Node
             ItemReader.Known ??= id => { try { return Kinds().Known(id); } catch { return true; } };   // data unavailable: read every id
             Items.TabOf = id => { try { return Kinds().TabOf(id); } catch { return 7; } };
             Items.BaseSlots ??= BaseSlotTable();
+            if (Inventory == null) { Inventory = new InventoryView(Items); Inventory.RequestTab = (tab, stack) => Send(new ItemInventoryTabRequest((byte) tab, stack)); }
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
             if (entry.EarlyFactor is { } fp) GD.Print($"live: global factor {(Factors.Apply(fp.Reader()) ? "applied" : "ignored")} (before the field)");
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter

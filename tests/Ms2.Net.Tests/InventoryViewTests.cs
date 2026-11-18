@@ -1,0 +1,78 @@
+using System.Linq;
+using Maple2.PacketLib.Tools;
+using Ms2.Net.Packets;
+using NUnit.Framework;
+
+namespace Ms2.Net.Tests;
+
+public class InventoryViewTests {
+    sealed class Rec : IInventoryBinding {
+        public List<string> Log = new();
+        public void initData(int b, bool d) => Log.Add($"init {b} {d}");
+        public void updateButtonState(InventoryButtonState s) => Log.Add("state");
+        public void setNew(int b, bool n) => Log.Add($"new {b} {n}");
+        public void m_expand(string t) => Log.Add("expand " + t);
+        public void bindSlotBag(int tab, IReadOnlyList<BagCell> c) => Log.Add($"bag {tab} {c.Count} used {c.Count(x => !x.Empty)}");
+        public void refreshSlot(int tab, int slot, BagCell c) => Log.Add($"slot {tab} {slot} {c.Uid}");
+    }
+
+    static EquipItem It(int id, long uid, short slot, int amount = 1) => new() { Id = id, Uid = uid, InventorySlot = slot, Amount = amount };
+    // tab = id / 10000000, capacity 10 + extra
+    static ItemBook Book() => new() { TabOf = id => id / 10000000, BaseSlots = _ => 10 };
+
+    [Test] public void CellsAreOrderedByInventorySlotAndCapacityIsBasePlusExtra() {
+        var b = Book(); b.TryAdd(It(20000001, 1, 3, 5)); b.TryAdd(It(20000002, 2, 0));
+        var v = new InventoryView(b);
+        Assert.That(v.Capacity(2), Is.EqualTo(10)); Assert.That(v.Cells(2)[3], Is.EqualTo(new BagCell(1, 20000001, 5)));
+        Assert.That(v.Cells(2)[0].Uid, Is.EqualTo(2)); Assert.That(v.ExpandLabel(2), Is.EqualTo("2/10")); Assert.That(v.ExpandLabel(3), Is.EqualTo("0/10"));
+        b.Apply(new ItemMessage.ExpandCount(2, 6));
+        Assert.That(v.Capacity(2), Is.EqualTo(16)); Assert.That(v.Cells(2).Count, Is.EqualTo(16)); Assert.That(v.ExpandLabel(2), Is.EqualTo("2/16"));
+        Assert.That(v.Capacity(15), Is.EqualTo(0));
+    }
+
+    [Test] public void NewFlagIsSetByNotifyNewAndClearedByTheClientPaths() {
+        var b = Book(); b.TryAdd(It(20000001, 1, 0)); b.TryAdd(It(30000001, 2, 0));
+        var v = new InventoryView(b); var r = new Rec(); v.Bind(r, 4, true);
+        v.Update(); r.Log.Clear();
+        b.Apply(new ItemMessage.NotifyNew(1, 0, ""));
+        Assert.That(b.Get(1).IsNew, Is.True); Assert.That(v.HasNew(2), Is.True); Assert.That(v.HasNew(3), Is.False);
+        v.Update();
+        Assert.That(r.Log, Does.Contain("new 2 True")); Assert.That(r.Log, Does.Contain("new 3 False"));
+        r.Log.Clear(); v.ClearNew(1); v.Update();
+        Assert.That(b.Get(1).IsNew, Is.False); Assert.That(r.Log, Does.Contain("new 2 False"));
+        b.Apply(new ItemMessage.NotifyNew(2, 0, "")); v.ClearNewInTab(3); Assert.That(v.HasNew(3), Is.False);
+        b.Apply(new ItemMessage.NotifyNew(99, 0, "")); // unknown uid: nothing
+        r.Log.Clear(); v.TabButtons = new[] { 0, 1, -1, 7 }; b.Apply(new ItemMessage.NotifyNew(1, 0, "")); v.Update();
+        Assert.That(r.Log, Does.Not.Contain("new 2 True")); Assert.That(r.Log.Where(l => l.StartsWith("new")).Count(), Is.EqualTo(3));
+    }
+
+    [Test] public void SingleItemRefreshesOneSlotAndWholeTabRebuildsOnLoadResetExpand() {
+        var b = Book(); var v = new InventoryView(b); var r = new Rec(); v.Bind(r, 2, false); v.Update();
+        Assert.That(r.Log.Take(1), Is.EqualTo(new[] { "init 2 False" }));
+        v.SelectTab(2); v.Update(); r.Log.Clear();
+        b.Apply(new ItemMessage.Add(It(20000001, 5, 4)));
+        Assert.That(r.Log, Is.EqualTo(new[] { "slot 2 4 5" }));
+        v.Update(); Assert.That(r.Log.Last(), Is.EqualTo("expand 1/10")); Assert.That(r.Log.Any(l => l.StartsWith("bag")), Is.False);
+        r.Log.Clear(); b.Apply(new ItemMessage.Remove(5)); Assert.That(r.Log, Is.EqualTo(new[] { "slot 2 4 0" }));
+        r.Log.Clear(); b.Apply(new ItemMessage.Add(It(30000001, 6, 1))); Assert.That(r.Log, Is.Empty);   // another tab: no slot refresh on the shown tab
+        b.Apply(new ItemMessage.Reset(2)); v.Update(); Assert.That(r.Log, Does.Contain("bag 2 10 used 0"));
+        r.Log.Clear(); b.Apply(new ItemMessage.ExpandCount(2, 2)); v.Update(); Assert.That(r.Log, Does.Contain("bag 2 12 used 0")); Assert.That(r.Log, Does.Contain("expand 0/12"));
+    }
+
+    [Test] public void SelectTabFiresTheRequestOnlyWhenAsked() {
+        var b = Book(); var v = new InventoryView(b); var sent = new List<(int, bool)>(); v.RequestTab = (t, s) => sent.Add((t, s));
+        b.Apply(new ItemMessage.Reset(1)); b.Apply(new ItemMessage.ExpandCount(1, 1)); v.Bind(new Rec());
+        Assert.That(sent, Is.Empty);
+        v.SelectTab(3, true); v.SelectTab(99); Assert.That(sent, Is.EqualTo(new[] { (3, true) })); Assert.That(v.Tab, Is.EqualTo(3));
+        var w = new ByteWriter(); new ItemInventoryTabRequest(3, true).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 8, 3, 1 })); Assert.That(new ItemInventoryTabRequest(3, true).Op, Is.EqualTo(Outbound.RequestItemInventory));
+        Assert.That((ushort) Outbound.RequestItemInventory, Is.EqualTo(0x17));
+    }
+
+    [Test] public void IconPathFollowsCItemDataGetIconPath() {
+        Assert.That(ItemIcon.Path(20000001, ""), Is.EqualTo("./Data/Resource/Image/item/icon/20000001.png"));
+        Assert.That(ItemIcon.Path(1, null), Is.EqualTo("./Data/Resource/Image/item/icon/1.png"));
+        Assert.That(ItemIcon.Path(1, "abc/x"), Is.EqualTo("./Data/Resource/Image/item/icon/abc/x.png"));
+        Assert.That(ItemIcon.Path(1, "./Data/a.png"), Is.EqualTo("./Data/a.png"));
+    }
+}
