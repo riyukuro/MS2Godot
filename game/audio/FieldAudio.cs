@@ -27,24 +27,10 @@ public partial class FieldAudio : Node
     MusicPlan plan;
 
     /// <summary>Music category volume, the client's CSoundEventMgr::m_fNowMusicVolume, multiplied onto the FEV-authored cue
-    /// volume. The client sets it from the sound options (FUN_14125fe20, gameoptionstruct.cpp:2727: SetCategoryVolume(2, GetCategoryVolume(sound, 2)),
-    /// gameoptionstruct.cpp:2757), bgmSoundStep * mainSoundStep / 100; a fresh install reads them from
-    /// table/default/defaultgameoption.xml (CGameOption::LoadGameOption, gameoption.cpp:1720), see <see cref="OptionMusicVolume"/>. Open sets it.</summary>
+    /// volume. The client sets it from the sound options (FUN_14125fe20, gameoptionstruct.cpp:2727: SetCategoryVolume(2,
+    /// GetCategoryVolume(sound, 2)), gameoptionstruct.cpp:2757-2783), bgmSoundStep * mainSoundStep / 100 from the option
+    /// store (<see cref="GameOptions"/>). Open sets it.</summary>
     public float MusicVolume { get; set; } = 1f;
-
-    /// <summary>
-    /// GetCategoryVolume(sound, 2) (gameoptionstruct.cpp:2757) for the default options: the &lt;sound&gt; element's bgmSoundStep times
-    /// mainSoundStep over 100, each clamped to 0..10 as LoadGameOptionSound (gameoptionstruct.cpp:2632) does; an attribute that is not there stays at the
-    /// reset value 0 (FUN_14125f740, gameoptionstruct.cpp:2612). Null when the file cannot be read.
-    /// </summary>
-    public static float? OptionMusicVolume(string xml)
-    {
-        if (xml == null) return null;
-        var sound = XDocument.Parse(xml.TrimStart('\uFEFF')).Root?.Element("sound");
-        if (sound == null) return null;
-        int Step(string name) => int.TryParse((string)sound.Attribute(name), out int v) ? Math.Clamp(v, 0, 10) : 0;
-        return Step("bgmSoundStep") * Step("mainSoundStep") / 100f;
-    }
 
     public int BgmCue { get; private set; }
     public string BgmName => plan?.Loop.Name;
@@ -64,9 +50,7 @@ public partial class FieldAudio : Node
         var sw = System.Diagnostics.Stopwatch.StartNew();
         library = new SoundLibrary(dir);
         GD.Print($"audio: MS2Sound.fev read in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks, {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events, {library.Fev.CueIds.Count()} music cues");
-        if (packs != null)
-            try { MusicVolume = OptionMusicVolume(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/default/defaultgameoption.xml"))) ?? MusicVolume; }
-            catch (Exception ex) { GD.PushWarning("audio: defaultgameoption.xml: " + ex.Message); }
+        MusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
         GD.Print($"audio: music volume {MusicVolume:F2}");
         if (packs != null)
             try { systemSounds = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml"))); }

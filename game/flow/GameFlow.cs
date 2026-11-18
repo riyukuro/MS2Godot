@@ -44,6 +44,7 @@ public partial class GameFlow : Node
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--flow-shots") shotDir = args[i + 1];
+        GameOptions.Load();   // the client builds CGameOption (LoadLanguageOption, LoadGameOption) at startup, gameoption.cpp:1678-1685
         Session.Reset();
         Session.GameScene = GameScene;
         UiBridge.ToHost += OnHost;
