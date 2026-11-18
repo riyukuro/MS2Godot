@@ -114,7 +114,7 @@ public static class GameOptions
         try
         {
             if (Settings.DataDir is not { } data || !System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))) return null;
-            using var packs = new PackSet(data);
+            var packs = PackSet.Shared(data);     // the session's archives, open once (not an index read per call)
             return packs.Exists("Xml", entry) ? Parse(packs.Read("Xml", entry)) : null;
         }
         catch (Exception ex) { GD.PushWarning("options: " + ex.Message); return null; }
@@ -178,7 +178,7 @@ public static class GameOptions
         PackSet packs = null;
         try
         {
-            if (Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))) packs = new PackSet(data);
+            if (Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))) packs = PackSet.Shared(data);
             if (FromDefault)
             {
                 if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
@@ -197,7 +197,6 @@ public static class GameOptions
             GD.PushWarning("options: " + ex.Message);
             doc ??= new XDocument(new XElement("ms2"));
         }
-        finally { packs?.Dispose(); }
         Voice = current.LanguageOption.VoiceIndex;
         var g = current.GraphicOption;
         GD.Print($"options: {(FromDefault ? "default" : "GameOption.xml")}, {g.Width}x{g.Height} mode {g.ScreenMode} row {g.ResolutionIndex}, music {current.SoundOption.CategoryVolume(2):F2}");

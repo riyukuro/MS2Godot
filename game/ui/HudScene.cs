@@ -81,7 +81,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
-        assets = new UiAssets(new PackSet(dataDir));
+        assets = new UiAssets(PackSet.Shared(dataDir));   // the field's pack set: its archives and the per-pack-set UI caches are shared
 
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
