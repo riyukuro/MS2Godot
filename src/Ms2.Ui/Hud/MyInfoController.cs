@@ -1056,7 +1056,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
 
     /// <summary>
     /// CanSwapEquippedItems @0x141421230 (unit_1414210f0.cpp:49): no first item, or one that is not equip subtype 0x1f / 0x22
-    /// (CItemData::FUN_14053d510, itemdata.cpp:925): false. The record's layer-0 items (GetEquipItemSet1) at slots 4 and 5:
+    /// (CItemData::FUN_14053d510, itemdata.cpp:925): false. The record's kind-1 items (GetEquipItemSet1, m_mapEquip1: the
+    /// skin layer, PCInfo::GetEquipItemByKind kind 1; exe 0x141421318 / 0x141421339 call 0x140dba790) at slots 4 and 5:
     /// both: each, and the second item when there is one, must be of those subtypes; neither: the second item, when there is
     /// one, must be; only one: box 0xd5; false. Else true.
     /// </summary>
@@ -1064,8 +1065,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     {
         static bool Swappable(Item i) => i.Data.EquipSubtype is 0x1f or 0x22;
         if (first == null || !Swappable(first)) return false;
-        var four = EquipItemByKind(r, 0, 4);
-        var five = EquipItemByKind(r, 0, 5);
+        var four = EquipItemByKind(r, 1, 4);
+        var five = EquipItemByKind(r, 1, 5);
         if (four != null && five != null)
         {
             if (!Swappable(four) || !Swappable(five)) return false;

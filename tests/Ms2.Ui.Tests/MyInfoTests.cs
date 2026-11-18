@@ -792,7 +792,12 @@ public class MyInfoTests
         var lh = Rec(13400001, 5002, Ms2.Net.Packets.EquipSlot.LH);   // equip subtype 0x22
         var two = Rec(15000001, 5003, Ms2.Net.Packets.EquipSlot.RH);  // equip subtype 0x32, two-handed
         var top = Rec(11400021, 5004, Ms2.Net.Packets.EquipSlot.CL);
+        var skinRh = Rec(13100026, 5005, Ms2.Net.Packets.EquipSlot.RH);   // skin type 2: the kind-1 layer
+        var skinLh = Rec(13400077, 5006, Ms2.Net.Packets.EquipSlot.LH);
         string Slot(int s) => MyInfoController.EquipBag + "." + s;
+        Assert.That((model.Get(13100026).HasSkinType, model.Get(13100026).EquipSubtype, model.Get(13400077).HasSkinType,
+            model.Get(13400077).EquipSubtype), Is.EqualTo((true, 0x1f, true, 0x22)));
+        Assert.That((model.Get(13100001).HasSkinType, model.Get(13400001).HasSkinType), Is.EqualTo((false, false)));
 
         (MyInfoController, List<MessageBoxData>, List<(long, byte)>) Window(params Ms2.Net.Packets.EquipItem[] worn)
         {
@@ -827,11 +832,21 @@ public class MyInfoTests
         c.SlotDroppedOn(Slot(4), "QuickSlot.1", src);
         Assert.That(sent.Count, Is.EqualTo(1));
 
-        // one hand only: box 0xd5
-        (c, shown, sent) = Window(rh, top);
+        // the hands checked are the kind-1 (skin) layer's (GetEquipItemSet1, unit_1414210f0.cpp:55): one skin hand only: box 0xd5
+        (c, shown, sent) = Window(rh, lh, skinRh, top);
         Drag(rh);
         c.SlotDroppedOn(Slot(4), Slot(5), src);
         Assert.That((sent.Count, shown.Single().Msg), Is.EqualTo((0, c.Model.Tables.Common(MyInfoController.SwapHandsKey))));
+        // one layer-0 hand only, no skin hand: sent
+        (c, shown, sent) = Window(rh, top);
+        Drag(rh);
+        c.SlotDroppedOn(Slot(4), Slot(5), src);
+        Assert.That((sent.Single(), shown.Count), Is.EqualTo(((5001L, (byte)4), 0)));
+        // both skin hands, swappable: sent
+        (c, shown, sent) = Window(rh, skinRh, skinLh, top);
+        Drag(rh);
+        c.SlotDroppedOn(Slot(4), Slot(5), src);
+        Assert.That((sent.Single(), shown.Count), Is.EqualTo(((5001L, (byte)4), 0)));
 
         // neither hand: sent while this slot's item, when there is one, is swappable
         (c, shown, sent) = Window(top);
