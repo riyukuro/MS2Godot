@@ -82,6 +82,11 @@ public partial class LiveSession : Node
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
+    /// <summary>
+    /// WorldService::FUN_141bd1530 (worldservice_1.cpp:6210): the field's user object with this character id, here whether
+    /// the field's users (FieldAddUser, kept by the tracker) hold one. False before the field is built.
+    /// </summary>
+    public bool UserInField(long characterId) => remote?.Tracker.Snapshot().Any(a => a.Add?.User?.CharacterId == characterId) ?? false;
 
     /// <summary>
     /// CreateQuestByType (questmanager_2.cpp:803-830) makes a quest for the id: the client's quest data has it (FUN_14074bc90 gives

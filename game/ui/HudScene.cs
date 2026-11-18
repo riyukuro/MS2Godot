@@ -977,6 +977,7 @@ public partial class HudScene : Node, IUiStageHost
         p.SubJob = data.Player.Job <= 1 ? 100 : (data.Player.Job / 10 + 1) * 100;
         p.JobGroup = data.Player.Job;       // the job group ids of table/job.xml (1, 10 ... 110)
         p.HpCur = data.Player.HpCurrent; p.HpMax = data.Player.HpMax;
+        p.Channel = (int)data.Player.Channel;    // the user block's channel (a party slot's "Ch. N" line reads its member's)
         p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
         p.EpCur = data.EpCurrent; p.EpMax = data.EpMax;
         p.Exp = (long)Math.Round(hudModel.NextLevelExp * data.ExpPercent / 100);

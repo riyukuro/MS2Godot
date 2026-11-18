@@ -45,7 +45,40 @@ public static class LobbyFeatures
             if ((string)f.Attribute("name") is { } name && int.TryParse((string)f.Attribute(Locale), out int l) && l != 0) levels[name] = l;
     }
 
-    static XDocument Xml(PackSet packs, string entry) => packs.Exists("Xml", entry)
-        ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'))
-        : null;
+    /// <summary>
+    /// CFileSystem::LoadXmlFile (filesystem.cpp:393): a loose file under the data folder is read first (the client always
+    /// reads loose files, FUN_14039bf70 returns true), then its locale copy (GetLocalePath: "kr/" before the file name,
+    /// localepath.cpp:604-607), and only then the pack entry. A client folder with Data/Xml/Table/feature.xml next to
+    /// Xml.m2d runs with that file's levels.
+    /// STILL-OPEN: the other tables (assets.Table, GameTables) read the pack alone.
+    /// </summary>
+    static XDocument Xml(PackSet packs, string entry)
+    {
+        var text = Loose(packs.DataDir, "Xml/" + entry) ?? Loose(packs.DataDir, "Xml/" + LocalePath(entry));
+        if (text == null && packs.Exists("Xml", entry)) text = System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry));
+        return text == null ? null : XDocument.Parse(text.TrimStart('\ufeff'));
+    }
+
+    static string LocalePath(string entry)
+    {
+        int slash = entry.LastIndexOf('/');
+        return entry[..(slash + 1)] + "kr/" + entry[(slash + 1)..];
+    }
+
+    /// <summary>A loose file's text by a path under <paramref name="dir"/>, its segments matched without case (Windows paths); null when absent.</summary>
+    static string Loose(string dir, string path)
+    {
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return null;
+        var cur = dir;
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            bool last = i == parts.Length - 1;
+            var hit = (last ? Directory.EnumerateFiles(cur) : Directory.EnumerateDirectories(cur))
+                .FirstOrDefault(e => string.Equals(Path.GetFileName(e), parts[i], StringComparison.OrdinalIgnoreCase));
+            if (hit == null) return null;
+            cur = hit;
+        }
+        return File.ReadAllText(cur);
+    }
 }

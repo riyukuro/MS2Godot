@@ -109,6 +109,13 @@ public partial class HudScene
         party.OnCallback("onPopupMenu", new object[] { b.X + b.W / 2, b.Y + b.H / 2, characterId.ToString() });
     }
 
+    /// <summary>FIXTURE: the offline party's field users are its online members on the own map and channel.</summary>
+    bool FixtureUserInField(long id)
+    {
+        var self = partyBook?.Find(PartyFixture.SelfCharacterId)?.User;
+        return self != null && partyBook.Find(id) is { Offline: false } m && m.User.MapId == self.MapId && m.User.Channel == self.Channel;
+    }
+
     /// <summary>A party slot's right click (UIPartyDialog::FUN_141a77760): the popup menu, its movie loaded on first use.</summary>
     void OpenPartySlotMenu(float x, float y, long characterId)
     {
@@ -122,7 +129,8 @@ public partial class HudScene
                 Party = partyBook,
                 SelfCharacterId = live?.CharacterId ?? PartyFixture.SelfCharacterId,
                 ProfileImagePath = (_, _) => noProfile,
-                // STILL-OPEN: the field's other users are not kept (FUN_141bd1530), so no trade item
+                // FUN_141bd1530: the field's users. FIXTURE (offline): an online fixture member on the own map and channel
+                PlayerInField = live != null ? live.UserInField : FixtureUserInField,
             };
             c.ItemClicked += (id, t) => GD.Print($"popup menu: item {id} ({menuModel.Tables.PopupMenuName(id)}) for {t?.Name}: its handler is not ported");
             if (popupLayer == null) AddChild(popupLayer = new CanvasLayer { Layer = 11 });
