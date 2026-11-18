@@ -1,3 +1,5 @@
+using Ms2.Formats.Pack;
+
 namespace Ms2.Quest;
 
 /// <summary>
@@ -58,6 +60,19 @@ public sealed class QuestMapGraph
                     }
             }
         }
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Task<(FieldMeta Meta, QuestMapGraph Graph)>> shared = new();
+
+    /// <summary>
+    /// The field meta table and its map graph, read and built once per pack set on a worker thread (the client builds its
+    /// map paths once, at startup): the first call starts the build, later calls get the same task. Both are read-only
+    /// once built.
+    /// </summary>
+    public static Task<(FieldMeta Meta, QuestMapGraph Graph)> Shared(PackSet packs)
+    {
+        lock (shared)
+            return shared.GetValue(packs, p => Task.Run(() => { var m = FieldMeta.Load(p); return (m, From(m)); }));
     }
 
     public static QuestMapGraph From(FieldMeta meta) =>

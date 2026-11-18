@@ -786,7 +786,7 @@ public partial class HudScene : Node, IUiStageHost
                 {
                     FieldId = fieldId,
                     LocalTm = Ms2.Net.MsTime.LocalTm,
-                    Map = QuestMapGraph.From(fieldMeta),
+                    Map = QuestMapGraph.Shared(assets.Packs).GetAwaiter().GetResult().Graph,
                     // offline: the player is alive in this field, no party search, the server time unknown (no end time line)
                     Buttons = (d, q) => QuestCommon.Buttons(d, q, new QuestButtonInputs
                     {
@@ -833,7 +833,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             bool featureOn(string f) => !data.FeaturesOff.Contains(f);
             questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, featureOn);
-            fieldMeta ??= FieldMeta.Load(assets.Packs);
+            fieldMeta ??= QuestMapGraph.Shared(assets.Packs).GetAwaiter().GetResult().Meta;
             fieldCodes ??= QuestTable.FieldCodes(assets.Table("table/fielddata.xml"), questTable.Available);
             var live = Ms2Godot.Net.LiveSession.Instance;
             var meta = fieldMeta;
@@ -905,7 +905,7 @@ public partial class HudScene : Node, IUiStageHost
         var model = NewModel();
         if (worldMapSide == null)
         {
-            fieldMeta ??= FieldMeta.Load(assets.Packs);
+            fieldMeta ??= QuestMapGraph.Shared(assets.Packs).GetAwaiter().GetResult().Meta;
             var meta = fieldMeta;
             try
             {

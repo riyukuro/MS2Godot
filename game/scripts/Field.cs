@@ -85,6 +85,7 @@ public partial class Field : Node3D
         packs.Prefetch("Resource/Exported", "Resource/Model/Map", "Resource/Model/Effect", "Resource/Model/Npc", "Resource/Model/Textures", "Resource/Image", "Resource/Model/Character", "Resource/Model/Item");   // every field's build opens these; their indexes open side by side
         World.FieldContents.Prefetch(packs);   // the npc and region spawn tables
         Ui.UiAssets.Prefetch(packs, "gfxfontlib", "commonNameTag", "component_v1");   // shared UI movie parses overlap the field build
+        Ms2.Quest.QuestMapGraph.Shared(packs);      // the quest map graph too (the quest log, the world map and the quest guide)
         var spec = new NifSpec(nifxml);
         var builder = new ModelBuilder(spec, packs);
         var assets = AssetIndex.For(packs);

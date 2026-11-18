@@ -59,7 +59,7 @@ public partial class QuestGuide : Node3D
         g.label.AddThemeConstantOverride("outline_size", 6);
         layer.AddChild(g.label);
         g.AddChild(layer);
-        g.loading = Task.Run(() => { var m = FieldMeta.Load(packs); return (m, QuestMapGraph.From(m)); });
+        g.loading = QuestMapGraph.Shared(packs);
         return g;
     }
 
