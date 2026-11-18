@@ -38,8 +38,6 @@ public sealed class ItemData
     /// <summary>&lt;basic stringTag&gt;: the tag name, which CItemData::Load maps through CItemDataTable::GetTagByName (itemdatatable.cpp:578,
     /// a case-insensitive name match of the AddItemTag list) to stringTag.</summary>
     public string StringTag = "";
-    /// <summary>&lt;ucc mesh&gt; (ItemUccMesh::LoadXml, itemdatastruct.cpp:1583): cubeTextureName.mesh.</summary>
-    public string UccMesh = "";
     // ItemFunction::Load (itemdatastruct.cpp:1755)
     public string FunctionName = "", FunctionParameter = "";
     public int FunctionParam1, FunctionParam2, FunctionParam3;
@@ -95,7 +93,6 @@ public sealed class ItemData
             bool xml = s.Length > 1 && s[0] == '<' && s[^1] == '>';
             if (!xml) d.FunctionArgs.AddRange(s.Split(',', StringSplitOptions.RemoveEmptyEntries));
         }
-        if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
         if (env.Element("install") is { } inst) Int(inst, "objCode", ref d.InstallObjCode);
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
         return d;
@@ -125,10 +122,8 @@ public sealed class ItemData
     public bool IsEquip => Type == 1;                          // FUN_14053cbc0 (:663)
     public bool IsConsumable => Type == 2;                     // FUN_14053d270 (:842)
     public bool IsSkillItem => Type == 5;                      // :651
-    public bool IsRideItem => Type == 9;                       // :681
     public bool IsType16 => Type == 0x16;                      // FUN_14053d900 (:1056)
     public bool HasFunction => FunctionName.Length != 0;       // :707
-    public bool HasCubeTextureMesh => UccMesh.Length != 0;     // :987
     /// <summary>The stringTag is ItemTagKey 0xd9, "UGCMapOX" (CItemDataTable::AddItemTag list, itemdatatable.cpp:1460).</summary>
     public bool IsUgcMapOX => string.Equals(StringTag, "UGCMapOX", StringComparison.OrdinalIgnoreCase);
     /// <summary>IsLevelAllowed @0x14053c9a0 (:618): levelLimit &lt;= level.</summary>
