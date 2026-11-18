@@ -80,16 +80,57 @@ public class ButtonWidget : Widget
 
     public override void MouseOver(bool over) { Hover = over; if (!over) Down = false; Refresh(); }
 
+    /// <summary>ButtonEvent.PRESS: the mouse went down on the enabled button (Button.handleMousePress).</summary>
+    public event Action<ButtonWidget> Press;
+    /// <summary>The ButtonEvent.CLICK with isRepeat set that an auto repeating button sends while it is held.</summary>
+    public event Action<ButtonWidget> RepeatClick;
+    /// <summary>Button.autoRepeat, repeatDelay and repeatInterval (milliseconds).</summary>
+    public bool AutoRepeat;
+    public double RepeatDelay = 500, RepeatInterval = 200;
+    double repeatLeft = -1;           // _repeatTimer: the milliseconds to its next tick, -1 with no timer
+    bool repeatArmed, repeating;      // _autoRepeatEvent set; _isRepeating
+    bool repeatBegun;                 // beginRepeat ran: the timer ticks every repeatInterval
+
+    /// <summary>
+    /// Button.handleMousePress / handleMouseRelease. A press on the enabled button shows "down", starts the repeat timer
+    /// when it auto repeats (repeatDelay, then every repeatInterval: beginRepeat / handleRepeat) and sends PRESS. The release
+    /// stops the timer; released over the button, a click selects a toggle and sends CLICK, unless the button repeated.
+    /// </summary>
     public override void MouseDown(bool down)
     {
         bool wasDown = Down;
         Down = down && Enabled; Refresh();
-        if (!down && wasDown && Hover && Enabled)
+        if (down)
+        {
+            if (!Enabled) return;
+            if (AutoRepeat && repeatLeft < 0) { repeatArmed = true; repeatBegun = false; repeatLeft = RepeatDelay; }
+            Press?.Invoke(this);
+            return;
+        }
+        repeatArmed = false;
+        repeatLeft = -1;
+        if (wasDown && Hover && Enabled)
         {
             if (Toggle && (!Selected || AllowDeselect)) SetSelected(!Selected, true);
-            RaiseClick();
-            Clicked();
+            if (!repeating) { RaiseClick(); Clicked(); }
         }
+        repeating = false;
+    }
+
+    /// <summary>
+    /// The repeat timer (a flash Timer: one tick at most per frame). Its end after repeatDelay only switches it to
+    /// repeatInterval (beginRepeat); each tick after that sends the repeat click while the press lasts (handleRepeat).
+    /// </summary>
+    public void Tick(double ms)
+    {
+        if (repeatLeft < 0) return;
+        repeatLeft -= ms;
+        if (repeatLeft > 0) return;
+        repeatLeft = RepeatInterval;
+        if (!repeatBegun) { repeatBegun = true; return; }
+        if (!repeatArmed) { repeatLeft = -1; return; }
+        repeating = true;
+        RepeatClick?.Invoke(this);
     }
 
     /// <summary>After the click event: what the control's own class does on a click.</summary>
@@ -357,8 +398,14 @@ public static class UiWidgets
             return c.HitTest(xf.AffineInverse() * p);
         }
 
+        /// <summary>The button the last left press went to (null: none), until the release.</summary>
+        public ButtonWidget Pressed => pressed;
+
         public void Handle(InputEvent e)
         {
+            // a button whose clip was dropped (a list or bar built again) no longer takes the mouse
+            if (hover != null && !GodotObject.IsInstanceValid(hover.Node) || hover?.Node.IsQueuedForDeletion() == true) hover = null;
+            if (pressed != null && !GodotObject.IsInstanceValid(pressed.Node) || pressed?.Node.IsQueuedForDeletion() == true) pressed = null;
             if (e is InputEventMouseMotion mm)
             {
                 var h = Pick(mm.Position);

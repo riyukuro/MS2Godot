@@ -82,4 +82,72 @@ public class ScrollBarModelTests
         bar.MouseWheel(1);
         Assert.That((bar.Position, scrolls), Is.EqualTo((2.0, 3)));
     }
+
+    // the half-track thumb bar of APageOfAsManyLinesAsTheRangeIsHalfTheTrackAtTheTop: track 22 .. 341, thumb 159.5, 4 lines
+    static ScrollBarModel FourLines()
+    {
+        var bar = Bar();
+        bar.Validate();
+        bar.Position = 0;
+        bar.SetScrollProperties(4, 0, 4);
+        bar.Validate();
+        return bar;
+    }
+
+    [Test]
+    public void TheThumbDragsByTheFractionOfTheAvailableHeight()
+    {
+        var bar = FourLines();
+        Assert.That(bar.AvailableHeight, Is.EqualTo(159.5));
+        bar.ThumbPress(30);                                             // 8 below the thumb's top
+        bar.Drag(30 + 79.75);                                           // half the available height: 2
+        Assert.That(bar.Position, Is.EqualTo(2));
+        bar.Drag(30 + 50);                                              // 50 / 159.5 * 4 = 1.25: rounded to 1
+        Assert.That(bar.Position, Is.EqualTo(1));
+        bar.Drag(1000);
+        Assert.That(bar.Position, Is.EqualTo(4));
+        bar.ThumbPress(0);                                              // already dragging: the offset stays
+        bar.Drag(30);
+        Assert.That(bar.Position, Is.EqualTo(0));
+        bar.EndDrag();
+        bar.Drag(1000);
+        Assert.That(bar.Position, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ATrackPressBesideTheThumbMovesAPageTowardsTheMouse()
+    {
+        var bar = FourLines();
+        bar.TrackPress(100, false);                                     // on the thumb (22 .. 181.5)
+        Assert.That(bar.Position, Is.EqualTo(0));
+        bar.TrackPress(300, false);
+        Assert.That(bar.Position, Is.EqualTo(1));
+        bar.Validate();                                                 // the thumb moves on the next draw
+        Assert.That(bar.ThumbY, Is.EqualTo(62));                        // round(0.25 * 159.5 + 22)
+        bar.TrackPress(30, false);
+        Assert.That(bar.Position, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void AShiftTrackPressJumpsToTheCursorAndDragsTheThumbByItsMiddle()
+    {
+        var bar = FourLines();
+        bar.TrackPress(22 + 79.75 + 79.75, true);                       // the thumb's middle at half the available height
+        Assert.That((bar.Position, bar.Dragging), Is.EqualTo((2.0, true)));
+        bar.Drag(22 + 79.75);                                           // the middle at the track's top: 0
+        Assert.That(bar.Position, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ScrollBarExTakesTheSizeUpAndCapsTheThumb()
+    {
+        var bar = Bar();
+        bar.Ex = true;
+        bar.MaxThumbSize = 50;
+        bar.SetHeight(400.2);
+        bar.Position = 0;
+        bar.SetScrollProperties(4, 0, 4);
+        bar.Validate();
+        Assert.That((bar.Height, bar.TrackHeight, bar.ThumbHeight), Is.EqualTo((401.0, 357.0, 50.0)));
+    }
 }

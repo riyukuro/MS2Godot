@@ -82,7 +82,7 @@ public sealed class QuestDialog
         RefreshDetail();
         SetTab(keepTab); SetSubTab(keepSub); ChangeTab(tab); RefreshTab();
         regPos = keep; Place(0);
-        ValidateBar();
+        ValidateBars();
     }
 
     /// <summary>
@@ -117,7 +117,7 @@ public sealed class QuestDialog
         // UIDialog::vfunc_43: no kept place, so ASGameEntity::vfunc_25 invokes "alignment"
         Align();
         StartOpen();
-        ValidateBar();
+        ValidateBars();
     }
 
     /// <summary>
@@ -136,7 +136,8 @@ public sealed class QuestDialog
         if (root?.GetParent() is Node holder) holder.QueueFree();
         root = null; body = null; mouse = null; closing = false; tween = null;
         tabs.Clear(); subTabs.Clear(); rows.Clear(); rowContainer = null; tree = null; selectedIndex = -1;
-        info = null; infoBar = null; infoBarView = null; barDrawn = -1; infoButtons.Clear();
+        info = null; infoBar = null; infoBarView = null; infoButtons.Clear();
+        listBar = null; listChild = null; scrollPosition = 0; curRowCount = 0;
     }
 
     // ---- build -------------------------------------------------------------------------------------------------------
@@ -154,7 +155,10 @@ public sealed class QuestDialog
         UiWidgets.ApplyInspector(root, Inspector);
         // __setProp_m_title_qd: m_title.text = "$s_quest_information"
         body.FindClip("m_title")?.Widget?.Set("text", "$s_quest_information");
-        mouse = new UiWidgets.MouseRouter(root) { Extra = () => tabs.Concat(subTabs).Concat(rows) };
+        mouse = new UiWidgets.MouseRouter(root)
+        {
+            Extra = () => tabs.Concat(subTabs).Concat(rows).Concat(listBar?.Buttons ?? []).Concat(infoBarView?.Buttons ?? []),
+        };
         ConfigUI();
         ConfigInfo();
     }
@@ -175,6 +179,8 @@ public sealed class QuestDialog
         BuildBar("m_subTab", "export_renderer_category", new[] { "$s_quest_tab_beginable", "$s_quest_tab_progress", "$s_quest_tab_complete" },
             137, 0, true, subTabs, i => { subTab = i; OnChangeTab(); });
         subTab = 0;
+        // m_questList.m_rowCount = 15; m_questList.scrollBar = m_scrollBar
+        ConfigList();
         // both check boxes start selected; a click tells the C++ dialog (onSelectProperLevel / onSelectProgressOnly)
         var proper = Clip("m_properLevel"); var progress = Clip("m_progressOnly");
         SetCheck(proper, true); SetCheck(progress, true);
@@ -194,6 +200,7 @@ public sealed class QuestDialog
             };
         UpdatePaper();
         UpdateSubTab();
+        listBar?.Validate();                                         // m_scrollBar.validateNow()
     }
 
     MovieClipNode Clip(string name) => body?.Direct(name)?.Node as MovieClipNode;
@@ -303,11 +310,12 @@ public sealed class QuestDialog
     {
         UpdateSubTab();
         SelectRow(-1);
+        SetScrollPosition(0);
         UpdatePaper();
         ChangeTab(tab);
         RefreshTab();
         RefreshDetail();
-        ValidateBar();
+        ValidateBars();
     }
 
     /// <summary>
@@ -336,8 +344,12 @@ public sealed class QuestDialog
     /// </summary>
     void SetList(QuestLogNode list)
     {
+        if (listBar != null) { listBar.Model.Position = 1; listBar.Model.Position = 0; }
         tree = new QuestLogTree(list);
         DrawRenderers();
+        UpdateScrollBar();
+        UpdateExpandIcon();
+        listBar?.Validate();
     }
 
     /// <summary>
@@ -347,6 +359,7 @@ public sealed class QuestDialog
     /// rheight, the height of a new instance); then the rows' data (requestItemRange -> populateData: ListData index,
     /// label and selected, setData) and the expand icons (updateExpandIcon). The renderers sit in the list's container,
     /// whose scale undoes the list's (CoreList.draw: container.scaleX = 1 / scaleX), at the list's place under its mask.
+    /// The layout counts the rows whose top is inside the list's height (drawLayout: m_curRowCount).
     /// </summary>
     void DrawRenderers()
     {
@@ -387,7 +400,95 @@ public sealed class QuestDialog
         }
         var range = tree.Range(0, listLength - 1);
         for (int i = 0; i < rows.Count; i++) SetData(rows[i], i < range.Count ? range[i] : null, i);
-        UpdateExpandIcon();
+        int limit = (int)listHeight;
+        curRowCount = rows.Count(r => r.Position.Y >= 0 && limit > r.Position.Y);
+    }
+
+    // ---- the list's scrolling (MultiRendererTreeList) -----------------------------------------------------------------
+
+    /// <summary>m_questList.m_rowCount (QuestDialog.configUI: 15).</summary>
+    const int RowCount = 15;
+    /// <summary>The list's scroll bar (m_scrollBar, export_scroll: a ScrollBarEx).</summary>
+    ClikScrollBarView listBar;
+    MovieClipNode.Child listChild;
+    /// <summary>The list's height (UIComponent.height: _height, the placed size).</summary>
+    double listHeight;
+    /// <summary>_scrollPosition and m_curRowCount.</summary>
+    int scrollPosition, curRowCount;
+
+    /// <summary>
+    /// QuestDialog.configUI: m_rowCount = 15 and scrollBar = m_scrollBar (set scrollBar: its position 0, its SCROLL to
+    /// handleScroll). The bar is drawn from its model in place of the placed one.
+    /// </summary>
+    void ConfigList()
+    {
+        listChild = body.Direct("m_questList");
+        if (listChild?.Node is MovieClipNode list) listHeight = list.Bounds.Size.Y * listChild.Base.Y.Length();
+        var barChild = body.Direct("m_scrollBar");
+        if (barChild?.Node is not MovieClipNode bar) return;
+        var model = ClikScrollBarView.ModelOf(bar, barChild);
+        model.Ex = bar.IsA("scaleform.ms2.controls.ScrollBarEx");
+        listBar = new ClikScrollBarView(body.Movie, u, body, barChild, bar, model);
+        model.Position = 0;
+        model.Scroll += () => SetScrollPosition((int)model.Position);       // handleScroll
+    }
+
+    /// <summary>
+    /// MultiRendererTreeList.updateScrollBar(a): the rows past m_rowCount (length + a - m_rowCount) are the bar's page and
+    /// range from 0; its position the scroll position; validated at once.
+    /// </summary>
+    void UpdateScrollBar(int a = 0)
+    {
+        if (listBar == null) return;
+        int n = listLength + a - RowCount;
+        listBar.Model.SetScrollProperties(n, 0, n);
+        listBar.Model.Position = scrollPosition;
+        listBar.Validate();
+    }
+
+    /// <summary>
+    /// MultiRendererTreeList.scrollPosition = a1. Up: not below 0. Down: not when the row after the shown ones is missing or
+    /// its bottom is inside the list, and not past length - m_curRowCount. The list itself moves by the difference of the
+    /// two rows' y (under its mask), then the bar follows (updateScrollBar).
+    /// </summary>
+    void SetScrollPosition(int a1)
+    {
+        int dir = scrollPosition < a1 ? -1 : 1;
+        if (a1 < 0 && dir == 1) return;
+        if (dir == -1)
+        {
+            int l5 = scrollPosition + curRowCount;
+            if (listLength <= l5) return;
+            if (l5 >= rows.Count) return;
+            var l6 = rows[l5];
+            if (l6.Position.Y + l6.Bounds.Size.Y < listHeight) return;
+            if (a1 > listLength - curRowCount) a1 = listLength - curRowCount;
+        }
+        if (scrollPosition == a1) return;
+        // getRendererAt: null past the renderers (an index below 0 is a uint past them too)
+        if (scrollPosition < 0 || scrollPosition >= rows.Count || a1 < 0 || a1 >= rows.Count) return;
+        if (listChild?.Node is MovieClipNode)
+            SetY(body, listChild, listChild.Base.Origin.Y + (rows[scrollPosition].Position.Y - rows[a1].Position.Y));
+        scrollPosition = a1;
+        UpdateScrollBar();
+    }
+
+    /// <summary>
+    /// CoreList.handleMouseWheel (the list's own MOUSE_WHEEL, from what it shows under the mouse): scrollList(1) for a turn
+    /// up, -1 down; MultiRendererTreeList.scrollList moves the scroll position by minus that.
+    /// </summary>
+    bool ListWheel(int delta, Vector2 p)
+    {
+        if (listChild?.Node is not MovieClipNode list || !list.IsVisibleInTree()) return false;
+        // the list draws under its mask (the shape at depth 28, clipping to depth 31)
+        var mask = body.Children.FirstOrDefault(c => c.Def["clipDepth"] is JsonNode cd && (int)cd >= (int)listChild.Def["depth"]
+            && (int)c.Def["depth"] < (int)listChild.Def["depth"]);
+        if (mask?.Node is Node2D mn && mn is MovieClipNode mc && !mc.GlobalBounds().HasPoint(p)) return false;
+        // under the mouse: the list's own clips or a renderer in its container
+        bool own = FlashBounds(list) is { } box && box.HasPoint(list.GetGlobalTransform().AffineInverse() * p);
+        if (!own && !rows.Any(r => r.IsVisibleInTree() && r.GlobalBounds().HasPoint(p))) return false;
+        SetScrollPosition(scrollPosition - (delta > 0 ? 1 : -1));
+        return true;
     }
 
     /// <summary>populateData for one renderer: setListData (label, selected) then the renderer class's setData.</summary>
@@ -483,15 +584,20 @@ public sealed class QuestDialog
         {
             d.Type = d.Type == QuestLogTree.TypeOpen ? QuestLogTree.TypeClosed : QuestLogTree.TypeOpen;
             selectedIndex = index;
-            tree = new QuestLogTree(tree.Root);      // resetRenderer: validateLength over the same tree
+            // resetRenderer: validateLength over the same tree, then updateScrollBar while the old renderers are still in
+            // place (the renderers are invalidated, made at the validateNow after it), then updateExpandIcon
+            tree = new QuestLogTree(tree.Root);
+            listLength = tree.Length;
+            UpdateScrollBar();
             DrawRenderers();
+            UpdateExpandIcon();
             OnSelectRenderer(index);
-            ValidateBar();
+            ValidateBars();
             return;
         }
         SelectRow(index);
         OnSelectRenderer(index);
-        ValidateBar();
+        ValidateBars();
     }
 
     /// <summary>ScrollingListQuest.updateSelectedIndex: the old row deselected, the new one selected.</summary>
@@ -576,8 +682,7 @@ public sealed class QuestDialog
     MovieClipNode info;
     /// <summary>QuestInfo.m_scrollBar (qd_scroll_info, a CLIK ScrollBar) and the nodes it is drawn with.</summary>
     ScrollBarModel infoBar;
-    Node2D infoBarView;
-    int barDrawn = -1;
+    ClikScrollBarView infoBarView;
     /// <summary>The buttons setButton added to m_buttons.</summary>
     readonly List<MovieClipNode> infoButtons = new();
     /// <summary>QuestInfo.m_id.</summary>
@@ -605,21 +710,10 @@ public sealed class QuestDialog
         if (info.Direct("m_title")?.Node is TextNode title) titleFontSize = title.Label.LabelSettings.FontSize;
         var barChild = info.Direct("m_scrollBar");
         if (barChild?.Node is not MovieClipNode bar) return;
-        (double Y, double H) Part(string name)
-        {
-            var c = bar.Direct(name);
-            var b = c?.Def["id"] is JsonNode id ? bar.Scope.Symbol((int)id)?["bounds"] : null;
-            return (c?.Base.Origin.Y ?? 0, b == null ? 0 : UiBuilder.F(b["h"], 0));
-        }
-        var up = Part("upArrow"); var track = Part("track"); var down = Part("downArrow"); var thumb = Part("thumb");
-        infoBar = new ScrollBarModel(bar.Bounds.Size.X, bar.Bounds.Size.Y, up.H, track.Y, track.H, down.Y, down.H, thumb.Y, thumb.H,
-            barChild.Base.Y.Length());
+        infoBar = ClikScrollBarView.ModelOf(bar, barChild);
         infoBar.Scroll += () => HandleScroll(null, default);
-        infoBarView = new Node2D { Position = barChild.Base.Origin };
-        info.AddChild(infoBarView);
-        info.MoveChild(infoBarView, bar.GetIndex());
-        barChild.Last = -1;
-        info.GotoFrame(info.Frame);
+        // its parts (qd_scroll_up / qd_scroll_dn, the track's 9-slice symbol, qd_scroll_thumb) drawn from the model
+        infoBarView = new ClikScrollBarView(body.Movie, u, info, barChild, bar, infoBar);
     }
 
     /// <summary>
@@ -773,33 +867,13 @@ public sealed class QuestDialog
     }
 
     /// <summary>
-    /// The pane's next validation (UIComponent.validateNow on the frame): the bar draws what was invalidated, and its parts
-    /// are drawn again when it drew: the up arrow, the down arrow, the track (its 9-slice symbol at the track's height) and
-    /// the thumb (qd_scroll_thumb at its height), the arrows in their "disabled" state when disabled.
+    /// The next validation of the two bars (UIComponent.validateNow on the frame): each draws what was invalidated and its
+    /// parts follow (<see cref="ClikScrollBarView.Validate"/>).
     /// </summary>
-    void ValidateBar()
+    void ValidateBars()
     {
-        if (infoBar == null || infoBarView == null) return;
-        infoBar.Validate();
-        if (infoBar.Draws == barDrawn) return;
-        barDrawn = infoBar.Draws;
-        foreach (var n in infoBarView.GetChildren()) n.QueueFree();
-        infoBarView.Scale = new Vector2(1, (float)infoBar.ScaleY);
-        float w = (float)infoBar.Width;
-        void Add(MovieClipNode n, double y, string state)
-        {
-            if (n == null) return;
-            n.Position = new Vector2(0, (float)y);
-            if (state != null) n.GotoLabel(state);
-            infoBarView.AddChild(n);
-        }
-        Add(body.Movie.BuildClass("qd_scroll_up", u), 0, infoBar.UpEnabled ? "up" : "disabled");
-        Add(body.Movie.BuildClass("qd_scroll_dn", u), infoBar.DownY, infoBar.DownEnabled ? "up" : "disabled");
-        if (info.Direct("m_scrollBar")?.Node is MovieClipNode bar && bar.Direct("track")?.Def["id"] is JsonNode trackId)
-            Add(body.Movie.BuildSymbolSized((int)trackId, u, w, (float)infoBar.TrackHeight), infoBar.TrackY, null);
-        var thumb = body.Movie.BuildClassSized("qd_scroll_thumb", u, w, (float)infoBar.ThumbHeight);
-        if (thumb != null) thumb.Visible = infoBar.ThumbVisible;
-        Add(thumb, infoBar.ThumbY, infoBar.Enabled ? "up" : "disabled");
+        infoBarView?.Validate();
+        listBar?.Validate();
     }
 
     /// <summary>AS3 child.visible: kept over the timeline (the child stays in the display list and in its parent's bounds).</summary>
@@ -905,6 +979,10 @@ public sealed class QuestDialog
     /// </summary>
     public void Process(double delta)
     {
+        // the bars' arrow repeat timers, then the frame's validation
+        infoBarView?.Tick(delta * 1000);
+        listBar?.Tick(delta * 1000);
+        ValidateBars();
         if (tween == null) return;
         var t = tween;
         t.Position += delta * 1000;
@@ -930,16 +1008,19 @@ public sealed class QuestDialog
     {
         if (!IsOpen) return;
         mouse?.Handle(e);
+        var picked = mouse?.Pressed;
+        infoBarView?.Handle(e, picked);
+        listBar?.Handle(e, picked);
         if (e is InputEventMouseButton { Pressed: true } mb && mb.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown)
         {
             int delta = mb.ButtonIndex == MouseButton.WheelUp ? 1 : -1;
-            // the bar's own listener first (ScrollBar.handleMouseWheel, on the bar: the event's target is below it), then the
-            // stage's (QuestInfo.handleScroll); the bar validates on the next frame
-            if (infoBar != null && infoBarView != null && infoBarView.IsVisibleInTree()
-                && new Rect2(0, 0, (float)infoBar.Width, (float)infoBar.ContentHeight).HasPoint(infoBarView.GetGlobalTransform().AffineInverse() * mb.Position))
-                infoBar.MouseWheel(delta);
+            // the event goes to what is under the mouse and up its parents: a bar (ScrollBar.handleMouseWheel), else the
+            // quest list (CoreList.handleMouseWheel); the stage's listener (QuestInfo.handleScroll) gets every turn
+            if (listBar != null && listBar.Over(mb.Position)) listBar.Model.MouseWheel(delta);
+            else if (infoBarView != null && infoBarView.Over(mb.Position)) infoBar.MouseWheel(delta);
+            else ListWheel(delta, mb.Position);
             HandleScroll(delta, mb.Position);
-            ValidateBar();
+            ValidateBars();
         }
     }
 
@@ -951,6 +1032,39 @@ public sealed class QuestDialog
     {
         if (index < 0 || index >= rows.Count || rows[index].Widget is not ButtonWidget w) return;
         w.MouseOver(true); w.MouseDown(true); w.MouseDown(false); w.MouseOver(false);
+    }
+
+    /// <summary>
+    /// Scrolls the quest list with the mouse (for shots): 1-9 wheel turns down over the list; 11 drags the list bar's thumb
+    /// 100 down; 12 presses its track below the thumb; 13 holds its down arrow for a second.
+    /// </summary>
+    public void ShotScroll(int mode)
+    {
+        if (listBar == null) return;
+        void Send(InputEvent e) => Input(e);
+        static InputEventMouseButton Btn(MouseButton b, bool down, Vector2 p) => new() { ButtonIndex = b, Pressed = down, Position = p, GlobalPosition = p };
+        var bar = listBar.View.GetGlobalTransform();
+        var m = listBar.Model;
+        if (mode is > 0 and < 10)
+        {
+            var lp = rows.Count > 0 ? rows[0].GlobalBounds().GetCenter() : Vector2.Zero;
+            for (int i = 0; i < mode; i++) { Send(Btn(MouseButton.WheelDown, true, lp)); Send(Btn(MouseButton.WheelDown, false, lp)); }
+            return;
+        }
+        Vector2 at;
+        if (mode == 11) at = bar * new Vector2((float)m.Width / 2, (float)(m.ThumbY + m.ThumbHeight / 2));
+        else if (mode == 12) at = bar * new Vector2((float)m.Width / 2, (float)(m.TrackY + m.TrackHeight - 2));
+        else at = bar * new Vector2((float)m.Width / 2, (float)(m.DownY + 5));
+        Send(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        Send(Btn(MouseButton.Left, true, at));
+        if (mode == 11)
+        {
+            var to = bar * (bar.AffineInverse() * at + new Vector2(0, 100));
+            Send(new InputEventMouseMotion { Position = to, GlobalPosition = to });
+            Send(Btn(MouseButton.Left, false, to));
+        }
+        else if (mode == 12) Send(Btn(MouseButton.Left, false, at));
+        else { for (int i = 0; i < 60; i++) Process(1.0 / 60); Send(Btn(MouseButton.Left, false, at)); }
     }
 
     /// <summary>Clicks a tab or sub-tab button as the mouse would (for shots and tests).</summary>

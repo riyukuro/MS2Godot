@@ -36,7 +36,7 @@ public partial class HudScene : Node
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
     QuestDialog questDialog;                // UIQuestDialog, the quest log
-    int[] questShot;                        // --questlog TAB,SUBTAB[,ROW]: the shot opens the quest log on these tabs (and clicks a row)
+    int[] questShot;                        // --questlog TAB,SUBTAB[,ROW[,SCROLL]]: the shot opens the quest log on these tabs (clicks a row, scrolls the list)
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
     public override void _Ready()
@@ -1187,6 +1187,7 @@ public partial class HudScene : Node
         if (questShot != null && frames == 210) questDialog.ClickTab(false, questShot[0]);
         if (questShot != null && frames == 220 && questShot.Length > 1) questDialog.ClickTab(true, questShot[1]);
         if (questShot != null && frames == 230 && questShot.Length > 2) questDialog.ClickRow(questShot[2]);
+        if (questShot != null && frames == 240 && questShot.Length > 3) questDialog.ShotScroll(questShot[3]);
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (++frames == 300)
         {

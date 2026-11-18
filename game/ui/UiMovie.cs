@@ -91,6 +91,10 @@ public sealed class UiMovie
     public MovieClipNode BuildSymbolSized(int id, double scale, float w, float h) =>
         Scope.Symbol(id) is { } sym ? BuildSized(Scope, id, sym, scale, w, h) : null;
 
+    /// <summary><see cref="BuildSymbolSized(int, double, float, float)"/> for a symbol of a given scope (a library's).</summary>
+    public MovieClipNode BuildSymbolSized(UiScope sc, int id, double scale, float w, float h) =>
+        sc.Symbol(id) is { } sym ? BuildSized(sc, id, sym, scale, w, h) : null;
+
     MovieClipNode BuildSized(UiScope sc, int id, JsonNode sym, double scale, float w, float h)
     {
         NineCtx ctx = null;

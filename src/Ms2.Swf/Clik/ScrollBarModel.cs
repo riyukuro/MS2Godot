@@ -25,6 +25,14 @@ public sealed class ScrollBarModel
 
     // ScrollIndicator's defaults
     public double OffsetTop = 0, OffsetBottom = 0, MinThumbSize = 10, PageScrollSize = 1;
+    /// <summary>ScrollBar.trackScrollPageSize: a track press moves the position by this much.</summary>
+    public double TrackScrollPageSize = 1;
+    /// <summary>
+    /// scaleform.ms2.controls.ScrollBarEx: drawLayout takes the size up to whole units (Math.ceil) and updateThumb caps the
+    /// thumb at <see cref="MaxThumbSize"/> when that is above the minimum thumb size (0, the default, is no cap).
+    /// </summary>
+    public bool Ex;
+    public double MaxThumbSize;
     double position = 5, minPosition = 0, maxPosition = 10, pageSize = double.NaN;
 
     /// <summary>UIComponent _width / _height: the size asked for.</summary>
@@ -129,6 +137,58 @@ public sealed class ScrollBarModel
     public void ScrollUp() => Position = position - PageScrollSize;
     public void ScrollDown() => Position = position + PageScrollSize;
 
+    /// <summary>ScrollBar.availableHeight: the track less the thumb, with the offsets.</summary>
+    public double AvailableHeight => TrackHeight - ThumbHeight + OffsetBottom + OffsetTop;
+
+    /// <summary>ScrollIndicator._isDragging: the thumb is held (handleThumbPress until endDrag).</summary>
+    public bool Dragging { get; private set; }
+    double dragOffset;
+
+    /// <summary>
+    /// ScrollBar.handleThumbPress (the thumb's MOUSE_DOWN): not while dragging; else the drag starts, the offset the mouse's
+    /// y in the bar less the thumb's y. The stage's MOUSE_MOVE then goes to <see cref="Drag"/> and MOUSE_UP to <see cref="EndDrag"/>.
+    /// </summary>
+    public void ThumbPress(double mouseY)
+    {
+        if (Dragging) return;
+        Dragging = true;
+        dragOffset = mouseY - ThumbY;
+    }
+
+    /// <summary>ScrollBar.doDrag: the position at the thumb's top's fraction of the available height (the setter rounds and clamps).</summary>
+    public void Drag(double mouseY)
+    {
+        if (!Dragging) return;
+        double frac = (mouseY - dragOffset - TrackY) / AvailableHeight;
+        Position = minPosition + frac * (maxPosition - minPosition);
+    }
+
+    /// <summary>ScrollBar.endDrag: the stage's listeners removed, the drag over.</summary>
+    public void EndDrag() => Dragging = false;
+
+    /// <summary>
+    /// ScrollBar.handleTrackPress (the track's MOUSE_DOWN) in the "scrollPage" track mode: with shift held the position goes
+    /// to the cursor (the thumb centred on it, rounded) and the thumb is pressed, dragged with its middle under the mouse;
+    /// then, unless dragging or at _trackScrollPosition (-1, never set), a press beside the thumb moves the position a track
+    /// page towards the mouse and a press on the thumb does nothing. The track is a plain movie clip, not a Button, so it has
+    /// no ButtonEvent.CLICK and no auto repeat.
+    /// </summary>
+    public void TrackPress(double mouseY, bool shift)
+    {
+        if (shift)
+        {
+            double frac = (mouseY - ThumbHeight / 2 - TrackY) / AvailableHeight;
+            Position = AsRound(frac * (maxPosition - minPosition) + minPosition);
+            // thumb.dispatchEvent(MOUSE_DOWN) runs handleThumbPress with the thumb where it was drawn; the call after it
+            // returns at once; then the offset is set to the thumb's middle
+            ThumbPress(mouseY);
+            dragOffset = ThumbHeight / 2;
+        }
+        if (Dragging || position == -1) return;
+        if (mouseY > ThumbY && mouseY < ThumbY + ThumbHeight) return;
+        Position = position + (ThumbY < mouseY ? TrackScrollPageSize : -TrackScrollPageSize);
+    }
+
     /// <summary>ScrollBar.handleMouseWheel: up a page scroll per notch up, down per notch down.</summary>
     public void MouseWheel(int delta) => Position = position - (delta > 0 ? 1 : -1) * PageScrollSize;
 
@@ -171,6 +231,7 @@ public sealed class ScrollBarModel
     /// <summary>ScrollBar.drawLayout: the thumb to the track's top, then Constraints.update(_width, _height) in REFLOW mode.</summary>
     void DrawLayout()
     {
+        if (Ex) { Width = Math.Ceiling(Width); Height = Math.Ceiling(Height); }
         ThumbY = TrackY - OffsetTop;
         DownY = Height - DownHeight - DownBottom;                 // BOTTOM: y = height - element height - bottom
         TrackHeight = Height - TrackTop - TrackBottom;            // TOP | BOTTOM: height = height - top - bottom
@@ -189,6 +250,7 @@ public sealed class ScrollBarModel
         double range = Math.Max(1, maxPosition - minPosition + pageSize);
         double track = TrackHeight + OffsetTop + OffsetBottom;
         double h = AsMax(MinThumbSize, AsMin(track, pageSize / range * track));
+        if (Ex && MaxThumbSize > MinThumbSize) h = AsMin(h, MaxThumbSize);
         if (!double.IsNaN(h)) ThumbHeight = h;
         UpdateThumbPosition();
     }
