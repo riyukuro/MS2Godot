@@ -38,9 +38,27 @@ public sealed class QuestData
     /// </summary>
     public readonly List<uint> Following = new();
     internal readonly List<uint> RequiredBy = new(), SelectableBy = new();
+    /// <summary>basic alliance (m_4c, Parse_14021a330): 0 none, 1 darkwind .. 5 greenhood, 6 .. 8 the expedition ones, 9 georg.</summary>
+    public int Alliance;
+    /// <summary>basic rank (m_50, Parse_14021a570): S 0, A 1, B 2, C 3, D 4; 5 when absent or another value.</summary>
+    public int Rank = 5;
+    /// <summary>The &lt;completeReward&gt; block (m_complete).</summary>
+    public readonly CompleteReward Complete = new();
 
     /// <summary>HasProperty (questdata.cpp).</summary>
     public bool HasProperty(int bit) => (Properties & (1 << bit)) != 0;
+}
+
+/// <summary>CQuestData::CompleteReward (questdata.h; ctor 0x140748100): the &lt;completeReward&gt; attributes.</summary>
+public sealed class CompleteReward
+{
+    public int Money, Karma, Lu, Exp, GuildFund, GuildExp, GuildCoin, MenteeCoin, UseMainFamePoint, RewardExpExtra;
+    /// <summary>m_38 / m_40: the global exp and meso rates applied to the quest (FUN_14074ee30), 1 until the server sends them.</summary>
+    public float ExpRate = 1, MesoRate = 1;
+    /// <summary>relativeExp (m_3c): the exp type (Parse_14021af40), -1 when absent.</summary>
+    public int RelativeExp = -1;
+    /// <summary>relativeMeso (m_44): the reward contents id (Parse_140217cd0), 0 when absent.</summary>
+    public int RelativeMeso;
 }
 
 /// <summary>
@@ -60,6 +78,8 @@ public sealed class QuestTable
     public ReservedWords Words = new();
     /// <summary>stringcommon text of a key (GetStringCommonByKey), empty when it has none.</summary>
     public Func<string, string> Common = _ => "";
+    /// <summary>The reward tables and readers (questmasktable.cpp); empty tables until loaded.</summary>
+    public QuestRewards Rewards = new();
 
     readonly string locale;
     readonly Func<string, bool> featureOn;
@@ -85,6 +105,7 @@ public sealed class QuestTable
             try { t.AddQuests(Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry)))); } catch (System.Xml.XmlException) { }
         }
         t.BuildIndexes();
+        t.Rewards = QuestRewards.Load(packs, locale, t.Available);
 
         foreach (var (table, file) in ReservedWords.Tables)
             foreach (var lang in languages)
@@ -187,6 +208,25 @@ public sealed class QuestTable
         }
         var start = q.Element("start");
         if (start != null) QueryUInt(start, "npc", ref d.StartNpc);
+        if ((string)basic.Attribute("alliance") is { } alliance) d.Alliance = QuestRewards.ParseAlliance(alliance);
+        if ((string)basic.Attribute("rank") is { } rank) d.Rank = QuestRewards.ParseRank(rank);
+        var reward = q.Element("completeReward");
+        if (reward != null)
+        {
+            var c = d.Complete;
+            QueryInt(reward, "money", ref c.Money);
+            QueryInt(reward, "exp", ref c.Exp);
+            QueryInt(reward, "guildFund", ref c.GuildFund);
+            QueryInt(reward, "guildExp", ref c.GuildExp);
+            QueryInt(reward, "guildCoin", ref c.GuildCoin);
+            QueryInt(reward, "menteeCoin", ref c.MenteeCoin);
+            QueryInt(reward, "useMainFamePoint", ref c.UseMainFamePoint);
+            QueryInt(reward, "rewardExpExtra", ref c.RewardExpExtra);
+            if ((string)reward.Attribute("relativeExp") is { } relExp) c.RelativeExp = QuestRewards.ParseExpType(relExp);
+            if ((string)reward.Attribute("relativeMeso") is { } relMeso) c.RelativeMeso = QuestRewards.ParseRewardContents(relMeso);
+            QueryInt(reward, "karma", ref c.Karma);
+            QueryInt(reward, "lu", ref c.Lu);
+        }
         return d;
     }
 
