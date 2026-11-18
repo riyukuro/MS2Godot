@@ -51,6 +51,8 @@ public partial class HudScene : Node, IUiStageHost
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     string openShot;                        // --uigen-open inventory|myinfo: the shot opens that window, as I or P does
+    string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
+    Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
@@ -67,6 +69,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-open") openShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-drag") dragShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--worldmap") worldMapShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
@@ -1242,7 +1245,13 @@ public partial class HudScene : Node, IUiStageHost
         foreach (var g in UiFixture.InventoryItems().GroupBy(i => kinds.TabOf(i.Id)))
             book.Apply(new Ms2.Net.Packets.ItemMessage.LoadTab(g.Key, g.ToList()));
         offlineBook = book;
-        return offlineInventory = new Ms2.Net.Packets.InventoryView(book);
+        return offlineInventory = new Ms2.Net.Packets.InventoryView(book)
+        {
+            // no server: the requests are only logged
+            RequestMove = (uid, slot) => GD.Print($"inventory: move {uid} to cell {slot} is not sent (offline)"),
+            RequestEquip = (uid, slot, kind) => GD.Print($"inventory: equip {uid} at slot {slot} kind {kind} is not sent (offline)"),
+            RequestUnequip = uid => GD.Print($"inventory: unequip {uid} is not sent (offline)"),
+        };
     }
 
     // ---- skill window: uiskillbooktreedialog run by its own ActionScript, UISkillBookTreeDialog's C++ side as SkillBookTreeController --
@@ -1448,6 +1457,9 @@ public partial class HudScene : Node, IUiStageHost
         if (msgboxShot == 3 && frames == 230) optionHost?.MessageBox(0x84b, "OnSaveAndCheck");   // OnCloseDialog with a page changed
         if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
         if (hoverShot != null && frames == 260) Hover(hoverShot);
+        if (dragShot != null && frames == 200) { ToggleMyInfo(); ToggleInventory(); }
+        if (dragShot != null && frames == 220) PlaceBeside(inventoryMovie, myInfoMovie);
+        if (dragShot != null && frames >= 240 && frames <= 270) DragStep(frames - 240);
         if (partyMenuShot != 0 && frames == 240) ShotPartyMenu(partyMenuShot);
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
@@ -1501,6 +1513,81 @@ public partial class HudScene : Node, IUiStageHost
                 for (var t = (Ms2.Avm2.Flash.AsDisplayObject)movie.Player.MouseTarget(x, y); t != null; t = t.Parent)
                     if (t == target) { movie.Player.MouseMove(x + 4, y + 4); return; }
         GD.PushWarning("hover: no hit on " + spec);
+    }
+
+    /// <summary>
+    /// The drag shot, one step a frame, through the window's own input: the pointer onto the source slot, the left button
+    /// down, 20 moves to the target slot, the shot drag.png (mid-drag, over the target), then the button up.
+    /// </summary>
+    void DragStep(int k)
+    {
+        if (k == 0)
+        {
+            var parts = dragShot.Split('>', 2);
+            string from = parts[0] == "worn" && myInfo != null
+                ? myInfo.GetBagSlotBindings(MyInfoController.EquipBag).FirstOrDefault(n => myInfo.WornSlot(n) != null) : parts[0];
+            if (from == null || SlotPoint(from) is not { } a || SlotPoint(parts[1]) is not { } b) { GD.PushWarning("drag: no slot for " + dragShot); dragShot = null; return; }
+            GD.Print($"drag: {from} -> {parts[1]}");
+            (dragFrom, dragTo) = (a, b);
+            SendMouse(dragFrom, null);
+        }
+        else if (k == 5) SendMouse(dragFrom, true);
+        else if (k >= 6 && k <= 25) SendMouse(dragFrom.Lerp(dragTo, (k - 5) / 20f), null);
+        else if (k == 26)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(shotDir);
+            GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "drag.png"));
+        }
+        else if (k == 28) SendMouse(dragTo, false);
+    }
+
+    /// <summary>The drag shot's layout, as a player would drag the window: <paramref name="beside"/>'s dialog near the left edge and
+    /// <paramref name="moved"/>'s right of it, top aligned (both movies share the stage's coordinates).</summary>
+    static void PlaceBeside(MovieDialog moved, MovieDialog beside)
+    {
+        if (moved?.Host.Entity is not Ms2.Avm2.Flash.AsDisplayObject m || beside?.Host.Entity is not Ms2.Avm2.Flash.AsDisplayObject b) return;
+        b.x += 40 - b.GetBounds(null).X;
+        var r = b.GetBounds(null);
+        var own = m.GetBounds(null);
+        m.x += r.X + r.W + 8 - own.X;
+        m.y += r.Y - own.Y;
+    }
+
+    /// <summary>A window point on the slot bound to <paramref name="binding"/> in any hosted movie (one its hit test reaches).</summary>
+    Vector2? SlotPoint(string binding)
+    {
+        foreach (var movie in FindMovies(GetTree().Root))
+        {
+            if (Descendant(movie.Host, movie.Player.Stage, "binding=" + binding) is not { } target) continue;
+            var view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
+            var r = target.GetBounds(null);
+            for (double y = r.Y + 2; y < r.Y + r.H; y += 2)
+                for (double x = r.X + 2; x < r.X + r.W; x += 2)
+                    for (var t = (Ms2.Avm2.Flash.AsDisplayObject)movie.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                        if (t == target)
+                        {
+                            var c = new Vector2((float)(r.X + r.W / 2), (float)(r.Y + r.H / 2));
+                            var p = movie.Player.MouseTarget(c.X, c.Y) is Ms2.Avm2.Flash.AsDisplayObject hit && IsUnder(hit, target) ? c : new Vector2((float)x, (float)y);
+                            return view != null ? view.GetGlobalTransformWithCanvas() * p : p;
+                        }
+        }
+        return null;
+    }
+
+    static bool IsUnder(Ms2.Avm2.Flash.AsDisplayObject o, Ms2.Avm2.Flash.AsDisplayObject ancestor)
+    {
+        for (; o != null; o = o.Parent) if (o == ancestor) return true;
+        return false;
+    }
+
+    /// <summary>A mouse event at a window point, through Godot's input (the pointer moved there first).</summary>
+    void SendMouse(Vector2 at, bool? press)
+    {
+        Input.WarpMouse(at);
+        InputEvent e = press is bool down
+            ? new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = down, Position = at, GlobalPosition = at, ButtonMask = down ? MouseButtonMask.Left : 0 }
+            : new InputEventMouseMotion { Position = at, GlobalPosition = at, ButtonMask = Input.IsMouseButtonPressed(MouseButton.Left) ? MouseButtonMask.Left : 0 };
+        Input.ParseInputEvent(e);
     }
 
     static IEnumerable<MovieDialog> FindMovies(Node n)

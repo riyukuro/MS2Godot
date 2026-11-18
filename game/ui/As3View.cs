@@ -33,6 +33,7 @@ public partial class As3View : Node2D
         public object ContentKey;
         public MaskShape Mask;           // set when this object masks following siblings or is masked by script
         public int Seen;
+        public int Z;                    // the holder's z index (the dragged sprite's, see SyncObject)
         // the holder's transform, visibility and colour and the content's material as last set (the node defaults at first):
         // a property is set again only when it changes
         public Transform2D Xf = Transform2D.Identity;
@@ -230,6 +231,10 @@ public partial class As3View : Node2D
         // a timeline mask's own node is not drawn (SyncChildren clips the following depths to it)
         bool visible = o.IsVisible && !masks.Contains(o) && !clipMask;
         if (visible != e.Visible) e.Holder.Visible = e.Visible = visible;
+        // DragManager's drag canvas is CommonDepth's layer under the mouse cursor (DragManager.init: DEPTH_LAYER_MOUSECURSOR
+        // - 1) on the one stage every dialog shares: the dragged sprite is drawn over the other movies too, not only its own
+        int z = o == Player.DraggedSprite ? (int)RenderingServer.CanvasItemZMax - 1 : 0;
+        if (z != e.Z) { e.Holder.ZAsRelative = z == 0; e.Holder.ZIndex = e.Z = z; }
         var cx = o.Color;
         var modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
         if (modulate != e.Modulate) e.Holder.Modulate = e.Modulate = modulate;
