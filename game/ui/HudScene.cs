@@ -35,11 +35,11 @@ public partial class HudScene : Node
     DamageText damageText;
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
-    QuestDialog questDialog;                // UIQuestDialog, the quest log
-    int[] questShot;                        // --questlog TAB,SUBTAB[,ROW[,SCROLL]]: the shot opens the quest log on these tabs (clicks a row, scrolls the list)
-    int[] uigenQuest;                       // --uigen-questlog TAB,SUBTAB[,QUEST]: the shot opens the quest log from its own movie, selecting the quest
+    int[] questShot;                        // --questlog TAB,SUBTAB[,QUEST]: the shot opens the quest log on these tabs, selecting the quest
     string questState;                      // --questlog-state LEVEL:ID,ID,..[:TRACKING]: the shot's quest state is these quests in progress at that level
-    MovieDialog movieQuestLog;
+    MovieDialog questLog;                   // UIQuestDialog, the quest log, run from its own movie while it is loaded
+    Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
+    Ms2.Ui.UiModel questLogModel;
     static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
@@ -47,14 +47,12 @@ public partial class HudScene : Node
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
-        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         questFixture = args.Contains("--questlog-fixture");
-        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-questlog") uigenQuest = args[i + 1].Split(',').Select(int.Parse).ToArray();
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
-        questDialog = new QuestDialog(assets, f => !data.FeaturesOff.Contains(f), QuestLogSource);
 
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
@@ -111,6 +109,7 @@ public partial class HudScene : Node
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         string typed = chatInput?.Edit.Text;
         bool menuOpen = systemMenu?.IsOpen == true;
+        questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         chat = null; chatInput = null; chatLog = null; chatThumb = null; target = null;
@@ -119,6 +118,7 @@ public partial class HudScene : Node
         if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
         if (chatShown.Count > 0) ShowChatLines();
         if (menuOpen) systemMenu.Open(animate: false);
+        questLog?.Relayout(GetWindow().Size);
     }
 
     /// <summary>
@@ -158,7 +158,7 @@ public partial class HudScene : Node
         AdventureBar(uiRoot);
         GameMenu(uiRoot);
         SystemMenuDialog(layer);
-        questDialog.Attach(uiRoot, u, stage);          // dialogs draw over the HUD (UIDialog m_e0: layer 4)
+        if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
     }
 
     SystemMenu systemMenu;          // UISystemMenuDialog (0x4e21)
@@ -626,7 +626,6 @@ public partial class HudScene : Node
     /// </summary>
     public override void _Input(InputEvent e)
     {
-        questDialog?.Input(e);
         if (ChatKeys(e)) { GetViewport().SetInputAsHandled(); return; }
         if (DialogKeys(e)) GetViewport().SetInputAsHandled();
     }
@@ -657,9 +656,10 @@ public partial class HudScene : Node
     /// </summary>
     bool DialogKeys(InputEvent e)
     {
-        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || questDialog == null) return false;
-        if (k.PhysicalKeycode == Key.L) { questDialog.Toggle(); return true; }       // a DirectInput key code is a physical key
-        if (k.Keycode == Key.Escape && questDialog.IsOpen) { questDialog.Close(); return true; }
+        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
+        if (k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }       // a DirectInput key code is a physical key
+        bool open = questLog != null && questLogSide?.IsClosed == false;
+        if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         return false;
     }
 
@@ -845,60 +845,77 @@ public partial class HudScene : Node
     }
 
     /// <summary>
-    /// The quest log run from its movie (uiquestdialog) with UIQuestDialog's C++ side (QuestDialogController), for a shot:
-    /// the translated code is loaded when it is built for this data, the tab and sub-tab are the ones it opens on.
+    /// The quest log key (CUIService::ToggleDialog -> UIDialog::FUN_1419246f0, uidialog.cpp:456): a closed log (vfunc_55)
+    /// opens, else it closes (vfunc_67), also while its close tween runs.
     /// </summary>
-    void OpenMovieQuestLog()
+    void ToggleQuestLog()
     {
-        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the quest log runs interpreted");
-        var log = QuestLogSource();
-        if (log == null) return;
-        if (questState != null)
+        if (questLog == null || questLogSide == null || questLogSide.IsClosed) OpenQuestLog();
+        else questLogSide.Close();
+    }
+
+    /// <summary>
+    /// Opens the quest log: its movie (uiquestdialog) runs its own ActionScript (the translated code when it is built for this
+    /// data, else the interpreter) with UIQuestDialog's C++ side (QuestDialogController), which is kept between opens. The
+    /// movie is dropped when its close tween ends (OnEndClose -> Unload).
+    /// </summary>
+    void OpenQuestLog()
+    {
+        if (questLog != null) { questLog.Host.Unload(); questLog.QueueFree(); questLog = null; }
+        if (questLogSide == null)
         {
-            var parts = questState.Split(':');
-            log.State = new QuestShotState(questTable, int.Parse(parts[0]), parts[1].Split(',').Select(int.Parse), parts.Length > 2 ? int.Parse(parts[2]) : 0);
-        }
-        // CFeatureManager by id for the bold words' dictionary links (feature 0x2f)
-        questTable.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length
-                                                && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]);
-        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"))
-        { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
-        var fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
-        var c = new Ms2.Ui.Hud.QuestDialogController
-        {
-            Log = log, OpenTab = uigenQuest[0], OpenSubTab = uigenQuest[1],
-            Detail = new QuestDetailContext
+            if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the quest log runs interpreted");
+            var log = QuestLogSource();
+            if (log == null) return;
+            if (questState != null)
             {
-                FieldId = fieldId,
-                LocalTm = Ms2.Net.MsTime.LocalTm,
-                Map = QuestMapGraph.From(fieldMeta),
-                // offline: the player is alive in this field, no party search, the server time unknown (no end time line)
-                Buttons = (d, q) => QuestCommon.Buttons(d, q, new QuestButtonInputs
+                var parts = questState.Split(':');
+                log.State = new QuestShotState(questTable, int.Parse(parts[0]), parts[1].Split(',').Select(int.Parse), parts.Length > 2 ? int.Parse(parts[2]) : 0);
+            }
+            // CFeatureManager by id for the bold words' dictionary links (feature 0x2f)
+            questTable.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length
+                                                    && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]);
+            questLogModel = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"))
+            { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
+            var fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+            questLogSide = new Ms2.Ui.Hud.QuestDialogController
+            {
+                Log = log,
+                Detail = new QuestDetailContext
                 {
-                    FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
-                    DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
-                }, fieldMeta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
-            },
-        };
+                    FieldId = fieldId,
+                    LocalTm = Ms2.Net.MsTime.LocalTm,
+                    Map = QuestMapGraph.From(fieldMeta),
+                    // offline: the player is alive in this field, no party search, the server time unknown (no end time line)
+                    Buttons = (d, q) => QuestCommon.Buttons(d, q, new QuestButtonInputs
+                    {
+                        FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
+                        DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
+                    }, fieldMeta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
+                },
+            };
+            if (questShot != null) (questLogSide.OpenTab, questLogSide.OpenSubTab) = (questShot[0], questShot[1]);
+            questLogSide.Unloaded += () => { questLog?.Host.Unload(); questLog?.QueueFree(); questLog = null; };
+        }
         var t = System.Diagnostics.Stopwatch.StartNew();
-        movieQuestLog = new MovieDialog(assets, c, model, GetWindow().Size);
-        GD.Print($"movie quest log: load={movieQuestLog.Loaded} in {t.ElapsedMilliseconds} ms, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
-        uiRoot.AddChild(movieQuestLog);
+        questLog = new MovieDialog(assets, questLogSide, questLogModel, GetWindow().Size);
+        GD.Print($"quest log: load={questLog.Loaded} in {t.ElapsedMilliseconds} ms, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
+        uiRoot.AddChild(questLog);
     }
 
     /// <summary>A click on the quest's row (the row the client's getIndex gives, ScrollToQuest), as the player selects it.</summary>
-    void ClickMovieQuest(int id)
+    void ClickQuest(int id)
     {
-        if (movieQuestLog == null) return;
-        var h = movieQuestLog.Host;
+        if (questLog == null) return;
+        var h = questLog.Host;
         int index = Ms2.Avm2.Rt.ToInt32(h.Invoke("getIndex", (uint)id));
         var list = h.Child("m_questList");
         if (index < 0 || list == null) { GD.PushWarning($"quest {id} is not in the list"); return; }
         int scroll = Ms2.Avm2.Rt.ToInt32(h.Get(list, "scrollPosition"));
         if (h.Invoke(list, "getRendererAt", index - scroll) is not Ms2.Avm2.Flash.AsDisplayObject r) { GD.PushWarning("no renderer for row " + index); return; }
         var b = r.GetBounds(null);
-        movieQuestLog.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
-        movieQuestLog.Step(10);
+        questLog.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
+        questLog.Step(10);
     }
 
     static QuestTable questTable;           // the quest log's tables, read when the log first lists (QuestDataTable, CQuestUIData)
@@ -1250,15 +1267,9 @@ public partial class HudScene : Node
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (mapImage != null && MinimapTimer()) UpdateMinimap();
         target?.Process(delta);
-        questDialog?.Process(delta);
         if (shotDir == null) return;
-        if (uigenQuest != null && frames == 200) OpenMovieQuestLog();
-        if (uigenQuest != null && frames == 230 && uigenQuest.Length > 2) ClickMovieQuest(uigenQuest[2]);
-        if (questShot != null && frames == 200) questDialog.Open();
-        if (questShot != null && frames == 210) questDialog.ClickTab(false, questShot[0]);
-        if (questShot != null && frames == 220 && questShot.Length > 1) questDialog.ClickTab(true, questShot[1]);
-        if (questShot != null && frames == 230 && questShot.Length > 2) questDialog.ClickRow(questShot[2]);
-        if (questShot != null && frames == 240 && questShot.Length > 3) questDialog.ShotScroll(questShot[3]);
+        if (questShot != null && frames == 200) OpenQuestLog();
+        if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (++frames == 300)
         {
