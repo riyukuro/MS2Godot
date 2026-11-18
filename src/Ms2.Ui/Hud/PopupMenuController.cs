@@ -59,13 +59,15 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public FieldData Field;
     /// <summary>WorldService::FUN_141bd1530: the character's PC is in the field (the trade item's test).</summary>
     public Func<long, bool> PlayerInField = _ => false;
-    /// <summary>FUN_1418fd280 (uicommon.cpp:353): the current house is the own home (the furnishing rights item). STILL-OPEN:
-    /// no house feed, so false.</summary>
+    /// <summary>FUN_1418fd280 (uicommon.cpp:353): the current house is the own home (the furnishing rights item): the house
+    /// owner (CubeMapInformationService FUN_1410c3180) is the own account (DAT_143ab2820). STILL-OPEN: the owner is set by
+    /// CSceneStateGame::OnLoadUgcMap (RecvOp LoadUgcMap 0x7D, scenestategame.cpp:2252), which is not decoded, so false.</summary>
     public Func<bool> InOwnHome = () => false;
     /// <summary>FUN_141028be0 (ugcimagepath.cpp:417) with no download: the character's profile image path for its picture.</summary>
     public Func<long, string, string> ProfileImagePath = (_, _) => "";
-    /// <summary>CAchieveManager::GetTally (the own PC's proxy tally, proxygameobject.cpp:354), summed. STILL-OPEN: no
-    /// achievement feed, so 0.</summary>
+    /// <summary>CAchieveManager::GetTally (the own PC's proxy tally, proxygameobject.cpp:354), summed. STILL-OPEN: the tally
+    /// is RebuildTally over the started achievements (achievemanager.cpp:756) of RecvOp Achieve 0x5E, which is not decoded,
+    /// so 0 (the own party record's trophy is not what the client reads).</summary>
     public Func<int> OwnTrophy = () => 0;
 
     /// <summary>MenuItemClick (vfunc_28, :1830) for an item whose handler is not ported (see the class note), with the target
@@ -186,8 +188,11 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// <summary>
     /// FUN_141a83810 (:2723) for the party slot's flags (0x63fe): trade, the character items, the group chat, the house
     /// visit, the home invite, the buddy item, the party items, the guild invite, the furnishing rights, the block items
-    /// and the report, in that order. No buddy list or guild is ported: every target counts as no buddy and the own
-    /// character as in no guild.
+    /// and the report, in that order. STILL-OPEN, the feeds not decoded: the buddy list (CBuddyManager::FindBuddy by account,
+    /// character id and name, RecvOp Buddy 0x61) for FUN_141a847c0 (a friend: 300, else 0x12d unless blocked or pending) and
+    /// FUN_141a84860 (blocked: 0x191 and 0x192, else 400); the own guild (CGuildManager::IsInGuild, the guild id of RecvOp
+    /// Guild 0x8A; the ServerEnter guild is SetTargetGuild, not the own one) for FUN_141a84b40. So every target counts as no
+    /// buddy and the own character as in no guild.
     /// </summary>
     void BuildItems(int flags, int kind, PopupMenuTarget t)
     {
