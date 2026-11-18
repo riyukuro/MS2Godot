@@ -39,10 +39,10 @@ public sealed class GameStrings
         {
             string entry = $"string/{lang}/{name}.xml";
             if (!packs.Exists("Xml", entry)) continue;
-            foreach (var e in Parse(packs.Read("Xml", entry)).Descendants("key"))
+            foreach (var r in Text.XmlRows.Elements(packs.Read("Xml", entry), "key"))    // Descendants("key"), streamed
             {
-                var id = (string)e.Attribute(idAttr);
-                if (id != null && !d.ContainsKey(id)) d[id] = (string)e.Attribute(valueAttr);
+                var id = r.GetAttribute(idAttr);
+                if (id != null && !d.ContainsKey(id)) d[id] = r.GetAttribute(valueAttr);
             }
         }
         return d;
