@@ -372,7 +372,10 @@ public partial class Player : CharacterBody3D
         // controller goes to onControllerHit (0x140cfaec0), which only keeps the other controller
         if (collider is CharacterBody3D || collider is Node c && c.HasMeta(MoveConfig.ControllerMeta)) return;
         moveShapeHit = true;
-        hitGroup = collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
+        // the entity's PropCollisionGroup: the shape's own when it differs from its body's (a GeneratePhysX cube box)
+        var owner = collider is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
+        hitGroup = owner != null && owner.HasMeta(FieldBuilder.KindMeta) ? (int)owner.GetMeta(FieldBuilder.KindMeta)
+                 : collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
         hitFallReturn = FallReturnEntity(collider, shape);
     }
 
@@ -699,7 +702,9 @@ public partial class Player : CharacterBody3D
 
     }
 
-    readonly RayQuery topRay = RayQuery.CastRay();
+    // StateLadder::FUN_1417d99e0 (stateladder.cpp:580-597) casts on m_groups 0x201: groups 0 and 9
+    readonly RayQuery topRay = RayQuery.CastRay(0x201);
+    const uint CapsuleOverlapGroups = 0x389;
 
     Vector3? TopPoint()
     {
@@ -710,10 +715,11 @@ public partial class Player : CharacterBody3D
 
     bool Overlaps(Vector3 feet)
     {
-        // GameObjectController::IsCapsuleOverlapping (gameobjectcontrollerphysxhelpers.cpp:538-558) is checkOverlapCapsule,
-        // which has no sides
+        // GameObjectController::IsCapsuleOverlapping (gameobjectcontrollerphysxhelpers.cpp:538-558) is
+        // checkOverlapCapsule(capsule, NX_ALL_SHAPES, 0x389), which has no sides: groups 0, 3, 7, 8 and 9, so neither an
+        // npc capsule (group 4) nor a group 10/11 mesh stops it
         var t = new Transform3D(Basis.Identity, feet + new Vector3(0, 2, 0));
-        return TestMove(t, Vector3.Up * 0.1f) || nx.OverlapsMeshes(t);
+        return nx.OverlapsAt(t, CapsuleOverlapGroups);
     }
 
     // ---- animation -----------------------------------------------------------------------------------------------------

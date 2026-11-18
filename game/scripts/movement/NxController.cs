@@ -214,11 +214,18 @@ public sealed class NxController
         var q = Query(uint.MaxValue, false);
         q.Transform = new Transform3D(Basis.Identity, body.GlobalPosition) * shapeNode.Transform;
         var world = body.GetWorld3D();
-        return world.DirectSpaceState.IntersectShape(q, 1).Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform);
+        return world.DirectSpaceState.IntersectShape(q, 1).Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, uint.MaxValue);
     }
 
-    /// <summary>The body's shape with the body at <paramref name="at"/> against the field's mesh triangles from either side.</summary>
-    public bool OverlapsMeshes(Transform3D at) => TwoSidedSpace.Overlaps(body.GetWorld3D(), shapeNode.Shape, at * shapeNode.Transform);
+    /// <summary>The body's shape with the body at <paramref name="at"/> against every shape of a group in
+    /// <paramref name="groups"/>, the field's mesh triangles from either side; the body's own shape is left out.</summary>
+    public bool OverlapsAt(Transform3D at, uint groups)
+    {
+        var q = Query(groups, false);
+        q.Transform = at * shapeNode.Transform;
+        var world = body.GetWorld3D();
+        return world.DirectSpaceState.IntersectShape(q, 1).Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, groups);
+    }
 
     static bool IsController(GodotObject o) =>
         o is CharacterBody3D || o is Node n && n.HasMeta(MoveConfig.ControllerMeta);

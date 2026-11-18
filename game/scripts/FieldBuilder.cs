@@ -17,6 +17,10 @@ public sealed class FieldBuilder
     const float ChunkSize = 1500f;                     // collider bodies per 10 x 10 cubes
     /// <summary>Meta on a collision shape of a fall-return cube: the entity's index in the field (see the collision pass).</summary>
     public const string FallReturnMeta = "ms2_fall_return";
+    /// <summary>Meta on a collision shape whose entity's PropCollisionGroup is not the group of its body (a GeneratePhysX
+    /// cube box); a shape without it has its body's group.</summary>
+    public const string KindMeta = "ms2_kind";
+    const int GeneratedBoxGroup = 9;
 
     readonly PackSet packs;
     readonly AssetIndex assets;
@@ -159,7 +163,8 @@ public sealed class FieldBuilder
         var groups = new Dictionary<string, List<FieldEntity>>(StringComparer.OrdinalIgnoreCase);
         var chunks = new Dictionary<(int, int), StaticBody3D>();
 
-        // colliders of entities with a PropCollisionGroup (8 = water) go to their own bodies, tagged ms2_group
+        // colliders of entities with a PropCollisionGroup (8 = water) go to their own bodies, tagged ms2_group and on the
+        // layer of their group (bit n = group n; group 0 stays on layer 1), so a query's mask is the client's groups mask
         var groupChunks = new Dictionary<(int, int, int), StaticBody3D>();
         StaticBody3D Chunk(Vec3 p, int group = 0)
         {
@@ -168,7 +173,7 @@ public sealed class FieldBuilder
             {
                 if (!groupChunks.TryGetValue((key.Item1, key.Item2, group), out var gb))
                 {
-                    gb = new StaticBody3D { Name = $"Chunk_{key.Item1}_{key.Item2}_g{group}" };
+                    gb = new StaticBody3D { Name = $"Chunk_{key.Item1}_{key.Item2}_g{group}", CollisionLayer = 1u << group, CollisionMask = 0 };
                     gb.SetMeta("ms2_group", group);
                     colliders.AddChild(gb);
                     groupChunks[(key.Item1, key.Item2, group)] = gb;
@@ -199,9 +204,10 @@ public sealed class FieldBuilder
                     var d = e.Vector("ShapeDimensions");
                     if (d.X > 0 && d.Y > 0 && d.Z > 0)
                     {
-                        // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2
+                        // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2, in the
+                        // entity's PropCollisionGroup (PhysXWhiteboxService.cpp:392-395, :440)
                         var cs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) }, Transform = xf };
-                        Chunk(e.Position).AddChild(cs);
+                        Chunk(e.Position, (int)e.Number("PropCollisionGroup")).AddChild(cs);
                         Whiteboxes++;
                     }
                     continue;
@@ -235,11 +241,12 @@ public sealed class FieldBuilder
                 }
                 if (me.Collision.Count > 0)
                 {
-                    // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props)
+                    // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props), every shape in the entity's
+                    // PropCollisionGroup (ecrPhysX PropService::SetCollisionGroup, PropService.cpp:1471-1499)
                     for (int i = 0; i < me.Collision.Count; i++)
                     {
                         Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D { Shape = me.Collision[i], Transform = xf }));
-                        twoSided.Add(me.Overlap[i], xf);
+                        twoSided.Add(me.Overlap[i], xf, group);
                     }
                     Meshes++;
                 }
@@ -247,16 +254,23 @@ public sealed class FieldBuilder
                 {
                     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
                     // standing on the entity position, turned by the Z rotation only; scale is ignored.
-                    // Built whether or not the NIF has its own PhysX meshes (cube load reads only GeneratePhysX)
+                    // Built whether or not the NIF has its own PhysX meshes (cube load reads only GeneratePhysX).
+                    // GeneratePhysX puts its shape in group 9 whatever the entity's PropCollisionGroup
+                    // (cubemapinformationservice_3.cpp:4343). Only housing's cell window (FUN_1410c3670, run from the
+                    // housing packets, scenestategame.cpp:2264, 10422) and a broken cube's respawn timer (:3666-3669)
+                    // set the entity's group on it. The entity keeps its own group for the hit report's tests
+                    // (FUN_141675ed0 reads the property, pcbase.cpp:4335-4342): KindMeta
                     var d = e.Vector("GeneratePhysXDimension");
                     var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
                     var p = e.Position;
-                    Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D
+                    var box = Tag(new CollisionShape3D
                     {
                         Shape = new BoxShape3D { Size = size },
                         Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
                                                     new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2)),
-                    }));
+                    });
+                    box.SetMeta(KindMeta, group);
+                    Chunk(e.Position, GeneratedBoxGroup).AddChild(box);
                     Boxes++;
                 }
             }
