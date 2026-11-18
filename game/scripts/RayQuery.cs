@@ -20,11 +20,14 @@ sealed class RayQuery
     /// its Mesh Flags into the triangle mesh desc's meshFlags (ToTriMeshDesc, NiPhysXMeshDesc.cpp:359). Every
     /// NiPhysXMeshDesc in the game data has Mesh Flags 0 (a survey of the fields' NIFs, not something the code fixes), so a
     /// ray passes through a mesh triangle from behind. The field's mesh shapes are one-sided in the PhysX winding.
+    /// The groups mask is the caller's (RayCastFromPoint's nMask), as Godot collision layer bits: bit n = group n
+    /// (MoveConfig.NpcLayer). Without one the cast tests every layer.
     /// </summary>
-    public static RayQuery CastRay()
+    public static RayQuery CastRay(uint groups = uint.MaxValue)
     {
         var r = new RayQuery();
         r.query.HitBackFaces = false;
+        r.query.CollisionMask = groups;
         return r;
     }
 

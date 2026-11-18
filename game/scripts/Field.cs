@@ -22,8 +22,11 @@ public partial class Field : Node3D
     public Field() { AddToGroup(Group); }
 
     // CTargetCameraMode / CHomeCameraMode's near-plane test casts with RayCastFromPoint (targetcameramode.cpp:763-771,
-    // homecameramode.cpp:617-625), which is CPhysXHelper::CastRay (physxhelper.cpp:433-449): one-sided on mesh triangles
-    readonly RayQuery occRay = RayQuery.CastRay();
+    // homecameramode.cpp:617-625), which is CPhysXHelper::CastRay (physxhelper.cpp:433-449): one-sided on mesh triangles.
+    // Every one of those casts passes the groups mask 0x209: groups 0, 3 and 9, so an npc capsule (group 4) or the PC
+    // (group 2) never blocks the view
+    const uint OcclusionGroups = 0x209;
+    readonly RayQuery occRay = RayQuery.CastRay(OcclusionGroups);
     protected PackSet packs;
     protected Player player;
     protected Camera3D camera;
