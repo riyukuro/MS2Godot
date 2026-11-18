@@ -26,6 +26,11 @@ public sealed class FieldNpcs
     /// </summary>
     public const float PacketLift = 4f;
 
+    /// <summary>The ground cast of <see cref="SpawnNpcs"/>: from this far above the spawn point (half a cube, which covers the
+    /// stairs' +15) down to this far below it (Tria's deepest case, guard_crossbow_05, is 151 below its point); and how far
+    /// under the ground the official server puts an npc.</summary>
+    public const float GroundProbeUp = 75f, GroundProbeDown = 1500f, GroundBelow = 1f;
+
     readonly PackSet packs;
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
@@ -135,11 +140,27 @@ public sealed class FieldNpcs
     }
 
     /// <summary>Server stand-in: the npcs of the spawn points that spawn on field creation.</summary>
+    /// <remarks>
+    /// The client places a FieldAddNpc at the packet's z + PacketLift, with no snap of its own (OnFieldAddNpc @0x141718cf0;
+    /// GameObject::vfunc_19 stores the point, no sweep or fall for npcs), so the packet's z is the server's choice. The
+    /// official server sends an npc at the ground under its spawn point, 1 unit down, not at the spawn point's z; this was
+    /// checked against the official server's packets for Tria (02000001). Most spawn points sit on their block top, so
+    /// they go 1 down. The stair spear guards 11000451_spear_03_Left/Right have their point 15 below the stair surface
+    /// and go to 1 under it, so the ground is used upward too. 11000452_guard_crossbow_05 has its point at 4200, the top of
+    /// the block one cube east, and goes to 1 under its own 4050 floor. The stand-in casts down on the field shapes from
+    /// GroundProbeUp above the point and uses the first hit - 1, which gives all three cases. With no hit within
+    /// GroundProbeDown the point's own z is used.
+    /// STILL-OPEN: what ground source the official server uses (only its result is known), how far it looks above and
+    /// below the point (Tria needs at least +15 and -151), and whether region spawn monsters get the same.
+    /// </remarks>
     public void SpawnNpcs(Node3D parent, FieldMap map, NpcTable table, int fieldId = 0, QuestMaskTable masks = null)
     {
         if (kfmByName.Count == 0)
             foreach (var x in packs.List(NpcArchive))
                 if (x.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)) kfmByName.TryAdd(Path.GetFileNameWithoutExtension(x), x);
+        var space = parent.GetWorld3D()?.DirectSpaceState;
+        var ray = RayQuery.CastRay();
+        ray.Query.CollisionMask = 1;      // the field's shapes (group 0), not the npc capsules or the player
         foreach (var e in map.Entities)
         {
             if (!e.HasMixin("SpawnPointNPC") || !e.Bool("IsSpawnOnFieldCreate", true) || !e.Bool("IsVisible", true)) continue;
@@ -152,13 +173,25 @@ public sealed class FieldNpcs
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
-                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, PacketLift);
+                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, GroundOffset(space, ray, e) + PacketLift);
                 var body = root.GetNode<Node3D>("Body");
                 Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body) });
                 Npcs++;
                 break;      // one body per point (NpcCount is how many the server keeps alive there)
             }
         }
+    }
+
+    /// <summary>The server's z change for a spawn point: the field ground under it - GroundBelow, or 0 when the cast hits nothing.</summary>
+    static float GroundOffset(PhysicsDirectSpaceState3D space, RayQuery ray, FieldEntity e)
+    {
+        if (space == null) return 0;
+        var at = FieldBuilder.ToGodotPoint(e.Position);
+        ray.Query.From = at + Vector3.Up * GroundProbeUp;
+        ray.Query.To = at + Vector3.Down * GroundProbeDown;
+        var hit = space.IntersectRay(ray.Query);
+        if (hit.Count == 0) return 0;
+        return ((Vector3)hit["position"]).Y - GroundBelow - at.Y;
     }
 
     public int Mobs;
