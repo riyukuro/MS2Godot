@@ -85,6 +85,19 @@ public sealed class InventoryView {
     /// <summary>UpdateExpandLabel 0x14199c0d0: StringFormat("{0}/{1}", GetItemCount, GetSlotCount).</summary>
     public string ExpandLabel(int tab) => $"{Used(tab)}/{Capacity(tab)}";
 
+    /// <summary>FUN_140a61870 / FUN_140a617f0: an item's tab (CItemData::FUN_14053fd90), 7 when unknown.</summary>
+    public int TabOfItem(int itemId) => tabOf(itemId);
+
+    /// <summary>FUN_140a61430 (inventory.cpp:1101): the tab has an empty cell, looked for in pairs from both ends (the last cell,
+    /// then the first, inward); with an odd count the middle cell is never looked at. False for a tab outside 0-14.</summary>
+    public bool HasEmptyCell(int tab) {
+        var c = Cells(tab);
+        int last = c.Count - 1;
+        for (int i = 0; i < c.Count / 2; i++)
+            if (c[last - i].Empty || c[i].Empty) return true;
+        return false;
+    }
+
     /// <summary>FUN_14199bc00 per tab: true when any item of the tab IsNew.</summary>
     public bool HasNew(int tab) => (uint) tab < ItemBook.Tabs && book.All.Any(i => i.IsNew && tabOf(i.Id) == tab);
 

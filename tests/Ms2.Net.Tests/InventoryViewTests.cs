@@ -93,6 +93,16 @@ public class InventoryViewTests {
         Assert.That((ushort)Outbound.ItemEquip, Is.EqualTo(0x16));
     }
 
+    [Test] public void AnEmptyCellIsLookedForInPairs() {
+        var b = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 3 };
+        var v = new InventoryView(b);
+        Assert.That(v.HasEmptyCell(3), Is.True);
+        b.Apply(new ItemMessage.Add(It(30000001, 1, 0))); b.Apply(new ItemMessage.Add(It(30000002, 2, 2)));
+        Assert.That(v.HasEmptyCell(3), Is.False, "three cells: the middle one is not looked at");
+        Assert.That((v.HasEmptyCell(-1), v.HasEmptyCell(15)), Is.EqualTo((false, false)));
+        Assert.That(v.TabOfItem(30000001), Is.EqualTo(3));
+    }
+
     [Test] public void SortWithAnExpiredItemWaitsForTheBoxAnswer() {
         var b = Book(); var v = new InventoryView(b) { ServerTime = () => 1000 }; var sent = new List<(int, bool)>(); v.RequestSort = (t, s) => sent.Add((t, s));
         b.Apply(new ItemMessage.Add(It(30000001, 1, 0))); b.Apply(new ItemMessage.Add(new EquipItem { Id = 30000002, Uid = 2, InventorySlot = 1, Amount = 1, ExpiryTime = 2000 }));
