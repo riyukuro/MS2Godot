@@ -27,6 +27,8 @@ public static class UiCode
     public static bool Load(string dataDir)
     {
         if (loaded) return true;
+        // MS2_PERF_INTERP (with MS2_PERF): run the movies interpreted, to time them against the translated code
+        if (Ms2Godot.Ui.PerfLog.On && !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_INTERP"))) return false;
         var dll = DllPath(dataDir);
         if (!System.IO.File.Exists(dll)) return false;
         int n = GeneratedCode.LoadAssembly(dll);
