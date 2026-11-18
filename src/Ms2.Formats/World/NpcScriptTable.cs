@@ -14,7 +14,8 @@ public sealed class NpcScriptTable
     public sealed class Content
     {
         public string Text, VoiceId, Illust;
-        public List<(string Text, int Goto)> Distractors = new();
+        /// <summary>The &lt;distractor&gt; choices: the text and the scripts its goto lists ("51", or "61,62,...").</summary>
+        public List<(string Text, int[] Goto)> Distractors = new();
     }
 
     public sealed class Script
@@ -62,7 +63,7 @@ public sealed class NpcScriptTable
                             Text = (string)c.Attribute("text"), VoiceId = (string)c.Attribute("voiceID"),
                             Illust = (string)c.Attribute("illust"),
                         };
-                        foreach (var d in c.Elements("distractor")) ct.Distractors.Add(((string)d.Attribute("text"), Int(d, "goto")));
+                        foreach (var d in c.Elements("distractor")) ct.Distractors.Add(((string)d.Attribute("text"), Ints(d, "goto")));
                         sc.Contents.Add(ct);
                     }
                     npc.Scripts.Add(sc);
@@ -74,6 +75,9 @@ public sealed class NpcScriptTable
     }
 
     static int Int(XElement e, string a) => int.TryParse((string)e.Attribute(a), out int v) ? v : 0;
+
+    static int[] Ints(XElement e, string a) => ((string)e.Attribute(a) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Select(x => int.TryParse(x, out int v) ? v : 0).Where(v => v != 0).ToArray();
 
     public Npc Find(int npcId) => npcs.GetValueOrDefault(npcId);
 
