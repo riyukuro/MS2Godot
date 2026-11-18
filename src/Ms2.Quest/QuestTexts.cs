@@ -107,6 +107,13 @@ public sealed partial class QuestTable
     public QuestDescription Description(int id) => descriptions.TryGetValue((uint)id, out var d) ? d : null;
 
     /// <summary>
+    /// GetQuestDesc (questuidata.cpp:278): the quest's description, "" without a row. The text had its reserved words
+    /// expanded with ReplaceBoldWords when the table was loaded (FUN_1416e43d0, questuidata.cpp:167); the "\\n" to line
+    /// break replace is already in <see cref="QuestDescription.Read"/>.
+    /// </summary>
+    public string QuestDesc(int id) => descriptions.TryGetValue((uint)id, out var d) ? Words.ReplaceBoldWords(d.Desc) : "";
+
+    /// <summary>
     /// GetQuestConditionText / CQuestUIData::GetConditionText: the condition's manual text (object words replaced,
     /// FUN_1416e43d0), else its type's formatter (s_condTexts); the value words replaced, then FUN_1416e6900's count
     /// suffix. Empty without a description row, a condition at the index, or a formatter for its type.

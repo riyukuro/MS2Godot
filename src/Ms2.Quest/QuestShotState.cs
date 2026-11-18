@@ -35,6 +35,19 @@ public sealed class QuestShotState : IQuestState
             Add((int)table.QuestIdsByChapter(c)[0], 1, 0, false);
     }
 
+    /// <summary>
+    /// The given quests in progress (no condition met, tracked or not), started in the listed order, and nothing else: a
+    /// capture's state, e.g. the quests a character was given with the server's quest command.
+    /// </summary>
+    public QuestShotState(QuestTable table, int playerLevel, IEnumerable<int> inProgress, int tracking = 0)
+    {
+        this.table = table;
+        PlayerLevel = playerLevel;
+        // started in the listed order: the start time is the position (CollectEpisodes sorts the in-progress chapters by it)
+        long start = 0;
+        foreach (int id in inProgress) records[id] = new QuestRecord(id, 1, ++start, 0, tracking, false, false);
+    }
+
     void Add(int id, int state, int tracking, bool complete) =>
         records[id] = new QuestRecord(id, state, id, state == 2 ? id : 0, tracking, complete, false);
 

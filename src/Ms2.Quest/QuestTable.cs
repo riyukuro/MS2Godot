@@ -63,6 +63,30 @@ public sealed class QuestData
     public int EventMission;
     /// <summary>The &lt;require&gt; block (m_require).</summary>
     public readonly QuestRequire Require = new();
+    /// <summary>basic disableGiveup (m_2e, questdata.cpp:1285): no "giveup" button.</summary>
+    public bool DisableGiveup;
+    /// <summary>basic useReEntryHiddenMap (m_34, questdata.cpp:1298): the "gotoReEntry" button is possible.</summary>
+    public bool UseReEntryHiddenMap;
+    /// <summary>
+    /// &lt;gotoNpc&gt; (m_300, questdata.cpp:1481-1486; read only with feature 0x42 EnableGoToNpc): enable (m_0), gotoField
+    /// (m_4), gotoPortal (m_8).
+    /// </summary>
+    public int GotoNpcEnable, GotoNpcField, GotoNpcPortal;
+    /// <summary>
+    /// &lt;gotoDungeon&gt; (m_30c, questdata.cpp:1488-1494): state (m_0, a plain int: 1 active and not complete, 2 complete,
+    /// 3 active), gotoDungeon (m_roomId, a DungeonRoom id), gotoInstanceID (m_fieldId).
+    /// </summary>
+    public int GotoDungeonState, GotoDungeonRoom, GotoDungeonField;
+    /// <summary>
+    /// &lt;remoteAccept&gt; (m_320, questdata.cpp:1495-1500): useRemote (m_0, FUN_1407513c0 @0x1407513c0: cinematic 1, popup 2,
+    /// system 3, any other text 0, any case) and requireField (m_4).
+    /// </summary>
+    public int RemoteAccept, RemoteRequireField;
+    /// <summary>
+    /// &lt;remoteComplete&gt; (m_32c, questdata.cpp:1501-1507): useRemote (m_0, as RemoteAccept), requireField (m_4),
+    /// requireDungeonClear (m_8).
+    /// </summary>
+    public int RemoteComplete, RemoteCompleteField, RemoteCompleteDungeonClear;
 
     /// <summary>HasProperty (questdata.cpp).</summary>
     public bool HasProperty(int bit) => (Properties & (1 << bit)) != 0;
@@ -154,6 +178,8 @@ public sealed partial class QuestTable
                 t.Words.AddTable(table, Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))), t.Available, fillOnly: true);
             }
 
+        t.Words.LoadBold(packs, t.Available, packs.Exists(FieldMeta.Archive, FieldMeta.Entry) ? FieldMeta.Load(packs).ParentFields : null);
+
         var common = new Dictionary<string, string>();
         foreach (var lang in languages)
         {
@@ -214,13 +240,13 @@ public sealed partial class QuestTable
             foreach (var q in env.Elements("quest"))
             {
                 if (!Available(q)) continue;
-                var d = Load(q);
+                var d = Load(q, featureOn);
                 if (d != null) quests.TryAdd((uint)d.Id, d);
             }
     }
 
     /// <summary>CQuestData::Load: the &lt;basic&gt;, &lt;require&gt; and &lt;start&gt; attributes the log reads.</summary>
-    static QuestData Load(XElement q)
+    static QuestData Load(XElement q, Func<string, bool> featureOn)
     {
         var basic = q.Element("basic");
         if (basic == null) return null;
@@ -234,6 +260,8 @@ public sealed partial class QuestTable
         QueryBool(basic, "locking", ref d.Locking);
         QueryInt(basic, "tabIndex", ref d.TabIndex);
         QueryBool(basic, "forceRegistGuide", ref d.ForceRegist);
+        QueryBool(basic, "disableGiveup", ref d.DisableGiveup);
+        QueryBool(basic, "useReEntryHiddenMap", ref d.UseReEntryHiddenMap);
         foreach (var p in FieldMissions.Tokens((string)basic.Attribute("property"), ","))
         {
             int bit = ParseProperty(p.Trim());
@@ -253,6 +281,30 @@ public sealed partial class QuestTable
         if (start != null) QueryUInt(start, "npc", ref d.StartNpc);
         var complete = q.Element("complete");
         if (complete != null) QueryUInt(complete, "npc", ref d.CompleteNpc);
+        // 0x42 = EnableGoToNpc (featuremanager.cpp:261-262); questdata.cpp:1479-1487
+        if (featureOn("EnableGoToNpc") && q.Element("gotoNpc") is { } gotoNpc)
+        {
+            QueryInt(gotoNpc, "enable", ref d.GotoNpcEnable);
+            QueryUInt(gotoNpc, "gotoField", ref d.GotoNpcField);
+            QueryInt(gotoNpc, "gotoPortal", ref d.GotoNpcPortal);
+        }
+        if (q.Element("gotoDungeon") is { } gotoDungeon)
+        {
+            QueryInt(gotoDungeon, "state", ref d.GotoDungeonState);
+            QueryUInt(gotoDungeon, "gotoDungeon", ref d.GotoDungeonRoom);
+            QueryUInt(gotoDungeon, "gotoInstanceID", ref d.GotoDungeonField);
+        }
+        if (q.Element("remoteAccept") is { } remoteAccept)
+        {
+            d.RemoteAccept = ParseRemote((string)remoteAccept.Attribute("useRemote"), d.RemoteAccept);
+            QueryUInt(remoteAccept, "requireField", ref d.RemoteRequireField);
+        }
+        if (q.Element("remoteComplete") is { } remoteComplete)
+        {
+            d.RemoteComplete = ParseRemote((string)remoteComplete.Attribute("useRemote"), d.RemoteComplete);
+            QueryUInt(remoteComplete, "requireField", ref d.RemoteCompleteField);
+            QueryInt(remoteComplete, "requireDungeonClear", ref d.RemoteCompleteDungeonClear);
+        }
         foreach (var c in q.Elements("condition"))
             if (QuestCondition.Load(c) is { } cond) d.Conditions.Add(cond);
         if ((string)basic.Attribute("alliance") is { } alliance) d.Alliance = QuestRewards.ParseAlliance(alliance);
@@ -319,6 +371,12 @@ public sealed partial class QuestTable
         QueryInt(e, "groupID", ref group);
         if (group != 0 && !d.Locking) r.GroupId = group;
     }
+
+    /// <summary>FUN_1407513c0 (questdata.cpp:2772): cinematic 1, popup 2, system 3, other 0; an absent attribute keeps the value.</summary>
+    static int ParseRemote(string s, int keep) => s == null ? keep : s.ToLowerInvariant() switch
+    {
+        "cinematic" => 1, "popup" => 2, "system" => 3, _ => 0,
+    };
 
     /// <summary>FUN_14028e160: the day number of a three letter day name (sun 1 .. sat 7, any case), 0 for anything else.</summary>
     public static int DayNumber(string s) => s.ToLowerInvariant() switch

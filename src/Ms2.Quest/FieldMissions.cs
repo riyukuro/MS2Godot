@@ -225,7 +225,7 @@ public sealed class FieldMissions
 /// CStringTable tables (Table/string.xml: 1 itemName, 2 npcName, 3 mapName, 19 npcTitle, 61 npcNamePlural). The
 /// language is English (GetLanguageCodeW 2), so the plural words read the plural tables.
 /// </summary>
-public sealed class ReservedWords
+public sealed partial class ReservedWords
 {
     public const int ItemName = 1, NpcName = 2, MapName = 3, InteractObjectAction = 11, LiftableTargetBox = 12, RegionName = 18, NpcTitle = 19, FieldEnterance = 20,
                      AchieveName = 24, ContinentName = 25, IslandName = 26, NpcNamePlural = 61, ItemNamePlural = 62,
@@ -268,7 +268,10 @@ public sealed class ReservedWords
     /// FUN_1416fc320 over the object words: each "$name:arg$" whose name is a known word is replaced and the scan goes on
     /// from the same place; an unknown one is left and skipped.
     /// </summary>
-    public string ReplaceObjectWords(string str)
+    public string ReplaceObjectWords(string str) => Scan(str, ObjectWord);
+
+    /// <summary>The scan of FUN_1416fc320 shared by the word maps: <paramref name="word"/> gets (token, name, argument, whole text) and returns the replacement, or null for an unknown word.</summary>
+    string Scan(string str, Func<string, string, string, string, string> word)
     {
         var s = new StringBuilder(str ?? "");
         int pos = 0;
@@ -277,8 +280,15 @@ public sealed class ReservedWords
             int end = IndexOf(s, '$', pos + 1);
             if (end == -1) break;
             string token = s.ToString(pos, end - pos + 1);
-            string name = TokenName(token), arg = TokenArgument(token);
-            string outText = name switch
+            string outText = word(token, TokenName(token), TokenArgument(token), s.ToString());
+            if (outText == null) { pos = end + 1; continue; }
+            s.Remove(pos, end - pos + 1).Insert(pos, outText);
+        }
+        return s.ToString();
+    }
+
+    /// <summary>m_mapObject: the word's replacement, or null when it is not an object word.</summary>
+    string ObjectWord(string token, string name, string arg, string whole) => name switch
             {
                 "$item" => Get(ItemName, FieldMissions.Int(arg)),
                 "$map" => Get(MapName, FieldMissions.Int(arg)),
@@ -291,14 +301,9 @@ public sealed class ReservedWords
                 "$dungeonTitle" => FieldMissions.Int(arg) == 0 ? "" : Get(FieldEnterance, FieldMissions.Int(arg)),
                 "$quest" => FieldMissions.Int(arg) == 0 ? "" : QuestName?.Invoke(FieldMissions.Int(arg)) ?? "",
                 "$petCollectGroup" => Get(PetCollectGroupName, FieldMissions.Int(arg)),
-                "$pp" => Ppr(token, arg, s.ToString()),
+                "$pp" => Ppr(token, arg, whole),
                 _ => null,
             };
-            if (outText == null) { pos = end + 1; continue; }
-            s.Remove(pos, end - pos + 1).Insert(pos, outText);
-        }
-        return s.ToString();
-    }
 
     /// <summary>
     /// ReplaceValueWords (FUN_1416fc320 over m_mapValue) for the words that need no player or dialog state: "$pp" and

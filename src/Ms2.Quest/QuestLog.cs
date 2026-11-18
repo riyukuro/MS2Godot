@@ -136,6 +136,7 @@ public sealed class QuestLogTree
 public sealed class QuestLog
 {
     readonly QuestTable table;
+    public QuestTable Table => table;
     public IQuestState State;
     /// <summary>The selected tab (GetTab: m_tab's selected index; 4 without the bar) and sub-tab (GetSubTab; 3 without).</summary>
     public int Tab, SubTab;
