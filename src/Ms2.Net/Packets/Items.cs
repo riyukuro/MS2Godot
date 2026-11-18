@@ -19,6 +19,8 @@ public sealed class EquipItem {
     /// <summary>Badge records only: the badge type (equip slot is meaningless then).</summary>
     public byte BadgeType;
     public bool IsBadge;
+    /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
+    public short InventorySlot;
 }
 
 /// <summary>Which extra block follows the limit break part of an item body (CItem::ReadFromStream picks it from item data).</summary>
@@ -62,6 +64,27 @@ public static class ItemReader {
         // the file name of the ugc: a uuid (8-4-4-4-12) or, for a blank look, the id as text
         if (len == 36) return text[8] == '-' && text[13] == '-' && text[18] == '-' && text[23] == '-';
         return text == id.ToString();
+    }
+
+    /// <summary>
+    /// Tells the first model slot of an item, from the item data (itemmodel slots after the itemdata preset). The body's appearance
+    /// variant follows it (hair HR, decal FD, cap CP; CItemData::CreateExtraData). Null = every body is read without one.
+    /// </summary>
+    public static Func<int, EquipSlot> SlotOf;
+
+    /// <summary>
+    /// An inventory record (OnItemInventory modes 0, 6, 8): i32 id, i64 uid, i16 bag slot, i32 rarity, then the item body.
+    /// </summary>
+    public static EquipItem ReadInventory(ByteReader r) {
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), InventorySlot = r.ReadShort(), Rarity = r.ReadInt() };
+        it.Slot = SlotOf?.Invoke(it.Id) ?? EquipSlot.Unknown;
+        ReadBody(r, it, it.Slot);
+        return it;
+    }
+
+    /// <summary>The body alone of a known item (OnItemInventory mode 0xe re-reads it into the item found by uid).</summary>
+    public static void ReadBodyInto(ByteReader r, EquipItem it) {
+        ReadBody(r, it, it.Slot);
     }
 
     public static EquipItem ReadEquip(ByteReader r) {

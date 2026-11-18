@@ -13,6 +13,8 @@ public sealed record ServerEnterRequest(int Language = 0) : IOutPacket {
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
     /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>
     public IReadOnlyList<Ms2.Net.Wire.RawPacket> EarlyQuests { get; init; } = Array.Empty<Ms2.Net.Wire.RawPacket>();
+    /// <summary>The ItemInventory packets that arrived before the field enter, in order.</summary>
+    public IReadOnlyList<Ms2.Net.Wire.RawPacket> EarlyItems { get; init; } = Array.Empty<Ms2.Net.Wire.RawPacket>();
 }
 
 /// <summary>
@@ -51,7 +53,7 @@ public sealed class GameClient {
         var game = new TcpTransport();
         try {
             await game.ConnectAsync(host ?? go.Address.ToString(), go.Port, ct);
-            ServerEnter enter = null; SyncNumber sync = null; var earlyQuests = new List<Ms2.Net.Wire.RawPacket>();
+            ServerEnter enter = null; SyncNumber sync = null; var earlyQuests = new List<Ms2.Net.Wire.RawPacket>(); var earlyItems = new List<Ms2.Net.Wire.RawPacket>();
             while (true) {
                 var p = await NextAsync(game, timeoutMs, ct);
                 if (game.OpOf(p) is Inbound gop) switch (gop) {
@@ -65,8 +67,9 @@ public sealed class GameClient {
                     case Inbound.ServerEnter: enter = ServerEnter.Read(p.Reader()); break;
                     case Inbound.SyncNumber: sync = SyncNumber.Read(p.Reader()); break;
                     case Inbound.Quest: earlyQuests.Add(p); break;
+                    case Inbound.ItemInventory: earlyItems.Add(p); break;
                     case Inbound.RequestFieldEnter:
-                        return (new GameEntry(enter, sync, RequestFieldEnter.Read(p.Reader())) { EarlyQuests = earlyQuests }, game);
+                        return (new GameEntry(enter, sync, RequestFieldEnter.Read(p.Reader())) { EarlyQuests = earlyQuests, EarlyItems = earlyItems }, game);
                 }
             }
         } catch { game.Dispose(); throw; }

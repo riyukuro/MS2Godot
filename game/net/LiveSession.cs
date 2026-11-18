@@ -39,6 +39,8 @@ public partial class LiveSession : Node
     public int CharacterLimit;
     /// <summary>The quest state the quest packets build (live only; the quest log reads it, offline it stays empty).</summary>
     public readonly QuestBook Quests = new();
+    /// <summary>The item inventory from the ItemInventory packets (OnItemInventory); live only.</summary>
+    public readonly ItemBook Items = new();
     public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
@@ -120,6 +122,25 @@ public partial class LiveSession : Node
         finally { Busy = false; }
     }
 
+    static string Describe(ItemMessage m) => m switch {
+        ItemMessage.LoadTab t => $"LoadTab {t.Tab} x{t.Items.Count}",
+        ItemMessage.Load l => $"Load x{l.Items.Count}",
+        _ => m.GetType().Name };
+
+    void ApplyItems(Ms2.Net.Wire.RawPacket p) {
+        try { var m = ItemMessage.Read(p.Reader(), Items.Get); Items.Apply(m); GD.Print("live: item " + Describe(m)); }
+        catch (Exception e) { GD.PushWarning($"live: item packet: {e.Message}"); }
+    }
+
+    /// <summary>The first model slot of an item for the body layout; Unknown when the item data is missing.</summary>
+    static Func<int, EquipSlot> ItemSlotTable() {
+        ItemModelSlots slots = null;
+        return id => {
+            try { return (slots ??= new ItemModelSlots(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir))).SlotOf(id); }
+            catch (Exception e) { GD.Print($"live: item model table unavailable ({e.Message})"); return EquipSlot.Unknown; }
+        };
+    }
+
     /// <summary>The quest table columns for QuestBook (questType, repeatable, groupID), read once from the quest XML; no lookup when the data is missing.</summary>
     static Func<int, QuestBook.QuestInfoRow?> QuestTable() {
         System.Collections.Generic.Dictionary<int, (int Type, int Repeatable, int GroupId)> rows = null;
@@ -139,8 +160,11 @@ public partial class LiveSession : Node
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
             (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host);
             Quests.QuestInfo = QuestTable();
+            ItemReader.SlotOf ??= ItemSlotTable();
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
             GD.Print($"live: {Quests.All.Count} quests loaded before the field");
+            foreach (var ip in entry.EarlyItems) ApplyItems(ip);
+            GD.Print($"live: {Items.All.Count} items loaded before the field ({entry.EarlyItems.Count} packets)");
             login.Dispose(); login = null;
             answered = false;
             syncNumber = entry.Sync?.Number ?? 0;
@@ -261,6 +285,11 @@ public partial class LiveSession : Node
                     var q = QuestMessage.Read(p.Reader());   // CQuestManager::OnQuest (questmanager_2.cpp:942); no ExpectEnd: the client ignores trailing bytes
                     Quests.Apply(q);
                     GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
+                }
+                else if (game.Is(p, Inbound.ItemInventory))
+                {
+                    ApplyItems(p);
+                    GD.Print($"live: item packet ({Items.All.Count} items)");
                 }
                 else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
