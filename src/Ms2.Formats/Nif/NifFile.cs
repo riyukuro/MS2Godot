@@ -78,8 +78,8 @@ public sealed class NifFile
 
     Dictionary<int, string> nodeNames;
     /// <summary>
-    /// A node's name, unique in the file: a name more than one NiNode carries (an effect creature's mirrored leg bones
-    /// named alike) keeps it on the block GetObjectByName finds, the first in a preorder depth-first walk from the
+    /// A scene object's name, unique in the file: a name more than one NiAVObject carries (an effect creature's
+    /// mirrored leg bones named alike, a mesh named like a node) keeps it on the block GetObjectByName finds, the first in a preorder depth-first walk from the
     /// scene root (NiNode.cpp:732-750), and gets "#" + block index on the others. A controller is tied to its node
     /// block, not to the name, so both sides of a model (its bones, its controllers) use this.
     /// </summary>
@@ -107,7 +107,7 @@ public sealed class NifFile
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (int i in order)
             {
-                if (Blocks[i].Type != "NiNode") continue;
+                if (!Blocks[i].Has("Translation")) continue;           // any NiAVObject: GetObjectByName finds meshes too
                 var n = Name(i);
                 if (n != null && !seen.Add(n)) nodeNames[i] = n + "#" + i;
             }

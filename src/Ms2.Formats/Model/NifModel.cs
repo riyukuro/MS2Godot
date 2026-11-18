@@ -14,7 +14,8 @@ public sealed class ModelBone
 public sealed class ModelMesh
 {
     public int Block = -1;                // the NiMesh block this came from
-    public string Name;
+    public string Name;                   // unique in the model (NifFile.NodeName): the target of a controller or kf channel
+    public string FileName;               // the mesh's name in the file (body cuts, replace and self-node lookups)
     public float[] Positions;             // xyz per vertex, skin space (scene root) for skinned meshes
     public float[] Normals;               // xyz per vertex, or null
     public float[] Tangents, Binormals;   // xyz per vertex (normal-map tangent frame), or null
@@ -413,7 +414,7 @@ public sealed class ModelData
             int nv = pos.v.Length / 3;
             var mesh = new ModelMesh
             {
-                Name = nif.Name(i), Block = i, Skinned = skinned,
+                Name = nif.NodeName(i), FileName = nif.Name(i), Block = i, Skinned = skinned,
                 Positions = pos.v.Select(x => (float)x).ToArray(),
                 Textures = TexturesOf(nif, i),
                 Bound = BoundOf(B[i]),

@@ -238,7 +238,7 @@ public sealed class EquipApplier
         if (selfName != null)
         {
             int sb = md.Bones.FindIndex(b => b.Name == selfName);
-            var sm = md.Meshes.FirstOrDefault(x => x.Name == selfName && !x.Skinned);
+            var sm = md.Meshes.FirstOrDefault(x => x.FileName == selfName && !x.Skinned);
             if (sb >= 0) selfInv = ModelBuilder.ToGodot(md.Bones[sb].World).AffineInverse();
             else if (sm != null)
                 selfInv = ((sm.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[sm.ParentBone].World) : Transform3D.Identity) * ModelBuilder.ToGodot(sm.Local)).AffineInverse();
@@ -247,7 +247,7 @@ public sealed class EquipApplier
         foreach (var m in md.Meshes)
         {
             var mi = new MeshInstance3D { Name = $"eq{item.Id}_{m.Name}", Mesh = Mesh(m) };
-            mi.SetMeta("mesh", m.Name);
+            mi.SetMeta("mesh", m.FileName ?? m.Name);
             if (m.Skinned)
             {
                 // FUN_141421f30 (itemugcmesh.cpp:271-290) swaps the skin's root parent and bones for the body's nodes of the
@@ -276,7 +276,7 @@ public sealed class EquipApplier
                     bone = "Bip01 Head";
                 else if (skel.FindBone(bone) < 0)
                 {
-                    var bodyMesh = body.Meshes.FirstOrDefault(x => x.Name == target && x.ParentBone >= 0);
+                    var bodyMesh = body.Meshes.FirstOrDefault(x => x.FileName == target && x.ParentBone >= 0);
                     bone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
                     if (bodyMesh != null) targetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
                 }
@@ -357,7 +357,7 @@ public sealed class EquipApplier
         if (skel.FindBone(bone) < 0)
         {
             // as Attach: a replace asset on a node the body lacks goes to Bip01 Head, else the body's rigid mesh of that name
-            var bodyMesh = (string)asset.Attribute("replace") == "1" ? null : body.Meshes.FirstOrDefault(x => x.Name == target && x.ParentBone >= 0);
+            var bodyMesh = (string)asset.Attribute("replace") == "1" ? null : body.Meshes.FirstOrDefault(x => x.FileName == target && x.ParentBone >= 0);
             bone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
             if (bodyMesh != null) targetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
         }
@@ -428,7 +428,7 @@ public sealed class EquipApplier
             if (md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal)) top = b;
         if (top >= 0)
             return ModelBuilder.ToGodot(md.Bones[top].Rest) * ModelBuilder.ToGodot(md.Bones[top].World).AffineInverse() * parentWorld * local;
-        if (m.Name != null && m.Name.StartsWith(selfName, StringComparison.Ordinal)) return local;
+        if (m.FileName != null && m.FileName.StartsWith(selfName, StringComparison.Ordinal)) return local;
         return null;
     }
 }
