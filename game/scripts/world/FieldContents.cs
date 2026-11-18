@@ -479,21 +479,27 @@ public partial class FieldContents : Node3D
         var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
         steps.Enqueue(("teleport", 0, () => { player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0); player.Face(-front); return Vector3.Zero; }, null));
         steps.Enqueue(("settle", 1.2f, null, "1a_npc_nametag.png"));
-        steps.Enqueue(("teleport", 0, () => { GD.Print($"talkable: {talk.FindTalkable()?.Row.Id}"); talk.ActionKey(); return Vector3.Zero; }, null));
-        steps.Enqueue(("settle", 2.0f, null, "1b_talk.png"));
-        // the action key through the pages (a choice page picks its first choice), a shot of each, up to 12
-        for (int k = 1; k <= 12; k++)
+        // a chosen npc is talked to twice: a quest giver's first talk accepts (the select's first choice is its first quest),
+        // the second shows the started quest's progress or complete talk
+        for (int round = 1; round <= (shotNpc != 0 ? 2 : 1); round++)
         {
-            int at = k;
-            steps.Enqueue(("teleport", 0, () =>
+            string r = round == 1 ? "" : $"r{round}_";
+            steps.Enqueue(("teleport", 0, () => { GD.Print($"talkable: {talk.FindTalkable()?.Row.Id}"); talk.ActionKey(); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 2.0f, null, $"1b_{r}talk.png"));
+            // the action key through the pages (a choice page picks its first choice), a shot of each, up to 12
+            for (int k = 1; k <= 12; k++)
             {
-                if (talk.Open) { talk.ActionKey(); GD.Print($"talk page {at}: script {talk.ScriptId} page {talk.Page + 1}"); }
-                return Vector3.Zero;
-            }, null));
-            steps.Enqueue(("settle", 0.8f, null, $"1c_talk_page{at:00}.png"));
+                int at = k;
+                steps.Enqueue(("teleport", 0, () =>
+                {
+                    if (talk.Open) { talk.ActionKey(); GD.Print($"talk page {at}: script {talk.ScriptId} page {talk.Page + 1}"); }
+                    return Vector3.Zero;
+                }, null));
+                steps.Enqueue(("settle", 0.8f, null, $"1c_{r}talk_page{at:00}.png"));
+            }
+            steps.Enqueue(("teleport", 0, () => { talk.End(); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 1.5f, null, $"1d_{r}talk_closed.png"));
         }
-        steps.Enqueue(("teleport", 0, () => { talk.End(); return Vector3.Zero; }, null));
-        steps.Enqueue(("settle", 1.5f, null, "1d_talk_closed.png"));
         steps.Enqueue(("walk", 2.0f, () => n.Position - player.GlobalPosition, null));
         steps.Enqueue(("settle", 0.3f, null, "1e_walked_into_npc.png"));
         steps.Enqueue(("teleport", 0, () =>
