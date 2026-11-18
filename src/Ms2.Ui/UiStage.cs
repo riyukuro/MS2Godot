@@ -60,17 +60,20 @@ public sealed class UiStage : IDropStage
         Add(host.Player, mouse, drawOrder, shown);
         host.DragSlots = DragSlots;
         DragSlots.Add(host.Controller as IDragSlotOwner);
-        host.Controller.Unloaded += () => Remove(host);
+        if (unloadWatched.TryAdd(host, null)) host.Controller.Unloaded += () => { Remove(host); host.Player.CancelDrag(); };
     }
 
-    readonly HashSet<Player> listening = new();
+    // once per movie and per dialog, held weakly: a closed dialog's runtime is not kept, and a dialog that leaves and
+    // re-enters the screen keeps its one pair of listeners (two would send each drag end twice)
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<Player, object> listening = new();
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<UiHost, object> unloadWatched = new();
 
     /// <summary>The listeners main.gfx's Main puts on the client's stage (<see cref="OnDragStart"/>, <see cref="OnDragEnd"/>),
     /// on this movie's stage; they do nothing once the movie has left.</summary>
     void ListenForDrags(Player player)
     {
         var rt = player.RT;
-        if (!listening.Add(player) || rt.GetClass(DragEventClass) is not { } ev) return;
+        if (!listening.TryAdd(player, null) || rt.GetClass(DragEventClass) is not { } ev) return;
         void Listen(string type, Action<Player, object> f)
         {
             if (rt.GetProperty(ev, Name.Public(type)) is not string name) return;
@@ -104,6 +107,10 @@ public sealed class UiStage : IDropStage
     void OnDragStart(Player player, object e)
     {
         var slot = Get(player.RT, e, "dragTarget");
+        // DragManager's drag sprite is on its drag canvas, CommonDepth's layer under the mouse cursor (DragManager.init):
+        // over every dialog of the client's one stage, so the host draws it over the other movies (a window moved by its
+        // title bar is a startDrag too, but no DRAG_START, and stays where it is drawn)
+        player.DrawnOnTop = Get(player.RT, e, "dragSprite") as AsDisplayObject;
         if (Rt.ToBoolean(slot))
         {
             if (Get(player.RT, e, "dragSprite") is AsDisplayObject sprite) sprite.HitTestDisabled = true;
@@ -121,6 +128,7 @@ public sealed class UiStage : IDropStage
     /// </summary>
     void OnDragEnd(Player player, object e)
     {
+        player.DrawnOnTop = null;
         if (!string.IsNullOrEmpty(dragBindId))
         {
             var drop = Get(player.RT, e, "dropTarget");

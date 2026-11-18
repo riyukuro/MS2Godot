@@ -1040,7 +1040,8 @@ namespace Ms2.Avm2.Flash
         /// <summary>
         /// The left button. MovieRoot::GenerateMouseEvents (sfr_as3_17.cpp:7035) sends the mouse up, the wheel and the mouse
         /// move to the top-most entity, or to the stage when there is none (topmostEntitySafe), so a release over nothing
-        /// still reaches the stage's listeners (DragManager's MOUSE_UP).
+        /// still reaches the stage's listeners (DragManager's MOUSE_UP); the mouse down likewise (activeEntitySafe, :7265),
+        /// and the click goes where both went.
         /// </summary>
         public void MouseButton(bool down)
         {
@@ -1048,16 +1049,16 @@ namespace Ms2.Avm2.Flash
             var t = MouseTarget(MouseX, MouseY);
             if (down)
             {
-                pressed = t;
+                pressed = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
                 var f = t;
                 for (var o = (AsDisplayObject)t; o != null; o = o.Parent) if (o is AsInteractiveObject io && (io is AsTextField { type: "input" } || io.tabEnabled)) { f = io; break; }
-                MouseEv(t, "mouseDown");
+                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown");     // activeEntitySafe, sfr_as3_17.cpp:7265
                 if (f is AsTextField { type: "input" } || f?.tabEnabled == true) SetFocus(f, "mouse");
             }
             else
             {
                 MouseEv(t ?? (AsInteractiveObject)Stage, "mouseUp");
-                if (t != null && t == pressed) MouseEv(t, "click");
+                if ((t ?? Stage) == pressed) MouseEv(pressed, "click");
                 pressed = null;
             }
         }
@@ -1183,6 +1184,11 @@ namespace Ms2.Avm2.Flash
         public bool Dragging => dragging != null;
         /// <summary>The sprite being dragged, or null.</summary>
         public AsSprite DraggedSprite => dragging;
+        /// <summary>Ends a drag without any event (the movie is going away mid-drag).</summary>
+        public void CancelDrag() => dragging = null;
+        /// <summary>A sprite the host draws over every other movie of the screen (DragManager's drag sprite, set by the
+        /// screen's stage), or null.</summary>
+        public AsDisplayObject DrawnOnTop;
         /// <summary>
         /// InteractiveObject::DoMouseDrag (sfr_gfx_06b.cpp:167): the dragged sprite at the mouse in its parent's space plus the
         /// centre delta, clamped to the bounds. Called on every mouse move (Stage::PropagateMouseEvent, sfr_as3_18.cpp:4486)

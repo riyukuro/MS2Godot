@@ -146,4 +146,29 @@ public class UiStageTests
         Dispatch(a, aEvents, "dragEnd", bag, bag, dragged);
         Assert.That(log, Is.EqualTo(new[] { "start Bag.1", "refresh Bag.1", "done Bag.1" }));
     }
+
+    [Test]
+    public void AMovieThatLeavesAndComesBackSendsEachDragEndOnce()
+    {
+        var (a, aSlot, _) = Movie();
+        var events = DragEvents(a.RT);
+        var bag = Box(a, aSlot, 100, "Bag.1");
+        var dragged = Box(a, a.RT.GetClass("flash.display.Sprite"), 100);
+        var stage = new UiStage();
+        var log = new List<string>();
+        stage.DragSlots.Add(new Slots("Bag.", log));
+        stage.Add(a, () => (110, 10), () => 0);
+        stage.Remove(a);
+        stage.Add(a, () => (110, 10), () => 0);
+
+        Dispatch(a, events, "dragStart", bag, null, dragged);
+        Assert.That(a.DrawnOnTop, Is.SameAs(dragged), "DragManager's drag sprite is drawn over the other movies");
+        Dispatch(a, events, "dragEnd", bag, bag, dragged);
+        Assert.That(log, Is.EqualTo(new[] { "start Bag.1", "refresh Bag.1", "done Bag.1" }), "one pair of listeners");
+        Assert.That(a.DrawnOnTop, Is.Null);
+
+        stage.Remove(a);
+        Dispatch(a, events, "dragStart", bag, null, dragged);
+        Assert.That(log, Has.Count.EqualTo(3), "a movie that left sends nothing");
+    }
 }

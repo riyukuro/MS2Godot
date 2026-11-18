@@ -233,7 +233,7 @@ public partial class As3View : Node2D
         if (visible != e.Visible) e.Holder.Visible = e.Visible = visible;
         // DragManager's drag canvas is CommonDepth's layer under the mouse cursor (DragManager.init: DEPTH_LAYER_MOUSECURSOR
         // - 1) on the one stage every dialog shares: the dragged sprite is drawn over the other movies too, not only its own
-        int z = o == Player.DraggedSprite ? (int)RenderingServer.CanvasItemZMax - 1 : 0;
+        int z = o == Player.DrawnOnTop ? (int)RenderingServer.CanvasItemZMax - 1 : 0;
         if (z != e.Z) { e.Holder.ZAsRelative = z == 0; e.Holder.ZIndex = e.Z = z; }
         var cx = o.Color;
         var modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
@@ -392,9 +392,19 @@ public partial class As3View : Node2D
     /// </summary>
     public override void _Input(InputEvent ev)
     {
-        if (Player == null || !Player.Dragging) return;
+        // no capture for a hidden view or a drag sprite that left the stage
+        if (Player == null || !Player.Dragging || !IsVisibleInTree() || Player.DraggedSprite is not { OnStage: true }) return;
         switch (ev)
         {
+            // the button came up where this window did not see it (focus lost: Godot releases the pressed buttons, or another
+            // window): the release, here
+            case InputEventMouseMotion mm when !Input.IsMouseButtonPressed(MouseButton.Left):
+            {
+                var p = StagePoint(mm.Position);
+                Player.MouseMove(p.X, p.Y);
+                Player.MouseButton(false);
+                break;
+            }
             case InputEventMouseMotion mm:
             {
                 var p = StagePoint(mm.Position);

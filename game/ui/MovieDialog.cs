@@ -68,6 +68,7 @@ public partial class MovieDialog : Node2D
 
     public override void _ExitTree()
     {
+        Player.CancelDrag();             // closed mid-drag: no capture left behind
         stage?.Remove(Host);
         stage = null;
     }
