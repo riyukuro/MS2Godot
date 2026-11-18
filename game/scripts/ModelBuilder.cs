@@ -56,12 +56,21 @@ public sealed class ModelBuilder
         for (int i = 0; i < md.Bones.Count; i++)
         {
             skel.SetBoneParent(i, md.Bones[i].Parent);
-            skel.SetBoneRest(i, ToGodot(md.Bones[i].Rest));
+            // a zero-scale rest has no rotation to read back (the pose is kept as a quaternion), so the rest carries
+            // scale 1 and the pose the zero scale
+            var rest = md.Bones[i].Rest;
+            skel.SetBoneRest(i, ToGodot(rest.S == 0 ? rest with { S = 1 } : rest));
         }
         skel.ResetBonePoses();
+        for (int i = 0; i < md.Bones.Count; i++)
+            if (md.Bones[i].Rest.S == 0) skel.SetBonePoseScale(i, Vector3.Zero);
 
         var skin = new Skin();
-        for (int i = 0; i < md.Bones.Count; i++) skin.AddBind(i, ToGodot(md.Bones[i].World).AffineInverse());
+        // a skin bone binds through its skin bone transform (NiSkinningMeshModifier), not through the file's node pose:
+        // the two agree on shipped characters (within 2e-5), but an effect creature's pose is where it rests or hides
+        // (the select-pose eagle perches there, or sits at a zero scale before it flies in); other bones keep World^-1
+        for (int i = 0; i < md.Bones.Count; i++)
+            skin.AddBind(i, md.Bones[i].SkinBind is { } bind ? ToGodot(bind) : md.Bones[i].World.S == 0 ? Transform3D.Identity : ToGodot(md.Bones[i].World).AffineInverse());
 
         foreach (var m in md.Meshes)
         {

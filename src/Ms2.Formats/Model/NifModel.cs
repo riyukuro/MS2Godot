@@ -8,6 +8,7 @@ public sealed class ModelBone
     public int Parent = -1;               // index into Bones, -1 = child of the scene root
     public Xform Rest;                    // local rest transform (= skin bind pose on shipped humanoids)
     public Xform World;                   // rest transform relative to the scene root
+    public Xform? SkinBind;               // scene root -> bone at the skin's bind (NiSkinningMeshModifier bone transform)
 }
 
 public sealed class ModelMesh
@@ -415,7 +416,15 @@ public sealed class ModelData
                 if (bts.Length > 0 && boneOf.TryGetValue((int)skBones[0], out int b0))
                 {
                     var toRoot = md.Bones[b0].World.Compose(XformOf(bts[0]));
+                    // a bone hidden by a zero scale in the file's pose (an effect creature before it flies in) has no
+                    // usable bind there: the skin's Skeleton Transform places the skin in the scene root instead (identity in
+                    // the select-pose effect nifs, so its direction is not checked)
+                    if (toRoot.S == 0) toRoot = XformOf(sk.Struct("Skeleton Transform"));
                     if (!IsIdentity(toRoot)) ToRootSpace(mesh, toRoot);
+                    // each skin bone's bind (scene root -> bone) from its bone transform, the mesh now being in root space
+                    var rootToSkin = toRoot.Inverse();
+                    for (int p = 0; p < skBones.Length && p < bts.Length; p++)
+                        if (boneOf.TryGetValue((int)skBones[p], out int bp)) md.Bones[bp].SkinBind ??= XformOf(bts[p]).Compose(rootToSkin);
                 }
                 var pal = s.TryGetValue("BONE_PALETTE", out var pp) ? pp.v.Select(x => (int)x).ToArray()
                                                                      : Enumerable.Range(0, skBones.Length).ToArray();
