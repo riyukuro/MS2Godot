@@ -14,7 +14,10 @@ public static class PerfLog
     const int FrameWindow = 100;
 
     static int frames;
-    static double sum, worst;
+    static double sum, worst, spent0, ticks0;   // As3View.SpentMs and TickMs at the window start
+    // As3View.Sync time and movie ticks at the last frame; the window's frames with a movie tick and without, and their sync time
+    static double syncLast; static long tickLast;
+    static int tickFrames; static double syncTick, syncIdle;
     static ulong lastTicks;
     static int gc0, gc1, gc2;
     static long allocated;
@@ -27,6 +30,15 @@ public static class PerfLog
     }
 
     static bool buildPrinted;
+
+    /// <summary>MS2_PERF_MAXFPS (with MS2_PERF): the frame rate cap (Engine.MaxFps) the run measures at, with vsync off.</summary>
+    public static void ApplyFpsCap()
+    {
+        if (!On || !int.TryParse(System.Environment.GetEnvironmentVariable("MS2_PERF_MAXFPS"), out int fps)) return;
+        DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+        Engine.MaxFps = fps;
+        Print($"frame rate cap {fps}, vsync off");
+    }
 
     /// <summary>The configuration each measured assembly was built in and whether the JIT optimizes it (a Debug build
     /// without Optimize carries DebuggableAttribute with the JIT optimizer off): the game's, then the libraries'.</summary>
@@ -47,15 +59,21 @@ public static class PerfLog
     {
         if (!On) return;
         ulong now = Time.GetTicksUsec();
-        if (lastTicks == 0) { lastTicks = now; Reset(); return; }
+        if (lastTicks == 0) { lastTicks = now; syncLast = As3View.SyncMs; tickLast = As3View.Ticks; Reset(); return; }
         double ms = (now - lastTicks) / 1000.0;
         lastTicks = now;
         frames++; sum += ms; if (ms > worst) worst = ms;
+        double sync = As3View.SyncMs - syncLast; syncLast = As3View.SyncMs;
+        bool ticked = As3View.Ticks != tickLast; tickLast = As3View.Ticks;
+        if (ticked) { tickFrames++; syncTick += sync; } else syncIdle += sync;
         if (frames < FrameWindow) return;
         Print($"frames [{state}] {frames / (sum / 1000.0):0.0} fps, mean {sum / frames:0.00} ms, worst {worst:0.0} ms, " +
               $"gc {GC.CollectionCount(0) - gc0}/{GC.CollectionCount(1) - gc1}/{GC.CollectionCount(2) - gc2}, " +
               $"alloc {(GC.GetTotalAllocatedBytes() - allocated) / 1048576.0 / (sum / 1000.0):0.0} MB/s, " +
-              $"process {Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000:0.00} ms, draw calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}");
+              $"process {Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000:0.00} ms, draw calls {Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame):0}, " +
+              $"movie views {(As3View.SpentMs - spent0) / frames:0.00} ms (ticks {(As3View.TickMs - ticks0) / frames:0.00} ms), " +
+              $"sync {(syncTick + syncIdle) / frames:0.000} ms/frame, frames without a movie tick {100.0 * (frames - tickFrames) / frames:0}% " +
+              $"(sync {(frames > tickFrames ? syncIdle / (frames - tickFrames) : 0):0.000} ms; with a tick {(tickFrames > 0 ? syncTick / tickFrames : 0):0.000} ms)");
         Reset();
     }
 
@@ -64,6 +82,8 @@ public static class PerfLog
         frames = 0; sum = 0; worst = 0;
         gc0 = GC.CollectionCount(0); gc1 = GC.CollectionCount(1); gc2 = GC.CollectionCount(2);
         allocated = GC.GetTotalAllocatedBytes();
+        spent0 = As3View.SpentMs; ticks0 = As3View.TickMs;
+        tickFrames = 0; syncTick = syncIdle = 0;
     }
 
     /// <summary>

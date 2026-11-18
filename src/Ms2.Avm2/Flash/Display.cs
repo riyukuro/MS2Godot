@@ -51,6 +51,13 @@ public class AsDisplayObject : AsEventDispatcher
     static bool Same(Mat a, Mat b) => a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D && a.Tx == b.Tx && a.Ty == b.Ty;
 
     // ---- change marks (the renderer's sync skips what is unmarked) ---------------------------------------------------
+    // The port of the client's per-node change bits (Render::Change_*, render_constants.h:60): MovieImpl::Advance
+    // (sfr_gfx_01i.cpp:3869) updates the render nodes every frame, and MovieImpl::Capture(onChangeOnly) (:4142) takes a
+    // snapshot only when RenderContext.HasChanges(). Own stands for a node's own bits (Change_Matrix, Change_CxForm,
+    // Change_Visible, Change_Shape, Change_IsMask; Change_ChildInsert / Change_ChildRemove on the parent). Deep stands for
+    // the states a subtree inherits (Change_State_Scale9, Change_State_BlendMode, Change_State_MaskNode), and is also set
+    // for a matrix, since text is laid out at the screen scale. Subtree marks the ancestors of a marked object, so the
+    // sync reaches it from the stage. The sync redoes the whole of an Own object, so the bits are not split further.
 
     [Flags] enum Marks : byte { Own = 1, Subtree = 2, Deep = 4 }
     Marks marks = Marks.Own | Marks.Subtree | Marks.Deep;      // a new object is drawn in full the first time
@@ -70,9 +77,13 @@ public class AsDisplayObject : AsEventDispatcher
     /// </summary>
     public void MarkChanged(bool deep = false)
     {
+        Changes++;
         marks |= deep ? Marks.Own | Marks.Subtree | Marks.Deep : Marks.Own | Marks.Subtree;
         for (var p = Parent ?? MarkOwner; p != null && (p.marks & Marks.Subtree) == 0; p = p.Parent ?? p.MarkOwner) p.marks |= Marks.Subtree;
     }
+
+    /// <summary>Counts the marks made on any display object (a renderer with nothing new since its last pass reads it unchanged).</summary>
+    public static long Changes;
 
     /// <summary>The renderer has drawn this object's current state.</summary>
     public void ClearMarks() => marks = 0;

@@ -18,7 +18,15 @@ public partial class As3View : Node2D
     public FlashPlayer Player { get; private set; }
     readonly UiAssets assets;
     readonly Dictionary<SymbolScope, UiScope> scopes = new();
-    readonly List<Entry> entries = new();
+    readonly HashSet<Entry> entries = new();
+    readonly Dictionary<Node, Entry> byNode = new();          // each entry's holder and mask node
+    readonly List<Node> detached = new();                     // nodes the sync took out of their parents (Sweep)
+    readonly HashSet<Entry> scriptMasked = new();             // synced objects with a script mask
+    static readonly HashSet<AsDisplayObject> noMasks = new();
+    HashSet<AsDisplayObject> masks = noMasks;                 // their mask objects (not drawn)
+    Transform2D viewXf;
+    bool full = true;
+    long changesSeen = -1;                                    // AsDisplayObject.Changes after the last sync
     int gen;
     double frameTime, caretTime;
     readonly TextCaret caret = new();
@@ -39,7 +47,8 @@ public partial class As3View : Node2D
         public Node2D Content;           // what the object itself draws (shape, text, bitmap, graphics)
         public object ContentKey;
         public MaskShape Mask;           // set when this object masks following siblings or is masked by script
-        public int Seen;
+        public int Seen;                 // the last sync that walked it (MS2_PERF_SYNCCHECK)
+        public bool ClipMask;            // a timeline mask (not drawn)
         public int Z;                    // the holder's z index (the dragged sprite's, see SyncObject)
         // the holder's transform, visibility and colour and the content's material as last set (the node defaults at first):
         // a property is set again only when it changes
@@ -80,6 +89,10 @@ public partial class As3View : Node2D
     /// <summary>Milliseconds all movie views spent in _Process (ticks and display-list sync), and in the ticks alone, since the last reset (frame-time runs).</summary>
     public static double SpentMs, TickMs;
 
+    /// <summary>Milliseconds all movie views spent in <see cref="Sync"/> (without the caret and the check mode), and the movie frames ticked, since the start (frame-time runs).</summary>
+    public static double SyncMs;
+    public static long Ticks;
+
     /// <summary>MS2_PERF: called once with the time of the next _Process (ticks and display-list sync), then cleared.</summary>
     public Action<double> NextProcessMs;
 
@@ -100,7 +113,7 @@ public partial class As3View : Node2D
             double step = 1.0 / Math.Max(1, Player.FrameRate);
             int n = 0;
             long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-            while (frameTime >= step && n++ < 4) { frameTime -= step; Player.Tick(); }
+            while (frameTime >= step && n++ < 4) { frameTime -= step; Player.Tick(); Ticks++; }
             TickMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
             if (frameTime > step) frameTime = 0;
         }
@@ -111,42 +124,120 @@ public partial class As3View : Node2D
 
     // ---- display list sync -------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Brings the nodes up to the display list. Only what the display objects marked since the last sync is walked (see
+    /// <see cref="AsDisplayObject.MarkChanged"/>): a subtree with no mark below its root keeps its nodes as they are. A
+    /// change of the screen scale (the view's or an ancestor node's transform) walks everything, since text is laid out
+    /// and drawn at that scale. One view consumes a player's marks.
+    /// </summary>
     public void Sync()
     {
         gen++;
-        var masks = new HashSet<AsDisplayObject>();
-        CollectMasks(Player.Stage, masks);
-        SyncChildren(Player.Stage, this, null, masks, null, null);
-        for (int i = entries.Count - 1; i >= 0; i--)
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var gx = IsInsideTree() ? GetGlobalTransform() : Transform;
+        bool deep = full || gx.X != viewXf.X || gx.Y != viewXf.Y;
+        full = false; viewXf = gx;
+        // a script mask's polygons are mapped through the mask's and the masked object's ancestors, which mark neither
+        // the masked object nor always this stage (a mask out of the display list): after any mark anywhere the masked
+        // objects are walked (those marks are this view's own: they are not counted as changes for the other views)
+        if (AsDisplayObject.Changes != changesSeen && scriptMasked.Count > 0)
         {
-            var e = entries[i];
-            if (e.Seen == gen) continue;
-            e.Holder.GetParent()?.RemoveChild(e.Holder);
-            e.Holder.QueueFree();
-            e.Mask?.GetParent()?.RemoveChild(e.Mask);
-            e.Mask?.QueueFree();
-            applied.Remove(e.Holder);
-            if (e.Mask != null) applied.Remove(e.Mask);
-            if (ReferenceEquals(e.Obj.Tag, e)) e.Obj.Tag = null;
-            entries.RemoveAt(i);
+            long changes = AsDisplayObject.Changes;
+            foreach (var e in scriptMasked) e.Obj.MarkChanged();
+            AsDisplayObject.Changes = changes;
         }
+        var stage = Player.Stage;
+        if (deep || stage.ChangedBelow)
+        {
+            bool kidsDeep = deep || stage.ChangedDeep;
+            stage.ClearMarks();
+            SyncChildren(stage, this, null, null, null, kidsDeep);
+            Sweep();
+            UpdateMasks();
+        }
+        changesSeen = AsDisplayObject.Changes;
+        SyncMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         var focus = Player.Focus as AsTextField;
         var fe = focus?.Tag as Entry;
         caret.Update(focus, fe?.Holder, fe?.Content, caretTime);
         caretTime = 0;
+        if (SyncCheck) Check();
     }
 
-    static void CollectMasks(AsDisplayObject o, HashSet<AsDisplayObject> masks)
+    /// <summary>
+    /// Frees the entries whose holders the sync took out of the view's nodes (a container's Apply or a button's state
+    /// change detached them, and no other parent took them in): those objects left the display list. The nodes under a
+    /// freed holder go with it, and so do their entries.
+    /// </summary>
+    void Sweep()
     {
-        if (o.MaskObject != null) masks.Add(o.MaskObject);
-        if (o is AsContainer c) foreach (var k in c.Children) CollectMasks(k, masks);
+        if (detached.Count == 0) return;
+        foreach (var n in detached)
+            if (byNode.TryGetValue(n, out var e) && entries.Contains(e) && !Attached(e.Holder)) Free(e);
+        detached.Clear();
+    }
+
+    bool Attached(Node n)
+    {
+        for (var p = n.GetParent(); p != null; p = p.GetParent()) if (p == this) return true;
+        return false;
+    }
+
+    void Free(Entry root)
+    {
+        var stack = new Stack<Node>();
+        stack.Push(root.Holder);
+        if (root.Mask != null) stack.Push(root.Mask);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            if (byNode.TryGetValue(n, out var e) && e.Holder == n) Drop(e);
+            foreach (var ch in n.GetChildren()) stack.Push(ch);
+        }
+        root.Holder.GetParent()?.RemoveChild(root.Holder);
+        root.Holder.QueueFree();
+        root.Mask?.GetParent()?.RemoveChild(root.Mask);
+        root.Mask?.QueueFree();
+    }
+
+    void Drop(Entry e)
+    {
+        entries.Remove(e);
+        scriptMasked.Remove(e);
+        byNode.Remove(e.Holder);
+        applied.Remove(e.Holder);
+        if (e.Mask != null) { byNode.Remove(e.Mask); applied.Remove(e.Mask); }
+        if (ReferenceEquals(e.Obj.Tag, e)) e.Obj.Tag = null;
+    }
+
+    /// <summary>
+    /// The objects used as script masks are not drawn. The set is the masks of the objects synced (kept current every
+    /// sync, see <see cref="Sync"/>); an object that became or stopped being a mask during the pass is set again here.
+    /// </summary>
+    void UpdateMasks()
+    {
+        HashSet<AsDisplayObject> now = null;
+        foreach (var e in scriptMasked) if (e.Obj.MaskObject is { } mo) (now ??= new()).Add(mo);
+        now ??= noMasks;
+        if (now.Count == 0 && masks.Count == 0) return;
+        foreach (var o in masks) if (!now.Contains(o)) Revisible(o, now);
+        foreach (var o in now) if (!masks.Contains(o)) Revisible(o, now);
+        masks = now;
+    }
+
+    void Revisible(AsDisplayObject o, HashSet<AsDisplayObject> set)
+    {
+        if (o.Tag is not Entry e || !entries.Contains(e)) return;
+        bool visible = o.IsVisible && !set.Contains(o) && !e.ClipMask;
+        if (visible != e.Visible) { Checked(true, "mask visible", e); e.Holder.Visible = e.Visible = visible; }
     }
 
     /// <summary>
     /// Puts the nodes of a container's children under <paramref name="into"/> in display order (after the container's own
-    /// <paramref name="content"/>); the children a timeline mask clips go under the mask's node, in display order.
+    /// <paramref name="content"/>); the children a timeline mask clips go under the mask's node, in display order. A child
+    /// with no mark below it keeps its nodes; <paramref name="deep"/> walks every child (an ancestor's context changed).
     /// </summary>
-    void SyncChildren(AsContainer c, Node2D into, Node2D content, HashSet<AsDisplayObject> masks, NineCtx nine, Material blend)
+    void SyncChildren(AsContainer c, Node2D into, Node2D content, NineCtx nine, Material blend, bool deep)
     {
         var wanted = new List<Node>();
         if (content != null) wanted.Add(content);
@@ -157,12 +248,13 @@ public partial class As3View : Node2D
         {
             if (clip != null && k.Depth > clipEnd) clip = null;
             bool clipMask = k.ClipDepth is int && k.Depth != int.MinValue;
-            var e = SyncObject(k, masks, nine, blend, clipMask);
+            bool visit = deep || k.ChangedBelow || k.Tag is not Entry;
+            var e = visit ? SyncObject(k, nine, blend, clipMask, deep) : (Entry)k.Tag;
             if (clipMask)
             {
                 // a timeline mask: following depths up to its clip depth draw only inside it; the mask itself is not drawn
-                e.Mask ??= new MaskShape();
-                e.Mask.Set(MaskShape.Polygons(k, Mat.Identity));
+                if (e.Mask == null) { e.Mask = new MaskShape(); byNode[e.Mask] = e; }
+                if (visit) Checked(e.Mask.Set(MaskShape.Polygons(k, Mat.Identity)), "clip mask polygons", e);
                 wanted.Add(e.Holder);
                 wanted.Add(e.Mask);
                 clip = e.Mask; clipEnd = (int)k.ClipDepth;
@@ -172,11 +264,11 @@ public partial class As3View : Node2D
             Node2D top = e.Holder;
             if (k.MaskObject != null)
             {
-                e.Mask ??= new MaskShape();
+                if (e.Mask == null) { e.Mask = new MaskShape(); byNode[e.Mask] = e; }
                 var mo = k.MaskObject;
                 toC ??= c.ToGlobalMatrix().Inverse();
-                e.Mask.Set(MaskShape.Polygons(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value)));
-                if (e.Holder.GetParent() != e.Mask) { e.Holder.GetParent()?.RemoveChild(e.Holder); e.Mask.AddChild(e.Holder); }
+                Checked(e.Mask.Set(MaskShape.Polygons(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value))), "script mask polygons", e);
+                if (e.Holder.GetParent() != e.Mask) { Checked(true, "masked holder parent", e); e.Holder.GetParent()?.RemoveChild(e.Holder); e.Mask.AddChild(e.Holder); }
                 top = e.Mask;
             }
             if (clip != null) clipped.Add(top);
@@ -188,9 +280,9 @@ public partial class As3View : Node2D
 
     /// <summary>
     /// Makes <paramref name="want"/> the children of <paramref name="into"/>, in that order: nodes from elsewhere are moved
-    /// in, others are dropped (their entries are freed after the pass if not seen elsewhere). Skipped when the parent was
-    /// given the same list last time and still has as many children (every move between parents goes through here, and the
-    /// parent losing a node is given a list without it).
+    /// in, others are dropped (their entries are freed after the pass if no other parent took them, <see cref="Sweep"/>).
+    /// Skipped when the parent was given the same list last time and still has as many children (every move between
+    /// parents goes through here, and the parent losing a node is given a list without it).
     /// </summary>
     void Apply(Node2D into, List<Node> want)
     {
@@ -201,12 +293,18 @@ public partial class As3View : Node2D
             if (same) return;
         }
         applied[into] = want;
-        foreach (var n in want)
-            if (n.GetParent() != into) { n.GetParent()?.RemoveChild(n); into.AddChild(n); }
         var keep = new HashSet<Node>(want);
+        bool changed = false;
+        foreach (var n in want)
+            if (n.GetParent() != into) { n.GetParent()?.RemoveChild(n); into.AddChild(n); changed = true; }
         foreach (var n in into.GetChildren())
-            if (!keep.Contains(n)) into.RemoveChild(n);
-        for (int i = 0; i < want.Count; i++) into.MoveChild(want[i], i);
+            if (!keep.Contains(n)) { into.RemoveChild(n); detached.Add(n); changed = true; }
+        for (int i = 0; i < want.Count; i++)
+        {
+            if (checking && !changed && into.GetChild(i) != want[i]) changed = true;
+            into.MoveChild(want[i], i);
+        }
+        Checked(changed, "children", into);
     }
 
     static void Reparent(Node2D n, Node2D into, List<Node> wanted)
@@ -215,14 +313,24 @@ public partial class As3View : Node2D
         wanted.Add(n);
     }
 
-    Entry SyncObject(AsDisplayObject o, HashSet<AsDisplayObject> masks, NineCtx nine, Material blend, bool clipMask = false)
+    /// <summary>
+    /// Syncs one display object's holder and content (when it or an ancestor's context is marked) and walks into its
+    /// marked children; the object's marks are cleared.
+    /// </summary>
+    Entry SyncObject(AsDisplayObject o, NineCtx nine, Material blend, bool clipMask, bool deep)
     {
+        bool fresh = o.Tag is not Entry e;
+        bool self = deep || fresh || o.ChangedSelf;
+        bool kidsDeep = deep || fresh || o.ChangedDeep;
+        o.ClearMarks();
         blend = BlendFor(o.Blend) ?? blend;
-        if (o.Tag is not Entry e)
+        if (fresh)
         {
+            Checked(true, "unsynced object", o);
             e = new Entry { Obj = o, Holder = new Node2D { Name = string.IsNullOrEmpty(o.InstanceName) ? o.Class?.LocalName ?? "obj" : o.InstanceName } };
-            o.Tag = e; entries.Add(e);
+            o.Tag = e; entries.Add(e); byNode[e.Holder] = e;
         }
+        else e = (Entry)o.Tag;
         e.Seen = gen;
         var m = o.Matrix;
         // Scale-9: every node under a grid sprite keeps its matrix; only shape meshes are made through the grid, from
@@ -238,37 +346,101 @@ public partial class As3View : Node2D
                 ? new NineCtx { Grid = UiBuilder.Rc(g9), Bounds = UiBuilder.Rc(o.Symbol["bounds"]), Sx = (float)sx, Sy = (float)sy, Chain = Transform2D.Identity }
                 : null;
         }
-        var xf = Xf(m);
-        if (xf != e.Xf) e.Holder.Transform = e.Xf = xf;
-        // a timeline mask's own node is not drawn (SyncChildren clips the following depths to it)
-        bool visible = o.IsVisible && !masks.Contains(o) && !clipMask;
-        if (visible != e.Visible) e.Holder.Visible = e.Visible = visible;
-        // DragManager's drag canvas is CommonDepth's layer under the mouse cursor (DragManager.init: DEPTH_LAYER_MOUSECURSOR
-        // - 1) on the one stage every dialog shares: the dragged sprite is drawn over the other movies too, not only its own
-        int z = o == Player.DrawnOnTop ? (int)RenderingServer.CanvasItemZMax - 1 : 0;
-        if (z != e.Z) { e.Holder.ZAsRelative = z == 0; e.Holder.ZIndex = e.Z = z; }
-        var cx = o.Color;
-        var modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
-        if (modulate != e.Modulate) e.Holder.Modulate = e.Modulate = modulate;
-        SyncContent(e, nine);
-        if (e.Content != null && e.ContentMaterial != blend)
+        if (self)
         {
-            e.Content.Material = e.ContentMaterial = blend;
-            foreach (var ch in e.Content.GetChildren()) if (ch is CanvasItem ci) ci.UseParentMaterial = true;   // ShapeNode's bitmap sprites
+            var xf = Xf(m);
+            if (xf != e.Xf) { Checked(true, "transform", e); e.Holder.Transform = e.Xf = xf; }
+            // a timeline mask's own node is not drawn (SyncChildren clips the following depths to it)
+            e.ClipMask = clipMask;
+            bool visible = o.IsVisible && !masks.Contains(o) && !clipMask;
+            if (visible != e.Visible) { Checked(true, "visible", e); e.Holder.Visible = e.Visible = visible; }
+            // DragManager's drag canvas is CommonDepth's layer under the mouse cursor (DragManager.init: DEPTH_LAYER_MOUSECURSOR
+            // - 1) on the one stage every dialog shares: the dragged sprite is drawn over the other movies too, not only its own
+            int z = o == Player.DrawnOnTop ? (int)RenderingServer.CanvasItemZMax - 1 : 0;
+            if (z != e.Z) { Checked(true, "z", e); e.Holder.ZAsRelative = z == 0; e.Holder.ZIndex = e.Z = z; }
+            var cx = o.Color;
+            var modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
+            if (modulate != e.Modulate) { Checked(true, "modulate", e); e.Holder.Modulate = e.Modulate = modulate; }
+            SyncContent(e, nine);
+            if (e.Content != null && e.ContentMaterial != blend)
+            {
+                Checked(true, "material", e);
+                e.Content.Material = e.ContentMaterial = blend;
+                foreach (var ch in e.Content.GetChildren()) if (ch is CanvasItem ci) ci.UseParentMaterial = true;   // ShapeNode's bitmap sprites
+            }
+            if (o.MaskObject != null) scriptMasked.Add(e);
+            else scriptMasked.Remove(e);
         }
         switch (o)
         {
-            case AsContainer c: SyncChildren(c, e.Holder, e.Content, masks, childNine, blend); break;
+            case AsContainer c: SyncChildren(c, e.Holder, e.Content, childNine, blend, kidsDeep); break;
             case AsSimpleButton b:
             {
                 var wanted = new List<Node>();
                 if (e.Content != null) wanted.Add(e.Content);
-                foreach (var s in b.Drawn) Reparent(SyncObject(s, masks, childNine, blend).Holder, e.Holder, wanted);
-                foreach (var n in e.Holder.GetChildren()) if (!wanted.Contains(n)) e.Holder.RemoveChild(n);
+                foreach (var s in b.Drawn)
+                {
+                    var se = kidsDeep || s.ChangedBelow || s.Tag is not Entry ? SyncObject(s, childNine, blend, false, kidsDeep) : (Entry)s.Tag;
+                    if (se.Holder.GetParent() != e.Holder) Checked(true, "button state", e);
+                    Reparent(se.Holder, e.Holder, wanted);
+                }
+                foreach (var n in e.Holder.GetChildren())
+                    if (!wanted.Contains(n)) { Checked(true, "button state", e); e.Holder.RemoveChild(n); detached.Add(n); }
                 break;
             }
         }
         return e;
+    }
+
+    // ---- MS2_PERF_SYNCCHECK ----------------------------------------------------------------------------------------
+
+    /// <summary>MS2_PERF_SYNCCHECK: after every sync, a full sync checks that the marked one left nothing to change.</summary>
+    static readonly bool SyncCheck = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_SYNCCHECK"));
+
+    /// <summary>MS2_PERF_SYNCCHECK: differences the full syncs found, and the full syncs run, over every view.</summary>
+    public static long CheckDiffs, CheckRuns;
+    bool checking;
+
+    /// <summary>
+    /// The full sync as it was before the marks (every object walked, the masks collected from the whole display list,
+    /// the entries not reached freed), run right after the marked sync: whatever it still has to change is logged.
+    /// </summary>
+    void Check()
+    {
+        checking = true;
+        try
+        {
+            gen++;
+            var all = new HashSet<AsDisplayObject>();
+            CollectMasks(Player.Stage, all);
+            if (!all.SetEquals(masks)) Checked(true, "script mask set", null);
+            masks = all;
+            Player.Stage.ClearMarks();
+            SyncChildren(Player.Stage, this, null, null, null, true);
+            foreach (var e in entries) if (e.Seen != gen) Checked(true, "entry kept for an object not in the display list", e);
+            Sweep();
+            UpdateMasks();
+            CheckRuns++;
+        }
+        finally { checking = false; }
+    }
+
+    static void CollectMasks(AsDisplayObject o, HashSet<AsDisplayObject> masks)
+    {
+        if (o.MaskObject != null) masks.Add(o.MaskObject);
+        if (o is AsContainer c) foreach (var k in c.Children) CollectMasks(k, masks);
+    }
+
+    /// <summary>In the check sync, logs a change it made (the marked sync missed it).</summary>
+    void Checked(bool changed, string what, object at)
+    {
+        if (!checking || !changed) return;
+        if (CheckDiffs++ < 200)
+        {
+            var o = (at as Entry)?.Obj ?? at as AsDisplayObject;
+            string where = o != null ? $"{o.Class?.LocalName} {o.InstanceName}" : at is Node n ? n.Name.ToString() : "";
+            GD.PrintErr($"MS2_PERF_SYNCCHECK {Player.Main?.Key}: {what} at {where}");
+        }
     }
 
     static Transform2D Xf(Mat m) => new(new Vector2((float)m.A, (float)m.B), new Vector2((float)m.C, (float)m.D), new Vector2((float)m.Tx, (float)m.Ty));
@@ -282,6 +454,7 @@ public partial class As3View : Node2D
         object key = ContentKey(o, nine, out var sn);
         if (!Equals(key, e.ContentKey))
         {
+            Checked(true, "content", e);
             if (e.Content != null) { e.Content.GetParent()?.RemoveChild(e.Content); e.Content.QueueFree(); e.Content = null; }
             e.ContentKey = key;
             e.Content = MakeContent(o, sn);
@@ -289,7 +462,8 @@ public partial class As3View : Node2D
             e.ContentMaterial = e.Content?.Material;
         }
         if (e.Content is GraphicsNode or FieldNode) e.Content.QueueRedraw();
-        if (e.Content is FieldText ft) ft.Sync();
+        // a field made in this pass builds once its holder is in the tree (FieldText's TreeEntered), so the check skips it
+        if (e.Content is FieldText ft) { bool pending = !ft.Built; Checked(ft.Sync() && !pending, "text", e); }
     }
 
     /// <summary>
@@ -512,14 +686,15 @@ public partial class MaskShape : Node2D
 
     public MaskShape() { ClipChildren = ClipChildrenMode.Only; }
 
-    /// <summary>The mask's polygons this frame; redrawn only when they changed.</summary>
-    public void Set(List<Vector2[]> p)
+    /// <summary>The mask's polygons this frame; redrawn only when they changed (then true).</summary>
+    public bool Set(List<Vector2[]> p)
     {
         bool same = p.Count == polys.Count;
         for (int i = 0; same && i < p.Count; i++) same = p[i].AsSpan().SequenceEqual(polys[i]);
-        if (same) return;
+        if (same) return false;
         polys = p;
         QueueRedraw();
+        return true;
     }
 
     public override void _Draw()
@@ -669,6 +844,8 @@ public partial class FieldText : Node2D
     readonly AsTextField tf;
     readonly UiScope scope;
     TextNode node;
+    /// <summary>The text node was built (a field made in a sync pass builds once it is in the tree).</summary>
+    public bool Built => built != null;
     string built;
     int version = -1;
 
@@ -676,12 +853,13 @@ public partial class FieldText : Node2D
     {
         this.tf = tf; this.scope = scope;
         // a field made during a sync pass is synced before its holder joins the tree: it syncs once it is in
-        TreeEntered += () => Callable.From(Sync).CallDeferred();
+        TreeEntered += () => Callable.From(() => { Sync(); }).CallDeferred();
     }
 
-    public void Sync()
+    /// <summary>Builds the text node again or sets its text when the field changed; true when it did either.</summary>
+    public bool Sync()
     {
-        if (!IsInsideTree()) return;
+        if (!IsInsideTree()) return false;
         var gs = GetGlobalTransform().Scale;
         float sx = Math.Max(0.001f, Math.Abs(gs.X)), sy = Math.Max(0.001f, Math.Abs(gs.Y));
         var f = tf.Format;
@@ -689,7 +867,8 @@ public partial class FieldText : Node2D
         var filters = Filters();
         string key = string.Join("|", tf.Box.X, tf.Box.Y, tf.Box.W, tf.Box.H, D(f?.font), D(f?.size), D(f?.color), D(f?.align),
             D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType, tf.TextAutoSize);
-        if (key != built)
+        bool rebuilt = key != built;
+        if (rebuilt)
         {
             node?.QueueFree();
             node = null;
@@ -714,7 +893,7 @@ public partial class FieldText : Node2D
             built = key;
             version = -1;
         }
-        if (tf.Version == version) return;
+        if (tf.Version == version) return rebuilt;
         version = tf.Version;
         if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
         else node.Text = tf.Text;
@@ -725,6 +904,7 @@ public partial class FieldText : Node2D
         node.Scale = new Vector2(scale, scale);
         node.RecenterScaled(scale);
         node.Position = origin - origin * scale + new Vector2(0, (float)(tf.FirstLineTop(node.NumLines, scale) - (tf.Box.Y + 2)));
+        return true;
     }
 
     /// <summary>The field's filters as the layout writes them: the ones ActionScript set (angle in degrees), else the placement's.</summary>

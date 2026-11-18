@@ -63,6 +63,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--frametime") frameCase = args[i + 1];
         if (System.Array.IndexOf(args, "--oracle") >= 0) Ms2.Avm2.Interp.UseOracle = true;
         if (frameCase != null) DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
+        PerfLog.ApplyFpsCap();
         questFixture = args.Contains("--questlog-fixture");
         partyFixture = args.Contains("--party-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
@@ -1534,6 +1535,7 @@ public partial class HudScene : Node, IUiStageHost
                 PerfLog.Print($"players made {MovieDialog.Opened.Count}, alive after GC: {string.Join(", ", alive)}");
             }
             PerfLog.Print($"managed heap after GC {GC.GetTotalMemory(false) / 1048576.0:0} MB");
+            if (As3View.CheckRuns > 0) PerfLog.Print($"MS2_PERF_SYNCCHECK: {As3View.CheckRuns} full syncs, {As3View.CheckDiffs} differences");
         }
         if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) GetTree().Quit(0);
     }
