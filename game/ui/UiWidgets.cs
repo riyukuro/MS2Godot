@@ -38,7 +38,7 @@ public abstract class Widget
     public virtual void MouseDown(bool down) { }
 }
 
-public sealed class ButtonWidget : Widget
+public class ButtonWidget : Widget
 {
     public bool Toggle, Selected, Hover, Down;
     public bool IsCheckBox;
@@ -59,7 +59,7 @@ public sealed class ButtonWidget : Widget
         Refresh();
     }
 
-    public void SetSelected(bool sel, bool raise)
+    public virtual void SetSelected(bool sel, bool raise)
     {
         if (Selected == sel) return;
         Selected = sel; Refresh();
@@ -76,8 +76,12 @@ public sealed class ButtonWidget : Widget
         {
             if (Toggle) SetSelected(!Selected, true);
             RaiseClick();
+            Clicked();
         }
     }
+
+    /// <summary>After the click event: what the control's own class does on a click.</summary>
+    protected virtual void Clicked() { }
 
     public override void Refresh()
     {
@@ -160,12 +164,121 @@ public sealed class TextInputWidget : Widget
     }
 }
 
+/// <summary>
+/// CLIK DropdownMenu (scaleform.clik.controls.DropdownMenu, the movies' scaleform.ms2.controls.DropDownMenu /
+/// AnimationDropDownMenu): a button showing the selected row's label; a click opens the list below it (the
+/// <see cref="Dropdown"/> class, a ScrollingList, at x + menuOffset.left, y + height + menuOffset.top, as wide as the button
+/// plus the left and right offsets when menuWidth is -1) with <see cref="MenuRowCount"/> rows of the
+/// <see cref="ItemRenderer"/> class, menuMargin inside its frame; a row click selects that row (ListEvent.INDEX_CHANGE when the
+/// index changes) and closes it, as does a click elsewhere. The button shows its selected_* states while the list is open.
+/// Not ported: the AnimationDropDownMenu open animation (dropdownAni) and a list scroll bar (rows past menuRowCount).
+/// </summary>
+public sealed class DropdownWidget : ButtonWidget
+{
+    public readonly List<(string Label, object Data)> Items = new();
+    public int SelectedIndex = -1, MenuRowCount = 5, MenuMargin = 1;
+    public Vector4 MenuOffset;                 // left, top, right, bottom
+    public string Dropdown = "export_scrollinglist_black", ItemRenderer = "export_renderer_dropdown";
+    /// <summary>ListEvent.INDEX_CHANGE: the new index.</summary>
+    public event Action<DropdownWidget, int> IndexChange;
+    public MovieClipNode List { get; private set; }
+    readonly List<MovieClipNode> rows = new();
+    public IEnumerable<MovieClipNode> OpenClips => List == null ? Enumerable.Empty<MovieClipNode>() : rows.Prepend(List);
+    public bool IsOpen => List != null;
+
+    public override void Init() { Toggle = true; Refresh(); }
+
+    public override void Set(string prop, object value)
+    {
+        switch (prop)
+        {
+            case "menuRowCount": MenuRowCount = Convert.ToInt32(value); break;
+            case "menuMargin": MenuMargin = Convert.ToInt32(value); break;
+            case "dropdown": Dropdown = (string)value; break;
+            case "itemRenderer": ItemRenderer = (string)value; break;
+            case "visible": if (!(bool)value) Close(); base.Set(prop, value); break;
+            default: base.Set(prop, value); break;
+        }
+    }
+
+    /// <summary>The button's own toggle state is the list being open (CLIK DropdownMenu.selected).</summary>
+    public override void SetSelected(bool sel, bool raise) { Selected = sel; Refresh(); }
+
+    protected override void Clicked() { if (IsOpen) Close(); else Open(); }
+
+    /// <summary>dataProvider and selectedIndex: the label shows the selected row's text (updateLabel).</summary>
+    public void SetData(IEnumerable<(string Label, object Data)> items, int selected)
+    {
+        Close();
+        Items.Clear(); Items.AddRange(items);
+        SelectedIndex = -1;
+        Select(selected, false);
+    }
+
+    public void Select(int index, bool raise)
+    {
+        if (index >= Items.Count) index = Items.Count - 1;
+        if (index == SelectedIndex) return;
+        SelectedIndex = index;
+        Node.SetText(index >= 0 ? Items[index].Label : "");
+        if (raise) IndexChange?.Invoke(this, index);
+    }
+
+    public void Open()
+    {
+        if (IsOpen || Items.Count == 0 || Node.GetParent() is not Node2D parent) return;
+        var movie = Node.Movie;
+        double s = Node.sx;
+        var size = Node.Bounds.Size;
+        int count = Math.Min(MenuRowCount, Items.Count);
+        float w = size.X + MenuOffset.X + MenuOffset.Z;
+        var probe = movie.BuildClass(ItemRenderer, s) ?? movie.Assets.Common.BuildClass(ItemRenderer, s);
+        if (probe == null) return;
+        float rowH = probe.Bounds.Size.Y, rowW = w - MenuMargin * 2;
+        probe.Free();
+        float h = count * rowH + MenuMargin * 2;
+        List = movie.BuildClassSized(Dropdown, s, w, h) ?? movie.Assets.Common.BuildClassSized(Dropdown, s, w, h);
+        if (List == null) return;
+        List.Position = Node.Position + new Vector2(MenuOffset.X, size.Y + MenuOffset.Y);
+        parent.AddChild(List);
+        rows.Clear();
+        for (int i = 0; i < count; i++)
+        {
+            var r = movie.BuildClassSized(ItemRenderer, s, rowW, rowH) ?? movie.Assets.Common.BuildClassSized(ItemRenderer, s, rowW, rowH);
+            if (r == null) break;
+            if (r.Widget == null) UiWidgets.Attach(r);
+            r.Position = new Vector2(MenuMargin, MenuMargin + i * rowH);
+            r.SetText(Items[i].Label);
+            int index = i;
+            if (r.Widget is ButtonWidget b)
+            {
+                b.Toggle = true;
+                b.SetSelected(i == SelectedIndex, false);
+                b.Click += _ => { Close(); Select(index, true); };
+            }
+            List.AddChild(r);
+            rows.Add(r);
+        }
+        SetSelected(true, false);
+    }
+
+    public void Close()
+    {
+        if (List == null) return;
+        List.QueueFree();
+        List = null;
+        rows.Clear();
+        SetSelected(false, false);
+    }
+}
+
 public static class UiWidgets
 {
     public static void Attach(MovieClipNode n)
     {
         Widget w = null;
-        if (n.IsA("scaleform.clik.controls.CheckBox")) w = new ButtonWidget { Toggle = true, IsCheckBox = true };
+        if (n.IsA("scaleform.clik.controls.DropdownMenu") || n.IsA("scaleform.ms2.controls.DropDownMenu")) w = new DropdownWidget();
+        else if (n.IsA("scaleform.clik.controls.CheckBox")) w = new ButtonWidget { Toggle = true, IsCheckBox = true };
         else if (n.IsA("scaleform.clik.controls.Button")) w = new ButtonWidget();
         else if (n.IsA("scaleform.clik.controls.TextArea")) return;      // multi-line text areas (chat log) show their own text field
         else if (n.IsA("scaleform.clik.controls.TextInput")) w = new TextInputWidget();
@@ -209,10 +322,13 @@ public static class UiWidgets
         /// </summary>
         public Func<IEnumerable<MovieClipNode>> Extra;
 
+        IEnumerable<DropdownWidget> OpenDropdowns() => root.AllClips().Select(c => c.Widget).OfType<DropdownWidget>().Where(d => d.IsOpen);
+
         ButtonWidget Pick(Vector2 p)
         {
             ButtonWidget hit = null;
-            var clips = Extra == null ? root.AllClips() : root.AllClips().Concat(Extra().SelectMany(x => x.AllClips()));
+            var clips = root.AllClips().Concat(OpenDropdowns().SelectMany(d => d.OpenClips).ToList());
+            if (Extra != null) clips = clips.Concat(Extra().SelectMany(x => x.AllClips()));
             foreach (var c in clips)
                 if (c.Widget is ButtonWidget b && b.Enabled && c.IsVisibleInTree() && Hits(c, p)) hit = b;   // later = on top
             return hit;
@@ -238,7 +354,14 @@ public static class UiWidgets
             }
             else if (e is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
             {
-                if (mb.Pressed) { pressed = Pick(mb.Position); pressed?.MouseDown(true); }
+                if (mb.Pressed)
+                {
+                    pressed = Pick(mb.Position);
+                    // DropdownMenu.handleStageClick: a press outside the button and its list closes the list
+                    foreach (var d in OpenDropdowns().ToList())
+                        if (pressed != d && !d.OpenClips.Any(c => c.Widget == pressed)) d.Close();
+                    pressed?.MouseDown(true);
+                }
                 else { var p = pressed; pressed = null; p?.MouseDown(false); }
             }
         }

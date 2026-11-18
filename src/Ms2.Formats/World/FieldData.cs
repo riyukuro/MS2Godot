@@ -43,6 +43,11 @@ public sealed class FieldData
     /// <summary>&lt;ui instancingGrid&gt;: the hardware-instancing cell edge (CFieldDataCli m_nInstancingGrid, default 0 = one cell);
     /// WorldService::FUN_141bc72f0 hands it to HardwareInstancingService::SetCellSize before BuildInstancings.</summary>
     public int InstancingGrid;
+    /// <summary>&lt;property mapType&gt;: CFieldDataCli::m_nMapType (3 home, 5 dungeon, ... ; uisystemmenudialog.cpp:173).</summary>
+    public int MapType;
+    /// <summary>&lt;property channelGroupID&gt;: the channel group whose name (string table 23, channelGroupName) prefixes the
+    /// system menu's channel rows (UISystemMenuDialog::Notify, uisystemmenudialog.cpp:309-316).</summary>
+    public int ChannelGroupId;
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
@@ -70,6 +75,8 @@ public sealed class FieldData
             }
             var prop = env.Element("property") ?? fd.Element("property");
             if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
+            if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
+            if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
             if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
             var fov = env.Element("fov");
             if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);

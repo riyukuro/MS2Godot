@@ -14,7 +14,7 @@ namespace Ms2Godot.Flow;
 /// that lives beside the current scene and switches scenes:
 ///   Login (login.tscn) -> Lobby (charselect.tscn; an empty slot goes to Create, charcreate.tscn) -> Loading (the field's
 ///   loading picture over the scene change) -> Game (hud.tscn: the field, the player in the chosen character's look, the HUD).
-/// In Game, Esc opens a menu: resume, back to character select (Lobby), quit.
+/// In Game, Esc toggles the client's system menu (Ui.SystemMenu): character select goes back to Lobby, exit asks and quits.
 /// The login accepts any id; the character list is the stub list. Args after `--`: --flow-shots DIR runs the whole
 /// flow by script, with a shot at each step, and quits.
 /// </summary>
@@ -29,7 +29,6 @@ public partial class GameFlow : Node
     public State Current { get; private set; } = State.Login;
     CanvasLayer loadingLayer;
     TextureRect picture;
-    EscMenu menu;
     int loadingFrames = -1;
     string shotDir;
 
@@ -61,10 +60,11 @@ public partial class GameFlow : Node
         black.AddChild(picture);
         AddChild(loadingLayer);
 
-        menu = new EscMenu();
-        AddChild(menu);
-        menu.BackToSelect += () => Go(State.Lobby);
-        menu.Quit += () => GetTree().Quit(0);
+        // the system menu's entries that leave the field (Ui.SystemMenu): OnSelectCharacter sends RequestQuit, whose answer
+        // returns to character select; offline that is the lobby at once (the request packet is not ported)
+        Ui.SystemMenu.SelectCharacter += () => { if (Current == State.Game) Go(State.Lobby); };
+        // OnGameExit: box 0x288 (s_msg_game_over); its yes answer quits (tag s_gameExit, windowservice.cpp:652)
+        Ui.SystemMenu.GameExit += () => ShowConfirm(CommonStrings()("s_msg_game_over") ?? "", () => GetTree().Quit(0));
 
         Net.LiveSession.Attach(this);
         Go(State.Login);
@@ -94,7 +94,6 @@ public partial class GameFlow : Node
     {
         GD.Print($"flow: {Current} -> {next}");
         Current = next;
-        if (menu.IsOpen) menu.Close();
         switch (next)
         {
             case State.Login: Change(LoginScene); break;
@@ -213,6 +212,21 @@ public partial class GameFlow : Node
         box.PopupCentered();
     }
 
+    /// <summary>STAND-IN for a yes/no UIMessageBox (box type 0x17): the same text in a Godot ConfirmationDialog; yes runs <paramref name="yes"/>.</summary>
+    void ShowConfirm(string text, Action yes)
+    {
+        GD.Print("flow: confirm: " + text);
+        var box = new ConfirmationDialog { DialogText = text, Title = "", Exclusive = true };
+        box.Confirmed += () => { box.QueueFree(); yes(); };
+        box.Canceled += box.QueueFree;
+        AddChild(box);
+        box.PopupCentered();
+        Confirm = box;
+    }
+
+    /// <summary>The open stand-in confirm box (scripted runs answer it).</summary>
+    public ConfirmationDialog Confirm { get; private set; }
+
     void OnCreateCancelled()
     {
         if (Current == State.Create) Go(State.Lobby);
@@ -315,13 +329,14 @@ public partial class GameFlow : Node
     {
         if (Current == State.Game && e is InputEventKey { Pressed: true, Echo: false, Keycode: Godot.Key.Escape })
         {
-            menu.Toggle();
+            (GetTree().CurrentScene as Ui.HudScene)?.Escape();
             GetViewport().SetInputAsHandled();
         }
     }
 
     // ---- scripted proof run ----------------------------------------------------------------------------------------
 
+    Ui.HudScene Hud => GetTree().CurrentScene as Ui.HudScene;
     async Task Frames(int n) { for (int i = 0; i < n; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
     async Task Until(Func<bool> cond, int maxFrames = 3000) { for (int i = 0; i < maxFrames && !cond(); i++) await Frames(1); }
     // presses the job page's back button (the scene's members are private)
@@ -371,16 +386,22 @@ public partial class GameFlow : Node
         Shot("06_loading.png");
         await Until(() => Current == State.Game); await Frames(240);
         Shot("07_field_hud.png");
-        Press(Godot.Key.Escape); await Frames(10);
+        Press(Godot.Key.Escape); await Frames(30);
         Shot("08_esc_menu.png");
-        menu.BackButton.EmitSignal(BaseButton.SignalName.Pressed);
+        Hud?.SystemMenuForScripts.ClickEntry("m_selectChannel"); await Frames(5);
+        Shot("08b_esc_menu_channels.png");
+        Hud?.SystemMenuForScripts.ClickEntry("m_channel"); await Frames(5);
+        Shot("08c_esc_menu_channel_list.png");
+        Hud?.SystemMenuForScripts.ClickEntry("m_selectCharacter");
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("09_back_at_charselect.png");
         Press(Godot.Key.Up); await Frames(5); await LobbyReady(); Press(Godot.Key.Enter);
         await Until(() => Current == State.Game); await Frames(240);
         Shot("10_field_second_entry.png");
-        Press(Godot.Key.Escape); await Frames(10);
+        Press(Godot.Key.Escape); await Frames(30);
         GD.Print("flow: quit from the menu");
-        menu.QuitButton.EmitSignal(BaseButton.SignalName.Pressed);
+        Hud?.SystemMenuForScripts.ClickEntry("m_exitGame"); await Frames(10);
+        Shot("11_exit_confirm.png");
+        Confirm?.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
     }
 }

@@ -423,6 +423,37 @@ public partial class MovieClipNode : Node2D
         GotoFrame(Frame);
     }
 
+    /// <summary>Moves a direct child's registration point to <paramref name="y"/> (AS3 child.y = y).</summary>
+    public void SetChildY(Child c, float y)
+    {
+        if (c == null) return;
+        var b = c.Base; c.Base = new Transform2D(b.X, b.Y, new Vector2(b.Origin.X, y));
+        GotoFrame(Frame);
+    }
+
+    /// <summary>
+    /// AS3 child.width / child.height on a placed 9-slice sprite (one placed by id with a scale9 grid): the child is built
+    /// again at that size with its grid, as Scaleform slices a scaled scale9 clip. Other children are left as they are.
+    /// </summary>
+    public void ResizeNine(Child c, float w, float h)
+    {
+        if (c?.Def["id"] == null || Scope.Symbol((int)c.Def["id"]) is not { } sym || sym["scale9"] == null || sym["bounds"] == null) return;
+        var b = UiBuilder.Rc(sym["bounds"]);
+        var ctx = new NineCtx { Grid = UiBuilder.Rc(sym["scale9"]), Bounds = b, Sx = w / Math.Max(b.Size.X, 0.001f), Sy = h / Math.Max(b.Size.Y, 0.001f) };
+        var node = UiBuilder.BuildSprite(Movie, Scope, (int)c.Def["id"], sx, sy, ctx);
+        if (node == null) return;
+        var old = c.Node; var parent = old.GetParent();
+        int index = old.GetIndex();
+        parent.AddChild(node);
+        parent.MoveChild(node, index);
+        old.QueueFree();
+        c.Node = node;
+        c.Static9 = true;
+        c.Base = new Transform2D(Vector2.Right, Vector2.Down, c.Base.Origin);
+        c.Moves.Clear();
+        GotoFrame(Frame);
+    }
+
     /// <summary>
     /// The bounding box of what is shown at the current frame, in this clip's coordinates (AS3 getBounds(this)).
     /// With <paramref name="fitText"/> text fields count only as wide as their text plus the 2 px gutters (autoSize).

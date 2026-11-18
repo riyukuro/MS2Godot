@@ -98,6 +98,7 @@ public partial class HudScene : Node
         relayoutQueued = false;
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         string typed = chatInput?.Edit.Text;
+        bool menuOpen = systemMenu?.IsOpen == true;
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         chat = null; chatInput = null; chatLog = null; chatThumb = null; target = null;
@@ -105,6 +106,7 @@ public partial class HudScene : Node
         BuildHud();
         if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
         if (chatShown.Count > 0) ShowChatLines();
+        if (menuOpen) systemMenu.Open(animate: false);
     }
 
     /// <summary>
@@ -143,7 +145,79 @@ public partial class HudScene : Node
         ExpBar(uiRoot);
         AdventureBar(uiRoot);
         GameMenu(uiRoot);
+        SystemMenuDialog(layer);
     }
+
+    SystemMenu systemMenu;          // UISystemMenuDialog (0x4e21)
+    Func<string, string> commonStrings;
+    Dictionary<string, string> channelGroupNames;
+
+    /// <summary>
+    /// The system menu, made with the HUD (CUIService registers it, uiservice.cpp:2385) and shown by Esc. Its field facts:
+    /// the map type (leave entry) and the channel group (the channel rows' prefix; none when the client country is 2,
+    /// DAT_143ab0248, cpp:309).
+    /// </summary>
+    void SystemMenuDialog(CanvasLayer layer)
+    {
+        if (commonStrings == null)
+        {
+            var strings = new GameStrings(assets.Packs, assets.Language);
+            commonStrings = strings.Common();
+            try { channelGroupNames = strings.Table("channelgroupname", "name"); } catch (Exception ex) { GD.PushWarning("channel group names: " + ex.Message); channelGroupNames = new(); }
+        }
+        FieldData fd = null;
+        try { fd = FieldData.FindByXBlock(assets.Packs, xblock); } catch (Exception ex) { GD.PushWarning("system menu field data: " + ex.Message); }
+        int mapType = fd?.MapType ?? -1;
+        string group = fd != null && channelGroupNames.TryGetValue(fd.ChannelGroupId.ToString(), out var g) ? g : "";
+        systemMenu = new SystemMenu(assets, u, stage, mapType, LeaveButtonText(mapType), commonStrings("s_word_ch"), group);
+        layer.AddChild(systemMenu);
+    }
+
+    /// <summary>
+    /// GetLeaveButtonText (uisystemmenudialog.cpp:476-507). The numeric ids are CommonString's keys (commonstringtable.cpp):
+    /// 0xaaf s_room_exit_ugc_indoor (a home outside the design, blueprint and preview states, which need the house service:
+    /// none offline), 0xab0 s_room_exit_bonus, 0xab2 s_room_exit_pvp_zone. Map types 8 and 14 format 0xab1
+    /// (s_room_exit_massive_event) with the dungeon's name, which is not resolved here: null.
+    /// </summary>
+    string LeaveButtonText(int mapType) => mapType switch
+    {
+        3 => commonStrings("s_room_exit_ugc_indoor"),
+        5 => commonStrings("s_room_exit_dungeon"),
+        7 => commonStrings("s_room_exit_bonus"),
+        8 or 14 => null,
+        9 => commonStrings("s_room_exit_pvp_zone"),
+        13 => commonStrings("s_room_exit_arcade"),
+        _ => commonStrings($"s_room_exit_name_{mapType}"),
+    };
+
+    /// <summary>
+    /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), as far as this HUD has its parts: tooltips, the cutscene
+    /// movie, the guide's text tip and fishing are not in it, a focused text field keeps Esc (the chat input takes it in
+    /// _Input), and an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
+    /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
+    /// on and is otherwise left; with none it toggles the system menu (ToggleDialog(0x4e21)).
+    /// </summary>
+    public void Escape()
+    {
+        if (systemMenu == null) return;
+        if (AnyClosableDialogOpen())
+        {
+            if (GameOptions.Current.InterfaceOption.EnableCloseAllDlg) CloseAllDialogs();
+            return;
+        }
+        systemMenu.Toggle();
+    }
+
+    /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open. None of this HUD's
+    /// dialogs is closable yet.</summary>
+    bool AnyClosableDialogOpen() => false;
+
+    /// <summary>CUIService::CloseAllDialogs: closes every closable dialog.</summary>
+    void CloseAllDialogs() { }
+
+    public bool SystemMenuOpen => systemMenu?.IsOpen == true;
+    /// <summary>The system menu, for scripted runs.</summary>
+    public SystemMenu SystemMenuForScripts => systemMenu;
 
     /// <summary>Places a movie at a position in stage units; <paramref name="factor"/> is a per-dialog size the client applies on top of the UI scale.</summary>
     MovieClipNode Place(Control parent, string movie, float factor, Vector2 stagePos)
