@@ -89,6 +89,11 @@ public sealed class GameOption
 
     static XElement Section(XDocument doc, string name) => doc.Root?.Element(name);
 
+    /// <summary>The memcmp the option pages use for "changed" (vfunc_14): every public field of the two blocks is equal.</summary>
+    public static bool SameFields<T>(T a, T b) where T : class =>
+        typeof(T).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+            .All(f => Equals(f.GetValue(a), f.GetValue(b)));
+
     /// <summary>Camera (Unk_CameraState): reset FUN_14125b430 gameoptionstruct.cpp:1119-1126, load :1130-1151, save :1155-1162.</summary>
     public sealed class Camera
     {
@@ -349,6 +354,29 @@ public sealed class GameOption
             Xml.ReadBool(d, "graphic", "showEnchantEffect", ref ShowEnchantEffect);
         }
 
+        /// <summary>LoadGameOptionGraphic in its default form (nDefault 1, gameoptionstruct.cpp:1938-1951 and :1980-1986):
+        /// quality from the benchmark, hdr and shimmer by the graphic option table, multisampling 0, effect step and shadow
+        /// from the quality, the row of the screen size (FUN_14125eb00), then the common keys of the document.</summary>
+        public void LoadDefault(XDocument d, int benchmark, Func<int, bool> hdrSupported, Func<int, bool> shimmerSupported,
+            ScreenModes modes, int screenWidth, int screenHeight)
+        {
+            Quality = benchmark;
+            DisplayHdr = hdrSupported(Quality);
+            DisplayShimmer = shimmerSupported(Quality);
+            MultisamplingIndex = 0;
+            EffectStep = Math.Clamp(Quality, 1, 3);
+            ShadowLevel = Quality;
+            modes?.PickRow(this, screenWidth, screenHeight);
+            Xml.ReadInt(d, "graphic", "fullScreen", ref ScreenMode);
+            Xml.ReadInt(d, "graphic", "brightness", ref Brightness);
+            Xml.ReadBool(d, "graphic", "showFramerate", ref ShowFrameRate);
+            Xml.ReadBool(d, "graphic", "advancedEffect", ref AdvancedEffect);
+            Xml.ReadBool(d, "graphic", "vsync", ref Vsync);
+            Xml.ReadBool(d, "graphic", "showEnchantEffect", ref ShowEnchantEffect);
+        }
+
+        public Graphic Clone() => (Graphic)MemberwiseClone();
+
         /// <summary>advancedEffect is read, never written (:1983).</summary>
         public void Save(XDocument d)
         {
@@ -377,6 +405,8 @@ public sealed class GameOption
         public int MainSoundStep, EffectSoundStep, EnviromentSoundStep, UiSoundStep, NpcSoundStep, BossSoundStep, BgmSoundStep;
         public int SystemSoundStep, MovieSoundStep, CharSoundStep = 7, InstrumentSoundStep = 10;
         public bool OffBgmWhilePlayInstrument = true;
+
+        public Sound Clone() => (Sound)MemberwiseClone();
 
         public void Load(XDocument d)
         {
@@ -491,6 +521,8 @@ public sealed class GameOption
     {
         public int OptimalHide, CustomCount;
         public bool HideAlways = true, HideBossBattle, ShowGuild, ShowParty, ShowCustom, ShowPhysx;
+
+        public Optimizer Clone() => (Optimizer)MemberwiseClone();
 
         public void Load(XDocument d)
         {

@@ -32,6 +32,17 @@ public partial class FieldAudio : Node
     /// store (<see cref="GameOptions"/>). Open sets it.</summary>
     public float MusicVolume { get; set; } = 1f;
 
+    /// <summary>The options dialog's sound save (CGameOptionSoundDefault::vfunc_10 -> FUN_14125fe20,
+    /// gameoptionstruct.cpp:2727-2752): CSoundEventMgr::SetCategoryVolume(2, ...) becomes the music volume, applied to the
+    /// playing cue at once. SetAllMute and the sound service's main volume are not carried here yet.</summary>
+    public void ApplyVolumes(Ms2.Formats.Options.SoundVolumes v)
+    {
+        MusicVolume = v.Category[2];
+        if (music != null && plan != null)
+            music.VolumeDb = Mathf.LinearToDb(plan.Loop.Volume * MusicVolume);
+        GD.Print($"audio: music volume {MusicVolume:F2}");
+    }
+
     public int BgmCue { get; private set; }
     public string BgmName => plan?.Loop.Name;
     public bool MusicPlaying => music != null && music.Playing;
