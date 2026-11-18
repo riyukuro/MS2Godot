@@ -565,8 +565,9 @@ namespace Ms2.Avm2.Flash
         /// from that movie); null = no image by that name.</summary>
         public Func<string, string, (double W, double H)?> ExportedImageSize;
 
-        /// <summary>A Bitmap standing for an image file; the renderer draws it from <see cref="AsBitmapData.Source"/>.</summary>
-        /// <summary>The size of image resource <paramref name="id"/> of a scope (its atlas rectangle, or the whole image), or null.</summary>
+        /// <summary>The size of image resource <paramref name="id"/> of a scope (its atlas rectangle, or the whole image), or null.
+        /// STILL-OPEN: an embedded DefineBits/JPEG image (tags 6, 21, 35, 90) carries no size in its tag, so the layout has
+        /// none and this gives 0x0 where the client's bitmap has the decoded size.</summary>
         static (int W, int H)? PlacedImage(SymbolScope scope, int id)
         {
             foreach (var n in scope.Layout?["subImages"] as JsonArray ?? new JsonArray())
@@ -576,6 +577,7 @@ namespace Ms2.Avm2.Flash
             return null;
         }
 
+        /// <summary>A Bitmap standing for an image file; the renderer draws it from <see cref="AsBitmapData.Source"/>.</summary>
         public AsBitmap NewBitmap(string url, int w, int h)
         {
             var bd = (AsBitmapData)RT.GetClass("flash.display.BitmapData").Construct(Rt.Box(w), Rt.Box(h));

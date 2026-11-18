@@ -77,6 +77,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public event Action OpenMyInfo;
     /// <summary>FUN_140710590: a packet to the game server.</summary>
     public Action<IOutPacket> Send = _ => { };
+    /// <summary>PlaySystemSound by its table/systemsound.xml key. STILL-OPEN: PC_InviteSuccess is byGender/byJob (a voice);
+    /// the host's table resolves a key to its first soundID, not the own gender's and job's.</summary>
+    public Action<string> PlaySound = _ => { };
     /// <summary>The message box queue's show (FUN_14151f150).</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
     /// <summary>FUN_14151f200: the queue's next box, after OnMessage's answer.</summary>
@@ -327,7 +330,11 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
                 Send(new PartyLeaveRequest());
                 break;
             case InviteToParty:                                         // InviteToParty (:3166) -> SendPartyMode1 (partymanager.cpp:761)
-                if (name.Length != 0) Send(new PartyInviteRequest(name));
+                if (name.Length != 0)
+                {
+                    Send(new PartyInviteRequest(name));
+                    PlaySound("PC_InviteSuccess");                     // PlaySystemSound(DAT_143ae2ca8) after the send
+                }
                 break;
             case KickFromParty:                                         // ConfirmExpelPartyMember (:3173)
                 if (name.Length != 0) Confirm("s_party_check_expel_member", "expelMember", name);

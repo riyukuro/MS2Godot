@@ -55,6 +55,10 @@ public class BanTextCheckerTests
         Assert.That(m, Is.EqualTo("Contains a forbidden word (badword)."));
         c.CheckCharacterName("Ab cd", out m);
         Assert.That(m, Is.EqualTo("Can't use spaces or special characters."));
+        c.CheckCharacterName("Whole", out m);
+        Assert.That(m, Is.EqualTo("This name cannot be used."));         // 0xdf has the limit bit: all_name
+        Assert.That(c.CheckClubName("Whole", out m), Is.EqualTo(9));
+        Assert.That(m, Is.EqualTo("This word cannot be used."));         // 0xd8 has not: all_word
     }
 
     [Test]

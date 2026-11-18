@@ -323,12 +323,13 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>HandlePlainTag @0x1419f9ba0, its "gameexit" branch; FUN_1419fa910 ("tag,arg") and the other plain tags
-    /// are reported as unported.</summary>
+    /// are reported as unported, except on a box with a listener: its tags (the slot menu's "expelMember:name",
+    /// "changeChief:name") are the listener's, which OnClick has already called, and no plain tag handler takes them.</summary>
     bool HandlePlainTag(int button, string tag)
     {
         if (tag == "gameexit")
             return HandleGameexitButton(button);
-        UnportedTag?.Invoke(button, tag);
+        if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
 

@@ -263,9 +263,13 @@ public sealed class BanTextChecker
         }
         int t = CheckTables(s, checks, out var matched);
         if (t != 0)
-            // GetOptionErrString with the checkers' flag set: 5 and 9 name the whole text, 6-8 quote the word found
+            // GetOptionErrString (commonstringtable.cpp:469) with bFlag = types & 1 (CheckTextOption, :597): 5 and 9 give
+            // kind 1 (0x8b8 all_name) when the limit bit is asked for, else kind 2 (0x8b7 all_word, the club name's 0xd8);
+            // 6-8 quote the word found (the checkers' flag is set)
             message = t is 5 or 9
-                ? Format("s_ban_check_err_all_name", "This name cannot be used.", matched)
+                ? (((uint)checks & 1) != 0
+                    ? Format("s_ban_check_err_all_name", "This name cannot be used.", matched)
+                    : Format("s_ban_check_err_all_word", "This word cannot be used.", matched))
                 : Format("s_ban_check_err_any_word", "Contains a forbidden word ({0}).", matched);
         return t;
     }
