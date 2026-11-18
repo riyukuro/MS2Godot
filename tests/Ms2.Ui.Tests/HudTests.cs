@@ -4,6 +4,7 @@ using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -628,6 +629,103 @@ public class HudTests
         Assert.That(Rt.ToString(h.Get(h.Get(dp, "0"), "iconPath")), Is.EqualTo("export_common_icon_megaphone6"));
         Assert.That(Rt.ToNumber(h.Get(subject, "selectedIndex")), Is.EqualTo(3));
         Assert.That(Rt.ToBoolean(h.Get(h.Child("m_chatEmoticonOpen"), "visible")), Is.True);
+    }
+
+    [Test]
+    public void MessengerTabsFilterTheLogByTheirPanelSettings()
+    {
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        Load(c, m);
+        PanelSetting entire = c.Tabs[0].Panel, items = c.Tabs[1].Panel;
+        // the entire tab: the system lines and the item lines (Require all="0" is recomputed to 1: token and auth stay 1),
+        // not meso or experience
+        Assert.That(entire["Require", "all"], Is.EqualTo(1));
+        Assert.That(entire.Hidden(TalkKind.SystemNotice), Is.False);
+        Assert.That(entire.Hidden(TalkKind.Item), Is.False);
+        Assert.That(entire.Hidden(5), Is.True);
+        Assert.That(entire.Hidden(8), Is.True);
+        Assert.That(entire.Hidden(1), Is.False);
+        // the item tab: no system lines (all recomputed to 0), the item lines, no social chat; friend notices stay
+        // (Notice all="0" is recomputed to 1 by friend and the rest, which default to 1)
+        Assert.That(items["System", "all"], Is.EqualTo(0));
+        Assert.That(items["Notice", "all"], Is.EqualTo(1));
+        Assert.That(items.Hidden(TalkKind.SystemNotice), Is.True);
+        Assert.That(items.Hidden(TalkKind.Item), Is.False);
+        Assert.That(items.Hidden(1), Is.True);
+        Assert.That(items.Hidden(0xc), Is.False);
+        Assert.That(items.Hidden(10), Is.True);
+        // kind 0x1d is never hidden; global="1" makes the shared screen setting the one both tabs use
+        Assert.That(entire.Hidden(TalkKind.TopLayer) || items.Hidden(TalkKind.TopLayer), Is.False);
+        Assert.That(c.Browser.Global, Is.True);
+        Assert.That(c.Browser.GlobalScreen.FontSize, Is.EqualTo(17));
+    }
+
+    [Test]
+    public void MessengerShowsTheSystemAndItemLinesOfItsTab()
+    {
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        var log = c.Browser;
+        string welcome = m.Tables.Common("s_msg_chatting_welcome");
+        Assert.That(welcome, Is.Not.Empty);
+        log.AddSystemLine(welcome, TalkKind.SystemNotice);
+        // s_html_chat_notice with chatTextSystemMessage and the shared font size
+        Assert.That(log.Logs.Last().Msg, Is.EqualTo(
+            $"<P><FONT color='#{m.Tables.ChatTextColors["chatTextSystemMessage"]:x}' size='17'>{welcome}</FONT></P>"));
+        var item = Item.Create(m.Tables.Items, 20300327, 0);
+        Assert.That(item, Is.Not.Null);
+        log.AddItemLine(item, 3);
+        string name = new ItemTooltip(m, 0).Name(item);
+        Assert.That(log.Logs.Last().Kind, Is.EqualTo(TalkKind.Item));
+        Assert.That(log.Logs.Last().Msg, Does.Contain($"size='17'>{name}</FONT></a> x3"));
+        // two pending lines: appended to the entire tab
+        log.Process();
+        Assert.That(log.Pending, Is.Empty);
+        var output = (AsObject)h.Child("m_textOutput");
+        string Html() => Rt.ToString(h.Get(output, "htmlText"));
+        Assert.That(Html(), Does.Contain(welcome));
+        Assert.That(Html(), Does.Contain(name));
+        // the item tab redraws from the log: the item line only
+        c.OnCallback("eventChangeTab", new object[] { "$messenger_tab_name_item" });
+        Assert.That(Html(), Does.Not.Contain(welcome));
+        Assert.That(Html(), Does.Contain(name));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerShowsTheLinesLoggedBeforeItLoaded()
+    {
+        var m = Model();
+        var log = new MessengerBrowser { Model = m };
+        string welcome = m.Tables.Common("s_msg_chatting_welcome");
+        log.AddSystemLine(welcome, TalkKind.SystemNotice);
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true, log);
+        var h = Load(c, m);
+        log.Process();
+        var output = (AsObject)h.Child("m_textOutput");
+        Assert.That(Rt.ToString(h.Get(output, "htmlText")), Does.Contain(welcome));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerLogKeepsFiveHundredLines()
+    {
+        var log = new MessengerBrowser();
+        for (int i = 0; i < 501; i++) log.AddLog("<P>" + i + "</P>", TalkKind.SystemNotice);
+        Assert.That(log.Logs.Count, Is.EqualTo(MessengerBrowser.MaxLogs));
+        Assert.That(log.Logs.First().Msg, Is.EqualTo("<P>1</P>"));
+        Assert.That(log.Pending.Count, Is.EqualTo(501));
+        log.Process();
+        Assert.That(log.Pending, Is.Empty);
+        log.AddSystemLine("", TalkKind.SystemNotice);
+        Assert.That(log.Pending, Is.Empty);
+        log.Clear();
+        Assert.That(log.Logs, Is.Empty);
+        // UIMessenger::ReplaceFontSize: only size='12' .. size='18'
+        Assert.That(MessengerBrowser.ReplaceFontSize(14, "size='12' size='18' size='19' size='17'"),
+            Is.EqualTo("size='14' size='14' size='19' size='14'"));
     }
 
     [Test]

@@ -93,6 +93,7 @@ public partial class GameFlow : Node
         {
             case State.Login: Change(LoginScene); break;
             case State.Lobby:
+                Ui.HudScene.ChatLog.Clear();                 // CSceneStateMulti::OnEnter -> FUN_141275500 (scenestatemulti.cpp:345)
                 if (GetTree().CurrentScene is Ui.LoginScene login) EnterLobbyFrom(login);
                 else Change(LobbyScene);
                 break;

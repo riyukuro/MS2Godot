@@ -22,6 +22,14 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>UIMessengerBrowser's windows (one per default messenger, LoadDefaultWindows) and UIGroupMessengerBrowser,
     /// run from their movies; built once and kept over a relayout, as the client keeps its dialogs.</summary>
     readonly List<(MovieDialog Movie, MessengerController Side)> messengers = new();
+    /// <summary>
+    /// UIMessengerBrowser's log, the lines all chat windows share. It lives in the game scene's UI, which a field move
+    /// keeps, so it outlives this scene (made again per field); FUN_141275500 (unit_141274d10_uihelpers.cpp:327) clears it
+    /// when the lobby is entered (CSceneStateMulti::OnEnter, scenestatemulti.cpp:345).
+    /// </summary>
+    public static readonly Ms2.Ui.Hud.MessengerBrowser ChatLog = new();
+    /// <summary>UISceneGame::vfunc_48's s_bWelcomeShown (uiscenegame.cpp:192): the welcome line once per run.</summary>
+    static bool welcomeShown;
     MovieDialog groupMessenger;
     MovieDialog notice;                 // uinoticedialog (UINoticeDialog)
     /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
@@ -120,6 +128,9 @@ public partial class HudScene : Node, IUiStageHost
         unwatchParty = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
+        unwatchNewItems?.Invoke();
+        unwatchNewItems = null;
+        foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         unbindBoxAnswers?.Invoke();
         unbindBoxAnswers = null;
         Ms2Godot.Net.ProfileImageService.Images.Ready -= ProfileImageReady;
@@ -476,12 +487,17 @@ public partial class HudScene : Node, IUiStageHost
     Action unwatchGemErrors;
 
     /// <summary>
-    /// FUN_141275260 (unit_141274d10_uihelpers.cpp): the common string of the id through ShowSystemNotice(text, 1, true)
-    /// (@0x1412751f0), which is UISystemText::ShowMessage(text, 1, 0), the red warning line.
-    /// STILL-OPEN: ShowSystemNotice's bLog also adds the line to the chat log (FUN_1412751b0(text, 0x14)); the chat
-    /// windows here have no log append.
+    /// FUN_141275260 (unit_141274d10_uihelpers.cpp:265): the common string of the id through ShowSystemNotice(text, 1, true)
+    /// (@0x1412751f0), which is UISystemText::ShowMessage(text, 1, 0), the red warning line, and with bLog the same text as
+    /// a chat line of kind 0x14 (FUN_1412751b0); nothing without the system text, nor for an empty string.
     /// </summary>
-    void SystemNotice(string key) => SystemText?.ShowMessage(hudModel.Tables.Common(key), Ms2.Ui.Hud.SystemTextController.Warning, 0);
+    void SystemNotice(string key)
+    {
+        string text = hudModel.Tables.Common(key);
+        if (string.IsNullOrEmpty(text) || SystemText == null) return;
+        SystemText.ShowMessage(text, Ms2.Ui.Hud.SystemTextController.Warning, 0);
+        ChatLog.AddSystemLine(text, Ms2.Ui.Hud.TalkKind.SystemNotice);
+    }
 
     // ---- minimap: uiminimapdialog run by its own ActionScript, UIMinimapDialog's C++ side as MinimapController ----------
 
@@ -657,26 +673,50 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): a chat window (UIMessenger) per
     /// table/default/DefaultMessenger&lt;i&gt;.xml, named messengerdialog&lt;i&gt;.xml, first load; then UIGroupMessengerBrowser,
-    /// the group chat bar. The saved windows of the character folder (LoadWindows :3689) are not read yet. Lines typed
-    /// are not shown: SendChat (:4208) only sends the command and the line arrives with the chat packet (0x1d), which the
-    /// live session does not carry yet.
+    /// the group chat bar, all over the shared log (<see cref="ChatLog"/>). The saved windows of the character folder
+    /// (LoadWindows :3689) are not read yet. Lines typed are not shown: SendChat (:4208) only sends the command and the
+    /// line arrives with the chat packet (0x1d), which the live session does not carry yet.
+    /// The log's lines here: the welcome line (UISceneGame::vfunc_48, uiscenegame.cpp:187: s_msg_chatting_welcome, or
+    /// s_msg_chatting_welcome_pubtest2 while the public test game event runs; game events are not modelled, so the plain
+    /// one), the system notices' copies (<see cref="SystemNotice"/>) and the new items of a live session (ItemInventory mode
+    /// 7 -> the item event dispatcher's vfunc_4, uiitemenchantdialog.cpp:2146 -> UIMessengerBrowser::vfunc_5). Of mode 7
+    /// (scenestategame.cpp:2836) the item's name (FUN_140529500, only read for a score's title) and MyPC's cube gate
+    /// (FUN_141527eb0: m_15e4, set by the cube responses 0x20 / 0x21, not ported) are left out.
     /// </summary>
     void Chat(Control ui)
     {
         var window = GetWindow().Size;
         if (messengers.Count == 0)
         {
+            ChatLog.Model = hudModel;
             var docs = hudModel.Tables.DefaultMessengers;
             for (int i = 0; i < docs.Count; i++)
             {
-                var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true) { IsKeyDown = DikHeld };
+                var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true, ChatLog) { IsKeyDown = DikHeld };
                 messengers.Add((new MovieDialog(assets, c, hudModel, window), c));
             }
             groupMessenger = new MovieDialog(assets, new GroupMessengerBrowserController(), hudModel, window);
+            if (!welcomeShown)
+            {
+                ChatLog.AddSystemLine(hudModel.Tables.Common("s_msg_chatting_welcome"), Ms2.Ui.Hud.TalkKind.SystemNotice);
+                welcomeShown = true;
+            }
+            if (Ms2Godot.Net.LiveSession.Instance is { } live)
+            {
+                Action<long, int> onNew = (uid, count) =>
+                {
+                    if (live.Items.Get(uid) is { } e && Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) is { } item)
+                        ChatLog.AddItemLine(item, (uint)count);
+                };
+                live.Items.NotifiedNew += onNew;
+                unwatchNewItems = () => live.Items.NotifiedNew -= onNew;
+            }
         }
         foreach (var (m, _) in messengers) ui.AddChild(m);
         ui.AddChild(groupMessenger);
     }
+
+    Action unwatchNewItems;
 
     /// <summary>Unk_MsgKeys::FUN_14116d7a0, a key held now, for the DIK codes the chat asks about (Tab).</summary>
     static bool DikHeld(int dik) => dik == MessengerController.DikTab && Input.IsPhysicalKeyPressed(Key.Tab);
@@ -1697,6 +1737,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Process(double delta)
     {
         PerfLog.Frame(perfState);
+        ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         shop?.Process();                                                        // UIShopDialog::vfunc_72

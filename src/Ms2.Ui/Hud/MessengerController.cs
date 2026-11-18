@@ -7,13 +7,14 @@ namespace Ms2.Ui.Hud;
 /// <summary>
 /// UIMessenger (ms2/client/ms2/uimessenger.cpp), the C++ side of a chat window (uimessengerdialog). The movie's own
 /// MessengerDialog draws everything; this side sizes and aligns the window from its option document, fills the tab bar and
-/// the chat target list, sets the screen setting of the selected tab and takes the window's keys.
+/// the chat target list, sets the screen setting of the selected tab, shows the lines of the shared log
+/// (<see cref="MessengerBrowser"/>) its tab's panel setting lets through, and takes the window's keys.
 /// UIMessengerBrowser::LoadDefaultWindows (:3149) makes one window per table/default/DefaultMessenger&lt;i&gt;.xml, named
 /// messengerdialog&lt;i&gt;.xml.
 /// Not ported yet: the character folder's saved windows (LoadWindows :3689, FUN_141a27570) and saving them (vfunc_4 :638);
-/// chat lines (the browser's log, filled by the chat packets, RecvOp 0x1d); sending a line (SendChat :4208, which only
-/// sends; the line shows when the server sends it back) and slash commands (FUN_141a10fd0); the input history; whisper,
-/// emoticon, tab menu, attach/detach and the extra components (m_2e0 / m_2f0).
+/// the chat packets' lines (RecvOp 0x1d); sending a line (SendChat :4208, which only sends; the line shows when the server
+/// sends it back) and slash commands (FUN_141a10fd0); the input history; whisper, emoticon, tab menu, attach/detach and
+/// the extra components (m_2e0 / m_2f0).
 /// </summary>
 public sealed class MessengerController : UiController
 {
@@ -32,17 +33,15 @@ public sealed class MessengerController : UiController
     /// <summary>DIK codes vfunc_13 (:810) reads.</summary>
     public const int DikReturn = 0x1c, DikTab = 0xf;
 
-    /// <summary>MessengerData::TalkTab: tabName, close, detach, additive and its panel's screen setting.</summary>
+    /// <summary>MessengerData::TalkTab: tabName, close, detach, additive and its panel setting (m_panel).</summary>
     public sealed class TalkTab
     {
         public string Name = "";
         public int Close = 1, Detach = 1, Additive;          // TalkTab() (messengerdata.cpp:706)
-        public readonly ScreenSetting Screen = new();
-        public bool Global;                                   // the "global" switch read with this tab
+        public readonly PanelSetting Panel = new();
+        public ScreenSetting Screen => Panel.Screen;
+        public bool Global;                                   // s_nGlobal after this tab was read
     }
-
-    /// <summary>MessengerData::ScreenSetting (messengerdata.cpp:374): fontSize 17, backgroundAlpha 50, showDamage 1.</summary>
-    public sealed class ScreenSetting { public int FontSize = 0x11, BackgroundAlpha = 0x32, ShowDamage = 1; }
 
     readonly XDocument doc;                                   // m_doc
     /// <summary>m_strName, the window's file name (messengerdialog&lt;i&gt;.xml).</summary>
@@ -52,9 +51,8 @@ public sealed class MessengerController : UiController
     int alignType = 7;                                        // m_nAlignType
     int tabSelectedIndex, targetSelectedIndex;                // m_nTabSelectedIndex / m_nTargetSelectedIndex
     public readonly List<TalkTab> Tabs = new();               // m_tabs
-    /// <summary>PanelSetting's s_nGlobal and the shared screen setting DAT_143adda48 (messengerdata.cpp:600, :626).</summary>
-    bool global;
-    readonly ScreenSetting globalScreen = new();
+    /// <summary>m_pBrowser, the log and panel statics all windows share.</summary>
+    public readonly MessengerBrowser Browser;
     /// <summary>UIMessengerBrowser::m_hiddenTypes (HideType, from CSceneStateGame::OnMessengerBrowserStamp).</summary>
     public readonly HashSet<int> HiddenTypes = new();
     /// <summary>CGameRule's world / channel chat discount rates (m_2b0 / m_2d0 Get(0, 0), gamerule.cpp:757, :766), set by
@@ -68,12 +66,15 @@ public sealed class MessengerController : UiController
     AsObject textInput, textOutput, buttonBar, subject, emoticonPreview;
     bool scrollEnd;                                           // m_bScrollEnd
 
-    /// <summary>The window as UIMessengerBrowser makes it: its option document, its name and m_184 (first load).</summary>
-    public MessengerController(XDocument doc, string name, bool first)
+    /// <summary>The window as UIMessengerBrowser makes it: its option document, its name, m_184 (first load) and the browser
+    /// (a window of its own when none is given); the window joins the browser's m_windows.</summary>
+    public MessengerController(XDocument doc, string name, bool first, MessengerBrowser browser = null)
     {
         this.doc = doc;
         Name = name;
         this.first = first;
+        Browser = browser ?? new MessengerBrowser();
+        Browser.Windows.Add(this);
     }
 
     /// <summary>UIMessengerBrowser::IsTypeHidden (:3614).</summary>
@@ -90,6 +91,7 @@ public sealed class MessengerController : UiController
         buttonBar = Host.Child("m_buttonBar") as AsObject;
         subject = Host.Child("m_subject") as AsObject;
         emoticonPreview = Host.Child("m_chatEmoticonPreview") as AsObject;
+        Browser.Model ??= Model;
         if (doc?.Root is { } root && root.Name.LocalName == "MessengerDialog") LoadConfig(root);
     }
 
@@ -131,9 +133,7 @@ public sealed class MessengerController : UiController
         return Tabs.Count;
     }
 
-    /// <summary>TalkTab::FUN_1414827c0 (messengerdata.cpp:718) and PanelSetting::FUN_141482220 (:620); of the panel only the
-    /// screen setting (ScreenSetting::FUN_141481480, :380) is kept here (the notice, system, require and subject filters
-    /// choose the log lines a tab shows, and there are none yet).</summary>
+    /// <summary>TalkTab::FUN_1414827c0 (messengerdata.cpp:718) and its panel (<see cref="PanelSetting.Read"/>).</summary>
     bool ReadTab(TalkTab tab, XElement t)
     {
         tab.Name = (string)t.Attribute("tabName") ?? tab.Name;
@@ -141,35 +141,37 @@ public sealed class MessengerController : UiController
         Attr(t, "detach", ref tab.Detach);
         Attr(t, "additive", ref tab.Additive);
         if (tab.Name.Length == 0) return false;
-        // XmlChild(.., true) (tinyxmlhelper.cpp:101) adds a missing element, so a missing PanelSetting or Screen reads as
-        // one without attributes
-        var panel = t.Element("PanelSetting");
-        int g = global ? 1 : 0;
-        if (panel != null) Attr(panel, "global", ref g);
-        global = g != 0;
-        ReadScreen(tab.Screen, panel);
-        if (global) ReadScreen(globalScreen, panel);
-        tab.Global = global;
+        // XmlChild(.., true) (tinyxmlhelper.cpp:101) adds a missing element, so a missing PanelSetting reads as one
+        // without attributes or children
+        tab.Panel.Read(t.Element("PanelSetting"), Browser, Model.IsFeatureEnabled);
+        tab.Global = Browser.Global;
         return true;
     }
 
-    static void ReadScreen(ScreenSetting s, XElement panel)
-    {
-        int fontSize = 0, alpha = 0;
-        if (panel?.Element("Screen") is { } e)
-        {
-            Attr(e, "fontSize", ref fontSize);
-            Attr(e, "backgroundAlpha", ref alpha);
-            Attr(e, "showDamage", ref s.ShowDamage);
-        }
-        s.FontSize = fontSize;
-        s.BackgroundAlpha = alpha;
-    }
-
     /// <summary>PanelSetting::FUN_1414821b0 (messengerdata.cpp:600): the shared setting while s_nGlobal is set.</summary>
-    ScreenSetting ScreenOf(TalkTab tab) => global ? globalScreen : tab.Screen;
+    ScreenSetting ScreenOf(TalkTab tab) => Browser.ScreenOf(tab.Panel);
 
     TalkTab FindTab(string name) => Tabs.FirstOrDefault(t => t.Name == name);     // FindTabByName (:989)
+
+    /// <summary>GetSelectedTabName (:973): ASButtonBar::GetSelectedLabel (asbuttonbar.cpp:219), the label of the data
+    /// provider's row at selectedIndex (GetLabelAt :226); "" without the bar, out of range or for a label not a string.</summary>
+    string SelectedTabName
+    {
+        get
+        {
+            if (buttonBar == null) return "";
+            int index = (int)Rt.ToNumber(Host.Get(buttonBar, "selectedIndex"));
+            if (index < 0 || Host.Get(buttonBar, "dataProvider") is not AsObject dp) return "";
+            if (index >= (int)Rt.ToNumber(Host.Get(dp, "length"))) return "";
+            return Host.Get(dp, index.ToString(CultureInfo.InvariantCulture)) is AsObject row && Host.Get(row, "label") is string label ? label : "";
+        }
+    }
+
+    /// <summary>GetCurrentTab (:981): the only tab, else the bar's selected one.</summary>
+    public TalkTab CurrentTab => Tabs.Count == 1 ? Tabs[0] : FindTab(SelectedTabName);
+
+    /// <summary>FUN_141a131a0 (:1646): a line the tab does not show (no tab shows none).</summary>
+    static bool Hidden(TalkTab tab, int kind) => tab == null || tab.Panel.Hidden(kind);
 
     /// <summary>AddTab (:1051): a new name joins m_tabs and the bar's data provider as {label, close, detach}.</summary>
     bool AddTab(TalkTab tab)
@@ -298,21 +300,37 @@ public sealed class MessengerController : UiController
         Host.Invoke(c, "validateNow");
     }
 
-    /// <summary>ReselectCurrentTab (:1121): vfunc_97 with the bar's selected label (GetSelectedTabName :973).</summary>
-    void ReselectCurrentTab() => SelectTab(buttonBar != null ? Rt.ToString(Host.Get(buttonBar, "selectedLabel")) : "");
+    /// <summary>ReselectCurrentTab (:1121): vfunc_97 with the bar's selected label.</summary>
+    public void ReselectCurrentTab() => SelectTab(SelectedTabName);
 
     /// <summary>
-    /// vfunc_97 (:2237): the output shows the tab's lines (the browser's log, none yet) at the tab's font size, the
-    /// background takes the tab's alpha (SetBackgroundAlpha :1156), and the bar's selection is kept.
+    /// vfunc_97 (:2237): the output shows the log's lines the tab lets through at the tab's font size (ReplaceFontSize
+    /// :1143), the background takes the tab's alpha (SetBackgroundAlpha :1156), the bar's selection is kept, and the
+    /// browser counts the whole log as shown.
     /// </summary>
     void SelectTab(string name)
     {
         var tab = FindTab(name);
         if (tab == null) return;
+        var html = new System.Text.StringBuilder();
+        foreach (var log in Browser.Logs)
+            if (!Hidden(tab, log.Kind)) html.Append(log.Msg);
         var screen = ScreenOf(tab);
+        string text = MessengerBrowser.ReplaceFontSize((uint)screen.FontSize, html.ToString());
         Host.Invoke("backgroundAlpha", (uint)screen.BackgroundAlpha);
-        SetOutput("", true);
+        SetOutput(text, true);
         if (buttonBar != null) tabSelectedIndex = (int)Rt.ToNumber(Host.Get(buttonBar, "selectedIndex"));
+        Browser.Drawn();
+    }
+
+    /// <summary>vfunc_88 (:2128): a new line the current tab shows is appended at its font size; false = no tab.</summary>
+    public bool AppendLine(string msg, int kind)
+    {
+        var tab = CurrentTab;
+        if (tab == null) return false;
+        if (Hidden(tab, kind)) return true;
+        SetOutput(MessengerBrowser.ReplaceFontSize((uint)ScreenOf(tab).FontSize, msg), false);
+        return true;
     }
 
     int MaxScrollV() => textOutput != null && Host.Get(textOutput, "textField") is AsObject tf ? (int)Rt.ToNumber(Host.Get(tf, "maxScrollV")) : 0;

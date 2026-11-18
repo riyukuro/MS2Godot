@@ -269,12 +269,13 @@ public sealed class GameTables
         (4, "HonorTokenMax"), (5, "KarmaTokenMax"), (6, "LuTokenMax"), (7, "HabiTokenMax"), (0xc, "ReverseCoinMax"),
         (0xd, "MentorTokenMax"), (0xe, "MenteeTokenMax"),
     };
-    /// <summary>The chat colour constants (table/colorconstants.xml; Define defaults 0xffffff, constantsblocks.cpp:1426-1437),
-    /// read as the subject colours s_color10 / 16..20 (texttohtml.cpp:300-310).</summary>
+    /// <summary>The chat colour constants (table/colorconstants.xml; Define defaults 0xffffff, constantsblocks.cpp:1426-1438),
+    /// read as the subject colours s_color10 / 16..20 (texttohtml.cpp:300-310) and the system line colour s_color21.</summary>
     public readonly Dictionary<string, uint> ChatTextColors = new()
     {
         ["chatTextNormal"] = 0xffffff, ["chatTextParty"] = 0xffffff, ["chatTextGuild"] = 0xffffff,
         ["chatTextSuper"] = 0xffffff, ["chatTextWorld"] = 0xffffff, ["chatTextChannel"] = 0xffffff,
+        ["chatTextSystemMessage"] = 0xffffff,
     };
     /// <summary>The default messenger windows' documents (table/default/defaultmessenger&lt;i&gt;.xml), in order.</summary>
     public readonly List<System.Xml.Linq.XDocument> DefaultMessengers = new();
