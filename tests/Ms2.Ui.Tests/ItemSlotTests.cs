@@ -49,6 +49,24 @@ public class ItemSlotTests
     }
 
     [Test]
+    public void GenderAndJobLimitsAreTheClients()
+    {
+        var d = new ItemData();
+        Assert.That((d.IsGenderAllowed(0), d.IsGenderAllowed(1)), Is.EqualTo((true, true)), "genderLimit 2: any");
+        d.GenderLimit = 1;
+        Assert.That((d.IsGenderAllowed(0), d.IsGenderAllowed(1)), Is.EqualTo((false, true)));
+        Assert.That((d.IsJobAllowed(0), d.IsJobAllowed(30)), Is.EqualTo((false, true)), "job 0 never; an empty jobLimit any");
+        d.JobLimit.Add(10); d.JobLimit.Add(20);
+        Assert.That((d.IsJobAllowed(1), d.IsJobAllowed(20), d.IsJobAllowed(30)), Is.EqualTo((true, true, false)), "job 1 counts as 10");
+        d.DisableJobLimit.Add(20);
+        Assert.That(d.IsJobAllowed(20), Is.False, "a disabled job");
+        d.JobLimit.Add(1);
+        Assert.That(d.IsJobAllowed(30), Is.True, "a jobLimit entry of 1: any");
+        var t = new GameTables(Packs(), "en").Items.Get(20300327);
+        Assert.That((t.GenderLimit, t.JobLimit.Count), Is.EqualTo((2, 0)));
+    }
+
+    [Test]
     public void BindNewItemSlotHasTheItemAndItsCount()
     {
         var model = NewModel();

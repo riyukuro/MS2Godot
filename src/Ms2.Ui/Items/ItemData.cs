@@ -45,6 +45,10 @@ public sealed class ItemData
     public int TransferType, EnableBreak;
     public bool ShopSell;
     public readonly SortedSet<int> RecommendJobs = new();      // XmlTokenList (",") into std::set
+    /// <summary>ItemLimit genderLimit (:572; the ctor's 2, any gender).</summary>
+    public int GenderLimit = 2;
+    /// <summary>ItemLimit jobLimit / disableJobLimit (:585-586, XmlTokenList ",").</summary>
+    public readonly List<int> JobLimit = new(), DisableJobLimit = new();
     // ItemSkill::LoadXml (itemdatastruct.cpp:871)
     public int SkillId;
     /// <summary>&lt;basic stringTag&gt;: the tag name, which CItemData::Load maps through CItemDataTable::GetTagByName (itemdatatable.cpp:578,
@@ -98,6 +102,11 @@ public sealed class ItemData
             if (globalTransferType && l.Attribute("globalTransferType") != null) Int(l, "globalTransferType", ref d.TransferType);
             Bool(l, "shopSell", ref d.ShopSell);
             Int(l, "enableBreak", ref d.EnableBreak);
+            Int(l, "genderLimit", ref d.GenderLimit);
+            if ((string)l.Attribute("jobLimit") is { } jl)
+                foreach (var t in jl.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.JobLimit.Add(Atoi(t));
+            if ((string)l.Attribute("disableJobLimit") is { } dj)
+                foreach (var t in dj.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.DisableJobLimit.Add(Atoi(t));
             if ((string)l.Attribute("recommendJobs") is { } jobs)
                 foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.RecommendJobs.Add(Atoi(t));
         }
@@ -190,6 +199,21 @@ public sealed class ItemData
         || (HasFunction ? FunctionName != "TreasureMap" : Type == 4);
     /// <summary>FUN_14053e900 (:1460): a gem's subtype, else 0.</summary>
     public int GemSubtype => IsGemItem ? Subtype : 0;
+
+    /// <summary>CItemData::IsGenderAllowed (itemdata.cpp:610): genderLimit 2 is any, else the same gender.</summary>
+    public bool IsGenderAllowed(int gender) => GenderLimit == 2 || GenderLimit == gender;
+
+    /// <summary>ItemLimit::IsJobAllowed (itemdatastruct.cpp:690): job 0 never; a disabled job no; then (job 1 counted as 10) a
+    /// jobLimit entry of 0, 1 or the job yes; else only an empty jobLimit.</summary>
+    public bool IsJobAllowed(int job)
+    {
+        if (job == 0) return false;
+        if (DisableJobLimit.Contains(job)) return false;
+        if (job == 1) job = 10;
+        foreach (var l in JobLimit)
+            if (l == 0 || l == 1 || l == job) return true;
+        return JobLimit.Count == 0;
+    }
 
     /// <summary>ItemLimit::IsJobRecommended (itemdatastruct.cpp:716): any job when the set is empty; job 1 counts as 10.</summary>
     public bool IsJobRecommended(int job)
