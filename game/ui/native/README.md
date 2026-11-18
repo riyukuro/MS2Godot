@@ -20,7 +20,6 @@ Screens:
 
 | Scene | Shows | Args after `--` |
 |---|---|---|
-| `native_login.tscn` | the login dialog (uilogindialog) | `--native-shots DIR` |
 | `native_hud.tscn` | the field with the quick slots and orb, EXP bar and game menu | `--native-hudshot DIR` |
 | `native_widgets.tscn` | a test bench for the widgets | `--native-shots DIR` |
 
