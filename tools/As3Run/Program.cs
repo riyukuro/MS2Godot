@@ -170,9 +170,12 @@ switch (pos[0])
         p.StageW = 1920; p.StageH = 1080;
         var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(packs, "en"));
         Ms2.Ui.UiFixture.Apply(model);
+        model.FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(packs, f);
         var h = new Ms2.Ui.UiHost(p, c, model);
         Console.WriteLine($"mode {(Interp.UseOracle ? "oracle" : GeneratedCode.Count > 0 ? "compiled" : "interpreter")} load={h.Load()} tab={c.GetTab()} sub={c.GetSubTab()}");
         for (int i = 0; i < 30; i++) p.Tick();
+        var tabs = rt.GetProperty(h.Child("m_tab"), Name.Public("dataProvider"));
+        Console.WriteLine($"tabs: {Rt.Describe(rt.GetProperty(tabs, Name.Public("length")))}");
         var list = (AsDisplayObject)h.Child("m_questList");
         void Show(string when)
         {
@@ -248,6 +251,9 @@ switch (pos[0])
         var keys = byKey.Keys.Where(k => only == null || k.Contains(only)).OrderBy(k => k).ToList();
         int clean = 0, constructed = 0, total = 0, noCode = 0;
         var missingMovies = new Dictionary<string, HashSet<string>>();
+        var missingHits = new Dictionary<string, long>();
+        long totalErrors = 0, totalMissingHits = 0;
+        var perMovie = new List<(string Key, int Errors, int Missing, long Hits)>();
         var errorKinds = new Dictionary<string, HashSet<string>>();
         var rows = new StringBuilder();
         var sw = Stopwatch.StartNew();
@@ -264,12 +270,22 @@ switch (pos[0])
             bool isClean = ok && rt.Errors.Count == 0 && rt.Missing.Keys.All(m => m.StartsWith("data: "));
             if (isClean) clean++;
             foreach (var m in rt.Missing.Keys) missingMovies.GetOrAdd(m).Add(k);
+            foreach (var (m, n) in rt.Missing) { missingHits[m] = missingHits.GetValueOrDefault(m) + n; totalMissingHits += n; }
+            totalErrors += rt.Errors.Count;
+            perMovie.Add((k, rt.Errors.Count, rt.Missing.Count, rt.Missing.Values.Sum(v => (long)v)));
             foreach (var e in rt.Errors) errorKinds.GetOrAdd(Shorten(e)).Add(k);
             rows.AppendLine($"{k}\t{(isClean ? "CLEAN" : ok ? "RAN" : "FAILED")}\terrors={rt.Errors.Count}\tmissing={rt.Missing.Count}\tms={sw.ElapsedMilliseconds - t0}\t{string.Join(" | ", rt.Errors.Take(2))}");
             Console.Error.Write($"\r{total}/{keys.Count} clean={clean}   ");
         }
         var rep = new StringBuilder();
         rep.AppendLine($"movies {total}, document class constructed {constructed}, clean (no error, no missing API in {frames} frames) {clean}, movies without code {noCode}, {sw.Elapsed.TotalSeconds:0}s");
+        rep.AppendLine($"errors {totalErrors} in {perMovie.Count(x => x.Errors > 0)} movies; missing APIs {missingHits.Count} distinct, {totalMissingHits} hits, in {perMovie.Count(x => x.Missing > 0)} movies");
+        rep.AppendLine();
+        rep.AppendLine("## Movies with the most errors + missing APIs (errors, distinct missing, missing hits)");
+        foreach (var x in perMovie.OrderByDescending(x => x.Errors + x.Missing).ThenByDescending(x => x.Hits).Take(10)) rep.AppendLine($"{x.Key}\t{x.Errors}\t{x.Missing}\t{x.Hits}");
+        rep.AppendLine();
+        rep.AppendLine("## Missing APIs by hits (hits, movies)");
+        foreach (var (m, n) in missingHits.OrderByDescending(x => x.Value).Take(20)) rep.AppendLine($"{n,8}  {missingMovies[m].Count,4}  {m}");
         rep.AppendLine();
         rep.AppendLine("## Missing APIs (by movies affected)");
         foreach (var (m, s) in missingMovies.OrderByDescending(x => x.Value.Count).Take(80)) rep.AppendLine($"{s.Count,4}  {m}");

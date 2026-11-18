@@ -93,6 +93,7 @@ public sealed class UiHost
 
     void InstallShared()
     {
+        CommonCallback();
         if (RT.GetClass("scaleform.ms2.Data.MS2DataModel") is { } dm)
         {
             Static(dm, "getUserData", a =>
@@ -117,6 +118,18 @@ public sealed class UiHost
             Static(gm, "getSlotTooltip", a => null);
             Static(gm, "getBagSlotBindings", a => ToAs(Controller.GetBagSlotBindings(Rt.ToString(a.ElementAtOrDefault(0)))));
         }
+    }
+
+    /// <summary>
+    /// GFxMovie::InvokeCommonCallback (gfxmovie.cpp:334) with the callback CUIService sets, FUN_141ade430
+    /// (uiservice.cpp:3185): members of scaleform.ms2.common.Common. Only the feature list is set here; the stage margins
+    /// (FUN_1418dd0c0 / dd110 / dd0d0, from DAT_1439f8ccc, DAT_1439f8cd0, DAT_1439f8cc8), the tooltip label width
+    /// and the meso / numeric text functions are not yet.
+    /// </summary>
+    void CommonCallback()
+    {
+        if (Model.FeatureEnabledByName == null || RT.GetClass("scaleform.ms2.common.Common") is not { } common) return;
+        RT.SetProperty(common, Name.Public("m_currentFeatureByString"), FeatureTable.EnabledString(Model.FeatureEnabledByName));
     }
 
     void Static(AsClass cls, string name, Func<object[], object> f) =>

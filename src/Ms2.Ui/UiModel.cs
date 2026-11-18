@@ -79,6 +79,11 @@ public sealed class UiModel
     public void Notify(StatusEvent e) => Changed?.Invoke(e);
     public DateTime Now => ServerTime?.Invoke() ?? DateTime.Now;
     public bool IsFeatureEnabled(int id) => Features.Contains(id);
+    /// <summary>
+    /// CFeatureManager by name (table/feature.xml level within the server type's level): what the movies' Common class is
+    /// told (<see cref="FeatureTable.EnabledString"/>). Null: the host has no feature table and the movies see none on.
+    /// </summary>
+    public Func<string, bool> FeatureEnabledByName;
 
     // ---- what the controllers compute from the state (the client's helper functions) ----
 

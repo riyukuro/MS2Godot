@@ -2,6 +2,7 @@ using Godot;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2Godot.Ui.Contracts;
+using LobbyFeatures = Ms2.Ui.LobbyFeatures;
 
 namespace Ms2Godot.Ui;
 

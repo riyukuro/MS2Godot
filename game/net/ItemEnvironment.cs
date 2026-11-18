@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2Godot.Ui;
+using LobbyFeatures = Ms2.Ui.LobbyFeatures;
 namespace Ms2Godot.Net;
 
 /// <summary>

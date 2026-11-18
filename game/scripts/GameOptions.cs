@@ -75,7 +75,7 @@ public static class GameOptions
                 GD.PushWarning("options: no GameOption.xml and no default, using reset values");
                 doc = new XDocument(new XElement("ms2"));
             }
-            current.Load(doc, name => packs != null && Ui.LobbyFeatures.IsEnabled(packs, name));
+            current.Load(doc, name => packs != null && Ms2.Ui.LobbyFeatures.IsEnabled(packs, name));
         }
         catch (Exception ex)
         {

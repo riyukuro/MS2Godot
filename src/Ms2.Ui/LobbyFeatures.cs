@@ -1,7 +1,7 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 
-namespace Ms2Godot.Ui;
+namespace Ms2.Ui;
 
 /// <summary>
 /// CFeatureManager::IsFeatureEnabled as the KR client runs it: a feature is on when its level in table/feature.xml (the
