@@ -44,6 +44,9 @@ public sealed class ClientSession {
         if (cmd == 2) return true;
         if (cmd > 1) return false;
         int time = r.ReadInt();
+        r.ReadLong();                                    // the server time (SyncServerTime)
+        int zone = r.ReadInt(); byte flag = r.ReadByte();
+        MsTime.SetTimeZone(zone, flag);                  // CMsTime::SetTimeZone(zone, flag) for kinds 0 and 1 (networkservice.cpp:756-779)
         serverTickBase = time; localTickBase = ElapsedMs; hasServerTick = true;   // volatile write publishes the bases
         return cmd == 1;
     }

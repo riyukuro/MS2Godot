@@ -70,7 +70,8 @@ public sealed class LobbyCharacterData
     /// </summary>
     public static string Date(long unixSeconds)
     {
-        var t = DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime;
+        // FUN_14083bab0(CMsTime(m_70), "/"): the calendar date in the server's zone (CMsTime::GetLocalTm)
+        var t = Ms2.Net.MsTime.LocalTm(unixSeconds);
         return $"{t.Year:D4}/{t.Month:D2}/{t.Day:D2}";
     }
 
