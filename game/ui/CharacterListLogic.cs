@@ -148,6 +148,9 @@ public sealed class CharacterListLogic
             var r = rows[i];
             bool sel = i == index;
             r.Clip.GotoLabel(sel ? "selected_up" : "up");
+            // CharacterRenderer.updateAfterStateChange: m_moveButton (the up/down swap arrows) hidden, then shown again
+            // only on the selected row when it is not empty
+            r.Clip.SetNamedVisible("m_moveButton", sel && !r.Empty);
             if (r.Data == null) continue;
             // setJobIcon: m_jobicon or m_jobicon_sel to the frame "_" + jobcode
             foreach (var name in new[] { "m_jobicon", "m_jobicon_sel" })
