@@ -7,6 +7,7 @@ using Ms2.Swf.Abc;
 //   AbcProbe stats [--data DIR]                 opcode histogram, classes, external references, shared code over every movie
 //   AbcProbe dump <movie> [--class SUBSTR] [--out FILE]   pseudo C# for the classes of one movie
 //   AbcProbe classes <movie>                    class list with super classes
+//   AbcProbe contract [--out FILE]              TSV over every movie: classes, method signatures, ExternalInterface.call and getUserData sites
 string data = Environment.GetEnvironmentVariable("MS2_DATA");
 bool dyn = false; var pos = new List<string>(); string classFilter = null, outFile = null;
 for (int i = 0; i < args.Length; i++)
@@ -56,6 +57,48 @@ switch (pos[0])
         return 0;
     }
     case "stats": return Stats.Run(packs);
+    case "contract":
+    {
+        // TSV over every movie: class rows, instance method signatures, ExternalInterface.call sites (one line of
+        // decompiled code each). The input of the C++ <-> AS data contract; shared library classes show up in many movies.
+        var w = new StringBuilder();
+        var rx = new System.Text.RegularExpressions.Regex("ExternalInterface\\.call\\(.*?, \\\"(\\w+)\\\"");
+        var ud = new System.Text.RegularExpressions.Regex("getUserData\\([^,]+, \\\"(\\w+)\\\"");
+        foreach (var e in packs.List("Resource/Gfx").Where(e => e.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e))
+        {
+            SwfMovie sm;
+            try { sm = SwfMovie.Parse(packs.Read("Resource/Gfx", e)); } catch (FormatException) { continue; }
+            var movie = Path.GetFileNameWithoutExtension(e).ToLowerInvariant();
+            foreach (var (_, raw) in sm.AbcBlocks)
+            {
+                var abc = AbcFile.Parse(raw);
+                var d = new Decompiler(abc) { AllDynamic = true };
+                for (int ci = 0; ci < abc.Instances.Length; ci++)
+                {
+                    var cn = abc.ClassName(ci);
+                    w.Append("class\t").Append(movie).Append('\t').Append(cn).Append('\t').AppendLine(abc.Name(abc.Instances[ci].Super));
+                    foreach (var t in abc.Instances[ci].Traits)
+                    {
+                        if (t.Kind is not (TraitKind.Method or TraitKind.Setter)) continue;
+                        var mi = abc.Methods[t.MethodIndex];
+                        var ps = Enumerable.Range(0, mi.ParamCount).Select(i => (mi.ParamNames != null && i < mi.ParamNames.Length ? mi.ParamNames[i] : "p" + i) + ":" + abc.Local(mi.ParamTypes[i]));
+                        if (mi.NeedRest) ps = ps.Append("...rest");
+                        w.Append(t.Kind == TraitKind.Setter ? "set\t" : "fn\t").Append(movie).Append('\t').Append(cn).Append('\t').Append(abc.Local(t.Name)).Append('\t')
+                         .Append(string.Join(", ", ps)).Append('\t').AppendLine(abc.Local(mi.ReturnType));
+                    }
+                    foreach (var line in d.Class(ci).Split('\n'))
+                    {
+                        foreach (System.Text.RegularExpressions.Match mt in ud.Matches(line))
+                            w.Append("ud\t").Append(movie).Append('\t').Append(cn).Append('\t').Append(mt.Groups[1].Value).Append('\t').AppendLine(line.Trim().Replace('\t', ' '));
+                        foreach (System.Text.RegularExpressions.Match mt in rx.Matches(line))
+                            w.Append("cb\t").Append(movie).Append('\t').Append(cn).Append('\t').Append(mt.Groups[1].Value).Append('\t').AppendLine(line.Trim().Replace('\t', ' '));
+                    }
+                }
+            }
+        }
+        File.WriteAllText(outFile ?? "contract.tsv", w.ToString());
+        return 0;
+    }
     case "decompile-all":
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();

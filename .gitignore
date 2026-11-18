@@ -19,3 +19,7 @@ shots/
 build/
 shots_*/
 game/shots_*/
+
+# AS3 translator output: produced from the player's own Gfx.m2d, never committed
+game/generated/
+*.ms2gen.cs
