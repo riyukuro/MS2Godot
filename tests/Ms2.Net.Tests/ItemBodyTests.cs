@@ -57,6 +57,7 @@ public class ItemBodyTests {
         var g = it.Socket.Gems[1];
         Assert.That((g.GemId, g.HasBind, g.BindCharacterId, g.BindName, g.HasLock, g.LockState, g.LockExpireTime), Is.EqualTo((40000001, true, 78L, "Gem", true, (byte) 1, 500L)));
         Assert.That((it.CoupleId, it.CoupleName, it.CoupleFlag, it.BindingId, it.BindingName), Is.EqualTo((9L, "Partner", true, 79L, "Owner")));
+        Assert.That(it.HasUgc, Is.False);
     }
 
     [Test] public void AReReadStartsTheBlocksOverLikeTheClient() {
@@ -71,5 +72,30 @@ public class ItemBodyTests {
         Assert.That((it.Transfer.HasBinding, it.Transfer.BindingName), Is.EqualTo((true, "Solo")));
         Assert.That((it.CoupleId, it.CoupleName), Is.EqualTo((0L, "Partner")));
         Assert.That((it.BindingId, it.BindingName), Is.EqualTo((0L, "")));
+    }
+
+    [Test] public void TheUgcFlagIsTheReadBlock() {
+        var w = new ByteWriter(); w.WriteInt(11400021); w.WriteLong(55); w.WriteByte((byte) EquipSlot.CL); w.WriteInt(1);
+        var full = new ByteWriter(); Body(full, false);
+        var body = full.Buffer.AsSpan(0, full.Length).ToArray();
+        int cut = Measure(false);                                                   // the bytes before the transfer block
+        w.WriteBytes(body[..cut]);
+        // UgcItemLook, then the blueprint
+        w.WriteLong(5); w.WriteUnicodeString("5"); w.WriteUnicodeString("Look"); w.WriteByte(0); w.WriteInt(0); w.WriteLong(0); w.WriteLong(0);
+        w.WriteUnicodeString(""); w.WriteLong(0); w.WriteUnicodeString(""); w.WriteByte(0);
+        w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteLong(0); w.WriteLong(0); w.WriteUnicodeString("");
+        w.WriteBytes(body[cut..]);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        var it = ItemReader.ReadEquip(r);
+        Assert.That(it.HasUgc, Is.True);
+        Assert.That(r.ReadInt(), Is.EqualTo(-12345));
+    }
+
+    // the length of the body up to the transfer block: the header, colour, status, enchant and limit break
+    static int Measure(bool full) {
+        var w = new ByteWriter(); Body(w, full);
+        var b = w.Buffer.AsSpan(0, w.Length).ToArray();
+        // transfer + socket + couple + binding + marker of the plain body: 4+1+4+4+1+1+1, 1+1, 8, 8+2, 4
+        return b.Length - (16 + 2 + 8 + 10 + 4);
     }
 }

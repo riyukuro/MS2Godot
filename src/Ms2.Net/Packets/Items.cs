@@ -30,6 +30,9 @@ public sealed class EquipItem {
     public byte LockState; public long UnlockTime;
     /// <summary>CItem m_d8 (u16), m_d4 (bool), m_dc (item.cpp:2667-2669).</summary>
     public ushort GlamorForges; public bool D4; public int GachaDismantleId;
+    /// <summary>The UGC block was read: CItem has m_spUgc exactly when it reads it (both on HasCubeTextureMesh or
+    /// FUN_140526010, item.cpp:2672 and :2774).</summary>
+    public bool HasUgc;
     /// <summary>CItemStatus (itemsocketsystemutil.cpp:1868): the option sets, the enchant and the limit break.</summary>
     public ItemOptions Options = new();
     public ItemEnchant Enchant = new();
@@ -231,7 +234,8 @@ public static class ItemReader {
         for (uint i = 0; i < n; i++) { int id = (ushort) r.ReadShort(); lb.Special[id] = r.ReadInt(); }
 
         var extra = forceExtra ?? (badge ? ItemExtra.Gem : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None);
-        if ((extra & ItemExtra.Ugc) != 0) {
+        it.HasUgc = (extra & ItemExtra.Ugc) != 0;
+        if (it.HasUgc) {
             ReadUgcLook(r);
             // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
             r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
