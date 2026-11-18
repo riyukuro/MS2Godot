@@ -238,6 +238,23 @@ public class HudTests
     }
 
     [Test]
+    public void MinimapFieldNameTooltip()
+    {
+        var m = Model();
+        m.Field.Name = "Tria";
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) };
+        Load(c, m);
+        Assert.That(c.GetUserData("getTooltip", new object[] { "m_fieldname" }), Is.Null, "no field data, no tooltip");
+        m.Field.MapLevel = 10;
+        var d = c.GetUserData("getTooltip", new object[] { "m_fieldname" });
+        Assert.That(d["text"], Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_minimap_tooltip_field_info"), "Tria", 10u)));
+        Assert.That(d["tooltipAlign"], Is.EqualTo(7));
+        var shown = TooltipTests.Draw(d);
+        TestContext.WriteLine("m_fieldname: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Tria"));
+    }
+
+    [Test]
     public void QuestGuideBuildsTrackedQuests()
     {
         var m = Model();

@@ -52,6 +52,8 @@ public sealed class FieldState
     public string XBlock = "";
     /// <summary>The map's display name (string table mapname).</summary>
     public string Name = "";
+    /// <summary>The map's CFieldDataCli m_nMapLevel; null when the map has no field data (CFieldDataCli::Find fails).</summary>
+    public int? MapLevel;
     public int Channel = 1;
     public int[] Channels = { 1 };
 }

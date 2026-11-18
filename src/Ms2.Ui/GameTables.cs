@@ -32,6 +32,10 @@ public sealed class GameTables
         jobNames = s.Table("jobname", "name");
         mapNames = s.Table("mapname", "name");
         mapTileDescs = s.Table("maptiledesc", "name");
+        // CommonResource::LoadMembers (commonresource.cpp:91): Table/commonResource.xml, each member <KEY value="..."/>
+        if (packs.Exists("Xml", "table/commonresource.xml"))
+            foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/commonresource.xml")).Root.Elements())
+                commonResource.TryAdd(e.Name.LocalName, (string)e.Attribute("value") ?? "");
         common = s.Common();
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
@@ -51,6 +55,11 @@ public sealed class GameTables
     static (float, float, float) Unpack(uint c) => (((c >> 16) & 0xff) / 255f, ((c >> 8) & 0xff) / 255f, (c & 0xff) / 255f);
     static uint Rgb((float r, float g, float b) c)
         => ((uint)MathF.Round(c.r * 255) << 16) | ((uint)MathF.Round(c.g * 255) << 8) | (uint)MathF.Round(c.b * 255);
+
+    readonly Dictionary<string, string> commonResource = new();
+
+    /// <summary>A CommonResource member by its commonResource.xml key (e.g. HDR_PATH); "" when absent.</summary>
+    public string CommonResource(string key) => commonResource.TryGetValue(key, out var v) ? v : "";
 
     /// <summary>Exp needed from <paramref name="level"/> to the next level; 0 = unknown level.</summary>
     public long NextExp(int level) => nextExp.TryGetValue(level, out var v) ? v : 0;

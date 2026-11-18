@@ -42,6 +42,34 @@ public class TooltipTests
     [TearDown]
     public void Drop() => UiHost.Tooltips = null;
 
+    static Dictionary<string, string> flash;
+
+    /// <summary>The tooltip movie draws <paramref name="data"/> (createTooltip as a dialog's TooltipManager sends it, with
+    /// the movie's "$" strings from korflash): the texts it shows.</summary>
+    internal static List<string> Draw(IDictionary<string, object> data)
+    {
+        Packs();
+        if (flash == null)
+        {
+            flash = new();
+            using var xr = System.Xml.XmlReader.Create(new MemoryStream(Packs().Read("Xml", "string/en/korflash.xml")));
+            while (xr.Read())
+                if (xr.NodeType == System.Xml.XmlNodeType.Element && xr.Name == "key" && xr.GetAttribute("id") is { } id && xr.GetAttribute("value") is { } v)
+                    flash[id] = v.Replace("\\n", "\n");
+        }
+        var tc = new TooltipController();
+        var (rt, p) = src.Open(tc.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => flash.TryGetValue(k, out var t) ? t : k;
+        var th = new UiHost(p, tc, NewModel());
+        Assert.That(th.Load(), Is.True);
+        for (int i = 0; i < 5; i++) p.Tick();
+        tc.Call("createTooltip", new object[] { 1, data, new Dictionary<string, object> { ["x"] = 600, ["y"] = 300, ["width"] = 40, ["height"] = 20 } });
+        for (int i = 0; i < 30; i++) p.Tick();
+        Assert.That(rt.Errors, Is.Empty, string.Join("; ", rt.Errors));
+        return Texts(p.Stage).Select(t => t.Text).Where(t => t.Length > 0).ToList();
+    }
+
     [Test]
     public void TextTooltipIsTheClientsObject()
     {

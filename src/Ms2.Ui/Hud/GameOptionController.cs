@@ -34,6 +34,26 @@ public sealed class GameOptionController : UiController, IOptionTab
     /// <summary>UIDialog::vfunc_67, the movie's close tween.</summary>
     public void CloseMovie() => base.Close();
 
+    /// <summary>
+    /// vfunc_49 @0x141943230 (uigameoptiondialog.cpp:321): the image option tooltip of "m_hdr" and "m_shimmer": the
+    /// description, on and off texts (string ids the movie localizes) and CommonResource m_strHdrPath (HDR_PATH) /
+    /// m_strDistortionPath (distortion_path) as the image.
+    /// </summary>
+    public override IDictionary<string, object> GetTooltip(object[] args)
+    {
+        string name = Rt.ToString(args.ElementAtOrDefault(0));
+        string kind = name switch { "m_hdr" => "hdr", "m_shimmer" => "shimmer", _ => null };
+        if (kind == null) return null;
+        return new Dictionary<string, object>
+        {
+            ["tooltip"] = "export_common_tooltip_tooltipImageOption",
+            ["optionDesc"] = "$s_gameoption_tooltip_" + kind,
+            ["optionOn"] = "$s_gameoption_tooltip_" + kind + "_on",
+            ["optionOff"] = "$s_gameoption_tooltip_" + kind + "_off",
+            ["imgPath"] = Model.Tables.CommonResource(kind == "hdr" ? "HDR_PATH" : "distortion_path"),
+        };
+    }
+
     /// <summary>vfunc_28 @0x141942cc0 takes OnCloseDialog itself (the modified / quick-slot checks) before UIDialog's.</summary>
     public override bool OnCallbackBeforeDialog(string name, object[] args) =>
         string.Equals(name, "OnCloseDialog", StringComparison.OrdinalIgnoreCase) && Dialog.Call(name, args);

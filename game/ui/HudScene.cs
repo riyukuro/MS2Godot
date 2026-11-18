@@ -45,7 +45,7 @@ public partial class HudScene : Node
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
-    string tooltipShot;                     // --uigen-tooltip NAME: the pointer on that game menu entry (its tooltip shows)
+    string hoverShot;                       // --uigen-hover MOVIE:a.b.c: the pointer on that child of a hosted movie (its tooltip shows)
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
@@ -66,7 +66,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--worldmap") worldMapShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
-        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-tooltip") tooltipShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-hover") hoverShot = args[i + 1];
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -424,6 +424,7 @@ public partial class HudScene : Node
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
         var model = NewModel();
         model.Field.Name = MapName();
+        try { model.Field.MapLevel = FieldData.FindByXBlock(assets.Packs, xblock)?.MapLevel; } catch (Exception e) { GD.PushWarning("minimap field data: " + e.Message); }
         model.Field.Channel = (int)data.Player.Channel;
         model.Field.Channels = new[] { (int)data.Player.Channel };
         var path = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value");
@@ -1008,7 +1009,7 @@ public partial class HudScene : Node
         if (msgboxShot == 2 && frames == 230) optionDialog?.FUN_141943a30();               // the movie's OnInit (Defaults)
         if (msgboxShot == 3 && frames == 230) optionHost?.MessageBox(0x84b, "OnSaveAndCheck");   // OnCloseDialog with a page changed
         if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
-        if (tooltipShot != null && frames == 200) HoverGameMenu(tooltipShot);
+        if (hoverShot != null && frames == 260) Hover(hoverShot);
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
         {
@@ -1018,16 +1019,45 @@ public partial class HudScene : Node
         }
     }
 
-    /// <summary>The shot's pointer on a game menu entry's button (a point of its own art, not its closed drop-down).</summary>
-    void HoverGameMenu(string name)
+    /// <summary>The first display object named <paramref name="name"/> under <paramref name="o"/> (breadth first).</summary>
+    static Ms2.Avm2.Flash.AsDisplayObject Descendant(UiHost h, Ms2.Avm2.Flash.AsDisplayObject o, string name)
     {
-        var h = gameMenuMovie?.Host;
-        if (h?.Child("m_menus") is not Ms2.Avm2.AsObject menus) return;
-        if (h.Invoke(h.Invoke(menus, "getChildByName", name), "getChildByName", "m_button") is not Ms2.Avm2.Flash.AsDisplayObject button) return;
-        var b = button.GetBounds(null);
+        var queue = new Queue<Ms2.Avm2.Flash.AsDisplayObject>();
+        queue.Enqueue(o);
+        while (queue.Count > 0)
+        {
+            var d = queue.Dequeue();
+            if (d != o && Ms2.Avm2.Rt.ToString(h.Get(d, "name")) == name) return d;
+            if (d is Ms2.Avm2.Flash.AsContainer c) foreach (var k in c.Children) queue.Enqueue(k);
+        }
+        return null;
+    }
+
+    /// <summary>The shot's pointer on a descendant (dotted path of names, each searched under the one before) of the hosted movie with that id,
+    /// at a point of its own art.</summary>
+    void Hover(string spec)
+    {
+        var parts = spec.Split(':', 2);
+        var movie = FindMovies(GetTree().Root).FirstOrDefault(m => m.Host.Id == parts[0]);
+        if (movie == null) { GD.PushWarning("hover: no movie " + parts[0]); return; }
+        var h = movie.Host;
+        object o = h.Entity;
+        foreach (var n in parts[1].Split('.'))
+            o = o is Ms2.Avm2.Flash.AsDisplayObject p ? Descendant(h, p, n) : null;
+        if (o is not Ms2.Avm2.Flash.AsDisplayObject target) { GD.PushWarning("hover: no " + spec); return; }
+        var b = target.GetBounds(null);
         for (double y = b.Y; y < b.Y + b.H; y += 2)
             for (double x = b.X; x < b.X + b.W; x += 2)
-                if (gameMenuMovie.Player.MouseTarget(x, y) == button) { gameMenuMovie.Player.MouseMove(x + 12, y + 12); return; }
+                for (var t = (Ms2.Avm2.Flash.AsDisplayObject)movie.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                    if (t == target) { movie.Player.MouseMove(x + 4, y + 4); return; }
+        GD.PushWarning("hover: no hit on " + spec);
+    }
+
+    static IEnumerable<MovieDialog> FindMovies(Node n)
+    {
+        if (n is MovieDialog m) yield return m;
+        foreach (var c in n.GetChildren())
+            foreach (var x in FindMovies(c)) yield return x;
     }
 
     /// <summary>The shot's chat: Return focuses the input, then the text is typed into the movie.</summary>

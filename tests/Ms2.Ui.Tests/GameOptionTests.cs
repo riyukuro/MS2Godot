@@ -258,4 +258,22 @@ public class GameOptionTests
         TestContext.WriteLine($"{n} rows; first {Rt.ToString(h.Get(first, "label"))} = {Rt.ToString(h.Get(first, "primaryKey"))}");
         Assert.That(Rt.ToString(h.Get(first, "primaryKey")), Is.Not.Empty, "the first action has a default key");
     }
+
+    [Test]
+    public void HdrAndShimmerImageTooltips()
+    {
+        var (h, _) = Load(0);
+        foreach (var (name, kind, path) in new[] { ("m_hdr", "hdr", "HDR_PATH"), ("m_shimmer", "shimmer", "distortion_path") })
+        {
+            var d = h.Controller.GetUserData("getTooltip", new object[] { name });
+            Assert.That(d["tooltip"], Is.EqualTo("export_common_tooltip_tooltipImageOption"));
+            Assert.That(d["optionDesc"], Is.EqualTo("$s_gameoption_tooltip_" + kind));
+            Assert.That(d["imgPath"], Is.EqualTo(tables.CommonResource(path)).And.StartsWith("./Data/Resource/Image/"));
+            var shown = TooltipTests.Draw(d);
+            TestContext.WriteLine(name + ": " + string.Join(" | ", shown));
+            Assert.That(shown, Is.Not.Empty);
+            Assert.That(shown, Has.None.StartsWith("$s_"), "the movie localizes the ids");
+        }
+        Assert.That(h.Controller.GetUserData("getTooltip", new object[] { "m_other" }), Is.Null);
+    }
 }
