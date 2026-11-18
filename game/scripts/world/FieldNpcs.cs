@@ -31,11 +31,12 @@ public sealed class FieldNpcs
     /// under the ground the official server puts an npc.</summary>
     public const float GroundProbeUp = 75f, GroundProbeDown = 1500f, GroundBelow = 1f;
 
-    /// <summary>The layers the ground cast of <see cref="SpawnNpcs"/> hits: every field collision group (bit n = group n) but
-    /// the npc capsules (group 4, <see cref="Movement.MoveConfig.NpcLayer"/>) and water (group 8,
-    /// <see cref="Movement.MoveConfig.WaterGroup"/>; statefishingdata.cpp:660 tells water by PropCollisionGroup 8), so boxes
-    /// and meshes count and fluids do not.</summary>
-    public const uint GroundLayers = ~(Movement.MoveConfig.NpcLayer | 1u << Movement.MoveConfig.WaterGroup);
+    /// <summary>The layers the ground cast of <see cref="SpawnNpcs"/> hits. This offline stand-in for the server's spawn
+    /// height sees the ground as the PC stands on it: CPhysXHelper's down-ray groups 0x389
+    /// (<see cref="Movement.MoveConfig.DownRayGroups"/>: 0, 3, 7, 8 and 9), which leave out the PC (group 2,
+    /// <see cref="Movement.MoveConfig.PcLayer"/>), the npc capsules (group 4), vibrators (10) and ladders (11). A water
+    /// cube is hit through its GeneratePhysX box (group 9), and a water prop's own mesh (group 8) is hit too.</summary>
+    public const uint GroundLayers = Movement.MoveConfig.DownRayGroups;
 
     readonly PackSet packs;
     readonly AssetIndex assets;

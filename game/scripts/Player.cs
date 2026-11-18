@@ -95,8 +95,9 @@ public partial class Player : CharacterBody3D
 
     public static Player Create(Node3D visual, AnimationPlayer anim)
     {
-        // PC::vfunc_10: SetGroups(0x399), the groups the controller's moves collide with
-        var p = new Player { Name = "Player", Visual = visual, Anim = anim, CollisionMask = MoveConfig.PcGroups };
+        // PC::vfunc_10 (pc.cpp:804-805): SetCollisionGroup(2), the controller's own group, and SetGroups(0x399), the
+        // groups its moves collide with
+        var p = new Player { Name = "Player", Visual = visual, Anim = anim, CollisionLayer = MoveConfig.PcLayer, CollisionMask = MoveConfig.PcGroups };
         // GameObjectController::CreateController: radius 25 and a capsule part of the height less two radii; the feet
         // (GetFeetPosition) are the capsule's bottom, and the sweep keeps them one skin above what they stand on
         var collision = new CollisionShape3D
