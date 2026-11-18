@@ -1,5 +1,7 @@
+using System.Text.Json.Nodes;
 using Godot;
 using Ms2.Quest;
+using Ms2.Swf.Clik;
 
 namespace Ms2Godot.Ui;
 
@@ -9,8 +11,9 @@ namespace Ms2Godot.Ui;
 /// (OpenCloseTween), its place on the stage (Dialog.alignment), the tab and sub-tab bars (QuestDialog.configUI,
 /// updateSubTab, UIQuestDialog::SetTab / SetSubTab / ChangeTab), the two list filters and the display settings panel.
 /// The quest list (UIQuestDialog::RefreshTab, <see cref="QuestLog"/>) is drawn as QuestDialog.setList draws it: a
-/// TreeViewDataProvider over the tree, one renderer per row (MultiRendererTreeList). The detail pane is the next step;
-/// until then it shows the movie as built.
+/// TreeViewDataProvider over the tree, one renderer per row (MultiRendererTreeList). The detail pane (m_questInfo, AS3
+/// QuestInfo) is emptied by UIQuestDialog::RefreshDetail and laid out by QuestInfo.setData, with its CLIK scroll bar
+/// (<see cref="ScrollBarModel"/>); a quest's own details (SelectQuest) are the next step.
 /// </summary>
 public sealed class QuestDialog
 {
@@ -76,8 +79,10 @@ public sealed class QuestDialog
         var keep = new Vector2(regPos.X * stage.X / oldStage.X, regPos.Y * stage.Y / oldStage.Y);
         int keepTab = tab, keepSub = subTab;
         Build();
+        RefreshDetail();
         SetTab(keepTab); SetSubTab(keepSub); ChangeTab(tab); RefreshTab();
         regPos = keep; Place(0);
+        ValidateBar();
     }
 
     /// <summary>
@@ -99,7 +104,8 @@ public sealed class QuestDialog
         if (parent == null || IsOpen) return;
         Drop();                                   // a dialog still closing is loaded anew
         Build();
-        // OnLoadInit: RefreshDetail (the detail step), then SetTab(m_180), SetSubTab(m_184), ChangeTab(GetTab()), RefreshTab
+        // OnLoadInit: RefreshDetail, then SetTab(m_180), SetSubTab(m_184), ChangeTab(GetTab()), RefreshTab
+        RefreshDetail();
         SetTab(savedTab);
         SetSubTab(savedSubTab);
         ChangeTab(tab);
@@ -111,6 +117,7 @@ public sealed class QuestDialog
         // UIDialog::vfunc_43: no kept place, so ASGameEntity::vfunc_25 invokes "alignment"
         Align();
         StartOpen();
+        ValidateBar();
     }
 
     /// <summary>
@@ -129,6 +136,7 @@ public sealed class QuestDialog
         if (root?.GetParent() is Node holder) holder.QueueFree();
         root = null; body = null; mouse = null; closing = false; tween = null;
         tabs.Clear(); subTabs.Clear(); rows.Clear(); rowContainer = null; tree = null; selectedIndex = -1;
+        info = null; infoBar = null; infoBarView = null; barDrawn = -1; infoButtons.Clear();
     }
 
     // ---- build -------------------------------------------------------------------------------------------------------
@@ -148,6 +156,7 @@ public sealed class QuestDialog
         body.FindClip("m_title")?.Widget?.Set("text", "$s_quest_information");
         mouse = new UiWidgets.MouseRouter(root) { Extra = () => tabs.Concat(subTabs).Concat(rows) };
         ConfigUI();
+        ConfigInfo();
     }
 
     Vector2 size;
@@ -297,6 +306,8 @@ public sealed class QuestDialog
         UpdatePaper();
         ChangeTab(tab);
         RefreshTab();
+        RefreshDetail();
+        ValidateBar();
     }
 
     /// <summary>
@@ -475,10 +486,12 @@ public sealed class QuestDialog
             tree = new QuestLogTree(tree.Root);      // resetRenderer: validateLength over the same tree
             DrawRenderers();
             OnSelectRenderer(index);
+            ValidateBar();
             return;
         }
         SelectRow(index);
         OnSelectRenderer(index);
+        ValidateBar();
     }
 
     /// <summary>ScrollingListQuest.updateSelectedIndex: the old row deselected, the new one selected.</summary>
@@ -491,7 +504,7 @@ public sealed class QuestDialog
     /// <summary>
     /// QuestDialog.onSelectRenderer: a chapter row shows the paper's list line (updatePaper(true)) and tells the dialog
     /// (OnSelectChapter: SelectChapter, RefreshDetail); a quest row shows the paper's normal state and tells it
-    /// (OnSelectQuest: SelectQuest, RemovePinned). The detail pane is the next step.
+    /// (OnSelectQuest: SelectQuest, RemovePinned). SelectQuest is the next step.
     /// </summary>
     void OnSelectRenderer(int index)
     {
@@ -502,6 +515,7 @@ public sealed class QuestDialog
         {
             UpdatePaper(true);
             log?.SelectChapter(d.Chapter);
+            RefreshDetail();
         }
         else if (d.Id != 0)
         {
@@ -555,6 +569,276 @@ public sealed class QuestDialog
             _ => listLength > 0 ? "$s_quest_select_complete_quest" : "$s_quest_no_have_quest",
         };
         paper.SetNamedText("textField", assets.Str(key));
+    }
+
+    // ---- the detail pane (m_questInfo: QuestInfo) ----------------------------------------------------------------------
+
+    MovieClipNode info;
+    /// <summary>QuestInfo.m_scrollBar (qd_scroll_info, a CLIK ScrollBar) and the nodes it is drawn with.</summary>
+    ScrollBarModel infoBar;
+    Node2D infoBarView;
+    int barDrawn = -1;
+    /// <summary>The buttons setButton added to m_buttons.</summary>
+    readonly List<MovieClipNode> infoButtons = new();
+    /// <summary>QuestInfo.m_id.</summary>
+    uint infoId;
+    int titleFontSize;
+
+    /// <summary>What UIQuestDialog hands QuestInfo.setData (an ASObj): the members it reads.</summary>
+    sealed class InfoData
+    {
+        public uint Id;
+        public string Title = "", Level = "", Date = "", Story = "";
+        public bool Main, Progress;
+        public List<string> GotoButton;
+    }
+
+    /// <summary>
+    /// QuestInfo.configUI: the scroll bar's SCROLL / CHANGE and the stage's mouse wheel go to handleScroll; the title shrinks
+    /// its text to fit (TEXTAUTOSZ_SHRINK). The bar is laid out by <see cref="ScrollBarModel"/> from its symbol's parts and
+    /// drawn here in place of the placed symbol.
+    /// </summary>
+    void ConfigInfo()
+    {
+        info = Clip("m_questInfo");
+        if (info == null) return;
+        if (info.Direct("m_title")?.Node is TextNode title) titleFontSize = title.Label.LabelSettings.FontSize;
+        var barChild = info.Direct("m_scrollBar");
+        if (barChild?.Node is not MovieClipNode bar) return;
+        (double Y, double H) Part(string name)
+        {
+            var c = bar.Direct(name);
+            var b = c?.Def["id"] is JsonNode id ? bar.Scope.Symbol((int)id)?["bounds"] : null;
+            return (c?.Base.Origin.Y ?? 0, b == null ? 0 : UiBuilder.F(b["h"], 0));
+        }
+        var up = Part("upArrow"); var track = Part("track"); var down = Part("downArrow"); var thumb = Part("thumb");
+        infoBar = new ScrollBarModel(bar.Bounds.Size.X, bar.Bounds.Size.Y, up.H, track.Y, track.H, down.Y, down.H, thumb.Y, thumb.H,
+            barChild.Base.Y.Length());
+        infoBar.Scroll += () => HandleScroll(null, default);
+        infoBarView = new Node2D { Position = barChild.Base.Origin };
+        info.AddChild(infoBarView);
+        info.MoveChild(infoBarView, bar.GetIndex());
+        barChild.Last = -1;
+        info.GotoFrame(info.Frame);
+    }
+
+    /// <summary>
+    /// UIQuestDialog::RefreshDetail: the pane emptied: id 0, no title, level, date or story, the give-up button disabled,
+    /// main when the main tab is selected (GetTab() == 0). No progress member: QuestInfo.setData shows "complete".
+    /// </summary>
+    void RefreshDetail() => SetInfoData(new InfoData { Main = Tabs.Tab == 0 });
+
+    /// <summary>
+    /// QuestInfo.setData: the "progress" or "complete" state, the title, level, main quest mark and date (shown when it has
+    /// text), the story (its field as tall as its text plus 5), the buttons, the conditions, the rewards and the scroll.
+    /// </summary>
+    void SetInfoData(InfoData d)
+    {
+        if (info == null) return;
+        string state = d.Progress ? "progress" : "complete";
+        GotoInfo(state);
+        infoId = d.Id;
+        info.SetNamedHtml("m_title", d.Title);
+        if (info.Direct("m_title")?.Node is TextNode title) { title.Label.LabelSettings.FontSize = titleFontSize; title.ShrinkToFit(); }
+        info.SetNamedHtml("m_standardLevel", d.Level);
+        SetHidden(info, "m_mainquest", !d.Main);
+        info.SetNamedHtml("m_date", d.Date);
+        SetHidden(info, "m_date", string.IsNullOrEmpty(d.Date));
+        var container = Container();
+        if (container?.Direct("story")?.Node is TextNode story)
+        {
+            story.SetHtml(d.Story);
+            float textHeight = story.Text.Length == 0 ? 0 : story.FlashTextHeight();
+            story.Bounds = new Rect2(story.Bounds.Position, new Vector2(story.Bounds.Size.X, textHeight + 5));
+        }
+        SetButton(d.GotoButton);
+        if (container != null)
+        {
+            // setSummary(undefined): the conditions are hidden
+            SetHidden(container, "summary", true);
+            // setReward(0, "0", 0, 0, null, "", 0, 0, 0) (no reward member): the list is emptied; with nothing in it the
+            // rewards are hidden at y 0
+            if (container.Direct("reward") is { Node: MovieClipNode reward } rewardChild)
+            {
+                if (reward.Direct("container")?.Node is MovieClipNode list)
+                {
+                    foreach (var c in list.Children) c.Last = -1;
+                    list.GotoFrame(list.Frame);
+                }
+                rewardChild.Hidden = true;
+                SetY(container, rewardChild, 0);
+            }
+        }
+        SetScroll(state == "progress" ? 370 : 408);
+    }
+
+    /// <summary>
+    /// gotoAndPlay(state): the frames of a state are alike and the timeline stops at its end. m_container is placed anew at
+    /// the "complete" label (its frame 0 placement ends at frame 9), so a move across it shows a new instance, made from its
+    /// symbol as the timeline makes it.
+    /// </summary>
+    void GotoInfo(string state)
+    {
+        var before = ContainerChild();
+        info.GotoLabel(state);
+        var now = ContainerChild();
+        if (now == null || now == before) return;
+        var old = now.Node;
+        var parent = old.GetParent();
+        int index = old.GetIndex();
+        var fresh = UiBuilder.Build(info.Movie, info.Scope, (int)now.Def["id"], info.sx, info.sy);
+        if (fresh == null || parent == null) return;
+        if (fresh is MovieClipNode mc) UiWidgets.Attach(mc);
+        parent.AddChild(fresh);
+        parent.MoveChild(fresh, index);
+        old.QueueFree();
+        now.Node = fresh;
+        now.Base = UiBuilder.ToTransform(now.Def["matrix"]);
+        info.GotoFrame(info.Frame);
+    }
+
+    MovieClipNode.Child ContainerChild() =>
+        info?.Children.FirstOrDefault(c => c.Name == "m_container" && info.Frame >= c.First && info.Frame <= c.Last);
+
+    MovieClipNode Container() => ContainerChild()?.Node as MovieClipNode;
+
+    /// <summary>
+    /// QuestInfo.setButton: m_buttons emptied; then one export_btn_type_b per kind, 106 wide and 5 apart, centred in the
+    /// pane's width, labelled by its kind. Their clicks call the C++ dialog (onGiveUpQuest, onGotoNpc ...), not built here.
+    /// </summary>
+    void SetButton(List<string> kinds)
+    {
+        if (info.Direct("m_buttons")?.Node is not MovieClipNode holder) return;
+        foreach (var c in holder.Children) c.Last = -1;
+        holder.GotoFrame(holder.Frame);
+        foreach (var b in infoButtons) b.QueueFree();
+        infoButtons.Clear();
+        if (kinds == null || kinds.Count == 0) return;
+        const float w = 106;
+        // width: UIComponent _width, the pane's size when it was made
+        float x0 = (info.Bounds.Size.X - (w * kinds.Count + (kinds.Count - 1) * 5)) * 0.5f;
+        for (int i = 0; i < kinds.Count; i++)
+        {
+            string label = kinds[i] switch
+            {
+                "giveup" => "$s_quest_giveup",
+                "gotoNpc" => "$s_quest_guide_move_field",
+                "gotoDungeon" => "$s_quest_guide_move_dungeon",
+                "gotoReEntry" => "$s_quest_guide_move_reentry",
+                "gotoDispatch" => "$s_quest_guide_dispatch",
+                "partyFind" => "$s_quest_guide_party_find",
+                "partyFindCancel" => "$s_quest_guide_party_find_cancel",
+                _ => null,
+            };
+            var b = body.Movie.BuildClass("export_btn_type_b", u);
+            if (b == null) break;
+            b.Position = new Vector2(x0 + i * (w + 5), 0);
+            if (b.Widget == null) UiWidgets.Attach(b);
+            if (label != null) b.Widget?.Set("label", label);
+            holder.AddChild(b);
+            infoButtons.Add(b);
+        }
+    }
+
+    /// <summary>
+    /// QuestInfo.setScroll(h): the bar h tall; a container taller than h scrolls by 25 a line, (height - h) / 25 + 1 lines
+    /// (else none); the position back to 0 and the range set to that many lines with a page of as many.
+    /// </summary>
+    void SetScroll(double h)
+    {
+        if (infoBar == null) return;
+        infoBar.SetHeight(h);
+        double height = Container() is { } c && FlashBounds(c) is { } r ? r.Size.Y : 0;
+        double n = height > h ? (height - h) / 25 + 1 : 0;
+        infoBar.Position = 0;
+        infoBar.SetScrollProperties(n, 0, n);
+    }
+
+    /// <summary>
+    /// QuestInfo.handleScroll: a wheel turn (a MouseEvent) over m_container's box moves the bar a line up or down; any call
+    /// then puts the container at 82 less 25 a line. The bar's SCROLL and CHANGE events come as plain Events (the handler's
+    /// "as MouseEvent" is null for them; the AS dump drops the astype).
+    /// </summary>
+    void HandleScroll(int? delta, Vector2 mouse)
+    {
+        var child = ContainerChild();
+        if (child?.Node is not MovieClipNode c || infoBar == null) return;
+        if (delta is int d)
+        {
+            var local = c.GetGlobalTransform().AffineInverse() * mouse;
+            if (FlashBounds(c) is not { } box || !box.HasPoint(local)) return;
+            infoBar.Position = d > 0 ? infoBar.Position - 1 : infoBar.Position + 1;
+        }
+        SetY(info, child, (float)(82 + 25 * infoBar.Position * -1));
+    }
+
+    /// <summary>
+    /// The pane's next validation (UIComponent.validateNow on the frame): the bar draws what was invalidated, and its parts
+    /// are drawn again when it drew: the up arrow, the down arrow, the track (its 9-slice symbol at the track's height) and
+    /// the thumb (qd_scroll_thumb at its height), the arrows in their "disabled" state when disabled.
+    /// </summary>
+    void ValidateBar()
+    {
+        if (infoBar == null || infoBarView == null) return;
+        infoBar.Validate();
+        if (infoBar.Draws == barDrawn) return;
+        barDrawn = infoBar.Draws;
+        foreach (var n in infoBarView.GetChildren()) n.QueueFree();
+        infoBarView.Scale = new Vector2(1, (float)infoBar.ScaleY);
+        float w = (float)infoBar.Width;
+        void Add(MovieClipNode n, double y, string state)
+        {
+            if (n == null) return;
+            n.Position = new Vector2(0, (float)y);
+            if (state != null) n.GotoLabel(state);
+            infoBarView.AddChild(n);
+        }
+        Add(body.Movie.BuildClass("qd_scroll_up", u), 0, infoBar.UpEnabled ? "up" : "disabled");
+        Add(body.Movie.BuildClass("qd_scroll_dn", u), infoBar.DownY, infoBar.DownEnabled ? "up" : "disabled");
+        if (info.Direct("m_scrollBar")?.Node is MovieClipNode bar && bar.Direct("track")?.Def["id"] is JsonNode trackId)
+            Add(body.Movie.BuildSymbolSized((int)trackId, u, w, (float)infoBar.TrackHeight), infoBar.TrackY, null);
+        var thumb = body.Movie.BuildClassSized("qd_scroll_thumb", u, w, (float)infoBar.ThumbHeight);
+        if (thumb != null) thumb.Visible = infoBar.ThumbVisible;
+        Add(thumb, infoBar.ThumbY, infoBar.Enabled ? "up" : "disabled");
+    }
+
+    /// <summary>AS3 child.visible: kept over the timeline (the child stays in the display list and in its parent's bounds).</summary>
+    static void SetHidden(MovieClipNode parent, string name, bool hidden)
+    {
+        foreach (var c in parent.Children) if (c.Name == name) c.Hidden = hidden;
+        parent.GotoFrame(parent.Frame);
+    }
+
+    static void SetY(MovieClipNode parent, MovieClipNode.Child c, float y)
+    {
+        var b = c.Base; c.Base = new Transform2D(b.X, b.Y, new Vector2(b.Origin.X, y));
+        parent.GotoFrame(parent.Frame);
+    }
+
+    /// <summary>
+    /// A clip's bounds as Scaleform takes them (DisplayList::GetBounds): every child in the display list, hidden ones too,
+    /// in the clip's coordinates; a text field by its rectangle.
+    /// </summary>
+    static Rect2? FlashBounds(MovieClipNode n)
+    {
+        Rect2? r = null;
+        foreach (var c in n.Children)
+        {
+            if (n.Frame < c.First || n.Frame > c.Last) continue;
+            Rect2? b = c.Node switch
+            {
+                MovieClipNode mc when !c.Static9 => FlashBounds(mc),
+                TextNode t => t.Bounds,
+                _ => c.Def["id"] is JsonNode id && n.Scope.Symbol((int)id)?["bounds"] is { } sb ? UiBuilder.Rc(sb) : null,
+            };
+            if (b is not { } bb) continue;
+            if (c.Static9 && c.Def["matrix"] is JsonObject m9)
+                bb = new Rect2(bb.Position, bb.Size * new Vector2(Math.Abs(UiBuilder.F(m9["a"], 1)), Math.Abs(UiBuilder.F(m9["d"], 1))));
+            var xf = c.Node.Transform;
+            foreach (var p in new[] { xf * bb.Position, xf * new Vector2(bb.End.X, bb.Position.Y), xf * new Vector2(bb.Position.X, bb.End.Y), xf * bb.End })
+                r = r == null ? new Rect2(p, Vector2.Zero) : r.Value.Expand(p);
+        }
+        return r;
     }
 
     // ---- place and tweens --------------------------------------------------------------------------------------------
@@ -644,7 +928,19 @@ public sealed class QuestDialog
     /// <summary>Mouse over the dialog's buttons, bars and check boxes while it is open.</summary>
     public void Input(InputEvent e)
     {
-        if (IsOpen) mouse?.Handle(e);
+        if (!IsOpen) return;
+        mouse?.Handle(e);
+        if (e is InputEventMouseButton { Pressed: true } mb && mb.ButtonIndex is MouseButton.WheelUp or MouseButton.WheelDown)
+        {
+            int delta = mb.ButtonIndex == MouseButton.WheelUp ? 1 : -1;
+            // the bar's own listener first (ScrollBar.handleMouseWheel, on the bar: the event's target is below it), then the
+            // stage's (QuestInfo.handleScroll); the bar validates on the next frame
+            if (infoBar != null && infoBarView != null && infoBarView.IsVisibleInTree()
+                && new Rect2(0, 0, (float)infoBar.Width, (float)infoBar.ContentHeight).HasPoint(infoBarView.GetGlobalTransform().AffineInverse() * mb.Position))
+                infoBar.MouseWheel(delta);
+            HandleScroll(delta, mb.Position);
+            ValidateBar();
+        }
     }
 
     /// <summary>The selected tab and sub-tab (UIQuestDialog::GetTab / GetSubTab: 4 and 3 with no bar).</summary>
