@@ -28,6 +28,15 @@ public sealed class UiHost
     public readonly string Id;
     /// <summary>The object the controller drives (UISwfEntity m_30, CreateGameEntity of the root).</summary>
     public AsObject Entity;
+
+    /// <summary>The character's UI settings folder (GetCharacterFolder); null before a character is chosen (nothing is kept).</summary>
+    public ICharacterFolder Folder;
+
+    /// <summary>
+    /// The client size times the UI scale (DAT_143af62d4 / DAT_143af62d8 times FUN_141276490), which a dialog's saved rates
+    /// are relative to (UIDialog vfunc_53 / vfunc_54). The window host sets it; until then it is the movie's stage.
+    /// </summary>
+    public double ClientStageW, ClientStageH;
     /// <summary>Every callback name the movie sent, in order (for tests and logs).</summary>
     public readonly List<string> Calls = new();
     /// <summary>Callback names no controller handled (the client returns 0 for these too).</summary>
@@ -40,6 +49,7 @@ public sealed class UiHost
     public UiHost(Player player, UiController controller, UiModel model, string id = null)
     {
         Player = player; Controller = controller; Model = model;
+        ClientStageW = player.StageW; ClientStageH = player.StageH;
         Id = id ?? (string)player.Layout["movie"];
         Player.HostId = Id;
         Player.External = External;
@@ -56,7 +66,10 @@ public sealed class UiHost
         for (int i = 0; i < frames; i++) Player.Tick();        // configUI runs in the first frames, before the client's OnLoadComplete
         Entity = Controller.FindEntity();
         if (Entity == null) { RT.NoteMissing("ui entity of " + Id); return false; }
-        Controller.Layout(Player.StageW, Player.StageH);
+        // UISwfEntity::OnLoadComplete (uiswfentity.cpp:443): the settings file (vfunc_5), the layout (FUN_1422dc450), then
+        // the subclass's OnLoadComplete
+        RT.Guard("load transform " + Id, Controller.LoadTransform);
+        Controller.LayoutAndClear(Player.StageW, Player.StageH);
         RT.Guard("OnLoadComplete " + Id, Controller.OnLoadComplete);
         Model.Changed += OnStatus;
         return true;
@@ -87,6 +100,11 @@ public sealed class UiHost
         }
         bool handled = false;
         ReturnValue = null;
+        if (Controller.IsDialogEntity)
+        {
+            RT.Guard("dialog callback " + name, () => handled = Controller.DialogCallback(name));
+            if (handled) return null;
+        }
         RT.Guard("callback " + name, () => handled = Controller.OnCallback(name, rest));
         if (!handled) Unhandled.Add(name);
         var ret = ReturnValue;

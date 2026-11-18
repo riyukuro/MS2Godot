@@ -181,6 +181,37 @@ public sealed class QuestDialogController : UiController
         Host.Invoke("updateSubTab");
     }
 
+    public override string TypeName => "QuestDialog";
+
+    /// <summary>
+    /// vfunc_67 (uiquestdialog.cpp:544): the tab and sub-tab are kept for the next open (m_180 / m_184), then UIDialog's.
+    /// ClearOpened destroys the reward item info slots, which are not hosted here.
+    /// </summary>
+    public override void Close()
+    {
+        if (Host?.Entity != null) (OpenTab, OpenSubTab) = (GetTab(), GetSubTab());
+        base.Close();
+    }
+
+    static readonly (string Name, int Tab)[] FilterKeys = { ("World", 2), ("Epic", 0), ("Event", 1) };
+
+    /// <summary>vfunc_53 (uiquestdialog.cpp:559): tab.properLevel* then tab.progressOnly*, World, Epic, Event (tabs 2, 0, 1).</summary>
+    protected override void SaveSettings(DialogSettings s)
+    {
+        foreach (var (n, t) in FilterKeys) s.Set("tab", "properLevel" + n, filterA[t] ? 1 : 0);
+        foreach (var (n, t) in FilterKeys) s.Set("tab", "progressOnly" + n, filterB[t] ? 1 : 0);
+    }
+
+    /// <summary>vfunc_54 (uiquestdialog.cpp:572): ResetFilters (:1836), then the saved filters over them.</summary>
+    protected override void LoadSettings(DialogSettings s)
+    {
+        bool[] a = { false, false, true, false }, b = { true, true, true, true };
+        a.CopyTo(filterA, 0);
+        b.CopyTo(filterB, 0);
+        foreach (var (n, t) in FilterKeys) { int v = filterA[t] ? 1 : 0; s.Get("tab", "properLevel" + n, ref v); filterA[t] = v != 0; }
+        foreach (var (n, t) in FilterKeys) { int v = filterB[t] ? 1 : 0; s.Get("tab", "progressOnly" + n, ref v); filterB[t] = v != 0; }
+    }
+
     /// <summary>ChangeTab: the tab's filters onto the two check boxes.</summary>
     public void ChangeTab(int tab)
     {

@@ -19,7 +19,7 @@ public partial class MovieDialog : Node2D
     public bool Loaded { get; }
     readonly As3View view;
 
-    public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window)
+    public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window, ICharacterFolder folder = null)
     {
         var packs = assets.Packs;
         var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
@@ -29,7 +29,8 @@ public partial class MovieDialog : Node2D
         view = new As3View(p, assets);
         AddChild(view);
         Place(window);
-        Host = new UiHost(p, controller, model);
+        Host = new UiHost(p, controller, model) { Folder = folder ?? CharacterFolder.ForChosen() };
+        SetClientStage(window);
         Loaded = Host.Load();
         foreach (var e in rt.Errors) GD.PushWarning($"[{controller.Movie}] {e}");
     }
@@ -47,12 +48,25 @@ public partial class MovieDialog : Node2D
         view.Position = UiScale.MovieOrigin;
     }
 
-    /// <summary>The window was resized: the new stage, then the controller's layout (UIObject vfunc_43).</summary>
+    /// <summary>The client size times the UI scale (DAT_143af62d4 times FUN_141276490), a dialog's saved rates' base.</summary>
+    void SetClientStage(Vector2 window)
+    {
+        var s = UiScale.Stage(window);
+        Host.ClientStageW = s.X;
+        Host.ClientStageH = s.Y;
+    }
+
+    /// <summary>
+    /// The window was resized: the new stage, then the controller's vfunc_18 with the stage before and after (UIDialog keeps
+    /// its position's ratio, then the layout).
+    /// </summary>
     public void Relayout(Vector2 window)
     {
+        double oldW = Player.StageW, oldH = Player.StageH;
         Resize(window);
         Place(window);
-        Host.Controller.Layout(Player.StageW, Player.StageH);
+        SetClientStage(window);
+        Host.Controller.Resize(oldW, oldH, Player.StageW, Player.StageH);
     }
 
     /// <summary>The movie's next frames now (a shot steps the timeline instead of waiting for real time).</summary>
