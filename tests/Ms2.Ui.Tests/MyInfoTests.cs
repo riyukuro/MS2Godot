@@ -1,6 +1,7 @@
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 using Ms2.Ui.Items;
@@ -257,6 +258,26 @@ public class MyInfoTests
         TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
         Assert.That(shown, Does.Contain(t.ItemName(11400021)));
         Assert.That(shown, Has.Some.Contains("right-click"));
+        // korItemDescription.xml 11400021: the description and the outfit guide line (as the Green Hood capture's)
+        Assert.That(shown, Has.Some.Contains("A simple yet elegant striped shirt."));
+        Assert.That(shown, Has.Some.Contains("Outfit items replace the look of your gear when equipped."));
+    }
+
+    [Test]
+    public void ItemDescriptionsAreTheStringTablesRows()
+    {
+        var t = new GameTables(Packs(), "en");
+        Assert.That(t.ItemDescription(11400021, "tooltipDescription"), Is.EqualTo("A simple yet elegant striped shirt."));
+        Assert.That(t.ItemDescription(11400021, "nope"), Is.EqualTo(""));
+        Assert.That(t.ItemDescription(1, "tooltipDescription"), Is.EqualTo(""));
+        // the object words are replaced: $item:13100028$ is that item's name
+        Assert.That(t.ItemDescription(13100153, "tooltipDescription"), Does.StartWith("When " + t.ItemName(13100028) + " was thrown"));
+        // 11301252 has a WorldChampionMushroom row and an Event / NA row: the last available one is kept
+        var rows = GameStrings.Parse(Packs().Read("Xml", "string/en/koritemdescription.xml")).Root.Elements("key")
+            .Where(e => (string)e.Attribute("id") == "11301252" && FeatureElements.IsAvailable(Packs(), e)).ToList();
+        string want = rows.Count == 0 ? "" : ((string)rows[^1].Attribute("tooltipDescription")).Replace("\\n", "\n");
+        TestContext.WriteLine($"11301252: {rows.Count} available rows -> {want}");
+        Assert.That(t.ItemDescription(11301252, "tooltipDescription"), Is.EqualTo(want));
     }
 
     [Test]

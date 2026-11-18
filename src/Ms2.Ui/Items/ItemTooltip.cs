@@ -29,7 +29,8 @@ public sealed class ItemTooltip
     /// <summary>
     /// FUN_1409e0d40 (:4675): 0 without an item or its data; else the class, the flags, name, grade, kind, ugc tag, icon
     /// and the align (9 with flag 0x40 or 2, else 5). Ported so far: the pet rank (feature 0x8c) or pet flag, the cash /
-    /// skin / PC bang / VIP / wedding flags, the name, grade, kind, ugc tag, icon path, piece flag and pet skin flag.
+    /// skin / PC bang / VIP / wedding flags, the name, grade, kind, ugc tag, icon path, description, guide description,
+    /// piece flag and pet skin flag.
     /// </summary>
     public bool Fill(Item item)
     {
@@ -52,6 +53,8 @@ public sealed class ItemTooltip
         Data["itemKinds"] = Kinds(d.IconCode);                                    // FUN_1409d5610
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
+        SetItemDescription(item);                                                 // FUN_1409d0710
+        SetItemGuideDescription(item);                                            // FUN_1409d0a80
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
         Data.SetTooltipAlign((Flags & 0x40) != 0 || (Flags & 2) != 0 ? 9 : 5);
@@ -87,6 +90,38 @@ public sealed class ItemTooltip
         if (item.UnlimitedEnchantLevel > 0) return Format(Common("s_word_item_unlimited_enchant"), item.UnlimitedEnchantLevel, name);
         if (item.EnchantLevel > 0) return "+" + item.EnchantLevel.ToString(CultureInfo.InvariantCulture) + " " + name;
         return name;
+    }
+
+    /// <summary>
+    /// FUN_1409d0710 (astooltip.cpp:2131), "itemDescription": the string table's tooltipDescription with its value words
+    /// replaced (ReplaceValueWords: the local player's name; the gender words read no gender here, none of the item texts
+    /// use them). Not ported, so the member is left out: an item with a UGC block (the UGC text 0xf3 or "" by
+    /// CItemUgc::FUN_1406321a0 and the look path, for a UGC type or cube mesh item) and a score item (a custom score's
+    /// BlockFormat(0x9be, mastery max)); both need what the port does not read.
+    /// </summary>
+    public void SetItemDescription(Item item)
+    {
+        var d = item.Data;
+        if (item.Record?.HasUgc == true || d.IsScoreItem) return;
+        string text = Tables.ItemDescription(d.Id, "tooltipDescription");
+        Data["itemDescription"] = Tables.ReservedWords.ReplaceValueWords(text, model.HasLocalPlayer ? model.Player.Name : null);
+    }
+
+    /// <summary>
+    /// FUN_1409d0a80 (astooltip.cpp:2178), "itemGuideDescription": the string table's guideDescription, then m_50 (set
+    /// only by the shop and merat market tooltips, FUN_1409dbc30). Ported: the plain text. Not ported, so the member is left
+    /// out: a UGC block, a score, a multi-ride item with feature 0xad (s_multi_riding_item_desc and the UGC counts
+    /// FUN_141901d20 / f70), a gacha box (type 0x1a, its item list), the InstallBillBoard limits, an install object's
+    /// rights (objCode: 0xafa / 0xaf9), an install item's housing limits and trophy, and a type 0x19 item (the expiry
+    /// notice by FUN_1409e0450).
+    /// </summary>
+    public void SetItemGuideDescription(Item item)
+    {
+        var d = item.Data;
+        if (item.Record?.HasUgc == true || d.IsScoreItem) return;
+        if (d.IsMultiRideItem && model.IsFeatureEnabled(0xad)) return;
+        if (d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19) return;
+        Data["itemGuideDescription"] = Tables.ItemDescription(d.Id, "guideDescription");
     }
 
     /// <summary>SetEnablePuton (@0x1409c69b0): nothing with flag 0x100; else "enablePuton".</summary>

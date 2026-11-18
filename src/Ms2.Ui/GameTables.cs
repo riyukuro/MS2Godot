@@ -25,6 +25,7 @@ public sealed class GameTables
 
     public GameTables(PackSet packs, params string[] languages)
     {
+        this.packs = packs;
         Items = new Items.ItemDataTable(packs);
         GachaBoxes = new Items.GachaBoxTable(packs);
         if (packs.Exists("Xml", "table/nextexp.xml"))
@@ -152,6 +153,50 @@ public sealed class GameTables
     /// <summary>The "name" text of the skill's row in stringSkillDescription.xml (CStringTable::GetSkillDescription
     /// @stringtable.cpp:750 reads the tag "name"); null when the skill has no row.</summary>
     public string SkillDescriptionText(uint id) => Lazy(ref skillDescs, "stringskilldescription", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : null;
+
+    /// <summary>
+    /// CStringTable::GetItemDescription (stringtable.cpp:737): the <paramref name="tag"/> text of the item's row in
+    /// korItemDescription.xml, "" without one. The rows are read as FUN_141814750 (:1113) does: each available &lt;key&gt;
+    /// (IsElementAvailable) by id, a later one replacing an earlier one (SetAt), with FUN_141815650 (:1259) keeping the
+    /// non-empty tags with "\n" turned into line breaks. The text is returned with its object words replaced
+    /// (CDesc::FUN_141813a30, :574: ReplaceObjectWords on first use). With several string languages, the first language
+    /// that has the row is used (the client loads one language's file).
+    /// </summary>
+    public string ItemDescription(int id, string tag)
+    {
+        if (itemDescs == null)
+        {
+            itemDescs = new Dictionary<int, Dictionary<string, string>>();
+            foreach (var lang in strings?.Languages ?? Array.Empty<string>())
+            {
+                string entry = $"string/{lang}/koritemdescription.xml";
+                if (!packs.Exists("Xml", entry)) continue;
+                var file = new Dictionary<int, Dictionary<string, string>>();
+                foreach (var e in GameStrings.Parse(packs.Read("Xml", entry)).Root.Elements("key"))
+                {
+                    if (!FeatureElements.IsAvailable(packs, e)) continue;
+                    var desc = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var t in ItemDescTags)
+                        if ((string)e.Attribute(t) is { Length: > 0 } v) desc[t] = v.Replace("\\n", "\n");
+                    file[ReservedWords.Atoi((string)e.Attribute("id") ?? "")] = desc;
+                }
+                foreach (var (k, v) in file) itemDescs.TryAdd(k, v);
+            }
+        }
+        if (!itemDescs.TryGetValue(id, out var d) || !d.TryGetValue(tag, out var text)) return "";
+        if (text.Contains('$'))
+        {
+            d[tag] = text = ReservedWords.ReplaceObjectWords(text);
+        }
+        return text;
+    }
+    /// <summary>ParseItemDesc (stringtable.cpp:1247): the tags kept, with "name" (read first by FUN_141815650).</summary>
+    static readonly string[] ItemDescTags = { "name", "mainDescription", "functionDescription", "tooltipDescription", "guideDescription" };
+    readonly PackSet packs;
+    Dictionary<int, Dictionary<string, string>> itemDescs;
+    ReservedWords reservedWords;
+    /// <summary>The reserved word table for value words (CReservedWordTable), over these string tables.</summary>
+    public ReservedWords ReservedWords => reservedWords ??= new ReservedWords(strings, null);
 
     GameStrings strings;
     Dictionary<string, string> skillNames, slotNames, skillDescs;
