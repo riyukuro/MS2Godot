@@ -123,7 +123,10 @@ public sealed class FieldEntity
         Raw.Props.TryGetValue(key, out var v) ? v : Flat != null && Flat.Props.TryGetValue(key, out var d) ? d : null;
 
     public bool Has(string key) => Get(key) != null;
-    public bool HasMixin(string m) => Flat != null && Flat.Mixins.Contains(m);
+    /// <summary>egf FlatModel::ContainsModel: the entity's own model or one of its mixins. A flat model holds its own id in
+    /// its super-model set (FlatModel::SetID adds it, FlatModel.cpp:72-74), so an entity of model X contains X. The flat is
+    /// looked up by name ignoring case, and so is the own-model compare.</summary>
+    public bool HasMixin(string m) => Flat != null && (string.Equals(Flat.Name, m, StringComparison.OrdinalIgnoreCase) || Flat.Mixins.Contains(m));
 
     public bool Bool(string key, bool def = false)
     {
