@@ -114,4 +114,24 @@ public class SkillBookTreeTests
         Assert.That(t["tooltip"], Is.EqualTo("export_common_tooltip_tooltipText"));
         Assert.That((string)t["text"], Does.Contain("13"));
     }
+    [Test]
+    public void TheOpenWindowFollowsLevelPointsAndJobEvents()
+    {
+        var (h, c, _) = Load();
+        c.OnSkillBookTree(NoTabs());
+        string Point() => Rt.ToString(h.Get(h.Get(h.Child("m_point"), "textField"), "text"));
+        Assert.That(Point(), Is.EqualTo("0"));
+        // vfunc_oa0_9: level 20 gives 11 rank 1 points
+        h.Model.Player.Level = 20;
+        c.OnLevelChanged(20);
+        Assert.That((Point(), c.Simulator.GetRemainPoints(1)), Is.EqualTo(("11", 11)));
+        // vfunc_oa0_28: 2 more rank 1 points from a source
+        c.Points.Apply(SkillPointPacket.Read(new ByteReader(SkillPointPacket.Write(0, new (int, IEnumerable<(int, int)>)[] { (2, new[] { (1, 2) }) }, 0))));
+        c.OnSkillPointsChanged();
+        Assert.That(Point(), Is.EqualTo("13"));
+        // vfunc_oa0_7: a job change closes the window
+        c.OnJobChanged();
+        for (int i = 0; i < 60 && !c.IsClosed; i++) h.Player.Tick();
+        Assert.That((c.IsClosed, c.Simulator), Is.EqualTo((true, (SkillPointSimulator)null)));
+    }
 }

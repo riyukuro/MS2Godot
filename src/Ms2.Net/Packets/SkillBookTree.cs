@@ -67,7 +67,7 @@ public sealed record SkillTreeTab(long Id, string Name, IReadOnlyList<(int Skill
 }
 
 /// <summary>
-/// Inbound 0x10C (SkillBookTree), UISkillBookTreeDialog::vfunc_79 @0x140ec5820 (uiskillbookautodistributedialog.cpp:1962): u8 mode.
+/// Inbound 0x10C (SkillBookTree), UISkillBookTreeDialog::vfunc_79 @0x140ec7890 (uiskillbookautodistributedialog.cpp:1962): u8 mode.
 /// Mode 0 (the tabs): i32 max tabs, i64 selected tab id, i32 count of tabs. Mode 4 (paid tab): i32 max tabs. Mode 1 (saved):
 /// i64 selected tab, i64 tab, i32 rank. Mode 2 (renamed): i64 tab, unicode name, u8 result.
 /// </summary>

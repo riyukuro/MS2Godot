@@ -183,6 +183,8 @@ public static class SkillTooltip
         if ((uint)s.RangeType < 3 && range[s.RangeType] is { } rk) line += Common(tables, rk);
         if ((uint)s.AttackType < 3 && attack[s.AttackType] is { } ak) line += line.Length == 0 ? Common(tables, ak) : " / " + Common(tables, ak);
         if (line.Length > 0) rows.Add(Row(line, Gray));
+        // The hands are not fed yet (EquipSubtype is 0 for both), so the colour is only the client's for empty hands: then any
+        // entry with a one-sided hand (lh or rh 0) counts as allowed, as FUN_1409e6d00 does with no weapon equipped.
         int right = player?.EquipSubtype(5) ?? 0, left = player?.EquipSubtype(4) ?? 0;
         var (allowed, weapons) = Weapons(tables, right, left, s.Weapons);
         if (weapons.Length > 0) rows.Add(Row(weapons, allowed ? Gray : Red));

@@ -22,7 +22,7 @@ public sealed class SkillBookTreeController : UiController
 
     public override string Movie => JobChange01 ? "uiskillbooktreedialog_jobchange01" : "uiskillbooktreedialog";
     protected override string EntityMethod => "setRemainSkillPoint";
-    /// <summary>GetTypeName @0x140ec5200.</summary>
+    /// <summary>GetTypeName @0x140ec51c0.</summary>
     public override string TypeName => JobChange01 ? "SkillBookTreeDialog_jobchange01" : "SkillBookTreeDialog";
 
     /// <summary>m_strSlotPrefix: the BookSlotBag's name; its slots are "skillTreeSlot.&lt;i&gt;" (SkillSlot.setData).</summary>
@@ -100,7 +100,7 @@ public sealed class SkillBookTreeController : UiController
 
     // ---- vfunc_79: the SkillBookTree packet ---------------------------------------------------------------------------
 
-    /// <summary>vfunc_79 @0x140ec5820 (:1962), opcode 0x10C. Mode 0 loads the tabs (an empty name becomes the default tab name;
+    /// <summary>vfunc_79 @0x140ec7890 (:1962), opcode 0x10C. Mode 0 loads the tabs (an empty name becomes the default tab name;
     /// none: one free tab "Build 1"), selects the one in use and shows the dialog. Mode 1 commits a tab's preview; mode 2 renames
     /// a tab; mode 4 (a paid tab) needs the add-tab flow, which is not here.</summary>
     public void OnSkillBookTree(SkillBookTreePacket p)
@@ -267,6 +267,41 @@ public sealed class SkillBookTreeController : UiController
         for (int i = 0; i < bag.Count; i++) Host.Push(SlotName(i));
     }
 
+    // ---- status events (UIStatusEventDispatcher::NotifyStatusChanged, uistatuseventlistener.cpp:257) ----------------------
+
+    /// <summary>vfunc_oa0_7 @0x140ec7750 (:873), event 4 (OnJob modes 0, 1, 2 and 7 of the local player,
+    /// scenestategame.cpp:7463-7509): the window closes.</summary>
+    public void OnJobChanged() => Close();
+
+    /// <summary>vfunc_oa0_9 @0x140ec76d0 (:879), event 6 (OnLevelUp, scenestategame.cpp:9563): the shown tab's preview takes the
+    /// level, then RefreshJob and RefreshTree.</summary>
+    public void OnLevelChanged(int level)
+    {
+        if (sim == null) return;
+        sim.SetLevel(level);
+        RefreshJob();
+        RefreshTree();
+    }
+
+    /// <summary>vfunc_oa0_28 @0x140ec77b0 (:889), event 0xf (OnSkillPoint, scenestategame.cpp:4241): the shown tab's preview takes
+    /// the per-rank points (DAT_143ab32f8; the bonus m_n179c is not reapplied), then RefreshJob and RefreshTree.</summary>
+    public void OnSkillPointsChanged()
+    {
+        if (sim == null) return;
+        sim.SetExtraPoints(Points.ByRank);
+        RefreshJob();
+        RefreshTree();
+    }
+
+    /// <summary>vfunc_oa0_21 @0x140ec7830 (:899), event 0xe (the skill tier options changed, PC::vfunc_53 pc.cpp:4474): RefreshJob
+    /// and RefreshTree. Nothing feeds the tier options yet, so nothing calls it.</summary>
+    public void OnSkillTierChanged()
+    {
+        if (sim == null) return;
+        RefreshJob();
+        RefreshTree();
+    }
+
     static string SlotName(int i) => BagName + "." + i.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>RefreshJob @0x140ecb540 (:662).</summary>
@@ -309,7 +344,7 @@ public sealed class SkillBookTreeController : UiController
         }
     }
 
-    /// <summary>MyPC::GetRemainingSkillPoints @0x14152cd70 (mypc.cpp:3965): the rank's points (level, sources, bonus) less the
+    /// <summary>MyPC::GetRemainingSkillPoints @0x14152e970 (mypc.cpp:3965): the rank's points (level, sources, bonus) less the
     /// book's used points, not below 0.</summary>
     public int RemainingSkillPoints(int rank) =>
         Math.Max(0, Points.RankTotal(rank) + JobSystem.GetLevelSkillPoint(Level, rank, Model.Tables.SkillPointLimitLevel1, Model.Tables.SkillPointLimitLevel2)
@@ -330,7 +365,7 @@ public sealed class SkillBookTreeController : UiController
         }
     }
 
-    /// <summary>GetJobSkillPoint @0x140ec5480 (:552): DAT_143ab32e8[source][m_nJobLevel].</summary>
+    /// <summary>GetJobSkillPoint @0x140ecb130 (:552): DAT_143ab32e8[source][m_nJobLevel].</summary>
     int GetJobSkillPoint(int source) => Points.Source(source, JobLevel);
 
     /// <summary>OnPointClick @0x140ec8720 (:1427): the point tooltip, total = level points + source points + bonus.</summary>
@@ -448,7 +483,7 @@ public sealed class SkillBookTreeController : UiController
     // ---- the slot bag -------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// BookSlot::vfunc_8 @0x140a36b40 (bookslot.cpp:84): ASSlot(2).FUN_1409c4360(skill, 0x401) (asitemslot.cpp:1408): the skill
+    /// BookSlot::vfunc_8 @0x140a367a0 (bookslot.cpp:84): ASSlot(2).FUN_1409c4360(skill, 0x401) (asitemslot.cpp:1408): the skill
     /// data's icon path, upgradeCondition (CanUpgrade with the rank's remaining points), disable = not learnt, and a passive
     /// skill's disableDrag. Other names go to the base.
     /// </summary>
@@ -519,7 +554,7 @@ public sealed class SkillBookTreeController : UiController
 
     // ---- vfunc_45 / vfunc_28 ------------------------------------------------------------------------------------------
 
-    /// <summary>vfunc_45 @0x140ec5c30 (:2046): the skill tooltip at the shown level; the next level's (when below the max, one
+    /// <summary>vfunc_45 @0x140ec5820 (:2046): the skill tooltip at the shown level; the next level's (when below the max, one
     /// up when learnable) and the previous level's (when it can go down), both aligned 7 with an empty enablePuton.</summary>
     public override IDictionary<string, object> GetUserData(string name, object[] args)
     {
@@ -579,7 +614,7 @@ public sealed class SkillBookTreeController : UiController
         return false;
     }
 
-    /// <summary>SkillPointUp @0x140eca9f0 (:1355): the preview one level up, the tree updated, the change effect, the job part.</summary>
+    /// <summary>SkillPointUp @0x140ecaa30 (:1355): the preview one level up, the tree updated, the change effect, the job part.</summary>
     void SkillPointUp(uint id)
     {
         if (sim == null) return;

@@ -52,6 +52,20 @@ public sealed class SkillPointSimulator
         Recalc();
     }
 
+    /// <summary>SetLevel @0x140abc7a0 (:60).</summary>
+    public void SetLevel(int level)
+    {
+        Level = level;
+        Recalc();
+    }
+
+    /// <summary>SetExtraPoints @0x140abc7e0 (:67).</summary>
+    public void SetExtraPoints(IReadOnlyDictionary<int, int> extraPoints)
+    {
+        extra = extraPoints != null ? new Dictionary<int, int>(extraPoints) : new();
+        Recalc();
+    }
+
     /// <summary>GetTotalPoints @0x140abc820.</summary>
     public int GetTotalPoints(int rank) => total.GetValueOrDefault(rank);
     /// <summary>GetRemainPoints @0x140abc860.</summary>

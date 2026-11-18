@@ -61,6 +61,8 @@ public partial class LiveSession : Node
     public readonly Ms2.Ui.Skills.SkillPoints SkillPoints = new();
     /// <summary>A SkillBookTree (0x10C) packet, for the skill window's vfunc_79.</summary>
     public event Action<SkillBookTreePacket> SkillBookTree;
+    /// <summary>After each 0x44 (UIStatusEventDispatcher event 0xf).</summary>
+    public event Action SkillPointsChanged;
     /// <summary>RequestSkillBookTree mode 0 (UISkillBookTreeDialog::OnLoadComplete): a read request for the saved tabs.</summary>
     public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
     /// <summary>Raised after the local player's skill book changed (the Job packet's mode).</summary>
@@ -388,6 +390,7 @@ public partial class LiveSession : Node
                 else if (game.Is(p, Inbound.SkillPoint))
                 {
                     SkillPoints.Apply(SkillPointPacket.Read(p.Reader()));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
+                    SkillPointsChanged?.Invoke();
                     GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
                 }
                 else if (game.Is(p, Inbound.SkillBookTree))

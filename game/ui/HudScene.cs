@@ -1148,16 +1148,25 @@ public partial class HudScene : Node
         };
         c.Button += name => GD.Print($"skill book: {name} is not sent (display only)");
         Action<Ms2.Net.Packets.SkillBookTreePacket> onTree = c.OnSkillBookTree;
+        // the status events the open window listens to (UISkillBookTreeDialog vfunc_oa0_7 / 9 / 28): the local player's job
+        // packet modes 0, 1, 2 and 7 close it, a level change and the skill points refresh the shown preview
+        Action<int> onJob = mode => { if (mode is 0 or 1 or 2 or 7) c.OnJobChanged(); };
+        Action onPoints = c.OnSkillPointsChanged;
+        Action<Ms2.Ui.StatusEvent> onStatus = e => { if (e == Ms2.Ui.StatusEvent.Level) c.OnLevelChanged(hudModel.Player.Level); };
+        hudModel.Changed += onStatus;
         if (live != null)
         {
             c.RequestTree += live.RequestSkillBookTree;
             live.SkillBookTree += onTree;
+            live.SkillBookChanged += onJob;
+            live.SkillPointsChanged += onPoints;
         }
         else c.RequestTree += () => Callable.From(() => c.OnSkillBookTree(UiFixture.NoSkillTabs())).CallDeferred();
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.Unloaded += () =>
         {
-            if (live != null) live.SkillBookTree -= onTree;
+            hudModel.Changed -= onStatus;
+            if (live != null) { live.SkillBookTree -= onTree; live.SkillBookChanged -= onJob; live.SkillPointsChanged -= onPoints; }
             m.Host.Unload();
             m.QueueFree();
             if (skillBookMovie == m) skillBookMovie = null;
