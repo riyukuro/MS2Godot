@@ -256,6 +256,13 @@ public sealed class ItemData
 /// </summary>
 public sealed class ItemDataTable
 {
+    /// <summary>
+    /// The worn layer of an item as PC::vfunc_127 / vfunc_128 (pc.cpp:1400, :1415) need it: null for an unknown item or
+    /// one without a model preset (not worn); else CItem::FUN_14052a170 (item.cpp:1629) without a variant: 1 for a skin
+    /// item, else 0 (property flag08's layer 3 is never loaded).
+    /// </summary>
+    public int? WornLayer(int itemId) => Get(itemId) is { ItemPreset: not 0 } d ? (d.HasSkinType ? 1 : 0) : null;
+
     readonly PackSet packs;
     readonly Dictionary<int, Dictionary<int, ItemData>> files = new();
 

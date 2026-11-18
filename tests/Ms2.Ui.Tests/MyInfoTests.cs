@@ -478,6 +478,39 @@ public class MyInfoTests
     }
 
     [Test]
+    public void PutOnAndOffChangeTheOwnEquipment()
+    {
+        var t = new GameTables(Packs(), "en");
+        Func<int, int?> layer = t.Items.WornLayer;
+        Assert.That((layer(15000001), layer(11400021), layer(12200398), layer(1)), Is.EqualTo(((int?)0, (int?)1, (int?)1, (int?)null)));
+        var me = UiFixture.Character();
+        int changes = 0;
+        me.Changed += () => changes++;
+        long[] Uids(IEnumerable<EquipItem> l) => l.Select(e => e.Uid).OrderBy(u => u).ToArray();
+
+        // the Green Hood top (an outfit, layer 1) in CL replaces the outfit top 11400021; the sword stays
+        var hood = new EquipItem { Id = 12200398, Uid = 3001, Slot = EquipSlot.CL, Rarity = 1, Amount = 1 };
+        Assert.That(me.Apply(new ItemPutOn(1, 0, hood), layer), Is.True);
+        Assert.That(Uids(me.Equips), Is.EqualTo(new long[] { 2001, 3001 }));
+        // put-on kind 2 goes to the second outfit layer and leaves the first one
+        var hood2 = new EquipItem { Id = 12200398, Uid = 3002, Slot = EquipSlot.CL, Rarity = 1, Amount = 1 };
+        Assert.That(me.Apply(new ItemPutOn(1, 2, hood2), layer), Is.True);
+        Assert.That((Uids(me.Equips), Uids(me.Outfit2)), Is.EqualTo((new long[] { 2001, 3001 }, new long[] { 3002 })));
+        // another object, a kind above 2 and an unknown item are not applied
+        Assert.That(me.Apply(new ItemPutOn(7, 0, hood), layer), Is.False);
+        Assert.That(me.Apply(new ItemPutOn(1, 3, hood), layer), Is.False);
+        Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 1, Uid = 3003, Slot = EquipSlot.CL }), layer), Is.False);
+        // put-off by uid, from either list
+        Assert.That(me.Apply(new ItemPutOff(1, 3002), layer), Is.True);
+        Assert.That(me.Apply(new ItemPutOff(1, 2001), layer), Is.True);
+        Assert.That((Uids(me.Equips), Uids(me.Outfit2)), Is.EqualTo((new long[] { 3001 }, Array.Empty<long>())));
+        Assert.That(me.Apply(new ItemPutOff(1, 9999), layer), Is.False);
+        Assert.That(changes, Is.EqualTo(4));
+        // the character window's record has the new list
+        Assert.That(Uids(me.ToPcInfo(0).Equips), Is.EqualTo(new long[] { 3001 }));
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");

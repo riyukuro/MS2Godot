@@ -199,6 +199,43 @@ public sealed class MyCharacter {
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080) for the own object: put-on kind 0 / 1 / 2 (FUN_140222f60;
+    /// others are dropped); kind 2 sets the item's variant 2, the second outfit layer. PC::vfunc_127 (pc.cpp:1400) wears
+    /// only an item with a model preset: <paramref name="wornLayer"/> gives the item's layer (CItem::FUN_14052a170 without
+    /// a variant) or null when the item is unknown or has no preset. CEquipment::FUN_1411ec190 puts the item into the
+    /// slots of its model groups at its layer; here the item replaces the one in the same slot and layer (the multi-slot
+    /// groups of a model are not modelled). Returns whether the lists changed.
+    /// </summary>
+    public bool Apply(ItemPutOn p, Func<int, int?> wornLayer) {
+        if (User == null || p.ObjectId != ObjectId || p.Kind > 2) return false;
+        if (wornLayer(p.Item.Id) is not { } dataLayer) return false;
+        int layer = p.Kind == 2 ? 2 : dataLayer;
+        int? LayerOf(EquipItem e, bool outfit2) => outfit2 ? 2 : wornLayer(e.Id);
+        bool Keep(EquipItem e, bool outfit2) => !(e.Slot == p.Item.Slot && LayerOf(e, outfit2) == layer);
+        var equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => Keep(e, false)).ToList();
+        var outfit = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => Keep(e, true)).ToList();
+        (layer == 2 ? outfit : equips).Add(p.Item);
+        Equips = equips; Outfit2 = outfit;
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>
+    /// CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144) for the own object: the worn item of that uid
+    /// (PC::FUN_141655b80) is taken off when it has a model preset (PC::vfunc_128, pc.cpp:1415; CEquipment::FUN_1411e3960
+    /// finds it by uid). Returns whether the lists changed.
+    /// </summary>
+    public bool Apply(ItemPutOff p, Func<int, int?> wornLayer) {
+        if (User == null || p.ObjectId != ObjectId) return false;
+        var item = (Equips ?? Array.Empty<EquipItem>()).Concat(Outfit2 ?? Array.Empty<EquipItem>()).FirstOrDefault(e => e.Uid == p.ItemUid);
+        if (item == null || wornLayer(item.Id) == null) return false;
+        Equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
+        Outfit2 = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
+        Changed?.Invoke();
+        return true;
+    }
+
     /// <summary>The own Stat (0x2E): the values of the stats it carries (PC's m_unk_1c0[0..2]).</summary>
     public void Apply(PlayerStat s) {
         foreach (var (stat, v) in s.Values) {
