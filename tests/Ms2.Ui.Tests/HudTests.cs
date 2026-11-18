@@ -300,8 +300,9 @@ public class HudTests
         var c = new GroupMessengerBrowserController();
         var h = Load(c, m);
         Assert.That(h.RT.Errors, Is.Empty);
-        // m_container, added last by the constructor, holds only the insert button (its slot is not found by public name
-        // through UiHost.Get, so it is taken from the display list)
+        // m_container, added last by the constructor, holds only the insert button. The slot is private to the class, and
+        // GFx::Value::GetMember looks a name up in the public namespace (AS3ValueObjectInterface::GetMember,
+        // sfr_as3_18.cpp:7551), so it is taken from the display list
         var container = (AsContainer)((AsContainer)h.Entity).Children[3];
         Assert.That(container.Children.Count, Is.EqualTo(1));
         double y = Rt.ToNumber(h.Get(h.Entity, "y")), ht = Rt.ToNumber(h.Get(h.Entity, "height"));
