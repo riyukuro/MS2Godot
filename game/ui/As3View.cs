@@ -648,6 +648,8 @@ public partial class As3View : Node2D
                 var p = StagePoint(mb.Position);
                 Player.MouseMove(p.X, p.Y);
                 if (mb.ButtonIndex == MouseButton.Left) Player.MouseButton(mb.Pressed);
+                else if (mb.ButtonIndex == MouseButton.Right) Player.MouseButton(mb.Pressed, FlashPlayer.RightButton);    // WM_RBUTTONDOWN/UP
+                else if (mb.ButtonIndex == MouseButton.Middle) Player.MouseButton(mb.Pressed, FlashPlayer.MiddleButton);
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp) Player.Wheel(3);
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown) Player.Wheel(-3);
                 if (!MouseOverUi) return;   // the click goes on to the game

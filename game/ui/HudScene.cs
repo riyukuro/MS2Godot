@@ -1682,7 +1682,7 @@ public partial class HudScene : Node, IUiStageHost
         if (dragShot != null && frames == 200) { ToggleMyInfo(); ToggleInventory(); }
         if (dragShot != null && frames == 220) PlaceBeside(inventoryMovie, myInfoMovie);
         if (dragShot != null && frames >= 240 && frames <= 270) DragStep(frames - 240);
-        if (partyMenuShot != 0 && frames == 240) ShotPartyMenu(partyMenuShot);
+        if (partyMenuShot != 0 && frames >= 240 && frames <= 244) ShotPartyMenu(partyMenuShot, frames - 240);
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
         {
@@ -1779,20 +1779,26 @@ public partial class HudScene : Node, IUiStageHost
     Vector2? SlotPoint(string binding)
     {
         foreach (var movie in FindMovies(GetTree().Root))
-        {
-            if (Descendant(movie.Host, movie.Player.Stage, "binding=" + binding) is not { } target) continue;
-            var view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
-            var r = target.GetBounds(null);
-            for (double y = r.Y + 2; y < r.Y + r.H; y += 2)
-                for (double x = r.X + 2; x < r.X + r.W; x += 2)
-                    for (var t = (Ms2.Avm2.Flash.AsDisplayObject)movie.Player.MouseTarget(x, y); t != null; t = t.Parent)
-                        if (t == target)
-                        {
-                            var c = new Vector2((float)(r.X + r.W / 2), (float)(r.Y + r.H / 2));
-                            var p = movie.Player.MouseTarget(c.X, c.Y) is Ms2.Avm2.Flash.AsDisplayObject hit && IsUnder(hit, target) ? c : new Vector2((float)x, (float)y);
-                            return view != null ? view.GetGlobalTransformWithCanvas() * p : p;
-                        }
-        }
+            if (Descendant(movie.Host, movie.Player.Stage, "binding=" + binding) is { } target && WindowPoint(movie, target) is { } p)
+                return p;
+        return null;
+    }
+
+    /// <summary>A window point on <paramref name="target"/> in <paramref name="movie"/> that its hit test reaches: the middle
+    /// when it hits there, else the first hit on a 2-pixel grid; null when none does.</summary>
+    static Vector2? WindowPoint(MovieDialog movie, Ms2.Avm2.Flash.AsDisplayObject target)
+    {
+        var view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
+        var r = target.GetBounds(null);
+        for (double y = r.Y + 2; y < r.Y + r.H; y += 2)
+            for (double x = r.X + 2; x < r.X + r.W; x += 2)
+                for (var t = (Ms2.Avm2.Flash.AsDisplayObject)movie.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                    if (t == target)
+                    {
+                        var c = new Vector2((float)(r.X + r.W / 2), (float)(r.Y + r.H / 2));
+                        var p = movie.Player.MouseTarget(c.X, c.Y) is Ms2.Avm2.Flash.AsDisplayObject hit && IsUnder(hit, target) ? c : new Vector2((float)x, (float)y);
+                        return view != null ? view.GetGlobalTransformWithCanvas() * p : p;
+                    }
         return null;
     }
 
@@ -1802,12 +1808,14 @@ public partial class HudScene : Node, IUiStageHost
         return false;
     }
 
-    /// <summary>A mouse event at a window point, through Godot's input (the pointer moved there first).</summary>
-    void SendMouse(Vector2 at, bool? press)
+    /// <summary>A mouse event at a window point, through Godot's input (the pointer moved there first): a press or release of
+    /// <paramref name="button"/>, or a move when <paramref name="press"/> is null.</summary>
+    void SendMouse(Vector2 at, bool? press, MouseButton button = MouseButton.Left)
     {
         Input.WarpMouse(at);
+        var mask = button == MouseButton.Right ? MouseButtonMask.Right : button == MouseButton.Middle ? MouseButtonMask.Middle : MouseButtonMask.Left;
         InputEvent e = press is bool down
-            ? new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = down, Position = at, GlobalPosition = at, ButtonMask = down ? MouseButtonMask.Left : 0 }
+            ? new InputEventMouseButton { ButtonIndex = button, Pressed = down, Position = at, GlobalPosition = at, ButtonMask = down ? mask : 0 }
             : new InputEventMouseMotion { Position = at, GlobalPosition = at, ButtonMask = Input.IsMouseButtonPressed(MouseButton.Left) ? MouseButtonMask.Left : 0 };
         Input.ParseInputEvent(e);
     }

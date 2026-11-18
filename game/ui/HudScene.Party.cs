@@ -109,17 +109,28 @@ public partial class HudScene
         partyLayer.AddChild(m);
     }
 
-    /// <summary>The shot's slot menu (--uigen-party-menu ID): what PartyDialog.OnRightClickParty sends for a click at the slot's
-    /// middle, onPopupMenu(x, y, charSN). The player has no right button dispatch, so the call goes to the controller.</summary>
-    void ShotPartyMenu(long characterId)
+    Vector2 partyMenuPoint;             // the shot's window point on the slot
+
+    /// <summary>The shot's slot menu (--uigen-party-menu ID), one step a frame through the window's own input: the pointer onto
+    /// the member's slot, the right button down, then up. The player's right button dispatch (Main's stage listeners) turns the
+    /// click into rightClick, and PartyDialog.OnRightClickParty sends onPopupMenu(x, y, charSN) to the controller.</summary>
+    void ShotPartyMenu(long characterId, int step)
     {
-        if (!PartyWindowOpen || party.Host.Invoke(party.Host.Entity, "getMemberAni", characterId.ToString()) is not Ms2.Avm2.Flash.AsDisplayObject slot)
+        if (step == 0)
         {
-            GD.PushWarning("party menu shot: no slot " + characterId);
-            return;
+            partyMenuPoint = default;
+            if (!PartyWindowOpen || party.Host.Invoke(party.Host.Entity, "getMemberAni", characterId.ToString()) is not Ms2.Avm2.Flash.AsDisplayObject slot
+                || WindowPoint(partyMovie, slot) is not { } at)
+            {
+                GD.PushWarning("party menu shot: no slot " + characterId);
+                partyMenuShot = 0;
+                return;
+            }
+            partyMenuPoint = at;
+            SendMouse(at, null);
         }
-        var b = slot.GetBounds(null);
-        party.OnCallback("onPopupMenu", new object[] { b.X + b.W / 2, b.Y + b.H / 2, characterId.ToString() });
+        else if (step == 2) SendMouse(partyMenuPoint, true, MouseButton.Right);
+        else if (step == 4) SendMouse(partyMenuPoint, false, MouseButton.Right);
     }
 
     /// <summary>FIXTURE: the offline party's field users are its online members on the own map and channel.</summary>

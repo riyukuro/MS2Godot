@@ -169,6 +169,8 @@ namespace Ms2.Avm2.Flash
                 // MS2DataModel.getUserData instead of installing its authoring stand-in
                 if (InGame && RT.GetClass("scaleform.ms2.manager.TooltipManager") is { } tm)
                     RT.CallProperty(tm, Name.Public("init"), new object[] { Stage });
+                // and listens for the right button on the stage (Main.addedToStage, after TooltipManager.init)
+                if (InGame) ListenForRightButton();
                 var rootSym = new JsonObject { ["kind"] = "sprite", ["timeline"] = Layout["root"]?.DeepClone() };
                 var name = (string)Layout["documentClass"];
                 var cls = name == null ? null : RT.GetClass(name);
@@ -1027,15 +1029,33 @@ namespace Ms2.Avm2.Flash
 
         AsInteractiveObject over;
 
-        void MouseEv(AsInteractiveObject t, string type, AsObject related = null, int delta = 0)
+        AsClass mouseEventClass, mouseEventExClass;
+        bool mouseEventExLooked;
+
+        /// <summary>
+        /// EventDispatcher::CreateMouseEventObject (sfr_as3_09.cpp:2303): with the extensions on (they are in the game) the
+        /// event is a scaleform.gfx.MouseEventEx, the class the movie's ABC declares, constructed with the type alone; then
+        /// bubbles (all but roll over/out), not cancelable, and the Ex fields mouseIdx (one mouse: 0) and buttonIdx (the
+        /// EventId's ButtonId: the button pressed or released, 0 for the others). STILL-OPEN: nestingIdx is the EventId's
+        /// RollOverCnt, which this player does not count; it stays 0.
+        /// </summary>
+        void MouseEv(AsInteractiveObject t, string type, AsObject related = null, int delta = 0, int button = 0)
         {
             if (t == null) return;
             var (lx, ly) = t.GlobalToLocal(MouseX, MouseY);
             bool bubbles = type is not ("rollOver" or "rollOut");
             RT.Guard(type, () =>
             {
-                var e = (AsMouseEvent)RT.GetClass("flash.events.MouseEvent").Construct(type, Rt.Box(bubbles));
+                mouseEventClass ??= RT.GetClass("flash.events.MouseEvent");
+                if (!mouseEventExLooked) { mouseEventExLooked = true; mouseEventExClass = RT.GetClass("scaleform.gfx.MouseEventEx"); }
+                var e = (AsMouseEvent)(mouseEventExClass ?? mouseEventClass).Construct(type);
+                e.bubbles = bubbles; e.cancelable = false;
                 e.localX = lx; e.localY = ly; e.StageX = MouseX; e.StageY = MouseY; e.buttonDown = MouseDown; e.relatedObject = related; e.delta = delta;
+                if (mouseEventExClass != null)
+                {
+                    RT.SetProperty(e, Name.Public("mouseIdx"), Rt.Box(0));
+                    RT.SetProperty(e, Name.Public("buttonIdx"), Rt.Box(button));
+                }
                 t.Dispatch(e);
             });
         }
@@ -1062,31 +1082,89 @@ namespace Ms2.Avm2.Flash
 
         static bool Contains(AsDisplayObject a, AsDisplayObject b) { for (var o = b; o != null; o = o.Parent) if (o == a) return true; return false; }
 
-        AsInteractiveObject pressed;
+        /// <summary>The mouse button index of <see cref="MouseButton(bool, int)"/>: MouseEventEx.LEFT_BUTTON, RIGHT_BUTTON,
+        /// MIDDLE_BUTTON.</summary>
+        public const int LeftButton = 0, RightButton = 1, MiddleButton = 2;
+
+        readonly AsInteractiveObject[] pressedBy = new AsInteractiveObject[3];     // GetMouseButtonDownEntity(buttonIdx)
         /// <summary>
-        /// The left button. MovieRoot::GenerateMouseEvents (sfr_as3_17.cpp:7035) sends the mouse up, the wheel and the mouse
-        /// move to the top-most entity, or to the stage when there is none (topmostEntitySafe), so a release over nothing
-        /// still reaches the stage's listeners (DragManager's MOUSE_UP); the mouse down likewise (activeEntitySafe, :7265),
-        /// and the click goes where both went.
+        /// A mouse button (<see cref="LeftButton"/>, <see cref="RightButton"/>, <see cref="MiddleButton"/>). MovieRoot::
+        /// GenerateMouseEvents (sfr_as3_17.cpp:7007) runs per button index: the mouse up, the wheel and the mouse move go to
+        /// the top-most entity, or to the stage when there is none (topmostEntitySafe), so a release over nothing still
+        /// reaches the stage's listeners (DragManager's MOUSE_UP); the mouse down likewise (activeEntitySafe, :7265), and
+        /// the click goes where both went, each with that button's index as buttonIdx. Only a left press moves the focus
+        /// (MovieImpl's mouse handling, sfr_gfx_01i.cpp:3673), and MouseEvent.buttonDown is the left button (ButtonsMask &amp; 1,
+        /// sfr_as3_09.cpp:1708). main.gfx's stage listeners turn the right button's events into the right* events
+        /// (<see cref="ListenForRightButton"/>).
         /// </summary>
-        public void MouseButton(bool down)
+        public void MouseButton(bool down, int button = LeftButton)
         {
-            MouseDown = down;
+            if ((uint)button >= (uint)pressedBy.Length) return;
+            if (button == LeftButton) MouseDown = down;
             var t = MouseTarget(MouseX, MouseY);
             if (down)
             {
-                pressed = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
+                pressedBy[button] = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
                 var f = t;
-                for (var o = (AsDisplayObject)t; o != null; o = o.Parent) if (o is AsInteractiveObject io && (io is AsTextField { type: "input" } || io.tabEnabled)) { f = io; break; }
-                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown");     // activeEntitySafe, sfr_as3_17.cpp:7265
-                if (f is AsTextField { type: "input" } || f?.tabEnabled == true) SetFocus(f, "mouse");
+                if (button == LeftButton)
+                    for (var o = (AsDisplayObject)t; o != null; o = o.Parent) if (o is AsInteractiveObject io && (io is AsTextField { type: "input" } || io.tabEnabled)) { f = io; break; }
+                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown", button: button);     // activeEntitySafe, sfr_as3_17.cpp:7265
+                if (button == LeftButton && (f is AsTextField { type: "input" } || f?.tabEnabled == true)) SetFocus(f, "mouse");
             }
             else
             {
-                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseUp");
-                if ((t ?? Stage) == pressed) MouseEv(pressed, "click");
-                pressed = null;
+                var pressed = pressedBy[button];
+                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseUp", button: button);
+                if ((t ?? Stage) == pressed) MouseEv(pressed, "click", button: button);
+                pressedBy[button] = null;
             }
+        }
+
+        /// <summary>The classes main.gfx's Main.useRClickEvent leaves alone: their right button events are not redispatched.</summary>
+        static readonly string[] RightClickOwnClasses =
+        {
+            "scaleform.ms2.controls.RClickDropdown", "scaleform.clik.controls.ButtonBar", "scaleform.ms2.renderer.SkillRenderer",
+            "scaleform.ms2.renderer.ComponentRenderer", "scaleform.ms2.renderer.GroupMessengerUserRenderer",
+            "scaleform.ms2.unit.construct.CubeRenderer",
+        };
+
+        /// <summary>
+        /// The right button's events as main.gfx's scaleform.ms2.Main makes them. Main.addedToStage puts onHandleMouseClick,
+        /// onHandleMouseDown, onHandleMouseUp and onHandleMouseDoubleClick on the stage for click, mouseDown, mouseUp and
+        /// doubleClick, capture and bubble, priority 10000; each returns at once when useRClickEvent(target) (the target is
+        /// one of <see cref="RightClickOwnClasses"/>), and for buttonIdx == MouseEventEx.RIGHT_BUTTON stops the event
+        /// (stopImmediatePropagation, stopPropagation) and dispatchMouseEventToTarget: a new MouseEvent of EventString's
+        /// rightClick, rightMouseDown, rightMouseUp or rightDoubleClick with the event's bubbles, cancelable, localX, localY,
+        /// relatedObject, ctrlKey, altKey, shiftKey, buttonDown and delta, dispatched on the event's target. In the client
+        /// every dialog is in main.gfx's one stage; here each movie has its own, so each gets these listeners.
+        /// </summary>
+        void ListenForRightButton()
+        {
+            var rt = RT;
+            AsClass[] own = null;
+            void Listen(string type, string rightType)
+            {
+                var fn = new AsPlainFunction(rt, new NativeMethod("Main.onHandleMouse " + type, (_, a) =>
+                {
+                    if (a.Length == 0 || a[0] is not AsMouseEvent e) return Rt.Undef;
+                    own ??= RightClickOwnClasses.Select(rt.GetClass).Where(c => c != null).ToArray();
+                    if (own.Any(c => rt.IsType(e.target, c))) return Rt.Undef;          // useRClickEvent
+                    if (Rt.ToNumber(rt.GetProperty(e, Name.Public("buttonIdx"))) != RightButton) return Rt.Undef;
+                    e.stopImmediatePropagation();
+                    e.stopPropagation();
+                    if (e.target is not { } target) return Rt.Undef;                     // dispatchMouseEventToTarget
+                    var r = (mouseEventClass ??= rt.GetClass("flash.events.MouseEvent")).Construct(rightType, Rt.Box(e.bubbles), Rt.Box(e.cancelable), e.localX, e.localY, e.relatedObject,
+                        Rt.Box(e.ctrlKey), Rt.Box(e.altKey), Rt.Box(e.shiftKey), Rt.Box(e.buttonDown), Rt.Box(e.delta));
+                    rt.CallProperty(target, Name.Public("dispatchEvent"), new object[] { r });
+                    return Rt.Undef;
+                }));
+                Stage.addEventListener(type, fn, false, 10000, true);
+                Stage.addEventListener(type, fn, true, 10000, true);
+            }
+            Listen("click", "rightClick");
+            Listen("mouseDown", "rightMouseDown");
+            Listen("mouseUp", "rightMouseUp");
+            Listen("doubleClick", "rightDoubleClick");
         }
 
         public void Wheel(int delta) => MouseEv(MouseTarget(MouseX, MouseY) ?? (AsInteractiveObject)Stage, "mouseWheel", null, delta);

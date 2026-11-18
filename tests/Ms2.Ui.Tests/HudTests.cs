@@ -200,11 +200,35 @@ public class HudTests
         Assert.That(Tip(3), Is.EqualTo(m.Tables.Common("s_tooltip_party").Replace("{0}", m.Tables.Common("s_word_online"))
             .Replace("{1}", m.Tables.Common("s_tooltip_party_ch").Replace("{0}", m.Player.Channel.ToString()) + " Field")));
         Assert.That(Tip(5), Is.EqualTo(m.Tables.Common("s_word_offline")));
-        // the movie's right click raises the member menu (raise-only in phase 1)
+        // a right click on member 3's slot: Main.onHandleMouse turns the stage's click (buttonIdx 1) into rightClick, which
+        // PartyDialog.OnRightClickParty sends as onPopupMenu(x, y, charSN); the plain click stops at Main's listener
         long menuFor = 0;
         c.MemberMenu += (x, y, id) => menuFor = id;
-        Assert.That(c.OnCallback("onPopupMenu", new object[] { 10.0, 20.0, "3" }), Is.True);
+        var seen = new List<string>();
+        foreach (var type in new[] { "click", "rightClick", "rightMouseDown", "rightMouseUp" })
+            h.Player.Call(h.Player.Stage, "addEventListener", new object[] { type,
+                new AsPlainFunction(h.RT, new NativeMethod(type, (_, a) => { seen.Add(type); return Rt.Undef; })), false, 0 });
+        var slot = (AsDisplayObject)Member(3);
+        var r = slot.GetBounds(null);
+        (double X, double Y)? at = null;
+        for (double y = r.Y + 2; at == null && y < r.Y + r.H; y += 2)
+            for (double x = r.X + 2; at == null && x < r.X + r.W; x += 2)
+                for (var t = (AsDisplayObject)h.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                    if (t == slot) { at = (x, y); break; }
+        Assert.That(at, Is.Not.Null, "a point on member 3's slot");
+        h.Player.MouseMove(at.Value.X, at.Value.Y);
+        h.Player.MouseButton(true, Player.RightButton);
+        h.Player.MouseButton(false, Player.RightButton);
         Assert.That(menuFor, Is.EqualTo(3));
+        Assert.That(seen, Is.EqualTo(new[] { "rightMouseDown", "rightMouseUp", "rightClick" }));
+        Assert.That(h.RT.Errors, Is.Empty);
+        // the left button's events go on as they are
+        seen.Clear();
+        menuFor = 0;
+        h.Player.MouseButton(true);
+        h.Player.MouseButton(false);
+        Assert.That(seen, Is.EqualTo(new[] { "click" }));
+        Assert.That(menuFor, Is.EqualTo(0));
     }
 
     [Test]
