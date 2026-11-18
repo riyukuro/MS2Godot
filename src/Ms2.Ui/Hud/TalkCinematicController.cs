@@ -117,6 +117,19 @@ public sealed class TalkCinematicController : UiController
     public event Action<int, int> SendQuestAccept;
     /// <summary>CQuestCompleteCinematicComponent::vfunc_2 (:630): Quest mode 4 with the quest, the talk npc and the choice (0).</summary>
     public event Action<int, int, int> SendQuestComplete;
+    /// <summary>NpcTalk mode 7 (cinematiccomponent.cpp:586, :652): the quest and 2 after an accept, the following quest and 0 after a
+    /// complete; the talk goes on with that quest's script instead of mode 2.</summary>
+    public event Action<int, short> SendQuestRedirect;
+    /// <summary>CQuestProgressCinematicComponent::vfunc_2 (:611): Quest mode 0x12 with the quest.</summary>
+    public event Action<int> SendQuestProgress;
+    /// <summary>FUN_14074b840 (questdata.cpp @0x14074b840): with the QuestProgress feature, a quest without conditions whose start
+    /// npc is its complete npc; a redirect page's accept then sends mode 7.</summary>
+    public Func<int, bool> AcceptRedirects = _ => false;
+    /// <summary>FUN_14074b950 (questdata.cpp @0x14074b950): with the QuestProgress feature, the one following quest when it starts
+    /// at this quest's complete npc, else 0; a redirect page's complete then sends mode 7 with it.</summary>
+    public Func<int, int> CompleteRedirectTo = _ => 0;
+    /// <summary>The quest data's &lt;summonPortal&gt; fieldID (m_318.m_0) is set: the progress page sends Quest mode 0x12.</summary>
+    public Func<int, bool> HasSummonPortal = _ => false;
 
     /// <summary>FUN_1401aa6a0: the npc's "title name".</summary>
     public Func<int, string> NpcName = id => id.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -405,6 +418,7 @@ public sealed class TalkCinematicController : UiController
     {
         if (IsQuestActive(c.QuestId)) return;
         SendQuestAccept?.Invoke(c.QuestId, TalkNpcId);
+        if (c.Redirect != 0 && AcceptRedirects(c.QuestId)) { SendQuestRedirect?.Invoke(c.QuestId, 2); return; }
         RequestNext(0);
     }
 
@@ -415,6 +429,7 @@ public sealed class TalkCinematicController : UiController
         if (QuestOf(c.QuestId) == null) return;
         if (IsQuestRewarded(c.QuestId)) return;
         SendQuestComplete?.Invoke(c.QuestId, TalkNpcId, 0);
+        if (c.Redirect != 0 && CompleteRedirectTo(c.QuestId) is var next and not 0) { SendQuestRedirect?.Invoke(next, 0); return; }
         RequestNext(0);
     }
 
@@ -624,8 +639,9 @@ public sealed class TalkCinematicController : UiController
             if (kind == Kind.QuestProgress)
             {
                 // CQuestProgressCinematicComponent::vfunc_2 (:604) skips the base: nothing once started (it never sets the
-                // flag), and a next requests mode 2 (Quest mode 0x12 first for a quest whose m_318 is set, not read here)
+                // flag), and a next requests mode 2, Quest mode 0x12 first for a quest whose m_318.m_0 is set (:611)
                 if (started || msg != 0x493e2) return;
+                if (owner.Content is { } pc && owner.QuestOf(pc.QuestId) != null && owner.HasSummonPortal(pc.QuestId)) owner.SendQuestProgress?.Invoke(pc.QuestId);
                 owner.RequestNext(0);
                 return;
             }

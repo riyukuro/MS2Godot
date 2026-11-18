@@ -161,6 +161,38 @@ public class TalkCinematicTests
     }
 
     [Test]
+    public void ARedirectPagesAcceptGoesOnWithTheQuestInsteadOfTheNextPage()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "Will you help me?", QuestId = Quest, Redirect = 1 }, 6, x => x.AcceptRedirects = q => q == Quest);
+        var redirect = new List<(int, short)>(); int next = -1; bool accepted = false;
+        c.SendQuestAccept += (q, n) => accepted = true;
+        c.SendQuestRedirect += (q, k) => redirect.Add((q, k));
+        c.SendNext += i => next = i;
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(accepted, Is.True, "Quest mode 2 first");
+        Assert.That(redirect, Is.EqualTo(new[] { (Quest, (short)2) }), "NpcTalk mode 7 (quest, 2)");
+        Assert.That(next, Is.EqualTo(-1), "no mode 2");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void AProgressPageOfASummonPortalQuestSendsQuestMode0x12()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "Not done yet?", QuestId = Quest }, 8, x =>
+        {
+            x.QuestOf = q => q == Quest ? new("A New Path", 10, "_epic") : null;
+            x.HasSummonPortal = q => q == Quest;
+        });
+        var progress = new List<int>(); int next = -1;
+        c.SendQuestProgress += progress.Add;
+        c.SendNext += i => next = i;
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(progress, Is.EqualTo(new[] { Quest }));
+        Assert.That(next, Is.EqualTo(0));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
     public void AnActiveQuestIsNotAcceptedAgain()
     {
         var (h, c, p, _) = Load(new() { Script = "Will you help me?", QuestId = Quest }, 6, x => x.IsQuestActive = q => q == Quest);

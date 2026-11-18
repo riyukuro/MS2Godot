@@ -40,6 +40,8 @@ public sealed class QuestData
     /// </summary>
     public readonly List<uint> Following = new();
     internal readonly List<uint> RequiredBy = new(), SelectableBy = new();
+    /// <summary>&lt;summonPortal&gt; fieldID / portalID (m_318.m_0 / m_4): a progress talk on such a quest sends Quest mode 0x12.</summary>
+    public int SummonPortalField, SummonPortalId;
     /// <summary>basic alliance (m_4c, Parse_14021a330): 0 none, 1 darkwind .. 5 greenhood, 6 .. 8 the expedition ones, 9 georg.</summary>
     public int Alliance;
     /// <summary>basic rank (m_50, Parse_14021a570): S 0, A 1, B 2, C 3, D 4; 5 when absent or another value.</summary>
@@ -348,6 +350,11 @@ public sealed partial class QuestTable
             d.RemoteComplete = ParseRemote((string)remoteComplete.Attribute("useRemote"), d.RemoteComplete);
             QueryUInt(remoteComplete, "requireField", ref d.RemoteCompleteField);
             QueryInt(remoteComplete, "requireDungeonClear", ref d.RemoteCompleteDungeonClear);
+        }
+        if (q.Element("summonPortal") is { } summonPortal)
+        {
+            QueryInt(summonPortal, "fieldID", ref d.SummonPortalField);
+            QueryInt(summonPortal, "portalID", ref d.SummonPortalId);
         }
         foreach (var c in q.Elements("condition"))
             if (QuestCondition.Load(c) is { } cond) d.Conditions.Add(cond);
