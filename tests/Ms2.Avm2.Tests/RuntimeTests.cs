@@ -187,6 +187,23 @@ public class RuntimeTests
     }
 
     [Test]
+    public void HtmlTextWhosePlainTextIsAKeyIsTranslated()
+    {
+        // the translator takes plain text (caps 0): an html text is parsed and its text is the key; the result is html
+        var (rt, p) = Empty();
+        p.Translate = k => k == "$s_points" ? "Attribute <b>Points</b>" : null;
+        var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();
+        tf.FromSymbol(new JsonObject { ["bounds"] = new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 100, ["h"] = 20 },
+            ["text"] = new JsonObject { ["size"] = 12, ["html"] = true, ["initial"] = "<p align=\"left\"><font size=\"18\" color=\"#ffffff\">$s_points</font></p>" } });
+        Assert.That(tf.Text, Is.EqualTo("Attribute Points"));
+        Assert.That(tf.Html, Is.EqualTo("Attribute <b>Points</b>"));
+        tf.htmlText = "<font color=\"#ff0000\">$s_other</font>";
+        Assert.That(tf.Text, Is.EqualTo("$s_other"), "a key with no value stays");
+        tf.htmlText = "<b>$s_points</b> left";
+        Assert.That(tf.Text, Is.EqualTo("$s_points left"), "only a whole text is a key");
+    }
+
+    [Test]
     public void TextAutoSizeScaleFollowsDocViewFormat()
     {
         // shrink: the smaller axis ratio where the text is larger; text that fits keeps its size

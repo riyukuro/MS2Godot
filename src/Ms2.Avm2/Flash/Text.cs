@@ -356,13 +356,21 @@ public class AsTextField : AsInteractiveObject
     /// with StyledText::ParseHtml, <see cref="HtmlText.Parse"/>): <see cref="Text"/> and each char's format. A line break
     /// the end of the html's last P makes is not kept in Text; <see cref="GetHtml"/> still writes its paragraph.
     /// </summary>
-    public void SetHtml(string html)
+    public void SetHtml(string html) => SetHtml(html, true);
+
+    /// <summary><paramref name="translate"/>: TextField::SetTextValue's translation (sfr_gfx_03f.cpp:601). The client's
+    /// FontTranslator has no GetCaps override (caps 0, no Cap_ReceiveHtml), so an html text is parsed and its plain text
+    /// is the key (the movie's "&lt;p&gt;&lt;font ...&gt;$s_key&lt;/font&gt;&lt;/p&gt;" initial texts); the result is
+    /// html parsed over the field's initial formats, not the key's markup (GetInitialFormats + ParseHtml).</summary>
+    void SetHtml(string html, bool translate)
     {
         Html = html ?? "";
         IsHtml = true;
-        var (s, formats) = HtmlText.Parse(Tr(Html), multiline, '\r', perChar: true);
+        var src = translate ? Tr(Html) : Html;
+        var (s, formats) = HtmlText.Parse(src, multiline, '\r', perChar: true);
         bool endBreak = s.EndsWith('\r') && Regex.IsMatch(Html, "</p>\\s*$", RegexOptions.IgnoreCase);
         if (endBreak) s = s[..^1];
+        if (translate && src == Html && s != Html && Tr(s) is var t && t != s) { SetHtml(t, false); return; }
         Text = s;
         SetFormats(formats, endBreak);
     }
