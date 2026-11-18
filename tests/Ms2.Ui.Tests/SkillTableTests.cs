@@ -122,6 +122,11 @@ public class SkillTableTests
         Assert.That(extra.Select(r => ((string)r["text"], (string)r["color"])), Is.EqualTo(new[]
             { ("Active", "aaaaaa"), ("Long Range / Physical", "aaaaaa"), ("Weapon Required: Two-handed Bow", "aaaaaa") }));
         Assert.That(SkillTooltip.Weapons(tables, 51, 0, t.GetSkillData(ArrowStream).Weapons).Allowed, Is.True);
+        // other weapons in both hands: red
+        player.EquipSubtype = slot => slot == 5 ? 52 : slot == 4 ? 53 : 0;
+        var held = ((List<object>)SkillTooltip.Build(tables, player, ArrowStream, 1, 0x10, true)["extraDescription"]).Cast<Dictionary<string, object>>().Last();
+        Assert.That(held["color"], Is.EqualTo("ff4040"));
+        player.EquipSubtype = _ => 0;
         // the description's {0} fields are filled from the level's stringParam
         var desc = (string)o["skillDescription"];
         Assert.That(desc, Is.Not.Empty);

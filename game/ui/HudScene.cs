@@ -1130,8 +1130,8 @@ public partial class HudScene : Node
             Points = live?.SkillPoints ?? new Ms2.Ui.Skills.SkillPoints(),
             IsQuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
         };
-        // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061); no equipment feed
-        // yet, so both hands read empty
+        // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061); the hands are
+        // PC::GetEquipItemLayer0(5 / 4) (pc.cpp:1340), the own FieldAddUser's layer 0 equips (RH, LH), offline none
         var tipPlayer = new Ms2.Ui.Skills.SkillTooltipPlayer
         {
             Jobs = jobs,
@@ -1139,6 +1139,8 @@ public partial class HudScene : Node
             IsQuestRewarded = c.IsQuestRewarded,
             QuestName = id => questTable?.QuestName((int)id) ?? "",
             QuickSlotOf = id => hudModel.ServerKeys?.FindQuickSlotBySkillAndItemUid((int)id, 0) ?? -1,
+            EquipSubtype = slot => live?.Me.Equips?.FirstOrDefault(e => (int)e.Slot == slot) is { } eq
+                ? hudModel.Tables.Items.Get(eq.Id)?.EquipSubtype ?? 0 : 0,
         };
         c.SkillTooltip = (d, id, level) =>
         {

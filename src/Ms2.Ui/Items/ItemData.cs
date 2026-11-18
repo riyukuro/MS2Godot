@@ -94,6 +94,7 @@ public sealed class ItemData
         return d;
     }
 
+    public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
     public bool IsGemItem => Type == 7;                        // :669
     public bool IsPetItem => Type == 0xb;                      // :675
     public bool IsScoreItem => Type == 0xc;                    // :695
