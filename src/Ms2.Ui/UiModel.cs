@@ -112,4 +112,6 @@ public static class Feature
     public const int GamePad = 0xb5;
     /// <summary>0xc9: the client version text (uiupperhuddialog.cpp:300).</summary>
     public const int VersionText = 0xc9;
+    /// <summary>0x3d: merats (UIUpperHudDialog vfunc_46 hides m_marat without it, uiupperhuddialog.cpp:462; vfunc_oa0_14).</summary>
+    public const int Merat = 0x3d;
 }

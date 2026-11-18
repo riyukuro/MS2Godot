@@ -162,6 +162,26 @@ public class HudTests
     }
 
     [Test]
+    public void UpperHudMeratFeatureAndTick()
+    {
+        var m = Model();
+        var now = new DateTime(2026, 1, 1, 9, 5, 0);
+        m.ServerTime = () => now;
+        m.Features.Remove(Feature.Merat);
+        var c = new UpperHudController();
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // vfunc_46: no merats without feature 0x3d
+        Assert.That((h.FindNamed("m_marat") as AsDisplayObject)?.visible, Is.False);
+        // vfunc_15: the clock follows the server time once a second
+        now = now.AddMinutes(2);
+        c.Process(500);
+        Assert.That(Text(h, "timeText"), Is.EqualTo("09:05"));
+        c.Process(1500);
+        Assert.That(Text(h, "timeText"), Is.EqualTo("09:07"));
+    }
+
+    [Test]
     public void MinimapInitDataAndEntities()
     {
         var m = Model();

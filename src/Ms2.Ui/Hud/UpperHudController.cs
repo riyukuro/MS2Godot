@@ -41,6 +41,8 @@ public sealed class UpperHudController : UiController
             Host.SetVisible(ver, true);
             Host.Set(ver, "htmlText", Model.Tables.Common("s_upper_hud_version") ?? "");
         }
+        // the version field is shown and multiline with or without 0xc9 (uiupperhuddialog.cpp:307)
+        if (Host.Child("m_version") is { } version) { Host.SetVisible(version, true); Host.Set(version, "multiline", true); }
         if (Host.Child("m_maidStatusButton") is AsDisplayObject maid) Host.SetChildVisible("badge", false, maid);
         UpdateMoney();
         UpdateHotTime();
@@ -50,6 +52,26 @@ public sealed class UpperHudController : UiController
         RefreshNotice();
         Host.Invoke("arrangePos");
         UpdateMaidReadyCount();
+        Shown();
+    }
+
+    /// <summary>vfunc_46 (uiupperhuddialog.cpp:462), when the HUD is shown: m_marat hides without feature 0x3d, then arrangePos.</summary>
+    void Shown()
+    {
+        if (!Model.IsFeatureEnabled(Feature.Merat)) Host.SetVisible(Host.Child("m_marat"), false);
+        Host.Invoke("arrangePos");
+    }
+
+    ulong lastTick;
+    /// <summary>vfunc_15 (uiupperhuddialog.cpp:424): once a second (m_timer.Check(1000)) the clock, the maid badge and the
+    /// hot time; the notice scroll every frame (no notice is set here).</summary>
+    public void Process(ulong nowMs)
+    {
+        if (Host?.Entity == null || nowMs - lastTick < 1000) return;
+        lastTick = nowMs;
+        UpdateClock();
+        UpdateMaidReadyCount();
+        UpdateHotTime();
     }
 
     /// <summary>SetChildText(root, "mesoText" / "maratText", number) (uiupperhuddialog.cpp:325; status events 8 and 11).</summary>
@@ -100,6 +122,8 @@ public sealed class UpperHudController : UiController
 
     public override void OnStatus(StatusEvent e)
     {
+        // vfunc_oa0_11 / vfunc_oa0_14 (uiupperhuddialog.cpp:437, 446): the merat text only with feature 0x3d
+        if (e is StatusEvent.Merat && !Model.IsFeatureEnabled(Feature.Merat)) return;
         if (e is StatusEvent.Meso or StatusEvent.Merat) { UpdateMoney(); Host.Invoke("arrangePos"); }
     }
 }

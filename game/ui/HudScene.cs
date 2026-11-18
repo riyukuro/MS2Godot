@@ -120,6 +120,7 @@ public partial class HudScene : Node
         questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
         foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
         groupMessenger?.GetParent()?.RemoveChild(groupMessenger);
+        upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         target = null;
@@ -345,47 +346,29 @@ public partial class HudScene : Node
 
     static void Hide(MovieClipNode root, params string[] names) { foreach (var n in names) root.HideNamed(n); }
 
+    // ---- top bar: uiupperhuddialog run by its own ActionScript, UIUpperHudDialog's C++ side as UpperHudController ------
+
+    MovieDialog upperHud;
+    Ms2.Ui.Hud.UpperHudController upperHudSide;
+
+    /// <summary>
+    /// The clock, mesos, merats and the buttons at the top (UIUpperHudDialog, uiupperhuddialog.cpp). The mesos and merats are
+    /// shown only; the features the controller tests are the client's (feature.xml by name). Kept across relayouts.
+    /// </summary>
     void UpperHud(Control ui)
     {
-        var r = Place(ui, "uiupperhuddialog", 1f, Vector2.Zero);
-        // the constructor hides the effects, version and game pad buttons; the client shows one of the game pad pair and the
-        // keyboard/mouse mode pair, and no PC bang buttons outside PC bangs
-        Hide(r, "m_searchInput", "m_version", "m_eventText", "m_searchDungeon", "m_pcBangButton", "m_pcBangButtonCn1", "m_pcBangButtonCn2", "m_effectMerat", "m_effectTokenPocket",
-            "m_effectHotTime", "m_gamePadOn", "m_mouseMode");
-        var bar = r.FindClip("m_noticeButton");
-        bar.FindClip("m_time")?.SetNamedText("timeText", DateTime.Now.ToString("HH:mm"));
-        bar.FindClip("m_meso")?.SetNamedText("mesoText", data.Mesos.ToString());
-        bar.FindClip("m_marat")?.SetNamedText("maratText", data.Merets.ToString());
-        if (bar.FindClip("m_maidStatusButton") is { } maid) { maid.GotoLabel("up"); maid.HideNamed("badge"); }   // the count badge shows only with waiting maid messages
-        ArrangeUpperHud(bar);
-    }
-
-    /// <summary>UpperHudDialog.arrangePos: each visible control follows the previous one, by its width (+10) or by a fixed step (+32).</summary>
-    static void ArrangeUpperHud(MovieClipNode d)
-    {
-        MovieClipNode.Child prev = d.Direct("m_time");
-        bool Visible(MovieClipNode.Child c) => c != null && c.Last >= 0 && c.Node.Visible;
-        void AfterWidth(string name, int gap)
-        {
-            var c = d.Direct(name);
-            if (!Visible(c) || prev == null) return;
-            d.SetChildX(c, prev.Base.Origin.X + d.ChildWidth(prev, true) + gap); prev = c;
-        }
-        void After(string name, int gap, bool always = false)
-        {
-            var c = d.Direct(name);
-            if (c == null || prev == null || (!always && !Visible(c))) return;
-            d.SetChildX(c, prev.Base.Origin.X + gap); prev = c;
-        }
-        AfterWidth("m_meso", 10);
-        AfterWidth("m_marat", 10);
-        AfterWidth("m_tokenPocketButton", 10);
-        After("m_maidStatusButton", 32, true);
-        After("m_fishingBookButton", 32, true);
-        After("m_keyboardGuideButton", 32, true);
-        After("m_keyboardMode", 32);
-        After("m_gamePadOff", 32);
-        After("m_searchButton", 32, true);
+        if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(GetWindow().Size); return; }
+        var model = new UiModel(new GameTables(assets.Packs, "en"));
+        model.Features.Clear();
+        foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat })
+            if (id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1])
+                && !data.FeaturesOff.Contains(Ms2.Ui.FeatureTable.Names[id - 1]))
+                model.Features.Add(id);
+        model.Player.Mesos = data.Mesos;
+        model.Player.Merats = data.Merets;
+        upperHudSide = new Ms2.Ui.Hud.UpperHudController();
+        upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
+        ui.AddChild(upperHud);
     }
 
     // ---- minimap: uiminimapdialog run by its own ActionScript, UIMinimapDialog's C++ side as MinimapController ----------
@@ -929,6 +912,7 @@ public partial class HudScene : Node
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());
+        upperHudSide?.Process(Time.GetTicksMsec());
         target?.Process(delta);
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
