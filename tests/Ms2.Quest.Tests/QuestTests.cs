@@ -39,7 +39,8 @@ public class QuestTests
     }
 
     // The client's loop as written (BuildMapPaths): every k, i, j, no row skipped; paths read back as FindMapPath does.
-    static List<int> ReferencePath(int[] fields, Func<int, int, bool> portal, int from, int to)
+    // the tables built once per graph, paths read for any pair
+    static Func<int, int, List<int>> Reference(int[] fields, Func<int, int, bool> portal)
     {
         int n = fields.Length + 1;
         var map = new int[n];
@@ -53,6 +54,11 @@ public class QuestTests
             for (int i = 0; i < n; i++)
                 for (int j = 0; j < n; j++)
                     if (dist[i, k] + dist[k, j] < dist[i, j]) { mid[i, j] = (short)k; dist[i, j] = (short)(dist[i, k] + dist[k, j]); }
+        return (from, to) => Path(fields, portal, map, mid, from, to);
+    }
+
+    static List<int> Path(int[] fields, Func<int, int, bool> portal, int[] map, short[,] mid, int from, int to)
+    {
         if (from == to) return new List<int> { from };
         int fi = Array.IndexOf(fields, from) + 1, ti = Array.IndexOf(fields, to) + 1;
         if (fi == 0 || ti == 0) return null;
@@ -83,9 +89,10 @@ public class QuestTests
             for (int c = 0; c < 70 * (seed % 3 + 1); c++) e.Add((fields[rnd.Next(70)], fields[rnd.Next(70)]));
             bool Portal(int a, int b) => e.Contains((a, b));
             var g = new QuestMapGraph(fields, Portal);
+            var reference = Reference(fields, Portal);
             foreach (int a in fields)
                 foreach (int b in fields)
-                    Assert.That(g.FindMapPath(a, b), Is.EqualTo(ReferencePath(fields, Portal, a, b)), $"seed {seed}: {a} -> {b}");
+                    Assert.That(g.FindMapPath(a, b), Is.EqualTo(reference(a, b)), $"seed {seed}: {a} -> {b}");
         }
     }
 
@@ -109,9 +116,10 @@ public class QuestTests
             }
             bool Portal(int a, int b) => lists.TryGetValue(a, out var l) && l.Contains(b);
             var g = new QuestMapGraph(fields, lists);
+            var reference = Reference(fields, Portal);
             foreach (int a in fields.Append(0))
                 foreach (int b in fields.Append(0))
-                    Assert.That(g.FindMapPath(a, b), Is.EqualTo(ReferencePath(fields, Portal, a, b)), $"seed {seed}: {a} -> {b}");
+                    Assert.That(g.FindMapPath(a, b), Is.EqualTo(reference(a, b)), $"seed {seed}: {a} -> {b}");
         }
     }
 
