@@ -42,11 +42,20 @@ public partial class MovieDialog : Node2D
         Player.StageH = stage.Y;
     }
 
+    Vector2 window;
+
+    /// <summary>
+    /// The stage origin goes at <see cref="UiScale.MovieOrigin"/> in the viewport, through whatever canvas layer the dialog
+    /// is added to (a host layer may already be offset by it), so every hosted movie is placed once.
+    /// </summary>
     void Place(Vector2 window)
     {
+        this.window = window;
         view.StageScale = UiScale.For(window);
-        view.Position = UiScale.MovieOrigin;
+        if (IsInsideTree()) view.GlobalPosition = GetCanvasTransform().AffineInverse() * UiScale.MovieOrigin;
     }
+
+    public override void _EnterTree() => Place(window);
 
     /// <summary>The client size times the UI scale (DAT_143af62d4 times FUN_141276490), a dialog's saved rates' base.</summary>
     void SetClientStage(Vector2 window)
