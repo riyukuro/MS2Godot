@@ -39,6 +39,15 @@ public partial class As3View : Node2D
         Player = player; this.assets = assets;
         player.Translate ??= key => assets.Str(key);
         player.ImageSize ??= url => ResolveImage(url) is { } t ? ((int)t.GetSize().X, (int)t.GetSize().Y) : null;
+        // the runtime breaks lines and sizes fields with the advances of the game font the field draws in (unhinted, as
+        // FieldNode draws it), measured at 8x the size so the whole-pixel font sizes do not round the advances
+        TextMeasure.HeightRatio = font => assets.LineRatios(font).Height;
+        TextMeasure.Width = (font, size, s) =>
+        {
+            if (string.IsNullOrEmpty(s) || size <= 0) return 0;
+            int px = Math.Max(1, (int)Math.Round(size * 8));
+            return assets.FontFor(font).GetStringSize(s, HorizontalAlignment.Left, -1, px).X * size / px;
+        };
     }
 
     /// <summary>Scale from stage units to this node's units (set by the host to fit the viewport).</summary>
@@ -145,6 +154,11 @@ public partial class As3View : Node2D
         }
         e.Seen = gen;
         var m = o.Matrix;
+        // under a scale-9 sprite (whose holder drops its scale): only shape meshes are mapped through the grid
+        // (TreeCacheShapeLayer's mesh key, sfr_render_03f.cpp:538); a text node keeps the whole matrix chain, so it gets
+        // the sprite's scale
+        if (nine != null && o is AsTextField or AsStaticText)
+            m = new Mat(m.A * nine.Sx, m.B * nine.Sy, m.C * nine.Sx, m.D * nine.Sy, m.Tx * nine.Sx, m.Ty * nine.Sy);
         // scale-9 sprite with a scale: its own scale is applied by mapping its shapes (corners and edges keep their size)
         NineCtx childNine = null;
         if (o.Symbol?["scale9"] is JsonObject g9 && o is AsContainer)
@@ -357,22 +371,26 @@ public partial class FieldNode : Node2D
         var gs = GetGlobalTransform().Scale;
         float screen = Math.Max(0.01f, Math.Abs(gs.Y));
         float size = (float)(tf.FontSize * fit);
-        int px = Math.Max(1, (int)Math.Round(size * screen));
+        // Scaleform's glyph cache rasterizes at the ramp size of the screen size (SnapFontSizeToRamp) and draws that raster
+        // scaled to the exact screen size, as TextNode does: px is the raster size, k the raster's scale to field units
+        int px = (int)TextNode.RampSize(size * screen);
+        float k = size / px;
         var col = tf.Format?.color is { } cv && !Rt.IsNullish(cv) ? Rt.ToUint32(cv) : 0u;
         var color = new Color(((col >> 16) & 255) / 255f, ((col >> 8) & 255) / 255f, (col & 255) / 255f);
         var align = tf.Format?.align as string ?? "left";
         var box = tf.Box;
-        float lineH = (float)TextMeasure.LineHeight(size, 0);
-        float ascent = font.GetAscent(px) / screen;
-        DrawSetTransform(Vector2.Zero, 0, new Vector2(1 / screen, 1 / screen));
-        float y = (float)box.Y + 2;
+        // lines advance by the line height plus the field's leading; the baseline is the font's ascent below the line top
+        float lineH = (float)TextMeasure.LineHeight(tf.FontClass, size, tf.Leading);
+        float ascent = assets.AscentRatio(tf.FontClass) * size;
+        DrawSetTransform(Vector2.Zero, 0, new Vector2(k, k));
+        float y = (float)tf.FirstLineTop(lines.Count);
         foreach (var line in lines)
         {
-            float w = font.GetStringSize(line, HorizontalAlignment.Left, -1, px).X / screen;
+            float w = font.GetStringSize(line, HorizontalAlignment.Left, -1, px).X * k;
             float x = (float)box.X + 2;
             if (align == "center") x = (float)(box.X + (box.W - w) / 2);
             else if (align == "right") x = (float)(box.X + box.W - 2 - w);
-            DrawString(font, new Vector2(x, y + ascent) * screen, line, HorizontalAlignment.Left, -1, px, color);
+            DrawString(font, new Vector2(x, y + ascent) / k, line, HorizontalAlignment.Left, -1, px, color);
             y += lineH;
         }
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
