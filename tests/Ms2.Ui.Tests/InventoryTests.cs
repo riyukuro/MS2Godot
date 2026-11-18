@@ -304,6 +304,8 @@ public class InventoryTests
             new EquipItem { Id = 11400001, Uid = 11, InventorySlot = 1, Amount = 1, Rarity = 1 },
             new EquipItem { Id = 11400001, Uid = 12, InventorySlot = 2, Amount = 1, Rarity = 1, ExpiryTime = 500 },
             new EquipItem { Id = 11400021, Uid = 13, InventorySlot = 3, Amount = 1, Rarity = 1 },                    // a skin item
+            new EquipItem { Id = 11400001, Uid = 14, InventorySlot = 4, Amount = 1, Rarity = 1, Transfer = { Rule = 8 } }, // binds on equip
+            new EquipItem { Id = 11400001, Uid = 15, InventorySlot = 5, Amount = 1, Rarity = 1, ExpiryTime = 1000 },  // expires now
         }));
         var (h, c, _) = Load(model, book);
         c.View.ServerTime = () => 1000;
@@ -335,6 +337,12 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.LowLevelKey))), "level: box 224, no send");
         record.Level = 50;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.5", 1 });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.ExpiredKey))), "IsExpired is expiry <= now");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.4", 1 });
+        Assert.That((sent.Count, raised.Last()), Is.EqualTo((count, InventoryController.BindOnEquipBox)), "binds on equip: the box, not ported, no send");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", "x" });
+        Assert.That(sent.Count, Is.EqualTo(count), "a button that is not a number is 0, the double click");
         record.JobGroup = 0;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.EquipJobKey))), "job 0 is never allowed: box 232");
@@ -345,7 +353,7 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.9", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "the preview key, a double click or an empty cell send nothing");
-        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(2), "the preview and the double click are raised");
+        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(3), "the preview and the double clicks (no function) are raised");
         model.HasLocalPlayer = false;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "no local player");
@@ -370,6 +378,8 @@ public class InventoryTests
             new EquipItem { Id = plain, Uid = 20, InventorySlot = 0, Amount = 3, Rarity = 1 },
             new EquipItem { Id = plain, Uid = 21, InventorySlot = 1, Amount = 1, Rarity = 1, ExpiryTime = 500 },
             new EquipItem { Id = 20300327, Uid = 22, InventorySlot = 2, Amount = 1, Rarity = 1 },                    // OpenItemBox
+            new EquipItem { Id = plain, Uid = 23, InventorySlot = 3, Amount = 1, Rarity = 1, Transfer = { Rule = 8 } }, // binds on use
+            new EquipItem { Id = plain, Uid = 24, InventorySlot = 4, Amount = 1, Rarity = 1, ExpiryTime = 1000 },     // expires now
         }));
         var (h, c, _) = Load(model, book);
         c.View.ServerTime = () => 1000;
@@ -397,6 +407,10 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((2, t.Common(InventoryController.DisabledJobKey))), "job 0: s_item_err_disable_job");
         record.JobGroup = 10;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.4" });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((2, t.Common(InventoryController.ExpiredKey))), "IsExpired is expiry <= now");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.3" });
+        Assert.That((sent.Count, raised.Last()), Is.EqualTo((2, InventoryController.BindOnUseBox)), "binds on use: the box, not ported, no send");
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
         Assert.That((sent.Count, raised.Last()), Is.EqualTo((2, "notifySlotUse")), "a function with its own handler: raised");
     }

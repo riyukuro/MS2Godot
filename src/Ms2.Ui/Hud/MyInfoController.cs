@@ -872,7 +872,7 @@ public sealed class MyInfoController : UiController
     /// </summary>
     bool SlotUse(object[] args)
     {
-        int button = args.Length > 1 ? (int)Rt.ToNumber(args[1]) : 0;
+        int button = args.Length > 1 ? InventoryController.ArgInt(args[1]) : 0;
         if (args.Length > 0 && args[0] is string n && n.StartsWith(EquipBag + ".", StringComparison.Ordinal)
             && int.TryParse(n.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot))
         {

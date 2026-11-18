@@ -268,6 +268,13 @@ public sealed class InventoryController : UiController, IInventoryBinding
         return false;
     }
 
+    /// <summary>Scaleform Value::GetInt of a callback argument: its number, 0 for one that is not a number (NaN or infinite).</summary>
+    internal static int ArgInt(object v)
+    {
+        double d = Rt.ToNumber(v);
+        return double.IsNaN(d) || double.IsInfinity(d) ? 0 : (int)d;
+    }
+
     /// <summary>The bag slot index of a slot name of the shown bag, -1 for another name.</summary>
     int SlotIndexOf(object name) =>
         name is string n && n.StartsWith(BagName + ".", StringComparison.Ordinal) && int.TryParse(n.AsSpan(BagName.Length + 1), out int i)
@@ -310,7 +317,7 @@ public sealed class InventoryController : UiController, IInventoryBinding
     bool SlotUse(object[] args)
     {
         int i = args.Length > 0 ? SlotIndexOf(args[0]) : -1;
-        int button = args.Length > 1 ? Convert.ToInt32(args[1], System.Globalization.CultureInfo.InvariantCulture) : 0;
+        int button = args.Length > 1 ? ArgInt(args[1]) : 0;
         if (i >= 0 && button == 0)
         {
             if (!ShiftHeld()) DoubleClick(i);
@@ -370,7 +377,8 @@ public sealed class InventoryController : UiController, IInventoryBinding
     /// equipment item, FUN_14053c8b0) are not ported: raised.
     /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe) checks,
     /// the use cooldown (FUN_141409060, box 0x55), the function shutdown list (notice 0x2f7), the bind-on-use box (0x11,
-    /// s_msg_transfer_bind_when_use), the dead check (box 66) and the item sound.
+    /// s_msg_transfer_bind_when_use: an item that binds on use is not sent, <see cref="BindOnUseBox"/> is raised), the dead
+    /// check (box 66) and the item sound. Without the wearer's record the requirement checks are skipped.
     /// </summary>
     void DoubleClick(int i)
     {
@@ -380,11 +388,12 @@ public sealed class InventoryController : UiController, IInventoryBinding
         var d = item.Data;
         if (d.HasCubeTextureMesh || d.IsScoreItem || !d.HasFunction) { Button?.Invoke("notifySlotUse"); return; }
         var record = Wearer?.Invoke();
-        bool expired = item.ExpiryTime > 0 && item.ExpiryTime < View.ServerTime();
+        bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
         if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(UseLevelKey); return; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return; }
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
+        if (NeedsBindConfirm(item)) { Button?.Invoke(BindOnUseBox); return; }
         if (OwnUseFunctions.Contains(d.FunctionName)) { Button?.Invoke("notifySlotUse"); return; }
         if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }                     // GetItemUseError 5 (an expired pet)
         View.RequestUse?.Invoke(item.Uid, "");
@@ -407,15 +416,17 @@ public sealed class InventoryController : UiController, IInventoryBinding
     /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang, VIP
     /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
     /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
-    /// 0x43, s_item_err_codi_slot, the cube texture block), the bind-on-equip box (17, s_msg_transfer_bind_when_equip) and
-    /// the item sound.
+    /// 0x43, s_item_err_codi_slot, the cube texture block), the bind-on-equip box (17, s_msg_transfer_bind_when_equip: an
+    /// item that binds on equip is not sent, <see cref="BindOnEquipBox"/> is raised), the warning sounds (s_warningLevel,
+    /// s_warningGender, s_warningClass) and the item sound. Without the wearer's record the requirement checks are skipped
+    /// (the client always has the player).
     /// </summary>
     void RequestEquip(Item item, int layer)
     {
         if (!Model.HasLocalPlayer) return;
         var d = item.Data;
         long now = View.ServerTime();
-        bool expired = item.ExpiryTime > 0 && item.ExpiryTime < now;
+        bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= now;
         if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
         var record = Wearer?.Invoke();
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
@@ -424,13 +435,24 @@ public sealed class InventoryController : UiController, IInventoryBinding
         var models = Model.Tables.ItemModels;
         if (d.Type != 1 || models.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return;
         var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
-        bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime < now && !w.Data.IsPetItem && !w.Data.HasMaidId)
+        bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime <= now && !w.Data.IsPetItem && !w.Data.HasMaidId)
             && (record?.CodiActive == true || !IsLayer2(w));
         bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
         int slot = worn.EquipSlotFor(item, models, Feature, CanUse);
+        if (NeedsBindConfirm(item)) { Button?.Invoke(BindOnEquipBox); return; }
         byte mode = layer switch { 1 => 1, 2 => Feature(142) ? (byte)2 : (byte)1, _ => 0 };
         View.RequestEquip?.Invoke(item.Uid, (byte)slot, mode);
     }
+
+    /// <summary>CItemTransfer::HasBindingRule (itemsocketsystemutil.cpp:2788, rule &amp; 8) and no binding (HasBinding, :2795): the
+    /// client asks first, box 17 / 0x11, and sends only on its confirm.</summary>
+    static bool NeedsBindConfirm(Item item) => item.Record?.Transfer is { } t && (t.Rule & 8) != 0 && !t.HasBinding;
+
+    /// <summary>The boxes raised (by their tag, inventory.cpp:196 / unit_140d1ae30_itemfunctiondispatch.cpp:304) in place of a
+    /// send the client confirms first: the bind-on-equip box (RequestEquipItem, inventory.cpp:1245,
+    /// s_msg_transfer_bind_when_equip) and the bind-on-use box (UseItem, s_msg_transfer_bind_when_use). Not ported: nothing is
+    /// sent.</summary>
+    public const string BindOnEquipBox = "useBindEquipItem", BindOnUseBox = "useBindFuncItem";
 
     void ShowCommonBox(string key) => ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(key) ?? "", null, ""));
 
