@@ -28,7 +28,7 @@ public interface IEquipSlotOwner : IDragSlotOwner
 /// are raised as <see cref="Button"/>; the dialogs the buttons open as <see cref="ToggleDialog"/> / <see cref="OpenDialog"/>.</para>
 /// <para>The parts whose data or code is not ported take it from a source that may be null; a null source leaves the
 /// member unset (or the row's value and detail empty): the Lua scores and crit rate, the equipment abilities, the item
-/// level, the shield, the achievement tally, the profile image path and the symbol.</para>
+/// level, the shield, the achievement tally and the profile image path.</para>
 /// </summary>
 public sealed class MyInfoController : UiController, IEquipSlotOwner
 {
@@ -55,6 +55,11 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public Func<long> Shield;
     /// <summary>UIMyInfoDialog::vfunc_104 (@0x141a5ae90): CAchieveManager::GetTally()->Sum().</summary>
     public Func<uint> AchieveTally;
+    /// <summary>The local PC's name tag symbol (PCBase::FUN_141661e00 = m_n10f8: the own FieldAddUser's, PC::FUN_141661d40).
+    /// STILL-OPEN: CSceneStateGame::OnNametag (scenestategame.cpp:7314), which changes it later, is not handled.</summary>
+    public Func<ushort> SymbolId = () => 0;
+    /// <summary>The local player's GM grade (GetGmGrade), for the symbol's gm condition.</summary>
+    public Func<int> GmGrade = () => 0;
     /// <summary>GetProfileImagePath (@0x141336c90): FUN_14016a730(FUN_141028be0(character id, picture, 1, "")).</summary>
     public Func<PcInfo, string> ProfileImagePath;
 
@@ -173,8 +178,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
 
     // ---- vfunc_84: the profile -------------------------------------------------------------------------------------
 
-    /// <summary>vfunc_84 (@0x14132fb40), then UIMyInfoDialog's SetSymbol (string table 0x27 and the name tag symbol table:
-    /// not here).</summary>
+    /// <summary>vfunc_84 (@0x14132fb40), then UIMyInfoDialog's override (@0x141a5ae40): <see cref="Symbol"/>.</summary>
     void Profile()
     {
         if (info == null) { ClearProfile(); return; }
@@ -194,6 +198,20 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         Guild();
         Adventure(info.PrestigeLevel);
         Wedding();
+        Symbol();
+    }
+
+    /// <summary>
+    /// UIMyInfoDialog::SetSymbol (@0x141a5ac90) with the local PC's symbol: setSymbol(its name from string table 0x27, the
+    /// ranked icon, CheckCondition == 0). The movie draws the icon disabled while the condition is not met. The trophy
+    /// condition reads the achievement tally (none = 0).
+    /// </summary>
+    void Symbol()
+    {
+        ushort id = SymbolId?.Invoke() ?? 0;
+        var table = Model.Tables.NametagSymbols;
+        var player = new NametagSymbols.Player(info.Level, info.PrestigeLevel, GmGrade?.Invoke() ?? 0, info.Titles, AchieveTally?.Invoke() ?? 0);
+        Host.Invoke("setSymbol", new object[] { Model.Tables.NametagSymbolTitle(id), table.IconRanked(id, player), table.CheckCondition(id, player) == 0 });
     }
 
     /// <summary>ClearProfile (@0x141333090): no name, trophy 0, m_title disabled.</summary>

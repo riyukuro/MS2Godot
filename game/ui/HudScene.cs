@@ -1075,6 +1075,7 @@ public partial class HudScene : Node, IUiStageHost
             Record = () => me.ToPcInfo(now()), StatPoints = me.StatPoints, ServerTime = now,
             Inventory = live != null ? live.Inventory : OfflineInventory(),
             ActionKeyDown = ActionKeyDown,
+            SymbolId = () => me.Insignia, GmGrade = () => me.User?.GmGrade ?? 0,
         };
         c.SystemNotice += key => GD.Print($"character: system notice {key}: {hudModel.Tables.Common(key)}");
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");

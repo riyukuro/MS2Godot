@@ -175,6 +175,8 @@ public sealed class MyCharacter {
     public int ObjectId = -1;
     public UserBlock User;
     public int Title;
+    /// <summary>The name tag symbol (PC::FUN_141661d40 = m_n10f8, read after the title in the own FieldAddUser).</summary>
+    public ushort Insignia;
     public long HomeCommendMonth; public int HomeCommendMonthly, HomeCommendPoint;
     public readonly long[] Stats0 = new long[PcInfo.StatCount], Stats1 = new long[PcInfo.StatCount], Stats2 = new long[PcInfo.StatCount];
     /// <summary>The proxies' trophy triples by proxy id (ProxyGameObj AddPlayer, scenestategame.cpp:11358; removed by mode 4),
@@ -192,7 +194,7 @@ public sealed class MyCharacter {
     /// <summary>The own FieldAddUser: object id, user block, the title (PC::FUN_141661c00 = m_n10f4) and the architect score
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
     public void Apply(FieldAddUser u) {
-        ObjectId = u.ObjectId; User = u.User; Title = u.Title;
+        ObjectId = u.ObjectId; User = u.User; Title = u.Title; Insignia = (ushort)u.Insignia;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();

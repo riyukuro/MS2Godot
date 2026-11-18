@@ -250,6 +250,13 @@ public sealed class GameTables
     /// <summary>CStringTable::FUN_141811980(0x53, id): string table 83 "stringShopTitle", a shop's title by shop id; "" when unknown.</summary>
     public string ShopTitle(int id) => Lazy(ref shopTitles, "stringshoptitle", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     Dictionary<string, string> categoryNames, shopTitles;
+    /// <summary>CStringTable::FUN_141811980(0x27, id): string table 39 "nametagSymbolTitle", a name tag symbol's name; ""
+    /// when unknown.</summary>
+    public string NametagSymbolTitle(int id) => Lazy(ref nametagSymbolTitles, "nametagsymboltitle", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> nametagSymbolTitles;
+    NametagSymbols nametagSymbols;
+    /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
+    public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);
 
     Dictionary<string, string> Lazy(ref Dictionary<string, string> d, string table, string attr)
         => d ??= strings?.Table(table, attr) ?? new Dictionary<string, string>();

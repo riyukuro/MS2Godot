@@ -93,6 +93,34 @@ public class MyInfoTests
     }
 
     [Test]
+    public void SymbolButtonIsTheOwnSymbol()
+    {
+        Packs();
+        // symbol 0 (no condition): its name from string table 39, drawn disabled
+        var (h, c, _, errors) = Load();
+        Assert.That(errors, Is.Empty);
+        var btn = (AsDisplayObject)h.Child("m_symbolBtn");
+        Assert.That(Rt.ToBoolean(h.Get(btn, "visible")), Is.True);
+        Assert.That(Rt.ToString(h.Get(btn, "label")), Is.EqualTo(c.Model.Tables.NametagSymbolTitle(0)).And.Not.Empty);
+        var icon = h.Get(btn, "m_icon");
+        Assert.That(Rt.ToNumber(h.Get(icon, "numChildren")), Is.EqualTo(1));
+        // a level symbol is met at level 50 (the fixture is level 21) and an adventure level one is ranked by the level
+        var t = c.Model.Tables.NametagSymbols;
+        var p = new NametagSymbols.Player(21, 0, 0, Array.Empty<uint>(), 0);
+        foreach (ushort id in Enumerable.Range(0, 2000).Select(i => (ushort)i))
+        {
+            if (t.Get(id) is not { } s) continue;
+            if (s.Condition == NametagSymbols.Condition.Level)
+            {
+                Assert.That(t.CheckCondition(id, p), Is.EqualTo(0u));
+                Assert.That(t.CheckCondition(id, p with { Level = 50 }), Is.EqualTo(1u));
+            }
+            if (s.Condition == NametagSymbols.Condition.AdventureLevel)
+                Assert.That(t.IconRanked(id, p with { AdventureLevel = 650 }), Is.EqualTo(s.Icon + "_500"));
+        }
+    }
+
+    [Test]
     public void CodiTabWithoutAPeriodShowsTheBoxAndOkGoesBack()
     {
         Packs();
