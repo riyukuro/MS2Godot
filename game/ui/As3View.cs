@@ -55,6 +55,9 @@ public partial class As3View : Node2D
         // the runtime breaks lines and sizes fields with the advances of the game font the field draws in (unhinted, as
         // FieldNode draws it), measured at 8x the size so the whole-pixel font sizes do not round the advances
         TextMeasure.HeightRatio = font => assets.LineRatios(font).Height;
+        TextMeasure.AscentRatio = font => assets.AscentRatio(font);
+        player.ExportedImageSize ??= (movie, name) =>
+            assets.ExportedImage(movie, player.Main.Key, name) is { } img && img.Region.Size.X > 0 ? (img.Region.Size.X, img.Region.Size.Y) : null;
         TextMeasure.Width = (font, size, s) =>
         {
             if (string.IsNullOrEmpty(s) || size <= 0) return 0;
@@ -317,7 +320,7 @@ public partial class As3View : Node2D
 
     UiScope Scope(SymbolScope s)
     {
-        if (!scopes.TryGetValue(s, out var u)) scopes[s] = u = new UiScope(s.Layout, assets);
+        if (!scopes.TryGetValue(s, out var u)) scopes[s] = u = new UiScope(s.Layout, assets) { MovieKey = s.Key, RootKey = Player.Main.Key };
         return u;
     }
 

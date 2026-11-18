@@ -166,6 +166,48 @@ public sealed class UiAssets
         return (JsonObject)template.DeepClone();
     }
 
+    /// <summary>
+    /// The image an exported name stands for, looked up as MovieImpl::FindExportedResource does for an IMG tag's url
+    /// (TextField::ProcessImageTags, sfr_gfx_03e.cpp:1441; sfr_gfx_01i.cpp:2534): in the field's own movie
+    /// <paramref name="movie"/> and its imports (MovieDefImpl::GetExportedResource, sfr_gfx_04.cpp:1292: its own exports
+    /// by name without case, then each imported movie's in import order), then in the root movie <paramref name="root"/>
+    /// that imports it. Found: the texture and its rectangle (the image's size), or no texture when the name is not an
+    /// image (a sprite is not supported). Null when no movie exports the name.
+    /// </summary>
+    public (Texture2D Tex, Rect2 Region)? ExportedImage(string movie, string root, string name)
+    {
+        if (string.IsNullOrEmpty(name)) return null;
+        var key = (movie ?? "", root ?? "", name);
+        if (exportedImages.TryGetValue(key, out var hit)) return hit;
+        var found = Exported(movie, name, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        if (found == null && !string.IsNullOrEmpty(root) && !string.Equals(root, movie, StringComparison.OrdinalIgnoreCase))
+            found = Exported(root, name, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        return exportedImages[key] = found;
+    }
+
+    readonly Dictionary<(string, string, string), (Texture2D, Rect2)?> exportedImages = new();
+
+    (Texture2D, Rect2)? Exported(string movie, string name, HashSet<string> seen)
+    {
+        if (string.IsNullOrEmpty(movie) || !seen.Add(movie)) return null;
+        var m = Dependency(movie);
+        if (m == null) return null;
+        // SymbolClass names are exports in an AS3 movie (the game's movies export their images that way)
+        foreach (var (id, n) in m.Exports.Concat(m.SymbolClasses))
+        {
+            if (!string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!m.Characters.TryGetValue(id, out var c)) return (null, default);
+            if (c.Kind == Ms2.Swf.CharKind.SubImage && m.Characters.TryGetValue(c.AtlasImageId ?? -1, out var atlas))
+                return (Atlas(atlas.ImageFile), new Rect2((float)c.AtlasRect.X, (float)c.AtlasRect.Y, (float)c.AtlasRect.W, (float)c.AtlasRect.H));
+            if (c.Kind == Ms2.Swf.CharKind.Image && c.ImageFile != null)
+                return (Atlas(c.ImageFile), new Rect2(0, 0, c.ImageWidth, c.ImageHeight));
+            return (null, default);
+        }
+        foreach (var g in m.Imports)
+            if (Exported(System.IO.Path.GetFileNameWithoutExtension(g.Url), name, seen) is { } r) return r;
+        return null;
+    }
+
     /// <summary>The DDS atlas next to a movie, e.g. "UILoginDialog_I1.dds". Null when missing.</summary>
     public Texture2D Atlas(string file)
     {

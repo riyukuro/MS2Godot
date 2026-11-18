@@ -11,6 +11,9 @@ public sealed class UiScope
     public Dictionary<int, JsonObject> SubImages = new();
     public Dictionary<int, JsonObject> Images = new();
     public JsonObject Symbols;
+    /// <summary>The movie the scope's symbols are defined in (a library's own movie) and the root movie that loads it: where an
+    /// IMG tag's export name is looked up (UiAssets.ExportedImage).</summary>
+    public string MovieKey, RootKey;
 
     public UiScope(JsonObject layout, UiAssets assets)
     {
@@ -46,12 +49,12 @@ public sealed class UiMovie
     {
         Assets = assets; Name = name;
         var layout = assets.LoadLayout(name);
-        Scope = new UiScope(layout, assets);
+        Scope = new UiScope(layout, assets) { MovieKey = name, RootKey = name };
         if (layout["library"] is JsonObject lib)
             foreach (var (k, v) in lib) library[k] = new UiScope(new JsonObject
             {
                 ["symbols"] = v["symbols"]?.DeepClone(), ["images"] = v["images"]?.DeepClone(), ["subImages"] = v["subImages"]?.DeepClone(),
-            }, assets);
+            }, assets) { MovieKey = k, RootKey = name };
     }
 
     readonly Dictionary<string, UiMovie> externals = new();

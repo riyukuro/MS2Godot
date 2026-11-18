@@ -122,7 +122,15 @@ public partial class TextNode
             for (int r = 0; r < runs.Count; r++)
             {
                 var (a, b) = runs[r];
-                ts.ShapedTextAddString(rid, t.Substring(Utf16(a), Utf16(b) - Utf16(a)) + (r == runs.Count - 1 ? "\u200B" : ""), font.GetRids(),
+                bool last = r == runs.Count - 1;
+                if (ImageAt(a) is ImageBox img)
+                {
+                    // an IMG char: an object as wide as its advance (TextNode.ImageBox)
+                    ts.ShapedTextAddObject(rid, a, new Vector2(img.Advance / Label.Scale.X, img.H / Label.Scale.Y), InlineAlignment.Center, 1);
+                    if (last) ts.ShapedTextAddString(rid, "\u200B", font.GetRids(), ShapeSize(FieldSize), font.GetOpentypeFeatures(), lang);
+                    continue;
+                }
+                ts.ShapedTextAddString(rid, t.Substring(Utf16(a), Utf16(b) - Utf16(a)) + (last ? "\u200B" : ""), font.GetRids(),
                     ShapeSize(SizeAt(a)), font.GetOpentypeFeatures(), lang);
             }
             var breaks = ts.ShapedTextGetLineBreaks(rid, (int)Label.Size.X, 0, flags);
@@ -206,12 +214,12 @@ public partial class TextNode
         _ => 0,
     };
 
-    /// <summary>Maximal ranges of code points in [a, b) that share a size.</summary>
+    /// <summary>Maximal ranges of code points in [a, b) that share a size; an IMG char is a range of its own.</summary>
     IEnumerable<(int, int)> Runs(int a, int b)
     {
         int s = a;
         for (int i = a + 1; i <= b; i++)
-            if (i == b || SizeAt(i) != SizeAt(s)) { if (i > s) yield return (s, i); s = i; }
+            if (i == b || SizeAt(i) != SizeAt(s) || ImageAt(i) != null || ImageAt(s) != null) { if (i > s) yield return (s, i); s = i; }
     }
 
     /// <summary>The run's size in label pixels (the label's raster size scaled by the run's size over the field's).</summary>
@@ -232,19 +240,20 @@ public partial class TextNode
         {
             int index = first + (int)g["start"], at = Math.Min(index, codePoints.Length - 1), repeat = (int)g["repeat"];
             float size = SizeAt(at), labelSize = LabelSize(size);
-            float k = labelSize / ShapeSize(size);                   // label pixels per shaped pixel
+            bool image = ImageAt(at) != null;                       // an IMG object: its advance is in label pixels already
+            float k = image ? 1 : labelSize / ShapeSize(size);       // label pixels per shaped pixel
             // a run of another size in readable text keeps the field font's oversampling: its raster is the whole size nearest
             // its quarter-pixel size, times that
             int raster = size == FieldSize ? ramp : (int)MathF.Max(1, MathF.Round(CachedSize(size * ScreenScale, Readable)));
             float advance = (float)g["advance"];
             int count = (int)g["count"];
-            long id = (long)g["index"];
+            long id = image ? 0 : (long)g["index"];
             var gflags = (TextServer.GraphemeFlag)(long)g["flags"];
             line.Shaped.Add(new PlacedGlyph(index, count, (Rid)g["font_rid"], id, raster, labelSize / raster,
                 pen, (Vector2)g["offset"] * k, advance * k, repeat, labelSize)
             {
                 End = first + (int)g["end"],
-                Bounded = count > 0 && (id != 0 || (gflags & TextServer.GraphemeFlag.Space) != 0),
+                Bounded = count > 0 && (image || id != 0 || (gflags & TextServer.GraphemeFlag.Space) != 0),
             });
             pen += advance * k * repeat;
             shaped += advance * repeat;
@@ -259,23 +268,24 @@ public partial class TextNode
     (float Ascent, float Advance) LineMove(int start, int end, int total)
     {
         var (asc, _, adv) = ClientLine(start, end, total, i => SizeAt(i));
-        var (fasc, _, fadv) = ClientLine(start, end, total, _ => FieldSize);
+        var (fasc, _, fadv) = ClientLine(start, end, total, _ => FieldSize, false);
         return ((asc - fasc) / Label.Scale.Y, (adv - fadv) / Label.Scale.Y);
     }
 
     /// <summary>
-    /// How much taller the text is than the same lines at the field's size, in field units (DocView::Format: the last line's
-    /// offset plus its height): every line's advance but the last one's and the last line's height. 0 without sized runs.
+    /// How much taller the text is than the same lines at the field's size with no images, in field units (DocView::Format:
+    /// the last line's offset plus its height): every line's advance but the last one's and the last line's height. 0
+    /// without sized runs or images.
     /// </summary>
     float SizedHeightMove()
     {
-        if (!HasSizedRuns) return 0;
+        if (!HasSizedRuns && !HasImages) return 0;
         var lines = Layout();
         float move = 0;
         for (int i = 0; i < lines.Count; i++)
         {
             var (_, h, adv) = ClientLine(lines[i].Start, lines[i].End, codePoints.Length, j => SizeAt(j));
-            var (_, fh, fadv) = ClientLine(lines[i].Start, lines[i].End, codePoints.Length, _ => FieldSize);
+            var (_, fh, fadv) = ClientLine(lines[i].Start, lines[i].End, codePoints.Length, _ => FieldSize, false);
             move += i < lines.Count - 1 ? adv - fadv : h - fh;
         }
         return move;
@@ -284,9 +294,11 @@ public partial class TextNode
     /// <summary>
     /// FinalizeLine's metrics of the line [start, end) in field units, the sizes from <paramref name="size"/>: MaxFontAscent,
     /// the line height IRound(maxAsc + maxDesc) and the next line's offset, IRound(lineHeight + IRound(leading)) twips. TrackFontParams takes every glyph but
-    /// the paragraph end; an empty line takes its paragraph end's.
+    /// the paragraph end; an empty line takes its paragraph end's. An IMG char takes no font: it raises MaxFontAscent to
+    /// its ascent and MaxFontDescent to its height less that (sfr_render_03b.cpp:2150); with <paramref name="images"/>
+    /// false it is the space the label lays out in its place.
     /// </summary>
-    (float Ascent, float Height, float Advance) ClientLine(int start, int end, int total, Func<int, float> size)
+    (float Ascent, float Height, float Advance) ClientLine(int start, int end, int total, Func<int, float> size, bool images = true)
     {
         float ascR = AscentRatio, descR = lineRatios.Height - AscentRatio;
         float maxAsc = 0, maxDesc = 0, maxLead = 0;
@@ -294,6 +306,12 @@ public partial class TextNode
         for (int i = start; i < end; i++)
         {
             if (CodePointAt(i) == '\n') continue;
+            if (images && ImageAt(i) is ImageBox img)
+            {
+                maxAsc = Math.Max(maxAsc, img.Ascent * 20); maxDesc = Math.Max(maxDesc, (img.H - img.Ascent) * 20);
+                any = true;
+                continue;
+            }
             float s = size(i) * 20;
             maxAsc = Math.Max(maxAsc, ascR * s); maxDesc = Math.Max(maxDesc, descR * s); maxLead = Math.Max(maxLead, lineRatios.Leading * s);
             any = true;

@@ -542,6 +542,10 @@ namespace Ms2.Avm2.Flash
         /// Without a resolver every load succeeds with a 0x0 image.</summary>
         public Func<string, (int W, int H)?> ImageSize;
 
+        /// <summary>(movie key, export name) → the size of the image a movie's IMG tag url names (MovieImpl::FindExportedResource
+        /// from that movie); null = no image by that name.</summary>
+        public Func<string, string, (double W, double H)?> ExportedImageSize;
+
         /// <summary>A Bitmap standing for an image file; the renderer draws it from <see cref="AsBitmapData.Source"/>.</summary>
         public AsBitmap NewBitmap(string url, int w, int h)
         {

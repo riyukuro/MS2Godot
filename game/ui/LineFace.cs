@@ -60,6 +60,11 @@ public partial class LineFace : Node2D
                     }
                     else if (underline != null) ulLen += g.Advance * g.Repeat;
                     ulColor = underline;
+                    if (face && text.ImageAt(g.Index) is TextNode.ImageBox img)
+                    {
+                        if (img.Tex != null) { Scale(ref scale, 1); Image(img, pen, baseline); }
+                        continue;
+                    }
                     if (g.Glyph != 0)
                     {
                         // the glyph from its run's raster, scaled to the run's size
@@ -73,6 +78,26 @@ public partial class LineFace : Node2D
             }
         }
         Scale(ref scale, 1);
+    }
+
+    /// <summary>
+    /// An IMG char's image (TextMeshProvider::addImage, sfr_render_07o.cpp:1033): its top left at the pen and the baseline
+    /// less its ascent, the pen x snapped to the nearest screen pixel (snapX: the text has no 3D and no free rotation),
+    /// drawn at its size from its texture, clamped and filtered linearly. Label pixels.
+    /// </summary>
+    void Image(TextNode.ImageBox img, float pen, float baseline)
+    {
+        var k = text.Label.Scale;
+        var toScreen = GetGlobalTransformWithCanvas();
+        bool snap = toScreen.X.Y == 0 && toScreen.Y.X == 0;
+        float x = pen;
+        if (snap)
+        {
+            var p = toScreen * new Vector2(pen, baseline);
+            x = (toScreen.AffineInverse() * new Vector2(MathF.Floor(p.X + 0.5f), p.Y)).X;
+        }
+        var rect = new Rect2(x, baseline - img.Ascent / k.Y, img.W / k.X, img.H / k.Y);
+        DrawTextureRectRegion(img.Tex, rect, img.Region);
     }
 
     /// <summary>Draws what follows scaled by <paramref name="to"/> (the label's own pixels at 1).</summary>

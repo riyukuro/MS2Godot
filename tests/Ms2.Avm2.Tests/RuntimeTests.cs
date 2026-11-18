@@ -161,4 +161,32 @@ public class RuntimeTests
         // the AS-visible metrics are those of the full text
         Assert.That(tf.text, Is.EqualTo("Character Information Window"));
     }
+    [Test]
+    public void HtmlImageCharsSizeTheirLines()
+    {
+        // StyledText::ParseHtml: an IMG tag is a space; ProcessImageTags sizes it by the exported image and moves it up by its
+        // height + VSPACE; FinalizeLine takes its ascent and descent, the layout its width + 2 px
+        var (rt, player) = Empty();
+        var (height, ascent) = (TextMeasure.HeightRatio, TextMeasure.AscentRatio);
+        try
+        {
+            TextMeasure.HeightRatio = _ => 1.0;
+            TextMeasure.AscentRatio = _ => 0.8;
+            player.ExportedImageSize = (movie, name) => name == "icon" ? (22, 22) : null;
+            var tf = Field(rt, 200, false);
+            tf.SetHtml("Title\n<img src='icon' vspace='-6'/> 5");
+            Assert.That(tf.text, Is.EqualTo("Title\n  5"));
+            Assert.That(tf.textWidth, Is.EqualTo(Math.Max(TextMeasure.Width("", 12, "Title"), TextMeasure.Width("", 12, " 5") + 24)));
+            // line 1: 9.6 + 2.4 px; line 2: the image's 16 above and 6 below the baseline
+            Assert.That(tf.textHeight, Is.EqualTo((240 + 440) / 20.0));
+            // a url that names no image: the tag's size, no move up
+            tf.SetHtml("x<img src='none' width='10' height='4'/>");
+            Assert.That(tf.textWidth, Is.EqualTo(TextMeasure.Width("", 12, "x") + 12));
+            Assert.That(tf.textHeight, Is.EqualTo((192 + 80) / 20.0));
+            // plain text has no images
+            tf.text = "Title\n  5";
+            Assert.That(tf.textHeight, Is.EqualTo(24));
+        }
+        finally { (TextMeasure.HeightRatio, TextMeasure.AscentRatio) = (height, ascent); }
+    }
 }

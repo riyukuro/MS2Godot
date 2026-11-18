@@ -226,6 +226,7 @@ public partial class TextNode : Node2D
     public TextNode(UiScope scope, JsonObject sym, double sx, double sy, NineCtx nine = null)
     {
         Def = sym["text"];
+        ExportedImage = src => scope.Assets.ExportedImage(scope.MovieKey, scope.RootKey, src);
         Readable = (bool?)Def["readable"] == true;
         Bounds = UiBuilder.Rc(sym["bounds"]);
         if (nine != null) Bounds = nine.Map(Bounds);
@@ -348,7 +349,7 @@ public partial class TextNode : Node2D
         bool perLine = lines > 1 && plainFace;
         // a hard drop shadow (ApplyFilters with no blur) on text with FONT-sized runs: the label could only draw the field's
         // size, so the face is drawn by line, its shadow pass first (LineFace)
-        faceShadow = runStyles != null && ls != null && !plainFace && HasSizedRuns && ls.OutlineSize <= 0 && ls.ShadowSize <= 0;
+        faceShadow = runStyles != null && ls != null && !plainFace && (HasSizedRuns || HasImages) && ls.OutlineSize <= 0 && ls.ShadowSize <= 0;
         colored = runStyles != null && (plainFace || faceShadow);
         perLineDx = false;
         foreach (var l in all) l.Dx = 0;
@@ -382,6 +383,8 @@ public partial class TextNode : Node2D
         double sum = 0;
         foreach (var (a, b) in Runs(line.Start, end))
         {
+            // an IMG char: its advance, or its width when it is the line's last (LineWidthWithoutTrailingSpaces = NewLineWidth + AdjLineWidth)
+            if (ImageAt(a) is ImageBox img) { sum += (b == end ? img.W : img.Advance) / Label.Scale.X; continue; }
             float size = SizeAt(a);
             var tl = new TextLine();
             tl.AddString(Substring(a, b), Label.LabelSettings.Font, ShapeSize(size));
@@ -437,7 +440,7 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => Label.Text; set { runStyles = null; HasSizedRuns = false; Label.Text = value ?? ""; } }
+    public string Text { get => Label.Text; set { runStyles = null; HasSizedRuns = false; images = null; Label.Text = value ?? ""; } }
 
     /// <summary>
     /// AS3 htmlText = <paramref name="html"/>: the text without its markup (FlashHtml, with the field's multiline flag), each
@@ -449,11 +452,50 @@ public partial class TextNode : Node2D
         var (text, styles) = FlashHtml.Parse(html, Def?["multiline"] is JsonNode ml ? (bool)ml : true);
         runStyles = Array.Exists(styles, s => !s.IsPlain) ? styles : null;
         HasSizedRuns = Array.Exists(styles, s => s.Size is float z && z != FieldSize);
+        images = null;
+        foreach (var st in styles)
+            if (st.Image is HtmlImage im && (images ??= new()).ContainsKey(im) == false) images[im] = Box(im);
         Label.Text = text;
         Label.QueueRedraw();
     }
 
     GlyphStyle[] runStyles;
+
+    /// <summary>
+    /// An IMG char as the client lays it out and draws it, in field units: its texture and region (none when its url
+    /// names no image), its size W x H, its ascent above the baseline (its height less its descent) and its advance.
+    /// TextField::ProcessImageTags (sfr_gfx_03e.cpp:1441): the url is an export name (UiAssets.ExportedImage); the size is
+    /// the tag's WIDTH / HEIGHT, else the image's; BaseLineY = the image's height + VSPACE, and the desc's matrix moves the
+    /// image up by it and scales it to the size, so the ascent is BaseLineY scaled by H over the image's height. An image
+    /// that is not found keeps the tag's size and an identity matrix (ascent 0). ParagraphFormatter (sfr_render_03b.cpp:2124):
+    /// the glyph is IRound(ScreenWidth) wide and advances 40 twips (2 px) more.
+    /// </summary>
+    public readonly record struct ImageBox(Texture2D Tex, Rect2 Region, float W, float H, float Ascent)
+    {
+        public float Advance => W + 2;
+    }
+
+    Dictionary<HtmlImage, ImageBox> images;
+
+    /// <summary>The IMG url's image: (texture or null, region) when an exported name, null when none.</summary>
+    public Func<string, (Texture2D Tex, Rect2 Region)?> ExportedImage;
+
+    ImageBox Box(HtmlImage im)
+    {
+        if (ExportedImage?.Invoke(im.Src) is { } found && found.Region.Size.X > 0 && found.Region.Size.Y > 0)
+        {
+            float ow = found.Region.Size.X, oh = found.Region.Size.Y;
+            float w = im.Width > 0 ? im.Width : ow, h = im.Height > 0 ? im.Height : oh;
+            return new ImageBox(found.Tex, found.Region, MathF.Floor(w * 20 + 0.5f) / 20, h, (oh + im.VSpace) * (h / oh));
+        }
+        return new ImageBox(null, default, im.Width, im.Height, 0);
+    }
+
+    /// <summary>True when the text has IMG chars.</summary>
+    public bool HasImages => images != null;
+
+    /// <summary>The IMG char at <paramref name="index"/>, null for text.</summary>
+    public ImageBox? ImageAt(int index) => images != null && StyleAt(index).Image is HtmlImage im ? images[im] : null;
 
     /// <summary>The text format of the code point at <paramref name="index"/> (the field's own when it has none).</summary>
     public GlyphStyle StyleAt(int index) =>
@@ -477,7 +519,7 @@ public partial class TextNode : Node2D
         get
         {
             if (Label.AutowrapMode == TextServer.AutowrapMode.Off) return Math.Max(1, Label.Text.Split('\n').Length);
-            if (Label.IsInsideTree() || HasSizedRuns) return Math.Max(1, Layout().Count);   // the lines as drawn (the label's own wrap at the field's size)
+            if (Label.IsInsideTree() || HasSizedRuns || HasImages) return Math.Max(1, Layout().Count);   // the lines as drawn (the label's own wrap at the field's size)
             var ls = Label.LabelSettings;
             var p = new TextParagraph { Width = Label.Size.X, BreakFlags = TextServer.LineBreakFlag.Mandatory | TextServer.LineBreakFlag.WordBound | TextServer.LineBreakFlag.Adaptive };
             p.AddString(Label.Text, ls.Font, ls.FontSize);

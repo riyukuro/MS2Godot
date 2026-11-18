@@ -14,6 +14,9 @@ public static class TextMeasure
     /// A line is then IRound(ascent + descent) twips tall (Scaleform's FinalizeLine); without it, a whole-pixel 1.2 em.
     /// </summary>
     public static Func<string, double> HeightRatio;
+    /// <summary>(font class or name) → the font's ascent per pixel of font size (with <see cref="HeightRatio"/>, the line
+    /// metrics of a line with an IMG char).</summary>
+    public static Func<string, double> AscentRatio;
     public static double LineHeight(string font, double size, double leading) =>
         (HeightRatio == null ? Math.Round(size * 1.2) : Math.Round(HeightRatio(font) * size * 20) / 20) + leading;
 }
@@ -124,6 +127,25 @@ public class AsTextField : AsInteractiveObject
         if (IsHtml || Tr(init) != init) SetHtml(Tr(init)); else Text = init;
     }
 
+    static string Attr(string tag, string name)
+    {
+        var m = Regex.Match(tag, "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>/]+))", RegexOptions.IgnoreCase);
+        return !m.Success ? null : m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
+    }
+
+    /// <summary>SGMLParser::ParseInt (sfr_render_05i.cpp:590): an optional sign and decimal digits only.</summary>
+    static int? ParseInt(string v)
+    {
+        if (string.IsNullOrEmpty(v)) return null;
+        int i = v[0] is '-' or '+' ? 1 : 0, sign = v[0] == '-' ? -1 : 1, r = 0;
+        for (; i < v.Length; i++)
+        {
+            if (v[i] is < '0' or > '9') return null;
+            r = unchecked(r * 10 + (v[i] - '0'));
+        }
+        return r * sign;
+    }
+
     /// <summary>Scaleform's translator: a text that is a string-table key ("$s_...") shows the table's value.</summary>
     string Tr(string s) => s.Length > 1 && s[0] == '$' && Class.Runtime.Player?.Translate is { } t ? t(s) ?? s : s;
 
@@ -133,27 +155,90 @@ public class AsTextField : AsInteractiveObject
 
     void Changed() { Version++; if (autoSizeMode != "none") AutoSize(); }
 
-    public List<string> Lines()
+    public List<string> Lines() => Spans().Select(l => l.Line).ToList();
+
+    /// <summary>The lines and the index in <see cref="Text"/> of each line's first character.</summary>
+    List<(string Line, int Start)> Spans()
     {
-        var src = (displayAsPassword ? new string('*', Text.Length) : Text).Replace("\r\n", "\r").Replace('\n', '\r');
-        var paras = src.Split('\r');
-        var lines = new List<string>();
-        double max = Box.W - 4;
-        foreach (var p in paras)
+        // CR LF and LF are paragraph ends as CR; map: index in that text -> index in Text
+        string raw = displayAsPassword ? new string('*', Text.Length) : Text;
+        var sb = new StringBuilder(raw.Length);
+        var map = new List<int>(raw.Length + 1);
+        for (int i = 0; i < raw.Length; i++)
         {
-            if (!wordWrap || max <= 0) { lines.Add(p); continue; }
+            if (raw[i] == '\n' && i > 0 && raw[i - 1] == '\r') continue;
+            sb.Append(raw[i] == '\n' ? '\r' : raw[i]);
+            map.Add(i);
+        }
+        map.Add(raw.Length);
+        var src = sb.ToString();
+        var lines = new List<(string, int)>();
+        double max = Box.W - 4;
+        int pstart = 0;
+        foreach (var p in src.Split('\r'))
+        {
+            if (!wordWrap || max <= 0) { lines.Add((p, map[pstart])); pstart += p.Length + 1; continue; }
             var cur = new StringBuilder();
+            int curStart = pstart;
             // English breaking: only after a space or a hyphen, never inside a word (a word wider than the box stays
             // whole); CJK text keeps its own per-character breaking. Unlike Scaleform's per-character wrap of the
             // Korean-sized fields ("Characte/r"), which the English text rule of this port does not copy.
             foreach (var word in Regex.Split(p, @"(?<=[\s\-])|(?<=[⺀-￿])(?=.)|(?<=.)(?=[⺀-￿])"))
             {
-                if (cur.Length > 0 && TextMeasure.Width(FontName, Size, cur + word.TrimEnd()) > max) { lines.Add(cur.ToString()); cur.Clear(); }
+                if (cur.Length > 0 && LineWidth(cur + word.TrimEnd(), map[curStart]) > max)
+                {
+                    lines.Add((cur.ToString(), map[curStart]));
+                    curStart += cur.Length;
+                    cur.Clear();
+                }
                 cur.Append(word);
             }
-            lines.Add(cur.ToString());
+            lines.Add((cur.ToString(), map[curStart]));
+            pstart += p.Length + 1;
         }
         return lines;
+    }
+
+    /// <summary>
+    /// The IMG chars of the html text (SetHtml): each tag's url, WIDTH, HEIGHT and VSPACE by its index in
+    /// <see cref="Text"/>, while Text is still the html's text.
+    /// </summary>
+    Dictionary<int, (string Src, int Width, int Height, int VSpace)> imgTags;
+    string imgText;
+
+    /// <summary>
+    /// An IMG char's width, height and ascent in pixels as the client lays it out: TextField::ProcessImageTags
+    /// (sfr_gfx_03e.cpp:1441) sizes it by its WIDTH / HEIGHT, else the exported image's (looked up from the field's movie,
+    /// <see cref="Player.ExportedImageSize"/>), and moves it up by the image's height + VSPACE scaled to that height; a url
+    /// that names no image keeps the tag's size and no move. Null for a text char.
+    /// </summary>
+    (double W, double H, double Ascent)? ImageAt(int textIndex)
+    {
+        if (imgTags == null || !ReferenceEquals(imgText, Text) || !imgTags.TryGetValue(textIndex, out var t)) return null;
+        var player = Class.Runtime.Player;
+        if (player?.ExportedImageSize?.Invoke(Scope?.Key ?? player.Main?.Key, t.Src) is { } size && size.W > 0 && size.H > 0)
+        {
+            double w = t.Width > 0 ? t.Width : size.W, h = t.Height > 0 ? t.Height : size.H;
+            return (w, h, (size.H + t.VSpace) * (h / size.H));
+        }
+        return (t.Width, t.Height, 0);
+    }
+
+    bool HasImages => imgTags != null && ReferenceEquals(imgText, Text) && imgTags.Count > 0;
+
+    /// <summary>
+    /// A line's width: the font's advances of its text chars and, for each IMG char, its width plus 40 twips
+    /// (ParagraphFormatter, sfr_render_03b.cpp:2124: GlyphAdvance = GlyphWidth + 40).
+    /// </summary>
+    double LineWidth(string line, int textStart)
+    {
+        if (!HasImages) return TextMeasure.Width(FontName, Size, line);
+        var text = new StringBuilder(line.Length);
+        double images = 0;
+        for (int i = 0; i < line.Length; i++)
+            if (ImageAt(textStart + i) is { } img) images += img.W + 2;
+            else text.Append(line[i]);
+        return TextMeasure.Width(FontName, Size, text.ToString()) + images;
     }
 
     /// <summary>Minimum font scale a single-line caption shrinks to before it is cut with an ellipsis.</summary>
@@ -219,6 +304,9 @@ public class AsTextField : AsInteractiveObject
         // the lines as laid out, times the text auto size's scale (LineBuffer::Scale)
         double line = TextMeasure.LineHeight(FontName, Size, 0) * scale, lead = Leading * scale;
         double textH = lineCount == 0 ? 0 : Math.Floor(lineCount * (line + lead) - lead);
+        // lines with IMG chars have their own heights (ImageTextH)
+        if (lineCount > 0 && HasImages && TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null && lineCount == Spans().Count)
+            textH = Math.Floor(ImageTextH() * scale);
         if (textH < maxH) return valign == "center" ? top + (maxH / 2 - textH / 2) : top + maxH - textH;
         double vis = 0;
         for (int i = 0; i < lineCount; i++)
@@ -232,8 +320,41 @@ public class AsTextField : AsInteractiveObject
     public string FontClass => FontName;
     public double FontSize => Size;
 
-    public double TextW() => Lines().Select(l => TextMeasure.Width(FontName, Size, l)).DefaultIfEmpty(0).Max();
-    public double TextH() { var n = Lines().Count; return Text.Length == 0 ? 0 : n * TextMeasure.LineHeight(FontName, Size, Leading) - Leading; }
+    public double TextW() => Spans().Select(l => LineWidth(l.Line, l.Start)).DefaultIfEmpty(0).Max();
+    public double TextH()
+    {
+        if (Text.Length == 0) return 0;
+        if (HasImages && TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null) return ImageTextH();
+        var n = Lines().Count;
+        return n * TextMeasure.LineHeight(FontName, Size, Leading) - Leading;
+    }
+
+    /// <summary>
+    /// textHeight of a text with IMG chars (DocView::Format: the last line's offset plus its height), each line by
+    /// FinalizeLine (sfr_render_03b.cpp:1743): IRound(MaxFontAscent + MaxFontDescent) twips tall, the next IRound(height +
+    /// IRound(leading)) below. A text char tracks the font's ascent and descent; an IMG char (:2150) raises the ascent to
+    /// its own and the descent to its height less that; an empty line takes the font's.
+    /// </summary>
+    double ImageTextH()
+    {
+        double asc = TextMeasure.AscentRatio(FontName) * Size * 20, desc = (TextMeasure.HeightRatio(FontName) - TextMeasure.AscentRatio(FontName)) * Size * 20;
+        static double IRound(double v) => Math.Floor(v + 0.5);
+        double leading = IRound(Leading * 20), offset = 0, height = 0;
+        bool first = true;
+        foreach (var (line, start) in Spans())
+        {
+            double maxAsc = 0, maxDesc = 0;
+            bool font = line.Length == 0;
+            for (int i = 0; i < line.Length; i++)
+                if (ImageAt(start + i) is { } img) { maxAsc = Math.Max(maxAsc, img.Ascent * 20); maxDesc = Math.Max(maxDesc, (img.H - img.Ascent) * 20); }
+                else font = true;
+            if (font) { maxAsc = Math.Max(maxAsc, asc); maxDesc = Math.Max(maxDesc, desc); }
+            if (!first) offset += IRound(height + leading);
+            first = false;
+            height = IRound(maxAsc + maxDesc);
+        }
+        return (offset + height) / 20;
+    }
 
     void AutoSize()
     {
@@ -252,10 +373,29 @@ public class AsTextField : AsInteractiveObject
         Html = html ?? "";
         IsHtml = true;
         var s = Regex.Replace(Tr(Html), @"<br\s*/?>|</p>", "\r", RegexOptions.IgnoreCase);
+        // StyledText::ParseHtml (sfr_render_05i.cpp:946): an IMG tag is a space carrying the tag's image
+        var tags = new List<(string, int, int, int)>();
+        s = Regex.Replace(s, @"<img\b[^>]*>", m =>
+        {
+            string a = m.Value;
+            int Px(string name, bool positive) => ParseInt(Attr(a, name)) is int v && (!positive || v >= 0) ? v : 0;
+            tags.Add((Attr(a, "src") ?? "", Px("width", true), Px("height", true), Px("vspace", false)));
+            return "\uE000";
+        }, RegexOptions.IgnoreCase);
         s = Regex.Replace(s, "<[^>]*>", "");
         s = s.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&quot;", "\"").Replace("&apos;", "'").Replace("&nbsp;", " ").Replace("&amp;", "&");
         if (s.EndsWith('\r') && Regex.IsMatch(Html, "</p>\\s*$", RegexOptions.IgnoreCase)) s = s[..^1];
+        imgTags = null;
+        if (tags.Count > 0)
+        {
+            imgTags = new();
+            var chars = s.ToCharArray();
+            for (int i = 0, k = 0; i < chars.Length; i++)
+                if (chars[i] == '\uE000') { imgTags[i] = tags[k++]; chars[i] = ' '; }
+            s = new string(chars);
+        }
         Text = s;
+        imgText = Text;
     }
 
     public override RectD LocalBounds() => Box;

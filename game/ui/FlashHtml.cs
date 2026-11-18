@@ -9,8 +9,21 @@ namespace Ms2Godot.Ui;
 /// </summary>
 public readonly record struct GlyphStyle(Color? Color, bool Bold, bool Italic, bool Underline, float? Size)
 {
-    public bool IsPlain => Color == null && !Bold && !Italic && !Underline && Size == null;
+    /// <summary>The IMG tag this code point stands for (the space ParseHtml appends for it), null for text.</summary>
+    public HtmlImage Image { get; init; }
+
+    public bool IsPlain => Color == null && !Bold && !Italic && !Underline && Size == null && Image == null;
 }
+
+/// <summary>
+/// An IMG tag as StyledText::ParseHtml reads it into its HTMLImageTagDesc (sfr_render_05i.cpp:946): SRC (the url), ID,
+/// ALIGN (left, right or baseline; Baseline when none), WIDTH and HEIGHT (whole pixels, 0 or more; 0: the image's own) and
+/// VSPACE and HSPACE (whole pixels).
+/// </summary>
+public sealed record HtmlImage(string Src, string Id, HtmlImageAlign Align, int Width, int Height, int VSpace, int HSpace);
+
+/// <summary>HTMLImageTagInfo alignment (Align_BaseLine is the default).</summary>
+public enum HtmlImageAlign { BaseLine, Left, Right }
 
 /// <summary>
 /// A Flash text field's htmlText as a TextNode shows it (TextNode.SetHtml), parsed the way Scaleform's StyledText::ParseHtml
@@ -21,6 +34,8 @@ public readonly record struct GlyphStyle(Color? Color, bool Bold, bool Italic, b
 /// entry when the names match and is ignored otherwise, except that an unmatched end P or LI closes everything up to its
 /// own element.</item>
 /// <item>BR is a line break in a multiline field only; TAB is a tab.</item>
+/// <item>IMG is an empty element: a space in the field's default text format (not the one of the elements around it)
+/// carrying the tag's image (<see cref="HtmlImage"/>).</item>
 /// <item>In a multiline field a P opened while another P is open starts a new line, an LI starts one unless its paragraph is
 /// still empty, and the end of a P (not an empty P element) or of an LI ends the line.</item>
 /// <item>Entities are decoded.</item>
@@ -79,6 +94,15 @@ public static class FlashHtml
             {
                 case "BR": case "SBR": NewLine(); return;
                 case "TAB": Add('\t'); return;
+                case "IMG":
+                {
+                    // HTML_IMG: the image char's format is the default text format with the image desc
+                    var saved = current;
+                    current = new GlyphStyle { Image = Image(rest[n..]) };
+                    Add(' ');
+                    current = saved;
+                    return;
+                }
             }
             stack.Add((name, current));
             switch (name)
@@ -120,6 +144,30 @@ public static class FlashHtml
 
     /// <summary>The text with its markup taken out (Parse without the formats).</summary>
     public static string Plain(string html, bool multiline = true) => Parse(html, multiline).Text;
+
+    /// <summary>The IMG attributes (ParseHtml's HTML_SRC ... HTML_HSPACE cases; a value ParseInt rejects is skipped).</summary>
+    static HtmlImage Image(string attrs)
+    {
+        // SGMLParser::ParseInt: an optional sign and decimal digits only, nothing else (a lone sign is 0)
+        static int? Int(string v)
+        {
+            if (string.IsNullOrEmpty(v)) return null;
+            int i = v[0] is '-' or '+' ? 1 : 0, sign = v[0] == '-' ? -1 : 1, r = 0;
+            for (; i < v.Length; i++)
+            {
+                if (v[i] is < '0' or > '9') return null;
+                r = unchecked(r * 10 + (v[i] - '0'));
+            }
+            return r * sign;
+        }
+        var align = (Attribute(attrs, "align") ?? "").Trim().ToUpperInvariant() switch
+        {
+            "LEFT" => HtmlImageAlign.Left, "RIGHT" => HtmlImageAlign.Right, _ => HtmlImageAlign.BaseLine,
+        };
+        int w = Int(Attribute(attrs, "width")) is int a && a >= 0 ? a : 0, h = Int(Attribute(attrs, "height")) is int b && b >= 0 ? b : 0;
+        return new HtmlImage(Attribute(attrs, "src") ?? "", Attribute(attrs, "id") ?? "", align, w, h,
+            Int(Attribute(attrs, "vspace")) ?? 0, Int(Attribute(attrs, "hspace")) ?? 0);
+    }
 
     static string Attribute(string attrs, string name)
     {
