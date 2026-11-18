@@ -106,7 +106,7 @@ public partial class HudScene : Node
     }
 
     CanvasLayer hudLayer; Node[] worldUi = System.Array.Empty<Node>();   // the HUD layer and the world-anchored UI layers
-    PortraitView portrait;          // the menu's face portrait, handed to the next build on a relayout
+    PortraitView portrait;          // the game menu's face portrait, kept across relayouts
     bool relayoutQueued;
 
     /// <summary>
@@ -888,46 +888,32 @@ public partial class HudScene : Node
 
     // ---- game menu ---------------------------------------------------------------------------------------------------
 
+    MovieDialog gameMenuMovie;
+    static Ms2.Ui.Hud.GameMenuTable gameMenuTable;    // CGameMenuTable, read once
+
+    /// <summary>
+    /// UIGameMenuDialog: its movie (uigamemenudialog) with its C++ side (GameMenuController). The movie loads the face
+    /// portrait as "img://&lt;movie&gt;:faceView/92/106" (loadRenderTarget), which vfunc_25 fills with CreatePortrait(92, 106):
+    /// the portrait view's image here.
+    /// </summary>
     void GameMenu(Control ui)
     {
-        var r = Place(ui, "uigamemenudialog", 1f, Vector2.Zero);
-        // UIGameMenuDialog::vfunc_43: vfunc_2(8, 5, -(FUN_1418dd0c0() - 6 + FUN_1418dd110())) with feature 0xbd on; the
-        // dialog's size is UIComponent's, the bounds shown at its first frame when it was built (before configUI hides
-        // m_quest). Those are 498 x 195: the symbol's 208.5 height also counts m_quest's glow on its later frames.
-        if (DialogBody(r) is { } gmBody && gmBody.ContentRect() is { } gb)
-            AlignDialog(r, gmBody, 8, gb.Size, 5, -(ExpBarLift - 6 + AdventureBarLift));
-        // configUI hides the quest and pet attack buttons; no pet (initPetInfo) and no contract (initContract(true)) for now
-        Hide(r, "m_quest", "m_petInfo", "m_petAttack", "m_contract");
-        // OnLoadComplete -> LoadRenderTarget: the face portrait (faceView) in m_renderTarget
-        if (DialogBody(r) is { } faceBody) portrait = PortraitView.Attach(faceBody, faceBody.Direct("m_renderTarget"), assets.Packs, Settings.NifXml, portrait);
-        var menus = r.FindClip("m_menus");
-        if (menus == null) return;
-        // RefreshMenu -> addMenuEntity per top item; SystemDropDownContainer.addEntity builds the entry class, sets the icon
-        // (getDefinitionByName("export_common_menu_" + layerName) into m_layerBtn and m_layerEffect) and the caption tag
-        foreach (var item in GameMenuTable.TopItems(assets.Table("table/gamemenu.xml"), data.Locale, f => !data.FeaturesOff.Contains(f)))
-        {
-            var entry = r.Movie.BuildClass(item.Group ? "UIGameMenuDialog_group" : "UIGameMenuDialog_menu", u);
-            if (entry == null) continue;
-            entry.Name = item.Name;
-            entry.Position = new Vector2(item.Col * 56, 120 - item.Row * 60);
-            menus.AddChild(entry);
-            menus.MoveChild(entry, 0);                                  // addChildAt(entry, 0): a later entry draws under the earlier ones
-            var btn = entry.FindClip("m_button");
-            if (btn != null)
-            {
-                btn.GotoLabel("up");
-                Hide(btn, "m_notifyUp", "m_notifyCount", "m_notifyNew", "m_notifyRedCircle", "m_eventPopup", "m_hitArea");
-                foreach (var layer in new[] { "m_layerBtn", "m_layerEffect" })
-                {
-                    var holder = btn.FindClip(layer);
-                    if (holder == null) continue;
-                    foreach (var n in holder.GetChildren()) n.QueueFree();
-                    if (assets.Common.BuildClass("export_common_menu_" + item.Name, u) is { } icon) holder.AddChild(icon);
-                }
-            }
-            // setMenuTag: tag.text, then TextFieldEx.setVerticalAlign(tag, VALIGN_BOTTOM)
-            if (entry.Children.FirstOrDefault(c => c.Name == "tag")?.Node is TextNode tag) { tag.Text = assets.Str(item.Caption); tag.AlignBottom(); }
-        }
+        gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
+        var c = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable };
+        c.ToggleDialog += GameMenuToggle;
+        if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
+        ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
+        string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
+        foreach (var n in gameMenuMovie.GetChildren())
+            if (n is As3View v) v.ImageLookup = url => url.StartsWith(face, StringComparison.OrdinalIgnoreCase) ? portrait?.Image : null;
+    }
+
+    /// <summary>CUIService::ToggleDialog for a game menu entry, for the dialogs this HUD has: the system menu (0x4e21, as
+    /// Esc toggles it) and the quest log (0x4e3e).</summary>
+    void GameMenuToggle(int id)
+    {
+        if (id == 0x4e21) { if (systemMenu == null || systemMenu.IsClosed) OpenSystemMenu(); else systemMenu.Close(); }
+        else if (id == 0x4e3e) ToggleQuestLog();
     }
 
     public override void _Process(double delta)

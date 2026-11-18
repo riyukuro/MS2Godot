@@ -20,10 +20,10 @@ namespace Ms2Godot.Ui;
 /// </list>
 /// The client's frustum is 0.312384 / 0.36397 wide for a 92 x 106 image, about 1.1% narrower than square pixels give.
 /// So the view renders 91 x 106 at the same vertical field of view (91 / 106 x 0.36397 = 0.31247) and is drawn
-/// stretched to 92 x 106. The image goes 1:1 into m_renderTarget and is clipped by the movie's mask shape over it (its
-/// MaskGroup outline).
+/// stretched into the 92 x 106 image (<see cref="Image"/>) the movie's loader shows in m_renderTarget, under the movie's
+/// mask.
 /// </summary>
-public sealed partial class PortraitView : Node2D
+public sealed partial class PortraitView : Node
 {
     const int ImageWidth = 92, ImageHeight = 106, RenderWidth = 91;
     const float Fov = 40f, Near = 10f, Far = 100000f, HeadRaise = 25f, Distance = 130f, LightDimmer = 0.9f;
@@ -34,40 +34,33 @@ public sealed partial class PortraitView : Node2D
     Skeleton3D skeleton;
     int head = -1;
 
-    /// <summary>Builds the portrait into <paramref name="target"/> (m_renderTarget), clipped by the mask child of
-    /// <paramref name="body"/> that covers it. Null when the model cannot be built. With <paramref name="reuse"/> (the
-    /// portrait of the previous build, on a HUD relayout) its render view, copy and camera move over instead of being
-    /// built again: the client keeps the portrait PC across a resize (CreatePortraitPC runs when the own user is added), so
-    /// its idle runs on.</summary>
-    public static PortraitView Attach(MovieClipNode body, MovieClipNode.Child target, PackSet packs, string nifXml, PortraitView reuse = null)
+    SubViewport image;
+
+    /// <summary>The 92 x 106 image the movie loads as "img://&lt;movie&gt;:faceView/92/106".</summary>
+    public Texture2D Image => image?.GetTexture();
+
+    /// <summary>The portrait PC and its views, or null when the model cannot be built. The node has to stay in the tree
+    /// for the views to render; it keeps its model across HUD rebuilds, as the client keeps the portrait PC (CreatePortraitPC
+    /// runs when the own user is added), so its idle runs on.</summary>
+    public static PortraitView Create(PackSet packs, string nifXml)
     {
-        if (target?.Node is not MovieClipNode rt || string.IsNullOrEmpty(nifXml)) return null;
+        if (string.IsNullOrEmpty(nifXml)) return null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var pv = new PortraitView { Name = "PortraitView" };
-        bool reused = reuse != null && IsInstanceValid(reuse) && pv.Adopt(reuse);
-        if (!reused && !pv.BuildModel(packs, nifXml)) return null;
-
-        // the movie's mask over the target (the masking child whose clip depth covers its depth) clips it by its shape
-        // (MaskGroup's outline), so the image goes in as it is
-        pv.AddChild(new Sprite2D
+        if (!pv.BuildModel(packs, nifXml)) { pv.QueueFree(); return null; }
+        pv.image = new SubViewport
+        {
+            Size = new Vector2I(ImageWidth, ImageHeight), TransparentBg = true, Disable3D = true,
+            RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
+        };
+        pv.image.AddChild(new Sprite2D
         {
             Texture = pv.view.GetTexture(), Centered = false, Scale = new Vector2((float)ImageWidth / RenderWidth, 1f),
-            TextureFilter = TextureFilterEnum.Linear,
+            TextureFilter = CanvasItem.TextureFilterEnum.Linear,
         });
-        rt.AddChild(pv);
-        GD.Print($"portrait: {(reused ? "reused" : "built")} in {sw.ElapsedMilliseconds} ms");
+        pv.AddChild(pv.image);
+        GD.Print($"portrait: built in {sw.ElapsedMilliseconds} ms");
         return pv;
-    }
-
-    /// <summary>Takes over <paramref name="old"/>'s render view and model; the old portrait no longer drives the camera.</summary>
-    bool Adopt(PortraitView old)
-    {
-        if (old.view == null || !IsInstanceValid(old.view) || old.head < 0) return false;
-        view = old.view; camera = old.camera; copy = old.copy; skeleton = old.skeleton; head = old.head;
-        old.RemoveChild(view);
-        AddChild(view);
-        old.view = null; old.head = -1;
-        return true;
     }
 
     bool BuildModel(PackSet packs, string nifXml)
