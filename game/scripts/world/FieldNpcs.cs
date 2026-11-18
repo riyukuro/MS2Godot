@@ -31,6 +31,12 @@ public sealed class FieldNpcs
     /// under the ground the official server puts an npc.</summary>
     public const float GroundProbeUp = 75f, GroundProbeDown = 1500f, GroundBelow = 1f;
 
+    /// <summary>The layers the ground cast of <see cref="SpawnNpcs"/> hits: every field collision group (bit n = group n) but
+    /// the npc capsules (group 4, <see cref="Movement.MoveConfig.NpcLayer"/>) and water (group 8,
+    /// <see cref="Movement.MoveConfig.WaterGroup"/>; statefishingdata.cpp:660 tells water by PropCollisionGroup 8), so boxes
+    /// and meshes count and fluids do not.</summary>
+    public const uint GroundLayers = ~(Movement.MoveConfig.NpcLayer | 1u << Movement.MoveConfig.WaterGroup);
+
     readonly PackSet packs;
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
@@ -160,7 +166,7 @@ public sealed class FieldNpcs
                 if (x.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)) kfmByName.TryAdd(Path.GetFileNameWithoutExtension(x), x);
         var space = parent.GetWorld3D()?.DirectSpaceState;
         var ray = RayQuery.CastRay();
-        ray.Query.CollisionMask = 1;      // the field's shapes (group 0), not the npc capsules or the player
+        ray.Query.CollisionMask = GroundLayers;
         foreach (var e in map.Entities)
         {
             if (!e.HasMixin("SpawnPointNPC") || !e.Bool("IsSpawnOnFieldCreate", true) || !e.Bool("IsVisible", true)) continue;
