@@ -21,7 +21,25 @@ public static class PerfLog
 
     public static void Print(string line)
     {
-        if (On) GD.Print("perf: " + line);
+        if (!On) return;
+        if (!buildPrinted) { buildPrinted = true; GD.Print("perf: build " + Build()); }
+        GD.Print("perf: " + line);
+    }
+
+    static bool buildPrinted;
+
+    /// <summary>The configuration each measured assembly was built in and whether the JIT optimizes it (a Debug build
+    /// without Optimize carries DebuggableAttribute with the JIT optimizer off): the game's, then the libraries'.</summary>
+    static string Build()
+    {
+        static string Of(System.Reflection.Assembly a)
+        {
+            var config = a.GetCustomAttributes(typeof(System.Reflection.AssemblyConfigurationAttribute), false) is [System.Reflection.AssemblyConfigurationAttribute c, ..] ? c.Configuration : "?";
+            bool opt = a.GetCustomAttributes(typeof(DebuggableAttribute), false) is not [DebuggableAttribute d, ..] || !d.IsJITOptimizerDisabled;
+            return $"{a.GetName().Name} {config} {(opt ? "optimized" : "not optimized")}";
+        }
+        return string.Join(", ", new[] { typeof(PerfLog), typeof(Ms2.Avm2.Runtime), typeof(Ms2.Ui.UiStage), typeof(Ms2.Formats.Pack.PackSet), typeof(Ms2.Quest.QuestTable) }
+            .Select(t => Of(t.Assembly)));
     }
 
     /// <summary>Call once per frame (from one node's _Process) with the label of the scene's current state.</summary>

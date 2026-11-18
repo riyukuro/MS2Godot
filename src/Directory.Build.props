@@ -1,0 +1,10 @@
+<Project>
+  <!-- The libraries are built optimized in every configuration: the game project builds them in its own configuration
+       (Debug from the editor and a plain launch, ExportDebug / ExportRelease on export), and only "Release" turns the
+       optimizer on by default. Symbols are kept for stack traces and the debugger. -->
+  <PropertyGroup>
+    <Optimize>true</Optimize>
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+</Project>
