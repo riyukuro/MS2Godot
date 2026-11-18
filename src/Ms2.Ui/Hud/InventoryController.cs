@@ -334,20 +334,21 @@ public sealed class InventoryController : UiController, IInventoryBinding
     }
 
     /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
-    public const string LowLevelKey = "s_item_err_puton_low_level", ExpiredKey = "s_item_err_puton_expired";
+    public const string LowLevelKey = "s_item_err_puton_low_level", ExpiredKey = "s_item_err_puton_expired", GenderKey = "s_err_gender",
+        EquipJobKey = "s_item_err_puton_job", DisabledJobKey = "s_item_err_disable_job";
 
     /// <summary>
     /// Unk_Inventory::RequestEquipItem (inventory.cpp:1236) with slot 0 and no binding skip: no local player, nothing.
     /// FUN_140a65e30 (:1630) on GetItemUseError (:1572): an expired item (CItem::IsExpired, server time) without a maid id:
-    /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError's level: box 224 for the
-    /// wearer's level below levelLimit; then an expired item that is not a pet (CItem::FUN_140528980): nothing, no box. The
-    /// slot is <see cref="WornEquipment.EquipSlotFor"/> (FUN_141420a70; worn items usable as PC::CanUseItem's expiry and
-    /// codi-layer parts). CanEquipItem (:1418): not an equipment item with model groups none of type 0 (FUN_14053c710):
+    /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError (:1586) on the wearer's record:
+    /// gender box 45, job box 232 for an equipment item else 233, level box 224. The slot is
+    /// <see cref="WornEquipment.EquipSlotFor"/> (FUN_141420a70; worn items usable as PC::CanUseItem's expiry, CItem::FUN_140528980
+    /// (item.cpp:1717: expired, not a pet and no maid id), and codi-layer parts). CanEquipItem (:1418): not an equipment item with model groups none of type 0 (FUN_14053c710):
     /// nothing (its layer checks, s_item_err_Invalid_slot_codi and box 0xd3, cannot fail: the layer is 1 or 2 only for a skin
     /// item, 2 only with feature 0x8e). No record: no worn item. The send maps the layer as FUN_1401fb870: 2 only with feature 142.
     /// Nothing is put on here: the server's equip packets do.
-    /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang,
-    /// gender, job, VIP and wedding requirements (their item limits and player states are not in the port), the rest of
+    /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang, VIP
+    /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
     /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
     /// 0x43, s_item_err_codi_slot, the cube texture block), the bind-on-equip box (17, s_msg_transfer_bind_when_equip) and
     /// the item sound.
@@ -360,12 +361,14 @@ public sealed class InventoryController : UiController, IInventoryBinding
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime < now;
         if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
         var record = Wearer?.Invoke();
+        if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
+        if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(d.Type == 1 ? EquipJobKey : DisabledJobKey); return; }
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
-        if (expired && !d.IsPetItem) return;
         var models = Model.Tables.ItemModels;
         if (d.Type != 1 || models.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return;
         var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
-        bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime < now && !w.Data.IsPetItem) && (record?.CodiActive == true || !IsLayer2(w));
+        bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime < now && !w.Data.IsPetItem && !w.Data.HasMaidId)
+            && (record?.CodiActive == true || !IsLayer2(w));
         bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
         int slot = worn.EquipSlotFor(item, models, Feature, CanUse);
         byte mode = layer switch { 1 => 1, 2 => Feature(142) ? (byte)2 : (byte)1, _ => 0 };

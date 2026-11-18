@@ -307,7 +307,7 @@ public class InventoryTests
         }));
         var (h, c, _) = Load(model, book);
         c.View.ServerTime = () => 1000;
-        var record = new PcInfo { Level = 50, Equips = new[] { new EquipItem { Id = 13000001, Uid = 2, Slot = EquipSlot.RH, Rarity = 1 } } };
+        var record = new PcInfo { Level = 50, JobGroup = 10, Equips = new[] { new EquipItem { Id = 13000001, Uid = 2, Slot = EquipSlot.RH, Rarity = 1 } } };
         c.Wearer = () => record;
         int gear = c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Tab == 1).i;
         h.Set(h.Child("m_tab"), "selectedIndex", gear);
@@ -335,6 +335,10 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.LowLevelKey))), "level: box 224, no send");
         record.Level = 50;
+        record.JobGroup = 0;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.EquipJobKey))), "job 0 is never allowed: box 232");
+        record.JobGroup = 10;
         c.ActionKeyDown = a => a == 0x49406;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         c.ActionKeyDown = _ => false;
