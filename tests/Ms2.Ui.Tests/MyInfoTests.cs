@@ -971,4 +971,51 @@ public class MyInfoTests
         Assert.That((MyInfoController.GemEquipErrorKey(5, true), MyInfoController.GemEquipErrorKey(-1, true)), Is.EqualTo(("s_gem_error_VIP", "s_gem_error_unknown")));
         foreach (var k in keys.Append("s_gem_error_VIP")) Assert.That(m.Tables.Common(k), Is.Not.Empty, k);
     }
+
+    [Test]
+    public void AvatarRendersIntoTheMouseAreaAndTurnsOnARightDrag()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var me = UiFixture.Character();
+        var c = new MyInfoController { Record = () => me.ToPcInfo(0), StatPoints = me.StatPoints };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var urls = new List<string>();
+        p.ImageSize = url => { urls.Add(url); return url.Contains(":avatar/") ? (10, 10) : null; };
+        var h = new UiHost(p, c, model);
+        Assert.That(h.Load(), Is.True);
+        for (int i = 0; i < 10; i++) { p.Tick(); c.Process(i * 16); }
+        Assert.That(rt.Errors, Is.Empty);
+        // vfunc_17's LoadRenderTarget: the movie loads its mouse area's size from the avatar view
+        var area = h.FindNamed("m_mouseArea");
+        Assert.That(area, Is.Not.Null);
+        var b = area.GetBounds(null);
+        TestContext.WriteLine($"urls: {string.Join(", ", urls)}; area {b.X},{b.Y} {b.W}x{b.H}");
+        Assert.That(urls.Count(u => System.Text.RegularExpressions.Regex.IsMatch(u, $@"^img://{h.Id}:avatar/[1-9]\d*/[1-9]\d*$")), Is.EqualTo(1));
+        Assert.That(c.Avatar, Is.Not.Null);
+        Assert.That(c.Avatar.Angle, Is.EqualTo((0f, 0f, 90f)));
+
+        // a right press: main.gfx's stage listener stops the mouseDown (buttonIdx 1) and redispatches rightMouseDown, a plain
+        // MouseEvent; the movie's onAvatarMouseDown takes RIGHT_BUTTON for it, OnAvatarMouseDown(1) -> mode 1; a 100 pixel drag
+        // right turns z by -35
+        double x = b.X + b.W / 2, y = b.Y + b.H / 2;
+        p.MouseMove(x, y);
+        p.MouseButton(true, Ms2.Avm2.Flash.Player.RightButton);
+        Assert.That(c.Avatar.Mode, Is.EqualTo(1));
+        p.MouseMove(x + 100, y);
+        Assert.That(c.Avatar.Angle.Z, Is.EqualTo(55f).Within(1e-3));
+        p.MouseButton(false, Ms2.Avm2.Flash.Player.RightButton);
+        // a left press does not turn (mode 2 clears on an unlocked view)
+        p.MouseMove(x, y);
+        p.MouseButton(true);
+        p.MouseMove(x - 50, y);
+        p.MouseButton(false);
+        Assert.That(c.Avatar.Mode, Is.EqualTo(0));
+        Assert.That(c.Avatar.Angle.Z, Is.EqualTo(55f).Within(1e-3));
+        c.Close();
+        Assert.That(c.Avatar, Is.Null);
+    }
 }

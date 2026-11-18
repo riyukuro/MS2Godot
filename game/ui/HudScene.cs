@@ -1137,8 +1137,22 @@ public partial class HudScene : Node, IUiStageHost
             if (myInfoMovie == m) myInfoMovie = null;
         };
         myInfo = c; myInfoMovie = m;
+        c.RotateLimit = avatarLimit ??= Ms2.Ui.Hud.AvatarRotateLimit.FromConstants(assets.Packs);
+        string avatar = "img://" + m.Host.Id + ":avatar/";
+        AvatarView view = null;
+        foreach (var n in m.GetChildren())
+            if (n is As3View v) v.ImageLookup = url =>
+            {
+                if (!url.StartsWith(avatar, StringComparison.OrdinalIgnoreCase) || c.Avatar == null) return null;
+                if (view == null && AvatarView.SizeOf(url) is { } size
+                    && (view = AvatarView.Create(assets.Packs, Settings.NifXml, size, c.Avatar)) != null) AddChild(view);
+                return view?.Image;
+            };
+        c.Unloaded += () => { view?.QueueFree(); view = null; };
         uiRoot.AddChild(m);
     }
+
+    static Ms2.Ui.Hud.AvatarRotateLimit avatarLimit;   // UIAvatarPC::vfunc_1's constants, read once
 
     /// <summary>
     /// CKeyTable::IsActionKeyDown (keytable.cpp:1037): any key bound to the action is held. The bound keys are DirectInput codes

@@ -125,6 +125,28 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         // m_webGuideButton (FUN_1419260d0) is the web guide's: not here
         if (Child("m_closet") is { } closet) Host.SetVisible(closet, Feature(0xe3));
         HideFeatureButtons();
+        LoadRenderTarget();
+    }
+
+    /// <summary>
+    /// The avatar the window shows (m_spAvatar: vfunc_65 makes a UIAvatarPC of the local player, its vfunc_1 sets the y
+    /// turn limit), facing the camera (0, 0, 90). Null while closed or without a record.
+    /// </summary>
+    public AvatarControl Avatar { get; private set; }
+    /// <summary>UIAvatarPC::vfunc_1's CLimitCharRotate; null: no limit.</summary>
+    public AvatarRotateLimit RotateLimit;
+
+    /// <summary>
+    /// LoadRenderTarget (@0x141a5d5d0) from vfunc_17 (@0x141a5d410): the movie's loadRenderTarget loads
+    /// "img://&lt;id&gt;:avatar/&lt;w&gt;/&lt;h&gt;" (the render view vfunc_25 @0x141a5d0c0 sets up) into m_renderTarget and
+    /// takes the avatar's mouse calls once loaded. STILL-OPEN: vfunc_o178_1 (@0x141a5d450), run when the avatar's model has
+    /// loaded, also passes the skin colour list and showActionList to initData; the action and pose lists are not ported.
+    /// </summary>
+    void LoadRenderTarget()
+    {
+        if (Host.Entity == null || info == null) return;
+        Avatar = new AvatarControl(RotateLimit ?? new AvatarRotateLimit(0, 360), 0, 0, 90);
+        Host.Invoke("loadRenderTarget");
     }
 
     object TabRow(int index, string label, string frame, string tooltip) =>
@@ -142,6 +164,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// and tab cleared, UIDialog's close.</summary>
     public override void Close()
     {
+        if (Avatar != null && Host.Entity != null) Host.Invoke("unloadRenderTarget");   // vfunc_16 (@0x141a5d3e0)
+        Avatar = null;
         info = null;
         tab = 0;
         dirty = false; statsDueMs = -1;
@@ -907,7 +931,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             case "onclickmynews": Button?.Invoke(name); return true;
             case "notifyslotuse": return SlotUse(args);
         }
-        return false;
+        return Avatar?.OnCallback(name, args) == true;                          // m_spAvatar->vfunc_27
     }
 
     /// <summary>

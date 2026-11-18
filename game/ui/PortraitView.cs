@@ -94,7 +94,7 @@ public sealed partial class PortraitView : Node
     /// vfunc_11 attaches only these two to the copy's roots, so no field light reaches it. The light's direction needs
     /// nothing here: SetSunDirection(camera direction) is what character_lit already takes from the camera that draws it.
     /// </summary>
-    static void OwnLights(Node n)
+    internal static void OwnLights(Node n)
     {
         const float dim = LightDimmer;
         if (n is GeometryInstance3D g && UsesCharacterShader(g))
