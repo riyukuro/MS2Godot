@@ -34,7 +34,7 @@ public class QuestLogTests
         t.BuildIndexes();
         t.AddChapters(XDocument.Parse(@"<ms2><chapter id=""10"" name=""Ch10"" /><chapter id=""20"" name=""Tut"" isTutorial=""1"" />
             <chapter id=""30"" name=""Ch30"" isTutorial=""OK"" /><chapter id=""40"" name=""Ch40"" /></ms2>"));
-        t.AddQuestNames(XDocument.Parse(@"<ms2><quest questID=""100"" name=""A"" /><quest questID=""101"" name=""B"" />
+        t.AddDescriptions(XDocument.Parse(@"<ms2><quest questID=""100"" name=""A"" /><quest questID=""101"" name=""B"" />
             <quest questID=""200"" name=""T"" /><quest questID=""300"" name=""W"" /><quest questID=""301"" name=""D"" />
             <quest questID=""400"" name=""X"" /></ms2>"));
         var common = new Dictionary<string, string>

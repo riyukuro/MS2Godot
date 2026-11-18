@@ -227,7 +227,7 @@ public sealed class FieldMissions
 /// </summary>
 public sealed class ReservedWords
 {
-    public const int ItemName = 1, NpcName = 2, MapName = 3, RegionName = 18, NpcTitle = 19, FieldEnterance = 20,
+    public const int ItemName = 1, NpcName = 2, MapName = 3, InteractObjectAction = 11, LiftableTargetBox = 12, RegionName = 18, NpcTitle = 19, FieldEnterance = 20,
                      AchieveName = 24, ContinentName = 25, IslandName = 26, NpcNamePlural = 61, ItemNamePlural = 62,
                      PetCollectGroupName = 65;
 
@@ -237,6 +237,7 @@ public sealed class ReservedWords
         (NpcNamePlural, "npcnameplural"), (RegionName, "regionname"), (FieldEnterance, "stringfieldenterance"),
         (AchieveName, "achievename"), (ContinentName, "continentname"), (IslandName, "islandname"),
         (ItemNamePlural, "itemnameplural"), (PetCollectGroupName, "petcollectgroupname"),
+        (InteractObjectAction, "stringinteractobjectaction"), (LiftableTargetBox, "stringliftabletargetbox"),
     };
 
     /// <summary>GetQuestName for the $quest word (Rw_Quest); empty when unset.</summary>

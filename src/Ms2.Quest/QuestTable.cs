@@ -30,6 +30,8 @@ public sealed class QuestData
     public int Properties;
     /// <summary>start npc (m_2e8).</summary>
     public int StartNpc;
+    /// <summary>m_2ec: &lt;complete npc&gt;, the npc the quest is completed at.</summary>
+    public int CompleteNpc;
     /// <summary>require quest / selectableQuest (m_require.m_quest / m_selectableQuest).</summary>
     public uint[] RequireQuest = Array.Empty<uint>(), SelectableQuest = Array.Empty<uint>();
     /// <summary>
@@ -44,6 +46,8 @@ public sealed class QuestData
     public int Rank = 5;
     /// <summary>The &lt;completeReward&gt; block (m_complete).</summary>
     public readonly CompleteReward Complete = new();
+    /// <summary>m_conditions: the &lt;condition&gt; rows that load (CConditionCommonData::Load), in order.</summary>
+    public readonly List<QuestCondition> Conditions = new();
 
     /// <summary>HasProperty (questdata.cpp).</summary>
     public bool HasProperty(int bit) => (Properties & (1 << bit)) != 0;
@@ -65,7 +69,7 @@ public sealed class CompleteReward
 /// QuestDataTable's quest and chapter indexes (LoadQuestData, BuildIndexes, FUN_1407503f0, BuildChapterFieldCodes) and
 /// the quest and chapter texts (CQuestUIData FUN_1416e4590, CChapterUIData FUN_1416e7c00), from the client data.
 /// </summary>
-public sealed class QuestTable
+public sealed partial class QuestTable
 {
     /// <summary>A chapter's text (CChapterUIData): its name and the isTutorial flag.</summary>
     public sealed record Chapter(int Id, string Name, bool Tutorial);
@@ -74,7 +78,7 @@ public sealed class QuestTable
     readonly Dictionary<int, List<uint>> chapterQuests = new();         // m_chapter
     List<int> chapterOrder = new();                                     // m_chapter's CAtlMap order
     readonly Dictionary<int, Chapter> chapters = new();                 // s_chapters
-    readonly Dictionary<uint, string> names = new();                    // CQuestUIData m_strName
+    readonly Dictionary<uint, QuestDescription> descriptions = new();   // s_quests: the CQuestUIData rows
     public ReservedWords Words = new();
     /// <summary>stringcommon text of a key (GetStringCommonByKey), empty when it has none.</summary>
     public Func<string, string> Common = _ => "";
@@ -131,7 +135,7 @@ public sealed class QuestTable
             var files = entries.Where(n => n.StartsWith($"string/{lang}/", StringComparison.OrdinalIgnoreCase)
                                         && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
             var chapterRows = new Dictionary<int, Chapter>();
-            var nameRows = new Dictionary<uint, string>();
+            var nameRows = new Dictionary<uint, QuestDescription>();
             foreach (var entry in files)
             {
                 string file = entry[(entry.LastIndexOf('/') + 1)..].ToLowerInvariant();
@@ -144,11 +148,11 @@ public sealed class QuestTable
                 else if (file.StartsWith("questdescription", StringComparison.Ordinal))
                 {
                     try { doc = Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
-                    t.AddQuestNames(doc, nameRows);
+                    t.AddDescriptions(doc, nameRows);
                 }
             }
             foreach (var (id, c) in chapterRows) t.chapters.TryAdd(id, c);
-            foreach (var (id, n) in nameRows) t.names.TryAdd(id, n);
+            foreach (var (id, n) in nameRows) t.descriptions.TryAdd(id, n);
         }
         return t;
     }
@@ -208,6 +212,10 @@ public sealed class QuestTable
         }
         var start = q.Element("start");
         if (start != null) QueryUInt(start, "npc", ref d.StartNpc);
+        var complete = q.Element("complete");
+        if (complete != null) QueryUInt(complete, "npc", ref d.CompleteNpc);
+        foreach (var c in q.Elements("condition"))
+            if (QuestCondition.Load(c) is { } cond) d.Conditions.Add(cond);
         if ((string)basic.Attribute("alliance") is { } alliance) d.Alliance = QuestRewards.ParseAlliance(alliance);
         if ((string)basic.Attribute("rank") is { } rank) d.Rank = QuestRewards.ParseRank(rank);
         var reward = q.Element("completeReward");
@@ -325,21 +333,23 @@ public sealed class QuestTable
     public void AddChapters(XDocument doc) => AddChapters(doc, chapters);
 
     /// <summary>
-    /// FUN_1416e4590: each quest row's name (the last available row of a quest wins), the object words replaced afterwards
-    /// (ReplaceObjectWords over m_strName). The rows of another locale are skipped, as the field mission texts are.
+    /// FUN_1416e4590: each quest's description row (the last available row of a quest wins): name and summary (both the
+    /// name attribute), desc, complete and descFameUI with backslash-n turned into line breaks, manual split on "|" (each
+    /// part trimmed on the right) and count parsed on "|". FUN_1416e43d0's object words are replaced when read. The rows
+    /// of another locale are skipped, as the field mission texts are.
     /// </summary>
-    public void AddQuestNames(XDocument doc, Dictionary<uint, string> into)
+    public void AddDescriptions(XDocument doc, Dictionary<uint, QuestDescription> into)
     {
-        var rows = new Dictionary<uint, string>();
+        var rows = new Dictionary<uint, QuestDescription>();
         foreach (var q in doc.Root?.Elements("quest") ?? Enumerable.Empty<XElement>())
         {
             if (!Available(q)) continue;
-            rows[(uint)FieldMissions.Int((string)q.Attribute("questID"))] = (string)q.Attribute("name") ?? "";
+            rows[(uint)FieldMissions.Int((string)q.Attribute("questID"))] = QuestDescription.Read(q);
         }
         foreach (var (id, n) in rows) into[id] = n;
     }
 
-    public void AddQuestNames(XDocument doc) => AddQuestNames(doc, names);
+    public void AddDescriptions(XDocument doc) => AddDescriptions(doc, descriptions);
 
     // ---- QuestDataTable / CQuestUIData lookups -------------------------------------------------------------------
 
@@ -367,10 +377,10 @@ public sealed class QuestTable
     /// </summary>
     public string QuestName(int id)
     {
-        if (!names.TryGetValue((uint)id, out var raw)) return "";
+        if (!descriptions.TryGetValue((uint)id, out var row)) return "";
         var d = Quest(id);
         if (d == null) return "";
-        string name = Words.ReplaceObjectWords(raw);
+        string name = Words.ReplaceObjectWords(row.Name);
         name = d.Repeat switch
         {
             1 => Common("s_quest_repeat_infinite") + " " + name,

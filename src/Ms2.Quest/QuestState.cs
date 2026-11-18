@@ -8,7 +8,9 @@ namespace Ms2.Quest;
 /// <param name="Tracking">m_trackingState, the registered-in-the-guide flag the packet sent (GetTrackingState adds the forced ones).</param>
 /// <param name="Complete">IsComplete: every condition met (from the progress counts).</param>
 /// <param name="Expired">IsExpired: the quest's period is over (needs the server time).</param>
-public sealed record QuestRecord(int Id, int State, long StartTime, long CompleteTime, int Tracking, bool Complete, bool Expired)
+/// <param name="Progress">m_progress: each condition's count (GetProgress), null when the packet gave none.</param>
+public sealed record QuestRecord(int Id, int State, long StartTime, long CompleteTime, int Tracking, bool Complete, bool Expired,
+                                 long[] Progress = null)
 {
     public bool IsActive => State == 1;
     public bool IsRewarded => State == 2;
