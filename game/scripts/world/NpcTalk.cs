@@ -492,8 +492,12 @@ public sealed partial class NpcTalk : Node
         }
     }
 
-    /// <summary>Modes 2 / 8 / 9 (FUN_141b204d0, ReloadScript): the quest list becomes the packet's id (mode 9 clears it), the script is
-    /// found again, and its page shown; a page the client cannot show ends the talk (SendNpcTalkMode0).</summary>
+    /// <summary>
+    /// Modes 2 / 8 / 9 (FUN_141b204d0 @0x141b204d0, ReloadScript): the quest list becomes the packet's id (mode 9 clears it), the
+    /// script is found again and ShowCurrentPage (uitalkcinematic.cpp:1636-1663) shows its page. With no script it opens the npc's
+    /// talk ui (not ported, see OnLiveTalk) or returns 0, and the talk ends (SendNpcTalkMode0); a page past the script's end
+    /// returns 1: nothing is shown and nothing is sent.
+    /// </summary>
     void LivePage(int newFlags, int? quest, int scriptId, int newPage, int buttonSet)
     {
         flags = newFlags; page = newPage;
@@ -502,15 +506,21 @@ public sealed partial class NpcTalk : Node
         var npc = talking ?? liveTalking;
         if (npc == null) return;
         script = FindTalkScript(npc, scriptId);
-        if (side == null)
+        if (script == null)
         {
-            if (script != null && page < script.Contents.Count) OpenWindow(npc, buttonSet, talkQuests.ToList());
+            GD.Print($"talk: type {flags} script {scriptId}: not in the client's scripts, the talk ends");
+            if (side != null) side.EndTalk();
+            else { liveTalking = null; live.SendTalk(new NpcTalkEndRequest()); }
             return;
         }
-        if (script == null || page >= script.Contents.Count)
+        if (page >= script.Contents.Count)
         {
-            GD.Print($"talk: type {flags} script {scriptId} page {page}: not in the client's scripts, the talk ends");
-            side.EndTalk();
+            GD.Print($"talk: type {flags} script {scriptId} page {page}: past the script's {script.Contents.Count} page(s), nothing shown");
+            return;
+        }
+        if (side == null)
+        {
+            OpenWindow(npc, buttonSet, talkQuests.ToList());
             return;
         }
         side.Flags = flags;
