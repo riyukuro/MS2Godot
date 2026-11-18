@@ -338,7 +338,8 @@ public partial class LiveSession : Node
             GD.Print(gone ? $"live: delete run done, {n0} -> {Session.List().Count}" : "live: delete run failed");
             tree.Quit(gone ? 0 : 1); return;
         }
-        var first = newName != null && newName != "" ? Session.List().Last() : Session.List().FirstOrDefault();
+        string pick = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAR");   // enter with this character name (default: the first)
+        var first = newName != null && newName != "" ? Session.List().Last() : !string.IsNullOrEmpty(pick) ? Session.List().FirstOrDefault(c => c.User.Name == pick) : Session.List().FirstOrDefault();
         if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }
         UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, first.User.CharacterId.ToString());
         await Until(() => flow.Current == GameFlow.State.Game);
