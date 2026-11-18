@@ -52,6 +52,12 @@ public sealed class MyInfoController : UiController
     public event Action<int> OpenDialog;
     /// <summary>A button whose client path sends a request or opens a part not here, by its callback name.</summary>
     public event Action<string> Button;
+    /// <summary>FUN_141275260(id, 1, 1) (unit_141274d10_uihelpers.cpp:267): ShowSystemNotice of a common string, by its key.</summary>
+    public event Action<string> SystemNotice;
+    /// <summary>The local player's inventory (g_143ab2a90): its bag-room check and the unequip request.</summary>
+    public Ms2.Net.Packets.InventoryView Inventory;
+    /// <summary>CInputKeyHandler::IsActionKeyDown(action, 0, 0): 0x49406, MS2DragSlot::vfunc_19's preview key.</summary>
+    public Func<int, bool> ActionKeyDown = _ => false;
 
     PcInfo info;           // m_spInfo
     int tab;               // m_nTab
@@ -853,8 +859,63 @@ public sealed class MyInfoController : UiController
             case "onsymbolclick": ToggleDialog?.Invoke(0x4ed5); return false;
             case "onwedding": ToggleDialog?.Invoke(0x4f8c); return false;
             case "onclickmynews": Button?.Invoke(name); return true;
+            case "notifyslotuse": return SlotUse(args);
         }
         return false;
+    }
+
+    /// <summary>
+    /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) for a slot of the equip bag: the button is the second argument (0
+    /// without one). Button 0 is EquipSlot::vfunc_13 (equipslot.cpp:116), nothing. Button 1: MS2DragSlot::vfunc_19 (the slot
+    /// is enabled, EquipSlot's ctor) with action 0x49406 held is the preview (vfunc_16, not ported: raised), else
+    /// <see cref="Unequip"/>. A gem bag slot's use is not ported: raised. The client guards none against a repeat.
+    /// </summary>
+    bool SlotUse(object[] args)
+    {
+        int button = args.Length > 1 ? (int)Rt.ToNumber(args[1]) : 0;
+        if (args.Length > 0 && args[0] is string n && n.StartsWith(EquipBag + ".", StringComparison.Ordinal)
+            && int.TryParse(n.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot))
+        {
+            if (button != 1) return true;
+            if (ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
+            Unequip(slot);
+            return true;
+        }
+        Button?.Invoke("notifySlotUse");
+        return true;
+    }
+
+    /// <summary>The common string ids the unequip shows (commonstringtable.cpp:1684, :1824).</summary>
+    public const string PutOffErrorKey = "s_item_err_putoff", InventoryFullKey = "s_err_inventory";
+
+    /// <summary>g_ItemFunctionFlags (0x142d568c0, read by CItem::HasAnyEquipSlotOf, item.cpp:1373): the model group types of a
+    /// worn part that cannot be taken off.</summary>
+    static readonly int[] FixedPartGroups = { 1, 2, 3, 18 };
+
+    /// <summary>
+    /// EquipSlot::vfunc_14 (equipslot.cpp:121): the slot's item (vfunc_25, <see cref="EquipSlotItem"/>), none: nothing; else
+    /// Unk_Inventory::RequestUnequipItem (inventory.cpp:1293): no local player, nothing; the local player's worn item of the uid
+    /// (PC::FUN_141655b80), none (a record not the local player's): nothing; CItem::HasAnyEquipSlotOf (a model group of
+    /// <see cref="FixedPartGroups"/>): box 207 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(207), 0)); FUN_140a655b0
+    /// (:1563): no empty cell in the item's tab (<see cref="Ms2.Net.Packets.InventoryView.HasEmptyCell"/>): system notice 67.
+    /// Then the unequip request: nothing is taken off here, the server's equip packets do.
+    /// STILL-OPEN: the guide restriction (IsRestricted(5), notice 2185), the dead check (box 66) and the sounds (the warning
+    /// DAT_143ab78e8, the item's material sound).
+    /// </summary>
+    void Unequip(int slot)
+    {
+        var r = equipBagRecord;
+        if (r == null || Model == null) return;
+        var item = EquipSlotItem(r, equipBagKind, slot);
+        if (item == null || !Model.HasLocalPlayer || !r.IsLocal || Inventory == null) return;
+        var model = Model.Tables.ItemModels.Get(item.Data.ItemPreset);
+        if (model != null && FixedPartGroups.Any(model.HasSlotType))
+        {
+            ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(PutOffErrorKey) ?? "", null, ""));
+            return;
+        }
+        if (!Inventory.HasEmptyCell(Inventory.TabOfItem(item.Data.Id))) { SystemNotice?.Invoke(InventoryFullKey); return; }
+        Inventory.RequestUnequip?.Invoke(item.Uid);
     }
 
     /// <summary>ASDataProvider: a scaleform.clik.data.DataProvider with the values pushed.</summary>

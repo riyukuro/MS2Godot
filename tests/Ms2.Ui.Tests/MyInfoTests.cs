@@ -631,4 +631,37 @@ public class MyInfoTests
         }
         Assert.That(errors, Is.Empty);
     }
+
+    [Test]
+    public void ARightClickOnAWornItemSendsTheUnequipOnly()
+    {
+        Packs();
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 2 };
+        var view = new Ms2.Net.Packets.InventoryView(book);
+        var sent = new List<long>(); view.RequestUnequip = sent.Add;
+        var notices = new List<string>(); var raised = new List<string>();
+        var (h, c, _, errors) = Load(x => { x.Inventory = view; x.SystemNotice += notices.Add; x.Button += raised.Add; });
+        Assert.That(errors, Is.Empty);
+        long rh = c.Record().Equips.First(e => e.Id == 15000001).Uid;
+        string Slot(int s) => MyInfoController.EquipBag + "." + s;
+
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 }), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { rh }), "the worn item's uid");
+        Assert.That(c.Record().Equips.Any(e => e.Uid == rh), Is.True, "nothing is taken off until the server says so");
+        c.OnCallback("notifySlotUse", new object[] { Slot(4), 1 });
+        Assert.That(sent.Last(), Is.EqualTo(rh), "an empty LH holds the two-handed RH item (vfunc_25)");
+        sent.Clear();
+        c.OnCallback("notifySlotUse", new object[] { Slot(6), 1 });
+        c.OnCallback("notifySlotUse", new object[] { Slot(5) });
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)), "an empty slot or a double click (vfunc_13) does nothing");
+        c.ActionKeyDown = a => a == 0x49406;
+        c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 });
+        c.ActionKeyDown = _ => false;
+        Assert.That((sent.Count, raised.Single()), Is.EqualTo((0, "notifySlotUse")), "the preview key: raised");
+
+        book.Apply(new Ms2.Net.Packets.ItemMessage.Add(new Ms2.Net.Packets.EquipItem { Id = 15000002, Uid = 900, InventorySlot = 0, Amount = 1 }));
+        book.Apply(new Ms2.Net.Packets.ItemMessage.Add(new Ms2.Net.Packets.EquipItem { Id = 15000003, Uid = 901, InventorySlot = 1, Amount = 1 }));
+        c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 });
+        Assert.That((sent.Count, notices.Single()), Is.EqualTo((0, MyInfoController.InventoryFullKey)), "no empty cell in the item's tab: notice 67");
+    }
 }
