@@ -46,6 +46,10 @@ public sealed class UiHost
 
     public Runtime RT => Player.RT;
 
+    /// <summary>The drag slots this movie's drag callbacks look up: its own controller's, or a shared stage's
+    /// (<see cref="UiStage"/>), as the client's one binding map.</summary>
+    public BindingRegistry DragSlots { get; set; }
+
     public UiHost(Player player, UiController controller, UiModel model, string id = null)
     {
         Player = player; Controller = controller; Model = model;
@@ -54,6 +58,8 @@ public sealed class UiHost
         Player.HostId = Id;
         Player.External = External;
         controller.Host = this;
+        DragSlots = new BindingRegistry();
+        DragSlots.Add(controller as IDragSlotOwner);
         RT.Guard("sharedFunctionInit", InstallShared);
     }
 
@@ -159,8 +165,11 @@ public sealed class UiHost
         }
         if (RT.GetClass("com.scaleform.mmo.GameDataModel") is { } gm)
         {
-            foreach (var n in new[] { "notifySlotUse", "notifySlotShiftClick", "notifySlotDragStart", "notifySlotDragEnd" })
+            foreach (var n in new[] { "notifySlotUse", "notifySlotShiftClick" })
                 Static(gm, n, a => { RT.Guard(n, () => Controller.OnCallback(n, a)); return null; });
+            // NotifyDragSlot::SlotDragStart / SlotDragEnd (notifydragslot.cpp:77, :93) over the screen's drag slots
+            Static(gm, "notifySlotDragStart", a => { RT.Guard("notifySlotDragStart", () => NotifyDragSlot.SlotDragStart(DragSlots, a)); return null; });
+            Static(gm, "notifySlotDragEnd", a => { RT.Guard("notifySlotDragEnd", () => NotifyDragSlot.SlotDragEnd(DragSlots, a)); return null; });
             // NotifyDragSlot::GetSlotTooltip (notifydragslot.cpp:127): for a bound slot a new object, filled by its vfunc_0
             Static(gm, "getSlotTooltip", a =>
             {

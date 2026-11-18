@@ -20,25 +20,120 @@ public sealed class UiStage : IDropStage
     /// <summary>The proxy class registered in a dragging movie's runtime.</summary>
     public const string SlotProxyClass = "ms2.stage.OtherMovieDragSlot";
 
-    sealed record Movie(Player Player, Func<(double X, double Y)> Mouse, Func<int> DrawOrder);
+    sealed record Movie(Player Player, Func<(double X, double Y)> Mouse, Func<int> DrawOrder, Func<bool> Shown);
 
     readonly List<Movie> movies = new();
 
     /// <summary>
     /// Adds a movie. <paramref name="mouse"/> gives the pointer in that movie's own stage coordinates; a larger
     /// <paramref name="drawOrder"/> is drawn in front (the client sorts its dialogs by CommonDepth layer, then by add order;
-    /// the host draws its movies in that order).
+    /// the host draws its movies in that order). A movie <paramref name="shown"/> says is not drawn is not hit.
     /// </summary>
-    public void Add(Player player, Func<(double X, double Y)> mouse, Func<int> drawOrder)
+    public void Add(Player player, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown = null)
     {
         Remove(player);
-        movies.Add(new Movie(player, mouse, drawOrder));
+        movies.Add(new Movie(player, mouse, drawOrder, shown));
         player.DropStage = this;
+        ListenForDrags(player);
     }
 
     public void Remove(Player player)
     {
         if (movies.RemoveAll(m => m.Player == player) > 0 && player.DropStage == this) player.DropStage = null;
+    }
+
+    // ---- main.gfx's Main: the drag callbacks of every movie ---------------------------------------------------------
+
+    /// <summary>The client's one binding map (NotifyContext ms_mapBindings) for the drag slots of every movie here.</summary>
+    public readonly BindingRegistry DragSlots = new();
+
+    /// <summary>Main.m_dragBindId: the binding of the slot being dragged, "" when none.</summary>
+    string dragBindId = "";
+
+    /// <summary>
+    /// Adds a dialog's movie (see <see cref="Add(Player, Func{ValueTuple{double, double}}, Func{int}, Func{bool})"/>): its
+    /// drag slots join <see cref="DragSlots"/> and its drag callbacks look them up there. The dialog leaves when its
+    /// controller unloads.
+    /// </summary>
+    public void Add(UiHost host, Func<(double X, double Y)> mouse, Func<int> drawOrder, Func<bool> shown = null)
+    {
+        Add(host.Player, mouse, drawOrder, shown);
+        host.DragSlots = DragSlots;
+        DragSlots.Add(host.Controller as IDragSlotOwner);
+        host.Controller.Unloaded += () => Remove(host);
+    }
+
+    readonly HashSet<Player> listening = new();
+
+    /// <summary>The listeners main.gfx's Main puts on the client's stage (<see cref="OnDragStart"/>, <see cref="OnDragEnd"/>),
+    /// on this movie's stage; they do nothing once the movie has left.</summary>
+    void ListenForDrags(Player player)
+    {
+        var rt = player.RT;
+        if (!listening.Add(player) || rt.GetClass(DragEventClass) is not { } ev) return;
+        void Listen(string type, Action<Player, object> f)
+        {
+            if (rt.GetProperty(ev, Name.Public(type)) is not string name) return;
+            var fn = new AsPlainFunction(rt, new NativeMethod("Main." + type, (_, a) =>
+            {
+                if (movies.Any(m => m.Player == player)) rt.Guard("Main " + type, () => f(player, a.ElementAtOrDefault(0)));
+                return Rt.Undef;
+            }));
+            player.Call(player.Stage, "addEventListener", new object[] { name, fn });
+        }
+        Listen("DRAG_START", OnDragStart);
+        Listen("DRAG_END", OnDragEnd);
+    }
+
+    public void Remove(UiHost host)
+    {
+        Remove(host.Player);
+        DragSlots.Remove(host.Controller as IDragSlotOwner);
+    }
+
+    /// <summary>An AS String field set from a value (coerce_s): null and undefined stay null.</summary>
+    static string AsString(object v) => Rt.IsNullish(v) ? null : Rt.ToString(v);
+
+    static object Get(Runtime rt, object o, string name) => o is AsObject ? rt.GetProperty(o, Name.Public(name)) : null;
+
+    /// <summary>
+    /// Main.onStartDragAlertModel: with a dragged slot, the drag sprite is left out of hit tests
+    /// (InteractiveObjectEx.setHitTestDisable), GameDataModel.notifySlotDragStart(slot.binding) and the binding is kept;
+    /// without one, the kept binding is cleared.
+    /// </summary>
+    void OnDragStart(Player player, object e)
+    {
+        var slot = Get(player.RT, e, "dragTarget");
+        if (Rt.ToBoolean(slot))
+        {
+            if (Get(player.RT, e, "dragSprite") is AsDisplayObject sprite) sprite.HitTestDisabled = true;
+            var binding = AsString(Get(player.RT, slot, "binding"));
+            NotifyDragSlot.SlotDragStart(DragSlots, new object[] { binding });
+            dragBindId = binding;
+        }
+        else dragBindId = "";
+    }
+
+    /// <summary>
+    /// Main.onEndDragAlertModel: with a kept binding, the drop slot's binding, or its parent's when that is null or empty
+    /// (null without a drop slot), goes to GameDataModel.notifySlotDragEnd(kept, drop); the kept binding is cleared. A drop
+    /// slot of another movie (a proxy) is read in that movie.
+    /// </summary>
+    void OnDragEnd(Player player, object e)
+    {
+        if (!string.IsNullOrEmpty(dragBindId))
+        {
+            var drop = Get(player.RT, e, "dropTarget");
+            var (rt, obj) = OtherMovieSlotOf(drop) is { } t ? (t.Owner.RT, (object)t.Slot) : (player.RT, drop);
+            string binding = null;
+            if (Rt.ToBoolean(obj))
+            {
+                binding = AsString(Get(rt, obj, "binding"));
+                if (string.IsNullOrEmpty(binding) && obj is AsDisplayObject d && d.Parent != null) binding = AsString(Get(rt, d.Parent, "binding"));
+            }
+            NotifyDragSlot.SlotDragEnd(DragSlots, new object[] { dragBindId, binding });
+        }
+        dragBindId = "";
     }
 
     /// <summary>
@@ -52,6 +147,7 @@ public sealed class UiStage : IDropStage
     {
         foreach (var m in movies.OrderByDescending(m => m.DrawOrder()))
         {
+            if (m.Shown?.Invoke() == false) continue;
             var (x, y) = m.Mouse();
             var hit = m.Player.GetTopMostEntity(x, y, true, m.Player == source ? dragged : null);
             if (hit == null) continue;

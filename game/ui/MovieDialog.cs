@@ -6,6 +6,9 @@ using FlashPlayer = Ms2.Avm2.Flash.Player;
 
 namespace Ms2Godot.Ui;
 
+/// <summary>A scene whose dialogs share one stage (<see cref="UiStage"/>): drops across dialogs and the drag callbacks.</summary>
+public interface IUiStageHost { UiStage UiStage { get; } }
+
 /// <summary>
 /// A client window run from its own movie: the movie's ActionScript (the translated code when it is built, else the
 /// interpreter) drawn by <see cref="As3View"/>, with the dialog's C++ side in a <see cref="UiController"/>. The movie is
@@ -55,7 +58,45 @@ public partial class MovieDialog : Node2D
         if (IsInsideTree()) view.GlobalPosition = GetCanvasTransform().AffineInverse() * UiScale.MovieOrigin;
     }
 
-    public override void _EnterTree() => Place(window);
+    public override void _EnterTree()
+    {
+        Place(window);
+        for (var n = GetParent(); n != null; n = n.GetParent())
+            if (n is IUiStageHost h && h.UiStage != null) { stage = h.UiStage; break; }
+        stage?.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree);
+    }
+
+    public override void _ExitTree()
+    {
+        stage?.Remove(Host);
+        stage = null;
+    }
+
+    UiStage stage;
+
+    /// <summary>
+    /// Where this dialog is drawn among the others: its canvas layer, then its place among the dialogs in that layer in tree
+    /// order (Godot draws a layer's children in tree order).
+    /// </summary>
+    int DrawOrder()
+    {
+        Node n = this;
+        while (n != null && n is not CanvasLayer) n = n.GetParent();
+        if (n is not CanvasLayer layer) return 0;
+        int rank = 0, found = -1;
+        void Walk(Node x)
+        {
+            foreach (var c in x.GetChildren())
+            {
+                if (found >= 0) return;
+                if (c == this) { found = rank; return; }
+                if (c is MovieDialog) { rank++; continue; }
+                Walk(c);
+            }
+        }
+        Walk(layer);
+        return layer.Layer * 100_000 + Math.Max(found, 0);
+    }
 
     /// <summary>The client size times the UI scale (DAT_143af62d4 times FUN_141276490), a dialog's saved rates' base.</summary>
     void SetClientStage(Vector2 window)

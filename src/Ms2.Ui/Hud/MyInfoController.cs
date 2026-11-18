@@ -6,6 +6,18 @@ using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
+/// <summary>The owner of the character window's equip slots (EquipSlot: FUN_14120d560 casts a drag slot to it).</summary>
+public interface IEquipSlotOwner : IDragSlotOwner
+{
+    /// <summary>The name is one of the equip slots.</summary>
+    bool IsEquipSlot(string name);
+    /// <summary>The slot's item (vfunc_25), that item's equip slot (CItem m_68) and the bag's kind (m_nKind); null for an
+    /// empty slot or another name.</summary>
+    (Item Item, int Slot, int Kind)? WornSlot(string name);
+    /// <summary>Unk_Inventory::RequestUnequipItem with its checks.</summary>
+    void RequestUnequip(Item item);
+}
+
 /// <summary>
 /// UIMyInfoDialog (client/ms2/uimyinfodialog.cpp; UI id 0x2711, the game menu's "characterinfo" entry and key action 400002)
 /// over UIPCInfoDialog (uipcinfodialog.cpp), the C++ side of the character window movie uimyinfodialog
@@ -18,7 +30,7 @@ namespace Ms2.Ui.Hud;
 /// member unset (or the row's value and detail empty): the Lua scores and crit rate, the equipment abilities, the item
 /// level, the shield, the achievement tally, the profile image path and the symbol.</para>
 /// </summary>
-public sealed class MyInfoController : UiController
+public sealed class MyInfoController : UiController, IEquipSlotOwner
 {
     public override string Movie => "uimyinfodialog";
     protected override string EntityMethod => "setTodayMemo";
@@ -934,6 +946,34 @@ public sealed class MyInfoController : UiController
         var item = EquipSlotItem(equipBagRecord, equipBagKind, slot);
         return item == null ? null : (item, (int)(item.Record?.Slot ?? 0), equipBagKind);
     }
+
+    // ---- the drag slots (EquipSlot, GemSlot), through NotifyDragSlot -----------------------------------------------
+
+    /// <summary>A slot of the shown equip bag (an EquipSlot).</summary>
+    public bool IsEquipSlot(string name) => GetBagSlotBindings(EquipBag).Contains(name);
+
+    /// <summary>The equip bag's slots (EquipSlot) and the gem bag's (GemSlot).</summary>
+    public bool IsDragSlot(string name) => IsEquipSlot(name) || GetBagSlotBindings(GemBag).Contains(name);
+
+    /// <summary>DragSlot::vfunc_10: the slot pushed again.</summary>
+    public void RefreshSlot(string name) { if (IsDragSlot(name)) Host.Push(name); }
+
+    /// <summary>
+    /// The destination's vfunc_18. EquipSlot::vfunc_18 (equipslot.cpp:151): the put-on from a bag slot (FUN_14120d2e0, then
+    /// RequestEquipItem) and the swap with another equip slot (CanSwapEquippedItems, ItemEquip mode 2) are not ported:
+    /// raised; then, either way, the source's vfunc_10. GemSlot::vfunc_18 (gemslot.cpp:117) is not ported: raised.
+    /// </summary>
+    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
+    {
+        Button?.Invoke("notifySlotDragEnd");
+        if (IsEquipSlot(name)) sourceOwner.RefreshSlot(source);
+    }
+
+    /// <summary>
+    /// The open FUN_1422aeed0(2) branch picks vfunc_12 or vfunc_17; for both slot kinds both are vfunc_10
+    /// (DragSlot::vfunc_12, EquipSlot::vfunc_17 equipslot.cpp:145, GemSlot::vfunc_17 gemslot.cpp:111): the slot pushed again.
+    /// </summary>
+    public void SlotDropUnresolved(string name) => RefreshSlot(name);
 
     /// <summary>ASDataProvider: a scaleform.clik.data.DataProvider with the values pushed.</summary>
     object DataProvider(IEnumerable<object> values)

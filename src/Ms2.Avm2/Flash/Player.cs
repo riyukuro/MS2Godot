@@ -1172,6 +1172,8 @@ namespace Ms2.Avm2.Flash
             dragDx = lockCenter ? 0 : s.Matrix.Tx - px; dragDy = lockCenter ? 0 : s.Matrix.Ty - py;
         }
         internal void StopDrag(AsSprite s) { if (dragging == s) dragging = null; }
+        /// <summary>A sprite is being dragged (startDrag until stopDrag): it follows the mouse wherever the mouse is.</summary>
+        public bool Dragging => dragging != null;
         public void UpdateDrag()
         {
             if (dragging == null) return;

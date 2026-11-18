@@ -14,7 +14,7 @@ namespace Ms2.Ui.Hud;
 /// <para>Nothing here sends a packet: the sort, the slot expansion, the bank call and item use are raised as
 /// <see cref="Button"/> / <see cref="ToggleDialog"/> for the host to leave unsent.</para>
 /// </summary>
-public sealed class InventoryController : UiController, IInventoryBinding
+public sealed class InventoryController : UiController, IInventoryBinding, IDragSlotOwner
 {
     public override string Movie => "uiinventorydialog";
     protected override string EntityMethod => "changeMoney";
@@ -43,7 +43,7 @@ public sealed class InventoryController : UiController, IInventoryBinding
     /// <summary>A button whose client path sends a request or opens a part not here (by its callback name): OnClickSort,
     /// onClickSlotExpand, onClickOpenBank, onClickItemOption, onClickItemMerge, onClickItemEnchantTransform,
     /// onClickUnlimitedEnchant, onClickItemRemakeOption, OnItemSearch, notifySlotUse (the double click, the preview and the
-    /// right-click modes other than put-on), notifySlotDragEnd (a drop off the bag).</summary>
+    /// right-click modes other than put-on), notifySlotDragEnd (a drop off the bag, a drop from a kind of slot not ported).</summary>
     public event Action<string> Button;
 
     /// <summary>m_1f0 (BuildTabList @0x14199d1c0): the tab buttons in order, by name and tab.</summary>
@@ -256,7 +256,6 @@ public sealed class InventoryController : UiController, IInventoryBinding
             case "onclickitemsocketandgem": ToggleDialog?.Invoke(0x4f0a); return true;
             case "onclickitemenchant": ToggleDialog?.Invoke(0x4e91); return true;           // OnClickItemEnchant @0x14199aaa0
             case "onclicksort": OnClickSort(); return true;
-            case "notifyslotdragend": return SlotDragEnd(args);
             case "notifyslotuse": return SlotUse(args);
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
             case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand":
@@ -280,61 +279,73 @@ public sealed class InventoryController : UiController, IInventoryBinding
         name is string n && n.StartsWith(BagName + ".", StringComparison.Ordinal) && int.TryParse(n.AsSpan(BagName.Length + 1), out int i)
         && i >= 0 && i < slotCount ? i : -1;
 
+    // ---- the bag's drag slots (InvenSlot), through NotifyDragSlot ----------------------------------------------------
+
+    /// <summary>The slots of the shown bag are its drag slots.</summary>
+    public bool IsDragSlot(string name) => SlotIndexOf(name) >= 0;
+
+    /// <summary>DragSlot::vfunc_10: the slot pushed again.</summary>
+    public void RefreshSlot(string name) { if (SlotIndexOf(name) is int i and >= 0) Host.Push(SlotName(i)); }
+
     /// <summary>
-    /// NotifyDragSlot::SlotDragEnd (@0x1423025d0) for a drag from this bag (main.gfx's onEndDragAlertModel sends the dragged
-    /// slot's binding and the drop target's): fewer than two arguments or no source name does nothing; a source that is not
-    /// a slot of this bag: a worn item (an equip bag slot, <see cref="WornSlotItem"/>) dropped on a bag slot is
-    /// <see cref="WornDroppedOnBag"/>; any other source or target is not ported (raised). Dropped on the same slot: vfunc_12, the slot pushed again. Dropped on another
-    /// slot of the bag: that slot's InvenSlot::vfunc_18 (invenslot.cpp:1141) with an InvenSlot source: the move request
-    /// (mode 3: the source slot's item uid, 0 for an empty cell as m_nItemUid, and the target's index), then the source's
-    /// vfunc_10 (pushed again: nothing moves until the server's item packets do). Dropped elsewhere (another dialog's slot
-    /// or no slot): the client's vfunc_12 / vfunc_17 by FUN_1422aeed0(2) (vfunc_17 is the drop-the-item path, vfunc_26)
-    /// are not ported: the slot is pushed again and the callback raised. The item sound (PlayItemSoundByUid) and the
-    /// source's vfunc_21 (its sound, FUN_14199bc00) are not here.
+    /// InvenSlot::vfunc_20 (invenslot.cpp:1299) for a slot with an item: the item's new flag cleared (SetNew(0)). Its
+    /// material sound and UIDialogEventDispatcher's vfunc_3 are not here.
     /// </summary>
-    bool SlotDragEnd(object[] args)
+    public void SlotDragStarted(string name)
     {
-        if (args.Length < 2 || args[0] is not string src) return true;
-        int from = SlotIndexOf(src);
-        if (from < 0)
-        {
-            int target = SlotIndexOf(args[1]);
-            if (target >= 0 && WornSlotItem?.Invoke(src) is { } worn) WornDroppedOnBag(worn.Item, worn.Slot, worn.Kind, target);
-            else Button?.Invoke("notifySlotDragEnd");
-            return true;
-        }
-        int to = SlotIndexOf(args[1]);
-        if (to < 0) { Host.Push(SlotName(from)); Button?.Invoke("notifySlotDragEnd"); return true; }
-        if (to != from)
+        if (SlotIndexOf(name) is int i and >= 0 && View?.ItemAt(View.Tab, i) is { } e) View.ClearNew(e.Uid);
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_18 (invenslot.cpp:1141), something dropped on a slot of this bag. A slot of this bag: the move
+    /// request (mode 3: the source slot's item uid, 0 for an empty cell as m_nItemUid, and this slot's index), then the
+    /// source's vfunc_10 (pushed again: nothing moves until the server's item packets do). The character window's equip
+    /// slot (EquipSlot, FUN_14120d560): <see cref="WornDroppedOnBag"/>. Any other source (the store slot branch and the
+    /// rest) is not ported: raised. The item sound (PlayItemSoundByUid) is not here.
+    /// </summary>
+    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
+    {
+        int to = SlotIndexOf(name);
+        if (to < 0) return;
+        if (sourceOwner == this && SlotIndexOf(source) is int from and >= 0)
         {
             long uid = View?.ItemAt(View.Tab, from)?.Uid ?? 0;
             View?.RequestMove?.Invoke(uid, (short)to);
+            RefreshSlot(source);
         }
-        Host.Push(SlotName(from));
-        return true;
+        else if (sourceOwner is IEquipSlotOwner equips && equips.IsEquipSlot(source))
+        {
+            if (equips.WornSlot(source) is { } worn) WornDroppedOnBag(worn.Item, worn.Slot, worn.Kind, to, equips);
+        }
+        else Button?.Invoke("notifySlotDragEnd");
     }
 
-    /// <summary>The character window's equip slot of a binding name (EquipSlot, FUN_14120d560): its item (vfunc_25), the item's
-    /// equip slot (CItem m_68) and the slot's kind (m_nKind); null for another name or an empty slot.</summary>
-    public Func<string, (Item Item, int Slot, int Kind)?> WornSlotItem;
-    /// <summary>Unk_Inventory::RequestUnequipItem with its checks (the character window's).</summary>
-    public Action<Item> RequestUnequipWorn;
+    /// <summary>
+    /// The branch NotifyDragSlot::SlotDragEnd picks by FUN_1422aeed0(2), vfunc_12 or vfunc_17 (InvenSlot::vfunc_17,
+    /// invenslot.cpp:1109, the drop-the-item path), is open: the slot is pushed again and the callback raised.
+    /// </summary>
+    public void SlotDropUnresolved(string name)
+    {
+        RefreshSlot(name);
+        Button?.Invoke("notifySlotDragEnd");
+    }
+
 
     /// <summary>
     /// InvenSlot::vfunc_18's EquipSlot branch (invenslot.cpp:1153): the target cell's item, when its model has the worn item's
     /// group type (CItem::FUN_140527a20: m_68 for equip subtype 0x1f / 0x22, else the model's first group), is put on at that
     /// slot with the equip slot's kind: RequestEquipItem(mine, slot, kind, 0) (<see cref="RequestEquip"/>); else, when the
-    /// shown tab (FUN_140a65b70) is the worn item's tab, the worn item is taken off (RequestUnequipItem). Nothing moves here.
+    /// shown tab (FUN_140a65b70) is the worn item's tab, the worn item is taken off (RequestUnequipItem, with the character window's checks: <see cref="IEquipSlotOwner.RequestUnequip"/>). Nothing moves here.
     /// The source's vfunc_21 (its sound) is not here.
     /// </summary>
-    void WornDroppedOnBag(Item worn, int wornSlot, int kind, int target)
+    void WornDroppedOnBag(Item worn, int wornSlot, int kind, int target, IEquipSlotOwner equips)
     {
         if (View == null || Model == null) return;
         var models = Model.Tables.ItemModels;
         int group = wornSlot != 0 && worn.Data.EquipSubtype is 0x1f or 0x22 ? wornSlot : models.Get(worn.Data.ItemPreset)?.FirstSlotType ?? 0;
         var mine = View.ItemAt(View.Tab, target) is { } e ? ToItem(e, Model.Tables.Items) : null;
         if (mine != null && models.Get(mine.Data.ItemPreset)?.HasSlotType(group) == true) RequestEquip(mine, group, kind);
-        else if (View.Tab == View.TabOfItem(worn.Data.Id)) RequestUnequipWorn?.Invoke(worn);
+        else if (View.Tab == View.TabOfItem(worn.Data.Id)) equips.RequestUnequip(worn);
     }
 
     /// <summary>

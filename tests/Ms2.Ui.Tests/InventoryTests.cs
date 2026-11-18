@@ -280,14 +280,14 @@ public class InventoryTests
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
         var sent = new List<(long, short)>(); c.View.RequestMove = (u, s) => sent.Add((u, s));
         var raised = new List<string>(); c.Button += raised.Add;
-        Assert.That(c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", "InventoryDialog.4" }), Is.True);
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "InventoryDialog.0", "InventoryDialog.4" });
         Assert.That(sent, Is.EqualTo(new[] { (3L, (short)4) }), "mode 3: the dragged item's uid and the target index");
         Assert.That(c.View.ItemAt(c.View.Tab, 0)?.Uid, Is.EqualTo(3L), "nothing moves until the server says so");
-        c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", "InventoryDialog.0" });
-        c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0" });
-        c.OnCallback("notifySlotDragEnd", new object[] { "QuickSlot.1", "InventoryDialog.4" });
-        Assert.That(sent, Has.Count.EqualTo(1), "the same slot, one argument or another bag's source send nothing");
-        c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", null });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "InventoryDialog.0", "InventoryDialog.0" });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "InventoryDialog.0" });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "QuickSlot.1", "InventoryDialog.4" });
+        Assert.That(sent, Has.Count.EqualTo(1), "the same slot, one argument or a source that is no drag slot send nothing");
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "InventoryDialog.0", null });
         Assert.That((sent.Count, raised.Last()), Is.EqualTo((1, "notifySlotDragEnd")), "a drop off the bag is not ported: raised");
     }
 
@@ -443,26 +443,50 @@ public class InventoryTests
         var wornRecord = new EquipItem { Id = 13000001, Uid = 2, Slot = EquipSlot.RH, Rarity = 1 };
         var worn = InventoryController.ToItem(wornRecord, t.Items);
         int group = t.ItemModels.Get(worn.Data.ItemPreset).FirstSlotType;
-        c.WornSlotItem = n => n == "MyPcInfoDialog.Equip.5" ? (worn, (int)wornRecord.Slot, 0) : null;
-        var unequipped = new List<long>(); c.RequestUnequipWorn = it => unequipped.Add(it.Uid);
+        var equips = new EquipSlots { Worn = n => n == "MyPcInfoDialog.Equip.5" ? (worn, (int)wornRecord.Slot, 0) : null };
+        var unequipped = equips.Unequipped;
+        h.DragSlots.Add(equips);
+        h.DragSlots.Add(new OtherSlots());
         var equipped = new List<(long, byte, byte)>(); c.View.RequestEquip = (u, s, m) => equipped.Add((u, s, m));
         var raised = new List<string>(); c.Button += raised.Add;
         int gear = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 1).i;
         h.Set(h.Child("m_tab"), "selectedIndex", gear);
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
 
-        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.0" });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.0" });
         Assert.That(equipped, Is.EqualTo(new[] { (30L, (byte)group, (byte)0) }), "the cell's item has the worn item's group: put on at that slot, the bag's kind");
-        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.1" });
-        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.7" });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.1" });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.7" });
         Assert.That((equipped.Count, unequipped), Is.EqualTo((1, new List<long> { 2, 2 })), "another item or an empty cell: taken off");
-        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", null });
-        c.OnCallback("notifySlotDragEnd", new object[] { "QuickSlot.1", "InventoryDialog.7" });
-        Assert.That((unequipped.Count, raised.Count(r => r == "notifySlotDragEnd")), Is.EqualTo((2, 2)), "not ported: raised");
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "MyPcInfoDialog.Equip.4", "InventoryDialog.0" });
+        Assert.That((equipped.Count, unequipped.Count, raised.Count), Is.EqualTo((1, 2, 0)), "an empty equip slot: nothing");
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "QuickSlot.1", "InventoryDialog.7" });
+        Assert.That((unequipped.Count, raised.Count(r => r == "notifySlotDragEnd")), Is.EqualTo((2, 1)), "another kind of slot: not ported, raised");
         int other = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 3).i;
         h.Set(h.Child("m_tab"), "selectedIndex", other);
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
-        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.0" });
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.0" });
         Assert.That(unequipped.Count, Is.EqualTo(2), "another tab shown: nothing");
+    }
+
+    /// <summary>A character window's equip slots, "MyPcInfoDialog.Equip.N", with the worn items given.</summary>
+    sealed class EquipSlots : IEquipSlotOwner
+    {
+        public Func<string, (Item Item, int Slot, int Kind)?> Worn = _ => null;
+        public readonly List<long> Unequipped = new();
+        public bool IsDragSlot(string name) => IsEquipSlot(name);
+        public bool IsEquipSlot(string name) => name.StartsWith("MyPcInfoDialog.Equip.", StringComparison.Ordinal);
+        public (Item Item, int Slot, int Kind)? WornSlot(string name) => Worn(name);
+        public void RequestUnequip(Item item) => Unequipped.Add(item.Uid);
+        public void RefreshSlot(string name) { }
+        public void SlotDropUnresolved(string name) { }
+    }
+
+    /// <summary>A drag slot of another kind ("QuickSlot.1").</summary>
+    sealed class OtherSlots : IDragSlotOwner
+    {
+        public bool IsDragSlot(string name) => name == "QuickSlot.1";
+        public void RefreshSlot(string name) { }
+        public void SlotDropUnresolved(string name) { }
     }
 }

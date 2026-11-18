@@ -372,6 +372,42 @@ public partial class As3View : Node2D
     /// <summary>A viewport point in stage units (through the canvas layer the view is drawn in).</summary>
     Vector2 StagePoint(Vector2 viewport) => GetGlobalTransformWithCanvas().AffineInverse() * viewport;
 
+    /// <summary>The mouse in stage units, (NaN, NaN) out of the tree.</summary>
+    public (double X, double Y) StageMouse()
+    {
+        if (!IsInsideTree() || GetViewport() is not { } vp) return (double.NaN, double.NaN);
+        var p = StagePoint(vp.GetMousePosition());
+        return (p.X, p.Y);
+    }
+
+    /// <summary>
+    /// While this movie drags a sprite (DragManager's startDrag) it gets the mouse before any other movie: the client's
+    /// movies share one stage, so the drag follows the mouse over other dialogs and the release ends it
+    /// (DragManager.handleEndDragEvent on the stage's MOUSE_UP) wherever it happens.
+    /// </summary>
+    public override void _Input(InputEvent ev)
+    {
+        if (Player == null || !Player.Dragging) return;
+        switch (ev)
+        {
+            case InputEventMouseMotion mm:
+            {
+                var p = StagePoint(mm.Position);
+                Player.MouseMove(p.X, p.Y);
+                break;
+            }
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mb:
+            {
+                var p = StagePoint(mb.Position);
+                Player.MouseMove(p.X, p.Y);
+                Player.MouseButton(false);
+                break;
+            }
+            default: return;
+        }
+        GetViewport().SetInputAsHandled();
+    }
+
     public override void _UnhandledInput(InputEvent ev)
     {
         switch (ev)

@@ -77,4 +77,73 @@ public class UiStageTests
         stage.Remove(b);
         Assert.That(b.DropStage, Is.Null);
     }
+
+    /// <summary>The drag event class a movie's DragManager and Main use, with its two type names.</summary>
+    static AsClass DragEvents(Runtime rt)
+    {
+        var cls = rt.NewNativeClass(UiStage.DragEventClass, rt.GetClass("flash.events.Event"), dynamic: true);
+        rt.SetProperty(cls, Name.Public("DRAG_START"), "dragStart");
+        rt.SetProperty(cls, Name.Public("DRAG_END"), "dragEnd");
+        return cls;
+    }
+
+    static void Dispatch(Player p, AsClass cls, string type, AsDisplayObject from, object dropTarget, AsDisplayObject sprite)
+    {
+        var e = (AsObject)cls.Construct(type, true, true);
+        e.SetDynamic("dragTarget", from);
+        e.SetDynamic("dropTarget", dropTarget);
+        e.SetDynamic("dragSprite", sprite);
+        p.Call(from, "dispatchEvent", new object[] { e });
+    }
+
+    sealed class Slots(string prefix, List<string> log) : IDragSlotOwner
+    {
+        public bool IsDragSlot(string name) => name.StartsWith(prefix, StringComparison.Ordinal);
+        public void RefreshSlot(string name) => log.Add("refresh " + name);
+        public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner) => log.Add($"on {name} from {source}");
+        public void SlotDropUnresolved(string name) => log.Add("unresolved " + name);
+        public void SlotDragStarted(string name) => log.Add("start " + name);
+        public void SlotDragDone(string name) => log.Add("done " + name);
+    }
+
+    [Test]
+    public void TheStagesDragEventsGoToTheSlotOwnersAsMainSendsThem()
+    {
+        var (a, aSlot, _) = Movie();
+        var (b, bSlot, _) = Movie();
+        var aEvents = DragEvents(a.RT);
+        DragEvents(b.RT);
+        var bag = Box(a, aSlot, 100, "Bag.1");
+        var dragged = Box(a, a.RT.GetClass("flash.display.Sprite"), 100);
+        var panel = Box(b, b.RT.GetClass("flash.display.Sprite"), 100, "Equip.panel");
+        var equip = Box(b, bSlot, 0, "");
+        b.Stage.removeChild(equip); panel.addChild(equip);
+        var stage = new UiStage();
+        stage.Add(a, () => (110, 10), () => 0);
+        stage.Add(b, () => (110, 10), () => 1);
+        var log = new List<string>();
+        stage.DragSlots.Add(new Slots("Bag.", log));
+        stage.DragSlots.Add(new Slots("Equip.", log));
+
+        Dispatch(a, aEvents, "dragStart", bag, null, dragged);
+        Assert.That(log, Is.EqualTo(new[] { "start Bag.1" }));
+        Assert.That(dragged.HitTestDisabled, Is.True, "setHitTestDisable(dragSprite, true)");
+
+        // the drop slot is in the other movie and has an empty binding: its parent's binding is the destination
+        Dispatch(a, aEvents, "dragEnd", bag, dragged.dropTarget, dragged);
+        Assert.That(log.Skip(1), Is.EqualTo(new[] { "on Equip.panel from Bag.1", "done Bag.1" }));
+
+        // no drop slot: the source's open branch, then done; a drag end with no drag started sends nothing
+        log.Clear();
+        Dispatch(a, aEvents, "dragStart", bag, null, dragged);
+        Dispatch(a, aEvents, "dragEnd", bag, null, dragged);
+        Dispatch(a, aEvents, "dragEnd", bag, null, dragged);
+        Assert.That(log, Is.EqualTo(new[] { "start Bag.1", "unresolved Bag.1", "done Bag.1" }));
+
+        // a drop back on the source slot itself: vfunc_12, a refresh
+        log.Clear();
+        Dispatch(a, aEvents, "dragStart", bag, null, dragged);
+        Dispatch(a, aEvents, "dragEnd", bag, bag, dragged);
+        Assert.That(log, Is.EqualTo(new[] { "start Bag.1", "refresh Bag.1", "done Bag.1" }));
+    }
 }

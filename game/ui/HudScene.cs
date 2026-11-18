@@ -15,7 +15,7 @@ namespace Ms2Godot.Ui;
 /// own Gfx.m2d and fed from <see cref="StubHudData"/>.
 /// Args after `--`: --hudshot DIR saves a shot after the field has loaded and quits; --field is passed to the field scene.
 /// </summary>
-public partial class HudScene : Node
+public partial class HudScene : Node, IUiStageHost
 {
     UiAssets assets;
     readonly StubHudData data = StubHudData.Instance;
@@ -123,6 +123,9 @@ public partial class HudScene : Node
         relayoutQueued = true;
         CallDeferred(MethodName.Relayout);
     }
+
+    /// <summary>The HUD's dialogs as the client's one stage: drops from one dialog onto another, and main.gfx's drag callbacks.</summary>
+    public UiStage UiStage { get; } = new();
 
     CanvasLayer hudLayer; Node[] worldUi = System.Array.Empty<Node>();   // the HUD layer and the world-anchored UI layers
     PortraitView portrait;          // the game menu's face portrait, kept across relayouts
@@ -1135,9 +1138,6 @@ public partial class HudScene : Node
             Wearer = () => me?.ToPcInfo(now()),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             ActionKeyDown = ActionKeyDown,
-            // a worn item dragged from the character window (its equip slots) and its unequip checks
-            WornSlotItem = name => myInfo != null && !myInfo.IsClosed ? myInfo.WornSlot(name) : null,
-            RequestUnequipWorn = item => myInfo?.RequestUnequip(item),
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
