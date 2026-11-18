@@ -449,6 +449,19 @@ public class MyInfoTests
     }
 
     [Test]
+    public void ModelSlotTypesAreTheClients()
+    {
+        var models = new ItemModelTable(Packs());
+        Assert.That(models.Get(11400001).SlotTypes, Is.EqualTo(new[] { 8 }), "CL");
+        var wings = models.Get(15300000);
+        Assert.That(wings.SlotTypes, Is.EqualTo(new[] { 5, 4 }), "RH, then LH");
+        Assert.That((wings.FirstSlotType, wings.HasSlotType(4), wings.HasSlotType(8)), Is.EqualTo((5, true, false)));
+        Assert.That((ItemModelTable.SlotType("OH"), ItemModelTable.SlotType("oh"), ItemModelTable.SlotType("")), Is.EqualTo((19, 0, 0)));
+        var oh = new ItemModelTable.Model(false, 0, new List<int>(), new[] { 19, 8 });
+        Assert.That((oh.HasSlotType(5), oh.HasSlotType(4), oh.HasSlotType(8)), Is.EqualTo((true, true, false)), "OH answers first");
+    }
+
+    [Test]
     public void PreviewLineIsTheClients()
     {
         var m = NewModel();

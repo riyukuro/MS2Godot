@@ -6,17 +6,33 @@ namespace Ms2.Ui.Items;
 /// <summary>
 /// CItemDataTable's item models (ms2/commonfiles/itemdatatable.cpp), the parts the item tooltip reads. GetModel (:599)
 /// loads itemmodel/&lt;preset / 100000&gt;.xml on first use (LoadModelFile :1569): each &lt;ItemModel&gt; by id, a later
-/// one replacing an earlier one. Of a model only ItemModelHead::Load's &lt;customize&gt; (itemdatastruct.cpp:930) is read.
+/// one replacing an earlier one. Of a model ItemModelHead::Load's &lt;customize&gt; (itemdatastruct.cpp:930) is read, and of
+/// ItemModelData::Load (0x14054af00) each &lt;slots&gt;&lt;slot&gt;'s type only.
 /// </summary>
 public sealed class ItemModelTable
 {
     /// <summary>
     /// ItemModelHead (ctor itemdatastruct.cpp:924): ColorEnabled is "color" (flag10, cleared without a palette),
     /// Palette is "colorPalette" (FUN_140547250), DefaultColors is "defaultColorIndex" split at "," (default "-1"; GetIdAt
-    /// :1049), and MultiColor is more than one default (flag11).
+    /// :1049), and MultiColor is more than one default (flag11). SlotTypes are the groups' types in order: ModelGroup::Load
+    /// (0x140544cf0) reads "name" through ReadSlotAttr and Parse_14021bdc0 (SlotType); a missing name keeps 0.
     /// </summary>
-    public sealed record Model(bool ColorEnabled, int Palette, IReadOnlyList<int> DefaultColors)
+    public sealed record Model(bool ColorEnabled, int Palette, IReadOnlyList<int> DefaultColors, IReadOnlyList<int> SlotTypes)
     {
+        /// <summary>ItemModelData::GetFirstGroupType (itemdatastruct.cpp:2079): 0 without groups.</summary>
+        public int FirstSlotType => SlotTypes.Count > 0 ? SlotTypes[0] : 0;
+
+        /// <summary>ItemModelData::HasGroupType (0x14054b450): an OH group, met first, answers for RH and LH only.</summary>
+        public bool HasSlotType(int type)
+        {
+            foreach (int t in SlotTypes)
+            {
+                if (t == 19) return type == 5 || type == 4;
+                if (t == type) return true;
+            }
+            return false;
+        }
+
         public bool MultiColor => DefaultColors.Count > 1;
         /// <summary>GetIdAt: -1 past the list.</summary>
         public int DefaultColor(int index) => index < DefaultColors.Count ? DefaultColors[index] : -1;
@@ -54,8 +70,15 @@ public sealed class ItemModelTable
                     .Select(ItemData.Atoi).ToList();
                 if (palette == 0) color = false;
             }
-            models[id] = new Model(color, palette, ids);
+            var slots = e.Element("slots")?.Elements("slot").Select(x => x.Attribute("name") is { } n ? SlotType(n.Value) : 0).ToList()
+                ?? new List<int>();
+            models[id] = new Model(color, palette, ids, slots);
         }
         return models;
     }
+
+    static readonly string[] SlotNames = { "HR", "FA", "FD", "LH", "RH", "CP", "MT", "CL", "PA", "GL", "SH", "FH", "EY", "EA", "PD", "RI", "BE", "ER", "OH" };
+
+    /// <summary>Parse_14021bdc0 (commonenum.cpp:1401): HR 1 through OH 19 in this order, exact case; anything else 0.</summary>
+    public static int SlotType(string name) => Array.IndexOf(SlotNames, name) + 1;
 }
