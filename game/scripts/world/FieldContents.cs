@@ -10,7 +10,7 @@ namespace Ms2Godot.World;
 /// <summary>
 /// What a field shows besides its static meshes, with no server (offline sandbox): self-animating props (FieldProps), actors and
 /// stand-in npcs (FieldNpcs) with their name tags, bodies (NpcPresence) and talk (NpcTalk), and the portals (FieldPortals, with
-/// the client's quest masks for a fresh character) with the field move and its loading screen (LoadingProgressLogic).
+/// the client's quest masks for a fresh character) with the field move and its loading screen (LoadingMovie).
 /// Field creates it before FieldBuilder runs (FieldBuilder.DrawsInstance hands it the animated models) and starts it once the
 /// player exists. Keys: the action key (Space) in a portal moves to its target field; elsewhere it talks to the npc in front.
 /// User args: --sandbox-shots DIR (scripted walk Tria -> portal -> target field -> back, with screenshots, then quit),
@@ -30,9 +30,9 @@ public partial class FieldContents : Node3D
 
     // the loading screen (UILoadingProgress) over the field move
     CanvasLayer overlay;
-    LoadingProgressLogic loading;
+    LoadingMovie loading;
     /// <summary>The cover of a field move under way, held by the tree root across the scene change (see <see cref="Enter"/>).</summary>
-    static (CanvasLayer Overlay, LoadingProgressLogic Loading) carried;
+    static (CanvasLayer Overlay, LoadingMovie Loading) carried;
     int settleFrames = -1;
     /// <summary>The field build's entity count (the client's GetBlockInfo count / total), shown by the loading screen.</summary>
     public LoadCount Load;
@@ -182,9 +182,9 @@ public partial class FieldContents : Node3D
     }
 
     /// <summary>The loading screen last started (by <see cref="CoverLoad"/> or a portal move), while it is up.</summary>
-    static LoadingProgressLogic shownCover;
+    static LoadingMovie shownCover;
     /// <summary>True while a field's loading screen covers the screen (GameFlow hands its first-entry picture over to it).</summary>
-    public static bool CoverUp => shownCover != null && shownCover.Active && GodotObject.IsInstanceValid(shownCover.Layer) && shownCover.Layer.IsVisibleInTree();
+    public static bool CoverUp => shownCover != null && GodotObject.IsInstanceValid(shownCover) && shownCover.Active && shownCover.IsVisibleInTree();
 
     /// <summary>
     /// The start of a field load: the loading screen comes up before the field is built (WorldService::FUN_141bbc1d0 puts
@@ -203,17 +203,17 @@ public partial class FieldContents : Node3D
         // the root is busy while the scene that holds the field enters it: the layer goes in at the end of this frame's
         // process, before the frame is drawn (the field waits a frame for it)
         root.CallDeferred(Node.MethodName.AddChild, overlay);
-        LoadingProgressLogic cover;
+        LoadingMovie cover;
         try
         {
-            cover = new LoadingProgressLogic(Ui(packs));
-            overlay.AddChild(cover.Layer);
+            cover = new LoadingMovie(Ui(packs), root.Size);
+            overlay.AddChild(cover);
         }
         catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); carried = (overlay, null); return true; }
         // the first entry is the lobby's loading screen (UILoadingProgressLobby: vfunc_52 false, no frame)
-        var start = new LoadingProgressLogic.Start { Picture = Travel.LoadingImage != null ? LoadPicture(packs, Travel.LoadingImage) : null, Tip = Travel.LoadingTip ?? "", ShowGuide = true, ShowFrame = false };
-        if (start.Picture == null) start.ScreenShot = ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage());
-        cover.StartProgress(start);
+        var picture = Picture(packs, Travel.LoadingImage);
+        cover.Start(picture, picture == null ? ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage()) : null,
+                    Travel.LoadingTip, true, false);
         shownCover = cover;
         carried = (overlay, cover);
         return true;
@@ -263,7 +263,7 @@ public partial class FieldContents : Node3D
             (overlay, loading) = carried;
             carried = default;
             overlay.Reparent(this, false);
-            UiBridge.ToHost += OnLoadingHost;
+            if (loading != null) loading.Controller.FadeInComplete += OnLoadingClosed;
             return loading != null;
         }
         carried = default;
@@ -271,20 +271,20 @@ public partial class FieldContents : Node3D
         AddChild(overlay);
         try
         {
-            loading = new LoadingProgressLogic(Ui(packs));
-            overlay.AddChild(loading.Layer);
-            UiBridge.ToHost += OnLoadingHost;
+            loading = new LoadingMovie(Ui(packs), GetTree().Root.Size);
+            overlay.AddChild(loading);
+            loading.Controller.FadeInComplete += OnLoadingClosed;
         }
         catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); loading = null; }
         return false;
     }
 
-    public override void _ExitTree() => UiBridge.ToHost -= OnLoadingHost;
-
-    void OnLoadingHost(string movie, string name, object[] args)
+    public override void _ExitTree()
     {
-        if (movie == UILoadingProgressContract.Movie && name == UILoadingProgressContract.ToHost.OnFadeInComplete) GD.Print("loading screen closed");
+        if (loading != null && GodotObject.IsInstanceValid(loading)) loading.Controller.FadeInComplete -= OnLoadingClosed;
     }
+
+    void OnLoadingClosed() => GD.Print("loading screen closed");
 
     /// <summary>
     /// UILoadingProgress::StartProgress for a field move: the picture (or a screenshot when there is none), a random tip, and the
@@ -293,9 +293,8 @@ public partial class FieldContents : Node3D
     void ShowLoading(string image, string tip, Texture2D screenShot = null)
     {
         if (loading == null) return;
-        var start = new LoadingProgressLogic.Start { Picture = image != null ? LoadPicture(image) : null, Tip = tip ?? "", ShowGuide = true };
-        if (start.Picture == null) start.ScreenShot = screenShot ?? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
-        loading.StartProgress(start);
+        var picture = Picture(packs, image);
+        loading.Start(picture, picture == null ? screenShot ?? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage()) : null, tip, true, true);
         shownCover = loading;
     }
 
@@ -325,16 +324,10 @@ public partial class FieldContents : Node3D
         RenderingServer.FramePostDraw += Captured;
     }
 
-    Texture2D LoadPicture(string entry) => LoadPicture(packs, entry);
-
-    static Texture2D LoadPicture(PackSet packs, string entry)
+    /// <summary>The picture entry when the data has it, else null (the screenshot).</summary>
+    static string Picture(PackSet packs, string entry)
     {
-        try
-        {
-            if (!packs.Exists(LoadingImageTable.ImageArchive, entry)) return null;
-            var img = new Image();
-            return img.LoadDdsFromBuffer(packs.Read(LoadingImageTable.ImageArchive, entry)) == Error.Ok ? ImageTexture.CreateFromImage(img) : null;
-        }
+        try { return entry != null && packs.Exists(LoadingImageTable.ImageArchive, entry) ? entry : null; }
         catch { return null; }
     }
 
@@ -400,9 +393,8 @@ public partial class FieldContents : Node3D
         {
             settleFrames = -1;
             if (shotDir != null) Shot("loading_100.png");
-            loading.StopProgress(true);       // UILoadingProgress::StopProgress: the 500 ms fade
+            loading.Stop(true);       // UILoadingProgress::StopProgress: the 500 ms fade
         }
-        loading.Process(delta);
         if (shotWait > 0 && --shotWait == 0) { shotWait = -1; NextStep(true); }
     }
 

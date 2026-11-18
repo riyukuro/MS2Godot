@@ -5,22 +5,21 @@ using Ms2.Formats.World;
 namespace Ms2Godot.Ui;
 
 /// <summary>
-/// A capture of the loading screen (res://ui/loadingshot.tscn), from its movie (<see cref="LoadingMovie"/>) or, with --hand,
-/// from the hand port (LoadingProgressLogic), in the same state:
+/// A capture of the loading screen (res://ui/loadingshot.tscn), run from its movie (<see cref="LoadingMovie"/>):
 /// <list type="bullet">
 /// <item>--shots DIR: where the shots go (loading_&lt;ms&gt;.png);</item>
 /// <item>--map ID: the loading picture of that map (LoadingImageTable.Pick with a fixed seed; the candidates are printed);
-/// --picture FILE: that picture (a file of LoadingImageTable.ImageArchive) instead; neither: no picture;</item>
+/// --picture FILE: that picture (a file of LoadingImageTable.ImageArchive) instead; neither: no picture, so the screenshot;</item>
+/// <item>--screenshot PNG: the scene screenshot shown without a picture;</item>
 /// <item>--tip TEXT, --guide (showGuide 1), --noframe (showFrame false), --progress COUNT,TOTAL.</item>
 /// </list>
 /// </summary>
 public partial class LoadingShot : Node
 {
-    string shotDir, picture, tip = "";
-    bool hand, guide, frame = true;
+    string shotDir, picture, screenShot, tip = "";
+    bool guide, frame = true;
     int count = -1, total;
     LoadingMovie movie;
-    LoadingProgressLogic logic;
     double t;
     int next;
     static readonly int[] ShotsMs = { 100, 500, 1000, 2000 };
@@ -35,10 +34,10 @@ public partial class LoadingShot : Node
                 case "--shots": shotDir = args[++i]; break;
                 case "--map": map = int.Parse(args[++i]); break;
                 case "--picture": picture = args[++i]; break;
+                case "--screenshot": screenShot = args[++i]; break;
                 case "--tip": tip = args[++i]; break;
                 case "--guide": guide = true; break;
                 case "--noframe": frame = false; break;
-                case "--hand": hand = true; break;
                 case "--progress": var p = args[++i].Split(','); count = int.Parse(p[0]); total = int.Parse(p[1]); break;
             }
         var packs = new PackSet(Settings.DataDir);
@@ -51,35 +50,17 @@ public partial class LoadingShot : Node
         }
         var layer = new CanvasLayer { Layer = 100 };
         AddChild(layer);
-        if (hand)
-        {
-            logic = new LoadingProgressLogic(assets);
-            layer.AddChild(logic.Layer);
-            Texture2D tex = null;
-            if (picture != null)
-            {
-                var img = new Image();
-                if (img.LoadDdsFromBuffer(packs.Read(LoadingImageTable.ImageArchive, picture)) == Error.Ok) tex = ImageTexture.CreateFromImage(img);
-            }
-            logic.StartProgress(new LoadingProgressLogic.Start { Picture = tex, Tip = tip, ShowGuide = guide, ShowFrame = frame });
-            if (count >= 0) logic.Progress(count, total);
-        }
-        else
-        {
-            movie = new LoadingMovie(assets, GetWindow().Size);
-            layer.AddChild(movie);
-            GD.Print($"loading movie: load={movie.Dialog.Loaded}, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
-            movie.Controller.StartProgress(new Ms2.Ui.LoadingProgressController.StartInfo
-            {
-                FilePath = picture ?? "", Tip = tip, ShowGuide = guide ? 1 : 0, ShowFrame = frame,
-            });
-            if (count >= 0) movie.Controller.SetProgress("", count, total);
-        }
+        movie = new LoadingMovie(assets, GetWindow().Size);
+        layer.AddChild(movie);
+        GD.Print($"loading movie: load={movie.Dialog.Loaded}, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
+        movie.Start(picture, screenShot != null ? LoadPng(screenShot) : null, tip, guide, frame);
+        if (count >= 0) movie.Progress(count, total);
     }
+
+    static Texture2D LoadPng(string path) => Image.LoadFromFile(path) is { } img ? ImageTexture.CreateFromImage(img) : null;
 
     public override void _Process(double delta)
     {
-        logic?.Process(delta);
         t += delta * 1000;
         if (next >= ShotsMs.Length) { GetTree().Quit(); return; }
         if (t < ShotsMs[next]) return;

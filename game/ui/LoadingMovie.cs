@@ -25,7 +25,50 @@ public partial class LoadingMovie : Node2D
         window = windowSize;
         Dialog = new MovieDialog(assets, Controller, model, window);
         AddChild(Dialog);
+        foreach (var n in Dialog.GetChildren())
+            if (n is As3View v) v.ImageLookup = Lookup;
+        Controller.FadeInComplete += () => Active = false;
     }
+
+    /// <summary>Between StartProgress and the movie's OnFadeInComplete.</summary>
+    public bool Active { get; private set; }
+
+    /// <summary>
+    /// StartProgress (uiloadingprogress.cpp:85-111). <paramref name="picture"/> is the table's picture (GetLoadingImagePath,
+    /// an entry of LoadingImageTable.ImageArchive), or null for none: the movie then shows <paramref name="screenShot"/>.
+    /// </summary>
+    public void Start(string picture, Texture2D screenShot, string tip, bool showGuide, bool showFrame)
+    {
+        ScreenShot = picture == null ? screenShot : null;
+        Active = true;
+        Controller.StartProgress(new LoadingProgressController.StartInfo
+        {
+            FilePath = picture ?? "", Tip = tip ?? "", ShowGuide = showGuide ? 1 : 0, ShowFrame = showFrame,
+        });
+    }
+
+    /// <summary>SetProgress (uiloadingprogress.cpp:140-146).</summary>
+    public void Progress(int count, int total)
+    {
+        if (Active) Controller.SetProgress("", count, total);
+    }
+
+    /// <summary>StopProgress (uiloadingprogress.cpp:115-122): stopProgress(GetFadeOutFlag); the movie fades out (or not) and
+    /// answers OnFadeInComplete.</summary>
+    public void Stop(bool fade)
+    {
+        if (Active) Controller.StopProgress(fade ? 1 : 0);
+    }
+
+    /// <summary>
+    /// The scene screenshot the movie shows when it gets no picture of its own (filePath ""): it loads
+    /// "img://" + getID + ":screenShot", which UILoadingProgress::vfunc_25 (uiloadingprogress.cpp:215-232) binds to the
+    /// screenshot's render texture.
+    /// </summary>
+    public Texture2D ScreenShot;
+
+    Texture2D Lookup(string url) =>
+        ScreenShot != null && string.Equals(url, "img://" + Dialog.Host.Id + ":screenShot", System.StringComparison.OrdinalIgnoreCase) ? ScreenShot : null;
 
     public LoadingMovie() { }
 
