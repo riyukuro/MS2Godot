@@ -235,7 +235,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     /// <summary>The HUD's key table when it is up, else one read from the data.</summary>
     public IKeyTable Keys
     {
-        get => keys ??= new Ms2.Ui.KeyTable(packs, "en");
+        get => keys ??= new Ms2.Ui.KeyTable(packs, GameOptions.StringLanguage);
         set => keys = value;
     }
 

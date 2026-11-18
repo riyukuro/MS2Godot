@@ -41,7 +41,7 @@ public partial class TooltipLayer : CanvasLayer
     {
         UiCode.Load(Settings.DataDir);
         controller = new TooltipController();
-        movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, "en")), root.Size);
+        movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), root.Size);
         view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
         view?.SetProcessUnhandledInput(false);      // no keys or clicks
         AddChild(movie);

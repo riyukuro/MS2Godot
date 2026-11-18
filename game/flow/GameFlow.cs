@@ -223,7 +223,7 @@ public partial class GameFlow : Node
     Func<string, string> CommonStrings()
     {
         if (commonStrings != null) return commonStrings;
-        try { using var packs = new PackSet(Settings.DataDir); commonStrings = new GameStrings(packs, "en").Common(); }
+        try { using var packs = new PackSet(Settings.DataDir); commonStrings = new GameStrings(packs, GameOptions.StringLanguage).Common(); }
         catch (Exception ex) { GD.PushWarning("flow strings: " + ex.Message); commonStrings = _ => null; }
         return commonStrings;
     }

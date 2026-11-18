@@ -42,9 +42,10 @@ public sealed class CreateLook
     readonly Dictionary<int, ItemCustomize> customizes = new();
     public Random Rng = new();
 
-    public CreateLook(PackSet packs, ColorPalettes palettes, string lang = "en")
+    public CreateLook(PackSet packs, ColorPalettes palettes, string lang = null)
     {
         this.packs = packs; this.palettes = palettes;
+        lang ??= GameOptions.StringLanguage;
         var names = Load($"string/{lang}/itemname.xml");
         if (names != null)
             foreach (var k in names.Root.Elements("key"))

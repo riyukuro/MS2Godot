@@ -104,13 +104,13 @@ public sealed partial class NpcTalk : Node
     }
     public NpcTalk() { }
 
-    static NpcScriptTable Scripts(PackSet packs) => scripts ??= new NpcScriptTable(packs, new GameStrings(packs, "en"));
+    static NpcScriptTable Scripts(PackSet packs) => scripts ??= new NpcScriptTable(packs, new GameStrings(packs, GameOptions.StringLanguage));
 
     /// <summary>The client's quest data (QuestDataTable), loaded once.</summary>
     public static QuestTable ClientQuests(PackSet packs)
     {
         var d = StubHudData.Instance;
-        return questTable ??= QuestTable.Load(packs, new GameStrings(packs, "en").Languages, d.Locale, f => !d.FeaturesOff.Contains(f));
+        return questTable ??= QuestTable.Load(packs, new GameStrings(packs, GameOptions.StringLanguage).Languages, d.Locale, f => !d.FeaturesOff.Contains(f));
     }
 
     static QuestScriptTable QuestScripts(PackSet packs) =>
@@ -330,7 +330,7 @@ public sealed partial class NpcTalk : Node
     {
         talking = npc;
         ui ??= new UiAssets(packs);
-        tables ??= GameTables.Shared(packs, "en");
+        tables ??= GameTables.Shared(packs, GameOptions.StringLanguage);
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the talk window runs interpreted");
         var size = (Vector2)GetWindow().Size;
         side = new TalkCinematicController

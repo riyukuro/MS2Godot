@@ -37,8 +37,8 @@ public partial class QuestGuide : Node3D
         foreach (var e in map.Entities)
             if (e.HasMixin("SpawnPointNPC"))
                 foreach (int id in FieldNpcs.NpcIds(e)) { g.spawns.Add((e.Position, id)); break; }
-        try { g.npcs = new NpcTable(packs); } catch { }
-        g.strings = QuestStrings.Load(packs);
+        try { g.npcs = new NpcTable(packs, GameOptions.StringLanguage); } catch { }
+        g.strings = QuestStrings.Load(packs, GameOptions.StringLanguage);
         parent.AddChild(g);
         try
         {

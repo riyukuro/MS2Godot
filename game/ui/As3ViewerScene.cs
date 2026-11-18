@@ -71,12 +71,12 @@ public partial class As3ViewerScene : Control
 
     void QuestLogScenario(PackSet packs, FlashPlayer p)
     {
-        var table = Ms2.Quest.QuestTable.Load(packs, new Ms2.Formats.World.GameStrings(packs, "en").Languages, "KR", _ => true);
+        var table = Ms2.Quest.QuestTable.Load(packs, new Ms2.Formats.World.GameStrings(packs, GameOptions.StringLanguage).Languages, "KR", _ => true);
         var fd = System.Xml.Linq.XDocument.Load(new System.IO.MemoryStream(packs.Read("Xml", "table/fielddata.xml")));
         var log = new Ms2.Quest.QuestLog(table, new Ms2.Quest.QuestShotState(table, 30))
         { Meta = Ms2.Quest.FieldMeta.Load(packs), FieldCodes = Ms2.Quest.QuestTable.FieldCodes(fd, table.Available) };
         var c = new Ms2.Ui.Hud.QuestDialogController { Log = log, OpenTab = tab, OpenSubTab = subTab };
-        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(packs, "en"));
+        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(packs, GameOptions.StringLanguage));
         Ms2.Ui.UiFixture.Apply(model);
         var h = new Ms2.Ui.UiHost(p, c, model);
         GD.Print($"quest log: {(Interp.UseOracle ? "oracle" : GeneratedCode.Count > 0 ? "translated" : "interpreter")} load={h.Load()}");

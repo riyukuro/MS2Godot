@@ -408,7 +408,7 @@ public partial class HudScene : Node, IUiStageHost
     void UpperHud(Control ui)
     {
         if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(GetWindow().Size); return; }
-        var model = new UiModel(GameTables.Shared(assets.Packs, "en"));
+        var model = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
         model.Features.Clear();
         foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat,
             Ms2.Ui.Feature.PvPRankingDuelMode, Ms2.Ui.Feature.ItemSocketSystem, Ms2.Ui.Feature.HabiToken, Ms2.Ui.Feature.ReverseRaid01,
@@ -495,7 +495,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void MinimapMarks(World.FieldContents fc, List<Ms2.Ui.Hud.MinimapController.Mark> marks)
     {
-        var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, "en"));
+        var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, assets.Language));
         foreach (var n in fc.SpawnedNpcs)
         {
             var e = MinimapIcons.Npc(n.Row);
@@ -572,7 +572,7 @@ public partial class HudScene : Node, IUiStageHost
         try
         {
             var fd = FieldData.FindByXBlock(assets.Packs, xblock);
-            if (fd != null && new GameStrings(assets.Packs, "en").Table("mapname", "name") is { } names
+            if (fd != null && new GameStrings(assets.Packs, assets.Language).Table("mapname", "name") is { } names
                 && (names.TryGetValue(fd.Id.ToString(), out var n) || names.TryGetValue(fd.Id.ToString("D8"), out n)))
                 return n;
         }
@@ -721,7 +721,7 @@ public partial class HudScene : Node, IUiStageHost
         try
         {
             var perf = PerfLog.On && fieldMissions == null ? new PerfLog.Steps("field missions") : null;
-            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, f => !data.FeaturesOff.Contains(f),
+            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale, f => !data.FeaturesOff.Contains(f),
                                                  questTable?.Words);     // the same languages, locale and features: its tables
             perf?.Step("load");
             perf?.Done();
@@ -840,7 +840,7 @@ public partial class HudScene : Node, IUiStageHost
             var perf = PerfLog.On && questTable == null ? new PerfLog.Steps("quest tables") : null;
             fieldMeta ??= QuestMapGraph.SharedMeta(assets.Packs);
             perf?.Step("field-meta");
-            questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, featureOn);
+            questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale, featureOn);
             perf?.Step("quest-table");
             perf?.Done();
             fieldCodes ??= QuestTable.FieldCodes(FieldData.Document(assets.Packs), questTable.Available);   // the session's parsed table
@@ -952,7 +952,7 @@ public partial class HudScene : Node, IUiStageHost
     /// A model for the field's movies: the tables, and the features as the client runs them (CFeatureManager by id and by
     /// name: table/feature.xml within the Live server level, <see cref="Ms2.Ui.LobbyFeatures"/>).
     /// </summary>
-    UiModel NewModel() => new(GameTables.Shared(assets.Packs, "en")) { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
+    UiModel NewModel() => new(GameTables.Shared(assets.Packs, assets.Language)) { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
 
     /// <summary>The HUD movies' model: the tables, features, key tables and the player.</summary>
     void HudModel()
@@ -962,7 +962,7 @@ public partial class HudScene : Node, IUiStageHost
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
         // UIAlignWidgetManager::LoadWidgets (uiservice.cpp:1941): table/alignwidget.xml, one manager for the scene
         hudModel.AlignWidgets = alignWidgets ??= AlignWidgetManager.Load(assets.Table("table/alignwidget.xml")?.Root);
-        hudModel.Keys = new KeyTable(assets.Packs, "en");
+        hudModel.Keys = new KeyTable(assets.Packs, assets.Language);
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live
             : quickSlotShot != null ? QuickSlotShotTable(quickSlotShot) : UiFixture.NewCharacterKeyTable();

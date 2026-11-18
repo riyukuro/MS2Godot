@@ -79,9 +79,11 @@ public sealed class NpcTable
     readonly Dictionary<int, NpcRow> rows = new();
     public int Count => rows.Count;
 
-    public NpcTable(PackSet packs) : this(packs, EffectDummyTable.Load(packs)) { }
+    /// <summary>The npc rows, their names and titles read in <paramref name="language"/> (a string folder such as "kr",
+    /// the client's g_strLocaleDir2) first, then en and kr as <see cref="GameStrings"/> does.</summary>
+    public NpcTable(PackSet packs, string language = null) : this(packs, EffectDummyTable.Load(packs), language) { }
 
-    public NpcTable(PackSet packs, EffectDummyTable effectDummies)
+    public NpcTable(PackSet packs, EffectDummyTable effectDummies, string language = null)
     {
         var dummies = effectDummies?.Default ?? Array.Empty<EffectDummy>();
         foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("npcdata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
@@ -91,7 +93,7 @@ public sealed class NpcTable
             foreach (var n in x.Descendants("npc"))
                 if (ParseRow(n, dummies) is { } row) rows[row.Id] = row;
         }
-        LoadNames(packs);
+        LoadNames(packs, new GameStrings(packs, language ?? "en").Languages);
     }
 
     /// <summary>
@@ -157,9 +159,9 @@ public sealed class NpcTable
         race > 0 && race < RaceKeys.Length && raceNames != null && raceNames.TryGetValue(RaceKeys[race], out var n) ? n : null;
 
     /// <summary>Fills the row names from the string table.</summary>
-    void LoadNames(PackSet packs)
+    void LoadNames(PackSet packs, string[] languages)
     {
-        foreach (var lang in new[] { "en", "kr" })
+        foreach (var lang in languages)
         {
             string entry = $"string/{lang}/npcname.xml";
             if (!packs.Exists("Xml", entry)) continue;

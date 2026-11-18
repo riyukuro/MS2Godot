@@ -163,6 +163,30 @@ public static class GameOptions
     /// <summary>SetVoice at load (CGameOption::LoadLanguageOption, gameoption.cpp:1847): the voice in use until a restart.</summary>
     public static int Voice { get; private set; }
 
+    /// <summary>
+    /// SetLanguage at load (CGameOption::LoadLanguageOption, gameoption.cpp:1821-1849): the language in use until a restart.
+    /// The command line's "-language &lt;code&gt;" (unit_1414b1230.cpp:334-339, SetLanguageByCode and SetVoiceByCode, then
+    /// g_bLanguageSet) makes LoadLanguageOption return before the option file is read; ours is the user argument
+    /// --language. Otherwise it is GameOption.xml's language/languageIndex, which defaults to the region's language (the
+    /// Unk_LgState reset, gameoptionstruct.cpp:2466-2490: region KR gives 0, KR). The NA region's fresh-file pick from the
+    /// Windows UI language (gameoption.cpp:1840-1844) is not ported: <see cref="RegionIndex"/> is KR.
+    /// IsNexonPlatform (unit_1406c3230_atlbytearrayglue.cpp:88) is taken as 0, so the argument wins over the file.
+    /// </summary>
+    public static int Language { get { if (current == null) Load(); return language; } }
+    static int language;
+
+    /// <summary>The string folder of <see cref="Language"/> in Xml.m2d (string/&lt;folder&gt;/*.xml, g_strLocaleDir2;
+    /// GameOptionLocale.StringDirectory). Every string table reads from it.</summary>
+    public static string StringLanguage => GameOptionLocale.StringDirectory(Language);
+
+    /// <summary>The --language user argument (the client's "-language"), or null.</summary>
+    static string LanguageArgument()
+    {
+        var args = OS.GetCmdlineUserArgs();
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--language") return args[i + 1];
+        return null;
+    }
+
     /// <summary>True when the user file was missing or outdated and the shipped default was read instead.</summary>
     public static bool FromDefault { get; private set; }
 
@@ -198,6 +222,12 @@ public static class GameOptions
             doc ??= new XDocument(new XElement("ms2"));
         }
         Voice = current.LanguageOption.VoiceIndex;
+        language = current.LanguageOption.LanguageIndex;
+        if (LanguageArgument() is { } code)
+        {
+            language = GameOptionLocale.LanguageByCode(code, 0);    // DAT_143ab0240 starts at 0 (KR)
+            Voice = GameOptionLocale.LanguageByCode(code, 0);
+        }
         var g = current.GraphicOption;
         GD.Print($"options: {(FromDefault ? "default" : "GameOption.xml")}, {g.Width}x{g.Height} mode {g.ScreenMode} row {g.ResolutionIndex}, music {current.SoundOption.CategoryVolume(2):F2}");
     }

@@ -48,7 +48,7 @@ public partial class MessageBoxLayer : CanvasLayer
         controller = new MessageBoxController();
         controller.GameExit += () => GameExit?.Invoke();
         controller.UnportedTag += (b, t) => GD.Print($"message box: button {b} of tag {t}: its handler is not ported");
-        movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, "en")), root.Size);
+        movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), root.Size);
         AddChild(movie);
         MessageBoxQueue.Layer = controller;
     }

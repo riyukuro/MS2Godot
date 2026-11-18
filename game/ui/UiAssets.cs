@@ -8,14 +8,15 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// Player data for the UI runtime: layouts (built from Resource/Gfx.m2d with Ms2.Swf), DDS atlases, and the flash UI
-/// string table (Xml.m2d string/en/korflash.xml, keys such as "$s_login_msg_id").
+/// string table (Xml.m2d string/&lt;language&gt;/korflash.xml, keys such as "$s_login_msg_id").
 /// </summary>
 public sealed class UiAssets
 {
     public PackSet Packs { get; }
     readonly Dictionary<string, Texture2D> textures = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, string> strings = new();
-    public string Language = "en";
+    /// <summary>The string folder (GameOptions.StringLanguage, the client's g_strLocaleDir2).</summary>
+    public string Language = GameOptions.StringLanguage;
     readonly Dictionary<string, Font> fonts = new();
     SystemFont fallbackFont;
 

@@ -150,7 +150,7 @@ public partial class FieldContents : Node3D
     static NpcTable npcTable;
     static readonly object tableLock = new();
     /// <summary>The npc table, loaded once per run (a prefetch may be building it; the lock makes the caller wait for it).</summary>
-    public static NpcTable Npcs(PackSet packs) { lock (tableLock) return npcTable ??= new NpcTable(packs); }
+    public static NpcTable Npcs(PackSet packs) { lock (tableLock) return npcTable ??= new NpcTable(packs, GameOptions.StringLanguage); }
     static RegionSpawnTable regionTable;
     static RegionSpawnTable Regions(PackSet packs) { lock (tableLock) return regionTable ??= new RegionSpawnTable(packs); }
 
@@ -356,7 +356,7 @@ public partial class FieldContents : Node3D
             // the tips' words are resolved as the table loads them (no tip uses $script, so no script table is needed)
             if (tipTable == null)
             {
-                var text = new GameStrings(packs, "en");
+                var text = new GameStrings(packs, GameOptions.StringLanguage);
                 tipTable = new LoadingTipTable(packs, text, new ReservedWords(text, null));
             }
             return tipTable.Pick(new Random()) ?? "";

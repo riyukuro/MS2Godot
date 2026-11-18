@@ -20,9 +20,9 @@ public sealed class LobbyCharacterData
     readonly Func<string, string> common;
     readonly Dictionary<int, int> enterReturn = new();
 
-    public LobbyCharacterData(PackSet packs, string lang = "en")
+    public LobbyCharacterData(PackSet packs, string lang = null)
     {
-        var strings = new GameStrings(packs, lang);
+        var strings = new GameStrings(packs, lang ?? GameOptions.StringLanguage);
         mapNames = strings.Table("mapname", "name");     // CStringTable 3 (table/string.xml mapName)
         jobNames = strings.Table("jobname", "name");     // CStringTable 6 (jobName)
         common = strings.Common();
