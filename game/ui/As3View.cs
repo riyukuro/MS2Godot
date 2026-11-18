@@ -360,7 +360,9 @@ public partial class As3View : Node2D
         ulong now = Time.GetTicksMsec();
         if (now - lastMouseTest <= 50) return;
         lastMouseTest = now;
-        var p = StagePoint(GetViewport().GetMousePosition());
+        // a view leaving the tree (a scene change) has no viewport: no sample
+        if (!IsInsideTree() || GetViewport() is not { } vp) { MouseOverUi = false; return; }
+        var p = StagePoint(vp.GetMousePosition());
         MouseOverUi = IsVisibleInTree() && Player.HitTestShapes(p.X, p.Y);
     }
 
