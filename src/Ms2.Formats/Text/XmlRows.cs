@@ -24,12 +24,14 @@ public static class XmlRows
     {
         int start = 0;
         while (start + 2 < data.Length && data[start] == 0xEF && data[start + 1] == 0xBB && data[start + 2] == 0xBF) start += 3;
-        var text = new StreamReader(new MemoryStream(data, start, data.Length - start, false), new UTF8Encoding(false), false);
-        return XmlReader.Create(text, new XmlReaderSettings
-        {
-            IgnoreWhitespace = true, DtdProcessing = DtdProcessing.Parse, MaxCharactersFromEntities = 10_000_000, CloseInput = true,
-        });
+        return Open(new StreamReader(new MemoryStream(data, start, data.Length - start, false), new UTF8Encoding(false), false));
     }
+
+    /// <summary>A reader over <paramref name="text"/> with XDocument.Parse's settings (closing the text with it).</summary>
+    public static XmlReader Open(TextReader text) => XmlReader.Create(text, new XmlReaderSettings
+    {
+        IgnoreWhitespace = true, DtdProcessing = DtdProcessing.Parse, MaxCharactersFromEntities = 10_000_000, CloseInput = true,
+    });
 
     /// <summary>
     /// Each element named <paramref name="name"/> (no namespace) in document order: at any depth, as

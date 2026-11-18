@@ -1,5 +1,6 @@
 using System.Globalization;
-using System.Xml.Linq;
+using System.Xml;
+using Ms2.Formats.Text;
 using Ms2.Formats.Pack;
 
 namespace Ms2.Quest;
@@ -57,52 +58,90 @@ public sealed class FieldMeta
         return seen.ToList();
     }
 
-    public static FieldMeta Load(PackSet packs) =>
-        Parse(System.Text.Encoding.UTF8.GetString(packs.Read(Archive, Entry)).TrimStart('﻿'));
+    /// <summary>The table read from the pack set, streamed (<see cref="XmlRows"/>: the text and reader XDocument.Parse uses).</summary>
+    public static FieldMeta Load(PackSet packs)
+    {
+        using var r = XmlRows.Open(packs.Read(Archive, Entry));
+        return Read(r);
+    }
 
     public static FieldMeta Parse(string xml)
     {
+        using var r = XmlRows.Open(new StringReader(xml));
+        return Read(r);
+    }
+
+    /// <summary>
+    /// The root's &lt;npc&gt; (their &lt;field&gt; children), &lt;taxiStation&gt; and &lt;fieldPortal&gt; (their &lt;portal&gt;
+    /// children) read in one pass in document order. Each kind fills its own tables, in the order of its own elements, so
+    /// this gives the tables a pass per kind (npc, then taxi, then portal) gives. The whole text is read, so malformed XML
+    /// throws.
+    /// </summary>
+    static FieldMeta Read(XmlReader r)
+    {
         var m = new FieldMeta();
-        var root = XDocument.Parse(xml).Root;
-        foreach (var npc in root.Elements("npc"))
-        {
-            int id = Int(npc, "id");
-            foreach (var f in npc.Elements("field"))
-            {
-                if (!m.NpcFields.TryGetValue(id, out var l)) m.NpcFields[id] = l = new List<int>();
-                l.Add(Int(f, "id"));
-                if (!m.FieldNpcs.TryGetValue(Int(f, "id"), out var n)) m.FieldNpcs[Int(f, "id")] = n = new List<int>();
-                n.Add(id);
-                if (f.Attribute("startTime") != null && f.Attribute("endTime") != null
-                    && ParseTimeString((string)f.Attribute("startTime")) && ParseTimeString((string)f.Attribute("endTime")))
-                    m.TimedNpcFields.Add((id, Int(f, "id")));
-            }
-        }
-        foreach (var t in root.Elements("taxiStation"))
-            m.TaxiStations[Int(t, "field")] = (string)t.Attribute("IsHomePrivilege") is "1" or "true";
         var indoorPortals = m.IndoorPortals;
         var outdoor = new Dictionary<int, bool>();          // outdoor[nField] = (indoor == 0): a later fieldPortal of the field decides
-        foreach (var fp in root.Elements("fieldPortal"))
+        var portals = new List<(int Type, int Target, int Id, int Indoor)>();
+        if (r.MoveToContent() != XmlNodeType.Element) throw new XmlException("fieldmetadata: no root element");
+        bool empty = r.IsEmptyElement;
+        r.Read();
+        while (!empty && !r.EOF && r.Depth >= 1)
         {
-            int field = Int(fp, "field");
-            var targets = new List<int>();
-            foreach (var p in fp.Elements("portal"))
+            if (r.NodeType != XmlNodeType.Element || r.NamespaceURI.Length != 0) { r.Read(); continue; }
+            switch (r.LocalName)
             {
-                if (Int(p, "portalType") == 0) targets.Add(Int(p, "targetField"));
-                else if (Int(p, "portalType") == 8)
+                case "npc":
                 {
-                    if (!m.PortalType8.TryGetValue(field, out var t8)) m.PortalType8[field] = t8 = new List<int>();
-                    if (!t8.Contains(Int(p, "id"))) t8.Add(Int(p, "id"));
+                    int id = Int(r, "id");
+                    ForChildren(r, "field", f =>
+                    {
+                        int field = Int(f, "id");
+                        if (!m.NpcFields.TryGetValue(id, out var l)) m.NpcFields[id] = l = new List<int>();
+                        l.Add(field);
+                        if (!m.FieldNpcs.TryGetValue(field, out var n)) m.FieldNpcs[field] = n = new List<int>();
+                        n.Add(id);
+                        if (f.GetAttribute("startTime") is { } start && f.GetAttribute("endTime") is { } end
+                            && ParseTimeString(start) && ParseTimeString(end))
+                            m.TimedNpcFields.Add((id, field));
+                    });
+                    break;
                 }
+                case "taxiStation":
+                    m.TaxiStations[Int(r, "field")] = r.GetAttribute("IsHomePrivilege") is "1" or "true";
+                    r.Skip();
+                    break;
+                case "fieldPortal":
+                {
+                    int field = Int(r, "field");
+                    bool isOutdoor = Int(r, "indoor") == 0;
+                    portals.Clear();
+                    ForChildren(r, "portal", p => portals.Add((Int(p, "portalType"), Int(p, "targetField"), Int(p, "id"), Int(p, "portalIndoor"))));
+                    var targets = new List<int>();
+                    foreach (var p in portals)
+                    {
+                        if (p.Type == 0) targets.Add(p.Target);
+                        else if (p.Type == 8)
+                        {
+                            if (!m.PortalType8.TryGetValue(field, out var t8)) m.PortalType8[field] = t8 = new List<int>();
+                            if (!t8.Contains(p.Id)) t8.Add(p.Id);
+                        }
+                    }
+                    m.PortalFields.Add(field);
+                    m.PortalTargets[field] = targets;
+                    var indoor = new List<int>();
+                    foreach (var p in portals)
+                        if (p.Indoor != 0 && !indoor.Contains(p.Target)) indoor.Add(p.Target);
+                    indoorPortals[field] = indoor;
+                    outdoor[field] = isOutdoor;
+                    break;
+                }
+                default:
+                    r.Skip();
+                    break;
             }
-            m.PortalFields.Add(field);
-            m.PortalTargets[field] = targets;
-            var indoor = new List<int>();
-            foreach (var p in fp.Elements("portal"))
-                if (Int(p, "portalIndoor") != 0 && !indoor.Contains(Int(p, "targetField"))) indoor.Add(Int(p, "targetField"));
-            indoorPortals[field] = indoor;
-            outdoor[field] = Int(fp, "indoor") == 0;
         }
+        while (r.Read()) { }
         foreach (int field in AtlMapOrder(indoorPortals.Keys).Where(f => outdoor[f]))
         {
             var done = new List<int>();
@@ -186,6 +225,21 @@ public sealed class FieldMeta
             && v[4] >= 0 && v[4] <= 59 && v[5] >= 0 && v[5] <= 59;
     }
 
-    static int Int(XElement e, string a) =>
-        int.TryParse((string)e.Attribute(a), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+    static int Int(XmlReader e, string a) =>
+        int.TryParse(e.GetAttribute(a), NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+
+    /// <summary>With the reader on an element's start tag: <paramref name="each"/> on every direct child named
+    /// <paramref name="name"/> (on its start tag), then the reader past the element's end.</summary>
+    static void ForChildren(XmlReader r, string name, Action<XmlReader> each)
+    {
+        if (r.IsEmptyElement) { r.Read(); return; }
+        int depth = r.Depth;
+        r.Read();
+        while (r.Depth > depth)
+        {
+            if (r.NodeType == XmlNodeType.Element && r.Depth == depth + 1 && r.LocalName == name && r.NamespaceURI.Length == 0) each(r);
+            r.Read();
+        }
+        r.Read();                                           // the end tag
+    }
 }
