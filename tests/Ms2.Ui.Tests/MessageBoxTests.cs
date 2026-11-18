@@ -166,4 +166,56 @@ public class MessageBoxTests
         Assert.That(l.Answers, Has.Count.EqualTo(1), "onEscapeKey answers the box");
         Assert.That(c.IsIdle, Is.True);
     }
+
+    /// <summary>UICharacterListDialog's delete box (uicharacterlistdialog.cpp:2239): CreateMessageBox(0xe, text, this,
+    /// "deletePC"), SetInput(2, "", 0, 0, 0), SetCheckbox0(BlockFormat(7), 0). OnMessage @0x1418eb540 splits the answer's
+    /// tag into "deletePC" and the typed name.</summary>
+    [Test]
+    public void DeleteConfirmAnswersWithTheTypedName()
+    {
+        var (h, c) = Load();
+        var l = new Listener { OnAnswer = MessageBoxQueue.Next };
+        var box = MessageBoxQueue.Create(0xe, "Delete the character Solo?", l, "deletePC");
+        box.SetInput(2, "", 0, 0, 0);
+        box.SetCheckbox0("Delete this character and their inventory", false);
+        MessageBoxQueue.Show(box);
+        h.Player.Tick();
+        var mb = Box(h);
+        TestContext.WriteLine("box: " + mb);
+        h.Set(h.Get(mb, "m_textInput"), "text", "Solo");
+        h.Set(h.Get(mb, "m_checkbox0"), "selected", true);
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Click(h, "m_button0");
+        TestContext.WriteLine("answers: " + string.Join(",", l.Answers));
+        Assert.That(l.Answers, Is.EqualTo(new[] { (0, "deletePC,Solo") }));
+        Assert.That(c.IsIdle, Is.True);
+    }
+
+    /// <summary>UICharacterCreateDialog's name box (uicameraeditdialog.cpp:2127): FUN_140d73e40(10, 1, 0, ""), SetInput(2,
+    /// "", 12, 0, 0) and a callback; the callback reads the name with GetInputText, an empty name gets UpdateErrorMessage
+    /// and keeps the box (the callback returns false).</summary>
+    [Test]
+    public void NameBoxCallbackReadsTheInput()
+    {
+        var (h, c) = Load();
+        var names = new List<string>();
+        var box = MessageBoxQueue.CreateWithCallback("Enter a name", 10, (n, d) =>
+        {
+            var name = c.InputText(d);
+            names.Add(n + ":" + name);
+            if (n == 0 && name.Length == 0) { c.UpdateErrorMessage("Enter a name."); return false; }
+            return true;
+        });
+        box.SetInput(2, "", 12, 0, 0);
+        MessageBoxQueue.Show(box);
+        h.Player.Tick();
+        Click(h, "m_button0");
+        Assert.That(c.CurrentBox, Is.SameAs(box), "an empty name keeps the box");
+        h.Set(h.Get(Box(h), "m_textInput"), "text", "Tester01");
+        // the buttons' ButtonDelayTimer drops a click within 500 ms of the last one (MessageBoxBase, ButtonDelayTimer.onClickButton)
+        for (int i = 0; i < h.Player.FrameRate; i++) h.Player.Tick();
+        Click(h, "m_button0");
+        Assert.That(names, Is.EqualTo(new[] { "0:", "0:Tester01" }));
+        Assert.That(c.IsIdle, Is.True);
+    }
 }

@@ -101,6 +101,18 @@ public static class MessageBoxQueue
         return d;
     }
 
+    /// <summary>ShowMessageBoxWithCallback @0x140d74390: a box answered by <paramref name="callback"/>, shown now.</summary>
+    public static MessageBoxData ShowWithCallback(string text, int type, Func<int, MessageBoxData, bool> callback)
+    {
+        var d = CreateWithCallback(text, type, callback);
+        Show(d);
+        return d;
+    }
+
+    /// <summary>CreateMessageBoxWithCallback @0x140d74500: the same, not shown yet.</summary>
+    public static MessageBoxData CreateWithCallback(string text, int type, Func<int, MessageBoxData, bool> callback) =>
+        new MessageBoxData(type) { Msg = text ?? "", Callback = callback };
+
     /// <summary>ShowMessageBox(text, type, listener, tag): CreateMessageBox, then FUN_14151f150.</summary>
     public static MessageBoxData ShowMessageBox(string text, int type, IMessageBoxListener listener, string tag)
     {
@@ -329,6 +341,31 @@ public sealed class MessageBoxController : UiController
             return false;
         }
         return true;
+    }
+
+    /// <summary>MessageBoxFactory.getCurMsgBox: the movie's last box (m_msgBoxArray's tail), null when none.</summary>
+    public object MovieBox()
+    {
+        if (!HasRoot) return null;
+        var boxes = Host.Get(Host.Entity, "m_msgBoxArray");
+        int n = Avm2.Rt.ToInt32(Host.Get(boxes, "length"));
+        return n == 0 ? null : Host.Get(boxes, (n - 1).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>GetInputText @0x141a04da0: m_textInput's text in the box the callback got (m_movie); "" without it.</summary>
+    public string InputText(MessageBoxData box)
+    {
+        if (box?.MovieBox == null || Avm2.Rt.IsNullish(box.MovieBox)) return "";
+        var input = Host.Get(box.MovieBox, "m_textInput");
+        return Avm2.Rt.IsNullish(input) ? "" : Avm2.Rt.ToString(Host.Get(input, "text")) ?? "";
+    }
+
+    /// <summary>IsCheckbox0Checked @0x141a04aa0 / IsCheckbox1Checked @0x141a04c20: m_checkbox0/1's selected.</summary>
+    public bool CheckboxChecked(MessageBoxData box, int n)
+    {
+        if (box?.MovieBox == null || Avm2.Rt.IsNullish(box.MovieBox)) return false;
+        var check = Host.Get(box.MovieBox, n == 0 ? "m_checkbox0" : "m_checkbox1");
+        return !Avm2.Rt.IsNullish(check) && Avm2.Rt.ToBoolean(Host.Get(check, "selected"));
     }
 
     /// <summary>vfunc_13 @0x1419f7560: a shown box's keys go to the movie's onProcessKey. <paramref name="key"/> is
