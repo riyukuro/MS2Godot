@@ -29,6 +29,9 @@ public sealed class GameTables
         jobNames = s.Table("jobname", "name");
         mapNames = s.Table("mapname", "name");
         common = s.Common();
+        var k = new ClientConstants(packs);
+        AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
+        AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
     }
 
     /// <summary>Exp needed from <paramref name="level"/> to the next level; 0 = unknown level.</summary>
@@ -37,6 +40,10 @@ public sealed class GameTables
     /// <summary>The job's display name by sub job code (string table 6); the code as text when unknown.</summary>
     public string JobName(int subJob) => jobNames.TryGetValue(subJob.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : subJob.ToString(CultureInfo.InvariantCulture);
     public string Common(string key) => common(key);
+    /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
+    /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
+    public long AdventureLevelLvUpExp = 15000;
+    public int AdventureLevelStartLevel = 50;
     /// <summary>The map's display name (string table mapname, id = 8-digit map id); null when unknown.</summary>
     public string MapName(int mapId) => mapNames.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
 }

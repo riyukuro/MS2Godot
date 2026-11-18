@@ -33,6 +33,11 @@ public sealed class PlayerState
     /// <summary>The exp counter in this level (DAT_143ab28a0) and the rest exp bonus pool (DAT_143ab28a8).</summary>
     public long Exp, RestExp;
     public long Mesos, Merats;
+    /// <summary>The prestige counters (CSceneStateGame::OnPrestige, scenestategame.cpp:8815): the exp in this level
+    /// (DAT_143ab2958), the player's adventure level (PC vfunc_141), the level at or below which a level shows full
+    /// (DAT_143ab2960) and the exp shown for the level above it (DAT_143ab2968).</summary>
+    public long AdventureExp, AdventureNextExp;
+    public int AdventureLevel, AdventureFilledLevel;
     public int Channel;
     public bool Battle, Riding;
     public string NameWithTitle => string.IsNullOrEmpty(Title) ? Name : Title + " " + Name;

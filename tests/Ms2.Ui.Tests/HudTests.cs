@@ -80,6 +80,25 @@ public class HudTests
     }
 
     [Test]
+    public void AdventureLevelExpBarPointAndLayout()
+    {
+        var m = Model();
+        m.Features.Add(AdventureLevelExpBarController.Feature);
+        m.Player.Level = 60;
+        m.Player.AdventureExp = m.Tables.AdventureLevelLvUpExp / 4;
+        var c = new AdventureLevelExpBarController();
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // setPoint(25, ...): the movie's own label text
+        Assert.That(Text(h, "textField", h.Child("m_point") as AsDisplayObject), Is.EqualTo("25.00 %"));
+        // vfunc_43: stage width, alignment puts it right over the exp bar (setExpBarHeight 19)
+        double y = Rt.ToNumber(h.Get(h.Entity, "y"));
+        Assert.That(y, Is.EqualTo(1080 - 19 - 21).Within(1));
+        var ud = c.GetUserData("getExp", Array.Empty<object>());
+        Assert.That((string)ud["text"], Does.Contain($"{m.Player.AdventureExp:N0} / {m.Tables.AdventureLevelLvUpExp:N0}"));
+    }
+
+    [Test]
     public void MainPlayerInfoInitAndStatusEvents()
     {
         var m = Model();
