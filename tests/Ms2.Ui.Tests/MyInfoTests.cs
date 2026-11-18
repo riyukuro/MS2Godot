@@ -373,6 +373,36 @@ public class MyInfoTests
     }
 
     [Test]
+    public void UsePeriodLinesAreTheClients()
+    {
+        var now = new DateTime(2026, 11, 18, 12, 0, 0);
+        var m = NewModel();
+        m.ServerTime = () => now;
+        long t0 = new DateTimeOffset(now).ToUnixTimeSeconds();
+        string Period(int id, long expiry = 0)
+        {
+            var item = Item.Create(m.Tables.Items, id, 1);
+            item.ExpiryTime = expiry;
+            var tip = new ItemTooltip(m, 0x200);
+            tip.Fill(item);
+            return tip.Data.TryGetValue("itemUsePeriod", out var v) ? (string)v : null;
+        }
+        // itemdata 203: <life usePeriod="1440">, expirationType 2 with 2 months, expirationType 1 without a count,
+        // expirationPeriod 2016-02-25-07-00-00
+        Assert.That(Period(20300008), Is.EqualTo("This is a temporary item. (1 d)"));
+        Assert.That(Period(20300043), Is.EqualTo("This item expires 2 month(s) after you obtain it."));
+        Assert.That(Period(20301428), Is.EqualTo("This item expires 1 week(s) after you obtain it."));
+        // the fields come back as written (the zone offset is added and taken off again)
+        Assert.That(Period(20300081), Is.EqualTo("This is a temporary item.\n(Expires 2/25/2016 07:00)"));
+        // an owned item's expiry time comes first: its end date, then the expired form
+        var at = Ms2.Net.MsTime.LocalTm(t0 + 3 * 86400);
+        Assert.That(Period(20300008, t0 + 3 * 86400), Is.EqualTo($"Expires {at.Month}/{at.Day}/{at.Year} {at.Hour:00}:{at.Minute:00}"));
+        Assert.That(Period(20300008, t0 - 60), Does.StartWith("<FONT color='#FF5F5F'>(Expired "));
+        // no life: no member
+        Assert.That(Period(12200398), Is.Null);
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");

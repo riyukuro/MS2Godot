@@ -24,6 +24,16 @@ public sealed class ItemData
     public string UccMesh = "";
     // <PCBang PCBang> (:371)
     public bool PCBang;
+    // ItemPeriod::Load (itemdatastruct.cpp:796), <life>
+    /// <summary>"usePeriod": the use period in minutes.</summary>
+    public int UsePeriod;
+    /// <summary>"expirationPeriod" (y-m-d-h-m-s) as CMsTime's 6-field constructor (mstime.cpp:43) keeps it: _mkgmtime of
+    /// the fields, 0 when a field is out of range or the list is not 6 numbers; a server zone time.</summary>
+    public long ExpirationFields;
+    /// <summary>"expirationType" (1 weekly, 2 monthly as the tooltip reads it), "numberOfWeeksMonths", "termTag".</summary>
+    public int ExpirationType;
+    public uint NumberOfWeeksMonths;
+    public string TermTag = "";
     // ItemLimit::Load (itemdatastruct.cpp:567)
     /// <summary>ItemLimit levelLimit (itemdatastruct.cpp:573; the constructor's 1, :560).</summary>
     public int LevelLimit = 1;
@@ -98,10 +108,37 @@ public sealed class ItemData
         if (env.Element("tool") is { } tool) Int(tool, "itemPreset", ref d.ItemPreset);
         if (env.Element("install") is { } inst) Int(inst, "objCode", ref d.InstallObjCode);
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
+        if (env.Element("life") is { } life)
+        {
+            Int(life, "usePeriod", ref d.UsePeriod);
+            var fields = ((string)life.Attribute("expirationPeriod") ?? "").Split('-', StringSplitOptions.RemoveEmptyEntries).Select(Atoi).ToArray();
+            if (fields.Length == 6) d.ExpirationFields = MsTimeFields(fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]);
+            Int(life, "expirationType", ref d.ExpirationType);
+            int weeks = 0; Int(life, "numberOfWeeksMonths", ref weeks); d.NumberOfWeeksMonths = (uint)weeks;
+            d.TermTag = (string)life.Attribute("termTag") ?? "";
+        }
         return d;
     }
 
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
+    /// <summary>CMsTime(y, m, d, h, min, s) (mstime.cpp:43): _mkgmtime64 of the fields when each is in range, else 0.</summary>
+    static long MsTimeFields(int y, int mo, int d, int h, int mi, int s)
+    {
+        if (!(y >= 1900 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 && h >= 0 && h <= 23 && mi >= 0 && mi <= 59 && s >= 0 && s <= 59)) return 0;
+        // _mkgmtime64 normalizes a day past the month's end into the next month; -1 outside 1970 .. 3000-12-31 23:59:59
+        var t = new DateTime(y, mo, 1, h, mi, s, DateTimeKind.Utc).AddDays(d - 1);
+        if (t.Year < 1970 || t.Year > 3000) return -1;
+        return new DateTimeOffset(t).ToUnixTimeSeconds();
+    }
+
+    /// <summary>The expiration's CMsTime::GetTime (mstime.h): 0 when unset, else the fields' time plus the zone offset.</summary>
+    public long ExpirationTime => ExpirationFields == 0 ? 0 : ExpirationFields + Ms2.Net.MsTime.CalcZoneOffset;
+
+    /// <summary>CItemData::GetMaidId (itemdata.cpp:1163): param2 of a type 6 subtype 7 item; HasMaidId is above 0.</summary>
+    public bool HasMaidId => Type == 6 && Subtype == 7 && Param2 > 0;
+    /// <summary>CItemData::HasPeriod (itemdata.cpp:981).</summary>
+    public bool HasPeriod => UsePeriod > 0 || ExpirationTime > 0 || ExpirationType != 0 || TermTag.Length != 0;
+
     public bool IsGemItem => Type == 7;                        // :669
     public bool IsPetItem => Type == 0xb;                      // :675
     public bool IsScoreItem => Type == 0xc;                    // :695

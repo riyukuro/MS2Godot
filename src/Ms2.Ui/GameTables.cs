@@ -58,6 +58,7 @@ public sealed class GameTables
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
         MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
+        PCBangItemDefaultPeriod = (uint)k.Float("PCBangItemDefaultPeriod", PCBangItemDefaultPeriod);
         MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
         MeratConsumeChannelChat = (uint)k.Float("MeratConsumeChannelChat", MeratConsumeChannelChat);
         foreach (var (cur, key) in TokenCapKeys) TokenCaps[cur] = (long)k.Float(key, TokenCaps[cur]);
@@ -147,6 +148,8 @@ public sealed class GameTables
     /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
     public int MaxChatLength = 50;
+    /// <summary>Client::Constants PCBangItemDefaultPeriod in minutes (Define default 1440: unit_1402ab440_constantsblocks.cpp:981).</summary>
+    public uint PCBangItemDefaultPeriod = 1440;
     public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
     /// <summary>Client::Constants SkillPointLimitLevel1 / SkillPointLimitLevel2 (defaults 80, 100).</summary>
     public int SkillPointLimitLevel1 = 80, SkillPointLimitLevel2 = 100;

@@ -60,6 +60,7 @@ public sealed class ItemTooltip
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
         SetNotExchange(item);                                                     // SetItemSellPrice
+        SetItemUsePeriod(item);
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
         SetItemLockInfo(item);
@@ -252,6 +253,76 @@ public sealed class ItemTooltip
         Data["itemIconLock"] = locked;
         Data["itemIconUnLock"] = false;
         if (locked && Localize != null) Data["itemLockInfo"] = Localize("$s_itemlock_tooltip_msg_lock");
+    }
+
+    /// <summary>
+    /// ASTooltip::SetItemUsePeriod (astooltip.cpp:1890), "itemUsePeriod": an item with an expiry time (CItem m_80) that
+    /// is not a pet shows its end date in the server zone (s_item_end_time, the maid and PC cafe variants, each with an
+    /// _expired form once the time has passed). Without one, a shop item's life (FUN_1409cf4d0) comes first; shop
+    /// items are not ported, and an owned item has none. Then an item data period or a PC cafe item takes
+    /// <see cref="SetDataPeriod"/>.
+    /// </summary>
+    public void SetItemUsePeriod(Item item)
+    {
+        var d = item.Data;
+        if (item.ExpiryTime > 0)
+        {
+            if (d.IsPetItem) return;
+            var t = Ms2.Net.MsTime.LocalTm(item.ExpiryTime);
+            bool expired = item.ExpiryTime <= new DateTimeOffset(model.Now).ToUnixTimeSeconds();   // CItem::IsExpired (item.cpp:1303)
+            string key = d.HasMaidId ? (expired ? "s_item_end_time_maid_expired" : "s_item_end_time_maid")             // 0xbb / 0xba
+                : d.PCBang ? (expired ? "s_item_end_time_pcbang_expired" : "s_item_end_time_pcbang")                   // 0xbd / 0xbc
+                : expired ? "s_item_end_time_expired" : "s_item_end_time";                                             // 0xb9 / 0xb8
+            Data["itemUsePeriod"] = CommonF(key, t.Year, t.Month, t.Day, t.Hour, t.Minute);
+            return;
+        }
+        if (d.HasPeriod || d.PCBang) SetDataPeriod(d, 0);
+    }
+
+    /// <summary>
+    /// ASTooltip::FUN_1409d6a40 (astooltip.cpp:3070): a use period (the data's minutes, a PC cafe item's
+    /// PCBangItemDefaultPeriod, or <paramref name="minutes"/>) as "{days}{ hours}{ minutes}" in s_item_end_time_tooltip
+    /// (the PC cafe and maid variants); else the data's end date (s_item_end_time_tooltip_expiration), its weekly or
+    /// monthly expiry (at least 1). An end set by a term tag (TermTagManagerCli::GetEndTime) is not ported; the member is
+    /// left out there.
+    /// </summary>
+    void SetDataPeriod(ItemData d, long minutes)
+    {
+        if (d.UsePeriod > 0 || d.PCBang || minutes > 0)
+        {
+            long seconds = 0;
+            if (d.UsePeriod > 0) seconds = d.UsePeriod * 60L;
+            else if (d.PCBang) seconds = Tables.PCBangItemDefaultPeriod * 60L;
+            if (minutes > 0) seconds = minutes * 60;
+            long days = seconds / 86400, hours = seconds / 3600 % 24, mins = seconds / 60 % 60;   // ATL::CTimeSpan
+            string dayText = "", hourText = "", minuteText = "";
+            if (days > 0) dayText = CommonF("s_item_word_d", days);                                // 0xc5
+            if (hours > 0)
+            {
+                hourText = CommonF("s_item_word_h", hours);                                        // 0xc6
+                if (days > 0) hourText = " " + hourText;
+            }
+            if (mins > 0)
+            {
+                minuteText = CommonF("s_item_word_m", mins);                                       // 199
+                if (days > 0 || hours > 0) minuteText = " " + minuteText;
+            }
+            string period = dayText + hourText + minuteText;
+            Data["itemUsePeriod"] = d.PCBang ? CommonF("s_item_end_time_tooltip_pcbang", period)   // 0xc0
+                : d.HasMaidId ? CommonF("s_item_end_time_tooltip_maid", period)                    // 0xc1
+                : CommonF("s_item_end_time_tooltip", period);                                      // 0xbe
+            return;
+        }
+        if (d.ExpirationTime > 0)
+        {
+            var t = Ms2.Net.MsTime.LocalTm(d.ExpirationTime);
+            Data["itemUsePeriod"] = CommonF("s_item_end_time_tooltip_expiration",                  // 0xbf
+                CommonF("s_item_end_time", t.Year, t.Month, t.Day, t.Hour, t.Minute));            // 0xb8
+        }
+        else if (d.ExpirationType == 1)
+            Data["itemUsePeriod"] = CommonF("s_item_end_time_tooltip_expirationtype_weekly", Math.Max(d.NumberOfWeeksMonths, 1u));
+        else if (d.ExpirationType == 2)
+            Data["itemUsePeriod"] = CommonF("s_item_end_time_tooltip_expirationtype_monthly", Math.Max(d.NumberOfWeeksMonths, 1u));
     }
 
     static string Join(string text, string line) => text.Length == 0 ? line : text + "\n" + line;
