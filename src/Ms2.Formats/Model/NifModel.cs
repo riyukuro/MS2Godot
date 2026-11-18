@@ -330,7 +330,7 @@ public sealed class ModelData
                 if (k < 0 || !IsNode(B[(int)k].Type)) continue;
                 var local = XformOf(B[(int)k]);
                 var world = parentWorld.Compose(local);
-                var bone = new ModelBone { Name = nif.Name((int)k) ?? $"blk{k}", Parent = parentBone, Rest = local, World = world };
+                var bone = new ModelBone { Name = nif.NodeName((int)k) ?? $"blk{k}", Parent = parentBone, Rest = local, World = world };
                 md.Bones.Add(bone);
                 boneOf[(int)k] = md.Bones.Count - 1;
                 Add((int)k, md.Bones.Count - 1, world);

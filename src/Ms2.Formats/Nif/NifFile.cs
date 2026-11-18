@@ -75,4 +75,26 @@ public sealed class NifFile
     }
 
     public string Name(int block) => StrField(Blocks[block], "Name");
+
+    Dictionary<int, string> nodeNames;
+    /// <summary>
+    /// A node's name, unique in the file: a name more than one NiNode carries (an effect creature's mirrored leg bones
+    /// named alike) keeps it on its first block and gets "#" + block index on the others. A controller is tied to its
+    /// node block, not to the name, so both sides of a model (its bones, its controllers) use this.
+    /// </summary>
+    public string NodeName(int block)
+    {
+        if (nodeNames == null)
+        {
+            nodeNames = new Dictionary<int, string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < Blocks.Count; i++)
+            {
+                if (Blocks[i].Type != "NiNode") continue;
+                var n = Name(i);
+                if (n != null && !seen.Add(n)) nodeNames[i] = n + "#" + i;
+            }
+        }
+        return nodeNames.TryGetValue(block, out var u) ? u : Name(block);
+    }
 }

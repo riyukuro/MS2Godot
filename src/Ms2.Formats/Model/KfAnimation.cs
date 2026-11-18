@@ -377,7 +377,7 @@ public sealed class KfAnimation
             long ti = c.Int("Target"), ii = c.IntOr("Interpolator", -1);
             if (ti < 0 || ii < 0 || B[(int)ii].Type != "NiTransformInterpolator") continue;
             if (B[(int)ii].IntOr("Data", -1) < 0) continue;                // a constant pose, nothing moves
-            var name = nif.Name((int)ti);
+            var name = nif.NodeName((int)ti);
             if (string.IsNullOrEmpty(name)) continue;
             ctrls.Add((c, name, B[(int)ti].Type != "NiNode"));
         }
