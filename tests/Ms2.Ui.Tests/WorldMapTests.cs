@@ -136,4 +136,61 @@ public class WorldMapTests
         Assert.That(o.ContainsKey("title"), Is.False);
         Assert.That(c.NameSearch("zzzz-none").ContainsKey("title"), Is.True, "s_err_worldmap_search_none");
     }
+
+    [Test]
+    public void FieldMissionRoundsKeepTheirOrderAndRewards()
+    {
+        var t = FieldMissionTable.Parse(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <round mission=""10"" type=""statPoint"" value=""3"" subJobLevel=""1"" />
+            <round mission=""5"" type=""item"" value=""20000028,1,10"" />
+            <round mission=""15"" type=""SkillPoint"" value=""1"" /></ms2>"));
+        Assert.That(t.GetNextRound(0), Is.EqualTo(5), "round 0 gives the first round");
+        Assert.That(t.GetNextRound(5), Is.EqualTo(10));
+        Assert.That(t.GetNextRound(15), Is.Zero);
+        Assert.That(t.GetPrevRound(5), Is.Zero);
+        Assert.That(t.GetPrevRound(15), Is.EqualTo(10));
+        Assert.That(t.GetMaxRound(), Is.EqualTo(15));
+        var item = t.GetReward(5);
+        Assert.That((item.Type, item.ItemId, item.ItemRank, item.ItemCount), Is.EqualTo((1, 20000028, 1, 10)));
+        Assert.That((t.GetReward(10).Type, t.GetReward(10).Value, t.GetReward(10).SubJobLevel), Is.EqualTo((2, 3, 2)));
+        Assert.That((t.GetReward(15).Type, t.GetReward(15).SubJobLevel), Is.EqualTo((3, 1)));
+        Assert.That(t.GetReward(7), Is.Null);
+    }
+
+    [Test]
+    public void ExplorationPanelShowsTheFirstRoundUnclaimed()
+    {
+        var (_, c, _) = Load();
+        var missions = new FieldMissions("KR", _ => true);
+        missions.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2><environment>
+            <quest><basic questID=""9001"" questType=""4"" /><progressMap progressMap=""2000001"" /><condition type=""run"" value=""1"" /></quest>
+            <quest><basic questID=""9002"" questType=""4"" /><progressMap progressMap=""2000001"" /><condition type=""run"" value=""1"" /></quest>
+            </environment></ms2>"));
+        missions.BuildIndex();
+        c.Missions = missions;
+        c.MissionRewards = FieldMissionTable.Load(packs);
+        Assert.That(c.MissionRewards.GetNextRound(0), Is.GreaterThan(0), "table/kr/fieldmission.xml has rounds");
+        var o = c.FieldMissionData();
+        foreach (var (k, v) in o) TestContext.WriteLine($"{k}: {v}");
+        int first = c.MissionRewards.GetNextRound(0);
+        Assert.That(o["rewardCount"], Is.EqualTo(first));
+        Assert.That(o["rate"], Is.EqualTo("0%"));
+        Assert.That(o["count"], Is.EqualTo("0/2"));
+        Assert.That(o["enable"], Is.EqualTo(0), "nothing done: the claim is off");
+        Assert.That(o["prev"], Is.EqualTo(false));
+        Assert.That(o["desc"], Does.Contain(first.ToString()));
+        if (c.MissionRewards.GetReward(first).Type == 1)
+            Assert.That(o["binding"], Is.EqualTo(c.TypeName), "the reward item is bound as the dialog's slot");
+        c.CompletedMissions = first;
+        Assert.That(c.FieldMissionData()["enable"], Is.EqualTo(1), "the round is reached");
+    }
+
+    [Test]
+    public void TriasPanelNamesItsFishingSpot()
+    {
+        var (_, c, _) = Load();
+        var spot = (string)c.FieldDetails(Tria)["fishingSpot"];
+        TestContext.WriteLine(spot);
+        Assert.That(spot, Is.Not.Empty, "CFishingManager::GetSpotDescription of Tria's spot");
+    }
 }

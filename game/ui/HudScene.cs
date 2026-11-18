@@ -893,6 +893,7 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog worldMap;
     Ms2.Ui.Hud.WorldMapController worldMapSide;     // kept between opens, as the client keeps the dialog (the island indices)
     static Ms2.Ui.WorldMap.WorldMapTable worldMapTable;    // WorldMapManager, read once
+    static Ms2.Ui.WorldMap.FieldMissionTable fieldMissionTable;    // CFieldMissionTable, read once
 
     bool WorldMapOpen => worldMap != null && worldMapSide?.IsClosed == false;
 
@@ -934,6 +935,8 @@ public partial class HudScene : Node, IUiStageHost
                 VisitedFields = new[] { (uint)fieldId },
                 Npcs = World.FieldContents.Npcs(assets.Packs),
                 Rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e)),
+                Missions = fieldMissions,       // the quest tracker's, read when the HUD starts
+                MissionRewards = fieldMissionTable ??= Ms2.Ui.WorldMap.FieldMissionTable.Load(assets.Packs),
             };
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }

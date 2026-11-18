@@ -171,6 +171,9 @@ public sealed class FieldMissions
 
     public void AddDescriptions(XDocument doc) => AddDescriptions(doc, descriptions);
 
+    /// <summary>QuestDataTable::CollectQuestsByType(4) (questdata.cpp:1875): the number of field mission quests.</summary>
+    public int QuestCount => quests.Count;
+
     /// <summary>The quest ids of a field's missions (GetQuestIdsByMap), empty when none.</summary>
     public IReadOnlyList<int> QuestIds(int mapId) => byMap.TryGetValue(mapId, out var l) ? l : Array.Empty<int>();
 

@@ -44,6 +44,15 @@ public sealed class WorldMapController : UiController
     public Action<int, int, int> SendRequestWorldmap;
     /// <summary>g_143ab2a90.FUN_140a5f7b0(10 / 0xb): the air taxi tickets (setAirTaxiCount).</summary>
     public int AirTaxiTickets, AdvancedAirTaxiTickets;
+    /// <summary>QuestDataTable's field mission quests (questType 4): their number is the exploration total.</summary>
+    public FieldMissions Missions;
+    /// <summary>CFieldMissionTable: the exploration rewards by round.</summary>
+    public FieldMissionTable MissionRewards;
+    /// <summary>
+    /// CQuestManager m_group: the last exploration round rewarded (the server's quest packet), 0 for none; and
+    /// CountCompletedQuests80, the field missions completed (state 2 in m_quests80). Both 0 without the server.
+    /// </summary>
+    public int MissionGroup, CompletedMissions;
 
     // ---- the dialog's state (uiworldmapdialog.h) ----
     int world;                 // m_nWorld (GetSelectedWorld)
@@ -92,7 +101,7 @@ public sealed class WorldMapController : UiController
         world = Table.WorldOfField(f.Continent);
         SendRequestWorldmapMode0();
         SetFieldSearchInfo((uint)field, missionMode);
-        // UpdateFieldMission (:1664): the field mission panel is not ported
+        UpdateFieldMission();
         if (missionMode) Select((uint)field);
     }
 
@@ -108,6 +117,93 @@ public sealed class WorldMapController : UiController
         visited.Clear();
         missionMode = false;
         missionAttack = false;
+    }
+
+    // ---- the exploration panel (m_fieldMission) ----
+
+    /// <summary>CQuestManager::GetNextRound (questmanager_2.cpp:1571): the round after the last one rewarded.</summary>
+    int NextRound => MissionRewards?.GetNextRound(MissionGroup) ?? 0;
+
+    /// <summary>
+    /// UpdateFieldMission (:1664): the panel's data when there are field mission quests: the next round (the last round
+    /// once it is rewarded, IsLastRound, then the claim is off), the completed share as string 0x98e (built into the client:
+    /// the number with a % sign), done / total, the round's goal (s_fieldmission_desc), whether there is a round before and
+    /// after, whether the claim is on (IsRoundTargetReached: done &gt;= the round) and the reward.
+    /// </summary>
+    void UpdateFieldMission()
+    {
+        var o = FieldMissionData();
+        if (o == null) return;
+        if (Host.Child("m_fieldMission") is { } panel) Host.Invoke(panel, "setData", o);
+        if (missionMode) Host.Invoke("setFieldMissionMode", 1);
+    }
+
+    /// <summary>UpdateFieldMission's object for m_fieldMission.setData; null when there are no field missions.</summary>
+    public Dictionary<string, object> FieldMissionData()
+    {
+        int total = Missions?.QuestCount ?? 0;
+        if (total == 0 || MissionRewards == null) return null;
+        int round = NextRound;
+        bool enable = CompletedMissions >= round;
+        if (MissionGroup == MissionRewards.GetMaxRound())
+        {
+            round = MissionRewards.GetMaxRound();
+            enable = false;
+        }
+        var o = new Dictionary<string, object>
+        {
+            ["rewardCount"] = round,
+            ["rate"] = (CompletedMissions * 100 / total).ToString(CultureInfo.InvariantCulture) + "%",
+            ["count"] = $"{CompletedMissions}/{total}",
+            ["desc"] = Fill(Common("s_fieldmission_desc"), round),
+            ["prev"] = MissionRewards.GetPrevRound(round) != 0,
+            ["next"] = MissionRewards.GetNextRound(round) != 0,
+            ["enable"] = enable ? 1 : 0,
+        };
+        SetFieldMissionReward(round, o);
+        return o;
+    }
+
+    /// <summary>UpdateFieldMissionRound (:1796): another round's goal and reward; the claim only on the next round.</summary>
+    void UpdateFieldMissionRound(int round)
+    {
+        bool enable = NextRound == round && CompletedMissions >= NextRound;
+        var o = new Dictionary<string, object>
+        {
+            ["rewardCount"] = round,
+            ["enable"] = enable ? 1 : 0,
+            ["desc"] = Fill(Common("s_fieldmission_desc"), round),
+            ["prev"] = MissionRewards.GetPrevRound(round) != 0,
+            ["next"] = MissionRewards.GetNextRound(round) != 0,
+        };
+        SetFieldMissionReward(round, o);
+        if (Host.Child("m_fieldMission") is { } panel) Host.Invoke(panel, "setData", o);
+    }
+
+    /// <summary>
+    /// SetFieldMissionReward (:1707): an item reward is a new item of the reward's id and rank (FUN_140523c40) with its
+    /// count, bound as the dialog's type name (CreateItemInfoSlot with no index, icon type or flags), and the text
+    /// s_fieldmission_reward. STILL-OPEN: the stat point (type 2) and skill point (type 3) rewards bind a slot-text slot
+    /// (FUN_141415560: CommonResource m_1d0 or GetPath(subJob), the tip s_fieldmission_stat_reward /
+    /// s_fieldmission_skill_reward, the value as the count), which ItemInfoSlot does not build; only their text
+    /// (s_fieldmission_point_reward) is set.
+    /// </summary>
+    void SetFieldMissionReward(int round, Dictionary<string, object> o)
+    {
+        var reward = MissionRewards.GetReward(round);
+        if (reward == null) return;
+        if (reward.Type == 1)
+        {
+            var item = Items.Item.Create(Model.Tables.Items, reward.ItemId, reward.ItemRank);
+            if (item == null) return;
+            item.SetCountClamped(reward.ItemCount);
+            Model.ItemSlots.Remove(TypeName);                                               // DestroyItemInfoSlot
+            Model.ItemSlots[TypeName] = new Items.ItemInfoSlot(TypeName, item, 0, 0, 0);     // CreateItemInfoSlot
+            o["binding"] = TypeName;
+            o["reward"] = Common("s_fieldmission_reward");
+        }
+        else if (reward.Type is 2 or 3)
+            o["reward"] = Common("s_fieldmission_point_reward");
     }
 
     /// <summary>GetFieldToShow (:843): the field, else its parent, else the manager's selected field.</summary>
@@ -130,12 +226,14 @@ public sealed class WorldMapController : UiController
 
     /// <summary>
     /// OnIconPacket (:884), packet 0x84 mode 0: the icons (LoadIconPacket), the visited fields, then the tiles. The quest,
-    /// npc quest, dungeon, party and buddy icons are not ported.
+    /// npc quest, party and buddy icons are not ported.
     /// </summary>
     public void OnIconPacket()
     {
         if (Host?.Entity == null || IsClosed) return;
+        dungeonIcons.Clear();                                   // LoadIconPacket: ClearIconInfos
         foreach (uint id in VisitedFields) visited.Add(id);     // FUN_141b58f00
+        AddDungeonIcons();
         SelectPendingField();
         ApplyPendingSearch();
         BuildWorldTiles();
@@ -257,8 +355,52 @@ public sealed class WorldMapController : UiController
         o["buddy"] = Array.Empty<object>(); o["buddyChannel"] = Array.Empty<object>();
         TaxiMembers(t, o);
         SpecialNpcMembers(t, o);
-        // FUN_141b5f740 (field mission), SetEventScript and SetDungeonScript are not ported
+        // FUN_141b5f740 (field mission) and SetEventScript are not ported
+        SetDungeonScript(t.FieldId, o);
         Host.Invoke("createMap", o);
+    }
+
+    /// <summary>
+    /// The dungeon part of the manager's icon infos (IconInfo m_48: m_18 the dungeon, m_1c isUseBossIcon, m_1d
+    /// isTimeUp == 1) by field. LoadIconPacket's ClearIconInfos and ClearDungeonInfos empty it.
+    /// </summary>
+    readonly Dictionary<uint, (int Dungeon, bool Boss, bool TimeUp)> dungeonIcons = new();
+
+    /// <summary>
+    /// AddDungeonIcons (:1336): for each field with dungeon (portalType 8) portals and no dungeon yet, each of its
+    /// dungeons whose first room passes the display filter sets the field's dungeon (the last one wins).
+    /// </summary>
+    void AddDungeonIcons()
+    {
+        if (Rooms == null || Meta == null) return;
+        foreach (int field in FieldMeta.AtlMapOrder(Meta.PortalType8.Keys))
+        {
+            if (dungeonIcons.ContainsKey((uint)field)) continue;
+            foreach (int dungeon in Meta.PortalType8[field])
+            {
+                var rooms = Rooms.GetRooms(dungeon);
+                if (rooms.Count == 0 || !DungeonShown(rooms[0])) continue;
+                dungeonIcons[(uint)field] = (dungeon, rooms[0].IsUseBossIcon, rooms[0].IsTimeUp == 1);
+            }
+        }
+    }
+
+    /// <summary>
+    /// DisplaySetting::FUN_141b95270 (worldmapmanager.cpp:351): with "display proper dungeons" on (m_18[4]) only a room
+    /// whose limitPlayerLevel suits the player's level.
+    /// </summary>
+    bool DungeonShown(DungeonRoom room) => !DisplayProperDungeon || LevelInRange(room.LimitPlayerLevel, PlayerLevel);
+
+    /// <summary>IsDungeonLevelInRange (dungeonroom.cpp:751), the arguments as FUN_141b95270 passes them.</summary>
+    static bool LevelInRange(int level, int dungeonLevel) =>
+        Math.Abs((ushort)level - (ushort)dungeonLevel) <= 5 || dungeonLevel >= 50 && level >= 50 && level <= dungeonLevel;
+
+    /// <summary>WorldMapManager::SetDungeonScript (worldmapmanager.cpp:1169): portalID and dungeonType.</summary>
+    void SetDungeonScript(uint field, Dictionary<string, object> o)
+    {
+        if (!dungeonIcons.TryGetValue(field, out var d) || d.Dungeon == 0) return;
+        o["portalID"] = d.Dungeon;
+        o["dungeonType"] = d.Boss ? (d.TimeUp ? "boss_special" : "boss") : (d.TimeUp ? "dungeon_special" : "dungeon");
     }
 
     /// <summary>FUN_141b5d4b0 (:1869): the tile's own members.</summary>
@@ -302,13 +444,17 @@ public sealed class WorldMapController : UiController
 
     int ParentFieldId(int id) => Table.ParentField(id) ?? id;    // GetParentFieldId (:2257)
 
+    /// <summary>CFishingManager::GetSpotDescription (fishingmanager.cpp:1102) with the player's fishing mastery (GetMastery(1)).</summary>
+    string FishingSpot(uint field) => Model.Tables.Fishing.Description((int)field, Model.Player.FishingMastery, Common);
+
     /// <summary>GetTileTooltip (:1566): name and level (red-free above the player's level + 5), the fishing spot, the hint.</summary>
     string TileTooltip(WorldMapTable.Tile t, WorldMapTable.Field f)
     {
         string level = Fill(Common("s_worldmap_tooltip_level"), f.MapLevel);       // 0x713
         string text = Fill(Common(PlayerLevel + 5 < f.MapLevel ? "s_worldmap_tooltip_mapname_high" : "s_worldmap_tooltip_mapname_low"),
             MapName(t.FieldId), level);                                          // 0x717 / 0x716
-        // CFishingManager GetSpotDescription is not ported
+        string fishing = FishingSpot(t.FieldId);
+        if (fishing.Length > 0) text += "\n" + fishing;
         string hint = Common("s_worldmap_tooltip_dbclick");
         if (hint.Length > 0) text += "\n" + hint;
         return text;
@@ -430,8 +576,16 @@ public sealed class WorldMapController : UiController
 
     bool NpcHere(int npc, int field) => Meta == null || !Meta.TimedNpcFields.Contains((npc, field)) || NpcFieldOpen(npc, field);
 
-    /// <summary>FUN_1401aa6a0: the npc's name (string table npcname).</summary>
-    string NpcName(int npc) => Npcs?.Find(npc)?.Name ?? "";
+    /// <summary>
+    /// FUN_1401aa6a0 (arcademaindata.cpp:60): "&lt;title&gt; &lt;name&gt;" from the string tables 0x13 (npctitle, the
+    /// $npcTitle reserved word) and 2 (npcname), or the name alone when the npc has no title.
+    /// </summary>
+    string NpcName(int npc)
+    {
+        var row = Npcs?.Find(npc);
+        string name = row?.Name ?? "";
+        return string.IsNullOrEmpty(row?.Title) ? name : $"{row.Title} {name}";
+    }
 
     /// <summary>
     /// NpcSearchName (worldmapmanager.cpp:1218): a monster as s_worldmap_search_monster (name, level, race), an npc with a
@@ -479,8 +633,8 @@ public sealed class WorldMapController : UiController
     /// BuildFieldDetails (worldmapmanager.cpp:1248): the title (name and level), the dungeons behind the field's portalType 8
     /// portals (by group, then level: WorldMapDungeonLess :1440), the npcs of the field and its connected fields
     /// (FUN_1406fc2f0, those with a search entry; each name once) as monsters, elites, bosses and notable npcs, the
-    /// connected maps, the description and the cash taxi flag. The shadow gate (npc kind 0x55, CJobConditionTable), a
-    /// boss's spawn guarantee time (the server's) and the fishing spot are not ported.
+    /// connected maps, the description and the cash taxi flag. The shadow gate (npc kind 0x55, CJobConditionTable) and a
+    /// boss's spawn guarantee time (the server's) are not ported.
     /// </summary>
     public Dictionary<string, object> FieldDetails(uint id)
     {
@@ -526,7 +680,7 @@ public sealed class WorldMapController : UiController
         {
             ["fieldSN"] = id,
             ["title"] = Fill(Common("s_worldmap_search_map_title"), MapName(id), f.MapLevel),
-            ["fishingSpot"] = "",           // CFishingManager GetSpotDescription is not ported
+            ["fishingSpot"] = FishingSpot(id),
             ["mapDesc"] = Model.Tables.MapTileDesc((int)id) ?? "",
             ["dungeon"] = dungeons, ["monster"] = monsters, ["bossMonster"] = bosses, ["eliteMonster"] = elites,
             ["shadowgate"] = gates, ["indoor"] = indoors, ["npc"] = npcs,
@@ -659,7 +813,12 @@ public sealed class WorldMapController : UiController
     }
 
     /// <summary>OnDisplaySettingsChanged (:1648): the icons are rebuilt (none here) and the world again.</summary>
-    void OnDisplaySettingsChanged() => BuildWorldTiles();
+    void OnDisplaySettingsChanged()
+    {
+        dungeonIcons.Clear();       // ClearDungeonInfos
+        AddDungeonIcons();
+        BuildWorldTiles();
+    }
 
     /// <summary>
     /// vfunc_13 (:328), Enter: in the focused search box processEnterKey runs the search; else the box takes the focus.
@@ -722,10 +881,16 @@ public sealed class WorldMapController : UiController
                 missionMode = Bool(args, 1);
                 return true;
             case "onclickskyfortressmode": skyFortress = Bool(args, 0); return true;
-            // a taxi, the cash taxi, a portal move, the boss / dungeon dialogs and the mission rewards move the player or
-            // spend: not here
+            case "onclickmissionrewardprev":
+                if (args.Length > 0 && MissionRewards?.GetPrevRound(Int(args, 0)) is int prev and not 0) UpdateFieldMissionRound(prev);
+                return true;
+            case "onclickmissionrewardnext":
+                if (args.Length > 0 && MissionRewards?.GetNextRound(Int(args, 0)) is int next and not 0) UpdateFieldMissionRound(next);
+                return true;
+            // a taxi, the cash taxi, a portal move, the boss / dungeon dialogs and the mission reward (SendQuest :1782, the
+            // Quest packet 0x1a once the round's target is reached) move the player or spend: not here
             case "ontaxi": case "oncashtaxi": case "onportal": case "onboss": case "ondungeon": case "onclicksearchinfoicon":
-            case "onclickmissionreward": case "onclickmissionrewardprev": case "onclickmissionrewardnext":
+            case "onclickmissionreward":
                 return true;
         }
         return false;
