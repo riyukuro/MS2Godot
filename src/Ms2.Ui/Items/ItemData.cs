@@ -73,6 +73,12 @@ public sealed class ItemData
     /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt; and space (bit 1 outdoors, bits 2 / 4
     /// indoors too, as the tooltip's FUN_1409de630 reads them).</summary>
     public int InstallObjCode, InstallSpace;
+    /// <summary>ItemLimit exceptEnchant (itemdatastruct.cpp:581): the item takes no enchant (CItemEnchantLimitTable::CanEnchant).</summary>
+    public bool ExceptEnchant;
+    /// <summary>CItemData::Load (itemdata.cpp:366): &lt;option constantID randomID&gt;, the option table ids.</summary>
+    public int ConstantId, RandomId;
+    /// <summary>ItemAdditionalEffect::Load (itemdatastruct.cpp:1687): the &lt;AdditionalEffect id&gt; list (XmlSplit ",").</summary>
+    public readonly List<string> AdditionalEffectIds = new();
 
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
@@ -110,6 +116,7 @@ public sealed class ItemData
             if (globalTransferType && l.Attribute("globalTransferType") != null) Int(l, "globalTransferType", ref d.TransferType);
             Bool(l, "shopSell", ref d.ShopSell);
             Int(l, "enableBreak", ref d.EnableBreak);
+            Bool(l, "exceptEnchant", ref d.ExceptEnchant);
             Int(l, "genderLimit", ref d.GenderLimit);
             if ((string)l.Attribute("jobLimit") is { } jl)
                 foreach (var t in jl.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.JobLimit.Add(Atoi(t));
@@ -118,6 +125,13 @@ public sealed class ItemData
             if ((string)l.Attribute("recommendJobs") is { } jobs)
                 foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.RecommendJobs.Add(Atoi(t));
         }
+        if (env.Element("option") is { } opt)
+        {
+            Int(opt, "constantID", ref d.ConstantId);
+            Int(opt, "randomID", ref d.RandomId);
+        }
+        if (env.Element("AdditionalEffect") is { } ae)
+            d.AdditionalEffectIds.AddRange(((string)ae.Attribute("id") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries));
         if (env.Element("skill") is { } sk) { Int(sk, "skillID", ref d.SkillId); Int(sk, "skillLevel", ref d.SkillLevel); }
         if (env.Element("function") is { } f)
         {
@@ -210,6 +224,26 @@ public sealed class ItemData
     /// <summary>FUN_14053e460 (:1358): a consumable, skill, pet or ride item, an item with a function other than TreasureMap, or type 4.</summary>
     public bool IsQuickSlotUsable => IsConsumable || IsSkillItem || IsPetItem || IsRideItem
         || (HasFunction ? FunctionName != "TreasureMap" : Type == 4);
+    /// <summary>
+    /// CItemData::HasStat (itemdata.cpp:1849): the stat is the part's own base stat, which the tooltip's constant rows
+    /// leave out: 0x1b and 0x1c for a weapon (FUN_14053d760 :999, equip subtype 0x1e-0x22 or 0x32-0x38), else the
+    /// subtype's one (FUN_14053f7c0): 0xc / 0x14 0x1a, 0x12 / 0x13 0x19, 0xd-0x11 / 0x15 / 0x16 / 0x29 0x14, 0x28 0x18.
+    /// </summary>
+    public bool HasStat(int stat)
+    {
+        int sub = EquipSubtype;
+        if ((stat == 0x1b || stat == 0x1c) && Type == 1 && (sub >= 0x1e && sub <= 0x22 || sub >= 0x32 && sub <= 0x38)) return true;
+        int own = sub switch
+        {
+            0xc or 0x14 => 0x1a,
+            0x12 or 0x13 => 0x19,
+            >= 0xd and <= 0x11 or 0x15 or 0x16 or 0x29 => 0x14,
+            0x28 => 0x18,
+            _ => -1,
+        };
+        return own == stat;
+    }
+
     /// <summary>FUN_14053e900 (:1460): a gem's subtype, else 0.</summary>
     public int GemSubtype => IsGemItem ? Subtype : 0;
 

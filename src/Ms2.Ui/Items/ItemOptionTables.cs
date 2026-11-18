@@ -1,0 +1,262 @@
+using System.Xml.Linq;
+using Ms2.Formats.Pack;
+using Ms2.Formats.World;
+
+namespace Ms2.Ui.Items;
+
+/// <summary>
+/// The option tables the item tooltip's status rows read: the stat and special ability definitions (LoadStatDefinitions,
+/// stat.cpp:172; LoadSpecialAbilityStringTable, specialability.cpp:170), CItemOptionTable's random options and variation
+/// rows (itemoptiondata_3.cpp:909, :942) and CItemEnchantLimitTable (itemenchantlimittable.cpp:150). Each is read on
+/// first use.
+/// </summary>
+public sealed class ItemOptionTables
+{
+    /// <summary>A stat or special ability definition: its option name, valueType and value format text (the name string of
+    /// its valueStringID).</summary>
+    sealed record Def(string Name, int ValueType, string ValueText);
+
+    /// <summary>ItemOptionValueRandom (itemoptiondata_2.cpp:1378): the stat (-1 when none) or special (0 when none) and
+    /// its "statID" (the variation row).</summary>
+    sealed record RandomValue(int Stat, int Special, int StatId);
+
+    /// <summary>ItemOptionRandom (itemoptiondata_2.cpp:1737): "pickCount", "isRarePickOne" and the values.</summary>
+    sealed record Random(int PickCount, bool RarePickOne, List<RandomValue> Values);
+
+    /// <summary>ItemOptionVariationData (itemoptiondata_2.cpp:1633): "highStat" and the &lt;v stat&gt; values in file order.</summary>
+    sealed record Variation(int HighStat, List<int> Stats);
+
+    /// <summary>EnchantLimit (itemenchantlimittable.cpp:150): "minLv", "maxLv", "maxGrade".</summary>
+    sealed record EnchantLimit(int MinLv, int MaxLv, int MaxGrade);
+
+    readonly PackSet packs;
+    readonly Dictionary<string, string> statValueNames, specialValueNames;
+    Def[] stats, specials;
+    Dictionary<int, Random> randoms;
+    Dictionary<int, Variation> variations;
+    Dictionary<int, EnchantLimit> limits;
+
+    public static readonly ItemOptionTables Empty = new(null, new(), new());
+
+    /// <param name="statValueNames">string table stringstatname (by id).</param>
+    /// <param name="specialValueNames">string table stringspecialabilityname (by id).</param>
+    public ItemOptionTables(PackSet packs, Dictionary<string, string> statValueNames, Dictionary<string, string> specialValueNames)
+    {
+        this.packs = packs;
+        this.statValueNames = statValueNames;
+        this.specialValueNames = specialValueNames;
+    }
+
+    XElement Root(string path) => packs != null && packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)).Root : null;
+
+    static int Int(XElement e, string name) => ItemData.Atoi((string)e.Attribute(name) ?? "0");
+
+    /// <summary>The definitions of a key table, by &lt;key id&gt; into <paramref name="slots"/> slots (a later key replaces an
+    /// earlier one; an id outside the slots is dropped).</summary>
+    Def[] Defs(string path, int slots, Dictionary<string, string> valueNames)
+    {
+        var d = new Def[slots];
+        var root = Root(path);
+        if (root == null) return d;
+        foreach (var e in root.Elements("key"))
+        {
+            if (!int.TryParse((string)e.Attribute("id"), out int id) || (uint)id >= (uint)slots) continue;
+            string text = valueNames.TryGetValue((string)e.Attribute("valueStringID") ?? "", out var t) && t != null ? t : "";
+            d[id] = new Def((string)e.Attribute("option") ?? "", Int(e, "valueType"), text);
+        }
+        return d;
+    }
+
+    Def[] Stats() => stats ??= Defs("table/statstringtable.xml", 0x23, statValueNames);
+    Def[] Specials() => specials ??= Defs("table/specialabilitystringtable.xml", 0xcf, specialValueNames);
+
+    /// <summary>FindStatByName (stat.cpp): the stat whose option name equals <paramref name="name"/> (case-insensitive),
+    /// -1 when none.</summary>
+    public int FindStatByName(string name)
+    {
+        var s = Stats();
+        for (int i = 0; i < s.Length; i++)
+            if (s[i] != null && string.Equals(s[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i;
+        return -1;
+    }
+
+    /// <summary>FUN_14081d260 (specialability.cpp): the special ability whose option name equals <paramref name="name"/>
+    /// (case-insensitive), 0 when none.</summary>
+    public int FindSpecialByName(string name)
+    {
+        var s = Specials();
+        for (int i = 0; i < s.Length; i++)
+            if (s[i] != null && string.Equals(s[i].Name, name, StringComparison.OrdinalIgnoreCase)) return i;
+        return 0;
+    }
+
+    /// <summary>FUN_14081d380 (specialability.cpp): the special ability's option name, "" when none.</summary>
+    public string SpecialOption(int special) => (uint)special < 0xcf ? Specials()[special]?.Name ?? "" : "";
+
+    /// <summary>IsStatKindTwo (stat.cpp): the stat's valueType is 2 (a rate, in tenths).</summary>
+    public bool IsStatRate(int stat) => (uint)stat < 0x23 && Stats()[stat]?.ValueType == 2;
+    /// <summary>GetStatValueText (stat.cpp): the stat's value format text, "" when none.</summary>
+    public string StatValueText(int stat) => (uint)stat < 0x23 ? Stats()[stat]?.ValueText ?? "" : "";
+    /// <summary>FUN_14081dcd0 (specialability.cpp): the special ability's valueType is 2 (a rate, in tenths).</summary>
+    public bool IsSpecialRate(int special) => (uint)special < 0xcf && Specials()[special]?.ValueType == 2;
+    /// <summary>The special ability's value format text (SpecialAbilityInfo, valueStringID), "" when none.</summary>
+    public string SpecialValueText(int special) => (uint)special < 0xcf ? Specials()[special]?.ValueText ?? "" : "";
+
+    /// <summary>
+    /// LoadItemOptionRandom (itemoptiondata_3.cpp:909): every &lt;option&gt; of Table/ItemOptionRandom.xml whose feature is
+    /// empty or on (FUN_14028f5d0, commonutil.cpp:1022), keyed by "code"; code 0 is dropped and the first of a code is kept
+    /// (unordered_map insert; the client loads them in parallel, so which duplicate wins there is not fixed). Each
+    /// option's &lt;v&gt; children pass the same filter; a v without a name, or whose name is neither a stat nor a special
+    /// ability, is dropped.
+    /// </summary>
+    Dictionary<int, Random> Randoms()
+    {
+        if (randoms != null) return randoms;
+        randoms = new();
+        var root = Root("table/itemoptionrandom.xml");
+        if (root == null) return randoms;
+        foreach (var e in root.Elements("option"))
+        {
+            if (!FeatureOn(e)) continue;
+            int code = Int(e, "code");
+            if (code == 0 || randoms.ContainsKey(code)) continue;
+            var values = new List<RandomValue>();
+            foreach (var v in e.Elements("v"))
+            {
+                if (!FeatureOn(v)) continue;
+                string name = (string)v.Attribute("name") ?? "";
+                if (name.Length == 0) continue;
+                int statId = Int(v, "statID");
+                int stat = FindStatByName(name);
+                if (stat != -1) { values.Add(new RandomValue(stat, 0, statId)); continue; }
+                int special = FindSpecialByName(name);
+                if (special != 0) values.Add(new RandomValue(-1, special, statId));
+            }
+            randoms[code] = new Random(Int(e, "pickCount"), Int(e, "isRarePickOne") != 0, values);
+        }
+        return randoms;
+    }
+
+    /// <summary>IsElementFeatureEnabled (commonutil.cpp:1035): the "feature" attribute is empty or on.</summary>
+    bool FeatureOn(XElement e)
+    {
+        string feature = (string)e.Attribute("feature") ?? "";
+        return feature.Length == 0 || LobbyFeatures.IsEnabledByName(packs, feature);
+    }
+
+    /// <summary>LoadItemOptionVariation (itemoptiondata_3.cpp:942): every &lt;option&gt; of Table/itemOptionVariation.xml by
+    /// "id" (std::map insert keeps the first), no feature filter.</summary>
+    Dictionary<int, Variation> Variations()
+    {
+        if (variations != null) return variations;
+        variations = new();
+        var root = Root("table/itemoptionvariation.xml");
+        if (root == null) return variations;
+        foreach (var e in root.Elements("option"))
+        {
+            int id = Int(e, "id");
+            if (variations.ContainsKey(id)) continue;
+            variations[id] = new Variation(Int(e, "highStat"), e.Elements("v").Select(v => Int(v, "stat")).ToList());
+        }
+        return variations;
+    }
+
+    /// <summary>CItemData::FUN_14053eff0 (itemdata.cpp:1633) for a non-pet item: its randomID.</summary>
+    static int RandomCode(ItemData d) => d.RandomId;
+
+    /// <summary>ItemOptionRandom::GetPickCount (itemoptiondata_2.cpp:2021) of the item's random option at
+    /// <paramref name="rank"/>; null without the option (GetRandom, a map find). Not for pets.</summary>
+    public int? PickCount(ItemData d, int rank)
+    {
+        if (!Randoms().TryGetValue(RandomCode(d), out var r)) return null;
+        if (r.RarePickOne)
+        {
+            if (rank == 2) return 1;
+            if (rank == 1) return 0;
+        }
+        return r.PickCount;
+    }
+
+    /// <summary>GetStatIdByStat / GetStatIdBySpecial (itemoptiondata_2.cpp:2198, :2207): the statID of the first value of
+    /// the stat or special; 0 when none. <paramref name="stat"/> -1 matches by <paramref name="special"/>.</summary>
+    int StatId(Random r, int stat, int special)
+    {
+        foreach (var v in r.Values)
+            if (stat != -1 ? v.Stat == stat : v.Special == special) return v.StatId;
+        return 0;
+    }
+
+    /// <summary>GetVariationRange (itemoptiondata_3.cpp:562): the first and last stat of the row, (0, 0) when none.</summary>
+    (int First, int Last) VariationRange(int id) =>
+        Variations().TryGetValue(id, out var v) && v.Stats.Count > 0 ? (v.Stats[0], v.Stats[^1]) : (0, 0);
+
+    /// <summary>GetRandomOptionRange / GetRandomSpecialOptionRange (itemoptiondata_3.cpp:575, :590): the variation range of
+    /// the stat (or, with <paramref name="stat"/> -1, the special) in the item's random option at
+    /// <paramref name="rank"/>; (0, 0) when none.</summary>
+    public (int First, int Last) RandomOptionRange(ItemData d, int rank, int stat, int special)
+    {
+        if (d == null || !Randoms().TryGetValue(RandomCode(d), out var r)) return (0, 0);
+        return VariationRange(StatId(r, stat, special));
+    }
+
+    /// <summary>IsHighRollValue / IsHighRollSpecialValue (itemoptiondata_3.cpp:606, :631): the value is in the top band of
+    /// its variation row; the item must be level 50 or more.</summary>
+    public bool IsHighRoll(ItemData d, int stat, int special, int value)
+    {
+        if (d == null || (ushort)d.LevelLimit < 50) return false;
+        if (!Randoms().TryGetValue(RandomCode(d), out var r)) return false;
+        int id = StatId(r, stat, special);
+        int high = Variations().TryGetValue(id, out var v) ? v.HighStat : 0;
+        if (high == 0) return false;
+        var range = VariationRange(id);
+        if (range.First == range.Last) return true;
+        if (range.First >= value) return false;
+        return value >= high;
+    }
+
+    /// <summary>CItemEnchantLimitTable::Load (itemenchantlimittable.cpp:150): the &lt;limit&gt; elements of
+    /// Table/enchantLimitTable.xml picked per "slot" (FUN_14028faa0), by slot.</summary>
+    Dictionary<int, EnchantLimit> Limits()
+    {
+        if (limits != null) return limits;
+        limits = new();
+        var root = Root("table/enchantlimittable.xml");
+        if (root == null) return limits;
+        foreach (var e in FeatureElements.Collect(packs, root, "limit", "slot"))
+            limits[Int(e, "slot")] = new EnchantLimit((ushort)Int(e, "minLv"), (ushort)Int(e, "maxLv"), Int(e, "maxGrade"));
+        return limits;
+    }
+
+    /// <summary>
+    /// CItemEnchantLimitTable::CanEnchant (itemenchantlimittable.cpp:185): an equip item that has not expired, has no
+    /// unlimited enchant level, whose slot has a limit with the item's level limit inside it and the enchant level below
+    /// its max grade, and whose data does not set exceptEnchant.
+    /// </summary>
+    public bool CanEnchant(Item item)
+    {
+        var d = item?.Data;
+        if (d == null || d.Type != 1) return false;
+        if (item.ExpiryTime > 0) return false;                              // FUN_140525c60: 0 < FUN_140528910
+        if (item.UnlimitedEnchantLevel > 0) return false;                   // GetPlusLevel
+        if (!Limits().TryGetValue(d.EquipSubtype, out var l)) return false;
+        int level = (ushort)d.LevelLimit;                                   // GetRequiredLevel
+        if (level < l.MinLv || level > l.MaxLv) return false;
+        if (item.EnchantLevel >= l.MaxGrade) return false;
+        return !d.ExceptEnchant;
+    }
+
+    static readonly int[] Rates20 = { 0, 10000, 10000, 10000, 5000, 5000, 5000, 2500, 2500, 2500, 2000, 2000, 1000, 500, 200, 100 };
+    static readonly int[] Rates38 = { 0, 10000, 10000, 10000, 5000, 5000, 5000, 2500, 2500, 2500, 2000, 3334, 2000, 2000, 1250, 1250 };
+
+    /// <summary>FUN_140528f90 (item.cpp): the enchant gauge step of the next level (<paramref name="level"/> + 1): with a
+    /// charge, version 0 reads the first rate table and version 1 the second (any other version 0); without a charge the
+    /// second. 0 past level 15.</summary>
+    public static int EnchantStep(int level, int charge, int version)
+    {
+        int lv = level + 1;
+        if ((uint)(lv - 1) >= 15) return 0;
+        if (charge != 0) return version == 0 ? Rates20[lv] : version == 1 ? Rates38[lv] : 0;
+        return Rates38[lv];
+    }
+
+}

@@ -88,6 +88,7 @@ public sealed class GameTables
         statNames = CommonTexts(packs, "table/statstringtable.xml", s.Table("stringstatname", "name"));
         statOptions = Options(packs, "table/statstringtable.xml");
         specialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", s.Table("stringspecialabilityname", "name"));
+        ItemOptions = new Items.ItemOptionTables(packs, s.Table("stringstatname", "name"), s.Table("stringspecialabilityname", "name"));
         // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
         XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
         Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
@@ -198,6 +199,9 @@ public sealed class GameTables
     public readonly Items.GachaBoxTable GachaBoxes = Ms2.Ui.Items.GachaBoxTable.Empty;
     /// <summary>table/itemSocket.xml (CItemSocketTable); empty without data.</summary>
     public readonly Items.ItemSocketTable ItemSockets = Ms2.Ui.Items.ItemSocketTable.Empty;
+    /// <summary>The stat and special ability definitions, CItemOptionTable's random and variation rows and
+    /// CItemEnchantLimitTable; empty without data.</summary>
+    public readonly Items.ItemOptionTables ItemOptions = Ms2.Ui.Items.ItemOptionTables.Empty;
     /// <summary>itemmodel/*.xml (CItemDataTable::GetModel); empty without data.</summary>
     public readonly Items.ItemModelTable ItemModels = Ms2.Ui.Items.ItemModelTable.Empty;
     readonly Dictionary<int, float> equipmentSellRates = new();

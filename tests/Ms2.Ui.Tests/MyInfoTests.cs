@@ -377,6 +377,65 @@ public class MyInfoTests
         ((IEnumerable<object>)data["extraDescription"]).Cast<Dictionary<string, object>>().Select(r => r["text"] + " #" + r["color"]).ToList();
 
     [Test]
+    public void ItemStatusIsTheClientsOptionRows()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        var t = m.Tables;
+        ItemTooltip Tip(EquipItem r, int flags = 0x200) { var tip = new ItemTooltip(m, flags); tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, t.Items)); return tip; }
+        string Status(ItemTooltip tip) => tip.Data.TryGetValue("itemStatus", out var v) ? (string)v : null;
+        const string space = "<font size='3'>\n</font>";
+        string S(int stat) => t.StatName(stat);
+        string V(int stat, int v) => Ms2.Quest.ClientFormat.Format(t.ItemOptions.StatValueText(stat), v);   // FUN_140631600
+        string Sp(int tenths) => Ms2.Quest.ClientFormat.Format(t.ItemOptions.SpecialValueText(7), tenths / 10.0f);   // a rate special
+
+        // 15000001 (level 10, random option 15000001; its data has stats 0x1b / 0x1c, so kind 0 skips them)
+        var weapon = new EquipItem { Id = 15000001, Uid = 10, Rarity = 2, Amount = 1 };
+        weapon.Options.Stat[0][0x1b] = 10; weapon.Options.Stat[0][0x1c] = 20; weapon.Options.Stat[0][0x17] = 5;
+        // CAtlMap order: bin key % 17, the newest first in a bin: cap (0x11) and str (0) share bin 0
+        weapon.Options.Stat[2][1] = 12; weapon.Options.Stat[2][0] = 18; weapon.Options.Stat[2][0x11] = 8;
+        weapon.Options.Special[2][7] = 26;
+        // enchant rates (value / 1000) of the kind 0 values: 0.1 of 5 rounds to 0, 1.0 of 10 is 10
+        weapon.Enchant.Options[0x1b] = 1000; weapon.Enchant.Options[0x17] = 100;
+        var full = Status(Tip(weapon));
+        TestContext.WriteLine("full: " + full.Replace("\n", "\\n"));
+        Assert.That(full, Is.EqualTo(
+            "<font color='#ffffff'>Basic Attributes\n  • " + V(0x17, 5) + "\n</font>" + space +
+            // str 18 and finalAdditionalDamage 26 are the last value of their variation rows (1010153, 1010008)
+            "<font color='#91a8ff'>Bonus Attributes\n  • " + V(0x11, 8) + "\n  <font color='#d659ff'>• " + V(0, 18) + " (Max)</font>\n" +
+            "  • " + V(1, 12) + "\n  <font color='#d659ff'>• " + Sp(26) + " (Max)</font>\n</font>" + space +
+            "<font color='#ffd200'>Enchantment Effects\n  • " + Ms2.Quest.ClientFormat.Format(t.Common("s_word_stat_increase_near_zero"), S(0x17)) + "\n  • " + V(0x1b, 10) + "\n</font>"));
+        // level 10 is below its enchant limit: no gauge
+        Assert.That(Tip(weapon).Data.ContainsKey("itemEnchantExpString"), Is.False);
+        // the compact block: 15000001 has no socketDataId (the Lua max count, STILL-OPEN), so no member
+        Assert.That(Status(Tip(weapon, 0x800)), Is.Null);
+
+        // a skin with socketDataId 1002 (max 2): 2 options less its own stat 0x14, no random option; flag 0x4000 hides the sockets
+        var skin = new EquipItem { Id = 11300379, Uid = 13, Rarity = 1, Amount = 1 };
+        skin.Options.Stat[0][0x14] = 5; skin.Options.Special[0][7] = 10;
+        Assert.That(Status(Tip(skin, 0x800)), Is.EqualTo("<font color='#ffffff'>Random Attributes: 1</font>\n<font color='#ffffff'>+2 Sockets</font>"));
+        Assert.That(Status(Tip(skin, 0x4800)), Is.EqualTo("<font color='#ffffff'>Random Attributes: 1</font>"));
+        Assert.That(Status(Tip(skin, 0x10800)), Is.EqualTo("<font color='#ffffff'>Basic Attributes\n  • " + Sp(10) + "\n</font>"),
+            "0x10000 takes the option block");
+
+        // the unlimited block: this data's English s_tooltip_itemoption_unlimited is a placeholder without fields
+        var limit = new EquipItem { Id = 15000001, Uid = 11, Rarity = 2, Amount = 1 };
+        limit.Options.Stat[0][0x1c] = 20;
+        limit.LimitBreak.Level = 2; limit.LimitBreak.Stat[0x1c] = 500; limit.LimitBreak.Stat[0x17] = 30; limit.LimitBreak.Special[5] = 15;
+        Assert.That(Status(Tip(limit)), Is.EqualTo(t.Common("s_tooltip_itemoption_unlimited")));
+
+        // 15000307 (rank 4) can be enchanted: +3 with 5000 charge, step 5000 (the version 1 table): 1 of 2, 50%
+        var gauge = new EquipItem { Id = 15000307, Uid = 12, Rarity = 4, Amount = 1 };
+        gauge.Enchant.Level = 3; gauge.Enchant.Charge = 5000; gauge.Enchant.Version = 1;
+        var g = Tip(gauge);
+        Assert.That(Status(g), Is.EqualTo("<font color='#ffd200'>Enchantment Experience\n</font>gauge:\n\n"));
+        Assert.That(g.Data["itemEnchantExpString"], Is.EqualTo("1 / 2"));
+        Assert.That(g.Data["itemEnchantExpPercent"], Is.EqualTo(50));
+        gauge.Enchant.Version = 0;                          // NeedsChargeVersionUpdate
+        Assert.That(Status(Tip(gauge)), Is.EqualTo("<font color='#ffd200'>Enchantment Experience Reset & Material Refund Available\n</font>gauge:\n\n"));
+    }
+
+    [Test]
     public void ExtraDescriptionIsTheClientsRows()
     {
         var m = NewModel();

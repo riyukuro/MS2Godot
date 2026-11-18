@@ -61,6 +61,18 @@ public sealed class ItemSocketTable
     static bool SocketFeature(ItemData d, Func<int, bool> feature) => feature(0x2e) && (!d.HasSkinType || feature(0x5e));
 
     /// <summary>
+    /// CItemSocketTable::GetMaxSocketCount (:1448): 0 with the socket feature off or for a Lapenshard; without a
+    /// socketDataId the client asks its Lua CalcItemSocketMaxCount (equip subtype, grade, level limit, skin type):
+    /// STILL-OPEN, null here; else the row's maxCount, 0 without the row.
+    /// </summary>
+    public uint? GetMaxSocketCount(ItemData d, int grade, Func<int, bool> feature)
+    {
+        if (d == null || !SocketFeature(d, feature) || d.IsLapenshard) return 0;
+        if (d.SocketDataId == 0) return null;
+        return Find(d.SocketDataId, grade)?.MaxCount ?? 0;
+    }
+
+    /// <summary>
     /// FUN_14062d980 (:1512), the transfer's m_b41 (CItemTransfer::InitFromItem): true without a socketDataId; false
     /// without its row; else whether the max count (GetMaxSocketCount :1448) is above the initial count
     /// (GetInitialSocketCount :1473).

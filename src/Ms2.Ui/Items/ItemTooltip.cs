@@ -8,7 +8,7 @@ namespace Ms2.Ui.Items;
 /// <see cref="Flags"/> is m_48: 0x100 another player's equipment, 0x200 the own one, 0x80 the bag, 0x40 / 2 a shop.
 /// The builders not listed in <see cref="Fill"/> are not ported yet; their members are left out.
 /// </summary>
-public sealed class ItemTooltip
+public sealed partial class ItemTooltip
 {
     public readonly AsTooltip Data = new();
     /// <summary>m_48.</summary>
@@ -64,6 +64,7 @@ public sealed class ItemTooltip
         Data["itemGrade"] = item.Rarity;                                          // SetItemGrade
         Data["itemKinds"] = Kinds(d.IconCode);                                    // FUN_1409d5610
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
+        SetItemStatus(item);                                                      // FUN_1409c7fc0
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
         SetSellPrice(item);                                                       // SetItemSellPrice
         SetNotExchange(item);
