@@ -9,7 +9,13 @@ public static class TextMeasure
 {
     /// <summary>(font class or name, size, line) → width in pixels.</summary>
     public static Func<string, double, string, double> Width = (font, size, s) => s.Sum(ch => ch < 0x2e80 ? (ch == ' ' ? 0.3 : char.IsUpper(ch) ? 0.62 : 0.52) : 1.0) * size;
-    public static double LineHeight(double size, double leading) => Math.Round(size * 1.2) + leading;
+    /// <summary>
+    /// (font class or name) → the font's ascent + descent per pixel of font size, when the host knows the font's layout.
+    /// A line is then IRound(ascent + descent) twips tall (Scaleform's FinalizeLine); without it, a whole-pixel 1.2 em.
+    /// </summary>
+    public static Func<string, double> HeightRatio;
+    public static double LineHeight(string font, double size, double leading) =>
+        (HeightRatio == null ? Math.Round(size * 1.2) : Math.Round(HeightRatio(font) * size * 20) / 20) + leading;
 }
 
 [AsClass("flash.text.TextFormat")]
@@ -122,7 +128,7 @@ public class AsTextField : AsInteractiveObject
 
     double Size => Format?.size is { } s && !Rt.IsNullish(s) ? Rt.ToNumber(s) : 12;
     string FontName => Format?.font is string f ? f : "";
-    double Leading => Format?.leading is { } l && !Rt.IsNullish(l) ? Rt.ToNumber(l) : 0;
+    public double Leading => Format?.leading is { } l && !Rt.IsNullish(l) ? Rt.ToNumber(l) : 0;
 
     void Changed() { Version++; if (autoSizeMode != "none") AutoSize(); }
 
@@ -170,11 +176,37 @@ public class AsTextField : AsInteractiveObject
         return (new List<string> { t + "…" }, sc);
     }
 
+    /// <summary>
+    /// The top of the first drawn line of <paramref name="lineCount"/> lines, in field units: DocView::Format's vertical
+    /// alignment (sfr_render_03b.cpp:2453-2556). With autoSize the view follows the text, so the text starts at the top
+    /// gutter. Otherwise a single-line field with a text auto size (TextFieldEx.setTextAutoSize) and no vertical alignment
+    /// is centred, and a centred or bottom-aligned text is placed in the view less its 2 px gutters: the text's height
+    /// (whole pixels) when it fits, else the lines that fit counted up from the bottom scroll line.
+    /// </summary>
+    public double FirstLineTop(int lineCount)
+    {
+        double top = Box.Y + 2, maxH = Box.H - 4;
+        if (autoSizeMode != "none") return top;
+        string valign = VerticalAlign;
+        if (TextAutoSize != "none" && !multiline && valign == "none") valign = "center";
+        if (valign is not ("center" or "bottom")) return top;
+        double line = TextMeasure.LineHeight(FontName, Size, 0), lead = Leading;
+        double textH = lineCount == 0 ? 0 : Math.Floor(lineCount * (line + lead) - lead);
+        if (textH < maxH) return valign == "center" ? top + (maxH / 2 - textH / 2) : top + maxH - textH;
+        double vis = 0;
+        for (int i = 0; i < lineCount; i++)
+        {
+            double lh = line + (i != 0 ? lead : 0);
+            if (vis + lh <= maxH) vis += lh; else break;
+        }
+        return valign == "bottom" ? top + maxH - vis : top + (maxH / 2 - vis / 2);
+    }
+
     public string FontClass => FontName;
     public double FontSize => Size;
 
     public double TextW() => Lines().Select(l => TextMeasure.Width(FontName, Size, l)).DefaultIfEmpty(0).Max();
-    public double TextH() { var n = Lines().Count; return Text.Length == 0 ? 0 : n * TextMeasure.LineHeight(Size, Leading) - Leading; }
+    public double TextH() { var n = Lines().Count; return Text.Length == 0 ? 0 : n * TextMeasure.LineHeight(FontName, Size, Leading) - Leading; }
 
     void AutoSize()
     {
@@ -220,27 +252,30 @@ public class AsTextField : AsInteractiveObject
     [As] public int getLineLength(int i) => getLineText(i).Length;
     [As] public int getLineOffset(int i) { var l = Lines(); int o = 0; for (int k = 0; k < i && k < l.Count; k++) o += l[k].Length; return o; }
     [As] public int getLineIndexOfChar(int c) { var l = Lines(); int o = 0; for (int k = 0; k < l.Count; k++) { o += l[k].Length; if (c < o) return k; } return -1; }
-    [As] public int getLineIndexAtPoint(double x, double y) => Math.Clamp((int)((y - 2) / TextMeasure.LineHeight(Size, Leading)), 0, numLines - 1);
+    [As] public int getLineIndexAtPoint(double x, double y) => Math.Clamp((int)((y - 2) / TextMeasure.LineHeight(FontName, Size, Leading)), 0, numLines - 1);
     [As] public int getCharIndexAtPoint(double x, double y) => -1;
     [As] public AsRectangle getCharBoundaries(int i)
     {
         if (i < 0 || i >= Text.Length) return null;
         double x = 2 + TextMeasure.Width(FontName, Size, Text[..i]);
-        return AsRectangle.New(R, x, 2, TextMeasure.Width(FontName, Size, Text[i].ToString()), TextMeasure.LineHeight(Size, 0));
+        return AsRectangle.New(R, x, 2, TextMeasure.Width(FontName, Size, Text[i].ToString()), TextMeasure.LineHeight(FontName, Size, 0));
     }
     [As] public AsTextLineMetrics getLineMetrics(int i)
     {
         var m = (AsTextLineMetrics)R.GetClass("flash.text.TextLineMetrics").Construct();
         var l = Lines(); var s = i >= 0 && i < l.Count ? l[i] : "";
-        m.width = TextMeasure.Width(FontName, Size, s); m.height = TextMeasure.LineHeight(Size, Leading);
+        m.width = TextMeasure.Width(FontName, Size, s); m.height = TextMeasure.LineHeight(FontName, Size, Leading);
         m.ascent = Size * 0.9; m.descent = Size * 0.25; m.leading = Leading; m.x = 2;
         return m;
     }
     [As] public int getFirstCharInParagraph(int c) => 0;
     [As] public int getParagraphLength(int c) => Text.Length;
 
-    [As] public new double width { get => Box.W * scaleX; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, value / (scaleX == 0 ? 1 : scaleX), Box.H); Version++; } }
-    [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value / (scaleY == 0 ? 1 : scaleY)); Version++; } }
+    // DisplayObject.widthSet / heightSet call the object's SetWidth / SetHeight; TextField's (sfr_gfx_03f.cpp:792 / :364)
+    // set the view rectangle's width / height to the value from its left / top, in the field's own pixels: the field's
+    // scale is not divided out (CLIK's Constraints.update relies on it: a counter-scaled TextField gets the width unadjusted)
+    [As] public new double width { get => Box.W * scaleX; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, value, Box.H); Version++; } }
+    [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value); Version++; } }
 
     public string autoSizeMode = "none";
     [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Changed(); } }
@@ -283,9 +318,9 @@ public class AsTextField : AsInteractiveObject
     [As] public int caretIndex => SelEnd;
     [As] public int scrollV { get; set; } = 1;
     [As] public int scrollH { get; set; }
-    [As] public int maxScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(Size, Leading))); return Math.Max(1, numLines - vis + 1); } }
+    [As] public int maxScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Max(1, numLines - vis + 1); } }
     [As] public int maxScrollH => 0;
-    [As] public int bottomScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(Size, Leading))); return Math.Min(numLines, scrollV + vis - 1); } }
+    [As] public int bottomScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Min(numLines, scrollV + vis - 1); } }
     [As] public AsObject getImageReference(string id) => null;
 
     /// <summary>Typed input from the player: inserts at the caret, honours maxChars and restrict.</summary>
