@@ -17,6 +17,8 @@ jobs:
           dotnet-version: |
             8.0.x
             10.0.x
+      - name: No generated UI code
+        run: tools/hooks/check-generated.sh --tracked
       - name: Build
         run: dotnet build MS2Godot.sln --configuration Release
       - name: Test (tests that need game data skip)

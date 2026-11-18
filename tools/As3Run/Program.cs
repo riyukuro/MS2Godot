@@ -20,6 +20,8 @@ for (int i = 0; i < args.Length; i++)
         case "--tree": tree = true; break;
         case "--out": outFile = args[++i]; break;
         case "--only": only = args[++i]; break;
+        case "--gen": Console.Error.WriteLine($"compiled bodies: {GeneratedCode.LoadAssembly(args[++i])} blocks"); break;
+        case "--oracle": Interp.UseOracle = true; break;
         default: pos.Add(args[i]); break;
     }
 }
@@ -152,6 +154,52 @@ switch (pos[0])
         }
         return 0;
     }
+    case "parity":
+    {
+        // every movie twice: the interpreter (oracle) and the compiled bodies (--gen); same errors and display tree?
+        var keys = byKey.Keys.Where(k => only == null || k.Contains(only)).OrderBy(k => k).ToList();
+        int same = 0, total = 0;
+        var rows = new StringBuilder();
+        double tOracle = 0, tGen = 0;
+        foreach (var k in keys)
+        {
+            total++;
+            string Snap(bool oracle, out double secs)
+            {
+                Interp.UseOracle = oracle;
+                var t = Stopwatch.StartNew();
+                var sb = new StringBuilder();
+                try
+                {
+                    var (rt, p, ok) = RunMovie(k, null);
+                    secs = t.Elapsed.TotalSeconds;
+                    sb.AppendLine($"constructed={ok} frames={p.FrameCount}");
+                    foreach (var e in rt.Errors) sb.AppendLine("ERROR " + e);
+                    foreach (var (m, n) in rt.Missing.OrderBy(x => x.Key, StringComparer.Ordinal)) sb.AppendLine($"MISSING {m} x{n}");
+                    if (p.Stage != null) DumpTo(sb, p.Stage, 0);
+                }
+                catch (Exception e) { secs = t.Elapsed.TotalSeconds; sb.AppendLine("LOADFAIL " + e.GetType().Name + ": " + e.Message); }
+                return sb.ToString();
+            }
+            var a = Snap(true, out var ta); var b = Snap(false, out var tb);
+            tOracle += ta; tGen += tb;
+            if (a == b) { same++; rows.AppendLine($"{k}	SAME	{ta:F2}s	{tb:F2}s"); }
+            else
+            {
+                var la = a.Split('\n'); var lb = b.Split('\n');
+                int d = 0; while (d < la.Length && d < lb.Length && la[d] == lb[d]) d++;
+                rows.AppendLine($"{k}	DIFF	line {d}	oracle: {(d < la.Length ? la[d] : "<end>")}	gen: {(d < lb.Length ? lb[d] : "<end>")}");
+            }
+            Console.Error.Write($"\r{total}/{keys.Count} same={same}   ");
+        }
+        Interp.UseOracle = false;
+        var head = $"movies {total}, same errors+missing+display tree after {frames} frames: {same}; time oracle {tOracle:F0}s, compiled {tGen:F0}s; calls compiled {Interp.CompiledCalls}, interpreted {Interp.InterpretedCalls}";
+        if (outFile != null) File.WriteAllText(outFile, head + "\n\n" + rows);
+        Console.Error.WriteLine();
+        Console.WriteLine(head);
+        foreach (var l in rows.ToString().Split('\n').Where(l => l.Contains("\tDIFF")).Take(30)) Console.WriteLine(l);
+        return 0;
+    }
     case "scan":
     {
         var keys = byKey.Keys.Where(k => only == null || k.Contains(only)).OrderBy(k => k).ToList();
@@ -209,6 +257,15 @@ static void Dump(AsDisplayObject o, int depth)
     var extra = o switch { AsTextField t => $" text=\"{Trunc(t.Text)}\"", AsMovieClip mc => $" frame={mc.currentFrame}/{mc.totalFrames} scope={mc.Scope?.Key} labels={string.Join(",", (mc.TL?.Labels ?? new()).Take(6).Select(l => l.Name))}", _ => "" };
     Console.WriteLine($"{new string(' ', depth * 2)}{o.Class.Name} '{o.InstanceName}' vis={o.IsVisible} {b}{extra}{(o.HitTestDisabled ? " hitDisabled" : "")}{(o.Blend != "normal" ? " blend=" + o.Blend : "")}{(o.Filters != null ? " filters" : "")}");
     if (o is AsContainer c) foreach (var ch in c.Children) Dump(ch, depth + 1);
+}
+
+static void DumpTo(StringBuilder sb, AsDisplayObject o, int depth)
+{
+    if (depth > 12) return;
+    var b = o.GetBounds(null);
+    var extra = o switch { AsTextField t => $" text=\"{Trunc(t.Text)}\"", AsMovieClip mc => $" frame={mc.currentFrame}/{mc.totalFrames}", _ => "" };
+    sb.AppendLine($"{new string(' ', depth * 2)}{o.Class.Name} '{o.InstanceName}' vis={o.IsVisible} {b}{extra}");
+    if (o is AsContainer c) foreach (var ch in c.Children) DumpTo(sb, ch, depth + 1);
 }
 
 static string Trunc(string s) => s.Length > 40 ? s[..40] + "…" : s.Replace("\r", "\\r");

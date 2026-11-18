@@ -74,9 +74,12 @@ public sealed class AbcFile
 
     int p; byte[] b;
 
+    /// <summary>The SHA-1 of the block's bytes (hex): the key translated code is registered under.</summary>
+    public string Hash;
+
     public static AbcFile Parse(byte[] data)
     {
-        var f = new AbcFile { b = data };
+        var f = new AbcFile { b = data, Hash = Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(data)) };
         f.Read();
         f.b = null;
         return f;

@@ -17,6 +17,11 @@ public static class Interp
         return string.Join(" < ", Enumerable.Range(0, Math.Min(n, calls.Count)).Select(i => calls[calls.Count - 1 - i]));
     }
 
+    /// <summary>Run every method in the interpreter even when translated code is loaded (the A/B oracle).</summary>
+    public static bool UseOracle;
+    /// <summary>Method calls run by translated code and by the interpreter (A/B bookkeeping).</summary>
+    public static long CompiledCalls, InterpretedCalls;
+
     public static object Run(AbcMethod m, object self, object[] args)
     {
         if (!m.NativeResolved)
@@ -25,6 +30,13 @@ public static class Interp
             if (m.Info.Body != null && m.Name.StartsWith("scaleform.gfx.", StringComparison.Ordinal) && m.Ctx.Rt.Natives.TryGetValue(m.Name, out var ov)) m.NativeOverride = ov;
         }
         if (m.NativeOverride != null) return m.NativeOverride.Invoke(self, args);
+        if (m.Compiled != null && !UseOracle)
+        {
+            if (++depth > 400) { depth--; throw m.Ctx.Rt.MakeError("Error", "Error #1023: Stack overflow occurred.", 1023); }
+            (calls ??= new()).Add(m.Name); OnCall?.Invoke(m.Name); CompiledCalls++;
+            try { return m.Compiled(m, self, args); }
+            finally { depth--; calls.RemoveAt(calls.Count - 1); }
+        }
         var info = m.Info;
         var body = info.Body;
         if (body == null)
@@ -36,7 +48,7 @@ public static class Interp
             return Rt.Undef;
         }
         if (++depth > 400) { depth--; throw m.Ctx.Rt.MakeError("Error", "Error #1023: Stack overflow occurred.", 1023); }
-        (calls ??= new()).Add(m.Name); OnCall?.Invoke(m.Name);
+        (calls ??= new()).Add(m.Name); OnCall?.Invoke(m.Name); InterpretedCalls++;
         try { return Exec(m, self, args); }
         finally { depth--; calls.RemoveAt(calls.Count - 1); }
     }
@@ -429,7 +441,7 @@ public static class Interp
     }
 
     /// <summary>A C# failure inside a native (bad cast, null) as an AS error, so AS code can catch it.</summary>
-    static AsThrow Wrap(Runtime rt, Exception e) => e switch
+    internal static AsThrow Wrap(Runtime rt, Exception e) => e switch
     {
         InvalidCastException => rt.TypeError("Error #1034: Type Coercion failed: " + e.Message),
         NullReferenceException => rt.TypeError("Error #1009: Cannot access a property or method of a null object reference. (native) " + e.StackTrace?.Split('\n').FirstOrDefault()?.Trim()),
@@ -437,9 +449,9 @@ public static class Interp
         _ => rt.MakeError("Error", "internal " + e.GetType().Name + ": " + e.Message),
     };
 
-    static string Qual(in Name n) => n.Set != null && n.Set.Length > 0 && n.Set[0].Uri.Length > 0 && n.Set[0].Kind == NsKind.Public && n.Set.Length == 1 ? n.Set[0].Uri + "." + n.Local : n.Local;
+    internal static string Qual(in Name n) => n.Set != null && n.Set.Length > 0 && n.Set[0].Uri.Length > 0 && n.Set[0].Kind == NsKind.Public && n.Set.Length == 1 ? n.Set[0].Uri + "." + n.Local : n.Local;
 
-    static bool ScopeHas(Runtime rt, object o, in Name n, bool with)
+    internal static bool ScopeHas(Runtime rt, object o, in Name n, bool with)
     {
         if (o is not AsObject ao) return false;
         if (ao.Traits?.Find(n) != null) return true;
@@ -447,19 +459,19 @@ public static class Interp
         return false;
     }
 
-    static object GlobalOf(AbcMethod m, List<(object Obj, bool With)> scopes)
+    internal static object GlobalOf(AbcMethod m, List<(object Obj, bool With)> scopes)
     {
         var g = m.Scope; while (g?.Parent != null) g = g.Parent;
         return g?.Obj ?? scopes[0].Obj;
     }
 
-    static object CoerceSlot(Runtime rt, AsObject o, int slot, object v)
+    internal static object CoerceSlot(Runtime rt, AsObject o, int slot, object v)
     {
         var types = o.Traits?.SlotTypes;
         return types != null && slot < types.Count ? rt.CoerceTo(types[slot], v) : v;
     }
 
-    static AsClass TypeClass(Runtime rt, AbcContext ctx, int mn)
+    internal static AsClass TypeClass(Runtime rt, AbcContext ctx, int mn)
     {
         if (mn == 0) return null;
         var nm = ctx.NameAt(mn);
@@ -471,7 +483,7 @@ public static class Interp
         return v as AsClass;
     }
 
-    static object Coerce(Runtime rt, AbcContext ctx, int mn, string t, object v)
+    internal static object Coerce(Runtime rt, AbcContext ctx, int mn, string t, object v)
     {
         switch (t)
         {
@@ -486,7 +498,7 @@ public static class Interp
         return v;
     }
 
-    static bool InstanceOf(Runtime rt, object v, object t)
+    internal static bool InstanceOf(Runtime rt, object v, object t)
     {
         if (t is AsClass c) return rt.IsType(v, c);
         if (t is AsFunction f && v is AsObject o && f.GetDynamic("prototype") is AsObject proto)
@@ -496,14 +508,14 @@ public static class Interp
 
     // ---- super ---------------------------------------------------------------------------------------------
 
-    static Binding SuperBinding(Runtime rt, AbcMethod m, in Name n)
+    internal static Binding SuperBinding(Runtime rt, AbcMethod m, in Name n)
     {
         var sup = m.Declaring?.Super;
         if (sup == null) throw rt.ReferenceError($"no super class for {n.Local}");
         return sup.InstanceTraits.Find(n);
     }
 
-    static object SuperGet(Runtime rt, AbcMethod m, object obj, in Name n)
+    internal static object SuperGet(Runtime rt, AbcMethod m, object obj, in Name n)
     {
         var b = SuperBinding(rt, m, n);
         if (b == null) return rt.GetProperty(obj, n);
@@ -515,7 +527,7 @@ public static class Interp
         };
     }
 
-    static void SuperSet(Runtime rt, AbcMethod m, object obj, in Name n, object v)
+    internal static void SuperSet(Runtime rt, AbcMethod m, object obj, in Name n, object v)
     {
         var b = SuperBinding(rt, m, n);
         if (b == null) { rt.SetProperty(obj, n, v); return; }
@@ -523,7 +535,7 @@ public static class Interp
         if (b.Kind is BindingKind.Slot or BindingKind.Const) ((AsObject)obj).Slots[b.Slot] = v;
     }
 
-    static object SuperCall(Runtime rt, AbcMethod m, object obj, in Name n, object[] a)
+    internal static object SuperCall(Runtime rt, AbcMethod m, object obj, in Name n, object[] a)
     {
         var b = SuperBinding(rt, m, n);
         if (b == null) return rt.CallProperty(obj, n, a);
@@ -533,21 +545,21 @@ public static class Interp
 
     // ---- for-in --------------------------------------------------------------------------------------------
 
-    static int EnumNext(object o, int i)
+    internal static int EnumNext(object o, int i)
     {
         if (o is not AsObject ao) return 0;
         var keys = ao.EnumKeys();
         return i < keys.Count ? i + 1 : 0;
     }
 
-    static object EnumName(Runtime rt, object o, int i)
+    internal static object EnumName(Runtime rt, object o, int i)
     {
         if (o is not AsObject ao) return Rt.Undef;
         var keys = ao.EnumKeys();
         return i >= 1 && i <= keys.Count ? keys[i - 1] : Rt.Undef;
     }
 
-    static object EnumValue(Runtime rt, object o, int i)
+    internal static object EnumValue(Runtime rt, object o, int i)
     {
         var k = EnumName(rt, o, i);
         if (Rt.IsUndef(k)) return k;

@@ -28,6 +28,7 @@ public sealed class AbcContext
         Classes = new AsClass[abc.Instances.Length];
         code = new Code[abc.Methods.Length];
         activationTraits = new TraitTable[abc.Methods.Length];
+        CompiledBodies = GeneratedCode.Find(abc.Hash);
     }
 
     public Ns NsAt(int i) => i > 0 && i < ns.Length ? ns[i] : Ns.Public;
@@ -176,6 +177,9 @@ public sealed class AbcContext
 
     // ---- decoded bodies -----------------------------------------------------------------------------------
 
+    /// <summary>The translated method bodies registered for this block's hash, by method index (null: none).</summary>
+    public CompiledBody[] CompiledBodies;
+
     public sealed class Code
     {
         public byte[] Op; public int[] A, B, Target; public int[][] Cases; public int[] Off;
@@ -227,7 +231,13 @@ public sealed class AbcMethod : MethodImpl
     public readonly MethodInfo Info;
     public readonly Scope Scope;
     public readonly AsClass Declaring;
-    public AbcMethod(AbcContext ctx, MethodInfo info, Scope scope, AsClass declaring) { Ctx = ctx; Info = info; Scope = scope; Declaring = declaring; Name = declaring?.Name + "/m" + info.Index; }
+    public AbcMethod(AbcContext ctx, MethodInfo info, Scope scope, AsClass declaring)
+    {
+        Ctx = ctx; Info = info; Scope = scope; Declaring = declaring; Name = declaring?.Name + "/m" + info.Index;
+        Compiled = ctx.CompiledBodies is { } cb && info.Index < cb.Length ? cb[info.Index] : null;
+    }
+    /// <summary>The translated body of this method (<see cref="GeneratedCode"/>), null to interpret it.</summary>
+    public readonly CompiledBody Compiled;
     /// <summary>The runtime's native body for this method, if any: Scaleform replaces the stub bodies the movies carry
     /// for scaleform.gfx.* (e.g. Extensions.isScaleform returns false in the SWF). Resolved on the first call.</summary>
     internal MethodImpl NativeOverride;
