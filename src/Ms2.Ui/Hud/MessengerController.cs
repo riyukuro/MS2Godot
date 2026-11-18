@@ -236,12 +236,14 @@ public sealed class MessengerController : UiController
         return subjectIndex.TryGetValue(FirstSubjectIndex(), out var f) ? f : 0x1b;
     }
 
+    /// <summary>DAT_143aef3b8 (texttohtml.cpp:48), the super chat icon of an item without its own.</summary>
+    const string SuperChatDefaultIcon = "export_common_icon_megaphone6";
+
     static uint Price(uint value, uint rate) => (uint)(value * (1.0 - rate / 10000.0) + 1e-06);    // FUN_140482050 (gamerule.cpp:360)
 
     /// <summary>
     /// RebuildSubjectList (:4518): the target list's rows ({frame, price, originPrice, label, color}) for the types not
-    /// hidden, at most 8 rows shown, the saved target selected. The super chat row (feature 0x19) needs the selected super
-    /// chat item's icon (FUN_1416639e0, FUN_14183ea40), which is not modelled: with the feature on it is left out.
+    /// hidden, at most 8 rows shown, the saved target selected.
     /// </summary>
     void RebuildSubjectList()
     {
@@ -254,6 +256,11 @@ public sealed class MessengerController : UiController
         var c = t.ChatTextColors;
         void Row(params (string, object)[] m) { if (dp != null) Host.Invoke(dp, "push", Host.Obj(m)); }
         string L(string key) => Host.Player.Translate?.Invoke(key) ?? key;                      // GFxManager::Localize
+        // the super chat row (feature 0x19): the icon of the selected super chat item (MyPC FUN_1416639e0) when the
+        // inventory holds it (FUN_140a5e2e0), else of item 0. The inventory is not modelled, so it is item 0, whose icon
+        // is the default one (FUN_14183ea40, texttohtml.cpp:334: DAT_143aef3b8)
+        if (!IsTypeHidden(Super))
+            Row(("frame", "super"), ("iconPath", SuperChatDefaultIcon), ("label", L("$s_talkpanelsetting_super")), ("color", c["chatTextSuper"]));
         if (!IsTypeHidden(World))
             Row(("frame", "world"), ("price", Price(t.MeratConsumeWorldChat, WorldChatRate)), ("originPrice", t.MeratConsumeWorldChat),
                 ("label", L("$s_talkpanelsetting_world")), ("color", c["chatTextWorld"]));

@@ -88,7 +88,13 @@ public sealed class UiModel
 
     public void Notify(StatusEvent e) => Changed?.Invoke(e);
     public DateTime Now => ServerTime?.Invoke() ?? DateTime.Now;
-    public bool IsFeatureEnabled(int id) => Features.Contains(id);
+    /// <summary>
+    /// CFeatureManager::IsFeatureEnabled (featuremanager.cpp:845): 0 is off, 1 is on, any other id is its name's level
+    /// within the server type's (<see cref="FeatureEnabledByName"/>, names by <see cref="FeatureTable"/>). A host without
+    /// the feature table uses <see cref="Features"/>.
+    /// </summary>
+    public bool IsFeatureEnabled(int id) => FeatureEnabledByName == null ? Features.Contains(id)
+        : id == 1 || (id > 1 && id <= FeatureTable.Names.Length && FeatureEnabledByName(FeatureTable.Names[id - 1]));
     /// <summary>
     /// CFeatureManager by name (table/feature.xml level within the server type's level): what the movies' Common class is
     /// told (<see cref="FeatureTable.EnabledString"/>). Null: the host has no feature table and the movies see none on.

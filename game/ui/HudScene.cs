@@ -280,7 +280,7 @@ public partial class HudScene : Node
     {
         CloseAllDialogs();
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the system menu runs interpreted");
-        menuModel ??= new UiModel(new GameTables(assets.Packs, "en"));
+        menuModel ??= NewModel();
         var c = new SystemMenuController
         {
             MapType = menuMapType,
@@ -358,7 +358,7 @@ public partial class HudScene : Node
         if (page != 0) optionDialog.SetTab(page);
         if (!optionHost.Vfunc55) return;
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the options dialog runs interpreted");
-        menuModel ??= new UiModel(new GameTables(assets.Packs, "en"));
+        menuModel ??= NewModel();
         if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
         var c = new GameOptionController { Dialog = optionDialog };
         optionHost.Movie = c;
@@ -458,7 +458,7 @@ public partial class HudScene : Node
         MinimapInfo info = null;
         try { info = MinimapInfo.Parse(System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{xblock}.xml")))); }
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
-        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"));
+        var model = NewModel();
         model.Field.Name = MapName();
         model.Field.Channel = (int)data.Player.Channel;
         model.Field.Channels = new[] { (int)data.Player.Channel };
@@ -780,7 +780,7 @@ public partial class HudScene : Node
             PageCount = (int)constants.Float("QuestGuidePageCount", 4),
             MaxCount = (int)constants.Float("QuestGuideMaxCount", 40),
         };
-        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"));
+        var model = NewModel();
         questGuide = new MovieDialog(assets, questGuideSide, model, GetWindow().Size);
         ui.AddChild(questGuide);
     }
@@ -816,8 +816,7 @@ public partial class HudScene : Node
             // CFeatureManager by id for the bold words' dictionary links (feature 0x2f)
             questTable.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length
                                                     && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]);
-            questLogModel = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"))
-            { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
+            questLogModel = NewModel();
             var fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
             questLogSide = new Ms2.Ui.Hud.QuestDialogController
             {
@@ -896,12 +895,17 @@ public partial class HudScene : Node
     UiModel hudModel;
     MovieDialog playerInfoMovie, expBarMovie, adventureBarMovie;
 
+    /// <summary>
+    /// A model for the field's movies: the tables, and the features as the client runs them (CFeatureManager by id and by
+    /// name: table/feature.xml within the Live server level, <see cref="Ms2.Ui.LobbyFeatures"/>).
+    /// </summary>
+    UiModel NewModel() => new(new GameTables(assets.Packs, "en")) { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
+
     /// <summary>The HUD movies' model: the tables, features, key tables and the player.</summary>
     void HudModel()
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
-        hudModel = new UiModel(new GameTables(assets.Packs, "en"));
-        hudModel.Features.Add(Ms2.Ui.Hud.MainPlayerInfoController.AdventureLevelFeature);
+        hudModel = NewModel();
         hudModel.Keys = new KeyTable(assets.Packs, "en");
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live : UiFixture.NewCharacterKeyTable();
@@ -919,8 +923,8 @@ public partial class HudScene : Node
 
     /// <summary>
     /// UIMainPlayerInfo (uimainplayerinfo), UIExpBar (uiexpbar) and UIAdventureLevelExpBar (uiadventurelevelexpbar), each run from its own movie with its C++ side as the
-    /// controller (Ms2.Ui.Hud). The model is the HUD's numbers (<see cref="StubHudData"/>); feature 0xbd is on, as the
-    /// adventure level bar shows.
+    /// controller (Ms2.Ui.Hud). The model is the HUD's numbers (<see cref="StubHudData"/>); feature 0xbd (the
+    /// adventure level bar) is on in the Live feature table.
     /// </summary>
     void PlayerInfo(Control ui)
     {

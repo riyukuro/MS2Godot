@@ -49,6 +49,20 @@ public class HudTests
     static string Text(UiHost h, string name, AsDisplayObject from = null) => (h.FindNamed(name, from) as AsTextField)?.Text;
 
     [Test]
+    public void FeatureIdsGoThroughTheFeatureTable()
+    {
+        // CFeatureManager::IsFeatureEnabled: 0 off, 1 on, other ids by their name (FeatureTable)
+        var m = new UiModel(GameTables.Empty) { FeatureEnabledByName = n => n == "SuperWorldChat" };
+        Assert.That(m.IsFeatureEnabled(0), Is.False);
+        Assert.That(m.IsFeatureEnabled(1), Is.True);
+        Assert.That(m.IsFeatureEnabled(0x19), Is.True);
+        Assert.That(m.IsFeatureEnabled(0x18), Is.False);
+        Assert.That(m.IsFeatureEnabled(0x118), Is.False);
+        // without the table, the ids the host listed
+        Assert.That(new UiModel(GameTables.Empty).IsFeatureEnabled(Feature.GamePad), Is.True);
+    }
+
+    [Test]
     public void TablesReadNextExpAndJobNames()
     {
         var m = Model();
@@ -259,6 +273,24 @@ public class HudTests
         c.OnKey(MessengerController.DikReturn, false);
         Assert.That(c.OnKey(0, true), Is.True);
         Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerSuperChatRowWithTheLiveFeatures()
+    {
+        var m = Model();
+        m.FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f);      // KR Live: SuperWorldChat (0x19) and ChatEmoticon on
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // super, world, channel, social, party, guild, guild megaphone; social still selected (the first of m_subjects)
+        var subject = (AsObject)h.Child("m_subject");
+        var dp = h.Get(subject, "dataProvider");
+        Assert.That(Rt.ToNumber(h.Get(dp, "length")), Is.EqualTo(7));
+        Assert.That(Rt.ToString(h.Get(h.Get(dp, "0"), "frame")), Is.EqualTo("super"));
+        Assert.That(Rt.ToString(h.Get(h.Get(dp, "0"), "iconPath")), Is.EqualTo("export_common_icon_megaphone6"));
+        Assert.That(Rt.ToNumber(h.Get(subject, "selectedIndex")), Is.EqualTo(3));
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_chatEmoticonOpen"), "visible")), Is.True);
     }
 
     [Test]
