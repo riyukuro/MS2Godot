@@ -191,12 +191,14 @@ public sealed class QuestRules
     }
 
     /// <summary>CQuestManager::vfunc_1(id, 0) (questmanager_2.cpp @0x1416c9e10): null when an input it reads is unknown.</summary>
-    public bool? CanStart(int questId) => VFunc1(questId, 0);
+    public bool? CanStart(int questId) => CanStart(questId, 0);
 
-    bool? VFunc1(int questId, int flag)
+    /// <summary>CQuestManager::vfunc_1(id, npc): with an npc, also only from the quest's start npc (FUN_1416e6100 asks it
+    /// with the talk npc).</summary>
+    public bool? CanStart(int questId, int npcId)
     {
         var u = new Tri();
-        if (!u.Pass(CanStartChecks(questId, flag, 0))) return false;
+        if (!u.Pass(CanStartChecks(questId, npcId, 0))) return false;
         var data = table.Quest(questId);
         if (data == null) return false;
         switch (data.Type)

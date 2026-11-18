@@ -601,6 +601,9 @@ public sealed partial class QuestTable
     public QuestData Quest(uint id) => quests.TryGetValue(id, out var q) ? q : null;
     public QuestData Quest(int id) => Quest((uint)id);
 
+    /// <summary>Every quest of the table, in quest id order.</summary>
+    public IEnumerable<QuestData> Quests => quests.Values;
+
     /// <summary>GetChapterIds: the chapter ids in m_chapter's order.</summary>
     public IReadOnlyList<int> ChapterIds => chapterOrder;
 
