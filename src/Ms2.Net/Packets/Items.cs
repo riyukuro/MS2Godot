@@ -24,7 +24,8 @@ public sealed class EquipItem {
 }
 
 /// <summary>Which extra block follows the limit break part of an item body (CItem::ReadFromStream picks it from item data).</summary>
-public enum ItemExtra { None, Ugc, Pet, Music }
+/// <summary>The blocks CItem::ReadFromStream reads after the item status, in this order: ugc, gem (a badge), custom music score, pet.</summary>
+[Flags] public enum ItemExtra { None = 0, Ugc = 1, Gem = 2, Music = 4, Pet = 8 }
 
 /// <summary>
 /// Reader for the equip record: i32 id, i64 uid, i8 slot, i32 rarity, then the item body (CItem::ReadFromStream).
@@ -158,27 +159,28 @@ public static class ItemReader {
         lb = r.ReadInt();
         for (int i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
 
-        if (badge) {
-            // ItemBadge: u8 1, u8 type, i32 id; transparency: 10 bools; pet skin: i32
-            r.ReadByte();
-            byte type = r.ReadByte();
-            r.ReadInt();
-            if (type == 1) { for (int i = 0; i < 10; i++) r.ReadBool(); }
-            else if (type == 11) r.ReadInt();
+        var extra = forceExtra ?? (badge ? ItemExtra.Gem : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None);
+        if ((extra & ItemExtra.Ugc) != 0) {
+            ReadUgcLook(r);
+            // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
+            r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
         }
-
-        switch (forceExtra ?? (badge ? ItemExtra.None : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None)) {
-            case ItemExtra.Ugc:
-                ReadUgcLook(r);
-                // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
-                r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
-                break;
-            case ItemExtra.Pet:
-                r.ReadUnicodeString(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool();
-                break;
-            case ItemExtra.Music:
-                r.ReadInt(); r.ReadByte(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadInt(); r.ReadLong(); r.ReadBool(); r.ReadLong(); r.ReadLong();
-                break;
+        if ((extra & ItemExtra.Gem) != 0) {
+            // CItemGem::vfunc_4 0x1405a7920: bool has; u8 type, i32 gem id, then the gem (type 1 transparency: 10 bytes, type 11 pet skin: i32)
+            if (r.ReadBool()) {
+                byte type = r.ReadByte();
+                r.ReadInt();
+                if (type == 1) { for (int i = 0; i < 10; i++) r.ReadByte(); }
+                else if (type == 11) r.ReadInt();
+            }
+        }
+        if ((extra & ItemExtra.Music) != 0) {
+            // CItemCustomMusicScore::ReadFromStream 0x140632620: i32, i32, string, string, i32, i64, u8, i64, i64
+            r.ReadInt(); r.ReadInt(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadInt(); r.ReadLong(); r.ReadByte(); r.ReadLong(); r.ReadLong();
+        }
+        if ((extra & ItemExtra.Pet) != 0) {
+            // item.cpp:2655: string, i64, i32, i32 pet level, u8
+            r.ReadUnicodeString(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool();
         }
 
         // ItemTransfer
