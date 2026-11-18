@@ -101,8 +101,10 @@ public sealed class FieldBuilder
                                              : new ConcavePolygonShape3D { Data = faces, BackfaceCollision = true });
                 }
                 bool first = true;
-                foreach (var m in md.Meshes)
+                foreach (var m0 in md.Meshes)
                 {
+                    // a skinned mesh is drawn at the file's node pose (nothing animates it here), not at its bind shape
+                    var m = m0.Skinned ? md.Posed(m0) : m0;
                     var world = m.Skinned ? Xform.Identity
                               : (m.ParentBone >= 0 ? md.Bones[m.ParentBone].World : Xform.Identity).Compose(m.Local);
                     var local = ModelBuilder.ToGodot(md.RootLocal.Compose(world));

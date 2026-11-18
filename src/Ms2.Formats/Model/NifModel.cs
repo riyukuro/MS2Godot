@@ -50,6 +50,8 @@ public sealed class ModelMesh
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
     public Dictionary<string, int> ExtraInts = new();          // NiIntegerExtraData by name (ColorOverrideMapIndex, ...)
+
+    public ModelMesh Clone() => (ModelMesh)MemberwiseClone();
 }
 
 /// <summary>A looping texture translation: the offset along U (Axis 0) or V (Axis 1) of a slot's uv, linear between keys.</summary>
@@ -73,6 +75,56 @@ public sealed class ModelData
     public List<ModelMesh> Meshes = new();
 
     public int BoneIndex(string name) => Bones.FindIndex(b => b.Name == name);
+
+    /// <summary>
+    /// A skinned mesh drawn at the file's node pose, as Gamebryo's skinning draws an unanimated skin
+    /// (NiSkinningMeshModifier: vertex = sum w_j BoneWorld_j * SkinBind_j * p), in scene root space; a copy with the
+    /// positions, normals and tangent frame moved. A bone outside the mesh's skin binds through World^-1 (identity at
+    /// scale 0), as <c>ModelBuilder.SkinOf</c> binds it.
+    /// </summary>
+    public ModelMesh Posed(ModelMesh m)
+    {
+        var o = m.Clone();
+        var mats = new Dictionary<int, Xform>();
+        Xform Mat(int j)
+        {
+            if (mats.TryGetValue(j, out var x)) return x;
+            var w = Bones[j].World;
+            x = m.SkinBinds != null && m.SkinBinds.TryGetValue(j, out var b) ? w.Compose(b) : w.S == 0 ? w : Xform.Identity;
+            return mats[j] = x;
+        }
+        int n = m.Positions.Length / 3;
+        float[] Move(float[] a, bool point)
+        {
+            if (a == null) return null;
+            var r = new float[a.Length];
+            for (int v = 0; v < n; v++)
+            {
+                double x = 0, y = 0, z = 0;
+                for (int k = 0; k < 4; k++)
+                {
+                    float wt = m.Weights[v * 4 + k];
+                    if (wt == 0) continue;
+                    var t = Mat(m.Joints[v * 4 + k]);
+                    var q = point ? t.Apply(new Vec3(a[v * 3], a[v * 3 + 1], a[v * 3 + 2]))
+                                  : (t with { T = new Vec3(0, 0, 0) }).Apply(new Vec3(a[v * 3], a[v * 3 + 1], a[v * 3 + 2]));
+                    x += wt * q.X; y += wt * q.Y; z += wt * q.Z;
+                }
+                if (!point)
+                {
+                    double l = Math.Sqrt(x * x + y * y + z * z);
+                    if (l > 0) { x /= l; y /= l; z /= l; }
+                }
+                r[v * 3] = (float)x; r[v * 3 + 1] = (float)y; r[v * 3 + 2] = (float)z;
+            }
+            return r;
+        }
+        o.Positions = Move(m.Positions, true);
+        o.Normals = Move(m.Normals, false);
+        o.Tangents = Move(m.Tangents, false);
+        o.Binormals = Move(m.Binormals, false);
+        return o;
+    }
 
     /// <summary>An NiMesh's stored "Bounding Sphere" (NiBound: Center, Radius), the model bound Gamebryo keeps for it.</summary>
     static float[] BoundOf(NifStruct b)
