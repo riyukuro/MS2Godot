@@ -43,7 +43,7 @@ public partial class Player : CharacterBody3D
     public Vector2 Input2;
     public Vector2 MouseInput;            // click to move (MouseMove), used while there is no other direction
     public bool WalkMode, JumpHeld, ScriptDriven;
-    public float CameraPitch = Mathf.Pi / 2, CameraYawMs2;   // CTargetCameraMode m_6c / m_68 (radians), for the live sync record
+    public Vector3 CameraEuler;           // the camera mode's Euler rotation in degrees (CameraMath.Euler of the placed eye and look), for the live sync record
     public float CameraYaw;               // radians about +Y; camera forward = (-sin, 0, -cos)
     public string CurrentAnim = "";
 

@@ -512,7 +512,11 @@ public partial class Field : Node3D
                 zoomInput = 0;
             }
             player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
-            player.CameraPitch = CameraPitch; player.CameraYawMs2 = CameraYaw;   // for the sync record's camera field
+            {   // the sync record's camera field: FUN_140afdd40 over the placed eye and look, in MS2 axes (x, -z, y)
+                var e = placedEye.Value;
+                var (ex, ey, ez) = Ms2.Net.CameraMath.Euler(e.X, -e.Z, e.Y, look.X, -look.Z, look.Y);
+                player.CameraEuler = new Vector3(ex, ey, ez);
+            }
             var ideal = Transform3D.Identity.LookingAt(look - placedEye.Value, Vector3.Up);
             ideal.Origin = placedEye.Value;
             var shown = EaseCamera(ideal, (float)dt);

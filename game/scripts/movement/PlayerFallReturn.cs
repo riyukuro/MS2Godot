@@ -46,7 +46,7 @@ public partial class Player
     /// <summary>One StateSyncObject: the synced fields this model needs, its age and whether it went out.</summary>
     sealed class SyncRecord
     {
-        public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw, CamYaw, CamPitch;
+        public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw; public Vector3 CamEuler;
         public byte Sub; public int Tick;
         public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
     }
@@ -78,20 +78,26 @@ public partial class Player
         MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, _ => 1,
     };
 
-    /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18, 0x17 riding (statewalk.cpp:86,160; the gamepad 0x19 is not modelled);
-    /// Swim 0x84, 0x85 riding (stateswim.cpp:104-126); Jump the Player's jumpSub 0x21-0x24, 0x27 riding (statejump.cpp:100-112); Land 0x86, 0x87 riding;
-    /// Idle 1 (boredom variants 2-5 not modelled); Ladder 0x2a (entry). Fall, Rope, Climb and Dash: not found in the decomp yet, 0.</summary>
+    /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18 (statewalk.cpp:86; the gamepad 0x19 is not modelled), Swim 0x84,
+    /// Jump the Player's jumpSub 0x21-0x24, Land 0x86, Idle 1 (boredom variants 2-5 not modelled), Ladder/Rope/Climb/Dash their m_n10; Fall 0.</summary>
     byte SubOf(MoveState s)
     {
-        bool ride = Mount != null;
+        // The player's own records never carry the riding ids 0x17/0x27/0x85/0x87: that flag (m_unk_b80, FUN_141676b70) is set
+        // by Ridee::UpdateRunEffects on the mount itself (ridee.cpp:721-779).
+        // Rope 0x33-0x39 (statemanager.cpp:1226-1414), climb 0x56-0x62 (state.cpp:1049-1051, 1177), dash 0x1d-0x1f
+        // (state.cpp:1812-1920) and ladder 0x2a-0x31 (stateladder.cpp:237-462) are the states' own m_n10, which the controller keeps.
+        // Fall has no sub id (0).
         return s switch
         {
-            MoveState.Walk => (byte)(ride ? 0x17 : 0x18),
-            MoveState.Swim => (byte)(ride ? 0x85 : 0x84),
-            MoveState.Jump => (byte)(ride ? 0x27 : jumpSub),
-            MoveState.Land => (byte)(ride ? 0x87 : 0x86),
+            MoveState.Walk => (byte)0x18,
+            MoveState.Swim => 0x84,
+            MoveState.Jump => (byte)jumpSub,
+            MoveState.Land => 0x86,
             MoveState.Idle => 1,
-            MoveState.Ladder => 0x2a,
+            MoveState.Ladder => (byte)lsub,
+            MoveState.Rope => (byte)rsub,
+            MoveState.Climb => (byte)csub,
+            MoveState.Dash => (byte)dsub,
             _ => 0,
         };
     }
@@ -163,7 +169,7 @@ public partial class Player
             // StateSyncObject::FUN_1408356c0 writes the position as three int16 (CByteBuffer::WriteVector3Short, stream.cpp:127)
             Pos = new Vector3((short)feet.X, (short)feet.Y, (short)(feet.Z + 0.0001f)), Marked = marked,
             Cell = marked ? CellKey(feet) : int.MaxValue,
-            State = State, Dir = moveDir, Yaw = targetYawDeg, BodyYaw = yawDeg, CamYaw = Mathf.RadToDeg(CameraYawMs2), CamPitch = Mathf.RadToDeg(CameraPitch), Sub = SubOf(State), Tick = ServerTick?.Invoke() ?? 0, Made = syncClock,
+            State = State, Dir = moveDir, Yaw = targetYawDeg, BodyYaw = yawDeg, CamEuler = CameraEuler, Sub = SubOf(State), Tick = ServerTick?.Invoke() ?? 0, Made = syncClock,
         };
         QueueCurrent();                                                              // FUN_1417b7670
         current = rec;
@@ -230,8 +236,10 @@ public partial class Player
     /// The wire record of a sync (StateSyncObject::vfunc_1, statesyncobject.cpp:113-146), filled as MyPC builds it (mypc.cpp:2324-2332):
     /// SubState = FUN_14166cc80 (the state's own sub id, mypc.cpp:2323: SubOf); Rotation = m_dir2c.z (vfunc_20, the body's direction); Animation = m_nDirFlags, from m_vel3c = m_pos98, the move
     /// direction, packed by FUN_140836250 (statesyncobject.cpp:202-220: x -1/0/1 = 0/1/2, y -1/0/1 = +4/+8/+12, else 0x80 and the two
-    /// floats follow); Speed = m_pos48 = m_posBF4 = the camera mode's Euler rotation in degrees (x, y, z) as int16 (cameramode.h:191, editcameramode.cpp:131-133; refreshed only while CameraMgr::m_1b0 != 0, mypc.cpp:2291-2292): sent as (pitch, 0, yaw). CONVENTION UNSETTLED: the kms2-sniffs captures carry a constant (90, 45, -40) in this field, so they show x = 90 = our default pitch but no yaw to compare, and the yaw sign/offset against Field.CameraYaw is unverified; Unknown1 =
-    /// m_n54 = CameraMgr::GetModeType, 2 for the field's TargetCameraMode (targetcameramode.h:28; mypc.cpp:2787 SetMode(2,1); the captures show 17, not explained); Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime x1000 (the record's age, ms).
+    /// floats follow); Speed = m_pos48 = m_posBF4 = the camera mode's Euler rotation m_setting.m_18 in degrees as int16 (FUN_140afdd40 over the eye and look, ported in Ms2.Net CameraMath; cameramode.cpp:316-331,
+    /// targetcameramode.cpp:302,872). It is refreshed with every record while CameraMgr::m_1b0 != 0, which is set at field camera setup (camera.cpp:803 via 1847) and cleared only at teardown (camera.cpp:855; mypc.cpp:2291, 1256),
+    /// so it follows the camera; Unknown1 = m_n54 = CameraMgr::GetModeType() when the record is made (mypc.cpp:2331; ridee.cpp:947), 2 for the field's CTargetCameraMode (camera.cpp:780-783, 2020). 17 is CHomeCameraMode
+    /// (homecameramode.h:57), housing only (camera.cpp:1938-1941). Sniff check (kms2-sniffs, builds 2493-2549): Unknown1 = 17 appears only on map 62000000 (housing, builds 2495-2511 incl. the 2525 era files), every other map carries 2. Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime x1000 (the record's age, ms).
     /// The move direction is in game axes (x, -z godot, y godot).
     /// </summary>
     Ms2.Net.Packets.StateSync LiveRecord(SyncRecord q)
@@ -242,7 +250,7 @@ public partial class Player
             State = StateId(q.State), SubState = q.Sub,
             Position = new Ms2.Net.Packets.Vector3S((short)q.Pos.X, (short)q.Pos.Y, (short)q.Pos.Z),
             Rotation = (short)(q.BodyYaw * 10f), Rotation2 = (short)(q.Yaw * 10f), SyncNumber = q.Cell,
-            Speed = new Ms2.Net.Packets.Vector3S((short)q.CamPitch, 0, (short)q.CamYaw), /* camera field: see LiveRecord doc */ Unknown1 = 2,
+            Speed = new Ms2.Net.Packets.Vector3S((short)q.CamEuler.X, (short)q.CamEuler.Y, (short)q.CamEuler.Z), /* camera field: see LiveRecord doc */ Unknown1 = 2,
             Unknown3 = (short)(q.Time * 1000f),   // WriteShortDivScaled(m_fTime, 1000), the record's age in ms (statesyncobject.cpp:126)
         };
         static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
