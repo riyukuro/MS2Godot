@@ -25,6 +25,7 @@ public enum Inbound : ushort {
     RequestFieldEnter = 0x16,
     FieldAddUser = 0x17,
     FieldRemoveUser = 0x18,
+    Quest = 0x52,
     UserSync = 0x1C,
     UserChat = 0x1D,
     Emote = 0x1F,

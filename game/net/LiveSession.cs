@@ -37,6 +37,8 @@ public partial class LiveSession : Node
     /// <summary>The last create the server refused (null after a create that went through).</summary>
     /// <summary>The account's character limit from CharMaxCount 0xB8 (DAT_1439f4a84); 0 until the server sent it.</summary>
     public int CharacterLimit;
+    /// <summary>The quest state the quest packets build (live only; the quest log reads it, offline it stays empty).</summary>
+    public readonly QuestBook Quests = new();
     public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
@@ -126,6 +128,8 @@ public partial class LiveSession : Node
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
             (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host);
+            foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
+            GD.Print($"live: {Quests.All.Count} quests loaded before the field");
             login.Dispose(); login = null;
             answered = false;
             syncNumber = entry.Sync?.Number ?? 0;
@@ -240,6 +244,12 @@ public partial class LiveSession : Node
                     var m = UserMoveByPortal.Read(p.Reader());
                     GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
                     if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z, m.IsPortal);
+                }
+                else if (game.Is(p, Inbound.Quest))
+                {
+                    var q = QuestMessage.Read(p.Reader());   // CQuestManager::OnQuest (questmanager_2.cpp:942); no ExpectEnd: the client ignores trailing bytes
+                    Quests.Apply(q);
+                    GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
                 }
                 else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
