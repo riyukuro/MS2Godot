@@ -56,6 +56,9 @@ public sealed class ItemData
     public readonly List<string> FunctionArgs = new();
     /// <summary>CItemData::Load (itemdata.cpp:364): &lt;tool itemPreset&gt;, the item model id.</summary>
     public int ItemPreset;
+    /// <summary>ItemProperty "sell price" (itemdatastruct.cpp:1136): the &lt;property&gt;&lt;sell price&gt; list, each token
+    /// read with atoi (XmlConvert, xmlattr.h).</summary>
+    public List<long> SellPrices = new();
     /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt;.</summary>
     public int InstallObjCode;
 
@@ -67,6 +70,8 @@ public sealed class ItemData
         if (env.Element("property") is { } p)
         {
             Int(p, "type", ref d.Type);
+            if (p.Element("sell") is { } sell)
+                d.SellPrices = ((string)sell.Attribute("price") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => (long)Atoi(t)).ToList();
             Int(p, "subtype", ref d.Subtype);
             Int(p, "iconCode", ref d.IconCode);
             Int(p, "itemGroup", ref d.ItemGroup);
@@ -133,6 +138,11 @@ public sealed class ItemData
 
     /// <summary>The expiration's CMsTime::GetTime (mstime.h): 0 when unset, else the fields' time plus the zone offset.</summary>
     public long ExpirationTime => ExpirationFields == 0 ? 0 : ExpirationFields + Ms2.Net.MsTime.CalcZoneOffset;
+
+    /// <summary>ItemProperty::GetSellPrice (itemdatastruct.cpp:1263): none 0, one the price, six the rarity's, else 0.</summary>
+    public long PropertySellPrice(int rarity) =>
+        SellPrices.Count == 0 ? 0 : SellPrices.Count == 1 ? SellPrices[0]
+        : SellPrices.Count == 6 && rarity >= 1 && rarity <= 6 ? SellPrices[rarity - 1] : 0;
 
     /// <summary>CItemData::GetMaidId (itemdata.cpp:1163): param2 of a type 6 subtype 7 item; HasMaidId is above 0.</summary>
     public bool HasMaidId => Type == 6 && Subtype == 7 && Param2 > 0;

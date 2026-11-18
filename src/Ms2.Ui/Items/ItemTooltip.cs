@@ -59,7 +59,8 @@ public sealed class ItemTooltip
         Data["itemKinds"] = Kinds(d.IconCode);                                    // FUN_1409d5610
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
-        SetNotExchange(item);                                                     // SetItemSellPrice
+        SetSellPrice(item);                                                       // SetItemSellPrice
+        SetNotExchange(item);
         SetItemCreateTime(item);
         SetItemUsePeriod(item);
         SetItemDescription(item);                                                 // FUN_1409d0710
@@ -161,10 +162,36 @@ public sealed class ItemTooltip
     string CommonF(string key, params object[] args) => Ms2.Quest.ClientFormat.Format(Common(key), args);
 
     /// <summary>
+    /// SetItemSellPrice (@0x1409cd9c0, astooltip.cpp:1772), the "itemSellPrice" part: a sellable item (shopSell, not
+    /// locked) shows "s_word_sellprice : " and its price as meso text (FUN_1418fec00(1, price, true): s_common_payment
+    /// with the grouped amount and the meso icon). Not ported: an install item's housing price, and an equipment item
+    /// without a price from level 57 (its rank's Client::Constants price, the array at m_a020, whose names are not
+    /// recovered); the member is left out there.
+    /// </summary>
+    public void SetSellPrice(Item item)
+    {
+        var d = item.Data;
+        if (d.IsInstallItem) return;
+        if (!(d.ShopSell && !IsLocked(item))) return;                                // CItemTransfer::IsSellable
+        // CItem::GetSellPrice (item.cpp:1235) = CItemData::GetSellPrice(rarity) (itemdata.cpp)
+        long price = d.PropertySellPrice(item.Rarity);
+        if (d.IsEquipItem)
+        {
+            if (!d.HasSkinType && price == 0 && (ushort)d.LevelLimit >= 0x39) return;
+            price = (long)(price * Tables.EquipmentSellRate(item.Rarity));            // float math as the client
+        }
+        Data["itemSellPrice"] = Common("s_word_sellprice") + " : " + MesoText(price);  // 0x587
+    }
+
+    /// <summary>FUN_1418fec90(1, amount, 0) (uicommon.cpp:913): s_common_payment with the grouped amount
+    /// (FUN_1409404f0), the meso icon and its vspace (FUN_1418fe870: export_common_icon_meso_h21, -6).</summary>
+    string MesoText(long amount) => CommonF("s_common_payment", NumberText.MesoText(amount.ToString(System.Globalization.CultureInfo.InvariantCulture)), "export_common_icon_meso_h21", -6);
+
+    /// <summary>
     /// SetItemSellPrice (@0x1409cd9c0, astooltip.cpp:1772), the "notExchange" part (flag 0x2000 clear): FUN_1409e6120's
     /// trade, bind and move lines (:5397), then FUN_1409d98a0's dismantle line (:3553), the socket transfer line
     /// (feature 0xa7 ItemSocketTransfer01, a skin item that cannot transfer its socket), the pet line (feature 0x8d) and the
-    /// couple partner, joined with line breaks. The "itemSellPrice" part is not ported. The member is left out where an
+    /// couple partner, joined with line breaks. The member is left out where an
     /// input is not ported: no record, a UGC block, a socket with a gem (the gem checks), a gacha dismantle id or a pet
     /// item (the dismantle check), a move-disabled item's stored character and a skin item's dismantle reward (CItemBreakManager::HasBreakReward's ingredient table and Lua).
     /// </summary>

@@ -449,6 +449,35 @@ public class MyInfoTests
     }
 
     [Test]
+    public void SellPriceLineIsTheClients()
+    {
+        var m = NewModel();
+        ItemTooltip Tip(int id, int rarity, int lockState = 0)
+        {
+            var item = Item.Create(m.Tables.Items, id, rarity);
+            item.LockState = lockState;
+            var tip = new ItemTooltip(m, 0x80);
+            tip.Fill(item);
+            return tip;
+        }
+        // lv10_tooltip_gemstone.png: "Shop Sales Price : 1" with the meso icon
+        var gem = Tip(40200003, 4);
+        Assert.That(gem.Data["itemSellPrice"], Is.EqualTo("Shop Sales Price : 1 <Img Src='export_common_icon_meso_h21' vspace='-6'/> "));
+        var shown = TooltipTests.Draw(gem.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Shop Sales Price : 1"));
+        // locked: not sellable; the Green Hood has no shopSell
+        Assert.That(Tip(40200003, 4, lockState: 1).Data.ContainsKey("itemSellPrice"), Is.False);
+        Assert.That(Tip(12200398, 1).Data.ContainsKey("itemSellPrice"), Is.False);
+        // the amount is grouped; 12200001 has six prices, one per rarity (472 .. 1392)
+        var top = Item.Create(m.Tables.Items, 12200001, 6);
+        Assert.That(top.Rarity, Is.EqualTo(6));
+        var topTip = new ItemTooltip(m, 0x80);
+        topTip.Fill(top);
+        Assert.That(topTip.Data["itemSellPrice"], Is.EqualTo("Shop Sales Price : 1,392 <Img Src='export_common_icon_meso_h21' vspace='-6'/> "));
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");
