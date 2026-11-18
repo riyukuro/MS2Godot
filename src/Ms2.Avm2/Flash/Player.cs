@@ -280,6 +280,7 @@ namespace Ms2.Avm2.Flash
             if (initial)
             {
                 if (J.I(pl["clipDepth"]) is int cd) d.ClipDepth = cd;
+                if (pl["filters"] is JsonArray fl) d.PlaceFilters = fl;
                 if (pl["blend"] is JsonValue bv) d.Blend = bv.TryGetValue<string>(out var bs) ? bs : BlendNames[Math.Clamp(J.Iv(bv), 0, BlendNames.Length - 1)];
             }
         }

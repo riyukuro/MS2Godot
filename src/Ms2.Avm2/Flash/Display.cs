@@ -21,6 +21,8 @@ public class AsDisplayObject : AsEventDispatcher
     public AsDisplayObject MaskObject;
     public RectD? ScrollRect;
     public object Filters;
+    /// <summary>The filters of the timeline placement that made the object (PlaceObject3's filter list), for the renderer.</summary>
+    public JsonArray PlaceFilters;
     public string Blend = "normal";
     public bool CacheAsBitmapFlag;
     public bool HitTestDisabled;
