@@ -37,6 +37,10 @@ public sealed class EquipApplier
     }
 
     readonly Dictionary<int, Dictionary<int, int>> presets = new();
+    readonly Dictionary<int, string> characterIdle = new();
+    readonly HashSet<string> itemNodes = new(StringComparer.Ordinal);    // node names of the models hung on the character
+    Ms2.Formats.World.EffectTable effects;
+    public int IdleEffects, IdleEffectsOpen;
 
     /// <summary>
     /// The item model of an item: itemdata/{id / 100000}.xml can name another item's model (tool itemPreset, as the
@@ -53,9 +57,14 @@ public sealed class EquipApplier
             {
                 var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
                 foreach (var e in x.Root.Elements("item"))
-                    if (int.TryParse((string)e.Attribute("id"), out int i)
-                        && int.TryParse((string)e.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0)
+                {
+                    if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
+                    if (int.TryParse((string)e.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0)
                         byItem[i] = p;
+                    // ItemEffect::Load (itemdatastruct.cpp:1609-1625): <effect characterIdle> of the item itself
+                    if ((string)e.Descendants("effect").FirstOrDefault()?.Attribute("characterIdle") is { Length: > 0 } fx)
+                        characterIdle[i] = fx;
+                }
             }
             presets[prefix] = byItem;
         }
@@ -108,6 +117,7 @@ public sealed class EquipApplier
         var bodyNodes = skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
         var cut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var added = new List<MeshInstance3D>();
+        itemNodes.Clear();
 
         foreach (var item in Visible(items))
         {
@@ -149,6 +159,7 @@ public sealed class EquipApplier
                 {
                     var made = isNif ? Attach(skel, body, md, asset, item, gender) : AttachKfm(skel, body, asset, item, gender, -1);
                     if (made == null) { MissingIds.Add(item.Id); continue; }
+                    if (md != null) NoteNodes(md);
                     if (DyeOf(item, im) is { } dye)
                         foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
                     added.AddRange(made);
@@ -170,6 +181,75 @@ public sealed class EquipApplier
         if (skinColor is { } sc)
             foreach (var n in bodyNodes.Concat(added))
                 SetColors(n, true, sc, null, skinShade ?? sc);
+        PlayIdleEffects(visual, skel, body, items);
+    }
+
+    void NoteNodes(ModelData md)
+    {
+        foreach (var b in md.Bones) itemNodes.Add(b.FileName ?? b.Name);
+        foreach (var m in md.Meshes) itemNodes.Add(m.FileName ?? m.Name);
+    }
+
+    /// <summary>
+    /// The items' character idle effects. FUN_141202bd0 (equipmodel.cpp:1113-1131) gives each equip model two effect slots:
+    /// - slot 0: the item's idle effect on the model;
+    /// - slot 1: the item's characterIdle effect (characterBattleIdle in battle stance).
+    /// It runs after the model loads (FUN_141200ca0, equipmodel.cpp:730). Slot 1 is started with no node
+    /// (FUN_141203570 / FUN_141203660, equipmodel.cpp:1241-1280), so NoticeMessage::Bind hangs it on the owner's own scene
+    /// graph (effectservice.cpp:288). A nif part with attachToNode="true" (attach type 1) goes to AttachToModelNode
+    /// (nifeffectparam.cpp:1079-1112): GetObjectByName(parentNode) over that graph, the graph root when there is none.
+    /// FUN_14154c580 (1158-1164) wraps it in a SeparateNode when its update bits are not all set.
+    /// A loop effect stays; another one goes after its duration (CEffect::vfunc_9).
+    /// Not done:
+    /// - battle stance (characterBattleIdle);
+    /// - parent nodes that only an item model has (wings, kfm bodies): counted in IdleEffectsOpen;
+    /// - attachType "Mesh" and attach type 0, applyNodeTransform="false", and the non-nif kinds (swoosh, sound).
+    /// </summary>
+    void PlayIdleEffects(Node3D visual, Skeleton3D skel, ModelData body, IEnumerable<EquipItem> items)
+    {
+        var model = visual.GetNodeOrNull<Node3D>("Model");
+        if (model == null) return;
+        foreach (var old in model.FindChildren("itemfx_*", "", true, false)) old.QueueFree();
+        effects ??= new Ms2.Formats.World.EffectTable(packs);
+        foreach (var item in Visible(items))
+        {
+            if (!characterIdle.TryGetValue(item.Id, out var xml) && (FindItem(item.Id) == null || !characterIdle.TryGetValue(item.Id, out xml))) continue;
+            foreach (var part in effects.Get(xml) ?? new List<Ms2.Formats.World.EffectPart>())
+            {
+                if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) continue;
+                if (!part.AttachToNode || !part.ApplyNodeTransform) { IdleEffectsOpen++; continue; }
+                Node3D parent;
+                string name = part.ParentNode ?? "";
+                int bone = skel.FindBone(name);
+                if (bone >= 0)
+                {
+                    var att = new BoneAttachment3D { Name = $"itemfx_{item.Id}_attach", BoneName = name };
+                    skel.AddChild(att);
+                    parent = att;
+                }
+                else if (itemNodes.Contains(name)) { IdleEffectsOpen++; continue; }
+                else parent = model;    // no node of that name anywhere: the graph root
+                Node3D fx;
+                try { fx = Ui.EffectNif.Build(mb, packs, part); }
+                catch (Exception ex) { GD.PushWarning($"item {item.Id} idle effect {part.FilePath}: {ex.Message}"); continue; }
+                Node3D holder = parent;
+                if (!(part.UpdateTranslate && part.UpdateRotation && part.UpdateScale))
+                {
+                    holder = new Ui.SeparateNode3D(part.UpdateTranslate, part.UpdateRotation, part.UpdateScale);
+                    parent.AddChild(holder);
+                }
+                fx.Name = $"itemfx_{item.Id}_{fx.Name}";
+                if (holder is Ui.SeparateNode3D) holder.Name = $"itemfx_{item.Id}_separate";
+                fx.Visible = part.StartDelay <= 0;
+                holder.AddChild(fx);
+                IdleEffects++;
+                var tree = (Engine.GetMainLoop() as SceneTree);
+                if (part.StartDelay > 0 && tree != null)
+                    tree.CreateTimer(part.StartDelay).Timeout += () => { if (GodotObject.IsInstanceValid(fx)) fx.Visible = true; };
+                if (!part.Loop && part.Duration > 0 && tree != null)
+                    tree.CreateTimer(part.StartDelay + part.Duration).Timeout += () => { if (GodotObject.IsInstanceValid(fx)) fx.QueueFree(); };
+            }
+        }
     }
 
     /// <summary>The record's dye, else the item model's default (customize colorPalette / defaultColorIndex).</summary>
@@ -342,6 +422,7 @@ public sealed class EquipApplier
         catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id} kfm: {ex.Message}"); return null; }
         if (md == null) { NoAsset++; return null; }
         Loaded++;
+        NoteNodes(md);
         bool pony = index >= 0;
         double[] pos = null, rot = null; double scale = 1;
         var a = item.Appearance;

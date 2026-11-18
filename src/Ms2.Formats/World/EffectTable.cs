@@ -13,6 +13,16 @@ public sealed class EffectPart
     public float StartDelay, Duration;
     public float[] Translate = new float[3], Rotation = new float[3];
     public float Scale = 1f;
+    /// <summary>loop: the effect stays past its duration (CEffectParam::vfunc_1, CEffect::vfunc_9).</summary>
+    public bool Loop;
+    /// <summary>
+    /// attachInfo, as CNifEffectParam::vfunc_1 reads it (nifeffectparam.cpp:388-401): attachType (text, e.g. "Mesh"),
+    /// attachToNode="true" (attach type 1), applyNodeTransform (false when absent) and parentNode.
+    /// </summary>
+    public string AttachType, ParentNode;
+    public bool AttachToNode, ApplyNodeTransform;
+    /// <summary>update translate / rotation / scale: the parts of the parent's world the effect follows (true when absent).</summary>
+    public bool UpdateTranslate = true, UpdateRotation = true, UpdateScale = true;
 }
 
 /// <summary>Effect definitions on demand from the Xml pack.</summary>
@@ -39,6 +49,20 @@ public sealed class EffectTable
                     var p = new EffectPart { Type = (string)e.Attribute("type"), FilePath = (string)e.Attribute("filePath"), SoundGroup = (string)e.Attribute("group"), SoundEvent = (string)e.Attribute("event"), StartDelay = F((string)e.Attribute("startDelay")), Duration = F((string)e.Attribute("duration")) };
                     var t = e.Element("transform");
                     if (t != null) { p.Translate = V((string)t.Attribute("translate")); p.Rotation = V((string)t.Attribute("rotation")); p.Scale = F((string)t.Attribute("scale"), 1f); }
+                    p.Loop = B((string)e.Attribute("loop"), false);
+                    if (e.Element("attachInfo") is { } a)
+                    {
+                        p.AttachType = (string)a.Attribute("attachType");
+                        p.ParentNode = (string)a.Attribute("parentNode");
+                        p.AttachToNode = B((string)a.Attribute("attachToNode"), false);
+                        p.ApplyNodeTransform = B((string)a.Attribute("applyNodeTransform"), false);
+                    }
+                    if (e.Element("update") is { } u)
+                    {
+                        p.UpdateTranslate = B((string)u.Attribute("translate"), true);
+                        p.UpdateRotation = B((string)u.Attribute("rotation"), true);
+                        p.UpdateScale = B((string)u.Attribute("scale"), true);
+                    }
                     parts.Add(p);
                 }
             }
@@ -47,6 +71,7 @@ public sealed class EffectTable
         return cache[xmlPath] = parts;
     }
 
+    static bool B(string s, bool def) => s == null ? def : s.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) || s.Trim() == "1";
     static float F(string s, float def = 0) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : def;
     static float[] V(string s)
     {

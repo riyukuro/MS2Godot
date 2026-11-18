@@ -72,7 +72,6 @@ public sealed class SelectPose
 public sealed partial class SelectPosePlayer : Node
 {
     public const string Bore = "bore", BoreIdle = "bore_idle";
-    const string EffectArchive = "Resource/Model/Effect";
 
     readonly SelectPose pose;
     readonly AnimationPlayer anim;
@@ -141,31 +140,6 @@ public sealed partial class SelectPosePlayer : Node
         }
     }
 
-    /// <summary>
-    /// The effect nif as a model (a skinned mesh driven by the nif's own transform controllers), placed in the
-    /// character's scene root frame by the effect xml's transform (translate, Euler XYZ degrees, scale).
-    /// </summary>
-    Node3D BuildEffect(Ms2.Formats.World.EffectPart part)
-    {
-        var nif = NifFile.Load(builder.Spec, packs.Read(EffectArchive, part.FilePath.Replace('\\', '/').ToLowerInvariant()));
-        var md = ModelData.Load(nif);
-        var root = builder.Build(md, System.IO.Path.GetFileNameWithoutExtension(part.FilePath));
-        var kf = KfAnimation.FromControllers(nif);
-        if (kf != null)
-        {
-            var player = root.GetNode<AnimationPlayer>("Model/AnimationPlayer");
-            var a = ModelBuilder.BuildAnimation(kf, md);
-            a.LoopMode = kf.Cycle == 0 ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
-            player.GetAnimationLibrary("").AddAnimation("fx", a);
-            player.Play("fx");
-        }
-        // degrees to radians, then FromEulerAnglesXYZ (nifeffectparam.cpp:708): Gamebryo's clockwise rotations
-        var r = part.Rotation; var t = part.Translate;
-        var xml = ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), DummyWorld.EulerXyz(r[0], r[1], r[2]), part.Scale));
-        // under the character's Model node (the scene root, file space): the built root turns Z-up to Y-up again,
-        // so it carries that turn undone
-        var zup = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero);
-        root.Transform = xml * zup.AffineInverse();
-        return root;
-    }
+    /// <summary>The effect nif under the character's scene root (EffectNif.Build).</summary>
+    Node3D BuildEffect(Ms2.Formats.World.EffectPart part) => EffectNif.Build(builder, packs, part);
 }
