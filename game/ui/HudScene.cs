@@ -67,6 +67,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-hover") hoverShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -665,10 +666,12 @@ public partial class HudScene : Node
         if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
         if (k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
         if (k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
+        if (k.PhysicalKeycode == Key.K) { ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
+        if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
         return false;
     }
 
@@ -991,6 +994,7 @@ public partial class HudScene : Node
         else if (id == 0x4e42) ToggleWorldMap();
         else if (id == 0x4e2d) ToggleInventory();
         else if (id == 0x2711) ToggleMyInfo();      // "characterinfo" (gameeventmanagercli.cpp:486-494)
+        else if (id == 0x4f2d) ToggleSkillBook();
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
@@ -1091,6 +1095,61 @@ public partial class HudScene : Node
         return offlineInventory = new Ms2.Net.Packets.InventoryView(book);
     }
 
+    // ---- skill window: uiskillbooktreedialog run by its own ActionScript, UISkillBookTreeDialog's C++ side as SkillBookTreeController --
+
+    MovieDialog skillBookMovie;                 // from open until OnEndClose
+    Ms2.Ui.Hud.SkillBookTreeController skillBook;
+    int[] skillShot;                            // --skillbook subJob[,level]
+
+    /// <summary>CUIService::ToggleDialog(0x4f2d): open when closed, else vfunc_67.</summary>
+    void ToggleSkillBook()
+    {
+        if (skillBook == null || skillBook.IsClosed) OpenSkillBook();
+        else skillBook.Close();
+    }
+
+    /// <summary>
+    /// Opens the skill window over the live session's skill book and skill points, asking the server for the saved tabs
+    /// (RequestSkillBookTree mode 0, a read request) and answering the dialog with its 0x10C reply; with no live session, over a
+    /// new character's book of the HUD's job (<see cref="UiFixture.NewCharacterSkillBook"/>) and a reply with no tabs. A live
+    /// session without its book yet opens nothing. Everything that would change the book is only logged.
+    /// </summary>
+    void OpenSkillBook()
+    {
+        if (skillBookMovie != null) { skillBookMovie.Host.Unload(); skillBookMovie.QueueFree(); skillBookMovie = null; }
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var tables = hudModel.Tables.Skills;
+        var book = live != null ? live.SkillBook : UiFixture.NewCharacterSkillBook(tables.Jobs, hudModel.Player.SubJob / 10);
+        if (book == null) { GD.Print("skill book: the live session has no skill book yet"); return; }
+        var jobs = new Ms2.Ui.Skills.JobSystem(tables) { IsFeatureEnabled = hudModel.IsFeatureEnabled };
+        jobs.Read(book);
+        var c = new Ms2.Ui.Hud.SkillBookTreeController
+        {
+            JobChange01 = hudModel.IsFeatureEnabled(0xca),
+            Jobs = jobs,
+            Points = live?.SkillPoints ?? new Ms2.Ui.Skills.SkillPoints(),
+            IsQuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
+        };
+        c.Button += name => GD.Print($"skill book: {name} is not sent (display only)");
+        Action<Ms2.Net.Packets.SkillBookTreePacket> onTree = c.OnSkillBookTree;
+        if (live != null)
+        {
+            c.RequestTree += live.RequestSkillBookTree;
+            live.SkillBookTree += onTree;
+        }
+        else c.RequestTree += () => Callable.From(() => c.OnSkillBookTree(UiFixture.NoSkillTabs())).CallDeferred();
+        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        c.Unloaded += () =>
+        {
+            if (live != null) live.SkillBookTree -= onTree;
+            m.Host.Unload();
+            m.QueueFree();
+            if (skillBookMovie == m) skillBookMovie = null;
+        };
+        skillBook = c; skillBookMovie = m;
+        uiRoot.AddChild(m);
+    }
+
     public override void _Process(double delta)
     {
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
@@ -1109,6 +1168,13 @@ public partial class HudScene : Node
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
         if (sysmenuShot >= 0 && frames == 200) Escape();
         if (worldMapShot >= 0 && frames == 200) ToggleWorldMap();
+        if (skillShot != null && frames == 200)
+        {
+            // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)
+            hudModel.Player.SubJob = skillShot[0];
+            if (skillShot.Length > 1) hudModel.Player.Level = skillShot[1];
+            ToggleSkillBook();
+        }
         if (worldMapShot >= 1 && frames == 240) worldMapSide?.SetPendingSearch("Henesys");
         if (worldMapShot >= 2 && frames == 260) worldMapSide?.OnCallback("onClickSearchInfo", new object[] { 2000076u });
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);

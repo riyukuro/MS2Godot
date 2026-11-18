@@ -54,8 +54,15 @@ public partial class LiveSession : Node
     public readonly ServerKeyTable KeyTable = new();
     /// <summary>Raised after a KeyTable packet was applied (its mode: 0 load, 7 pages).</summary>
     public event Action<int> KeyTableChanged;
-    /// <summary>The local player's skill book (JobSystem) from the Job packets (OnJob); null before one arrives.</summary>
+    /// <summary>The local player's skill book (JobSystem): the own FieldAddUser's block (OnAddUser, scenestategame.cpp:11135) and the
+    /// Job packets (OnJob); null before one arrives.</summary>
     public SkillBook SkillBook { get; private set; }
+    /// <summary>The skill point state of OnSkillPoint (0x44, scenestategame.cpp:4241).</summary>
+    public readonly Ms2.Ui.Skills.SkillPoints SkillPoints = new();
+    /// <summary>A SkillBookTree (0x10C) packet, for the skill window's vfunc_79.</summary>
+    public event Action<SkillBookTreePacket> SkillBookTree;
+    /// <summary>RequestSkillBookTree mode 0 (UISkillBookTreeDialog::OnLoadComplete): a read request for the saved tabs.</summary>
+    public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
     /// <summary>Raised after the local player's skill book changed (the Job packet's mode).</summary>
     public event Action<int> SkillBookChanged;
     public CharacterCreateRefused LastRefusal { get; private set; }
@@ -312,6 +319,7 @@ public partial class LiveSession : Node
                     var u = FieldAddUser.Read(p.Reader());
                     bool self = u.User.CharacterId == entry.Enter.CharacterId;
                     if (self) { selfObject = u.ObjectId; Me.Apply(u); }
+                    if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
                     GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
                 }
                 else if (game.Is(p, Inbound.SyncNumber))
@@ -376,6 +384,17 @@ public partial class LiveSession : Node
                 else if (game.Is(p, Inbound.ProxyGameObj))
                 {
                     Me.Apply(ProxyGameObj.Read(p.Reader()));          // the own AddPlayer proxy's trophy counts
+                }
+                else if (game.Is(p, Inbound.SkillPoint))
+                {
+                    SkillPoints.Apply(SkillPointPacket.Read(p.Reader()));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
+                    GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
+                }
+                else if (game.Is(p, Inbound.SkillBookTree))
+                {
+                    var t = SkillBookTreePacket.Read(p.Reader());   // UISkillBookTreeDialog::vfunc_79 (uiskillbookautodistributedialog.cpp:1962)
+                    GD.Print($"live: skill book tree mode {t.Mode} ({t.Tabs.Count} tabs)");
+                    SkillBookTree?.Invoke(t);
                 }
                 else if (game.Is(p, Inbound.GlobalFactor))
                 {

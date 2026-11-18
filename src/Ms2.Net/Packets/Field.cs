@@ -121,6 +121,8 @@ public sealed class FieldAddUser {
     public UserBlock User;
     public int SkillRank, SkillJobCode;
     public List<(int Id, int Level, bool Notify, bool Learned)> Skills = new();
+    /// <summary>The whole skill book block (rank, job group, skills with their extra flag).</summary>
+    public SkillBook Book;
     public Vector3 Position, Rotation;
     /// <summary>The player stats block: 3 sets (total, base, current) of health (i64), attack speed, move speed, mount speed, jump height.</summary>
     public (long Health, int AttackSpeed, int MoveSpeed, int MountSpeed, int JumpHeight)[] Stats = new (long, int, int, int, int)[3];
@@ -142,9 +144,9 @@ public sealed class FieldAddUser {
 
     public static FieldAddUser Read(ByteReader r, string locale = "KR") {
         var f = new FieldAddUser { ObjectId = r.ReadInt(), User = UserBlock.Read(r, locale) };
-        f.SkillRank = r.ReadInt(); f.SkillJobCode = r.ReadInt();
-        int skills = r.ReadByte();
-        for (int i = 0; i < skills; i++) { var sk = (r.ReadInt(), r.ReadInt(), r.ReadBool(), r.ReadBool()); r.ReadBool(); f.Skills.Add(sk); }
+        f.Book = SkillBook.Read(r);     // the job system block JobSystem::vfunc_7 reads (the Job packet's layout)
+        f.SkillRank = f.Book.Rank; f.SkillJobCode = f.Book.JobGroup;
+        foreach (var sk in f.Book.Skills) f.Skills.Add((sk.SkillId, sk.Level, sk.Changed, sk.Learned));
         f.Position = r.ReadVec3(); f.Rotation = r.ReadVec3();
         r.ReadByte();
         if (r.ReadByte() != 0x23) throw new PacketLayoutException("player stats count");

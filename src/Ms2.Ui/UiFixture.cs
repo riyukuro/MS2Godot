@@ -82,4 +82,18 @@ public static class UiFixture
         t.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(0, true, null, 0, null)));
         return t;
     }
+    /// <summary>A rank 1 skill book for a job group as a new character has it: every skill of the job's table at level 1, learnt
+    /// when the table learns it with the rank (isLearn), and no tabs saved (the skill window's 0x10C mode 0 with none, which
+    /// makes it add the free tab "Build 1").</summary>
+    public static Ms2.Net.Packets.SkillBook NewCharacterSkillBook(Skills.JobTable jobs, int jobGroup) => new()
+    {
+        Rank = 1,
+        JobGroup = jobGroup,
+        Skills = (jobs.GetJobData(jobGroup)?.Skills ?? Enumerable.Empty<Skills.JobSkillData>())
+            .Select(r => new Ms2.Net.Packets.BookSkill((int)r.SkillId, 1, false, r.IsLearn, false)).ToList(),
+    };
+
+    /// <summary>The SkillBookTree answer for a character with no saved tabs: mode 0, one tab allowed, none sent.</summary>
+    public static Ms2.Net.Packets.SkillBookTreePacket NoSkillTabs() => Ms2.Net.Packets.SkillBookTreePacket.Read(
+        new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.SkillBookTreePacket.WriteTabs(1, 0, Array.Empty<Ms2.Net.Packets.SkillTreeTab>())));
 }
