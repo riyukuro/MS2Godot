@@ -246,8 +246,8 @@ public sealed class MinimapController : UiController
     /// <summary>vfunc_28 (uiminimapentity.cpp:1235): the movie's calls.</summary>
     /// <summary>
     /// vfunc_49 @0x141a37150 (uiminimapentity.cpp:1397): "m_fieldname" gets s_minimap_tooltip_field_info with the map's name
-    /// (string table 3) and m_nMapLevel, plus a line of CFishingManager::GetSpotDescription for a fishing spot (its built-in
-    /// strings 0x718 / 0x719 are not in the data, so no line here); a text tooltip with onDelay 300, offDelay 60000, align 7.
+    /// (string table 3) and m_nMapLevel, plus "\n" and CFishingManager::GetSpotDescription for a fishing spot (the player's
+    /// fishing mastery against the spot's); a text tooltip with onDelay 300, offDelay 60000, align 7.
     /// No field data = no tooltip.
     /// </summary>
     public override IDictionary<string, object> GetTooltip(object[] args)
@@ -259,7 +259,10 @@ public sealed class MinimapController : UiController
         tip["onDelay"] = 300;
         tip["offDelay"] = 60000;
         tip.SetTooltipAlign(7);
-        tip["text"] = Ms2.Quest.ClientFormat.Format(Model.Tables.Common("s_minimap_tooltip_field_info"), Model.Field.Name, (uint)level);
+        var text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common("s_minimap_tooltip_field_info"), Model.Field.Name, (uint)level);
+        var extra = Model.Tables.Fishing.Description(Model.Field.MapId, Pc.FishingMastery, Model.Tables.Common);
+        if (extra.Length > 0) text += "\n" + extra;
+        tip["text"] = text;
         return tip;
     }
 

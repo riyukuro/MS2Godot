@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 
@@ -46,6 +47,9 @@ public sealed class GameTables
         statNames = CommonTexts(packs, "table/statstringtable.xml", s.Table("stringstatname", "name"));
         statOptions = Options(packs, "table/statstringtable.xml");
         specialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", s.Table("stringspecialabilityname", "name"));
+        // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
+        XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
+        Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
@@ -99,6 +103,9 @@ public sealed class GameTables
         => ((uint)MathF.Round(c.r * 255) << 16) | ((uint)MathF.Round(c.g * 255) << 8) | (uint)MathF.Round(c.b * 255);
 
     readonly Dictionary<string, string> commonResource = new();
+
+    /// <summary>The fishing spots and fishing mastery grades (CFishingTable, CMasteryTable type 1); empty without data.</summary>
+    public FishingSpots Fishing { get; } = new(null, null, _ => true);
 
     /// <summary>A CommonResource member by its commonResource.xml key (e.g. HDR_PATH); "" when absent.</summary>
     public string CommonResource(string key) => commonResource.TryGetValue(key, out var v) ? v : "";

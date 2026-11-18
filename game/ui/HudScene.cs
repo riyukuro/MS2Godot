@@ -438,7 +438,15 @@ public partial class HudScene : Node
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
         var model = NewModel();
         model.Field.Name = MapName();
-        try { model.Field.MapLevel = FieldData.FindByXBlock(assets.Packs, xblock)?.MapLevel; } catch (Exception e) { GD.PushWarning("minimap field data: " + e.Message); }
+        try
+        {
+            var fd = FieldData.FindByXBlock(assets.Packs, xblock);
+            model.Field.MapLevel = fd?.MapLevel;
+            if (fd != null) model.Field.MapId = fd.Id;
+        }
+        catch (Exception e) { GD.PushWarning("minimap field data: " + e.Message); }
+        // PC::GetMastery(1): the user block's mastery list, index 1 = fishing
+        if (data.Player.Mastery is { Length: > 1 } mastery) model.Player.FishingMastery = (uint)mastery[1];
         model.Field.Channel = (int)data.Player.Channel;
         model.Field.Channels = new[] { (int)data.Player.Channel };
         var path = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value");

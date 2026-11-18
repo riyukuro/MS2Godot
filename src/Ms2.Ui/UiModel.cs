@@ -36,6 +36,8 @@ public sealed class PlayerState
     /// <summary>The exp counter in this level (DAT_143ab28a0) and the rest exp bonus pool (DAT_143ab28a8).</summary>
     public long Exp, RestExp;
     public long Mesos, Merats;
+    /// <summary>PC::GetMastery(1): the fishing mastery (the user block's mastery list, index 1).</summary>
+    public uint FishingMastery;
     /// <summary>The merat wallet by kind, 0 cash, 1 free, 2 market, 3 event (g_143ab2a78, set by FUN_1409304d0 from the
     /// ServerEnter wallet, scenestategame.cpp:2104), and the red merat balance (SetRedMeratBalance).</summary>
     public long[] MeratWallet = new long[4];

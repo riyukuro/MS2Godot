@@ -279,6 +279,18 @@ public class HudTests
         var shown = TooltipTests.Draw(d);
         TestContext.WriteLine("m_fieldname: " + string.Join(" | ", shown));
         Assert.That(shown, Has.Some.Contains("Tria"));
+        // Tria is fishing spot 02000001 (water, minMastery 0): s_worldmap_tooltip_fishingspot_low with the habitat and
+        // Grade(1, 0) = 1 -> s_fishing_grade_Lv1; the restored client shows "Freshwater / Fishing - Beginner I"
+        m.Field.MapId = 2000001;
+        var f = c.GetUserData("getTooltip", new object[] { "m_fieldname" });
+        var line = Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_worldmap_tooltip_fishingspot_low"),
+            m.Tables.Common("s_fishing_habitat_water"), m.Tables.Common("s_fishing_grade_Lv1"));
+        Assert.That(f["text"], Is.EqualTo((string)d["text"] + "\n" + line));
+        var fishing = TooltipTests.Draw(f);
+        TestContext.WriteLine("m_fieldname with spot: " + string.Join(" | ", fishing));
+        Assert.That(string.Join(" ", fishing), Does.Contain("Freshwater").And.Contain("Beginner I"));
+        Assert.That(m.Tables.Fishing.Grade(0), Is.EqualTo(1));
+        Assert.That(m.Tables.Fishing.Grade(80), Is.EqualTo(2));
     }
 
     [Test]
