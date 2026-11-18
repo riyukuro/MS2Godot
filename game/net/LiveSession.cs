@@ -120,6 +120,16 @@ public partial class LiveSession : Node
         finally { Busy = false; }
     }
 
+    /// <summary>The quest table columns for QuestBook (questType, repeatable, groupID), read once from the quest XML; no lookup when the data is missing.</summary>
+    static Func<int, QuestBook.QuestInfoRow?> QuestTable() {
+        System.Collections.Generic.Dictionary<int, (int Type, int Repeatable, int GroupId)> rows = null;
+        return id => {
+            try { rows ??= Ms2.Quest.QuestKinds.Load(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)); }
+            catch (Exception e) { GD.Print($"live: quest table unavailable ({e.Message})"); rows = new(); }
+            return rows.TryGetValue(id, out var r) ? new QuestBook.QuestInfoRow(r.Type, r.Repeatable, r.GroupId) : null;
+        };
+    }
+
     /// <summary>Select the character and migrate to the game server, up to RequestFieldEnter. The chosen character's map becomes the server's.</summary>
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
@@ -128,6 +138,7 @@ public partial class LiveSession : Node
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
             (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host);
+            Quests.QuestInfo = QuestTable();
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
             GD.Print($"live: {Quests.All.Count} quests loaded before the field");
             login.Dispose(); login = null;

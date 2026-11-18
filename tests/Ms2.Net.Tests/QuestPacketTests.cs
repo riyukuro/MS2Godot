@@ -1,3 +1,4 @@
+using System.Linq;
 using Maple2.PacketLib.Tools;
 using Ms2.Net.Packets;
 using NUnit.Framework;
@@ -40,5 +41,20 @@ public class QuestPacketTests {
         book.Apply(Read(w => { w.WriteByte(5); w.WriteInt(5); w.WriteInt(1); })); Assert.That(book.Get(5), Is.Not.Null);
         book.Apply(Read(w => { w.WriteByte(5); w.WriteInt(5); w.WriteInt(0); })); Assert.That(book.Get(5), Is.Null);
         Assert.That(Read(w => w.WriteByte(0x26)), Is.EqualTo(new QuestMessage.Other(0x26)));
+    }
+
+    [Test]
+    public void DailyDropRemovesOnlyTypeNineDailyUngrouped() {
+        var book = new QuestBook();
+        var table = new System.Collections.Generic.Dictionary<int, QuestBook.QuestInfoRow> {
+            [1] = new(9, 2, 0), [2] = new(9, 3, 0), [3] = new(9, 2, 5), [4] = new(4, 2, 0) };
+        book.QuestInfo = id => table.TryGetValue(id, out var r) ? r : null;
+        book.Apply(new QuestMessage.Load(new[] { 1, 2, 3, 4, 5 }.Select(i => new QuestRecord { Id = i, State = 1 }).ToList()));
+        book.Apply(new QuestMessage.Counts(false, false, new[] { 7 }));      // no drop byte: nothing removed
+        Assert.That(book.All.Count, Is.EqualTo(5));
+        book.Apply(new QuestMessage.Counts(false, true, new[] { 7 }));
+        Assert.That(book.All.Select(q => q.Id).OrderBy(i => i), Is.EqualTo(new[] { 2, 3, 4, 5 }));
+        book.Apply(new QuestMessage.Counts(true, true, new int[0]));         // weekly: state 3
+        Assert.That(book.All.Select(q => q.Id).OrderBy(i => i), Is.EqualTo(new[] { 3, 4, 5 }));
     }
 }

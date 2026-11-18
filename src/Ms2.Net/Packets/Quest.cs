@@ -1,3 +1,4 @@
+using System.Linq;
 // Layouts from the restored client's CQuestManager::OnQuest (questmanager_2.cpp:942) and CQuest::Init/DecodeStart/DecodeProgress/Complete (questmanager_1.cpp:127, 389-425),
 // checked against the server fork's QuestPacket writers (Maple2.Server.Game/Packets/QuestPacket.cs, Quest.WriteTo).
 using Maple2.PacketLib.Tools;
@@ -95,6 +96,11 @@ public sealed class QuestBook {
     public event Action<int> ErrorReceived;
     public event Action<int, IReadOnlyList<int>> NpcOffer;
 
+    /// <summary>Per-quest table data the client reads from the quest XML: basic questType, basic repeatable, require groupID.</summary>
+    public readonly record struct QuestInfoRow(int Type, int Repeatable, int GroupId);
+    /// <summary>Quest table lookup (null row = quest not in the table). Without it the count packets only replace the count sets.</summary>
+    public Func<int, QuestInfoRow?> QuestInfo { get; set; }
+
     public void Apply(QuestMessage m) {
         switch (m) {
             case QuestMessage.Reset x: quests.Clear(); pinned.Clear(); Group = x.Group; RefreshCount = x.RefreshCount; Changed?.Invoke(0); break;
@@ -111,7 +117,16 @@ public sealed class QuestBook {
             case QuestMessage.Abandon x: if (quests.Remove(x.Id)) Changed?.Invoke(x.Id); break;
             case QuestMessage.Expired x: foreach (int id in x.Ids) quests.Remove(id); if (x.Ids.Count > 0) Changed?.Invoke(0); break;
             case QuestMessage.Tracking x: if (quests.TryGetValue(x.Id, out var t)) { t.Tracked = x.Tracked; Changed?.Invoke(x.Id); } break;
-            case QuestMessage.Counts x: { var set = x.Weekly ? weekly : daily; set.Clear(); foreach (int id in x.Ids) set.Add(id); Changed?.Invoke(0); break; }
+            case QuestMessage.Counts x: {
+                var set = x.Weekly ? weekly : daily; set.Clear(); foreach (int id in x.Ids) set.Add(id);
+                // OnQuest modes 0x1f/0x20 with the drop byte set: RemoveQuestsByTypeAndState(9, 2 daily / 3 weekly, skipGrouped 1)
+                // (0x1416d38a0) removes every quest whose questType is 9 and repeatable equals the state, unless it has a require groupID.
+                if (x.Drop && QuestInfo != null) {
+                    int state = x.Weekly ? 3 : 2;
+                    foreach (int id in quests.Keys.ToList())
+                        if (QuestInfo(id) is { } row && row.Type == 9 && row.Repeatable == state && row.GroupId == 0) quests.Remove(id);
+                }
+                Changed?.Invoke(0); break; }
             case QuestMessage.Error x: ErrorReceived?.Invoke(x.Code); break;
             case QuestMessage.Talk x: NpcOffer?.Invoke(x.NpcId, x.Ids); break;
         }
