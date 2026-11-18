@@ -35,6 +35,8 @@ public partial class LiveSession : Node
     bool answered;           // ResponseFieldEnter sent for this entry
     public bool Busy { get; private set; }
     /// <summary>The last create the server refused (null after a create that went through).</summary>
+    /// <summary>The account's character limit from CharMaxCount 0xB8 (DAT_1439f4a84); 0 until the server sent it.</summary>
+    public int CharacterLimit;
     public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
@@ -68,6 +70,7 @@ public partial class LiveSession : Node
             accountId = o.Result.AccountId;
             Session.AccountId = up[0];
             Session.Characters = o.Characters.ToList();
+            if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
             GD.Print($"live: logged in, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");
             return true;
         }

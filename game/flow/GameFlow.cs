@@ -177,7 +177,7 @@ public partial class GameFlow : Node
         var e = await live.CreateAsync(request);
         if (e == null)
         {
-            if (live.LastRefusal is { } r) ShowNotice(Net.CreateRefusalText.For(r.Kind, r.Message, CommonStrings()));
+            if (live.LastRefusal is { } r) ShowNotice(Net.CreateRefusalText.For(r.Kind, r.Message, CommonStrings(), live.CharacterLimit > 0 ? live.CharacterLimit : 6));
             return;
         }
         Session.SelectedIndex = Session.List().Count - 1;

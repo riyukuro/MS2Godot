@@ -516,6 +516,7 @@ public partial class Field : Node3D
                 var e = placedEye.Value;
                 var (ex, ey, ez) = Ms2.Net.CameraMath.Euler(e.X, -e.Z, e.Y, look.X, -look.Z, look.Y);
                 player.CameraEuler = new Vector3(ex, ey, ez);
+                if (!eulerLogged) { eulerLogged = true; GD.Print($"field: camera hAngle {cam.HAngleDeg} vAngle {cam.VAngleDeg} eye {e} look {look} -> CameraEuler ({ex:F2}, {ey:F2}, {ez:F2})"); }
             }
             var ideal = Transform3D.Identity.LookingAt(look - placedEye.Value, Vector3.Up);
             ideal.Origin = placedEye.Value;
@@ -530,6 +531,7 @@ public partial class Field : Node3D
 
     // CTargetCameraMode distance state: camDist is m_50 (the eye's distance from the target in the ground plane), camVel
     // m_84 (+ toward the target), camVelActive m_88, camBlocked m_f4; placedEye is m_d8's position, camLook m_78.
+    bool eulerLogged;
     float camVel;
     bool camVelActive, camBlocked;
     int zoomInput;

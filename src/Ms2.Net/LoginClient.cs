@@ -6,6 +6,9 @@ namespace Ms2.Net;
 /// <summary>What the login server gave back: the LoginResult, and the character list when the login was accepted.</summary>
 public sealed record LoginOutcome(LoginResult Result, IReadOnlyList<CharacterEntry> Characters) {
     public bool Success => Result.Success;
+    /// <summary>CharMaxCount 0xB8 (CNetworkService::OnCharMaxCount, networkservice.cpp:1069): DAT_1439f4a84, the account's character limit, and DAT_1439f4a88, the list's row count. 0 when the server sent none.</summary>
+    public int CharacterLimit { get; init; }
+    public int CharacterRows { get; init; }
 }
 
 /// <summary>
@@ -72,6 +75,7 @@ public sealed class LoginClient {
 
     public async Task<LoginOutcome> RunAsync(string user, string password, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000) {
         LoginResult result = null;
+        int limit = 0, rows = 0;
         var list = new List<CharacterEntry>();
         var deadline = Environment.TickCount64 + timeoutMs;
         while (true) {
@@ -90,11 +94,14 @@ public sealed class LoginClient {
                     result = LoginResult.Read(p.Reader());
                     if (!result.Success) return new LoginOutcome(result, list);
                     break;
+                case Inbound.CharMaxCount:
+                    var cr = p.Reader(); limit = cr.ReadInt(); rows = cr.ReadInt();
+                    break;
                 case Inbound.CharacterList:
                     var m = CharacterListMessage.Read(p.Reader());
                     if (m.Command == CharacterListCommand.StartList) list.Clear();
                     else if (m.Command is CharacterListCommand.List or CharacterListCommand.AppendEntry) list.AddRange(m.Entries);
-                    else if (m.Command == CharacterListCommand.EndList) return new LoginOutcome(result ?? throw new InvalidDataException("CharacterList before LoginResult"), list);
+                    else if (m.Command == CharacterListCommand.EndList) return new LoginOutcome(result ?? throw new InvalidDataException("CharacterList before LoginResult"), list) { CharacterLimit = limit, CharacterRows = rows };
                     break;
             }
         }
