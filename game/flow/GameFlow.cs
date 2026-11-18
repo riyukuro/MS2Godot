@@ -197,6 +197,7 @@ public partial class GameFlow : Node
     void ShowNotice(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
+        GD.Print("flow: notice: " + text);
         var box = new AcceptDialog { DialogText = text, Title = "", Exclusive = true };
         box.Confirmed += box.QueueFree;
         box.Canceled += box.QueueFree;
