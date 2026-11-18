@@ -20,6 +20,11 @@ public sealed class FieldMeta
     /// <summary>npc id -> fields it stands in.</summary>
     public readonly Dictionary<int, List<int>> NpcFields = new();
     /// <summary>
+    /// The (npc, field) pairs with a time window (m_activeTimes: a field element with a startTime and an endTime that
+    /// both parse, ParseTimeString); the npc stands there only while the server time is inside it (FUN_1406fbb50).
+    /// </summary>
+    public readonly HashSet<(int Npc, int Field)> TimedNpcFields = new();
+    /// <summary>
     /// field -> its outdoor field (GetParentField, m_reverse): for each outdoor fieldPortal (indoor="0"), every field its
     /// portalIndoor portals lead to, and on through those fields' own portalIndoor portals (FUN_1406fbdf0), has it as
     /// the parent. The outdoor fields are walked in m_indoorPortals' hash map order (<see cref="AtlMapOrder"/>), so a field
@@ -41,6 +46,9 @@ public sealed class FieldMeta
             {
                 if (!m.NpcFields.TryGetValue(id, out var l)) m.NpcFields[id] = l = new List<int>();
                 l.Add(Int(f, "id"));
+                if (f.Attribute("startTime") != null && f.Attribute("endTime") != null
+                    && ParseTimeString((string)f.Attribute("startTime")) && ParseTimeString((string)f.Attribute("endTime")))
+                    m.TimedNpcFields.Add((id, Int(f, "id")));
             }
         }
         var indoorPortals = new Dictionary<int, List<int>>();
@@ -84,33 +92,62 @@ public sealed class FieldMeta
     /// of its new bin; GetStartPosition / GetNext walk the bins in order and each bin from its head. Keys repeat-inserted
     /// keep their place (SetAt).
     /// </summary>
-    public static List<int> AtlMapOrder(IEnumerable<int> insertOrder)
+    public static List<int> AtlMapOrder(IEnumerable<int> insertOrder) => AtlMapOrder(insertOrder, k => (uint)k);
+
+    /// <summary><see cref="AtlMapOrder(IEnumerable{int})"/> for any key with its CElementTraits hash.</summary>
+    public static List<T> AtlMapOrder<T>(IEnumerable<T> insertOrder, Func<T, uint> hash)
     {
         uint[] primes = { 17, 23, 29, 37, 41, 53, 67, 83, 103, 131, 163, 211, 257, 331, 409, 521, 647, 821, 1031, 1291, 1627,
                           2053, 2591, 3251, 4099, 5167, 6521, 8209, 10331, 13007, 16411, 20663, 26017, 32771, 41299, 52021, 65537 };
         uint bins = 17;
-        var table = new List<int>[bins];
-        for (int i = 0; i < bins; i++) table[i] = new List<int>();     // each bin head first
-        var seen = new HashSet<int>();
+        var table = new List<T>[bins];
+        for (int i = 0; i < bins; i++) table[i] = new List<T>();     // each bin head first
+        var seen = new HashSet<T>();
         int count = 0;
-        foreach (int key in insertOrder)
+        foreach (T key in insertOrder)
         {
             if (!seen.Add(key)) continue;
-            table[(uint)key % bins].Insert(0, key);
+            table[hash(key) % bins].Insert(0, key);
             count++;
             if (count > (int)(2.25f * bins))
             {
                 uint estimate = (uint)(count / 0.75f);
                 uint next = primes.First(p => estimate <= p);
                 if (next == bins) continue;
-                var nt = new List<int>[next];
-                for (int i = 0; i < next; i++) nt[i] = new List<int>();
+                var nt = new List<T>[next];
+                for (int i = 0; i < next; i++) nt[i] = new List<T>();
                 foreach (var bin in table)
-                    foreach (int k in bin) nt[(uint)k % next].Insert(0, k);
+                    foreach (T k in bin) nt[hash(k) % next].Insert(0, k);
                 table = nt; bins = next;
             }
         }
         return table.SelectMany(b => b).ToList();
+    }
+
+    /// <summary>
+    /// CFieldMetaTable::ParseTimeString's check: sscanf "%d-%d-%d-%d-%d-%d" (the parts it does not read stay 0) and each
+    /// part in range (year from 1900, month 1-12, day 1-31, hour 0-23, minute and second 0-59).
+    /// </summary>
+    public static bool ParseTimeString(string s)
+    {
+        var v = new int[6];
+        int i = 0;
+        for (int part = 0; part < 6; part++)
+        {
+            if (part > 0) { if (i >= s.Length || s[i] != '-') break; i++; }
+            int j = i;
+            while (j < s.Length && char.IsWhiteSpace(s[j])) j++;
+            bool neg = false;
+            if (j < s.Length && (s[j] == '-' || s[j] == '+')) neg = s[j++] == '-';
+            int start = j;
+            long n = 0;
+            while (j < s.Length && s[j] >= '0' && s[j] <= '9') n = n * 10 + (s[j++] - '0');
+            if (j == start) break;
+            v[part] = (int)(neg ? -n : n);
+            i = j;
+        }
+        return v[0] >= 1900 && v[1] >= 1 && v[1] <= 12 && v[2] >= 1 && v[2] <= 31 && v[3] >= 0 && v[3] <= 23
+            && v[4] >= 0 && v[4] <= 59 && v[5] >= 0 && v[5] <= 59;
     }
 
     static int Int(XElement e, string a) =>

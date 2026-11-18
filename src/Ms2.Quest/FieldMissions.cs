@@ -227,13 +227,20 @@ public sealed class FieldMissions
 /// </summary>
 public sealed class ReservedWords
 {
-    public const int ItemName = 1, NpcName = 2, MapName = 3, NpcTitle = 19, NpcNamePlural = 61;
+    public const int ItemName = 1, NpcName = 2, MapName = 3, RegionName = 18, NpcTitle = 19, FieldEnterance = 20,
+                     AchieveName = 24, ContinentName = 25, IslandName = 26, NpcNamePlural = 61, ItemNamePlural = 62,
+                     PetCollectGroupName = 65;
 
     public static readonly (int Table, string File)[] Tables =
     {
         (ItemName, "itemname"), (NpcName, "npcname"), (MapName, "mapname"), (NpcTitle, "npctitle"),
-        (NpcNamePlural, "npcnameplural"),
+        (NpcNamePlural, "npcnameplural"), (RegionName, "regionname"), (FieldEnterance, "stringfieldenterance"),
+        (AchieveName, "achievename"), (ContinentName, "continentname"), (IslandName, "islandname"),
+        (ItemNamePlural, "itemnameplural"), (PetCollectGroupName, "petcollectgroupname"),
     };
+
+    /// <summary>GetQuestName for the $quest word (Rw_Quest); empty when unset.</summary>
+    public Func<int, string> QuestName;
 
     readonly Dictionary<int, Dictionary<long, string>> tables = new();
 
@@ -277,6 +284,12 @@ public sealed class ReservedWords
                 "$npc" => NpcFullName(FieldMissions.Int(arg)),
                 "$npcName" => Get(NpcName, FieldMissions.Int(arg)),
                 "$npcNamePlural" => Get(NpcNamePlural, FieldMissions.Int(arg)),
+                "$itemPlural" => Get(ItemNamePlural, FieldMissions.Int(arg)),
+                "$npcPlural" => NpcPluralName(FieldMissions.Int(arg)),
+                "$achieve" => FieldMissions.Int(arg) == 0 ? "" : Get(AchieveName, FieldMissions.Int(arg)),
+                "$dungeonTitle" => FieldMissions.Int(arg) == 0 ? "" : Get(FieldEnterance, FieldMissions.Int(arg)),
+                "$quest" => FieldMissions.Int(arg) == 0 ? "" : QuestName?.Invoke(FieldMissions.Int(arg)) ?? "",
+                "$petCollectGroup" => Get(PetCollectGroupName, FieldMissions.Int(arg)),
                 "$pp" => Ppr(token, arg, s.ToString()),
                 _ => null,
             };
@@ -284,6 +297,34 @@ public sealed class ReservedWords
             s.Remove(pos, end - pos + 1).Insert(pos, outText);
         }
         return s.ToString();
+    }
+
+    /// <summary>
+    /// ReplaceValueWords (FUN_1416fc320 over m_mapValue) for the words that need no player or dialog state: "$pp" and
+    /// "$ppr" (Rw_Ppr). The others ($MyPCHp, $MyPCName, $MyPCLevel, $paneltyPrice, $pp2, the roulette words, $male,
+    /// $female, $key) are left as they are; no quest or chapter name uses them.
+    /// </summary>
+    public string ReplaceValueWords(string str)
+    {
+        var s = new StringBuilder(str ?? "");
+        int pos = 0;
+        while ((pos = IndexOf(s, '$', pos)) != -1)
+        {
+            int end = IndexOf(s, '$', pos + 1);
+            if (end == -1) break;
+            string token = s.ToString(pos, end - pos + 1);
+            string name = TokenName(token);
+            if (name != "$pp" && name != "$ppr") { pos = end + 1; continue; }
+            s.Remove(pos, end - pos + 1).Insert(pos, Ppr(token, TokenArgument(token), s.ToString()));
+        }
+        return s.ToString();
+    }
+
+    /// <summary>FUN_141700820 ($npcPlural in English): "&lt;title&gt; &lt;plural name&gt;", or the plural name alone without a title.</summary>
+    public string NpcPluralName(long id)
+    {
+        string title = Get(NpcTitle, id), name = Get(NpcNamePlural, id);
+        return title.Length != 0 ? title + " " + name : name;
     }
 
     /// <summary>FUN_1401aa6a0: "&lt;title&gt; &lt;name&gt;", or the name alone when the npc has no title.</summary>

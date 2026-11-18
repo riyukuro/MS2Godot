@@ -1,4 +1,5 @@
 using Godot;
+using Ms2.Quest;
 
 namespace Ms2Godot.Ui;
 
@@ -7,8 +8,9 @@ namespace Ms2Godot.Ui;
 /// open and close (UIDialog::FUN_1419246f0 toggles, vfunc_65 loads the movie, vfunc_67 closes it), the open and close tweens
 /// (OpenCloseTween), its place on the stage (Dialog.alignment), the tab and sub-tab bars (QuestDialog.configUI,
 /// updateSubTab, UIQuestDialog::SetTab / SetSubTab / ChangeTab), the two list filters and the display settings panel.
-/// The quest list and the detail pane are filled by the later steps; until then the list is empty and the detail pane
-/// shows the movie as built.
+/// The quest list (UIQuestDialog::RefreshTab, <see cref="QuestLog"/>) is drawn as QuestDialog.setList draws it: a
+/// TreeViewDataProvider over the tree, one renderer per row (MultiRendererTreeList). The detail pane is the next step;
+/// until then it shows the movie as built.
 /// </summary>
 public sealed class QuestDialog
 {
@@ -44,7 +46,20 @@ public sealed class QuestDialog
     Vector2 regPos;                   // the dialog's registration point on the stage, in stage units (its x, y)
     bool closing;                     // the close tween runs; the movie is unloaded at its end (OnEndClose -> Unload)
 
-    public QuestDialog(UiAssets assets, Func<string, bool> featureOn) { this.assets = assets; this.featureOn = featureOn; }
+    /// <summary>The quest list's data: the quest table and the character's quest state; null until the table is loaded.</summary>
+    readonly Func<QuestLog> logSource;
+    QuestLog log;
+    QuestLogTree tree;
+    /// <summary>The list's renderers (_renderers), one per row, in the list's container.</summary>
+    readonly List<MovieClipNode> rows = new();
+    Node2D rowContainer;
+    /// <summary>m_questList.selectedIndex (-1 none).</summary>
+    int selectedIndex = -1;
+
+    public QuestDialog(UiAssets assets, Func<string, bool> featureOn, Func<QuestLog> logSource)
+    {
+        this.assets = assets; this.featureOn = featureOn; this.logSource = logSource;
+    }
 
     /// <summary>Whether the dialog is open (UIDialog::vfunc_55 false): loaded and not closing.</summary>
     public bool IsOpen => root != null && !closing;
@@ -61,7 +76,7 @@ public sealed class QuestDialog
         var keep = new Vector2(regPos.X * stage.X / oldStage.X, regPos.Y * stage.Y / oldStage.Y);
         int keepTab = tab, keepSub = subTab;
         Build();
-        SetTab(keepTab); SetSubTab(keepSub); ChangeTab(tab);
+        SetTab(keepTab); SetSubTab(keepSub); ChangeTab(tab); RefreshTab();
         regPos = keep; Place(0);
     }
 
@@ -113,7 +128,7 @@ public sealed class QuestDialog
     {
         if (root?.GetParent() is Node holder) holder.QueueFree();
         root = null; body = null; mouse = null; closing = false; tween = null;
-        tabs.Clear(); subTabs.Clear();
+        tabs.Clear(); subTabs.Clear(); rows.Clear(); rowContainer = null; tree = null; selectedIndex = -1;
     }
 
     // ---- build -------------------------------------------------------------------------------------------------------
@@ -131,7 +146,7 @@ public sealed class QuestDialog
         UiWidgets.ApplyInspector(root, Inspector);
         // __setProp_m_title_qd: m_title.text = "$s_quest_information"
         body.FindClip("m_title")?.Widget?.Set("text", "$s_quest_information");
-        mouse = new UiWidgets.MouseRouter(root) { Extra = () => tabs.Concat(subTabs) };
+        mouse = new UiWidgets.MouseRouter(root) { Extra = () => tabs.Concat(subTabs).Concat(rows) };
         ConfigUI();
     }
 
@@ -278,6 +293,7 @@ public sealed class QuestDialog
     void OnChangeTab()
     {
         UpdateSubTab();
+        SelectRow(-1);
         UpdatePaper();
         ChangeTab(tab);
         RefreshTab();
@@ -285,12 +301,213 @@ public sealed class QuestDialog
 
     /// <summary>
     /// UIQuestDialog::RefreshTab: sub-tab 0 lists the startable quests, the others the tab's quests (RefreshEpisodes on the
-    /// main tab, RefreshList on the rest). The list is the next step; the paper then follows the list (setList -> updatePaper).
+    /// main tab, RefreshList on the rest), each then setList and updatePaper. The filters are the check boxes' states:
+    /// "proper level" selected (CollectRecommended reads it shown or not), "progress only" shown and selected.
     /// </summary>
     void RefreshTab()
     {
-        listLength = 0;
+        log ??= logSource?.Invoke();
+        if (log == null || body == null) return;
+        (log.Tab, log.SubTab) = Tabs;
+        log.ProperLevel = Checked(Clip("m_properLevel"));
+        log.ProgressOnly = body.Direct("m_progressOnly") is { Last: > 0 } && Checked(Clip("m_progressOnly"));
+        var list = log.Build();
+        if (list == null) return;
+        SetList(list);
         UpdatePaper();
+    }
+
+    // ---- the quest list ----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// QuestDialog.setList: a TreeViewDataProvider over the tree becomes the list's data, and its renderers are made again
+    /// (invalidateRenderers, validateNow), then updateExpandIcon.
+    /// </summary>
+    void SetList(QuestLogNode list)
+    {
+        tree = new QuestLogTree(list);
+        DrawRenderers();
+    }
+
+    /// <summary>
+    /// CoreList.draw with the renderers invalid, for a MultiRendererTreeList: the old renderers are dropped; one renderer per
+    /// row (dataProvider.length) of the class its data names (rendererClassName; getRendererInfo), made while the row has
+    /// data (drawRenderers); each placed under the one before it by that one's class height (drawLayout: rendererData
+    /// rheight, the height of a new instance); then the rows' data (requestItemRange -> populateData: ListData index,
+    /// label and selected, setData) and the expand icons (updateExpandIcon). The renderers sit in the list's container,
+    /// whose scale undoes the list's (CoreList.draw: container.scaleX = 1 / scaleX), at the list's place under its mask.
+    /// </summary>
+    void DrawRenderers()
+    {
+        foreach (var r in rows) r.QueueFree();
+        rows.Clear();
+        listLength = tree?.Length ?? 0;
+        var listChild = body?.Direct("m_questList");
+        if (tree == null || listChild?.Node is not MovieClipNode list) return;
+        if (rowContainer == null)
+        {
+            var b = listChild.Base;
+            rowContainer = new Node2D { Scale = new Vector2(1 / b.X.Length(), 1 / b.Y.Length()) };
+            list.AddChild(rowContainer);
+        }
+        var heights = new Dictionary<string, float>();
+        float y = 0;
+        for (int i = 0; i < listLength; i++)
+        {
+            var data = tree.ItemAt(i);
+            if (data == null) continue;
+            // getRendererInfo(data).rclass: a row without a class name has no renderer info, and the AS stops on it
+            if (string.IsNullOrEmpty(data.Renderer)) break;
+            var r = body.Movie.BuildClass(data.Renderer, u);
+            if (r == null) break;
+            if (r.Widget == null) UiWidgets.Attach(r);
+            heights.TryAdd(data.Renderer, r.Bounds.Size.Y);
+            if (i > 0) y += heights[tree.ItemAt(i - 1).Renderer ?? data.Renderer];
+            r.Position = new Vector2(0, y);
+            rowContainer.AddChild(r);
+            int index = i;
+            if (r.Widget is ButtonWidget w)
+            {
+                // the list selects (ListData.selected); a click selects the row (CoreList.handleItemClick)
+                w.Toggle = true; w.AllowDeselect = false;
+                w.Click += _ => OnItemClick(index);
+            }
+            rows.Add(r);
+        }
+        var range = tree.Range(0, listLength - 1);
+        for (int i = 0; i < rows.Count; i++) SetData(rows[i], i < range.Count ? range[i] : null, i);
+        UpdateExpandIcon();
+    }
+
+    /// <summary>populateData for one renderer: setListData (label, selected) then the renderer class's setData.</summary>
+    void SetData(MovieClipNode r, QuestLogNode d, int index)
+    {
+        if (r.Widget is ButtonWidget w)
+        {
+            w.SetSelected(selectedIndex == index, false);
+            // itemToLabel: the item's label; the region rows have no label and no label field to show one
+            if (d?.Label != null) w.Set("label", d.Label);
+        }
+        switch (d?.Renderer)
+        {
+            case "qd_renderer_chapter":
+                // ChapterListRenderer.setLevel: m_level.htmlText = data.level
+                r.SetNamedHtml("m_level", d.Level ?? "");
+                break;
+            case "qd_renderer_region":
+                // ItemRendererTile.setData
+                r.SetNamedHtml("m_code", d.Code ?? "");
+                r.SetNamedHtml("m_field", d.Field ?? "");
+                break;
+            case "qd_renderer_questList":
+                SetQuestRow(r, d);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// QuestListRenderer.setData: the name; the register check box from regist; a quest in progress has the check box and
+    /// the name enabled, the new mark after the name (but not past the give-up button), and the give-up button when it
+    /// failed or else its state icon; any other row hides the check box, the new mark and the give-up button, greys the
+    /// name and shows the "complete" icon. A forced quest's check box is selected and disabled.
+    /// </summary>
+    static void SetQuestRow(MovieClipNode r, QuestLogNode d)
+    {
+        var name = r.Direct("m_name")?.Node as MovieClipNode;
+        var check = r.Direct("m_checkBox")?.Node as MovieClipNode;
+        var icon = r.Direct("m_stateIcon")?.Node as MovieClipNode;
+        name?.Widget?.Set("text", d.Label ?? "");
+        if (check?.Widget is ButtonWidget cb) cb.SetSelected(d.Regist != 0, false);
+        if (d.Progress)
+        {
+            check?.Widget?.Set("enabled", true);
+            name?.GotoLabel("default");
+            r.SetNamedVisible("m_new", d.IsNew != 0);
+            var nameChild = r.Direct("m_name");
+            float textWidth = name?.Children.Select(c => c.Node).OfType<TextNode>().FirstOrDefault()?.TextWidth ?? 0;
+            float giveupX = r.Direct("m_giveup")?.Base.Origin.X ?? 0;
+            r.SetChildX(r.Direct("m_new"), Math.Min(nameChild.Base.Origin.X + textWidth + 10, giveupX));
+            bool fail = d.Icon == "fail";
+            r.SetNamedVisible("m_giveup", fail);
+            r.SetNamedVisible("m_stateIcon", !fail);
+            if (!fail) icon?.GotoLabel(d.Icon);
+        }
+        else
+        {
+            r.SetNamedVisible("m_checkBox", false);
+            name?.GotoLabel("disabled");
+            r.SetNamedVisible("m_new", false);
+            r.SetNamedVisible("m_giveup", false);
+            icon?.GotoLabel("complete");
+        }
+        if (d.ForceRegist != 0 && check?.Widget is ButtonWidget fb)
+        {
+            fb.SetSelected(true, false);
+            fb.Set("enabled", false);
+        }
+        // onRegister (the check box's SELECT): the row's regist follows it; telling the server is the C++ side's (not here)
+        if (check?.Widget is ButtonWidget rb) rb.Select += (_, sel) => d.Regist = sel ? 1 : 0;
+    }
+
+    /// <summary>MultiRendererTreeList.updateExpandIcon: each row with children shows "collapse" when open, else "expand".</summary>
+    void UpdateExpandIcon()
+    {
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var d = tree.ItemAt(i);
+            if (d == null || d.Type == QuestLogTree.TypeLeaf) continue;
+            (rows[i].Direct("icon")?.Node as MovieClipNode)?.GotoLabel(d.Type == QuestLogTree.TypeOpen ? "collapse" : "expand");
+        }
+    }
+
+    /// <summary>
+    /// A row clicked: MultiRendererTreeList.handleItemClick selects it (CoreList), then a row with children flips open or
+    /// closed and the renderers are made again (resetRenderer); the new index raises INDEX_CHANGE (onSelectRenderer).
+    /// </summary>
+    void OnItemClick(int index)
+    {
+        var d = tree?.ItemAt(index);
+        if (d == null) return;
+        if (d.Type != QuestLogTree.TypeLeaf)
+        {
+            d.Type = d.Type == QuestLogTree.TypeOpen ? QuestLogTree.TypeClosed : QuestLogTree.TypeOpen;
+            selectedIndex = index;
+            tree = new QuestLogTree(tree.Root);      // resetRenderer: validateLength over the same tree
+            DrawRenderers();
+            OnSelectRenderer(index);
+            return;
+        }
+        SelectRow(index);
+        OnSelectRenderer(index);
+    }
+
+    /// <summary>ScrollingListQuest.updateSelectedIndex: the old row deselected, the new one selected.</summary>
+    void SelectRow(int index)
+    {
+        selectedIndex = index;
+        for (int i = 0; i < rows.Count; i++) if (rows[i].Widget is ButtonWidget w) w.SetSelected(i == index, false);
+    }
+
+    /// <summary>
+    /// QuestDialog.onSelectRenderer: a chapter row shows the paper's list line (updatePaper(true)) and tells the dialog
+    /// (OnSelectChapter: SelectChapter, RefreshDetail); a quest row shows the paper's normal state and tells it
+    /// (OnSelectQuest: SelectQuest, RemovePinned). The detail pane is the next step.
+    /// </summary>
+    void OnSelectRenderer(int index)
+    {
+        if (tree == null || index >= listLength) return;
+        var d = rows.Count > index ? tree.ItemAt(index) : null;
+        if (d == null) return;
+        if (d.Chapter != 0)
+        {
+            UpdatePaper(true);
+            log?.SelectChapter(d.Chapter);
+        }
+        else if (d.Id != 0)
+        {
+            UpdatePaper();
+            log?.Pinned.Remove((int)d.Id);
+        }
     }
 
     /// <summary>
@@ -321,13 +538,15 @@ public sealed class QuestDialog
     static void Label(MovieClipNode b, string key) => b.Widget?.Set("label", key);
 
     /// <summary>
-    /// QuestDialog.updatePaper: with no list row selected the paper shows its "progress" state on the first sub-tab and
-    /// "complete" on the others, with a line for the sub-tab and whether its list is empty; else its "normal" state.
+    /// QuestDialog.updatePaper: with no list row selected (or <paramref name="list"/>) the paper shows its "progress" state
+    /// on the first sub-tab and "complete" on the others, with a line for the sub-tab and whether its list is empty; else
+    /// its "normal" state.
     /// </summary>
-    void UpdatePaper()
+    void UpdatePaper(bool list = false)
     {
         var paper = Clip("m_paper");
         if (paper == null) return;
+        if (selectedIndex != -1 && !list) { paper.GotoLabel("normal", true); return; }
         paper.GotoLabel(subTab == 0 ? "progress" : "complete", true);
         string key = subTab switch
         {
@@ -430,6 +649,13 @@ public sealed class QuestDialog
 
     /// <summary>The selected tab and sub-tab (UIQuestDialog::GetTab / GetSubTab: 4 and 3 with no bar).</summary>
     public (int Tab, int SubTab) Tabs => (tabs.Count > 0 ? tab : 4, subTabs.Count > 0 ? subTab : 3);
+
+    /// <summary>Clicks a row of the quest list as the mouse would (for shots and tests).</summary>
+    public void ClickRow(int index)
+    {
+        if (index < 0 || index >= rows.Count || rows[index].Widget is not ButtonWidget w) return;
+        w.MouseOver(true); w.MouseDown(true); w.MouseDown(false); w.MouseOver(false);
+    }
 
     /// <summary>Clicks a tab or sub-tab button as the mouse would (for shots and tests).</summary>
     public void ClickTab(bool sub, int index)

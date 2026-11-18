@@ -36,17 +36,19 @@ public partial class HudScene : Node
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
     QuestDialog questDialog;                // UIQuestDialog, the quest log
-    int[] questShot;                        // --questlog TAB,SUBTAB: the shot opens the quest log on these tabs
+    int[] questShot;                        // --questlog TAB,SUBTAB[,ROW]: the shot opens the quest log on these tabs (and clicks a row)
+    bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
     public override void _Ready()
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
+        questFixture = args.Contains("--questlog-fixture");
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
-        questDialog = new QuestDialog(assets, f => !data.FeaturesOff.Contains(f));
+        questDialog = new QuestDialog(assets, f => !data.FeaturesOff.Contains(f), QuestLogSource);
 
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
@@ -836,6 +838,28 @@ public partial class HudScene : Node
         }
     }
 
+    static QuestTable questTable;           // the quest log's tables, read when the log first lists (QuestDataTable, CQuestUIData)
+    static Dictionary<int, (int Continent, int Region)> fieldCodes;
+
+    /// <summary>
+    /// The quest log's data: the quest tables and the character's quest state. The state comes from the server (the quest
+    /// packets); until the network side fills <see cref="IQuestState"/> the character has no quest records and can accept
+    /// nothing (<see cref="NoQuestState"/>), so every list is empty. A shot with --questlog-fixture lists made-up state.
+    /// </summary>
+    QuestLog QuestLogSource()
+    {
+        try
+        {
+            bool featureOn(string f) => !data.FeaturesOff.Contains(f);
+            questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, featureOn);
+            fieldMeta ??= FieldMeta.Load(assets.Packs);
+            fieldCodes ??= QuestTable.FieldCodes(assets.Table("table/fielddata.xml"), questTable.Available);
+            IQuestState state = questFixture ? new QuestShotState(questTable, data.Player.Level) : new NoQuestState(data.Player.Level);
+            return new QuestLog(questTable, state) { Meta = fieldMeta, FieldCodes = fieldCodes };
+        }
+        catch (Exception e) { GD.PushWarning("quest log: " + e.Message); return null; }
+    }
+
     static FieldMissions fieldMissions;     // the quest and description tables, read once (6,780 quest files)
     static FieldMeta fieldMeta;
 
@@ -1162,6 +1186,7 @@ public partial class HudScene : Node
         if (questShot != null && frames == 200) questDialog.Open();
         if (questShot != null && frames == 210) questDialog.ClickTab(false, questShot[0]);
         if (questShot != null && frames == 220 && questShot.Length > 1) questDialog.ClickTab(true, questShot[1]);
+        if (questShot != null && frames == 230 && questShot.Length > 2) questDialog.ClickRow(questShot[2]);
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (++frames == 300)
         {
