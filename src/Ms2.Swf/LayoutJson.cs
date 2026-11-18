@@ -298,6 +298,8 @@ public static class LayoutJson
                         ["depth"] = p.Depth, ["id"] = p.CharacterId, ["name"] = p.Name, ["class"] = p.ClassName, ["first"] = f,
                         ["kind"] = p.CharacterId == null ? "class" : m.Characters.TryGetValue(p.CharacterId.Value, out var ch) ? KindName(ch.Kind) : "missing",
                         ["matrix"] = p.Matrix == null && replace ? Current(old, "matrix") : Mx(p.Matrix),
+                        // the tag has a matrix (an identity one is written as null above): a rewind to it sets the matrix
+                        ["hasMatrix"] = p.Matrix != null,
                         ["color"] = p.Color == null && replace ? Current(old, "color") : Cx(p.Color),
                         ["clipDepth"] = p.ClipDepth, ["ratio"] = p.Ratio,
                         ["blend"] = p.BlendMode, ["visible"] = p.Visible, ["cacheAsBitmap"] = p.CacheAsBitmap,

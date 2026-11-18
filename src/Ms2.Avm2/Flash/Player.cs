@@ -271,8 +271,20 @@ namespace Ms2.Avm2.Flash
 
         static void ApplyPlacement(AsDisplayObject d, JsonObject pl, bool initial)
         {
-            if (initial || !d.MatrixLocked) { if (pl["matrix"] is JsonObject m) d.Matrix = SymbolScope.Matrix(m); }
-            if (initial || !d.ColorLocked) { if (pl["color"] is JsonObject c) d.Color = SymbolScope.Color(c); }
+            if (initial || !d.MatrixLocked)
+            {
+                if (pl["matrix"] is JsonObject m) d.Matrix = SymbolScope.Matrix(m);
+                // placed again (a rewind to this placement): Scaleform moves the object it already has there to the tag's
+                // position (AvmSprite::AddDisplayObject -> DisplayList::MoveDisplayObject, sfr_as3_16z.cpp,
+                // sfr_gfx_06c.cpp:291), which sets the matrix whenever the tag has one, the identity included
+                else if (!initial && (bool?)pl["hasMatrix"] == true) d.Matrix = Mat.Identity;
+            }
+            if (initial || !d.ColorLocked)
+            {
+                if (pl["color"] is JsonObject c) d.Color = SymbolScope.Color(c);
+                // the same move sets a tag without a colour transform to the identity one (AvmSprite::AddDisplayObject)
+                else if (!initial) d.Color = Cx.Identity;
+            }
             // only the placement sets the visible flag; a timeline move does not (DisplayList::MoveDisplayObject,
             // sfr_gfx_06c.cpp:291), so a script's visible stays
             if (initial && pl["visible"] is JsonNode v) d.IsVisible = (bool)v;
