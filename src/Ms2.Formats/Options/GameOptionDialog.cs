@@ -33,6 +33,10 @@ public interface IOptionTab
     /// <summary>GetDataProvider()->GetItemAt(GetSelectedIndex()) ("requestItemAt") and its "index" member; null when there is
     /// no dropdown or the item is undefined or null.</summary>
     int? GetSelectedItemIndex(string name);
+    /// <summary>RefreshKeyList's list calls: getTabChild("m_keyList", category) keeps its scrollPosition, clears its provider
+    /// (FUN_1422dd1d0), pushes the rows (AddItem), restores scrollPosition, invalidates (vfunc_24), then
+    /// getTabComponent(tabType).refreshScrollBar(). False when there is no list.</summary>
+    bool SetKeyRows(int category, int tabType, IReadOnlyList<KeyRow> rows);
     /// <summary>ASMovieClip::vfunc_3 on a clip found by getTabChild (show 1 / hide 0); false when there is no clip.</summary>
     bool SetClipShown(string name, bool shown);
     /// <summary>The resolution dropdown (FillResolutionCombo @0x14124d080): ClearItems, then SetScrollBar("export_scroll")
@@ -42,6 +46,24 @@ public interface IOptionTab
     /// <summary>GetTabComponent(type)->Invoke("getResolution") (@0x14124bf20): the selected row's modeid, -1 for none.</summary>
     int GetResolution(int tabType);
 }
+
+/// <summary>CKeySettingParam (keytable.cpp LoadKeySettingTable): one row of an input tab's key list.</summary>
+public sealed record KeySetting(long Action, int Type, int PrimaryLocked, int SecondaryLocked, int ThirdlyLocked);
+
+/// <summary>What the input pages read of CKeyTable.</summary>
+public interface IKeyTable
+{
+    /// <summary>GetSettingList: the category's rows, null for none.</summary>
+    IReadOnlyList<KeySetting> GetSettingList(int category);
+    int FindKeyByActionAndPriority(long action, int priority);
+    string GetKeyName(int key);
+    /// <summary>CStringTable::FUN_1418125b0: the action's label.</summary>
+    string ActionName(long action);
+}
+
+/// <summary>One row of RefreshKeyList's list: keyGUID is the action as a string, or the int 0x49409.</summary>
+public sealed record KeyRow(string Label, object KeyGuid, string PrimaryKey, string SecondaryKey, string ThirdlyKey,
+    bool PrimaryEnable, bool SecondaryEnable, bool ThirdlyEnable, int IsGamePad);
 
 /// <summary>What the dialog and its pages call outside the movie's tab.</summary>
 public interface IGameOptionDialogHost
@@ -147,6 +169,10 @@ public interface IGameOptionDialogHost
     GameOption.CharacterFlag MouseControlFlag { get; }
     /// <summary>GetStatusChar: the character file's "status"/"displayLearningQuestV2".</summary>
     GameOption.CharacterFlag LearningQuestFlag { get; }
+    // ---- the input pages ----
+    /// <summary>GetKeyTable().</summary>
+    IKeyTable Keys { get; }
+
     // ---- the Language page ----
     /// <summary>DAT_143ab0248, the client region (0 KR, 1 JP, 2 NA, 3 CN).</summary>
     int Region { get; }
@@ -318,12 +344,13 @@ public sealed class GameOptionDialog
         Add(6, (k, t) => new GraphicOptionPage(k, t));
         Add(7, (k, t) => new SoundOptionPage(k, t));
         bool gamePad = host.IsFeatureEnabled(0xb5);
+        OptionPage Input(int k, int t) => new InputOptionPage(k, t);
         if (gamePad) Add(8, Plain);                      // CGameOptionGamePad
-        Add(9, Plain);                                   // CGameOptionInputDefault x5
-        Add(10, Plain);
-        Add(11, Plain);
-        if (gamePad) Add(12, Plain);
-        Add(13, Plain);
+        Add(9, Input);                                   // CGameOptionInputDefault x5
+        Add(10, Input);
+        Add(11, Input);
+        if (gamePad) Add(12, Input);
+        Add(13, Input);
         Add(14, (k, t) => new LanguageOptionPage(k, t)); // CGameOptionLanguage
         Add(16, Plain);                                  // CGameOptionAccount
         if (host.IsFeatureEnabled(0x117)) Add(15, Plain); // CGameOptionPersonalInfoAgreement
@@ -936,6 +963,68 @@ public sealed class CommunityOptionPage : OptionPage
     /// <summary>@0x14124aa70: FUN_14125d2d0 / FUN_14125d740 compare every switch.</summary>
     public override int vfunc_14() =>
         !GameOption.SameFields(State, Host.Options.CommunityOption) || !GameOption.SameFields(Account, Host.AccountCommunity) ? 1 : 0;
+}
+
+/// <summary>CGameOptionInputDefault (gameoptioninputdefault.cpp), pages 9..13: the key list of keySetting.xml's category
+/// (the page id) with the bound keys. Key editing (onFocusIn*, the key capture in vfunc_8, the save to the server) is not
+/// ported: it changes the live key bindings.</summary>
+public sealed class InputOptionPage : OptionPage
+{
+    public InputOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x141250c10: n 0 runs the base (fill or pend) and ends any edit; otherwise the list is refreshed.</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0) base.vfunc_3(n);
+        else RefreshKeyList(Type);
+    }
+
+    /// <summary>@0x1412514e0.</summary>
+    public override void vfunc_6() => RefreshKeyList(Type);
+    /// <summary>@0x141251510.</summary>
+    public override void vfunc_7() => RefreshKeyList(Type);
+
+    /// <summary>RefreshKeyList @0x141250cc0: a row per setting of the page id's category. Action 0x49409 shows key 1 as
+    /// its second key and keeps an int keyGUID; the third key shows only with the game pad feature (0xb5).</summary>
+    public void RefreshKeyList(int category)
+    {
+        var keys = Host.Keys;
+        bool pad = Host.IsFeatureEnabled(0xb5);
+        var rows = new List<KeyRow>();
+        if (keys?.GetSettingList(Id) is { } list)
+            foreach (var k in list)
+            {
+                int primary = keys.FindKeyByActionAndPriority(k.Action, 0);
+                int secondary = keys.FindKeyByActionAndPriority(k.Action, 1);
+                int thirdly = keys.FindKeyByActionAndPriority(k.Action, 2);
+                bool special = k.Action == 0x49409;
+                rows.Add(new KeyRow(keys.ActionName(k.Action),
+                    special ? 0x49409 : k.Action.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    keys.GetKeyName(primary), special ? keys.GetKeyName(1) : keys.GetKeyName(secondary),
+                    pad ? keys.GetKeyName(thirdly) : "",
+                    k.PrimaryLocked == 0, k.SecondaryLocked == 0, k.ThirdlyLocked == 0, pad ? 1 : 0));
+            }
+        Tab.SetKeyRows(category, Type, rows);
+    }
+
+    /// <summary>@0x141251a30: OnSelectCategory refreshes the list for the category given; the focus callbacks are taken
+    /// (their key editing is not ported).</summary>
+    public override int vfunc_5(string name, object[] args)
+    {
+        if (string.Equals(name, "OnSelectCategory", StringComparison.OrdinalIgnoreCase))
+        {
+            if (args is { Length: > 0 }) RefreshKeyList(Convert.ToInt32(args[0], System.Globalization.CultureInfo.InvariantCulture));
+            return 1;
+        }
+        foreach (var f in FocusCallbacks)
+            if (string.Equals(name, f, StringComparison.OrdinalIgnoreCase)) return 1;
+        return 0;
+    }
+
+    static readonly string[] FocusCallbacks =
+    {
+        "onFocusInPrimary", "onFocusInSecondary", "onFocusInThirdly", "onFocusOutPrimary", "onFocusOutSecondary", "onFocusOutThirdly",
+    };
 }
 
 /// <summary>CGameOptionLanguage (gameoptionlanguage.cpp): the language, region and voice dropdowns, filled from

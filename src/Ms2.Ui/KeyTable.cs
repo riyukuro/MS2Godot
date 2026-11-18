@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using System.Globalization;
+using Ms2.Formats.Options;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
@@ -15,13 +16,16 @@ namespace Ms2.Ui;
 /// RebuildActionKeyMaps (:2654) maps each action code to its keys. <see cref="Apply"/> takes the bindings the server keeps
 /// for the player (the KeyTable packet).
 /// </summary>
-public sealed class KeyTable
+public sealed class KeyTable : IKeyTable
 {
     sealed class Key { public string Name; public long Code; public int Type, Priority, Slot; }
 
     readonly SortedDictionary<int, Key> keys = new();
     readonly Dictionary<string, string> names = new();
     byte[] defaultKeys;
+    readonly Dictionary<int, List<KeySetting>> settings = new();
+    readonly GameStrings strings;
+    Dictionary<string, string> skillNames;
 
     /// <summary>InitKeys (:679): keys that take each other's binding (Alt, Shift, Ctrl and 0x82/0x83 left and right).</summary>
     static readonly Dictionary<int, int> PairKeys = new()
@@ -39,7 +43,9 @@ public sealed class KeyTable
 
     public KeyTable(PackSet packs, params string[] languages)
     {
-        names = new GameStrings(packs, languages).Table("keyname", "name");
+        strings = new GameStrings(packs, languages);
+        names = strings.Table("keyname", "name");
+        LoadKeySettingTable(packs);
         for (int k = 1; k < 0xd0; k++)
             if (names.TryGetValue(k.ToString(CultureInfo.InvariantCulture), out var n) && !string.IsNullOrEmpty(n))
                 keys[k] = new Key { Name = n };
@@ -117,4 +123,44 @@ public sealed class KeyTable
     /// <summary>GetKeyName (:1339): the key's name; "" for no key. (Game pad keys build an icon string with feature 0xb5;
     /// they never carry a DefaultKey binding here.)</summary>
     public string GetKeyName(int key) => keys.TryGetValue(key, out var k) ? k.Name : "";
+
+    /// <summary>LoadKeySettingTable (:2148): table/keySetting.xml's &lt;key&gt; rows that pass IsElementAvailable and whose
+    /// locale is in the list, appended to their category's list.</summary>
+    void LoadKeySettingTable(PackSet packs)
+    {
+        const string path = "table/keysetting.xml";
+        if (!packs.Exists("Xml", path)) return;
+        var root = GameStrings.Parse(packs.Read("Xml", path)).Root;
+        if (root?.Name != "ms2") return;
+        foreach (var e in root.Elements("key"))
+        {
+            if (!LocaleInList((string)e.Attribute("locale") ?? "") || !LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")))
+                continue;   // IsElementAvailable, then IsLocaleInList on the same attribute
+            int category = Atoi((string)e.Attribute("category"));
+            if (!settings.TryGetValue(category, out var list)) settings[category] = list = new();
+            list.Add(new KeySetting(Atoi((string)e.Attribute("keyGuid")), Atoi((string)e.Attribute("type")),
+                Atoi((string)e.Attribute("disableprimary")), Atoi((string)e.Attribute("disablesecondary")),
+                Atoi((string)e.Attribute("disablethirdly"))));
+        }
+    }
+
+    static bool LocaleInList(string list) => list.Length == 0
+        || list.Split(',').Any(l => string.Equals(l.Trim(), LobbyFeatures.LocaleName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>GetSettingList (:2226): the category's rows; null for none.</summary>
+    public IReadOnlyList<KeySetting> GetSettingList(int category) => settings.TryGetValue(category, out var l) ? l : null;
+
+    /// <summary>CStringTable::FUN_1418125b0 (stringtable.cpp:799) for an action id: ids 0x56057c1..90299999 from table 4
+    /// (skillName), the rest from table 5 (keyName). (The compact-config and closet ids 0xaae61.., 0xdbba1.. add player text;
+    /// no key setting row uses them.)</summary>
+    public string ActionName(long id)
+    {
+        var key = id.ToString(CultureInfo.InvariantCulture);
+        if (id >= 0x56057c1 && id < 90300000)
+        {
+            skillNames ??= strings?.Table("skillname", "name") ?? new();
+            return skillNames.TryGetValue(key, out var s) ? s : "";
+        }
+        return names.TryGetValue(key, out var n) ? n : "";
+    }
 }

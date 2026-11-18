@@ -283,6 +283,7 @@ public partial class HudScene : Node
         if (optionDialog == null)
         {
             optionHost = new GameOptionHost(this, assets.Packs, commonStrings);
+            if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
             optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
         }
         if (page != 0) optionDialog.SetTab(page);

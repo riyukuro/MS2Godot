@@ -74,6 +74,8 @@ public class GameOptionTests
         public GameOption.CharacterFlag MouseControlFlag { get; } = GameOption.CharacterFlag.MouseControl();
         public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
         public bool MouseCameraMode => false;
+        public IKeyTable Keys => keyTable ??= new KeyTable(packs, "en");
+        static KeyTable keyTable;
         public int Region => 0;
         public GameOptionLocale.Row LocaleData =>
             GameOptionLocale.Parse(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/gameoptionlocale.xml")).TrimStart('\ufeff'))).GetLocaleData(0, false);
@@ -235,5 +237,24 @@ public class GameOptionTests
             Assert.That(c.GetSelectedItemIndex(n), Is.EqualTo(0), n);
         }
         Assert.That(host.Dialog.IsNoPageChanged(), Is.True);
+    }
+
+    /// <summary>Tab type 9 (page 10) lists keySetting.xml's category 10, feature-filtered, with the default keys (DefaultKey.xml).</summary>
+    [Test]
+    public void InputPageListsTheKeys()
+    {
+        var (h, host) = Load(9);
+        var list = h.Invoke(h.Entity, "getTabChild", "m_keyList", 9);
+        Assert.That(Rt.IsNullish(list), Is.False, "m_keyList");
+        var dp = h.Get(list, "dataProvider");
+        int n = Rt.ToInt32(h.Get(dp, "length"));
+        var settings = host.Keys.GetSettingList(host.Dialog.GetPageByIndex(9).Id);   // tab type 9 is page 10
+        Assert.That(n, Is.EqualTo(settings.Count));
+        var first = h.Invoke(dp, "requestItemAt", 0);
+        long action = settings[0].Action;
+        Assert.That(Rt.ToString(h.Get(first, "label")), Is.EqualTo(host.Keys.ActionName(action)));
+        Assert.That(Rt.ToString(h.Get(first, "primaryKey")), Is.EqualTo(host.Keys.GetKeyName(host.Keys.FindKeyByActionAndPriority(action, 0))));
+        TestContext.WriteLine($"{n} rows; first {Rt.ToString(h.Get(first, "label"))} = {Rt.ToString(h.Get(first, "primaryKey"))}");
+        Assert.That(Rt.ToString(h.Get(first, "primaryKey")), Is.Not.Empty, "the first action has a default key");
     }
 }

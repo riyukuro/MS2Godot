@@ -239,6 +239,17 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void ApplyStatus(GameOption.Status state) => GD.Print("options: status stored (the hp and exp bars read it when hosted)");
     public void SendRideMode(bool disableSingleRiding) { }   // no server offline
 
+    // ---- the input pages --------------------------------------------------------------------------------------------
+
+    IKeyTable keys;
+
+    /// <summary>The HUD's key table when it is up, else one read from the data.</summary>
+    public IKeyTable Keys
+    {
+        get => keys ??= new Ms2.Ui.KeyTable(packs, "en");
+        set => keys = value;
+    }
+
     // ---- the Language page ------------------------------------------------------------------------------------------
 
     public int Region => GameOptions.RegionIndex;
@@ -281,6 +292,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         public bool SetItemRows(string n, IReadOnlyList<(string Label, int Index)> r) => false;
         public void SetMenuRowCount(string n, int r) { }
         public int? GetSelectedItemIndex(string n) => null;
+        public bool SetKeyRows(int c, int t, IReadOnlyList<KeyRow> r) => false;
         public bool SetClipShown(string n, bool v) => false;
         public bool SetResolutionRows(string n, IReadOnlyList<ResolutionRow> r, int s) => false;
         public int GetResolution(int t) => -1;

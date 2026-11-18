@@ -164,6 +164,33 @@ public sealed class GameOptionController : UiController, IOptionTab
         return Rt.IsNullish(item) ? null : Rt.ToInt32(Host.Get(item, "index"));
     }
 
+    /// <summary>RefreshKeyList's list calls (@0x141250cc0) on getTabChild("m_keyList", category).</summary>
+    public bool SetKeyRows(int category, int tabType, IReadOnlyList<KeyRow> rows)
+    {
+        if (Host?.Entity == null) return false;
+        var list = Host.Invoke(Host.Entity, "getTabChild", "m_keyList", category);
+        if (Rt.IsNullish(list)) return false;
+        var scroll = Host.Get(list, "scrollPosition");
+        var dp = Host.Get(list, "dataProvider");
+        if (!Rt.IsNullish(dp))
+        {
+            Host.Invoke(dp, "cleanUp");
+            foreach (var r in rows)
+                Host.Invoke(dp, "push", new Dictionary<string, object>
+                {
+                    ["label"] = r.Label, ["keyGUID"] = r.KeyGuid, ["secondaryKey"] = r.SecondaryKey, ["primaryKey"] = r.PrimaryKey,
+                    ["thirdlyKey"] = r.ThirdlyKey, ["primaryEnable"] = r.PrimaryEnable, ["secondaryEnable"] = r.SecondaryEnable,
+                    ["thirdlyEnable"] = r.ThirdlyEnable, ["isGamePad"] = r.IsGamePad,
+                });
+        }
+        Host.Set(list, "scrollPosition", Rt.ToNumber(scroll));
+        Host.Invoke(list, "invalidate");
+        Host.Invoke(list, "validateNow");
+        var tab = Host.Invoke(Host.Entity, "getTabComponent", tabType);
+        if (!Rt.IsNullish(tab)) Host.Invoke(tab, "refreshScrollBar");
+        return true;
+    }
+
     /// <summary>GetTabComponent(type)->Invoke("getResolution") (@0x14124bf20).</summary>
     public int GetResolution(int tabType)
     {

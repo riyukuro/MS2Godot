@@ -34,6 +34,8 @@ public class GameOptionDialogTests
         public void SetMenuRowCount(string n, int r) => MenuRows[n] = r;
         public int? GetSelectedItemIndex(string n) =>
             Items.TryGetValue(n, out var l) && Index.TryGetValue(n, out var i) && i >= 0 && i < l.Count ? l[i].Index : null;
+        public readonly Dictionary<int, List<KeyRow>> KeyRows = new();
+        public bool SetKeyRows(int c, int t, IReadOnlyList<KeyRow> r) { KeyRows[c] = r.ToList(); return true; }
         public bool SetClipShown(string n, bool v) { Shown[n] = v; return true; }
         public bool SetResolutionRows(string n, IReadOnlyList<ResolutionRow> rows, int sel) { Rows = rows.ToList(); RowSelected = sel; return true; }
         public int GetResolution(int type) => Resolution;
@@ -105,6 +107,7 @@ public class GameOptionDialogTests
         public GameOption.CharacterFlag MouseControlFlag { get; } = GameOption.CharacterFlag.MouseControl();
         public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
         public bool MouseCameraMode { get; set; }
+        public IKeyTable Keys { get; set; }
         public int Region { get; set; }
         public GameOptionLocale.Row LocaleData { get; set; }
         public int RunningVoice { get; set; }
@@ -196,6 +199,31 @@ public class GameOptionDialogTests
         Assert.That(h.Log, Does.Not.Contain("text s_gameoption_voice_select_restart"));
         Assert.That(h.Opt.LanguageOption.VoiceIndex, Is.EqualTo(3), "the missing voice goes back");
         Assert.That(h.T.Index["m_voiceSelect"], Is.EqualTo(3), "the client selects the voice enum as the row index");
+    }
+
+    sealed class FakeKeys : IKeyTable
+    {
+        public IReadOnlyList<KeySetting> GetSettingList(int c) => c == 9
+            ? new[] { new KeySetting(200001, 2, 0, 0, 0), new KeySetting(0x49409, 2, 0, 1, 0) } : null;
+        public int FindKeyByActionAndPriority(long a, int p) => a == 200001 && p == 0 ? 0x26 : 0;
+        public string GetKeyName(int k) => k == 0 ? "" : "k" + k;
+        public string ActionName(long a) => "a" + a;
+    }
+
+    [Test]
+    public void InputPageListsItsCategory()
+    {
+        var h = new FakeHost { Keys = new FakeKeys() };
+        var (d, _) = Open(h);
+        d.Call("OnOpenTab", 8);
+        d.Call("OnTabInit", 8);
+        Assert.That(h.T.KeyRows[8], Is.EqualTo(new[]
+        {
+            new KeyRow("a200001", "200001", "k38", "", "", true, true, true, 0),
+            new KeyRow("a300041", 0x49409, "", "k1", "", true, false, true, 0),
+        }), "page 9 is tab type 8: its category's rows; 0x49409 shows key 1 second and keeps an int keyGUID");
+        d.Call("OnSelectCategory", 8.0);
+        Assert.That(h.T.KeyRows[8].Count, Is.EqualTo(2));
     }
 
     [Test]
