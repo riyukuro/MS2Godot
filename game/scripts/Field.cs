@@ -129,7 +129,7 @@ public partial class Field : Node3D
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
         GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}), " +
-                 $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
+                 $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
         BuildEnvironment(map, fieldName);

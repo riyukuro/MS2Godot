@@ -8,7 +8,7 @@ namespace Ms2Godot;
 
 /// <summary>
 /// Builds a field from its entity set: one MultiMesh per (model, mesh) for the visible NIF entities, and static
-/// colliders: each NIF's own PhysX meshes, the generated box for cubes without them, and PhysXWhitebox boxes. Everything sits under a "World" node that rotates MS2 Z-up to Godot Y-up,
+/// colliders: each NIF's own PhysX meshes (none for a GeneratePhysX entity), the generated box of a GeneratePhysX entity, and PhysXWhitebox boxes. Everything sits under a "World" node that rotates MS2 Z-up to Godot Y-up,
 /// in file units.
 /// </summary>
 public sealed class FieldBuilder
@@ -27,6 +27,8 @@ public sealed class FieldBuilder
     readonly ModelBuilder builder;
 
     public int Instances, MultiMeshes, Boxes, Meshes, Whiteboxes, Missing, OwnShells, SplitObjects;
+    /// <summary>GeneratePhysX entities whose NIF has PhysX meshes the client does not build (their box stands in).</summary>
+    public int SkippedNifMeshes;
     /// <summary>The field's &lt;ui instancingGrid&gt; (FieldData.InstancingGrid): the instancing cell edge, 0 = one cell.</summary>
     public int InstancingGrid { get; set; }
 
@@ -259,7 +261,12 @@ public sealed class FieldBuilder
                     if (fallReturn) cs.SetMeta(FallReturnMeta, entityIndex);
                     return cs;
                 }
-                if (me.Collision.Count > 0)
+                // PropService::HandleSceneGraphAddedMessage (PropService.cpp:460-465, exe 0x142062560) returns before
+                // AddPhysXPropToPropData for an entity whose GeneratePhysX (0x38141815) is set, whatever its model: such an
+                // entity gets no NIF PhysX prop, and its only collision is the generated box below
+                bool generate = e.Bool("GeneratePhysX");
+                if (generate && me.Collision.Count > 0) SkippedNifMeshes++;
+                else if (me.Collision.Count > 0)
                 {
                     // the NIF's own PhysX meshes (deform pieces, stairs, water surface, props), every shape in the entity's
                     // PropCollisionGroup (ecrPhysX PropService::SetCollisionGroup, PropService.cpp:1471-1499)
@@ -270,16 +277,20 @@ public sealed class FieldBuilder
                     }
                     Meshes++;
                 }
-                if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX"))
+                // FUN_1410cf160 (cubemapinformationservice_3.cpp:4026-4052) runs FUN_1410c5570, the GeneratePhysX box, for
+                // an MS2CubeProp and for any other MS2PhysXProp (0xc9cd2193; MS2CubeProp contains it), but not for an
+                // MS2SalePost (0xf01a7608), which it tests first
+                if (generate && !e.HasMixin("MS2SalePost") && (e.HasMixin("MS2CubeProp") || e.HasMixin("MS2PhysXProp")))
                 {
                     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset)
                     // standing on the entity position, turned by the Z rotation only; scale is ignored.
-                    // Built whether or not the NIF has its own PhysX meshes (cube load reads only GeneratePhysX).
                     // GeneratePhysX puts its shape in group 9 whatever the entity's PropCollisionGroup
-                    // (cubemapinformationservice_3.cpp:4343). Only housing's cell window (FUN_1410c3670, run from the
-                    // housing packets, scenestategame.cpp:2264, 10422) and a broken cube's respawn timer (:3666-3669)
-                    // set the entity's group on it. The entity keeps its own group for the hit report's tests
-                    // (FUN_141675ed0 reads the property, pcbase.cpp:4335-4342): KindMeta
+                    // (cubemapinformationservice_3.cpp:4343). At field load nothing sets the entity's group on it; the other
+                    // SetEntityCollisionGroup callers run at run time only (housing's cell window FUN_1410c3670 and
+                    // cubemapinformationservice_3.cpp:3155, 3666-3669, 3736, 4761/4776; functioncubeobject.cpp:998/1000;
+                    // liftableobject.cpp:301/305; entityvibrator.cpp:287/345/485/581; worldservice_1.cpp:8727, 10392,
+                    // 10488). The entity keeps its own group for the hit report's tests (FUN_141675ed0 reads the property,
+                    // pcbase.cpp:4335-4342): KindMeta
                     var d = e.Vector("GeneratePhysXDimension");
                     var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
                     var p = e.Position;
