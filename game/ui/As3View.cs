@@ -263,10 +263,18 @@ public partial class As3View : Node2D
 
     static Rect2 Rect(RectD r) => r.IsEmpty ? new Rect2() : new Rect2((float)r.X, (float)r.Y, (float)r.W, (float)r.H);
 
+    /// <summary>
+    /// An image the host supplies for a url, asked first (null: not the host's). The client binds some movie images to its
+    /// own textures rather than to files: UILoadingProgress::vfunc_25 (uiloadingprogress.cpp:215-232) initializes the
+    /// image the movie loads as "img://&lt;id&gt;:screenShot" with the scene screenshot's render texture.
+    /// </summary>
+    public Func<string, Texture2D> ImageLookup;
+
     /// <summary>An image url as the movies build it (game: "img://icon:" + path, or a plain path) → a Resource/Image texture.</summary>
     Texture2D ResolveImage(string url)
     {
         if (string.IsNullOrEmpty(url)) return null;
+        if (ImageLookup?.Invoke(url) is { } supplied) return supplied;
         var p = url;
         if (p.StartsWith("img://", StringComparison.OrdinalIgnoreCase)) { int c = p.IndexOf(':', 6); p = c >= 0 ? p[(c + 1)..] : p[6..]; }
         p = p.Replace('\\', '/').TrimStart('.', '/');
