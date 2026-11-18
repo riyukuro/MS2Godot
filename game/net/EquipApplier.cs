@@ -118,11 +118,16 @@ public sealed class EquipApplier
             {
                 var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
                 if (asset == null) { NoAsset++; continue; }
-                ModelData md;
-                try { md = Nif((string)asset.Attribute("name")); }
-                catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id}: {ex.Message}"); continue; }
-                if (md == null) { NoAsset++; MissingIds.Add(item.Id); continue; }
-                Loaded++;
+                // ModelPart::Load (itemdatastruct.cpp:287-303): a name not ending in ".nif" is a kfm asset, a CKfmModel
+                bool isNif = ((string)asset.Attribute("name") ?? "").TrimEnd().EndsWith(".nif", StringComparison.Ordinal);
+                ModelData md = null;
+                if (isNif)
+                {
+                    try { md = Nif((string)asset.Attribute("name")); }
+                    catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id}: {ex.Message}"); continue; }
+                    if (md == null) { NoAsset++; MissingIds.Add(item.Id); continue; }
+                    Loaded++;
+                }
                 string slotName = (string)slot.Attribute("name");
                 if ((string)asset.Attribute("replace") == "1")
                     foreach (var n in bodyNodes)
@@ -133,7 +138,8 @@ public sealed class EquipApplier
                     var g = (string)c.Attribute("gender");
                     if (g == null || g == gender.ToString()) cut.Add((string)c.Attribute("name"));
                 }
-                var made = Attach(skel, body, md, asset, item, gender);
+                var made = isNif ? Attach(skel, body, md, asset, item, gender) : AttachKfm(skel, body, asset, item, gender, -1);
+                if (made == null) { MissingIds.Add(item.Id); continue; }
                 if (DyeOf(item, im) is { } dye)
                     foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
                 added.AddRange(made);
@@ -141,7 +147,7 @@ public sealed class EquipApplier
                 foreach (var pony in slot.Elements("asset").Where(a => a != asset && (string)a.Attribute("pony") == "1"
                              && ((string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString())))
                 {
-                    var p = AttachPony(skel, pony, item, ponyIndex++);
+                    var p = AttachKfm(skel, body, pony, item, gender, ponyIndex++);
                     if (p == null) continue;
                     if (DyeOf(item, im) is { } pd)
                         foreach (var n in p) SetColors(n, false, pd.Primary, pd.Secondary, pd.Tertiary);
@@ -290,38 +296,47 @@ public sealed class EquipApplier
     }
 
     /// <summary>
-    /// A hair's pony part (asset pony="1"), a model of its own hung on the asset's target node:
+    /// A kfm asset (CKfmModel), a model of its own hung on the asset's target node: capes, many caps and helmets, and a
+    /// hair's pony part (asset pony="1", index = its pony index; -1 for the other kfm assets):
     /// <list type="bullet">
     /// <item>its name is not a .nif, so it is the kfm asset "urn:gamebryo-animation:" + name (ModelPart::Load @0x140543ca0,
-    /// itemdatastruct.cpp:279-303): the kfm of that name in the Item pack, whose nif sits beside it;</item>
-    /// <item>CKfmModel::FUN_141440bc0 (kfmmodel.cpp:943) gives the nodes named like its selfnode (FUN_141422110, the
-    /// outermost match) the hair data of its pony index: translation m_aPt1[i], rotation Euler XYZ degrees m_aPt2[i],
-    /// uniform scale m_fScale[0] (CHairExtraData, read in the packet order of vfunc_6 @0x14059af30: per index a length,
-    /// Pt1, Pt2);</item>
-    /// <item>without hair data from the server, the values the item gives a new hair: Pt1 and Pt2 from the part's
-    /// &lt;custom&gt; (CHairExtraData::vfunc_4 @0x14059aaa0; the client picks one custom at random, the hair items hold one)
-    /// and the length from the slot's &lt;scale&gt; (the client picks at random between min and max; min here).</item>
+    /// itemdatastruct.cpp:287-303): the kfm of that name in the Item pack, whose nif sits beside it;</item>
+    /// <item>the self nodes (the outermost nodes named like its selfnode, FUN_141422110) hang under the attach node on the
+    /// target node and keep their local transform (CKfmModel::vfunc_12, kfmmodel.cpp:518-544), turned and moved by the
+    /// asset's dummy as a nif asset's are; the model's skinned meshes follow its own bones, so a cape skinned to MT_R and
+    /// MT_L under MT_Point01 hangs from the spine;</item>
+    /// <item>once loaded the model plays its Idle_A sequence (CKfmModel::vfunc_6, kfmmodel.cpp:403-408), looping;</item>
+    /// <item>a pony part's self nodes take the hair data of its pony index instead (CKfmModel::FUN_141440bc0,
+    /// kfmmodel.cpp:943): translation m_aPt1[i], rotation Euler XYZ degrees m_aPt2[i], uniform scale m_fScale[0]
+    /// (CHairExtraData, read in the packet order of vfunc_6 @0x14059af30: per index a length, Pt1, Pt2); without hair
+    /// data from the server, the values the item gives a new hair: Pt1 and Pt2 from the part's &lt;custom&gt;
+    /// (CHairExtraData::vfunc_4 @0x14059aaa0; the client picks one custom at random, the hair items hold one) and the
+    /// length from the slot's &lt;scale&gt; (the client picks at random between min and max; min here).</item>
     /// </list>
-    /// Not done: the ponytail's PhysX swing (NiPhysX joints in the nif); the bones keep the nif's pose.
+    /// Not done: PhysX swing (the NiPhysX joints in the nif), Attack_Idle_A in battle stance (vfunc_32), and the
+    /// replace path to Bip01 Head (vfunc_13).
     /// </summary>
-    List<MeshInstance3D> AttachPony(Skeleton3D skel, XElement asset, EquipItem item, int index)
+    List<MeshInstance3D> AttachKfm(Skeleton3D skel, ModelData body, XElement asset, EquipItem item, int gender, int index)
     {
         string name = ((string)asset.Attribute("name") ?? "").Replace("urn:gamebryo-animation:", "").Replace("urn:", "");
         string kfmEntry = packs.FindByFileName(ItemArchive, name.ToLowerInvariant() + ".kfm");
         if (kfmEntry == null) { NoAsset++; return null; }
         ModelData md;
+        KfmFile kfmSeqs;
         try
         {
-            var kfm = KfmFile.Load(packs.Read(ItemArchive, kfmEntry));
+            var kfm = kfmSeqs = KfmFile.Load(packs.Read(ItemArchive, kfmEntry));
             string nif = System.IO.Path.GetFileName(kfm.Nif.Replace('\\', '/')).ToLowerInvariant();
             md = Nif(kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + nif);
         }
-        catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id} pony: {ex.Message}"); return null; }
+        catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id} kfm: {ex.Message}"); return null; }
         if (md == null) { NoAsset++; return null; }
         Loaded++;
-        double[] pos, rot; double scale;
+        bool pony = index >= 0;
+        double[] pos = null, rot = null; double scale = 1;
         var a = item.Appearance;
-        if (a != null && a.Length >= 14)
+        if (!pony) { }
+        else if (a != null && a.Length >= 14)
         {
             int o = index * 7;
             pos = new double[] { a[o + 1], a[o + 2], a[o + 3] };
@@ -337,9 +352,19 @@ public sealed class EquipApplier
             scale = double.TryParse((string)sc?.Attribute("min"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double mn) ? mn : 1;
         }
         string target = (string)asset.Attribute("targetnode") ?? "Bip01 Head";
-        var att = new BoneAttachment3D { Name = $"eq{item.Id}_pony{index}_attach", BoneName = skel.FindBone(target) >= 0 ? target : "Bip01 Head" };
+        string bone = target;
+        var targetLocal = Transform3D.Identity;     // the target node relative to its bone
+        if (skel.FindBone(bone) < 0)
+        {
+            // as Attach: a replace asset on a node the body lacks goes to Bip01 Head, else the body's rigid mesh of that name
+            var bodyMesh = (string)asset.Attribute("replace") == "1" ? null : body.Meshes.FirstOrDefault(x => x.Name == target && x.ParentBone >= 0);
+            bone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
+            if (bodyMesh != null) targetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
+        }
+        string tag = pony ? $"pony{index}" : "kfm";
+        var att = new BoneAttachment3D { Name = $"eq{item.Id}_{tag}_attach", BoneName = bone };
         skel.AddChild(att);
-        var root = mb.Build(md, $"eq{item.Id}_pony{index}");
+        var root = mb.Build(md, $"eq{item.Id}_{tag}");
         // the body skeleton is in file space (Z-up), so the built model's own Z-up turn is undone
         root.Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero).AffineInverse();
         att.AddChild(root);
@@ -348,19 +373,39 @@ public sealed class EquipApplier
         // efd::Matrix3::FromEulerAnglesXYZ = MakeXRotation(x) * MakeYRotation(y) * MakeZRotation(z), and Gamebryo's
         // Make*Rotation turn clockwise (MakeXRotation puts +sin at [1][2]: Foundation/efd/Win32/Matrix3_Win32.cpp:76-107,
         // 1146-1154), so each angle is the negated counter-clockwise turn
-        const double d2r = Math.PI / 180;
-        var q = Quat.FromAxis(0, -rot[0] * d2r) * Quat.FromAxis(1, -rot[1] * d2r) * Quat.FromAxis(2, -rot[2] * d2r);
-        var xf = ModelBuilder.ToGodot(new Xform(new Vec3(pos[0], pos[1], pos[2]), q.ToMatrix(), scale));
+        var dummy = pony ? Transform3D.Identity : DummyOf(asset, gender);
+        Transform3D? xf = pony ? ModelBuilder.ToGodot(new Xform(new Vec3(pos[0], pos[1], pos[2]), DummyWorld.EulerXyz(rot[0], rot[1], rot[2]), scale)) : null;
         // the self nodes: the outermost nodes whose name starts with selfnode (Point01, not its child "Point01 NonAccum")
         bool Self(int b) => selfName != null && md.Bones[b].Name != null && md.Bones[b].Name.StartsWith(selfName, StringComparison.Ordinal);
         bool Under(int b) { for (int u = md.Bones[b].Parent; u >= 0; u = md.Bones[u].Parent) if (Self(u)) return true; return false; }
         for (int b = 0; b < md.Bones.Count; b++)
         {
             if (!Self(b) || Under(b)) continue;
-            ps.SetBoneRest(b, xf);
-            ps.SetBonePosePosition(b, xf.Origin);
-            ps.SetBonePoseRotation(b, xf.Basis.GetRotationQuaternion());
-            ps.SetBonePoseScale(b, xf.Basis.Scale);
+            // the self node hangs under the attach node (CKfmModel::vfunc_12, kfmmodel.cpp:518-544) keeping its local
+            // transform, or takes the hair data's (pony, FUN_141440bc0)
+            var x = targetLocal * dummy * (xf ?? ModelBuilder.ToGodot(md.Bones[b].Rest));
+            ps.SetBoneParent(b, -1);
+            ps.SetBoneRest(b, x);
+            ps.SetBonePosePosition(b, x.Origin);
+            ps.SetBonePoseRotation(b, x.Basis.GetRotationQuaternion());
+            ps.SetBonePoseScale(b, x.Basis.Scale);
+        }
+        // CKfmModel::vfunc_6 (kfmmodel.cpp:403-408) plays the model's Idle_A once it has loaded
+        if (kfmSeqs.ByName("Idle_A") is { } idle)
+        {
+            string kfEntry = kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(idle.KfPath.Replace('\\', '/')).ToLowerInvariant();
+            if (packs.Exists(ItemArchive, kfEntry))
+            {
+                try
+                {
+                    var anim = ModelBuilder.BuildAnimation(KfAnimation.Load(Ms2.Formats.Nif.NifFile.Load(mb.Spec, packs.Read(ItemArchive, kfEntry))), md);
+                    anim.LoopMode = Animation.LoopModeEnum.Linear;
+                    var player = root.GetNode<AnimationPlayer>("Model/AnimationPlayer");
+                    player.GetAnimationLibrary("").AddAnimation("Idle_A", anim);
+                    player.Play("Idle_A");
+                }
+                catch (Exception ex) { GD.PushWarning($"item {item.Id} Idle_A: {ex.Message}"); }
+            }
         }
         var made = root.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
         foreach (var mi in made) mi.SetMeta("mesh", mi.Name.ToString());
