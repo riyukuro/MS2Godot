@@ -941,6 +941,7 @@ public partial class HudScene : Node
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
         hudModel = NewModel();
+        hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
         hudModel.Keys = new KeyTable(assets.Packs, "en");
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live : UiFixture.NewCharacterKeyTable();

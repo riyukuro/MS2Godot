@@ -20,6 +20,8 @@ public sealed class ItemData
     // <PCBang PCBang> (:371)
     public bool PCBang;
     // ItemLimit::Load (itemdatastruct.cpp:567)
+    /// <summary>ItemLimit levelLimit (itemdatastruct.cpp:573; the constructor's 1, :560).</summary>
+    public int LevelLimit = 1;
     public bool Vip, Wedding;                                  // "vip" -> flag6a, "wedding"
     public readonly SortedSet<int> RecommendJobs = new();      // XmlTokenList (",") into std::set
     // ItemSkill::LoadXml (itemdatastruct.cpp:871)
@@ -51,6 +53,7 @@ public sealed class ItemData
         }
         if (env.Element("limit") is { } l)
         {
+            Int(l, "levelLimit", ref d.LevelLimit);
             Bool(l, "vip", ref d.Vip);
             Bool(l, "wedding", ref d.Wedding);
             if ((string)l.Attribute("recommendJobs") is { } jobs)

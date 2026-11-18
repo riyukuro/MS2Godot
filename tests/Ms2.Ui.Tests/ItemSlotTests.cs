@@ -98,6 +98,6 @@ public class ItemSlotTests
     {
         var model = NewModel();
         var item = Item.Create(model.Tables.Items, 20300327, 0);
-        Assert.Throws<NotImplementedException>(() => ItemSlot.Build(new(), item, false, 0x11 | 2, model));
+        Assert.Throws<NotImplementedException>(() => ItemSlot.Build(new(), item, false, 0x11 | 0x20, model));
     }
 }

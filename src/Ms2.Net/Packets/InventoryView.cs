@@ -65,6 +65,12 @@ public sealed class InventoryView {
 
     public IReadOnlyList<BagCell> Cells(int tab) => (uint) tab < ItemBook.Tabs ? cells[tab] : Array.Empty<BagCell>();
 
+    /// <summary>The item in a cell of a tab (Unk_Inventory::FindItemByUid of the cell's uid), null for an empty cell.</summary>
+    public EquipItem ItemAt(int tab, int slot) {
+        var c = Cells(tab);
+        return slot < 0 || slot >= c.Count || c[slot].Empty ? null : book.Get(c[slot].Uid);
+    }
+
     /// <summary>GetItemCount(tab) 0x140a5cf30: the non-empty cells.</summary>
     public int Used(int tab) => Cells(tab).Count(c => !c.Empty);
 

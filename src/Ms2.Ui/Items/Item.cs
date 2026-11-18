@@ -15,6 +15,10 @@ public sealed class Item
     public long UnlockTime;            // m_a8 (GetUnlockTime :399), server time
     public int EnchantLevel;           // CItemStatus enchant: CItemEnchantInfo::GetLevel
     public int UnlimitedEnchantLevel;  // CItemStatus UnlimitedEnchantInfo::GetLevel
+    public long Uid;                   // GetItemUid
+    public bool IsNew;                 // m_2c (IsNew :126)
+    public bool IsEvent;               // m_30 (IsEvent :140)
+    public long ExpiryTime;            // m_80 (IsExpired :1303), server time
 
     Item(ItemData data) { Data = data; }
 

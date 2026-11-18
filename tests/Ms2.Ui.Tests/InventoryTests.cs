@@ -53,6 +53,34 @@ public class InventoryTests
         return (h, c, book);
     }
 
+    [Test]
+    public void SlotsAreBuiltOnTheItemSlotPath()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var (h, c, book) = Load(model);
+        int material = c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Name == "material").i;
+        h.Set(h.Child("m_tab"), "selectedIndex", material);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var data = model.Tables.Items.Get(30000001);
+        Assert.That(data, Is.Not.Null, "item 30000001 in itemdata");
+        var slot = c.GetBinding("InventoryDialog.0");
+        Assert.That(slot, Is.Not.Null);
+        Assert.That(Rt.ToNumber(h.Get(slot, "itemID")), Is.EqualTo(30000001));
+        Assert.That(Rt.ToNumber(h.Get(slot, "index")), Is.EqualTo(0));
+        Assert.That(Rt.ToNumber(h.Get(slot, "level")), Is.EqualTo(data.LevelLimit));
+        Assert.That(Rt.ToString(h.Get(slot, "itemCount")), Is.EqualTo(data.IsStackable ? "7" : ""));
+        Assert.That(Rt.ToBoolean(h.Get(slot, "updateIconSearchOn")), Is.False);
+        Assert.That(Rt.IsNullish(h.Get(slot, "itemNew")), Is.True);
+        Assert.That(c.GetBinding("InventoryDialog.1"), Is.Null, "an empty cell");
+        // the new mark (ItemInventory mode 7 sets IsNew)
+        book.Get(3).IsNew = true;
+        Assert.That(Rt.ToNumber(h.Get(c.GetBinding("InventoryDialog.0"), "itemNew")), Is.EqualTo(1));
+        model.HasLocalPlayer = false;
+        Assert.That(c.GetBinding("InventoryDialog.0"), Is.Null, "no local player: vfunc_8 returns 0");
+    }
+
     static List<object> Items(UiHost h, object dp) =>
         Enumerable.Range(0, (int)Rt.ToNumber(h.Get(dp, "length"))).Select(i => h.Invoke(dp, "requestItemAt", i)).ToList();
 

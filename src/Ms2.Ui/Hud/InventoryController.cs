@@ -1,5 +1,6 @@
 using Ms2.Avm2;
 using Ms2.Net.Packets;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
@@ -309,8 +310,42 @@ public sealed class InventoryController : UiController, IInventoryBinding
 
     public static string SlotName(int i) => BagName + "." + i;
 
-    /// <summary>InvenSlot::vfunc_8: the slot object, or null (an empty slot, or one whose item data path is not here yet).</summary>
-    public override object GetBinding(string name) => null;
+    /// <summary>
+    /// The slot "InventoryDialog.&lt;i&gt;" of the shown tab: InvenSlot::vfunc_8 (invenslot.cpp:1592): null for an empty
+    /// cell, an unknown item or no local player; else an ASSlot(2) object built by ASSlot::FUN_1409c3860 with flags 0x1c01f
+    /// and updateIconSearchOn (FUN_14140c180: the item's name equal to the search text, false while it is empty; the search
+    /// is not ported, so it is empty). Other names go to the base (the item slot table).
+    /// </summary>
+    public override object GetBinding(string name)
+    {
+        if (!name.StartsWith(BagName + ".", StringComparison.Ordinal) || !int.TryParse(name.AsSpan(BagName.Length + 1), out int i))
+            return base.GetBinding(name);
+        if (View?.ItemAt(View.Tab, i) is not { } e || Model == null || !Model.HasLocalPlayer) return null;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return null;
+        var slot = new List<(string, object)>();
+        if (!ItemSlot.Build(slot, item, true, SlotFlags, Model, Model.ItemSlotSources)) return null;
+        slot.Add(("updateIconSearchOn", false));
+        return Host.Obj(slot.ToArray());
+    }
+
+    /// <summary>The flags InvenSlot::vfunc_8 builds its slot with.</summary>
+    public const int SlotFlags = 0x1c01f;
+
+    /// <summary>A bag item (the parsed CItem::ReadFromStream record) as the slot's CItem: its data, rarity, count, bag slot,
+    /// uid, new flag and expiry; the parts the record parse does not keep yet (enchant, lock) stay 0.</summary>
+    public static Item ToItem(EquipItem e, ItemDataTable table)
+    {
+        var item = Item.Create(table, e.Id, e.Rarity);
+        if (item == null) return null;
+        item.Rarity = e.Rarity;
+        item.Count = (uint)Math.Max(e.Amount, 0);
+        item.Slot = e.InventorySlot;
+        item.Uid = e.Uid;
+        item.IsNew = e.IsNew;
+        item.ExpiryTime = e.ExpiryTime;
+        return item;
+    }
 
     /// <summary>The names of the bag built last.</summary>
     public override IEnumerable<string> GetBagSlotBindings(string bag) =>
