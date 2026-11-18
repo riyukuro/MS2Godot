@@ -1,6 +1,5 @@
-using Ms2.Quest;
 
-namespace Ms2Godot.Ui;
+namespace Ms2.Quest;
 
 /// <summary>
 /// SHOT FIXTURE, not game state: made-up quest records so a shot can show the quest log's rows (--questlog-fixture). The

@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Ms2.Avm2/Ms2.Avm2.csproj" />
     <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
+    <ProjectReference Include="../../src/Ms2.Ui/Ms2.Ui.csproj" />
   </ItemGroup>
 </Project>

@@ -154,6 +154,49 @@ switch (pos[0])
         }
         return 0;
     }
+    case "questlog":
+    {
+        // the quest log driven by its client controller (UIQuestDialog) over the QuestLog tree, the same data the hand
+        // port draws: the list's renderers and the scroll bar after setList, then after scrolling (questlog TAB SUBTAB SCROLL)
+        int tab = pos.Count > 1 ? int.Parse(pos[1]) : 1, sub = pos.Count > 2 ? int.Parse(pos[2]) : 1, scroll = pos.Count > 3 ? int.Parse(pos[3]) : 3;
+        var langs = new Ms2.Formats.World.GameStrings(packs, "en").Languages;
+        var table = Ms2.Quest.QuestTable.Load(packs, langs, "KR", _ => true);
+        var meta = Ms2.Quest.FieldMeta.Load(packs);
+        var fd = System.Xml.Linq.XDocument.Load(new MemoryStream(packs.Read("Xml", "table/fielddata.xml")));
+        var codes = Ms2.Quest.QuestTable.FieldCodes(fd, table.Available);
+        var log = new Ms2.Quest.QuestLog(table, new Ms2.Quest.QuestShotState(table, 30)) { Meta = meta, FieldCodes = codes };
+        var c = new Ms2.Ui.Hud.QuestDialogController { Log = log, OpenTab = tab, OpenSubTab = sub };
+        var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
+        p.StageW = 1920; p.StageH = 1080;
+        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(packs, "en"));
+        Ms2.Ui.UiFixture.Apply(model);
+        var h = new Ms2.Ui.UiHost(p, c, model);
+        Console.WriteLine($"mode {(Interp.UseOracle ? "oracle" : GeneratedCode.Count > 0 ? "compiled" : "interpreter")} load={h.Load()} tab={c.GetTab()} sub={c.GetSubTab()}");
+        for (int i = 0; i < 30; i++) p.Tick();
+        var list = (AsDisplayObject)h.Child("m_questList");
+        void Show(string when)
+        {
+            Console.WriteLine($"-- {when}: scrollPosition={Rt.Describe(rt.GetProperty(list, Name.Public("scrollPosition")))} " +
+                              $"length={Rt.Describe(rt.GetProperty(rt.GetProperty(list, Name.Public("dataProvider")), Name.Public("length")))}");
+            var sb = new StringBuilder();
+            DumpTo(sb, list, 0);
+            Console.Write(sb);
+        }
+        Show("after setList");
+        h.Set(list, "scrollPosition", scroll);
+        for (int i = 0; i < 5; i++) p.Tick();
+        Show($"after scrollPosition={scroll}");
+        foreach (var e in rt.Errors.Take(10)) Console.WriteLine("ERROR " + e);
+        foreach (var (k, n) in rt.Missing.Take(20)) Console.WriteLine($"MISSING {k} x{n}");
+        // the hand port's rows over the same tree (QuestLogTree.RequestItemRange, as QuestDialog draws them)
+        log.Tab = tab; log.SubTab = sub;
+        var root = log.Build();
+        var qtree = new Ms2.Quest.QuestLogTree(root);
+        Console.WriteLine($"-- hand port rows: length={qtree.Length}");
+        int row = 0;
+        foreach (var n in qtree.Range(0, qtree.Length - 1)) Console.WriteLine($"  {row++} {n?.Renderer} '{n?.Label}{n?.Code}{n?.Field}' type={n?.Type}");
+        return 0;
+    }
     case "parity":
     {
         // every movie twice: the interpreter (oracle) and the compiled bodies (--gen); same errors and display tree?

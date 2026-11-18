@@ -9,12 +9,15 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// Development scene for the ActionScript route: runs UI movies' own AS3 (Ms2.Avm2) and draws them with <see cref="As3View"/>.
-/// Args after `--`: --movie NAME [--scenario login|minimap|expbar] [--out FILE.png] [--frames N]
+/// Args after `--`: --movie NAME [--scenario login|minimap|expbar|questlog] [--out FILE.png] [--frames N] [--gen DLL]
+/// [--oracle] [--tab N --subtab N --scroll N]. --gen loads the translated movie code (tools/UiGen); --oracle runs the
+/// interpreter anyway. The questlog scenario is the quest log driven by its client controller over the shot fixture's
+/// quest state (QuestShotState, not game data).
 /// Without --out the movie stays up and takes mouse and keyboard input.
 /// </summary>
 public partial class As3ViewerScene : Control
 {
-    string movie = "uilogindialog", scenario, outFile; int frames = 30;
+    string movie = "uilogindialog", scenario, outFile; int frames = 30, tab = 1, subTab = 0, scroll = 0;
     As3View view; int wait = -1;
 
     public override void _Ready()
@@ -26,7 +29,13 @@ public partial class As3ViewerScene : Control
             if (a[i] == "--scenario") scenario = a[i + 1];
             if (a[i] == "--out") outFile = a[i + 1];
             if (a[i] == "--frames") frames = int.Parse(a[i + 1]);
+            if (a[i] == "--gen") GD.Print($"translated code: {GeneratedCode.LoadAssembly(a[i + 1])} blocks");
+            if (a[i] == "--tab") tab = int.Parse(a[i + 1]);
+            if (a[i] == "--subtab") subTab = int.Parse(a[i + 1]);
+            if (a[i] == "--scroll") scroll = int.Parse(a[i + 1]);
         }
+        if (System.Array.IndexOf(a, "--oracle") >= 0) Interp.UseOracle = true;
+        if (scenario == "questlog") movie = "uiquestdialog";
         var data = Settings.DataDir;
         if (string.IsNullOrEmpty(data)) { GD.PushError("need MS2_DATA"); GetTree().Quit(2); return; }
         RenderingServer.SetDefaultClearColor(new Color(0.35f, 0.5f, 0.35f));
@@ -42,6 +51,13 @@ public partial class As3ViewerScene : Control
         p.StageW = size.X; p.StageH = size.Y;
         view.StageScale = 1;
         AddChild(view);
+        if (scenario == "questlog")
+        {
+            QuestLogScenario(packs, p);
+            foreach (var e in rt.Errors) GD.PushWarning("[as3 error] " + e);
+            if (outFile != null) { for (int i = 0; i < frames; i++) p.Tick(); view.Sync(); wait = 4; }
+            return;
+        }
         if (!p.Start()) GD.PushWarning("construct failed");
         for (int i = 0; i < 5; i++) p.Tick();
         // the client's dialog wrapper invokes "alignment" on the movie's entity (ASGameEntity::vfunc_25)
@@ -51,6 +67,21 @@ public partial class As3ViewerScene : Control
         RunScenario(p);
         foreach (var e in rt.Errors) GD.PushWarning("[as3 error] " + e);
         if (outFile != null) { for (int i = 0; i < frames; i++) p.Tick(); view.Sync(); wait = 4; }
+    }
+
+    void QuestLogScenario(PackSet packs, FlashPlayer p)
+    {
+        var table = Ms2.Quest.QuestTable.Load(packs, new Ms2.Formats.World.GameStrings(packs, "en").Languages, "KR", _ => true);
+        var fd = System.Xml.Linq.XDocument.Load(new System.IO.MemoryStream(packs.Read("Xml", "table/fielddata.xml")));
+        var log = new Ms2.Quest.QuestLog(table, new Ms2.Quest.QuestShotState(table, 30))
+        { Meta = Ms2.Quest.FieldMeta.Load(packs), FieldCodes = Ms2.Quest.QuestTable.FieldCodes(fd, table.Available) };
+        var c = new Ms2.Ui.Hud.QuestDialogController { Log = log, OpenTab = tab, OpenSubTab = subTab };
+        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(packs, "en"));
+        Ms2.Ui.UiFixture.Apply(model);
+        var h = new Ms2.Ui.UiHost(p, c, model);
+        GD.Print($"quest log: {(Interp.UseOracle ? "oracle" : GeneratedCode.Count > 0 ? "translated" : "interpreter")} load={h.Load()}");
+        for (int i = 0; i < 30; i++) p.Tick();
+        if (scroll != 0) h.Set(h.Child("m_questList"), "scrollPosition", scroll);
     }
 
     void RunScenario(FlashPlayer p)

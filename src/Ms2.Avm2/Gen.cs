@@ -1,3 +1,4 @@
+using System.IO;
 using System.Reflection;
 using Ms2.Swf.Abc;
 
@@ -28,7 +29,11 @@ public static class GeneratedCode
     /// <summary>Loads a generated assembly and runs its registration (a static <c>Ms2UiGen.Init()</c>).</summary>
     public static int LoadAssembly(string path)
     {
-        var asm = Assembly.LoadFrom(path);
+        // into the load context that holds this runtime (a host such as Godot runs its game assemblies in their own),
+        // so the generated code binds to the same Ms2.Avm2
+        var ctx = System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(typeof(GeneratedCode).Assembly)
+                  ?? System.Runtime.Loader.AssemblyLoadContext.Default;
+        var asm = ctx.LoadFromAssemblyPath(Path.GetFullPath(path));
         int before = Count;
         asm.GetType("Ms2UiGen")?.GetMethod("Init", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, null);
         return Count - before;

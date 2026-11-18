@@ -8,5 +8,6 @@
   <ItemGroup>
     <ProjectReference Include="../Ms2.Avm2/Ms2.Avm2.csproj" />
     <ProjectReference Include="../Ms2.Formats/Ms2.Formats.csproj" />
+    <ProjectReference Include="../Ms2.Quest/Ms2.Quest.csproj" />
   </ItemGroup>
 </Project>
