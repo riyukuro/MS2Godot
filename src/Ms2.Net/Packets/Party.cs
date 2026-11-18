@@ -16,11 +16,13 @@ public sealed class PartyUser {
     public int MapInstanceId;   // m_30: compared when the channel is 0 (a dungeon)
     public short Level;         // m_34
     public ushort Channel;      // m_38: 0 in a dungeon
+    public int JobGroup;        // m_3c: the job group (the popup menu target's m_n20)
     public int Job;             // m_40: the job code the movie's job icon frame is named by ("_" + job)
     public int MaxHp;           // m_44
     public int Hp;              // m_48
     public short TombFlags;     // m_4c: GetTombType reads the low two bits
     public int GearScore;       // m_d0
+    public (int, int, int) Trophy;  // m_d4 (Unk_IntTriple): the trophy counts; the popup menu shows their sum
     public string Picture = ""; // SetImage
     public byte ReturnUserKind; // m_180: 2 = a returning user (the return icon)
     public bool IsDead;         // m_184: FUN_141637c40's state 2
@@ -41,7 +43,7 @@ public sealed class PartyUser {
         u.MapInstanceId = r.ReadInt();
         u.Level = r.ReadShort();
         u.Channel = (ushort) r.ReadShort();
-        r.ReadInt();                                   // m_3c
+        u.JobGroup = r.ReadInt();                      // m_3c
         u.Job = r.ReadInt();
         u.MaxHp = r.ReadInt();
         u.Hp = r.ReadInt();
@@ -52,7 +54,7 @@ public sealed class PartyUser {
         u.GearScore = r.ReadInt();
         r.ReadInt(); r.ReadInt();                      // m_58[2]
         r.ReadLong();                                  // m_70
-        r.ReadInt(); r.ReadInt(); r.ReadInt();         // m_d4 (Unk_IntTriple::ReadFrom)
+        u.Trophy = (r.ReadInt(), r.ReadInt(), r.ReadInt());   // m_d4 (Unk_IntTriple::ReadFrom)
         r.ReadLong();                                  // m_80
         r.ReadUnicodeString();                         // FUN_1408f0950
         r.ReadUnicodeString();                         // FUN_1408f08c0
@@ -80,11 +82,11 @@ public sealed class PartyUser {
         w.WriteLong(AccountId); w.WriteLong(CharacterId); w.WriteUnicodeString(Name);
         w.WriteByte(0); w.WriteByte(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(0);
         w.WriteInt(MapId); w.WriteInt(MapInstanceId); w.WriteShort(Level); w.WriteShort((short) Channel);
-        w.WriteInt(0); w.WriteInt(Job); w.WriteInt(MaxHp); w.WriteInt(Hp); w.WriteShort(TombFlags);
+        w.WriteInt(JobGroup); w.WriteInt(Job); w.WriteInt(MaxHp); w.WriteInt(Hp); w.WriteShort(TombFlags);
         w.WriteLong(0); w.WriteLong(0); w.WriteLong(0); w.WriteInt(0);
         w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);
         w.WriteInt(GearScore); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0);
-        w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0);
+        w.WriteInt(Trophy.Item1); w.WriteInt(Trophy.Item2); w.WriteInt(Trophy.Item3); w.WriteLong(0);
         w.WriteUnicodeString(""); w.WriteUnicodeString(""); w.WriteUnicodeString(Picture);
         w.WriteByte(0);                                // no clubs
         w.WriteByte(0);
@@ -234,6 +236,8 @@ public sealed class PartyBook {
     /// <summary>IsInParty (:526): more than one member.</summary>
     public bool IsInParty => members.Count > 1;
     public PartyMember Find(long characterId) => members.FirstOrDefault(m => m.CharacterId == characterId);
+    /// <summary>FindMemberByName (partymanager.cpp:629): the first member with the name, case ignored (CompareNoCase).</summary>
+    public PartyMember FindByName(string name) => members.FirstOrDefault(m => string.Equals(m.User.Name, name, StringComparison.OrdinalIgnoreCase));
     /// <summary>IsLocalPlayerLeader (:530).</summary>
     public bool IsLeader(long characterId) => IsInParty && LeaderId == characterId;
 
@@ -243,6 +247,16 @@ public sealed class PartyBook {
     /// <summary>OnParty (partymanager.cpp:447) for the modes the window shows; <paramref name="self"/> is DAT_143ab2828, the own
     /// character id. The chat notices (FUN_1412751b0) are not raised.</summary>
     public void Apply(PartyMessage message, long self, bool windowOpen) {
+        ApplyMessage(message, self, windowOpen);
+        Applied?.Invoke(message);
+    }
+
+    /// <summary>Raised after <see cref="Apply"/> for the UI's own 0x53 handlers (PacketHandlerManager::RegisterHandler, e.g.
+    /// UIPopUpMenu::FUN_141a80a50, which closes its menu on modes 7 and 8). Whether the client runs them before or after
+    /// CPartyManager::OnParty is not checked.</summary>
+    public event Action<PartyMessage> Applied;
+
+    void ApplyMessage(PartyMessage message, long self, bool windowOpen) {
         switch (message) {
             case PartyInfo info: {                          // :1104
                 if (PartyId > 0) { Clear(); Closed?.Invoke(); }

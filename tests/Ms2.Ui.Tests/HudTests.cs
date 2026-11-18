@@ -208,6 +208,53 @@ public class HudTests
     }
 
     [Test]
+    public void PartySlotMenuListsTheClientItems()
+    {
+        // UIPopUpMenu for the party slots (FUN_141a83810 with 0x63fe): the own slot, an online member, an offline member,
+        // as the leader and after the lead passes; the movie's "open" takes the list and MenuItemClick raises the item
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PopupMenuController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, ProfileImagePath = (_, _) => "" };
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        bool voteKick = m.IsFeatureEnabled(0xe0);
+        int[] Menu(long id)
+        {
+            c.OpenForPartySlot(100, 200, id, m.Player);
+            var items = c.Items.ToArray();
+            c.ClosePopup();
+            return items;
+        }
+        int[] With(bool on, params int[] ids) => on ? ids : Array.Empty<int>();
+        const int self = (int)PartyFixture.SelfCharacterId;
+        // the own slot: view character, leave, ready check (the leader)
+        Assert.That(Menu(self), Is.EqualTo(new[] { PopupMenuController.ViewOwnCharacter, PopupMenuController.LeaveParty, PopupMenuController.ReadyCheck }));
+        // an online member as the leader: view, whisper, group chat, house, home, friend, kick, leader, (vote), block, report
+        Assert.That(Menu(3), Is.EqualTo(new[] { 0x66, 0x65, 0x1f6, 0x1f7, 0x1f8, 0x12d, 0xca, 0xcb }.Concat(With(voteKick, 0xcc)).Concat(new[] { 400, 0x1f5 })));
+        // an offline member: no whisper, group chat, leader change or report
+        Assert.That(Menu(5), Is.EqualTo(new[] { 0x66, 0x1f7, 0x1f8, 0x12d, 0xca }.Concat(With(voteKick, 0xcc)).Concat(new[] { 400 })));
+        // not the leader: the own slot only leaves, a member only has the vote kick of the party items
+        book.Apply(new PartyLeaderChange(3), PartyFixture.SelfCharacterId, true);
+        Assert.That(Menu(self), Is.EqualTo(new[] { PopupMenuController.ViewOwnCharacter, PopupMenuController.LeaveParty }));
+        Assert.That(Menu(4), Is.EqualTo(new[] { 0x66, 0x65, 0x1f6, 0x1f7, 0x1f8, 0x12d }.Concat(With(voteKick, 0xcc)).Concat(new[] { 400, 0x1f5 })));
+        // the movie's list: open, labelled from string table 7, and a click raises the item for the target
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        Assert.That(c.IsClosed, Is.False);
+        Assert.That(c.InfoString, Is.EqualTo("partySlot"));
+        Assert.That(m.Tables.PopupMenuName(0x66), Is.Not.Empty);
+        var menu = h.Child("m_menu") as AsObject;
+        Assert.That(Rt.ToBoolean(h.Get(menu, "visible")), Is.True);
+        (int id, string name) clicked = default;
+        c.ItemClicked += (id, t) => clicked = (id, t.Name);
+        c.OnCallback("MenuItemClick", new object[] { (uint)0x66 });
+        Assert.That(clicked, Is.EqualTo((0x66, "FixtureArcher")));
+        // a disband closes it (FUN_141a80a50 mode 7)
+        c.OnPartyMessage(new PartyDisband());
+        Assert.That(c.IsClosed, Is.True);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MainPlayerInfoInitAndStatusEvents()
     {
         var m = Model();

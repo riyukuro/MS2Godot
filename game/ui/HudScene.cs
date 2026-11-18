@@ -45,6 +45,7 @@ public partial class HudScene : Node
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
+    long partyMenuShot;                     // --uigen-party-menu ID: the party slot menu of that member
     string hoverShot;                       // --uigen-hover MOVIE:a.b.c (or MOVIE:@x,y): the pointer on that child of a hosted movie, or at that point (its tooltip shows)
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
@@ -68,6 +69,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-hover") hoverShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-party-menu") long.TryParse(args[i + 1], out partyMenuShot);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots") quickSlotShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots-player") quickSlotPlayer = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
@@ -154,6 +156,7 @@ public partial class HudScene : Node
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
         partyMovie?.Relayout(GetWindow().Size);
+        popupMovie?.Relayout(GetWindow().Size);
     }
 
     /// <summary>
@@ -1316,6 +1319,7 @@ public partial class HudScene : Node
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
+        popupMenu?.Update();       // UIPopUpMenu::vfunc_15
         alignWidgets?.ProcessPendingLayout();      // the end of UISwfEntityManager::UpdateEntities
         // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:639): the queued slot refresh, when its 200 ms timer fires
         if (playerInfo != null && Time.GetTicksMsec() - slotRefreshTick >= 200)
@@ -1352,6 +1356,7 @@ public partial class HudScene : Node
         if (msgboxShot == 3 && frames == 230) optionHost?.MessageBox(0x84b, "OnSaveAndCheck");   // OnCloseDialog with a page changed
         if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
         if (hoverShot != null && frames == 260) Hover(hoverShot);
+        if (partyMenuShot != 0 && frames == 240) ShotPartyMenu(partyMenuShot);
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
         {

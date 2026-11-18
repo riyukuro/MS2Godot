@@ -23,14 +23,15 @@ public sealed class PartyController : UiController
     public FieldData Field;
     /// <summary>The local player is dead (PCBase::IsDead); no feed yet: false.</summary>
     public Func<bool> LocalPlayerDead = () => false;
+    /// <summary>The popup menu (FindPopupMenu(0x4e39)) is open for a party slot (not IsClosed, GetInfoString "partySlot").</summary>
+    public Func<bool> SlotMenuOpen = () => false;
     /// <summary>CStringTable::FUN_141811980(3, id): the map name.</summary>
     public Func<int, string> MapName = _ => "";
     /// <summary>CStringTable::FUN_141811980(0x14, id): the dungeon name.</summary>
     public Func<int, string> DungeonName = _ => "";
 
     /// <summary>onPopupMenu (vfunc_28, :640): the member menu at (x, y) for a character (FUN_141a77760, :794): the own one
-    /// opens the PC menu, another member PopUpMenuFromPartyMember (invite, leave, kick, leader change). The popup menu is not
-    /// ported: raised only.</summary>
+    /// opens the PC menu, another member PopUpMenuFromPartyMember; the host opens <see cref="PopupMenuController"/>.</summary>
     public event Action<float, float, long> MemberMenu;
     /// <summary>onCameraClick (:655): MyPC::StartObserving the member's PC. Raised only.</summary>
     public event Action<long> ObserveMember;
@@ -264,13 +265,14 @@ public sealed class PartyController : UiController
     }
 
     /// <summary>
-    /// vfunc_45 @0x141a76ff0 (:692) "getTooltip"(charSN): none while the member popup menu is open (not ported); offline
+    /// vfunc_45 @0x141a76ff0 (:692) "getTooltip"(charSN): none while the popup menu is open for a party slot; offline
     /// s_word_offline, else s_tooltip_party of s_word_online and the place (s_tooltip_party_ch of the channel and a space,
     /// none in a dungeon, then the map name); align 4, offset (-30, -1).
     /// </summary>
     public override IDictionary<string, object> GetUserData(string name, object[] args)
     {
         if (name != "getTooltip") return base.GetUserData(name, args);
+        if (SlotMenuOpen()) return null;
         if (args.Length < 1 || !long.TryParse(Avm2.Rt.ToString(args[0]), NumberStyles.Integer, CultureInfo.InvariantCulture, out long id) || id <= 0)
             return null;
         if (Party.Find(id) is not { } m) return null;

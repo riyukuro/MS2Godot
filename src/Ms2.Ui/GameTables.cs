@@ -177,6 +177,8 @@ public sealed class GameTables
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>CStringTable::FUN_141811980(4, id): the skill's name (string table 4 "skillName"); "" when unknown.</summary>
     public string SkillName(uint id) => Lazy(ref skillNames, "skillname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    /// <summary>CStringTable::FUN_141811980(7, id): string table 7 "popupMenu" (a popup menu item's label); "" when unknown.</summary>
+    public string PopupMenuName(int id) => Lazy(ref popupMenuNames, "popupmenu", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>CStringTable::FUN_141811980(8, id): string table 8 "slotName" (a weapon kind's name); "" when unknown.</summary>
     public string SlotName(int id) => Lazy(ref slotNames, "slotname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>The "name" text of the skill's row in stringSkillDescription.xml (CStringTable::GetSkillDescription
@@ -228,7 +230,7 @@ public sealed class GameTables
     public ReservedWords ReservedWords => reservedWords ??= new ReservedWords(strings, null);
 
     GameStrings strings;
-    Dictionary<string, string> skillNames, slotNames, skillDescs;
+    Dictionary<string, string> skillNames, slotNames, skillDescs, popupMenuNames;
     /// <summary>CStringTable::FUN_141811980(13, id): string table 13 "categoryName", a shop tab's name (CShopCategoryTable
     /// TabInfo::GetName, shopcategorytable.cpp:152); "" when unknown.</summary>
     public string CategoryName(int id) => Lazy(ref categoryNames, "categoryname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
