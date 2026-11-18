@@ -17,6 +17,10 @@ public sealed class ItemTooltip
 
     public ItemTooltip(UiModel model, int flags) { this.model = model; Flags = flags; }
 
+    /// <summary>The tooltip's owner (m_40, the local player: EquipSlot::vfunc_0) by character id (PCBase::FUN_141656a80)
+    /// and name, for a binding's owner name (CItemTransfer::GetBindingOwnerName); null: the binding's own name.</summary>
+    public (long Id, string Name)? Owner;
+
     GameTables Tables => model.Tables;
     string Common(string key) => Tables.Common(key) ?? "";
 
@@ -53,6 +57,7 @@ public sealed class ItemTooltip
         Data["itemKinds"] = Kinds(d.IconCode);                                    // FUN_1409d5610
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
+        SetNotExchange(item);                                                     // SetItemSellPrice
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
@@ -122,6 +127,114 @@ public sealed class ItemTooltip
         if (d.IsMultiRideItem && model.IsFeatureEnabled(0xad)) return;
         if (d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19) return;
         Data["itemGuideDescription"] = Tables.ItemDescription(d.Id, "guideDescription");
+    }
+
+    string CommonF(string key, params object[] args) => Ms2.Quest.ClientFormat.Format(Common(key), args);
+
+    /// <summary>
+    /// SetItemSellPrice (@0x1409cd9c0, astooltip.cpp:1772), the "notExchange" part (flag 0x2000 clear): FUN_1409e6120's
+    /// trade, bind and move lines (:5397), then FUN_1409d98a0's dismantle line (:3553), the socket transfer line
+    /// (feature 0xa7 ItemSocketTransfer01, a skin item that cannot transfer its socket), the pet line (feature 0x8d) and the
+    /// couple partner, joined with line breaks. The "itemSellPrice" part is not ported. The member is left out where an
+    /// input is not ported: no record, a UGC block, a socket with a gem (the gem checks), a gacha dismantle id or a pet
+    /// item (the dismantle check), a move-disabled item's stored character and a skin item's dismantle reward (CItemBreakManager::HasBreakReward's ingredient table and Lua).
+    /// </summary>
+    public void SetNotExchange(Item item)
+    {
+        var d = item.Data;
+        var r = item.Record;
+        if (r == null || r.HasUgc || HasGem(r) || d.IsPetItem) return;
+        var t = r.Transfer;
+        bool locked = IsLocked(item);
+        // CanTradeItem (FUN_140633e40): the transfer's FUN_140635590, the gems (none here), the enchant's IsEnabled
+        bool tradeable = TradeRule(t, locked) != 0 && r.Enchant.HistoryEnabled;
+        // CItemTransfer::IsSellable: shopSell (InitFromItem's m_b39) and not locked (FUN_140635870)
+        bool personal = d.ShopSell && !locked;
+        bool bindable = (t.Rule & 8) != 0, bindOnGet = bindable && t.HasBinding;
+        string bindName = bindOnGet ? (Owner is { } o && o.Id == t.BindingId ? o.Name : t.BindingName) : "";
+        bool countLeft = !t.HasBinding && (t.Rule & 0x10) != 0 && t.Count != 0;   // HasTradeCountLeft (FUN_140634cc0 is 1)
+        int count = countLeft ? t.Count : 0;
+        // FUN_1409dfae0: locked, the gems pass, a pet or rarity 4+, a count
+        bool remainOnly = locked && (d.IsPetItem || item.Rarity >= 4) && t.Count > 0;
+        string text = "";
+        if (remainOnly) text = CommonF("s_word_item_limit_trade_count_without_sell_for_itemlock", count);   // 0x525
+        else if (tradeable && count > 0)
+            text = personal ? CommonF("s_word_item_limit_trade_count", count) : CommonF("s_word_item_limit_trade_count_without_sell", count);   // 0x523 / 0x524
+        else if (!personal && !tradeable) text = Common("s_word_item_limit_sell_trade");   // 0x520
+        else if (!personal) text = Common("s_word_item_limit_sell");                       // 0x51e
+        else if (!tradeable) text = Common("s_word_item_limit_trade");                     // 0x51f
+        if (bindable)
+        {
+            if (bindOnGet) text = Join(text, CommonF("s_word_item_limit_bind_format", bindName));   // 0x527
+            else
+            {
+                string bind = Common("s_word_item_limit_bind");                                     // 0x526
+                switch (d.TransferType)
+                {
+                    case 2: bind = Common("s_word_item_limit_bind_get"); break;
+                    case 3: case 4:
+                        bind = Common(d.IsPetItem ? "s_word_item_limit_bind_pet" : d.IsEquipItem ? "s_word_item_limit_bind_equip" : "s_word_item_limit_bind_use");
+                        break;
+                }
+                text = Join(text, bind);
+            }
+        }
+        if (model.IsFeatureEnabled(0xcf) && d.MoveDisable)
+        {
+            if (r.BindingId != 0) return;                                         // s_word_item_limit_moveDisable_store_in: the stored character
+            text = Join(text, Common("s_word_item_limit_moveDisable"));
+        }
+        // FUN_1409d98a0: feature 0x3a, a skin item that CItemBreakManager::CanBreakItem refuses
+        if (model.IsFeatureEnabled(0x3a) && d.HasSkinType)
+        {
+            if (CanBreak(item, locked) is not { } canBreak) return;
+            if (!canBreak) text = Join(text, Common("s_invalid_break_skinitem"));   // 0xc44
+        }
+        if (model.IsFeatureEnabled(0xa7) && d.HasSkinType)
+        {
+            // CanTransferSocket: m_b42 (read) and m_b41 (InitFromItem: CItemSocketTable::FUN_14062d980 with the rarity);
+            // the line is appended after a line break even to an empty text
+            if (!(t.B42 && Tables.ItemSockets.SocketCanGrow(d, item.Rarity, model.IsFeatureEnabled)))
+                text += "\n" + Common("s_word_item_limit_socket_transfer");
+        }
+        if (!string.IsNullOrEmpty(r.CoupleName)) text = Join(text, CommonF("s_couple_effect_partner", r.CoupleName));
+        Data["notExchange"] = text;
+    }
+
+    static string Join(string text, string line) => text.Length == 0 ? line : text + "\n" + line;
+
+    static bool HasGem(Ms2.Net.Packets.EquipItem r) => r.Socket.MaxSlot != 0 && r.Socket.Gems.Any(g => g != null && g.GemId != 0);
+
+    /// <summary>CItem::FUN_140528e20 (item.cpp): lock state 1, or 0 with an unlock time still ahead of the server time.</summary>
+    bool IsLocked(Item item) => item.LockState == 1 || (item.LockState == 0 && new DateTimeOffset(model.Now).ToUnixTimeSeconds() < item.UnlockTime);
+
+    /// <summary>CItemTransfer::FUN_140635590: 0 when bound or locked (FUN_140634cc0 is always 1: the enchant's FUN_14058c8a0
+    /// returns 0); else the trade count rule (0x10) with a count left, else the trade rule bit 4.</summary>
+    static int TradeRule(Ms2.Net.Packets.ItemTransfer t, bool locked)
+    {
+        if (t.HasBinding || locked) return 0;
+        int result = (t.Rule & 0x10) != 0 && t.Count > 0 ? 1 : 0;
+        return result == 0 ? t.Rule & 4 : result;
+    }
+
+    /// <summary>
+    /// CItemBreakManager::CanBreakItem (itembreakmanager.cpp:276) for an item without gems; null where it needs what is not
+    /// ported: a gacha dismantle id (FUN_140531510: the gacha box and the content shutdown flag 0x71), the summoned pet
+    /// (FUN_140531630, a pet item) and a skin item's reward (HasBreakReward).
+    /// </summary>
+    bool? CanBreak(Item item, bool locked)
+    {
+        var d = item.Data;
+        var r = item.Record;
+        if (locked) return false;
+        if (r.GachaDismantleId != 0 || d.IsPetItem) return null;
+        // FUN_140633bf0: CItemTransfer::CanBreak (m_b3F, InitFromItem's m_b3E = enableBreak 0, a PC bang item, locked,
+        // a skin item with feature 0x3a off or a cube mesh with no socket slots), then the gems (none here)
+        if (r.Transfer.B3F || d.EnableBreak == 0 || d.PCBang) return false;
+        if (d.HasSkinType && !model.IsFeatureEnabled(0x3a)) return false;
+        if (d.HasSkinType && d.HasCubeTextureMesh && r.Socket.Gems.Count == 0) return false;
+        if (d.HasSkinType) return null;                                            // HasBreakReward
+        return true;
     }
 
     /// <summary>SetEnablePuton (@0x1409c69b0): nothing with flag 0x100; else "enablePuton".</summary>

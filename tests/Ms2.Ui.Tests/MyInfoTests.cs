@@ -264,6 +264,46 @@ public class MyInfoTests
     }
 
     [Test]
+    public void TradeLinesAreTheClientsForABoundOutfit()
+    {
+        // the Green Hood Uniform of outfits_hover_equipped_top.png: bound to Solo, transfer type 2, no shopSell, no
+        // enableBreak, socketDataId 9006 (grade 0 row: 4 max, 0 open) with the server's socket transfer flag
+        var m = NewModel();
+        var r = new EquipItem { Id = 12200398, Uid = 9, Rarity = 1, Amount = 1 };
+        r.Transfer.Rule = 8; r.Transfer.HasBinding = true; r.Transfer.BindingId = 2; r.Transfer.BindingName = "Solo"; r.Transfer.B42 = true;
+        var item = Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items);
+        var tip = new ItemTooltip(m, 0x200) { Owner = (2, "Solo") };
+        Assert.That(tip.Fill(item), Is.True);
+        Assert.That(tip.Data["notExchange"], Is.EqualTo("Untradable, Unsellable\nBound to Solo\nThis outfit cannot be dismantled"));
+        var shown = TooltipTests.Draw(tip.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Bound to Solo"));
+
+        // without the socket transfer flag the client adds its line; a binding to someone else keeps the binding's name
+        r.Transfer.B42 = false; r.Transfer.BindingId = 5; r.Transfer.BindingName = "Other";
+        tip = new ItemTooltip(m, 0x200) { Owner = (2, "Solo") };
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+        Assert.That(tip.Data["notExchange"], Is.EqualTo("Untradable, Unsellable\nBound to Other\nThis outfit cannot be dismantled\nSocket cannot be transferred."));
+
+        // unbound, tradable 3 times, a weapon (not skin): the count line, then "Binds to character" for type 1
+        var w = new EquipItem { Id = 15000001, Uid = 10, Rarity = 2, Amount = 1 };
+        w.Transfer.Rule = 8 | 0x10 | 4; w.Transfer.Count = 3;
+        tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(w, m.Tables.Items));
+        var wd = m.Tables.Items.Get(15000001);
+        string bind = wd.TransferType switch { 2 => "Binds on Loot", 3 or 4 => "Binds on Equip", _ => "Binds to character" };
+        string first = wd.ShopSell ? "<FONT color='#FFD200'>Tradable 3 time(s)</FONT>" : "Tradable 3 time(s), Unsellable";
+        TestContext.WriteLine($"15000001: transferType {wd.TransferType} shopSell {wd.ShopSell} -> {tip.Data["notExchange"]}");
+        Assert.That(tip.Data["notExchange"], Is.EqualTo(first + "\n" + bind));
+
+        // a gem in a socket: the gem checks are not ported, so the member is left out
+        w.Socket.MaxSlot = 1; w.Socket.Gems.Add(new SocketGem { GemId = 40100001 });
+        tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(w, m.Tables.Items));
+        Assert.That(tip.Data.ContainsKey("notExchange"), Is.False);
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");

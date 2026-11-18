@@ -717,11 +717,15 @@ public sealed class MyInfoController : UiController
     /// record (PCInfo m_3c0) else 0x100, 2) over FUN_14120ce90's item; when it fills, SetEnablePuton(GetStringCommon(0x752)).
     /// The preview line (SetEnablePreview, IsPreviewable) is not ported.
     /// </summary>
+    /// <summary>ASTooltip(the local player, 0x200 for the own record (PCInfo m_3c0) else 0x100, 2). The owner's character
+    /// id and name are the record's when it is the local player's; otherwise not known here (the binding's own name).</summary>
+    ItemTooltip NewItemTooltip(PcInfo r) => new(Model, r.IsLocal ? 0x200 : 0x100) { Owner = r.IsLocal ? (r.CharacterId, r.Name) : null };
+
     AsTooltip EquipTooltip(int slot)
     {
         var r = equipBagRecord;
         if (r == null || !Model.HasLocalPlayer) return null;
-        var tip = new ItemTooltip(Model, r.IsLocal ? 0x200 : 0x100);
+        var tip = NewItemTooltip(r);
         if (!tip.Fill(EquipSlotItem(r, equipBagKind, slot))) return null;
         tip.SetEnablePuton(Common("s_msg_rclick_putoff_equip"));                  // 0x752
         return tip.Data;
@@ -743,7 +747,7 @@ public sealed class MyInfoController : UiController
         var item = e != null ? InventoryController.ToItem(e, Model.Tables.Items) : null;
         if (item != null)
         {
-            var tip = new ItemTooltip(Model, r.IsLocal ? 0x200 : 0x100);
+            var tip = NewItemTooltip(r);
             if (!tip.Fill(item)) return null;
             tip.SetEnablePuton("");
             return tip.Data;

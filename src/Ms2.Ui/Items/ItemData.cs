@@ -17,12 +17,21 @@ public sealed class ItemData
     // ItemProperty::Load (itemdatastruct.cpp:1122)
     public uint SlotMax = 1;                                   // ctor default 1 (:1115), capped at 99999
     public string SlotIcon = "", Category = "";
+    /// <summary>ItemProperty moveDisable (itemdatastruct.cpp:1158) and socketDataId.</summary>
+    public bool MoveDisable;
+    public int SocketDataId;
+    /// <summary>ItemUccMesh::LoadXml (itemdatastruct.cpp:1583): &lt;ucc mesh&gt;.</summary>
+    public string UccMesh = "";
     // <PCBang PCBang> (:371)
     public bool PCBang;
     // ItemLimit::Load (itemdatastruct.cpp:567)
     /// <summary>ItemLimit levelLimit (itemdatastruct.cpp:573; the constructor's 1, :560).</summary>
     public int LevelLimit = 1;
     public bool Vip, Wedding;                                  // "vip" -> flag6a, "wedding"
+    /// <summary>ItemLimit transferType (:574; "globalTransferType" instead with feature 0x84 GlobalTransferType, :576),
+    /// shopSell (:578) and enableBreak (:579); the ctor's 0 / false / 0 (:560).</summary>
+    public int TransferType, EnableBreak;
+    public bool ShopSell;
     public readonly SortedSet<int> RecommendJobs = new();      // XmlTokenList (",") into std::set
     // ItemSkill::LoadXml (itemdatastruct.cpp:871)
     public int SkillId;
@@ -35,7 +44,7 @@ public sealed class ItemData
     /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt;.</summary>
     public int InstallObjCode;
 
-    public static ItemData Load(int id, XElement env)
+    public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
         var d = new ItemData { Id = id };
         if (env.Element("property") is { } p)
@@ -52,12 +61,18 @@ public sealed class ItemData
             d.SlotMax = Math.Min(d.SlotMax, 99999u);
             d.Category = (string)p.Attribute("category") ?? d.Category;
             d.SlotIcon = (string)p.Attribute("slotIcon") ?? d.SlotIcon;
+            Bool(p, "moveDisable", ref d.MoveDisable);
+            Int(p, "socketDataId", ref d.SocketDataId);
         }
         if (env.Element("limit") is { } l)
         {
             Int(l, "levelLimit", ref d.LevelLimit);
             Bool(l, "vip", ref d.Vip);
             Bool(l, "wedding", ref d.Wedding);
+            Int(l, "transferType", ref d.TransferType);
+            if (globalTransferType && l.Attribute("globalTransferType") != null) Int(l, "globalTransferType", ref d.TransferType);
+            Bool(l, "shopSell", ref d.ShopSell);
+            Int(l, "enableBreak", ref d.EnableBreak);
             if ((string)l.Attribute("recommendJobs") is { } jobs)
                 foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.RecommendJobs.Add(Atoi(t));
         }
@@ -73,6 +88,7 @@ public sealed class ItemData
             bool xml = s.Length > 1 && s[0] == '<' && s[^1] == '>';
             if (!xml) d.FunctionArgs.AddRange(s.Split(',', StringSplitOptions.RemoveEmptyEntries));
         }
+        if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
         if (env.Element("install") is { } inst) Int(inst, "objCode", ref d.InstallObjCode);
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
         return d;
@@ -82,6 +98,10 @@ public sealed class ItemData
     public bool IsPetItem => Type == 0xb;                      // :675
     public bool IsScoreItem => Type == 0xc;                    // :695
     public bool IsInstallItem => Type == 6;                    // :657
+    /// <summary>FUN_14053cbc0 (:663): an equipment item.</summary>
+    public bool IsEquipItem => Type == 1;
+    /// <summary>HasCubeTextureMesh (:987).</summary>
+    public bool HasCubeTextureMesh => UccMesh.Length > 0;
     public bool IsRideItem => Type == 9;                       // :681
     /// <summary>FUN_14053ccc0 (:687): a ride item of subtype 1.</summary>
     public bool IsMultiRideItem => IsRideItem && Subtype == 1;
@@ -190,7 +210,7 @@ public sealed class ItemDataTable
                 {
                     if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
                     if (FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
-                    rows.TryAdd(i, ItemData.Load(i, env));                  // std::map::insert keeps the first
+                    rows.TryAdd(i, ItemData.Load(i, env, LobbyFeatures.IsEnabled(packs, "GlobalTransferType")));                  // std::map::insert keeps the first
                 }
             files[file] = rows;
         }
