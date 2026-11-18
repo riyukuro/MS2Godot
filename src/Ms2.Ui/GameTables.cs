@@ -57,6 +57,16 @@ public sealed class GameTables
         MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
         MeratConsumeChannelChat = (uint)k.Float("MeratConsumeChannelChat", MeratConsumeChannelChat);
         foreach (var (cur, key) in TokenCapKeys) TokenCaps[cur] = (long)k.Float(key, TokenCaps[cur]);
+        // ConstantsBlocks (unit_1402ab440_constantsblocks.cpp:1169): read by JobSystem::GetLevelSkillPoint (jobsystem.cpp:301)
+        SkillPointLimitLevel1 = (int)k.Float("SkillPointLimitLevel1", SkillPointLimitLevel1);
+        SkillPointLimitLevel2 = (int)k.Float("SkillPointLimitLevel2", SkillPointLimitLevel2);
+        // JobTable::Load (jobtable.cpp:309): table/job.xml; SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every
+        // ./Data/Xml/SkillData/*.xml (FindSkillFiles :1352, not recursive), read on first use
+        List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
+        var skillFiles = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
+            && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        Skills = new Skills.SkillTables(new Skills.JobTable(Xml("table/job.xml"), collect),
+            new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
@@ -126,6 +136,10 @@ public sealed class GameTables
     public int AdventureLevelStartLevel = 50;
     /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
+    /// <summary>Client::Constants SkillPointLimitLevel1 / SkillPointLimitLevel2 (defaults 80, 100).</summary>
+    public int SkillPointLimitLevel1 = 80, SkillPointLimitLevel2 = 100;
+    /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
+    public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     public int MaxChatLength = 50;
     public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
     /// <summary>The token caps by currency (GetCurrencyAmountAndCap, uicommon.cpp): Client::Constants HonorTokenMax,

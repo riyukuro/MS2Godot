@@ -52,6 +52,8 @@ public enum Inbound : ushort {
     StateFallDamage = 0x65,
     KeyTable = 0x6F,
     Job = 0x49,
+    SkillPoint = 0x44,
+    SkillBookTree = 0x10C,
     ProxyGameObj = 0x7E,
     RideSync = 0x7A,
     World = 0xB9,
@@ -76,4 +78,5 @@ public enum Outbound : ushort {
     State = 0x80,
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
+    RequestSkillBookTree = 0xA2,
 }
