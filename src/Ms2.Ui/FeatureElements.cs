@@ -11,14 +11,14 @@ namespace Ms2.Ui;
 /// </summary>
 public static class FeatureElements
 {
-    /// <summary>IsElementAvailable: the client's locale (or none) and an enabled feature (or none).</summary>
+    /// <summary>IsElementAvailable (commonutil.cpp:1047): the client's locale (or none) and an enabled feature (or none).</summary>
     public static bool IsAvailable(PackSet packs, XElement e)
     {
         string locale = (string)e.Attribute("locale") ?? "", feature = (string)e.Attribute("feature") ?? "";
         return (locale == "" || locale == LobbyFeatures.LocaleName) && LobbyFeatures.IsEnabledByName(packs, feature);
     }
 
-    /// <summary>FUN_14028f8d0: the &lt;environment&gt; of an item (or any data element) the client uses; null when none is
+    /// <summary>FUN_14028f8d0 (commonutil.cpp:1064): the &lt;environment&gt; of an item (or any data element) the client uses; null when none is
     /// available.</summary>
     public static XElement SelectEnvironment(PackSet packs, XElement parent)
     {

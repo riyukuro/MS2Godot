@@ -102,7 +102,7 @@ public sealed class WorldMapTable
     {
         foreach (var fd in Xml(packs, "fielddata.xml")?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
         {
-            var env = XmlEnvironment.Select(packs, fd);
+            var env = FeatureElements.SelectEnvironment(packs, fd);
             if (env == null) continue;
             var f = new Field { Id = Int(fd, "id") };
             var prop = env.Element("property");
@@ -127,17 +127,17 @@ public sealed class WorldMapTable
     {
         const string tilePath = "./Data/Resource/Image/Map/Worldmap/";     // CommonResource WORLDMAP_TILE_PATH (+0xd0)
         var names = (Xml(packs, "worldmap.xml")?.Root?.Elements("xml") ?? Enumerable.Empty<XElement>())
-            .Where(e => XmlEnvironment.Available(packs, e)).Select(e => (string)e.Attribute("name"));      // LoadWorldMapNames (:623)
+            .Where(e => FeatureElements.IsAvailable(packs, e)).Select(e => (string)e.Attribute("name"));      // LoadWorldMapNames (:623)
         var custom = new SortedDictionary<int, List<Tile>>();
         foreach (var name in names)
         {
             var root = Xml(packs, name)?.Root;
             if (root == null || root.Name != "ms2worldmap") continue;
-            var group = XmlEnvironment.Select(packs, root);
+            var group = FeatureElements.SelectEnvironment(packs, root);
             if (group == null) continue;
-            foreach (var p in group.Elements("portal").Where(e => XmlEnvironment.Available(packs, e)))
+            foreach (var p in group.Elements("portal").Where(e => FeatureElements.IsAvailable(packs, e)))
                 if (FindField((uint)Int(p, "code")) != null) PortalFields.Add((uint)Int(p, "code"));
-            foreach (var m in group.Elements("map").Where(e => XmlEnvironment.Available(packs, e)))
+            foreach (var m in group.Elements("map").Where(e => FeatureElements.IsAvailable(packs, e)))
             {
                 var tile = new Tile { FieldId = (uint)Int(m, "code") };
                 var field = FindField(tile.FieldId);
@@ -215,7 +215,7 @@ public sealed class WorldMapTable
         if (tiles.Count == 0) return;
         foreach (var k in Xml(packs, "worldMapFieldNameInfo.xml")?.Root?.Elements("key") ?? Enumerable.Empty<XElement>())
         {
-            if (!XmlEnvironment.Available(packs, k)) continue;
+            if (!FeatureElements.IsAvailable(packs, k)) continue;
             uint id = (uint)Int(k, "mapCode");
             if (id == 0 || FindTile(id) is not { } tile) continue;
             tile.NameAlign = AlignFromName((string)k.Attribute("align") ?? "");
