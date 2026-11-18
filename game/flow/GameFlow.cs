@@ -192,7 +192,7 @@ public partial class GameFlow : Node
         catch (Exception ex) { GD.PushWarning("flow strings: " + ex.Message); commonStrings = _ => null; }
         return commonStrings;
     }
-
+    /// <summary>STAND-IN for ShowMessageBox / UIMessageBox::UpdateErrorMessage: the client opens uimessagebox.gfx (UIMessageBox); that movie is not built yet (UI lane), so this is a Godot AcceptDialog with the same text and an OK button.</summary>
     /// <summary>ShowMessageBox / UIMessageBox::UpdateErrorMessage: one box with the text and an OK button.</summary>
     void ShowNotice(string text)
     {
