@@ -30,7 +30,7 @@ public class GameOptionTests
         public string InvokeString(string m) => Movie.InvokeString(m);
         public void SetApplyEnabled(bool e) { Log.Add("apply " + e); Movie.SetApplyEnabled(e); }
         public void CloseDialog() { Log.Add("close"); Movie.CloseMovie(); }
-        public bool Vfunc55 => Movie == null || Movie.IsClosed;
+        public bool IsClosed => Movie == null || Movie.IsClosed;
         public void MessageBox(int id, string tag) => Log.Add($"box {id:x} {tag}");
         public void Notice(int id) => Log.Add($"notice {id:x}");
         public void ResetBox(string t, string a, string c, string x) => Log.Add($"reset {c}");

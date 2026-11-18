@@ -91,8 +91,8 @@ public interface IGameOptionDialogHost
     void SetApplyEnabled(bool enabled);
     /// <summary>UIDialog::vfunc_67: the dialog closes.</summary>
     void CloseDialog();
-    /// <summary>UIDialog::vfunc_55, checked before the tab and key handlers (its meaning is not read here).</summary>
-    bool Vfunc55 { get; }
+    /// <summary>UIDialog::vfunc_55: the dialog is closed; checked before the tab and key handlers.</summary>
+    bool IsClosed { get; }
     bool IsFeatureEnabled(int feature);
     /// <summary>DAT_143ab2914, compared with 0x32 for bNewBuild.</summary>
     int BuildNumber { get; }
@@ -270,55 +270,56 @@ public class OptionPage
     public OptionPage(int id, int type) { Id = id; Type = type; }
     internal void Attach(GameOptionDialog dialog) => Dialog = dialog;
 
-    /// <summary>OnTabInit: the tab's movie is ready; a pending fill runs now.</summary>
-    public virtual void vfunc_2()
+    /// <summary>CBaseOption::vfunc_2 (baseoption.cpp:35), OnTabInit: the tab's movie is ready; a pending fill runs now.</summary>
+    public virtual void OnTabInit()
     {
         Active = true;
         if (Pending)
         {
-            vfunc_6();
+            FillControls();
             Pending = false;
         }
     }
 
-    /// <summary>The page opens (n 1) or the dialog refreshes (n 0): fill when active, else on OnTabInit.</summary>
-    public virtual void vfunc_3(int n)
+    /// <summary>CBaseOption::vfunc_3 (baseoption.cpp:46): the page opens (n 1) or the dialog refreshes (n 0): fill when active, else on OnTabInit.</summary>
+    public virtual void Open(int n)
     {
-        if (Active) vfunc_6();
+        if (Active) FillControls();
         else Pending = true;
     }
 
-    /// <summary>The page closes: n 0 deactivates, else reads the controls back.</summary>
-    public virtual void vfunc_4(int n)
+    /// <summary>CBaseOption::vfunc_4 (baseoption.cpp:55): the page closes: n 0 deactivates, else reads the controls back.</summary>
+    public virtual void Close(int n)
     {
         if (n == 0) Active = false;
-        else vfunc_7();
+        else ReadControls();
     }
 
-    /// <summary>A movie call the dialog did not handle; nonzero when handled.</summary>
-    public virtual int vfunc_5(string method, object[] args) => 0;
-    /// <summary>Fill the controls from the page state.</summary>
-    public virtual void vfunc_6() { }
-    /// <summary>Read the controls into the page state.</summary>
-    public virtual void vfunc_7() { }
-    /// <summary>The page takes the key (UIGameOptionDialog::vfunc_13).</summary>
-    public virtual int vfunc_8() => 0;
-    /// <summary>The changes are dropped (FUN_141943d80).</summary>
-    public virtual void vfunc_9() { }
-    /// <summary>Save: read the controls when active, then the page applies.</summary>
-    public virtual void vfunc_10()
+    /// <summary>CBaseOption::vfunc_5 (baseoption.cpp:64): a movie call the dialog did not handle; nonzero when handled.</summary>
+    public virtual int OnMovieCall(string method, object[] args) => 0;
+    /// <summary>CBaseOption::vfunc_6 (baseoption.cpp:70): fill the controls from the page state.</summary>
+    public virtual void FillControls() { }
+    /// <summary>CBaseOption::vfunc_7 (baseoption.cpp:75): read the controls into the page state.</summary>
+    public virtual void ReadControls() { }
+    /// <summary>CBaseOption::vfunc_8 (baseoption.cpp:80): the page takes the key (UIGameOptionDialog::vfunc_13).</summary>
+    public virtual int TakesKey() => 0;
+    /// <summary>CBaseOption::vfunc_9 (baseoption.cpp:86): the changes are dropped (FUN_141943d80).</summary>
+    public virtual void DropChanges() { }
+    /// <summary>CBaseOption::vfunc_10 (baseoption.cpp:91): read the controls when active, then the page applies.</summary>
+    public virtual void Save()
     {
-        if (Active) vfunc_7();
+        if (Active) ReadControls();
     }
-    /// <summary>After SaveGameSettings.</summary>
-    public virtual void vfunc_11() { }
-    /// <summary>Reset to the defaults.</summary>
-    public virtual void vfunc_12() { }
-    public virtual void vfunc_13() { }
+    /// <summary>CBaseOption::vfunc_11 (baseoption.cpp:98): after SaveGameSettings.</summary>
+    public virtual void AfterSave() { }
+    /// <summary>CBaseOption::vfunc_12 (baseoption.cpp:103): reset to the defaults.</summary>
+    public virtual void ResetToDefaults() { }
+    /// <summary>CBaseOption::vfunc_13 (baseoption.cpp:108): each frame while the dialog is open (UIGameOptionDialog::vfunc_15).</summary>
+    public virtual void Update() { }
     /// <summary>IMessageListener::OnMessage: the answer of a box the page opened (0 yes).</summary>
     public virtual void OnMessage(string tag, int answer) { }
-    /// <summary>The page state differs from the stored option.</summary>
-    public virtual int vfunc_14() => 0;
+    /// <summary>CBaseOption::vfunc_14 (baseoption.cpp:113): the page state differs from the stored option.</summary>
+    public virtual int HasChanges() => 0;
 }
 
 /// <summary>UIGameOptionDialog (uigameoptiondialog.cpp).</summary>
@@ -382,13 +383,13 @@ public sealed class GameOptionDialog
         int gamePad = Host.IsFeatureEnabled(0xb5) ? 1 : 0;
         RemovePage(0x10, newBuild);   // FUN_141944590
         Host.Invoke("initData", Host.Locale, newBuild, gamePad);
-        FUN_141943480();
+        ApplySimpleMode();
         OpenTab(Tab);
     }
 
-    /// <summary>@0x141943480: simple mode in scenes 0x620000d / 0x6200009 / 0x6200085 or under guide restriction 1, where
+    /// <summary>UIGameOptionDialog::FUN_141943480: simple mode in scenes 0x620000d / 0x6200009 / 0x6200085 or under guide restriction 1, where
     /// only the pages of type 6, 7 and 0xe are enabled and the graphics tab opens.</summary>
-    public void FUN_141943480()
+    public void ApplySimpleMode()
     {
         int scene = Host.SceneId;
         Simple = scene == 0x620000d || scene == 0x6200009 || scene == 0x6200085 || Host.GuideRestricted(1);
@@ -396,14 +397,14 @@ public sealed class GameOptionDialog
         foreach (var p in pages.Values)
         {
             p.Enabled = !Simple || p.Type == 6 || p.Type == 7 || p.Type == 0xe;
-            p.vfunc_3(0);
+            p.Open(0);
         }
         Host.Invoke("setTabComponent", Tab, Simple, false);
-        FUN_141943940();
+        UpdateAgreementRedCircle();
     }
 
-    /// <summary>@0x141943940.</summary>
-    public void FUN_141943940()
+    /// <summary>UIGameOptionDialog::FUN_141943940: the agreement tab button's red circle.</summary>
+    public void UpdateAgreementRedCircle()
     {
         if (pages.ContainsKey(0xf))
             Host.Invoke("enableAgreementTabButtonRedCircle", Host.AgreementRedCircle);
@@ -413,15 +414,15 @@ public sealed class GameOptionDialog
     public void OpenTab(int tab)
     {
         Tab = tab;
-        if (Host.Vfunc55) return;
-        GetPageByIndex(Tab)?.vfunc_3(1);
+        if (Host.IsClosed) return;
+        GetPageByIndex(Tab)?.Open(1);
     }
 
     /// <summary>@0x141943790.</summary>
     public void OnCloseTab(int tab)
     {
-        if (Host.Vfunc55) return;
-        GetPageByIndex(tab)?.vfunc_4(1);
+        if (Host.IsClosed) return;
+        GetPageByIndex(tab)?.Close(1);
     }
 
     /// <summary>vfunc_28 @0x141942cc0: the movie's ExternalInterface calls, names compared case-insensitively. True when
@@ -433,27 +434,27 @@ public sealed class GameOptionDialog
         if (Is(method, "OnOpenTab")) { if (args.Length > 0) OpenTab(Convert.ToInt32(args[0])); return false; }
         if (Is(method, "OnCloseTab")) { OnCloseTab(Tab); return false; }
         if (Is(method, "OnUndo")) return true;
-        if (Is(method, "OnInit")) { FUN_141943a30(); return true; }
+        if (Is(method, "OnInit")) { OpenResetBox(); return true; }
         if (Is(method, "OnSave")) { OnSave(); return true; }
-        if (Is(method, "OnTabInit")) { if (args.Length > 0) GetPageByIndex(Convert.ToInt32(args[0]))?.vfunc_2(); return false; }
+        if (Is(method, "OnTabInit")) { if (args.Length > 0) GetPageByIndex(Convert.ToInt32(args[0]))?.OnTabInit(); return false; }
         if (Is(method, "OnSecondaryPassword")) { Host.OpenSecondaryPassword(); return true; }
         var page = GetPageByIndex(Tab);
-        return page != null && page.vfunc_5(method, args) != 0;
+        return page != null && page.OnMovieCall(method, args) != 0;
     }
 
     /// <summary>vfunc_13 @0x141942b10: a key while open. True when the page or the dialog took it; Esc closes.</summary>
     public bool OnKey(bool escape)
     {
-        if (Host.Vfunc55) return false;
+        if (Host.IsClosed) return false;
         var page = GetPageByIndex(Tab);
-        if (page != null && page.vfunc_8() != 0) return true;
+        if (page != null && page.TakesKey() != 0) return true;
         if (!escape) return false;
         OnCloseDialog();
         return true;
     }
 
-    /// <summary>@0x141943a30: the reset box. The category is the movie's, or s_gameoption_init_shoutcut on tabs 9..0xd.</summary>
-    public void FUN_141943a30()
+    /// <summary>UIGameOptionDialog::FUN_141943a30: the reset box. The category is the movie's, or s_gameoption_init_shoutcut on tabs 9..0xd.</summary>
+    public void OpenResetBox()
     {
         string tab = Host.InvokeString("getCurrentTabName");
         string category = Host.InvokeString("getCurrentCategoryName");
@@ -465,49 +466,49 @@ public sealed class GameOptionDialog
     /// <summary>@0x141943e30: 0x84a is s_gameoption_quickslot_warning.</summary>
     public void OnSave()
     {
-        if (!FUN_141944250()) Host.MessageBox(0x84a, "OnSave");
-        else FUN_141943ec0();
+        if (!CanSaveQuickSlots()) Host.MessageBox(0x84a, "OnSave");
+        else SaveAll();
     }
 
-    /// <summary>@0x141943ec0: every page saves, the option file is written, then every page's vfunc_11.</summary>
-    public void FUN_141943ec0()
+    /// <summary>UIGameOptionDialog::FUN_141943ec0: every page saves, the option file is written, then every page's vfunc_11.</summary>
+    public void SaveAll()
     {
-        foreach (var p in pages.Values.ToList()) p.vfunc_10();
+        foreach (var p in pages.Values.ToList()) p.Save();
         Host.SaveGameSettings();
-        foreach (var p in pages.Values.ToList()) p.vfunc_11();
+        foreach (var p in pages.Values.ToList()) p.AfterSave();
         Host.SendBuddyMode20();
     }
 
-    /// <summary>@0x141943d80: every page drops its changes.</summary>
-    public void FUN_141943d80()
+    /// <summary>UIGameOptionDialog::FUN_141943d80: every page drops its changes.</summary>
+    public void DropAllChanges()
     {
-        foreach (var p in pages.Values.ToList()) p.vfunc_9();
+        foreach (var p in pages.Values.ToList()) p.DropChanges();
     }
 
-    /// <summary>@0x141944030: reset this page (n != 0) or all pages.</summary>
-    public void FUN_141944030(int n)
+    /// <summary>UIGameOptionDialog::FUN_141944030: reset this page (n != 0) or all pages.</summary>
+    public void ResetPages(int n)
     {
         resetScope = n;
-        if (n != 0) GetPageByIndex(Tab)?.vfunc_12();
-        else foreach (var p in pages.Values.ToList()) p.vfunc_12();
+        if (n != 0) GetPageByIndex(Tab)?.ResetToDefaults();
+        else foreach (var p in pages.Values.ToList()) p.ResetToDefaults();
     }
 
     /// <summary>@0x141944150: 0x84b is s_gameoption_modified_warning.</summary>
     public void OnCloseDialog()
     {
         if (!IsNoPageChanged()) Host.MessageBox(0x84b, "OnSaveAndCheck");
-        else if (!FUN_141944250()) Host.MessageBox(0x84a, "OnSaveAndCheck");
+        else if (!CanSaveQuickSlots()) Host.MessageBox(0x84a, "OnSaveAndCheck");
         else Close();
     }
 
-    /// <summary>@0x141944250: simple mode skips the quick-slot test.</summary>
-    public bool FUN_141944250() => Simple || Host.QuickSlotsBound;
+    /// <summary>UIGameOptionDialog::FUN_141944250: simple mode skips the quick-slot test.</summary>
+    public bool CanSaveQuickSlots() => Simple || Host.QuickSlotsBound;
 
     /// <summary>@0x141944330: the open page reads its controls back, then any page that differs counts.</summary>
     public bool IsNoPageChanged()
     {
-        GetPageByIndex(Tab)?.vfunc_7();
-        return !pages.Values.Any(p => p.vfunc_14() != 0);
+        GetPageByIndex(Tab)?.ReadControls();
+        return !pages.Values.Any(p => p.HasChanges() != 0);
     }
 
     /// <summary>OnMessage @0x141943010: a message box answer (0 yes / first button, 1 no / second, 2 cancel, -1 none), after
@@ -519,14 +520,14 @@ public sealed class GameOptionDialog
         {
             if (answer == 0)
             {
-                FUN_141943ec0();
+                SaveAll();
                 Host.SetApplyEnabled(false);
             }
         }
         else if (tag == "OnSaveAndCheck")
         {
-            if (answer == 0) FUN_141943ec0();
-            else FUN_141943d80();
+            if (answer == 0) SaveAll();
+            else DropAllChanges();
             Close();
         }
         else if (tag == "OnClose")
@@ -535,8 +536,8 @@ public sealed class GameOptionDialog
         }
         else
         {
-            if (answer == 0) FUN_141944030(0);
-            else if (answer == 1) FUN_141944030(1);
+            if (answer == 0) ResetPages(0);
+            else if (answer == 1) ResetPages(1);
             if (answer != 2 && answer != -1) Host.SetApplyEnabled(true);
         }
     }
@@ -547,7 +548,7 @@ public sealed class GameOptionDialog
     /// <summary>vfunc_67 @0x141942a10: every page deactivates, the dialog closes, simple mode and the tab reset.</summary>
     public void Close()
     {
-        foreach (var p in pages.Values.ToList()) p.vfunc_4(0);
+        foreach (var p in pages.Values.ToList()) p.Close(0);
         Host.CloseDialog();
         Simple = false;
         Tab = 1;
@@ -561,17 +562,17 @@ public sealed class CameraOptionPage : OptionPage
     public CameraOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x1412488c0.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0) State = Host.Options.CameraOption.Clone();
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     /// <summary>GetCameraFovStep @0x14125b6e0.</summary>
     int FovStep => Host.MouseCameraMode ? State.CameraFovStepMouseMode : State.CameraFovStep;
 
     /// <summary>@0x141248960.</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         Tab.SetSelected("m_enableBgTransparency", State.BgTransparency);
         Tab.SetSelected("m_enableVibrateEffect", State.VibrateEffect);
@@ -580,7 +581,7 @@ public sealed class CameraOptionPage : OptionPage
     }
 
     /// <summary>@0x141248c40; the fov step goes back by SetCameraFovStep @0x14125b720.</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         if (Tab.IsSelected("m_enableBgTransparency") is bool t) State.BgTransparency = t;
         if (Tab.IsSelected("m_enableVibrateEffect") is bool v) State.VibrateEffect = v;
@@ -593,24 +594,24 @@ public sealed class CameraOptionPage : OptionPage
     }
 
     /// <summary>@0x141248f10: stored, then the camera follows.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         Host.Options.CameraOption = State.Clone();
         Host.ApplyCamera(State);
     }
 
     /// <summary>@0x1412491c0: reset, the default document's camera block, refill.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         State = new GameOption.Camera();
         State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument());
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x141249270: memcmp of the 0x10-byte block.</summary>
-    public override int vfunc_14() => GameOption.SameFields(State, Host.Options.CameraOption) ? 0 : 1;
+    public override int HasChanges() => GameOption.SameFields(State, Host.Options.CameraOption) ? 0 : 1;
 }
 
 /// <summary>CGameOptionInterface (gameoptionstruct.cpp:189-431): the interface block and the character file's mouse
@@ -622,19 +623,19 @@ public sealed class InterfaceOptionPage : OptionPage
     public InterfaceOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x1412559a0.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0)
         {
             State = Host.Options.InterfaceOption.Clone();
             MouseControl = Host.MouseControlFlag.Value;
         }
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     /// <summary>@0x141255a40: onResetUILayout asks first (0x852 s_gameoption_confirm_reset_layout). The client returns 0
     /// after opening the box.</summary>
-    public override int vfunc_5(string method, object[] args)
+    public override int OnMovieCall(string method, object[] args)
     {
         if (string.Equals(method, "onResetUILayout", StringComparison.OrdinalIgnoreCase))
             Host.PageMessageBox(0x852, "resetSwfLayout", this);
@@ -649,7 +650,7 @@ public sealed class InterfaceOptionPage : OptionPage
     }
 
     /// <summary>@0x141255c10. The UI scale slider runs 80..120 the other way round (200 - scale * 100).</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         Tab.SetSelected("m_enableMouseControl", MouseControl);
         Tab.SetSelected("m_closeDialogAll", State.EnableCloseAllDlg);
@@ -665,7 +666,7 @@ public sealed class InterfaceOptionPage : OptionPage
     }
 
     /// <summary>@0x1412562f0. The chaos meter switch is read only with feature 0xbe (PartyDamageMeter).</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         if (Tab.IsSelected("m_enableMouseControl") is bool m) MouseControl = m;
         if (Tab.IsSelected("m_closeDialogAll") is bool c) State.EnableCloseAllDlg = c;
@@ -680,9 +681,9 @@ public sealed class InterfaceOptionPage : OptionPage
 
     /// <summary>@0x1412569a0: the meters and the damage effect, the mouse control switch (FUN_14125bd20), the blocks back,
     /// then the character file.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         Host.ApplyInterface(State);
         Host.MouseControlFlag.Value = MouseControl;
         Host.SetMouseControl(MouseControl);
@@ -691,24 +692,24 @@ public sealed class InterfaceOptionPage : OptionPage
     }
 
     /// <summary>@0x141256b50.</summary>
-    public override void vfunc_11() => Host.UiScaleChanged(State.UIScale);
+    public override void AfterSave() => Host.UiScaleChanged(State.UIScale);
 
     /// <summary>@0x141256bb0: both blocks from the default game document, refill, then the layout reset.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         var doc = Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument();
         State = new GameOption.Interface();
         State.Load(doc, Host.IsFeatureEnabled(0xbe));
         var flag = GameOption.CharacterFlag.MouseControl();
         flag.Load(doc);
         MouseControl = flag.Value;
-        vfunc_6();
+        FillControls();
         Host.ResetUiLayout();
     }
 
     /// <summary>@0x141256ca0: memcmp of the 0x18-byte interface block only (the mouse switch is not compared).</summary>
-    public override int vfunc_14() => GameOption.SameFields(State, Host.Options.InterfaceOption) ? 0 : 1;
+    public override int HasChanges() => GameOption.SameFields(State, Host.Options.InterfaceOption) ? 0 : 1;
 }
 
 /// <summary>CGameOptionStatus (gameoptionstruct.cpp:704-1067): the status block and the character file's learning quest
@@ -720,14 +721,14 @@ public sealed class StatusOptionPage : OptionPage
     public StatusOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x141258a50.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0)
         {
             State = Host.Options.StatusOption.Clone();
             LearningQuest = Host.LearningQuestFlag.Value;
         }
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     static readonly (string Name, Func<GameOption.Status, bool> Get, Action<GameOption.Status, bool> Set)[] Checks =
@@ -757,7 +758,7 @@ public sealed class StatusOptionPage : OptionPage
     };
 
     /// <summary>@0x141258b10. The pet switches only with feature 0x8c.</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         foreach (var c in Checks) Tab.SetSelected(c.Name, c.Get(State));
         Tab.SetSelectedIndex("m_bossMonsterNotify", State.DisplayBossMonsterNotify);
@@ -773,7 +774,7 @@ public sealed class StatusOptionPage : OptionPage
     }
 
     /// <summary>@0x141259c40.</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         foreach (var c in Checks) if (Tab.IsSelected(c.Name) is bool v) c.Set(State, v);
         if (Tab.GetSelectedIndex("m_bossMonsterNotify") is int b) State.DisplayBossMonsterNotify = b;
@@ -790,9 +791,9 @@ public sealed class StatusOptionPage : OptionPage
 
     /// <summary>@0x14125ae50: the hud bars, the blocks back (the pet change hooks FUN_14125b130 / FUN_14125b140 are empty),
     /// then the character file.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         Host.ApplyStatus(State);
         Host.Options.StatusOption = State.Clone();
         Host.LearningQuestFlag.Value = LearningQuest;
@@ -800,7 +801,7 @@ public sealed class StatusOptionPage : OptionPage
     }
 
     /// <summary>@0x14125afe0 (no CBaseOption::vfunc_12 call): both from the default game document, refill.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
         var doc = Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument();
         State = new GameOption.Status(Host.Options.StatusOption.RegionKr);
@@ -808,11 +809,11 @@ public sealed class StatusOptionPage : OptionPage
         var flag = GameOption.CharacterFlag.LearningQuest();
         flag.Load(doc);
         LearningQuest = flag.Value;
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x14125b0b0: the 0x1c-byte block, then the 1-byte flag.</summary>
-    public override int vfunc_14() =>
+    public override int HasChanges() =>
         !GameOption.SameFields(State, Host.Options.StatusOption) || LearningQuest != Host.LearningQuestFlag.Value ? 1 : 0;
 }
 
@@ -824,10 +825,10 @@ public sealed class BattleOptionPage : OptionPage
     public BattleOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x141246dd0.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0) State = Host.Options.BattleOption.Clone();
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     static readonly (string Name, Func<GameOption.Battle, bool> Get, Action<GameOption.Battle, bool> Set)[] Checks =
@@ -843,7 +844,7 @@ public sealed class BattleOptionPage : OptionPage
     static readonly (string Suffix, int Value)[] Forms = { ("Mine", 1), ("Party", 3), ("All", 7) };
 
     /// <summary>@0x141246e70: one radio per form is selected (a form outside 1/3/7 selects none).</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         foreach (var c in Checks) Tab.SetSelected(c.Name, c.Get(State));
         foreach (var (suffix, value) in Forms) if (State.GiveDamage == value) Tab.SetSelected("m_giveDamage" + suffix, true);
@@ -853,7 +854,7 @@ public sealed class BattleOptionPage : OptionPage
     }
 
     /// <summary>@0x141247770: the first selected radio of each group; the other form is rebuilt from the boxes there are.</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         foreach (var c in Checks) if (Tab.IsSelected(c.Name) is bool v) c.Set(State, v);
         foreach (var (suffix, value) in Forms)
@@ -874,23 +875,23 @@ public sealed class BattleOptionPage : OptionPage
     }
 
     /// <summary>@0x141248140.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         Host.Options.BattleOption = State.Clone();
     }
 
     /// <summary>@0x141248190.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         State = new GameOption.Battle();
         State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument(), Host.IsFeatureEnabled(0x66));
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x141248240: memcmp of the 0x14-byte block.</summary>
-    public override int vfunc_14() => GameOption.SameFields(State, Host.Options.BattleOption) ? 0 : 1;
+    public override int HasChanges() => GameOption.SameFields(State, Host.Options.BattleOption) ? 0 : 1;
 }
 
 /// <summary>CGameOptionCommunity (gameoption.cpp:560-783): the game file's balloons and riding switch, and the account
@@ -902,14 +903,14 @@ public sealed class CommunityOptionPage : OptionPage
     public CommunityOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x1412493a0.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0)
         {
             State = Host.Options.CommunityOption.Clone();
             Account = Host.AccountCommunity.Clone();
         }
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     static readonly (string Name, Func<GameOption.AccountCommunity, bool> Get, Action<GameOption.AccountCommunity, bool> Set)[] Requests =
@@ -928,7 +929,7 @@ public sealed class CommunityOptionPage : OptionPage
     };
 
     /// <summary>@0x141249460.</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         Tab.SetSelected("m_displayMyChatBalloon", State.DisplayMyChatBalloon);
         Tab.SetSelected("m_displayOtherChatBalloon", State.DisplayOtherChatBalloon);
@@ -937,7 +938,7 @@ public sealed class CommunityOptionPage : OptionPage
     }
 
     /// <summary>@0x141249e50.</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         if (Tab.IsSelected("m_displayMyChatBalloon") is bool m) State.DisplayMyChatBalloon = m;
         if (Tab.IsSelected("m_displayOtherChatBalloon") is bool o) State.DisplayOtherChatBalloon = o;
@@ -946,9 +947,9 @@ public sealed class CommunityOptionPage : OptionPage
     }
 
     /// <summary>@0x14124a8d0: a changed riding switch goes to the server, then both blocks back.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         if (Host.Options.CommunityOption.DisableSingleRiding != State.DisableSingleRiding) Host.SendRideMode(State.DisableSingleRiding);
         Host.Options.CommunityOption = State.Clone();
         Host.AccountCommunity = Account.Clone();
@@ -956,18 +957,18 @@ public sealed class CommunityOptionPage : OptionPage
 
     /// <summary>@0x14124a990: the account block from DefaultAccountOption.xml, the game block from the default game
     /// document, refill.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         Account = new GameOption.AccountCommunity();
         State = new GameOption.Community();
         Account.Load(Host.DefaultAccountDocument ?? new System.Xml.Linq.XDocument());
         State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument());
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x14124aa70: FUN_14125d2d0 / FUN_14125d740 compare every switch.</summary>
-    public override int vfunc_14() =>
+    public override int HasChanges() =>
         !GameOption.SameFields(State, Host.Options.CommunityOption) || !GameOption.SameFields(Account, Host.AccountCommunity) ? 1 : 0;
 }
 
@@ -979,16 +980,16 @@ public sealed class InputOptionPage : OptionPage
     public InputOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x141250c10: n 0 runs the base (fill or pend) and ends any edit; otherwise the list is refreshed.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
-        if (n == 0) base.vfunc_3(n);
+        if (n == 0) base.Open(n);
         else RefreshKeyList(Type);
     }
 
     /// <summary>@0x1412514e0.</summary>
-    public override void vfunc_6() => RefreshKeyList(Type);
+    public override void FillControls() => RefreshKeyList(Type);
     /// <summary>@0x141251510.</summary>
-    public override void vfunc_7() => RefreshKeyList(Type);
+    public override void ReadControls() => RefreshKeyList(Type);
 
     /// <summary>RefreshKeyList @0x141250cc0: a row per setting of the page id's category. Action 0x49409 shows key 1 as
     /// its second key and keeps an int keyGUID; the third key shows only with the game pad feature (0xb5).</summary>
@@ -1015,7 +1016,7 @@ public sealed class InputOptionPage : OptionPage
 
     /// <summary>@0x141251a30: OnSelectCategory refreshes the list for the category given; the focus callbacks are taken
     /// (their key editing is not ported).</summary>
-    public override int vfunc_5(string name, object[] args)
+    public override int OnMovieCall(string name, object[] args)
     {
         if (string.Equals(name, "OnSelectCategory", StringComparison.OrdinalIgnoreCase))
         {
@@ -1043,11 +1044,11 @@ public sealed class LanguageOptionPage : OptionPage
     static GameOption.Language Copy(GameOption.Language l) => new(0) { LanguageIndex = l.LanguageIndex, VoiceIndex = l.VoiceIndex };
 
     /// <summary>@0x140cfb4e0: n 0 copies the block, otherwise the dropdowns are filled (FUN_140cfbf50).</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0) State = Copy(Host.Options.LanguageOption);
         else Fill();
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     /// <summary>FUN_140cfbf50 (@0x140cfbf50): each dropdown gets ClearItems and a {label, index} row per code; three rows or
@@ -1083,7 +1084,7 @@ public sealed class LanguageOptionPage : OptionPage
 
     /// <summary>@0x140cfb590: each dropdown selects the row whose code matches. The client's region loop counts the region
     /// codes but compares the voice codes to the region's code; kept.</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         var row = Host.LocaleData;
         if (row == null) return;
@@ -1099,7 +1100,7 @@ public sealed class LanguageOptionPage : OptionPage
     }
 
     /// <summary>@0x140cfb9e0: the selected rows' "index".</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         if (Tab.GetSelectedItemIndex("m_languageSelect") is int l) State.LanguageIndex = l;
         if (Tab.GetSelectedItemIndex("m_voiceSelect") is int v) State.VoiceIndex = v;
@@ -1125,9 +1126,9 @@ public sealed class LanguageOptionPage : OptionPage
 
     /// <summary>@0x140cfcb20: a changed language asks for a restart; a changed voice is checked (a missing one goes back with
     /// s_gameoption_voice_select_warning) and asks for a restart when it differs from the running voice; then stored.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         var stored = Host.Options.LanguageOption;
         bool restart = State.LanguageIndex != stored.LanguageIndex;
         if (State.VoiceIndex != stored.VoiceIndex)
@@ -1146,16 +1147,16 @@ public sealed class LanguageOptionPage : OptionPage
     }
 
     /// <summary>@0x140cfce00: reset to the region's values, read the default game document, refill.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         State = new GameOption.Language(Host.Region);
         State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument());
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x140cfceb0.</summary>
-    public override int vfunc_14() =>
+    public override int HasChanges() =>
         State.LanguageIndex != Host.Options.LanguageOption.LanguageIndex || State.VoiceIndex != Host.Options.LanguageOption.VoiceIndex ? 1 : 0;
 }
 
@@ -1173,7 +1174,7 @@ public sealed class GraphicOptionPage : OptionPage
     GameOption.Optimizer Global2 => Host.Options.OptimizerOption;
 
     /// <summary>@0x14124abe0: n 0 copies the stored options into the page state.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0)
         {
@@ -1181,12 +1182,12 @@ public sealed class GraphicOptionPage : OptionPage
             State2 = Global2.Clone();
             filled = false;
         }
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     /// <summary>@0x14124ac90: onDisplayQuality(level) from the quality slider. The hdr box, the shadow index and the
     /// effect step follow the level; a level above the benchmark warns once (0x84d s_gameoption_quality_warning).</summary>
-    public override int vfunc_5(string method, object[] args)
+    public override int OnMovieCall(string method, object[] args)
     {
         if (!string.Equals(method, "onDisplayQuality", StringComparison.OrdinalIgnoreCase) || !filled || args.Length == 0)
             return 0;
@@ -1202,7 +1203,7 @@ public sealed class GraphicOptionPage : OptionPage
     }
 
     /// <summary>@0x14124aff0.</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         FillResolutionCombo();
         Tab.SetSelected("m_screenModeWindow", State.ScreenMode == 1);
@@ -1232,7 +1233,7 @@ public sealed class GraphicOptionPage : OptionPage
     }
 
     /// <summary>@0x14124bf20.</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         int res = Tab.GetResolution(Type);
         if (res != -1)
@@ -1279,10 +1280,10 @@ public sealed class GraphicOptionPage : OptionPage
         return (int)(neg ? -v : v);
     }
 
-    /// <summary>FUN_14124ce20 @0x14124ce20: carry out what changed against the stored option. A changed screen mode or row
+    /// <summary>CGameOptionGraphicDefault::FUN_14124ce20 @0x14124ce20: carry out what changed against the stored option. A changed screen mode or row
     /// switches through FUN_14125e910 on the stored option and takes its size back. Multisampling and vsync only raise
     /// the notice 0x84e: their setters FUN_14125e4b0 / FUN_14125e5b0 have empty bodies (gameoptionstruct.cpp:2112,2136).</summary>
-    public void FUN_14124ce20()
+    public void ApplyChangedSettings()
     {
         var g = Global;
         bool notify = false;
@@ -1305,11 +1306,11 @@ public sealed class GraphicOptionPage : OptionPage
 
     /// <summary>@0x14124d6a0: apply, then the page state becomes the stored option (FUN_14125dff0 / FUN_14125ef60).
     /// FUN_14125ef90(&amp;m_state2) runs on the page copy after it is stored.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         bool oldEnchant = Global.ShowEnchantEffect;
-        FUN_14124ce20();
+        ApplyChangedSettings();
         Host.Options.GraphicOption = State.Clone();
         Host.Options.OptimizerOption = State2.Clone();
         if (State.ShowEnchantEffect != oldEnchant)
@@ -1318,20 +1319,20 @@ public sealed class GraphicOptionPage : OptionPage
 
     /// <summary>@0x14124d7a0: the defaults (FUN_14125d8c0, then LoadGameOptionGraphic of the default document in its
     /// default form; FUN_14125ec50, then LoadGameOptionOptimizer of the default document), then refill.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         var doc = Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument();
         var (w, h) = Host.ScreenSize;
         State = new GameOption.Graphic();
         State.LoadDefault(doc, Host.BenchmarkLevel, Host.IsHdrSupported, Host.IsShimmerSupported, Host.Modes, w, h);
         State2 = new GameOption.Optimizer();
         State2.Load(doc);
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x14124d890: either block differs from the stored option.</summary>
-    public override int vfunc_14() => GameOption.SameFields(State, Global) && GameOption.SameFields(State2, Global2) ? 0 : 1;
+    public override int HasChanges() => GameOption.SameFields(State, Global) && GameOption.SameFields(State2, Global2) ? 0 : 1;
 
     /// <summary>@0x14124d080.</summary>
     public void FillResolutionCombo()
@@ -1459,14 +1460,14 @@ public sealed class SoundOptionPage : OptionPage
     public SoundOptionPage(int id, int type) : base(id, type) { }
 
     /// <summary>@0x141256dd0.</summary>
-    public override void vfunc_3(int n)
+    public override void Open(int n)
     {
         if (n == 0)
         {
             State = Host.Options.SoundOption.Clone();
             Flag = Host.SoundFlag.Clone();
         }
-        base.vfunc_3(n);
+        base.Open(n);
     }
 
     static readonly (string Name, Func<GameOption.Sound, int> Get, Action<GameOption.Sound, int> Set)[] Steps =
@@ -1483,7 +1484,7 @@ public sealed class SoundOptionPage : OptionPage
     };
 
     /// <summary>@0x141256e90. The instrument row shows only with feature 10.</summary>
-    public override void vfunc_6()
+    public override void FillControls()
     {
         Tab.SetSelected("m_bMuteAll", State.MuteAll);
         Tab.SetSelected("m_bPlayAll", State.PlayAll);
@@ -1502,7 +1503,7 @@ public sealed class SoundOptionPage : OptionPage
     }
 
     /// <summary>@0x141257a90.</summary>
-    public override void vfunc_7()
+    public override void ReadControls()
     {
         if (Tab.IsSelected("m_bMuteAll") is bool m) State.MuteAll = m;
         if (Tab.IsSelected("m_bPlayAll") is bool p) State.PlayAll = p;
@@ -1519,9 +1520,9 @@ public sealed class SoundOptionPage : OptionPage
 
     /// <summary>@0x1412585a0: the page's volumes are set (FUN_14125fe20 on the page state), then stored, the instruments
     /// follow, and the character settings are written.</summary>
-    public override void vfunc_10()
+    public override void Save()
     {
-        base.vfunc_10();
+        base.Save();
         Host.ApplySoundVolumes(SoundVolumes.From(State, Host.InstrumentPlaying, Host.AppActive));
         Host.Options.SoundOption = State.Clone();
         Host.SoundFlag.DisableJobSound = Flag.DisableJobSound;
@@ -1531,20 +1532,20 @@ public sealed class SoundOptionPage : OptionPage
 
     /// <summary>@0x141258650: the defaults (FUN_14125f740 + LoadGameOptionSound of the default document, FUN_1412603b0 +
     /// FUN_1412603d0), then refill.</summary>
-    public override void vfunc_12()
+    public override void ResetToDefaults()
     {
-        base.vfunc_12();
+        base.ResetToDefaults();
         var doc = Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument();
         State = new GameOption.Sound();
         State.Load(doc);
         Flag = new SoundFlag();
         Flag.Load(doc);
-        vfunc_6();
+        FillControls();
     }
 
     /// <summary>@0x141258730: as the client has it, the page counts as changed only when both the state and the flag
     /// differ.</summary>
-    public override int vfunc_14()
+    public override int HasChanges()
     {
         if (GameOption.SameFields(State, Host.Options.SoundOption)) return 0;
         if (Flag.DisableJobSound == Host.SoundFlag.DisableJobSound) return 0;

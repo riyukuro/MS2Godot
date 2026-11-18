@@ -29,7 +29,7 @@ public static class MessageBoxQueue
         {
             if (Queue.Count == 0)
             {
-                Layer?.FUN_1419f8120();
+                Layer?.CloseBox();
                 return;
             }
             var data = RemoveTail();
@@ -45,7 +45,7 @@ public static class MessageBoxQueue
                 }
                 data = Queue.Count == 0 ? null : RemoveTail();
             }
-            Layer?.FUN_1419f8120();
+            Layer?.CloseBox();
         }
     }
 
@@ -165,15 +165,15 @@ public sealed class MessageBoxController : UiController
         if (!HasRoot) return 0;
         if (IsSameBox(box)) return 0;
         closing = false;
-        if (!IsIdle) FUN_1419f9250(0);
+        if (!IsIdle) CloseCurrent(0);
         Open(box);
         return 1;
     }
 
     /// <summary>FUN_1419f8120: the current box closes (with 1 while CloseAll runs).</summary>
-    public void FUN_1419f8120()
+    public void CloseBox()
     {
-        FUN_1419f9250(closing ? 1 : 0);
+        CloseCurrent(closing ? 1 : 0);
     }
 
     /// <summary>CloseAll @0x1419f8170.</summary>
@@ -190,7 +190,7 @@ public sealed class MessageBoxController : UiController
     public void ShowIfIdle(MessageBoxData box)
     {
         if (IsIdle) return;
-        FUN_1419f9250(0);
+        CloseCurrent(0);
         Open(box);
     }
 
@@ -246,7 +246,7 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>FUN_1419f9250: the movie closes the current box (closeCurrent(id, result)), then the layer resets. The
     /// modaless position save is not ported.</summary>
-    void FUN_1419f9250(int result)
+    void CloseCurrent(int result)
     {
         if (HasRoot && data != null) Host.Invoke(Host.Entity, "closeCurrent", (long)data.Id, result);
         ResetAfterClose();
@@ -296,7 +296,7 @@ public sealed class MessageBoxController : UiController
         {
             bool handled = true;
             if (data.Listener is { } l) handled = l.OnMessageBox(this, button, tag);
-            bool consumed = FUN_1419f97a0(button, tag);
+            bool consumed = HandleTag(button, tag);
             if (tag == "rankArenaJoin" && !handled && !closing) return;
             if (consumed || !handled) close = true;
         }
@@ -313,7 +313,7 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>FUN_1419f97a0: the tag handlers; true when the box is used up (a type 0 box always is). The group tags'
     /// UIMsg 0x7d1 is not ported (no group boxes).</summary>
-    bool FUN_1419f97a0(int button, string tag)
+    bool HandleTag(int button, string tag)
     {
         if (data == null) return true;
         if (tag.Length == 0) return !IsIdle;

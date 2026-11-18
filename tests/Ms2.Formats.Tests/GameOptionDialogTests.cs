@@ -69,7 +69,7 @@ public class GameOptionDialogTests
         public string FormatStringId(int id, params object[] a) => $"#{id:x}:" + string.Join(",", a);
         public void SetApplyEnabled(bool e) => Log.Add("apply " + e);
         public void CloseDialog() => Log.Add("close");
-        public bool Vfunc55 => false;
+        public bool IsClosed => false;
         public bool IsFeatureEnabled(int f) => Features.Contains(f);
         public int BuildNumber => Build;
         public string Locale => "en";
@@ -178,9 +178,9 @@ public class GameOptionDialogTests
         var (d, _) = Open(h);
         var p = ShowLanguage(d);
         h.T.Index["m_languageSelect"] = 2;   // PT
-        p.vfunc_7();
-        Assert.That(p.vfunc_14(), Is.EqualTo(1));
-        p.vfunc_10();
+        p.ReadControls();
+        Assert.That(p.HasChanges(), Is.EqualTo(1));
+        p.Save();
         Assert.That(h.Log, Does.Contain("text s_gameoption_voice_select_restart"));
         Assert.That(h.Opt.LanguageOption.LanguageIndex, Is.EqualTo(6));
     }
@@ -194,8 +194,8 @@ public class GameOptionDialogTests
         var (d, _) = Open(h);
         var p = ShowLanguage(d);
         h.T.Index["m_voiceSelect"] = 1;   // kr
-        p.vfunc_7();
-        p.vfunc_10();
+        p.ReadControls();
+        p.Save();
         Assert.That(h.Log, Does.Contain("text s_gameoption_voice_select_warning"));
         Assert.That(h.Log, Does.Not.Contain("text s_gameoption_voice_select_restart"));
         Assert.That(h.Opt.LanguageOption.VoiceIndex, Is.EqualTo(3), "the missing voice goes back");
@@ -271,7 +271,7 @@ public class GameOptionDialogTests
         var (d, h) = Open();
         h.Opt.GraphicOption.Width = 1280;
         h.Opt.GraphicOption.Height = 720;
-        d.FUN_141943480();   // the open refresh copies the stored option again
+        d.ApplySimpleMode();   // the open refresh copies the stored option again
         d.Call("OnOpenTab", 6);
         Assert.That(h.T.Rows, Is.Null, "not filled before the tab's movie says it is ready");
         var g = ShowGraphics(d);
@@ -421,9 +421,9 @@ public class GameOptionDialogTests
         var (d, h) = Open();
         var p = (SoundOptionPage)d.Page(7);
         p.State.BgmSoundStep = 9;
-        Assert.That(p.vfunc_14(), Is.EqualTo(0), "the client's test: a state change alone is not a change");
+        Assert.That(p.HasChanges(), Is.EqualTo(0), "the client's test: a state change alone is not a change");
         p.Flag.DisableJobSound = true;
-        Assert.That(p.vfunc_14(), Is.EqualTo(1));
+        Assert.That(p.HasChanges(), Is.EqualTo(1));
     }
 
     [TestCase(1920, 1080, 16, 9)]

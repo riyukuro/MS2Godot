@@ -40,7 +40,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void SetApplyEnabled(bool enabled) => Movie?.SetApplyEnabled(enabled);
     public void CloseDialog() => Movie?.CloseMovie();
     /// <summary>UIDialog::vfunc_55: closed and unloaded (no movie counts as closed).</summary>
-    public bool Vfunc55 => Movie == null || Movie.IsClosed;
+    public bool IsClosed => Movie == null || Movie.IsClosed;
 
     // ---- strings ----------------------------------------------------------------------------------------------------
 

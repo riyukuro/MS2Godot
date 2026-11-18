@@ -287,7 +287,7 @@ public partial class HudScene : Node
 
     /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
     /// dialogs, the quest log.</summary>
-    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.Vfunc55 == false
+    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
@@ -295,7 +295,7 @@ public partial class HudScene : Node
     {
         if (questLog != null && questLogSide?.IsClosed == false) questLogSide.Close();
         if (WorldMapOpen) worldMapSide.Close();
-        if (optionHost?.Vfunc55 == false) optionHost.Movie.Close();
+        if (optionHost?.IsClosed == false) optionHost.Movie.Close();
         if (inventory?.IsClosed == false) inventory.Close();
         if (myInfo?.IsClosed == false) myInfo.Close();
     }
@@ -318,7 +318,7 @@ public partial class HudScene : Node
             optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
         }
         if (page != 0) optionDialog.SetTab(page);
-        if (!optionHost.Vfunc55) return;
+        if (!optionHost.IsClosed) return;
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the options dialog runs interpreted");
         menuModel ??= NewModel();
         if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
@@ -1317,7 +1317,7 @@ public partial class HudScene : Node
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");
         if (msgboxShot == 1 && frames == 200) Escape();
         if (msgboxShot == 1 && frames == 230) ClickSystemMenu("m_exitGame");
-        if (msgboxShot == 2 && frames == 230) optionDialog?.FUN_141943a30();               // the movie's OnInit (Defaults)
+        if (msgboxShot == 2 && frames == 230) optionDialog?.OpenResetBox();               // the movie's OnInit (Defaults)
         if (msgboxShot == 3 && frames == 230) optionHost?.MessageBox(0x84b, "OnSaveAndCheck");   // OnCloseDialog with a page changed
         if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
         if (hoverShot != null && frames == 260) Hover(hoverShot);
