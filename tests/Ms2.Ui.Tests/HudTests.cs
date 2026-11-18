@@ -205,6 +205,58 @@ public class HudTests
         Assert.That(texts, Has.None.Contains("Third"));
     }
 
+    [Test]
+    public void MessengerTabsTargetsAndKeys()
+    {
+        var m = Model();
+        Assert.That(m.Tables.DefaultMessengers, Is.Not.Empty);
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // defaultmessenger0.xml: two tabs, 408 x 270, bottom left at offset (0, -38)
+        Assert.That(c.Tabs.Select(t => t.Name), Is.EqualTo(new[] { "$messenger_tab_name_entire", "$messenger_tab_name_item" }));
+        var bar = (AsObject)h.Child("m_buttonBar");
+        Assert.That(Rt.ToNumber(h.Get(h.Get(bar, "dataProvider"), "length")), Is.EqualTo(2));
+        Assert.That(Rt.ToNumber(h.Get(bar, "selectedIndex")), Is.EqualTo(0));
+        double x = Rt.ToNumber(h.Get(h.Entity, "x")), y = Rt.ToNumber(h.Get(h.Entity, "y")), ht = Rt.ToNumber(h.Get(h.Entity, "height"));
+        Assert.That(x, Is.EqualTo(0));
+        Assert.That(y, Is.EqualTo(1080 - (int)ht - 38));
+        // the target list without feature 0x19: world, channel, social, party, guild, guild megaphone; social selected
+        var subject = (AsObject)h.Child("m_subject");
+        Assert.That(Rt.ToNumber(h.Get(h.Get(subject, "dataProvider"), "length")), Is.EqualTo(6));
+        Assert.That(Rt.ToNumber(h.Get(subject, "selectedIndex")), Is.EqualTo(2));
+        Assert.That(Rt.ToNumber(h.Get(subject, "menuRowCount")), Is.EqualTo(6));
+        // Return focuses the input; Return again with text releases it and clears it (the line is not sent here)
+        var input = (AsObject)h.Child("m_textInput");
+        Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(1));
+        h.Set(input, "text", "HelloWorld");
+        Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(0));
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo(""));
+        // Escape is used only while the input is focused
+        Assert.That(c.OnKey(0, true), Is.False);
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(c.OnKey(0, true), Is.True);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void GroupMessengerBrowserInsertButtonOnly()
+    {
+        var m = Model();
+        var c = new GroupMessengerBrowserController();
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // m_container, added last by the constructor, holds only the insert button (its slot is not found by public name
+        // through UiHost.Get, so it is taken from the display list)
+        var container = (AsContainer)((AsContainer)h.Entity).Children[3];
+        Assert.That(container.Children.Count, Is.EqualTo(1));
+        double y = Rt.ToNumber(h.Get(h.Entity, "y")), ht = Rt.ToNumber(h.Get(h.Entity, "height"));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "x")), Is.EqualTo(0));
+        Assert.That(y, Is.EqualTo(1080 - (int)ht - 300));
+    }
+
     static List<string> AllTexts(AsDisplayObject o)
     {
         var l = new List<string>();

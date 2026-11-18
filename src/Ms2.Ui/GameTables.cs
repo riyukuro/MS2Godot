@@ -32,7 +32,21 @@ public sealed class GameTables
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
+        MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
+        MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
+        MeratConsumeChannelChat = (uint)k.Float("MeratConsumeChannelChat", MeratConsumeChannelChat);
+        foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
+        // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
+        for (int i = 0; i < 100; i++)
+        {
+            var path = $"table/default/defaultmessenger{i}.xml";
+            if (packs.Exists("Xml", path)) DefaultMessengers.Add(GameStrings.Parse(packs.Read("Xml", path)));
+        }
     }
+
+    static (float, float, float) Unpack(uint c) => (((c >> 16) & 0xff) / 255f, ((c >> 8) & 0xff) / 255f, (c & 0xff) / 255f);
+    static uint Rgb((float r, float g, float b) c)
+        => ((uint)MathF.Round(c.r * 255) << 16) | ((uint)MathF.Round(c.g * 255) << 8) | (uint)MathF.Round(c.b * 255);
 
     /// <summary>Exp needed from <paramref name="level"/> to the next level; 0 = unknown level.</summary>
     public long NextExp(int level) => nextExp.TryGetValue(level, out var v) ? v : 0;
@@ -44,6 +58,19 @@ public sealed class GameTables
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;
     public int AdventureLevelStartLevel = 50;
+    /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
+    /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
+    public int MaxChatLength = 50;
+    public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
+    /// <summary>The chat colour constants (table/colorconstants.xml; Define defaults 0xffffff, constantsblocks.cpp:1426-1437),
+    /// read as the subject colours s_color10 / 16..20 (texttohtml.cpp:300-310).</summary>
+    public readonly Dictionary<string, uint> ChatTextColors = new()
+    {
+        ["chatTextNormal"] = 0xffffff, ["chatTextParty"] = 0xffffff, ["chatTextGuild"] = 0xffffff,
+        ["chatTextSuper"] = 0xffffff, ["chatTextWorld"] = 0xffffff, ["chatTextChannel"] = 0xffffff,
+    };
+    /// <summary>The default messenger windows' documents (table/default/defaultmessenger&lt;i&gt;.xml), in order.</summary>
+    public readonly List<System.Xml.Linq.XDocument> DefaultMessengers = new();
     /// <summary>The map's display name (string table mapname, id = 8-digit map id); null when unknown.</summary>
     public string MapName(int mapId) => mapNames.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
 }

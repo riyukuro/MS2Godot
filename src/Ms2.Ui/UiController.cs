@@ -109,7 +109,7 @@ public abstract class UiController
     /// or more places it at the rates times the client size times the UI scale instead (both, the missing one as -1), and a
     /// rate above 1 marks it for re-alignment (m_60).
     /// </summary>
-    public void LoadTransform()
+    public virtual void LoadTransform()
     {
         if (!IsDialog || Host.Folder == null) return;
         var s = DialogSettings.Parse(TypeName, Host.Folder.Read(TypeName + ".xml"));

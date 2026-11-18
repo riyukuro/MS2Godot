@@ -12,23 +12,19 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The in-field HUD over the field scene: top bar (uiupperhuddialog), minimap frame (uiminimapdialog), chat (uimessengerdialog),
 /// HP/SP orb and quick slots (uimainplayerinfo), EXP bar (uiexpbar) and game menu (uigamemenudialog), built from the player's
-/// own Gfx.m2d and fed from <see cref="StubHudData"/>. Chat: the input box echoes into the log locally.
+/// own Gfx.m2d and fed from <see cref="StubHudData"/>.
 /// Args after `--`: --hudshot DIR saves a shot after the field has loaded and quits; --field is passed to the field scene.
 /// </summary>
 public partial class HudScene : Node
 {
     UiAssets assets;
     readonly StubHudData data = StubHudData.Instance;
-    /// <summary>
-    /// UIMessengerBrowser's chat log (m_logs, the last m_18c = 500 lines), the lines the output field holds (m_194 of them)
-    /// and the lines not yet in it (m_pendingLogs).
-    /// </summary>
-    readonly List<string> chatLogs = new(), chatShown = new(), chatPending = new();
-    const int ChatLogMax = 500, ChatShownMax = 600, ChatRebuildPending = 10;     // m_18c, m_190, m_198 (UIMessengerBrowser ctor)
-    MovieClipNode chat; TextInputWidget chatInput; TextNode chatLog;
+    /// <summary>UIMessengerBrowser's windows (one per default messenger, LoadDefaultWindows) and UIGroupMessengerBrowser,
+    /// run from their movies; built once and kept over a relayout, as the client keeps its dialogs.</summary>
+    readonly List<(MovieDialog Movie, MessengerController Side)> messengers = new();
+    MovieDialog groupMessenger;
     /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
     /// (DAT_1439f8cd0 - 2) = 19 + 19 with feature 0xbd (the adventure level bar) on.</summary>
-    const float BottomBars = ExpBarLift + AdventureBarLift;
     const float ExpBarLift = 21 - 2, AdventureBarLift = 21 - 2;
     string shotDir; int frames;
     string frameCase;                       // --frametime closed|open|scroll: frame times over 300 frames instead of a shot
@@ -113,23 +109,24 @@ public partial class HudScene : Node
     /// The window was resized. The client resets the device on WM_SIZE (GFxMovieEventHandler: OnDeviceLost, then
     /// GFxService::vfunc_17 on restore), and GFxManager::ResizeMovies gives every movie the new render target size
     /// (GFxMovie::vfunc_7) and sends SceneResize, so each dialog aligns itself to the new stage. Here the HUD is built
-    /// again at the new size; the chat log and the typed text are kept.
+    /// again at the new size; the dialogs run from their own movies are kept and laid out again.
     /// </summary>
     void Relayout()
     {
         relayoutQueued = false;
         if (!IsInsideTree()) return;     // queued before the scene left the tree
-        string typed = chatInput?.Edit.Text;
         questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
         minimap?.GetParent()?.RemoveChild(minimap);           // so is the minimap
         questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
+        foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
+        groupMessenger?.GetParent()?.RemoveChild(groupMessenger);
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
-        chat = null; chatInput = null; chatLog = null; chatThumb = null; target = null;
+        target = null;
         BuildHud();
         if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(GetWindow().Size); }
-        if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
-        if (chatShown.Count > 0) ShowChatLines();
+        foreach (var (m, _) in messengers) m.Relayout(GetWindow().Size);
+        groupMessenger?.Relayout(GetWindow().Size);
         questLog?.Relayout(GetWindow().Size);
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
@@ -165,6 +162,7 @@ public partial class HudScene : Node
         NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
         target = new TargetFrame(assets, uiRoot, u, stage);
+        HudModel();
         Chat(uiRoot);
         Quests(uiRoot);
         PlayerInfo(uiRoot);
@@ -604,119 +602,70 @@ public partial class HudScene : Node
         return null;
     }
 
-    // ---- chat: uimessengerdialog sized and placed from table/default/defaultmessenger0.xml ----------------------------
+    // ---- chat: uimessengerdialog and uigroupmessengerbrowser, run from their movies ------------------------------------
 
     /// <summary>
-    /// The chat window as UIMessenger builds it (uimessenger.cpp): vfunc_54 reads the window's width/height, alignType and
-    /// offsets and its tabs from the option file (the default one: table/default/defaultmessenger0.xml), AddTab fills the
-    /// tab bar, SetSizeInt runs MessengerDialog's Constraints reflow (configUI), and vfunc_43 aligns it with vfunc_2.
-    /// SetBackgroundAlpha drives m_panel.alpha; the log is m_textOutput (AppendHtml).
+    /// UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): a chat window (UIMessenger) per
+    /// table/default/DefaultMessenger&lt;i&gt;.xml, named messengerdialog&lt;i&gt;.xml, first load; then UIGroupMessengerBrowser,
+    /// the group chat bar. The saved windows of the character folder (LoadWindows :3689) are not read yet. Lines typed
+    /// are not shown: SendChat (:4208) only sends the command and the line arrives with the chat packet (0x1d), which the
+    /// live session does not carry yet.
     /// </summary>
     void Chat(Control ui)
     {
-        var cfg = assets.Table("table/default/defaultmessenger0.xml")?.Root;
-        float A(string n, float d) => float.TryParse((string)cfg?.Attribute(n), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : d;
-        var size = new Vector2(A("width", 408), A("height", 270));
-        var tabs = cfg?.Elements("Tab").ToList() ?? new();
-        var screen = tabs.FirstOrDefault()?.Element("PanelSetting")?.Element("Screen");
-        float bgAlpha = float.TryParse((string)screen?.Attribute("backgroundAlpha"), out var ba) ? ba : 50;
-        float fontSize = float.TryParse((string)screen?.Attribute("fontSize"), out var fs) ? fs : 16;
-
-        var movie = new UiMovie(assets, "uimessengerdialog");
-        UiLayout.ResetRootScale(movie, "messenger_dialog");
-        // MessengerDialog.configUI constraints; the authored dialog is 350 x 270
-        UiLayout.Reflow(movie, "messenger_dialog", new Vector2(350, 270), size,
-            ("m_panel", UiLayout.Edge.All), ("m_textBgColor", UiLayout.Edge.All), ("m_textOutput", UiLayout.Edge.All), ("m_textOutputMask", UiLayout.Edge.All),
-            ("m_resize", UiLayout.Edge.Top | UiLayout.Edge.Right), ("m_emotion", UiLayout.Edge.Bottom | UiLayout.Edge.Right),
-            ("m_subject", UiLayout.Edge.Left | UiLayout.Edge.Bottom), ("m_superEffect", UiLayout.Edge.Left | UiLayout.Edge.Bottom),
-            ("m_textInput", UiLayout.Edge.Left | UiLayout.Edge.Right | UiLayout.Edge.Bottom), ("m_buttonBar", UiLayout.Edge.Left | UiLayout.Edge.Right | UiLayout.Edge.Top),
-            ("m_scrollBar", UiLayout.Edge.Left | UiLayout.Edge.Top | UiLayout.Edge.Bottom),
-            ("m_chatEmoticonOpen", UiLayout.Edge.Bottom | UiLayout.Edge.Right), ("m_chatEmoticonPreview", UiLayout.Edge.Bottom | UiLayout.Edge.Right));
-        var root = movie.BuildRoot(u);
-        root.Scale = new Vector2(u, u);
-        var holder = new Node2D(); holder.AddChild(root); ui.AddChild(holder);
-        var dlgChild = root.Children.FirstOrDefault(c => c.Node is MovieClipNode m && m.ClassName == "messenger_dialog");
-        if (dlgChild == null) return;
-        chat = (MovieClipNode)dlgChild.Node;
-        // UIComponent resets the authored scale; vfunc_43 aligns the window (alignType 7 = bottom left, offsetY -38 =
-        // above the two bottom bars, FUN_1418dd0c0 + FUN_1418dd110)
-        var pos = UiLayout.Align((int)A("alignType", 7), stage, size, A("offsetX", 0), A("offsetY", -BottomBars));
-        dlgChild.Base = new Transform2D(Vector2.Right, Vector2.Down, pos);
-        root.GotoFrame(root.Frame);
-        // the emoticon preview opens on demand and the super chat effect shows only for super world chat
-        Hide(chat, "m_chatEmoticonPreview", "m_superEffect");
-        // SetBackgroundAlpha -> backgroundAlpha(a): m_panel.alpha = a / 100 (replaces the authored 0.3)
-        if (chat.Direct("m_panel") is { } panel) { panel.BaseColor = new Color(panel.BaseColor, bgAlpha / 100f); chat.GotoFrame(chat.Frame); }
-        // the talk target dropdown shows the first target not hidden (FUN_141a14110); in the field that is the local
-        // talk, labelled $s_talkpanelsetting_social (uimessenger.cpp:4567)
-        if (chat.FindClip("m_subject") is { } subject) subject.SetText(assets.Str("$s_talkpanelsetting_social"));
-        // AddTab: one messenger_rclickDropdown per tab (buttonWidth 62, spacing 1) on the bar at m_buttonBar; index 0 selected
-        if (chat.Direct("m_buttonBar") is { } barChild)
+        var window = GetWindow().Size;
+        if (messengers.Count == 0)
         {
-            barChild.Node.Visible = false; barChild.Last = -1;
-            for (int i = 0; i < tabs.Count; i++)
+            var docs = hudModel.Tables.DefaultMessengers;
+            for (int i = 0; i < docs.Count; i++)
             {
-                var tab = movie.BuildClassSized("messenger_rclickDropdown", u, 62, 24);
-                if (tab == null) continue;
-                tab.Position = barChild.Base.Origin + new Vector2(i * (62 + 1), 0);
-                tab.HideNamed("m_alime");
-                tab.GotoLabel(i == 0 ? "selected_up" : "up");
-                tab.SetNamedText("textField", assets.Str((string)tabs[i].Attribute("tabName")));
-                chat.AddChild(tab);
+                var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true) { IsKeyDown = DikHeld };
+                messengers.Add((new MovieDialog(assets, c, hudModel, window), c));
             }
-            chat.GotoFrame(chat.Frame);
+            groupMessenger = new MovieDialog(assets, new GroupMessengerBrowserController(), hudModel, window);
         }
-        chatLog = chat.FindClip("m_textOutput")?.TextFields.FirstOrDefault();
-        if (chatLog != null)
-        {
-            var ls = (LabelSettings)chatLog.Label.LabelSettings.Duplicate();
-            ls.FontSize = Math.Max(1, (int)Math.Round(ls.FontSize * fontSize / UiBuilder.F(chatLog.Def["size"], 16)));
-            chatLog.Label.LabelSettings = ls;
-            chatLog.Label.ClipText = true;
-            chatLog.Text = "";
-        }
-        UpdateChatScroll();
-        chatInput = new TextInputWidget { Node = chat.FindClip("m_textInput") };
-        chatInput.Init();
-        // UIMessenger::FUN_141a11e30, Return with the input focused: an empty (trimmed) line only releases the input, any
-        // other line is submitted and then the input is released (FUN_141a12260)
-        chatInput.Edit.TextSubmitted += text =>
-        {
-            if (text.Trim().Length > 0) AddChatLine($"{data.Player.Name}: {text.Trim()}");
-            ReleaseChat();
-        };
-        GroupChat(ui);
+        foreach (var (m, _) in messengers) ui.AddChild(m);
+        ui.AddChild(groupMessenger);
     }
 
-    /// <summary>
-    /// UIMessenger::vfunc_13, the messenger's keys while it is shown. Return (DIK_RETURN) with the input not focused
-    /// focuses it with the caret after its text (FUN_141a11e30: SetFocused, FocusAndSetSelection(length, length)); with
-    /// it focused the LineEdit submits (TextSubmitted above). Escape with the input focused releases it
-    /// (FUN_141a12260) and is used up, so it does not reach the game menu; unfocused, it is left to the rest.
-    /// </summary>
+    /// <summary>Unk_MsgKeys::FUN_14116d7a0, a key held now, for the DIK codes the chat asks about (Tab).</summary>
+    static bool DikHeld(int dik) => dik == MessengerController.DikTab && Input.IsPhysicalKeyPressed(Key.Tab);
+
+    /// <summary>The scene's keys: the chat windows first, then the dialogs.</summary>
     public override void _Input(InputEvent e)
     {
         if (ChatKeys(e)) { GetViewport().SetInputAsHandled(); return; }
         if (DialogKeys(e)) GetViewport().SetInputAsHandled();
     }
 
+    /// <summary>
+    /// UIMessenger::vfunc_13 (uimessenger.cpp:810), the window's keys while it is shown: Return (DIK_RETURN) and Escape go
+    /// to the controller, which returns whether it used them (an unfocused input leaves Escape to the rest). While its
+    /// input has the focus the other keys go to that movie, as Scaleform sends keys to the movie with the focus.
+    /// </summary>
     bool ChatKeys(InputEvent e)
     {
-        if (chatInput?.Edit == null || chat == null || !chat.IsVisibleInTree()) return false;
-        if (e is not InputEventKey { Pressed: true, Echo: false } k) return false;
-        if (k.Keycode == Key.Enter && !chatInput.Focused && !UiFocus.IsTyping)
+        if (e is not InputEventKey k) return false;
+        foreach (var (m, c) in messengers)
         {
-            chatInput.Focus();
-            chatInput.Edit.CaretColumn = chatInput.Length;
-            return true;
-        }
-        if (k.Keycode == Key.Escape && chatInput.Focused)
-        {
-            ReleaseChat();
+            if (!m.Loaded || !m.IsVisibleInTree()) continue;
+            if (k.Pressed && !k.Echo && !UiFocus.IsTyping)
+            {
+                if ((k.Keycode == Key.Enter && c.OnKey(MessengerController.DikReturn, false))
+                    || (k.Keycode == Key.Escape && c.OnKey(DikEscape, true)))
+                    return true;
+            }
+            if (!c.InputActive) continue;
+            if (k.Keycode is Key.Enter or Key.Escape) return true;
+            uint code = As3View.FlashKeyCode(k.Keycode);
+            if (code == 0 && k.Unicode == 0) return true;
+            m.Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
             return true;
         }
         return false;
     }
+
+    const int DikEscape = 1;
 
     /// <summary>
     /// The scene's action keys and an open dialog's Escape, while nothing takes typing. UISceneGame::vfunc_13 runs the
@@ -733,125 +682,6 @@ public partial class HudScene : Node
         return false;
     }
 
-    /// <summary>UIMessenger::FUN_141a12260: the input loses the focus and its text is cleared.</summary>
-    void ReleaseChat()
-    {
-        chatInput.Edit.ReleaseFocus();
-        chatInput.Edit.Text = "";
-    }
-
-    /// <summary>UIMessengerBrowser::FUN_141a26e00: the line joins the log (the oldest goes past 500) and the pending lines.</summary>
-    void AddChatLine(string line)
-    {
-        if (chatLog == null) return;
-        chatLogs.Add(line);
-        chatPending.Add(line);
-        if (chatLogs.Count > ChatLogMax) chatLogs.RemoveAt(0);
-    }
-
-    /// <summary>
-    /// UIMessengerBrowser::vfunc_15, once a frame: 10 or more pending lines, or more than 600 in the field with them, rebuild
-    /// the field from the log (FUN_141a27bf0, ReselectCurrentTab: the last 500); otherwise they are appended
-    /// (FlushPendingLogs). The log keeps the last lines in view (TextAreaEx position = maxScrollV after each append).
-    /// </summary>
-    void FlushChat()
-    {
-        if (chatPending.Count == 0) return;
-        if (chatPending.Count >= ChatRebuildPending || chatShown.Count + chatPending.Count > ChatShownMax)
-        {
-            chatShown.Clear();
-            chatShown.AddRange(chatLogs);
-        }
-        else chatShown.AddRange(chatPending);
-        chatPending.Clear();
-        ShowChatLines();
-    }
-
-    void ShowChatLines()
-    {
-        if (chatLog == null) return;
-        var l = chatLog.Label;
-        l.LinesSkipped = 0;
-        l.Text = string.Join("\n", chatShown);
-        l.LinesSkipped = Math.Max(0, l.GetLineCount() - l.GetVisibleLineCount());
-        UpdateChatScroll();
-    }
-
-    MovieClipNode chatThumb;
-
-    /// <summary>
-    /// m_scrollBar (messenger_scrollbar : ScrollBarEx, scrollTarget m_textOutput) as CLIK draws it. ScrollIndicator.draw takes
-    /// the field's scroll state: setScrollProperties(bottomScrollV - scrollV, 1, maxScrollV), position scrollV.
-    /// ScrollBar.updateThumbPosition hides the thumb when (position - min) / (max - min) is NaN (nothing to scroll) or max
-    /// is not positive. The arrows are enabled only with the thumb shown and room to move that way, and the track is
-    /// enabled likewise (it is authored at alpha 0). ScrollBarEx.updateThumb sizes the thumb to page / (max - min + page) of
-    /// the track, between minThumbSize 10 and maxThumbSize 20, and it sits at round(fraction * (track - thumb)) below the
-    /// track's top. The bar is placed with a 9-slice grid (y 30..40 of 2..70), so the arrows keep their size at the ends
-    /// and the track (authored y 25, height 22) takes the stretch.
-    /// </summary>
-    void UpdateChatScroll()
-    {
-        if (chatLog == null || chat?.Direct("m_scrollBar") is not { Node: MovieClipNode bar } barChild) return;
-        var l = chatLog.Label;
-        int total = l.GetLineCount(), visible = Math.Max(1, l.GetVisibleLineCount());
-        int scrollV = l.LinesSkipped + 1;
-        int maxScrollV = Math.Max(1, total - visible + 1);
-        int bottomScrollV = Math.Min(total, scrollV + visible - 1);
-        double page = bottomScrollV - scrollV, min = 1, max = maxScrollV, pos = scrollV;
-        double frac = (pos - min) / (max - min);
-        bool thumbOn = !(double.IsNaN(frac) || double.IsNaN(page) || max <= 0 || double.IsInfinity(max));
-        bool on = thumbOn;      // enabled is true (__setProp_m_scrollBar)
-        void State(string name, bool enabled) { if (bar.Direct(name)?.Node is MovieClipNode b) b.GotoLabel(enabled ? "up" : "disabled"); }
-        State("upArrow", on && pos > min);
-        State("downArrow", on && pos < max);
-        State("track", on);
-        if (bar.Direct("thumb") is { } authored) { authored.Last = -1; bar.GotoFrame(bar.Frame); }
-        chatThumb?.QueueFree(); chatThumb = null;
-        if (!thumbOn) return;
-        float d = UiBuilder.F(barChild.Def?["matrix"]?["d"], 1);
-        float trackY = 2 * d + 23, trackH = 68 * d - 46;          // the track between the arrows, in the bar's drawn space
-        double span = Math.Max(1, max - min + page);
-        double th = Math.Max(10, Math.Min(trackH, page / span * trackH));
-        th = Math.Min(th, 20);
-        float thumbH = (float)th;
-        double y = Math.Round(frac * (trackH - thumbH) + trackY);
-        y = Math.Max(trackY, Math.Min(trackY + trackH - thumbH, y));
-        chatThumb = chat.Movie.BuildClassSized("btn_chat_scrollbar", u, 22, thumbH);
-        if (chatThumb == null) return;
-        chatThumb.GotoLabel("up");
-        chatThumb.Position = new Vector2(6, (float)y);
-        bar.AddChild(chatThumb);
-    }
-
-    /// <summary>
-    /// UIGroupMessengerBrowser (uigroupmessengerbrowser): vfunc_43 aligns it bottom left at offset (0, -300); with no group
-    /// chat setData([]) leaves only the insert button (btn_group_chat_a, label $s_groupmessenger_addbutton) in m_container
-    /// at (6, 25). m_background and m_line fade in only under the mouse (configUI tweens them to alpha 0).
-    /// </summary>
-    void GroupChat(Control ui)
-    {
-        var movie = new UiMovie(assets, "uigroupmessengerbrowser");
-        var root = movie.BuildRoot(u);
-        root.Scale = new Vector2(u, u);
-        var holder = new Node2D(); holder.AddChild(root); ui.AddChild(holder);
-        var dlgChild = root.Children.FirstOrDefault(c => c.Node is MovieClipNode m && m.ClassName == "group_messenger_browser_dialog");
-        if (dlgChild == null) return;
-        var dlg = (MovieClipNode)dlgChild.Node;
-        var btn = movie.BuildClass("btn_group_chat_a", u);
-        if (btn != null)
-        {
-            btn.Position = new Vector2(6, 25);
-            btn.GotoLabel("up");
-            btn.SetNamedText("textField", assets.Str("$s_groupmessenger_addbutton"));
-            dlg.AddChild(btn);
-        }
-        foreach (var n in new[] { "m_background", "m_line" })
-            if (dlg.Direct(n) is { } c) { c.BaseColor = new Color(c.BaseColor, 0); }
-        dlg.GotoFrame(dlg.Frame);
-        var box = dlg.ContentRect() ?? new Rect2(0, 0, 131, 94);
-        dlgChild.Base = new Transform2D(Vector2.Right, Vector2.Down, UiLayout.Align(7, stage, box.Size, 0, -300));
-        root.GotoFrame(root.Frame);
-    }
 
     // ---- quest guide: uiquestguidedialog run by its own ActionScript, UIQuestGuideDialog's C++ side as QuestGuideController --
 
@@ -1013,12 +843,8 @@ public partial class HudScene : Node
     UiModel hudModel;
     MovieDialog playerInfoMovie, expBarMovie, adventureBarMovie;
 
-    /// <summary>
-    /// UIMainPlayerInfo (uimainplayerinfo), UIExpBar (uiexpbar) and UIAdventureLevelExpBar (uiadventurelevelexpbar), each run from its own movie with its C++ side as the
-    /// controller (Ms2.Ui.Hud). The model is the HUD's numbers (<see cref="StubHudData"/>); feature 0xbd is on, as the
-    /// adventure level bar shows.
-    /// </summary>
-    void PlayerInfo(Control ui)
+    /// <summary>The HUD movies' model: the tables, features, key tables and the player.</summary>
+    void HudModel()
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
         hudModel = new UiModel(new GameTables(assets.Packs, "en"));
@@ -1036,6 +862,16 @@ public partial class HudScene : Node
         p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
         p.EpCur = data.EpCurrent; p.EpMax = data.EpMax;
         p.Exp = (long)Math.Round(hudModel.NextLevelExp * data.ExpPercent / 100);
+    }
+
+    /// <summary>
+    /// UIMainPlayerInfo (uimainplayerinfo), UIExpBar (uiexpbar) and UIAdventureLevelExpBar (uiadventurelevelexpbar), each run from its own movie with its C++ side as the
+    /// controller (Ms2.Ui.Hud). The model is the HUD's numbers (<see cref="StubHudData"/>); feature 0xbd is on, as the
+    /// adventure level bar shows.
+    /// </summary>
+    void PlayerInfo(Control ui)
+    {
+        var p = hudModel.Player;
         var window = GetWindow().Size;
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, new Ms2.Ui.Hud.MainPlayerInfoController(), hudModel, window));
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
@@ -1089,7 +925,7 @@ public partial class HudScene : Node
 
     public override void _Process(double delta)
     {
-        if (chatLog != null) FlushChat();
+        foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());
@@ -1101,13 +937,25 @@ public partial class HudScene : Node
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
         if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");
-        if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
+        if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
         {
             DirAccess.MakeDirRecursiveAbsolute(shotDir);
             GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "hud.png"));
             GetTree().Quit();
+        }
+    }
+
+    /// <summary>The shot's chat: Return focuses the input, then the text is typed into the movie.</summary>
+    static void TypeChat((MovieDialog Movie, MessengerController Side) m, string text)
+    {
+        m.Side.OnKey(MessengerController.DikReturn, false);
+        foreach (var ch in text)
+        {
+            uint code = char.IsAsciiLetterOrDigit(ch) ? char.ToUpperInvariant(ch) : 0u;
+            m.Movie.Player.Key(code, ch, true, char.IsUpper(ch), false);
+            m.Movie.Player.Key(code, 0, false, false, false);
         }
     }
 
