@@ -163,13 +163,14 @@ public partial class LiveSession : Node
         try
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
-            (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host);
+            (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host, requestGlobalFactor: !Factors.Applied);
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();
             ItemReader.ExtraOf ??= id => { try { return Kinds().ExtraOf(id); } catch (Exception e) { GD.Print($"live: item kinds unavailable ({e.Message})"); return null; } };
             ItemReader.Known ??= id => { try { return Kinds().Known(id); } catch { return true; } };   // data unavailable: read every id
             Items.TabOf = id => { try { return Kinds().TabOf(id); } catch { return 7; } };
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
+            if (entry.EarlyFactor is { } fp) GD.Print($"live: global factor {(Factors.Apply(fp.Reader()) ? "applied" : "ignored")} (before the field)");
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
             GD.Print($"live: {Quests.All.Count} quests loaded before the field");
             foreach (var ip in entry.EarlyItems) ApplyItems(ip);

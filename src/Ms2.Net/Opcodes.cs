@@ -68,5 +68,6 @@ public enum Outbound : ushort {
     UserSync = 0x12,
     RequestServerList = 0x14,
     State = 0x80,
+    GlobalFactor = 0x82,
     ServerEnter = 0xB0,
 }

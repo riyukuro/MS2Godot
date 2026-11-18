@@ -9,12 +9,20 @@ public sealed record ServerEnterRequest(int Language = 0) : IOutPacket {
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) => w.WriteInt(Language);
 }
 
+/// <summary>Outbound 0x82 (SendOp::GlobalFactor, no payload): CSceneStateGame::OnServerEnter (CSceneStateGame::OnServerEnter, scenestategame.cpp:2144, 0x14170dd60) asks for the rate tables while DAT_143ab2918 is not set. A read request.</summary>
+public sealed record GlobalFactorRequest : IOutPacket {
+    public Outbound Op => Outbound.GlobalFactor;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { }
+}
+
 /// <summary>What the game server sent from the key check up to the field enter request.</summary>
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
     /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>
     public IReadOnlyList<Ms2.Net.Wire.RawPacket> EarlyQuests { get; init; } = Array.Empty<Ms2.Net.Wire.RawPacket>();
     /// <summary>The ItemInventory packets that arrived before the field enter, in order.</summary>
     public IReadOnlyList<Ms2.Net.Wire.RawPacket> EarlyItems { get; init; } = Array.Empty<Ms2.Net.Wire.RawPacket>();
+    /// <summary>The GlobalFactor (0xD6) answer when it arrived before RequestFieldEnter, else null.</summary>
+    public Ms2.Net.Wire.RawPacket? EarlyFactor { get; init; }
 }
 
 /// <summary>
@@ -48,12 +56,12 @@ public sealed class GameClient {
 
     /// <summary>Connects to the game endpoint (host overrides the address in the packet when given), answers RequestKey and reads up to RequestFieldEnter.
     /// The key is account id, then the token as the two i32 the client writes (WriteLoginEnter, classobject.cpp:260-266: token1 is the low half), the same 8 bytes as a little-endian u64.</summary>
-    public static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(LoginToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default) {
+    public static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(LoginToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false) {
         if (!go.Ok) throw new InvalidOperationException("LoginToGame error " + go.Error + " " + go.Message);
         var game = new TcpTransport();
         try {
             await game.ConnectAsync(host ?? go.Address.ToString(), go.Port, ct);
-            ServerEnter enter = null; SyncNumber sync = null; var earlyQuests = new List<Ms2.Net.Wire.RawPacket>(); var earlyItems = new List<Ms2.Net.Wire.RawPacket>();
+            ServerEnter enter = null; SyncNumber sync = null; var earlyQuests = new List<Ms2.Net.Wire.RawPacket>(); var earlyItems = new List<Ms2.Net.Wire.RawPacket>(); Ms2.Net.Wire.RawPacket? earlyFactor = null;
             while (true) {
                 var p = await NextAsync(game, timeoutMs, ct);
                 if (game.OpOf(p) is Inbound gop) switch (gop) {
@@ -64,12 +72,16 @@ public sealed class GameClient {
                         if (m.Error != 0) throw new InvalidDataException("game server refused the key, move error " + m.Error);
                         break;
                     }
-                    case Inbound.ServerEnter: enter = ServerEnter.Read(p.Reader()); break;
+                    case Inbound.ServerEnter:
+                        enter = ServerEnter.Read(p.Reader());
+                        if (requestGlobalFactor) await game.SendAsync(new GlobalFactorRequest(), ct);   // OnServerEnter sends it before SendServerEnter
+                        break;
+                    case Inbound.GlobalFactor: earlyFactor = p; break;
                     case Inbound.SyncNumber: sync = SyncNumber.Read(p.Reader()); break;
                     case Inbound.Quest: earlyQuests.Add(p); break;
                     case Inbound.ItemInventory: earlyItems.Add(p); break;
                     case Inbound.RequestFieldEnter:
-                        return (new GameEntry(enter, sync, RequestFieldEnter.Read(p.Reader())) { EarlyQuests = earlyQuests, EarlyItems = earlyItems }, game);
+                        return (new GameEntry(enter, sync, RequestFieldEnter.Read(p.Reader())) { EarlyQuests = earlyQuests, EarlyItems = earlyItems, EarlyFactor = earlyFactor }, game);
                 }
             }
         } catch { game.Dispose(); throw; }

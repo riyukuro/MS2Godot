@@ -95,6 +95,49 @@ public class GameClientTests {
         l.Stop();
     }
 
+    [Test] public async Task GlobalFactorIsRequestedAtServerEnterAndTheAnswerKept() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        var go = new LoginToGame(0, new byte[] { 127, 0, 0, 1 }, (ushort) port, 0xAABBCCDD11223344UL, 2000001, "");
+        var machine = Enumerable.Range(1, 16).Select(i => (byte) i).ToArray();
+        var enter = GameClient.EnterAsync(go, 10000000000, machine, requestGlobalFactor: true);
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        Assert.That((await ReadFrame(s, srv)).op, Is.EqualTo((ushort) Outbound.ResponseVersion));
+        await s.WriteAsync(srv.Frame(Inbound.RequestKey));
+        var (op, body) = await ReadFrame(s, srv);
+        Assert.That(op, Is.EqualTo((ushort) Outbound.ResponseKey));
+        var key = ResponseKey.Read(new ByteReader(body));
+        Assert.That(key.AccountId, Is.EqualTo(10000000000)); Assert.That(key.Token, Is.EqualTo(0xAABBCCDD11223344UL)); Assert.That(key.MachineId, Is.EqualTo(machine));
+        // the client writes the token as two i32, low half first: the same bytes
+        Assert.That(BitConverter.ToInt32(body, 8), Is.EqualTo(0x11223344)); Assert.That(BitConverter.ToInt32(body, 12), Is.EqualTo(unchecked((int) 0xAABBCCDD)));
+        await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0)));
+        await s.WriteAsync(srv.Frame(Inbound.ServerEnter, w => {
+            w.WriteInt(7); w.WriteLong(20000000000); w.WriteShort(1); w.WriteLong(100); w.WriteLong(50); w.WriteLong(9);
+            for (int i = 0; i < 14; i++) w.WriteLong(i);
+            w.WriteUnicodeString("pic"); w.WriteByte(0);
+            w.WriteShort(1); w.WriteInt(2000001); w.WriteShort(0);
+            w.WriteLong(0); w.WriteUnicodeString(""); w.WriteUnicodeString("u1"); w.WriteUnicodeString("u2"); w.WriteUnicodeString("u3");
+        }));
+        var (gop, gbody) = await ReadFrame(s, srv);   // OnServerEnter sends SendOp::GlobalFactor (0x82), no payload
+        Assert.That(gop, Is.EqualTo((ushort) Outbound.GlobalFactor)); Assert.That(gbody, Is.Empty);
+        await s.WriteAsync(srv.Frame(Inbound.GlobalFactor, w => { for (int t = 0; t < 6; t++) { w.WriteByte((byte) t); for (int i = 1; i <= 99; i++) w.WriteFloat(1.5f); } }));
+        await s.WriteAsync(srv.Frame(Inbound.SyncNumber, w => w.WriteByte(0)));
+        await s.WriteAsync(srv.Frame(Inbound.RequestFieldEnter, w => {
+            w.WriteByte(0); w.WriteInt(2000001); w.WriteByte(0); w.WriteByte(0); w.WriteInt(0); w.WriteInt(0);
+            w.WriteFloat(1); w.WriteFloat(2); w.WriteFloat(3); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(90); w.WriteInt(55);
+        }));
+        var (e, game) = await enter.WaitAsync(TimeSpan.FromSeconds(10));
+        using (game) {
+            Assert.That(e.EarlyFactor, Is.Not.Null);
+            var g = new GlobalFactor(); var r = e.EarlyFactor.Value.Reader();
+            Assert.That(g.Apply(r), Is.True); Assert.That(r.Available, Is.EqualTo(0)); Assert.That(g.ExpRate(5, 2), Is.EqualTo(1.5f));
+        }
+        l.Stop();
+    }
+
     [Test] public async Task GameServerRefusesTheKey() {
         var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
         var srv = new FakeServer(5, 6);
