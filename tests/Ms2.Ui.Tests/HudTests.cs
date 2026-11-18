@@ -139,6 +139,32 @@ public class HudTests
     }
 
     [Test]
+    public void QuickSlotTooltipsFollowTheSlotKind()
+    {
+        // SkillSlot::vfunc_0 (skillslot.cpp:716): a skill slot's skill tooltip with the remove hint, a key-bound slot's action
+        // label, nothing for an empty slot
+        var m = Model();
+        m.HasLocalPlayer = true;   // vfunc_0 shows a skill or item tooltip only with a local PC
+        var pages = new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)) } };   // Arrow Stream
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0, pages)));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var c = new MainPlayerInfoController();
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        string hint = m.Tables.Common("s_msg_rclick_putoff_qslot");
+        Assert.That(hint, Is.Not.Empty);
+        var skill = c.GetSlotTooltip(MainPlayerInfoController.SlotBag + ".3");
+        Assert.That(skill, Is.Not.Null.And.Not.Empty);
+        Assert.That(skill["enablePuton"], Is.EqualTo(hint));
+        var key = c.GetSlotTooltip(MainPlayerInfoController.SlotBag + ".22");
+        Assert.That(key["text"], Is.EqualTo(m.Tables.Common("s_quick_slot_item_get")));
+        Assert.That(key["tooltipAlign"], Is.EqualTo(5));
+        Assert.That(c.GetSlotTooltip(MainPlayerInfoController.SlotBag + ".1"), Is.Empty);
+        Assert.That(c.GetSlotTooltip("SlotInfo.other.1"), Is.Null);
+    }
+
+    [Test]
     public void MainPlayerInfoInitAndStatusEvents()
     {
         var m = Model();

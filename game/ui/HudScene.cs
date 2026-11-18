@@ -45,7 +45,7 @@ public partial class HudScene : Node
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
-    string hoverShot;                       // --uigen-hover MOVIE:a.b.c: the pointer on that child of a hosted movie (its tooltip shows)
+    string hoverShot;                       // --uigen-hover MOVIE:a.b.c (or MOVIE:@x,y): the pointer on that child of a hosted movie, or at that point (its tooltip shows)
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
@@ -68,6 +68,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-hover") hoverShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots") quickSlotShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots-player") quickSlotPlayer = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
@@ -950,6 +951,12 @@ public partial class HudScene : Node
         p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
         p.EpCur = data.EpCurrent; p.EpMax = data.EpMax;
         p.Exp = (long)Math.Round(hudModel.NextLevelExp * data.ExpPercent / 100);
+        if (quickSlotPlayer != null)
+        {
+            p.SubJob = quickSlotPlayer[0];
+            p.JobGroup = quickSlotPlayer[0] == 100 ? 1 : (quickSlotPlayer[0] / 100 - 1) * 10;
+            if (quickSlotPlayer.Length > 1) p.Level = quickSlotPlayer[1];
+        }
     }
 
     /// <summary>
@@ -961,7 +968,11 @@ public partial class HudScene : Node
     {
         var p = hudModel.Player;
         var window = GetWindow().Size;
-        playerInfo = new Ms2.Ui.Hud.MainPlayerInfoController { SlotWorld = QuickSlotWorld };
+        playerInfo = new Ms2.Ui.Hud.MainPlayerInfoController
+        {
+            SlotWorld = QuickSlotWorld,
+            TooltipPlayer = () => { QuickSlotWorld(); return SkillTooltipPlayer(slotJobs); },
+        };
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));
         WatchQuickSlotState();
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
@@ -1190,6 +1201,7 @@ public partial class HudScene : Node
     Ms2.Ui.Hud.SkillBookTreeController skillBook;
     int[] skillShot;                            // --skillbook subJob[,level]
     string quickSlotShot;                       // --quickslots slot:skill[:item[:uid]];...
+    int[] quickSlotPlayer;                      // --quickslots-player subJob[,level]: the shot's job and level
 
     /// <summary>The shot's key table: a new character's packet with page 0 holding the given quick slot entries.</summary>
     static Ms2.Net.Packets.ServerKeyTable QuickSlotShotTable(string spec)
@@ -1208,6 +1220,25 @@ public partial class HudScene : Node
     {
         if (skillBook == null || skillBook.IsClosed) OpenSkillBook();
         else skillBook.Close();
+    }
+
+    /// <summary>
+    /// The player a skill tooltip reads (ASTooltip's owner PC): its job system, level, quests, quick slots and hands. The hands
+    /// are PC::GetEquipItemLayer0(5 / 4) (pc.cpp:1340), the own FieldAddUser's layer 0 equips (RH, LH), offline none.
+    /// </summary>
+    Ms2.Ui.Skills.SkillTooltipPlayer SkillTooltipPlayer(Ms2.Ui.Skills.JobSystem jobs)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        return new Ms2.Ui.Skills.SkillTooltipPlayer
+        {
+            Jobs = jobs,
+            Level = hudModel.Player.Level,
+            IsQuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
+            QuestName = id => questTable?.QuestName((int)id) ?? "",
+            QuickSlotOf = id => hudModel.ServerKeys?.FindQuickSlotBySkillAndItemUid((int)id, 0) ?? -1,
+            EquipSubtype = slot => live?.Me.Equips?.FirstOrDefault(e => (int)e.Slot == slot) is { } eq
+                ? hudModel.Tables.Items.Get(eq.Id)?.EquipSubtype ?? 0 : 0,
+        };
     }
 
     /// <summary>
@@ -1232,18 +1263,8 @@ public partial class HudScene : Node
             Points = live?.SkillPoints ?? new Ms2.Ui.Skills.SkillPoints(),
             IsQuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
         };
-        // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061); the hands are
-        // PC::GetEquipItemLayer0(5 / 4) (pc.cpp:1340), the own FieldAddUser's layer 0 equips (RH, LH), offline none
-        var tipPlayer = new Ms2.Ui.Skills.SkillTooltipPlayer
-        {
-            Jobs = jobs,
-            Level = hudModel.Player.Level,
-            IsQuestRewarded = c.IsQuestRewarded,
-            QuestName = id => questTable?.QuestName((int)id) ?? "",
-            QuickSlotOf = id => hudModel.ServerKeys?.FindQuickSlotBySkillAndItemUid((int)id, 0) ?? -1,
-            EquipSubtype = slot => live?.Me.Equips?.FirstOrDefault(e => (int)e.Slot == slot) is { } eq
-                ? hudModel.Tables.Items.Get(eq.Id)?.EquipSubtype ?? 0 : 0,
-        };
+        // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061)
+        var tipPlayer = SkillTooltipPlayer(jobs);
         c.SkillTooltip = (d, id, level) =>
         {
             tipPlayer.Level = hudModel.Player.Level;
@@ -1355,6 +1376,14 @@ public partial class HudScene : Node
         var movie = FindMovies(GetTree().Root).FirstOrDefault(m => m.Host.Id == parts[0]);
         if (movie == null) { GD.PushWarning("hover: no movie " + parts[0]); return; }
         var h = movie.Host;
+        if (parts[1].StartsWith('@'))       // "@x,y": the pointer at that window point (in the movie's stage units)
+        {
+            var xy = parts[1][1..].Split(',').Select(float.Parse).ToArray();
+            var view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
+            var p = view != null ? view.GetGlobalTransformWithCanvas().AffineInverse() * new Vector2(xy[0], xy[1]) : new Vector2(xy[0], xy[1]);
+            movie.Player.MouseMove(p.X, p.Y);
+            return;
+        }
         object o = h.Entity;
         foreach (var n in parts[1].Split('.'))
             o = o is Ms2.Avm2.Flash.AsDisplayObject p ? Descendant(h, p, n) : null;

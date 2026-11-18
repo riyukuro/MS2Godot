@@ -115,9 +115,16 @@ public sealed class MainPlayerInfoController : UiController
     static readonly Dictionary<int, long> SlotKeys = new() { [0x16] = 0x493e3, [0x17] = 0x49401, [0x18] = 0x493e1 };
     const int PetRankFeature = 0x8c;
 
+    /// <summary>The player a skill tooltip reads (its job system, quests, quick slots, hands); null = no player.</summary>
+    public Func<Skills.SkillTooltipPlayer> TooltipPlayer;
+
     /// <summary>The local player state the quick slots read (inventory, skill book, field, ...); null = a world with no player
     /// state beyond the model's tables and level.</summary>
     public Func<Skills.SlotWorld> SlotWorld;
+
+    /// <summary>The fed player state, else one with only the model's tables and level.</summary>
+    Skills.SlotWorld World() => SlotWorld?.Invoke()
+        ?? new Skills.SlotWorld { Tables = Model.Tables.Skills, ItemData = Model.Tables.Items.Get, Level = Model.Player.Level, HasPc = Model.HasLocalPlayer };
 
     /// <summary>
     /// SkillSlot::vfunc_8 @0x14175e9e0 (skillslot.cpp:793): the slot object a bound quick slot holds, for the current page's
@@ -131,7 +138,7 @@ public sealed class MainPlayerInfoController : UiController
             || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
             return null;
         var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
-        var w = SlotWorld?.Invoke() ?? new Skills.SlotWorld { Tables = Model.Tables.Skills, ItemData = Model.Tables.Items.Get, Level = Model.Player.Level, HasPc = Model.HasLocalPlayer };
+        var w = World();
         var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
         int hotkey = Hotkey(i);
         float total = s.CooldownDuration(), remain = s.CooldownRemain();
@@ -176,6 +183,68 @@ public sealed class MainPlayerInfoController : UiController
         return Host.Obj(d.ToArray());
     }
 
+    /// <summary>
+    /// SkillSlot::vfunc_0 (ITooltip, skillslot.cpp:716) through NotifyDragSlot::GetSlotTooltip: null for a name that is not
+    /// a slot; an empty object when the slot gives none. With m_bFixed 0 (no slot of this bar is fixed) every filled
+    /// tooltip gets the right-click remove hint, SetEnablePuton(GetStringCommon(0x759)) = s_msg_rclick_putoff_qslot.
+    /// - An item id whose item is gone: ASTooltip(player, 0x40, 2).FUN_1409e1770(id, GetItemRank(id)).
+    ///   STILL-OPEN: the item tooltip by id is not ported, so that slot shows none.
+    /// - An item that FUN_14053e460 allows: FUN_1409e0d40 over the item, the same flags.
+    /// - Else the skill: none for an item kind skill (FUN_1407e9d70); a key bound slot (22..24) gets its action's text
+    ///   (GetActionLabel, :1467) aligned 5; else FUN_1409e1c50(skill, the book's level or 1, 0) with flags 0x40.
+    /// </summary>
+    public override IDictionary<string, object> GetSlotTooltip(string name)
+    {
+        if (!name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
+            || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
+            return null;
+        return SlotTooltip(i) ?? new AsTooltip();
+    }
+
+    const int SlotTooltipFlags = 0x40;
+
+    AsTooltip SlotTooltip(int i)
+    {
+        var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+        var w = World();
+        var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
+        var item = s.Item();
+        string removeHint = Model.Tables.Common("s_msg_rclick_putoff_qslot") ?? "";     // 0x759
+        if (item == null && e.ItemId != 0) return null;
+        if (item != null && w.ItemData(item.Id) is { } data && data.IsQuickSlotUsable)
+        {
+            if (!Model.HasLocalPlayer) return null;
+            var tip = new Items.ItemTooltip(Model, SlotTooltipFlags);
+            if (!tip.Fill(InventoryController.ToItem(item, Model.Tables.Items))) return null;
+            tip.SetEnablePuton(removeHint);
+            return tip.Data;
+        }
+        uint skillId = s.EffectiveSkillId;
+        if (w.Tables.GetSkillData(skillId) is { IsItemKind: true }) return null;
+        if (SlotKeys.TryGetValue(i, out var action))
+        {
+            var text = AsTooltip.Text(ActionLabel(action));
+            text?.SetTooltipAlign(5);
+            return text;
+        }
+        if (!Model.HasLocalPlayer) return null;
+        var player = TooltipPlayer?.Invoke();
+        int level = w.Jobs?.LevelData(skillId)?.Level ?? 1;
+        var skillTip = Skills.SkillTooltip.Build(Model.Tables, player, skillId, level, SlotTooltipFlags, false);
+        if (skillTip == null) return null;
+        skillTip["enablePuton"] = removeHint;
+        return skillTip;
+    }
+
+    /// <summary>SkillSlot::GetActionLabel (skillslot.cpp:1467): the text of a key bound slot's action.</summary>
+    string ActionLabel(long action) => action switch
+    {
+        0x493e3 => Model.Tables.Common("s_quick_slot_item_get") ?? "",
+        0x49401 => Model.Tables.Common("s_quick_slot_attack") ?? "",
+        0x493e1 => Model.Tables.Common("s_quick_slot_jump") ?? "",
+        _ => "",
+    };
+
     // ---- the slot refresh: queued flags flushed every 200 ms ----
 
     public const int RefreshGray = 1, RefreshItemCount = 2, RefreshRecharge = 4;
@@ -202,8 +271,7 @@ public sealed class MainPlayerInfoController : UiController
         if (flags == 0) return;
         pendingRefresh = 0;
         if (Model.ServerKeys is not { } t) return;
-        var w = SlotWorld?.Invoke();
-        if (w == null) return;
+        var w = World();
         for (int i = 0; i < SlotCount; i++)
         {
             var e = t.Entry(t.CurrentPage, i);
