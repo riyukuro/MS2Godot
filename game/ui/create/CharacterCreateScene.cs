@@ -66,8 +66,20 @@ public partial class CharacterCreateScene : LobbyFieldScene
     /// <summary>Scripted runs: the job page's back button (CharacterCreateSelectDialog.onClickPrev), as a click on it.</summary>
     public static void ClickPrevScripted() { if (page == Page.Select && current?.selectDialog?.Host is { } h) h.Invoke(h.Entity, "onClickPrev", (object)null); }
     public static bool OnCreatePage => current != null && page == Page.Create && current.create?.State == 1;
-    /// <summary>The server refused the request (the flow shows its message): failCreate, the page takes input again.</summary>
-    public static void CreateFailed() => current?.create?.CreateRefused();
+    /// <summary>
+    /// The server refused the request (UICharacterCreateDialog::OnCreateCharacterAnswer, uicameraeditdialog.cpp:1608):
+    /// failCreate and state 1 (the page takes input again). The text of a name refusal goes under the open name box's input
+    /// (UIMessageBox::UpdateErrorMessage) and the box stays; any other refusal closes the box (FUN_14151f200 with no box
+    /// queued, messageboxqueue.cpp:47) and returns false: the flow shows the text in a message box.
+    /// </summary>
+    public static bool CreateFailed(int kind, string text)
+    {
+        if (current?.create is not { } c) return false;
+        c.CreateRefused();
+        if (Ms2Godot.Net.CreateRefusalText.InNameBox(kind)) { current.prompt?.SetError(text); return true; }
+        current.ClosePrompt();
+        return false;
+    }
 
     static CharacterCreateScene current;
     public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); current = this; }
@@ -315,7 +327,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
     {
         if (prompt != null) return;
         prompt = new NamePromptStandIn(assets.Str("$s_charcreate_input_name") is var t && !t.StartsWith('$') ? t : "");
-        prompt.Ok += text => { if (create.SubmitName(text)) ClosePrompt(); };
+        // the box stays open after the request goes out (FUN_1418e7790 returns false); CreateFailed closes it or shows the error
+        prompt.Ok += text => create.SubmitName(text);
         prompt.Cancel += ClosePrompt;
         layer.AddChild(prompt);
         prompt.Center();
@@ -324,9 +337,14 @@ public partial class CharacterCreateScene : LobbyFieldScene
     void ClosePrompt() { prompt?.QueueFree(); prompt = null; }
 
     /// <summary>Scripted runs: the name into the open box, then OK.</summary>
-    void SubmitName(string name)
+    void SubmitName(string name) => create.SubmitName(name);
+
+    /// <summary>Scripted runs: the server's refusal of the sent request, as the flow passes it on.</summary>
+    void RefuseScripted(int kind)
     {
-        if (create.SubmitName(name)) ClosePrompt();
+        string text = Ms2Godot.Net.CreateRefusalText.For(kind, "Tester01", create.Common);
+        bool inBox = CreateFailed(kind, text);
+        GD.Print($"create shots: refusal {kind}: state {create.State}, in the name box {inBox}, box open {prompt != null}, text \"{text}\"");
     }
 
     void Created(Ms2.Net.Packets.CreateCharacter packet)
@@ -420,7 +438,12 @@ public partial class CharacterCreateScene : LobbyFieldScene
             if (frame == 400) Save($"create_custom_hair_{job}.png");
             if (frame == 401) ClickObj(Content("m_create"));
             if (frame == 420) { Save($"create_name_prompt_{job}.png"); SubmitName("Tester01"); }
-            if (frame == 430) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
+            // the answer refusing the request: a name refusal (kind 1) keeps the box with its error; another kind (6) closes it
+            if (frame == 425) RefuseScripted(1);
+            if (frame == 430) Save($"create_name_refused_{job}.png");
+            if (frame == 431) RefuseScripted(6);
+            if (frame == 440) Save($"create_refused_closed_{job}.png");
+            if (frame == 450) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
         }
     }
 

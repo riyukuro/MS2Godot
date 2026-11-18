@@ -11,6 +11,12 @@ namespace Ms2Godot.Net;
 /// </summary>
 public static class CreateRefusalText
 {
+    /// <summary>
+    /// Kinds 1, 0xb, 8 and 9 (the name refused) put the text under the open name box's input (UpdateErrorMessage, the box
+    /// stays); every other kind closes the box and shows the text in a message box (OnCreateCharacterAnswer's bNotify).
+    /// </summary>
+    public static bool InNameBox(int kind) => kind is 1 or 0xb or 8 or 9;
+
     /// <param name="maxCharacters">DAT_1439f4a84, the account's character limit from CharMaxCount (kind 6); 6 only before the server sent it.</param>
     public static string For(int kind, string name, Func<string, string> common, int maxCharacters = 6)
     {

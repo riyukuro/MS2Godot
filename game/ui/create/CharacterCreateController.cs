@@ -143,7 +143,8 @@ public sealed class CharacterCreateController : UiController
     /// <summary>
     /// The name box's OK (FUN_1418e7790: the text trimmed of ',', then FUN_1418e6430): an empty name gives common string
     /// 0xd and a refused one the check's message, both under the input; a good name commits the look and sends the request.
-    /// Returns true when the request went out (the box closes).
+    /// Returns true when the request went out. The box stays open either way (the callback returns false): the answer
+    /// closes it or writes its error into it (OnCreateCharacterAnswer).
     /// </summary>
     public bool SubmitName(string text)
     {

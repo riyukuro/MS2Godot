@@ -176,7 +176,12 @@ public partial class GameFlow : Node
         var e = await live.CreateAsync(request);
         if (e == null)
         {
-            if (live.LastRefusal is { } r) ShowNotice(Net.CreateRefusalText.For(r.Kind, r.Message, CommonStrings(), live.CharacterLimit > 0 ? live.CharacterLimit : 6));
+            if (live.LastRefusal is { } r)
+            {
+                var text = Net.CreateRefusalText.For(r.Kind, r.Message, CommonStrings(), live.CharacterLimit > 0 ? live.CharacterLimit : 6);
+                // the page answers first (failCreate, state 1, a name error into the name box); other refusals: a message box
+                if (!CharacterCreateScene.CreateFailed(r.Kind, text)) ShowNotice(text);
+            }
             return;
         }
         Session.SelectedIndex = Session.List().Count - 1;
