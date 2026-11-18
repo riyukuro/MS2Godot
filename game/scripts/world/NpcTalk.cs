@@ -88,6 +88,7 @@ public sealed partial class NpcTalk : Node
 
     public override void _EnterTree()
     {
+        Ui.MessageBoxLayer.Ensure(this);    // the accept's unrequire-group box (CUIService::CreateAllDialogs has the one layer)
         if (live == null) return;
         live.NpcTalkReceived += OnLiveTalk;
         live.Quests.NpcOffer += OnQuestOffer;
@@ -345,6 +346,7 @@ public sealed partial class NpcTalk : Node
             AcceptRedirects = AcceptRedirects,
             CompleteRedirectTo = CompleteRedirectTo,
             HasSummonPortal = q => ClientQuests(packs).Quest(q)?.SummonPortalField is > 0,
+            HasUnrequireGroup = q => ClientQuests(packs).Quest(q)?.Require.UnrequireGroup.Length > 0,
             NpcName = id => Scripts(packs).NpcDisplayName(id),
             NpcIllust = id => id == npc.Row.Id ? npc.Row.Illust ?? "" : "",
             FileExists = ImageExists,

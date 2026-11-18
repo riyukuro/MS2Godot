@@ -193,6 +193,32 @@ public class TalkCinematicTests
     }
 
     [Test]
+    public void AnUnrequireGroupQuestAsksBeforeTheAccept()
+    {
+        foreach (int answer in new[] { 0, 1 })
+        {
+            MessageBoxData box = null;
+            var (h, c, p, rt) = Load(new() { Script = "Will you help me?", QuestId = Quest }, 6, x =>
+            {
+                x.QuestOf = q => q == Quest ? new("A New Path", 10, "_epic") : null;
+                x.HasUnrequireGroup = q => q == Quest;
+                x.ShowBox = d => box = d;
+            });
+            bool accepted = false, ended = false; int next = -1;
+            c.SendQuestAccept += (q, n) => accepted = true;
+            c.SendEnd += () => ended = true;
+            c.SendNext += i => next = i;
+            c.Key(TalkCinematicController.TalkKey.Next);
+            Assert.That(box, Is.Not.Null, "s_alliance_quest_unreq_group_warn");
+            Assert.That((box.Type, accepted, next), Is.EqualTo((1, false, -1)), "nothing is sent before the answer");
+            box.InvokeCallback(answer, null);
+            if (answer == 0) Assert.That((accepted, next, ended), Is.EqualTo((true, 0, false)), "OK: SendQuestAccept");
+            else Assert.That((accepted, ended), Is.EqualTo((false, true)), "cancel: SendNpcTalkMode0");
+            Assert.That(rt.Errors, Is.Empty);
+        }
+    }
+
+    [Test]
     public void AnActiveQuestIsNotAcceptedAgain()
     {
         var (h, c, p, _) = Load(new() { Script = "Will you help me?", QuestId = Quest }, 6, x => x.IsQuestActive = q => q == Quest);

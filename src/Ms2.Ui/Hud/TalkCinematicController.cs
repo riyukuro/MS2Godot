@@ -130,6 +130,10 @@ public sealed class TalkCinematicController : UiController
     public Func<int, int> CompleteRedirectTo = _ => 0;
     /// <summary>The quest data's &lt;summonPortal&gt; fieldID (m_318.m_0) is set: the progress page sends Quest mode 0x12.</summary>
     public Func<int, bool> HasSummonPortal = _ => false;
+    /// <summary>The quest's data has unrequire groups (m_require.m_unrequireGroup is not empty): its accept asks first.</summary>
+    public Func<int, bool> HasUnrequireGroup = _ => false;
+    /// <summary>FUN_140d73c60: show a box on the message box layer.</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
     /// <summary>FUN_1401aa6a0: the npc's "title name".</summary>
     public Func<int, string> NpcName = id => id.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -410,15 +414,34 @@ public sealed class TalkCinematicController : UiController
     }
 
     /// <summary>
-    /// CQuestAcceptCinematicComponent::vfunc_2 (:533): nothing for a quest already active; a quest with unrequire groups
-    /// first asks with s_alliance_quest_unreq_group_warn (not ported: STILL-OPEN, it accepts at once); else SendQuestAccept
-    /// (:577): Quest mode 2, then (no redirect) mode 2 of the talk.
+    /// CQuestAcceptCinematicComponent::vfunc_2 (cinematiccomponent.cpp:533): nothing for a quest already active; a quest with
+    /// unrequire groups (m_require.m_unrequireGroup) first asks with a type 1 box of s_alliance_quest_unreq_group_warn
+    /// (:540-547) and accepts only on its first button (OnMsgBoxResult, :561: any other button ends the talk with
+    /// SendNpcTalkMode0); else SendQuestAccept at once.
     /// </summary>
     void QuestAccept(TalkContent c)
     {
         if (IsQuestActive(c.QuestId)) return;
-        SendQuestAccept?.Invoke(c.QuestId, TalkNpcId);
-        if (c.Redirect != 0 && AcceptRedirects(c.QuestId)) { SendQuestRedirect?.Invoke(c.QuestId, 2); return; }
+        int quest = c.QuestId;
+        bool redirect = c.Redirect != 0;
+        if (QuestOf(quest) != null && HasUnrequireGroup(quest))
+        {
+            ShowBox(MessageBoxQueue.CreateWithCallback(MessageBoxData.CommonByKey("s_alliance_quest_unreq_group_warn") ?? "", 1, (button, _) =>
+            {
+                if (button != 0) EndTalk();
+                else SendAccept(quest, redirect);
+                return true;
+            }));
+            return;
+        }
+        SendAccept(quest, redirect);
+    }
+
+    /// <summary>SendQuestAccept (:577): Quest mode 2, then NpcTalk mode 7 for a redirect the quest allows, else mode 2 of the talk.</summary>
+    void SendAccept(int quest, bool redirect)
+    {
+        SendQuestAccept?.Invoke(quest, TalkNpcId);
+        if (redirect && AcceptRedirects(quest)) { SendQuestRedirect?.Invoke(quest, 2); return; }
         RequestNext(0);
     }
 
