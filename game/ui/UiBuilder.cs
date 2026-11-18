@@ -269,7 +269,10 @@ public partial class TextNode : Node2D
         int lines = exact ? all.Count : 0;
         bool plainFace = ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
         bool perLine = lines > 1 && plainFace;
-        colored = runStyles != null && plainFace;
+        // a hard drop shadow (ApplyFilters with no blur) on text with FONT-sized runs: the label could only draw the field's
+        // size, so the face is drawn by line, its shadow pass first (LineFace)
+        faceShadow = runStyles != null && ls != null && !plainFace && HasSizedRuns && ls.OutlineSize <= 0 && ls.ShadowSize <= 0;
+        colored = runStyles != null && (plainFace || faceShadow);
         perLineDx = false;
         foreach (var l in all) l.Dx = 0;
         if (exact && lines == 1)
@@ -321,7 +324,10 @@ public partial class TextNode : Node2D
     /// <summary>True while the label's own face is hidden and LineFace draws it (lines at their own x, or html colours and sizes).</summary>
     public bool FaceByLine => perLineDx || colored;
 
-    bool colored;
+    bool colored, faceShadow;
+
+    /// <summary>LineFace draws the label's hard drop shadow too (FONT-sized text under a no-blur shadow filter).</summary>
+    public bool FaceDrawsShadow => faceShadow;
 
     /// <summary>Screen pixels per label pixel: the glyphs are rasterized at the ramp size and drawn scaled by this.</summary>
     public float RasterScale = 1;

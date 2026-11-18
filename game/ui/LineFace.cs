@@ -32,37 +32,45 @@ public partial class LineFace : Node2D
         var ts = TextServerManager.GetPrimaryInterface();
         var canvas = GetCanvasItem();
         float scale = 1;                         // the draw transform's scale: label pixels per raster pixel
+        bool shadow = text.FaceDrawsShadow;
         foreach (var line in text.ShownLines())
         {
             float baseline = line.Baseline;
-            // the underline run being built: its start x, y, length and colour (a change of colour or underline closes it)
-            float ulX = 0, ulY = 0, ulLen = 0;
-            Color? ulColor = null;
-            foreach (var g in line.Shaped)
+            // a hard drop shadow the label would draw (TextNode.FaceDrawsShadow) is drawn first: every glyph of the line at the
+            // shadow offset in the shadow colour, as the label draws a line's shadows before its glyphs
+            for (int pass = shadow ? 0 : 1; pass < 2; pass++)
             {
-                if (text.Hidden(g)) continue;
-                float pen = line.LabelX + g.Pen + line.Dx;
-                var style = text.StyleAt(g.Index);
-                var color = text.GlyphColor(g.Index);
-                float descent = text.DescentRatio * g.Size;
-                Color? underline = style.Underline ? color : null;
-                if (underline != ulColor)
+                bool face = pass == 1;
+                var passOffset = face ? Vector2.Zero : ls.ShadowOffset;
+                // the underline run being built: its start x, y, length and colour (a change of colour or underline closes it)
+                float ulX = 0, ulY = 0, ulLen = 0;
+                Color? ulColor = null;
+                foreach (var g in line.Shaped)
                 {
-                    if (ulColor is Color uc) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, uc); }
-                    ulX = pen; ulY = baseline + descent / 2; ulLen = g.Advance * g.Repeat;
+                    if (text.Hidden(g)) continue;
+                    float pen = line.LabelX + g.Pen + line.Dx;
+                    var style = text.StyleAt(g.Index);
+                    var color = face ? text.GlyphColor(g.Index) : ls.ShadowColor;
+                    float descent = text.DescentRatio * g.Size;
+                    Color? underline = face && style.Underline ? color : null;
+                    if (underline != ulColor)
+                    {
+                        if (ulColor is Color uc) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, uc); }
+                        ulX = pen; ulY = baseline + descent / 2; ulLen = g.Advance * g.Repeat;
+                    }
+                    else if (underline != null) ulLen += g.Advance * g.Repeat;
+                    ulColor = underline;
+                    if (g.Glyph != 0)
+                    {
+                        // the glyph from its run's raster, scaled to the run's size
+                        var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Raster, text.DescentRatio * g.Raster);
+                        Scale(ref scale, g.Scale);
+                        for (int r = 0; r < g.Repeat; r++)
+                            ts.FontDrawGlyph(frid, canvas, g.Raster, (new Vector2(pen + r * g.Advance + g.Offset.X, baseline + g.Offset.Y) + passOffset) / g.Scale + shift, g.Glyph, color);
+                    }
                 }
-                else if (underline != null) ulLen += g.Advance * g.Repeat;
-                ulColor = underline;
-                if (g.Glyph != 0)
-                {
-                    // the glyph from its run's raster, scaled to the run's size
-                    var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Raster, text.DescentRatio * g.Raster);
-                    Scale(ref scale, g.Scale);
-                    for (int r = 0; r < g.Repeat; r++)
-                        ts.FontDrawGlyph(frid, canvas, g.Raster, new Vector2(pen + r * g.Advance + g.Offset.X, baseline + g.Offset.Y) / g.Scale + shift, g.Glyph, color);
-                }
+                if (ulColor is Color last) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, last); }
             }
-            if (ulColor is Color last) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, last); }
         }
         Scale(ref scale, 1);
     }
