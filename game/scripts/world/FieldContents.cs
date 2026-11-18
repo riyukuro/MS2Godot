@@ -42,6 +42,7 @@ public partial class FieldContents : Node3D
     List<FieldNpcs.Placed> spawned = new();
     int shotNpc;
     List<int> shotNpcs = new();
+    bool liveQuestSends;            // --sandbox-quest-sends: the live shot run presses next on quest pages too
     bool actionHeld;
 
     // proof run
@@ -78,6 +79,7 @@ public partial class FieldContents : Node3D
             if (args[i] == "--sandbox-shots" && i + 1 < args.Length) shotDir = args[i + 1];
             if (args[i] == "--sandbox-portal" && i + 1 < args.Length) int.TryParse(args[i + 1], out shotPortal);
             if (args[i] == "--no-npcs") npcs = false;
+            if (args[i] == "--sandbox-quest-sends") liveQuestSends = true;
             if (args[i] == "--sandbox-npc" && i + 1 < args.Length)
             {
                 // one npc, or a comma list (a live run talks to each in turn)
@@ -531,6 +533,9 @@ public partial class FieldContents : Node3D
     /// <summary>
     /// The live talk proof (--sandbox-shots DIR --sandbox-npc ID[,ID...] on a live session): wait for the server's npcs, then for each
     /// npc in turn stand in front of it and talk to it through every page, with a shot of each. One npc is talked to twice.
+    /// On a quest page (accept, complete, progress) the run stops pressing next and ends the talk, since that next makes the server
+    /// start or complete the quest and grant its rewards; --sandbox-quest-sends lets it press next there too (only for a character
+    /// whose quest records may change).
     /// </summary>
     void PlanLiveTalk()
     {
@@ -567,7 +572,14 @@ public partial class FieldContents : Node3D
                 int at = k;
                 steps.Enqueue(("teleport", 0, () =>
                 {
-                    if (talk != null && talk.Open) { talk.ActionKey(); GD.Print($"talk page {at}: script {talk.ScriptId} page {talk.Page + 1}"); }
+                    if (talk == null || !talk.Open) return Vector3.Zero;
+                    if (talk.OnQuestPage && !liveQuestSends)
+                    {
+                        GD.Print($"talk page {at}: script {talk.ScriptId} is a quest page, the talk ends (--sandbox-quest-sends to go on)");
+                        talk.End();
+                        return Vector3.Zero;
+                    }
+                    talk.ActionKey(); GD.Print($"talk page {at}: script {talk.ScriptId} page {talk.Page + 1}");
                     return Vector3.Zero;
                 }, null));
                 steps.Enqueue(("settle", 1.5f, null, $"1c_{r}talk_page{at:00}.png"));

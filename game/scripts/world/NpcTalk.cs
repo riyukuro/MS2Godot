@@ -75,6 +75,8 @@ public sealed partial class NpcTalk : Node
     /// <summary>$MyPCName: the live character's name, else the sandbox's.</summary>
     public string PlayerName { get => live?.Me.User?.Name ?? playerName; set => playerName = value; }
     public bool Open => window != null;
+    /// <summary>The page shown sends a quest packet on next: button set 6 accept (Quest 2), 7 complete (Quest 4), 8 progress (Quest 0x12).</summary>
+    public bool OnQuestPage => side != null && side.ButtonSet is 6 or 7 or 8;
     public int Talks;
     /// <summary>The page shown (0 based) and its script id, for the shots.</summary>
     public int Page => page;
