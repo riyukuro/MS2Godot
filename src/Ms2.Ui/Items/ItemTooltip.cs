@@ -194,7 +194,7 @@ public sealed class ItemTooltip
         {
             // CanTransferSocket: m_b42 (read) and m_b41 (InitFromItem: CItemSocketTable::FUN_14062d980 with the rarity);
             // the line is appended after a line break even to an empty text
-            if (!(t.B42 && Tables.ItemSockets.SocketCanGrow(d, item.Rarity, model.IsFeatureEnabled)))
+            if (!(t.SocketTransferEnabled && Tables.ItemSockets.SocketCanGrow(d, item.Rarity, model.IsFeatureEnabled)))
                 text += "\n" + Common("s_word_item_limit_socket_transfer");
         }
         if (!string.IsNullOrEmpty(r.CoupleName)) text = Join(text, CommonF("s_couple_effect_partner", r.CoupleName));
@@ -230,7 +230,7 @@ public sealed class ItemTooltip
         if (r.GachaDismantleId != 0 || d.IsPetItem) return null;
         // FUN_140633bf0: CItemTransfer::CanBreak (m_b3F, InitFromItem's m_b3E = enableBreak 0, a PC bang item, locked,
         // a skin item with feature 0x3a off or a cube mesh with no socket slots), then the gems (none here)
-        if (r.Transfer.B3F || d.EnableBreak == 0 || d.PCBang) return false;
+        if (r.Transfer.BreakDisabled || d.EnableBreak == 0 || d.PCBang) return false;
         if (d.HasSkinType && !model.IsFeatureEnabled(0x3a)) return false;
         if (d.HasSkinType && d.HasCubeTextureMesh && r.Socket.Gems.Count == 0) return false;
         if (d.HasSkinType) return null;                                            // HasBreakReward

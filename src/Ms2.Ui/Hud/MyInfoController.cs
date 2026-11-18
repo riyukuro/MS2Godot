@@ -101,7 +101,7 @@ public sealed class MyInfoController : UiController
         }
         // m_webGuideButton (FUN_1419260d0) is the web guide's: not here
         if (Child("m_closet") is { } closet) Host.SetVisible(closet, Feature(0xe3));
-        Vfunc46();
+        HideFeatureButtons();
     }
 
     object TabRow(int index, string label, string frame, string tooltip) =>
@@ -109,7 +109,7 @@ public sealed class MyInfoController : UiController
             ("tooltipData", Host.Obj(("className", "export_common_tooltip_tooltipText"), ("id", tooltip), ("align", "topLeft"))));
 
     /// <summary>UIPCInfoDialog::vfunc_46 (@0x14132da70): m_myNews hidden without feature 0x3b, m_wedding without 0x104.</summary>
-    void Vfunc46()
+    void HideFeatureButtons()
     {
         if (!Feature(0x3b) && Child("m_myNews") is { } news) Host.SetVisible(news, false);
         if (!Feature(0x104) && Child("m_wedding") is { } wedding) Host.SetVisible(wedding, false);

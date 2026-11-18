@@ -63,12 +63,12 @@ public sealed class InventoryController : UiController, IInventoryBinding
             View.Bind(this, View.Tab, DevMode);
         }
         SetMesos(Pc.Mesos);
-        Vfunc46();
+        RefreshFeatureButtons();
     }
 
     /// <summary>vfunc_46 @0x1419994e0: the item break button's tooltip, the buttons hidden by their features (socket and gem
     /// 0x2e, merge 0x6f, open bank 0x75, enchant transform 0xa6, unlimited enchant 0x10d), then updateButtonPos.</summary>
-    void Vfunc46()
+    void RefreshFeatureButtons()
     {
         if (Host.Child("m_itemBreak") is { } brk) SetTooltipText(brk, GetItemBreakTooltip());
         foreach (var (feature, name) in new[] { (0x2e, "m_itemSocketAndGem"), (0x6f, "m_itemMerge"), (0x75, "m_openBank"), (0xa6, "m_itemEnchantTransform"), (0x10d, "m_unlimitedEnchant") })

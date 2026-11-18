@@ -24,12 +24,14 @@ public sealed class EquipItem {
     public byte GemType;
     /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
     public short InventorySlot;
-    /// <summary>CItem m_60, m_88, m_9c, m_a0 (the stream's ints and longs after the times, item.cpp:2658-2664).</summary>
-    public int M60, M9c, RemainUses; public long M88;
+    /// <summary>CItem m_60, m_88, m_9c, m_a0 (the stream's ints and longs after the times, item.cpp:2658-2664).
+    /// RetrievableUntil: m_88 (CNetworkService::SendRetrieveFurnishingItem sends only while it is a future time).
+    /// RemakeCount: m_9c (CItem::GetRemakeCount, item.cpp:357). HeaderInt60 has no named use yet.</summary>
+    public int HeaderInt60, RemakeCount, RemainUses; public long RetrievableUntil;
     /// <summary>CItem m_a4 (GetLockState) and m_a8 (GetUnlockTime), item.cpp:2665-2666.</summary>
     public byte LockState; public long UnlockTime;
     /// <summary>CItem m_d8 (u16), m_d4 (bool), m_dc (item.cpp:2667-2669).</summary>
-    public ushort GlamorForges; public bool D4; public int GachaDismantleId;
+    public ushort GlamorForges; public bool HeaderFlagD4; public int GachaDismantleId;
     /// <summary>The UGC block was read: CItem has m_spUgc exactly when it reads it (both on HasCubeTextureMesh or
     /// FUN_140526010, item.cpp:2672 and :2774).</summary>
     public bool HasUgc;
@@ -54,7 +56,8 @@ public sealed class EquipItem {
 public sealed class ItemOptions {
     public readonly Dictionary<int, int>[] Stat = { new(), new(), new(), new(), new() };
     public readonly Dictionary<int, int>[] Special = { new(), new(), new(), new(), new() };
-    public int M2f0;
+    /// <summary>m_n2f0 (CItemOption::GetMergeId, itemoptiondata_1.cpp:89).</summary>
+    public int MergeId;
 }
 
 /// <summary>CItemEnchantInfo::Read (itemenchantinfo.cpp:194): level, charge, version, the history (Unk_EnchantHistory::Read
@@ -74,7 +77,9 @@ public sealed class ItemLimitBreak {
 
 /// <summary>CItemTransfer::vfunc_2: rule, m_b38, count, max, m_b3F, m_b42, then the binding when present.</summary>
 public sealed class ItemTransfer {
-    public int Rule, Count, Max; public bool B38, B3F, B42;
+    /// <summary>BreakDisabled: m_b3F (CItemTransfer::CanBreak refuses; FUN_140635300 sets it). SocketTransferEnabled: m_b42
+    /// (SetSocketTransferFlag; CanTransferSocket).</summary>
+    public int Rule, Count, Max; public bool TransferFlag38, BreakDisabled, SocketTransferEnabled;
     public bool HasBinding; public long BindingId; public string BindingName = "";
 }
 
@@ -185,16 +190,16 @@ public static class ItemReader {
 
     static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false, ItemExtra? forceExtra = null) {
         it.Amount = r.ReadInt();
-        it.M60 = r.ReadInt();
+        it.HeaderInt60 = r.ReadInt();
         it.CreationTime = r.ReadLong();
         it.ExpiryTime = r.ReadLong();
-        it.M88 = r.ReadLong();
-        it.M9c = r.ReadInt();
+        it.RetrievableUntil = r.ReadLong();
+        it.RemakeCount = r.ReadInt();
         it.RemainUses = r.ReadInt();
         it.LockState = r.ReadByte();
         it.UnlockTime = r.ReadLong();
         it.GlamorForges = (ushort) r.ReadShort();
-        it.D4 = r.ReadBool();
+        it.HeaderFlagD4 = r.ReadBool();
         it.GachaDismantleId = r.ReadInt();
 
         it.Color = r.ReadEquipColor();
@@ -219,7 +224,7 @@ public static class ItemReader {
             int special = (ushort) r.ReadShort();
             for (int j = 0; j < special; j++) { int id = (ushort) r.ReadShort(); o.Special[i][id] = r.ReadInt(); }
         }
-        o.M2f0 = r.ReadInt();
+        o.MergeId = r.ReadInt();
 
         var e = it.Enchant = new ItemEnchant();
         e.Level = r.ReadInt(); e.Charge = r.ReadInt(); e.Version = r.ReadByte();
@@ -261,7 +266,7 @@ public static class ItemReader {
         }
 
         var t = it.Transfer;
-        t.Rule = r.ReadInt(); t.B38 = r.ReadBool(); t.Count = r.ReadInt(); t.Max = r.ReadInt(); t.B3F = r.ReadByte() != 0; t.B42 = r.ReadByte() != 0;
+        t.Rule = r.ReadInt(); t.TransferFlag38 = r.ReadBool(); t.Count = r.ReadInt(); t.Max = r.ReadInt(); t.BreakDisabled = r.ReadByte() != 0; t.SocketTransferEnabled = r.ReadByte() != 0;
         // the binding is only assigned when present (vfunc_2 keeps an earlier one otherwise)
         if (r.ReadBool()) { t.HasBinding = true; t.BindingId = r.ReadLong(); t.BindingName = r.ReadUnicodeString(); }
 

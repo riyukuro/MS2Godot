@@ -270,7 +270,7 @@ public class MyInfoTests
         // enableBreak, socketDataId 9006 (grade 0 row: 4 max, 0 open) with the server's socket transfer flag
         var m = NewModel();
         var r = new EquipItem { Id = 12200398, Uid = 9, Rarity = 1, Amount = 1 };
-        r.Transfer.Rule = 8; r.Transfer.HasBinding = true; r.Transfer.BindingId = 2; r.Transfer.BindingName = "Solo"; r.Transfer.B42 = true;
+        r.Transfer.Rule = 8; r.Transfer.HasBinding = true; r.Transfer.BindingId = 2; r.Transfer.BindingName = "Solo"; r.Transfer.SocketTransferEnabled = true;
         var item = Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items);
         var tip = new ItemTooltip(m, 0x200) { Owner = (2, "Solo") };
         Assert.That(tip.Fill(item), Is.True);
@@ -280,7 +280,7 @@ public class MyInfoTests
         Assert.That(shown, Has.Some.Contains("Bound to Solo"));
 
         // without the socket transfer flag the client adds its line; a binding to someone else keeps the binding's name
-        r.Transfer.B42 = false; r.Transfer.BindingId = 5; r.Transfer.BindingName = "Other";
+        r.Transfer.SocketTransferEnabled = false; r.Transfer.BindingId = 5; r.Transfer.BindingName = "Other";
         tip = new ItemTooltip(m, 0x200) { Owner = (2, "Solo") };
         tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
         Assert.That(tip.Data["notExchange"], Is.EqualTo("Untradable, Unsellable\nBound to Other\nThis outfit cannot be dismantled\nSocket cannot be transferred."));
