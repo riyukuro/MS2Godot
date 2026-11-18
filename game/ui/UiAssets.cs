@@ -325,15 +325,7 @@ public static class DdsLoader
         if (!alphaOnly && !lum && bits == 32 && rm == 0x00ff0000 && gm == 0x0000ff00 && bm == 0x000000ff && (am == 0xff000000 || !hasAlpha))
         {
             // A8R8G8B8 / X8R8G8B8, the usual atlas: every channel is a whole byte, so this is a byte swizzle
-            for (int y = 0; y < h; y++)
-            {
-                int o = 128 + y * stride, q = y * w * 4;
-                for (int x = 0; x < w; x++, o += 4, q += 4)
-                {
-                    rgba[q] = d[o + 2]; rgba[q + 1] = d[o + 1]; rgba[q + 2] = d[o];
-                    rgba[q + 3] = hasAlpha ? d[o + 3] : (byte)255;
-                }
-            }
+            Ms2.Formats.Pixels.DdsPixels.SwizzleBgra(d.AsSpan(128, rgba.Length), rgba, hasAlpha);
             return Image.CreateFromData(w, h, false, Image.Format.Rgba8, rgba);
         }
         for (int y = 0; y < h; y++)
