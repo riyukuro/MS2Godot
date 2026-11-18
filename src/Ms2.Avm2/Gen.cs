@@ -110,6 +110,7 @@ public static class Gen
             if (Interp.ScopeHas(rt, s.Obj, nm, s.With)) return s.Obj;
         var d = rt.FindDefinition(nm);
         if (d != null) return d;
+        if (Interp.GlobalHas(rt, m, scopes, nm, out var go)) return go;     // avmplus: the global object's dynamic properties
         if (strict)
         {
             rt.NoteMissing("global " + Interp.Qual(nm));

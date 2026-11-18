@@ -129,6 +129,8 @@ public static class Interp
                 if (ScopeHas(rt, s.Obj, nm, s.With)) return s.Obj;
             var d = rt.FindDefinition(nm);
             if (d != null) return d;
+            // avmplus MethodEnv::findproperty: the global object's dynamic properties last (a name set through findproperty)
+            if (GlobalHas(rt, m, scopes, nm, out var go)) return go;
             if (strict)
             {
                 rt.NoteMissing("global " + Qual(nm));
@@ -457,6 +459,14 @@ public static class Interp
         if (ao.Traits?.Find(n) != null) return true;
         if (with && rt.HasProperty(ao, n)) return true;
         return false;
+    }
+
+    /// <summary>avmplus MethodEnv::findproperty, after the definitions: the global object (scope 0) has the name as a
+    /// property, as `x = v` with no declaration leaves it there (findproperty gives the global object to setproperty).</summary>
+    internal static bool GlobalHas(Runtime rt, AbcMethod m, List<(object Obj, bool With)> scopes, in Name n, out object global)
+    {
+        global = scopes.Count == 0 && m.Scope == null ? null : GlobalOf(m, scopes);
+        return global is AsObject g && rt.HasProperty(g, n);
     }
 
     internal static object GlobalOf(AbcMethod m, List<(object Obj, bool With)> scopes)
