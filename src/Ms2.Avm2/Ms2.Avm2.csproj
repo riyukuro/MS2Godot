@@ -6,6 +6,9 @@
     <RootNamespace>Ms2.Avm2</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Ms2.Ui.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Ms2.Swf/Ms2.Swf.csproj" />
   </ItemGroup>
 </Project>

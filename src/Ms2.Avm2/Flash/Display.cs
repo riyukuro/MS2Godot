@@ -128,6 +128,22 @@ public class AsDisplayObject : AsEventDispatcher
         return r;
     }
 
+    int boundsMemoAt;
+    RectD boundsMemo;
+
+    /// <summary>
+    /// <see cref="LocalBounds"/>, kept per object while a <see cref="BoundsMemo"/> scope is open (a hit test, which changes
+    /// nothing in the display list), so that a container's bounds, which hold all of its descendants', are each made once
+    /// per test instead of once for every ancestor the test passes through. Outside a scope it is LocalBounds itself.
+    /// </summary>
+    internal RectD MemoBounds()
+    {
+        int at = BoundsMemo.Epoch;
+        if (at == 0) return LocalBounds();
+        if (boundsMemoAt != at) { boundsMemo = LocalBounds(); boundsMemoAt = at; }
+        return boundsMemo;
+    }
+
     public Mat ToGlobalMatrix()
     {
         var m = Matrix;
@@ -235,7 +251,7 @@ public class AsContainer : AsInteractiveObject
         if (this is AsMovieClip || this is AsSprite) r = OwnGraphicsBounds();
         foreach (var c in Children)
         {
-            var cb = c.LocalBounds();
+            var cb = c.MemoBounds();
             if (cb.IsEmpty) continue;
             r = r.Union(c.Matrix.Apply(cb));
         }
@@ -694,3 +710,29 @@ public class AsJointStyle : AsObject { [As] public const string BEVEL = "bevel",
 
 [AsClass("flash.display.InterpolationMethod")]
 public class AsInterpolationMethod : AsObject { [As] public const string LINEAR_RGB = "linearRGB", RGB = "rgb"; }
+
+/// <summary>
+/// The scope of a <see cref="AsDisplayObject.MemoBounds"/> memo: each scope has its own epoch, so bounds kept in an earlier
+/// scope are never reused. Scopes are per thread and do not nest (an inner scope keeps the outer one's epoch).
+/// </summary>
+internal static class BoundsMemo
+{
+    [ThreadStatic] internal static int Epoch;
+    [ThreadStatic] static int last;
+    /// <summary>Tests only: no memo, for the reference answers.</summary>
+    internal static bool Off;
+
+    internal readonly struct Scope : IDisposable
+    {
+        readonly bool opened;
+        Scope(bool o) => opened = o;
+        public static Scope Open()
+        {
+            if (Off || Epoch != 0) return default;
+            if (++last == 0) last = 1;
+            Epoch = last;
+            return new Scope(true);
+        }
+        public void Dispose() { if (opened) Epoch = 0; }
+    }
+}

@@ -886,6 +886,7 @@ namespace Ms2.Avm2.Flash
         /// </summary>
         public bool HitTestShapes(double x, double y)
         {
+            using var memo = BoundsMemo.Scope.Open();
             if (!Stage.GetBounds(null).Contains(x, y)) return false;
             return PointTest(Stage, x, y, true, true);
         }
@@ -904,7 +905,7 @@ namespace Ms2.Avm2.Flash
             var (lx, ly) = o.GlobalToLocal(gx, gy);
             if (o is AsContainer c)
             {
-                if (o.Symbol?["scale9"] == null && !o.LocalBounds().Contains(lx, ly)) return false;
+                if (o.Symbol?["scale9"] == null && !o.MemoBounds().Contains(lx, ly)) return false;
                 if (ignoreInvisible && !o.IsVisible) return false;
                 if (o.MaskObject is { } m && !PointTest(m, gx, gy, shapes, ignoreInvisible)) return false;
                 var kids = c.Children;
@@ -933,7 +934,7 @@ namespace Ms2.Avm2.Flash
                 case AsTextField:
                     return (!ignoreInvisible || o.IsVisible) && o.HitsContent(gx, gy);
                 case AsBitmap:
-                    return o.LocalBounds().Contains(lx, ly);
+                    return o.MemoBounds().Contains(lx, ly);
                 case AsShape sh:
                     if (sh.GraphicsOrNull is { } g && DrawingHit(g, lx, ly, shapes)) return true;
                     return ShapeDefHit(o.Symbol, lx, ly, shapes);
