@@ -7,25 +7,75 @@ public class AsDisplayObject : AsEventDispatcher
 {
     public AsContainer Parent;
     public string InstanceName;
-    public Mat Matrix = Mat.Identity;
-    public Cx Color = Cx.Identity;
-    public bool IsVisible = true;
+    Mat matrix = Mat.Identity;
+    Cx color = Cx.Identity;
+    bool isVisible = true;
+    JsonObject symbol;
+    SymbolScope scope;
+    int depth = int.MinValue;
+    int? clipDepth;
+    AsDisplayObject maskObject;
+    object scriptFilters;
+    JsonArray placeFilters;
+    string blend = "normal";
+
+    // The state the renderer reads is set through these properties, which mark the object when the value changes
+    // (see MarkChanged). A matrix, symbol or blend change also changes what the descendants are drawn through (their
+    // screen scale, a scale-9 grid, the blend they inherit), so it marks the subtree as a whole.
+    public Mat Matrix { get => matrix; set { if (!Same(matrix, value)) { matrix = value; MarkChanged(true); } } }
+    public Cx Color { get => color; set { if (color != value) { color = value; MarkChanged(); } } }
+    public bool IsVisible { get => isVisible; set { if (isVisible != value) { isVisible = value; MarkChanged(); } } }
     /// <summary>The symbol this object draws (shape, text, sprite timeline), with the scope its ids resolve in.</summary>
-    public JsonObject Symbol;
-    public SymbolScope Scope;
+    public JsonObject Symbol { get => symbol; set { if (symbol != value) { symbol = value; MarkChanged(true); } } }
+    public SymbolScope Scope { get => scope; set { if (scope != value) { scope = value; MarkChanged(); } } }
     /// <summary>Timeline placement that created it (null for objects made by code) and its depth.</summary>
     public JsonObject Placement;
-    public int Depth = int.MinValue;
-    public int? ClipDepth;
+    /// <summary>The depth; the parent's clip masks reach by depth, so the parent is marked too.</summary>
+    public int Depth { get => depth; set { if (depth != value) { depth = value; MarkChanged(); Parent?.MarkChanged(); } } }
+    public int? ClipDepth { get => clipDepth; set { if (clipDepth != value) { clipDepth = value; MarkChanged(); Parent?.MarkChanged(); } } }
     public bool MatrixLocked, ColorLocked;
-    public AsDisplayObject MaskObject;
+    /// <summary>The script mask; the old and the new mask object are marked as well (a mask object is not drawn).</summary>
+    public AsDisplayObject MaskObject
+    {
+        get => maskObject;
+        set { if (maskObject == value) return; maskObject?.MarkChanged(); maskObject = value; value?.MarkChanged(); MarkChanged(true); }
+    }
     /// <summary>The display object this one is the script mask of (DisplayObject::IsUsedAsMask).</summary>
     public AsDisplayObject MaskOwner;
     public RectD? ScrollRect;
-    public object Filters;
+    public object Filters { get => scriptFilters; set { if (scriptFilters != value) { scriptFilters = value; MarkChanged(); } } }
     /// <summary>The filters of the timeline placement that made the object (PlaceObject3's filter list), for the renderer.</summary>
-    public JsonArray PlaceFilters;
-    public string Blend = "normal";
+    public JsonArray PlaceFilters { get => placeFilters; set { if (placeFilters != value) { placeFilters = value; MarkChanged(); } } }
+    public string Blend { get => blend; set { if (blend != value) { blend = value; MarkChanged(true); } } }
+
+    static bool Same(Mat a, Mat b) => a.A == b.A && a.B == b.B && a.C == b.C && a.D == b.D && a.Tx == b.Tx && a.Ty == b.Ty;
+
+    // ---- change marks (the renderer's sync skips what is unmarked) ---------------------------------------------------
+
+    [Flags] enum Marks : byte { Own = 1, Subtree = 2, Deep = 4 }
+    Marks marks = Marks.Own | Marks.Subtree | Marks.Deep;      // a new object is drawn in full the first time
+    /// <summary>The object a mark goes up to when there is no parent: the button whose state this object is.</summary>
+    internal AsDisplayObject MarkOwner;
+
+    /// <summary>This object's own drawn state changed since the renderer last cleared the marks.</summary>
+    public bool ChangedSelf => (marks & Marks.Own) != 0;
+    /// <summary>This object or something under it changed (every ancestor of a marked object has this).</summary>
+    public bool ChangedBelow => (marks & Marks.Subtree) != 0;
+    /// <summary>Everything under this object is to be drawn again (its matrix, symbol or blend changed, or it was added).</summary>
+    public bool ChangedDeep => (marks & Marks.Deep) != 0;
+
+    /// <summary>
+    /// Marks the object changed (and, with <paramref name="deep"/>, everything under it) and every ancestor as having a
+    /// change below; the walk up stops at the first ancestor already marked, so a frame's marks cost O(depth) once.
+    /// </summary>
+    public void MarkChanged(bool deep = false)
+    {
+        marks |= deep ? Marks.Own | Marks.Subtree | Marks.Deep : Marks.Own | Marks.Subtree;
+        for (var p = Parent ?? MarkOwner; p != null && (p.marks & Marks.Subtree) == 0; p = p.Parent ?? p.MarkOwner) p.marks |= Marks.Subtree;
+    }
+
+    /// <summary>The renderer has drawn this object's current state.</summary>
+    public void ClearMarks() => marks = 0;
     public bool CacheAsBitmapFlag;
     public bool HitTestDisabled;
     /// <summary>Free slot for the renderer (its node for this object).</summary>
@@ -53,18 +103,18 @@ public class AsDisplayObject : AsEventDispatcher
     [As] public AsStage stage { get { for (AsDisplayObject o = this; o != null; o = o.Parent) if (o is AsStage s) return s; return null; } }
     public bool OnStage => stage != null;
 
-    [As] public double x { get => Matrix.Tx; set { if (double.IsNaN(value)) return; Matrix.Tx = value; ScriptMoved(); } }
-    [As] public double y { get => Matrix.Ty; set { if (double.IsNaN(value)) return; Matrix.Ty = value; ScriptMoved(); } }
+    [As] public double x { get => Matrix.Tx; set { if (double.IsNaN(value)) return; var m = Matrix; m.Tx = value; Matrix = m; ScriptMoved(); } }
+    [As] public double y { get => Matrix.Ty; set { if (double.IsNaN(value)) return; var m = Matrix; m.Ty = value; Matrix = m; ScriptMoved(); } }
     [As] public double z { get; set; }
     [As] public double scaleX
     {
         get { var s = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); return Matrix.A * Matrix.D - Matrix.B * Matrix.C < 0 && Matrix.A < 0 ? -s : s; }
-        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); double rot = cur == 0 ? 0 : Math.Atan2(Matrix.B, Matrix.A); Matrix.A = value * Math.Cos(rot); Matrix.B = value * Math.Sin(rot); ScriptMoved(); }
+        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); double rot = cur == 0 ? 0 : Math.Atan2(Matrix.B, Matrix.A); var m = Matrix; m.A = value * Math.Cos(rot); m.B = value * Math.Sin(rot); Matrix = m; ScriptMoved(); }
     }
     [As] public double scaleY
     {
         get => Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D);
-        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D); double rot = cur == 0 ? 0 : Math.Atan2(-Matrix.C, Matrix.D); Matrix.C = -value * Math.Sin(rot); Matrix.D = value * Math.Cos(rot); ScriptMoved(); }
+        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D); double rot = cur == 0 ? 0 : Math.Atan2(-Matrix.C, Matrix.D); var m = Matrix; m.C = -value * Math.Sin(rot); m.D = value * Math.Cos(rot); Matrix = m; ScriptMoved(); }
     }
     [As] public double scaleZ { get; set; } = 1;
     [As] public double rotation
@@ -74,7 +124,7 @@ public class AsDisplayObject : AsEventDispatcher
         {
             if (double.IsNaN(value)) return;
             double sx = scaleX, sy = scaleY, r = value * Math.PI / 180;
-            Matrix.A = sx * Math.Cos(r); Matrix.B = sx * Math.Sin(r); Matrix.C = -sy * Math.Sin(r); Matrix.D = sy * Math.Cos(r); ScriptMoved();
+            var m = Matrix; m.A = sx * Math.Cos(r); m.B = sx * Math.Sin(r); m.C = -sy * Math.Sin(r); m.D = sy * Math.Cos(r); Matrix = m; ScriptMoved();
         }
     }
     [As] public double rotationX { get; set; }
@@ -239,7 +289,9 @@ public class AsInteractiveObject : AsDisplayObject
 [AsClass("flash.display.DisplayObjectContainer", "flash.display.InteractiveObject")]
 public class AsContainer : AsInteractiveObject
 {
-    public readonly List<AsDisplayObject> Children = new();
+    /// <summary>The children in display order; every change to the list marks this container (and an added child in full).</summary>
+    public readonly ChildList Children;
+    public AsContainer() { Children = new ChildList(this); }
     [As] public bool mouseChildren { get; set; } = true;
     [As] public bool tabChildren { get; set; } = true;
     [As] public int numChildren => Children.Count;
@@ -512,12 +564,23 @@ public class AsSimpleButton : AsInteractiveObject
     [As] public bool enabled { get; set; } = true;
     [As] public bool useHandCursor { get; set; } = true;
     [As] public bool trackAsMenu { get; set; }
-    [As] public AsDisplayObject upState { get; set; }
-    [As] public AsDisplayObject overState { get; set; }
-    [As] public AsDisplayObject downState { get; set; }
-    [As] public AsDisplayObject hitTestState { get; set; }
+    // the states are drawn under the button without being its children: their marks go up to it (MarkOwner)
+    AsDisplayObject up, over, down, hit;
+    AsDisplayObject SetState(AsDisplayObject old, AsDisplayObject value)
+    {
+        if (old == value) return old;
+        if (old != null && old.MarkOwner == this) old.MarkOwner = null;
+        if (value != null) { value.MarkOwner = this; value.MarkChanged(true); }
+        MarkChanged();
+        return value;
+    }
+    [As] public AsDisplayObject upState { get => up; set => up = SetState(up, value); }
+    [As] public AsDisplayObject overState { get => over; set => over = SetState(over, value); }
+    [As] public AsDisplayObject downState { get => down; set => down = SetState(down, value); }
+    [As] public AsDisplayObject hitTestState { get => hit; set => hit = SetState(hit, value); }
     [As] public AsObject soundTransform { get; set; }
-    public string State = "up";
+    string state = "up";
+    public string State { get => state; set { if (state != value) { state = value; MarkChanged(); } } }
     protected override bool DefaultTabEnabled => true;
     AsDisplayObject Current => State == "down" ? downState ?? upState : State == "over" ? overState ?? upState : upState;
     public IEnumerable<AsDisplayObject> Drawn => Current == null ? Array.Empty<AsDisplayObject>() : new[] { Current };
@@ -561,7 +624,8 @@ public class AsGraphics : AsObject
     uint fill; double fillAlpha; bool filling;
     public static AsGraphics For(Runtime rt, AsDisplayObject owner) { var g = (AsGraphics)rt.GetClass("flash.display.Graphics").Construct(); g.Owner = owner; return g; }
     void Grow(double x, double y, double w, double h) => Bounds = Bounds.Union(new RectD(x, y, w, h));
-    [As] public void clear() { Ops.Clear(); Bounds = RectD.None; filling = false; }
+    void Drawn(string op, double[] v) { Ops.Add((op, v, fill, filling ? fillAlpha : 0)); Grow(v[0], v[1], v[2], v[3]); Owner?.MarkChanged(); }
+    [As] public void clear() { Ops.Clear(); Bounds = RectD.None; filling = false; Owner?.MarkChanged(); }
     [As] public void beginFill(uint color, double alpha = 1) { fill = color; fillAlpha = alpha; filling = true; }
     [As] public void beginGradientFill(params object[] a) { fill = 0x808080; fillAlpha = 1; filling = true; }
     [As] public void beginBitmapFill(params object[] a) { fill = 0xffffff; fillAlpha = 1; filling = true; }
@@ -571,14 +635,14 @@ public class AsGraphics : AsObject
     [As] public void moveTo(double x, double y) => Grow(x, y, 0, 0);
     [As] public void lineTo(double x, double y) => Grow(x, y, 0, 0);
     [As] public void curveTo(double cx, double cy, double x, double y) => Grow(x, y, 0, 0);
-    [As] public void drawRect(double x, double y, double w, double h) { Ops.Add(("rect", new[] { x, y, w, h }, fill, filling ? fillAlpha : 0)); Grow(x, y, w, h); }
-    [As] public void drawRoundRect(double x, double y, double w, double h, double ew, double eh = double.NaN) { Ops.Add(("rect", new[] { x, y, w, h }, fill, filling ? fillAlpha : 0)); Grow(x, y, w, h); }
-    [As] public void drawCircle(double x, double y, double r) { Ops.Add(("ellipse", new[] { x - r, y - r, 2 * r, 2 * r }, fill, filling ? fillAlpha : 0)); Grow(x - r, y - r, 2 * r, 2 * r); }
-    [As] public void drawEllipse(double x, double y, double w, double h) { Ops.Add(("ellipse", new[] { x, y, w, h }, fill, filling ? fillAlpha : 0)); Grow(x, y, w, h); }
+    [As] public void drawRect(double x, double y, double w, double h) => Drawn("rect", new[] { x, y, w, h });
+    [As] public void drawRoundRect(double x, double y, double w, double h, double ew, double eh = double.NaN) => Drawn("rect", new[] { x, y, w, h });
+    [As] public void drawCircle(double x, double y, double r) => Drawn("ellipse", new[] { x - r, y - r, 2 * r, 2 * r });
+    [As] public void drawEllipse(double x, double y, double w, double h) => Drawn("ellipse", new[] { x, y, w, h });
     [As] public void drawPath(params object[] a) { }
     [As] public void drawTriangles(params object[] a) { }
     [As] public void drawGraphicsData(params object[] a) { }
-    [As] public void copyFrom(AsGraphics g) { Ops.Clear(); Ops.AddRange(g.Ops); Bounds = g.Bounds; }
+    [As] public void copyFrom(AsGraphics g) { Ops.Clear(); Ops.AddRange(g.Ops); Bounds = g.Bounds; Owner?.MarkChanged(); }
 }
 
 [AsClass("flash.display.BitmapData")]
@@ -608,7 +672,8 @@ public class AsBitmapData : AsObject
 [AsClass("flash.display.Bitmap", "flash.display.DisplayObject")]
 public class AsBitmap : AsDisplayObject
 {
-    [As] public AsBitmapData bitmapData { get; set; }
+    AsBitmapData data;
+    [As] public AsBitmapData bitmapData { get => data; set { if (data != value) { data = value; MarkChanged(); } } }
     [As] public bool smoothing { get; set; }
     [As] public string pixelSnapping { get; set; } = "auto";
     [AsCtor] void Ctor(object[] a) { bitmapData = a.Length > 0 ? a[0] as AsBitmapData : null; }
@@ -735,4 +800,34 @@ internal static class BoundsMemo
         }
         public void Dispose() { if (opened) Epoch = 0; }
     }
+}
+
+/// <summary>
+/// A container's children: a list whose changes mark the container (its child order or membership changed) and a child
+/// that comes in (everything under it is drawn again where it now is). Enumerates without allocating.
+/// </summary>
+public sealed class ChildList : IList<AsDisplayObject>, IReadOnlyList<AsDisplayObject>
+{
+    readonly List<AsDisplayObject> items = new();
+    readonly AsContainer owner;
+    internal ChildList(AsContainer owner) { this.owner = owner; }
+
+    public int Count => items.Count;
+    public bool IsReadOnly => false;
+    public AsDisplayObject this[int index]
+    {
+        get => items[index];
+        set { if (items[index] == value) return; items[index] = value; owner.MarkChanged(); value?.MarkChanged(true); }
+    }
+    public void Add(AsDisplayObject item) { items.Add(item); owner.MarkChanged(); item?.MarkChanged(true); }
+    public void Insert(int index, AsDisplayObject item) { items.Insert(index, item); owner.MarkChanged(); item?.MarkChanged(true); }
+    public bool Remove(AsDisplayObject item) { if (!items.Remove(item)) return false; owner.MarkChanged(); return true; }
+    public void RemoveAt(int index) { items.RemoveAt(index); owner.MarkChanged(); }
+    public void Clear() { if (items.Count == 0) return; items.Clear(); owner.MarkChanged(); }
+    public int IndexOf(AsDisplayObject item) => items.IndexOf(item);
+    public bool Contains(AsDisplayObject item) => items.Contains(item);
+    public void CopyTo(AsDisplayObject[] array, int arrayIndex) => items.CopyTo(array, arrayIndex);
+    public List<AsDisplayObject>.Enumerator GetEnumerator() => items.GetEnumerator();
+    IEnumerator<AsDisplayObject> IEnumerable<AsDisplayObject>.GetEnumerator() => items.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => items.GetEnumerator();
 }

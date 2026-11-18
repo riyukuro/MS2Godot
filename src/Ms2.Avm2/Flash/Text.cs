@@ -83,15 +83,24 @@ public class AsTextLineMetrics : AsObject
 [AsClass("flash.text.TextField", "flash.display.InteractiveObject")]
 public class AsTextField : AsInteractiveObject
 {
-    public string Text = "";
-    public string Html;            // last htmlText assigned (kept for the renderer)
-    public bool IsHtml;
-    public RectD Box = new(0, 0, 100, 100);
-    public AsTextFormat Format;
+    // what the renderer reads is set through marking properties (AsDisplayObject.MarkChanged)
+    string plainText = "", html, verticalAlign = "none", textAutoSize = "none";
+    bool isHtml;
+    RectD box = new(0, 0, 100, 100);
+    AsTextFormat format;
+    int version;
+    public string Text { get => plainText; set { if (plainText != value) { plainText = value; MarkChanged(); } } }
+    /// <summary>The last htmlText assigned (kept for the renderer).</summary>
+    public string Html { get => html; set { if (html != value) { html = value; MarkChanged(); } } }
+    public bool IsHtml { get => isHtml; set { if (isHtml != value) { isHtml = value; MarkChanged(); } } }
+    public RectD Box { get => box; set { if (!box.Equals(value)) { box = value; MarkChanged(); } } }
+    public AsTextFormat Format { get => format; set { if (format != value) { format = value; MarkChanged(); } } }
     public string Variable;
     public int SelBegin, SelEnd;
-    public int Version;            // bumped on each change (renderer refresh)
-    public string VerticalAlign = "none", TextAutoSize = "none";
+    /// <summary>Bumped on each change (renderer refresh).</summary>
+    public int Version { get => version; set { version = value; MarkChanged(); } }
+    public string VerticalAlign { get => verticalAlign; set { if (verticalAlign != value) { verticalAlign = value; MarkChanged(); } } }
+    public string TextAutoSize { get => textAutoSize; set { if (textAutoSize != value) { textAutoSize = value; MarkChanged(); } } }
 
     Runtime R => Class.Runtime;
 
@@ -456,8 +465,10 @@ public class AsTextField : AsInteractiveObject
     public string autoSizeMode = "none";
     [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Changed(); } }
     [As] public string type { get; set; } = "dynamic";
-    [As] public bool multiline { get; set; }
-    [As] public bool wordWrap { get; set; }
+    bool multilineFlag;
+    [As] public bool multiline { get => multilineFlag; set { if (multilineFlag != value) { multilineFlag = value; MarkChanged(); } } }
+    bool wordWrapFlag;
+    [As] public bool wordWrap { get => wordWrapFlag; set { if (wordWrapFlag != value) { wordWrapFlag = value; MarkChanged(); } } }
     [As] public bool selectable { get; set; } = true;
     [As] public bool displayAsPassword { get; set; }
     [As] public int maxChars { get; set; }
@@ -472,7 +483,8 @@ public class AsTextField : AsInteractiveObject
     [As] public bool mouseWheelEnabled { get; set; } = true;
     [As] public bool useRichTextClipboard { get; set; }
     /// <summary>Readability text: a script-made field gets the empty text def, which is readability text (TextFieldDef::InitEmptyTextDef, sfr_gfx_01g.cpp:75); a timeline field takes its symbol's.</summary>
-    [As] public string antiAliasType { get; set; } = "advanced";
+    string antiAlias = "advanced";
+    [As] public string antiAliasType { get => antiAlias; set { if (antiAlias != value) { antiAlias = value; MarkChanged(); } } }
     [As] public string gridFitType { get; set; } = "pixel";
     [As] public double sharpness { get; set; }
     [As] public double thickness { get; set; }

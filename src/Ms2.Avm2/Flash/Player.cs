@@ -1189,7 +1189,12 @@ namespace Ms2.Avm2.Flash
         public void CancelDrag() => dragging = null;
         /// <summary>A sprite the host draws over every other movie of the screen (DragManager's drag sprite, set by the
         /// screen's stage), or null.</summary>
-        public AsDisplayObject DrawnOnTop;
+        public AsDisplayObject DrawnOnTop
+        {
+            get => drawnOnTop;
+            set { if (drawnOnTop == value) return; drawnOnTop?.MarkChanged(); drawnOnTop = value; value?.MarkChanged(); }
+        }
+        AsDisplayObject drawnOnTop;
         /// <summary>
         /// InteractiveObject::DoMouseDrag (sfr_gfx_06b.cpp:167): the dragged sprite at the mouse in its parent's space plus the
         /// centre delta, clamped to the bounds. Called on every mouse move (Stage::PropagateMouseEvent, sfr_as3_18.cpp:4486)
@@ -1201,7 +1206,7 @@ namespace Ms2.Avm2.Flash
             var (px, py) = dragging.Parent?.GlobalToLocal(MouseX, MouseY) ?? (MouseX, MouseY);
             double nx = px + dragDx, ny = py + dragDy;
             if (dragBounds is { } b && !b.IsEmpty) { nx = Math.Clamp(nx, b.X, b.X + b.W); ny = Math.Clamp(ny, b.Y, b.Y + b.H); }
-            dragging.Matrix.Tx = nx; dragging.Matrix.Ty = ny; dragging.ScriptMoved();
+            var dm = dragging.Matrix; dm.Tx = nx; dm.Ty = ny; dragging.Matrix = dm; dragging.ScriptMoved();
         }
     }
 }
