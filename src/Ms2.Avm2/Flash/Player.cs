@@ -608,6 +608,271 @@ namespace Ms2.Avm2.Flash
             return Hit(Stage);
         }
 
+        // ---- GetTopMostEntity (the mouse entity under a point) ----------------------------------------------------------
+
+        enum TopMostResult { FoundNothing, Found, Continue }
+
+        /// <summary>DisplayObjectBase::TopMostDescr: the result, the object to skip and whether every object counts (not
+        /// only those that take mouse events).</summary>
+        sealed class TopMostDescr
+        {
+            public AsInteractiveObject Result;
+            public AsDisplayObject IgnoreMC;
+            public bool TestAll;
+            public TopMostDescr Copy() => (TopMostDescr)MemberwiseClone();
+        }
+
+        /// <summary>
+        /// MovieImpl::GetTopMostEntity (sfr_gfx_01i.cpp:3317): the topmost-level objects first, the last one on top, then
+        /// the level (the Stage). Points stay in stage coordinates here (the client hands each object a point in its
+        /// parent's space). The topmost-level objects are taken in display-list order; the client keeps them in the order
+        /// they were made topmost. IsFocusAllowed (focus groups per controller) is not modelled: one controller, all allowed.
+        /// </summary>
+        public AsInteractiveObject GetTopMostEntity(double x, double y, bool testAll, AsDisplayObject ignoreMC)
+        {
+            var topmost = new List<AsDisplayObject>();
+            void Collect(AsDisplayObject o)
+            {
+                if (o.TopmostLevel > 0 && o != Stage) topmost.Add(o);
+                if (o is AsContainer c) foreach (var k in c.Children) Collect(k);
+            }
+            Collect(Stage);
+            for (int i = topmost.Count - 1; i >= 0; i--)
+            {
+                var d = new TopMostDescr { IgnoreMC = ignoreMC, TestAll = testAll };
+                if (TopMostMouseEntity(topmost[i], x, y, d) == TopMostResult.Found) return d.Result;
+            }
+            var ld = new TopMostDescr { IgnoreMC = ignoreMC, TestAll = testAll };
+            return TopMostMouseEntity(Stage, x, y, ld) == TopMostResult.Found ? ld.Result : null;
+        }
+
+        /// <summary>The GetTopMostMouseEntity override of the object's kind.</summary>
+        TopMostResult TopMostMouseEntity(AsDisplayObject o, double gx, double gy, TopMostDescr d) => o switch
+        {
+            AsSprite sp => SpriteTopMost(sp, gx, gy, d),
+            AsContainer c => ContainerTopMost(c, gx, gy, d),
+            AsTextField tf => TextFieldTopMost(tf, gx, gy, d),
+            AsSimpleButton b => ButtonTopMost(b, gx, gy, d),
+            AsBitmap bm => BitmapTopMost(bm, gx, gy, d),
+            AsShape sh => ShapeTopMost(sh, gx, gy, d),
+            AsStaticText or AsMorphShape => DefTopMost(o, gx, gy, d),
+            _ => Nothing(d),                                    // DisplayObjectBase::GetTopMostMouseEntity (sfr_as3_18.cpp:8791)
+        };
+
+        static TopMostResult Nothing(TopMostDescr d) { d.Result = null; return TopMostResult.FoundNothing; }
+
+        /// <summary>AvmInteractiveObj / AvmSprite / AvmDisplayObjContainer::ActsAsButton (sfr_as3_16.cpp:2925-2946): a
+        /// sprite in button mode or with a button listener (EventDispatcher::HasButtonHandlers, sfr_as3_09.cpp:880); any
+        /// other container never; another interactive object when it has a button listener.</summary>
+        static bool ActsAsButton(AsDisplayObject o) => o switch
+        {
+            AsSprite sp => sp.buttonMode || HasButtonHandlers(sp),
+            AsContainer => false,
+            AsInteractiveObject io => HasButtonHandlers(io),
+            _ => false,
+        };
+
+        /// <summary>IsButtonEventInl (sfr_as3_09.cpp:990): the mouse events counted as button handlers.</summary>
+        static readonly string[] ButtonEvents = { "mouseDown", "mouseUp", "click", "doubleClick", "mouseOver", "mouseOut", "rollOver", "rollOut" };
+
+        static bool HasButtonHandlers(AsEventDispatcher e)
+        {
+            foreach (var t in ButtonEvents) if (e.hasEventListener(t)) return true;
+            return false;
+        }
+
+        /// <summary>DisplayObject::TransformPointToLocalAndCheckBounds (sfr_gfx_06.cpp:1831): with a scroll rect, the point
+        /// must fall inside it.</summary>
+        static bool LocalAndCheckBounds(AsDisplayObject o, double gx, double gy, out double lx, out double ly)
+        {
+            (lx, ly) = o.GlobalToLocal(gx, gy);
+            if (o.ScrollRect is { } r && (lx < 0 || ly < 0 || lx > r.W || ly > r.H)) return false;
+            return true;
+        }
+
+        /// <summary>DisplayObjContainer::GetTopMostMouseEntity (sfr_gfx_06d.cpp:298), AVM2.</summary>
+        TopMostResult ContainerTopMost(AsContainer c, double gx, double gy, TopMostDescr d)
+        {
+            var holder = (c as AsSprite)?.IsHitAreaOf;
+            // hidden containers take no mouse events unless they are a hit area; masks never do
+            if (c.HitTestDisabled || (!c.IsVisible && holder == null) || c.MaskOwner != null) return Nothing(d);
+            if (d.IgnoreMC == c) return Nothing(d);
+            if (!LocalAndCheckBounds(c, gx, gy, out _, out _)) return TopMostResult.FoundNothing;
+            if (c.MaskObject is { } mask && mask.MaskOwner == c && !PointTest(mask, gx, gy, true, false)) return Nothing(d);
+
+            // CalcDisplayListHitTestMaskArray: a clip-depth mask decides for the children up to its clip depth
+            var kids = c.Children;
+            int n = kids.Count;
+            bool[] hit = null;
+            for (int i = 0; i < n; i++)
+            {
+                if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
+                if (hit == null) { hit = new bool[n]; Array.Fill(hit, true); }
+                hit[i] = PointTest(kids[i], gx, gy, true, false);
+                int k = i + 1;
+                for (; k < n && kids[k].Depth <= clip; k++) hit[k] = hit[i];
+                i = k - 1;
+            }
+
+            TopMostDescr saved = null;
+            bool foundButMouseDisabled = false;
+            for (int i = n - 1; i >= 0; i--)
+            {
+                var ch = kids[i];
+                if (hit != null && (!hit[i] || ch.ClipDepth is > 0)) continue;
+                if (ch.TopmostLevel > 0) continue;
+                var te = TopMostMouseEntity(ch, gx, gy, d);
+                if (te == TopMostResult.Found)
+                {
+                    if (!c.mouseChildren) d.Result = c;
+                    if (d.Result != null && !d.Result.mouseEnabled)
+                    {
+                        d.Result = c;
+                        foundButMouseDisabled = true;
+                        continue;
+                    }
+                }
+                else if (te == TopMostResult.Continue && d.Result != null)
+                    saved = d.Copy();
+
+                // a hit in button mode is ours (or the hit area holder's)
+                if (ActsAsButton(c) || (holder != null && ActsAsButton(holder)))
+                {
+                    if (te == TopMostResult.Found || saved != null)
+                    {
+                        if (holder != null && ActsAsButton(holder)) { d.Result = holder; return TopMostResult.Found; }
+                        // AS3: the hit area does not count when a child interactive object was hit
+                        if (c is AsSprite { HitAreaObject: { } ha } && (d.Result == null || d.Result == c))
+                            return TopMostMouseEntity(ha, gx, gy, d);
+                    }
+                    if (te == TopMostResult.Found && d.TestAll) return te;
+                }
+                else
+                {
+                    if (te == TopMostResult.Found && d.TestAll) return te;
+                    if (te == TopMostResult.Found && d.Result != c)
+                    {
+                        if (d.Result.Parent != null && d.Result.Parent.IsVisible) return te;
+                        return Nothing(d);
+                    }
+                }
+            }
+            if (saved != null)
+            {
+                d.Result = saved.Result;
+                return TopMostResult.Found;
+            }
+            if (foundButMouseDisabled) { d.Result = c; return TopMostResult.Found; }
+            d.Result = null;
+            return TopMostResult.Continue;
+        }
+
+        /// <summary>Sprite::GetTopMostMouseEntity (sfr_gfx_05b.cpp:1350): the container's, then the sprite's own drawing
+        /// for a button-mode sprite (or its hit area holder's) or when every object counts.</summary>
+        TopMostResult SpriteTopMost(AsSprite sp, double gx, double gy, TopMostDescr d)
+        {
+            var res = ContainerTopMost(sp, gx, gy, d);
+            if (res != TopMostResult.Continue || sp.GraphicsOrNull is not { } g) return res;
+            var holder = sp.IsHitAreaOf;
+            if (!(ActsAsButton(sp) || d.TestAll || (holder != null && ActsAsButton(holder)))) return res;
+            var (lx, ly) = sp.GlobalToLocal(gx, gy);
+            if (!DrawingHit(g, lx, ly, true)) return res;
+            if (holder != null && ActsAsButton(holder)) { d.Result = holder; return TopMostResult.Found; }
+            if (sp.HitAreaObject is { } ha)
+            {
+                if (d.Result == null || d.Result == sp || d.Result is not AsInteractiveObject)
+                    return TopMostMouseEntity(ha, gx, gy, d);
+                return res;
+            }
+            d.Result = sp;
+            return TopMostResult.Found;
+        }
+
+        /// <summary>
+        /// TextField::GetTopMostMouseEntity (sfr_gfx_03e.cpp:1312): a visible field under the point is the result when
+        /// every object counts or it is selectable; else the nearest parent sprite that acts as a button (or any, when every
+        /// object counts). The url test of a non-selectable html field is not modelled.
+        /// </summary>
+        static TopMostResult TextFieldTopMost(AsTextField tf, double gx, double gy, TopMostDescr d)
+        {
+            d.Result = null;
+            if (tf.HitTestDisabled || !tf.IsVisible || d.IgnoreMC == tf) return TopMostResult.FoundNothing;
+            if (tf.ClipDepth is null or 0 && tf.HitsContent(gx, gy))
+            {
+                if (d.TestAll || tf.selectable) { d.Result = tf; return TopMostResult.Found; }
+                for (var p = tf.Parent; p is AsSprite; p = p.Parent)
+                    if ((d.TestAll || ActsAsButton(p)) && (d.IgnoreMC == null || p != d.IgnoreMC))
+                    {
+                        d.Result = (AsInteractiveObject)p;
+                        return TopMostResult.Found;
+                    }
+            }
+            d.Result = null;
+            return TopMostResult.Continue;
+        }
+
+        /// <summary>Button::GetTopMostMouseEntity (sfr_gfx_05c.cpp:241): the button when its hit state is under the point.</summary>
+        static TopMostResult ButtonTopMost(AsSimpleButton b, double gx, double gy, TopMostDescr d)
+        {
+            d.Result = null;
+            if (!b.IsVisible || d.IgnoreMC == b) return TopMostResult.FoundNothing;
+            if (!LocalAndCheckBounds(b, gx, gy, out _, out _)) return TopMostResult.FoundNothing;
+            if (b.hitTestState != null && b.HitsContent(gx, gy)) { d.Result = b; return TopMostResult.Found; }
+            return TopMostResult.Continue;
+        }
+
+        /// <summary>AvmBitmap::GetTopMostMouseEntity (sfr_as3_18.cpp:5881): a visible bitmap is hit inside its image's
+        /// rectangle; the result is its parent.</summary>
+        static TopMostResult BitmapTopMost(AsBitmap bm, double gx, double gy, TopMostDescr d)
+        {
+            if (!bm.IsVisible || bm.bitmapData == null) return TopMostResult.FoundNothing;
+            var (lx, ly) = bm.GlobalToLocal(gx, gy);
+            if (!new RectD(0, 0, bm.bitmapData.width, bm.bitmapData.height).Contains(lx, ly)) return TopMostResult.FoundNothing;
+            d.Result = bm.Parent as AsInteractiveObject;
+            return TopMostResult.Found;
+        }
+
+        /// <summary>ShapeObject::GetTopMostMouseEntity (sfr_as3_18.cpp:3452): a script drawing hit gives the parent; a
+        /// shape from the movie data goes through GetTopMostMouseEntityDef and continues.</summary>
+        static TopMostResult ShapeTopMost(AsShape sh, double gx, double gy, TopMostDescr d)
+        {
+            if (sh.GraphicsOrNull is { Ops.Count: > 0 } g)
+            {
+                if (LocalAndCheckBounds(sh, gx, gy, out var lx, out var ly) && DrawingHit(g, lx, ly, true))
+                {
+                    d.Result = sh.Parent as AsInteractiveObject;
+                    return TopMostResult.Found;
+                }
+                return TopMostResult.FoundNothing;
+            }
+            d.Result = TopMostMouseEntityDef(sh, gx, gy, d.TestAll, d.IgnoreMC);
+            return d.Result != null ? TopMostResult.Continue : TopMostResult.FoundNothing;
+        }
+
+        /// <summary>StaticTextCharacter::GetTopMostMouseEntity (sfr_gfx_05d.cpp:544), also used for a morph shape: the
+        /// definition's test, found when it gives a sprite.</summary>
+        static TopMostResult DefTopMost(AsDisplayObject o, double gx, double gy, TopMostDescr d)
+        {
+            d.Result = TopMostMouseEntityDef(o, gx, gy, d.TestAll, d.IgnoreMC);
+            return d.Result != null ? TopMostResult.Found : TopMostResult.FoundNothing;
+        }
+
+        /// <summary>
+        /// DisplayObjectBase::GetTopMostMouseEntityDef (sfr_gfx_06.cpp:599): when the point is inside the visible,
+        /// non-mask character's shape, the nearest parent sprite in button mode (or whose hit area holder is), or any parent
+        /// sprite when every object counts, other than the ignored one.
+        /// </summary>
+        static AsInteractiveObject TopMostMouseEntityDef(AsDisplayObject o, double gx, double gy, bool testAll, AsDisplayObject ignoreMC)
+        {
+            if (!o.IsVisible) return null;
+            var (lx, ly) = o.GlobalToLocal(gx, gy);
+            if (o.ClipDepth is not (null or 0) || !ShapeDefHit(o.Symbol, lx, ly, true)) return null;
+            for (var p = o.Parent; p is AsSprite spr; p = p.Parent)
+                if (testAll || ActsAsButton(spr) || (spr.IsHitAreaOf is { } h && ActsAsButton(h)))
+                    if (ignoreMC == null || ignoreMC != spr) return spr;
+            return null;
+        }
+
         /// <summary>
         /// MovieImpl::HitTest (0x142570a00) with HitTest_ShapesNoInvisible, the test CUIService::FUN_141aec760 (uiservice.cpp:2905)
         /// makes at the cursor: the level-0 clip (the Stage in AS3, sfr_as3_18.cpp:4006) is point-tested by its shapes, invisible

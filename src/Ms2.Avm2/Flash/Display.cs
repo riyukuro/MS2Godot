@@ -19,6 +19,8 @@ public class AsDisplayObject : AsEventDispatcher
     public int? ClipDepth;
     public bool MatrixLocked, ColorLocked;
     public AsDisplayObject MaskObject;
+    /// <summary>The display object this one is the script mask of (DisplayObject::IsUsedAsMask).</summary>
+    public AsDisplayObject MaskOwner;
     public RectD? ScrollRect;
     public object Filters;
     /// <summary>The filters of the timeline placement that made the object (PlaceObject3's filter list), for the renderer.</summary>
@@ -95,7 +97,12 @@ public class AsDisplayObject : AsEventDispatcher
     [As] public AsDisplayObject mask
     {
         get => MaskObject;
-        set { MaskObject = value; }
+        set
+        {
+            if (MaskObject != null && MaskObject.MaskOwner == this) MaskObject.MaskOwner = null;
+            MaskObject = value;
+            if (value != null) value.MaskOwner = this;
+        }
     }
     [As] public AsRectangle scrollRect
     {
@@ -357,7 +364,11 @@ public class AsSprite : AsContainer
     public AsSprite HitAreaObject;
     [As] public AsSprite hitArea { get => HitAreaObject; set { if (HitAreaObject != null) HitAreaObject.IsHitAreaOf = null; HitAreaObject = value; if (value != null) value.IsHitAreaOf = this; } }
     public AsSprite IsHitAreaOf;
-    [As] public AsSprite dropTarget => null;
+    /// <summary>
+    /// Sprite::dropTargetGet (sfr_as3_07.cpp:3619): the topmost entity under the last mouse position with every object
+    /// tested and this sprite ignored (MovieImpl::GetTopMostEntity(mouse, 0, true, this)), or null.
+    /// </summary>
+    [As] public AsDisplayObject dropTarget => P?.GetTopMostEntity(P.MouseX, P.MouseY, true, this);
     [As] public AsObject soundTransform { get; set; }
     [As] public void startDrag(bool lockCenter = false, AsRectangle bounds = null) => P?.StartDrag(this, lockCenter, bounds?.R);
     [As] public void stopDrag() => P?.StopDrag(this);

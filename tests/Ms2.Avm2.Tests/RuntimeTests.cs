@@ -68,6 +68,50 @@ public class RuntimeTests
     }
 
     [Test]
+    public void DropTargetIsTheTopmostEntityUnderTheMouseOtherThanTheDraggedSprite()
+    {
+        // Sprite::dropTargetGet -> MovieImpl::GetTopMostEntity(mouse, 0, testAll true, ignore the dragged sprite)
+        var (rt, p) = Empty();
+        var sprite = rt.GetClass("flash.display.Sprite");
+        AsSprite Box(double x)
+        {
+            var b = (AsSprite)sprite.Construct();
+            b.graphics.beginFill(0xffffff); b.graphics.drawRect(0, 0, 40, 40);
+            b.x = x;
+            return b;
+        }
+        var slot = Box(100);
+        var other = Box(200);
+        var dragged = Box(100);
+        p.Stage.addChild(slot); p.Stage.addChild(other); p.Stage.addChild(dragged);
+        p.MouseX = 120; p.MouseY = 20;
+        Assert.That(dragged.dropTarget, Is.SameAs(slot), "the slot under the dragged sprite, by its drawing");
+        p.MouseX = 220;
+        Assert.That(dragged.dropTarget, Is.SameAs(other));
+        p.MouseX = 400;
+        Assert.That(dragged.dropTarget, Is.Null, "nothing under the mouse");
+
+        // a text field in the slot is the target itself (every object counts); with mouseChildren off, the slot
+        var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();
+        tf.width = 40; tf.height = 20; tf.selectable = false;
+        slot.addChild(tf);
+        p.MouseX = 110; p.MouseY = 10;
+        Assert.That(dragged.dropTarget, Is.SameAs(tf));
+        slot.mouseChildren = false;
+        Assert.That(dragged.dropTarget, Is.SameAs(slot));
+
+        // a hidden sprite or a script mask takes nothing; the slot under it does
+        slot.mouseChildren = true;
+        var cover = Box(100);
+        p.Stage.addChildAt(cover, p.Stage.getChildIndex(dragged));
+        cover.visible = false;
+        Assert.That(dragged.dropTarget, Is.SameAs(tf));
+        cover.visible = true;
+        other.mask = cover;
+        Assert.That(dragged.dropTarget, Is.SameAs(tf));
+    }
+
+    [Test]
     public void VisibleSetterKeepsTimelineMoves()
     {
         // a clip whose alpha the timeline animates 0 -> 0.5 -> 1, with the placement's visible flag on
