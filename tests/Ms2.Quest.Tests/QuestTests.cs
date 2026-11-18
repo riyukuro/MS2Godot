@@ -38,6 +38,57 @@ public class QuestTests
         Assert.That(g2.FindMapPath(1, 4), Is.EqualTo(new[] { 1, 2, 3, 4 }));    // 3 steps beats 1 + 3 + 3
     }
 
+    // The client's loop as written (BuildMapPaths): every k, i, j, no row skipped; paths read back as FindMapPath does.
+    static List<int> ReferencePath(int[] fields, Func<int, int, bool> portal, int from, int to)
+    {
+        int n = fields.Length + 1;
+        var map = new int[n];
+        for (int i = 0; i < fields.Length; i++) map[i + 1] = fields[i];
+        var dist = new short[n, n];
+        var mid = new short[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+                dist[i, j] = i == j ? (short)0 : portal(map[i], map[j]) ? (map[i] == QuestMapGraph.SlowField || map[j] == QuestMapGraph.SlowField ? (short)3 : (short)1) : (short)0x7fff;
+        for (int k = 0; k < n; k++)
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++)
+                    if (dist[i, k] + dist[k, j] < dist[i, j]) { mid[i, j] = (short)k; dist[i, j] = (short)(dist[i, k] + dist[k, j]); }
+        if (from == to) return new List<int> { from };
+        int fi = Array.IndexOf(fields, from) + 1, ti = Array.IndexOf(fields, to) + 1;
+        if (fi == 0 || ti == 0) return null;
+        if (mid[fi, ti] == 0 && !portal(from, to)) return null;
+        var path = new List<int> { from };
+        int depth = 0;
+        void Collect(int a, int b)
+        {
+            if (++depth > fields.Length) return;
+            int m = mid[a, b];
+            if (m == 0) return;
+            Collect(a, m); path.Add(map[m]); Collect(m, b);
+        }
+        Collect(fi, ti);
+        path.Add(to);
+        return path;
+    }
+
+    [Test]
+    public void MapPathsMatchTheFullLoop()
+    {
+        // random sparse one-way portals with the slow field among the nodes: every pair's path as the unskipped loop gives it
+        for (int seed = 1; seed <= 6; seed++)
+        {
+            var rnd = new Random(seed);
+            var fields = Enumerable.Range(1, 70).Select(i => i == 35 ? QuestMapGraph.SlowField : 1000 + i).ToArray();
+            var e = new HashSet<(int, int)>();
+            for (int c = 0; c < 70 * (seed % 3 + 1); c++) e.Add((fields[rnd.Next(70)], fields[rnd.Next(70)]));
+            bool Portal(int a, int b) => e.Contains((a, b));
+            var g = new QuestMapGraph(fields, Portal);
+            foreach (int a in fields)
+                foreach (int b in fields)
+                    Assert.That(g.FindMapPath(a, b), Is.EqualTo(ReferencePath(fields, Portal, a, b)), $"seed {seed}: {a} -> {b}");
+        }
+    }
+
     [Test]
     public void NearestMapPicksFewestHops()
     {

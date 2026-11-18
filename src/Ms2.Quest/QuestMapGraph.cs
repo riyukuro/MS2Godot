@@ -39,14 +39,25 @@ public sealed class QuestMapGraph
                 else dist[i][j] = Unreachable;
             }
         }
+        // Floyd-Warshall, as the client's loop runs it. A row with no path to k is skipped: its sum through k is at least
+        // Unreachable, which is never below a distance, so the loop would change nothing there (the same tables, k by k).
         for (int k = 0; k < n; k++)
+        {
+            var dk = dist[k];
             for (int i = 0; i < n; i++)
+            {
+                var di = dist[i];
+                int ik = di[k];
+                if (ik == Unreachable) continue;
+                var mi = mid[i];
                 for (int j = 0; j < n; j++)
-                    if (dist[i][k] + dist[k][j] < dist[i][j])
+                    if (ik + dk[j] < di[j])
                     {
-                        mid[i][j] = (short)k;
-                        dist[i][j] = (short)(dist[i][k] + dist[k][j]);
+                        mi[j] = (short)k;
+                        di[j] = (short)(ik + dk[j]);
                     }
+            }
+        }
     }
 
     public static QuestMapGraph From(FieldMeta meta) =>
