@@ -582,12 +582,10 @@ public sealed class MyInfoController : UiController
     Item EquipItemByKind(PcInfo r, int kind, int slot) =>
         kind is >= 0 and <= 2 && EquipMaps(r) is { } m && m[kind].TryGetValue(slot, out var it) ? it : null;
 
-    static int EquipSubtype(ItemData d) => d.Type == 1 ? d.Subtype : 0;
-    /// <summary>CItemData::FUN_14053d460 (itemdata.cpp:893): a two-handed weapon (type 1 subtypes 0x32-0x38, 0x50-0x53). Its
-    /// type-0x17 branch needs the item model's group types (not loaded here): false.</summary>
-    static bool TwoHanded(ItemData d) => d.Type == 1 && EquipSubtype(d) is (>= 0x32 and <= 0x38) or (>= 0x50 and <= 0x53);
+    /// <summary>CItemData::FUN_14053d460 (<see cref="WornEquipment.IsTwoHanded"/>).</summary>
+    bool TwoHanded(ItemData d) => WornEquipment.IsTwoHanded(d, Model.Tables.ItemModels);
     /// <summary>CItemData::FUN_14053d2b0 (itemdata.cpp:848): equip subtype 0x16 (a suit over the pants).</summary>
-    static bool Suit(ItemData d) => EquipSubtype(d) == 0x16;
+    static bool Suit(ItemData d) => d.EquipSubtype == 0x16;
 
     /// <summary>EquipSlot::FUN_14120ce90 (equipslot.cpp:294): the slot's item; an empty LH shows a two-handed RH item, an empty
     /// PA a suit CL item.</summary>
