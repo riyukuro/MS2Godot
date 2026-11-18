@@ -1,0 +1,75 @@
+using Maple2.PacketLib.Tools;
+using Ms2.Net.Packets;
+using NUnit.Framework;
+
+namespace Ms2.Net.Tests;
+
+public class ItemBodyTests {
+    static void Body(ByteWriter w, bool full) {
+        w.WriteInt(3); w.WriteInt(-1); w.WriteLong(100); w.WriteLong(200); w.WriteLong(300); w.WriteInt(4); w.WriteInt(5);
+        w.WriteByte(1); w.WriteLong(400); w.WriteShort(6); w.WriteBool(true); w.WriteInt(7);
+        w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0);     // EquipColor: 3 RGBA, 2 ints
+        for (int i = 0; i < 5; i++) {
+            if (full && i == 0) { w.WriteShort(1); w.WriteShort(0x10); w.WriteInt(25); } else w.WriteShort(0);
+            if (full && i == 2) { w.WriteShort(1); w.WriteShort(0x23); w.WriteInt(30); } else w.WriteShort(0);
+        }
+        w.WriteInt(8);
+        w.WriteInt(full ? 5 : 0); w.WriteInt(9); w.WriteByte(2);
+        w.WriteLong(11); w.WriteInt(12); w.WriteInt(13); w.WriteBool(true); w.WriteInt(14);
+        if (full) { w.WriteByte(1); w.WriteInt(0x10); w.WriteInt(50); } else w.WriteByte(0);
+        w.WriteInt(2);
+        if (full) { w.WriteInt(1); w.WriteShort(4); w.WriteInt(60); } else w.WriteInt(0);
+        if (full) { w.WriteInt(1); w.WriteShort(0x12); w.WriteInt(70); } else w.WriteInt(0);
+        // transfer, binding only in the full one
+        w.WriteInt(3); w.WriteBool(true); w.WriteInt(1); w.WriteInt(2); w.WriteByte(1); w.WriteByte(0);
+        if (full) { w.WriteBool(true); w.WriteLong(77); w.WriteUnicodeString("Solo"); } else w.WriteBool(false);
+        // socket: max 3, slot 0 empty, slot 1 a gem with bind and lock
+        w.WriteByte(3);
+        if (full) {
+            w.WriteByte(2); w.WriteBool(false);
+            w.WriteBool(true); w.WriteInt(40000001); w.WriteBool(true); w.WriteLong(78); w.WriteUnicodeString("Gem"); w.WriteBool(true); w.WriteByte(1); w.WriteLong(500);
+        } else w.WriteByte(0);
+        if (full) { w.WriteLong(9); w.WriteUnicodeString("Partner"); w.WriteBool(true); } else w.WriteLong(0);
+        w.WriteLong(full ? 79 : 0); w.WriteUnicodeString(full ? "Owner" : "");
+        w.WriteInt(-12345);                                                             // a marker after the body
+    }
+
+    static ByteReader R(bool full, out ByteWriter w) {
+        w = new ByteWriter(); w.WriteInt(11400021); w.WriteLong(55); w.WriteByte((byte) EquipSlot.CL); w.WriteInt(1);
+        Body(w, full);
+        return new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+    }
+
+    [Test] public void TheBodyKeepsWhatTheClientsReadersFill() {
+        var r = R(true, out _);
+        var it = ItemReader.ReadEquip(r);
+        Assert.That(r.ReadInt(), Is.EqualTo(-12345), "the whole body is read");
+        Assert.That((it.Amount, it.M60, it.CreationTime, it.ExpiryTime, it.M88, it.M9c, it.RemainUses), Is.EqualTo((3, -1, 100L, 200L, 300L, 4, 5)));
+        Assert.That((it.LockState, it.UnlockTime, it.GlamorForges, it.D4, it.GachaDismantleId), Is.EqualTo(((byte) 1, 400L, (ushort) 6, true, 7)));
+        Assert.That(it.Options.Stat[0][0x10], Is.EqualTo(25)); Assert.That(it.Options.Special[2][0x23], Is.EqualTo(30)); Assert.That(it.Options.M2f0, Is.EqualTo(8));
+        var e = it.Enchant;
+        Assert.That((e.Level, e.Charge, e.Version, e.HistoryItemId, e.Attempts, e.Failures, e.HistoryEnabled, e.FailStack), Is.EqualTo((5, 9, (byte) 2, 11L, 12, 13, true, 14)));
+        Assert.That(e.Options[0x10], Is.EqualTo(50));
+        Assert.That((it.LimitBreak.Level, it.LimitBreak.Stat[4], it.LimitBreak.Special[0x12]), Is.EqualTo((2, 60, 70)));
+        var t = it.Transfer;
+        Assert.That((t.Rule, t.B38, t.Count, t.Max, t.B3F, t.B42, t.HasBinding, t.BindingId, t.BindingName), Is.EqualTo((3, true, 1, 2, true, false, true, 77L, "Solo")));
+        Assert.That(it.Socket.MaxSlot, Is.EqualTo(3)); Assert.That(it.Socket.Gems[0], Is.Null);
+        var g = it.Socket.Gems[1];
+        Assert.That((g.GemId, g.HasBind, g.BindCharacterId, g.BindName, g.HasLock, g.LockState, g.LockExpireTime), Is.EqualTo((40000001, true, 78L, "Gem", true, (byte) 1, 500L)));
+        Assert.That((it.CoupleId, it.CoupleName, it.CoupleFlag, it.BindingId, it.BindingName), Is.EqualTo((9L, "Partner", true, 79L, "Owner")));
+    }
+
+    [Test] public void AReReadStartsTheBlocksOverLikeTheClient() {
+        var it = ItemReader.ReadEquip(R(true, out _));
+        var w = new ByteWriter(); Body(w, false);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        ItemReader.ReadBodyInto(r, it);
+        Assert.That(r.ReadInt(), Is.EqualTo(-12345));
+        Assert.That(it.Options.Stat[0], Is.Empty); Assert.That(it.Enchant.Options, Is.Empty); Assert.That(it.LimitBreak.Stat, Is.Empty);
+        Assert.That(it.Socket.Gems, Is.Empty);
+        // vfunc_2 assigns the binding only when present; the couple name is only read with a partner
+        Assert.That((it.Transfer.HasBinding, it.Transfer.BindingName), Is.EqualTo((true, "Solo")));
+        Assert.That((it.CoupleId, it.CoupleName), Is.EqualTo((0L, "Partner")));
+        Assert.That((it.BindingId, it.BindingName), Is.EqualTo((0L, "")));
+    }
+}

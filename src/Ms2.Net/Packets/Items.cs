@@ -9,7 +9,7 @@ public enum EquipSlot : sbyte {
     FH = 12, EY = 13, EA = 14, PD = 15, RI = 16, BE = 17, ER = 18, OH = 19, Unknown = 20,
 }
 
-/// <summary>What the equip record keeps of an item; the long tail (stats, enchant, sockets, binding) is parsed and dropped.</summary>
+/// <summary>An item record as CItem::ReadFromStream (item.cpp:2655) fills it.</summary>
 public sealed class EquipItem {
     public int Id; public long Uid; public EquipSlot Slot; public int Rarity;
     public int Amount; public long CreationTime, ExpiryTime;
@@ -24,8 +24,67 @@ public sealed class EquipItem {
     public byte GemType;
     /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
     public short InventorySlot;
+    /// <summary>CItem m_60, m_88, m_9c, m_a0 (the stream's ints and longs after the times, item.cpp:2658-2664).</summary>
+    public int M60, M9c, RemainUses; public long M88;
+    /// <summary>CItem m_a4 (GetLockState) and m_a8 (GetUnlockTime), item.cpp:2665-2666.</summary>
+    public byte LockState; public long UnlockTime;
+    /// <summary>CItem m_d8 (u16), m_d4 (bool), m_dc (item.cpp:2667-2669).</summary>
+    public ushort GlamorForges; public bool D4; public int GachaDismantleId;
+    /// <summary>CItemStatus (itemsocketsystemutil.cpp:1868): the option sets, the enchant and the limit break.</summary>
+    public ItemOptions Options = new();
+    public ItemEnchant Enchant = new();
+    public ItemLimitBreak LimitBreak = new();
+    /// <summary>CItemTransfer::vfunc_2 (itemsocketsystemutil.cpp:2711).</summary>
+    public ItemTransfer Transfer = new();
+    /// <summary>CItemSocket::ReadFromStream (itemsocket.cpp:314).</summary>
+    public ItemSocket Socket = new();
+    /// <summary>CItemCoupleInfo::ReadFromStream (item.cpp:2847): the partner's id (0 = none), name and a flag.</summary>
+    public long CoupleId; public string CoupleName = ""; public bool CoupleFlag;
+    /// <summary>CItem m_spBinding, CItemBinding::FUN_140634700 (itemsocketsystemutil.cpp:2592): the character id and name.</summary>
+    public long BindingId; public string BindingName = "";
     /// <summary>CItem::m_2c (IsNew 0x1405268f0, SetNew 0x1405268d0; ctor default 0). Set only by OnItemInventory mode 7 (scenestategame.cpp:2844); cleared by InvenSlot::vfunc_14 0x141406a60 / vfunc_20 0x141408cd0 and the tab clear FUN_14199be00.</summary>
     public bool IsNew;
+}
+
+/// <summary>CItemOption::Deserialize (itemoptiondata_1.cpp:242): 5 groups of stat and special options (id -> BaseOption
+/// m_nValue, the one int BaseOption::Read reads), then m_n2f0.</summary>
+public sealed class ItemOptions {
+    public readonly Dictionary<int, int>[] Stat = { new(), new(), new(), new(), new() };
+    public readonly Dictionary<int, int>[] Special = { new(), new(), new(), new(), new() };
+    public int M2f0;
+}
+
+/// <summary>CItemEnchantInfo::Read (itemenchantinfo.cpp:194): level, charge, version, the history (Unk_EnchantHistory::Read
+/// :28), then the options (int id -> value).</summary>
+public sealed class ItemEnchant {
+    public int Level, Charge; public byte Version;
+    public long HistoryItemId; public int Attempts, Failures; public bool HistoryEnabled; public int FailStack;
+    public readonly Dictionary<int, int> Options = new();
+}
+
+/// <summary>UnlimitedEnchantInfo::ReadFromStream (unlimitedenchantinfo.cpp:101): level, stat options, special options.</summary>
+public sealed class ItemLimitBreak {
+    public int Level;
+    public readonly Dictionary<int, int> Stat = new(), Special = new();
+}
+
+/// <summary>CItemTransfer::vfunc_2: rule, m_b38, count, max, m_b3F, m_b42, then the binding when present.</summary>
+public sealed class ItemTransfer {
+    public int Rule, Count, Max; public bool B38, B3F, B42;
+    public bool HasBinding; public long BindingId; public string BindingName = "";
+}
+
+/// <summary>CItemSocket: m_nMaxSlot and the slots (null = empty). A gem: TSocketGemStoneInfo::ReadFromStream (itemsocket.cpp:228).</summary>
+public sealed class ItemSocket {
+    public int MaxSlot;
+    public readonly List<SocketGem> Gems = new();
+}
+
+/// <summary>TSocketGemStoneInfo: the gem id, the bind (TSocketGemStoneBind::Read :37) and the lock (TSocketGemStoneLock :51).</summary>
+public sealed class SocketGem {
+    public int GemId;
+    public bool HasBind; public long BindCharacterId; public string BindName = "";
+    public bool HasLock; public byte LockState; public long LockExpireTime;
 }
 
 /// <summary>The blocks CItem::ReadFromStream reads after the item status, in this order: ugc, gem (a badge), custom music score, pet.</summary>
@@ -122,17 +181,17 @@ public static class ItemReader {
 
     static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false, ItemExtra? forceExtra = null) {
         it.Amount = r.ReadInt();
-        r.ReadInt(); // -1
+        it.M60 = r.ReadInt();
         it.CreationTime = r.ReadLong();
         it.ExpiryTime = r.ReadLong();
-        r.ReadLong();
-        r.ReadInt(); // time changed option
-        r.ReadInt(); // remain uses
-        r.ReadBool(); // locked
-        r.ReadLong(); // unlock time
-        r.ReadShort(); // glamor forges
-        r.ReadBool();
-        r.ReadInt(); // gacha dismantle id
+        it.M88 = r.ReadLong();
+        it.M9c = r.ReadInt();
+        it.RemainUses = r.ReadInt();
+        it.LockState = r.ReadByte();
+        it.UnlockTime = r.ReadLong();
+        it.GlamorForges = (ushort) r.ReadShort();
+        it.D4 = r.ReadBool();
+        it.GachaDismantleId = r.ReadInt();
 
         it.Color = r.ReadEquipColor();
         switch (slot) {
@@ -147,28 +206,29 @@ public static class ItemReader {
                 break;
         }
 
-        // ItemStats: 5 option sets, then merge id
+        // CItemStatus::ReadFromStream: the options, the enchant, the limit break
+        // a re-read starts over as the client's do (ClearAll, Reset, the clears, RemoveAll)
+        var o = it.Options = new ItemOptions();
         for (int i = 0; i < 5; i++) {
             int basic = (ushort) r.ReadShort();
-            for (int j = 0; j < basic; j++) { r.ReadShort(); r.ReadInt(); }
+            for (int j = 0; j < basic; j++) { int id = (ushort) r.ReadShort(); o.Stat[i][id] = r.ReadInt(); }
             int special = (ushort) r.ReadShort();
-            for (int j = 0; j < special; j++) { r.ReadShort(); r.ReadInt(); }
+            for (int j = 0; j < special; j++) { int id = (ushort) r.ReadShort(); o.Special[i][id] = r.ReadInt(); }
         }
-        r.ReadInt();
+        o.M2f0 = r.ReadInt();
 
-        // ItemEnchant
-        r.ReadInt(); r.ReadInt(); r.ReadByte();
-        r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool(); // enchant history
-        r.ReadInt();
+        var e = it.Enchant = new ItemEnchant();
+        e.Level = r.ReadInt(); e.Charge = r.ReadInt(); e.Version = r.ReadByte();
+        e.HistoryItemId = r.ReadLong(); e.Attempts = r.ReadInt(); e.Failures = r.ReadInt(); e.HistoryEnabled = r.ReadBool(); e.FailStack = r.ReadInt();
         int ench = r.ReadByte();
-        for (int i = 0; i < ench; i++) { r.ReadInt(); r.ReadInt(); }
+        for (int i = 0; i < ench; i++) { int id = r.ReadInt(); e.Options[id] = r.ReadInt(); }
 
-        // ItemLimitBreak
-        r.ReadInt();
-        uint lb = (uint) r.ReadInt();
-        for (uint i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
-        lb = (uint) r.ReadInt();
-        for (uint i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
+        var lb = it.LimitBreak = new ItemLimitBreak();
+        lb.Level = r.ReadInt();
+        uint n = (uint) r.ReadInt();
+        for (uint i = 0; i < n; i++) { int id = (ushort) r.ReadShort(); lb.Stat[id] = r.ReadInt(); }
+        n = (uint) r.ReadInt();
+        for (uint i = 0; i < n; i++) { int id = (ushort) r.ReadShort(); lb.Special[id] = r.ReadInt(); }
 
         var extra = forceExtra ?? (badge ? ItemExtra.Gem : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None);
         if ((extra & ItemExtra.Ugc) != 0) {
@@ -195,24 +255,25 @@ public static class ItemReader {
             r.ReadUnicodeString(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool();
         }
 
-        // ItemTransfer
-        r.ReadInt(); r.ReadBool(); r.ReadInt(); r.ReadInt(); r.ReadBool(); r.ReadBool();
-        if (r.ReadBool()) { r.ReadLong(); r.ReadUnicodeString(); }
+        var t = it.Transfer;
+        t.Rule = r.ReadInt(); t.B38 = r.ReadBool(); t.Count = r.ReadInt(); t.Max = r.ReadInt(); t.B3F = r.ReadByte() != 0; t.B42 = r.ReadByte() != 0;
+        // the binding is only assigned when present (vfunc_2 keeps an earlier one otherwise)
+        if (r.ReadBool()) { t.HasBinding = true; t.BindingId = r.ReadLong(); t.BindingName = r.ReadUnicodeString(); }
 
-        // ItemSocket
-        r.ReadByte();
-        int unlocked = r.ReadByte();
-        for (int i = 0; i < unlocked; i++) {
-            if (!r.ReadBool()) continue;
-            r.ReadInt();
-            if (r.ReadBool()) { r.ReadLong(); r.ReadUnicodeString(); }
-            if (r.ReadBool()) { r.ReadByte(); r.ReadLong(); }
+        var so = it.Socket = new ItemSocket();
+        so.MaxSlot = r.ReadByte();
+        int count = r.ReadByte();
+        for (int i = 0; i < count; i++) {
+            if (!r.ReadBool()) { so.Gems.Add(null); continue; }
+            var g = new SocketGem { GemId = r.ReadInt() };
+            if (g.HasBind = r.ReadBool()) { g.BindCharacterId = r.ReadLong(); g.BindName = r.ReadUnicodeString(); }
+            if (g.HasLock = r.ReadBool()) { g.LockState = r.ReadByte(); g.LockExpireTime = r.ReadLong(); }
+            so.Gems.Add(g);
         }
 
-        // ItemCoupleInfo
-        if (r.ReadLong() != 0) { r.ReadUnicodeString(); r.ReadBool(); }
-        // ItemBinding
-        r.ReadLong(); r.ReadUnicodeString();
+        // the couple's name and flag are only read for a partner (an earlier name stays otherwise)
+        if ((it.CoupleId = r.ReadLong()) != 0) { it.CoupleName = r.ReadUnicodeString(); it.CoupleFlag = r.ReadBool(); }
+        it.BindingId = r.ReadLong(); it.BindingName = r.ReadUnicodeString();
     }
 
     static float[] ReadFloats(ByteReader r, int n) {
