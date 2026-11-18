@@ -41,6 +41,35 @@ public static class UiFixture
     };
 
     /// <summary>
+    /// FIXTURE npc shop in the shape of the shop packet (Inbound 0x51 commands 0 and 1): Surnuny's gear shop (npc 11000004,
+    /// shop 106) with the twelve products a capture of it listed, their serial, item, grade, price and category as the
+    /// server's shop table gives them (one in stock each, paid in mesos). The restock fields are the shop table's (restock on,
+    /// 1,000 mesos); the restock time and interval are made up (the server's are not known): due in 30 s of the client's
+    /// default interval.
+    /// </summary>
+    public static (Ms2.Net.Packets.ShopInfo Info, Ms2.Net.Packets.ShopProduct[] Products) GearShop(long now)
+    {
+        var rows = new (int Serial, int Item, int Grade, int Price, string Category)[]
+        {
+            (16, 11400003, 1, 2360, "CL"), (24, 11400012, 1, 4470, "CL"), (25, 11400014, 1, 5160, "CL"),
+            (34, 11500006, 1, 4470, "PA"), (46, 11600002, 1, 3560, "GL"), (74, 11700027, 1, 3030, "SH"),
+            (143, 15100002, 1, 2790, "BH"), (146, 15100005, 1, 4470, "BH"), (158, 15300005, 1, 4470, "BH"),
+            (172, 11500399, 1, 5160, "PA"), (198, 11300009, 2, 8230, "CP"), (377, 15500003, 2, 8230, "BH"),
+        };
+        var info = new Ms2.Net.Packets.ShopInfo
+        {
+            NpcId = 11000004, ShopId = 106, ResetTime = now + 30, ProductCount = rows.Length, TabShopId = 5,
+            ResetEnable = true, ResetPrice = 1000, HideReset = false, Icon = "",
+        };
+        var products = rows.Select(r => new Ms2.Net.Packets.ShopProduct
+        {
+            Serial = r.Serial, ItemId = r.Item, Rarity = r.Grade, Price = r.Price, OriginalPrice = r.Price, Count = 1, Limit = 1,
+            Categories = r.Category,
+        }).ToArray();
+        return (info, products);
+    }
+
+    /// <summary>
     /// FIXTURE character window record without a server: the own FieldAddUser's user block, equips and gems, a Stat packet with all 35 stats
     /// (three values each, Ms2.Net PlayerStat) and the AttributePoint loads (modes 0 and 1), in the parsed packet shapes, with
     /// real-shaped values for the HUD fixture's level 21 Knight, not a recorded character.

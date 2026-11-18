@@ -72,6 +72,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-party-menu") long.TryParse(args[i + 1], out partyMenuShot);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots") quickSlotShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots-player") quickSlotPlayer = args[i + 1].Split(',').Select(int.Parse).ToArray();
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--shop") shopShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
@@ -1210,6 +1211,50 @@ public partial class HudScene : Node
 
     // ---- skill window: uiskillbooktreedialog run by its own ActionScript, UISkillBookTreeDialog's C++ side as SkillBookTreeController --
 
+    // ---- npc shop: uishopdialog run by its own ActionScript, UIShopDialog's C++ side as ShopController ----------------
+
+    MovieDialog shopMovie;
+    Ms2.Ui.Shop.ShopController shop;
+    string shopShot;                            // --shop all|weapons|armor|buyback: the fixture gear shop on that filter or tab
+
+    /// <summary>
+    /// Opens the npc shop over the fixture gear shop (<see cref="UiFixture.GearShop"/>, in the shop packet's shape): the
+    /// header before the movie loads, the products after, as the server's commands 0 and 1 arrive. Buy, sell and restock
+    /// requests are only logged.
+    /// </summary>
+    void OpenShop()
+    {
+        long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var (info, products) = UiFixture.GearShop(Now());
+        var c = new Ms2.Ui.Shop.ShopController
+        {
+            Categories = new Ms2.Ui.Shop.ShopCategoryTable(assets.Packs),
+            Npcs = World.FieldContents.Npcs(assets.Packs),
+            ServerTime = Now,
+            ShopSeedResetTime = (int)new ClientConstants(assets.Packs).Float("ShopSeedResetTime", 0),
+        };
+        c.Request += (name, _) => GD.Print($"shop: {name} is not sent (display only)");
+        c.OpenDialog += id => GD.Print($"shop: dialog 0x{id:x} is not in this HUD");
+        c.ReadShopInfo(info);
+        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        c.ReadProducts(products);
+        shop = c; shopMovie = m;
+        uiRoot.AddChild(m);
+    }
+
+    /// <summary>The shot's filter or tab, picked through the movie's own list and tab bar (their change events call back).</summary>
+    void PickShopView(string view)
+    {
+        if (shopMovie == null || shop?.ShopView == null) return;
+        var h = shopMovie.Host;
+        if (view == "buyback") { h.Set(h.Get(shop.ShopView, "m_tab"), "selectedIndex", 1); return; }
+        // shopcategory.xml category 5: the Weapons and Armor tabs' name ids
+        int nameId = view switch { "weapons" => 2017, "armor" => 2018, _ => 0 };
+        if (nameId == 0) return;
+        int row = shop.Tabs(0).ToList().FindIndex(r => r.Tab.NameId == nameId);
+        if (row >= 0) h.Set(h.Get(shop.ShopView, "m_categoryList"), "selectedIndex", row);
+    }
+
     MovieDialog skillBookMovie;                 // from open until OnEndClose
     Ms2.Ui.Hud.SkillBookTreeController skillBook;
     int[] skillShot;                            // --skillbook subJob[,level]
@@ -1317,6 +1362,7 @@ public partial class HudScene : Node
     {
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
+        shop?.Process();                                                        // UIShopDialog::vfunc_72
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
@@ -1345,6 +1391,14 @@ public partial class HudScene : Node
             if (skillShot.Length > 1) hudModel.Player.Level = skillShot[1];
             ToggleSkillBook();
         }
+        if (shopShot != null && frames == 200)
+        {
+            hudModel.Player.Mesos = 1_001_000;          // the capture's purse
+            OpenInventory();
+            OpenShop();
+        }
+        if (shopShot != null && frames == 210) shop?.PlaceBesideInventory(inventory, inventory != null && !inventory.IsClosed);
+        if (shopShot != null && frames == 230) PickShopView(shopShot);
         if (worldMapShot >= 1 && frames == 240) worldMapSide?.SetPendingSearch("Henesys");
         if (worldMapShot >= 2 && frames == 260) worldMapSide?.OnCallback("onClickSearchInfo", new object[] { 2000076u });
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
