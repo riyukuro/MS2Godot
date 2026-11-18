@@ -243,6 +243,9 @@ public class MyInfoTests
         c.OnCallback("onChangeTab", new object[] { 2 });
         var empty = c.GetSlotTooltip(MyInfoController.GemBag + ".0");
         Assert.That((empty["tooltip"], empty["text"], empty["tooltipAlign"]), Is.EqualTo(("export_common_tooltip_tooltipText", "$s_tooltip_myinfo_gem_trans", 3)));
+        var emptyShown = TooltipTests.Draw(empty);
+        TestContext.WriteLine("empty badge: " + string.Join(" | ", emptyShown));
+        Assert.That(emptyShown, Has.Some.Contains("Transparency Badge"), "lv10_badges_hover_empty_slot.png");
         var badge = c.GetSlotTooltip(MyInfoController.GemBag + ".2");
         Assert.That(badge["enablePuton"], Is.EqualTo(""));
         Assert.That(badge.ContainsKey("itemName"), Is.False, "a gem's name (GetGemName) is not ported");
