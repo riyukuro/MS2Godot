@@ -29,6 +29,7 @@ public sealed class GameTables
         Items = new Items.ItemDataTable(packs);
         GachaBoxes = new Items.GachaBoxTable(packs);
         ItemSockets = new Items.ItemSocketTable(packs);
+        ItemModels = new Items.ItemModelTable(packs);
         if (packs.Exists("Xml", "table/nextexp.xml"))
             foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/nextexp.xml")).Descendants("exp"))
                 if (int.TryParse((string)e.Attribute("level"), out var lv) && long.TryParse((string)e.Attribute("value"), out var v))
@@ -137,6 +138,8 @@ public sealed class GameTables
     public readonly Items.GachaBoxTable GachaBoxes = Ms2.Ui.Items.GachaBoxTable.Empty;
     /// <summary>table/itemSocket.xml (CItemSocketTable); empty without data.</summary>
     public readonly Items.ItemSocketTable ItemSockets = Ms2.Ui.Items.ItemSocketTable.Empty;
+    /// <summary>itemmodel/*.xml (CItemDataTable::GetModel); empty without data.</summary>
+    public readonly Items.ItemModelTable ItemModels = Ms2.Ui.Items.ItemModelTable.Empty;
     /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;

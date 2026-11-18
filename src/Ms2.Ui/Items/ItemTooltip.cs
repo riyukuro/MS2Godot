@@ -62,6 +62,8 @@ public sealed class ItemTooltip
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
+        if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)
+            SetCustomizeColor(item);                                              // FUN_1409d2cb0; FUN_1409d3010 after it is not ported
         Data.SetTooltipAlign((Flags & 0x40) != 0 || (Flags & 2) != 0 ? 9 : 5);
         return true;
     }
@@ -127,6 +129,27 @@ public sealed class ItemTooltip
         if (d.IsMultiRideItem && model.IsFeatureEnabled(0xad)) return;
         if (d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19) return;
         Data["itemGuideDescription"] = Tables.ItemDescription(d.Id, "guideDescription");
+    }
+
+    /// <summary>CItemData::IsCustomizable (itemdata.cpp:1286): a model whose color is on with a palette and one default color.</summary>
+    bool IsCustomizable(ItemData d) =>
+        d.ItemPreset != 0 && Tables.ItemModels.Get(d.ItemPreset) is { } m && m.ColorEnabled && m.Palette != 0 && !m.MultiColor;
+
+    /// <summary>
+    /// ASTooltip::FUN_1409d2cb0 (astooltip.cpp:2499), "customizeColor": with the local player, a customizable item's dye
+    /// hint (s_msg_tooltip_customize_color, 0x9b7). With flag 4 and no default color the client first checks the
+    /// player's equipment for the item (unequipped: s_msg_tooltip_customize_buy_random_color, 0x9b8, above it); that
+    /// lookup is not ported, so the member is left out there. Returns whether the member was set.
+    /// </summary>
+    public bool SetCustomizeColor(Item item)
+    {
+        if (!model.HasLocalPlayer) return false;
+        var d = item.Data;
+        if (!IsCustomizable(d)) return false;
+        bool defaultColor = Tables.ItemModels.Get(d.ItemPreset).DefaultColor(0) >= 0;   // CItemData::FUN_14053e2b0(0)
+        if ((Flags & 4) != 0 && !defaultColor) return false;
+        Data["customizeColor"] = Common("s_msg_tooltip_customize_color");
+        return true;
     }
 
     string CommonF(string key, params object[] args) => Ms2.Quest.ClientFormat.Format(Common(key), args);

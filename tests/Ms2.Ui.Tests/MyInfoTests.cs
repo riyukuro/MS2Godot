@@ -304,6 +304,37 @@ public class MyInfoTests
     }
 
     [Test]
+    public void DyeLineIsTheClientsForACustomizableOutfit()
+    {
+        // the Green Hood Uniform's model 12200398: <customize color="1" colorPalette="10" defaultColorIndex="13">
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        var gm = m.Tables.ItemModels.Get(m.Tables.Items.Get(12200398).ItemPreset);
+        Assert.That(gm, Is.Not.Null);
+        Assert.That((gm.ColorEnabled, gm.Palette, gm.DefaultColor(0), gm.MultiColor), Is.EqualTo((true, 10, 13, false)));
+        var r = new EquipItem { Id = 12200398, Uid = 9, Rarity = 1, Amount = 1 };
+        var tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+        // outfits_hover_equipped_top.png's line
+        Assert.That(tip.Data["customizeColor"], Is.EqualTo("Can be dyed at the Dye Workshop on Beauty Street."));
+        var shown = TooltipTests.Draw(tip.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Can be dyed at the Dye Workshop"));
+
+        // no local player: the client returns before the line
+        m.HasLocalPlayer = false;
+        tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+        Assert.That(tip.Data.ContainsKey("customizeColor"), Is.False);
+
+        // a weapon has no dyeable model
+        m.HasLocalPlayer = true;
+        tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(new EquipItem { Id = 15000001, Uid = 10, Rarity = 2, Amount = 1 }, m.Tables.Items));
+        Assert.That(tip.Data.ContainsKey("customizeColor"), Is.False);
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");

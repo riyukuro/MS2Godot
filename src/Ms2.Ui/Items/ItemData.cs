@@ -44,6 +44,8 @@ public sealed class ItemData
     /// <summary>ItemFunctionArgs words: the parameter split at ',' (FUN_1408d1e00 -> FUN_14025a680, CStringW::Tokenize, empty
     /// tokens dropped); not split when the parameter is "&lt;...&gt;" (parsed as xml values).</summary>
     public readonly List<string> FunctionArgs = new();
+    /// <summary>CItemData::Load (itemdata.cpp:364): &lt;tool itemPreset&gt;, the item model id.</summary>
+    public int ItemPreset;
     /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt;.</summary>
     public int InstallObjCode;
 
@@ -93,6 +95,7 @@ public sealed class ItemData
             bool xml = s.Length > 1 && s[0] == '<' && s[^1] == '>';
             if (!xml) d.FunctionArgs.AddRange(s.Split(',', StringSplitOptions.RemoveEmptyEntries));
         }
+        if (env.Element("tool") is { } tool) Int(tool, "itemPreset", ref d.ItemPreset);
         if (env.Element("install") is { } inst) Int(inst, "objCode", ref d.InstallObjCode);
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
         return d;
@@ -175,7 +178,7 @@ public sealed class ItemData
     }
 
     // TiXmlElement::QueryBoolAttribute (tinyxml.cpp:620): true/yes/1 or false/no/0, any case; anything else leaves the value
-    static void Bool(XElement e, string name, ref bool v)
+    internal static void Bool(XElement e, string name, ref bool v)
     {
         if ((string)e.Attribute(name) is not { } s) return;
         if (s.Equals("true", StringComparison.OrdinalIgnoreCase) || s.Equals("yes", StringComparison.OrdinalIgnoreCase) || s == "1") v = true;
