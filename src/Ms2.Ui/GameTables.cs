@@ -31,7 +31,7 @@ public sealed class GameTables
             foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/nextexp.xml")).Descendants("exp"))
                 if (int.TryParse((string)e.Attribute("level"), out var lv) && long.TryParse((string)e.Attribute("value"), out var v))
                     nextExp.TryAdd(lv, v);
-        var s = new GameStrings(packs, languages);
+        var s = strings = new GameStrings(packs, languages);
         jobNames = s.Table("jobname", "name");
         mapNames = s.Table("mapname", "name");
         mapTileDescs = s.Table("maptiledesc", "name");
@@ -136,12 +136,24 @@ public sealed class GameTables
     public int AdventureLevelStartLevel = 50;
     /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
+    public int MaxChatLength = 50;
+    public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
     /// <summary>Client::Constants SkillPointLimitLevel1 / SkillPointLimitLevel2 (defaults 80, 100).</summary>
     public int SkillPointLimitLevel1 = 80, SkillPointLimitLevel2 = 100;
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
-    public int MaxChatLength = 50;
-    public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
+    /// <summary>CStringTable::FUN_141811980(4, id): the skill's name (string table 4 "skillName"); "" when unknown.</summary>
+    public string SkillName(uint id) => Lazy(ref skillNames, "skillname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    /// <summary>CStringTable::FUN_141811980(8, id): string table 8 "slotName" (a weapon kind's name); "" when unknown.</summary>
+    public string SlotName(int id) => Lazy(ref slotNames, "slotname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    /// <summary>The "name" text of the skill's row in stringSkillDescription.xml (CStringTable::GetSkillDescription
+    /// @stringtable.cpp:750 reads the tag "name"); null when the skill has no row.</summary>
+    public string SkillDescriptionText(uint id) => Lazy(ref skillDescs, "stringskilldescription", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : null;
+
+    GameStrings strings;
+    Dictionary<string, string> skillNames, slotNames, skillDescs;
+    Dictionary<string, string> Lazy(ref Dictionary<string, string> d, string table, string attr)
+        => d ??= strings?.Table(table, attr) ?? new Dictionary<string, string>();
     /// <summary>The token caps by currency (GetCurrencyAmountAndCap, uicommon.cpp): Client::Constants HonorTokenMax,
     /// KarmaTokenMax, LuTokenMax, HabiTokenMax, ReverseCoinMax, MentorTokenMax, MenteeTokenMax (Define default 4000 each,
     /// unit_1402ab440_constantsblocks.cpp:972-978); 0xf and 0x10 have no cap.</summary>

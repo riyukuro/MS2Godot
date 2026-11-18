@@ -98,6 +98,48 @@ public class SkillTableTests
     }
 
     [Test]
+    public void TheSkillTooltipOfALevelOneArrowStream()
+    {
+        var tables = Tables();
+        var t = tables.Skills;
+        var js = new JobSystem(t);
+        js.Read(1, 50, t.Jobs.GetJobData(50).Skills.Select(r => new BookSkill((int)r.SkillId, 1, false, r.IsLearn, false)));
+        var player = new SkillTooltipPlayer { Jobs = js, Level = 1 };
+        var o = SkillTooltip.Build(tables, player, ArrowStream, 1, 0x10, true);
+        Assert.That(o, Is.Not.Null);
+        Assert.That((o["tooltip"], o["skillName"], o["iconPath"], o["tooltipAlign"]),
+            Is.EqualTo(("export_common_tooltip_kindsSkill", "Arrow Stream", "./Data/Resource/Image/skill/icon/10500001.png", 5)));
+        var stat = (Dictionary<string, object>)o["statDescription"];
+        Assert.That((stat["type"], stat["level"]), Is.EqualTo((1, "Level 1")));
+        // learnt, on no quick slot: the right-click hint
+        Assert.That(o.ContainsKey("enablePuton") && !o.ContainsKey("itemEquip"), Is.True);
+        // the capture: "[Requirements]" alone (the job row has a level list, level 1 needs none)
+        var req = ((List<object>)o["requireDescription"]).Cast<Dictionary<string, object>>().ToList();
+        Assert.That(req.Select(r => r["text"]), Is.EqualTo(new[] { "[Requirements]" }));
+        // Active; Long Range / Physical; Weapon Required: Two-handed Bow, gray with no weapon: the entry is rh 51 lh 0 and
+        // FUN_1409e6d00 matches an empty left hand to lh 0
+        var extra = ((List<object>)o["extraDescription"]).Cast<Dictionary<string, object>>().ToList();
+        Assert.That(extra.Select(r => ((string)r["text"], (string)r["color"])), Is.EqualTo(new[]
+            { ("Active", "aaaaaa"), ("Long Range / Physical", "aaaaaa"), ("Weapon Required: Two-handed Bow", "aaaaaa") }));
+        Assert.That(SkillTooltip.Weapons(tables, 51, 0, t.GetSkillData(ArrowStream).Weapons).Allowed, Is.True);
+        // the description's {0} fields are filled from the level's stringParam
+        var desc = (string)o["skillDescription"];
+        Assert.That(desc, Is.Not.Empty);
+        Assert.That(desc, Does.Not.Contain("{0}"));
+        // on a quick slot: "Equipped" instead of the hint
+        player.QuickSlotOf = _ => 3;
+        var q = SkillTooltip.Build(tables, player, ArrowStream, 1, 0x10, true);
+        Assert.That((q["itemEquip"], q.ContainsKey("enablePuton")), Is.EqualTo(("Equipped", false)));
+        // 10500021 at level 1: level 16 and Arrow Stream 3 unmet (red), 10500011 at 1 learnt with the rank (yellow)
+        var b = ((List<object>)SkillTooltip.Build(tables, player, ArrowBarrage, 1, 0x10, false)["requireDescription"]).Cast<Dictionary<string, object>>().ToList();
+        TestContext.WriteLine(string.Join(" | ", b.Select(r => $"{r["text"]} {r["color"]}")));
+        Assert.That(b.Count, Is.EqualTo(4));
+        Assert.That(b.Skip(1).Select(r => (string)r["color"]), Is.EqualTo(new[] { "ff4040", "ff4040", "ffd400" }));
+        Assert.That((string)b[1]["text"], Is.EqualTo("Level 16+"));
+        Assert.That((string)b[2]["text"], Is.EqualTo("Arrow Stream [Level 3+]"));
+    }
+
+    [Test]
     public void LevelSkillPointsFollowTheLimits()
     {
         Assert.That(JobSystem.GetLevelSkillPoint(9, 1, 80, 100), Is.EqualTo(0));

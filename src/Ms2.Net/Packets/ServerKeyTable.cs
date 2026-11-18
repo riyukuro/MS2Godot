@@ -36,6 +36,16 @@ public sealed class ServerKeyTable {
     public QuickSlotEntry Entry(int page, int slot) =>
         page >= 0 && page < pages.Count && pages[page].TryGetValue(slot, out var e) ? e : default;
 
+    /// <summary>CKeyTable::FindQuickSlotBySkillAndItemUid @0x14142e090 (client/ms2/keytable.cpp): the slot of the current page that
+    /// holds the skill and item uid, -1 when none does, 0 when the page does not exist. The client walks a CAtlMap; with the
+    /// same entry on two slots the one returned may differ.</summary>
+    public int FindQuickSlotBySkillAndItemUid(int skillId, long itemUid) {
+        if (CurrentPage < 0 || CurrentPage >= pages.Count) return 0;
+        foreach (var (slot, e) in pages[CurrentPage].OrderBy(kv => kv.Key))
+            if (e.SkillId == skillId && e.ItemUid == itemUid) return slot;
+        return -1;
+    }
+
     /// <summary>OnKeyTable: applies one packet; returns the mode.</summary>
     public int Apply(ByteReader r) {
         int mode = r.ReadByte();

@@ -1130,6 +1130,22 @@ public partial class HudScene : Node
             Points = live?.SkillPoints ?? new Ms2.Ui.Skills.SkillPoints(),
             IsQuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
         };
+        // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061); no equipment feed
+        // yet, so both hands read empty
+        var tipPlayer = new Ms2.Ui.Skills.SkillTooltipPlayer
+        {
+            Jobs = jobs,
+            Level = hudModel.Player.Level,
+            IsQuestRewarded = c.IsQuestRewarded,
+            QuestName = id => questTable?.QuestName((int)id) ?? "",
+            QuickSlotOf = id => hudModel.ServerKeys?.FindQuickSlotBySkillAndItemUid((int)id, 0) ?? -1,
+        };
+        c.SkillTooltip = (d, id, level) =>
+        {
+            tipPlayer.Level = hudModel.Player.Level;
+            tipPlayer.DialogSimulator = d.Simulator;
+            return Ms2.Ui.Skills.SkillTooltip.Build(hudModel.Tables, tipPlayer, id, level, 0x10, true);
+        };
         c.Button += name => GD.Print($"skill book: {name} is not sent (display only)");
         Action<Ms2.Net.Packets.SkillBookTreePacket> onTree = c.OnSkillBookTree;
         if (live != null)
