@@ -11,6 +11,7 @@ public sealed class AbcContext
     readonly Ns[] ns;
     readonly Ns[][] sets;
     readonly Name?[] names;
+    readonly string[] typeNames;
     public readonly AsClass[] Classes;
     public readonly List<ScriptObject> Scripts = new();
     readonly Code[] code;
@@ -25,6 +26,7 @@ public sealed class AbcContext
         sets = new Ns[abc.NsSets.Length][];
         for (int i = 0; i < sets.Length; i++) sets[i] = abc.NsSets[i].Select(x => ns[x]).ToArray();
         names = new Name?[abc.Multinames.Length];
+        typeNames = new string[abc.Multinames.Length];
         Classes = new AsClass[abc.Instances.Length];
         code = new Code[abc.Methods.Length];
         activationTraits = new TraitTable[abc.Methods.Length];
@@ -51,9 +53,11 @@ public sealed class AbcContext
         return r;
     }
 
-    public string TypeNameAt(int mn)
+    /// <summary>A type multiname's qualified name ("uri.Local", or the local name); made once per multiname.</summary>
+    public string TypeNameAt(int mn) => mn <= 0 ? null : typeNames[mn] ??= MakeTypeName(mn);
+
+    string MakeTypeName(int mn)
     {
-        if (mn <= 0) return null;
         var m = Abc.Multinames[mn];
         if (m.Kind == 0x1D) return "Vector";
         var n = NameAt(mn);
