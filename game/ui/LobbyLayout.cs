@@ -14,14 +14,13 @@ public static class LobbyLayout
 {
     /// <summary>
     /// The scenes run in window pixels, as the HUD does: the project's canvas stretch is off while they run, so the movies
-    /// can use the client's own scale. Restored when the scene leaves the tree.
+    /// can use the client's own scale (or the emulated full-window size, <see cref="ScreenMode.UseWindowPixels"/>).
+    /// Restored when the scene leaves the tree.
     /// </summary>
     public static void UseWindowPixels(Node scene)
     {
-        var w = scene.GetWindow();
-        var outer = w.ContentScaleMode;
-        w.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
-        scene.TreeExiting += () => w.ContentScaleMode = outer;
+        var restore = ScreenMode.UseWindowPixels(scene.GetWindow());
+        scene.TreeExiting += restore;
     }
 
     /// <summary>Common.getLobbyRatioY with CommonPath.flash false: a stage taller than 1200 scales by its height over 1200.</summary>

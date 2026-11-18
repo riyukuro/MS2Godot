@@ -51,7 +51,7 @@ public partial class HudScene : Node
         sizeSource.SizeChanged += QueueRelayout;
     }
 
-    Window.ContentScaleModeEnum outerScaleMode;
+    Action restoreScale;
 
     /// <summary>
     /// The field draws to the whole window, as the client's back buffer is the window's client area and every movie's
@@ -60,8 +60,7 @@ public partial class HudScene : Node
     /// </summary>
     public override void _EnterTree()
     {
-        outerScaleMode = GetWindow().ContentScaleMode;
-        GetWindow().ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
+        restoreScale = ScreenMode.UseWindowPixels(GetWindow());
     }
 
     /// <summary>
@@ -71,7 +70,8 @@ public partial class HudScene : Node
     public override void _ExitTree()
     {
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
-        GetWindow().ContentScaleMode = outerScaleMode;
+        restoreScale?.Invoke();
+        restoreScale = null;
     }
 
     Viewport sizeSource;            // the viewport whose size_changed relays the HUD out, while connected

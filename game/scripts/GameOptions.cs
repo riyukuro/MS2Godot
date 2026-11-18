@@ -18,6 +18,18 @@ namespace Ms2Godot;
 public static class GameOptions
 {
     public const string UserFile = "user://Config/GameOption.xml";
+
+    /// <summary>The file in use: <see cref="UserFile"/>, or the one named by the user argument --options-file (test runs
+    /// that must not read or write the shared user folder).</summary>
+    public static string FilePath
+    {
+        get
+        {
+            var args = OS.GetCmdlineUserArgs();
+            for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--options-file") return System.IO.Path.GetFullPath(args[i + 1]);
+            return ProjectSettings.GlobalizePath(UserFile);
+        }
+    }
     const string DefaultEntry = "table/default/defaultgameoption.xml";
 
     /// <summary>The KMS2 client's region index, DAT_143ab0248 = 0 (KR, localepath.cpp:505-542).</summary>
@@ -45,7 +57,7 @@ public static class GameOptions
     {
         current = new GameOption(RegionIndex);
         doc = null;
-        var path = ProjectSettings.GlobalizePath(UserFile);
+        var path = FilePath;
         var user = ReadFile(path);
         FromDefault = user == null || !GameOption.IsCurrent(user);
         PackSet packs = null;
@@ -80,11 +92,15 @@ public static class GameOptions
     {
         var o = Current;
         o.Save(doc);
-        var path = ProjectSettings.GlobalizePath(UserFile);
-        System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-        var settings = new XmlWriterSettings { Indent = true, IndentChars = "    ", Encoding = new System.Text.UTF8Encoding(false) };
-        using var w = XmlWriter.Create(path, settings);
-        doc.Save(w);
+        var path = FilePath;
+        try
+        {
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
+            var settings = new XmlWriterSettings { Indent = true, IndentChars = "    ", Encoding = new System.Text.UTF8Encoding(false) };
+            using var w = XmlWriter.Create(path, settings);
+            doc.Save(w);
+        }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { GD.PushWarning("options: " + ex.Message); }
     }
 
     static XDocument ReadFile(string path)

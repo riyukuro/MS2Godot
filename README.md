@@ -305,14 +305,37 @@ The project contains no local paths. The paths are looked up in this order:
 
 ### Window
 
-The client's windowed mode (`CWindowService::InitInstance`, window style `0xCA0000`: a caption, the system menu and a
-minimise box, with no maximise box and no sizing frame) cannot be maximised or resized by dragging; it changes size only
-through Options -> Resolution. This project does not have that option yet, so for now its window stays resizable and
-starts at 1280x720, centred. It will take the client's fixed window once the resolution option exists. The front-end
-scenes (login, character select, character create) lay themselves out again when the window size changes.
+The window follows the client's graphic options (`GameOption.xml`, see Options below). These are the screen mode and
+the resolution, applied as `MS2RenderService::OnInit` and `CWindowService::ApplyWindowMode` apply them:
 
-Not the client: the client's full-screen option switches the display itself to the chosen resolution (an exclusive
-display mode, not a window stretched over the desktop). This project has no full-screen option.
+- **Window** (screen mode 1): the client's window has the style `0xCA0000`: a caption, the system menu and a minimise
+  box, with no maximise box and no sizing frame. Its size is the chosen resolution, clamped to the screen, and it is
+  centred. Until the options dialog exists, this project's window stays resizable; the front-end scenes lay themselves
+  out again when the window size changes.
+- **Full window** (screen mode 2): on Windows, the display is switched to the chosen resolution, as the client does
+  (`ChangeDisplaySettings`), and a borderless window covers it at 0,0. Leaving it, or quitting, restores the desktop's
+  mode.
+- A fresh or outdated option file starts as a full window at the desktop size and is then saved.
+
+The resolution list is the display's 32-bit modes of at least 1024x720, the client's filter. On Windows the modes come
+from `EnumDisplaySettings`. On Linux they come from XRandR (the primary output's modes, read only). When the list
+cannot be read, it holds only the desktop size.
+
+Not the client:
+
+- Windows: the display change is temporary (`CDS_FULLSCREEN`) rather than written to the registry
+  (`CDS_UPDATEREGISTRY`), so a crash cannot leave the desktop at the game's resolution. The desktop's mode is also
+  restored on an unhandled exception.
+- Linux: the desktop's display mode is never changed. Wayland does not allow it, and on X11 a crash would leave the
+  monitor at the game's resolution. The full window is a borderless window covering the screen. Its content is rendered
+  at the chosen resolution and scaled to the screen with the aspect kept, so it looks like the client's mode switch.
+
+### Options
+
+The client's options are kept in `user://Config/GameOption.xml`, in the client's format (`Config/GameOption.xml` next to
+the client). If that file is missing or not version 21, the shipped `table/default/defaultgameoption.xml` is read
+instead, as the client does. Test runs can use their own file with the user argument `--options-file <path>`, so they
+do not read or write the shared one.
 
 Screenshot mode runs a scripted walk, saves frames to a folder and then quits:
 

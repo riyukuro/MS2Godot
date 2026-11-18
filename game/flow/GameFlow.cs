@@ -45,6 +45,7 @@ public partial class GameFlow : Node
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--flow-shots") shotDir = args[i + 1];
         GameOptions.Load();   // the client builds CGameOption (LoadLanguageOption, LoadGameOption) at startup, gameoption.cpp:1678-1685
+        ScreenMode.ApplyAtStartup();   // then MS2RenderService::OnInit sizes the window from it (ms2renderservice.cpp:699-743)
         Session.Reset();
         Session.GameScene = GameScene;
         UiBridge.ToHost += OnHost;
@@ -71,8 +72,15 @@ public partial class GameFlow : Node
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = Script(); }
     }
 
+    /// <summary>The client restores the desktop's display mode on WM_CLOSE and WM_DESTROY (windowservice.cpp:772-790).</summary>
+    public override void _Notification(int what)
+    {
+        if (what == NotificationWMCloseRequest || what == NotificationPredelete) DisplayNative.RestoreDisplayMode();
+    }
+
     public override void _ExitTree()
     {
+        DisplayNative.RestoreDisplayMode();
         UiBridge.ToHost -= OnHost;
         CharacterCreateScene.CharacterCreated -= OnCreated;
         CharacterCreateScene.Cancelled -= OnCreateCancelled;
