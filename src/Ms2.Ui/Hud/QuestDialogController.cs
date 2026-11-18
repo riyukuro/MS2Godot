@@ -4,11 +4,12 @@ using Ms2.Quest;
 namespace Ms2.Ui.Hud;
 
 /// <summary>
-/// UIQuestDialog (ms2/client/ms2/uiquestdialog.cpp): the quest log. This part drives the list: the tab and sub-tab
-/// (SetTab / SetSubTab / GetTab / GetSubTab), the filter check boxes (ChangeTab, RefreshTab's reads) and the list data
-/// (RefreshEpisodes / RefreshList / RefreshCompleted build the tree, then setList and updatePaper). The tree comes from
-/// <see cref="QuestLog"/>, the same one the hand-ported dialog draws. The detail pane (RefreshDetail, SelectQuest) is not
-/// driven yet.
+/// UIQuestDialog (ms2/client/ms2/uiquestdialog.cpp): the quest log. It drives the list: the tab and sub-tab (SetTab /
+/// SetSubTab / GetTab / GetSubTab), the filter check boxes (ChangeTab, RefreshTab's reads) and the list data
+/// (RefreshEpisodes / RefreshList / RefreshCompleted build the tree, then setList and updatePaper), and the detail pane
+/// (RefreshDetail, SelectQuest: m_questInfo's setData). The tree and the detail come from <see cref="QuestLog"/> and
+/// <see cref="QuestDetail"/>. The calls that act on the game (give up, tracking, the goto buttons, the settings) are
+/// raised as events for the game to carry out.
 /// </summary>
 public sealed class QuestDialogController : UiController
 {
@@ -16,6 +17,8 @@ public sealed class QuestDialogController : UiController
     protected override string EntityMethod => "setList";
 
     public QuestLog Log;
+    /// <summary>The live inputs of the detail pane (field, guild, time zone, button rules).</summary>
+    public QuestDetailContext Detail = new();
     /// <summary>m_180 / m_184: the tab and sub-tab the dialog opens on (ctor: 0 and 1).</summary>
     public int OpenTab = 0, OpenSubTab = 1;
     /// <summary>m_filterA / m_filterB per tab (ResetFilters): "proper level" and "progress only".</summary>
@@ -23,9 +26,29 @@ public sealed class QuestDialogController : UiController
     /// <summary>CGameOption etc m_20 / m_21 / m_22: displayEpicQuest, displayWorldQuestV2, displayRepeatQuest.</summary>
     public bool DisplayEpic = true, DisplayWorld = true, DisplayRepeat = true;
 
-    /// <summary>OnLoadInit (uiquestdialog.cpp:314) without the detail pane and the focus quest, then OnLoadComplete.</summary>
+    /// <summary>onGiveUpQuest (GiveUpQuest, :1792: the confirm box, then the give-up packet).</summary>
+    public event Action<int> GiveUpQuest;
+    /// <summary>onRegister: CQuest::RequestTrackingState(regist) of the quest (the tracking packet, questmanager_1.cpp).</summary>
+    public event Action<int, bool> RegisterQuest;
+    /// <summary>
+    /// onOkSetting: the three display options were saved (CGameOption etc m_20..m_22); the client then refreshes the world
+    /// map guide and the minimap quest icons, FUN_141bd3880, and SaveCharacterSettings.
+    /// </summary>
+    public event Action SettingsChanged;
+    /// <summary>
+    /// onGotoNpc (SendQuestMode12), onGotoDungeon (SendQuestMode13), onGotoDispatch (FUN_1416cf870), onGotoReEntry
+    /// (SendQuestMode19), onGotoFindParty / onGotoFindPartyCancel (FUN_1416cf980(id, 0 / 1)): the callback name and the quest.
+    /// </summary>
+    public event Action<string, int> Goto;
+    /// <summary>CanAdd: UIQuestGuideDialog(0x4e43)::CanAdd; null when the guide dialog is not open (the call is not handled).</summary>
+    public Func<bool?> CanAddToGuide = () => null;
+    /// <summary>ShowLimitMessage: FUN_141275260(0x5f1, 1, 1), a system message of common string 0x5f1.</summary>
+    public event Action ShowLimitMessage;
+
+    /// <summary>OnLoadInit (uiquestdialog.cpp:314) without the focus quest, then OnLoadComplete.</summary>
     public override void OnLoadComplete()
     {
+        RefreshDetail();
         SetTab(OpenTab);
         SetSubTab(OpenSubTab);
         ChangeTab(GetTab());
@@ -35,6 +58,105 @@ public sealed class QuestDialogController : UiController
         Host.Invoke(Host.Entity, "initializeSetting", "repeat", DisplayRepeat);
         base.OnLoadComplete();
     }
+
+    /// <summary>vfunc_28 (uiquestdialog.cpp:349): the movie's calls.</summary>
+    public override bool OnCallback(string name, object[] args)
+    {
+        uint UInt(int i) => i < args.Length ? Rt.ToUint32(args[i]) : 0;
+        int Int(int i) => i < args.Length ? Rt.ToInt32(args[i]) : 0;
+        bool Bool(int i) => i < args.Length && Rt.ToBoolean(args[i]);
+        switch (name.ToLowerInvariant())       // _stricmp
+        {
+            case "onselectquest":
+                if (args.Length == 0) return false;
+                SelectQuest((int)UInt(0));
+                Log?.Pinned.Remove((int)UInt(0));        // RemovePinned
+                return true;
+            case "onselectchapter":
+                if (args.Length != 0) { Log?.SelectChapter(Int(0)); RefreshDetail(); }
+                return true;
+            case "onchangetab":
+                ChangeTab(GetTab());
+                RefreshTab();
+                RefreshDetail();
+                return true;
+            case "ongiveupquest":
+                if (args.Length != 0) GiveUpQuest?.Invoke((int)UInt(0));
+                return true;
+            case "onregister":
+                if (args.Length != 0) RegisterQuest?.Invoke((int)UInt(0), Bool(1));
+                return true;
+            case "canadd":
+                if (CanAddToGuide() is not { } can) return false;
+                Host.ReturnValue = can;
+                return true;
+            case "showlimitmessage":
+                ShowLimitMessage?.Invoke();
+                return true;
+            case "onselectproperlevel":
+                SetFilter(filterA, args);
+                return true;
+            case "onselectprogressonly":
+                SetFilter(filterB, args);
+                return true;
+            case "onoksetting":
+                if (args.Length != 0)
+                {
+                    (DisplayEpic, DisplayWorld, DisplayRepeat) = (Bool(0), Bool(1), Bool(2));
+                    SettingsChanged?.Invoke();
+                }
+                return true;
+            case "ongotonpc":
+            case "ongotodungeon":
+                if (args.Length != 0) Goto?.Invoke(name, (int)UInt(0));
+                return true;
+            case "ongotodispatch":
+            case "ongotoreentry":
+            case "ongotofindparty":
+            case "ongotofindpartycancel":
+                // these return 1 only with an argument (:478-530)
+                if (args.Length == 0) return false;
+                Goto?.Invoke(name, (int)UInt(0));
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>onSelectProperLevel / onSelectProgressOnly: the tab's filter (not on tab 4), then RefreshTab.</summary>
+    void SetFilter(bool[] filter, object[] args)
+    {
+        if (args.Length == 0) return;
+        int tab = GetTab();
+        if (tab != 4) filter[tab] = Rt.ToBoolean(args[0]);
+        RefreshTab();
+    }
+
+    /// <summary>GetSubTabFilter (:932): the sub-tab 0, 1 or 2, else 4.</summary>
+    public int GetSubTabFilter() => GetSubTab() switch { 0 => 0, 1 => 1, 2 => 2, _ => 4 };
+
+    /// <summary>RefreshDetail (:1228): the empty pane.</summary>
+    public void RefreshDetail()
+    {
+        if (Host.Child("m_questInfo") is { } info) Host.Invoke(info, "setData", Info(QuestDetail.Empty(GetTab())));
+    }
+
+    /// <summary>SelectQuest (:777): the quest's detail, when the quest has data (and a record off sub-tab 0).</summary>
+    public void SelectQuest(int id)
+    {
+        if (Log == null) return;
+        if (Host.Child("m_questInfo") is not { } info) return;
+        var data = QuestDetail.Select(Log, id, GetSubTabFilter(), Detail);
+        if (data != null) Host.Invoke(info, "setData", Info(data));
+    }
+
+    AsObject Info(QuestInfoObject o) => Host.Obj(o.Members.Select(m => (m.Name, Value(m.Value))).ToArray());
+
+    object Value(object v) => v switch
+    {
+        QuestInfoObject o => Info(o),
+        IReadOnlyList<object> list => new AsArray(Host.RT, list.Select(Value).ToList()),
+        _ => v,
+    };
 
     object Bar(string name) => Host.Child(name);
 

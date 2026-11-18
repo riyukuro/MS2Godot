@@ -86,10 +86,19 @@ public sealed class UiHost
             case "playSound": return null;      // no audio from the UI movies here
         }
         bool handled = false;
+        ReturnValue = null;
         RT.Guard("callback " + name, () => handled = Controller.OnCallback(name, rest));
         if (!handled) Unhandled.Add(name);
-        return null;
+        var ret = ReturnValue;
+        ReturnValue = null;
+        return ret == null ? null : ToAs(ret);
     }
+
+    /// <summary>
+    /// GFx::Movie::SetExternalInterfaceRetVal: what the ExternalInterface.call being handled returns to the movie (set by
+    /// <see cref="UiController.OnCallback"/>; undefined when not set).
+    /// </summary>
+    public object ReturnValue;
 
     void InstallShared()
     {
@@ -122,14 +131,62 @@ public sealed class UiHost
 
     /// <summary>
     /// GFxMovie::InvokeCommonCallback (gfxmovie.cpp:334) with the callback CUIService sets, FUN_141ade430
-    /// (uiservice.cpp:3185): members of scaleform.ms2.common.Common. Only the feature list is set here; the stage margins
-    /// (FUN_1418dd0c0 / dd110 / dd0d0, from DAT_1439f8ccc, DAT_1439f8cd0, DAT_1439f8cc8), the tooltip label width
-    /// and the meso / numeric text functions are not yet.
+    /// (uiservice.cpp:3185): members of scaleform.ms2.common.Common: the feature list, and the meso and numeric text
+    /// functions (GetMesoText / GetNumericText, uiservice.cpp:3147 / 3166: (obj, text) sets obj.text). The stage margins
+    /// (FUN_1418dd0c0 / dd110 / dd0d0, from DAT_1439f8ccc, DAT_1439f8cd0, DAT_1439f8cc8) and the tooltip label width are
+    /// not set yet.
     /// </summary>
     void CommonCallback()
     {
-        if (Model.FeatureEnabledByName == null || RT.GetClass("scaleform.ms2.common.Common") is not { } common) return;
-        RT.SetProperty(common, Name.Public("m_currentFeatureByString"), FeatureTable.EnabledString(Model.FeatureEnabledByName));
+        if (RT.GetClass("scaleform.ms2.common.Common") is not { } common) return;
+        if (Model.FeatureEnabledByName != null)
+            RT.SetProperty(common, Name.Public("m_currentFeatureByString"), FeatureTable.EnabledString(Model.FeatureEnabledByName));
+        // GFxMovie::RegisterFormatFunction (gfxmovie.cpp:319) with CUIService's format callback (FUN_141addb30)
+        Static(common, "m_getFormatFunction", FormatCallback);
+        Static(common, "m_getMesoTextFunction", a => TextCallback(a, NumberText.MesoText));
+        Static(common, "m_getNumericFunction", a => TextCallback(a, NumberText.NumericText));
+    }
+
+    /// <summary>
+    /// FUN_141addb30 (uiservice.cpp:3252), Common.getFormatText's function: (obj, key, args...) sets obj.text. A key that
+    /// starts with "$" is the movie translator's text (GFxManager::Localize), "s_" a common string (GetStringCommonByKey),
+    /// anything else the text itself; an empty key or text sets nothing. Each further argument becomes a string by its
+    /// GFx type (int "%d", uint "%ld", Number "%f" of the float, strings as they are, any other type empty) and the text
+    /// is formatted with them (StringFormat); without them it is the text.
+    /// </summary>
+    object FormatCallback(object[] a)
+    {
+        if (a.Length < 1) return null;
+        string key = a.Length > 1 && a[1] is not null && a[1] is not Undefined ? Rt.ToString(a[1]) : "";
+        if (key.Length == 0) return null;
+        string format = key.StartsWith('$') ? Player.Translate?.Invoke(key) ?? ""
+            : key.StartsWith("s_", StringComparison.Ordinal) ? Model.Tables.Common(key) ?? ""
+            : key;
+        if (format.Length == 0) return null;
+        string result = format;
+        if (a.Length > 2)
+        {
+            var args = a.Skip(2).Select(v => (object)(v switch
+            {
+                int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                uint u => u.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                double d => ((double)(float)d).ToString("F6", System.Globalization.CultureInfo.InvariantCulture),
+                string str => str,
+                _ => "",
+            })).ToArray();
+            result = Ms2.Quest.ClientFormat.Format(format, args);
+        }
+        if (a[0] is AsObject o) RT.SetProperty(o, Name.Public("text"), result);
+        return null;
+    }
+
+    // GetMesoText / GetNumericText: no work without an argument; the first is the object, the second the text (ASData Pop order)
+    object TextCallback(object[] a, Func<string, int, string> f)
+    {
+        if (a.Length < 1 || a[0] is not AsObject o) return null;
+        string text = a.Length > 1 ? Rt.ToString(a[1]) : "";
+        RT.SetProperty(o, Name.Public("text"), f(text, NumberText.DefaultLanguage));
+        return null;
     }
 
     void Static(AsClass cls, string name, Func<object[], object> f) =>
