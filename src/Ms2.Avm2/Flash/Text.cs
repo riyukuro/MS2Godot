@@ -121,7 +121,7 @@ public class AsTextField : AsInteractiveObject
         IsHtml = (bool?)t["html"] ?? false;
         Variable = (string)t["variable"];
         var init = (string)t["initial"] ?? "";
-        if (IsHtml) SetHtml(init); else Text = Tr(init);
+        if (IsHtml || Tr(init) != init) SetHtml(Tr(init)); else Text = init;
     }
 
     /// <summary>Scaleform's translator: a text that is a string-table key ("$s_...") shows the table's value.</summary>
@@ -262,7 +262,21 @@ public class AsTextField : AsInteractiveObject
     public override bool HitsContent(double gx, double gy) { var (lx, ly) = GlobalToLocal(gx, gy); return Box.Contains(lx, ly); }
     protected override bool DefaultTabEnabled => type == "input";
 
-    [As] public string text { get => Text; set { Text = Tr(value ?? ""); Html = null; Changed(); } }
+    /// <summary>A text that is a string-table key shows the table's value as HTML: the client's translator answers through
+    /// TranslateInfo::SetResultHtml (FontTranslator::Translate @0x1422f9d10, fontconfig.cpp:315), whichever of text /
+    /// htmlText was set.</summary>
+    [As] public string text
+    {
+        get => Text;
+        set
+        {
+            var v = value ?? "";
+            var t = Tr(v);
+            if (!ReferenceEquals(t, v) && t != v) SetHtml(t);
+            else { Text = v; Html = null; }
+            Changed();
+        }
+    }
     [As] public string htmlText
     {
         get => Html ?? "<P ALIGN=\"" + (Format?.align ?? "left") + "\">" + System.Net.WebUtility.HtmlEncode(Text) + "</P>";
