@@ -59,6 +59,9 @@ public partial class LiveSession : Node
     /// <summary>Raised after the local player's skill book changed (the Job packet's mode).</summary>
     public event Action<int> SkillBookChanged;
     public CharacterCreateRefused LastRefusal { get; private set; }
+    /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
+    /// HomeCommand and own AddPlayer proxy; live only.</summary>
+    public readonly MyCharacter Me = new();
 
     public static void Attach(Node parent)
     {
@@ -301,14 +304,14 @@ public partial class LiveSession : Node
             try
             {
                 bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
-                if (own) ApplyStat(PlayerStat.Read(p.Reader()));
+                if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
                 else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
                 if (own) { }
                 else if (game.Is(p, Inbound.FieldAddUser))
                 {
                     var u = FieldAddUser.Read(p.Reader());
                     bool self = u.User.CharacterId == entry.Enter.CharacterId;
-                    if (self) selfObject = u.ObjectId;
+                    if (self) { selfObject = u.ObjectId; Me.Apply(u); }
                     GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
                 }
                 else if (game.Is(p, Inbound.SyncNumber))
@@ -351,6 +354,28 @@ public partial class LiveSession : Node
                     bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
                     if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
                     GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
+                }
+                else if (game.Is(p, Inbound.AttributePoint))
+                {
+                    var m = AttributePointMessage.Read(p.Reader());   // OnAttributePoint (scenestategame.cpp:4270): the local player's CStatPointManager
+                    if (m != null) Me.StatPoints.Apply(m);
+                    GD.Print($"live: attribute points {m?.GetType().Name ?? "other mode"} (total {Me.StatPoints.Total}, used {Me.StatPoints.Used})");
+                }
+                else if (game.Is(p, Inbound.UserEnv))
+                {
+                    var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept
+                    if (m != null) Me.Apply(m);
+                    GD.Print($"live: user env {m?.GetType().Name ?? "other mode"} ({Me.Titles.Count} titles)");
+                }
+                else if (game.Is(p, Inbound.HomeCommand))
+                {
+                    var m = HomeCommend.Read(p.Reader());             // OnHomeCommand (scenestategame.cpp:7975) mode 1
+                    if (m != null) Me.Apply(m);
+                    GD.Print($"live: home command {(m != null ? $"score {m.Point} object {m.ObjectId}" : "other mode")}");
+                }
+                else if (game.Is(p, Inbound.ProxyGameObj))
+                {
+                    Me.Apply(ProxyGameObj.Read(p.Reader()));          // the own AddPlayer proxy's trophy counts
                 }
                 else if (game.Is(p, Inbound.GlobalFactor))
                 {

@@ -55,6 +55,9 @@ public enum Inbound : ushort {
     ProxyGameObj = 0x7E,
     RideSync = 0x7A,
     World = 0xB9,
+    AttributePoint = 0x45,
+    UserEnv = 0xA8,
+    HomeCommand = 0xB7,
 }
 
 public enum Outbound : ushort {

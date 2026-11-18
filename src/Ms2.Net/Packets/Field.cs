@@ -135,6 +135,10 @@ public sealed class FieldAddUser {
     public short BuffCount;
     public int Title; public short Insignia; public bool InsigniaShown;
     public bool HasPet; public long PremiumTime;
+    /// <summary>The four values after the ride block (CSceneStateGame, scenestategame.cpp:11217-11224): i32 PC::FUN_14165f090
+    /// (m_n1038; pc.cpp:853 passes it to FUN_14165f1f0 when nothing is held), then the architect score: i64 the month it counts in (m_n1140),
+    /// i32 that month's count (m_n1148), i32 the score (m_n114c).</summary>
+    public int HeldObject; public long HomeCommendMonth; public int HomeCommendMonthly, HomeCommendPoint;
 
     public static FieldAddUser Read(ByteReader r, string locale = "KR") {
         var f = new FieldAddUser { ObjectId = r.ReadInt(), User = UserBlock.Read(r, locale) };
@@ -158,7 +162,7 @@ public sealed class FieldAddUser {
             f.Passengers = new (int, byte)[r.ReadByte()];
             for (int i = 0; i < f.Passengers.Length; i++) f.Passengers[i] = (r.ReadInt(), r.ReadByte());
         }
-        r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadInt();
+        f.HeldObject = r.ReadInt(); f.HomeCommendMonth = r.ReadLong(); f.HomeCommendMonthly = r.ReadInt(); f.HomeCommendPoint = r.ReadInt();
 
         using (var b = r.ReadDeflated()) {
             int n = b.ReadByte();
