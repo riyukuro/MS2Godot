@@ -163,6 +163,18 @@ public sealed class FieldBuilder
     /// <summary>The finished field from <see cref="BuildSteps"/>.</summary>
     public Node3D World { get; private set; }
 
+    // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset) standing on the
+    // entity position, turned by the Z rotation only; scale is ignored
+    static BoxShape3D GeneratePhysXBox(FieldEntity e, out Transform3D at)
+    {
+        var d = e.Vector("GeneratePhysXDimension");
+        var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
+        var p = e.Position;
+        at = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
+                             new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2));
+        return new BoxShape3D { Size = size };
+    }
+
     /// <summary>
     /// <see cref="Build"/> in steps: it yields after each entity of the first pass and after each instancing group, so a
     /// caller can spread the build over frames (Field: the field load behind the loading screen). The nodes are built off
@@ -180,6 +192,8 @@ public sealed class FieldBuilder
         world.AddChild(colliders);
         var twoSided = new TwoSidedSpace { Name = "TwoSided" };
         colliders.AddChild(twoSided);
+        var npcGround = new NpcGroundSpace { Name = "NpcGround" };
+        colliders.AddChild(npcGround);
 
         // key: the llid, plus the shell group and, for an own-group shell, the instancing batch (see ShellOf / BatchKey)
         var groups = new Dictionary<string, List<FieldEntity>>(StringComparer.OrdinalIgnoreCase);
@@ -250,7 +264,15 @@ public sealed class FieldBuilder
                     grouped = true;            // counted when its group is placed
                 }
 
-                if (e.Bool("DisableCollision")) continue;
+                if (e.Bool("DisableCollision"))
+                {
+                    // no collision in the world; the server stand-in's npc ground still stands on it (NpcGroundSpace),
+                    // fluids left out as the ground leaves them out
+                    if (e.Get("CubeType") == "Fluid") continue;
+                    foreach (var shape in me.Collision) npcGround.Add(shape, xf);
+                    if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX")) npcGround.Add(GeneratePhysXBox(e, out var at), at);
+                    continue;
+                }
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -291,15 +313,7 @@ public sealed class FieldBuilder
                     // liftableobject.cpp:301/305; entityvibrator.cpp:287/345/485/581; worldservice_1.cpp:8727, 10392,
                     // 10488). The entity keeps its own group for the hit report's tests (FUN_141675ed0 reads the property,
                     // pcbase.cpp:4335-4342): KindMeta
-                    var d = e.Vector("GeneratePhysXDimension");
-                    var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
-                    var p = e.Position;
-                    var box = Tag(new CollisionShape3D
-                    {
-                        Shape = new BoxShape3D { Size = size },
-                        Transform = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
-                                                    new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2)),
-                    });
+                    var box = Tag(new CollisionShape3D { Shape = GeneratePhysXBox(e, out var at), Transform = at });
                     box.SetMeta(KindMeta, group);
                     Chunk(e.Position, GeneratedBoxGroup).AddChild(box);
                     Boxes++;
