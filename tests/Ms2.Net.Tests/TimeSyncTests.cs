@@ -23,6 +23,21 @@ public class TimeSyncTests {
     }
 
     [Test]
+    public void ServerTimeFollowsTheTimeTheServerSent() {
+        var s = new ClientSession(new MapleChannel(new MemoryStream()));
+        long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        Assert.That(s.ServerTime, Is.InRange(now, now + 2), "before a sync: the local time");
+        var w = new ByteWriter();
+        w.WriteByte(1); w.WriteInt(0); w.WriteLong(1_000_000_000); w.WriteInt(0); w.WriteByte(0);
+        s.ApplyTimeSync(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(s.ServerTime, Is.InRange(1_000_000_000L, 1_000_000_002L));
+        w = new ByteWriter();
+        w.WriteByte(2);
+        s.ApplyTimeSync(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(s.ServerTime, Is.InRange(1_000_000_000L, 1_000_000_002L), "kind 2 sets no base");
+    }
+
+    [Test]
     public void Cmd2AsksForARequestAndSetsNoBase() {
         var s = new ClientSession(new MapleChannel(new MemoryStream()));
         Assert.That(s.ApplyTimeSync(new ByteReader(new byte[] { 2 })), Is.True);

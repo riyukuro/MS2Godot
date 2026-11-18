@@ -38,13 +38,24 @@ public sealed class ClientSession {
     /// </summary>
     public int ServerTick => HasServerTick ? ElapsedMs - localTickBase + serverTickBase : ElapsedMs;
 
+    /// <summary>m_tServerTimeBase - m_tLocalTimeBase: both are time() in the CMainSystem ctor (mainsystem.cpp:167-170), so 0 until a sync.</summary>
+    long serverTimeOffset;
+
+    /// <summary>
+    /// CMainSystem::GetServerTime (mainsystem.cpp:390): time() - m_tLocalTimeBase + m_tServerTimeBase, the server's clock in
+    /// seconds since 1970. SyncServerTime (mainsystem.cpp:398) sets the bases from the server time of a time sync of kind 0
+    /// or 1 and the local time() then (networkservice.cpp:767, 777). Quest periods, schedules and resets read it.
+    /// </summary>
+    public long ServerTime => DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Interlocked.Read(ref serverTimeOffset);
+
     /// <summary>Applies a time sync command (ResponseTimeSync body); returns true when the client must answer with a RequestTimeSync.</summary>
     public bool ApplyTimeSync(ByteReader r) {
         byte cmd = r.ReadByte();
         if (cmd == 2) return true;
         if (cmd > 1) return false;
         int time = r.ReadInt();
-        r.ReadLong();                                    // the server time (SyncServerTime)
+        long serverTime = r.ReadLong();
+        Interlocked.Exchange(ref serverTimeOffset, serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds());   // SyncServerTime
         int zone = r.ReadInt(); byte flag = r.ReadByte();
         MsTime.SetTimeZone(zone, flag);                  // CMsTime::SetTimeZone(zone, flag) for kinds 0 and 1 (networkservice.cpp:756-779)
         serverTickBase = time; localTickBase = ElapsedMs; hasServerTick = true;   // volatile write publishes the bases
