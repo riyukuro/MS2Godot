@@ -57,20 +57,19 @@ public sealed class WornEquipment
     }
 
     /// <summary>
-    /// CItemData::FUN_14053d2f0 (itemdata.cpp:853): a weapon. FUN_14053d340 (:860): type 1 subtypes 0x1e-0x22, 0x28, 0x29; any
-    /// type 8; a type 0x17 item whose model has exactly one of the RH (5) and LH (4) groups. Or a two-handed weapon.
+    /// CItemData::FUN_14053d340 (itemdata.cpp:860): a one-handed weapon, type 1 subtypes 0x1e-0x22, 0x28, 0x29; any type 8;
+    /// a type 0x17 item whose model has exactly one of the RH (5) and LH (4) groups.
     /// </summary>
-    public static bool IsWeapon(ItemData d, ItemModelTable models)
+    public static bool IsOneSlotWeapon(ItemData d, ItemModelTable models) => d.Type switch
     {
-        bool oneSlot = d.Type switch
-        {
-            1 => d.EquipSubtype is (>= 0x1e and <= 0x22) or 0x28 or 0x29,
-            8 => true,
-            0x17 => models.Get(d.ItemPreset) is { } m && m.HasSlotType(5) != m.HasSlotType(4),
-            _ => false,
-        };
-        return oneSlot || IsTwoHanded(d, models);
-    }
+        1 => d.EquipSubtype is (>= 0x1e and <= 0x22) or 0x28 or 0x29,
+        8 => true,
+        0x17 => models.Get(d.ItemPreset) is { } m && m.HasSlotType(5) != m.HasSlotType(4),
+        _ => false,
+    };
+
+    /// <summary>CItemData::FUN_14053d2f0 (itemdata.cpp:853): a weapon, <see cref="IsOneSlotWeapon"/> or a two-handed one.</summary>
+    public static bool IsWeapon(ItemData d, ItemModelTable models) => IsOneSlotWeapon(d, models) || IsTwoHanded(d, models);
 
     /// <summary>
     /// CEquipment::FUN_1411e1860(slot, 6, 0) (equipment.cpp:816), PC::FUN_141655e10: the item at the slot in the highest layer

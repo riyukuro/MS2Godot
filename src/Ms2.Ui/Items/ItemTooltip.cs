@@ -70,6 +70,7 @@ public sealed partial class ItemTooltip
         SetNotExchange(item);
         SetItemCreateTime(item);
         SetItemUsePeriod(item);
+        SetItemCompare(item);                                                     // FUN_1409cfbf0
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
         SetStatDescription(item);                                                 // FUN_1409d1d30
@@ -683,7 +684,8 @@ public sealed partial class ItemTooltip
     ItemTooltip lhs, rhs;
 
     /// <summary>A side tooltip: ASTooltip(the owner, flags, 2) (FUN_1409e13f0 passes m_40 on).</summary>
-    ItemTooltip Side() => new(model, Flags) { Owner = Owner, Localize = Localize, OwnerWearsUid = OwnerWearsUid, IsDialogOpen = IsDialogOpen };
+    ItemTooltip Side() => new(model, Flags) { Owner = Owner, Localize = Localize, OwnerWearsUid = OwnerWearsUid, IsDialogOpen = IsDialogOpen,
+        OwnerEquipment = OwnerEquipment, ShiftHeld = ShiftHeld };
 
     /// <summary>
     /// FUN_1409e13a0 (:315) with this tooltip's flags for both sides, i.e. FUN_1409e13f0 (:4748): false without either

@@ -26,6 +26,10 @@ public sealed class ItemOptionTables
     /// <summary>ItemOptionVariationData (itemoptiondata_2.cpp:1633): "highStat" and the &lt;v stat&gt; values in file order.</summary>
     sealed record Variation(int HighStat, List<int> Stats);
 
+    /// <summary>ItemOptionConstant (itemoptiondata_2.cpp:1493): its "grade" and the &lt;v&gt; values (a stat, or -1 and a
+    /// special); Values is null for a createType 3 rank (LoadLuaValues, not ported).</summary>
+    sealed record Constant(int Grade, List<(int Stat, int Special, int Value)> Values);
+
     /// <summary>EnchantLimit (itemenchantlimittable.cpp:150): "minLv", "maxLv", "maxGrade".</summary>
     sealed record EnchantLimit(int MinLv, int MaxLv, int MaxGrade);
 
@@ -35,6 +39,7 @@ public sealed class ItemOptionTables
     Dictionary<int, Random> randoms;
     Dictionary<int, Variation> variations;
     Dictionary<int, EnchantLimit> limits;
+    Dictionary<int, List<Constant>> constants;
 
     public static readonly ItemOptionTables Empty = new(null, new(), new());
 
@@ -243,6 +248,80 @@ public sealed class ItemOptionTables
         if (level < l.MinLv || level > l.MaxLv) return false;
         if (item.EnchantLevel >= l.MaxGrade) return false;
         return !d.ExceptEnchant;
+    }
+
+    /// <summary>
+    /// LoadItemOptionConstant (itemoptiondata_3.cpp:872): every &lt;option&gt; of Table/ItemOptionConstant.xml whose feature is
+    /// on (FUN_14028f5d0), by "code" (code 0 is dropped); each of its &lt;rank&gt; children that pass the same filter is one
+    /// ItemOptionConstant of the code (a multimap, the ranks in file order; the client loads the options in parallel, so the
+    /// order of two options with one code is not fixed). ItemOptionConstant::Load (itemoptiondata_2.cpp:1493): "grade",
+    /// then for createType 3 the Lua values (LoadLuaValues, STILL-OPEN: not ported), else the &lt;v&gt; children that pass
+    /// the filter: an empty name is skipped, a stat name (FindStatByName) or else a special name (FUN_14081d260) keeps its
+    /// "value" when it is not 0.
+    /// </summary>
+    Dictionary<int, List<Constant>> Constants()
+    {
+        if (constants != null) return constants;
+        constants = new();
+        var root = Root("table/itemoptionconstant.xml");
+        if (root == null) return constants;
+        foreach (var e in root.Elements("option"))
+        {
+            if (!FeatureOn(e)) continue;
+            int code = Int(e, "code");
+            if (code == 0) continue;
+            foreach (var r in e.Elements("rank"))
+            {
+                if (!FeatureOn(r)) continue;
+                int grade = Int(r, "grade");
+                if (Int(r, "createType") == 3) { Add(code, new Constant(grade, null)); continue; }
+                var values = new List<(int, int, int)>();
+                foreach (var v in r.Elements("v"))
+                {
+                    if (!FeatureOn(v)) continue;
+                    string name = (string)v.Attribute("name") ?? "";
+                    if (name.Length == 0) continue;
+                    int value = Int(v, "value");
+                    int stat = FindStatByName(name);
+                    if (stat != -1) { if (value != 0) values.Add((stat, 0, value)); continue; }
+                    int special = FindSpecialByName(name);
+                    if (special != 0 && value != 0) values.Add((-1, special, value));
+                }
+                Add(code, new Constant(grade, values));
+            }
+        }
+        return constants;
+
+        void Add(int code, Constant c)
+        {
+            if (!constants.TryGetValue(code, out var list)) constants[code] = list = new();
+            list.Add(c);
+        }
+    }
+
+    /// <summary>
+    /// ApplyConstantOptions (itemoptiondata_3.cpp:413) on a fresh option: the values FindConstantOption (:485) picks for
+    /// the item's constantId at <paramref name="rank"/>, the last rank of the code whose grade is not above it, as
+    /// FUN_1405d2e70 (itemoptiondata_2.cpp:1536) sets them in option group 0: a value above 0, the last of a stat or
+    /// special winning (SetAt). Empty without a rank; null for a Lua rank (STILL-OPEN).
+    /// </summary>
+    public (Dictionary<int, int> Stat, Dictionary<int, int> Special)? ConstantOptions(ItemData d, int rank)
+    {
+        var stat = new Dictionary<int, int>();
+        var special = new Dictionary<int, int>();
+        if (d == null || !Constants().TryGetValue(d.ConstantId, out var list)) return (stat, special);
+        Constant pick = null;
+        int best = 0;
+        foreach (var c in list)
+            if (rank >= c.Grade && rank >= best) { pick = c; best = c.Grade; }
+        if (pick == null) return (stat, special);
+        if (pick.Values == null) return null;
+        foreach (var (s, sp, v) in pick.Values)
+        {
+            if (v <= 0) continue;                           // vfunc_1: the base ItemOptionValue returns its value
+            if (s != -1) stat[s] = v; else special[sp] = v;
+        }
+        return (stat, special);
     }
 
     static readonly int[] Rates20 = { 0, 10000, 10000, 10000, 5000, 5000, 5000, 2500, 2500, 2500, 2000, 2000, 1000, 500, 200, 100 };

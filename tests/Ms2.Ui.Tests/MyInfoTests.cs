@@ -436,6 +436,74 @@ public class MyInfoTests
     }
 
     [Test]
+    public void ItemCompareIsTheStatChange()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        var t = m.Tables;
+        string S(int stat) => t.StatName(stat);
+        EquipItem Rec(int id, long uid, EquipSlot slot, int rarity = 1) => new() { Id = id, Uid = uid, Slot = slot, Amount = 1, Rarity = rarity };
+        // worn: dagger 13100001 RH (equip subtype 0x1f), 13400001 LH (0x22), top 11400021 CL
+        var rh = Rec(13100001, 1, EquipSlot.RH);
+        rh.Options.Stat[0][0x17] = 40; rh.Options.Stat[0][0x1b] = 4; rh.Options.Stat[0][0x1c] = 6;
+        var lh = Rec(13400001, 2, EquipSlot.LH);
+        lh.Options.Stat[0][0x17] = 5;
+        var top = Rec(11400021, 3, EquipSlot.CL);
+        var equipment = WornEquipment.Of(new PcInfo { Equips = new[] { rh, lh, top } }, t.Items);
+        bool shift = false;
+        ItemTooltip Tip(EquipItem r, int flags = 0x80, WornEquipment eq = null)
+        {
+            var tip = new ItemTooltip(m, flags) { OwnerEquipment = eq ?? equipment, ShiftHeld = () => shift };
+            tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, t.Items));
+            return tip;
+        }
+        List<string> Rows(ItemTooltip tip) => tip.Data.TryGetValue("itemCompare", out var v)
+            ? ((IEnumerable<object>)v).Cast<Dictionary<string, object>>().Select(r =>
+                r["statName"] + " " + (r.TryGetValue("statRate", out var x) ? "rate " + x : "value " + r["statValue"]) + ((bool)r["up"] ? " up" : " down")).ToList()
+            : null;
+
+        // the bag dagger: rarity 2, max attack 20 with a ratio enchant of 500 (ScaleValue(20, 0.5) = 10), min attack 10,
+        // physical attack 30, perfect guard (a rate stat) 25 in group 2, special 7 (a rate) 26, and gem 40200001 in its
+        // socket (constant rank: int 2)
+        var bag = Rec(13100001, 10, EquipSlot.RH, 2);
+        bag.Options.Stat[0][0x1b] = 10; bag.Options.Stat[0][0x1c] = 20; bag.Enchant.Options[0x1c] = 500;
+        bag.Options.Stat[0][0x17] = 30; bag.Options.Stat[2][0x15] = 25; bag.Options.Special[0][7] = 26;
+        bag.Socket.MaxSlot = 1; bag.Socket.Gems.Add(new SocketGem { GemId = 40200001 });
+        var d = t.Items.Get(13100001);
+        int score = ItemLevels.Base(d, 2) - ItemLevels.Base(d, 1);
+        Assert.That(score, Is.Not.Zero);
+        var rows = Rows(Tip(bag));
+        TestContext.WriteLine(string.Join(" | ", rows));
+        // max attack: (30 - 6 + 10 - 4) / 2 = 15, min attack left out; the stat order, then the specials, then the level
+        Assert.That(rows, Is.EqualTo(new[]
+        {
+            S(0x1c) + " value 15 up", S(2) + " value 2 up", S(0x17) + " value 10 down", S(0x15) + " rate 2.5% up",
+            t.SpecialAbilityName(7) + " rate 2.6% up", t.Common("s_common_item_level") + " rate " + score + " up",
+        }));
+
+        // Shift held: against the LH item (physical attack 5)
+        shift = true;
+        Assert.That(Rows(Tip(bag))[2], Is.EqualTo(S(0x17) + " value 25 up"));
+        shift = false;
+
+        // a two-handed weapon replaces both hands: physical attack 0 - (40 + 5)
+        Assert.That(Rows(Tip(Rec(15000001, 11, EquipSlot.RH))), Does.Contain(S(0x17) + " value 45 down"));
+
+        // the worn item itself: the array is there but empty
+        Assert.That(Rows(Tip(rh)), Is.Empty);
+        // nothing worn in the hands: the item's own stats, max attack (30 + 10) / 2
+        var empty = WornEquipment.Of(new PcInfo { Equips = Array.Empty<EquipItem>() }, t.Items);
+        Assert.That(Rows(Tip(bag, eq: empty))[0], Is.EqualTo(S(0x1c) + " value 20 up"));
+
+        // no owner player, flag 0x800 or a non-equip item: no member
+        var none = new ItemTooltip(m, 0x80);
+        none.Fill(Ms2.Ui.Hud.InventoryController.ToItem(bag, t.Items));
+        Assert.That(Rows(none), Is.Null);
+        Assert.That(Rows(Tip(bag, 0x800)), Is.Null);
+        Assert.That(Rows(Tip(Rec(40200001, 12, EquipSlot.Unknown))), Is.Null);
+    }
+
+    [Test]
     public void ExtraDescriptionIsTheClientsRows()
     {
         var m = NewModel();

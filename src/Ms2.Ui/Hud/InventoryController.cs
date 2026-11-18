@@ -775,6 +775,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             Owner = record != null ? (record.CharacterId, record.Name) : null,
             Localize = Localize,
             OwnerWearsUid = uid => equipment?.Wears(uid) == true,
+            OwnerEquipment = equipment,
+            ShiftHeld = ShiftHeld,
         };
         if (!tip.FillCompare(worn, item)) return null;
         tip.SetEnablePutonBoth("", UseHint(item));
