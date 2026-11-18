@@ -178,6 +178,35 @@ public static class ItemReader {
         ReadBody(r, it, it.Slot);
     }
 
+    /// <summary>
+    /// An item made from its id and rarity and then read (CItem::FUN_140523c40 + ReadFromStream, as the npc shop's products,
+    /// npcshopproductbase.cpp:186): the body alone, its first model slot from <see cref="SlotOf"/>.
+    /// </summary>
+    public static EquipItem ReadItem(ByteReader r, int id, int rarity) {
+        var it = new EquipItem { Id = id, Rarity = rarity, Slot = SlotOf?.Invoke(id) ?? EquipSlot.Unknown };
+        ReadBody(r, it, it.Slot);
+        return it;
+    }
+
+    /// <summary>
+    /// The body <see cref="ReadBody"/> reads for an item with every block empty and no extra block (no UGC, gem, music or
+    /// pet; not a hair, decal or cap), the amount set (tests and offline fixtures).
+    /// </summary>
+    public static void WriteEmptyBody(ByteWriter w, int amount) {
+        w.WriteInt(amount); w.WriteInt(0); w.WriteLong(0); w.WriteLong(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(0);
+        w.WriteByte(0); w.WriteLong(0); w.WriteShort(0); w.WriteBool(false); w.WriteInt(0);
+        for (int i = 0; i < 3; i++) w.WriteInt(0);          // the colour: three rgba
+        w.WriteInt(0); w.WriteInt(0);                        // its index and palette
+        for (int i = 0; i < 5; i++) { w.WriteShort(0); w.WriteShort(0); }   // the option sets
+        w.WriteInt(0);
+        w.WriteInt(0); w.WriteInt(0); w.WriteByte(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteBool(false); w.WriteInt(0); w.WriteByte(0);   // the enchant
+        w.WriteInt(0); w.WriteInt(0); w.WriteInt(0);         // the limit break
+        w.WriteInt(0); w.WriteBool(false); w.WriteInt(0); w.WriteInt(0); w.WriteByte(0); w.WriteByte(0); w.WriteBool(false);   // the transfer
+        w.WriteByte(0); w.WriteByte(0);                      // the socket
+        w.WriteLong(0);                                      // no couple
+        w.WriteLong(0); w.WriteUnicodeString("");            // the binding
+    }
+
     public static EquipItem ReadEquip(ByteReader r) {
         var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), Slot = (EquipSlot) r.ReadByte(), Rarity = r.ReadInt() };
         ReadBody(r, it, it.Slot);
