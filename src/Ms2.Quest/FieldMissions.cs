@@ -165,16 +165,23 @@ public sealed class FieldMissions
     public IReadOnlyList<int> QuestIds(int mapId) => byMap.TryGetValue(mapId, out var l) ? l : Array.Empty<int>();
 
     /// <summary>
-    /// FUN_141aaddb0: the parent field's missions when the field has a parent, every condition of each quest in order,
-    /// unmet. Empty when the field has none (the panel is not added).
+    /// FUN_141aaddb0 (uiquesteventlistener.cpp:1096): the parent field's missions when the field has a parent, every
+    /// condition of each quest in order; a condition is met when the character's record of the quest is rewarded or its
+    /// progress reaches the goal (none without a record). Empty when the field has none (the panel is not added).
     /// </summary>
-    public List<(string Text, bool Satisfied)> Goals(int fieldId, Func<int, int?> parentField = null)
+    public List<(string Text, bool Satisfied)> Goals(int fieldId, Func<int, int?> parentField = null, IQuestState state = null)
     {
         int mapId = parentField?.Invoke(fieldId) ?? fieldId;
         var goals = new List<(string, bool)>();
         foreach (int id in QuestIds(mapId))
+        {
+            var r = state?.Get(id);
             for (int j = 0; j < quests[id].Conditions.Length; j++)
-                goals.Add((ConditionText(id, j), false));
+            {
+                bool met = r != null && (r.IsRewarded || (r.Progress != null && j < r.Progress.Length && r.Progress[j] >= quests[id].Conditions[j].Goal));
+                goals.Add((ConditionText(id, j), met));
+            }
+        }
         return goals;
     }
 

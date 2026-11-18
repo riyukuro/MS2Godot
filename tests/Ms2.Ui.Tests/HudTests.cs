@@ -177,6 +177,34 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test]
+    public void QuestGuideBuildsTrackedQuests()
+    {
+        var m = Model();
+        // synthetic quests: 1 and 2 in progress and tracked, 3 in progress and not tracked
+        var t = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
+        t.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest><basic questID=""1"" questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
+            <quest><basic questID=""2"" questType=""1"" standardLevel=""4"" /><condition type=""npc"" code=""7"" value=""2"" /></quest>
+            <quest><basic questID=""3"" questType=""1"" standardLevel=""5"" /><condition type=""npc"" code=""7"" value=""1"" /></quest></ms2>"));
+        t.BuildIndexes();
+        t.AddDescriptions(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest questID=""1"" name=""First"" /><quest questID=""2"" name=""Second"" /><quest questID=""3"" name=""Third"" /></ms2>"));
+        var state = new Ms2.Quest.QuestShotState(t, 10, new[] { 1, 2 }, tracking: 1);
+        var c = new QuestGuideController { Table = t, State = state };
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        var container = h.Get(h.Entity, "m_dragContainer") as AsContainer;
+        Assert.That(container, Is.Not.Null);
+        Assert.That(container.Children.Count, Is.EqualTo(2), "one entity per tracked quest in progress");
+        // shown at gotoAndStop(11): the "show" slide's last move (an identity matrix) puts the body back at x 0
+        foreach (AsContainer e in container.Children) Assert.That(e.Children[0].x, Is.EqualTo(0));
+        var texts = AllTexts(container);
+        Assert.That(texts, Has.Some.Contains("First (Lv. 3)"));
+        Assert.That(texts, Has.Some.Contains("Second (Lv. 4)"));
+        Assert.That(texts, Has.None.Contains("Third"));
+    }
+
     static List<string> AllTexts(AsDisplayObject o)
     {
         var l = new List<string>();

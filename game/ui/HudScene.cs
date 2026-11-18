@@ -122,6 +122,7 @@ public partial class HudScene : Node
         string typed = chatInput?.Edit.Text;
         questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
         minimap?.GetParent()?.RemoveChild(minimap);           // so is the minimap
+        questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         chat = null; chatInput = null; chatLog = null; chatThumb = null; target = null;
@@ -852,65 +853,53 @@ public partial class HudScene : Node
         root.GotoFrame(root.Frame);
     }
 
-    // ---- quest guide: the field mission panel ---------------------------------------------------------------------
+    // ---- quest guide: uiquestguidedialog run by its own ActionScript, UIQuestGuideDialog's C++ side as QuestGuideController --
+
+    MovieDialog questGuide;
+    Ms2.Ui.Hud.QuestGuideController questGuideSide;
 
     /// <summary>
-    /// UIQuestGuideDialog with only the field mission entity: the dialog aligns top right at (0, 330)
-    /// (CAlignmentInfo(6, 0, 330) in its constructor, x = stage width - ceil(dialog width)). qg_dialog_body places
-    /// m_topContainer at x -1, and addMission puts a qg_mission_entity at x -1 inside it, so the entity sits at dialog x - 2.
-    /// FieldMissionGuideEntity.setType("field") / setData run as below. AddMission adds the entity only when the field has
-    /// missions (FUN_141aaddb0 returns false for none), so a field without them shows no panel.
+    /// The quest tracker: its movie with UIQuestGuideDialog's C++ side, over the character's quest state (the quest log's
+    /// source, with the shot's --questlog-state) and this field's missions. It is kept across a window relayout.
     /// </summary>
     void Quests(Control ui)
     {
-        var goals = FieldMissionGoals();
-        if (goals.Count == 0) return;
-        var m = new UiMovie(assets, "uiquestguidedialog");
-        var sym = UiLayout.SymbolOfClass(m, "qg_mission_entity", out _);
-        if (sym == null) return;
-
-        // addCondition: a qg_label_condition per goal at y = m_container.height + 3, height = textHeight + 5
-        var labels = new List<(MovieClipNode Node, float Y)>();
-        float contH = 0, top = 0;
-        foreach (var (text, _) in goals)
+        if (questGuide != null) { ui.AddChild(questGuide); questGuide.Relayout(GetWindow().Size); return; }
+        var log = QuestLogSource();
+        if (log == null) return;
+        if (questState != null)
         {
-            var l = m.BuildClass("qg_label_condition", u);
-            if (l == null) break;
-            l.SetHtmlText(text);                                           // addCondition: l2.htmlText = text
-            float h = (l.TextFields.FirstOrDefault()?.FlashTextHeight() ?? 16) + 5;
-            float y = contH + 3;
-            if (labels.Count == 0) top = y;
-            labels.Add((l, y));
-            contH = y + h - top;            // DisplayObject.height: the children's bounds, from the first label's top
+            var parts = questState.Split(':');
+            log.State = new QuestShotState(questTable, int.Parse(parts[0]), parts[1].Split(',').Select(int.Parse), parts.Length > 2 ? int.Parse(parts[2]) : 0);
         }
-
-        // m_bg.height = m_container.y + m_container.height + 15, set before the build so the 9-slice grid rebuilds
-        var children = sym["timeline"]?["children"] as JsonArray;
-        var bgDef = children?.OfType<JsonObject>().FirstOrDefault(c => (string)c["name"] == "m_bg");
-        var contDef = children?.OfType<JsonObject>().FirstOrDefault(c => (string)c["name"] == "m_container");
-        float contY = UiBuilder.F(contDef?["matrix"]?["y"], 34);
-        if (bgDef?["matrix"] is JsonObject bm && m.Scope.Symbol((int)bgDef["id"])?["bounds"] is JsonNode bb)
-            bm["d"] = (double)((contY + contH + 15) / UiBuilder.F(bb["h"], 37));
-
-        var panel = m.BuildClass("qg_mission_entity", u);
-        if (panel == null) return;
-        var at = UiLayout.Align(6, stage, new Vector2(QuestGuideWidth, 0), 0, 330) + new Vector2(-2, 0);   // m_topContainer -1, entity -1
-        panel.Scale = new Vector2(u, u); panel.Position = at * u;
-        var holder = new Node2D(); holder.AddChild(panel); ui.AddChild(holder);
-        panel.SetNamedText("m_chapterName", assets.Str("$s_questguide_mission_field"));
-        panel.FindClip("m_toggle")?.GotoLabel("up");                       // _toggle false: expanded, shows "-"
-
-        var cont = panel.FindClip("m_container");
-        foreach (var (l, y) in labels) { l.Position = new Vector2(0, y); cont?.AddChild(l); }
-
-        // the stars: the last goals.Length of mission1..5, "off" until the goal is met
-        for (int i = 1; i <= 5; i++) panel.SetNamedVisible("mission" + i, false);
-        for (int i = 0; i < goals.Count && i < 5; i++)
+        int fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+        try
         {
-            string name = "mission" + (5 - goals.Count + i + 1);
-            panel.SetNamedVisible(name, true);
-            panel.FindClip(name)?.GotoLabel(goals[i].Satisfied ? "on" : "off");
+            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, f => !data.FeaturesOff.Contains(f));
         }
+        catch (Exception e) { GD.PushWarning("field missions: " + e.Message); }
+        var meta = fieldMeta;
+        var constants = new ClientConstants(assets.Packs);
+        var inputs = new QuestButtonInputs
+        {
+            FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
+            DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
+        };
+        questGuideSide = new Ms2.Ui.Hud.QuestGuideController
+        {
+            Table = questTable,
+            State = log.State,
+            Missions = fieldMissions,
+            ParentField = f => meta.ParentFields.TryGetValue(f, out int p) ? p : null,
+            FieldId = fieldId,
+            GotoButtons = (d, q) => QuestCommon.Buttons(d, q, inputs, meta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
+            FeatureOn = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]),
+            PageCount = (int)constants.Float("QuestGuidePageCount", 4),
+            MaxCount = (int)constants.Float("QuestGuideMaxCount", 40),
+        };
+        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"));
+        questGuide = new MovieDialog(assets, questGuideSide, model, GetWindow().Size);
+        ui.AddChild(questGuide);
     }
 
     /// <summary>
@@ -1018,26 +1007,6 @@ public partial class HudScene : Node
     static FieldMissions fieldMissions;     // the quest and description tables, read once (6,780 quest files)
     static FieldMeta fieldMeta;
 
-    /// <summary>
-    /// FUN_141aaddb0's conditions for this field: the field mission quests of the field (or of its parent field), each
-    /// condition's text with its count, unmet. The quest packet state is not here yet, so no goal is met and every count
-    /// is 0 (FUN_1416e6900 without a CQuest).
-    /// </summary>
-    List<(string Text, bool Satisfied)> FieldMissionGoals()
-    {
-        try
-        {
-            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale,
-                f => !data.FeaturesOff.Contains(f));
-            fieldMeta ??= FieldMeta.Load(assets.Packs);
-            int id = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
-            return fieldMissions.Goals(id, f => fieldMeta.ParentFields.TryGetValue(f, out int p) ? p : null);
-        }
-        catch (Exception e) { GD.PushWarning("field missions: " + e.Message); return new(); }
-    }
-
-    /// <summary>qg_dialog_body's width: the dialog's AS3 width when only the mission entity shows.</summary>
-    const float QuestGuideWidth = 298;
 
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
