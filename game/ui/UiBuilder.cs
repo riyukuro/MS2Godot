@@ -56,7 +56,35 @@ public sealed class NineCtx
     public float Sx, Sy;
     public Vector2 Offset;
 
+    /// <summary>
+    /// When set, the shape's matrices up to the grid sprite (Scale9GridData::ShapeMtx, TreeCacheShapeLayer::calcMeshKey,
+    /// sfr_render_03f.cpp:534) and the shape and the grid sprite keep their own matrices: Scale9GridInfo::Transform
+    /// (sfr_render_05e.cpp:162) takes a point through ShapeMtx, the grid cell and back through the inverse of the grid
+    /// sprite's matrix and ShapeMtx, so only the mesh changes. Unset, the shape sits <see cref="Offset"/> into a grid
+    /// sprite drawn without its scale.
+    /// </summary>
+    public Transform2D? Chain;
+
     public NineCtx At(Vector2 offset) => new() { Grid = Grid, Bounds = Bounds, Sx = Sx, Sy = Sy, Offset = offset };
+    public NineCtx With(Transform2D chain) => new() { Grid = Grid, Bounds = Bounds, Sx = Sx, Sy = Sy, Chain = chain };
+
+    /// <summary>A point of the shape in the grid sprite's own space.</summary>
+    public Vector2 ToGrid(Vector2 q) => Chain is { } c ? c * q : q + Offset;
+
+    /// <summary>
+    /// A point given by <see cref="MapX"/>/<see cref="MapY"/> back in the shape's space. Those keep the bounds' left and
+    /// top edges where they are; the cell matrices put them through the grid sprite's scale (Bounds.x1 * Sx), so with
+    /// <see cref="Chain"/> the difference is added before the scale is taken off.
+    /// </summary>
+    public Vector2 FromGrid(Vector2 p) => Chain is { } c
+        ? c.AffineInverse() * new Vector2((p.X + Bounds.Position.X * (Sx - 1)) / Sx, (p.Y + Bounds.Position.Y * (Sy - 1)) / Sy)
+        : p - Offset;
+
+    public Vector2 MapPoint(Vector2 q)
+    {
+        var p = ToGrid(q);
+        return FromGrid(new Vector2(MapX(p.X), MapY(p.Y)));
+    }
 
     public float MapX(float x) => Map1(x, Bounds.Position.X, Bounds.Size.X, Grid.Position.X, Grid.End.X, Grid.Size.X, Bounds.Size.X * Sx);
 
@@ -159,7 +187,7 @@ public partial class ShapeNode : Node2D
     {
         foreach (var (color, pts) in paths)
         {
-            var poly = nine == null ? pts : pts.Select(q => new Vector2(nine.MapX(q.X + nine.Offset.X) - nine.Offset.X, nine.MapY(q.Y + nine.Offset.Y) - nine.Offset.Y)).ToArray();
+            var poly = nine == null ? pts : pts.Select(nine.MapPoint).ToArray();
             if (Geometry2D.TriangulatePolygon(poly).Length > 0) DrawColoredPolygon(poly, color);
         }
         if (nine == null || pieces.Count == 0) return;
@@ -168,7 +196,9 @@ public partial class ShapeNode : Node2D
         float[] ys = { float.NegativeInfinity, g.Position.Y, g.End.Y, float.PositiveInfinity };
         foreach (var (tex, dest0, src) in pieces)
         {
-            var dest = new Rect2(dest0.Position + nine.Offset, dest0.Size);    // sprite space
+            // grid sprite space (an axis-aligned chain keeps the piece a rectangle)
+            Vector2 c0 = nine.ToGrid(dest0.Position), c1 = nine.ToGrid(dest0.End);
+            var dest = new Rect2(Math.Min(c0.X, c1.X), Math.Min(c0.Y, c1.Y), Math.Abs(c1.X - c0.X), Math.Abs(c1.Y - c0.Y));
             for (int i = 0; i < 3; i++)
                 for (int j = 0; j < 3; j++)
                 {
@@ -177,7 +207,8 @@ public partial class ShapeNode : Node2D
                     if (x1 <= x0 || y1 <= y0) continue;
                     float fx = src.Size.X / dest.Size.X, fy = src.Size.Y / dest.Size.Y;
                     var s = new Rect2(src.Position.X + (x0 - dest.Position.X) * fx, src.Position.Y + (y0 - dest.Position.Y) * fy, (x1 - x0) * fx, (y1 - y0) * fy);
-                    var d = new Rect2(nine.MapX(x0) - nine.Offset.X, nine.MapY(y0) - nine.Offset.Y, nine.MapX(x1) - nine.MapX(x0), nine.MapY(y1) - nine.MapY(y0));
+                    Vector2 d0 = nine.FromGrid(new Vector2(nine.MapX(x0), nine.MapY(y0))), d1 = nine.FromGrid(new Vector2(nine.MapX(x1), nine.MapY(y1)));
+                    var d = new Rect2(d0, d1 - d0);
                     DrawTextureRectRegion(tex, d, s);
                 }
         }

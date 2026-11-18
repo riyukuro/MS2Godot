@@ -168,23 +168,20 @@ public partial class As3View : Node2D
         }
         e.Seen = gen;
         var m = o.Matrix;
-        // under a scale-9 sprite (whose holder drops its scale): only shape meshes are mapped through the grid
-        // (TreeCacheShapeLayer's mesh key, sfr_render_03f.cpp:538); a text node keeps the whole matrix chain, so it gets
-        // the sprite's scale
-        if (nine != null && o is AsTextField or AsStaticText)
-            m = new Mat(m.A * nine.Sx, m.B * nine.Sy, m.C * nine.Sx, m.D * nine.Sy, m.Tx * nine.Sx, m.Ty * nine.Sy);
-        // scale-9 sprite with a scale: its own scale is applied by mapping its shapes (corners and edges keep their size)
-        NineCtx childNine = null;
+        // Scale-9: every node under a grid sprite keeps its matrix; only shape meshes are made through the grid, from
+        // the shape's matrices up to the nearest grid sprite (NF_PartOfScale9 passes down to every child,
+        // TreeShape::NodeData::updateCache sfr_render_03f.cpp:183; TreeCacheShapeLayer::calcMeshKey :534 stops at the
+        // first node with a grid). Text is not a shape (TreeCacheText, sfr_render_04l.cpp:115) and is drawn plainly.
+        NineCtx childNine = nine?.With(Xf(m.Then(FromXf(nine.Chain.Value))));
         if (o.Symbol?["scale9"] is JsonObject g9 && o is AsContainer)
         {
+            // a grid at scale 1 maps nothing, but it still ends the outer grid's reach
             double sx = Math.Sqrt(m.A * m.A + m.B * m.B), sy = Math.Sqrt(m.C * m.C + m.D * m.D);
-            if (Math.Abs(sx - 1) > 1e-3 || Math.Abs(sy - 1) > 1e-3)
-            {
-                childNine = new NineCtx { Grid = UiBuilder.Rc(g9), Bounds = UiBuilder.Rc(o.Symbol["bounds"]), Sx = (float)sx, Sy = (float)sy };
-                m = new Mat(1, 0, 0, 1, m.Tx, m.Ty);
-            }
+            childNine = Math.Abs(sx - 1) > 1e-3 || Math.Abs(sy - 1) > 1e-3
+                ? new NineCtx { Grid = UiBuilder.Rc(g9), Bounds = UiBuilder.Rc(o.Symbol["bounds"]), Sx = (float)sx, Sy = (float)sy, Chain = Transform2D.Identity }
+                : null;
         }
-        e.Holder.Transform = new Transform2D(new Vector2((float)m.A, (float)m.B), new Vector2((float)m.C, (float)m.D), new Vector2((float)m.Tx, (float)m.Ty));
+        e.Holder.Transform = Xf(m);
         e.Holder.Visible = o.IsVisible && !masks.Contains(o);
         var cx = o.Color;
         e.Holder.Modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
@@ -201,13 +198,16 @@ public partial class As3View : Node2D
             {
                 var wanted = new List<Node>();
                 if (e.Content != null) wanted.Add(e.Content);
-                foreach (var s in b.Drawn) Reparent(SyncObject(s, masks, null, blend).Holder, e.Holder, wanted);
+                foreach (var s in b.Drawn) Reparent(SyncObject(s, masks, childNine, blend).Holder, e.Holder, wanted);
                 foreach (var n in e.Holder.GetChildren()) if (!wanted.Contains(n)) e.Holder.RemoveChild(n);
                 break;
             }
         }
         return e;
     }
+
+    static Transform2D Xf(Mat m) => new(new Vector2((float)m.A, (float)m.B), new Vector2((float)m.C, (float)m.D), new Vector2((float)m.Tx, (float)m.Ty));
+    static Mat FromXf(Transform2D t) => new(t.X.X, t.X.Y, t.Y.X, t.Y.Y, t.Origin.X, t.Origin.Y);
 
     void SyncContent(Entry e, NineCtx nine)
     {
@@ -217,11 +217,12 @@ public partial class As3View : Node2D
         {
             case AsShape sh when sh.GraphicsOrNull is { Ops.Count: > 0 } g:
                 key = g; make = () => new GraphicsNode(g); break;
-            case AsShape when o.Symbol != null && o.Scope != null:
-                key = (o.Symbol, nine?.Sx, nine?.Sy, nine?.Offset);
-                make = () => new ShapeNode(Scope(o.Scope), o.Symbol, nine?.At(new Vector2((float)o.Matrix.Tx, (float)o.Matrix.Ty) + nine.Offset)); break;
-            case AsMorphShape when o.Symbol != null && o.Scope != null:
-                key = o.Symbol; make = () => new ShapeNode(Scope(o.Scope), o.Symbol); break;
+            case AsShape or AsMorphShape when o.Symbol != null && o.Scope != null:
+            {
+                var sn = nine?.With(Xf(o.Matrix.Then(FromXf(nine.Chain.Value))));
+                key = (o.Symbol, sn?.Grid, sn?.Bounds, sn?.Sx, sn?.Sy, sn?.Chain);
+                make = () => new ShapeNode(Scope(o.Scope), o.Symbol, sn); break;
+            }
             case AsTextField tf when (tf.Symbol?["text"] is JsonObject) && o.Scope != null:
                 key = tf; make = () => new FieldText(tf, Scope(o.Scope)); break;
             case AsTextField tf:
