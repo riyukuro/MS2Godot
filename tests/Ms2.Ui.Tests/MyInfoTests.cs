@@ -258,4 +258,21 @@ public class MyInfoTests
         Assert.That(shown, Does.Contain(t.ItemName(11400021)));
         Assert.That(shown, Has.Some.Contains("right-click"));
     }
+
+    [Test]
+    public void ScoreTooltipsAreDrawnAsTheClients()
+    {
+        Packs();
+        var (h, c, _, errors) = Load();
+        if (!c.Model.IsFeatureEnabled(0xdf)) Assert.Ignore("feature 0xdf off in this data");
+        foreach (var (label, title) in new[] { ("m_attackInfo", "Attack Score"), ("m_defenseInfo", "Defense Score") })
+        {
+            var data = UiHost.FromAs(h.Get(h.Child(label), "_tooltipData")) as IDictionary<string, object>;
+            Assert.That(data, Is.Not.Null, label);
+            var shown = TooltipTests.Draw(data);
+            TestContext.WriteLine(label + ": " + string.Join(" | ", shown));
+            Assert.That(shown, Has.Some.StartsWith(title), "lv10_hover_attack_score.png / lv10_hover_defense_score.png");
+        }
+        Assert.That(errors, Is.Empty);
+    }
 }
