@@ -177,4 +177,22 @@ public class MyInfoTests
         Assert.That(Rt.ToString(h2.Get(h2.FindNamed("value", il2), "text")), Is.EqualTo("0"));
         Assert.That(Rt.ToString(h2.Get(h2.FindNamed("detail", il2), "text")), Is.EqualTo("0 + (0)"));
     }
+
+    [Test]
+    public void StatPointRowsHaveTheClientsTooltips()
+    {
+        Packs();
+        var (h, c, _, _) = Load();
+        var row = h.Child("m_statPoint1");
+        var fn = h.Get(row, "externalTooltipFunction") as AsFunction;
+        Assert.That(fn, Is.Not.Null);
+        var tip = fn.Call(row, Array.Empty<object>());
+        Assert.That(Rt.ToString(h.Get(tip, "tooltip")), Is.EqualTo("export_common_tooltip_tooltipText"));
+        Assert.That(Rt.ToNumber(h.Get(tip, "tooltipAlign")), Is.EqualTo(4));
+        Assert.That(Rt.ToString(h.Get(tip, "text")), Is.EqualTo(c.Model.Tables.Common("s_char_info_stat_point_tooltip_str") ?? ""));
+        var remain = h.Child("m_remainPoint");
+        var rf = h.Get(remain, "externalTooltipFunction") as AsFunction;
+        Assert.That(rf, Is.Not.Null);
+        TestContext.WriteLine(Rt.ToString(h.Get(rf.Call(remain, Array.Empty<object>()), "text")));
+    }
 }

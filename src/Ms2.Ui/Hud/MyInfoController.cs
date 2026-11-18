@@ -349,8 +349,9 @@ public sealed class MyInfoController : UiController
         return maps != null && maps[0].Count == 0 ? (0u, 0u) : null;
     }
 
-    /// <summary>The attack / defense label: detail "", value "{0}" of the score; with feature 0xdf the html label text and the
-    /// tooltip {className, text, onDelay 300, offDelay 5000, align 4}. A score not here leaves the value.</summary>
+    /// <summary>The attack / defense label: detail "", value "{0}" of the score; with feature 0xdf the html label text and
+    /// ASLabel::SetTooltipData of an ASTooltip (class export_common_tooltip_tooltipText, text, onDelay 300, offDelay 5000,
+    /// tooltipAlign 4). A score not here leaves the value.</summary>
     void ScoreLabel(string name, long? value, bool feature, string key)
     {
         if (Child(name) is not AsDisplayObject l) return;
@@ -358,8 +359,50 @@ public sealed class MyInfoController : UiController
         if (value is long v) Host.SetChildText("value", v.ToString(CultureInfo.InvariantCulture), l);
         if (!feature) return;
         if (Host.FindNamed("textField", l) is { } tf) Host.Set(tf, "htmlText", Localize("$s_myInfo_label_" + key));
-        Host.Set(l, "tooltipData", Host.Obj(("className", "export_common_tooltip_tooltipText"), ("text", "$s_tooltip_myinfo_stat_" + key),
-            ("onDelay", 300), ("offDelay", 5000), ("align", 4)));
+        SetTooltipData(l, Host.Obj(("tooltip", "export_common_tooltip_tooltipText"), ("text", "$s_tooltip_myinfo_stat_" + key),
+            ("onDelay", 300), ("offDelay", 5000), ("tooltipAlign", 4)));
+    }
+
+    /// <summary>ASUIComponent::SetTooltipData (asuicomponent.cpp:228): "_tooltipData", then RegisterTooltip (:247, once per
+    /// component: FUN_1422c6380 = the movie's TooltipManager.registerMouseEvent).</summary>
+    void SetTooltipData(object c, object data)
+    {
+        Host.Set(c, "_tooltipData", data);
+        if (registered.Add(c)) RegisterMouseEvent(c);
+    }
+    readonly HashSet<object> registered = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>ASTooltipManager::RegisterMouseEvent (astooltipmanager.cpp:26): TooltipManager.registerMouseEvent(obj).</summary>
+    void RegisterMouseEvent(object c)
+    {
+        if (Host.RT.GetClass("scaleform.ms2.manager.TooltipManager") is { } tm) Host.Invoke(tm, "registerMouseEvent", c);
+    }
+
+    /// <summary>ASMovieClip::SetExternalTooltipFunction (asmovieclip.cpp:285): the function member "externalTooltipFunction",
+    /// which TooltipManager.showTooltipMouseEvent calls for the tooltip data.</summary>
+    void SetExternalTooltipFunction(object c, Func<object> tooltip) =>
+        Host.Set(c, "externalTooltipFunction", new AsPlainFunction(Host.RT, new NativeMethod("externalTooltipFunction", (_, _) => tooltip())));
+
+    /// <summary>An ASTooltip(pc, 1, 2) with class export_common_tooltip_tooltipText, tooltipAlign 4 and the text.</summary>
+    object TextTooltip(string text) =>
+        Host.Obj(("tooltip", "export_common_tooltip_tooltipText"), ("tooltipAlign", 4), ("text", text));
+
+    /// <summary>FUN_14132eed0 (@0x14132eed0): GetStringCommonByKey("s_char_info_stat_point_tooltip_" + GetStatName(stat)); none
+    /// without a local player.</summary>
+    object StatPointTooltip(int stat) =>
+        Model.HasLocalPlayer ? TextTooltip(Common("s_char_info_stat_point_tooltip_" + Model.Tables.StatOption(stat))) : null;
+
+    /// <summary>FUN_14132f020 (@0x14132f020): with feature 0xbd and the level at least AdventureLevelStartLevel (Constants
+    /// m_9298) "s_char_info_stat_point_by_reason_with_adventure_level" of the total and the extras 2, 1, 3, 4; else
+    /// "s_char_info_stat_point_by_reason" of the total and the extras 2, 1, 3.</summary>
+    object RemainTooltip()
+    {
+        if (!Model.HasLocalPlayer || StatPoints == null || info == null) return null;
+        var p = StatPoints;
+        string text = Feature(0xbd) && info.Level >= Model.Tables.AdventureLevelStartLevel
+            ? Format(Common("s_char_info_stat_point_by_reason_with_adventure_level"), (uint)p.Total, p.GetExtra(2), p.GetExtra(1), p.GetExtra(3), p.GetExtra(4))
+            : Format(Common("s_char_info_stat_point_by_reason"), (uint)p.Total, p.GetExtra(2), p.GetExtra(1), p.GetExtra(3));
+        return TextTooltip(text);
     }
 
     /// <summary>GetAverageStat (@0x141335780): (Stats2[0x1b] + Stats2[0x1c]) * 0.5f.</summary>
@@ -467,6 +510,8 @@ public sealed class MyInfoController : UiController
                 if ((uint)remaining == 0) Host.Set(plus, "enabled", false);
                 else if (!Rt.ToBoolean(Host.Get(plus, "enabled"))) Host.Set(plus, "enabled", true);
             }
+            SetExternalTooltipFunction(row, () => StatPointTooltip(stat));
+            RegisterMouseEvent(row);
         }
         if (Child("m_resetStatPoint") is { } reset) Host.Set(reset, "enabled", (uint)used > 0);
         if (Child("m_remainPoint") is AsDisplayObject remain && Host.FindNamed("m_remainStatPoint", remain) is { } text)
@@ -477,6 +522,11 @@ public sealed class MyInfoController : UiController
                 Host.Set(text, "text", ((uint)remaining).ToString(CultureInfo.InvariantCulture));
                 Host.Set(text, "textColor", (uint)remaining > 0 ? 0xffa200u : 0xffffffu);
             }
+        }
+        if (info.IsLocal && Child("m_remainPoint") is { } remainClip)
+        {
+            SetExternalTooltipFunction(remainClip, RemainTooltip);
+            RegisterMouseEvent(remainClip);
         }
     }
 

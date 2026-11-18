@@ -16,7 +16,7 @@ public sealed class GameTables
     readonly Dictionary<string, string> mapTileDescs = new(), npcFunctionNames = new(), fieldEnterances = new(), raceNames = new();
     readonly Func<string, string> common = _ => null;
     readonly Dictionary<string, string> titleNames = new();
-    readonly Dictionary<int, string> statNames = new(), specialNames = new();
+    readonly Dictionary<int, string> statNames = new(), specialNames = new(), statOptions = new();
 
     public static readonly GameTables Empty = new();
 
@@ -44,6 +44,7 @@ public sealed class GameTables
         common = s.Common();
         titleNames = s.Table("titlename", "name");
         statNames = CommonTexts(packs, "table/statstringtable.xml", s.Table("stringstatname", "name"));
+        statOptions = Options(packs, "table/statstringtable.xml");
         specialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", s.Table("stringspecialabilityname", "name"));
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
@@ -73,6 +74,18 @@ public sealed class GameTables
         return d;
     }
 
+    /// <summary>LoadStatDefinitions (stat.cpp:172): per &lt;key id&gt; its "option" (the StatDefinition's name).</summary>
+    static Dictionary<int, string> Options(PackSet packs, string table)
+    {
+        var d = new Dictionary<int, string>();
+        if (!packs.Exists("Xml", table)) return d;
+        foreach (var e in GameStrings.Parse(packs.Read("Xml", table)).Root.Elements("key"))
+            if (int.TryParse((string)e.Attribute("id"), out int id)) d[id] = (string)e.Attribute("option") ?? "";
+        return d;
+    }
+
+    /// <summary>GetStatName (stat.cpp:271): the stat's option name, "" past 0x23 or without one.</summary>
+    public string StatOption(int stat) => (uint)stat < 0x23 && statOptions.TryGetValue(stat, out var n) ? n : "";
     /// <summary>GetStatCommonText (stat.cpp:280): the stat's common text, "" past 0x23 or without one.</summary>
     public string StatName(int stat) => (uint)stat < 0x23 && statNames.TryGetValue(stat, out var n) ? n : "";
     /// <summary>GetSATypeName (itemsocketsystemutil.cpp:2132): the special ability's common text (SpecialAbilityInfo m_strName).</summary>
