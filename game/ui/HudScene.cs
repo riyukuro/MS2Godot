@@ -42,6 +42,7 @@ public partial class HudScene : Node
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
+    int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
@@ -58,6 +59,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -90,6 +92,7 @@ public partial class HudScene : Node
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         restoreScale?.Invoke();
         restoreScale = null;
+        if (messageBox != null && MessageBoxQueue.Layer == messageBox) MessageBoxQueue.Layer = null;
     }
 
     Viewport sizeSource;            // the viewport whose size_changed relays the HUD out, while connected
@@ -131,6 +134,7 @@ public partial class HudScene : Node
         questLog?.Relayout(GetWindow().Size);
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
+        messageBoxMovie?.Relayout(GetWindow().Size);
     }
 
     /// <summary>
@@ -169,6 +173,7 @@ public partial class HudScene : Node
         PlayerInfo(uiRoot);
         GameMenu(uiRoot);
         SystemMenuFacts();
+        MessageBoxLayer();
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
     }
 
@@ -182,8 +187,72 @@ public partial class HudScene : Node
 
     /// <summary>OnSelectCharacter (@0x141b14600): SendRequestQuit; the game flow goes back to character select.</summary>
     public static event Action SystemMenuSelectCharacter;
-    /// <summary>OnGameExit (FUN_1418fc760): message box 0x288 (s_msg_game_over), type 0x17.</summary>
-    public static event Action SystemMenuGameExit;
+    /// <summary>The exit box's yes, UIMessageBox::HandleGameexitButton(0) @0x1419fb480: SendRequestQuitAndDisconnect, then
+    /// PostQuitMessage(0).</summary>
+    public static event Action GameExit;
+
+    MessageBoxController messageBox;    // UIMessageBox (0x4e48), the message box layer, loaded with the HUD and kept
+    MovieDialog messageBoxMovie;        // its movie (uimessagebox)
+    CanvasLayer messageBoxLayer;        // over the dialogs
+
+    /// <summary>
+    /// The message box layer: the client creates UIMessageBox with the game scene and keeps it; MessageBoxFactory's configUI
+    /// hides the root until a box opens. Boxes reach it through <see cref="MessageBoxQueue"/>.
+    /// </summary>
+    void MessageBoxLayer()
+    {
+        if (messageBox != null) return;
+        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the message box runs interpreted");
+        menuModel ??= new UiModel(new GameTables(assets.Packs, "en"));
+        MessageBoxData.CommonByKey = commonStrings;
+        var c = new MessageBoxController();
+        c.GameExit += () => GameExit?.Invoke();
+        c.UnportedTag += (b, t) => GD.Print($"message box: button {b} of tag {t}: its handler is not ported");
+        AddChild(messageBoxLayer = new CanvasLayer { Layer = 12 });
+        messageBoxMovie = new MovieDialog(assets, c, menuModel, GetWindow().Size);
+        messageBoxLayer.AddChild(messageBoxMovie);
+        messageBox = c;
+        MessageBoxQueue.Layer = c;
+    }
+
+    /// <summary>OnGameExit (FUN_1418fc760, uichatballoon.cpp:467): FUN_140d73bc0(0x288 s_msg_game_over, 0x17, 0, "gameexit").</summary>
+    static void ShowGameExitBox(Func<string, string> common) =>
+        MessageBoxQueue.ShowMessageBox(common("s_msg_game_over") ?? "", 0x17, null, "gameexit");
+
+    /// <summary>A scripted click on the shown box's button <paramref name="n"/> (m_button0..2, the centre of its bounds).</summary>
+    public void ClickMessageBox(int n)
+    {
+        if (messageBoxMovie == null || messageBox?.IsIdle != false) return;
+        var h = messageBoxMovie.Host;
+        var boxes = h.Get(h.Entity, "m_msgBoxArray");          // MessageBoxFactory.getCurMsgBox: the last box
+        int count = Ms2.Avm2.Rt.ToInt32(h.Get(boxes, "length"));
+        if (count == 0) return;
+        var box = h.Get(boxes, (count - 1).ToString());
+        if (h.Child("m_button" + n, box) is not Ms2.Avm2.Flash.AsDisplayObject d) { GD.PushWarning($"message box: no m_button{n}"); return; }
+        var b = d.GetBounds(null);
+        messageBoxMovie.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
+    }
+
+    public bool MessageBoxShown => messageBox?.IsIdle == false;
+
+    /// <summary>UIMessageBox::vfunc_13 @0x1419f7560 while a box is shown: Enter, Esc, the arrows and Tab go to the movie.</summary>
+    bool MessageBoxKeys(InputEvent e)
+    {
+        if (messageBox == null || messageBox.IsIdle) return false;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k) return false;
+        string key = k.Keycode switch
+        {
+            Key.Enter or Key.KpEnter => "enter",
+            Key.Escape => "escape",
+            Key.Up => "up",
+            Key.Left => "left",
+            Key.Down => "down",
+            Key.Right => "right",
+            Key.Tab => "tab",
+            _ => null,
+        };
+        return key != null && messageBox.ProcessKey(key);
+    }
 
     /// <summary>
     /// The system menu's field facts, read with the HUD: the map type (the leave entry) and the channel group (the channel
@@ -222,7 +291,7 @@ public partial class HudScene : Node
             Channels = new[] { new ChannelRow(1) },
         };
         c.SelectCharacter += () => SystemMenuSelectCharacter?.Invoke();
-        c.GameExit += () => SystemMenuGameExit?.Invoke();
+        c.GameExit += () => ShowGameExitBox(commonStrings);
         c.Leave += t => GD.Print($"system menu: leave field (map type {t}): OnLeaveFieldClick is not ported");
         c.OpenGameOption += OpenGameOption;
         if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
@@ -617,6 +686,7 @@ public partial class HudScene : Node
     /// <summary>The scene's keys: the chat windows first, then the dialogs.</summary>
     public override void _Input(InputEvent e)
     {
+        if (MessageBoxKeys(e)) { GetViewport().SetInputAsHandled(); return; }
         if (ChatKeys(e)) { GetViewport().SetInputAsHandled(); return; }
         if (DialogKeys(e)) GetViewport().SetInputAsHandled();
     }
@@ -921,6 +991,10 @@ public partial class HudScene : Node
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
         if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");
+        if (msgboxShot == 1 && frames == 200) Escape();
+        if (msgboxShot == 1 && frames == 230) ClickSystemMenu("m_exitGame");
+        if (msgboxShot == 2 && frames == 230) optionDialog?.FUN_141943a30();               // the movie's OnInit (Defaults)
+        if (msgboxShot == 3 && frames == 230) optionHost?.MessageBox(0x84b, "OnSaveAndCheck");   // OnCloseDialog with a page changed
         if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)

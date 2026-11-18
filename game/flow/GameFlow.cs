@@ -53,8 +53,9 @@ public partial class GameFlow : Node
         // the system menu's entries that leave the field (Ui.HudScene, uisystemmenudialog): OnSelectCharacter sends RequestQuit, whose answer
         // returns to character select; offline that is the lobby at once (the request packet is not ported)
         Ui.HudScene.SystemMenuSelectCharacter += () => { if (Current == State.Game) Go(State.Lobby); };
-        // OnGameExit: box 0x288 (s_msg_game_over); its yes answer quits (tag s_gameExit, windowservice.cpp:652)
-        Ui.HudScene.SystemMenuGameExit += () => ShowConfirm(CommonStrings()("s_msg_game_over") ?? "", () => GetTree().Quit(0));
+        // OnGameExit: the HUD's message box 0x288 (s_msg_game_over, tag "gameexit"); its yes answer quits
+        // (UIMessageBox::HandleGameexitButton: SendRequestQuitAndDisconnect is not ported, PostQuitMessage(0))
+        Ui.HudScene.GameExit += () => GetTree().Quit(0);
 
         Net.LiveSession.Attach(this);
         Go(State.Login);
@@ -200,21 +201,6 @@ public partial class GameFlow : Node
         AddChild(box);
         box.PopupCentered();
     }
-
-    /// <summary>STAND-IN for a yes/no UIMessageBox (box type 0x17): the same text in a Godot ConfirmationDialog; yes runs <paramref name="yes"/>.</summary>
-    void ShowConfirm(string text, Action yes)
-    {
-        GD.Print("flow: confirm: " + text);
-        var box = new ConfirmationDialog { DialogText = text, Title = "", Exclusive = true };
-        box.Confirmed += () => { box.QueueFree(); yes(); };
-        box.Canceled += box.QueueFree;
-        AddChild(box);
-        box.PopupCentered();
-        Confirm = box;
-    }
-
-    /// <summary>The open stand-in confirm box (scripted runs answer it).</summary>
-    public ConfirmationDialog Confirm { get; private set; }
 
     void OnCreateCancelled()
     {
@@ -388,6 +374,6 @@ public partial class GameFlow : Node
         GD.Print("flow: quit from the menu");
         Hud?.ClickSystemMenu("m_exitGame"); await Frames(10);
         Shot("11_exit_confirm.png");
-        Confirm?.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
+        Hud?.ClickMessageBox(0);
     }
 }

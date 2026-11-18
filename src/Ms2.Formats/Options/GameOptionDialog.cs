@@ -133,6 +133,9 @@ public interface IGameOptionDialogHost
     (int Width, int Height) ScreenSize { get; }
     /// <summary>FUN_14151f6e0 (messageboxqueue.cpp:110): the message box layer takes a box.</summary>
     bool MessageBoxFree { get; }
+    /// <summary>FUN_14151f200 (messageboxqueue.cpp): the shown box closes and the newest queued one shows, as a listener does
+    /// on its answer.</summary>
+    void NextMessageBox();
     /// <summary>The window request of FUN_14125e910 (ScreenModes.Switch) to carry out.</summary>
     void ApplyWindow(WindowRequest request);
     /// <summary>SetQuality(state, quality, 0) on the page state (@0x14125e1f0).</summary>
@@ -507,9 +510,11 @@ public sealed class GameOptionDialog
         return !pages.Values.Any(p => p.vfunc_14() != 0);
     }
 
-    /// <summary>OnMessage @0x141943010: a message box answer (0 yes / first button, 1 no / second, 2 cancel, -1 none).</summary>
+    /// <summary>OnMessage @0x141943010: a message box answer (0 yes / first button, 1 no / second, 2 cancel, -1 none), after
+    /// FUN_14151f200 closes the box.</summary>
     public void OnMessage(string tag, int answer)
     {
+        Host.NextMessageBox();
         if (tag == "OnSave")
         {
             if (answer == 0)
@@ -636,10 +641,11 @@ public sealed class InterfaceOptionPage : OptionPage
         return 0;
     }
 
-    /// <summary>@0x141255b50: yes resets the layout.</summary>
+    /// <summary>@0x141255b50: yes resets the layout; then the box closes (FUN_14151f200).</summary>
     public override void OnMessage(string tag, int answer)
     {
         if (answer == 0 && tag == "resetSwfLayout") Host.ResetUiLayout();
+        Host.NextMessageBox();
     }
 
     /// <summary>@0x141255c10. The UI scale slider runs 80..120 the other way round (200 - scale * 100).</summary>

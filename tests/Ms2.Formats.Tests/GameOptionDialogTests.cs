@@ -114,6 +114,7 @@ public class GameOptionDialogTests
         public readonly HashSet<string> Files = new();
         public bool FileExists(string path) => Files.Contains(path);
         public void TextNotice(string text) => Log.Add("text " + text);
+        public void NextMessageBox() => Log.Add("next box");
         public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
         public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
         public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
@@ -377,7 +378,7 @@ public class GameOptionDialogTests
         Assert.That(h.Log.Last(), Is.EqualTo("apply True"));
         h.Log.Clear();
         d.OnMessage("", 2);
-        Assert.That(h.Log, Is.Empty, "cancel");
+        Assert.That(h.Log, Is.EqualTo(new[] { "next box" }), "cancel: only the box closes (FUN_14151f200)");
     }
 
     [Test]

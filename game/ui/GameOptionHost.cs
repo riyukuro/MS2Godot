@@ -13,7 +13,6 @@ namespace Ms2Godot.Ui;
 /// </summary>
 public sealed class GameOptionHost : IGameOptionDialogHost
 {
-    readonly Node owner;
     readonly PackSet packs;
     readonly Func<string, string> common;
     readonly GraphicOptionTable table;
@@ -26,7 +25,6 @@ public sealed class GameOptionHost : IGameOptionDialogHost
 
     public GameOptionHost(Node owner, PackSet packs, Func<string, string> common)
     {
-        this.owner = owner;
         this.packs = packs;
         this.common = common;
         table = packs.Exists("Xml", "table/graphicoption.xml")
@@ -72,51 +70,42 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public string CommonByKey(string key) => common(key) ?? "";
     public string FormatStringId(int id, params object[] args) => Ms2.Quest.ClientFormat.Format(Common(id), args);
 
-    // ---- message boxes (stand-ins: the client's message box movie is not hosted yet) -------------------------------
+    // ---- message boxes: UIMessageBox through the message box queue (Ms2.Ui.Hud.MessageBoxQueue) ---------------------
 
-    public void MessageBox(int stringId, string tag) =>
-        Box(Common(stringId), Common(0x476), answer => Dialog?.OnMessage(tag, answer), null);
-
-    public void Notice(int stringId) => Box(Common(stringId), null, null, null);
-
-    public void ResetBox(string title, string allPages, string currentPage, string cancel) =>
-        Box(title, cancel, answer => Dialog?.OnMessage("", answer), (allPages, currentPage));
-
-    /// <summary>A Godot box in place of the client's: OK answers 0, the extra button 1, Cancel 2 (the reset box) or 1 (a
-    /// yes/no box).</summary>
-    void Box(string text, string cancel, Action<int> answer, (string First, string Second)? three)
+    /// <summary>An IMessageListener: UIMsg 0's button and tag go to <paramref name="answer"/>; the listener's return is
+    /// UIGameOptionDialog::OnMessage's 1 or CGameOptionInterface::OnMessage's 0 (@0x141255b50).</summary>
+    sealed class Listener(Action<string, int> answer, bool handled) : IMessageBoxListener
     {
-        GD.Print("options: box: " + text);
-        var box = cancel == null ? new AcceptDialog() : new ConfirmationDialog();
-        box.DialogText = three == null ? text : "";
-        box.Title = three == null ? "" : text;
-        box.Exclusive = true;
-        bool answered = false;
-        void Answer(int n)
+        public bool OnMessageBox(MessageBoxController sender, int button, string tag)
         {
-            if (answered) return;
-            answered = true;
-            answer?.Invoke(n);
-            box.QueueFree();
+            answer(tag, button);
+            return handled;
         }
-        if (three is var (first, second))
-        {
-            box.OkButtonText = first;
-            box.AddButton(second, true, "second");
-            box.CustomAction += a => { if (a == "second") { box.Hide(); Answer(1); } };
-        }
-        if (box is ConfirmationDialog cd)
-        {
-            cd.CancelButtonText = cancel;
-            cd.Canceled += () => Answer(three == null ? 1 : 2);
-        }
-        box.Confirmed += () => Answer(0);
-        box.CloseRequested += () => Answer(-1);
-        owner.AddChild(box);
-        box.PopupCentered();
     }
 
-    public bool MessageBoxFree => true;
+    Listener dialogListener;
+    Listener DialogListener => dialogListener ??= new Listener((tag, n) => Dialog?.OnMessage(tag, n), true);
+
+    /// <summary>FUN_140d73bc0(id, 1, this, tag).</summary>
+    public void MessageBox(int stringId, string tag) => MessageBoxQueue.ShowMessageBox(Common(stringId), 1, DialogListener, tag);
+
+    /// <summary>FUN_140d73bc0(id, 0, 0, "").</summary>
+    public void Notice(int stringId) => MessageBoxQueue.ShowMessageBox(Common(stringId), 0, null, "");
+
+    /// <summary>FUN_141943a30: CreateMessageBox(0x18, "", this, ""), SetButtonLabels, SetTitle(0x847), FUN_140d73c60.</summary>
+    public void ResetBox(string title, string allPages, string currentPage, string cancel)
+    {
+        var box = MessageBoxQueue.Create(0x18, "", DialogListener, "");
+        box.SetButtonLabels(allPages, currentPage, cancel);
+        box.Title = title ?? "";
+        MessageBoxQueue.Show(box);
+    }
+
+    /// <summary>FUN_14151f6e0.</summary>
+    public bool MessageBoxFree => MessageBoxQueue.IsIdle;
+
+    /// <summary>FUN_14151f200.</summary>
+    public void NextMessageBox() => MessageBoxQueue.Next();
 
     // ---- the client's state ----------------------------------------------------------------------------------------
 
@@ -229,7 +218,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public bool MouseCameraMode => false;
 
     public void PageMessageBox(int stringId, string tag, OptionPage listener) =>
-        Box(Common(stringId), Common(0x476), answer => listener.OnMessage(tag, answer), null);
+        MessageBoxQueue.ShowMessageBox(Common(stringId), 1, new Listener(listener.OnMessage, false), tag);
 
     public void ApplyCamera(GameOption.Camera camera) => GD.Print("options: camera option stored (CameraMgr and BGTransparencyMgr are not ported)");
     public void ApplyInterface(GameOption.Interface state) => GD.Print("options: interface stored (the damage meters and the damage effect are not hosted)");
@@ -274,7 +263,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
 
     public int RunningVoice => GameOptions.Voice;
     public bool FileExists(string path) => System.IO.File.Exists(path);
-    public void TextNotice(string text) => Box(text, null, null, null);
+    public void TextNotice(string text) => MessageBoxQueue.ShowMessageBox(text, 0, null, "");
 
     /// <summary>A tab with no controls (no movie loaded): reads null, ignores writes.</summary>
     sealed class NoTab : IOptionTab

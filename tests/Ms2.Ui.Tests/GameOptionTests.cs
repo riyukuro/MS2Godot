@@ -82,6 +82,7 @@ public class GameOptionTests
         public int RunningVoice => 0;
         public bool FileExists(string path) => false;
         public void TextNotice(string text) => Log.Add("text " + text);
+        public void NextMessageBox() => Log.Add("next box");
         public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
         public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
         public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
