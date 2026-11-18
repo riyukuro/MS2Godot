@@ -25,6 +25,7 @@ public enum Inbound : ushort {
     RequestFieldEnter = 0x16,
     FieldAddUser = 0x17,
     FieldRemoveUser = 0x18,
+    NpcTalk = 0x4B,
     Quest = 0x52,
     Party = 0x53,
     Shop = 0x51,
@@ -81,4 +82,6 @@ public enum Outbound : ushort {
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
+    NpcTalk = 0x22,
+    Quest = 0x29,
 }
