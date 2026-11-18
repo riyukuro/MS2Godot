@@ -52,15 +52,39 @@ public class CharacterInfoTests {
         Assert.That((me.Revive(8), me.Dead), Is.EqualTo((false, true)), "another object's revival");
         Assert.That((me.Revive(9), me.Dead, changed), Is.EqualTo((true, false, 2)));
         Assert.That(me.Revive(9), Is.False, "not dead: nothing changes");
-        Assert.That(me.Die(9), Is.True, "out of the death state: dies again");
+        Assert.That((me.State, me.Die(9)), Is.EqualTo((0x18, true)), "in the revival state: dies again");
+        Assert.That(me.State, Is.EqualTo(0xc));
 
         u.Stats[2].Health = 0;
         me.Apply(u);
-        Assert.That(me.Dead, Is.True, "a FieldAddUser with no current health: dead (scenestategame.cpp:11185)");
-        Assert.That(me.Die(9), Is.True, "the field entry left the old death state");
+        Assert.That((me.Dead, me.State), Is.EqualTo((true, 0)), "a FieldAddUser with no current health: dead (scenestategame.cpp:11185)");
+        Assert.That((me.Die(9), me.State), Is.EqualTo((false, 0xc)), "already dead: MyPC::vfunc_137 enters the death state");
         u.Stats[2].Health = 10;
         me.Apply(u);
         Assert.That(me.Dead, Is.False);
+    }
+
+    [Test] public void UserStateEntersTheStateBeforeTheDie() {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[2].Health = 0;
+        me.Apply(u);
+        me.Revive(9);
+        Assert.That((me.Dead, me.State), Is.EqualTo((false, 0x18)));
+        int changed = 0; me.Changed += () => changed++;
+        Assert.That((me.ApplyUserState(9, 12), me.Dead, me.State, changed), Is.EqualTo((false, false, 0xc, 0)),
+            "vfunc_59(12) enters the death state first, so vfunc_137 does not set the dead flag");
+        Assert.That((me.Die(9), me.Dead), Is.EqualTo((false, false)), "a DeadUser after it: already in the death state");
+        Assert.That((me.ApplyUserState(9, 1), me.State), Is.EqualTo((false, 0xc)), "no health: vfunc_124 stops the idle state");
+        Assert.That((me.ApplyUserState(9, 0x3f), me.State), Is.EqualTo((false, 0x3f)), "the observer state always passes");
+        Assert.That((me.Die(9), me.Dead, me.State, changed), Is.EqualTo((true, true, 0xc, 1)), "out of the death state: a DeadUser dies");
+        Assert.That((me.ApplyUserState(9, 0x18), me.State), Is.EqualTo((false, 0x18)), "the revival state passes while dead");
+        Assert.That((me.ApplyUserState(9, 1), me.State), Is.EqualTo((false, 0x18)), "dead: the idle state is stopped");
+        Assert.That((me.ApplyUserState(9, 0x23), me.State), Is.EqualTo((false, 0x18)), "0x23 is not registered");
+        me.Revive(9);
+        me.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 300 } }));
+        Assert.That((me.ApplyUserState(9, 1), me.State), Is.EqualTo((false, 1)), "alive with health: the idle state passes");
+        Assert.That((me.ApplyUserState(8, 12), me.State), Is.EqualTo((false, 1)), "another object");
     }
 
     [Test] public void TheRecordIsTheOwnPlayersPackets() {

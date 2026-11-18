@@ -493,10 +493,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// with s_msg_transfer_bind_when_use formatted with the player's name (vfunc_77, FUN_14028dfa0), tag
     /// <see cref="BindOnUseBox"/>, the item uid and the item entry (its name coloured, count 0), the yes / no labels
     /// (0x477 / 0x478), shown; its yes comes back as <see cref="ConfirmBindUse"/>. Then a function of
-    /// <see cref="OwnUseFunctions"/> has its own handler (raised); else FUN_140a63880 = RequestUseItem(uid, "")
-    /// (inventory.cpp:1201): a dead local player gets box 66 (<see cref="MyInfoController.DeadKey"/>) unless the function is
-    /// <see cref="NoStateCheckFunctions"/>; FUN_140a65e30's GetItemUseError (expired without a maid id box 225), then the use
-    /// request.
+    /// <see cref="OwnUseFunctions"/> has its own handler (raised); else FUN_140a63880 = <see cref="RequestUseItem"/>(uid, "").
     /// Nothing is used up here: the server's item packets do.
     /// STILL-OPEN: the function shutdown list (CGameEventValueManager::ShutdownFunctionItem()->IsShutdown of the item id,
     /// notice 0x2f7) and the item sound.
@@ -510,11 +507,24 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             ShowBox(BindBox(item, BindOnUseKey, BindOnUseBox));
             return true;
         }
-        if (OwnUseFunctions.Contains(d.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
-        if (!NoStateCheckFunctions.Contains(d.FunctionName) && LocalPlayerDead()) { ShowCommonBox(MyInfoController.DeadKey); return true; }   // inventory.cpp:1205-1211
+        if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
+        RequestUseItem(item, "");
+        return true;
+    }
+
+    /// <summary>
+    /// Unk_Inventory::RequestUseItem (inventory.cpp:1201): a dead local player gets box 66
+    /// (<see cref="MyInfoController.DeadKey"/>) unless the function is one of <see cref="NoStateCheckFunctions"/>;
+    /// FUN_140a65e30's GetItemUseError (expired without a maid id: box 225); then the use request with the argument.
+    /// Returns whether it was sent. The exemption is for the item box handlers (<see cref="OwnUseFunctions"/> holds them),
+    /// which reach this later with their own argument; plain uses never have those functions.
+    /// </summary>
+    public bool RequestUseItem(Item item, string argument)
+    {
+        if (!NoStateCheckFunctions.Contains(item.Data.FunctionName) && LocalPlayerDead()) { ShowCommonBox(MyInfoController.DeadKey); return false; }   // :1205-1211
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
-        if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return true; }                // GetItemUseError 5 (an expired pet)
-        View.RequestUse?.Invoke(item.Uid, "");
+        if (expired && !item.Data.HasMaidId) { ShowCommonBox(ExpiredKey); return false; }       // GetItemUseError 5 (an expired pet)
+        View.RequestUse?.Invoke(item.Uid, argument);
         return true;
     }
 

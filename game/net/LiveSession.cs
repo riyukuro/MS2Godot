@@ -446,8 +446,8 @@ public partial class LiveSession : Node
                 }
                 else if (game.Is(p, Inbound.UserState))
                 {
-                    var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): state 12 dies (PC::vfunc_137)
-                    if (u.State == 12 && Me.Die(u.ObjectId)) GD.Print("live: own player dead (state 12)");
+                    var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
+                    if (Me.ApplyUserState(u.ObjectId, u.State)) GD.Print($"live: own player dead (state {u.State})");
                 }
                 else if (game.Is(p, Inbound.DeadUser))
                 {

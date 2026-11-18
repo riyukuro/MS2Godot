@@ -199,7 +199,7 @@ public sealed class MyCharacter {
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
-        dying = false;
+        State = 0;
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
     }
@@ -209,35 +209,75 @@ public sealed class MyCharacter {
     /// <summary>PCBase::IsDead (pcbase.cpp:1256, m_unk_15c) of the local player: set by the own FieldAddUser with no current
     /// health and by <see cref="Die"/>, cleared by <see cref="Revive"/>.</summary>
     public bool Dead;
-    /// <summary>Stands in for GetCurStateId() == 0xc (the death state), which MyPC::vfunc_137 enters (vfunc_59(0xc)) and
-    /// OnRevival leaves (vfunc_59(0x18)). STILL-OPEN: the other state changes of the local player (its state machine is not
-    /// read here), so a death state left another way still blocks <see cref="Die"/>.</summary>
-    bool dying;
+    /// <summary>
+    /// CStateManager m_nCur (GetCurStateId) of the local player as the inbound packets set it: 0 after FieldAddUser (a new
+    /// MyPC, scenestategame.cpp:11119), then <see cref="EnterState"/>. STILL-OPEN: the state changes the client makes on its
+    /// own (moving, skills, the spawn state) are not modelled, so a state left that way is still the one here.
+    /// </summary>
+    public int State { get; private set; }
+
+    /// <summary>The ids PC registers in its state manager (pc.cpp:668-721); ChangeState ignores any other.</summary>
+    static readonly HashSet<int> RegisteredStates = new() {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 0xb, 0xc, 0xd, 0xe, 0xf, 0x10, 0x11, 0x12, 0x14, 0x15, 0x16, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+        0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x25, 0x26, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2f, 0x35, 0x36, 0x37, 0x39, 0x3a,
+        0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x45, 0x46, 0x47,
+    };
 
     /// <summary>
-    /// The local player's die (OnUserState state 12, scenestategame.cpp:5768; OnDeadUser, :6542): PC::vfunc_137 (pc.cpp:4593)
-    /// not in the death state and with no current health (FUN_141670a00(4) = m_unk_1c0[2][4]): FUN_14166ce50(1); then
-    /// MyPC::vfunc_137 (mypc.cpp:1343) enters the death state. Other objects: nothing. Returns whether the state changed.
-    /// STILL-OPEN: OnUserState calls vfunc_59(state) before vfunc_137; whether that already enters state 12 (which would
-    /// make vfunc_137 do nothing) is not read, so state 12 dies here. The PvP time scale, the revive dialog 0x4e38 and the
-    /// guide occurrence.
+    /// MyPC::vfunc_59 (mypc.cpp:1239) -> PC::vfunc_59 (pc.cpp:1187): PC::vfunc_124 (pc.cpp:1199) lets the state through when
+    /// the player is not dead and has health (or no max health, FUN_141670a30(4) = m_unk_1c0[0][4]), or for the death 0xc,
+    /// revival 0x18 and observer 0x3f states; then PCBase::vfunc_59 (pcbase.cpp:1098) -> CStateManager::ChangeState
+    /// (statemanager.cpp:291), which takes only a registered state. Returns whether the state was entered.
+    /// STILL-OPEN: an object that is not loaded yet (GameObject m_unk_b4 0: the state is queued in m_unk_c48) and the ride
+    /// state 0x21 with m_spB10 set (the change goes to m_spB10) are not modelled; both are taken as a loaded player on foot.
     /// </summary>
-    public bool Die(int objectId) {
-        if (objectId != ObjectId || User == null || dying || Stats2[PlayerStat.Health] != 0) return false;
-        Dead = true; dying = true;
-        Changed?.Invoke();
+    bool EnterState(int state) {
+        long hp = Stats2[PlayerStat.Health], maxHp = Stats0[PlayerStat.Health];
+        if (!((!Dead && (maxHp <= 0 || hp != 0)) || state == 0xc || state == 0x18 || state == 0x3f)) return false;
+        if (!RegisteredStates.Contains(state)) return false;
+        State = state;
         return true;
     }
 
-    /// <summary>OnRevival (scenestategame.cpp:7387) for the local player: FUN_14166ce50(0) and the revival state (0x18).
-    /// Returns whether the dead state changed.</summary>
+    /// <summary>
+    /// OnUserState (scenestategame.cpp:5758) for the local player: vfunc_59(state) first; then state 12 runs vfunc_137
+    /// (<see cref="Die"/>) and any other state runs vfunc_59(state) again. A loaded player that takes state 12 is already in
+    /// the death state when vfunc_137 runs, so the dead flag is not set by it. Other objects: nothing here. Returns whether
+    /// the dead flag changed.
+    /// </summary>
+    public bool ApplyUserState(int objectId, int state) {
+        if (objectId != ObjectId || User == null) return false;
+        EnterState(state);
+        if (state == 12) return Die(objectId);
+        EnterState(state);
+        return false;
+    }
+
+    /// <summary>
+    /// vfunc_137 for the local player (OnUserState state 12; OnDeadUser, scenestategame.cpp:6532): PC::vfunc_137 (pc.cpp:4593)
+    /// not in the death state and with no current health (FUN_141670a00(4) = m_unk_1c0[2][4]): FUN_14166ce50(1); then
+    /// MyPC::vfunc_137 (mypc.cpp:1343) with the dead flag set enters the death state (vfunc_59(0xc)). Other objects: nothing.
+    /// Returns whether the dead flag changed. STILL-OPEN: the PvP time scale, the revive dialog 0x4e38 and the guide
+    /// occurrence.
+    /// </summary>
+    public bool Die(int objectId) {
+        if (objectId != ObjectId || User == null) return false;
+        bool changed = false;
+        if (State != 0xc && Stats2[PlayerStat.Health] == 0 && !Dead) { Dead = true; changed = true; }
+        if (Dead) EnterState(0xc);
+        if (changed) Changed?.Invoke();
+        return changed;
+    }
+
+    /// <summary>OnRevival (scenestategame.cpp:7387) for the local player: FUN_14166ce50(0) and the revival state
+    /// (vfunc_59(0x18)). Returns whether the dead flag changed.</summary>
     public bool Revive(int objectId) {
         if (objectId != ObjectId || User == null) return false;
-        dying = false;
-        if (!Dead) return false;
+        bool changed = Dead;
         Dead = false;
-        Changed?.Invoke();
-        return true;
+        EnterState(0x18);
+        if (changed) Changed?.Invoke();
+        return changed;
     }
 
     /// <summary>

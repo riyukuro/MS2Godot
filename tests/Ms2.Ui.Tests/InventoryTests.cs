@@ -466,6 +466,9 @@ public class InventoryTests
         int raisedCount = raised.Count;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
         Assert.That(raised.Count, Is.EqualTo(raisedCount + 1), "dead: an OpenItemBox item still reaches its own handler");
+        var box = c.FindItem(c.View.ItemAt(c.View.Tab, 2).Uid);
+        Assert.That((c.RequestUseItem(box, "x"), sent.Last()), Is.EqualTo((true, (box.Uid, "x"))),
+            "dead: RequestUseItem skips the dead check for an OpenItemBox function (checkState 0)");
         Assert.That(InventoryController.NoStateCheckFunctions, Is.EquivalentTo(new[] { "OpenItemBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple" }),
             "RequestUseItem's checkState 0 functions (inventory.cpp:1205-1207)");
         c.LocalPlayerDead = () => false;
@@ -473,7 +476,7 @@ public class InventoryTests
         // inventory, uimessagebox.cpp:1868; the HUD keeps this controller for it)
         h.Unload();
         Assert.That(c.ConfirmBindUse(23), Is.True);
-        Assert.That((sent.Count, sent.Last()), Is.EqualTo((4, (23L, ""))), "the yes after the window closed: sent");
+        Assert.That((sent.Count, sent.Last()), Is.EqualTo((5, (23L, ""))), "the yes after the window closed: sent");
     }
 
     [Test]
