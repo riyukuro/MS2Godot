@@ -118,6 +118,10 @@ public sealed class QuestBook {
     /// <summary>The server's error code of the last mode 0 packet, and the quests an npc offered in the last mode 1 packet.</summary>
     public event Action<int> ErrorReceived;
     public event Action<int, IReadOnlyList<int>> NpcOffer;
+    /// <summary>After <see cref="Changed"/> for OnQuest mode 2 (a quest the server started): UIQuestEventListener slot 1.</summary>
+    public event Action<int> Started;
+    /// <summary>After <see cref="Changed"/> for OnQuest mode 3 on a known quest (its progress): UIQuestEventListener slot 3.</summary>
+    public event Action<int> ProgressUpdated;
 
     /// <summary>Per-quest table data the client reads from the quest XML: basic questType, basic repeatable, require groupID.</summary>
     public readonly record struct QuestInfoRow(int Type, int Repeatable, int GroupId);
@@ -129,9 +133,9 @@ public sealed class QuestBook {
             case QuestMessage.Reset x: quests.Clear(); pinned.Clear(); Group = x.Group; RefreshCount = x.RefreshCount; Changed?.Invoke(0); break;
             case QuestMessage.Load x: foreach (var q in x.Quests) quests[q.Id] = q; Changed?.Invoke(0); break;
             case QuestMessage.Pinned x: foreach (int id in x.Ids) pinned.Add(id); Changed?.Invoke(0); break;
-            case QuestMessage.Start x: quests[x.Id] = new QuestRecord { Id = x.Id, State = 1, StartTime = x.StartTime, Tracked = x.Tracked, Progress = x.Progress.ToArray() }; Changed?.Invoke(x.Id); break;
+            case QuestMessage.Start x: quests[x.Id] = new QuestRecord { Id = x.Id, State = 1, StartTime = x.StartTime, Tracked = x.Tracked, Progress = x.Progress.ToArray() }; Changed?.Invoke(x.Id); Started?.Invoke(x.Id); break;
             case QuestMessage.Update x:
-                if (quests.TryGetValue(x.Id, out var u)) { u.State = 1; u.Progress = x.Progress.ToArray(); Changed?.Invoke(x.Id); }   // an unknown id returns early in OnQuest
+                if (quests.TryGetValue(x.Id, out var u)) { u.State = 1; u.Progress = x.Progress.ToArray(); Changed?.Invoke(x.Id); ProgressUpdated?.Invoke(x.Id); }   // an unknown id returns early in OnQuest
                 break;
             case QuestMessage.Complete x:
                 if (quests.TryGetValue(x.Id, out var c)) { c.State = 2; c.CompletionCount = x.CompletionCount; c.CompleteTime = x.CompleteTime; Changed?.Invoke(x.Id); }

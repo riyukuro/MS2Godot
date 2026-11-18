@@ -109,7 +109,7 @@ public partial class FieldContents : Node3D
         if (!offline && player != null && Ms2Godot.Net.LiveSession.Instance is { } liveSession)
         {
             // a live field: the server's npcs (FieldAddNpc) are the ones to talk to, and the server answers the talk
-            try { AddChild(talk = new NpcTalk(packs, null, player, Constants(packs), liveSession)); }
+            try { AddChild(talk = new NpcTalk(packs, null, player, Constants(packs), liveSession) { FieldId = fieldId }); }
             catch (Exception ex) { GD.PushWarning("live npc talk: " + ex.Message); }
         }
         if (offline && fnpcs.Spawned.Count > 0)
@@ -122,7 +122,7 @@ public partial class FieldContents : Node3D
                 np.Build(fnpcs.Spawned, Ui(packs));
                 presence = $"; {np.Bodies} npc bodies, {np.NameTags} name tags";
                 spawned = fnpcs.Spawned;
-                if (player != null) AddChild(talk = new NpcTalk(packs, fnpcs.Spawned.Where(x => !x.Mob).ToList(), player, constants));
+                if (player != null) AddChild(talk = new NpcTalk(packs, fnpcs.Spawned.Where(x => !x.Mob).ToList(), player, constants) { FieldId = fieldId });
             }
             catch (Exception ex) { GD.PushWarning("npc presence: " + ex.Message); }
         }
@@ -144,6 +144,9 @@ public partial class FieldContents : Node3D
             if (Load != null && Load.Total > 0) loading?.Progress(Load.Count, Load.Total); else loading?.Progress(1, 1);
             settleFrames = 3;
         }
+        // a field shown without a loading screen (the sandbox's first field) is faded in at once: the client enters every
+        // field through the loading screen, so its NotifyFadeInComplete always comes
+        else if (talk != null) Callable.From(OnLoadingClosed).CallDeferred();
         if (shotDir != null && player != null) { if (offline) PlanShots(); else PlanLiveTalk(); }
     }
 
@@ -299,7 +302,11 @@ public partial class FieldContents : Node3D
         if (loading != null && GodotObject.IsInstanceValid(loading)) loading.Controller.FadeInComplete -= OnLoadingClosed;
     }
 
-    void OnLoadingClosed() => GD.Print("loading screen closed");
+    void OnLoadingClosed()
+    {
+        GD.Print("loading screen closed");
+        talk?.OnFadeInComplete();       // UIPopupNpcTalkDialog's NotifyFadeInComplete
+    }
 
     /// <summary>
     /// UILoadingProgress::StartProgress for a field move: the picture (or a screenshot when there is none), a random tip, and the

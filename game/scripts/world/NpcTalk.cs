@@ -94,6 +94,8 @@ public sealed partial class NpcTalk : Node
         if (live == null) return;
         live.NpcTalkReceived += OnLiveTalk;
         live.Quests.NpcOffer += OnQuestOffer;
+        live.Quests.Started += OnLiveQuestStarted;          // the popup's UIQuestEventListener slots 1 and 3
+        live.Quests.ProgressUpdated += OnLiveQuestProgress;
     }
 
     public override void _ExitTree()
@@ -102,6 +104,8 @@ public sealed partial class NpcTalk : Node
         if (live == null) return;
         live.NpcTalkReceived -= OnLiveTalk;
         live.Quests.NpcOffer -= OnQuestOffer;
+        live.Quests.Started -= OnLiveQuestStarted;
+        live.Quests.ProgressUpdated -= OnLiveQuestProgress;
     }
     public NpcTalk() { }
 
@@ -372,7 +376,12 @@ public sealed partial class NpcTalk : Node
         {
             side.SendNext += OnNext;
             // Maple2's QuestHandler Accept / Complete on the sandbox records
-            side.SendQuestAccept += (q, _) => GD.Print($"talk: quest {q} accept: {(Records.Accept(q) ? "started" : "refused")}");
+            side.SendQuestAccept += (q, _) =>
+            {
+                bool started = Records.Accept(q);
+                GD.Print($"talk: quest {q} accept: {(started ? "started" : "refused")}");
+                if (started) PopupDialog().OnQuestStarted(q);      // the server's Quest mode 2: the popup's listener slot 1
+            };
             side.SendQuestComplete += (q, _, _) => GD.Print($"talk: quest {q} complete: {(Records.Complete(q) ? "rewarded" : "refused")}");
             side.SendQuestRedirect += OnQuestRedirect;
             side.SendQuestProgress += q => GD.Print($"talk: quest {q} progress (Quest mode 0x12; the Maple2 server does not handle it)");
@@ -615,6 +624,7 @@ public sealed partial class NpcTalk : Node
     /// <summary>The action key: Next on the open window, or start a talk with the npc in front.</summary>
     public bool ActionKey()
     {
+        PopupKey(PopupNpcTalkController.PopupKey.Talk);    // the popup's vfunc_13 does not take the key
         if (window != null)
         {
             side.Key(TalkCinematicController.TalkKey.Next);
@@ -625,6 +635,7 @@ public sealed partial class NpcTalk : Node
 
     public override void _Input(InputEvent e)
     {
+        if (e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) PopupKey(PopupNpcTalkController.PopupKey.Escape);
         if (window == null || side == null) return;
         if (e is not InputEventKey { Pressed: true } k) return;
         TalkCinematicController.TalkKey? key = k.Keycode switch
