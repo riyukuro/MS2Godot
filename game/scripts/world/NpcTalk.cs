@@ -637,5 +637,33 @@ public sealed partial class NpcTalk : Node
     public override void _Process(double delta)
     {
         if (window != null) player.Input2 = Vector2.Zero;
+        EndTalkIfNpcGone();
+    }
+
+    /// <summary>
+    /// UITalkManager::EndTalkIfNpcGone (uitalkcinematic.cpp:1612), each frame from UISceneGame::vfunc_15 (uiscenegame.cpp:237):
+    /// during a talk, the npc is found again by its object id (WorldService::FindNpcById), and the talk ends (SendNpcTalkMode0)
+    /// when it is gone or out of talk range: CNpc::IsInTalkRange (npcactorandvibrate.cpp:1379), always in range with property
+    /// tag 0x1a, else the distance from the player (FUN_14123daa0 from WorldService's focus position) within TalkableDistance
+    /// (default 400) plus the npc's capsule radius. An npc re-added under the same object id is the one talked to from then on.
+    /// Live only: the sandbox's npcs never leave. STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(2)) is not ported.
+    /// </summary>
+    void EndTalkIfNpcGone()
+    {
+        if (live == null || player == null) return;
+        var npc = talking ?? liveTalking;
+        if (npc == null) return;
+        var now = LiveNpc(npc.ObjectId);
+        if (now != null && now != npc)
+        {
+            if (talking == npc) talking = now;
+            if (liveTalking == npc) liveTalking = now;
+        }
+        bool inRange = now != null && (now.Row.HasTag("26")
+            || (now.Position - player.GlobalPosition).Length() <= constants.Float("TalkableDistance", 400) + now.Row.CapsuleRadius);
+        if (inRange) return;
+        GD.Print($"talk: npc {npc.Row.Id} (object {npc.ObjectId}) {(now == null ? "is gone" : "is out of talk range")}, the talk ends");
+        if (side != null && side.Talking) side.EndTalk();
+        else { liveTalking = null; talking = null; live.SendTalk(new NpcTalkEndRequest()); }
     }
 }
