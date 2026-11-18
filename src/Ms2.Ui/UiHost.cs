@@ -66,8 +66,10 @@ public sealed class UiHost
         for (int i = 0; i < frames; i++) Player.Tick();        // configUI runs in the first frames, before the client's OnLoadComplete
         Entity = Controller.FindEntity();
         if (Entity == null) { RT.NoteMissing("ui entity of " + Id); return false; }
+        // the part of a subclass's OnLoadComplete that runs before it calls UIDialog's (UIShopDialog: initShop), then
         // UISwfEntity::OnLoadComplete (uiswfentity.cpp:443): the settings file (vfunc_5), the layout (FUN_1422dc450), then
-        // the subclass's OnLoadComplete
+        // the rest of the subclass's OnLoadComplete
+        RT.Guard("OnLoadComplete start " + Id, Controller.OnLoadCompleteBeforeBase);
         RT.Guard("load transform " + Id, Controller.LoadTransform);
         Model.AlignWidgets?.Add(Controller);                        // UISwfEntityManager's loaded entities
         Controller.LayoutAndClear(Player.StageW, Player.StageH);

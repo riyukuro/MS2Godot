@@ -171,8 +171,16 @@ public sealed class ShopController : UiController
         _ => "UIShopDialog",
     };
 
+    /// <summary>OnLoadComplete (@0x141af3820) up to UIDialog's: initShop by the shop type, before the dialog is aligned
+    /// (ShopDialogProxy.alignment centres by the shop's panel size, 1 by 1 with no shop).</summary>
+    public override void OnLoadCompleteBeforeBase()
+    {
+        if (Host.Entity != null) shop = Host.Invoke(Host.Entity, "initShop", ShopMovieName(info.ShopType));
+    }
+
     /// <summary>
-    /// OnLoadComplete (@0x141af3820): initShop by the shop type (none closes the dialog), UIDialog's, then initData
+    /// OnLoadComplete (@0x141af3820) after initShop (<see cref="OnLoadCompleteBeforeBase"/>; none closes the dialog):
+    /// UIDialog's, then initData
     /// (iconName: the header's icon, else the npc's shop icon, else its icon; strGender; checkEnableItems; the title:
     /// the shop's title row, else for an npc s_title_shop with its name; dpTab; notice), m_money, the reset data, the
     /// countdown, the group's tabs and the ready flag. The npc talk (type 1), the web guide (type 3), the star, gacha and
@@ -181,7 +189,6 @@ public sealed class ShopController : UiController
     public override void OnLoadComplete()
     {
         if (Host.Entity == null) return;
-        shop = Host.Invoke(Host.Entity, "initShop", ShopMovieName(info.ShopType));
         if (shop == null || shop is Undefined) { Close(); return; }
         base.OnLoadComplete();
         if (!Model.HasLocalPlayer) return;
@@ -243,12 +250,20 @@ public sealed class ShopController : UiController
         shop = null;
     }
 
-    /// <summary>vfunc_66 (@0x141af2cb0) after UIDialog's, with the inventory closed: the message that opens it beside the shop
-    /// (UIInventoryDialog's OnMessage "openWindowPos"); the open inventory's place beside the shop (FUN_141275c30) is the
-    /// host's.</summary>
-    public void PlaceBesideInventory(bool inventoryOpen)
+    /// <summary>
+    /// vfunc_66 (@0x141af2cb0, uishopdialog.cpp:626) after UIDialog's (the shop's position as it opens): with the inventory
+    /// (0x4e2d) open, the two placed side by side, the shop on the left (FUN_141275c30; a gacha shop's inventory 180 lower);
+    /// with it closed, the "openWindowPos" message with this id, which opens the inventory beside the shop
+    /// (UIInventoryDialog's OnMessage). The gacha coin check before the message (ItemGachaBoxTable::GetCoinItemIdByShopId)
+    /// is not ported.
+    /// </summary>
+    public void PlaceBesideInventory(UiController inventory, bool inventoryOpen)
     {
-        if (!inventoryOpen && Host?.Entity != null) InventoryWindowPos?.Invoke(UiId);
+        if (Host?.Entity == null) return;
+        var place = OpenPosition();
+        if (!inventoryOpen) { InventoryWindowPos?.Invoke(UiId); return; }
+        if (info.ShopType == 4) PlaceSideBySide(this, place, inventory, (0f, 0f), (0f, 180f));
+        else PlaceSideBySide(this, place, inventory);
     }
 
     /// <summary>

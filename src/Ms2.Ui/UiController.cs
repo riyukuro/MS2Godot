@@ -77,6 +77,46 @@ public abstract class UiController
     void SetPosition(float x, float y) { Host.Set(Host.Entity, "x", (double)x); Host.Set(Host.Entity, "y", (double)y); }
 
     /// <summary>
+    /// The width FUN_141275c30 takes for a window: its m_panel member's width rounded up (ASDisplayObject::GetWidthCeil,
+    /// asdisplayobject.cpp:539), else ASWindow::GetWindowWidth (aswindow.cpp:55: getWindowWidth() rounded up, 0 when it
+    /// gives null or undefined).
+    /// </summary>
+    float WindowWidth()
+    {
+        if (Host.Get(Host.Entity, "m_panel") is AsObject panel)
+            return (float)Math.Ceiling(Rt.ToNumber(Host.Get(panel, "width")));
+        var v = Host.Invoke(Host.Entity, "getWindowWidth");
+        return Rt.IsNullish(v) ? 0f : (float)Math.Ceiling(Rt.ToNumber(v));
+    }
+
+    /// <summary>
+    /// FUN_141275c30 (unit_141274d10_uihelpers.cpp:554): <paramref name="right"/> placed beside <paramref name="left"/>, at
+    /// the left one's remembered place (UIDialog::vfunc_66: its position when it opened, <paramref name="leftPlace"/>) plus
+    /// its width. When the two would run past the stage's right edge (ASStage::GetStageWidth, the stage's stageWidth), the
+    /// pair is centred: the left one moves to (stage width - both widths) / 2, plus <paramref name="leftOffset"/>.
+    /// </summary>
+    public static void PlaceSideBySide(UiController left, (float X, float Y) leftPlace, UiController right,
+        (float X, float Y) leftOffset = default, (float X, float Y) rightOffset = default)
+    {
+        if (left?.Host?.Entity == null || right?.Host?.Entity == null) return;
+        float leftWidth = left.WindowWidth(), rightWidth = right.WindowWidth();
+        var (x, y) = leftPlace;
+        int stageWidth = Rt.ToInt32(left.Host.Get(left.Host.Player.Stage, "stageWidth"));
+        float both = leftWidth + rightWidth;
+        float overflow = stageWidth - (x + both);
+        if (overflow < 0f)
+        {
+            x += overflow;
+            x -= (stageWidth - both) * 0.5f;
+            left.SetPosition(x + leftOffset.X, y + leftOffset.Y);
+        }
+        right.SetPosition(x + leftWidth + rightOffset.X, y + rightOffset.Y);
+    }
+
+    /// <summary>UIDialog::vfunc_66 (uidialog.cpp:597): the dialog's position as it opens, which it remembers (m_d8).</summary>
+    public (float X, float Y) OpenPosition() => Position();
+
+    /// <summary>
     /// The settings file's other members (a subclass's vfunc_53 after UIDialog's: UIQuestDialog writes its tab filters).
     /// </summary>
     protected virtual void SaveSettings(DialogSettings s) { }
@@ -233,6 +273,13 @@ public abstract class UiController
         Host.Invoke("startClose");
         closed = true;
     }
+
+    /// <summary>
+    /// The part of a subclass's OnLoadComplete that runs before it calls UIDialog's, whose UISwfEntity::OnLoadComplete
+    /// (uiswfentity.cpp:443) reads the settings file and aligns the dialog (the host runs those between this and
+    /// <see cref="OnLoadComplete"/>).
+    /// </summary>
+    public virtual void OnLoadCompleteBeforeBase() { }
 
     /// <summary>UIDialog::OnLoadComplete (uidialog.cpp:696): open (m_c0 0), shown, and startOpen when the tween is on (m_c4).</summary>
     public virtual void OnLoadComplete()

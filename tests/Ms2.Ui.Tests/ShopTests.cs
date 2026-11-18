@@ -129,6 +129,24 @@ public class ShopTests
     }
 
     [Test]
+    public void TheDialogIsCentredByTheShopPanelSize()
+    {
+        // initShop runs before UIDialog's OnLoadComplete aligns the dialog, so ShopDialogProxy.alignment centres it by the
+        // shop's panel on its first frame (getWindowWidth / getWindowHeight, as ints), not by the 1 x 1 fallback
+        var (h, c) = Load(NewModel());
+        for (int i = 0; i < 60; i++) h.Player.Tick();          // the open tween (startOpenAni) back to the aligned y
+        var (x, y) = c.OpenPosition();
+        var view = (AsMovieClip)c.ShopView;
+        view.gotoAndStop(1);
+        var panel = h.Get(view, "m_panel");
+        int w = (int)Rt.ToNumber(h.Get(panel, "width")), ht = (int)Rt.ToNumber(h.Get(panel, "height"));
+        Assert.That(ht, Is.GreaterThan(100));
+        double dx = Rt.ToNumber(h.Get(h.Entity, "_alignX")), dy = Rt.ToNumber(h.Get(h.Entity, "_alignY"));
+        Assert.That(x, Is.EqualTo((1280 - w) / 2.0 + dx).Within(0.5));
+        Assert.That(y, Is.EqualTo((720 - ht) / 2.0 + dy).Within(0.5));
+    }
+
+    [Test]
     public void PriceTextUsesTheCurrencyIcon()
     {
         Assert.That(ShopController.CurrencyOf(0), Is.EqualTo(1));
