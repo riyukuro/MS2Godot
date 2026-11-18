@@ -75,25 +75,15 @@ public sealed class FieldProps
         var skel = new Skeleton3D { Name = ModelBuilder.SkeletonName };
         model.AddChild(skel);
         foreach (var b in md.Bones) skel.AddBone(b.Name);
-        for (int i = 0; i < md.Bones.Count; i++)
-        {
-            skel.SetBoneParent(i, md.Bones[i].Parent);
-            skel.SetBoneRest(i, ModelBuilder.ToGodot(md.Bones[i].Rest));
-        }
-        skel.ResetBonePoses();
-        Skin skin = null;
+        ModelBuilder.SetRests(skel, md);
         var meshPaths = new Dictionary<string, string>(StringComparer.Ordinal);
         for (int mi = 0; mi < md.Meshes.Count; mi++)
         {
             var m = md.Meshes[mi];
             var inst = new MeshInstance3D { Name = $"m{mi}", Mesh = Mesh(md, mi, col) };
+            var skin = m.Skinned ? ModelBuilder.SkinOf(md, m) : null;
             if (m.Skinned)
             {
-                if (skin == null)
-                {
-                    skin = new Skin();
-                    for (int i = 0; i < md.Bones.Count; i++) skin.AddBind(i, ModelBuilder.ToGodot(md.Bones[i].World).AffineInverse());
-                }
                 skel.AddChild(inst);
                 inst.Skin = skin;
                 inst.Skeleton = "..";

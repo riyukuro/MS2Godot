@@ -43,16 +43,9 @@ public sealed class ModelBuilder
 
     public KfAnimation LoadKf(string entry) => KfAnimation.Load(NifFile.Load(spec, packs.Read(ModelArchive, entry)));
 
-    /// <summary>Root (Y-up) -> Model (file Z-up, scene root transform) -> Skeleton + meshes; AnimationPlayer under Model.</summary>
-    public Node3D Build(ModelData md, string name)
+    /// <summary>Parents and rests of a model's bones on its skeleton, then the poses reset to them.</summary>
+    public static void SetRests(Skeleton3D skel, ModelData md)
     {
-        var root = new Node3D { Name = name };
-        var model = new Node3D { Name = "Model", Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero) * ToGodot(md.RootLocal) };
-        root.AddChild(model);
-
-        var skel = new Skeleton3D { Name = SkeletonName };
-        model.AddChild(skel);
-        foreach (var b in md.Bones) skel.AddBone(b.Name);
         for (int i = 0; i < md.Bones.Count; i++)
         {
             skel.SetBoneParent(i, md.Bones[i].Parent);
@@ -64,24 +57,39 @@ public sealed class ModelBuilder
         skel.ResetBonePoses();
         for (int i = 0; i < md.Bones.Count; i++)
             if (md.Bones[i].Rest.S == 0) skel.SetBonePoseScale(i, Vector3.Zero);
+    }
 
-        // a skinned mesh binds each bone through that mesh's skin bone transform (NiSkinningMeshModifier), not through
-        // the file's node pose: the two agree on the player's body (within 4e-5), but many NPC and effect models store
-        // another pose (an effect creature rests or hides there), and meshes of one model may bind one bone differently,
-        // so each skinned mesh has its own skin; bones outside the mesh's skin keep World^-1
-        Skin SkinOf(ModelMesh m)
-        {
-            var skin = new Skin();
-            for (int i = 0; i < md.Bones.Count; i++)
-                skin.AddBind(i, m.SkinBinds != null && m.SkinBinds.TryGetValue(i, out var bind) ? ToGodot(bind)
-                              : md.Bones[i].World.S == 0 ? Transform3D.Identity : ToGodot(md.Bones[i].World).AffineInverse());
-            return skin;
-        }
+    /// <summary>
+    /// The skin of a skinned mesh: each bone binds through that mesh's skin bone transform (NiSkinningMeshModifier), not
+    /// through the file's node pose. The two agree on the player's body (within 4e-5), but many NPC, effect and map
+    /// models store another pose (an effect creature rests or hides there), and meshes of one model may bind one bone
+    /// differently, so each skinned mesh has its own skin; bones outside the mesh's skin keep World^-1.
+    /// </summary>
+    public static Skin SkinOf(ModelData md, ModelMesh m)
+    {
+        var skin = new Skin();
+        for (int i = 0; i < md.Bones.Count; i++)
+            skin.AddBind(i, m.SkinBinds != null && m.SkinBinds.TryGetValue(i, out var bind) ? ToGodot(bind)
+                          : md.Bones[i].World.S == 0 ? Transform3D.Identity : ToGodot(md.Bones[i].World).AffineInverse());
+        return skin;
+    }
+
+    /// <summary>Root (Y-up) -> Model (file Z-up, scene root transform) -> Skeleton + meshes; AnimationPlayer under Model.</summary>
+    public Node3D Build(ModelData md, string name)
+    {
+        var root = new Node3D { Name = name };
+        var model = new Node3D { Name = "Model", Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero) * ToGodot(md.RootLocal) };
+        root.AddChild(model);
+
+        var skel = new Skeleton3D { Name = SkeletonName };
+        model.AddChild(skel);
+        foreach (var b in md.Bones) skel.AddBone(b.Name);
+        SetRests(skel, md);
 
         foreach (var m in md.Meshes)
         {
             var mi = new MeshInstance3D { Name = m.Name, Mesh = BuildMesh(m) };
-            var skin = m.Skinned ? SkinOf(m) : null;
+            var skin = m.Skinned ? SkinOf(md, m) : null;
             if (m.Skinned)
             {
                 skel.AddChild(mi);
