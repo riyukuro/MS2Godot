@@ -403,6 +403,29 @@ public class MyInfoTests
     }
 
     [Test]
+    public void CreateTimeLinesAreTheClients()
+    {
+        var m = NewModel();
+        AsTooltip Tip(int id, UgcLook look)
+        {
+            var r = new EquipItem { Id = id, Uid = 9, Rarity = 1, Amount = 1, HasUgc = look != null, Ugc = look };
+            var tip = new ItemTooltip(m, 0x200);
+            tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+            return tip.Data;
+        }
+        // 50100189 has <ucc mesh="ugc_cube_A01">: the author and creation time, and the item's name
+        var data = Tip(50100189, new UgcLook { Uid = 77, Author = "Maker", CreationTime = 1700000000 });
+        var t = Ms2.Net.MsTime.LocalTm(1700000000);
+        Assert.That(data["itemCreateTime"], Is.EqualTo($"Created by Maker ({t.Month}/{t.Day}/{t.Year} - {t.Hour:00}:{t.Minute:00}:{t.Second:00})"));
+        Assert.That(data["designOrgItemName"], Is.EqualTo(m.Tables.ItemName(50100189)));
+        // no UGC id yet: the re-register hint
+        Assert.That(Tip(50100189, new UgcLook())["itemCreateTime"], Is.EqualTo(m.Tables.Common("s_ugc_upload_must_profile")));
+        // no look, or an item that is neither: no member
+        Assert.That(Tip(50100189, null).ContainsKey("itemCreateTime"), Is.False);
+        Assert.That(Tip(12200398, new UgcLook { Uid = 77 }).ContainsKey("itemCreateTime"), Is.False);
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");

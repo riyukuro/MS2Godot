@@ -60,6 +60,7 @@ public sealed class ItemTooltip
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
         SetNotExchange(item);                                                     // SetItemSellPrice
+        SetItemCreateTime(item);
         SetItemUsePeriod(item);
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
@@ -253,6 +254,28 @@ public sealed class ItemTooltip
         Data["itemIconLock"] = locked;
         Data["itemIconUnLock"] = false;
         if (locked && Localize != null) Data["itemLockInfo"] = Localize("$s_itemlock_tooltip_msg_lock");
+    }
+
+    /// <summary>
+    /// ASTooltip::SetItemCreateTime (astooltip.cpp:1849), "itemCreateTime": for a cube texture mesh item or a UGC type
+    /// item with a UGC look, s_ugc_upload_must_profile when the look has no UGC id, else s_item_edit_time with the
+    /// author and the creation time in the server zone, and "designOrgItemName" the item's name. A custom music score's
+    /// writer (s_msg_tooltip_musicscore_writer, by the music score table's custom note) is not ported.
+    /// </summary>
+    public void SetItemCreateTime(Item item)
+    {
+        var d = item.Data;
+        if (!(d.HasCubeTextureMesh || d.IsUgcType)) return;
+        var look = item.Record?.Ugc;
+        if (look == null) return;
+        if (look.Uid == 0)
+        {
+            Data["itemCreateTime"] = Common("s_ugc_upload_must_profile");                      // 0x46a
+            return;
+        }
+        var t = Ms2.Net.MsTime.LocalTm(look.CreationTime);
+        Data["itemCreateTime"] = CommonF("s_item_edit_time", look.Author, t.Year, t.Month, t.Day, t.Hour, t.Minute, t.Second);   // 0xb7
+        Data["designOrgItemName"] = Tables.ItemName(d.Id);                                    // CStringTable::FUN_141811980(1, id)
     }
 
     /// <summary>
