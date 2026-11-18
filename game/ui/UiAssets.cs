@@ -23,9 +23,28 @@ public sealed class UiAssets
     public SystemFont Fallback => fallbackFont ??= new SystemFont { FontNames = new[] { "Noto Sans CJK KR", "Noto Sans CJK JP", "Noto Sans", "DejaVu Sans", "sans-serif" }, Antialiasing = TextServer.FontAntialiasing.Gray };
 
     /// <summary>The game's UI font for a flash font class such as "$Font_SD_Neo_3", built from the glyph outlines in gfxfontlib. Falls back to a system font.</summary>
-    public Font FontFor(string fontClass)
+    public Font FontFor(string fontClass) => FontFor(fontClass, false);
+
+    /// <summary>
+    /// The font for readability text: the same outlines, hinted. Scaleform fits a readable glyph's lowercase and uppercase
+    /// tops to whole pixels vertically (GlyphCache::RasterizeGlyph addShapeAutoFit, sfr_render_06d.cpp:949; on when the
+    /// font has a layout, TextMeshProvider sfr_render_07o.cpp:953) and rasterizes small glyphs 2.5x wide, so their x is not
+    /// snapped (addRasterGlyph :1795); FreeType's light hinting is vertical only, the nearest Godot setting.
+    /// </summary>
+    /// <paramref name="oversampling"/> &gt; 0 rasterizes the glyphs at the font size times it and draws them back at the
+    /// font size: a readable label of whole font size N draws from a raster of the exact quarter-pixel size.
+    public Font FontFor(string fontClass, bool readable, float oversampling = 0)
     {
         if (string.IsNullOrEmpty(fontClass)) return Fallback;
+        if (readable)
+        {
+            string key = fontClass + "#readable" + oversampling.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            if (fonts.TryGetValue(key, out var rf)) return rf;
+            var plain = FontFor(fontClass, false);
+            Font r = plain is FontFile pf ? new FontFile { Data = pf.Data, Antialiasing = pf.Antialiasing, Hinting = TextServer.Hinting.Light, GenerateMipmaps = false, Fallbacks = pf.Fallbacks, Oversampling = oversampling } : plain;
+            fonts[key] = r;
+            return r;
+        }
         if (fonts.TryGetValue(fontClass, out var f)) return f;
         Font result = Fallback;
         try

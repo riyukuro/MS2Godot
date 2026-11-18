@@ -154,6 +154,8 @@ public sealed class SwfMovie
             case 56: { int n = r.U16(); for (int i = 0; i < n; i++) { int id = r.U16(); Exports[id] = r.CString(); } return 0; }
             case 76: { int n = r.U16(); for (int i = 0; i < n; i++) { int id = r.U16(); SymbolClasses[id] = r.CString(); } return 0; }
             case 57: case 71: ReadImport(r, code); return 0;
+            // CSMTextSettings: any settings mark the text for readability (GFx's loader, sfr_gfx_01g.cpp:196)
+            case 74: Get(r.U16(), CharKind.Other, code).AaReadable = true; return 0;
             case 78: { int id = r.U16(); Get(id, CharKind.Other, code).Scale9 = ReadRect(r); return 0; }
             case 86: ReadSceneData(r); return 0;
             case 48: case 75: ReadFont(r, code); return 0;

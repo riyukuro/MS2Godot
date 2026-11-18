@@ -233,7 +233,9 @@ public partial class TextNode
             int index = first + (int)g["start"], at = Math.Min(index, codePoints.Length - 1), repeat = (int)g["repeat"];
             float size = SizeAt(at), labelSize = LabelSize(size);
             float k = labelSize / ShapeSize(size);                   // label pixels per shaped pixel
-            int raster = size == FieldSize ? ramp : (int)RampSize(size * ScreenScale);
+            // a run of another size in readable text keeps the field font's oversampling: its raster is the whole size nearest
+            // its quarter-pixel size, times that
+            int raster = size == FieldSize ? ramp : (int)MathF.Max(1, MathF.Round(CachedSize(size * ScreenScale, Readable)));
             float advance = (float)g["advance"];
             int count = (int)g["count"];
             long id = (long)g["index"];

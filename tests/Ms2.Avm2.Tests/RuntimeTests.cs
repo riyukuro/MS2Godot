@@ -93,6 +93,17 @@ public class RuntimeTests
     }
 
     [Test]
+    public void ReadabilityTextFollowsTheSymbolAndScriptFieldsAreReadable()
+    {
+        var (rt, _) = Empty();
+        Assert.That(((AsTextField)rt.GetClass("flash.text.TextField").Construct()).antiAliasType, Is.EqualTo("advanced"));
+        Assert.That(Field(rt, 60, false).antiAliasType, Is.EqualTo("normal"));
+        var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();
+        tf.FromSymbol(new JsonObject { ["bounds"] = new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 60, ["h"] = 40 }, ["text"] = new JsonObject { ["size"] = 12, ["readable"] = true } });
+        Assert.That(tf.antiAliasType, Is.EqualTo("advanced"));
+    }
+
+    [Test]
     public void EnglishWrapsOnlyAtSpacesAndHyphens()
     {
         var (rt, _) = Empty();

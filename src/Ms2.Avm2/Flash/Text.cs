@@ -105,6 +105,7 @@ public class AsTextField : AsInteractiveObject
         Format.size = Rt.Num(J.D(t["size"]) ?? 12);
         if ((string)t["color"] is string c) Format.color = Rt.Uint(Convert.ToUInt32(c.TrimStart('#')[..6], 16));
         Format.align = (string)t["align"] ?? "left";
+        antiAliasType = (bool?)t["readable"] == true ? "advanced" : "normal";
         Format.leftMargin = Rt.Num(J.D(t["leftMargin"]) ?? 0);
         Format.rightMargin = Rt.Num(J.D(t["rightMargin"]) ?? 0);
         Format.indent = Rt.Num(J.D(t["indent"]) ?? 0);
@@ -295,7 +296,8 @@ public class AsTextField : AsInteractiveObject
     [As] public bool alwaysShowSelection { get; set; }
     [As] public bool mouseWheelEnabled { get; set; } = true;
     [As] public bool useRichTextClipboard { get; set; }
-    [As] public string antiAliasType { get; set; } = "normal";
+    /// <summary>Readability text: a script-made field gets the empty text def, which is readability text (TextFieldDef::InitEmptyTextDef, sfr_gfx_01g.cpp:75); a timeline field takes its symbol's.</summary>
+    [As] public string antiAliasType { get; set; } = "advanced";
     [As] public string gridFitType { get; set; } = "pixel";
     [As] public double sharpness { get; set; }
     [As] public double thickness { get; set; }

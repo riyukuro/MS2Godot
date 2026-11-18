@@ -226,9 +226,9 @@ public partial class TextNode : Node2D
     public TextNode(UiScope scope, JsonObject sym, double sx, double sy, NineCtx nine = null)
     {
         Def = sym["text"];
+        Readable = (bool?)Def["readable"] == true;
         Bounds = UiBuilder.Rc(sym["bounds"]);
         if (nine != null) Bounds = nine.Map(Bounds);
-        var font = scope.Assets.FontFor((string)Def["fontClass"]);
         lineRatios = scope.Assets.LineRatios((string)Def["fontClass"]);
         AscentRatio = scope.Assets.AscentRatio((string)Def["fontClass"]);
         DescentRatio = lineRatios.Height - AscentRatio;
@@ -236,8 +236,11 @@ public partial class TextNode : Node2D
         float asx = (float)sx, asy = (float)sy;
         // Scaleform's glyph cache rasterizes plain text (no readability AA) once at a ramp size and draws that raster scaled
         // to the screen size with linear filtering, unsnapped; the label does the same: font size = ramp, scale = screen / ramp
-        float screen = size * asy, ramp = RampSize(screen);
+        // Readability text draws from a raster of its quarter-pixel screen size (CachedSize); the label keeps a whole font
+        // size and the font's oversampling makes up the quarter.
+        float screen = size * asy, cached = CachedSize(screen, Readable), ramp = Readable ? Math.Max(1, MathF.Round(cached)) : cached;
         RasterScale = screen / ramp;
+        var font = scope.Assets.FontFor((string)Def["fontClass"], Readable, Readable ? cached / ramp : 0);
         ScreenScale = asy;
         Label = new Label
         {
@@ -267,8 +270,10 @@ public partial class TextNode : Node2D
         }
         else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
         Label.PivotOffset = Vector2.Zero;
-        AddChild(lineShift);
+        AddChild(snap);
+        snap.AddChild(lineShift);
         lineShift.AddChild(Label);
+        if (Readable) SetNotifyTransform(true);
         Label.Draw += AlignLine;
         face = new LineFace(this);
         Label.AddChild(face);
@@ -277,6 +282,46 @@ public partial class TextNode : Node2D
     public TextNode() { }
 
     readonly Node2D lineShift = new();
+    readonly Node2D snap = new();
+
+    /// <summary>
+    /// Readability text (GlyphParam::OptRead: a CSMTextSettings tag, a device font or a script-made field). Its glyphs
+    /// are drawn from a raster at the exact screen size (<see cref="CachedSize"/>), fitted to the pixel grid vertically
+    /// (GlyphCache::RasterizeGlyph addShapeAutoFit, sfr_render_06d.cpp:949: the readable font is hinted, see
+    /// UiAssets.FontFor), and the field's screen position is rounded to whole pixels (<see cref="SnapToPixel"/>).
+    /// </summary>
+    public bool Readable;
+
+    /// <summary>
+    /// GlyphCache::GetCachedFontSize (sfr_render_06d.cpp:1937): readability text is rasterized at its screen size in
+    /// quarter pixels up to the cache's slot height, other text at <see cref="RampSize"/>.
+    /// </summary>
+    public static float CachedSize(float screenSize, bool readable)
+        => readable ? Math.Clamp(MathF.Floor(screenSize * 4 + 0.5f) * 0.25f, 0.25f, MaxCachedSize) : RampSize(screenSize);
+
+    /// <summary>GlyphCache maxHeight: MaxSlotHeight 48 less 2 * SlotPadding 2 (the client keeps the defaults, gfxrendersinglethread.cpp:95).</summary>
+    const float MaxCachedSize = 44;
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationTransformChanged || what == NotificationEnterTree) SnapToPixel();
+    }
+
+    /// <summary>
+    /// TreeCacheText::UpdateTransform (sfr_render_07n.cpp:192): for readability text without 3D or free rotation, the
+    /// field's final matrix has its translation rounded half away from zero to whole pixels. A timeline field's matrix is
+    /// this node's (MovieClipNode places it); a script field's is its FieldText's. The text is moved by the difference.
+    /// </summary>
+    void SnapToPixel()
+    {
+        if (!Readable || !IsInsideTree()) return;
+        var field = (GetParent() as FieldText ?? (Node2D)this).GetGlobalTransformWithCanvas();
+        if (field.X.Y != 0 || field.Y.X != 0) { snap.Position = Vector2.Zero; return; }
+        static float Round(float v) => MathF.Floor(v + (v < 0 ? -0.5f : 0.5f));
+        var d = new Vector2(Round(field.Origin.X), Round(field.Origin.Y)) - field.Origin;
+        var to = GetGlobalTransformWithCanvas().BasisXformInv(d);
+        if (snap.Position != to) snap.Position = to;
+    }
     LineFace face;
 
     /// <summary>

@@ -526,7 +526,7 @@ public partial class FieldText : Node2D
         string D(object v) => v == null || Rt.IsNullish(v) ? "" : Rt.ToString(v);
         var filters = Filters();
         string key = string.Join("|", tf.Box.X, tf.Box.Y, tf.Box.W, tf.Box.H, D(f?.font), D(f?.size), D(f?.color), D(f?.align),
-            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString());
+            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType);
         if (key != built)
         {
             node?.QueueFree();
@@ -540,6 +540,7 @@ public partial class FieldText : Node2D
             def["wordWrap"] = tf.wordWrap;
             def["multiline"] = tf.multiline;
             def["initial"] = "";
+            def["readable"] = tf.antiAliasType == "advanced" ? true : null;
             var sym = new JsonObject
             {
                 ["bounds"] = new JsonObject { ["x"] = tf.Box.X, ["y"] = tf.Box.Y, ["w"] = tf.Box.W, ["h"] = tf.Box.H },

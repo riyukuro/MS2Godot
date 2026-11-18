@@ -241,6 +241,8 @@ public static class LayoutJson
                     ["variable"] = t.Variable, ["initial"] = t.InitialText, ["maxLength"] = t.MaxLength,
                     ["wordWrap"] = t.WordWrap, ["multiline"] = t.Multiline, ["password"] = t.Password, ["readOnly"] = t.ReadOnly,
                     ["autoSize"] = t.AutoSize, ["selectable"] = !t.NoSelect, ["border"] = t.Border, ["html"] = t.Html,
+                    // readability text: a CSMTextSettings tag, or a device font (TextField::SetTextFieldDef, sfr_gfx_03e.cpp:191)
+                    ["readable"] = c.AaReadable || !t.UseOutlines ? true : null,
                 };
                 break;
             case CharKind.Button:

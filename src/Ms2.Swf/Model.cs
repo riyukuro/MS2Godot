@@ -96,6 +96,7 @@ public sealed class Character
     public Rect Bounds;                 // own bounds (shapes, texts); computed for sprites and buttons
     public string ExportName, ClassName;
     public Rect Scale9;
+    public bool AaReadable;             // CSMTextSettings (tag 74) names this text: drawn for readability
     // shape
     public List<BitmapFill> BitmapFills;
     public Rgba SolidFill;

@@ -69,6 +69,38 @@ public class SyntheticTests
         Assert.That((double)json["namedInstances"][0]["bounds"]["x"], Is.EqualTo(20));
     }
 
+    // one DefineEditText (id 5) placed as "t"; flags2 0x01 = UseOutlines; csm adds a CSMTextSettings tag for it
+    static SwfMovie TextMovie(byte flags2, bool csm)
+    {
+        var body = new List<byte>();
+        body.AddRange(Rect(2000, 1000));
+        body.AddRange(new byte[] { 0, 10, 1, 0 });
+        var et = new List<byte>(); et.AddRange(BitConverter.GetBytes((ushort)5)); et.AddRange(Rect(800, 400));
+        et.Add(0x80 | 0x04 | 0x01); et.Add(flags2); et.AddRange(BitConverter.GetBytes((ushort)3)); et.AddRange(BitConverter.GetBytes((ushort)240));
+        et.AddRange(new byte[] { 255, 0, 0, 255 }); et.Add(0); et.Add((byte)'x'); et.Add(0);
+        body.AddRange(Tag(37, et.ToArray()));
+        // CSMTextSettings: id, flags (normal renderer, grid fit none), thickness 0, sharpness 0, reserved
+        if (csm) body.AddRange(Tag(74, new byte[] { 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }));
+        body.AddRange(Tag(26, new byte[] { 2 | 32, 1, 0, 5, 0, (byte)'t', 0 }));
+        body.AddRange(Tag(1, Array.Empty<byte>()));
+        body.AddRange(Tag(0, Array.Empty<byte>()));
+        var file = new List<byte> { (byte)'F', (byte)'W', (byte)'S', 9 };
+        file.AddRange(BitConverter.GetBytes(8 + body.Count)); file.AddRange(body);
+        return SwfMovie.Parse(file.ToArray());
+    }
+
+    [TestCase((byte)0x01, false, false)]
+    [TestCase((byte)0x01, true, true)]
+    [TestCase((byte)0x00, false, true)]
+    public void ReadabilityTextIsExported(byte flags2, bool csm, bool readable)
+    {
+        var m = TextMovie(flags2, csm);
+        Assert.That(m.Problems, Is.Empty);
+        Assert.That(m.Characters[5].AaReadable, Is.EqualTo(csm));
+        var json = LayoutJson.Build(m, "synthetic");
+        Assert.That((bool?)json["symbols"]["5"]["text"]["readable"] == true, Is.EqualTo(readable));
+    }
+
     [Test]
     public void MatrixComposeAndTransform()
     {
