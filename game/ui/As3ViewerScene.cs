@@ -9,7 +9,7 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// Development scene for the ActionScript route: runs UI movies' own AS3 (Ms2.Avm2) and draws them with <see cref="As3View"/>.
-/// Args after `--`: --movie NAME [--scenario login|minimap|expbar|questlog] [--out FILE.png] [--frames N] [--gen DLL]
+/// Args after `--`: --movie NAME [--scenario login|login-id|minimap|expbar|questlog] [--out FILE.png] [--frames N] [--gen DLL]
 /// [--oracle] [--tab N --subtab N --scroll N]. --gen loads the translated movie code (tools/UiGen); --oracle runs the
 /// interpreter anyway. The questlog scenario is the quest log driven by its client controller over the shot fixture's
 /// quest state (QuestShotState, not game data).
@@ -89,6 +89,7 @@ public partial class As3ViewerScene : Control
         switch (scenario)
         {
             case "login":
+            case "login-id":
             {
                 var dlg = p.FindOwner("onEnterKey");
                 if (dlg == null) return;
@@ -98,6 +99,7 @@ public partial class As3ViewerScene : Control
                 if (p.Focus is AsTextField ft) ft.setSelection(0, ft.Text.Length);
                 foreach (var ch in "tester") p.Key(char.ToUpperInvariant(ch), ch, true);
                 p.Tick();
+                if (scenario == "login-id") break;   // the restored client's id_typed shot: the id typed, the caret in its field
                 p.Call(dlg, "onTabKey"); p.Tick();
                 foreach (var ch in "secret") p.Key(char.ToUpperInvariant(ch), ch, true);
                 break;

@@ -20,7 +20,8 @@ public partial class As3View : Node2D
     readonly Dictionary<SymbolScope, UiScope> scopes = new();
     readonly List<Entry> entries = new();
     int gen;
-    double frameTime;
+    double frameTime, caretTime;
+    readonly TextCaret caret = new();
     /// <summary>Advance the movie's frames in _Process (off for scripted captures that tick by hand).</summary>
     public bool AutoPlay = true;
 
@@ -75,6 +76,7 @@ public partial class As3View : Node2D
             TickMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
             if (frameTime > step) frameTime = 0;
         }
+        caretTime += delta;
         Sync();
         SampleMouseOver();
     }
@@ -98,6 +100,10 @@ public partial class As3View : Node2D
             if (ReferenceEquals(e.Obj.Tag, e)) e.Obj.Tag = null;
             entries.RemoveAt(i);
         }
+        var focus = Player.Focus as AsTextField;
+        var fe = focus?.Tag as Entry;
+        caret.Update(focus, fe?.Holder, fe?.Content, caretTime);
+        caretTime = 0;
     }
 
     static void CollectMasks(AsDisplayObject o, HashSet<AsDisplayObject> masks)
