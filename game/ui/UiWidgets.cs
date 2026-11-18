@@ -41,6 +41,8 @@ public abstract class Widget
 public class ButtonWidget : Widget
 {
     public bool Toggle, Selected, Hover, Down;
+    /// <summary>CLIK Button.allowDeselect: a selected toggle is deselected by a click (Button.handleClick).</summary>
+    public bool AllowDeselect = true;
     public bool IsCheckBox;
     public string Label;
     public override bool HandlesMouse => true;
@@ -53,10 +55,20 @@ public class ButtonWidget : Widget
         {
             case "toggle": if (!IsCheckBox) Toggle = (bool)value; break;
             case "selected": SetSelected((bool)value, false); return;
-            case "label": Label = (string)value; Node.SetText(Node.Movie.Assets.Str(Label)); break;
+            case "label": Label = (string)value; SetLabel(); break;
             default: base.Set(prop, value); return;
         }
         Refresh();
+    }
+
+    /// <summary>
+    /// Button.updateText: textField.text = label. A "$" key is translated by the movie's translator, FontTranslator::Translate
+    /// (fontconfig.cpp), which hands the string back as HTML (SetResultHtml), so a translated label shows its markup's formats.
+    /// </summary>
+    void SetLabel()
+    {
+        var text = Node.Movie.Assets.Str(Label);
+        if (Label != null && Label.StartsWith('$') && text != Label) Node.SetHtmlText(text); else Node.SetText(text);
     }
 
     public virtual void SetSelected(bool sel, bool raise)
@@ -74,7 +86,7 @@ public class ButtonWidget : Widget
         Down = down && Enabled; Refresh();
         if (!down && wasDown && Hover && Enabled)
         {
-            if (Toggle) SetSelected(!Selected, true);
+            if (Toggle && (!Selected || AllowDeselect)) SetSelected(!Selected, true);
             RaiseClick();
             Clicked();
         }

@@ -35,14 +35,18 @@ public partial class HudScene : Node
     DamageText damageText;
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
+    QuestDialog questDialog;                // UIQuestDialog, the quest log
+    int[] questShot;                        // --questlog TAB,SUBTAB: the shot opens the quest log on these tabs
 
     public override void _Ready()
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
+        questDialog = new QuestDialog(assets, f => !data.FeaturesOff.Contains(f));
 
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
@@ -146,6 +150,7 @@ public partial class HudScene : Node
         AdventureBar(uiRoot);
         GameMenu(uiRoot);
         SystemMenuDialog(layer);
+        questDialog.Attach(uiRoot, u, stage);          // dialogs draw over the HUD (UIDialog m_e0: layer 4)
     }
 
     SystemMenu systemMenu;          // UISystemMenuDialog (0x4e21)
@@ -613,19 +618,41 @@ public partial class HudScene : Node
     /// </summary>
     public override void _Input(InputEvent e)
     {
-        if (chatInput?.Edit == null || chat == null || !chat.IsVisibleInTree()) return;
-        if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
+        questDialog?.Input(e);
+        if (ChatKeys(e)) { GetViewport().SetInputAsHandled(); return; }
+        if (DialogKeys(e)) GetViewport().SetInputAsHandled();
+    }
+
+    bool ChatKeys(InputEvent e)
+    {
+        if (chatInput?.Edit == null || chat == null || !chat.IsVisibleInTree()) return false;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k) return false;
         if (k.Keycode == Key.Enter && !chatInput.Focused && !UiFocus.IsTyping)
         {
             chatInput.Focus();
             chatInput.Edit.CaretColumn = chatInput.Length;
-            GetViewport().SetInputAsHandled();
+            return true;
         }
-        else if (k.Keycode == Key.Escape && chatInput.Focused)
+        if (k.Keycode == Key.Escape && chatInput.Focused)
         {
             ReleaseChat();
-            GetViewport().SetInputAsHandled();
+            return true;
         }
+        return false;
+    }
+
+    /// <summary>
+    /// The scene's action keys and an open dialog's Escape, while nothing takes typing. UISceneGame::vfunc_13 runs the
+    /// action keys (IsActionKeyPressed 0x61a87, the quest log, action 400007: DIK 38, L, in table/default/defaultkey.xml)
+    /// through CKeyTable::FUN_14142b300, which toggles the dialog (keytable.cpp: case 400007, ToggleDialog(0x4e3e)).
+    /// UIDialog::vfunc_13: Escape closes an open dialog (vfunc_69 -> vfunc_67).
+    /// </summary>
+    bool DialogKeys(InputEvent e)
+    {
+        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || questDialog == null) return false;
+        if (k.PhysicalKeycode == Key.L) { questDialog.Toggle(); return true; }       // a DirectInput key code is a physical key
+        if (k.Keycode == Key.Escape && questDialog.IsOpen) { questDialog.Close(); return true; }
+        return false;
     }
 
     /// <summary>UIMessenger::FUN_141a12260: the input loses the focus and its text is cleared.</summary>
@@ -1130,7 +1157,11 @@ public partial class HudScene : Node
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (mapImage != null && MinimapTimer()) UpdateMinimap();
         target?.Process(delta);
+        questDialog?.Process(delta);
         if (shotDir == null) return;
+        if (questShot != null && frames == 200) questDialog.Open();
+        if (questShot != null && frames == 210) questDialog.ClickTab(false, questShot[0]);
+        if (questShot != null && frames == 220 && questShot.Length > 1) questDialog.ClickTab(true, questShot[1]);
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (++frames == 300)
         {
