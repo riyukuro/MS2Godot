@@ -303,11 +303,13 @@ public class AsTextField : AsInteractiveObject
         double x = 2 + TextMeasure.Width(FontName, Size, Text[..i]);
         return AsRectangle.New(R, x, 2, TextMeasure.Width(FontName, Size, Text[i].ToString()), TextMeasure.LineHeight(FontName, Size, 0));
     }
+    // TextField::getLineMetrics (sfr_as3_13.cpp:2025) from DocView::GetLineMetrics (sfr_render_03b.cpp): the line's height is
+    // IRound(max ascent + max descent) (the formatter, sfr_render_03b.cpp:1665), its leading kept apart (SetLeading :1712)
     [As] public AsTextLineMetrics getLineMetrics(int i)
     {
         var m = (AsTextLineMetrics)R.GetClass("flash.text.TextLineMetrics").Construct();
         var l = Lines(); var s = i >= 0 && i < l.Count ? l[i] : "";
-        m.width = TextMeasure.Width(FontName, Size, s); m.height = TextMeasure.LineHeight(FontName, Size, Leading);
+        m.width = TextMeasure.Width(FontName, Size, s); m.height = TextMeasure.LineHeight(FontName, Size, 0);
         m.ascent = Size * 0.9; m.descent = Size * 0.25; m.leading = Leading; m.x = 2;
         return m;
     }
