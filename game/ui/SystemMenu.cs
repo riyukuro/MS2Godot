@@ -205,6 +205,7 @@ public sealed partial class SystemMenu : Node2D
 
     void OpenGameOptionDialog(int page)
     {
+        if (OpenGameOption == null) GD.Print($"system menu: OpenGameOptionDialog({page}): the options dialog is not available yet");
         OpenGameOption?.Invoke(page);
         Close();
     }

@@ -10,8 +10,10 @@ the player character at the field's player spawn point, dressed in a new charact
 runs and climbs steps over the field's collision.
 
 Game flow (`game/flow/`): setup, then login (any id and password), character select (stub list), create on an empty slot,
-the field's loading picture, and the field with the HUD and the chosen character's job and gender. Esc in the field opens a menu:
-resume, back to character select, quit. `--flow-shots DIR` runs the whole flow by script with a shot per step. Each scene still runs alone.
+the field's loading picture, and the field with the HUD and the chosen character's job and gender. Esc in the field opens the client's
+system menu (`uisystemmenudialog`): channel (one channel offline), switch characters (back to character select), exit
+(asks, then quits) and resume; graphics and options log that the options dialog is not available yet; the field is
+not paused. `--flow-shots DIR` runs the whole flow by script with a shot per step. Each scene still runs alone.
 
 Controls: the arrow keys (or WASD) move relative to the camera, C or Alt jumps, comma (or Shift) holds walk, and
 the wheel zooms. Keys are ignored while a text field has focus. The movement follows the client; see
@@ -315,7 +317,9 @@ the resolution, applied as `MS2RenderService::OnInit` and `CWindowService::Apply
 - **Full window** (screen mode 2): on Windows, the display is switched to the chosen resolution, as the client does
   (`ChangeDisplaySettings`), and a borderless window covers it at 0,0. Leaving it, or quitting, restores the desktop's
   mode.
-- A fresh or outdated option file starts as a full window at the desktop size and is then saved.
+- The client starts a fresh or outdated option file as a full window at the desktop size and saves it. Until the
+  options dialog can change the mode, this project skips that: with no stored `GameOption.xml` the window opens as it
+  always has and nothing is written. A stored file's screen mode and resolution are applied.
 
 The resolution list is the display's 32-bit modes of at least 1024x720, the client's filter. On Windows the modes come
 from `EnumDisplaySettings`. On Linux they come from XRandR (the primary output's modes, read only). When the list
