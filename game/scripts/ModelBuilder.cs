@@ -292,12 +292,17 @@ public sealed class ModelBuilder
     /// <summary>
     /// TransparencyStandardMaterial::vfunc_4 (0x141860bf0): the material alpha becomes the mesh's own NiMaterialProperty
     /// alpha (1 without one) times the fade, and when the NiAlphaProperty tests alpha (flag 0x200) its reference becomes
-    /// (int)(fade * reference) &amp; 0xff.
+    /// (int)(fade * reference) &amp; 0xff. The reference is read back from the live NiAlphaProperty, the clone that
+    /// TransparencyMaterial::FUN_141860140 attached and ReleaseMaterials drops, so it compounds on every call while the
+    /// clone lives (the material alpha is taken from the saved m_spMaterial and does not). <paramref name="testRef"/> is
+    /// that live reference: start it at the mesh's own reference when the fade material is made.
     /// </summary>
-    public static void SetFade(ShaderMaterial fade, ModelMesh m, float alpha)
+    public static void SetFade(ShaderMaterial fade, ModelMesh m, float alpha, ref int testRef)
     {
         fade.SetShaderParameter(ShaderParam.FadeAlpha, m.MaterialAlpha * alpha);
-        if (m.AlphaTestOn) fade.SetShaderParameter(ShaderParam.AlphaRef, ((int)(alpha * m.AlphaThreshold) & 0xff) / 255f);
+        if (!m.AlphaTestOn) return;
+        testRef = (int)(alpha * testRef) & 0xff;
+        fade.SetShaderParameter(ShaderParam.AlphaRef, testRef / 255f);
     }
 
     /// <summary>The depth-only SHELL form of a blended field mesh's material (colour unchanged, depth written), or null.</summary>

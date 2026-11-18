@@ -26,6 +26,11 @@ namespace Ms2Godot.World;
 /// faded material (<see cref="ModelBuilder.FadeMaterial"/>). Not modelled: the sorting of the faded entities
 /// (SortEntities), AlphaShellComposite::MarkScene, the shadow and glow of a faded entity, and props drawn elsewhere (animated
 /// props); the frustum test uses the entity's merged mesh box for its NiBound.
+///
+/// STILL-OPEN: the camera option's user flags. BGTransparencyMgr::SetUserFlags is fed from the game option
+/// (gameoption.cpp:534, mypc.cpp:1002), and m_nFlags 0 turns the test off and sends every faded entity back to fade-in;
+/// there is no such option here yet, so this runs as if the flag were always set. vfunc_1's GameObject gate (FUN_14123c660
+/// 0 or class 0x6200004, bgtransparencymgr.cpp:390) is left out too: it never stops the player.
 /// </summary>
 public partial class FieldFade : Node
 {
@@ -46,7 +51,17 @@ public partial class FieldFade : Node
         public ulong Start;
         public bool Running(ulong now) => now - Start < FadeMs;
         public float Ratio(ulong now) => Math.Min((now - Start) / (float)FadeMs, 1f);
-        public readonly List<(FieldBuilder.FadeDraw draw, Transform3D xf, MultiMeshInstance3D node, ShaderMaterial mat)> Parts = new();
+        public readonly List<Part> Parts = new();
+    }
+
+    /// <summary>One faded draw. <see cref="TestRef"/> is the alpha-test reference of its cloned NiAlphaProperty
+    /// (TransparencyMaterial::FUN_141860140), which every vfunc_4 call scales; it starts again from the mesh's own
+    /// reference only when a new element clones the property again.</summary>
+    sealed class Part
+    {
+        public FieldBuilder.FadeDraw draw; public Transform3D xf; public MultiMeshInstance3D node; public ShaderMaterial mat;
+        public int TestRef;
+        public void SetFade(float a) => ModelBuilder.SetFade(mat, draw.Mesh, a, ref TestRef);
     }
 
     readonly List<Target> targets = new();
@@ -197,8 +212,9 @@ public partial class FieldFade : Node
                 var node = new MultiMeshInstance3D { Name = "fade", Multimesh = one, MaterialOverride = mat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 d.Parent.AddChild(node);
                 d.Mm.SetInstanceTransform(d.Index, new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), xf.Origin));
-                ModelBuilder.SetFade(mat, d.Mesh, 1f);
-                el.Parts.Add((d, xf, node, mat));
+                var part = new Part { draw = d, xf = xf, node = node, mat = mat, TestRef = d.Mesh.AlphaThreshold };
+                part.SetFade(1f);
+                el.Parts.Add(part);
             }
             fadeOut[t] = el;
         }
@@ -216,7 +232,7 @@ public partial class FieldFade : Node
         {
             if (!el.Running(now)) continue;
             float a = Mathf.Clamp(1f - el.Ratio(now), el.Alpha, 1f);
-            foreach (var p in el.Parts) ModelBuilder.SetFade(p.mat, p.draw.Mesh, a);
+            foreach (var p in el.Parts) p.SetFade(a);
         }
     }
 
@@ -227,7 +243,7 @@ public partial class FieldFade : Node
         {
             if (!el.Running(now)) { (done ??= new()).Add(t); continue; }
             float a = Mathf.Clamp(el.Ratio(now), el.Alpha, 1f);
-            foreach (var p in el.Parts) ModelBuilder.SetFade(p.mat, p.draw.Mesh, a);
+            foreach (var p in el.Parts) p.SetFade(a);
         }
         if (done == null) return;
         foreach (var t in done)
