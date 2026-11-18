@@ -30,7 +30,7 @@ public abstract record ItemMessage {
             case 3: return new Move(r.ReadLong(), r.ReadShort(), r.ReadLong(), r.ReadShort());
             case 6: return new Load(ItemList(r));
             case 7: { long uid = r.ReadLong(); int arg = r.ReadInt(); return new NotifyNew(uid, arg, r.ReadUnicodeString()); }
-            case 8: { int tab = r.ReadInt(); return new LoadTab(tab, ItemList(r)); }
+            case 8: { int tab = r.ReadInt(); if (tab < 0) { r.ReadShort(); return new LoadTab(tab, new List<EquipItem>()); } return new LoadTab(tab, ItemList(r)); } // FUN_141715860 returns on a negative tab without reading records
             case 10: return new ExpandComplete();
             case 11: return new Reset(r.ReadInt());
             case 12: { int tab = r.ReadByte(); return new ExpandCount(tab, r.ReadInt()); }
