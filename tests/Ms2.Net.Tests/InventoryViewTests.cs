@@ -46,6 +46,12 @@ public class InventoryViewTests {
         Assert.That(r.Log, Does.Not.Contain("new 2 True")); Assert.That(r.Log.Where(l => l.StartsWith("new")).Count(), Is.EqualTo(3));
     }
 
+    [Test] public void BindSelectsTheTabsButton() {
+        var b = Book(); var v = new InventoryView(b) { TabButtons = new[] { 0, 1, 2, 3, 6, 7, 8, 14, 5, 9, 11, 12, 13, 10, 4 } }; var r = new Rec();
+        v.Bind(r, 14); Assert.That(v.Tab, Is.EqualTo(14)); Assert.That(r.Log, Is.EqualTo(new[] { "init 4 False" }));
+        Assert.That(v.TabButton(15), Is.EqualTo(0)); Assert.That(v.TabButton(-1), Is.EqualTo(0));
+    }
+
     [Test] public void SingleItemRefreshesOneSlotAndWholeTabRebuildsOnLoadResetExpand() {
         var b = Book(); var v = new InventoryView(b); var r = new Rec(); v.Bind(r, 2, false); v.Update();
         Assert.That(r.Log.Take(1), Is.EqualTo(new[] { "init 2 False" }));
@@ -59,13 +65,14 @@ public class InventoryViewTests {
         r.Log.Clear(); b.Apply(new ItemMessage.ExpandCount(2, 2)); v.Update(); Assert.That(r.Log, Does.Contain("bag 2 12 used 0")); Assert.That(r.Log, Does.Contain("expand 0/12"));
     }
 
-    [Test] public void SelectTabFiresTheRequestOnlyWhenAsked() {
-        var b = Book(); var v = new InventoryView(b); var sent = new List<(int, bool)>(); v.RequestTab = (t, s) => sent.Add((t, s));
+    [Test] public void TabSwitchSendsNothingAndSortSendsTheShownTab() {
+        var b = Book(); var v = new InventoryView(b); var sent = new List<(int, bool)>(); v.RequestSort = (t, s) => sent.Add((t, s));
         b.Apply(new ItemMessage.Reset(1)); b.Apply(new ItemMessage.ExpandCount(1, 1)); v.Bind(new Rec());
         Assert.That(sent, Is.Empty);
-        v.SelectTab(3, true); v.SelectTab(99); Assert.That(sent, Is.EqualTo(new[] { (3, true) })); Assert.That(v.Tab, Is.EqualTo(3));
-        var w = new ByteWriter(); new ItemInventoryTabRequest(3, true).Write(w);
-        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 8, 3, 1 })); Assert.That(new ItemInventoryTabRequest(3, true).Op, Is.EqualTo(Outbound.RequestItemInventory));
+        v.SelectTab(3); v.SelectTab(99); Assert.That(sent, Is.Empty); Assert.That(v.Tab, Is.EqualTo(3));
+        v.Sort(); Assert.That(sent, Is.EqualTo(new[] { (3, false) }));
+        var w = new ByteWriter(); new ItemInventorySortRequest(3, true).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 8, 3, 1 })); Assert.That(new ItemInventorySortRequest(3, true).Op, Is.EqualTo(Outbound.RequestItemInventory));
         Assert.That((ushort) Outbound.RequestItemInventory, Is.EqualTo(0x17));
     }
 

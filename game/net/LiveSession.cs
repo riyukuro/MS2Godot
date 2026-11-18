@@ -47,7 +47,7 @@ public partial class LiveSession : Node
     public int? FieldId => entry?.Field?.MapId;
     /// <summary>The item inventory from the ItemInventory packets (OnItemInventory); live only.</summary>
     public readonly ItemBook Items = new();
-    /// <summary>The inventory dialog model over Items; a UI binds it. Its tab switch sends RequestItemInventory (read request, 0x14199c230) and nothing else does.</summary>
+    /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
     /// <summary>CKeyTable's server side: the key bindings and quick slot pages (current page included) of OnKeyTable; live only.</summary>
@@ -200,7 +200,7 @@ public partial class LiveSession : Node
             ItemReader.Known ??= id => { try { return Kinds().Known(id); } catch { return true; } };   // data unavailable: read every id
             Items.TabOf = id => { try { return Kinds().TabOf(id); } catch { return 7; } };
             Items.BaseSlots ??= BaseSlotTable();
-            if (Inventory == null) { Inventory = new InventoryView(Items); Inventory.RequestTab = (tab, stack) => Send(new ItemInventoryTabRequest((byte) tab, stack)); }
+            if (Inventory == null) { Inventory = new InventoryView(Items); Inventory.RequestSort = (tab, stack) => Send(new ItemInventorySortRequest((byte) tab, stack)); }
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
             if (entry.EarlyFactor is { } fp) GD.Print($"live: global factor {(Factors.Apply(fp.Reader()) ? "applied" : "ignored")} (before the field)");
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter

@@ -15,8 +15,10 @@ public sealed record GlobalFactorRequest : IOutPacket {
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { }
 }
 
-/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 8: UIInventoryDialog::SendRequestItemInventory 0x14199c230 (uiinventorydialog.cpp:1598): u8 8, u8 tab, bool stack. Asks the server to send one tab (answered by ItemInventory LoadTab). A read request, sent only when the inventory view switches tab.</summary>
-public sealed record ItemInventoryTabRequest(byte Tab, bool Stack) : IOutPacket {
+/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 8: UIInventoryDialog::SendRequestItemInventory 0x14199c230 (uiinventorydialog.cpp:1598): u8 8, u8 tab, bool stack.
+/// The sort request ("send the sort request", uiinventorydialog.h:87): sent by OnClickSort (:856) and OnSortConfirm (:1391), not on a tab switch
+/// (OnTabChanged 0x14199a4b0 sends nothing).</summary>
+public sealed record ItemInventorySortRequest(byte Tab, bool Stack) : IOutPacket {
     public Outbound Op => Outbound.RequestItemInventory;
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(8); w.WriteByte(Tab); w.WriteBool(Stack); }
 }

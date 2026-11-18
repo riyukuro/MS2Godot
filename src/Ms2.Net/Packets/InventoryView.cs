@@ -41,8 +41,9 @@ public sealed class InventoryView {
 
     /// <summary>m_194: the tab the dialog shows.</summary>
     public int Tab { get; private set; }
-    /// <summary>The tab-open request (UIInventoryDialog::SendRequestItemInventory 0x14199c230): (tab, stack). Set by the owner of the connection; fires only from <see cref="SelectTab"/>.</summary>
-    public Action<int, bool> RequestTab { get; set; }
+    /// <summary>The sort request (UIInventoryDialog::SendRequestItemInventory 0x14199c230, "send the sort request" uiinventorydialog.h:87): (tab, stack).
+    /// Set by the owner of the connection; fires only from <see cref="Sort"/> (OnClickSort / OnSortConfirm), never on a tab switch.</summary>
+    public Action<int, bool> RequestSort { get; set; }
     public int Pending => pending;
     /// <summary>m_1a8: the tab button index of each tab (-1 = the tab has no button and is skipped); identity until the UI tells.</summary>
     public int[] TabButtons { get; set; } = Enumerable.Range(0, ItemBook.Tabs).ToArray();
@@ -83,21 +84,27 @@ public sealed class InventoryView {
         return arr;
     }
 
-    /// <summary>OnLoadComplete 0x141997dd0: initData(tabButtonIndex, devMode), then the first flags are pending so the next Update fills everything.</summary>
-    public void Bind(IInventoryBinding b, int tabButtonIndex = 0, bool devMode = false) {
+    /// <summary>OnLoadComplete 0x141997dd0: initData(GetTabButtonIndex(m_194), devMode) for the tab m_194, then the first flags are pending so
+    /// the next Update fills everything (the movie's initData selects the button, whose index change is OnTabChanged: m_19c = 7).</summary>
+    public void Bind(IInventoryBinding b, int tab = 0, bool devMode = false) {
         binding = b;
-        Tab = tabButtonIndex;
-        b.initData(tabButtonIndex, devMode);
+        Tab = tab;
+        b.initData(TabButton(tab), devMode);
         pending |= PendingNew | PendingExpand | PendingRebuild;
     }
 
-    /// <summary>OnTabChanged 0x14199a4b0: m_194 = tab, rebuild flag, and the tab request (a read; fires only here, when a UI asks).</summary>
-    public void SelectTab(int tab, bool stack = false) {
+    /// <summary>GetTabButtonIndex 0x14199d920: m_1a8[tab], 0 for a tab outside the array.</summary>
+    public int TabButton(int tab) => tab < 0 || tab >= TabButtons.Length ? 0 : TabButtons[tab];
+
+    /// <summary>OnTabChanged 0x14199a4b0: m_194 = the button's tabIndex, m_19c = 7. Nothing is sent.</summary>
+    public void SelectTab(int tab) {
         if ((uint) tab >= ItemBook.Tabs) return;
         Tab = tab;
-        pending |= PendingRebuild | PendingExpand;
-        RequestTab?.Invoke(tab, stack);
+        pending |= PendingNew | PendingExpand | PendingRebuild;
     }
+
+    /// <summary>The vfunc_28 "OnClickSort" tail (uiinventorydialog.cpp:856) and OnSortConfirm (:1391): SendRequestItemInventory(m_194, stack).</summary>
+    public void Sort(bool stack = false) => RequestSort?.Invoke(Tab, stack);
 
     void OnChanged(long uid) {
         if (uid == 0) {
