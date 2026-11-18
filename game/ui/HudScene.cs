@@ -843,8 +843,8 @@ public partial class HudScene : Node
 
     /// <summary>
     /// The quest log's data: the quest tables and the character's quest state. The state comes from the server (the quest
-    /// packets); until the network side fills <see cref="IQuestState"/> the character has no quest records and can accept
-    /// nothing (<see cref="NoQuestState"/>), so every list is empty. A shot with --questlog-fixture lists made-up state.
+    /// packets) of a live session (<see cref="Ms2Godot.Net.LiveQuestState"/>); offline the character has no quest records
+    /// and can accept nothing (<see cref="NoQuestState"/>), so every list is empty. A shot with --questlog-fixture lists made-up state.
     /// </summary>
     QuestLog QuestLogSource()
     {
@@ -854,7 +854,13 @@ public partial class HudScene : Node
             questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, featureOn);
             fieldMeta ??= FieldMeta.Load(assets.Packs);
             fieldCodes ??= QuestTable.FieldCodes(assets.Table("table/fielddata.xml"), questTable.Available);
-            IQuestState state = questFixture ? new QuestShotState(questTable, data.Player.Level) : new NoQuestState(data.Player.Level);
+            var live = Ms2Godot.Net.LiveSession.Instance;
+            var meta = fieldMeta;
+            IQuestState state = questFixture ? new QuestShotState(questTable, data.Player.Level)
+                : live?.GameSession != null
+                    ? new Ms2Godot.Net.LiveQuestState(live.Quests, questTable, live.GameSession, live.CharacterId, data.Player.Level,
+                                                      live.FieldId, f => meta.ParentFields.TryGetValue(f, out int p) ? p : null)
+                    : new NoQuestState(data.Player.Level);
             return new QuestLog(questTable, state) { Meta = fieldMeta, FieldCodes = fieldCodes };
         }
         catch (Exception e) { GD.PushWarning("quest log: " + e.Message); return null; }

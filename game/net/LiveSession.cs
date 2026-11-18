@@ -39,6 +39,12 @@ public partial class LiveSession : Node
     public int CharacterLimit;
     /// <summary>The quest state the quest packets build (live only; the quest log reads it, offline it stays empty).</summary>
     public readonly QuestBook Quests = new();
+    /// <summary>The game server session (its time sync), null before the field enter.</summary>
+    public ClientSession GameSession => game?.Session;
+    /// <summary>The entered character's id (DAT_143ab2828), 0 before the field enter.</summary>
+    public long CharacterId => entry?.Enter?.CharacterId ?? 0;
+    /// <summary>The field the server sent the character to (RequestFieldEnter), null before the field enter.</summary>
+    public int? FieldId => entry?.Field?.MapId;
     /// <summary>The item inventory from the ItemInventory packets (OnItemInventory); live only.</summary>
     public readonly ItemBook Items = new();
     /// <summary>The inventory dialog model over Items; a UI binds it. Its tab switch sends RequestItemInventory (read request, 0x14199c230) and nothing else does.</summary>
