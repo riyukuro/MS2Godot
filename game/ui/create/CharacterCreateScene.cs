@@ -71,7 +71,9 @@ public partial class CharacterCreateScene : LobbyFieldScene
     CreateTables tables;
     UiAssets assets;
     CanvasLayer layer;
-    MovieClipNode selectRoot, createRoot, listRoot;
+    MovieClipNode selectRoot, createRoot;
+    /// <summary>uicharacterlistdialog behind the job page.</summary>
+    Node2D listRoot;
     JobSelectLogic jobs;
     CharacterCreateLogic custom;
     UiWidgets.MouseRouter mouse, listMouse;
@@ -138,7 +140,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         relayoutQueued = false;
         if (!IsInsideTree()) return;
         bool optionsOpen = custom?.Options.Visible == true;     // read while the old page is still in the tree
-        foreach (var old in new[] { listRoot, selectRoot, createRoot })
+        foreach (var old in new Node2D[] { listRoot, selectRoot, createRoot })
             if (old != null) { layer.RemoveChild(old); old.QueueFree(); }
         listRoot = selectRoot = createRoot = null;
         if (jobs != null) BuildSelect(jobs.SelectedJob);
@@ -161,17 +163,15 @@ public partial class CharacterCreateScene : LobbyFieldScene
         // the character list stays behind, dimmed by the job page's m_fullBg
         try
         {
-            var listMovie = new UiMovie(assets, UICharacterListDialogContract.Movie);
-            listRoot = listMovie.BuildRoot(u);
-            listRoot.Scale = new Vector2(u, u);
-            UiWidgets.ApplyInspector(listRoot, UICharacterListDialogContract.Inspector);
-            LobbyLayout.AlignCharacterList(listRoot, stage, u);
-            layer.AddChild(listRoot);
             // the select scene's dialog as it was when the job page opened over it (UICharacterListDialog::OnEndPopdown
-            // 0x620001c -> SelectCreateJob): the flow's characters with the selected one, at the popup's end
-            var list = new CharacterListLogic(listMovie, listRoot);
-            list.BuildCharacterList(Flow.Session.List(), Flow.Session.SelectedIndex, 6, new LobbyCharacterData(packs, assets.Language), assets.ImageFile);
-            list.ShowDialog(assets, uiPacks ?? packs, false, Flow.Session.ServerInfo(assets));
+            // 0x620001c -> SelectCreateJob): the flow's characters, at the popup's end, taking no input
+            var list = CharacterListScene.NewController(assets, uiPacks ?? packs, new LobbyCharacterData(packs, assets.Language), Flow.Session.List());
+            list.KeepRow = Flow.Session.SelectedIndex;
+            var dialog = CharacterListScene.OpenList(assets, list, Screen().Window);
+            dialog.Step(CharacterListScene.PopupFrames);
+            list.SetInput(false);
+            listRoot = dialog;
+            layer.AddChild(dialog);
         }
         catch (Exception ex) { GD.PushWarning("character list: " + ex.Message); }
 

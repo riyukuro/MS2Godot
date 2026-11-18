@@ -3,15 +3,9 @@ using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2.Ui;
 
 namespace Ms2Godot.Ui;
-
-/// <summary>
-/// What the character list hands the movie for one character: the object FUN_1418f42c0 (uicharacterlistdialog.cpp) fills
-/// for buildCharacterList / addCharacter, from the character's user block.
-/// </summary>
-public sealed record LobbyCharacterRow(string CharName, int Gender, int JobCode, string LevelJob, string ImgPath,
-    string CreatedDate, string LastPos, string CharSN);
 
 /// <summary>The tables FUN_1418f42c0 reads, loaded once from the player's Xml.m2d.</summary>
 public sealed class LobbyCharacterData

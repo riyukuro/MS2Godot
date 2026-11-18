@@ -7,6 +7,7 @@ using Ms2Godot.Look;
 using Ms2Godot.Net;
 using Ms2Godot.Ui.Contracts;
 using Ms2Godot.Ui.Create;
+using Ms2.Ui;
 
 namespace Ms2Godot.Ui;
 
@@ -15,15 +16,16 @@ namespace Ms2Godot.Ui;
 /// selected character's job (EnterSelectMode: GetSelectMapForSelectedJob, LobbyFieldTable::GetSelectMap of the
 /// character's job group, job 1's map with no character), the camera its Camera0 entity, and the selected character
 /// stands at its spawn point dressed in its equips (UICharacterListDialog::PreviewCharacter -> FUN_14107b7e0).
-/// uicharacterlistdialog (built from the player's own Gfx.m2d) runs on top, filled from the game flow's list (the stub
-/// list when the scene runs alone).
+/// uicharacterlistdialog runs on top as the client's own movie with UICharacterListDialog's C++ side
+/// (<see cref="CharacterListController"/>), filled from the game flow's list (the stub list when the scene runs alone).
 /// Selecting another character goes through OnSelectCharacter -> EnterSelectScene -> EnterSelectMode -> LoadMap of the
 /// new character's select map; the preview follows once the map is in (CSceneStateMulti vfunc_1 ->
 /// PreviewSelectedCharacter). As the restored client shows it: on the same map the field stays and only the character
 /// is swapped (a hard cut); on another map the old frame crossfades into the new field; the selected row again does nothing.
-/// Start / Enter / a double click start the game (OnGameStart) or begin character creation on an empty slot (OnCreatePC).
+/// The movie's Start, a double click and Enter (vfunc_13 -> onEnterKey) start the game (OnGameStart) or begin character
+/// creation on an empty slot (OnCreatePC). The list takes no keys (CharacterList.configUI preventKeyInput).
 /// Args after `--`: --shots DIR renders shots and quits; with --resize WxH the window is resized after the first shot and
-/// a second one taken.
+/// a second one taken; --limit N sets the account's character limit (CharMaxCount), 6 without it or a live session.
 /// </summary>
 public partial class CharacterListScene : LobbyFieldScene
 {
@@ -32,9 +34,15 @@ public partial class CharacterListScene : LobbyFieldScene
     UiAssets assets;
     LobbyCharacterData data;
     CanvasLayer layer;
-    MovieClipNode root;
-    CharacterListLogic logic;
-    UiWidgets.MouseRouter mouse;
+    MovieDialog dialog;
+    CharacterListController controller;
+    /// <summary>The dialog of the scene a map change left; the new one carries its state (the client keeps the dialog open).</summary>
+    static CharacterListController carried;
+    /// <summary>GameOption m_nCharSN as the client keeps it: the last previewed character (SelectCharacter, :1263).</summary>
+    static string lastSn = "";
+    /// <summary>The character previewed in this scene, null for none.</summary>
+    string previewSn;
+    int? limitArg;
     ModelBuilder builder;
     int mapId;
     string shotDir;
@@ -43,12 +51,24 @@ public partial class CharacterListScene : LobbyFieldScene
     int frames;
 
     /// <summary>The list is built and takes input (no lobby change under way).</summary>
-    public bool ListReady => logic != null && logic.MouseEnabled;
+    public bool ListReady => controller != null && controller.InputOn && !controller.Selecting;
 
-    public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); UiBridge.ToHost += OnHost; }
+    /// <summary>The row the movie's list has selected.</summary>
+    public int ListIndex => controller?.ListIndex ?? -1;
+
+    /// <summary>A click on row <paramref name="row"/>: the list's selectedIndex set as CLIK's itemClick sets it (INDEX_CHANGE -> onChangeCharacter).</summary>
+    public void SelectRow(int row)
+    {
+        if (controller?.Host is not { } h || h.Get(h.Entity, "m_charlist") is not { } list) return;
+        h.Set(list, "selectedIndex", row);
+    }
+
+    /// <summary>The movie's Start button (onClickStart), as a click on it.</summary>
+    public void ClickStart() { if (controller?.Host is { } h) h.Invoke(h.Entity, "onClickStart", (object)null); }
+
+    public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); }
     public override void _ExitTree()
     {
-        UiBridge.ToHost -= OnHost;
         if (layer != null) GetViewport().SizeChanged -= QueueRelayout;
         base._ExitTree();
     }
@@ -71,6 +91,7 @@ public partial class CharacterListScene : LobbyFieldScene
         {
             if (args[i] == "--shots") shotDir = args[i + 1];
             if (args[i] == "--resize" && args[i + 1].Split('x') is [var w, var h] && int.TryParse(w, out int rw) && int.TryParse(h, out int rh)) resizeTo = new Vector2I(rw, rh);
+            if (args[i] == "--limit" && int.TryParse(args[i + 1], out int lim)) limitArg = lim;
         }
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
         uiPacks = new PackSet(Settings.DataDir);
@@ -95,8 +116,8 @@ public partial class CharacterListScene : LobbyFieldScene
         bool reselect = reselecting;
         reselecting = false;
         bool popup = !reselect && (shotDir == null || enterShots);
-        BuildList(popup);
         PreviewSelected();
+        if (!popup) BuildList(reselect, false);
         var fade = AddCrossfade(reselect ? null : EnterFrom);
         EnterFrom = null;
         StartAfterFirstFrame(popup, fade);
@@ -113,40 +134,70 @@ public partial class CharacterListScene : LobbyFieldScene
         CallDeferred(MethodName.Relayout);
     }
 
-    /// <summary>The list built again at the new window's UI scale, on the same selection and mouse state.</summary>
+    /// <summary>The dialog gets the new stage and aligns again (UIDialog::vfunc_43 -> alignment).</summary>
     void Relayout()
     {
         relayoutQueued = false;
-        if (!IsInsideTree() || root == null) return;
-        bool mouseOn = logic.MouseEnabled;
-        layer.RemoveChild(root);
-        root.QueueFree();
-        BuildList(false);
-        logic.MouseEnabled = mouseOn;
+        if (!IsInsideTree() || dialog == null) return;
+        dialog.Relayout(GetViewport().GetVisibleRect().Size);
     }
 
     /// <summary>
-    /// uicharacterlistdialog for the current window, filled from the flow's list (CharacterListDialog.buildCharacterList).
-    /// With <paramref name="popup"/> it plays its popup; otherwise it is put at the popup's end.
+    /// uicharacterlistdialog for the current window: the controller filled from the flow's list (FUN_1418f42c0 per
+    /// character), the movie loaded (OnLoadComplete -> initData, RefreshLobby -> buildCharacterList -> popup). With
+    /// <paramref name="reselect"/> it carries the dialog of the scene a map change left; without <paramref name="popupPlays"/>
+    /// the movie is stepped to the popup's end (the dialog was already open).
     /// </summary>
-    void BuildList(bool popup)
+    void BuildList(bool reselect, bool popupPlays)
     {
-        var window = GetViewport().GetVisibleRect().Size;    // window pixels (LobbyLayout.UseWindowPixels)
-        float u = UiScale.For(window);
-        var movie = new UiMovie(assets, UICharacterListDialogContract.Movie);
-        root = movie.BuildRoot(u);
-        root.Scale = new Vector2(u, u);
-        UiWidgets.ApplyInspector(root, UICharacterListDialogContract.Inspector);
-        LobbyLayout.AlignCharacterList(root, UiScale.MovieStage(window), u);
-        layer.AddChild(root);
+        controller = NewController(assets, uiPacks ?? packs, data, Flow.Session.List(), limitArg);
+        if (reselect && carried != null) controller.CarryFrom(carried);
+        else controller.SavedSn = lastSn;
+        carried = null;
+        controller.Previewed(previewSn);
+        if (previewSn != null) lastSn = previewSn;
+        controller.SelectCharacter += OnSelectCharacter;
+        controller.GameStart += sn => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, sn);
+        controller.CreateCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnCreatePC);
+        controller.DeleteCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC);
+        controller.ServerList += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnSceneLobbyServer);
+        controller.Swapped += (a, b) =>
+        {
+            var list = Flow.Session.List();
+            if (a < list.Count && b < list.Count) (list[a], list[b]) = (list[b], list[a]);
+        };
+        dialog = OpenList(assets, controller, GetViewport().GetVisibleRect().Size);
+        layer.AddChild(dialog);
+        if (!popupPlays) dialog.Step(PopupFrames);
+    }
 
-        logic = new CharacterListLogic(movie, root);
-        // CharacterListDialog.buildCharacterList -> popup: LobbyDialog.popup gotoAndPlay("popup") on the dialog,
-        // m_title.gotoAndPlay("popup"), btnsPopup(m_btns)
-        logic.BuildCharacterList(Flow.Session.List(), Flow.Session.SelectedIndex, 6, data, assets.ImageFile);
-        logic.ShowDialog(assets, uiPacks ?? packs, popup, Flow.Session.ServerInfo(assets));
-        mouse = new UiWidgets.MouseRouter(root);
+    /// <summary>Frames stepped to put a dialog that was already open at the end of its popup (the popup labels are shorter).</summary>
+    public const int PopupFrames = 60;
 
+    /// <summary>
+    /// A character list controller over the flow's characters: the account's limit from CharMaxCount (the live session's,
+    /// else <paramref name="limit"/>, else 6), the server line (FUN_141900750) and the DeleteAccount feature.
+    /// </summary>
+    public static CharacterListController NewController(UiAssets assets, PackSet features, LobbyCharacterData data, IEnumerable<CharacterEntry> characters, int? limit = null)
+    {
+        var info = Flow.Session.ServerInfo(assets);
+        var c = new CharacterListController
+        {
+            CharacterLimit = Net.LiveSession.Instance is { CharacterLimit: > 0 } live ? live.CharacterLimit : limit ?? 6,
+            Server = (info.Name, info.IconPath),
+            // UICharacterListDialog::OnLoadComplete: feature 0x112; feature.xml has DeleteAccount at KR level 100, over the
+            // Live server level (feature_setting.xml Live KR 78)
+            DeleteAccountEnabled = LobbyFeatures.IsEnabled(features, "DeleteAccount"),
+        };
+        foreach (var e in characters) c.Characters.Add(data.Row(e));
+        return c;
+    }
+
+    /// <summary>The movie for <paramref name="controller"/>, with the translated UI code when it is built.</summary>
+    public static MovieDialog OpenList(UiAssets assets, CharacterListController controller, Vector2 window)
+    {
+        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the character list runs interpreted");
+        return new MovieDialog(assets, controller, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
     }
 
     /// <summary>
@@ -156,6 +207,7 @@ public partial class CharacterListScene : LobbyFieldScene
     void PreviewSelected()
     {
         var e = Selected();
+        previewSn = e?.User.CharacterId.ToString();
         if (e == null) { ClearPreview(); return; }
         try
         {
@@ -179,21 +231,15 @@ public partial class CharacterListScene : LobbyFieldScene
         catch (Exception ex) { GD.PushWarning("character select preview: " + ex.Message); }
     }
 
-    void OnHost(string movieName, string method, object[] a)
+    /// <summary>
+    /// The controller let an OnSelectCharacter through (the dialog's input is off, m_180 set): 0x4c8 is posted ->
+    /// EnterSelectScene -> EnterSelectMode -> WorldService::LoadMap(select map, 1, 0).
+    /// </summary>
+    void OnSelectCharacter(string sn)
     {
-        if (movieName != UICharacterListDialogContract.Movie || method != UICharacterListDialogContract.ToHost.OnSelectCharacter) return;
-        // UICharacterListDialog OnSelectCharacter(charSN): m_188 = the character of that id (none for an empty slot). Only
-        // `spPrev != m_188 || (m_188 == 0 && m_220 == 0)` goes on: the selected character clicked again does nothing.
-        // Otherwise the dialog's input goes off (FUN_1412761e0(m_30, 0), m_180 = 1, back on in PreviewCharacter) and 0x4c8
-        // is posted -> EnterSelectScene -> EnterSelectMode -> WorldService::LoadMap(select map, 1, 0).
-        var list = Flow.Session.List();
-        string sn = a.Length > 0 ? a[0] as string : null;
-        int index = list.FindIndex(c => c.User.CharacterId.ToString() == sn);
-        var prev = Selected();
-        var next = index >= 0 ? list[index] : null;
-        if (next != null && ReferenceEquals(prev, next)) return;
-        Flow.Session.SelectedIndex = index >= 0 ? index : logic.SelectedIndex;
-        logic.MouseEnabled = false;
+        UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnSelectCharacter, sn);
+        Flow.Session.SelectedIndex = controller.ListIndex;
+        carried = controller;
         // WorldService::LoadMap returns early only while that map is still loading (m_state 2; a loaded map is at 4,
         // HandleWorldLoadedMessage result 4), so the select map already up is loaded again too, and the preview comes
         // back through the world-loaded callback (CSceneStateMulti::vfunc_1 -> PreviewSelectedCharacter). The restored
@@ -284,31 +330,29 @@ public partial class CharacterListScene : LobbyFieldScene
     /// <summary>
     /// The popup and the crossfade start once the new scene has been drawn: the frame that builds the field takes long,
     /// and its time would otherwise be taken off the start of both.
+    /// The scene's fade-in ends with the crossfade (or at once without one): UISceneLobbySelect::vfunc_58 -> the dialog's
+    /// FUN_1418f1fd0 turns its input on.
     /// </summary>
     async void StartAfterFirstFrame(bool popup, TextureRect fade)
     {
-        if (!popup && fade == null) return;
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         if (!IsInsideTree()) return;
-        if (popup) logic.PlayPopup();
-        if (fade == null) return;
+        if (popup) BuildList(false, true);
+        if (fade == null) { controller.FadeInComplete(); return; }
         var tween = CreateTween();
         tween.TweenProperty(fade, "modulate:a", 0f, CrossfadeSeconds);
         tween.TweenCallback(Callable.From(fade.GetParent().QueueFree));
+        tween.TweenCallback(Callable.From(() => controller?.FadeInComplete()));
         fadeStart = Time.GetTicksMsec() / 1000.0;
     }
 
+    /// <summary>UICharacterListDialog::vfunc_13 (uicharacterlistdialog.cpp:787-800): Enter -> onEnterKey, ahead of the movie.</summary>
     public override void _Input(InputEvent e)
     {
-        if (logic == null) return;
-        if (logic.MouseEnabled) mouse?.Handle(e);
-        if (e is InputEventMouseButton mb) logic.OnMouse(mb);
-        if (e is InputEventKey { Pressed: true, Echo: false } k && logic.MouseEnabled)
-        {
-            if (k.Keycode is Key.Enter or Key.KpEnter) logic.OnEnterKey();
-            else if (k.Keycode == Key.Down) logic.Select(Math.Min(logic.SelectedIndex + 1, CharacterListLogic.MaxRow - 1), true);
-            else if (k.Keycode == Key.Up) logic.Select(Math.Max(logic.SelectedIndex - 1, 0), true);
-        }
+        if (controller == null) return;
+        // the answer may change the scene at once (OnCreatePC / OnGameStart): this one is then out of the tree
+        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter && controller.EnterKey() && IsInsideTree())
+            GetViewport().SetInputAsHandled();
     }
 
     /// <summary>Shots step, kept over the reloads of a map change.</summary>
@@ -319,7 +363,7 @@ public partial class CharacterListScene : LobbyFieldScene
     public override void _Process(double delta)
     {
         base._Process(delta);
-        if (shotDir == null || logic == null) return;
+        if (shotDir == null || controller == null) return;
         frames++;
         if (!midSaved && fadeStart >= 0 && Time.GetTicksMsec() / 1000.0 - fadeStart >= 0.2)
         {
@@ -348,16 +392,16 @@ public partial class CharacterListScene : LobbyFieldScene
         if (frames == 61)
         {
             int step = shotStep++;
-            if (step == 0) logic.Select(1, true);
-            else if (step == 1) logic.Select(3, true);
-            else if (step == 2) { GD.Print($"same map: scene {GetInstanceId()}"); logic.Select(4, true); }
+            if (step == 0) SelectRow(1);
+            else if (step == 1) SelectRow(3);
+            else if (step == 2) { GD.Print($"same map: scene {GetInstanceId()}"); SelectRow(4); }
             else GetTree().Quit();
         }
         else if (frames == 120 && shotStep == 3)
         {
             GD.Print($"same map: scene {GetInstanceId()} after the select (no reload)");
             Save($"charselect_3_{Flow.Session.SelectedIndex}.png");
-            logic.Select(4, true);
+            SelectRow(4);
         }
         else if (frames == 180 && shotStep == 3) { Save("charselect_3_reclick.png"); GetTree().Quit(); }
     }

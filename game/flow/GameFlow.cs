@@ -349,6 +349,11 @@ public partial class GameFlow : Node
     }
     bool InScene(string path) => GetTree().CurrentScene?.SceneFilePath == path;
     Task LobbyReady() => Until(() => GetTree().CurrentScene is Ui.CharacterListScene { ListReady: true });
+    /// <summary>A click on a row of the select scene's list (the list takes no keys: CharacterList.configUI preventKeyInput).</summary>
+    void ClickRow(Func<Ui.CharacterListScene, int> row)
+    {
+        if (GetTree().CurrentScene is Ui.CharacterListScene s) s.SelectRow(row(s));
+    }
 
     async Task Script()
     {
@@ -357,15 +362,16 @@ public partial class GameFlow : Node
         UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);     // the Login button
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("02_charselect.png");
-        for (int i = 0; i < 3; i++) { Press(Godot.Key.Down); await Frames(5); await LobbyReady(); }   // the empty slot (another job's lobby map reloads the scene)
+        await LobbyReady(); ClickRow(_ => 3); await Frames(5); await LobbyReady();                   // the empty slot (another job's lobby map reloads the scene)
         Shot("03_charselect_empty_slot.png");
         Press(Godot.Key.Enter);
         await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(180);
         Shot("04_create.png");
         ClickJobBack();                                                                               // the job page's back button
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(60);
-        await LobbyReady();
-        Press(Godot.Key.Enter);                                                                       // the empty slot, still selected
+        await LobbyReady();                                                                           // the reopened list selects the last previewed character (RefreshLobby m_1a0), which loads its map
+        ClickRow(_ => 3); await Frames(5); await LobbyReady();
+        Press(Godot.Key.Enter);                                                                       // the empty slot
         await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(120);
         OnCreated(new CreateCharacter(0, 20, "Neutral", 0, 0, Array.Empty<byte>(), 0), Array.Empty<byte>());   // stands in for a confirmed name (the event is raised inside the create scene)
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
@@ -384,7 +390,7 @@ public partial class GameFlow : Node
         Hud?.ClickSystemMenu("m_selectCharacter");
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("09_back_at_charselect.png");
-        Press(Godot.Key.Up); await Frames(5); await LobbyReady(); Press(Godot.Key.Enter);
+        await LobbyReady(); ClickRow(s => s.ListIndex - 1); await Frames(5); await LobbyReady(); Press(Godot.Key.Enter);
         await Until(() => Current == State.Game); await Frames(240);
         Shot("10_field_second_entry.png");
         Press(Godot.Key.Escape); await Frames(30);

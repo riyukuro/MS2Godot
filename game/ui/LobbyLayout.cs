@@ -91,22 +91,6 @@ public static class LobbyLayout
         return new Vector2(x + AsRound(18 * g), y - h - AsRound(12 * g));
     }
 
-    /// <summary>
-    /// CharacterListDialog.alignment for a list root built at the UI scale <paramref name="u"/>: the dialog at the centre right
-    /// for m_bg (m_content.m_bg), then btnsAlignment(m_btns, getUIScale, m_exit.height, 0, 0, stage) puts the exit / option
-    /// buttons at the stage's bottom left. The region and event extras it also aligns are not shown here.
-    /// </summary>
-    public static void AlignCharacterList(MovieClipNode root, Vector2 stage, float u)
-    {
-        float exitH = root.FindClip("m_btns.m_exit") is { } exit ? AsHeight(exit) : 0;
-        var (at, r) = CenterRightOfBg(root, root.FindClip("m_content.m_bg"), stage, u);
-        if (root.ChildNamed("m_btns") is { } btns)
-        {
-            btns.Override = new Transform2D(0, BtnsAlignment(StageBottomLeftInDialog(at, r, stage), exitH, stage));
-            root.GotoFrame(root.Frame);
-        }
-    }
-
     /// <summary>globalToLocal(new Point(0, stage.stageHeight)) for a dialog at <paramref name="at"/> with scale <paramref name="r"/>.</summary>
     public static Vector2 StageBottomLeftInDialog(Vector2 at, float r, Vector2 stage) => (new Vector2(0, stage.Y) - at) / r;
 }
