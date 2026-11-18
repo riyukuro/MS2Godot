@@ -906,8 +906,15 @@ public sealed class MyInfoController : UiController
     {
         var r = equipBagRecord;
         if (r == null || Model == null) return;
-        var item = EquipSlotItem(r, equipBagKind, slot);
-        if (item == null || !Model.HasLocalPlayer || !r.IsLocal || Inventory == null) return;
+        if (EquipSlotItem(r, equipBagKind, slot) is { } item) RequestUnequip(item);
+    }
+
+    /// <summary>Unk_Inventory::RequestUnequipItem's part after the slot (see <see cref="Unequip"/>) for a worn item of the shown
+    /// equip bag's record.</summary>
+    public void RequestUnequip(Item item)
+    {
+        var r = equipBagRecord;
+        if (item == null || r == null || Model == null || !Model.HasLocalPlayer || !r.IsLocal || Inventory == null) return;
         var model = Model.Tables.ItemModels.Get(item.Data.ItemPreset);
         if (model != null && FixedPartGroups.Any(model.HasSlotType))
         {
@@ -916,6 +923,16 @@ public sealed class MyInfoController : UiController
         }
         if (!Inventory.HasEmptyCell(Inventory.TabOfItem(item.Data.Id))) { SystemNotice?.Invoke(InventoryFullKey); return; }
         Inventory.RequestUnequip?.Invoke(item.Uid);
+    }
+
+    /// <summary>The equip bag slot of a binding name (EquipSlot, FUN_14120d560): its item (vfunc_25), that item's equip slot
+    /// (CItem m_68, the record's slot) and the bag's kind (m_nKind); null for another name or an empty slot.</summary>
+    public (Item Item, int Slot, int Kind)? WornSlot(string name)
+    {
+        if (equipBagRecord == null || Model == null || !name.StartsWith(EquipBag + ".", StringComparison.Ordinal)
+            || !int.TryParse(name.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot)) return null;
+        var item = EquipSlotItem(equipBagRecord, equipBagKind, slot);
+        return item == null ? null : (item, (int)(item.Record?.Slot ?? 0), equipBagKind);
     }
 
     /// <summary>ASDataProvider: a scaleform.clik.data.DataProvider with the values pushed.</summary>

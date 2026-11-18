@@ -663,5 +663,8 @@ public class MyInfoTests
         book.Apply(new Ms2.Net.Packets.ItemMessage.Add(new Ms2.Net.Packets.EquipItem { Id = 15000003, Uid = 901, InventorySlot = 1, Amount = 1 }));
         c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 });
         Assert.That((sent.Count, notices.Single()), Is.EqualTo((0, MyInfoController.InventoryFullKey)), "no empty cell in the item's tab: notice 67");
+        var w = c.WornSlot(Slot(4));
+        Assert.That((w?.Item.Uid, w?.Slot, w?.Kind), Is.EqualTo(((long?)rh, (int?)5, (int?)0)), "LH shows the RH item: its own slot");
+        Assert.That(c.WornSlot(Slot(6)).HasValue || c.WornSlot("InventoryDialog.0").HasValue, Is.False, "an empty slot or another name");
     }
 }

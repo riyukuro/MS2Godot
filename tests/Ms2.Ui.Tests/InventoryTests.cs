@@ -423,4 +423,46 @@ public class InventoryTests
         Assert.That(keys.KeysOfAction(0x49406).OrderBy(k => k), Is.EqualTo(new[] { 42, 54 }), "defaultkey.xml: DIK_LSHIFT, DIK_RSHIFT");
         Assert.That(keys.KeysOfAction(0), Is.Empty);
     }
+
+    [Test]
+    public void AWornItemDroppedOnTheBagSwapsOrTakesItOff()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[]
+        {
+            new EquipItem { Id = 13000001, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = 11400001, Uid = 31, InventorySlot = 1, Amount = 1, Rarity = 1 },
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+        var wornRecord = new EquipItem { Id = 13000001, Uid = 2, Slot = EquipSlot.RH, Rarity = 1 };
+        var worn = InventoryController.ToItem(wornRecord, t.Items);
+        int group = t.ItemModels.Get(worn.Data.ItemPreset).FirstSlotType;
+        c.WornSlotItem = n => n == "MyPcInfoDialog.Equip.5" ? (worn, (int)wornRecord.Slot, 0) : null;
+        var unequipped = new List<long>(); c.RequestUnequipWorn = it => unequipped.Add(it.Uid);
+        var equipped = new List<(long, byte, byte)>(); c.View.RequestEquip = (u, s, m) => equipped.Add((u, s, m));
+        var raised = new List<string>(); c.Button += raised.Add;
+        int gear = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 1).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", gear);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+
+        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.0" });
+        Assert.That(equipped, Is.EqualTo(new[] { (30L, (byte)group, (byte)0) }), "the cell's item has the worn item's group: put on at that slot, the bag's kind");
+        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.1" });
+        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.7" });
+        Assert.That((equipped.Count, unequipped), Is.EqualTo((1, new List<long> { 2, 2 })), "another item or an empty cell: taken off");
+        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", null });
+        c.OnCallback("notifySlotDragEnd", new object[] { "QuickSlot.1", "InventoryDialog.7" });
+        Assert.That((unequipped.Count, raised.Count(r => r == "notifySlotDragEnd")), Is.EqualTo((2, 2)), "not ported: raised");
+        int other = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 3).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", other);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        c.OnCallback("notifySlotDragEnd", new object[] { "MyPcInfoDialog.Equip.5", "InventoryDialog.0" });
+        Assert.That(unequipped.Count, Is.EqualTo(2), "another tab shown: nothing");
+    }
 }

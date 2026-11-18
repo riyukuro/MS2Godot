@@ -283,7 +283,8 @@ public sealed class InventoryController : UiController, IInventoryBinding
     /// <summary>
     /// NotifyDragSlot::SlotDragEnd (@0x1423025d0) for a drag from this bag (main.gfx's onEndDragAlertModel sends the dragged
     /// slot's binding and the drop target's): fewer than two arguments or no source name does nothing; a source that is not
-    /// a slot of this bag is not handled here. Dropped on the same slot: vfunc_12, the slot pushed again. Dropped on another
+    /// a slot of this bag: a worn item (an equip bag slot, <see cref="WornSlotItem"/>) dropped on a bag slot is
+    /// <see cref="WornDroppedOnBag"/>; any other source or target is not ported (raised). Dropped on the same slot: vfunc_12, the slot pushed again. Dropped on another
     /// slot of the bag: that slot's InvenSlot::vfunc_18 (invenslot.cpp:1141) with an InvenSlot source: the move request
     /// (mode 3: the source slot's item uid, 0 for an empty cell as m_nItemUid, and the target's index), then the source's
     /// vfunc_10 (pushed again: nothing moves until the server's item packets do). Dropped elsewhere (another dialog's slot
@@ -295,7 +296,13 @@ public sealed class InventoryController : UiController, IInventoryBinding
     {
         if (args.Length < 2 || args[0] is not string src) return true;
         int from = SlotIndexOf(src);
-        if (from < 0) return true;
+        if (from < 0)
+        {
+            int target = SlotIndexOf(args[1]);
+            if (target >= 0 && WornSlotItem?.Invoke(src) is { } worn) WornDroppedOnBag(worn.Item, worn.Slot, worn.Kind, target);
+            else Button?.Invoke("notifySlotDragEnd");
+            return true;
+        }
         int to = SlotIndexOf(args[1]);
         if (to < 0) { Host.Push(SlotName(from)); Button?.Invoke("notifySlotDragEnd"); return true; }
         if (to != from)
@@ -305,6 +312,29 @@ public sealed class InventoryController : UiController, IInventoryBinding
         }
         Host.Push(SlotName(from));
         return true;
+    }
+
+    /// <summary>The character window's equip slot of a binding name (EquipSlot, FUN_14120d560): its item (vfunc_25), the item's
+    /// equip slot (CItem m_68) and the slot's kind (m_nKind); null for another name or an empty slot.</summary>
+    public Func<string, (Item Item, int Slot, int Kind)?> WornSlotItem;
+    /// <summary>Unk_Inventory::RequestUnequipItem with its checks (the character window's).</summary>
+    public Action<Item> RequestUnequipWorn;
+
+    /// <summary>
+    /// InvenSlot::vfunc_18's EquipSlot branch (invenslot.cpp:1153): the target cell's item, when its model has the worn item's
+    /// group type (CItem::FUN_140527a20: m_68 for equip subtype 0x1f / 0x22, else the model's first group), is put on at that
+    /// slot with the equip slot's kind: RequestEquipItem(mine, slot, kind, 0) (<see cref="RequestEquip"/>); else, when the
+    /// shown tab (FUN_140a65b70) is the worn item's tab, the worn item is taken off (RequestUnequipItem). Nothing moves here.
+    /// The source's vfunc_21 (its sound) is not here.
+    /// </summary>
+    void WornDroppedOnBag(Item worn, int wornSlot, int kind, int target)
+    {
+        if (View == null || Model == null) return;
+        var models = Model.Tables.ItemModels;
+        int group = wornSlot != 0 && worn.Data.EquipSubtype is 0x1f or 0x22 ? wornSlot : models.Get(worn.Data.ItemPreset)?.FirstSlotType ?? 0;
+        var mine = View.ItemAt(View.Tab, target) is { } e ? ToItem(e, Model.Tables.Items) : null;
+        if (mine != null && models.Get(mine.Data.ItemPreset)?.HasSlotType(group) == true) RequestEquip(mine, group, kind);
+        else if (View.Tab == View.TabOfItem(worn.Data.Id)) RequestUnequipWorn?.Invoke(worn);
     }
 
     /// <summary>
@@ -343,7 +373,7 @@ public sealed class InventoryController : UiController, IInventoryBinding
         View.ClearNew(e.Uid);
         if (UseMode(item) != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
-        RequestEquip(item, layer);
+        RequestEquip(item, 0, layer);
     }
 
     /// <summary>
@@ -400,18 +430,19 @@ public sealed class InventoryController : UiController, IInventoryBinding
     }
 
     /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
+    public const string InvalidCodiSlotKey = "s_item_err_Invalid_slot_codi", InvalidSlotKey = "s_item_err_Invalid_slot";
     public const string LowLevelKey = "s_item_err_puton_low_level", ExpiredKey = "s_item_err_puton_expired", GenderKey = "s_err_gender",
         EquipJobKey = "s_item_err_puton_job", DisabledJobKey = "s_item_err_disable_job";
 
     /// <summary>
-    /// Unk_Inventory::RequestEquipItem (inventory.cpp:1236) with slot 0 and no binding skip: no local player, nothing.
+    /// Unk_Inventory::RequestEquipItem (inventory.cpp:1236) with no binding skip: no local player, nothing.
     /// FUN_140a65e30 (:1630) on GetItemUseError (:1572): an expired item (CItem::IsExpired, server time) without a maid id:
     /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError (:1586) on the wearer's record:
-    /// gender box 45, job box 232 for an equipment item else 233, level box 224. The slot is
+    /// gender box 45, job box 232 for an equipment item else 233, level box 224. A slot of 0 is
     /// <see cref="WornEquipment.EquipSlotFor"/> (FUN_141420a70; worn items usable as PC::CanUseItem's expiry, CItem::FUN_140528980
     /// (item.cpp:1717: expired, not a pet and no maid id), and codi-layer parts). CanEquipItem (:1418): not an equipment item with model groups none of type 0 (FUN_14053c710):
-    /// nothing (its layer checks, s_item_err_Invalid_slot_codi and box 0xd3, cannot fail: the layer is 1 or 2 only for a skin
-    /// item, 2 only with feature 0x8e). No record: no worn item. The send maps the layer as FUN_1401fb870: 2 only with feature 142.
+    /// nothing; layer 2 without feature 0x8e or a skin type: s_item_err_Invalid_slot_codi; layer 1 without a skin type: box
+    /// 0xd3 (211). No record: no worn item. The send maps the layer as FUN_1401fb870: 2 only with feature 142.
     /// Nothing is put on here: the server's equip packets do.
     /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang, VIP
     /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
@@ -421,7 +452,7 @@ public sealed class InventoryController : UiController, IInventoryBinding
     /// s_warningGender, s_warningClass) and the item sound. Without the wearer's record the requirement checks are skipped
     /// (the client always has the player).
     /// </summary>
-    void RequestEquip(Item item, int layer)
+    void RequestEquip(Item item, int slot, int layer)
     {
         if (!Model.HasLocalPlayer) return;
         var d = item.Data;
@@ -434,11 +465,13 @@ public sealed class InventoryController : UiController, IInventoryBinding
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
         var models = Model.Tables.ItemModels;
         if (d.Type != 1 || models.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return;
+        if (layer == 2 && (!Feature(0x8e) || !d.HasSkinType)) { ShowCommonBox(InvalidCodiSlotKey); return; }
+        if (layer == 1 && !d.HasSkinType) { ShowCommonBox(InvalidSlotKey); return; }
         var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
         bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime <= now && !w.Data.IsPetItem && !w.Data.HasMaidId)
             && (record?.CodiActive == true || !IsLayer2(w));
         bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
-        int slot = worn.EquipSlotFor(item, models, Feature, CanUse);
+        if (slot == 0) slot = worn.EquipSlotFor(item, models, Feature, CanUse);
         if (NeedsBindConfirm(item)) { Button?.Invoke(BindOnEquipBox); return; }
         byte mode = layer switch { 1 => 1, 2 => Feature(142) ? (byte)2 : (byte)1, _ => 0 };
         View.RequestEquip?.Invoke(item.Uid, (byte)slot, mode);
