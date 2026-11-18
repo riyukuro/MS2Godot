@@ -170,16 +170,26 @@ public class AsTextField : AsInteractiveObject
             if (!wordWrap || max <= 0) { lines.Add((p, map[pstart])); pstart += p.Length + 1; continue; }
             var cur = new StringBuilder();
             int curStart = pstart;
-            // English breaking: only after a space or a hyphen, never inside a word (a word wider than the box stays
-            // whole); CJK text keeps its own per-character breaking. Unlike Scaleform's per-character wrap of the
-            // Korean-sized fields ("Characte/r"), which the English text rule of this port does not copy.
-            foreach (var word in Regex.Split(p, @"(?<=[\s\-])|(?<=[⺀-￿])(?=.)|(?<=.)(?=[⺀-￿])"))
+            // Breaks after a space or a hyphen, and around CJK chars. ParagraphFormatter::CheckWordWrap
+            // (sfr_render_03b.cpp:1918 @0x14260e120): a non-space char that overflows the line goes back to the last
+            // break point; with none on the line, the line ends before that char, so a word wider than the box breaks
+            // inside the word ("Characte/r"), keeping at least one char per line.
+            foreach (var part in Regex.Split(p, @"(?<=[\s\-])|(?<=[⺀-￿])(?=.)|(?<=.)(?=[⺀-￿])"))
             {
+                var word = part;
                 if (cur.Length > 0 && LineWidth(cur + word.TrimEnd(), map[curStart]) > max)
                 {
                     lines.Add((cur.ToString(), map[curStart]));
                     curStart += cur.Length;
                     cur.Clear();
+                }
+                while (cur.Length == 0 && word.TrimEnd().Length > 1 && LineWidth(word.TrimEnd(), map[curStart]) > max)
+                {
+                    int k = 1;
+                    while (k < word.Length && !char.IsWhiteSpace(word[k]) && LineWidth(word[..(k + 1)], map[curStart]) <= max) k++;
+                    lines.Add((word[..k], map[curStart]));
+                    curStart += k;
+                    word = word[k..];
                 }
                 cur.Append(word);
             }

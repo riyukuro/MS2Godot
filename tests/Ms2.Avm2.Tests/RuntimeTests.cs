@@ -230,17 +230,23 @@ public class RuntimeTests
     }
 
     [Test]
-    public void EnglishWrapsOnlyAtSpacesAndHyphens()
+    public void EnglishWrapsAtSpacesAndHyphensAndBreaksAnOverlongWord()
     {
         var (rt, _) = Empty();
-        var tf = Field(rt, 60, true);
+        var tf = Field(rt, 64, true);
         tf.text = "Character Adventure well-known";
         var lines = tf.Lines();
         foreach (var l in lines) TestContext.WriteLine("[" + l + "]");
         Assert.That(lines.Select(l => l.Trim()), Is.EqualTo(new[] { "Character", "Adventure", "well-", "known" }));
-        // a word wider than the box stays whole
-        tf.text = "Extraordinarily";
-        Assert.That(tf.Lines(), Is.EqualTo(new[] { "Extraordinarily" }));
+        // a word wider than the box breaks inside the word (ParagraphFormatter::CheckWordWrap, no break point on the line)
+        tf.text = "Extraordinarily";                                    // wider than the box
+        var parts = tf.Lines();
+        Assert.That(parts.Count, Is.GreaterThan(1));
+        Assert.That(string.Concat(parts), Is.EqualTo("Extraordinarily"));
+        Assert.That(tf.textWidth, Is.LessThanOrEqualTo(64 - 4), "each piece fits the box less its gutters");
+        // the words before it still wrap at the space
+        tf.text = "go Extraordinarily";
+        Assert.That(tf.Lines()[0], Is.EqualTo("go "));
     }
 
     [Test]
