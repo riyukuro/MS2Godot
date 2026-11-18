@@ -4,6 +4,8 @@ using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Quest;
+using Ms2.Ui;
+using Ms2.Ui.Hud;
 
 namespace Ms2Godot.Ui;
 
@@ -43,6 +45,7 @@ public partial class HudScene : Node
     MovieDialog questLog;                   // UIQuestDialog, the quest log, run from its own movie while it is loaded
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
+    int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
@@ -56,6 +59,7 @@ public partial class HudScene : Node
         questFixture = args.Contains("--questlog-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -114,7 +118,6 @@ public partial class HudScene : Node
         relayoutQueued = false;
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         string typed = chatInput?.Edit.Text;
-        bool menuOpen = systemMenu?.IsOpen == true;
         questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
@@ -123,8 +126,8 @@ public partial class HudScene : Node
         BuildHud();
         if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
         if (chatShown.Count > 0) ShowChatLines();
-        if (menuOpen) systemMenu.Open(animate: false);
         questLog?.Relayout(GetWindow().Size);
+        systemMenuMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
     }
 
     /// <summary>
@@ -163,20 +166,28 @@ public partial class HudScene : Node
         ExpBar(uiRoot);
         AdventureBar(uiRoot);
         GameMenu(uiRoot);
-        SystemMenuDialog(layer);
+        SystemMenuFacts();
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
     }
 
-    SystemMenu systemMenu;          // UISystemMenuDialog (0x4e21)
+    SystemMenuController systemMenu;    // UISystemMenuDialog (0x4e21), its C++ side while the menu is loaded
+    MovieDialog systemMenuMovie;        // its movie (uisystemmenudialog), from open until OnEndClose
+    CanvasLayer systemMenuLayer;        // dialogs over the HUD (UIDialog m_e0: layer 4); no offset, MovieDialog places itself
     Func<string, string> commonStrings;
     Dictionary<string, string> channelGroupNames;
+    int? menuMapType; string menuGroup = "";
+    UiModel menuModel;
+
+    /// <summary>OnSelectCharacter (@0x141b14600): SendRequestQuit; the game flow goes back to character select.</summary>
+    public static event Action SystemMenuSelectCharacter;
+    /// <summary>OnGameExit (FUN_1418fc760): message box 0x288 (s_msg_game_over), type 0x17.</summary>
+    public static event Action SystemMenuGameExit;
 
     /// <summary>
-    /// The system menu, made with the HUD (CUIService registers it, uiservice.cpp:2385) and shown by Esc. Its field facts:
-    /// the map type (leave entry) and the channel group (the channel rows' prefix; none when the client country is 2,
-    /// DAT_143ab0248, cpp:309).
+    /// The system menu's field facts, read with the HUD: the map type (the leave entry) and the channel group (the channel
+    /// rows' prefix; none when the client country is 2, DAT_143ab0248).
     /// </summary>
-    void SystemMenuDialog(CanvasLayer layer)
+    void SystemMenuFacts()
     {
         if (commonStrings == null)
         {
@@ -186,57 +197,89 @@ public partial class HudScene : Node
         }
         FieldData fd = null;
         try { fd = FieldData.FindByXBlock(assets.Packs, xblock); } catch (Exception ex) { GD.PushWarning("system menu field data: " + ex.Message); }
-        int mapType = fd?.MapType ?? -1;
-        string group = fd != null && channelGroupNames.TryGetValue(fd.ChannelGroupId.ToString(), out var g) ? g : "";
-        systemMenu = new SystemMenu(assets, u, stage, mapType, LeaveButtonText(mapType), commonStrings("s_word_ch"), group);
-        layer.AddChild(systemMenu);
+        menuMapType = fd?.MapType;
+        menuGroup = fd != null && channelGroupNames.TryGetValue(fd.ChannelGroupId.ToString(), out var g) ? g : "";
     }
 
     /// <summary>
-    /// GetLeaveButtonText (uisystemmenudialog.cpp:476-507). The numeric ids are CommonString's keys (commonstringtable.cpp):
-    /// 0xaaf s_room_exit_ugc_indoor (a home outside the design, blueprint and preview states, which need the house service:
-    /// none offline), 0xab0 s_room_exit_bonus, 0xab2 s_room_exit_pvp_zone. Map types 8 and 14 format 0xab1
-    /// (s_room_exit_massive_event) with the dungeon's name, which is not resolved here: null.
+    /// UISystemMenuDialog::vfunc_65 (OpenDialog, FUN_141924680): CloseAllDialogs, then the movie loads (LoadSwf) and the
+    /// controller's OnLoadInit / OnLoadComplete fill it. Offline the server has one channel, the current one (1).
     /// </summary>
-    string LeaveButtonText(int mapType) => mapType switch
+    void OpenSystemMenu()
     {
-        3 => commonStrings("s_room_exit_ugc_indoor"),
-        5 => commonStrings("s_room_exit_dungeon"),
-        7 => commonStrings("s_room_exit_bonus"),
-        8 or 14 => null,
-        9 => commonStrings("s_room_exit_pvp_zone"),
-        13 => commonStrings("s_room_exit_arcade"),
-        _ => commonStrings($"s_room_exit_name_{mapType}"),
-    };
+        CloseAllDialogs();
+        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the system menu runs interpreted");
+        menuModel ??= new UiModel(new GameTables(assets.Packs, "en"));
+        var c = new SystemMenuController
+        {
+            MapType = menuMapType,
+            LeaveText = menuMapType is int t ? SystemMenuController.LeaveButtonText(t, commonStrings) : null,
+            ChannelWord = commonStrings("s_word_ch") ?? "",
+            ChannelGroupName = menuGroup,
+            CurrentChannel = 1,
+            Channels = new[] { new ChannelRow(1) },
+        };
+        c.SelectCharacter += () => SystemMenuSelectCharacter?.Invoke();
+        c.GameExit += () => SystemMenuGameExit?.Invoke();
+        c.Leave += t => GD.Print($"system menu: leave field (map type {t}): OnLeaveFieldClick is not ported");
+        c.OpenGameOption += p => GD.Print($"system menu: OpenGameOptionDialog({p}): the options dialog is not available yet");
+        if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
+        var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
+        c.Unloaded += () =>
+        {
+            m.Host.Unload();
+            m.QueueFree();
+            if (systemMenuMovie == m) { systemMenuMovie = null; systemMenu = null; }
+        };
+        systemMenu = c; systemMenuMovie = m;
+        systemMenuLayer.AddChild(m);
+    }
 
     /// <summary>
     /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), as far as this HUD has its parts: tooltips, the cutscene
     /// movie, the guide's text tip and fishing are not in it, a focused text field keeps Esc (the chat input takes it in
     /// _Input), and an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
-    /// on and is otherwise left; with none it toggles the system menu (ToggleDialog(0x4e21)).
+    /// on and is otherwise left; with none it toggles the system menu: ToggleDialog(0x4e21) = FUN_1419246f0, open when
+    /// vfunc_55 (closed and unloaded), else vfunc_67 (close).
     /// </summary>
     public void Escape()
     {
-        if (systemMenu == null) return;
+        if (assets == null) return;
         if (AnyClosableDialogOpen())
         {
             if (GameOptions.Current.InterfaceOption.EnableCloseAllDlg) CloseAllDialogs();
             return;
         }
-        systemMenu.Toggle();
+        if (systemMenu == null || systemMenu.IsClosed) OpenSystemMenu();
+        else systemMenu.Close();
     }
 
-    /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open. None of this HUD's
-    /// dialogs is closable yet.</summary>
-    bool AnyClosableDialogOpen() => false;
+    /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
+    /// dialogs, the quest log.</summary>
+    bool AnyClosableDialogOpen() => questLog != null && questLogSide?.IsClosed == false;
 
-    /// <summary>CUIService::CloseAllDialogs: closes every closable dialog.</summary>
-    void CloseAllDialogs() { }
+    /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
+    void CloseAllDialogs()
+    {
+        if (AnyClosableDialogOpen()) questLogSide.Close();
+    }
 
     public bool SystemMenuOpen => systemMenu?.IsOpen == true;
-    /// <summary>The system menu, for scripted runs.</summary>
-    public SystemMenu SystemMenuForScripts => systemMenu;
+
+    /// <summary>A scripted click on one of the system menu movie's named children (the centre of its bounds), for proof
+    /// runs; <paramref name="row"/> clicks that row of a list's renderers instead.</summary>
+    public void ClickSystemMenu(string name, int row = -1)
+    {
+        if (systemMenuMovie == null) return;
+        var h = systemMenuMovie.Host;
+        object target = h.Child(name);
+        if (target != null && row >= 0) target = h.Invoke(target, "getRendererAt", row);
+        if (target is not Ms2.Avm2.Flash.AsDisplayObject d) { GD.PushWarning($"system menu: no {name} {row}"); return; }
+        var b = d.GetBounds(null);
+        systemMenuMovie.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
+        systemMenuMovie.Player.MouseMove(0, 0);       // the pointer leaves the menu, as after a hand click (no hover state in a shot)
+    }
 
     /// <summary>Places a movie at a position in stage units; <paramref name="factor"/> is a per-dialog size the client applies on top of the UI scale.</summary>
     MovieClipNode Place(Control parent, string movie, float factor, Vector2 stagePos)
@@ -1276,6 +1319,9 @@ public partial class HudScene : Node
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
+        if (sysmenuShot >= 0 && frames == 200) Escape();
+        if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
+        if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
