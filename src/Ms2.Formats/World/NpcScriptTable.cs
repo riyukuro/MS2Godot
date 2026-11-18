@@ -89,8 +89,11 @@ public sealed class NpcScriptTable
                 }
             }
         }
-        foreach (var k in text.Rows("scriptnpc"))
-            if (long.TryParse((string)k.Attribute("id"), out long sid) && !strings.ContainsKey(sid)) strings[sid] = (string)k.Attribute("name");
+        // the $script:N$ words: npc scripts' text in scriptnpc*.xml, quest scripts' (QuestScriptTable) in scriptquest_*.xml,
+        // one id space (the ids are unique stamps, e.g. 0831180104000004 for quest 90000000's complete talk)
+        foreach (var prefix in new[] { "scriptnpc", "scriptquest" })
+            foreach (var k in text.Rows(prefix))
+                if (long.TryParse((string)k.Attribute("id"), out long sid) && !strings.ContainsKey(sid)) strings[sid] = (string)k.Attribute("name");
     }
 
     static int Int(XElement e, string a) => int.TryParse((string)e.Attribute(a), out int v) ? v : 0;
