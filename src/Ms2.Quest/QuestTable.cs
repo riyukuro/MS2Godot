@@ -123,8 +123,7 @@ public sealed class CompleteReward
     public int RelativeExp = -1;
     /// <summary>relativeMeso (m_44): the reward contents id (Parse_140217cd0), 0 when absent.</summary>
     public int RelativeMeso;
-    /// <summary>m_choiceRewards: the &lt;v&gt; rows that load (QuestRewardItem::LoadXml, questdata.cpp:895), from the
-    /// client's QuestData.xml (<see cref="QuestTable"/>.AddChoiceRewards).</summary>
+    /// <summary>m_choiceRewards: the &lt;v&gt; rows that load (QuestRewardItem::LoadXml, questdata.cpp:895).</summary>
     public readonly List<QuestRewardItem> ChoiceRewards = new();
 }
 
@@ -135,7 +134,7 @@ public sealed class CompleteReward
 public sealed record QuestRewardItem(int ItemId, int Rank, int Count);
 
 /// <summary>
-/// QuestDataTable's quest and chapter indexes (LoadQuestData, BuildIndexes, FUN_1407503f0, BuildChapterFieldCodes) and
+/// QuestDataTable's quest and chapter indexes (LoadQuestData over questdata/QuestData.xml, BuildIndexes, FUN_1407503f0, BuildChapterFieldCodes) and
 /// the quest and chapter texts (CQuestUIData FUN_1416e4590, CChapterUIData FUN_1416e7c00), from the client data.
 /// </summary>
 public sealed partial class QuestTable
@@ -167,21 +166,16 @@ public sealed partial class QuestTable
     }
 
     /// <summary>
-    /// Everything from the client data: every quest file (quest/*.xml), the chapter and quest texts and the string tables
+    /// Everything from the client data: QuestData.xml (the quests), the chapter and quest texts and the string tables
     /// of the first language that has them, and stringcommon.
     /// </summary>
     public static QuestTable Load(PackSet packs, string[] languages, string locale, Func<string, bool> featureOn)
     {
         var t = new QuestTable(locale, featureOn);
         var entries = packs.List("Xml").ToList();
-        foreach (var entry in entries.Where(n => n.StartsWith("quest/", StringComparison.OrdinalIgnoreCase)
-                                               && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
-        {
-            try { t.AddQuests(Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry)))); } catch (System.Xml.XmlException) { }
-        }
+        if (packs.Exists("Xml", QuestDataFile))
+            try { t.AddQuests(Parse(Encoding.UTF8.GetString(packs.Read("Xml", QuestDataFile)))); } catch (System.Xml.XmlException) { }
         t.BuildIndexes();
-        if (packs.Exists("Xml", ChoiceRewardFile))
-            try { t.AddChoiceRewards(Parse(Encoding.UTF8.GetString(packs.Read("Xml", ChoiceRewardFile)))); } catch (System.Xml.XmlException) { }
         if (packs.Exists("Xml", "table/questgrouptable.xml"))
             try { t.AddGroups(Parse(Encoding.UTF8.GetString(packs.Read("Xml", "table/questgrouptable.xml")))); } catch (System.Xml.XmlException) { }
         t.Rewards = QuestRewards.Load(packs, locale, t.Available);
@@ -235,30 +229,7 @@ public sealed partial class QuestTable
     }
 
     /// <summary>QuestDataTable::LoadQuestData's file (GetXmlPath("QuestData", "QuestData.xml"), questdata.cpp:1800).</summary>
-    const string ChoiceRewardFile = "questdata/questdata.xml";
-
-    /// <summary>
-    /// The completeReward &lt;v&gt; rows (m_choiceRewards), which only the client's QuestData.xml has: LoadQuestData
-    /// (questdata.cpp:1810) skips a &lt;quest&gt; whose feature is off (IsElementFeatureEnabled), CQuestData::Load
-    /// (:1425) adds each row QuestRewardItem::LoadXml (:895) takes: one whose feature is on, code, rank and count.
-    /// </summary>
-    void AddChoiceRewards(XDocument doc)
-    {
-        foreach (var q in doc.Root?.Elements("quest") ?? Enumerable.Empty<XElement>())
-        {
-            if (!FeatureEnabled(q) || !uint.TryParse((string)q.Attribute("id"), out uint id) || Quest(id) is not { } d) continue;
-            if (q.Element("completeReward") is not { } reward) continue;
-            foreach (var v in reward.Elements("v"))
-            {
-                if (!FeatureEnabled(v)) continue;
-                int code = 0, itemRank = 0, count = 0;
-                QueryInt(v, "code", ref code);
-                QueryInt(v, "rank", ref itemRank);
-                QueryInt(v, "count", ref count);
-                d.Complete.ChoiceRewards.Add(new QuestRewardItem(code, itemRank, count));
-            }
-        }
-    }
+    const string QuestDataFile = "questdata/questdata.xml";
 
     /// <summary>IsElementFeatureEnabled (commonutil.cpp:1034): no feature, or an enabled one.</summary>
     bool FeatureEnabled(XElement e) => (string)e.Attribute("feature") is not { Length: > 0 } f || featureOn(f);
@@ -273,30 +244,30 @@ public sealed partial class QuestTable
     }
 
     /// <summary>
-    /// One quest file: the quests of its environment that passes (FUN_14028f8d0; every quest file has exactly one) and of
-    /// the root when it has none. A quest already read keeps its first definition (m_quests.insert).
+    /// QuestDataTable::LoadQuestData (@0x14074c320, questdata.cpp:1797): each &lt;quest&gt; of &lt;ms2&gt; whose feature is on
+    /// (IsElementFeatureEnabled; no locale test), loaded by CQuestData::Load. A quest id already read keeps its first row
+    /// (m_quests.insert).
     /// </summary>
     public void AddQuests(XDocument doc)
     {
-        var root = doc.Root;
-        if (root == null) return;
-        var blocks = root.Elements("environment").Any() ? root.Elements("environment").Where(Available) : new[] { root };
-        foreach (var env in blocks)
-            foreach (var q in env.Elements("quest"))
-            {
-                if (!Available(q)) continue;
-                var d = Load(q, featureOn);
-                if (d != null) quests.TryAdd((uint)d.Id, d);
-            }
+        if (doc.Root is not { Name.LocalName: "ms2" } root) return;
+        foreach (var q in root.Elements("quest"))
+        {
+            if (!FeatureEnabled(q)) continue;
+            var d = Load(q, featureOn);
+            quests.TryAdd((uint)d.Id, d);
+        }
     }
 
-    /// <summary>CQuestData::Load: the &lt;basic&gt;, &lt;require&gt; and &lt;start&gt; attributes the log reads.</summary>
+    /// <summary>
+    /// CQuestData::Load (@0x1407495d0, questdata.cpp:1276): the &lt;quest&gt;'s id, then each child it reads when present; it
+    /// always succeeds.
+    /// </summary>
     static QuestData Load(XElement q, Func<string, bool> featureOn)
     {
-        var basic = q.Element("basic");
-        if (basic == null) return null;
         var d = new QuestData();
-        QueryUInt(basic, "questID", ref d.Id);
+        QueryUInt(q, "id", ref d.Id);
+        var basic = q.Element("basic") ?? new XElement("basic");
         QueryInt(basic, "chapterID", ref d.Chapter);
         QueryInt(basic, "standardLevel", ref d.Level);
         QueryBool(basic, "exceptChapterClear", ref d.ExceptChapterClear);
@@ -376,6 +347,16 @@ public sealed partial class QuestTable
             if ((string)reward.Attribute("relativeMeso") is { } relMeso) c.RelativeMeso = QuestRewards.ParseRewardContents(relMeso);
             QueryInt(reward, "karma", ref c.Karma);
             QueryInt(reward, "lu", ref c.Lu);
+            // the <v> rows QuestRewardItem::LoadXml (:895) takes: one whose feature is on, code, rank and count
+            foreach (var v in reward.Elements("v"))
+            {
+                if ((string)v.Attribute("feature") is { Length: > 0 } f && !featureOn(f)) continue;
+                int code = 0, itemRank = 0, count = 0;
+                QueryInt(v, "code", ref code);
+                QueryInt(v, "rank", ref itemRank);
+                QueryInt(v, "count", ref count);
+                c.ChoiceRewards.Add(new QuestRewardItem(code, itemRank, count));
+            }
         }
         return d;
     }

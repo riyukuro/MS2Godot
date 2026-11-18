@@ -31,7 +31,7 @@ public class QuestRewardsTests
     static QuestData Quest(string basic, string reward)
     {
         var t = new QuestTable("KR", _ => true);
-        t.AddQuests(XDocument.Parse($@"<ms2><quest><basic questID=""1"" {basic} /><completeReward {reward} /></quest></ms2>"));
+        t.AddQuests(XDocument.Parse($@"<ms2><quest id=""1""><basic {basic} /><completeReward {reward} /></quest></ms2>"));
         return t.Quest(1);
     }
 

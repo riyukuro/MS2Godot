@@ -52,7 +52,7 @@ public class QuestRulesTests
     }
 
     static string Quest(int id, string basic = "", string require = "") =>
-        $@"<quest><basic questID=""{id}"" {basic} /><require {require} /></quest>";
+        $@"<quest id=""{id}""><basic {basic} /><require {require} /></quest>";
 
     // 2026-11-17 (a Tuesday) 12:00 UTC
     static readonly long Noon = new DateTimeOffset(2026, 11, 17, 12, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds();

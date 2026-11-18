@@ -32,7 +32,7 @@ public class QuestTextsTests
     {
         var t = new QuestTable("KR", _ => true) { Common = k => CommonStrings.TryGetValue(k, out var v) ? v : "" };
         t.AddQuests(XDocument.Parse(@"<ms2>
-            <quest><basic questID=""1"" /><complete npc=""7"" />
+            <quest id=""1""><basic /><complete npc=""7"" />
               <condition type=""npc"" code=""7"" value=""1"" />
               <condition type=""Dialogue"" code=""7, 8"" value=""1"" />
               <condition type=""interact_object"" code=""5"" value=""2"" />
@@ -43,7 +43,7 @@ public class QuestTextsTests
               <condition type=""npc"" code=""0"" value=""3"" />
               <condition type=""npc"" code=""7"" value=""5"" />
             </quest>
-            <quest><basic questID=""2"" /><condition type=""npc"" code=""7"" value=""5"" /></quest></ms2>"));
+            <quest id=""2""><basic /><condition type=""npc"" code=""7"" value=""5"" /></quest></ms2>"));
         t.BuildIndexes();
         t.Words.AddTable(ReservedWords.NpcName, XDocument.Parse(@"<ms2><key id=""7"" name=""Npc&#xAC01;"" /></ms2>"), null);
         t.Words.AddTable(ReservedWords.NpcTitle, XDocument.Parse(@"<ms2><key id=""7"" name=""Ttl"" /></ms2>"), null);

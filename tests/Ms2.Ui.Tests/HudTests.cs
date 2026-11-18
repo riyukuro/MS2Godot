@@ -420,9 +420,9 @@ public class HudTests
         // synthetic quests: 1 and 2 in progress and tracked, 3 in progress and not tracked
         var t = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
         t.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
-            <quest><basic questID=""1"" questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
-            <quest><basic questID=""2"" questType=""1"" standardLevel=""4"" /><condition type=""npc"" code=""7"" value=""2"" /></quest>
-            <quest><basic questID=""3"" questType=""1"" standardLevel=""5"" /><condition type=""npc"" code=""7"" value=""1"" /></quest></ms2>"));
+            <quest id=""1""><basic questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
+            <quest id=""2""><basic questType=""1"" standardLevel=""4"" /><condition type=""npc"" code=""7"" value=""2"" /></quest>
+            <quest id=""3""><basic questType=""1"" standardLevel=""5"" /><condition type=""npc"" code=""7"" value=""1"" /></quest></ms2>"));
         t.BuildIndexes();
         t.AddDescriptions(System.Xml.Linq.XDocument.Parse(@"<ms2>
             <quest questID=""1"" name=""First"" /><quest questID=""2"" name=""Second"" /><quest questID=""3"" name=""Third"" /></ms2>"));

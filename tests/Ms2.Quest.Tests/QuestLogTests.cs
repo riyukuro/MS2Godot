@@ -25,12 +25,12 @@ public class QuestLogTests
     {
         var t = new QuestTable("KR", _ => true);
         string Q(int id, int chapter, int type, int level, string extra = "", string require = "", int npc = 0) =>
-            $@"<quest><basic questID=""{id}"" chapterID=""{chapter}"" questType=""{type}"" standardLevel=""{level}"" {extra} />
+            $@"<quest id=""{id}""><basic chapterID=""{chapter}"" questType=""{type}"" standardLevel=""{level}"" {extra} />
                <require quest=""{require}"" /><start npc=""{npc}"" /></quest>";
-        t.AddQuests(XDocument.Parse("<ms2><environment>" +
+        t.AddQuests(XDocument.Parse("<ms2>" +
             Q(100, 10, 0, 10) + Q(101, 10, 0, 12, require: "100") + Q(200, 20, 0, 1) +
             Q(300, 30, 1, 20, npc: 1) + Q(301, 30, 1, 20, @"repeatable=""2""", npc: 1) + Q(400, 40, 1, 25, npc: 2) +
-            "</environment></ms2>"));
+            "</ms2>"));
         t.BuildIndexes();
         t.AddChapters(XDocument.Parse(@"<ms2><chapter id=""10"" name=""Ch10"" /><chapter id=""20"" name=""Tut"" isTutorial=""1"" />
             <chapter id=""30"" name=""Ch30"" isTutorial=""OK"" /><chapter id=""40"" name=""Ch40"" /></ms2>"));
