@@ -99,17 +99,39 @@ public class InventoryTests
     }
 
     [Test]
-    public void SortAndExpandAreOnlyRaised()
+    public void SortIsTheClientsAndTheOtherRequestsAreOnlyRaised()
     {
         Packs();
-        var (h, c, _) = Load();
-        var raised = new List<string>(); int sent = 0, toggled = 0;
-        c.Button += raised.Add; c.ToggleDialog += id => toggled = id; c.View.RequestSort = (_, _) => sent++;
+        var (h, c, book) = Load();
+        var raised = new List<string>(); var sent = new List<(int, bool)>(); int toggled = 0;
+        c.Button += raised.Add; c.ToggleDialog += id => toggled = id; c.View.RequestSort = (t, s) => sent.Add((t, s));
         Assert.That(c.OnCallback("OnClickSort", Array.Empty<object>()), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (0, false) }), "no expired item: sent at once");
         Assert.That(c.OnCallback("onClickSlotExpand", new object[] { "Equip" }), Is.True);
         Assert.That(c.OnCallback("onClickItemBreak", Array.Empty<object>()), Is.True);
-        Assert.That(raised, Is.EqualTo(new[] { "OnClickSort", "onClickSlotExpand" }));
+        Assert.That(c.OnCallback("onClickItemRemakeOption", Array.Empty<object>()), Is.False, "the client returns 0");
+        Assert.That(c.OnCallback("onClickOpenBank", Array.Empty<object>()), Is.False, "the client returns 0");
+        Assert.That(raised, Is.EqualTo(new[] { "onClickSlotExpand", "onClickItemRemakeOption", "onClickOpenBank" }));
         Assert.That(toggled, Is.EqualTo(0x4e8d));
-        Assert.That(sent, Is.Zero);
+
+        // an expired item: box 0x2a1, the answer sends (0 = stack)
+        MessageBoxData shown = null;
+        c.ShowBox = b => shown = b;
+        book.Apply(new ItemMessage.Add(new EquipItem { Id = 3, Uid = 9, InventorySlot = 7, Amount = 1, ExpiryTime = 1 }));
+        c.View.ServerTime = () => 100;
+        sent.Clear();
+        var before = MessageBoxData.CommonByKey;
+        MessageBoxData.CommonByKey = k => k == InventoryController.ExpiredItemsKey ? "remove expired?" : "";
+        try
+        {
+            Assert.That(c.View.ClickSort(), Is.EqualTo(InventoryView.SortClick.Confirm));
+            Assert.That(c.OnCallback("OnClickSort", Array.Empty<object>()), Is.True);
+        }
+        finally { MessageBoxData.CommonByKey = before; }
+        Assert.That(sent, Is.Empty);
+        Assert.That(shown?.Msg, Is.EqualTo("remove expired?"));
+        Assert.That(shown.Type, Is.EqualTo(1)); Assert.That(shown.Modaless, Is.True); Assert.That(shown.EnterAllowed, Is.False);
+        shown.Callback(0, shown);
+        Assert.That(sent, Is.EqualTo(new[] { (0, true) }));
     }
 }

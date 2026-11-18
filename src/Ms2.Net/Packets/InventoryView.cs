@@ -109,8 +109,36 @@ public sealed class InventoryView {
         pending |= PendingNew | PendingExpand | PendingRebuild;
     }
 
-    /// <summary>The vfunc_28 "OnClickSort" tail (uiinventorydialog.cpp:856) and OnSortConfirm (:1391): SendRequestItemInventory(m_194, stack).</summary>
-    public void Sort(bool stack = false) => RequestSort?.Invoke(Tab, stack);
+    /// <summary>GetServerTime (CMainSystem, seconds since 1970) for CItem::IsExpired; 0 until the owner sets it.</summary>
+    public Func<long> ServerTime { get; set; } = () => 0;
+
+    /// <summary>What <see cref="ClickSort"/> did.</summary>
+    public enum SortClick { Nothing, Sent, Confirm }
+
+    /// <summary>
+    /// vfunc_28 "OnClickSort" (uiinventorydialog.cpp:836-857): GetSelectedTab (m_194) out of 0-14 or with no item
+    /// (GetItemCount 0x140a5cf30) does nothing; with an expired item in it (CountStackableItems 0x14199d840) the caller shows
+    /// box 0x2a1 and the answer goes to <see cref="OnSortConfirm"/>; else SendRequestItemInventory(tab, false).
+    /// </summary>
+    public SortClick ClickSort() {
+        int tab = Tab;
+        if (tab < 0 || tab >= ItemBook.Tabs) return SortClick.Nothing;
+        if (Used(tab) == 0) return SortClick.Nothing;
+        if (CountExpired() > 0) return SortClick.Confirm;
+        RequestSort?.Invoke(tab, false);
+        return SortClick.Sent;
+    }
+
+    /// <summary>OnSortConfirm 0x14199b480 (:1388-1393): SendRequestItemInventory(m_194, result == 0).</summary>
+    public void OnSortConfirm(int result) => RequestSort?.Invoke(Tab, result == 0);
+
+    /// <summary>CountStackableItems 0x14199d840 (:1777-1789; the name is the decomp's): the items of m_194 (its argument is unused)
+    /// for which CItem::IsExpired 0x140528930 holds, an expiry time (m_80, the item's second i64 after the amount) above 0 and
+    /// not after the server time.</summary>
+    public int CountExpired() {
+        long now = ServerTime();
+        return book.All.Count(i => tabOf(i.Id) == Tab && i.ExpiryTime > 0 && i.ExpiryTime <= now);
+    }
 
     void OnChanged(long uid) {
         if (uid == 0) {
@@ -144,7 +172,7 @@ public sealed class InventoryView {
         if (book.Get(uid) is { IsNew: true } i) { i.IsNew = false; pending |= PendingNew; }
     }
 
-    /// <summary>FUN_14199be00 (called at uiinventorydialog.cpp:540-544 for the equip, life, misc, summon and skin tabs): SetNew(0) on every item of the tab.</summary>
+    /// <summary>FUN_14199be00 (vfunc_67 calls it for all 15 tabs, uiinventorydialog.cpp:540-554): SetNew(0) on every item of the tab.</summary>
     public void ClearNewInTab(int tab) {
         foreach (var i in book.All) if (i.IsNew && tabOf(i.Id) == tab) i.IsNew = false;
         pending |= PendingNew;

@@ -1015,14 +1015,17 @@ public partial class HudScene : Node
     }
 
     /// <summary>
-    /// Opens the inventory over the live session's bag (the item packets) or, offline, a fixture bag in the item packet's
-    /// shape (<see cref="UiFixture.InventoryItems"/>). Requests stay unsent: the sort, the slot expansion, the bank call,
-    /// item use and the dialogs the buttons open are only logged.
+    /// Opens the inventory over the live session's bag (the item packets) or, with no live session, a fixture bag in the
+    /// item packet's shape (<see cref="UiFixture.InventoryItems"/>). A live session without its bag yet (before the field
+    /// enter) opens nothing. The sort is the client's (its request is sent live); the slot expansion, the bank call, item use
+    /// and the dialogs the buttons open are only logged.
     /// </summary>
     void OpenInventory()
     {
         if (inventoryMovie != null) { inventoryMovie.Host.Unload(); inventoryMovie.QueueFree(); inventoryMovie = null; }
-        var view = Ms2Godot.Net.LiveSession.Instance?.Inventory ?? OfflineInventory();
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var view = live != null ? live.Inventory : OfflineInventory();
+        if (view == null) { GD.Print("inventory: the live session has no bag yet"); return; }
         var c = new Ms2.Ui.Hud.InventoryController
         {
             View = view,

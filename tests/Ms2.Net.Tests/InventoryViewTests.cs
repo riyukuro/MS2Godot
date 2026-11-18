@@ -70,10 +70,27 @@ public class InventoryViewTests {
         b.Apply(new ItemMessage.Reset(1)); b.Apply(new ItemMessage.ExpandCount(1, 1)); v.Bind(new Rec());
         Assert.That(sent, Is.Empty);
         v.SelectTab(3); v.SelectTab(99); Assert.That(sent, Is.Empty); Assert.That(v.Tab, Is.EqualTo(3));
-        v.Sort(); Assert.That(sent, Is.EqualTo(new[] { (3, false) }));
+        Assert.That(v.ClickSort(), Is.EqualTo(InventoryView.SortClick.Nothing), "an empty tab sends nothing"); Assert.That(sent, Is.Empty);
+        b.Apply(new ItemMessage.Add(It(30000001, 1, 0)));
+        Assert.That(v.ClickSort(), Is.EqualTo(InventoryView.SortClick.Sent)); Assert.That(sent, Is.EqualTo(new[] { (3, false) }));
         var w = new ByteWriter(); new ItemInventorySortRequest(3, true).Write(w);
         Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 8, 3, 1 })); Assert.That(new ItemInventorySortRequest(3, true).Op, Is.EqualTo(Outbound.RequestItemInventory));
         Assert.That((ushort) Outbound.RequestItemInventory, Is.EqualTo(0x17));
+    }
+
+    [Test] public void SortWithAnExpiredItemWaitsForTheBoxAnswer() {
+        var b = Book(); var v = new InventoryView(b) { ServerTime = () => 1000 }; var sent = new List<(int, bool)>(); v.RequestSort = (t, s) => sent.Add((t, s));
+        b.Apply(new ItemMessage.Add(It(30000001, 1, 0))); b.Apply(new ItemMessage.Add(new EquipItem { Id = 30000002, Uid = 2, InventorySlot = 1, Amount = 1, ExpiryTime = 2000 }));
+        b.Apply(new ItemMessage.Add(new EquipItem { Id = 20000002, Uid = 3, InventorySlot = 0, Amount = 1, ExpiryTime = 1000 }));   // expired, but on tab 2
+        v.Bind(new Rec(), 3);
+        Assert.That(v.CountExpired(), Is.Zero, "expiry after now, and 0 = none");
+        Assert.That(v.ClickSort(), Is.EqualTo(InventoryView.SortClick.Sent));
+        b.Apply(new ItemMessage.Add(new EquipItem { Id = 30000003, Uid = 4, InventorySlot = 2, Amount = 1, ExpiryTime = 1000 }));
+        sent.Clear();
+        Assert.That(v.CountExpired(), Is.EqualTo(1));
+        Assert.That(v.ClickSort(), Is.EqualTo(InventoryView.SortClick.Confirm)); Assert.That(sent, Is.Empty);
+        v.OnSortConfirm(0); v.OnSortConfirm(1);
+        Assert.That(sent, Is.EqualTo(new[] { (3, true), (3, false) }));
     }
 
     [Test] public void IconPathFollowsCItemDataGetIconPath() {

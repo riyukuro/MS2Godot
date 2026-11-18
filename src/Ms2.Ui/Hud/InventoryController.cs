@@ -234,8 +234,8 @@ public sealed class InventoryController : UiController, IInventoryBinding
     }
 
     /// <summary>
-    /// vfunc_28 @0x141998680 after UIDialog's. The buttons that open a dialog toggle it; the rest send a request (the sort,
-    /// the slot expansion's box and request, the bank call) or open a part not here, and are only raised.
+    /// vfunc_28 @0x141998680 after UIDialog's. The sort is the client's; the buttons that open a dialog toggle it; the rest
+    /// send a request (the slot expansion's box and request, the bank call) or open a part not here, and are only raised.
     /// </summary>
     public override bool OnCallback(string name, object[] args)
     {
@@ -245,13 +245,35 @@ public sealed class InventoryController : UiController, IInventoryBinding
             case "onclickitemlock": ToggleDialog?.Invoke(0x4f08); return true;
             case "onclickitemsocketandgem": ToggleDialog?.Invoke(0x4f0a); return true;
             case "onclickitemenchant": ToggleDialog?.Invoke(0x4e91); return true;           // OnClickItemEnchant @0x14199aaa0
-            case "onclicksort": case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
-            case "onclickitemmerge": case "onclickitemremakeoption": case "onitemsearch": case "onclickslotexpand":
-            case "onclickopenbank": case "notifyslotuse":
+            case "onclicksort": OnClickSort(); return true;
+            case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
+            case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand": case "notifyslotuse":
                 Button?.Invoke(name); return true;
+            // these two fall through to "return 0" in the client (:945-951, :979-981)
+            case "onclickitemremakeoption": case "onclickopenbank":
+                Button?.Invoke(name); return false;
         }
         return false;
     }
+
+    /// <summary>The message box text GetStringCommon(0x2a1) (commonstringtable.cpp:2289).</summary>
+    public const string ExpiredItemsKey = "s_msg_item_remove_expired_item_in_inventory";
+
+    /// <summary>"OnClickSort" (:836-857): the view's checks; with expired items, FUN_140d73e40(1, 0x2a1): a type-1 box with
+    /// OnSortConfirm as callback, SetButtonPreset(1), FUN_141a024a0 (Enter does not answer it), modaless, shown (FUN_140d73c60).</summary>
+    void OnClickSort()
+    {
+        if (View == null || View.ClickSort() != InventoryView.SortClick.Confirm) return;
+        var box = MessageBoxQueue.Create(1, MessageBoxData.CommonByKey(ExpiredItemsKey) ?? "", null, "");
+        box.Callback = (result, _) => { View?.OnSortConfirm(result); return true; };
+        box.SetButtonPreset(1);
+        box.EnterAllowed = false;
+        box.Modaless = true;
+        ShowBox(box);
+    }
+
+    /// <summary>FUN_140d73c60: the box goes to the message box queue (FUN_14151f150).</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
     // ---- IInventoryBinding: the view's calls into the movie -------------------------------------------------------------
 
