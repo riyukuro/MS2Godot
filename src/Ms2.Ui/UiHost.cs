@@ -100,6 +100,8 @@ public sealed class UiHost
         }
         bool handled = false;
         ReturnValue = null;
+        RT.Guard("callback " + name, () => handled = Controller.OnCallbackBeforeDialog(name, rest));
+        if (handled) return null;
         if (Controller.IsDialogEntity)
         {
             RT.Guard("dialog callback " + name, () => handled = Controller.DialogCallback(name));

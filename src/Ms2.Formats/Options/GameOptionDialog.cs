@@ -273,6 +273,9 @@ public sealed class GameOptionDialog
         if (host.IsFeatureEnabled(0x117)) Add(15, Plain); // CGameOptionPersonalInfoAgreement
     }
 
+    /// <summary>SetTab @0x141b15670 (inline in uisystemmenudialog.cpp): m_nTab, the page the next open shows.</summary>
+    public void SetTab(int tab) => Tab = tab;
+
     public IEnumerable<OptionPage> Pages => pages.Values;
     public OptionPage Page(int key) => pages.TryGetValue(key, out var p) ? p : null;
 

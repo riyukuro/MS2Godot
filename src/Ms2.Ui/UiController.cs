@@ -214,6 +214,10 @@ public abstract class UiController
         Host.Invoke("startOpen");
     }
 
+    /// <summary>A call the subclass's vfunc_28 takes before UIDialog's dialog calls (UIGameOptionDialog's OnCloseDialog);
+    /// true = handled.</summary>
+    public virtual bool OnCallbackBeforeDialog(string name, object[] args) => false;
+
     /// <summary>ExternalInterface callback from the movie; true = handled.</summary>
     public virtual bool OnCallback(string name, object[] args) => false;
 

@@ -73,6 +73,13 @@ public static class ScreenMode
         return true;
     }
 
+    /// <summary>The options dialog's window request (FUN_14124ce20 after FUN_14125e910).</summary>
+    public static void ApplyRequest(WindowRequest r)
+    {
+        if (Headless || Root == null) return;
+        Apply(r);
+    }
+
     /// <summary>ApplyWindowMode (windowservice.cpp:291-375) for a request.</summary>
     static void Apply(WindowRequest r)
     {

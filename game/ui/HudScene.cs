@@ -45,6 +45,7 @@ public partial class HudScene : Node
     MovieDialog questLog;                   // UIQuestDialog, the quest log, run from its own movie while it is loaded
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
+    int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
@@ -60,6 +61,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -127,7 +129,8 @@ public partial class HudScene : Node
         if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
         if (chatShown.Count > 0) ShowChatLines();
         questLog?.Relayout(GetWindow().Size);
-        systemMenuMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
+        systemMenuMovie?.Relayout(GetWindow().Size);
+        optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
     }
 
     /// <summary>
@@ -222,7 +225,7 @@ public partial class HudScene : Node
         c.SelectCharacter += () => SystemMenuSelectCharacter?.Invoke();
         c.GameExit += () => SystemMenuGameExit?.Invoke();
         c.Leave += t => GD.Print($"system menu: leave field (map type {t}): OnLeaveFieldClick is not ported");
-        c.OpenGameOption += p => GD.Print($"system menu: OpenGameOptionDialog({p}): the options dialog is not available yet");
+        c.OpenGameOption += OpenGameOption;
         if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
         var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
         c.Unloaded += () =>
@@ -246,6 +249,7 @@ public partial class HudScene : Node
     public void Escape()
     {
         if (assets == null) return;
+        if (optionDialog != null && optionDialog.OnKey(true)) return;      // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
         if (AnyClosableDialogOpen())
         {
             if (GameOptions.Current.InterfaceOption.EnableCloseAllDlg) CloseAllDialogs();
@@ -257,12 +261,47 @@ public partial class HudScene : Node
 
     /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
     /// dialogs, the quest log.</summary>
-    bool AnyClosableDialogOpen() => questLog != null && questLogSide?.IsClosed == false;
+    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || optionHost?.Vfunc55 == false;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
     {
-        if (AnyClosableDialogOpen()) questLogSide.Close();
+        if (questLog != null && questLogSide?.IsClosed == false) questLogSide.Close();
+        if (optionHost?.Vfunc55 == false) optionHost.Movie.Close();
+    }
+
+    Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
+    GameOptionHost optionHost;
+    MovieDialog optionMovie;            // its movie (uigameoptiondialog), from open until OnEndClose
+
+    /// <summary>
+    /// UISystemMenuDialog::OpenGameOptionDialog @0x141b14560 (page 1 or 6) and FUN_1418fc760's OnGameOption (page 0, no
+    /// SetTab): SetTab, then CUIService::OpenDialog(0x4ef3) = FUN_141924680, which opens only a closed dialog (vfunc_65
+    /// @0x141924a10 checks vfunc_55).
+    /// </summary>
+    void OpenGameOption(int page)
+    {
+        if (optionDialog == null)
+        {
+            optionHost = new GameOptionHost(this, assets.Packs, commonStrings);
+            optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
+        }
+        if (page != 0) optionDialog.SetTab(page);
+        if (!optionHost.Vfunc55) return;
+        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the options dialog runs interpreted");
+        menuModel ??= new UiModel(new GameTables(assets.Packs, "en"));
+        if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
+        var c = new GameOptionController { Dialog = optionDialog };
+        optionHost.Movie = c;
+        var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
+        c.Unloaded += () =>
+        {
+            m.Host.Unload();
+            m.QueueFree();
+            if (optionMovie == m) { optionMovie = null; optionHost.Movie = null; }
+        };
+        optionMovie = m;
+        systemMenuLayer.AddChild(m);
     }
 
     public bool SystemMenuOpen => systemMenu?.IsOpen == true;
@@ -1320,6 +1359,7 @@ public partial class HudScene : Node
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
         if (sysmenuShot >= 0 && frames == 200) Escape();
+        if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
         if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }

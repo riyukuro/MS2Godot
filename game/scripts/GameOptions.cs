@@ -36,6 +36,10 @@ public static class GameOptions
     public const int RegionIndex = 0;
 
     static GameOption current;
+
+    /// <summary>CGameOption::FUN_1411b1f30, the sound flag block ("sound"/"disableJobSound"), read and written with the
+    /// options.</summary>
+    public static SoundFlag SoundFlag { get; private set; } = new();
     static XDocument doc;
 
     /// <summary>The options, loaded on first use.</summary>
@@ -75,6 +79,8 @@ public static class GameOptions
                 GD.PushWarning("options: no GameOption.xml and no default, using reset values");
                 doc = new XDocument(new XElement("ms2"));
             }
+            SoundFlag = new SoundFlag();
+            SoundFlag.Load(doc);
             current.Load(doc, name => packs != null && Ms2.Ui.LobbyFeatures.IsEnabled(packs, name));
         }
         catch (Exception ex)
@@ -92,6 +98,7 @@ public static class GameOptions
     {
         var o = Current;
         o.Save(doc);
+        SoundFlag.Save(doc);
         var path = FilePath;
         try
         {
