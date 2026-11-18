@@ -23,6 +23,14 @@ public sealed record ItemInventorySortRequest(byte Tab, bool Stack) : IOutPacket
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(8); w.WriteByte(Tab); w.WriteBool(Stack); }
 }
 
+/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 3: InvenSlot::vfunc_18 (invenslot.cpp:1141), an inventory item dropped on
+/// another inventory slot: u8 3, i64 the dragged item's uid, i16 the target slot's index (m_nIndex). The client checks nothing first and
+/// moves nothing itself: the source slot is pushed again as it is and the server's item packets move the item.</summary>
+public sealed record ItemInventoryMoveRequest(long Uid, short Slot) : IOutPacket {
+    public Outbound Op => Outbound.RequestItemInventory;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(3); w.WriteLong(Uid); w.WriteShort(Slot); }
+}
+
 /// <summary>What the game server sent from the key check up to the field enter request.</summary>
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
     /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>

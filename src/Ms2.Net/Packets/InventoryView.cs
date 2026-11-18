@@ -44,6 +44,9 @@ public sealed class InventoryView {
     /// <summary>The sort request (UIInventoryDialog::SendRequestItemInventory 0x14199c230, "send the sort request" uiinventorydialog.h:87): (tab, stack).
     /// Set by the owner of the connection; fires only from <see cref="Sort"/> (OnClickSort / OnSortConfirm), never on a tab switch.</summary>
     public Action<int, bool> RequestSort { get; set; }
+    /// <summary>The move request (<see cref="ItemInventoryMoveRequest"/>, InvenSlot::vfunc_18): (item uid, target slot index). Set by the owner of
+    /// the connection; the item stays where it is until the server's item packets move it.</summary>
+    public Action<long, short> RequestMove { get; set; }
     public int Pending => pending;
     /// <summary>m_1a8: the tab button index of each tab (-1 = the tab has no button and is skipped); identity until the UI tells.</summary>
     public int[] TabButtons { get; set; } = Enumerable.Range(0, ItemBook.Tabs).ToArray();
