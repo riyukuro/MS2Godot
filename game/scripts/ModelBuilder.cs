@@ -65,16 +65,23 @@ public sealed class ModelBuilder
         for (int i = 0; i < md.Bones.Count; i++)
             if (md.Bones[i].Rest.S == 0) skel.SetBonePoseScale(i, Vector3.Zero);
 
-        var skin = new Skin();
-        // a skin bone binds through its skin bone transform (NiSkinningMeshModifier), not through the file's node pose:
-        // the two agree on shipped characters (within 2e-5), but an effect creature's pose is where it rests or hides
-        // (the select-pose eagle perches there, or sits at a zero scale before it flies in); other bones keep World^-1
-        for (int i = 0; i < md.Bones.Count; i++)
-            skin.AddBind(i, md.Bones[i].SkinBind is { } bind ? ToGodot(bind) : md.Bones[i].World.S == 0 ? Transform3D.Identity : ToGodot(md.Bones[i].World).AffineInverse());
+        // a skinned mesh binds each bone through that mesh's skin bone transform (NiSkinningMeshModifier), not through
+        // the file's node pose: the two agree on the player's body (within 4e-5), but many NPC and effect models store
+        // another pose (an effect creature rests or hides there), and meshes of one model may bind one bone differently,
+        // so each skinned mesh has its own skin; bones outside the mesh's skin keep World^-1
+        Skin SkinOf(ModelMesh m)
+        {
+            var skin = new Skin();
+            for (int i = 0; i < md.Bones.Count; i++)
+                skin.AddBind(i, m.SkinBinds != null && m.SkinBinds.TryGetValue(i, out var bind) ? ToGodot(bind)
+                              : md.Bones[i].World.S == 0 ? Transform3D.Identity : ToGodot(md.Bones[i].World).AffineInverse());
+            return skin;
+        }
 
         foreach (var m in md.Meshes)
         {
             var mi = new MeshInstance3D { Name = m.Name, Mesh = BuildMesh(m) };
+            var skin = m.Skinned ? SkinOf(m) : null;
             if (m.Skinned)
             {
                 skel.AddChild(mi);
@@ -93,7 +100,7 @@ public sealed class ModelBuilder
                 mi.Transform = ToGodot(m.Local);
                 skel.AddChild(mi);
             }
-            AddGlowTwin(mi, m, m.Skinned ? skin : null);
+            AddGlowTwin(mi, m, skin);
         }
 
         var player = new AnimationPlayer { Name = "AnimationPlayer" };

@@ -8,7 +8,6 @@ public sealed class ModelBone
     public int Parent = -1;               // index into Bones, -1 = child of the scene root
     public Xform Rest;                    // local rest transform (= skin bind pose on shipped humanoids)
     public Xform World;                   // rest transform relative to the scene root
-    public Xform? SkinBind;               // scene root -> bone at the skin's bind (NiSkinningMeshModifier bone transform)
 }
 
 public sealed class ModelMesh
@@ -23,6 +22,7 @@ public sealed class ModelMesh
     public float[] Weights;               // 4 weights per vertex, sum 1, skinned only
     public int[] Indices;                 // triangle list, file winding
     public bool Skinned;
+    public Dictionary<int, Xform> SkinBinds;  // skinned only: bone index -> scene root -> bone at this skin's bind
     public int ParentBone = -1;           // rigid meshes: the NiNode they hang from (-1 = scene root)
     public float[] Bound;                 // the NiMesh "Bounding Sphere" (its model bound): centre xyz, radius; null if absent
     public Xform Local = Xform.Identity;  // rigid meshes: transform relative to ParentBone
@@ -423,8 +423,9 @@ public sealed class ModelData
                     if (!IsIdentity(toRoot)) ToRootSpace(mesh, toRoot);
                     // each skin bone's bind (scene root -> bone) from its bone transform, the mesh now being in root space
                     var rootToSkin = toRoot.Inverse();
+                    mesh.SkinBinds = new Dictionary<int, Xform>();
                     for (int p = 0; p < skBones.Length && p < bts.Length; p++)
-                        if (boneOf.TryGetValue((int)skBones[p], out int bp)) md.Bones[bp].SkinBind ??= XformOf(bts[p]).Compose(rootToSkin);
+                        if (boneOf.TryGetValue((int)skBones[p], out int bp)) mesh.SkinBinds.TryAdd(bp, XformOf(bts[p]).Compose(rootToSkin));
                 }
                 var pal = s.TryGetValue("BONE_PALETTE", out var pp) ? pp.v.Select(x => (int)x).ToArray()
                                                                      : Enumerable.Range(0, skBones.Length).ToArray();
