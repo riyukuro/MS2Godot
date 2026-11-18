@@ -27,6 +27,11 @@ public sealed class InventoryController : UiController, IInventoryBinding
     public InventoryView View;
     /// <summary>FUN_140a66510 / FUN_140a66750: a tab's base slot count and its expand maximum (<see cref="BagSlots"/>).</summary>
     public Func<int, int> BaseSlots = _ => BagSlots.Default, MaxSlots = _ => BagSlots.Default;
+    /// <summary>The local player's record (MyPC): its equipment answers the hover's compare and "equipped" line; null: no
+    /// equipment is known (nothing is compared or marked equipped).</summary>
+    public Func<PcInfo> Wearer;
+    /// <summary>CUIService m_n128 (FUN_141adcb40): a Shift key is held (DIK 0x2a / 0x36, uiscenegame.cpp:1128).</summary>
+    public Func<bool> ShiftHeld = () => false;
     /// <summary>DAT_143af62d0, initData's second argument (the dev mode: the auto pick-up option button enabled).</summary>
     public bool DevMode;
 
@@ -327,6 +332,92 @@ public sealed class InventoryController : UiController, IInventoryBinding
         if (!ItemSlot.Build(slot, item, true, SlotFlags, Model, Model.ItemSlotSources)) return null;
         slot.Add(("updateIconSearchOn", false));
         return Host.Obj(slot.ToArray());
+    }
+
+    /// <summary>
+    /// The slot "InventoryDialog.&lt;i&gt;"'s tooltip through NotifyDragSlot::GetSlotTooltip: null for another name or a slot
+    /// past the bag; an empty object when the slot gives none (GetSlotTooltip makes the object before asking the slot).
+    /// </summary>
+    public override IDictionary<string, object> GetSlotTooltip(string name)
+    {
+        if (!name.StartsWith(BagName + ".", StringComparison.Ordinal) || !int.TryParse(name.AsSpan(BagName.Length + 1), out int i))
+            return base.GetSlotTooltip(name);
+        if (i < 0 || i >= slotCount) return null;
+        return SlotTooltip(i) ?? new AsTooltip();
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_0 (ITooltip, invenslot.cpp:1507): none for an empty cell, an unknown item or no local player. An
+    /// ItemExchangeScroll item shows its exchange result (CItemExchangeScrollTable) instead: not ported, none here. Else the
+    /// worn item it is compared with (FUN_14140c030: MyPC::FUN_14152e2f0); none when that is the item itself. ASTooltip(the
+    /// player, 0x80, 2).FUN_1409e13a0(worn, item), then SetEnablePutonBoth("", vfunc_22) and, the slot being enabled (the
+    /// ctor's SetEnabled(true), invenslot.cpp:630), SetEnablePreviewBoth(none, item). The use mode 2 parts (the mouse
+    /// cursor, customizeColor cleared) and the dagger swap sound need an open dialog or audio and are not here.
+    /// </summary>
+    AsTooltip SlotTooltip(int i)
+    {
+        if (View?.ItemAt(View.Tab, i) is not { } e || Model == null || !Model.HasLocalPlayer) return null;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return null;
+        if (item.Data.FunctionName == "ItemExchangeScroll") return null;
+        var record = Wearer?.Invoke();
+        var equipment = WornEquipment.Of(record, Model.Tables.Items);
+        var worn = equipment?.ForCompare(item, Model.Tables.ItemModels, ShiftHeld());
+        if (worn != null && worn.Uid == item.Uid) return null;
+        var tip = new ItemTooltip(Model, 0x80)
+        {
+            Owner = record != null ? (record.CharacterId, record.Name) : null,
+            Localize = Localize,
+            OwnerWearsUid = uid => equipment?.Wears(uid) == true,
+        };
+        if (!tip.FillCompare(worn, item)) return null;
+        tip.SetEnablePutonBoth("", UseHint(item));
+        tip.SetEnablePreviewBoth(null, item);
+        return tip.Data;
+    }
+
+    /// <summary>
+    /// FUN_14140d3e0 (invenslot.cpp:1957) with the hint flag. Its first branches follow the head of DAT_143af2258, the open
+    /// dialogs that register there (UIDialog m_164: the shop, trade, item break, item lock and the like); none of them is in
+    /// this port, so the list is empty and only the last part runs: 15 for a UGC item whose look state is 2
+    /// (CItem::FUN_140525fc0, CUgcItemLook::FUN_140893520), 6 an equipment item (CItemData::FUN_14053cbc0), 7 a quick slot
+    /// item (FUN_14053e460), 12 a gem, else 0.
+    /// </summary>
+    static int UseMode(Item item)
+    {
+        var d = item.Data;
+        if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
+        if (d.Type == 1) return 6;
+        if (d.IsQuickSlotUsable) return 7;
+        if (d.IsGemItem) return 12;
+        return 0;
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_22 (@0x14140b030): the use mode's right-click hint. Mode 6: with feature 0x8e and a skin item
+    /// s_msg_rclick_puton_equip_to_coditab, then, when action 0x4940d has a key (CKeyTable::GetActionKeyName(0x4940d, 0)),
+    /// a line s_msg_rclick_puton_equip_to_skintab_with_key with it; else s_msg_rclick_puton_equip (0x751). Mode 7:
+    /// s_msg_rclick_puton_qslot (0x75a). The other modes with a hint come only from the dialogs of DAT_143af2258; the rest "".
+    /// </summary>
+    string UseHint(Item item)
+    {
+        string Common(string key) => Model.Tables.Common(key) ?? "";
+        switch (UseMode(item))
+        {
+            case 6:
+                if (Feature(0x8e) && item.Data.HasSkinType)
+                {
+                    string text = Common("s_msg_rclick_puton_equip_to_coditab");
+                    var keys = Model.Keys;
+                    string key = keys.GetKeyName(keys.FindKeyByActionAndPriority(0x4940d, 0));
+                    if (key.Length != 0) text += "\n" + Ms2.Quest.ClientFormat.Format(Common("s_msg_rclick_puton_equip_to_skintab_with_key"), key);
+                    return text;
+                }
+                return Common("s_msg_rclick_puton_equip");
+            case 7:
+                return Common("s_msg_rclick_puton_qslot");
+        }
+        return "";
     }
 
     /// <summary>The flags InvenSlot::vfunc_8 builds its slot with.</summary>

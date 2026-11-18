@@ -519,6 +519,48 @@ public sealed class ItemTooltip
         Data["enablePreview"] = CommonF("s_msg_tooltip_enable_preview", keys.GetKeyName(keys.FindKeyByActionAndPriority(0x49406, 0)));
     }
 
+    /// <summary>The compare tooltip's sides, set only when a side filled (its member is there).</summary>
+    ItemTooltip lhs, rhs;
+
+    /// <summary>A side tooltip: ASTooltip(the owner, flags, 2) (FUN_1409e13f0 passes m_40 on).</summary>
+    ItemTooltip Side() => new(model, Flags) { Owner = Owner, Localize = Localize, OwnerWearsUid = OwnerWearsUid, IsDialogOpen = IsDialogOpen };
+
+    /// <summary>
+    /// FUN_1409e13a0 (:315) with this tooltip's flags for both sides, i.e. FUN_1409e13f0 (:4748): false without either
+    /// item. With both, the class export_common_tooltip_tooltipCompare and FUN_1409e15a0: "lhsTooltip" the compared item's
+    /// and "rhsTooltip" the item's tooltip, each set when it fills. With one, this tooltip filled with it (the flags stay).
+    /// </summary>
+    public bool FillCompare(Item compare, Item item)
+    {
+        if (item == null && compare == null) return false;
+        if (compare != null && item != null)
+        {
+            Data["tooltip"] = "export_common_tooltip_tooltipCompare";             // SetTooltipClass
+            var l = Side(); var r = Side();
+            if (l.Fill(compare)) { Data["lhsTooltip"] = l.Data; lhs = l; }
+            if (r.Fill(item)) { Data["rhsTooltip"] = r.Data; rhs = r; }
+        }
+        else Fill(compare ?? item);
+        return true;
+    }
+
+    /// <summary>SetEnablePutonBoth (@0x1409c6a20): nothing with flag 0x100; else "enablePuton" on each side, this tooltip when
+    /// that side is not there.</summary>
+    public void SetEnablePutonBoth(string lhsText, string rhsText)
+    {
+        if ((Flags & 0x100) != 0) return;
+        (lhs?.Data ?? Data)["enablePuton"] = lhsText;
+        (rhs?.Data ?? Data)["enablePuton"] = rhsText;
+    }
+
+    /// <summary>SetEnablePreviewBoth (@0x1409db930): SetEnablePreview of the compared item on the left side and of the item
+    /// on the right side, each on this tooltip when that side is not there.</summary>
+    public void SetEnablePreviewBoth(Item compare, Item item)
+    {
+        if (compare != null) (lhs ?? this).SetEnablePreview(compare);
+        if (item != null) (rhs ?? this).SetEnablePreview(item);
+    }
+
     /// <summary>SetEnablePuton (@0x1409c69b0): nothing with flag 0x100; else "enablePuton".</summary>
     public void SetEnablePuton(string text)
     {

@@ -38,11 +38,11 @@ public class InventoryTests
         return b;
     }
 
-    static (UiHost, InventoryController, ItemBook) Load(UiModel model = null)
+    static (UiHost, InventoryController, ItemBook) Load(UiModel model = null, ItemBook book = null)
     {
         model ??= NewModel();
         model.Player.Mesos = 1234567;
-        var book = Book();
+        book ??= Book();
         var c = new InventoryController { View = new InventoryView(book) };
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;
@@ -192,5 +192,57 @@ public class InventoryTests
         Assert.That(leftOnly.ForCompare(Hover(15300001), t.ItemModels, false)?.Uid, Is.EqualTo(3L), "two-handed: then LH");
         Assert.That((worn.Wears(3), worn.Wears(999)), Is.EqualTo((true, false)));
         Assert.That(WornEquipment.Of(new PcInfo(), t.Items), Is.Null, "no equipment lists");
+    }
+
+    [Test]
+    public void TheHoverTooltipIsTheClients()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        model.Keys = new KeyTable(Packs(), "en"); model.Keys.LoadDefaultKeys();
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[] {
+            new EquipItem { Id = 15300001, Uid = 11, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = 11400001, Uid = 12, InventorySlot = 1, Amount = 1, Rarity = 1 } }));
+        book.Apply(new ItemMessage.LoadTab(2, new[] { new EquipItem { Id = 20000028, Uid = 21, InventorySlot = 0, Amount = 10, Rarity = 1 } }));
+        var (h, c, _) = Load(model, book);
+        var me = new PcInfo { CharacterId = 5, Name = "Solo", Equips = new[] { new EquipItem { Id = 13000001, Uid = 31, Slot = EquipSlot.RH, Rarity = 1 } } };
+        c.Wearer = () => me;
+        void Show(int tab) { h.Set(h.Child("m_tab"), "selectedIndex", c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Tab == tab).i); for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); } }
+        string Common(string key) => model.Tables.Common(key);
+
+        // lv10_tooltip_consumable_red_herb.png: nothing worn to compare; the quick slot hint and the double-click line
+        Show(2);
+        var herb = c.GetSlotTooltip("InventoryDialog.0");
+        Assert.That(herb["tooltip"], Is.EqualTo("export_common_tooltip_kindsItem"));
+        Assert.That((herb["enablePuton"], herb["enableUseDbClick"]), Is.EqualTo((Common("s_msg_rclick_puton_qslot"), Common("s_msg_dclick_usable"))));
+        var shown = TooltipTests.Draw(herb);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("quick slots"));
+        Assert.That(shown, Has.Some.Contains("double-clicking"));
+
+        // a two-handed weapon against the worn RH item: the compare tooltip, the worn one on the left
+        Show(1);
+        var pair = c.GetSlotTooltip("InventoryDialog.0");
+        Assert.That(pair["tooltip"], Is.EqualTo("export_common_tooltip_tooltipCompare"));
+        var lhs = (IDictionary<string, object>)pair["lhsTooltip"];
+        var rhs = (IDictionary<string, object>)pair["rhsTooltip"];
+        Assert.That((lhs["itemName"], rhs["itemName"]), Is.EqualTo((model.Tables.ItemName(13000001), model.Tables.ItemName(15300001))));
+        Assert.That((lhs["itemEquip"], lhs["enablePuton"]), Is.EqualTo((Common("s_word_equiped"), "")));
+        Assert.That(rhs["enablePuton"], Is.EqualTo(Common("s_msg_rclick_puton_equip")));
+        Assert.That((lhs.ContainsKey("enablePreview"), rhs.ContainsKey("enablePreview")), Is.EqualTo((false, true)));
+        Assert.That(pair.ContainsKey("enablePuton"), Is.False);
+        shown = TooltipTests.Draw(pair);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Equipped"));
+
+        // a CL item with nothing worn on CL: its own tooltip
+        Assert.That(c.GetSlotTooltip("InventoryDialog.1")["tooltip"], Is.EqualTo("export_common_tooltip_kindsItem"));
+        // the worn item itself: no tooltip (an empty object); not a bag slot: none
+        me.Equips = new[] { new EquipItem { Id = 15300001, Uid = 11, Slot = EquipSlot.RH, Rarity = 1 } };
+        Assert.That(c.GetSlotTooltip("InventoryDialog.0"), Is.Empty);
+        Assert.That(c.GetSlotTooltip("InventoryDialog.999"), Is.Null);
+        Assert.That(c.GetSlotTooltip("Other.0"), Is.Null);
     }
 }
