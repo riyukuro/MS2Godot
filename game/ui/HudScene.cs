@@ -915,6 +915,8 @@ public partial class HudScene : Node
                 PlayerLevel = data.Player.Level,
                 JobGroupId = data.Player.Job <= 1 ? 10 : (data.Player.Job / 10 + 1) * 10,     // the job group: sub job / 10 (HudModel)
                 VisitedFields = new[] { (uint)fieldId },
+                Npcs = World.FieldContents.Npcs(assets.Packs),
+                Rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e)),
             };
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }

@@ -418,16 +418,106 @@ public sealed class WorldMapController : UiController
         if (o != null) Host.Invoke(info, "setData", o);
     }
 
+    /// <summary>NpcDataTableCli (npcdata/*.xml, NpcDataCli::LoadXml): the npcs the search and the field panel list.</summary>
+    public Ms2.Formats.World.NpcTable Npcs;
+    /// <summary>DungeonRoomTable: the rooms behind a field's dungeon (portalType 8) portals.</summary>
+    public DungeonRooms Rooms;
     /// <summary>
-    /// BuildFieldDetails (worldmapmanager.cpp:1248): the title (name and level), the description and the connected maps.
-    /// The dungeons (DungeonRoomTable), the npcs and monsters of the connected fields (NpcDataTableCli) and the fishing
-    /// spot are not ported: empty lists.
+    /// CFieldMetaTable::FUN_1406fbb50 for an (npc, field) pair with a time window (FieldMeta.TimedNpcFields): the server
+    /// time is inside it. Offline it is shut, as the quest log's state has it (NoQuestState).
     /// </summary>
-    Dictionary<string, object> FieldDetails(uint id)
+    public Func<int, int, bool> NpcFieldOpen = (_, _) => false;
+
+    bool NpcHere(int npc, int field) => Meta == null || !Meta.TimedNpcFields.Contains((npc, field)) || NpcFieldOpen(npc, field);
+
+    /// <summary>FUN_1401aa6a0: the npc's name (string table npcname).</summary>
+    string NpcName(int npc) => Npcs?.Find(npc)?.Name ?? "";
+
+    /// <summary>
+    /// NpcSearchName (worldmapmanager.cpp:1218): a monster as s_worldmap_search_monster (name, level, race), an npc with a
+    /// function title as s_worldmap_search_npc_function (title, name), else the name; in an indoor field (one with a
+    /// parent) s_worldmap_search_npc_indoor adds the field's name.
+    /// </summary>
+    string NpcSearchName(int npc, int fieldId)
+    {
+        string text;
+        var row = Npcs?.Find(npc);
+        if (row != null && row.Friendly == 0)
+            text = Fill(Common("s_worldmap_search_monster"), NpcName(npc), row.Level, Model.Tables.RaceName(row.Race) ?? "");
+        else
+        {
+            string title = Model.Tables.NpcFunctionName(npc) ?? "";
+            text = title.Length > 0 ? Fill(Common("s_worldmap_search_npc_function"), title, NpcName(npc)) : NpcName(npc);
+        }
+        if (fieldId != 0 && Table.ParentField(fieldId) != null)
+            return Fill(Common("s_worldmap_search_npc_indoor"), text, MapName((uint)fieldId));
+        return text;
+    }
+
+    /// <summary>A dungeon row: "[{0}] {1}" of the group's name (FUN_140e14b70: TranslateEnumDungeonGroup,
+    /// translateenum.cpp:50) and the room's (string table 0x14), the raid icon for group 2.</summary>
+    Dictionary<string, object> DungeonItem(DungeonRoom room, uint fieldId) => new()
+    {
+        ["text"] = Fill("[{0}] {1}", GroupName(room.GroupType), Model.Tables.FieldEnteranceName(room.Id) ?? ""),
+        ["id"] = fieldId,
+        ["icon"] = room.GroupType == 2 ? "dungeon_raid" : "dungeon",
+        ["iconData"] = (uint)room.Id,
+    };
+
+    static readonly string[] GroupKeys =
+    {
+        null, "normal", "raid", "chaosRaid", "reverseRaid", "lapenta", "guildRaid", "darkStream", "worldBoss", "item", "vip",
+        "event", "fameChallenge", "colosseum", "turka",
+    };
+    string GroupName(int group) => group > 0 && group < GroupKeys.Length ? Common("s_enum_dungeon_group_" + GroupKeys[group]) : "";
+
+    /// <summary>The npc's list: bosses (class 4, 6), elites (3, 7), else monsters.</summary>
+    static List<object> ByClass(int cls, List<object> bosses, List<object> elites, List<object> monsters) =>
+        cls is 4 or 6 ? bosses : cls is 3 or 7 ? elites : monsters;
+
+    /// <summary>
+    /// BuildFieldDetails (worldmapmanager.cpp:1248): the title (name and level), the dungeons behind the field's portalType 8
+    /// portals (by group, then level: WorldMapDungeonLess :1440), the npcs of the field and its connected fields
+    /// (FUN_1406fc2f0, those with a search entry; each name once) as monsters, elites, bosses and notable npcs, the
+    /// connected maps, the description and the cash taxi flag. The shadow gate (npc kind 0x55, CJobConditionTable), a
+    /// boss's spawn guarantee time (the server's) and the fishing spot are not ported.
+    /// </summary>
+    public Dictionary<string, object> FieldDetails(uint id)
     {
         if (Table.FindField(id) is not { } f) return null;
+        var dungeons = new List<object>();
+        if (Rooms != null && Meta != null && Meta.PortalType8.TryGetValue((int)id, out var portals))
+        {
+            var rooms = portals.SelectMany(Rooms.GetRooms).ToList();
+            rooms.Sort((a, b) => a.GroupType != b.GroupType ? a.GroupType.CompareTo(b.GroupType) : a.DungeonLevel.CompareTo(b.DungeonLevel));
+            foreach (var r in rooms) dungeons.Add(DungeonItem(r, id));
+        }
+        var monsters = new List<object>(); var bosses = new List<object>(); var elites = new List<object>();
+        var npcs = new List<object>(); var gates = new List<object>();
+        var connected = Meta?.ConnectedFields((int)id) ?? new List<int> { (int)id };
+        var seen = new HashSet<string>();
+        foreach (int c in connected)
+        {
+            if (!Table.Search.ContainsKey((uint)c) || Meta == null || !Meta.FieldNpcs.TryGetValue(c, out var ids)) continue;
+            foreach (int npc in ids)
+            {
+                if (!NpcHere(npc, c)) continue;                         // FUN_1406fb610
+                var row = Npcs?.Find(npc);
+                if (row == null || NpcName(npc).Length == 0) continue;
+                string name = NpcSearchName(npc, c);
+                if (!seen.Add(name)) continue;
+                if (row.Kind == 0x55) continue;                         // the shadow gate: CJobConditionTable is not ported
+                if (row.Friendly is 1 or 2)
+                {
+                    if (row.Icon.Length == 0 && row.Kind == 0) continue;
+                    npcs.Add(new Dictionary<string, object> { ["text"] = name });
+                }
+                else if (row.Friendly == 0)
+                    ByClass(row.Class, bosses, elites, monsters).Add(new Dictionary<string, object> { ["text"] = name });
+            }
+        }
         var indoors = new List<object>();
-        foreach (int c in Meta?.ConnectedFields((int)id) ?? new List<int> { (int)id })
+        foreach (int c in connected)
         {
             if (!Table.Search.ContainsKey((uint)c) || c == id) continue;
             indoors.Add(new Dictionary<string, object> { ["text"] = MapName((uint)c) });
@@ -436,27 +526,29 @@ public sealed class WorldMapController : UiController
         {
             ["fieldSN"] = id,
             ["title"] = Fill(Common("s_worldmap_search_map_title"), MapName(id), f.MapLevel),
-            ["fishingSpot"] = "",
+            ["fishingSpot"] = "",           // CFishingManager GetSpotDescription is not ported
             ["mapDesc"] = Model.Tables.MapTileDesc((int)id) ?? "",
-            ["dungeon"] = Array.Empty<object>(), ["monster"] = Array.Empty<object>(), ["bossMonster"] = Array.Empty<object>(),
-            ["eliteMonster"] = Array.Empty<object>(), ["shadowgate"] = Array.Empty<object>(), ["indoor"] = indoors,
-            ["npc"] = Array.Empty<object>(),
+            ["dungeon"] = dungeons, ["monster"] = monsters, ["bossMonster"] = bosses, ["eliteMonster"] = elites,
+            ["shadowgate"] = gates, ["indoor"] = indoors, ["npc"] = npcs,
             ["cashtaxi"] = !f.IsIndoor && f.CashTaxiDestinationAllowed,
         };
     }
 
     /// <summary>
-    /// BuildNameSearch (worldmapmanager.cpp:955): the search fields whose name holds the text (case-insensitive,
-    /// FUN_14083fec0): outdoor ones as maps (a cash taxi icon where it may land), indoor ones as connected maps. The
-    /// dungeon, npc and monster lists are not ported.
+    /// BuildNameSearch (worldmapmanager.cpp:955): the text (case-insensitive, FUN_14083fec0) in the search fields' names
+    /// (outdoor ones as maps, with the cash taxi icon where one may land; indoor ones as connected maps), in the dungeon
+    /// room names behind the portalType 8 portals of fields with a tile, and in the npcs' search names (by m_npcFields'
+    /// hash order, each name once; an npc counts in the first field it stands in, which must have a tile or an outdoor
+    /// field with one). The shadow gates and a boss's spawn guarantee time are not ported.
     /// </summary>
-    Dictionary<string, object> NameSearch(string text)
+    public Dictionary<string, object> NameSearch(string text)
     {
+        bool Has(string s) => s.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
         var maps = new List<object>();
         var indoors = new List<object>();
         foreach (var info in Table.Search.Values)
         {
-            if (info.Name.IndexOf(text, StringComparison.OrdinalIgnoreCase) < 0) continue;
+            if (!Has(info.Name)) continue;
             if (info.MappedId != info.FieldId)
                 indoors.Add(new Dictionary<string, object> { ["text"] = info.Name, ["id"] = info.MappedId });
             else
@@ -466,13 +558,55 @@ public sealed class WorldMapController : UiController
                 maps.Add(item);
             }
         }
+        var dungeons = new List<object>();
+        if (Rooms != null && Meta != null)
+            foreach (int field in FieldMeta.AtlMapOrder(Meta.PortalType8.Keys))
+            {
+                if (Table.FindTile((uint)field) == null) continue;
+                foreach (int portal in Meta.PortalType8[field])
+                    foreach (var room in Rooms.GetRooms(portal))
+                        if (Has(Model.Tables.FieldEnteranceName(room.Id) ?? "")) dungeons.Add(DungeonItem(room, (uint)field));
+            }
+        var monsters = new List<object>(); var bosses = new List<object>(); var elites = new List<object>();
+        var npcs = new List<object>(); var gates = new List<object>();
+        if (Npcs != null && Meta != null)
+        {
+            var seen = new HashSet<string>();
+            // m_npcFields holds the npcs with npc data (LoadFieldMetaData skips the others)
+            foreach (int npc in FieldMeta.AtlMapOrder(Meta.NpcFields.Keys.Where(n => Npcs.Find(n) != null)))
+            {
+                var fields = Meta.NpcFields[npc];
+                if (fields.Count == 0) continue;
+                int field = fields[0];
+                if (Table.FindField((uint)field) == null) continue;
+                var row = Npcs.Find(npc);
+                if (!NpcHere(npc, field)) continue;
+                if (Table.FindTile((uint)field) == null && (Table.ParentField(field) is not int outdoor || Table.FindTile((uint)outdoor) == null)) continue;
+                if (NpcName(npc).Length == 0) continue;
+                string name = NpcSearchName(npc, field);
+                if (!seen.Add(name)) continue;
+                if (row.Kind == 0x55) continue;                         // the shadow gate: CJobConditionTable is not ported
+                if (row.Friendly is 1 or 2)
+                {
+                    if (row.Icon.Length == 0 && row.Kind == 0) continue;
+                    if (!Has(name)) continue;
+                    npcs.Add(new Dictionary<string, object> { ["text"] = name, ["id"] = (uint)field });
+                }
+                else if (row.Friendly == 0)
+                {
+                    if (!Has(name)) continue;
+                    if (row.Class is 6 or 7 && Table.ParentField(field) == null) continue;
+                    ByClass(row.Class, bosses, elites, monsters).Add(new Dictionary<string, object> { ["text"] = name, ["id"] = (uint)field });
+                }
+            }
+        }
         var o = new Dictionary<string, object>
         {
-            ["map"] = maps, ["dungeon"] = Array.Empty<object>(), ["monster"] = Array.Empty<object>(),
-            ["eliteMonster"] = Array.Empty<object>(), ["bossMonster"] = Array.Empty<object>(), ["shadowgate"] = Array.Empty<object>(),
-            ["indoor"] = indoors, ["npc"] = Array.Empty<object>(),
+            ["map"] = maps, ["dungeon"] = dungeons, ["monster"] = monsters, ["eliteMonster"] = elites, ["bossMonster"] = bosses,
+            ["shadowgate"] = gates, ["indoor"] = indoors, ["npc"] = npcs,
         };
-        if (maps.Count == 0 && indoors.Count == 0) o["title"] = Common("s_err_worldmap_search_none");
+        if (maps.Count + dungeons.Count + monsters.Count + elites.Count + bosses.Count + npcs.Count + indoors.Count == 0)
+            o["title"] = Common("s_err_worldmap_search_none");
         if (Host.Child("m_searchInfo") is { } panel) Host.Invoke(panel, "setData", o);   // FUN_141b60d40 (:2371)
         return o;
     }

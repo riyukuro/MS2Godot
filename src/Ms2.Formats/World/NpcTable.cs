@@ -24,6 +24,7 @@ public sealed class NpcRow
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
     public bool Minimap = true;                  // environment minimap: shown on the minimap
     public string MinimapIcon;                   // environment minimapIconName: the minimap icon class suffix, when set
+    public string Icon = "";                     // environment iconName (NpcDataCli m_strIcon, npcdatacli.cpp:169)
     public string Illust;                        // environment illust: the talk portrait (Resource/Image quest/illust/<illust>.dds)
     public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
@@ -123,6 +124,7 @@ public sealed class NpcTable
             Illust = (string)env.Attribute("illust"),
             Minimap = (string)env.Attribute("minimap") is not ("0" or "false" or "False"),      // CNpcData: true unless set off
             MinimapIcon = (string)env.Attribute("minimapIconName"),
+            Icon = (string)env.Attribute("iconName") ?? "",
             HpBar = EffectDummy.Bool(env, "hpBar", false),
             Level = (string)env.Attribute("level") is { } lv && ushort.TryParse(lv, out var l) ? l : 1,
             Hp = long.TryParse((string)env.Element("stat")?.Attribute("hp"), out var hp) ? hp : 0,

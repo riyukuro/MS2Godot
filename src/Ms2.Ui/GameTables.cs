@@ -13,7 +13,7 @@ public sealed class GameTables
     readonly Dictionary<int, long> nextExp = new();
     readonly Dictionary<string, string> jobNames = new();
     readonly Dictionary<string, string> mapNames = new();
-    readonly Dictionary<string, string> mapTileDescs = new();
+    readonly Dictionary<string, string> mapTileDescs = new(), npcFunctionNames = new(), fieldEnterances = new(), raceNames = new();
     readonly Func<string, string> common = _ => null;
 
     public static readonly GameTables Empty = new();
@@ -36,6 +36,9 @@ public sealed class GameTables
         if (packs.Exists("Xml", "table/commonresource.xml"))
             foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/commonresource.xml")).Root.Elements())
                 commonResource.TryAdd(e.Name.LocalName, (string)e.Attribute("value") ?? "");
+        npcFunctionNames = s.Table("npcfunctionname", "name");
+        fieldEnterances = s.Table("stringfieldenterance", "name");
+        raceNames = s.Table("racename", "name");
         common = s.Common();
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
@@ -98,8 +101,14 @@ public sealed class GameTables
     };
     /// <summary>The default messenger windows' documents (table/default/defaultmessenger&lt;i&gt;.xml), in order.</summary>
     public readonly List<System.Xml.Linq.XDocument> DefaultMessengers = new();
-    /// <summary>The map's display name (string table mapname, id = 8-digit map id); null when unknown.</summary>
     /// <summary>The world map's field description (string table 0x4b, string/&lt;lang&gt;/maptiledesc.xml); null = none.</summary>
     public string MapTileDesc(int mapId) => mapTileDescs.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
+    /// <summary>An npc's function title (string table 10 "npcFunctionName", table/string.xml); null = none.</summary>
+    public string NpcFunctionName(int npcId) => npcFunctionNames.TryGetValue(npcId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
+    /// <summary>A dungeon room's name (string table 20 "stringFieldEnterance", by room id); null = none.</summary>
+    public string FieldEnteranceName(int roomId) => fieldEnterances.TryGetValue(roomId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
+    /// <summary>A race's name (string table 17 "raceName", parser raceName: by <see cref="Ms2.Formats.World.NpcTable.RaceKeys"/>); null = none.</summary>
+    public string RaceName(int race) => Ms2.Formats.World.NpcTable.RaceName(raceNames, race);
+    /// <summary>The map's display name (string table mapname, id = 8-digit map id); null when unknown.</summary>
     public string MapName(int mapId) => mapNames.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
 }

@@ -30,6 +30,8 @@ public class WorldMapTests
     static MovieSource src;
     static WorldMapTable table;
     static FieldMeta meta;
+    static Ms2.Formats.World.NpcTable npcs;
+    static Ms2.Quest.DungeonRooms rooms;
 
     static PackSet Packs()
     {
@@ -40,6 +42,8 @@ public class WorldMapTests
             packs = new PackSet(d);
             src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
             meta = FieldMeta.Load(packs);
+            npcs = new Ms2.Formats.World.NpcTable(packs);
+            rooms = Ms2.Quest.DungeonRooms.Load(packs, e => FeatureElements.IsAvailable(packs, e));
             var names = new GameTables(packs, "en");
             table = WorldMapTable.Load(packs, names.MapName, id => meta.ParentFields.TryGetValue(id, out int p) ? p : null);
         }
@@ -66,7 +70,7 @@ public class WorldMapTests
     {
         Packs();
         var c = new WorldMapController { Table = table, Meta = meta, FieldId = (int)Tria, PlayerName = "Tester", PlayerLevel = 1, JobGroupId = 50,
-                                         VisitedFields = new[] { Tria } };
+                                         VisitedFields = new[] { Tria }, Npcs = npcs, Rooms = rooms };
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 200_000_000);
         p.StageW = 1280; p.StageH = 720;
         var h = new UiHost(p, c, NewModel());
@@ -102,5 +106,34 @@ public class WorldMapTests
         c.Close();
         for (int i = 0; i < 60 && !c.IsClosed; i++) h.Player.Tick();
         Assert.That(c.IsClosed, Is.True, "the close tween ended");
+    }
+
+    static List<string> Texts(Dictionary<string, object> o, string key) =>
+        ((IEnumerable<object>)o[key]).Cast<Dictionary<string, object>>().Select(d => (string)d["text"]).ToList();
+
+    [Test]
+    public void TriasPanelListsItsDungeonAndMonsters()
+    {
+        var (_, c, _) = Load();
+        var o = c.FieldDetails(Tria);
+        foreach (var k in new[] { "dungeon", "bossMonster", "eliteMonster", "monster", "npc", "indoor" })
+            TestContext.WriteLine(k + ": " + string.Join(" | ", Texts(o, k)));
+        Assert.That(Texts(o, "dungeon"), Has.Count.EqualTo(1), "the Palace Undercroft room behind Tria's dungeon portal");
+        Assert.That(Texts(o, "bossMonster"), Has.Count.EqualTo(1));
+        Assert.That(Texts(o, "eliteMonster"), Has.Count.EqualTo(1));
+        Assert.That(Texts(o, "monster"), Has.Count.EqualTo(8));
+        Assert.That(Texts(o, "indoor"), Is.Not.Empty);
+    }
+
+    [Test]
+    public void HenesysSearchFindsItsNotablePerson()
+    {
+        var (_, c, _) = Load();
+        var o = c.NameSearch("Henesys");
+        Assert.That(Texts(o, "map"), Has.Count.EqualTo(2));
+        Assert.That(Texts(o, "indoor"), Has.Count.EqualTo(3));
+        Assert.That(Texts(o, "npc"), Has.Count.EqualTo(1), "the doctor in Henesys Hospital");
+        Assert.That(o.ContainsKey("title"), Is.False);
+        Assert.That(c.NameSearch("zzzz-none").ContainsKey("title"), Is.True, "s_err_worldmap_search_none");
     }
 }

@@ -19,6 +19,11 @@ public sealed class FieldMeta
     public readonly Dictionary<int, List<int>> PortalTargets = new();
     /// <summary>npc id -> fields it stands in.</summary>
     public readonly Dictionary<int, List<int>> NpcFields = new();
+    /// <summary>m_fieldNpcs (fieldmetatable.cpp:205): field id -> the npcs standing in it, in file order.</summary>
+    public readonly Dictionary<int, List<int>> FieldNpcs = new();
+    /// <summary>m_portalType8 (fieldmetatable.cpp:262): field -> the ids of its portalType 8 (dungeon) portals, once each,
+    /// in portal order; the keys in insertion order (GetPortalType8Map walks them in <see cref="AtlMapOrder"/>).</summary>
+    public readonly Dictionary<int, List<int>> PortalType8 = new();
     /// <summary>
     /// The (npc, field) pairs with a time window (m_activeTimes: a field element with a startTime and an endTime that
     /// both parse, ParseTimeString); the npc stands there only while the server time is inside it (FUN_1406fbb50).
@@ -66,6 +71,8 @@ public sealed class FieldMeta
             {
                 if (!m.NpcFields.TryGetValue(id, out var l)) m.NpcFields[id] = l = new List<int>();
                 l.Add(Int(f, "id"));
+                if (!m.FieldNpcs.TryGetValue(Int(f, "id"), out var n)) m.FieldNpcs[Int(f, "id")] = n = new List<int>();
+                n.Add(id);
                 if (f.Attribute("startTime") != null && f.Attribute("endTime") != null
                     && ParseTimeString((string)f.Attribute("startTime")) && ParseTimeString((string)f.Attribute("endTime")))
                     m.TimedNpcFields.Add((id, Int(f, "id")));
@@ -80,7 +87,14 @@ public sealed class FieldMeta
             int field = Int(fp, "field");
             var targets = new List<int>();
             foreach (var p in fp.Elements("portal"))
+            {
                 if (Int(p, "portalType") == 0) targets.Add(Int(p, "targetField"));
+                else if (Int(p, "portalType") == 8)
+                {
+                    if (!m.PortalType8.TryGetValue(field, out var t8)) m.PortalType8[field] = t8 = new List<int>();
+                    if (!t8.Contains(Int(p, "id"))) t8.Add(Int(p, "id"));
+                }
+            }
             m.PortalFields.Add(field);
             m.PortalTargets[field] = targets;
             var indoor = new List<int>();

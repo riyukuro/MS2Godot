@@ -13,7 +13,8 @@ namespace Ms2.Quest;
 /// <param name="GroupType">groupType (m_groupType, dungeonroom.cpp:378), read as the number the file holds.</param>
 /// <param name="MaxUserCount">maxUserCount (m_maxUserCount, :404).</param>
 /// <param name="FieldIds">fieldIDs (m_fieldIDs, :399), a token list.</param>
-public sealed record DungeonRoom(int Id, int GroupType, int MaxUserCount, int[] FieldIds);
+/// <param name="DungeonLevel">dungeonLevel (m_dungeonLevel, :376).</param>
+public sealed record DungeonRoom(int Id, int GroupType, int MaxUserCount, int[] FieldIds, int DungeonLevel = 0);
 
 /// <summary>DungeonRoomTable::LoadRooms (dungeonroom.cpp:1055-1072): the rows of table/dungeonroom.xml by room id.</summary>
 public sealed class DungeonRooms
@@ -26,6 +27,14 @@ public sealed class DungeonRooms
     /// <summary>DungeonRoomTable::GetRoom: null when there is no such room.</summary>
     public DungeonRoom GetRoom(int id) => rooms.TryGetValue(id, out var r) ? r : null;
 
+    /// <summary>DungeonRoomTable::GetRooms (dungeonroom.cpp:1253): the dungeon's rooms, ids dungeon * 1000 + 1 .. + 999
+    /// (MakeDungeonRoomId), ascending (std::map).</summary>
+    public List<DungeonRoom> GetRooms(int dungeonId)
+    {
+        long from = dungeonId * 1000L + 1, to = dungeonId * 1000L + 999;
+        return rooms.Values.Where(r => r.Id >= from && r.Id <= to).OrderBy(r => r.Id).ToList();
+    }
+
     /// <param name="available">IsElementAvailable (QuestTable.Available): FUN_14028faa0 skips the rows that fail it.</param>
     public static DungeonRooms Load(PackSet packs, Func<XElement, bool> available) =>
         Parse(XDocument.Parse(Encoding.UTF8.GetString(packs.Read(Archive, Entry)).TrimStart('﻿')), available);
@@ -37,14 +46,15 @@ public sealed class DungeonRooms
         foreach (var e in doc.Root?.Elements("dungeonRoom") ?? Enumerable.Empty<XElement>())
         {
             if (!available(e)) continue;
-            int id = 0, group = 0, max = 0;
+            int id = 0, group = 0, max = 0, level = 0;
             QuestTable.QueryUInt(e, "dungeonRoomID", ref id);
             QuestTable.QueryInt(e, "groupType", ref group);
             QuestTable.QueryUInt(e, "maxUserCount", ref max);
+            QuestTable.QueryUInt(e, "dungeonLevel", ref level);
             var fields = new List<int>();
             foreach (var tok in ((string)e.Attribute("fieldIDs") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(tok.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int f)) fields.Add(f);
-            t.rooms[id] = new DungeonRoom(id, group, max, fields.ToArray());
+            t.rooms[id] = new DungeonRoom(id, group, max, fields.ToArray(), level);
         }
         return t;
     }
