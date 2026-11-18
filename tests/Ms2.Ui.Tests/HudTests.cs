@@ -650,6 +650,71 @@ public class HudTests
         Assert.That(c.BrowserVisible, Is.False);
     }
 
+    [Test]
+    public void ASystemNoticeShownBeforeTheMovieIsReplayedAsTheRedWarning()
+    {
+        // ShowMessage without the movie parks the type and text (m_70, m_78); OnLoadComplete replays them by
+        // ShowMessage(text, type, 0), and type 1 is the movie's appendWarningMessage: the line in m_gameWarnMessage's step1
+        var m = Model();
+        var c = new SystemTextController();
+        c.ShowMessage("You do not have the necessary weapon equipped.", SystemTextController.Warning, 0);
+        Assert.That(c.Parked, Is.EqualTo((1, "You do not have the necessary weapon equipped.")));
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.Parked, Is.EqualTo((0, "")));
+        var warn = h.Child("m_gameWarnMessage");
+        Assert.That(Rt.ToNumber(h.Get(warn, "currentFrame")), Is.GreaterThan(1));
+        // onWarningTimer: step1's text field gets the new line (step2 the previous, none here)
+        Assert.That(Text(h, "textField", h.Child("step1", warn) as AsDisplayObject), Is.EqualTo("You do not have the necessary weapon equipped."));
+        Assert.That(Text(h, "textField", h.Child("step2", warn) as AsDisplayObject), Is.Empty);
+        // the same line again while it is queued or shown is dropped by the movie (appendWarningMessage's queue check)
+        c.ShowMessage("You do not have the necessary weapon equipped.", SystemTextController.Warning, 0);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // vfunc_43 without the upper HP bar: top centre, 100 down (the entity's width getter is 1920)
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "x")), Is.EqualTo(0));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "y")), Is.EqualTo(100));
+    }
+
+    [Test]
+    public void TheSystemLinesSitBelowTheUpperHpBar()
+    {
+        // vfunc_43: the top is the upper HP bar root's y + ceil(height) + 10
+        var m = Model();
+        var bar = new UpperHpBarController();
+        var hb = Load(bar, m);
+        var c = new SystemTextController { UpperHpBar = bar };
+        var h = Load(c, m);
+        double y = Rt.ToNumber(hb.Get(hb.Entity, "y")), ht = Rt.ToNumber(hb.Get(hb.Entity, "height"));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "y")), Is.EqualTo((int)((float)y + (int)Math.Ceiling(ht) + 10f)));
+    }
+
+    [Test]
+    public void TheAiWarningExpiresAndTheEmergencyLinePlaysItsSound()
+    {
+        var m = Model();
+        uint now = 1000;
+        var c = new SystemTextController { TickMs = () => now };
+        var sounds = new List<string>();
+        c.SystemSound += sounds.Add;
+        var h = Load(c, m);
+        // ShowTimedMessage: only type 0xc has a method; it expires at now + duration (m_88)
+        c.ShowTimedMessage("ai", SystemTextController.Warning, 500);
+        Assert.That(c.Timed, Is.Empty);
+        c.ShowTimedMessage("ai", SystemTextController.AiWarning, 500);
+        Assert.That(c.Timed[SystemTextController.AiWarning], Is.EqualTo(1500u));
+        var ai = h.Child("m_aiWarningMessage");
+        Assert.That(Rt.ToNumber(h.Get(ai, "currentFrame")), Is.GreaterThan(1));
+        now = 1400; c.Process();
+        Assert.That(c.Timed.ContainsKey(SystemTextController.AiWarning), Is.True);
+        now = 1500; c.Process();         // vfunc_15: expired (it->second <= now), onAiWarningMessage, erased
+        Assert.That(c.Timed, Is.Empty);
+        Assert.That(Rt.ToNumber(h.Get(ai, "currentFrame")), Is.EqualTo(1));
+        // type 9: appendEmergencyMessage(text, option) and PlaySystemSound("emergency_notice")
+        c.ShowMessage("emergency", SystemTextController.Emergency, 0);
+        Assert.That(sounds, Is.EqualTo(new[] { "emergency_notice" }));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     static List<string> AllTexts(AsDisplayObject o)
     {
         var l = new List<string>();

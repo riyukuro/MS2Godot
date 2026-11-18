@@ -36,6 +36,9 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog targetBar;                  // uiupperhpbar
     /// <summary>UIUpperHpBar's C++ side: the target HP bar at the top (Hit / Remove from combat, Process per frame).</summary>
     public Ms2.Ui.Hud.UpperHpBarController TargetBar { get; private set; }
+    MovieDialog systemText;                 // uisystemtext
+    /// <summary>UISystemText's C++ side: the system lines across the upper middle (the red warnings and the rest).</summary>
+    public Ms2.Ui.Hud.SystemTextController SystemText { get; private set; }
     DamageText damageText;
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
@@ -154,6 +157,7 @@ public partial class HudScene : Node, IUiStageHost
         notice?.GetParent()?.RemoveChild(notice);
         upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
         targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
+        systemText?.GetParent()?.RemoveChild(systemText);     // and the system lines
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         BuildHud();
@@ -199,6 +203,7 @@ public partial class HudScene : Node, IUiStageHost
         Minimap(uiRoot);
         UpperHud(uiRoot);
         TargetHpBar(uiRoot);
+        SystemTextLines(uiRoot);
         HudModel();
         Chat(uiRoot);
         Quests(uiRoot);
@@ -440,6 +445,28 @@ public partial class HudScene : Node, IUiStageHost
         targetBar = new MovieDialog(assets, TargetBar, NewModel(), GetWindow().Size);
         ui.AddChild(targetBar);
     }
+
+    /// <summary>
+    /// The system lines (UISystemText, uisystemtext.cpp), run by their movie; kept across relayouts, placed under the target
+    /// HP bar (vfunc_43). A message shown before the movie is loaded is parked and shown at OnLoadComplete.
+    /// </summary>
+    void SystemTextLines(Control ui)
+    {
+        if (systemText != null) { ui.AddChild(systemText); systemText.Relayout(GetWindow().Size); return; }
+        SystemText = new Ms2.Ui.Hud.SystemTextController { UpperHpBar = TargetBar, TickMs = () => (uint)Time.GetTicksMsec() };
+        // STILL-OPEN: PlaySystemSound (the emergency line's "emergency_notice"): this HUD has no system sound player
+        SystemText.SystemSound += key => GD.Print($"system text: sound {key} is not played");
+        systemText = new MovieDialog(assets, SystemText, NewModel(), GetWindow().Size);
+        ui.AddChild(systemText);
+    }
+
+    /// <summary>
+    /// FUN_141275260 (unit_141274d10_uihelpers.cpp): the common string of the id through ShowSystemNotice(text, 1, true)
+    /// (@0x1412751f0), which is UISystemText::ShowMessage(text, 1, 0), the red warning line.
+    /// STILL-OPEN: ShowSystemNotice's bLog also adds the line to the chat log (FUN_1412751b0(text, 0x14)); the chat
+    /// windows here have no log append.
+    /// </summary>
+    void SystemNotice(string key) => SystemText?.ShowMessage(hudModel.Tables.Common(key), Ms2.Ui.Hud.SystemTextController.Warning, 0);
 
     // ---- minimap: uiminimapdialog run by its own ActionScript, UIMinimapDialog's C++ side as MinimapController ----------
 
@@ -1078,7 +1105,7 @@ public partial class HudScene : Node, IUiStageHost
             SymbolId = () => me.Insignia, GmGrade = () => me.User?.GmGrade ?? 0,
             AchieveTally = () => live?.AchieveSum ?? 0,   // the fixture: an empty trophy book
         };
-        c.SystemNotice += key => GD.Print($"character: system notice {key}: {hudModel.Tables.Common(key)}");
+        c.SystemNotice += SystemNotice;
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"character: {name} is not sent (display only)");
@@ -1163,7 +1190,7 @@ public partial class HudScene : Node, IUiStageHost
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
-        c.SystemNotice += key => GD.Print($"inventory: system notice {key}: {hudModel.Tables.Common(key)}");
+        c.SystemNotice += SystemNotice;
         // the bind boxes' yes (UIMessageBox::HandleUseBindFuncItemButton / HandleUseBindEquipItemButton) goes back to the
         // inventory the box came from
         if (MessageBoxLayer.Instance?.Controller is { } boxes)
@@ -1581,6 +1608,7 @@ public partial class HudScene : Node, IUiStageHost
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();
+        SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
