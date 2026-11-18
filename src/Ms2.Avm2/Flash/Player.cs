@@ -1060,11 +1060,40 @@ namespace Ms2.Avm2.Flash
             });
         }
 
-        public void MouseMove(double x, double y)
+        /// <summary>
+        /// A mouse move. covered: another movie's object is over the point. The client's dialogs share main.gfx's one stage,
+        /// so its top-most entity there is that movie's object (GetTopMostEntity) and none of this movie's: what the mouse was
+        /// over rolls out, and the move goes to the stage as it bubbles there. Here each movie has its own stage, and the
+        /// host tells it.
+        /// </summary>
+        public void MouseMove(double x, double y, bool covered = false)
         {
-            MouseX = x; MouseY = y;
+            MouseX = x; MouseY = y; MouseActivated = true;
             UpdateDrag();               // Stage::PropagateMouseEvent: a mouse move drags what is being dragged
-            var t = MouseTarget(x, y);
+            var t = covered ? null : MouseTarget(x, y);
+            Hover(t);
+            MouseEv(t ?? (AsInteractiveObject)Stage, "mouseMove");
+        }
+
+        /// <summary>Whether a mouse event came (MouseState::IsActivated): before one, the mouse has no position.</summary>
+        public bool MouseActivated { get; private set; }
+
+        /// <summary>
+        /// MovieImpl::ProcessInput's mice without an event (sfr_gfx_01i.cpp:3126-3141): after a display list change
+        /// (Flag_NeedMouseUpdate) the top-most entity under the mouse's last position is found again and
+        /// GenerateMouseEvents runs the change's mouseOut / rollOut and mouseOver / rollOver (no mouseMove: the mouse did not
+        /// move). covered: as for <see cref="MouseMove"/>.
+        /// </summary>
+        public void MouseRetest(bool covered)
+        {
+            if (!MouseActivated) return;
+            Hover(covered ? null : MouseTarget(MouseX, MouseY));
+        }
+
+        /// <summary>The mouse's top-most entity becomes t: mouseOut and rollOut up from the old one, then mouseOver and
+        /// rollOver down to the new one.</summary>
+        void Hover(AsInteractiveObject t)
+        {
             if (t != over)
             {
                 var old = over; over = t;
@@ -1077,7 +1106,6 @@ namespace Ms2.Avm2.Flash
                     for (int i = chain.Count - 1; i >= 0; i--) MouseEv(chain[i], "rollOver", old);
                 }
             }
-            MouseEv(t ?? (AsInteractiveObject)Stage, "mouseMove");
         }
 
         static bool Contains(AsDisplayObject a, AsDisplayObject b) { for (var o = b; o != null; o = o.Parent) if (o == a) return true; return false; }

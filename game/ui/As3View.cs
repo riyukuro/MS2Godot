@@ -36,6 +36,8 @@ public partial class As3View : Node2D
         // the caret is in the tree only on a focused field's holder, and goes with it; without a focus it is out of the
         // tree and goes with the view
         if (what == NotificationPredelete && IsInstanceValid(caret) && caret.GetParent() == null) caret.Free();
+        else if (what == NotificationEnterTree) inTree.Add(this);
+        else if (what == NotificationExitTree) inTree.Remove(this);
     }
     /// <summary>Advance the movie's frames in _Process (off for scripted captures that tick by hand).</summary>
     public bool AutoPlay = true;
@@ -581,8 +583,70 @@ public partial class As3View : Node2D
         lastMouseTest = now;
         // a view leaving the tree (a scene change) has no viewport: no sample
         if (!IsInsideTree() || GetViewport() is not { } vp) { MouseOverUi = false; return; }
-        var p = StagePoint(vp.GetMousePosition());
+        sampledAt = vp.GetMousePosition();
+        var p = StagePoint(sampledAt);
         MouseOverUi = IsVisibleInTree() && Player.HitTestShapes(p.X, p.Y);
+        // Flag_NeedMouseUpdate: a display list changed (any movie's: one of them may now cover the mouse), so the mouse's
+        // top-most entity is found again at its last position (a drag keeps its own)
+        if (AsDisplayObject.Changes != retestChanges && !Player.Dragging && Player.MouseActivated)
+        {
+            retestChanges = AsDisplayObject.Changes;
+            Player.MouseRetest(CoveredAt(ViewportPoint(Player.MouseX, Player.MouseY), vp));
+        }
+    }
+
+    // ---- the movies' one stage ---------------------------------------------------------------------------------------
+    //
+    // The client's dialogs are all in main.gfx's one stage (GFxMovieMain), so a dialog over another one takes the mouse
+    // from it: the top-most entity is the upper dialog's object, and what the mouse was over below rolls out (the
+    // TooltipManager's ROLL_OUT then destroys its tooltip). Here each movie has its own stage, so a view told that another
+    // movie's object is over the mouse (CoveredAt) gives its player no top-most entity there. The tooltip movie (no input,
+    // its own movie in the client too) covers nothing.
+
+    static readonly HashSet<As3View> inTree = new();
+    Vector2 sampledAt = new(float.NaN, float.NaN);         // the viewport point of the last MouseOverUi sample
+    long retestChanges = -1;                                // AsDisplayObject.Changes at the last retest
+
+    /// <summary>A stage point in viewport units (through the canvas layer the view is drawn in).</summary>
+    Vector2 ViewportPoint(double x, double y) => GetGlobalTransformWithCanvas() * new Vector2((float)x, (float)y);
+
+    /// <summary>Whether the view takes the mouse: in the tree, shown, its input on.</summary>
+    bool TakesMouse => Player != null && IsInsideTree() && IsVisibleInTree() && IsProcessingUnhandledInput();
+
+    /// <summary>Whether this view is drawn over the other: a higher canvas layer, or on the same one later in the tree.</summary>
+    bool DrawnOver(As3View other)
+    {
+        int a = GetCanvasLayerNode()?.Layer ?? 0, b = other.GetCanvasLayerNode()?.Layer ?? 0;
+        return a != b ? a > b : IsGreaterThan(other);
+    }
+
+    /// <summary>Whether the view's shapes are at a viewport point (the last sample's answer when the point is the same).</summary>
+    bool HitsAt(Vector2 viewport)
+    {
+        if (viewport.DistanceSquaredTo(sampledAt) < 0.25f) return MouseOverUi;
+        var p = StagePoint(viewport);
+        return Player.HitTestShapes(p.X, p.Y);
+    }
+
+    /// <summary>Whether another view's shapes are over this view at a viewport point.</summary>
+    bool CoveredAt(Vector2 viewport, Viewport vp)
+    {
+        foreach (var v in inTree)
+            if (v != this && v.TakesMouse && v.GetViewport() == vp && v.DrawnOver(this) && v.HitsAt(viewport)) return true;
+        return false;
+    }
+
+    /// <summary>A mouse move this view takes (its shapes are under the mouse): the views it is drawn over do not see the
+    /// event, so they get it covered.</summary>
+    void CoverBelow(Vector2 viewport)
+    {
+        var vp = GetViewport();
+        foreach (var v in inTree)
+            if (v != this && v.TakesMouse && v.GetViewport() == vp && DrawnOver(v) && !v.Player.Dragging)
+            {
+                var p = v.StagePoint(viewport);
+                v.Player.MouseMove(p.X, p.Y, covered: true);
+            }
     }
 
     /// <summary>A viewport point in stage units (through the canvas layer the view is drawn in).</summary>
@@ -643,6 +707,7 @@ public partial class As3View : Node2D
                 var p = StagePoint(mm.Position);
                 Player.MouseMove(p.X, p.Y);
                 if (!MouseOverUi) return;
+                CoverBelow(mm.Position);
                 break;
             }
             case InputEventMouseButton mb:
