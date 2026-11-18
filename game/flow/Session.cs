@@ -14,6 +14,22 @@ public static class Session
     public static CharacterEntry Chosen;
     public static int SelectedIndex;
 
+    /// <summary>
+    /// The server picked in the server list: UIServerListDialog m_nServerId, set by OnSelectServer to the ServerList packet
+    /// row's id (at least 1, uiserverlistdialog.cpp:529-538). The flow has no server list page yet, so it is 1, the first row
+    /// of table/serverList.xml.
+    /// </summary>
+    public static int ServerId = 1;
+
+    /// <summary>
+    /// The channel the login asked for: UIServerListDialog m_nChannel, the login type of ResponseLogin, which OnLoginResult
+    /// stores as the current channel (DAT_1439f4a7c, uiserverlistdialog.cpp:618). The flow logs in with channel 0.
+    /// </summary>
+    public static int Channel;
+
+    /// <summary>The server line's initData (FUN_141900750) for the session's server and channel.</summary>
+    public static LobbyServerInfo ServerInfo(UiAssets assets) => LobbyServerInfo.Build(assets, ServerId, Channel);
+
     /// <summary>The scene that runs the field in the flow (the HUD over the field); null when a scene runs alone.</summary>
     public static string GameScene;
 

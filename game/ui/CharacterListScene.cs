@@ -144,7 +144,7 @@ public partial class CharacterListScene : LobbyFieldScene
         // CharacterListDialog.buildCharacterList -> popup: LobbyDialog.popup gotoAndPlay("popup") on the dialog,
         // m_title.gotoAndPlay("popup"), btnsPopup(m_btns)
         logic.BuildCharacterList(Flow.Session.List(), Flow.Session.SelectedIndex, 6, data, assets.ImageFile);
-        logic.ShowDialog(assets, uiPacks ?? packs, popup);
+        logic.ShowDialog(assets, uiPacks ?? packs, popup, Flow.Session.ServerInfo(assets));
         mouse = new UiWidgets.MouseRouter(root);
 
     }

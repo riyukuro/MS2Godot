@@ -220,7 +220,7 @@ public sealed class CharacterListLogic
     /// m_title are held at the popup's first frame until <see cref="PlayPopup"/>, otherwise put at its end; the server
     /// line, the title and the features the host sets (UICharacterListDialog::OnLoadComplete).
     /// </summary>
-    public void ShowDialog(UiAssets assets, PackSet features, bool popup)
+    public void ShowDialog(UiAssets assets, PackSet features, bool popup, LobbyServerInfo server)
     {
         foreach (var clip in PopupClips())
             if (popup && clip.Labels.TryGetValue("popup", out int first)) clip.GotoFrame(first); else clip.GotoLabel("popup");
@@ -228,8 +228,7 @@ public sealed class CharacterListLogic
         // UICharacterListDialog::OnLoadComplete: m_deleteAccount is hidden (vfunc_4(0)) unless the DeleteAccount feature
         // is on; feature.xml has it at KR level 100, over the Live server level (feature_setting.xml Live KR 78)
         if (!LobbyFeatures.IsEnabled(features, "DeleteAccount") && root.ChildNamed("m_deleteAccount") is { } del) { del.Hidden = true; RefreshHolder("m_deleteAccount"); }
-        root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_serverName", "Bigleaf  CH.1");
-        root.FindClip(UICharacterListDialogContract.Instances.M_content)?.SetNamedText("m_regionName", "");
+        server?.Apply(root.FindClip(UICharacterListDialogContract.Instances.M_content), assets);
         root.FindClip(UICharacterListDialogContract.Instances.M_title)?.SetText(assets.Str("$s_charselect_title"));
         // region and event extras the host attaches on demand (attachHealthGameCN, attachBurningLevelupDescBtn, ...)
         foreach (var name in new[] { UICharacterListDialogContract.Instances.M_healthGameCN, UICharacterListDialogContract.Instances.M_characterCraeteShutdownCN, UICharacterListDialogContract.Instances.M_burningEventDescBtn })

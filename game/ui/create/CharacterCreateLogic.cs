@@ -87,13 +87,12 @@ public sealed class CharacterCreateLogic
     }
 
     /// <summary>initData(gender, serverInfo) and buildCurrentItems: the start of the page, then popup.</summary>
-    public void InitData(int gender, int jobCode, string serverName)
+    public void InitData(int gender, int jobCode, LobbyServerInfo server, UiAssets assets)
     {
         openTime = Time.GetTicksMsec() / 1000.0;
         look.Reset(gender, jobCode);
         SetGenderButtons(gender);
-        content.SetNamedText("m_serverName", serverName ?? "");
-        content.SetNamedText("m_regionName", "");
+        server?.Apply(content, assets);
         UiBridge.Raise(Movie, C.ToHost.OnChangeTab, 0);
         BuildCurrentItems();
         category = -1;
@@ -107,12 +106,11 @@ public sealed class CharacterCreateLogic
     /// the same look, category, option panel (<paramref name="optionsOpen"/>: it was showing) and name prompt, with no popup
     /// or open animation and no host events.
     /// </summary>
-    public void Restore(CharacterCreateLogic old, string serverName, bool optionsOpen)
+    public void Restore(CharacterCreateLogic old, LobbyServerInfo server, UiAssets assets, bool optionsOpen)
     {
         openTime = old.openTime;
         SetGenderButtons(look.Gender);
-        content.SetNamedText("m_serverName", serverName ?? "");
-        content.SetNamedText("m_regionName", "");
+        server?.Apply(content, assets);
         BuildCurrentItems();
         category = -1;
         SelectCategory(Math.Max(old.category, 0), false, false);

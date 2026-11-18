@@ -171,7 +171,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
             // 0x620001c -> SelectCreateJob): the flow's characters with the selected one, at the popup's end
             var list = new CharacterListLogic(listMovie, listRoot);
             list.BuildCharacterList(Flow.Session.List(), Flow.Session.SelectedIndex, 6, new LobbyCharacterData(packs, assets.Language), assets.ImageFile);
-            list.ShowDialog(assets, uiPacks ?? packs, popup: false);
+            list.ShowDialog(assets, uiPacks ?? packs, false, Flow.Session.ServerInfo(assets));
         }
         catch (Exception ex) { GD.PushWarning("character list: " + ex.Message); }
 
@@ -226,10 +226,10 @@ public partial class CharacterCreateScene : LobbyFieldScene
         custom.LookChanged += RebuildPreview;
         custom.Back += () => SwitchTo(Page.Select);
         custom.Created += (packet, bytes) => CharacterCreated?.Invoke(packet, bytes);
-        if (old != null) custom.Restore(old, "Bigleaf  CH.1", optionsOpen);
+        if (old != null) custom.Restore(old, Flow.Session.ServerInfo(assets), assets, optionsOpen);
         else
         {
-            custom.InitData(gender, job, "Bigleaf  CH.1");
+            custom.InitData(gender, job, Flow.Session.ServerInfo(assets), assets);
             RebuildPreview();
         }
         mouse = new UiWidgets.MouseRouter(createRoot);
