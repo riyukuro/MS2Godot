@@ -33,7 +33,19 @@ public partial class As3View : Node2D
         public object ContentKey;
         public MaskShape Mask;           // set when this object masks following siblings or is masked by script
         public int Seen;
+        // the holder's transform, visibility and colour and the content's material as last set (the node defaults at first):
+        // a property is set again only when it changes
+        public Transform2D Xf = Transform2D.Identity;
+        public bool Visible = true;
+        public Color Modulate = Colors.White;
+        public Material ContentMaterial;
     }
+
+    /// <summary>
+    /// The children each parent node was last given (<see cref="Apply"/>), in order: a parent given the same list again with
+    /// the same child count keeps its children as they are, without reading them back or moving them.
+    /// </summary>
+    readonly Dictionary<Node, List<Node>> applied = new();
 
     public As3View(FlashPlayer player, UiAssets assets)
     {
@@ -88,7 +100,7 @@ public partial class As3View : Node2D
         gen++;
         var masks = new HashSet<AsDisplayObject>();
         CollectMasks(Player.Stage, masks);
-        SyncChildren(Player.Stage, this, masks, null, null);
+        SyncChildren(Player.Stage, this, null, masks, null, null);
         for (int i = entries.Count - 1; i >= 0; i--)
         {
             var e = entries[i];
@@ -97,6 +109,8 @@ public partial class As3View : Node2D
             e.Holder.QueueFree();
             e.Mask?.GetParent()?.RemoveChild(e.Mask);
             e.Mask?.QueueFree();
+            applied.Remove(e.Holder);
+            if (e.Mask != null) applied.Remove(e.Mask);
             if (ReferenceEquals(e.Obj.Tag, e)) e.Obj.Tag = null;
             entries.RemoveAt(i);
         }
@@ -112,27 +126,31 @@ public partial class As3View : Node2D
         if (o is AsContainer c) foreach (var k in c.Children) CollectMasks(k, masks);
     }
 
-    /// <summary>Puts the nodes of a container's children under <paramref name="into"/> in display order.</summary>
-    void SyncChildren(AsContainer c, Node2D into, HashSet<AsDisplayObject> masks, NineCtx nine, Material blend)
+    /// <summary>
+    /// Puts the nodes of a container's children under <paramref name="into"/> in display order (after the container's own
+    /// <paramref name="content"/>); the children a timeline mask clips go under the mask's node, in display order.
+    /// </summary>
+    void SyncChildren(AsContainer c, Node2D into, Node2D content, HashSet<AsDisplayObject> masks, NineCtx nine, Material blend)
     {
         var wanted = new List<Node>();
-        var content = (into.HasMeta("as3content") ? into.GetMeta("as3content").AsGodotObject() : null) as Node2D;
         if (content != null) wanted.Add(content);
-        MaskShape clip = null; int clipEnd = 0;
+        MaskShape clip = null; List<Node> clipped = null; int clipEnd = 0;
+        List<(MaskShape Mask, List<Node> Kids)> clips = null;
+        Mat? toC = null;
         foreach (var k in c.Children)
         {
             if (clip != null && k.Depth > clipEnd) clip = null;
-            var e = SyncObject(k, masks, nine, blend);
-            if (k.ClipDepth is int cd && k.Depth != int.MinValue)
+            bool clipMask = k.ClipDepth is int && k.Depth != int.MinValue;
+            var e = SyncObject(k, masks, nine, blend, clipMask);
+            if (clipMask)
             {
                 // a timeline mask: following depths up to its clip depth draw only inside it; the mask itself is not drawn
                 e.Mask ??= new MaskShape();
                 e.Mask.Set(MaskShape.Polygons(k, Mat.Identity));
-                e.Holder.Visible = false;
-                Reparent(e.Holder, into, wanted);
-                Reparent(e.Mask, into, wanted);
-                ClearExcept(e.Mask, null);
-                clip = e.Mask; clipEnd = cd;
+                wanted.Add(e.Holder);
+                wanted.Add(e.Mask);
+                clip = e.Mask; clipEnd = (int)k.ClipDepth;
+                (clips ??= new()).Add((clip, clipped = new List<Node>()));
                 continue;
             }
             Node2D top = e.Holder;
@@ -140,18 +158,39 @@ public partial class As3View : Node2D
             {
                 e.Mask ??= new MaskShape();
                 var mo = k.MaskObject;
-                var toC = (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(c.ToGlobalMatrix().Inverse());
-                e.Mask.Set(MaskShape.Polygons(mo, toC));
+                toC ??= c.ToGlobalMatrix().Inverse();
+                e.Mask.Set(MaskShape.Polygons(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value)));
                 if (e.Holder.GetParent() != e.Mask) { e.Holder.GetParent()?.RemoveChild(e.Holder); e.Mask.AddChild(e.Holder); }
                 top = e.Mask;
             }
-            if (clip != null) { if (top.GetParent() != clip) { top.GetParent()?.RemoveChild(top); clip.AddChild(top); } clip.MoveChild(top, -1); }
-            else Reparent(top, into, wanted);
+            if (clip != null) clipped.Add(top);
+            else wanted.Add(top);
         }
-        // drop nodes that are no longer children here (their entries are freed after the pass if not seen elsewhere)
+        if (clips != null) foreach (var (mask, kids) in clips) Apply(mask, kids);
+        Apply(into, wanted);
+    }
+
+    /// <summary>
+    /// Makes <paramref name="want"/> the children of <paramref name="into"/>, in that order: nodes from elsewhere are moved
+    /// in, others are dropped (their entries are freed after the pass if not seen elsewhere). Skipped when the parent was
+    /// given the same list last time and still has as many children (every move between parents goes through here, and the
+    /// parent losing a node is given a list without it).
+    /// </summary>
+    void Apply(Node2D into, List<Node> want)
+    {
+        if (applied.TryGetValue(into, out var last) && last.Count == want.Count && into.GetChildCount() == want.Count)
+        {
+            bool same = true;
+            for (int i = 0; same && i < want.Count; i++) same = ReferenceEquals(last[i], want[i]);
+            if (same) return;
+        }
+        applied[into] = want;
+        foreach (var n in want)
+            if (n.GetParent() != into) { n.GetParent()?.RemoveChild(n); into.AddChild(n); }
+        var keep = new HashSet<Node>(want);
         foreach (var n in into.GetChildren())
-            if (!wanted.Contains(n)) into.RemoveChild(n);
-        for (int i = 0; i < wanted.Count; i++) into.MoveChild(wanted[i], i);
+            if (!keep.Contains(n)) into.RemoveChild(n);
+        for (int i = 0; i < want.Count; i++) into.MoveChild(want[i], i);
     }
 
     static void Reparent(Node2D n, Node2D into, List<Node> wanted)
@@ -160,12 +199,7 @@ public partial class As3View : Node2D
         wanted.Add(n);
     }
 
-    static void ClearExcept(Node2D n, Node keep)
-    {
-        foreach (var ch in n.GetChildren()) if (ch != keep) n.RemoveChild(ch);
-    }
-
-    Entry SyncObject(AsDisplayObject o, HashSet<AsDisplayObject> masks, NineCtx nine, Material blend)
+    Entry SyncObject(AsDisplayObject o, HashSet<AsDisplayObject> masks, NineCtx nine, Material blend, bool clipMask = false)
     {
         blend = BlendFor(o.Blend) ?? blend;
         if (o.Tag is not Entry e)
@@ -188,19 +222,23 @@ public partial class As3View : Node2D
                 ? new NineCtx { Grid = UiBuilder.Rc(g9), Bounds = UiBuilder.Rc(o.Symbol["bounds"]), Sx = (float)sx, Sy = (float)sy, Chain = Transform2D.Identity }
                 : null;
         }
-        e.Holder.Transform = Xf(m);
-        e.Holder.Visible = o.IsVisible && !masks.Contains(o);
+        var xf = Xf(m);
+        if (xf != e.Xf) e.Holder.Transform = e.Xf = xf;
+        // a timeline mask's own node is not drawn (SyncChildren clips the following depths to it)
+        bool visible = o.IsVisible && !masks.Contains(o) && !clipMask;
+        if (visible != e.Visible) e.Holder.Visible = e.Visible = visible;
         var cx = o.Color;
-        e.Holder.Modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
+        var modulate = new Color((float)Math.Clamp(cx.Rm + cx.Ra / 255, 0, 1), (float)Math.Clamp(cx.Gm + cx.Ga / 255, 0, 1), (float)Math.Clamp(cx.Bm + cx.Ba / 255, 0, 1), (float)Math.Clamp(cx.Am + cx.Aa / 255, 0, 1));
+        if (modulate != e.Modulate) e.Holder.Modulate = e.Modulate = modulate;
         SyncContent(e, nine);
-        if (e.Content != null && e.Content.Material != blend)
+        if (e.Content != null && e.ContentMaterial != blend)
         {
-            e.Content.Material = blend;
+            e.Content.Material = e.ContentMaterial = blend;
             foreach (var ch in e.Content.GetChildren()) if (ch is CanvasItem ci) ci.UseParentMaterial = true;   // ShapeNode's bitmap sprites
         }
         switch (o)
         {
-            case AsContainer c: SyncChildren(c, e.Holder, masks, childNine, blend); break;
+            case AsContainer c: SyncChildren(c, e.Holder, e.Content, masks, childNine, blend); break;
             case AsSimpleButton b:
             {
                 var wanted = new List<Node>();
@@ -248,7 +286,7 @@ public partial class As3View : Node2D
             if (e.Content != null) { e.Content.GetParent()?.RemoveChild(e.Content); e.Content.QueueFree(); e.Content = null; }
             e.ContentKey = key;
             if (make != null) { e.Content = make(); if (e.Content != null) e.Holder.AddChild(e.Content); }
-            if (e.Content != null) e.Holder.SetMeta("as3content", e.Content); else if (e.Holder.HasMeta("as3content")) e.Holder.RemoveMeta("as3content");
+            e.ContentMaterial = e.Content?.Material;
         }
         if (e.Content is GraphicsNode or FieldNode) e.Content.QueueRedraw();
         if (e.Content is FieldText ft) ft.Sync();
@@ -416,6 +454,11 @@ public partial class MaskShape : Node2D
         return list;
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<JsonArray, double[]> points = new();
+
+    /// <summary>A layout path's point list as numbers, read once per path.</summary>
+    static double[] Points(JsonArray a) => points.GetValue(a, x => x.Select(v => (double)v).ToArray());
+
     static void Collect(AsDisplayObject o, Mat parentToSpace, List<Vector2[]> list, bool root)
     {
         if (!root && !o.IsVisible) return;
@@ -427,8 +470,9 @@ public partial class MaskShape : Node2D
             foreach (var p in ps)
             {
                 if (p["pts"] is not JsonArray a || a.Count < 6) continue;
-                var pts = new Vector2[a.Count / 2];
-                for (int i = 0; i < pts.Length; i++) pts[i] = P((double)a[2 * i], (double)a[2 * i + 1]);
+                var d = Points(a);
+                var pts = new Vector2[d.Length / 2];
+                for (int i = 0; i < pts.Length; i++) pts[i] = P(d[2 * i], d[2 * i + 1]);
                 list.Add(pts);
                 drew = true;
             }
