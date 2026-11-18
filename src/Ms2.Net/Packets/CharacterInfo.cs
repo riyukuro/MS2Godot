@@ -242,7 +242,11 @@ public sealed class MyCharacter {
     /// CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006) for the own object's PCGemEquip: mode 0 EquipItem
     /// (gemslot_2.cpp:270): a gem item (GetGem() != 0) goes in by its gem type (EquipByGemType), replacing the one of that
     /// type; mode 1 RemoveByGemType (:257) of the packet's u8. Returns whether the gems changed.
-    /// STILL-OPEN: mode 0's FUN_140523c40 (the item made from its id and rarity; an unknown id stops it) is not checked.
+    /// STILL-OPEN: mode 0's FUN_140523c40 (the item made from its id and rarity; an unknown id stops it) is not checked; the
+    /// damage-font gem (gem type 2, own or pPC->vfunc_65() == 1: CUIService::FUN_141ad9c40 -> GFxMovieDamage::LoadDamageFont
+    /// of FUN_140719190(gem id), scenestategame.cpp:11031-11039, uiservice.cpp:609), so the damage numbers keep their font;
+    /// the actor hooks (pPC->FUN_14166ccb0()->vfunc_29 / vfunc_30) and the own ItemEventDispatcher's vfunc_29 / vfunc_30;
+    /// other PCs' PCGemEquip (their packets are dropped here).
     /// </summary>
     public bool Apply(BadgeEquipMessage b) {
         if (User == null || b.ObjectId != ObjectId) return false;
