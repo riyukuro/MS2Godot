@@ -195,9 +195,9 @@ public sealed class EquipApplier
             if (!string.IsNullOrEmpty(node) && node != (string)asset.Attribute("targetnode")) continue;    // for another node (held)
             var t = Floats((string)d.Attribute("translation"));
             var r = Floats((string)d.Attribute("rotation"));
-            const double d2r = Math.PI / 180;
-            var q = Quat.FromAxis(0, r[0] * d2r) * Quat.FromAxis(1, r[1] * d2r) * Quat.FromAxis(2, r[2] * d2r);
-            return ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), q.ToMatrix(), 1));
+            // degrees to radians, then efd::Matrix3::FromEulerAnglesXYZ (equipmodel.cpp:589-591): Gamebryo's rotations
+            // turn clockwise about each axis
+            return ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), DummyWorld.EulerXyz(r[0], r[1], r[2]), 1));
         }
         return Transform3D.Identity;
     }

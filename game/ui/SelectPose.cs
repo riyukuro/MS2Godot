@@ -159,11 +159,9 @@ public sealed partial class SelectPosePlayer : Node
             player.GetAnimationLibrary("").AddAnimation("fx", a);
             player.Play("fx");
         }
-        // Euler XYZ degrees as the item dummies take them (EquipApplier.DummyOf)
-        const double d2r = Math.PI / 180;
+        // degrees to radians, then FromEulerAnglesXYZ (nifeffectparam.cpp:708): Gamebryo's clockwise rotations
         var r = part.Rotation; var t = part.Translate;
-        var q = Quat.FromAxis(0, r[0] * d2r) * Quat.FromAxis(1, r[1] * d2r) * Quat.FromAxis(2, r[2] * d2r);
-        var xml = ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), q.ToMatrix(), part.Scale));
+        var xml = ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), DummyWorld.EulerXyz(r[0], r[1], r[2]), part.Scale));
         // under the character's Model node (the scene root, file space): the built root turns Z-up to Y-up again,
         // so it carries that turn undone
         var zup = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero);
