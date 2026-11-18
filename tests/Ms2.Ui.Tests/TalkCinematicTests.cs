@@ -32,7 +32,8 @@ public class TalkCinematicTests
         Distractors = { ("Sell me on this Tria business.", true), ("What happened to the empress's celebration?", true), ("Hey there. I'm new in town.", true) },
     };
 
-    static (UiHost, TalkCinematicController, Player, Runtime) Load(TalkCinematicController.TalkContent first, int buttons)
+    static (UiHost, TalkCinematicController, Player, Runtime) Load(TalkCinematicController.TalkContent first, int buttons,
+                                                                   Action<TalkCinematicController> setup = null)
     {
         Packs();
         var c = new TalkCinematicController
@@ -43,8 +44,11 @@ public class TalkCinematicTests
             FileExists = p => p.EndsWith("guard_normal.dds"),
             ClientWidth = 1280, ClientHeight = 720, MovieScale = 1.43,
         };
+        setup?.Invoke(c);
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1837; p.StageH = 1034;
+        // the movie translator (GFxManager::Localize; the game's As3View reads korflash): the one key these pages format
+        p.Translate = k => k == "$s_talk_script_reward_exp" ? "{0} Experience" : null;
         var h = new UiHost(p, c, new UiModel(new GameTables(Packs(), "en")));
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 60 && !c.IsLoaded; i++) p.Tick();
@@ -132,5 +136,96 @@ public class TalkCinematicTests
         Assert.That(c.Talking, Is.False);
         for (int i = 0; i < 40 && !closed; i++) p.Tick();
         Assert.That(closed, Is.True, "the hide timeline ends with onCloseComplete (onHideScript, frame 56)");
+    }
+
+    const int Quest = 90000000;     // "A New Path": exp 450, meso 1000, item 20000028 x10 (questdata.xml)
+
+    static TalkCinematicController.QuestReward NewPathReward() => new() { Exp = 450, Meso = 1000, Items = { (20000028, 1, 10) } };
+
+    [Test]
+    public void TheAcceptPageAcceptsTheQuestAndAsksForTheNextPage()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "Will you help me?", QuestId = Quest }, 6);
+        var accepted = new List<(int, int)>(); int next = -1;
+        c.SendQuestAccept += (q, n) => accepted.Add((q, n));
+        c.SendNext += i => next = i;
+        var buttons = h.Get(Script(h), "m_buttons");
+        TestContext.WriteLine($"buttons: [{Rt.ToString(h.Get(h.Get(buttons, "m_next"), "label"))}] [{Rt.ToString(h.Get(h.Get(buttons, "m_end"), "label"))}]");
+        Assert.That(Rt.ToString(h.Get(h.Get(buttons, "m_next"), "label")), Does.StartWith("Accept"), "s_quest_talk_accept (0x5d3)");
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(accepted, Is.EqualTo(new[] { (Quest, Guard) }), "Quest mode 2 (quest, talk npc)");
+        Assert.That(next, Is.EqualTo(0), "then NpcTalk mode 2 with 0");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void AnActiveQuestIsNotAcceptedAgain()
+    {
+        var (h, c, p, _) = Load(new() { Script = "Will you help me?", QuestId = Quest }, 6, x => x.IsQuestActive = q => q == Quest);
+        bool sent = false;
+        c.SendQuestAccept += (q, n) => sent = true;
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(sent, Is.False, "IsQuestActive: the accept does nothing");
+    }
+
+    [Test]
+    public void TheCompletePageShowsTheQuestRewardAndCompletes()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "Well done.", QuestId = Quest }, 7, x =>
+        {
+            x.QuestOf = q => q == Quest ? new("A New Path", 10, "_epic") : null;
+            x.QuestRewardOf = q => q == Quest ? NewPathReward() : null;
+        });
+        var buttons = h.Get(Script(h), "m_buttons");
+        Assert.That(Rt.ToString(h.Get(h.Get(buttons, "m_next"), "label")), Does.StartWith("Complete"), "s_quest_talk_complete (0x5d4)");
+        Assert.That(c.Model.ItemSlots.ContainsKey("TalkCinematic_0"), Is.True, "FillRewardItems: slot <type name>_0 for the first item");
+        Assert.That(c.Model.ItemSlots["TalkCinematic_0"].Item.Count, Is.EqualTo(10u));
+        var item1 = h.FindNamed("m_rewardItem1");
+        Assert.That(item1, Is.Not.Null, "appendReward adds talk_movie_reward");
+        Assert.That(Rt.ToBoolean(h.Get(item1, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(h.FindNamed("m_rewardItem2"), "visible")), Is.False);
+        var exp = h.FindNamed("tfExp"); var meso = h.FindNamed("tfMeso");
+        TestContext.WriteLine($"exp [{(exp == null ? "-" : Rt.ToString(h.Get(exp, "text")))}] meso [{(meso == null ? "-" : Rt.ToString(h.Get(meso, "text")))}]");
+        if (exp != null) Assert.That(Rt.ToString(h.Get(exp, "text")), Does.Contain("450"));
+        if (meso != null) Assert.That(Rt.ToString(h.Get(meso, "text")), Does.Contain("1,000"));
+        var done = new List<(int, int, int)>();
+        c.SendQuestComplete += (q, n, ch) => done.Add((q, n, ch));
+        TestContext.WriteLine($"typed: {c.IsTalkComplete}");
+        for (int i = 0; i < 120 && !c.IsTalkComplete; i++) p.Tick();      // the reward panel comes in after the typing
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(done, Is.EqualTo(new[] { (Quest, Guard, 0) }), "Quest mode 4 (quest, npc, choice 0)");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void TheSelectListsTheQuestsThenTheTalk()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "Hello there." }, 5, x =>
+        {
+            x.Flags = 2 | 4 | 8;
+            x.QuestIds.Add(Quest);
+            x.QuestOf = q => q == Quest ? new("A New Path", 10, "_epic") : null;
+            x.QuestStateString = q => 0x5d9;
+        });
+        var d0 = h.FindNamed("distractor0"); var d1 = h.FindNamed("distractor1");
+        Assert.That(d0, Is.Not.Null); Assert.That(d1, Is.Not.Null);
+        string t0 = Rt.ToString(h.Get(d0, "label")), t1 = Rt.ToString(h.Get(d1, "label"));
+        TestContext.WriteLine($"choices: [{t0}] [{t1}]");
+        Assert.That(t0, Does.Contain("A New Path"), "s_quest_distactor_quest_name with the quest's name");
+        Assert.That(t1, Is.Not.Empty, "the talk choice (s_action_talk_normal_cinematic)");
+        int picked = -1;
+        c.SendNext += i => picked = i;
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(picked, Is.EqualTo(0), "Next picks the focused choice: the quest");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ATalkRewardShowsOnAnOpenTalkRewardPageOnce()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "Here you go.", OpenTalkReward = true }, 4, x => x.OnRewardMeso(500));
+        Assert.That(h.FindNamed("m_rewardItem1"), Is.Not.Null, "FillTalkReward put a reward on the page");
+        Assert.That(c.Reward.Meso, Is.EqualTo(0), "and cleared the reward data (FUN_141b1dbd0)");
+        Assert.That(rt.Errors, Is.Empty);
     }
 }

@@ -1,4 +1,5 @@
 using Ms2.Avm2;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
@@ -30,6 +31,9 @@ public sealed class TalkCinematicController : UiController
         public string LeftIllust = "", RightIllust = "", SpeakerIllust = "";
         public int SpeakerNpc, MyTalk, OtherNpcTalk;
         public List<(string Text, bool HasGoto)> Distractors = new();
+        /// <summary>m_questId (the page of a quest script, talkscript.cpp:595), m_redirect and m_openTalkReward (scriptcontent.cpp:255).</summary>
+        public int QuestId, Redirect;
+        public bool OpenTalkReward;
     }
 
     // ---- UITalkManager's state (uitalkcinematic.cpp:1500-1700) --------------------------------------------------------
@@ -43,6 +47,73 @@ public sealed class TalkCinematicController : UiController
     /// <summary>m_nSound, the server's button set (GetSound): CreateComponent (:700) picks the component by it.</summary>
     public int ButtonSet;
     bool pending;                // m_nPending
+    /// <summary>m_nFlags, the talk type of the server's mode 1 / 2 (:976): 1 dialog, 2 talk, 4 quest, 8 select, 0x10 component, 0x20 pick talk.</summary>
+    public int Flags;
+    /// <summary>
+    /// m_ids (FUN_141b217e0 :1854): the quests of the talk, which the quest packet's mode 1 sets (questmanager_2.cpp:996,
+    /// FUN_1416ce140) and the server's mode 2 replaces with the one quest it opened.
+    /// </summary>
+    public List<int> QuestIds = new();
+
+    /// <summary>
+    /// UITalkManager::CTalkRewardData (m_reward, :929), what the talk handed out so far: the server's mode 3 sub modes 5-9
+    /// (OnRewardItems :1250, OnRewardMerat, OnRewardMeso, OnRewardExp, OnRewardAffinity) add to it, FillTalkReward shows
+    /// it on a page with openTalkReward and clears it (FUN_141b1dbd0 :941), as ResetTalk does. Display only: the server
+    /// grants what it sends here with its own packets.
+    /// </summary>
+    public sealed class TalkReward
+    {
+        public long Merat, Meso;
+        public int Exp, Affinity;
+        public bool Jackpot;
+        public List<Item> Items = new();
+        public void Clear() { Items.Clear(); Merat = Meso = 0; Exp = Affinity = 0; Jackpot = false; }
+    }
+    public readonly TalkReward Reward = new();
+
+    /// <summary>OnRewardItems (:1250): each item with its amount; a meso item (CItem::IsMeso, item.cpp:857) adds to the meso
+    /// unless dialog 0x4e98 is open (the HUD's reward notify is not ported).</summary>
+    public void OnRewardItems(IEnumerable<(Item Item, bool IsMeso)> items)
+    {
+        foreach (var (it, meso) in items)
+        {
+            if (meso) Reward.Meso += it.Count;
+            else Reward.Items.Add(it);
+        }
+    }
+    public void OnRewardMerat(long v) => Reward.Merat += v;          // :1280
+    public void OnRewardMeso(long v) => Reward.Meso += v;            // :1290
+    public void OnRewardExp(int v) => Reward.Exp += v;               // :1300
+    public void OnRewardAffinity(int v, bool jackpot) { Reward.Affinity += v; if (jackpot) Reward.Jackpot = true; }   // :1307
+
+    /// <summary>A quest of the talk's choice list (component 5): the name (GetQuestName), its level (m_level), the kind
+    /// suffix of its icon (SelectStringByQuestId: "_epic", "", "_repeat", "_event").</summary>
+    public sealed record QuestEntry(string Name, int Level, string IconSuffix);
+    /// <summary>GetQuestData + the quest's text: null for an unknown quest.</summary>
+    public Func<int, QuestEntry> QuestOf = _ => null;
+    /// <summary>FUN_1416e6100(quest, 1) (questuidata.cpp:421): the quest's state string id with the talk npc: 0x5dc rewarded,
+    /// 0x5db completable, 0x5da in progress, 0x5d9 can be started, 0x5d8 not yet.</summary>
+    public Func<int, int> QuestStateString = _ => 0;
+    /// <summary>CQuestManagerCommon IsQuestActive / IsQuestRewarded.</summary>
+    public Func<int, bool> IsQuestActive = _ => false, IsQuestRewarded = _ => false;
+
+    /// <summary>
+    /// The complete talk's reward (CQuestCompleteCinematicComponent::vfunc_5, cinematiccomponent.cpp:664): exp
+    /// (FUN_140761ba0), meso (FUN_140761cc0), karma, lu, guild exp, guild fund, fame points, and the items: the quest's
+    /// choice rewards the player's job may use (FUN_140748050) and the guild coin item (0x1c9c6dd, FUN_140761c60).
+    /// </summary>
+    public sealed class QuestReward
+    {
+        public long Exp, Meso, Karma, Lu, GuildExp, GuildFund;
+        public int FamePoint;
+        public List<(int ItemId, int Rarity, int Count)> Items = new();
+    }
+    public Func<int, QuestReward> QuestRewardOf = _ => null;
+
+    /// <summary>SendQuestAccept (:577): Quest mode 2 with the quest and the talk npc (UITalkManager::GetNpcId).</summary>
+    public event Action<int, int> SendQuestAccept;
+    /// <summary>CQuestCompleteCinematicComponent::vfunc_2 (:630): Quest mode 4 with the quest, the talk npc and the choice (0).</summary>
+    public event Action<int, int, int> SendQuestComplete;
 
     /// <summary>FUN_1401aa6a0: the npc's "title name".</summary>
     public Func<int, string> NpcName = id => id.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -296,36 +367,188 @@ public sealed class TalkCinematicController : UiController
         Talking = false;
         Content = null;
         pending = false;
+        Reward.Clear();                 // m_reward.FUN_141b1dbd0 (:1537)
     }
 
     // ---- the cinematic components (cinematiccomponent.cpp) -----------------------------------------------------------
 
     /// <summary>
-    /// CreateComponent (:700): 4 CNextCinematicComponent, 3 CCloseCinematicComponent, 9
-    /// CSelectableDistractorCinematicComponent here; any other set (the quest, job, beauty ... components) is not ported,
+    /// CreateComponent (:700): 6 CQuestAccept, 7 CQuestComplete, 8 CQuestProgress, 4 CNext, 3 CClose, 9
+    /// CSelectableDistractor, 5 CSelectableTalk here; any other set (job, beauty, ugc sign, roulette ...) is not ported,
     /// and an unknown one ends the talk (SendNpcTalkMode0).
     /// </summary>
     Component CreateComponent(int set)
     {
         switch (set)
         {
+            case 6: return new Component(this, Component.Kind.QuestAccept);
+            case 7: return new Component(this, Component.Kind.QuestComplete);
+            case 8: return new Component(this, Component.Kind.QuestProgress);
             case 4: return new Component(this, Component.Kind.Next);
             case 3: return new Component(this, Component.Kind.Close);
             case 9: return new Component(this, Component.Kind.SelectableDistractor);
+            case 5: return new Component(this, Component.Kind.SelectableTalk);
         }
         EndTalk();
         return null;
     }
+
+    /// <summary>
+    /// CQuestAcceptCinematicComponent::vfunc_2 (:533): nothing for a quest already active; a quest with unrequire groups
+    /// first asks with s_alliance_quest_unreq_group_warn (not ported: STILL-OPEN, it accepts at once); else SendQuestAccept
+    /// (:577): Quest mode 2, then (no redirect) mode 2 of the talk.
+    /// </summary>
+    void QuestAccept(TalkContent c)
+    {
+        if (IsQuestActive(c.QuestId)) return;
+        SendQuestAccept?.Invoke(c.QuestId, TalkNpcId);
+        RequestNext(0);
+    }
+
+    /// <summary>CQuestCompleteCinematicComponent::vfunc_2 (:630): nothing for an unknown or rewarded quest; else Quest mode 4
+    /// (quest, npc, choice 0), then (no redirect) mode 2 of the talk.</summary>
+    void QuestComplete(TalkContent c)
+    {
+        if (QuestOf(c.QuestId) == null) return;
+        if (IsQuestRewarded(c.QuestId)) return;
+        SendQuestComplete?.Invoke(c.QuestId, TalkNpcId, 0);
+        RequestNext(0);
+    }
+
+    static string Num(long v) => NumberText.Group(v.ToString(System.Globalization.CultureInfo.InvariantCulture));   // FUN_1409404f0
+
+    string ItemSlot(Item item, string key)
+    {
+        if (item == null) return null;
+        Model.ItemSlots[key] = new ItemInfoSlot(key, item, 0, 0x11, 0x800);   // CreateItemInfoSlot(key, item, 0, 0x11, 0x800)
+        return key;
+    }
+
+    /// <summary>
+    /// FillTalkReward (:353): with the page's openTalkReward, a "reward" of what the talk handed out: title
+    /// s_talk_reward_title (0x94b), "exp" the merat, "meso", "mood" (title s_manufacture_cinematic_title 0x7c1;
+    /// s_manufacture_cinematic_mood_plus / _minus 0x7c4 / 0x7c5 with the value), "affinityExp" (the npc's maid: not here),
+    /// and reward1.. the items as slots "&lt;type name&gt;_&lt;n&gt;"; then the data is cleared. True when anything was shown.
+    /// </summary>
+    bool FillTalkReward(AsObject page)
+    {
+        if (shown == null || !shown.OpenTalkReward) return false;
+        bool any = false;
+        var h = Host;
+        var reward = h.Obj();
+        h.Set(reward, "title", Button("s_talk_reward_title"));
+        if (Reward.Merat != 0) { any = true; h.Set(reward, "exp", Num(Reward.Merat)); }
+        if (Reward.Meso != 0) { any = true; h.Set(reward, "meso", Num(Reward.Meso)); }
+        if (Reward.Exp != 0)
+        {
+            h.Set(reward, "title", Button("s_manufacture_cinematic_title"));
+            any = true;
+            string mood = "";
+            if (Reward.Exp > 0) mood = Ms2.Quest.ClientFormat.Format(Button("s_manufacture_cinematic_mood_plus"), Reward.Exp);
+            else if (Reward.Exp < 0) mood = Ms2.Quest.ClientFormat.Format(Button("s_manufacture_cinematic_mood_minus"), Math.Abs(Reward.Exp));
+            h.Set(reward, "mood", mood);
+        }
+        if (Reward.Affinity != 0)
+        {
+            h.Set(reward, "title", Button("s_manufacture_cinematic_title"));
+            any = true;
+            h.Set(reward, "affinityExp", "");       // the talk npc's maid (CNpc::GetMaid): no maid npcs here
+        }
+        for (int i = 0; i < Reward.Items.Count; i++)
+        {
+            any = true;
+            string key = $"{TypeName}_{i + 1}";
+            ItemSlot(Reward.Items[i], key);
+            h.Set(reward, $"reward{i + 1}", key);
+        }
+        Reward.Clear();
+        if (any) h.Set(page, "reward", reward);
+        return any;
+    }
+
+    /// <summary>
+    /// CQuestCompleteCinematicComponent::vfunc_5 (:664): "reward" titled s_quest_talk_reward_title (0x5d7) with exp and meso
+    /// (with separators), karma, lu, guildExp, guildFund, famePoint when not 0, the items (FillRewardItems :333: slots
+    /// "&lt;type name&gt;_&lt;i&gt;" as reward&lt;i+1&gt;), then the button s_quest_talk_complete (0x5d4).
+    /// </summary>
+    void FillQuestReward(AsObject page, int questId)
+    {
+        var r = QuestRewardOf(questId);
+        if (r == null) return;
+        var h = Host;
+        var reward = h.Obj();
+        h.Set(reward, "title", Button("s_quest_talk_reward_title"));
+        if (r.Exp != 0) h.Set(reward, "exp", Num(r.Exp));
+        if (r.Meso != 0) h.Set(reward, "meso", Num(r.Meso));
+        if (r.Karma != 0) h.Set(reward, "karma", (double)r.Karma);
+        if (r.Lu != 0) h.Set(reward, "lu", (double)r.Lu);
+        if (r.GuildExp != 0) h.Set(reward, "guildExp", (double)r.GuildExp);
+        if (r.GuildFund != 0) h.Set(reward, "guildFund", (double)r.GuildFund);
+        if (r.FamePoint != 0) h.Set(reward, "famePoint", r.FamePoint);
+        for (int i = 0; i < r.Items.Count; i++)
+        {
+            var (id, rarity, count) = r.Items[i];
+            var item = Item.Create(Model.Tables.Items, id, rarity);
+            if (item == null) continue;
+            item.SetCountClamped(count);
+            string key = $"{TypeName}_{i}";
+            ItemSlot(item, key);
+            h.Set(reward, $"reward{i + 1}", key);
+        }
+        h.Set(page, "reward", reward);
+        h.Set(page, "button", Button("s_quest_talk_complete"));
+    }
+
+    /// <summary>
+    /// CSelectableTalkCinematicComponent::vfunc_5 (:849), the choice list: with flag 4 each quest of the talk with its
+    /// state's icon (talk_icon_quest_complete / _progress / _accept, plus the kind suffix) and s_quest_distactor_quest_name
+    /// (name, state string, level); with flag 2 the talk choice (talk_icon_distractor, s_action_talk_normal_cinematic
+    /// 0x62e). The pick talk's choices (flag 0x20) and the job choice (flag 1) are not offered here.
+    /// </summary>
+    void FillTalkChoices(AsObject page)
+    {
+        var h = Host;
+        var list = new List<object>();
+        if ((Flags & 4) != 0)
+        {
+            foreach (int q in QuestIds)
+            {
+                int state = QuestStateString(q);
+                if (state == 0x5dc) state = 0x5d9;
+                string icon = state switch
+                {
+                    0x5db => "talk_icon_quest_complete",
+                    0x5da => "talk_icon_quest_progress",
+                    0x5d9 => "talk_icon_quest_accept",
+                    _ => "talk_icon_quest_progress",
+                };
+                var e = QuestOf(q);
+                if (e == null) continue;
+                string text = Ms2.Quest.ClientFormat.Format(Button("s_quest_distactor_quest_name"), e.Name, Button(StateKey(state)), e.Level);
+                list.Add(h.Obj(("iconClass", icon + e.IconSuffix), ("text", text)));
+            }
+        }
+        if ((Flags & 2) != 0) list.Add(h.Obj(("iconClass", "talk_icon_distractor"), ("text", Button("s_action_talk_normal_cinematic"))));
+        h.Set(page, "distractor", new AsArray(h.RT, list));
+    }
+
+    /// <summary>The common string keys of the quest states 0x5d8-0x5dc (commonstringtable.cpp:3109).</summary>
+    static string StateKey(int id) => id switch
+    {
+        0x5d8 => "s_quest_state_init", 0x5d9 => "s_quest_state_beginAble", 0x5da => "s_quest_state_progress",
+        0x5db => "s_quest_state_completeAble", 0x5dc => "s_quest_state_complete", _ => "",
+    };
 
     /// <summary>FUN_14107dfa0 (:418): the common string with its key names (GameStrings.Common replaces $key:N$).</summary>
     string Button(string key) => Model.Tables.Common(key) ?? "";
 
     sealed class Component
     {
-        public enum Kind { Next, Close, SelectableDistractor }
+        public enum Kind { Next, Close, SelectableDistractor, SelectableTalk, QuestAccept, QuestComplete, QuestProgress }
         readonly TalkCinematicController owner;
         readonly Kind kind;
         bool started;            // m_nStarted
+        bool reward;             // m_nReward (CNext / CClose: FillTalkReward showed something)
 
         public Component(TalkCinematicController owner, Kind kind) { this.owner = owner; this.kind = kind; }
 
@@ -348,8 +571,25 @@ public sealed class TalkCinematicController : UiController
             h.Set(page, "movie", c.MovieFile);
             switch (kind)
             {
-                case Kind.Next: h.Set(page, "button", owner.Button("s_quest_talk_progress")); break;
-                case Kind.Close: h.Set(page, "button", owner.Button("s_quest_talk_end")); break;
+                case Kind.Next:                 // :453
+                    reward = owner.FillTalkReward(page);
+                    h.Set(page, "button", owner.Button("s_quest_talk_progress"));
+                    break;
+                case Kind.Close:                // :484; CQuestProgress has no vfunc_5 of its own
+                case Kind.QuestProgress:
+                    reward = owner.FillTalkReward(page);
+                    h.Set(page, "button", owner.Button("s_quest_talk_end"));
+                    break;
+                case Kind.QuestAccept:          // :557, 0x5d3
+                    h.Set(page, "button", owner.Button("s_quest_talk_accept"));
+                    break;
+                case Kind.QuestComplete:        // :664
+                    owner.FillQuestReward(page, c.QuestId);
+                    break;
+                case Kind.SelectableTalk:       // :849
+                    owner.FillTalkChoices(page);
+                    h.Set(page, "button", owner.Button("s_quest_talk_progress"));
+                    break;
                 case Kind.SelectableDistractor:
                 {
                     var list = new List<object>();
@@ -373,6 +613,14 @@ public sealed class TalkCinematicController : UiController
         /// </summary>
         public void Message(int msg)
         {
+            if (kind == Kind.QuestProgress)
+            {
+                // CQuestProgressCinematicComponent::vfunc_2 (:604) skips the base: nothing once started (it never sets the
+                // flag), and a next requests mode 2 (Quest mode 0x12 first for a quest whose m_318 is set, not read here)
+                if (started || msg != 0x493e2) return;
+                owner.RequestNext(0);
+                return;
+            }
             if (msg == 0x493e2)
             {
                 if (started) return;
@@ -382,14 +630,32 @@ public sealed class TalkCinematicController : UiController
             if (msg == 0x79) { owner.Host.Invoke("onFocusUp"); return; }
             if (msg == 0x7e) { owner.Host.Invoke("onFocusDown"); return; }
             if (msg != 0x493e2) return;
-            if (kind == Kind.SelectableDistractor) owner.Host.Invoke("onSelect");
-            else owner.RequestNext(0);
+            switch (kind)
+            {
+                case Kind.SelectableDistractor:
+                case Kind.SelectableTalk:
+                    owner.Host.Invoke("onSelect");          // CDistractor (:497): SelectOption
+                    break;
+                case Kind.Close:
+                    // :466: the reward sound; FUN_141b213c0 (the npc preview) is not a plain talk, so mode 2
+                    owner.RequestNext(0);
+                    break;
+                case Kind.QuestAccept:
+                    owner.QuestAccept(owner.shown);
+                    break;
+                case Kind.QuestComplete:
+                    owner.QuestComplete(owner.shown);
+                    break;
+                default:
+                    owner.RequestNext(0);                   // CNext (:437)
+                    break;
+            }
         }
 
         /// <summary>vfunc_1: CSelectableDistractor (:722) requests mode 2 with the choice; the others do nothing (:281).</summary>
         public void Select(int index)
         {
-            if (kind == Kind.SelectableDistractor) owner.RequestNext(index);
+            if (kind is Kind.SelectableDistractor or Kind.SelectableTalk) owner.RequestNext(index);   // :722, :781
         }
     }
 }
