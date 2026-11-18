@@ -24,8 +24,9 @@ public partial class MovieDialog : Node2D
 
     public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window, ICharacterFolder folder = null)
     {
-        var packs = assets.Packs;
-        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        // the movies are parsed once per pack set and shared by every open (the client's loader keeps a movie's definition
+        // once loaded); the runtime, player and display list are still made on each open
+        var src = MovieSource.FromParsed(assets.Dependency);
         var (rt, p) = src.Open(controller.Movie, r => r.Budget = 20_000_000);
         Player = p;
         Resize(window);

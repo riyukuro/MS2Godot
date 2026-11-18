@@ -10,19 +10,26 @@ namespace Ms2.Avm2.Flash;
 /// </summary>
 public sealed class MovieSource
 {
-    readonly Func<string, byte[]> read;
+    readonly Func<string, SwfMovie> parse;
     readonly Dictionary<string, SwfMovie> movies = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<string, List<(string Name, AbcFile Abc)>> abcs = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="read">Bytes of a movie by key without extension ("uilogindialog"); null when absent.</param>
-    public MovieSource(Func<string, byte[]> read) { this.read = read; }
+    public MovieSource(Func<string, byte[]> read) { parse = k => read(k) is { } b ? SwfMovie.Parse(b) : null; }
+
+    MovieSource(Func<string, SwfMovie> parsed) { parse = parsed; }
+
+    /// <summary>
+    /// A source over movies already parsed elsewhere (a cache shared by every load: the parse is pure and nothing changes a
+    /// parsed movie). <paramref name="parsed"/> gives a movie by key without extension, null when absent.
+    /// </summary>
+    public static MovieSource FromParsed(Func<string, SwfMovie> parsed) => new(parsed);
 
     public SwfMovie Movie(string key)
     {
         key = Path.GetFileNameWithoutExtension(key);
         if (movies.TryGetValue(key, out var m)) return m;
-        var b = read(key);
-        movies[key] = m = b == null ? null : SwfMovie.Parse(b);
+        movies[key] = m = parse(key);
         return m;
     }
 
