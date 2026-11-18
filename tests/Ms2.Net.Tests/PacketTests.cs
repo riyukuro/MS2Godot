@@ -23,6 +23,22 @@ public class PacketTests {
         Assert.That(a.Kind, Is.EqualTo((byte) 3)); Assert.That(a.Message, Is.EqualTo("name taken"));
     }
 
+    static CharacterListMessage ListMsg(Action<ByteWriter> f) { var w = new ByteWriter(); f(w); return CharacterListMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())); }
+
+    [Test] public void CharacterListDeleteRepliesRead() {
+        var d = ListMsg(w => { w.WriteByte(2); w.WriteInt(0); w.WriteLong(20000000007); });
+        Assert.That((d.Command, d.Error, d.CharacterId), Is.EqualTo((CharacterListCommand.DeleteEntry, 0, 20000000007L)));
+        var b = ListMsg(w => { w.WriteByte(5); w.WriteLong(9); w.WriteInt(10); w.WriteLong(1700000000); });
+        Assert.That((b.Command, b.CharacterId, b.Error, b.DeleteTime), Is.EqualTo((CharacterListCommand.BeginDelete, 9L, 10, 1700000000L)));
+        var c = ListMsg(w => { w.WriteByte(6); w.WriteLong(9); w.WriteInt(8); });
+        Assert.That((c.Command, c.CharacterId, c.Error), Is.EqualTo((CharacterListCommand.CancelDelete, 9L, 8)));
+    }
+
+    [Test] public void ManageCharacterDeleteLayout() {
+        var w = new ByteWriter(); new ManageCharacter(CharacterIdCommand.ConfirmDelete, 5).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 4, 5, 0, 0, 0, 0, 0, 0, 0 }));
+    }
+
     [Test] public void SelectCharacterLayout() {
         var bytes = Bytes(new SelectCharacter(0x0102030405060708, 3));
         Assert.That(bytes, Is.EqualTo(new byte[] { 0, 8, 7, 6, 5, 4, 3, 2, 1, 3, 0 }));

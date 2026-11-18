@@ -42,6 +42,25 @@ public sealed class LoginClient {
         }
     }
 
+    /// <summary>Sends BeginDelete/CancelDelete/ConfirmDelete for a character and waits for the matching CharacterList reply (DeleteEntry, BeginDelete or CancelDelete for that id).
+    /// The reply is returned as read; the caller applies it (DeleteEntry with Error 0 removes the entry).</summary>
+    public async Task<CharacterListMessage> ManageAsync(CharacterIdCommand command, long characterId, int timeoutMs = 15000, CancellationToken ct = default) {
+        await transport.SendAsync(new ManageCharacter(command, characterId), ct);
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (true) {
+            ct.ThrowIfCancellationRequested();
+            if (!transport.Incoming.TryDequeue(out var p)) {
+                if (transport.IsClosed) throw new IOException("login connection closed", transport.Failure);
+                if (Environment.TickCount64 > deadline) throw new TimeoutException("character delete timed out");
+                await Task.Delay(5, ct);
+                continue;
+            }
+            if (!transport.Is(p, Inbound.CharacterList)) continue;
+            var m = CharacterListMessage.Read(p.Reader());
+            if (m.Command is CharacterListCommand.DeleteEntry or CharacterListCommand.BeginDelete or CharacterListCommand.CancelDelete && m.CharacterId == characterId) return m;
+        }
+    }
+
     readonly TcpTransport transport;
     public LoginClient(TcpTransport transport) { this.transport = transport; }
 

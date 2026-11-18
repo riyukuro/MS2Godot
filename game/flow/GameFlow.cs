@@ -129,6 +129,14 @@ public partial class GameFlow : Node
         {
             if (method == UICharacterListDialogContract.ToHost.OnSelectCharacter) { }   // the character select scene keeps Session.SelectedIndex
             else if (method == UICharacterListDialogContract.ToHost.OnCreatePC) Go(State.Create);
+            else if (method == UICharacterListDialogContract.ToHost.OnDeletePC)
+            {
+                // the real dialog asks for a confirmation first; here the request goes out at once
+                var list = Session.List();
+                var victim = Session.SelectedIndex >= 0 && Session.SelectedIndex < list.Count ? list[Session.SelectedIndex] : null;
+                if (victim == null || Net.LiveSession.Instance is not { } live) return;
+                if (!live.Busy) _ = live.DeleteAsync(victim).ContinueWith(t => { if (t.Result is { Command: Ms2.Net.Packets.CharacterListCommand.DeleteEntry, Error: 0 }) CallDeferred(nameof(DeferredGo), (int)State.Lobby); });
+            }
             else if (method == UICharacterListDialogContract.ToHost.OnGameStart && a.Length > 0)
             {
                 var chosen = Session.List().FirstOrDefault(c => c.User.CharacterId.ToString() == (string)a[0]);

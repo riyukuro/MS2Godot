@@ -89,6 +89,29 @@ public partial class LiveSession : Node
         finally { Busy = false; }
     }
 
+    /// <summary>Delete request for a character (OnDeletePC): BeginDelete (CharacterManagement 2). A low-level character goes at once (CharacterList DeleteEntry, error 0: the entry leaves the list);
+    /// otherwise the server answers BeginDelete with the deadline. Returns the reply, null when the request failed. A refusal (error != 0) is logged and the list stays.</summary>
+    public async Task<CharacterListMessage> DeleteAsync(CharacterEntry entry)
+    {
+        Busy = true;
+        try
+        {
+            long id = entry.User.CharacterId;
+            var m = await new LoginClient(login).ManageAsync(CharacterIdCommand.BeginDelete, id);
+            if (m.Command == CharacterListCommand.DeleteEntry && m.Error == 0)
+            {
+                Session.Characters.RemoveAll(c => c.User.CharacterId == id);
+                if (Session.SelectedIndex >= Session.Characters.Count) Session.SelectedIndex = Math.Max(0, Session.Characters.Count - 1);
+                GD.Print($"live: character deleted: {entry.User.Name} id {id}");
+            }
+            else if (m.Command == CharacterListCommand.BeginDelete && m.Error == 0) GD.Print($"live: delete pending for {entry.User.Name}, until unix {m.DeleteTime}");
+            else GD.PushWarning($"live: delete {m.Command} error {m.Error} (time {m.DeleteTime})");
+            return m;
+        }
+        catch (Exception ex) { GD.PushWarning("live: delete failed: " + ex.Message); return null; }
+        finally { Busy = false; }
+    }
+
     /// <summary>Select the character and migrate to the game server, up to RequestFieldEnter. The chosen character's map becomes the server's.</summary>
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
@@ -241,6 +264,16 @@ public partial class LiveSession : Node
             Ms2Godot.Ui.Create.CharacterCreateScene.ConfirmScripted(newName);
             await Until(() => flow.Current == GameFlow.State.Lobby && Session.List().Count > before, 600); await Frames(60);
             if (Session.List().Count <= before) { GD.PushWarning("live: create did not add a character"); tree.Quit(1); return; }
+        }
+        if (System.Environment.GetEnvironmentVariable("MS2_LIVE_DELETE") == "1")   // delete the last character through the dialog's OnDeletePC, then stop
+        {
+            int n0 = Session.List().Count;
+            Session.SelectedIndex = n0 - 1;
+            UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC);
+            await Until(() => Session.List().Count < n0, 600); await Frames(60);
+            bool gone = Session.List().Count == n0 - 1 && flow.Current == GameFlow.State.Lobby;
+            GD.Print(gone ? $"live: delete run done, {n0} -> {Session.List().Count}" : "live: delete run failed");
+            tree.Quit(gone ? 0 : 1); return;
         }
         var first = newName != null && newName != "" ? Session.List().Last() : Session.List().FirstOrDefault();
         if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }

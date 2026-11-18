@@ -229,7 +229,12 @@ public sealed class CharacterListMessage {
     public CharacterListCommand Command;
     public List<CharacterEntry> Entries = new();
     public bool CheckNames; // EndList
-    public byte[] Raw;      // DeleteEntry/BeginDelete/CancelDelete/NameChanged: not decoded
+    public byte[] Raw;      // NameChanged: not decoded
+    // DeleteEntry / BeginDelete / CancelDelete (UICharacterListDialog::OnCharacterListPacket, uicharacterlistdialog.cpp:894-1018; server CharacterListPacket.cs:48-71).
+    // DeleteEntry: i32 error, i64 id. BeginDelete: i64 id, i32 error, i64 deleteTime (unix seconds; error 10 = too early, the time is the next allowed date). CancelDelete: i64 id, i32 error.
+    public long CharacterId;
+    public int Error;       // CharacterDeleteError, 0 = ok
+    public long DeleteTime;
 
     public static CharacterListMessage Read(ByteReader r, string locale = "KR") {
         var m = new CharacterListMessage { Command = (CharacterListCommand) r.ReadByte() };
@@ -242,6 +247,9 @@ public sealed class CharacterListMessage {
             case CharacterListCommand.AppendEntry: m.Entries.Add(CharacterEntry.Read(r, locale)); break;
             case CharacterListCommand.StartList: break;
             case CharacterListCommand.EndList: m.CheckNames = r.ReadBool(); break;
+            case CharacterListCommand.DeleteEntry: m.Error = r.ReadInt(); m.CharacterId = r.ReadLong(); break;
+            case CharacterListCommand.BeginDelete: m.CharacterId = r.ReadLong(); m.Error = r.ReadInt(); m.DeleteTime = r.ReadLong(); break;
+            case CharacterListCommand.CancelDelete: m.CharacterId = r.ReadLong(); m.Error = r.ReadInt(); break;
             default: m.Raw = r.ReadBytes(r.Available); return m;
         }
         r.ExpectEnd($"CharacterList {m.Command}");
