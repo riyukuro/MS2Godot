@@ -23,7 +23,6 @@ public partial class QuestGuide : Node3D
 
     PackSet packs; FieldMap map; Node3D player; int fieldId; int npcId;
     FieldPortals portals; NpcTable npcs; TraceStrings strings;
-    Task<(FieldMeta meta, QuestMapGraph graph)> loading;
     (FieldMeta meta, QuestMapGraph graph)? ready;
     EffectInstance beam; Label label;
     readonly List<(Vec3 pos, int id)> spawns = new();
@@ -59,7 +58,6 @@ public partial class QuestGuide : Node3D
         g.label.AddThemeConstantOverride("outline_size", 6);
         layer.AddChild(g.label);
         g.AddChild(layer);
-        g.loading = QuestMapGraph.Shared(packs);
         return g;
     }
 
@@ -67,9 +65,9 @@ public partial class QuestGuide : Node3D
     {
         if (ready == null)
         {
-            if (loading == null || !loading.IsCompleted) { label.Text = strings.Initializing; return; }
-            if (loading.IsFaulted) { GD.PushWarning("quest map graph: " + loading.Exception?.GetBaseException().Message); loading = null; return; }
-            ready = loading.Result;
+            if (packs == null) { label.Text = strings.Initializing; return; }
+            try { ready = QuestMapGraph.Shared(packs); }      // built on first use, shared with the quest log and the world map
+            catch (Exception e) { GD.PushWarning("quest map graph: " + e.Message); packs = null; return; }
         }
         var (meta, graph) = ready.Value;
         var pp = FieldPortals.ToMs2(player.GlobalPosition);

@@ -124,17 +124,32 @@ public sealed class QuestMapGraph
         }
     }
 
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Task<(FieldMeta Meta, QuestMapGraph Graph)>> shared = new();
+    sealed class Built
+    {
+        public Lazy<FieldMeta> Meta;
+        public Lazy<QuestMapGraph> Graph;
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Built> shared = new();
+
+    static Built For(PackSet packs) => shared.GetValue(packs, p =>
+    {
+        var b = new Built { Meta = new Lazy<FieldMeta>(() => FieldMeta.Load(p)) };
+        b.Graph = new Lazy<QuestMapGraph>(() => From(b.Meta.Value));
+        return b;
+    });
+
+    /// <summary>The field meta table of <paramref name="packs"/>, read once, on the first call (without the map graph).</summary>
+    public static FieldMeta SharedMeta(PackSet packs) => For(packs).Meta.Value;
 
     /// <summary>
-    /// The field meta table and its map graph, read and built once per pack set on a worker thread (the client builds its
-    /// map paths once, at startup): the first call starts the build, later calls get the same task. Both are read-only
-    /// once built.
+    /// The field meta table and its map graph, each read or built once per pack set, on first use (the client builds its
+    /// map paths once): the quest log, the world map and the quest guide share them. Both are read-only once built.
     /// </summary>
-    public static Task<(FieldMeta Meta, QuestMapGraph Graph)> Shared(PackSet packs)
+    public static (FieldMeta Meta, QuestMapGraph Graph) Shared(PackSet packs)
     {
-        lock (shared)
-            return shared.GetValue(packs, p => Task.Run(() => { var m = FieldMeta.Load(p); return (m, From(m)); }));
+        var b = For(packs);
+        return (b.Meta.Value, b.Graph.Value);
     }
 
     public static QuestMapGraph From(FieldMeta meta) => new(meta.PortalFields, meta.PortalTargets);
