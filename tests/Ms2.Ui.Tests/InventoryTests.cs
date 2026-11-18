@@ -451,6 +451,11 @@ public class InventoryTests
             "CanUseItem again on the yes: its level check is a system notice (unit_140d1ae30:461)");
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
         Assert.That((sent.Count, raised.Last()), Is.EqualTo((3, "notifySlotUse")), "a function with its own handler: raised");
+        // the window closed while the box is up: its yes still uses the item (the client's goes through the global
+        // inventory, uimessagebox.cpp:1868; the HUD keeps this controller for it)
+        h.Unload();
+        Assert.That(c.ConfirmBindUse(23), Is.True);
+        Assert.That((sent.Count, sent.Last()), Is.EqualTo((4, (23L, ""))), "the yes after the window closed: sent");
     }
 
     [Test]

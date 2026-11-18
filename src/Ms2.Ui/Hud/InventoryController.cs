@@ -459,6 +459,11 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// FUN_140528980 refuses that has not expired.</summary>
     public const string InvalidUseKey = "s_item_err_puton_invalid";
 
+    /// <summary>CItem::FUN_140528980 (item.cpp:1717): an expired item that is not a pet and has no maid id is not usable.
+    /// STILL-OPEN: the music score part (a score item: FUN_140525730 / FUN_140527340 and its CItemCustomMusicScore's m_n38),
+    /// the one way to the 0xea box: the score block is read past, not kept.</summary>
+    static bool Usable(Item item, bool expired) => !(expired && !item.Data.IsPetItem && !item.Data.HasMaidId);
+
     /// <summary>
     /// CanUseItem (unit_140d1ae30_itemfunctiondispatch.cpp:430): no local player, false; CItem::FUN_140528980 false: box 225
     /// (0xe1) when expired, else box 0xea; the level: ShowSystemNotice(s_err_not_enough_level, 1, 1) (:461), a notice, not a
@@ -472,7 +477,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (Model == null || !Model.HasLocalPlayer) return false;
         var d = item.Data;
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= (View?.ServerTime() ?? 0);
-        if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return false; }   // FUN_140528980: only expiry here
+        if (!Usable(item, expired)) { ShowCommonBox(expired ? ExpiredKey : InvalidUseKey); return false; }
         var record = Wearer?.Invoke();
         if (record != null && !d.IsLevelAllowed(record.Level)) { SystemNotice?.Invoke(UseLevelKey); return false; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return false; }
@@ -592,13 +597,13 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(d.Type == 1 ? EquipJobKey : DisabledJobKey); return; }
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
-        if (!CanEquipItem(item, slot, layer)) return;
         var models = Model.Tables.ItemModels;
         var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
         bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime <= now && !w.Data.IsPetItem && !w.Data.HasMaidId)
             && (record?.CodiActive == true || !IsLayer2(w));
         bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
         int selected = slot == 0 ? worn.EquipSlotFor(item, models, Feature, CanUse) : slot;
+        if (!CanEquipItem(item, selected, layer)) return;      // inventory.cpp:1244: the slot picked, not the one asked for
         if (!skipBinding && NeedsBindConfirm(item))
         {
             // inventory.cpp:1245-1256: the box keeps the slot asked for (0: chosen again on the yes) and the layer

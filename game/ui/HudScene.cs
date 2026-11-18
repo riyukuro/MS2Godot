@@ -119,6 +119,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchParty = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
+        unbindBoxAnswers?.Invoke();
+        unbindBoxAnswers = null;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         restoreScale?.Invoke();
         restoreScale = null;
@@ -214,6 +216,7 @@ public partial class HudScene : Node, IUiStageHost
         EventWidgets(uiRoot);
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
+        BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
         if (worldMap != null) uiRoot.AddChild(worldMap);
@@ -1119,8 +1122,7 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"character: {name} is not sent (display only)");
-        // the gem bind box's yes (UIMessageBox::HandleUseBindGemEquipItemButton) goes back to the character window
-        if (MessageBoxLayer.Instance?.Controller is { } boxes) boxes.UseBindGemEquipItem = (uid, slot) => c.ConfirmBindGemEquip(uid, slot);
+        BindBoxAnswers();
         void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
         me.Changed += Changed; me.StatPoints.Changed += Changed;
         if (live != null) live.AchievesChanged += Changed;
@@ -1165,6 +1167,35 @@ public partial class HudScene : Node, IUiStageHost
 
     MovieDialog inventoryMovie;                 // from open until OnEndClose
     Ms2.Ui.Hud.InventoryController inventory;
+
+    /// <summary>
+    /// The bind boxes' yes (UIMessageBox::HandleUseBindFuncItemButton / HandleUseBindEquipItemButton /
+    /// HandleUseBindGemEquipItemButton, uimessagebox.cpp:1868-1925) find the item in the global inventory (g_143ab2a90) and
+    /// use or put it on, whether or not a window is open. Here they go to the last inventory and character window controllers:
+    /// those stay after their window closes, and what the confirm reads (the live inventory, the HUD model) is not the
+    /// window's. Set on the one message box layer when the HUD is built and again at each window open (the layer may be made
+    /// later); cleared when the HUD leaves, since the layer outlives it. No controller yet: the handler's 0 (no box of that
+    /// kind can be up).
+    /// </summary>
+    void BindBoxAnswers()
+    {
+        if (MessageBoxLayer.Instance?.Controller is not { } boxes || unbindBoxAnswers != null && boundBoxes == boxes) return;
+        unbindBoxAnswers?.Invoke();
+        Func<long, bool> use = uid => inventory?.ConfirmBindUse(uid) ?? false;
+        Func<long, uint, uint, bool> equip = (uid, slot, mode) => inventory?.ConfirmBindEquip(uid, slot, mode) ?? false;
+        Func<long, int, bool> gem = (uid, slot) => myInfo?.ConfirmBindGemEquip(uid, slot) ?? false;
+        boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem;
+        boundBoxes = boxes;
+        unbindBoxAnswers = () =>
+        {
+            if (boxes.UseBindFuncItem == use) boxes.UseBindFuncItem = null;
+            if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
+            if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
+            boundBoxes = null;
+        };
+    }
+    Action unbindBoxAnswers;
+    Ms2.Ui.Hud.MessageBoxController boundBoxes;
     Ms2.Net.Packets.InventoryView offlineInventory;
 
     /// <summary>CUIService::ToggleDialog(0x4e2d): open when closed (vfunc_55), else vfunc_67.</summary>
@@ -1201,13 +1232,7 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
         c.SystemNotice += SystemNotice;
-        // the bind boxes' yes (UIMessageBox::HandleUseBindFuncItemButton / HandleUseBindEquipItemButton) goes back to the
-        // inventory the box came from
-        if (MessageBoxLayer.Instance?.Controller is { } boxes)
-        {
-            boxes.UseBindFuncItem = uid => c.ConfirmBindUse(uid);
-            boxes.UseBindEquipItem = (uid, slot, mode) => c.ConfirmBindEquip(uid, slot, mode);
-        }
+        BindBoxAnswers();
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.Unloaded += () =>
         {
