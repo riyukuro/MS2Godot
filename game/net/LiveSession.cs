@@ -50,6 +50,10 @@ public partial class LiveSession : Node
     /// <summary>The inventory dialog model over Items; a UI binds it. Its tab switch sends RequestItemInventory (read request, 0x14199c230) and nothing else does.</summary>
     public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
+    /// <summary>CKeyTable's server side: the key bindings and quick slot pages (current page included) of OnKeyTable; live only.</summary>
+    public readonly ServerKeyTable KeyTable = new();
+    /// <summary>Raised after a KeyTable packet was applied (its mode: 0 load, 7 pages).</summary>
+    public event Action<int> KeyTableChanged;
     public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
@@ -325,6 +329,12 @@ public partial class LiveSession : Node
                 {
                     var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
                     GD.Print($"live: item put on/off {o}");
+                }
+                else if (game.Is(p, Inbound.KeyTable))
+                {
+                    int mode = KeyTable.Apply(p.Reader());   // CKeyTable::OnKeyTable (keytable.cpp:285); no ExpectEnd: the client ignores trailing bytes
+                    GD.Print($"live: key table mode {mode} ({KeyTable.PageCount} pages, page {KeyTable.CurrentPage})");
+                    KeyTableChanged?.Invoke(mode);
                 }
                 else if (game.Is(p, Inbound.GlobalFactor))
                 {

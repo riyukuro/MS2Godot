@@ -50,6 +50,7 @@ public enum Inbound : ushort {
     Buff = 0x47,
     UserMoveByPortal = 0x5F,
     StateFallDamage = 0x65,
+    KeyTable = 0x6F,
     ProxyGameObj = 0x7E,
     RideSync = 0x7A,
     World = 0xB9,
