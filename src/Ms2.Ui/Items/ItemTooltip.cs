@@ -64,6 +64,7 @@ public sealed class ItemTooltip
         SetItemUsePeriod(item);
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
+        SetExtraComment(item);
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
@@ -227,6 +228,33 @@ public sealed class ItemTooltip
         }
         if (!string.IsNullOrEmpty(r.CoupleName)) text = Join(text, CommonF("s_couple_effect_partner", r.CoupleName));
         Data["notExchange"] = text;
+    }
+
+    /// <summary>
+    /// ASTooltip::FUN_1409d3470 (astooltip.cpp), "extraComment": for a gemstone with feature 0x2e that has a next tier in
+    /// the upgrade table, s_msg_tooltip_gemstone_enable_upgrade and, with ingredients, a line of
+    /// s_msg_tooltip_gemstone_enable_upgrade_ingredients listing their names. Not ported: a score item's comment
+    /// (FUN_1409d9c50), a type 0x10 item's mastery recipes (FUN_1409da690) and ChatEmoticonAdd's emoticons
+    /// (FUN_1409daa30); the member is left out there.
+    /// </summary>
+    public void SetExtraComment(Item item)
+    {
+        var d = item.Data;
+        if (!d.IsGemstone || !model.IsFeatureEnabled(0x2e)) return;
+        var row = Tables.GemstoneUpgrades.Find(d.Id);
+        if (row == null || Tables.GemstoneUpgrades.IsLastTier(row)) return;
+        string text = Common("s_msg_tooltip_gemstone_enable_upgrade");                      // 0x9c3
+        if (row.Ingredients.Count != 0)
+        {
+            string names = "";
+            foreach (int id in row.Ingredients)
+            {
+                if (names.Length != 0) names += ", ";
+                names += Tables.ItemName(id);
+            }
+            text += "\n" + CommonF("s_msg_tooltip_gemstone_enable_upgrade_ingredients", names);
+        }
+        Data["extraComment"] = text;
     }
 
     /// <summary>

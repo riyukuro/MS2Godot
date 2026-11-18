@@ -426,6 +426,29 @@ public class MyInfoTests
     }
 
     [Test]
+    public void GemstoneUpgradeCommentIsTheClients()
+    {
+        var m = NewModel();
+        string Comment(int id)
+        {
+            var tip = new ItemTooltip(m, 0x80);
+            tip.Fill(Item.Create(m.Tables.Items, id, 4));
+            return tip.Data.TryGetValue("extraComment", out var v) ? (string)v : null;
+        }
+        // lv10_tooltip_gemstone.png: Tier 3 Wisdom Gemstone (40200003, next tier 40200004)
+        Assert.That(Comment(40200003), Is.EqualTo("<FONT color='#FFD200'>Upgrade Available</FONT>\n" +
+            "<FONT color='#909090'>Upgrade Materials: Blue Gem Dust, Cyan Gem Dust, Orange Gem Dust, Crystal Fragment</FONT>"));
+        // the last tier (no NextItemID) and a non-gemstone have none
+        Assert.That(Comment(40200010), Is.Null);
+        Assert.That(Comment(12200398), Is.Null);
+        var drawnTip = new ItemTooltip(m, 0x80);
+        drawnTip.Fill(Item.Create(m.Tables.Items, 40200003, 4));
+        var shown = TooltipTests.Draw(drawnTip.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Upgrade Materials: Blue Gem Dust"));
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");
