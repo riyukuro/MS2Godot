@@ -655,7 +655,10 @@ public partial class Field : Node3D
             }
             else
             {
-                if (space.IntersectRay(occRay.Set((Vector3)hit["position"], from, skip)).Count > 0) return true;
+                // the back cast from the hit runs the whole corner-to-target length, past the corner
+                // (targetcameramode.cpp:768-772, homecameramode.cpp:622-626)
+                var at = (Vector3)hit["position"];
+                if (space.IntersectRay(occRay.Set(at, at + (from - look).Normalized() * from.DistanceTo(look), skip)).Count > 0) return true;
             }
         }
         return false;
