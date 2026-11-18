@@ -328,15 +328,6 @@ public partial class GameFlow : Node
     Ui.HudScene Hud => GetTree().CurrentScene as Ui.HudScene;
     async Task Frames(int n) { for (int i = 0; i < n; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); }
     async Task Until(Func<bool> cond, int maxFrames = 3000) { for (int i = 0; i < maxFrames && !cond(); i++) await Frames(1); }
-    // presses the job page's back button (the scene's members are private)
-    void ClickJobBack()
-    {
-        const System.Reflection.BindingFlags f = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
-        var scene = GetTree().CurrentScene;
-        var jobs = scene?.GetType().GetField("jobs", f)?.GetValue(scene);
-        var button = jobs?.GetType().GetField("PrevButton")?.GetValue(jobs);
-        typeof(Widget).GetMethod("RaiseClick", f)?.Invoke(button, null);
-    }
     void Shot(string name)
     {
         GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, name));
@@ -367,7 +358,7 @@ public partial class GameFlow : Node
         Press(Godot.Key.Enter);
         await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(180);
         Shot("04_create.png");
-        ClickJobBack();                                                                               // the job page's back button
+        Ui.Create.CharacterCreateScene.ClickPrevScripted();                                           // the job page's back button
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(60);
         await LobbyReady();                                                                           // the reopened list selects the last previewed character (RefreshLobby m_1a0), which loads its map
         ClickRow(_ => 3); await Frames(5); await LobbyReady();

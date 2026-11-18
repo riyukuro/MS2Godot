@@ -4,12 +4,14 @@ using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2Godot.Look;
 using Ms2Godot.Ui.Contracts;
+using Ms2.Ui;
 
 namespace Ms2Godot.Ui.Create;
 
 /// <summary>
 /// Character creation as CSceneStateMulti runs it, without a server.
-/// Job pick: the lobby select field with the character list dimmed behind uicharactercreateselectdialog.
+/// Job pick: the lobby select field with the character list dimmed behind uicharactercreateselectdialog, run as the
+/// client's own movie with UICharacterCreateSelectDialog's C++ side (<see cref="CharacterCreateSelectController"/>).
 /// Create: SelectCreateJob loads the job's create map (table/lobbyfield.xml createMap, e.g. the "Character" xblock),
 /// the camera is the field's Camera0 entity, the preview character stands at SpawnPointPC0 in its idle pose, dressed
 /// by CreateLook, and uicharactercreatedialog runs on top. Create builds the CharacterManagement request and prints it.
@@ -53,8 +55,10 @@ public partial class CharacterCreateScene : LobbyFieldScene
     /// <summary>The server refused the request: shows its message in the name prompt, which opens again.</summary>
     /// <summary>Scripted runs: types the name into the open create screen and confirms it.</summary>
     public static void ConfirmScripted(string name) => current?.custom?.Confirm(name);
-    /// <summary>Scripted runs: the job page's Create button for its selected job (jobs.Create), which opens the look page.</summary>
-    public static void PickJobScripted() { var c = current; if (c?.jobs != null && page == Page.Select) { gender = rng.Next(2); c.SwitchTo(Page.Create); } }
+    /// <summary>Scripted runs: the job page's Create button for its selected job (onClickCreate), which opens the look page.</summary>
+    public static void PickJobScripted() { if (current?.select != null && page == Page.Select) current.ClickCreate(); }
+    /// <summary>Scripted runs: the job page's back button (CharacterCreateSelectDialog.onClickPrev), as a click on it.</summary>
+    public static void ClickPrevScripted() { if (page == Page.Select && current?.selectDialog?.Host is { } h) h.Invoke(h.Entity, "onClickPrev", (object)null); }
     public static bool OnCreatePage => current != null && page == Page.Create && current.custom != null;
     public static void CreateFailed(string message) => current?.custom?.ShowCreateError(message);
 
@@ -71,12 +75,15 @@ public partial class CharacterCreateScene : LobbyFieldScene
     CreateTables tables;
     UiAssets assets;
     CanvasLayer layer;
-    MovieClipNode selectRoot, createRoot;
+    MovieClipNode createRoot;
     /// <summary>uicharacterlistdialog behind the job page.</summary>
-    Node2D listRoot;
-    JobSelectLogic jobs;
+    MovieDialog listDialog;
+    /// <summary>uicharactercreateselectdialog, its C++ side and the picture of its job preview VideoPlayer.</summary>
+    MovieDialog selectDialog;
+    CharacterCreateSelectController select;
+    MovieVideo selectVideo;
     CharacterCreateLogic custom;
-    UiWidgets.MouseRouter mouse, listMouse;
+    UiWidgets.MouseRouter mouse;
     ModelBuilder builder;
     FieldMap map;
     string shotDir;
@@ -104,7 +111,13 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
         uiPacks = new PackSet(Settings.DataDir);
         tables = new CreateTables(uiPacks);
-        if (job == 0) job = tables.StartJob(rng);
+        if (job == 0 && page == Page.Create)
+        {
+            // the create page opened by itself (--page create): the job page's start job (FUN_140f30150)
+            var t = new CharacterCreateSelectController { Rng = rng };
+            t.Load(uiPacks, new UiAssets(uiPacks).Language);
+            job = t.PickJob();
+        }
         if (gender < 0) gender = rng.Next(2);
         int mapId = page == Page.Create ? tables.CreateMap(job) : tables.SelectMap(1);
         return tables.XBlockOf(mapId) ?? defaultName;
@@ -139,12 +152,15 @@ public partial class CharacterCreateScene : LobbyFieldScene
     {
         relayoutQueued = false;
         if (!IsInsideTree()) return;
-        bool optionsOpen = custom?.Options.Visible == true;     // read while the old page is still in the tree
-        foreach (var old in new Node2D[] { listRoot, selectRoot, createRoot })
-            if (old != null) { layer.RemoveChild(old); old.QueueFree(); }
-        listRoot = selectRoot = createRoot = null;
-        if (jobs != null) BuildSelect(jobs.SelectedJob);
-        else if (custom != null) BuildCreate(custom, optionsOpen);
+        var window = Screen().Window;
+        // the job page's movies align again in place (UIDialog::vfunc_43 -> alignment), as on the character list
+        listDialog?.Relayout(window);
+        selectDialog?.Relayout(window);
+        if (custom == null) return;
+        bool optionsOpen = custom.Options.Visible;     // read while the old page is still in the tree
+        if (createRoot != null) { layer.RemoveChild(createRoot); createRoot.QueueFree(); }
+        createRoot = null;
+        BuildCreate(custom, optionsOpen);
     }
 
     /// <summary>The window in pixels (LobbyLayout.UseWindowPixels), its UI scale and movie stage (LobbyLayout).</summary>
@@ -156,10 +172,15 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     // ---- job pick ----
 
-    /// <summary>The job page; <paramref name="relayoutJob"/> (not 0) rebuilds a page already open on that job.</summary>
-    void BuildSelect(int relayoutJob = 0)
+    /// <summary>
+    /// The job page: the character list behind it as the select scene left it, then uicharactercreateselectdialog
+    /// (OnLoadComplete -> initData, which plays the page's popup). Its answers: OnEndPopdown after onClickCreate is
+    /// CSceneStateMulti::SelectCreateJob (the create page on the job's create map); after onClickPrev the flow goes back
+    /// to the character list.
+    /// </summary>
+    void BuildSelect()
     {
-        var (_, u, stage) = Screen();
+        var window = Screen().Window;
         // the character list stays behind, dimmed by the job page's m_fullBg
         try
         {
@@ -167,29 +188,71 @@ public partial class CharacterCreateScene : LobbyFieldScene
             // 0x620001c -> SelectCreateJob): the flow's characters, at the popup's end, taking no input
             var list = CharacterListScene.NewController(assets, uiPacks ?? packs, new LobbyCharacterData(packs, assets.Language), Flow.Session.List());
             list.KeepRow = Flow.Session.SelectedIndex;
-            var dialog = CharacterListScene.OpenList(assets, list, Screen().Window);
-            dialog.Step(CharacterListScene.PopupFrames);
+            listDialog = CharacterListScene.OpenList(assets, list, window);
+            listDialog.Step(CharacterListScene.PopupFrames);
             list.SetInput(false);
-            listRoot = dialog;
-            layer.AddChild(dialog);
+            layer.AddChild(listDialog);
         }
         catch (Exception ex) { GD.PushWarning("character list: " + ex.Message); }
 
-        var movie = new UiMovie(assets, UICharacterCreateSelectDialogContract.Movie);
-        selectRoot = movie.BuildRoot(u);
-        // CharacterCreateSelect.alignment: applyScale -> LobbyDialog.applyScale (getLobbyRatioY); the dialog stays at the
-        // stage origin, its content is centred inside it (JobSelectLogic.Align)
-        float r = LobbyLayout.LobbyRatio(stage);
-        LobbyLayout.Place(selectRoot, Vector2.Zero, u, r);
-        UiWidgets.ApplyInspector(selectRoot, UICharacterCreateSelectDialogContract.Inspector);
-        layer.AddChild(selectRoot);
-        jobs = new JobSelectLogic(movie, selectRoot, tables, uiPacks);
-        jobs.InitData(relayoutJob != 0 ? relayoutJob : job, show: relayoutJob == 0);
-        jobs.Align(stage, r);
-        jobs.Create += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
-        jobs.Prev += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
-        // the job tabs are renderers m_tab / m_tab2 build from initData; a click on one is onChangeTab -> changeTab
-        mouse = new UiWidgets.MouseRouter(selectRoot) { Extra = () => jobs.TabClips };
+        select = new CharacterCreateSelectController { Rng = rng, KeepJob = job };
+        select.Load(uiPacks ?? packs, assets.Language);
+        select.SelectCreateJob += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
+        select.Closed += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
+        selectDialog = new MovieDialog(assets, select, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
+        layer.AddChild(selectDialog);
+        selectVideo = new MovieVideo(selectDialog, uiPacks ?? packs, () =>
+            selectDialog.Host.Get(selectDialog.Host.Entity, "m_content") is { } content ? selectDialog.Host.Get(content, "m_moviePlayer") : null);
+        selectDialog.AddChild(selectVideo);
+    }
+
+    /// <summary>The page's Create button (CharacterCreateSelectContent.onClickCreate), as a click on it.</summary>
+    void ClickCreate()
+    {
+        if (selectDialog?.Host is { } h && h.Get(h.Entity, "m_content") is { } content) h.Invoke(content, "onClickCreate", (object)null);
+    }
+
+    /// <summary>The tab renderers of m_tab and m_tab2 (CLIK ButtonBar), in arrTab order: even indices in m_tab when there are more than six.</summary>
+    List<object> Tabs()
+    {
+        var tabs = new List<object>();
+        if (selectDialog?.Host is not { } h || h.Get(h.Entity, "m_content") is not { } content) return tabs;
+        var bars = new[] { h.Get(content, "m_tab"), h.Get(content, "m_tab2") };
+        var lists = bars.Select(b => Renderers(h, b)).ToArray();
+        bool two = lists[0].Count > 0;
+        for (int i = 0; i < select.Jobs.Count; i++)
+        {
+            var l = two ? lists[i % 2] : lists[1];
+            int k = two ? i / 2 : i;
+            if (k < l.Count) tabs.Add(l[k]);
+        }
+        return tabs;
+    }
+
+    static List<object> Renderers(UiHost h, object bar)
+    {
+        var r = new List<object>();
+        if (bar == null) return r;
+        int n = (int)Ms2.Avm2.Rt.ToNumber(h.Get(h.Get(bar, "dataProvider"), "length"));
+        for (int i = 0; i < n; i++) r.Add(h.Invoke(bar, "getButtonAt", i));
+        return r;
+    }
+
+    /// <summary>The tab of arrTab index <paramref name="index"/>, clicked through the mouse.</summary>
+    void ClickTab(int index)
+    {
+        var tabs = Tabs();
+        if (index < 0 || index >= tabs.Count || tabs[index] is not Ms2.Avm2.Flash.AsDisplayObject t) return;
+        var b = t.GetBounds(null);
+        float s = UiScale.For(Screen().Window);
+        ClickAt(UiScale.MovieOrigin + new Vector2((float)(b.X + b.W / 2), (float)(b.Y + b.H / 2)) * s);
+    }
+
+    /// <summary>The tab next to the selected one in the same bar (tabs alternate between the two bars): for the shots.</summary>
+    int NeighbourTab()
+    {
+        int i = Math.Max(0, select.Jobs.FindIndex(j => j.JobCode == select.ShownJob));
+        return i >= 2 ? i - 2 : i + 2;
     }
 
     // ---- create ----
@@ -266,20 +329,17 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (custom?.PromptOpen == true) return;
         mouse?.Handle(e);
         if (e is InputEventMouse m) custom?.OnMouse(m);
-        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter)
-        {
-            if (jobs != null) jobs.ClickCreate();
-            else custom?.OnCreate();
-        }
+        // the job page's Enter does nothing (CharacterCreateSelectDialog.onEnterKey returns)
+        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter) custom?.OnCreate();
     }
 
     // ---- scripted shots ----
 
     void ClickAt(Vector2 at)
     {
-        _Input(new InputEventMouseMotion { Position = at });
-        _Input(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at });
-        _Input(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at });
+        Input.ParseInputEvent(new InputEventMouseMotion { Position = at, GlobalPosition = at });
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = at, GlobalPosition = at });
+        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = at, GlobalPosition = at });
     }
 
     public override void _Process(double delta)
@@ -291,10 +351,10 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (page == Page.Select)
         {
             if (frame == 45) Save("create_jobselect.png");
-            if (frame == 46) ClickAt(jobs.TabClips.ElementAt(jobs.NeighbourTab).GetGlobalTransform() * new Vector2(87, 55));   // the selected tab's neighbour in its bar, through the mouse
+            if (frame == 46) ClickTab(NeighbourTab());   // the selected tab's neighbour in its bar, through the mouse
             if (frame == 75) Save("create_jobselect_clicked.png");
-            if (frame == 160) { Save("create_jobselect_video.png"); GD.Print($"job video {jobs.Player?.MovieName}: {jobs.Player?.Video?.Width}x{jobs.Player?.Video?.Height} at {jobs.Player?.Video?.FrameRate} fps, t {jobs.Player?.Time:F2} s"); }
-            if (frame == 161) jobs.ClickCreate();
+            if (frame == 160) { var p = selectVideo?.Player; Save("create_jobselect_video.png"); GD.Print($"job video {p?.MovieName}: {p?.Video?.Width}x{p?.Video?.Height} at {p?.Video?.FrameRate} fps, t {p?.Time:F2} s"); }
+            if (frame == 161) ClickCreate();
         }
         else
         {
@@ -328,7 +388,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         string name = page == Page.Select ? "create_jobselect" : $"create_page_{job}";
         if (frame == 45)
         {
-            if (page == Page.Select) ClickAt(jobs.TabClips.ElementAt(jobs.NeighbourTab).GetGlobalTransform() * new Vector2(87, 55));
+            if (page == Page.Select) ClickTab(NeighbourTab());
             else { custom.SelectCategory(2, true); PickEditable(Ms2.Net.Packets.EquipSlot.FD); custom.OnCreate(); custom.PromptText = "Tester01"; }
         }
         if (frame == 90) Save($"{name}_before.png");

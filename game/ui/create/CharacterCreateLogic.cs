@@ -478,3 +478,23 @@ public sealed class CharacterCreateLogic
         return nameChecker.CheckCharacterName(name, out var message) == 0 ? null : message;
     }
 }
+
+/// <summary>
+/// The component values of class-placed IconButtons (the lobby back and guide buttons): their label and the icon clip
+/// IconButton.iconClassName loads, centred over the label.
+/// </summary>
+public static class IconButtons
+{
+    public static void Setup(UiMovie movie, MovieClipNode button, string iconClass, string label)
+    {
+        if (button == null) return;
+        (button.Widget as ButtonWidget)?.Set("label", label);
+        var icon = movie.BuildClass(iconClass, button.sx, button.sy);
+        if (icon == null) return;
+        icon.Name = "m_icon";
+        var b = button.Bounds;
+        float iw = icon.Bounds.Size.X;
+        icon.Position = new Vector2(b.Position.X + (b.Size.X - iw) / 2 - icon.Bounds.Position.X, b.Position.Y + b.Size.Y * 0.18f - icon.Bounds.Position.Y);
+        button.AddChild(icon);
+    }
+}
