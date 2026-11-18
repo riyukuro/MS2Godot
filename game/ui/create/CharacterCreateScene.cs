@@ -290,7 +290,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
             Look = look,
             Server = Flow.Session.ServerInfo(assets),
             NoCharacters = Flow.Session.List().Count == 0,
-            Common = k => assets.Str("$" + k) is var t && !t.StartsWith('$') ? t : null,
+            // GetStringCommon: stringcommon.xml (the UI's korflash table has none of the s_char_err keys)
+            Common = new GameStrings(assets.Packs, assets.Language).Common(),
             CheckName = CheckName,
         };
         create.LookChanged += RebuildPreview;
