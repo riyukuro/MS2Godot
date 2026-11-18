@@ -258,6 +258,18 @@ public static class LayoutJson
         return o;
     }
 
+    /// <summary>A placement's matrix or colour as its last move left it (a copy), else as placed.</summary>
+    static JsonNode Current(JsonObject placed, string key)
+    {
+        if (placed["moves"] is JsonArray mv)
+            for (int i = mv.Count - 1; i >= 0; i--)
+            {
+                if (key == "matrix" && !((bool?)mv[i]["hasMatrix"] ?? false)) continue;
+                if (mv[i][key] is { } v) return v.DeepClone();
+            }
+        return placed[key]?.DeepClone();
+    }
+
     /// <summary>Children as display-list lifespans: one entry per (depth, placement), with its matrix changes.</summary>
     static JsonNode TimelineJson(SwfMovie m, Timeline tl, int frameCount)
     {
@@ -275,11 +287,17 @@ public static class LayoutJson
                 if (p.CharacterId != null || (p.ClassName != null && !p.Move))
                 {
                     if (live.Remove(p.Depth, out var old)) old["last"] = f - 1;
+                    // PlaceObject2/3 with the move flag and a character replaces the character at that depth and keeps what the
+                    // tag leaves out (SWF spec, PlaceObject2: "the character at the depth is replaced ... its other properties
+                    // are retained"): the matrix and colour transform as they last were
+                    bool replace = p.Move && old != null;
                     var o = new JsonObject
                     {
                         ["depth"] = p.Depth, ["id"] = p.CharacterId, ["name"] = p.Name, ["class"] = p.ClassName, ["first"] = f,
                         ["kind"] = p.CharacterId == null ? "class" : m.Characters.TryGetValue(p.CharacterId.Value, out var ch) ? KindName(ch.Kind) : "missing",
-                        ["matrix"] = Mx(p.Matrix), ["color"] = Cx(p.Color), ["clipDepth"] = p.ClipDepth, ["ratio"] = p.Ratio,
+                        ["matrix"] = p.Matrix == null && replace ? Current(old, "matrix") : Mx(p.Matrix),
+                        ["color"] = p.Color == null && replace ? Current(old, "color") : Cx(p.Color),
+                        ["clipDepth"] = p.ClipDepth, ["ratio"] = p.Ratio,
                         ["blend"] = p.BlendMode, ["visible"] = p.Visible, ["cacheAsBitmap"] = p.CacheAsBitmap,
                         ["filters"] = Filters(p.Filters),
                     };
