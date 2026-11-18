@@ -65,6 +65,7 @@ public sealed class ItemTooltip
         SetItemUsePeriod(item);
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
+        SetStatDescription(item);                                                 // FUN_1409d1d30
         SetExtraComment(item);
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
@@ -136,6 +137,20 @@ public sealed class ItemTooltip
         if (d.IsMultiRideItem && model.IsFeatureEnabled(0xad)) return;
         if (d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19) return;
         Data["itemGuideDescription"] = Tables.ItemDescription(d.Id, "guideDescription");
+    }
+
+    /// <summary>
+    /// FUN_1409d1d30 (astooltip.cpp:2367), "statDescription": flag 0x800 picks the compact FUN_1409d26d0, else the full
+    /// FUN_1409d1d80; both start with the string table's mainDescription as a { type 0, text } row and stop there (every
+    /// item has an enchant info: CItemStatus::CItemStatus, itemsocketsystemutil.cpp:1600). Not ported, so nothing is set
+    /// when the item has no mainDescription: the pet size-up level (s_word_petlevel_sizeup), the full layout's
+    /// ChatEmoticonAdd text (FUN_1409daff0) and quest-book name, the constant-stat rows (FUN_1409d4760, type 2) and the
+    /// score text (FUN_1409da1c0).
+    /// </summary>
+    public void SetStatDescription(Item item)
+    {
+        string main = Tables.ItemDescription(item.Data.Id, "mainDescription");
+        if (main.Length > 0) Data["statDescription"] = new Dictionary<string, object> { ["type"] = 0, ["text"] = main };
     }
 
     /// <summary>CItemData::IsCustomizable (itemdata.cpp:1286): a model whose color is on with a palette and one default color.</summary>

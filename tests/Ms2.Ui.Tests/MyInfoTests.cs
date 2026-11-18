@@ -449,6 +449,25 @@ public class MyInfoTests
     }
 
     [Test]
+    public void StatDescriptionIsTheMainDescription()
+    {
+        var m = NewModel();
+        var tip = new ItemTooltip(m, 0x80);
+        tip.Fill(Item.Create(m.Tables.Items, 20000028, 1));
+        // lv10_tooltip_consumable_red_herb.png: "28 Sec Duration" over "Restores 224 Health"
+        var row = (Dictionary<string, object>) tip.Data["statDescription"];
+        Assert.That(row["type"], Is.EqualTo(0));
+        Assert.That(row["text"], Is.EqualTo("<font size='14'>28 Sec Duration</font>\n<font size='24'>Restores 224 Health</font>"));
+        var shown = TooltipTests.Draw(tip.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Restores 224 Health"));
+        // Iron Ore has no mainDescription: no row
+        var ore = new ItemTooltip(m, 0x80);
+        ore.Fill(Item.Create(m.Tables.Items, 33000005, 1));
+        Assert.That(ore.Data.ContainsKey("statDescription"), Is.False);
+    }
+
+    [Test]
     public void SellPriceLineIsTheClients()
     {
         var m = NewModel();
