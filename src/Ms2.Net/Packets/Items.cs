@@ -23,15 +23,13 @@ public sealed class EquipItem {
     public short InventorySlot;
 }
 
-/// <summary>Which extra block follows the limit break part of an item body (CItem::ReadFromStream picks it from item data).</summary>
 /// <summary>The blocks CItem::ReadFromStream reads after the item status, in this order: ugc, gem (a badge), custom music score, pet.</summary>
 [Flags] public enum ItemExtra { None = 0, Ugc = 1, Gem = 2, Music = 4, Pet = 8 }
 
 /// <summary>
-/// Reader for the equip record: i32 id, i64 uid, i8 slot, i32 rarity, then the item body (CItem::ReadFromStream).
-/// The body's appearance variant depends on the item's first slot (HR, FD, CP) which the server takes from item data;
-/// the record's slot byte carries it for equips, so no item table is needed. Ugc/pet/music extra blocks are
-/// not expected on worn gear and are rejected as a layout error rather than guessed.
+/// Readers for the item records (CItem::ReadFromStream, item.cpp:2655). An equip record carries its slot byte, which picks the
+/// body's appearance variant (HR, FD, CP); an inventory record takes it from <see cref="SlotOf"/>. The extra blocks (ugc, gem,
+/// music, pet) come from <see cref="ExtraOf"/> when the item data is loaded; without it a ugc block is recognised from its bytes.
 /// </summary>
 public static class ItemReader {
     
@@ -41,6 +39,12 @@ public static class ItemReader {
     /// transfer block can look like. Pet and music blocks are never worn, so they are only read when this returns them.
     /// </summary>
     public static Func<int, ItemExtra?> ExtraOf;
+
+    /// <summary>
+    /// Tells whether the item id is in the item data. CItem::FUN_140523c40 (item.cpp:2759) fails for an unknown id, so an inventory
+    /// record of it reads no body and is not added. Null = every id is taken as known.
+    /// </summary>
+    public static Func<int, bool> Known;
 
     /// <summary>UgcItemLook (CUgcItemLook::Read): i64 id, file name, item name, u8, i32, i64 account, i64 character, author, i64 creation time, url, u8.</summary>
     public static void ReadUgcLook(ByteReader r) {
@@ -75,9 +79,11 @@ public static class ItemReader {
 
     /// <summary>
     /// An inventory record (OnItemInventory modes 0, 6, 8): i32 id, i64 uid, i16 bag slot, i32 rarity, then the item body.
+    /// Null for an id the item data does not know: no body is read (the client's item create fails there).
     /// </summary>
     public static EquipItem ReadInventory(ByteReader r) {
         var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), InventorySlot = r.ReadShort(), Rarity = r.ReadInt() };
+        if (Known != null && !Known(it.Id)) return null;
         it.Slot = SlotOf?.Invoke(it.Id) ?? EquipSlot.Unknown;
         ReadBody(r, it, it.Slot);
         return it;
@@ -138,9 +144,9 @@ public static class ItemReader {
 
         // ItemStats: 5 option sets, then merge id
         for (int i = 0; i < 5; i++) {
-            int basic = r.ReadShort();
+            int basic = (ushort) r.ReadShort();
             for (int j = 0; j < basic; j++) { r.ReadShort(); r.ReadInt(); }
-            int special = r.ReadShort();
+            int special = (ushort) r.ReadShort();
             for (int j = 0; j < special; j++) { r.ReadShort(); r.ReadInt(); }
         }
         r.ReadInt();
@@ -154,10 +160,10 @@ public static class ItemReader {
 
         // ItemLimitBreak
         r.ReadInt();
-        int lb = r.ReadInt();
-        for (int i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
-        lb = r.ReadInt();
-        for (int i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
+        uint lb = (uint) r.ReadInt();
+        for (uint i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
+        lb = (uint) r.ReadInt();
+        for (uint i = 0; i < lb; i++) { r.ReadShort(); r.ReadInt(); }
 
         var extra = forceExtra ?? (badge ? ItemExtra.Gem : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None);
         if ((extra & ItemExtra.Ugc) != 0) {

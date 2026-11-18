@@ -14,6 +14,19 @@ public static class LobbyFeatures
     static int? serverLevel;
     static Dictionary<string, int> levels;
 
+    /// <summary>The locale the client runs as (CFeatureManager::GetLocaleName).</summary>
+    public const string LocaleName = Locale;
+
+    /// <summary>The level of a feature name (m_nameLevels); 0 for an unknown name, as the client's failed Lookup leaves it.</summary>
+    public static int LevelOf(PackSet packs, string feature)
+    {
+        Load(packs);
+        return feature != null && levels.TryGetValue(feature, out int level) ? level : 0;
+    }
+
+    /// <summary>IsFeatureEnabledByName: an empty name is on, an unknown name is off.</summary>
+    public static bool IsEnabledByName(PackSet packs, string feature) => string.IsNullOrEmpty(feature) || IsEnabled(packs, feature);
+
     public static bool IsEnabled(PackSet packs, string feature)
     {
         Load(packs);

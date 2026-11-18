@@ -165,7 +165,9 @@ public partial class LiveSession : Node
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();
             ItemReader.ExtraOf ??= id => { try { return Kinds().ExtraOf(id); } catch (Exception e) { GD.Print($"live: item kinds unavailable ({e.Message})"); return null; } };
+            ItemReader.Known ??= id => { try { return Kinds().Known(id); } catch { return true; } };   // data unavailable: read every id
             Items.TabOf = id => { try { return Kinds().TabOf(id); } catch { return 7; } };
+            Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
             GD.Print($"live: {Quests.All.Count} quests loaded before the field");
             foreach (var ip in entry.EarlyItems) ApplyItems(ip);
@@ -336,8 +338,7 @@ public partial class LiveSession : Node
             GD.Print(gone ? $"live: delete run done, {n0} -> {Session.List().Count}" : "live: delete run failed");
             tree.Quit(gone ? 0 : 1); return;
         }
-        string pick = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAR");   // enter with this character name (default: the first)
-        var first = newName != null && newName != "" ? Session.List().Last() : !string.IsNullOrEmpty(pick) ? Session.List().FirstOrDefault(c => c.User.Name == pick) : Session.List().FirstOrDefault();
+        var first = newName != null && newName != "" ? Session.List().Last() : Session.List().FirstOrDefault();
         if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }
         UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, first.User.CharacterId.ToString());
         await Until(() => flow.Current == GameFlow.State.Game);

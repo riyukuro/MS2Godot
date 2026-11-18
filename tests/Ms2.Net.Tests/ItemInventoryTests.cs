@@ -45,4 +45,59 @@ public class ItemInventoryTests {
         Assert.That(Read(book, w => w.WriteByte(10)), Is.TypeOf<ItemMessage.ExpandComplete>());
         Assert.That(Read(book, w => w.WriteByte(99)), Is.TypeOf<ItemMessage.Other>());
     }
+
+    // Unk_Inventory::AddItem (0x140a5d120): a duplicate uid, an occupied slot or a slot out of range is refused and the old item stays.
+    [Test] public void AddRefusesDuplicateUidOccupiedAndOutOfRangeSlot() {
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = tab => 4 };
+        book.Apply(Read(book, w => { w.WriteByte(6); w.WriteShort(1); Item(w, 20000001, 11, 1, 5); }));
+        book.Apply(Read(book, w => { w.WriteByte(0); Item(w, 20000009, 11, 2, 9); }));          // same uid
+        Assert.That(book.Get(11).Id, Is.EqualTo(20000001)); Assert.That(book.Get(11).Amount, Is.EqualTo(5));
+        book.Apply(Read(book, w => { w.WriteByte(0); Item(w, 20000002, 12, 1, 1); }));          // same tab, slot 1 taken
+        Assert.That(book.Get(12), Is.Null);
+        book.Apply(Read(book, w => { w.WriteByte(0); Item(w, 30000002, 13, 1, 1); }));          // other tab, slot 1 free
+        Assert.That(book.Get(13), Is.Not.Null);
+        book.Apply(Read(book, w => { w.WriteByte(0); Item(w, 20000003, 14, 4, 1); }));          // slot 4 of 4
+        Assert.That(book.Get(14), Is.Null);
+        Assert.That(book.TryAdd(new EquipItem { Id = 20000004, Uid = 15, InventorySlot = 3 }), Is.EqualTo(0));
+        Assert.That(book.TryAdd(new EquipItem { Id = 20000004, Uid = 15, InventorySlot = 2 }), Is.EqualTo(17));
+        Assert.That(book.TryAdd(new EquipItem { Id = 20000004, Uid = 16, InventorySlot = 3 }), Is.EqualTo(17));
+        Assert.That(book.TryAdd(new EquipItem { Id = 20000004, Uid = 17, InventorySlot = 9 }), Is.EqualTo(29));
+    }
+
+    // CItem::SetCountClamped (0x140526c70): an unsigned compare with the max stack.
+    [Test] public void AmountIsClampedUnsignedToTheMaxStack() {
+        var book = new ItemBook { MaxStackOf = id => 100 };
+        book.Apply(Read(book, w => { w.WriteByte(6); w.WriteShort(1); Item(w, 20000001, 11, 1, 5); }));
+        book.Apply(Read(book, w => { w.WriteByte(2); w.WriteLong(11); w.WriteInt(60); })); Assert.That(book.Get(11).Amount, Is.EqualTo(60));
+        book.Apply(Read(book, w => { w.WriteByte(2); w.WriteLong(11); w.WriteInt(500); })); Assert.That(book.Get(11).Amount, Is.EqualTo(100));
+        book.Apply(Read(book, w => { w.WriteByte(2); w.WriteLong(11); w.WriteInt(-1); })); Assert.That(book.Get(11).Amount, Is.EqualTo(100));
+    }
+
+    // Unk_Inventory::SetExtraSlots (0x140a5cb80): tabs outside 0-14 are ignored; a smaller capacity removes the items past it.
+    [Test] public void ExpandCountIgnoresBadTabsAndShrinks() {
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = tab => 4 };
+        book.Apply(Read(book, w => { w.WriteByte(12); w.WriteByte(2); w.WriteInt(6); }));
+        book.Apply(Read(book, w => { w.WriteByte(6); w.WriteShort(2); Item(w, 20000001, 11, 1, 1); Item(w, 20000002, 12, 8, 1); }));
+        Assert.That(book.All.Count, Is.EqualTo(2));                                              // slot 8 < 4 + 6
+        book.Apply(Read(book, w => { w.WriteByte(12); w.WriteByte(15); w.WriteInt(1); }));
+        Assert.That(book.ExtraSlots.ContainsKey(15), Is.False);
+        book.Apply(Read(book, w => { w.WriteByte(12); w.WriteByte(2); w.WriteInt(2); }));        // capacity 6: slot 8 goes
+        Assert.That(book.Get(12), Is.Null); Assert.That(book.Get(11), Is.Not.Null); Assert.That(book.ExtraSlots[2], Is.EqualTo(2));
+    }
+
+    // CItem::FUN_140523c40 (item.cpp:2759) fails for an item without data: no body is read and nothing is added.
+    [Test] public void UnknownItemIdReadsNoBodyAndIsNotAdded() {
+        ItemReader.Known = id => id != 20000002;
+        try {
+            var book = new ItemBook();
+            var w = new ByteWriter(); w.WriteByte(6); w.WriteShort(3); Item(w, 20000001, 11, 1, 1); Item(w, 20000002, 12, 2, 1); Item(w, 20000003, 13, 3, 1);
+            var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+            var m = (ItemMessage.Load) ItemMessage.Read(r, book.Get); book.Apply(m);
+            Assert.That(m.Items.Select(i => i.Uid), Is.EqualTo(new long[] { 11 }));
+            Assert.That(r.Available, Is.EqualTo(BodyLen + 3 * 0 + BodyLen + 18));                // the unknown record's body and the rest stay unread
+            var w2 = new ByteWriter(); w2.WriteByte(0); Item(w2, 20000002, 14, 1, 1);
+            var r2 = new ByteReader(w2.Buffer.AsSpan(0, w2.Length).ToArray());
+            book.Apply(ItemMessage.Read(r2, book.Get)); Assert.That(book.Get(14), Is.Null); Assert.That(r2.Available, Is.EqualTo(BodyLen));
+        } finally { ItemReader.Known = null; }
+    }
 }

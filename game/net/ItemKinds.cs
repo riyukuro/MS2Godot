@@ -13,13 +13,13 @@ namespace Ms2Godot.Net;
 public sealed class ItemKinds
 {
     readonly PackSet packs;
-    readonly Dictionary<int, Dictionary<int, (int Type, bool Skin, bool Ucc)>> files = new();
+    readonly Dictionary<int, Dictionary<int, (int Type, bool Skin, bool Ucc, uint SlotMax)>> files = new();
     HashSet<int> customNotes;
     public ItemKinds(PackSet packs) { this.packs = packs; }
 
     static XDocument Doc(PackSet p, string entry) => XDocument.Parse(Encoding.UTF8.GetString(p.Read("Xml", entry)).TrimStart('﻿'));
 
-    (int Type, bool Skin, bool Ucc)? Row(int id)
+    (int Type, bool Skin, bool Ucc, uint SlotMax)? Row(int id)
     {
         int prefix = id / 100000;
         if (!files.TryGetValue(prefix, out var rows))
@@ -30,10 +30,13 @@ public sealed class ItemKinds
                 foreach (var e in Doc(packs, entry).Root.Elements("item"))
                 {
                     if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
-                    var prop = e.Descendants("property").FirstOrDefault();
+                    // the client loads the element of the selected environment; an item without one has no data (an empty <item id/> row)
+                    if (ItemEnvironment.Select(packs, e) is not { } env) continue;
+                    var prop = env.Element("property");
                     int.TryParse((string)prop?.Attribute("type"), out int type);
                     int.TryParse((string)prop?.Attribute("skinType"), out int skin);
-                    rows[i] = (type, skin != 0, !string.IsNullOrEmpty((string)e.Descendants("ucc").FirstOrDefault()?.Attribute("mesh")));
+                    uint slotMax = uint.TryParse((string)prop?.Attribute("slotMax"), out uint sm) ? Math.Min(sm, 99999u) : 1;   // CItemProperty: default 1, capped at 99999
+                    rows[i] = (type, skin != 0, !string.IsNullOrEmpty((string)env.Descendants("ucc").FirstOrDefault()?.Attribute("mesh")), slotMax);
                 }
             files[prefix] = rows;
         }
@@ -64,6 +67,12 @@ public sealed class ItemKinds
         if (r.Type == 0xb) x |= ItemExtra.Pet;
         return x;
     }
+
+    /// <summary>Whether the item id has item data (CItem::FUN_140523c40 fails without it).</summary>
+    public bool Known(int id) => Row(id) != null;
+
+    /// <summary>CItem::GetSlotMax: the max stack of an item; 0 for an unknown item.</summary>
+    public uint SlotMax(int id) => Row(id)?.SlotMax ?? 0;
 
     /// <summary>The inventory tab of an item (CItemData::FUN_14053e530); 7 when the item is unknown (Unk_Inventory::FUN_140a61870).</summary>
     public int TabOf(int id)

@@ -55,7 +55,11 @@ public abstract record ItemMessage {
     static List<EquipItem> ItemList(ByteReader r) {
         int n = (ushort) r.ReadShort();
         var l = new List<EquipItem>(n);
-        for (int i = 0; i < n; i++) l.Add(ItemReader.ReadInventory(r));
+        for (int i = 0; i < n; i++) {
+            var it = ItemReader.ReadInventory(r);
+            if (it == null) break;      // an unknown item id: the client's create fails and the rest of the list is not read
+            l.Add(it);
+        }
         return l;
     }
 }
@@ -71,6 +75,11 @@ public sealed class ItemBook {
     public IReadOnlyDictionary<int, int> ExtraSlots => extra;
     readonly Dictionary<int, int> extra = new();
     public Func<int, int> TabOf { get; set; }
+    /// <summary>The item's max stack (CItemData property slotMax, CItem::GetSlotMax). Without it an Amount is stored as sent.</summary>
+    public Func<int, uint> MaxStackOf { get; set; }
+    /// <summary>The base slot count of a tab (FUN_140a66510). Without it the slot range and the shrink of SetExtraSlots are not enforced.</summary>
+    public Func<int, int> BaseSlots { get; set; }
+    public const int Tabs = 15;
     /// <summary>After a message that changed the book: the item uid, or 0 when many changed.</summary>
     public event Action<long> Changed;
     public event Action<int, int, int> ErrorReceived;   // code, item id, value
@@ -78,11 +87,11 @@ public sealed class ItemBook {
 
     public void Apply(ItemMessage m) {
         switch (m) {
-            case ItemMessage.Add x: items[x.Item.Uid] = x.Item; Changed?.Invoke(x.Item.Uid); break;
-            case ItemMessage.Load x: foreach (var i in x.Items) items[i.Uid] = i; Changed?.Invoke(0); break;
-            case ItemMessage.LoadTab x: foreach (var i in x.Items) items[i.Uid] = i; Changed?.Invoke(0); break;
+            case ItemMessage.Add x: if (x.Item != null && TryAdd(x.Item) == 0) Changed?.Invoke(x.Item.Uid); break;
+            case ItemMessage.Load x: foreach (var i in x.Items) TryAdd(i); Changed?.Invoke(0); break;
+            case ItemMessage.LoadTab x: foreach (var i in x.Items) TryAdd(i); Changed?.Invoke(0); break;
             case ItemMessage.Remove x: if (items.Remove(x.Uid)) Changed?.Invoke(x.Uid); break;
-            case ItemMessage.Amount x: if (items.TryGetValue(x.Uid, out var a)) { a.Amount = Math.Max(0, x.Count); Changed?.Invoke(x.Uid); } break;
+            case ItemMessage.Amount x: if (items.TryGetValue(x.Uid, out var a)) { a.Amount = Clamp(a.Id, x.Count); Changed?.Invoke(x.Uid); } break;
             case ItemMessage.Move x: {
                 // both items leave the bag, take their new slot and come back; an uid of 0 is an empty slot
                 var a1 = x.UidA != 0 ? Get(x.UidA) : null; var b1 = x.UidB != 0 ? Get(x.UidB) : null;
@@ -94,9 +103,37 @@ public sealed class ItemBook {
             case ItemMessage.Reset x:
                 if (TabOf != null) foreach (var i in items.Values.Where(i => TabOf(i.Id) == x.Tab).ToList()) items.Remove(i.Uid);
                 Changed?.Invoke(0); break;
-            case ItemMessage.ExpandCount x: extra[x.Tab] = x.Count; Changed?.Invoke(0); break;
+            case ItemMessage.ExpandCount x: SetExtraSlots(x.Tab, x.Count); Changed?.Invoke(0); break;
             case ItemMessage.NotifyNew x: if (items.ContainsKey(x.Uid)) NotifiedNew?.Invoke(x.Uid, x.Arg); break;
             case ItemMessage.Error x: ErrorReceived?.Invoke(x.Code, x.ItemId, x.Value); break;
         }
+    }
+
+    /// <summary>CItem::SetCountClamped (0x140526c70): an unsigned compare with the max stack, so a negative count becomes the max.</summary>
+    int Clamp(int itemId, int count) {
+        if (MaxStackOf?.Invoke(itemId) is not uint max) return count;
+        return (uint) count < max ? count : (int) max;
+    }
+
+    /// <summary>Unk_Inventory::AddItem (0x140a5d120): 0 added; 17 duplicate uid or occupied slot; 29 slot out of range. The old item stays on a refusal.</summary>
+    public int TryAdd(EquipItem it) {
+        if (items.ContainsKey(it.Uid)) return 17;
+        if (TabOf != null && it.InventorySlot != -1) {
+            int tab = TabOf(it.Id);
+            if (BaseSlots != null && (it.InventorySlot < 0 || it.InventorySlot >= BaseSlots(tab) + (extra.TryGetValue(tab, out var e) ? e : 0))) return 29;
+            foreach (var o in items.Values) if (o.InventorySlot == it.InventorySlot && TabOf(o.Id) == tab) return 17;
+        }
+        items[it.Uid] = it;
+        return 0;
+    }
+
+    /// <summary>Unk_Inventory::SetExtraSlots (0x140a5cb80): tabs outside 0-14 are ignored; a smaller capacity removes the items past it.</summary>
+    void SetExtraSlots(int tab, int count) {
+        if (tab < 0 || tab >= Tabs) return;
+        if (BaseSlots != null && TabOf != null) {
+            int cap = BaseSlots(tab) + count;
+            foreach (var i in items.Values.Where(i => TabOf(i.Id) == tab && (uint) i.InventorySlot >= (uint) cap).ToList()) items.Remove(i.Uid);
+        }
+        extra[tab] = count;
     }
 }
