@@ -238,23 +238,23 @@ public sealed class EquipApplier
                 selfInv = ((sm.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[sm.ParentBone].World) : Transform3D.Identity) * ModelBuilder.ToGodot(sm.Local)).AffineInverse();
         }
         var dummy = DummyOf(asset, gender);
-        Skin skin = null;
         foreach (var m in md.Meshes)
         {
             var mi = new MeshInstance3D { Name = $"eq{item.Id}_{m.Name}", Mesh = Mesh(m) };
             mi.SetMeta("mesh", m.Name);
             if (m.Skinned)
             {
-                if (skin == null)
+                // FUN_141421f30 (itemugcmesh.cpp:271-290) swaps the skin's root parent and bones for the body's nodes of the
+                // same names and keeps the skin's bone transforms, so each mesh binds through its own skin bone transforms
+                // (as ModelBuilder.SkinOf), not through the item file's node pose; by the file's name: an item holding a
+                // second copy of the skeleton (11400479_f_strikerredtop has three Bip01 trees) binds every copy to the
+                // body's bone of that name
+                var own = ModelBuilder.SkinOf(md, m);
+                var skin = new Skin();
+                for (int i = 0; i < md.Bones.Count; i++)
                 {
-                    skin = new Skin();
-                    foreach (var b in md.Bones)
-                    {
-                        // by the file's name: an item holding a second copy of the skeleton (11400479_f_strikerredtop
-                        // has three Bip01 trees) binds every copy to the body's bone of that name
-                        int bi = skel.FindBone(b.FileName ?? b.Name);
-                        skin.AddBind(bi >= 0 ? bi : 0, ModelBuilder.ToGodot(b.World).AffineInverse());
-                    }
+                    int bi = skel.FindBone(md.Bones[i].FileName ?? md.Bones[i].Name);
+                    skin.AddBind(bi >= 0 ? bi : 0, own.GetBindPose(i));
                 }
                 skel.AddChild(mi);
                 mi.Skin = skin; mi.Skeleton = "..";
