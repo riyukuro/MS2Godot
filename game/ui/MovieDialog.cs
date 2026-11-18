@@ -25,9 +25,9 @@ public partial class MovieDialog : Node2D
     public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window, ICharacterFolder folder = null)
     {
         var perf = PerfLog.On ? new PerfLog.Steps("open " + controller.Movie) : null;
-        // the movies are parsed once per pack set and shared by every open (the client's loader keeps a movie's definition
-        // once loaded); the runtime, player and display list are still made on each open
-        var src = MovieSource.FromParsed(assets.Dependency);
+        // the movies are parsed, and their code and layouts read, once per pack set and shared by every open (the client's
+        // loader keeps a movie's definition once loaded); the runtime, player and display list are still made on each open
+        var src = assets.Movies;
         if (perf != null)
         {
             // the same reads and parses Open does, first, so each is timed on its own

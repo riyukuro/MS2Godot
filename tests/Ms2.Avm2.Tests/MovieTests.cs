@@ -28,6 +28,59 @@ public class MovieTests
 
     static object Get(Player p, object o, string n) => p.RT.GetProperty(o, Name.Public(n));
 
+    static MovieSource Fresh()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        return new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+    }
+
+    /// <summary>The display list after the document class and 5 frames: type, name, depth, matrix, colour, visibility,
+    /// frame and text of every object, in child order.</summary>
+    static string DisplayList(MovieSource source, string key, out Player player)
+    {
+        var (_, p) = source.Open(key, r => r.Budget = 20_000_000);
+        p.External = (n, a) => null;
+        Assert.That(p.Start(), Is.True, key + " document class");
+        for (int i = 0; i < 5; i++) p.Tick();
+        var sb = new System.Text.StringBuilder();
+        void Walk(AsDisplayObject d, int depth)
+        {
+            var m = d.Matrix;
+            sb.Append(' ', depth).Append(d.GetType().Name).Append(' ').Append(d.InstanceName).Append(' ').Append(d.Depth)
+              .Append($" [{m.A:R} {m.B:R} {m.C:R} {m.D:R} {m.Tx:R} {m.Ty:R}] {d.Color} {d.IsVisible}");
+            if (d is AsMovieClip mc) sb.Append(" f").Append(mc.currentFrame);
+            if (d is AsTextField t) sb.Append(" \"").Append(t.Text).Append('"');
+            sb.Append('\n');
+            if (d is AsContainer c) foreach (var ch in c.Children) Walk(ch, depth + 1);
+        }
+        Walk(p.Stage, 0);
+        player = p;
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// A movie source shared by every open (MovieDialog's, one per pack set) gives each open the same display list as a
+    /// source of its own, the second open too: the cached layouts and code are only read.
+    /// </summary>
+    [TestCase("uiinventorydialog")]
+    [TestCase("uiworldmapdialog")]
+    [TestCase("uishopdialog")]
+    [TestCase("uimyinfodialog")]
+    public void SharedSourceOpensMatchAFreshSource(string key)
+    {
+        var shared = Fresh();
+        var first = DisplayList(shared, key, out var p1);
+        var second = DisplayList(shared, key, out var p2);
+        var fresh = DisplayList(Fresh(), key, out var pf);
+        Assert.That(fresh.Split('\n').Length, Is.GreaterThan(40), "a whole window's display list");
+        Assert.That(p2.Layout, Is.SameAs(p1.Layout), "the layout is built once");
+        Assert.That(first, Is.EqualTo(fresh));
+        Assert.That(second, Is.EqualTo(fresh));
+        Assert.That(p1.Layout.ToJsonString(), Is.EqualTo(pf.Layout.ToJsonString()), "the opens leave the shared layout as built");
+    }
+
     [Test]
     public void LoginTypingTabAndConnect()
     {

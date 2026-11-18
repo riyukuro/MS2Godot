@@ -143,6 +143,13 @@ public sealed class UiAssets
         })).Value;
     }
 
+    // The movie source every dialog opens from: the parsed movies above, with their ABC blocks and layouts built once per
+    // pack set (GFx keeps a loaded movie's definition; each open still makes its own runtime, player and display list).
+    // Opened on the main thread only.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Ms2.Avm2.Flash.MovieSource> sources = new();
+
+    public Ms2.Avm2.Flash.MovieSource Movies => sources.GetValue(Packs, p => { var ui = new UiAssets(p); return Ms2.Avm2.Flash.MovieSource.FromParsed(ui.Dependency); });
+
     /// <summary>Parses the shared dependency movies on a worker thread while the field loads.</summary>
     public static void Prefetch(PackSet packs, params string[] keys)
     {

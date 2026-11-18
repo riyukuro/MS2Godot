@@ -54,12 +54,22 @@ public sealed class MovieSource
         return l;
     }
 
+    readonly Dictionary<string, JsonObject> mains = new(StringComparer.OrdinalIgnoreCase);
+
+    // a movie's own layout (its imports resolved), built once like the library layouts: the build is pure and the player
+    // and views only read it
+    JsonObject MainLayout(string key, SwfMovie m)
+    {
+        if (mains.TryGetValue(key, out var l)) return l;
+        return mains[key] = LayoutJson.Build(m, key, k => Movie(k));
+    }
+
     /// <summary>A runtime and player for one movie, its imports' code loaded first. The document class is not constructed yet (call Start).</summary>
     public (Runtime Rt, Player Player) Open(string key, Action<Runtime> setup = null)
     {
         key = Path.GetFileNameWithoutExtension(key);
         var m = Movie(key) ?? throw new FileNotFoundException("movie " + key);
-        var layout = LayoutJson.Build(m, key, k => Movie(k));
+        var layout = MainLayout(key, m);
         var rt = new Runtime();
         setup?.Invoke(rt);
         var importKeys = new List<string>();
