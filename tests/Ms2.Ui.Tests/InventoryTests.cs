@@ -316,7 +316,8 @@ public class InventoryTests
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
         var sent = new List<(long, byte, byte)>(); c.View.RequestEquip = (u, s, m) => sent.Add((u, s, m));
         var raised = new List<string>(); c.Button += raised.Add;
-        var boxes = new List<string>(); c.ShowBox = b => boxes.Add(b.Msg);
+        var boxes = new List<string>(); var shownBoxes = new List<MessageBoxData>();
+        c.ShowBox = b => { boxes.Add(b.Msg); shownBoxes.Add(b); };
         var t = model.Tables;
         Assert.That(t.Common(InventoryController.ExpiredKey), Is.Not.Empty);
         Assert.That(t.Common(InventoryController.LowLevelKey), Is.Not.Empty);
@@ -339,8 +340,31 @@ public class InventoryTests
         record.Level = 50;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.5", 1 });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.ExpiredKey))), "IsExpired is expiry <= now");
+        model.Player.Name = "Tester";
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.4", 1 });
-        Assert.That((sent.Count, raised.Last()), Is.EqualTo((count, InventoryController.BindOnEquipBox)), "binds on equip: the box, not ported, no send");
+        Assert.That(sent.Count, Is.EqualTo(count), "binds on equip: the box first, no send");
+        var bind = shownBoxes.Last();
+        Assert.That((bind.Type, bind.Extra, bind.ItemUid), Is.EqualTo((0x11, InventoryController.BindOnEquipBox, 14L)));
+        Assert.That(bind.Args, Is.EqualTo(new[] { "0", "0" }), "the slot asked for (0) and the layer, Append<unsigned>");
+        Assert.That(bind.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(t.Common(InventoryController.BindOnEquipKey), "Tester")));
+        Assert.That(t.Common(InventoryController.BindOnEquipKey), Does.Contain("{0}"), "the key is formatted with the name");
+        Assert.That(bind.ItemEntry, Is.Not.Null, "SetItemEntry: flag 1");
+        Assert.That((bind.Flags & 1, bind.ItemEntry.Count, bind.ItemEntry.Max, bind.ItemEntry.Price, bind.ItemEntry.UnitCount), Is.EqualTo((1, 0, -1, -1, 1)));
+        Assert.That(bind.ItemEntry.Name, Does.StartWith($"<FONT color='#{t.Items.TextColor(1):x}'>"), "the name in the rarity's colour");
+        var obj = bind.FillObj(false, false, model);
+        string bag = "MsgBoxData_" + bind.Id;
+        Assert.That((obj["boxType"], obj["bagId"], obj["itemName"], obj["itemCount"], obj["itemMax"], obj["itemUnitCount"]),
+            Is.EqualTo(("itemNotify", bag, bind.ItemEntry.Name, 0, -1, 1)));
+        Assert.That(obj.ContainsKey("itemPrice"), Is.False, "price -1: no price members");
+        Assert.That(model.ItemSlots[bag].Item.Uid, Is.EqualTo(14L), "the bag is bound to the item (CreateItemInfoSlot)");
+        bind.ReleaseItems(model);
+        Assert.That(model.ItemSlots.ContainsKey(bag), Is.False, "the record's item binding goes with it");
+        Assert.That(c.ConfirmBindEquip(14, bind.ArgUInt(0, 0), bind.ArgUInt(1, 0)), Is.True);
+        Assert.That(sent.Last(), Is.EqualTo((14L, (byte)t.ItemModels.Get(t.Items.Get(11400001).ItemPreset).FirstSlotType, (byte)0)),
+            "the yes asks again with the binding skip: the slot chosen then, layer 0");
+        Assert.That(shownBoxes.Last(), Is.SameAs(bind), "no second box");
+        Assert.That(c.ConfirmBindEquip(99, 0, 0), Is.False, "an item the inventory no longer has: the handler's 0");
+        count = sent.Count;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", "x" });
         Assert.That(sent.Count, Is.EqualTo(count), "a button that is not a number is 0, the double click");
         record.JobGroup = 0;
@@ -390,7 +414,8 @@ public class InventoryTests
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
         var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
         var raised = new List<string>(); c.Button += raised.Add;
-        var boxes = new List<string>(); c.ShowBox = b => boxes.Add(b.Msg);
+        var boxes = new List<string>(); var shownBoxes = new List<MessageBoxData>();
+        c.ShowBox = b => { boxes.Add(b.Msg); shownBoxes.Add(b); };
 
         Assert.That(c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" }), Is.True);
         Assert.That(sent, Is.EqualTo(new[] { (20L, "") }), "the uid and an empty argument");
@@ -409,10 +434,25 @@ public class InventoryTests
         record.JobGroup = 10;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.4" });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((2, t.Common(InventoryController.ExpiredKey))), "IsExpired is expiry <= now");
+        model.Player.Name = "Tester";
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.3" });
-        Assert.That((sent.Count, raised.Last()), Is.EqualTo((2, InventoryController.BindOnUseBox)), "binds on use: the box, not ported, no send");
+        Assert.That(sent.Count, Is.EqualTo(2), "binds on use: the box first, no send");
+        var bind = shownBoxes.Last();
+        Assert.That((bind.Type, bind.Extra, bind.ItemUid, bind.Args.Count), Is.EqualTo((0x11, InventoryController.BindOnUseBox, 23L, 0)));
+        Assert.That(bind.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(t.Common(InventoryController.BindOnUseKey), "Tester")));
+        Assert.That(bind.ItemEntry?.Item?.Uid, Is.EqualTo(23L));
+        Assert.That(c.ConfirmBindUse(23), Is.True);
+        Assert.That(sent.Last(), Is.EqualTo((23L, "")), "the yes uses it with bConfirmed: sent");
+        Assert.That(shownBoxes.Last(), Is.SameAs(bind), "no second box");
+        Assert.That(c.ConfirmBindUse(99), Is.False, "an item the inventory no longer has: the handler's 0");
+        var notices = new List<string>(); c.SystemNotice += notices.Add;
+        record.Level = 0;
+        Assert.That(c.ConfirmBindUse(23), Is.True);
+        record.Level = 50;
+        Assert.That((sent.Count, notices.LastOrDefault()), Is.EqualTo((3, InventoryController.UseLevelKey)),
+            "CanUseItem again on the yes: its level check is a system notice (unit_140d1ae30:461)");
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
-        Assert.That((sent.Count, raised.Last()), Is.EqualTo((2, "notifySlotUse")), "a function with its own handler: raised");
+        Assert.That((sent.Count, raised.Last()), Is.EqualTo((3, "notifySlotUse")), "a function with its own handler: raised");
     }
 
     [Test]

@@ -1161,6 +1161,14 @@ public partial class HudScene : Node, IUiStageHost
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
+        c.SystemNotice += key => GD.Print($"inventory: system notice {key}: {hudModel.Tables.Common(key)}");
+        // the bind boxes' yes (UIMessageBox::HandleUseBindFuncItemButton / HandleUseBindEquipItemButton) goes back to the
+        // inventory the box came from
+        if (MessageBoxLayer.Instance?.Controller is { } boxes)
+        {
+            boxes.UseBindFuncItem = uid => c.ConfirmBindUse(uid);
+            boxes.UseBindEquipItem = (uid, slot, mode) => c.ConfirmBindEquip(uid, slot, mode);
+        }
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.Unloaded += () =>
         {

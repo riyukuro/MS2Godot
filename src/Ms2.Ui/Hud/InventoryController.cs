@@ -410,16 +410,13 @@ public sealed class InventoryController : UiController, IInventoryBinding, IDrag
     /// InvenSlot::vfunc_13 (invenslot.cpp:765): no local player or an empty cell, nothing. A cube texture item (UGC edit) and a
     /// music score item (the score dialogs) come first and are not ported: raised. An item with a function: FUN_140a661e0
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
-    /// id): box 225 (0xe1); the level: ShowMessageBox(s_err_not_enough_level); the job: s_item_err_disable_job; the gender: box
-    /// 45. Then TryUseItem / UseItem (unit_140d1ae30_itemfunctiondispatch.cpp:532, :491): a function of
-    /// <see cref="OwnUseFunctions"/> has its own handler (raised); else FUN_140a63880 = RequestUseItem(uid, "")
-    /// (inventory.cpp:1201): FUN_140a65e30's GetItemUseError (expired without a maid id box 225, the same limits), then the use
-    /// request. Nothing is used up here: the server's item packets do. The other kinds (a shop id, a pet, an emotion, an
-    /// equipment item, FUN_14053c8b0) are not ported: raised.
-    /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe) checks,
-    /// the use cooldown (FUN_141409060, box 0x55), the function shutdown list (notice 0x2f7), the bind-on-use box (0x11,
-    /// s_msg_transfer_bind_when_use: an item that binds on use is not sent, <see cref="BindOnUseBox"/> is raised), the dead
-    /// check (box 66) and the item sound. Without the wearer's record the requirement checks are skipped.
+    /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
+    /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
+    /// <see cref="UseItem"/>. The other kinds (a shop id, a pet, an emotion, an equipment item, FUN_14053c8b0) are not
+    /// ported: raised.
+    /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe)
+    /// checks, TryUseItem's use cooldown (FUN_141409060, box 0x55). Without the wearer's record the requirement checks are
+    /// skipped.
     /// </summary>
     void DoubleClick(int i)
     {
@@ -434,11 +431,109 @@ public sealed class InventoryController : UiController, IInventoryBinding, IDrag
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(UseLevelKey); return; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return; }
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
-        if (NeedsBindConfirm(item)) { Button?.Invoke(BindOnUseBox); return; }
-        if (OwnUseFunctions.Contains(d.FunctionName)) { Button?.Invoke("notifySlotUse"); return; }
-        if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }                     // GetItemUseError 5 (an expired pet)
-        View.RequestUse?.Invoke(item.Uid, "");
+        UseItem(item, false);
     }
+
+    /// <summary>The common string GetStringCommon(0xea) (commonstringtable.cpp:1851): CanUseItem's box for an item
+    /// FUN_140528980 refuses that has not expired.</summary>
+    public const string InvalidUseKey = "s_item_err_puton_invalid";
+
+    /// <summary>
+    /// CanUseItem (unit_140d1ae30_itemfunctiondispatch.cpp:430): no local player, false; CItem::FUN_140528980 false: box 225
+    /// (0xe1) when expired, else box 0xea; the level: ShowSystemNotice(s_err_not_enough_level, 1, 1) (:461), a notice, not a
+    /// box; the job: ShowMessageBox(s_item_err_disable_job); the gender: box 45 (0x2d).
+    /// STILL-OPEN: the skill cooldown (the skill system's FUN_141765fe0 of the item's skill, box 0x55), the PC bang (0xe2), VIP,
+    /// wedding and owner-bind (0xfe) checks: their player states are not in the port. Without the wearer's record the
+    /// requirement checks are skipped.
+    /// </summary>
+    bool CanUseItem(Item item)
+    {
+        if (Model == null || !Model.HasLocalPlayer) return false;
+        var d = item.Data;
+        bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= (View?.ServerTime() ?? 0);
+        if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return false; }   // FUN_140528980: only expiry here
+        var record = Wearer?.Invoke();
+        if (record != null && !d.IsLevelAllowed(record.Level)) { SystemNotice?.Invoke(UseLevelKey); return false; }
+        if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return false; }
+        if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return false; }
+        return true;
+    }
+
+    /// <summary>
+    /// UseItem(item, bConfirmed) (unit_140d1ae30_itemfunctiondispatch.cpp:491): <see cref="CanUseItem"/>; FUN_140a661e0 (always
+    /// 1); unless confirmed, an item that binds on use and is not bound (<see cref="NeedsBindConfirm"/>) asks first: box 0x11
+    /// with s_msg_transfer_bind_when_use formatted with the player's name (vfunc_77, FUN_14028dfa0), tag
+    /// <see cref="BindOnUseBox"/>, the item uid and the item entry (its name coloured, count 0), the yes / no labels
+    /// (0x477 / 0x478), shown; its yes comes back as <see cref="ConfirmBindUse"/>. Then a function of
+    /// <see cref="OwnUseFunctions"/> has its own handler (raised); else FUN_140a63880 = RequestUseItem(uid, "")
+    /// (inventory.cpp:1201): FUN_140a65e30's GetItemUseError (expired without a maid id box 225), then the use request.
+    /// Nothing is used up here: the server's item packets do.
+    /// STILL-OPEN: the function shutdown list (CGameEventValueManager::ShutdownFunctionItem()->IsShutdown of the item id,
+    /// notice 0x2f7) and the item sound.
+    /// </summary>
+    bool UseItem(Item item, bool confirmed)
+    {
+        if (!CanUseItem(item)) return false;
+        var d = item.Data;
+        if (!confirmed && NeedsBindConfirm(item))
+        {
+            ShowBox(BindBox(item, BindOnUseKey, BindOnUseBox));
+            return true;
+        }
+        if (OwnUseFunctions.Contains(d.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
+        bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
+        if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return true; }                // GetItemUseError 5 (an expired pet)
+        View.RequestUse?.Invoke(item.Uid, "");
+        return true;
+    }
+
+    /// <summary>The bind boxes' common strings, by key (FUN_14028dfa0 formats them with the player's name).</summary>
+    public const string BindOnUseKey = "s_msg_transfer_bind_when_use", BindOnEquipKey = "s_msg_transfer_bind_when_equip";
+
+    /// <summary>
+    /// The bind box of RequestEquipItem (inventory.cpp:1245-1256) and UseItem (unit_140d1ae30_itemfunctiondispatch.cpp:509-518):
+    /// CreateMessageBox(0x11 / 17, the key's text with the player's name, no listener, the tag), SetItemUid, SetItemEntry(item,
+    /// FUN_140527b10 (the item's name), 1, 0, -1, -1, 1), SetButtonLabelIds(0x477, 0x478, 0). The equip box appends its slot
+    /// and mode first.
+    /// </summary>
+    MessageBoxData BindBox(Item item, string key, string tag)
+    {
+        string text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(key) ?? "", Pc.Name);
+        var box = MessageBoxQueue.Create(0x11, text, null, tag);
+        box.ItemUid = item.Uid;
+        box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item) ?? "", 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+        box.SetButtonLabelIds(0x477, 0x478, 0);
+        return box;
+    }
+
+    /// <summary>HandleUseBindFuncItemButton @0x1419fde80 (uimessagebox.cpp:1868), the yes: FindItemByUid of the box's item uid,
+    /// then UseItem(item, 1). False when the inventory no longer has the item (the handler's 0).</summary>
+    public bool ConfirmBindUse(long uid)
+    {
+        if (View?.FindByUid(uid) is not { } e || Model == null) return false;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return false;
+        UseItem(item, true);
+        return true;
+    }
+
+    /// <summary>HandleUseBindEquipItemButton @0x1419fdf80 (uimessagebox.cpp:1885), the yes: FindItemByUid of the box's item
+    /// uid, then RequestEquipItem(item, arg 0, arg 1, 1), the slot and mode the box kept. False when the inventory no longer
+    /// has the item (the handler's 0).
+    /// STILL-OPEN: with feature 0xe8, a refused equip of the pending item clears it (FUN_140a66f20 / FUN_140a66f40,
+    /// inventory.cpp:1769, the auto-equip pending item): the port has no pending item.</summary>
+    public bool ConfirmBindEquip(long uid, uint slot, uint mode)
+    {
+        if (View?.FindByUid(uid) is not { } e || Model == null) return false;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return false;
+        RequestEquip(item, (int)slot, (int)mode, true);
+        return true;
+    }
+
+    /// <summary>FUN_141275260(id, 1, 1) (unit_141274d10_uihelpers.cpp:267) and ShowSystemNotice of a common string: the
+    /// notice, by its key.</summary>
+    public event Action<string> SystemNotice;
 
     /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
     public const string InvalidCodiSlotKey = "s_item_err_Invalid_slot_codi", InvalidSlotKey = "s_item_err_Invalid_slot";
@@ -446,24 +541,26 @@ public sealed class InventoryController : UiController, IInventoryBinding, IDrag
         EquipJobKey = "s_item_err_puton_job", DisabledJobKey = "s_item_err_disable_job";
 
     /// <summary>
-    /// Unk_Inventory::RequestEquipItem (inventory.cpp:1236) with no binding skip: no local player, nothing.
+    /// Unk_Inventory::RequestEquipItem(item, slot, layer, skipBinding) (inventory.cpp:1236): no local player, nothing.
     /// FUN_140a65e30 (:1630) on GetItemUseError (:1572): an expired item (CItem::IsExpired, server time) without a maid id:
     /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError (:1586) on the wearer's record:
     /// gender box 45, job box 232 for an equipment item else 233, level box 224. A slot of 0 is
     /// <see cref="WornEquipment.EquipSlotFor"/> (FUN_141420a70; worn items usable as PC::CanUseItem's expiry, CItem::FUN_140528980
     /// (item.cpp:1717: expired, not a pet and no maid id), and codi-layer parts). CanEquipItem (:1418): not an equipment item with model groups none of type 0 (FUN_14053c710):
     /// nothing; layer 2 without feature 0x8e or a skin type: s_item_err_Invalid_slot_codi; layer 1 without a skin type: box
-    /// 0xd3 (211). No record: no worn item. The send maps the layer as FUN_1401fb870: 2 only with feature 142.
-    /// Nothing is put on here: the server's equip packets do.
+    /// 0xd3 (211). No record: no worn item. Unless <paramref name="skipBinding"/>, an item that binds on equip and is not
+    /// bound asks first (:1245-1256): box 17 with s_msg_transfer_bind_when_equip and the player's name, tag
+    /// <see cref="BindOnEquipBox"/>, the slot asked for and the layer appended, the item uid and entry, yes / no; its yes comes
+    /// back as <see cref="ConfirmBindEquip"/>, which asks again with the skip. The send maps the layer as FUN_1401fb870: 2
+    /// only with feature 142. Nothing is put on here: the server's equip packets do.
     /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang, VIP
     /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
     /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
-    /// 0x43, s_item_err_codi_slot, the cube texture block), the bind-on-equip box (17, s_msg_transfer_bind_when_equip: an
-    /// item that binds on equip is not sent, <see cref="BindOnEquipBox"/> is raised), the warning sounds (s_warningLevel,
+    /// 0x43, s_item_err_codi_slot, the cube texture block), the warning sounds (s_warningLevel,
     /// s_warningGender, s_warningClass) and the item sound. Without the wearer's record the requirement checks are skipped
     /// (the client always has the player).
     /// </summary>
-    void RequestEquip(Item item, int slot, int layer)
+    void RequestEquip(Item item, int slot, int layer, bool skipBinding = false)
     {
         if (!Model.HasLocalPlayer) return;
         var d = item.Data;
@@ -482,20 +579,26 @@ public sealed class InventoryController : UiController, IInventoryBinding, IDrag
         bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime <= now && !w.Data.IsPetItem && !w.Data.HasMaidId)
             && (record?.CodiActive == true || !IsLayer2(w));
         bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
-        if (slot == 0) slot = worn.EquipSlotFor(item, models, Feature, CanUse);
-        if (NeedsBindConfirm(item)) { Button?.Invoke(BindOnEquipBox); return; }
+        int selected = slot == 0 ? worn.EquipSlotFor(item, models, Feature, CanUse) : slot;
+        if (!skipBinding && NeedsBindConfirm(item))
+        {
+            // inventory.cpp:1245-1256: the box keeps the slot asked for (0: chosen again on the yes) and the layer
+            var box = BindBox(item, BindOnEquipKey, BindOnEquipBox);
+            box.Append((uint)slot);
+            box.Append((uint)layer);
+            ShowBox(box);
+            return;
+        }
         byte mode = layer switch { 1 => 1, 2 => Feature(142) ? (byte)2 : (byte)1, _ => 0 };
-        View.RequestEquip?.Invoke(item.Uid, (byte)slot, mode);
+        View.RequestEquip?.Invoke(item.Uid, (byte)selected, mode);
     }
 
     /// <summary>CItemTransfer::HasBindingRule (itemsocketsystemutil.cpp:2788, rule &amp; 8) and no binding (HasBinding, :2795): the
     /// client asks first, box 17 / 0x11, and sends only on its confirm.</summary>
     static bool NeedsBindConfirm(Item item) => item.Record?.Transfer is { } t && (t.Rule & 8) != 0 && !t.HasBinding;
 
-    /// <summary>The boxes raised (by their tag, inventory.cpp:196 / unit_140d1ae30_itemfunctiondispatch.cpp:304) in place of a
-    /// send the client confirms first: the bind-on-equip box (RequestEquipItem, inventory.cpp:1245,
-    /// s_msg_transfer_bind_when_equip) and the bind-on-use box (UseItem, s_msg_transfer_bind_when_use). Not ported: nothing is
-    /// sent.</summary>
+    /// <summary>The bind boxes' tags (s_useBindEquipItem inventory.cpp:196, s_strUseBindFuncItem
+    /// unit_140d1ae30_itemfunctiondispatch.cpp:304), which UIMessageBox::HandlePlainTag answers (uimessagebox.cpp:1052-1061).</summary>
     public const string BindOnEquipBox = "useBindEquipItem", BindOnUseBox = "useBindFuncItem";
 
     void ShowCommonBox(string key) => ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(key) ?? "", null, ""));

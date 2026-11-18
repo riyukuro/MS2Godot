@@ -125,8 +125,8 @@ public static class MessageBoxQueue
 /// <summary>
 /// The C++ side of the message box layer, UIMessageBox (client/ms2/uimessagebox.cpp; UI id 0x4e48), for its movie
 /// uimessagebox. The boxes' layout, buttons and keys are the movie's (MessageBoxFactory and the msgbox_* classes); this
-/// opens and closes them with the box record's members and answers their OnClick. Of the tag handlers only "gameexit" is
-/// ported; the others are logged.
+/// opens and closes them with the box record's members and answers their OnClick. Of the tag handlers "gameexit",
+/// "useBindFuncItem" and "useBindEquipItem" are ported; the others are logged.
 /// </summary>
 public sealed class MessageBoxController : UiController
 {
@@ -153,6 +153,15 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>HandleGameexitButton @0x1419fb480, button 0: SendRequestQuitAndDisconnect, then PostQuitMessage(0).</summary>
     public event Action GameExit;
+
+    /// <summary>HandleUseBindFuncItemButton's yes (uimessagebox.cpp:1868): the box's item uid used again with bConfirmed
+    /// (UseItem(item, 1)); false when the inventory no longer has the item. Null: the item is not found.</summary>
+    public Func<long, bool> UseBindFuncItem;
+
+    /// <summary>HandleUseBindEquipItemButton's yes (uimessagebox.cpp:1885): the box's item uid, arg 0 (the slot) and arg 1 (the
+    /// layer) put on again with the binding skip (RequestEquipItem(item, a0, a1, 1)); false when the inventory no longer has
+    /// the item. Null: the item is not found.</summary>
+    public Func<long, uint, uint, bool> UseBindEquipItem;
 
     /// <summary>A tag this port has no handler for (HandlePlainTag / FUN_1419fa910's other tags).</summary>
     public event Action<int, string> UnportedTag;
@@ -224,7 +233,7 @@ public sealed class MessageBoxController : UiController
         data = box;
         if (box.Sound.Length > 0) PlaySound(box.Sound);
         if (data == null) return;
-        Host.Invoke(Host.Entity, "open", data.FillObj(MessageBoxQueue.AllModaless(), RbMerat));
+        Host.Invoke(Host.Entity, "open", data.FillObj(MessageBoxQueue.AllModaless(), RbMerat, Host.Model));
         SetShown(true);
     }
 
@@ -239,6 +248,7 @@ public sealed class MessageBoxController : UiController
             SetShown(false);
             PlaySound("dialog_close");
         }
+        data?.ReleaseItems(Host?.Model);     // the record's last reference goes with m_data (~CMsgBoxDataItem's DestroyItemInfoSlot)
         data = null;
         count = 0;
         closing = false;
@@ -322,13 +332,18 @@ public sealed class MessageBoxController : UiController
         return box.Type == 0;
     }
 
-    /// <summary>HandlePlainTag @0x1419f9ba0, its "gameexit" branch; FUN_1419fa910 ("tag,arg") and the other plain tags
-    /// are reported as unported, except on a box with a listener: its tags (the slot menu's "expelMember:name",
-    /// "changeChief:name") are the listener's, which OnClick has already called, and no plain tag handler takes them.</summary>
+    /// <summary>HandlePlainTag @0x1419f9ba0 (uimessagebox.cpp:899), its "gameexit", "useBindFuncItem" and "useBindEquipItem"
+    /// branches (:1052-1061); FUN_1419fa910 ("tag,arg") and the other plain tags are reported as unported, except on a box
+    /// with a listener: its tags (the slot menu's "expelMember:name", "changeChief:name") are the listener's, which OnClick
+    /// has already called, and no plain tag handler takes them.</summary>
     bool HandlePlainTag(int button, string tag)
     {
         if (tag == "gameexit")
             return HandleGameexitButton(button);
+        if (tag == "useBindFuncItem")
+            return HandleUseBindFuncItemButton(button);
+        if (tag == "useBindEquipItem")
+            return HandleUseBindEquipItemButton(button);
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -341,6 +356,26 @@ public sealed class MessageBoxController : UiController
             GameExit?.Invoke();
             return false;
         }
+        return true;
+    }
+
+    /// <summary>HandleUseBindFuncItemButton @0x1419fde80: no record, 1; the yes finds the item (0 without it) and uses it
+    /// confirmed; 1.</summary>
+    bool HandleUseBindFuncItemButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0 && !(UseBindFuncItem?.Invoke(data.ItemUid) ?? false)) return false;
+        return true;
+    }
+
+    /// <summary>HandleUseBindEquipItemButton @0x1419fdf80: no record, 1; the yes finds the item (0 without it) and puts it on
+    /// with FUN_141a02e90(0, 0) and FUN_141a02e90(1, 0); 1. The feature 0xe8 pending item reset is not ported (no pending
+    /// item).</summary>
+    bool HandleUseBindEquipItemButton(int button)
+    {
+        if (data == null) return true;
+        long uid = data.ItemUid;
+        if (button == 0 && !(UseBindEquipItem?.Invoke(uid, data.ArgUInt(0, 0), data.ArgUInt(1, 0)) ?? false)) return false;
         return true;
     }
 

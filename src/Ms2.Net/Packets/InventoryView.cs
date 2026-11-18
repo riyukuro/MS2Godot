@@ -81,6 +81,9 @@ public sealed class InventoryView {
         return slot < 0 || slot >= c.Count || c[slot].Empty ? null : book.Get(c[slot].Uid);
     }
 
+    /// <summary>Unk_Inventory::FindItemByUid: the item of a uid, null when the inventory has none.</summary>
+    public EquipItem FindByUid(long uid) => book.Get(uid);
+
     /// <summary>GetItemCount(tab) 0x140a5cf30: the non-empty cells.</summary>
     public int Used(int tab) => Cells(tab).Count(c => !c.Empty);
 

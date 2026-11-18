@@ -9,8 +9,9 @@ public interface IMessageBoxListener
 
 /// <summary>
 /// CMsgBoxData (client/ms2/uimessageboxdata.h; ctor and setters unit_141a00db0.cpp, FillObj uimessageboxdata.cpp): the
-/// record of one message box: its type, texts, buttons, tag, listener or callback, check boxes, text input and size. The
-/// item bags, timers, buffs, group lists and terms of the other box types are not ported.
+/// record of one message box: its type, texts, buttons, tag, listener or callback, arguments, item uid, first item entry,
+/// check boxes, text input and size. The second item, timers, buffs, group lists and terms of the other box types are not
+/// ported.
 /// </summary>
 public sealed class MessageBoxData
 {
@@ -40,6 +41,13 @@ public sealed class MessageBoxData
     // text input (flag 2)
     public int InputType, InputMaxChars = 20, InputMaxLine, InputShowLimit;
     public string InputDefault = "", MaxLineMsg = "", CountMsg = "";
+
+    /// <summary>m_args (a CAtlArray&lt;CStringW&gt;): the arguments a tag handler reads back, kept as text.</summary>
+    public readonly List<string> Args = new();
+    /// <summary>m_30 (SetItemUid @0x141a01600): the item a tag handler finds again (FindItemByUid).</summary>
+    public long ItemUid;
+    /// <summary>m_spItem (SetItemEntry @0x141a01ee0, flag 1): the item FillObj binds as "MsgBoxData_&lt;id&gt;".</summary>
+    public MessageBoxItem ItemEntry;
 
     static readonly string[] AlignNames = { "left", "center", "right", "justify" };
 
@@ -103,6 +111,46 @@ public sealed class MessageBoxData
     /// <summary>SetButtonLabels @0x141a01690.</summary>
     public void SetButtonLabels(string b0, string b1, string b2) => (Btn0, Btn1, Btn2) = (b0 ?? "", b1 ?? "", b2 ?? "");
 
+    /// <summary>SetButtonLabelIds @0x141a01700: GetStringCommon of each id.</summary>
+    public void SetButtonLabelIds(int a, int b, int c) => (Btn0, Btn1, Btn2) = (Common(a), Common(b), Common(c));
+
+    /// <summary>Append&lt;unsigned&gt; (0x140534050, uimessageboxdata.h:216): an argument, as its decimal text.</summary>
+    public void Append(uint n) => Args.Add(n.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>FUN_141a02e90 (unit_141a00db0.cpp:565): GetIntArg (actionkeyobject.cpp:3363) of the argument, _wtoi of its
+    /// text; <paramref name="def"/> past the last argument.</summary>
+    public uint ArgUInt(int index, uint def) => (uint)index < (uint)Args.Count ? (uint)WToI(Args[index]) : def;
+
+    /// <summary>_wtoi: leading blanks, a sign, then the digits up to the first other character; 0 without digits.</summary>
+    static int WToI(string s)
+    {
+        int i = 0, sign = 1;
+        long v = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        if (i < s.Length && (s[i] == '-' || s[i] == '+')) sign = s[i++] == '-' ? -1 : 1;
+        for (; i < s.Length && s[i] >= '0' && s[i] <= '9'; i++) v = Math.Min(v * 10 + (s[i] - '0'), 1L << 32);
+        v *= sign;
+        return v > int.MaxValue ? int.MaxValue : v < int.MinValue ? int.MinValue : (int)v;
+    }
+
+    /// <summary>SetItemEntry @0x141a01ee0: with an item, a new CMsgBoxDataItem (flag 1), its name through SetName (coloured
+    /// when <paramref name="colorMode"/> is 1, by the item's rarity), the item, count, max, price and unit count.
+    /// <paramref name="textColor"/> is CItemDataTable::GetTextColor.</summary>
+    public void SetItemEntry(Items.Item item, string name, int colorMode, int count, int max, int price, int unitCount,
+        Func<int, uint> textColor)
+    {
+        if (item == null) return;
+        var e = new MessageBoxItem();
+        Flags |= 1;
+        e.SetName(name, colorMode == 1, item.Rarity, textColor);
+        e.Item = item;
+        e.Count = count;
+        e.Max = max;
+        e.Price = price;
+        e.UnitCount = unitCount;
+        ItemEntry = e;
+    }
+
     /// <summary>SetCheckbox0 @0x141a024e0.</summary>
     public void SetCheckbox0(string label, bool selected) { Flags |= 8; Check0 = label ?? ""; Check0Selected = selected; }
 
@@ -160,10 +208,11 @@ public sealed class MessageBoxData
         1 => "number", 2 => "charname", 3 => "housename", 4 => "maidname", 5 => "numberText", _ => "text",
     };
 
-    /// <summary>FillObj @0x141a034d0, for the members this port keeps: the common members, the check boxes (8), the input
-    /// (2) and the size (0x10); the timer, item, link and per-type members are not ported. <paramref name="showModaless"/> is
-    /// FUN_14151f9c0, <paramref name="rbMerat"/> is feature 0x61.</summary>
-    public Dictionary<string, object> FillObj(bool showModaless, bool rbMerat = false)
+    /// <summary>FillObj @0x141a034d0, for the members this port keeps: the common members, the input (2), the first item
+    /// (1), the check boxes (8) and the size (0x10); the timer, second item, link and per-type members are not ported.
+    /// <paramref name="showModaless"/> is FUN_14151f9c0, <paramref name="rbMerat"/> is feature 0x61. <paramref name="model"/>
+    /// holds the item slot bindings (CreateItemInfoSlot); without it the item block is left out.</summary>
+    public Dictionary<string, object> FillObj(bool showModaless, bool rbMerat = false, UiModel model = null)
     {
         var o = new Dictionary<string, object>
         {
@@ -183,6 +232,29 @@ public sealed class MessageBoxData
             o["maxLineMsg"] = MaxLineMsg;
             o["textCountMsg"] = CountMsg;
         }
+        if ((Flags & 1) != 0 && ItemEntry != null && model != null)
+        {
+            // uimessageboxdata.cpp:156-176: the bag "MsgBoxData_<id>" is bound again (DestroyItemInfoSlot, then
+            // CreateItemInfoSlot(bag, item, 0, m_48, 0)) and is the entry's bind id.
+            var e = ItemEntry;
+            string bag = "MsgBoxData_" + Id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            model.ItemSlots.Remove(bag);
+            model.ItemSlots[bag] = new Items.ItemInfoSlot(bag, e.Item, 0, e.IconType, 0);
+            e.BindId = bag;
+            o["bagId"] = e.BindId;
+            o["itemName"] = e.Name;
+            if (e.Count != -1)
+            {
+                o["itemCount"] = e.Count;
+                o["itemMax"] = e.Max;
+                o["itemUnitCount"] = e.UnitCount;
+                if (e.Price != -1)
+                {
+                    o["itemTotalPrice"] = (long)e.Price * e.Count;
+                    o["itemPrice"] = e.Price;
+                }
+            }
+        }
         if ((Flags & 8) != 0)
         {
             if (Check0.Length > 0) o["checkbox0"] = Check0;
@@ -200,5 +272,32 @@ public sealed class MessageBoxData
         }
         if (rbMerat) o["rbmerat"] = true;
         return o;
+    }
+
+    /// <summary>The record's item bindings go (CMsgBoxDataItem's destructor @0x141a06590: DestroyItemInfoSlot of its bind
+    /// id). The layer calls it when the box is let go.</summary>
+    public void ReleaseItems(UiModel model)
+    {
+        if (ItemEntry is { BindId.Length: > 0 } e) model?.ItemSlots.Remove(e.BindId);
+    }
+}
+
+/// <summary>CMsgBoxDataItem (uimessageboxdata.h:50, 0x50): one item of a box: its shown name, the item, the counts and price,
+/// the slot's icon type (m_48) and the bind id FillObj gives it. The constructor @0x141a064e0 sets count, max and price -1,
+/// the unit count 1 and m_48 0.</summary>
+public sealed class MessageBoxItem
+{
+    public string Name = "", BindId = "";
+    public Items.Item Item;
+    public int Count = -1, Max = -1, Price = -1, UnitCount = 1;
+    /// <summary>m_48: CreateItemInfoSlot's icon type (0: the slot's own 0x415).</summary>
+    public int IconType;
+
+    /// <summary>SetName @0x141a06630: the name; with colour, FUN_14183e930(name, GetTextColor(rarity)), the
+    /// &lt;FONT color='#%x'&gt;%s&lt;/FONT&gt; wrap.</summary>
+    public void SetName(string name, bool color, int rarity, Func<int, uint> textColor)
+    {
+        Name = name ?? "";
+        if (color && textColor != null) Name = $"<FONT color='#{textColor(rarity):x}'>{name}</FONT>";
     }
 }
