@@ -90,6 +90,32 @@ public class QuestTests
     }
 
     [Test]
+    public void MapPathsFromPortalListsMatchTheFullLoop()
+    {
+        // the list-built graph (From) against the unskipped loop: one-way portals, repeated targets, a field's portal to
+        // itself, portals to field 0 (the unused index 0) and to fields that are not nodes, field counts off the vector width
+        for (int seed = 1; seed <= 8; seed++)
+        {
+            var rnd = new Random(seed);
+            int count = 30 + seed * 7;
+            var fields = Enumerable.Range(1, count).Select(i => i == 5 ? QuestMapGraph.SlowField : 1000 + i).ToArray();
+            var lists = new Dictionary<int, List<int>>();
+            for (int c = 0; c < count * (seed % 3 + 1); c++)
+            {
+                int a = fields[rnd.Next(count)];
+                int b = rnd.Next(20) switch { 0 => 0, 1 => 99999, 2 => a, _ => fields[rnd.Next(count)] };
+                if (!lists.TryGetValue(a, out var l)) lists[a] = l = new List<int>();
+                l.Add(b);
+            }
+            bool Portal(int a, int b) => lists.TryGetValue(a, out var l) && l.Contains(b);
+            var g = new QuestMapGraph(fields, lists);
+            foreach (int a in fields.Append(0))
+                foreach (int b in fields.Append(0))
+                    Assert.That(g.FindMapPath(a, b), Is.EqualTo(ReferencePath(fields, Portal, a, b)), $"seed {seed}: {a} -> {b}");
+        }
+    }
+
+    [Test]
     public void NearestMapPicksFewestHops()
     {
         var g = Chain();
@@ -168,6 +194,11 @@ public class QuestTests
         int far = meta.PortalFields.Select(f => g.FindMapPath(2000001, f)?.Count ?? 0).Max();
         TestContext.Out.WriteLine($"longest path from Tria: {far} fields");
         Assert.That(far, Is.GreaterThan(2));
+        // the list-built graph is the pairwise-built one: every path from a spread of starts
+        var pairwise = new QuestMapGraph(meta.PortalFields, (a, b) => meta.PortalTargets.TryGetValue(a, out var l) && l.Contains(b));
+        for (int i = 0; i < meta.PortalFields.Count; i += 7)
+            foreach (int b in meta.PortalFields)
+                Assert.That(g.FindMapPath(meta.PortalFields[i], b), Is.EqualTo(pairwise.FindMapPath(meta.PortalFields[i], b)));
         var s = QuestStrings.Load(packs);
         Assert.That(s.DistanceM, Does.Contain("{0}"));
     }

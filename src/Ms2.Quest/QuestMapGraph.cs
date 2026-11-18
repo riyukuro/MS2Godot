@@ -1,3 +1,4 @@
+using System.Numerics;
 using Ms2.Formats.Pack;
 
 namespace Ms2.Quest;
@@ -10,7 +11,7 @@ namespace Ms2.Quest;
 public sealed class QuestMapGraph
 {
     public const int SlowField = 0x3197542;     // 52000066
-    const short Unreachable = 0x7fff;
+    const ushort Unreachable = 0x7fff;
 
     readonly Dictionary<int, short> indexOf = new();
     readonly short[][] mid;                     // m_78: the intermediate index of the best path, 0 = direct
@@ -24,39 +25,100 @@ public sealed class QuestMapGraph
     public QuestMapGraph(IReadOnlyList<int> fields, Func<int, int, bool> hasPortalTarget)
     {
         hasPortal = hasPortalTarget;
-        int n = fields.Count + 1;
-        var map = new int[n];
-        for (int i = 0; i < fields.Count; i++) { map[i + 1] = fields[i]; indexOf[fields[i]] = (short)(i + 1); }
-        mapIds = map;
-        var dist = new short[n][];
+        var map = mapIds = Index(fields, indexOf);
+        int n = map.Length;
+        var dist = new ushort[n][];
         mid = new short[n][];
         for (int i = 0; i < n; i++)
         {
-            dist[i] = new short[n];
+            dist[i] = new ushort[n];
             mid[i] = new short[n];
             for (int j = 0; j < n; j++)
             {
                 if (i == j) dist[i][j] = 0;
-                else if (hasPortalTarget(map[i], map[j])) dist[i][j] = (map[i] == SlowField || map[j] == SlowField) ? (short)3 : (short)1;
+                else if (hasPortalTarget(map[i], map[j])) dist[i][j] = Cost(map[i], map[j]);
                 else dist[i][j] = Unreachable;
             }
         }
-        // Floyd-Warshall, as the client's loop runs it. A row with no path to k is skipped: its sum through k is at least
-        // Unreachable, which is never below a distance, so the loop would change nothing there (the same tables, k by k).
+        FloydWarshall(dist, mid);
+    }
+
+    /// <summary>The same graph from the portal lists: HasPortalTarget(a, b) is "b is in a's list", so the start table is
+    /// filled from the lists (one entry per listed target, at every index holding it, index 0 holding field 0) instead of
+    /// asking every pair (n² list scans).</summary>
+    public QuestMapGraph(IReadOnlyList<int> fields, IReadOnlyDictionary<int, List<int>> portalTargets)
+    {
+        hasPortal = (a, b) => portalTargets.TryGetValue(a, out var l) && l.Contains(b);
+        var map = mapIds = Index(fields, indexOf);
+        int n = map.Length;
+        var at = new Dictionary<int, List<short>>();
+        for (short i = 0; i < n; i++)
+        {
+            if (!at.TryGetValue(map[i], out var l)) at[map[i]] = l = new List<short>();
+            l.Add(i);
+        }
+        var dist = new ushort[n][];
+        mid = new short[n][];
+        for (int i = 0; i < n; i++)
+        {
+            var d = dist[i] = new ushort[n];
+            mid[i] = new short[n];
+            Array.Fill(d, Unreachable);
+            d[i] = 0;
+            if (!portalTargets.TryGetValue(map[i], out var targets)) continue;
+            foreach (int t in targets)
+                if (at.TryGetValue(t, out var js))
+                    foreach (short j in js)
+                        if (j != i) d[j] = Cost(map[i], t);
+        }
+        FloydWarshall(dist, mid);
+    }
+
+    static int[] Index(IReadOnlyList<int> fields, Dictionary<int, short> indexOf)
+    {
+        var map = new int[fields.Count + 1];
+        for (int i = 0; i < fields.Count; i++) { map[i + 1] = fields[i]; indexOf[fields[i]] = (short)(i + 1); }
+        return map;
+    }
+
+    static ushort Cost(int from, int to) => from == SlowField || to == SlowField ? (ushort)3 : (ushort)1;
+
+    /// <summary>
+    /// Floyd-Warshall, as the client's loop runs it. A row with no path to k is skipped: its sum through k is at least
+    /// Unreachable, which is never below a distance, so the loop would change nothing there (the same tables, k by k).
+    /// The j loop runs on vectors: each j is decided from di[k] and dk[j] only, neither of which the loop changes (dk[k] is
+    /// 0 and di[i] is 0), so updating a block of j at once gives the same tables. Distances are unsigned: a sum is at most
+    /// 2 * 0x7fff, so it never wraps and compares as the client's int sum does.
+    /// </summary>
+    static void FloydWarshall(ushort[][] dist, short[][] mid)
+    {
+        int n = dist.Length, w = Vector<ushort>.Count;
         for (int k = 0; k < n; k++)
         {
             var dk = dist[k];
+            var vk = new Vector<short>((short)k);
             for (int i = 0; i < n; i++)
             {
                 var di = dist[i];
                 int ik = di[k];
                 if (ik == Unreachable) continue;
                 var mi = mid[i];
-                for (int j = 0; j < n; j++)
+                var vik = new Vector<ushort>((ushort)ik);
+                int j = 0;
+                for (; j + w <= n; j += w)
+                {
+                    var sum = vik + new Vector<ushort>(dk, j);
+                    var cur = new Vector<ushort>(di, j);
+                    var less = Vector.LessThan(sum, cur);
+                    if (less == Vector<ushort>.Zero) continue;
+                    Vector.Min(sum, cur).CopyTo(di, j);
+                    Vector.ConditionalSelect(Vector.AsVectorInt16(less), vk, new Vector<short>(mi, j)).CopyTo(mi, j);
+                }
+                for (; j < n; j++)
                     if (ik + dk[j] < di[j])
                     {
                         mi[j] = (short)k;
-                        di[j] = (short)(ik + dk[j]);
+                        di[j] = (ushort)(ik + dk[j]);
                     }
             }
         }
@@ -75,8 +137,7 @@ public sealed class QuestMapGraph
             return shared.GetValue(packs, p => Task.Run(() => { var m = FieldMeta.Load(p); return (m, From(m)); }));
     }
 
-    public static QuestMapGraph From(FieldMeta meta) =>
-        new(meta.PortalFields, (a, b) => meta.PortalTargets.TryGetValue(a, out var l) && l.Contains(b));
+    public static QuestMapGraph From(FieldMeta meta) => new(meta.PortalFields, meta.PortalTargets);
 
     /// <summary>FindMapPath: the fields from <paramref name="from"/> to <paramref name="to"/> inclusive, or null.</summary>
     public List<int> FindMapPath(int from, int to)
