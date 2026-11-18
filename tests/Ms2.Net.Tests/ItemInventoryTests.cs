@@ -108,4 +108,21 @@ public class ItemInventoryTests {
         Assert.That(Rd(w => { w.WriteByte(5); w.WriteInt(9); w.WriteLong(79); w.WriteByte(4); w.WriteByte(1); }), Is.EqualTo(new ItemPutOnOrOff.MoveWorn(9, 79, 4, 1)));
         Assert.That(Rd(w => { w.WriteByte(4); }), Is.EqualTo(new ItemPutOnOrOff.Other(4)));
     }
+
+    // FUN_140a66510 / FUN_140a66750 against the KMS2 table/constants.xml entries (bagSlotTab*Count) and the switch order at 0x140a66510.
+    [Test] public void BagSlotsFollowTheClientSwitchAndConstants() {
+        var xml = new System.Collections.Generic.Dictionary<string, int[]> {
+            ["bagSlotTabGameCount"] = new[] { 48, 48 }, ["bagSlotTabSkinCount"] = new[] { 156, 156 }, ["bagSlotTabSummonCount"] = new[] { 48, 48 },
+            ["bagSlotTabMaterialCount"] = new[] { 48, 48 }, ["bagSlotTabMasteryCount"] = new[] { 126, 48 }, ["bagSlotTabLifeCount"] = new[] { 48, 48 },
+            ["bagSlotTabQuestCount"] = new[] { 48, 48 }, ["bagSlotTabGemCount"] = new[] { 48, 48 }, ["bagSlotTabPetCount"] = new[] { 60, 78 },
+            ["bagSlotTabActiveSkillCount"] = new[] { 84, 48 }, ["bagSlotTabCoinCount"] = new[] { 48, 48 }, ["bagSlotTabBadgeCount"] = new[] { 60, 48 },
+            ["bagSlotTabMiscCount"] = new[] { 84, 48 }, ["bagSlotTabLapenShardCount"] = new[] { 48, 48 }, ["bagSlotTabPieceCount"] = new[] { 48, 48 },
+        };
+        int[] want = { 48, 156, 48, 48, 48, 48, 48, 84, 126, 60, 84, 48, 60, 48, 48 };
+        for (int t = 0; t < 15; t++) Assert.That(BagSlots.Base(t, true, k => xml.GetValueOrDefault(k)), Is.EqualTo(want[t]), "tab " + t);
+        Assert.That(BagSlots.Max(9, true, k => xml.GetValueOrDefault(k)), Is.EqualTo(78));
+        Assert.That(BagSlots.Base(1, false, k => xml.GetValueOrDefault(k)), Is.EqualTo(48));      // BagRenewal01 off
+        Assert.That(BagSlots.Base(1, true, k => null), Is.EqualTo(48));                           // entry absent
+        Assert.Throws<System.ArgumentOutOfRangeException>(() => BagSlots.Base(15, true, k => null));
+    }
 }

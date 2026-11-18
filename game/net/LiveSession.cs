@@ -143,6 +143,16 @@ public partial class LiveSession : Node
         };
     }
 
+    /// <summary>The per-tab base slot count (FUN_140a66510) from table/constants.xml; the default 48 when the data is missing.</summary>
+    static Func<int, int> BaseSlotTable() {
+        Func<int, int> t = null;
+        return tab => {
+            try { t ??= Ms2Godot.Net.BagSlotTable.Load(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)); }
+            catch (Exception e) { GD.Print($"live: bag slot table unavailable ({e.Message})"); t = _ => Ms2.Net.Packets.BagSlots.Default; }
+            return t(tab);
+        };
+    }
+
     static ItemKinds kinds;
     static ItemKinds Kinds() => kinds ??= new ItemKinds(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
 
@@ -169,6 +179,7 @@ public partial class LiveSession : Node
             ItemReader.ExtraOf ??= id => { try { return Kinds().ExtraOf(id); } catch (Exception e) { GD.Print($"live: item kinds unavailable ({e.Message})"); return null; } };
             ItemReader.Known ??= id => { try { return Kinds().Known(id); } catch { return true; } };   // data unavailable: read every id
             Items.TabOf = id => { try { return Kinds().TabOf(id); } catch { return 7; } };
+            Items.BaseSlots ??= BaseSlotTable();
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
             if (entry.EarlyFactor is { } fp) GD.Print($"live: global factor {(Factors.Apply(fp.Reader()) ? "applied" : "ignored")} (before the field)");
             foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
