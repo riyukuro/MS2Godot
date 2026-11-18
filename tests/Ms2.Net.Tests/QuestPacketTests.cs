@@ -57,4 +57,24 @@ public class QuestPacketTests {
         book.Apply(new QuestMessage.Counts(true, true, new int[0]));         // weekly: state 3
         Assert.That(book.All.Select(q => q.Id).OrderBy(i => i), Is.EqualTo(new[] { 3, 4, 5 }));
     }
+
+    static void Record(ByteWriter w, int id, int state, params int[] progress) {
+        w.WriteInt(id); w.WriteInt(state); w.WriteInt(0); w.WriteLong(1); w.WriteLong(0); w.WriteBool(false);
+        w.WriteInt(progress.Length); foreach (int p in progress) w.WriteInt(p);
+    }
+
+    [Test] public void LoginQuestListMisreadsAfterAnIdWithoutQuestData() {
+        var w = new ByteWriter(); w.WriteByte(0x16); w.WriteInt(3);
+        Record(w, 100, 2, 1); Record(w, 200, 1, 3); Record(w, 300, 1, 0);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        var load = (QuestMessage.Load) QuestMessage.Read(r, id => id == 100 || id == 300);
+        // 200 has no data: its progress (count 1, value 3) is not read, so the third record starts inside it and is not quest 300
+        Assert.That(load.Quests.Select(q => q.Id), Is.EqualTo(new[] { 100 }));
+        Assert.That(load.Skipped.First(), Is.EqualTo(200));
+        Assert.That(load.Skipped, Does.Not.Contain(300));
+        // with every id known all three come through
+        var all = (QuestMessage.Load) QuestMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()), _ => true);
+        Assert.That(all.Quests.Select(q => q.Id), Is.EqualTo(new[] { 100, 200, 300 }));
+        Assert.That(all.Skipped, Is.Empty); Assert.That(all.Overrun, Is.False);
+    }
 }

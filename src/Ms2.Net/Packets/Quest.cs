@@ -16,8 +16,13 @@ public sealed class QuestRecord {
 
 /// <summary>A decoded Inbound 0x52 packet (one per OnQuest mode). Unread modes are kept as <see cref="Other"/> with the mode number.</summary>
 public abstract record QuestMessage {
-    /// <summary>Mode 0x16: every quest the character has (id, state, completion count, start, complete, tracking, then a count and progress ints each).</summary>
-    public sealed record Load(IReadOnlyList<QuestRecord> Quests) : QuestMessage;
+    /// <summary>Mode 0x16: every quest the character has (id, state, completion count, start, complete, tracking, then a count and progress ints each).
+    /// <see cref="Skipped"/>: the ids the client could not create (no quest data), whose progress it then does not read, so the records after
+    /// one are misread; <see cref="Overrun"/>: the reads ran past the packet's end (the client's handler stops there).</summary>
+    public sealed record Load(IReadOnlyList<QuestRecord> Quests) : QuestMessage {
+        public IReadOnlyList<int> Skipped { get; init; } = Array.Empty<int>();
+        public bool Overrun { get; init; }
+    }
     /// <summary>Mode 0x17: the pinned (loaded) quest ids.</summary>
     public sealed record Pinned(IReadOnlyList<int> Ids) : QuestMessage;
     /// <summary>Mode 0x15: i32 group, i32 refresh count; the client clears all its quest lists (the server sends it as exploration progress before the states).</summary>
@@ -48,7 +53,15 @@ public abstract record QuestMessage {
     static IReadOnlyList<int> IdList(ByteReader r) { int n = r.ReadInt(); var l = new List<int>(n); for (int i = 0; i < n; i++) l.Add(r.ReadInt()); return l; }
     static long[] Prog(ByteReader r) { int n = r.ReadInt(); var a = new long[n]; for (int i = 0; i < n; i++) a[i] = r.ReadInt(); return a; }
 
-    public static QuestMessage Read(ByteReader r) {
+    public static QuestMessage Read(ByteReader r) => Read(r, null);
+
+    /// <summary>
+    /// <paramref name="hasQuestData"/>: whether the client's quest data has the id (GetQuestData). Mode 0x16 then reads as OnQuest does
+    /// (questmanager_2.cpp:959): CreateQuestByType gives no quest for an id without data (FUN_14074bc90 returns type 11), and the
+    /// progress count and ints are read only inside the quest's Init branch, so every record after such an id is read from the wrong
+    /// offset. Null: every id counts as known.
+    /// </summary>
+    public static QuestMessage Read(ByteReader r, Func<int, bool> hasQuestData) {
         int mode = r.ReadByte();
         switch (mode) {
             case 0: return new Error(r.ReadInt());
@@ -62,12 +75,15 @@ public abstract record QuestMessage {
             case 9: return new Tracking(r.ReadInt(), r.ReadByte() != 0);
             case 0x15: return new Reset(r.ReadInt(), r.ReadInt());
             case 0x16: {
-                int n = r.ReadInt(); var l = new List<QuestRecord>(n);
-                for (int i = 0; i < n; i++) {
-                    var q = new QuestRecord { Id = r.ReadInt(), State = r.ReadInt(), CompletionCount = r.ReadInt(), StartTime = r.ReadLong(), CompleteTime = r.ReadLong(), Tracked = r.ReadByte() != 0 };
-                    q.Progress = Prog(r); l.Add(q);
-                }
-                return new Load(l);
+                int n = r.ReadInt(); var l = new List<QuestRecord>(); var skipped = new List<int>(); bool overrun = false;
+                try {
+                    for (int i = 0; i < n; i++) {
+                        var q = new QuestRecord { Id = r.ReadInt(), State = r.ReadInt(), CompletionCount = r.ReadInt(), StartTime = r.ReadLong(), CompleteTime = r.ReadLong(), Tracked = r.ReadByte() != 0 };
+                        if (hasQuestData != null && !hasQuestData(q.Id)) { skipped.Add(q.Id); continue; }
+                        q.Progress = Prog(r); l.Add(q);
+                    }
+                } catch (Exception) when (hasQuestData != null) { overrun = true; }   // CInPacket throws past the end; the quests added so far stay
+                return new Load(l) { Skipped = skipped, Overrun = overrun };
             }
             case 0x17: return new Pinned(IdList(r));
             case 0x1f: case 0x20: { bool drop = r.ReadByte() != 0; return new Counts(mode == 0x20, drop, IdList(r)); }
