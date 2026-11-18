@@ -51,6 +51,11 @@ namespace Ms2.Avm2.Flash
         public bool InGame = true;
         public double StageW, StageH, FrameRate = 30;
         public double MouseX, MouseY;
+        /// <summary>
+        /// The stage this movie shares with other movies, or null. In the client every dialog is loaded into main.gfx's one
+        /// stage, so Sprite.dropTarget sees all of them; here each movie has its own Player, and the shared stage stands in.
+        /// </summary>
+        public IDropStage DropStage;
         public bool MouseDown;
         public object Focus;
         public AsDisplayObject ModalClip;
@@ -1187,5 +1192,12 @@ namespace Ms2.Avm2.Flash
         public static double Dv(JsonNode n) => D(n) ?? 0;
         public static int? I(JsonNode n) => D(n) is double d ? (int)d : null;
         public static int Iv(JsonNode n) => I(n) ?? 0;
+    }
+
+    /// <summary>Several movies drawn as one stage: Sprite.dropTarget's search over all of them (see <see cref="Player.DropStage"/>).</summary>
+    public interface IDropStage
+    {
+        /// <summary>The drop target under the mouse for <paramref name="dragged"/>, a sprite of <paramref name="source"/>.</summary>
+        AsDisplayObject DropTarget(Player source, AsDisplayObject dragged);
     }
 }

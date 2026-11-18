@@ -366,9 +366,11 @@ public class AsSprite : AsContainer
     public AsSprite IsHitAreaOf;
     /// <summary>
     /// Sprite::dropTargetGet (sfr_as3_07.cpp:3619): the topmost entity under the last mouse position with every object
-    /// tested and this sprite ignored (MovieImpl::GetTopMostEntity(mouse, 0, true, this)), or null.
+    /// tested and this sprite ignored (MovieImpl::GetTopMostEntity(mouse, 0, true, this)), or null. A movie on a shared
+    /// stage (<see cref="Player.DropStage"/>) asks that stage, which searches every movie on it.
     /// </summary>
-    [As] public AsDisplayObject dropTarget => P?.GetTopMostEntity(P.MouseX, P.MouseY, true, this);
+    [As] public AsDisplayObject dropTarget => P == null ? null
+        : P.DropStage != null ? P.DropStage.DropTarget(P, this) : P.GetTopMostEntity(P.MouseX, P.MouseY, true, this);
     [As] public AsObject soundTransform { get; set; }
     [As] public void startDrag(bool lockCenter = false, AsRectangle bounds = null) => P?.StartDrag(this, lockCenter, bounds?.R);
     [As] public void stopDrag() => P?.StopDrag(this);
