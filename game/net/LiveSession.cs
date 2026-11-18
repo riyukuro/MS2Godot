@@ -83,10 +83,13 @@ public partial class LiveSession : Node
     /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
 
-    /// <summary>GetQuestData: the client's quest data has the id (the login quest list reads by it, OnQuest mode 0x16).</summary>
+    /// <summary>
+    /// CreateQuestByType (questmanager_2.cpp:803-830) makes a quest for the id: the client's quest data has it (FUN_14074bc90 gives
+    /// type 11 without) and its type is one of 0-10. The login quest list (OnQuest mode 0x16) reads a record's progress only then.
+    /// </summary>
     static bool HasQuestData(int id)
     {
-        try { return NpcTalk.ClientQuests(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)).Quest(id) != null; }
+        try { return NpcTalk.ClientQuests(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)).Quest(id) is { Type: >= 0 and <= 10 }; }
         catch (Exception e) { GD.Print($"live: quest data unavailable ({e.Message})"); return true; }
     }
 
