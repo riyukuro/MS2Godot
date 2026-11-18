@@ -378,7 +378,9 @@ public partial class TextNode : Node2D
     float? ClientLineX(LayoutLine line, HorizontalAlignment align, bool visible = false)
     {
         int end = visible && Label.VisibleCharacters >= 0 ? Math.Min(line.End, Label.VisibleCharacters) : line.End;
-        while (end > line.Start && CodePointAt(end - 1) is ' ' or '\t' or '\n' or '\r') end--;
+        // an IMG char is a space code point but not a space (ParagraphFormatter: isSpace false, NumOfTrailingSpaces = 0,
+        // sfr_render_03b.cpp:2128 / :2155): the trailing spaces end at it
+        while (end > line.Start && ImageAt(end - 1) == null && CodePointAt(end - 1) is ' ' or '\t' or '\n' or '\r') end--;
         if (end <= line.Start) return null;
         double sum = 0;
         foreach (var (a, b) in Runs(line.Start, end))

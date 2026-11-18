@@ -167,7 +167,8 @@ public partial class TextNode
 
     /// <summary>
     /// The lines the label shows (Label::get_layout_data): from its first unskipped line (LinesSkipped), those whose running
-    /// height fits the label's height plus one line spacing, at most MaxLinesVisible; each line's top and baseline from the
+    /// height fits the label's height plus one line spacing, and the first one always (as the client shows it), at most
+    /// MaxLinesVisible; each line's top and baseline from the
     /// first shown line's top at 0. Glyphs past VisibleCharacters are not drawn (the reader skips them).
     /// </summary>
     public List<LayoutLine> ShownLines()
@@ -181,7 +182,9 @@ public partial class TextNode
         {
             var l = all[i];
             total += l.Pitch;
-            if (total > fit) break;
+            // LineBuffer::IsLineVisible (sfr_render_04d.cpp:365): the first visible line shows even when it runs past the
+            // bottom (its top is in the view); the others only when they fit
+            if (total > fit && i > Label.LinesSkipped) break;
             if (Label.MaxLinesVisible >= 0 && res.Count >= Label.MaxLinesVisible) break;
             l.Top = top;
             l.Baseline = top + l.Ascent;
