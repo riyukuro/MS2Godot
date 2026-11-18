@@ -38,17 +38,21 @@ public sealed class FieldMissions
     /// <summary>
     /// Everything from the client data: the quests (quest/*.xml), the description rows and string tables of the first
     /// language that has them (string/&lt;lang&gt;/questdescription*.xml), and the count format (stringcommon).
+    /// <paramref name="words"/>, when given, is a table set already read from the same packs, languages, locale and features
+    /// (the quest table's): its reserved word tables are used instead of reading them again (they are not changed after
+    /// loading).
     /// </summary>
-    public static FieldMissions Load(PackSet packs, string[] languages, string locale, Func<string, bool> featureOn)
+    public static FieldMissions Load(PackSet packs, string[] languages, string locale, Func<string, bool> featureOn, ReservedWords words = null)
     {
         var m = new FieldMissions(locale, featureOn);
         var names = packs.List("Xml").ToList();
         foreach (var entry in names.Where(n => n.StartsWith("quest/", StringComparison.OrdinalIgnoreCase)
                                             && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
         {
-            string text = Encoding.UTF8.GetString(packs.Read("Xml", entry));
-            if (!text.Contains("questType=\"4\"", StringComparison.Ordinal)) continue;     // only field missions are indexed
-            try { m.AddQuests(Parse(text)); } catch (System.Xml.XmlException) { }
+            // only field missions are indexed; the marker is ASCII, so it is in the bytes exactly when it is in the UTF-8 text
+            var bytes = packs.Read("Xml", entry);
+            if (bytes.AsSpan().IndexOf(QuestType4) < 0) continue;
+            try { m.AddQuests(Parse(Encoding.UTF8.GetString(bytes))); } catch (System.Xml.XmlException) { }
         }
         m.BuildIndex();
 
@@ -66,21 +70,26 @@ public sealed class FieldMissions
             foreach (var (id, d) in rows) if (!m.descriptions.ContainsKey(id)) m.descriptions[id] = d;
         }
 
-        foreach (var (table, file) in ReservedWords.Tables)
-            foreach (var lang in languages)
-            {
-                string entry = $"string/{lang}/{file}.xml";
-                if (!packs.Exists("Xml", entry)) continue;
-                m.Words.AddTable(table, packs.Read("Xml", entry), m.Available, fillOnly: true);
-            }
+        if (words != null) m.Words.ShareTables(words);
+        else
+            foreach (var (table, file) in ReservedWords.Tables)
+                foreach (var lang in languages)
+                {
+                    string entry = $"string/{lang}/{file}.xml";
+                    if (!packs.Exists("Xml", entry)) continue;
+                    m.Words.AddTable(table, packs.Read("Xml", entry), m.Available, fillOnly: true);
+                }
 
         foreach (var lang in languages)
         {
             string entry = $"string/{lang}/stringcommon.xml";
             if (!packs.Exists("Xml", entry)) continue;
-            var key = Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))).Descendants("key")
-                .FirstOrDefault(k => (string)k.Attribute("id") == "s_quest_desc_with_count");
-            if (key != null) { m.CountFormat = ((string)key.Attribute("value"))?.Replace("\\n", "\n"); break; }
+            // the first such key (Descendants, FirstOrDefault); the whole file is read, so a malformed one throws as the parse did
+            bool found = false;
+            string value = null;
+            foreach (var k in Ms2.Formats.Text.XmlRows.Elements(packs.Read("Xml", entry), "key"))
+                if (!found && k.GetAttribute("id") == "s_quest_desc_with_count") { found = true; value = k.GetAttribute("value"); }
+            if (found) { m.CountFormat = value?.Replace("\\n", "\n"); break; }
         }
         return m;
     }
@@ -206,6 +215,8 @@ public sealed class FieldMissions
 
     // ---- helpers --------------------------------------------------------------------------------------------------
 
+    static readonly byte[] QuestType4 = Encoding.ASCII.GetBytes("questType=\"4\"");
+
     static XDocument Parse(string text) => XDocument.Parse(text.TrimStart('﻿'));
 
     /// <summary>CString::Tokenize: the parts between any of the separator characters, empty parts dropped.</summary>
@@ -283,6 +294,13 @@ public sealed partial class ReservedWords
             file[(uint)FieldMissions.Long(k.GetAttribute("id"))] = (k.GetAttribute("name") ?? "").Replace("\\n", "\n");
         }
         foreach (var (id, s) in file) if (!fillOnly || !d.ContainsKey(id)) d[id] = s;
+    }
+
+    /// <summary>The reserved word tables of <paramref name="from"/>, shared (both read the same files; neither changes them
+    /// after loading).</summary>
+    public void ShareTables(ReservedWords from)
+    {
+        foreach (var (table, d) in from.tables) tables[table] = d;
     }
 
     /// <summary>CStringTable::FUN_141811980: the text, empty when the table or id has none.</summary>

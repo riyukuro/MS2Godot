@@ -719,7 +719,11 @@ public partial class HudScene : Node, IUiStageHost
         int fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
         try
         {
-            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, f => !data.FeaturesOff.Contains(f));
+            var perf = PerfLog.On && fieldMissions == null ? new PerfLog.Steps("field missions") : null;
+            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, f => !data.FeaturesOff.Contains(f),
+                                                 questTable?.Words);     // the same languages, locale and features: its tables
+            perf?.Step("load");
+            perf?.Done();
         }
         catch (Exception e) { GD.PushWarning("field missions: " + e.Message); }
         var meta = fieldMeta;
