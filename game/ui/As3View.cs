@@ -602,7 +602,7 @@ public partial class FieldText : Node2D
         string D(object v) => v == null || Rt.IsNullish(v) ? "" : Rt.ToString(v);
         var filters = Filters();
         string key = string.Join("|", tf.Box.X, tf.Box.Y, tf.Box.W, tf.Box.H, D(f?.font), D(f?.size), D(f?.color), D(f?.align),
-            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType);
+            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType, tf.TextAutoSize);
         if (key != built)
         {
             node?.QueueFree();
@@ -632,7 +632,13 @@ public partial class FieldText : Node2D
         version = tf.Version;
         if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
         else node.Text = tf.Text;
-        node.Position = new Vector2(0, (float)(tf.FirstLineTop(node.NumLines) - (tf.Box.Y + 2)));
+        // TextFieldEx.setTextAutoSize(SHRINK / FIT): LineBuffer::Scale (sfr_render_04d.cpp:394) scales every line's offsets and
+        // sizes and every glyph from the text rect's origin, keeping the lines' breaks
+        float scale = tf.TextAutoSize is "shrink" or "fit" ? node.TextAutoSizeScale(tf.TextAutoSize) : 1;
+        var origin = new Vector2((float)tf.Box.X + 2, (float)tf.Box.Y + 2);
+        node.Scale = new Vector2(scale, scale);
+        node.RecenterScaled(scale);
+        node.Position = origin - origin * scale + new Vector2(0, (float)(tf.FirstLineTop(node.NumLines, scale) - (tf.Box.Y + 2)));
     }
 
     /// <summary>The field's filters as the layout writes them: the ones ActionScript set (angle in degrees), else the placement's.</summary>

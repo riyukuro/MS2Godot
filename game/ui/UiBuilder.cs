@@ -536,6 +536,37 @@ public partial class TextNode : Node2D
         Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y + BaselineShift + Math.Max(0, (room - height) / 2));
     }
 
+    /// <summary>
+    /// The text auto size scale (<paramref name="tas"/> = TextFieldEx's "shrink" or "fit") of the text as laid out: its widest
+    /// line and Scaleform text height in field units, in the field less its 2 px gutters (AsTextField.TextAutoSizeScale).
+    /// </summary>
+    public float TextAutoSizeScale(string tas)
+    {
+        float textH = FlashTextHeight(), textW = 0;
+        foreach (var line in Layout()) textW = Math.Max(textW, line.Width.Width * Label.Scale.X);
+        if (Label.AutowrapMode == TextServer.AutowrapMode.Off) textW = Math.Max(textW, TextWidth);
+        return (float)Ms2.Avm2.Flash.AsTextField.TextAutoSizeScale(tas, textW, textH, Bounds.Size.X - 4, Bounds.Size.Y - 4, LineMetrics().Height);
+    }
+
+    /// <summary>
+    /// After a text auto size scale, centred and right-aligned lines are placed again in the whole view (DocView::Format,
+    /// NeedRecenterLines, sfr_render_03b.cpp:1720-1731, :2558): the label of an unwrapped field is widened by 1 / scale so it
+    /// spans the field once scaled. A word-wrapped label keeps its width (a wider one would break its lines elsewhere).
+    /// </summary>
+    public void RecenterScaled(float scale)
+    {
+        if (scaledFrom is { } w0) Label.Size = new Vector2(w0, Label.Size.Y);
+        scaledFrom = null;
+        if (scale == 1 || Label.AutowrapMode != TextServer.AutowrapMode.Off || Label.HorizontalAlignment == HorizontalAlignment.Left) return;
+        scaledFrom = Label.Size.X;
+        // a centred unwrapped label spans the whole field (no gutters) and the scale pivots on the gutter: its width puts
+        // the centre back at the view's; a right-aligned one starts on the gutter
+        bool centre = Label.HorizontalAlignment == HorizontalAlignment.Center;
+        float field = centre ? Bounds.Size.X : Math.Max(1, Bounds.Size.X - 4), w = (Bounds.Size.X - 4) / scale + (centre ? 4 : 0);
+        Label.Size = new Vector2(Label.Size.X * w / field, Label.Size.Y);       // label units per field unit as built
+    }
+    float? scaledFrom;
+
     /// <summary>Scaleform TEXTAUTOSZ_SHRINK: lowers the font size until the text fits the field width (2 px gutters).</summary>
     public void ShrinkToFit()
     {

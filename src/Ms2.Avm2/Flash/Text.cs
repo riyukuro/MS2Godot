@@ -184,14 +184,40 @@ public class AsTextField : AsInteractiveObject
     /// is centred, and a centred or bottom-aligned text is placed in the view less its 2 px gutters: the text's height
     /// (whole pixels) when it fits, else the lines that fit counted up from the bottom scroll line.
     /// </summary>
-    public double FirstLineTop(int lineCount)
+    /// <summary>
+    /// DocView::Format's text auto size (sfr_render_03b.cpp:2450-2493): the scale applied to the laid out lines (LineBuffer::Scale)
+    /// of a text <paramref name="textW"/> x <paramref name="textH"/> in a view (the field less its 2 px gutters) of
+    /// <paramref name="viewW"/> x <paramref name="viewH"/>. "shrink": the smaller of view / text on each axis where the text
+    /// is larger; "fit": the smaller of view / text on each axis where the text is at least 20 wide or tall. A scale that
+    /// puts the shortest line (<paramref name="minLineH"/>) under 6 px is raised to 6 px (GFX_MIN_LINE_HEIGHT_FOR_AUTOSIZE, :1207).
+    /// </summary>
+    public static double TextAutoSizeScale(string tas, double textW, double textH, double viewW, double viewH, double minLineH)
+    {
+        double scale = 1;
+        if (tas == "shrink")
+        {
+            double hs = textW > viewW ? viewW / textW : 1, vs = textH > viewH ? viewH / textH : 1;
+            scale = Math.Min(vs, hs);
+        }
+        else if (tas == "fit")
+        {
+            double hs = textW >= 20 ? viewW / textW : double.MaxValue, vs = textH >= 20 ? viewH / textH : double.MaxValue;
+            scale = Math.Min(vs, hs);
+            if (scale == double.MaxValue) scale = 1;
+        }
+        if (scale != 1 && minLineH > 0 && minLineH * scale < 6) scale = 6 / minLineH;
+        return scale;
+    }
+
+    public double FirstLineTop(int lineCount, double scale = 1)
     {
         double top = Box.Y + 2, maxH = Box.H - 4;
         if (autoSizeMode != "none") return top;
         string valign = VerticalAlign;
         if (TextAutoSize != "none" && !multiline && valign == "none") valign = "center";
         if (valign is not ("center" or "bottom")) return top;
-        double line = TextMeasure.LineHeight(FontName, Size, 0), lead = Leading;
+        // the lines as laid out, times the text auto size's scale (LineBuffer::Scale)
+        double line = TextMeasure.LineHeight(FontName, Size, 0) * scale, lead = Leading * scale;
         double textH = lineCount == 0 ? 0 : Math.Floor(lineCount * (line + lead) - lead);
         if (textH < maxH) return valign == "center" ? top + (maxH / 2 - textH / 2) : top + maxH - textH;
         double vis = 0;

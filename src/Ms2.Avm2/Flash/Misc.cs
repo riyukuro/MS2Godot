@@ -413,7 +413,7 @@ public static class ScaleformNatives
         N("scaleform.gfx.TextFieldEx/getVerticalAlign", a => (a[0] as AsTextField)?.VerticalAlign ?? "none");
         N("scaleform.gfx.TextFieldEx/setVerticalAutoSize", Undef);
         N("scaleform.gfx.TextFieldEx/getVerticalAutoSize", a => "none");
-        N("scaleform.gfx.TextFieldEx/setTextAutoSize", a => { if (a[0] is AsTextField t) t.TextAutoSize = Rt.ToString(a[1]); return Rt.Undef; });
+        N("scaleform.gfx.TextFieldEx/setTextAutoSize", a => { if (a[0] is AsTextField t) { t.TextAutoSize = Rt.ToString(a[1]); t.Version++; } return Rt.Undef; });
         N("scaleform.gfx.TextFieldEx/getTextAutoSize", a => (a[0] as AsTextField)?.TextAutoSize ?? "none");
         N("scaleform.gfx.TextFieldEx/setImageSubstitutions", Undef);
         N("scaleform.gfx.TextFieldEx/updateImageSubstitution", Undef);

@@ -93,6 +93,21 @@ public class RuntimeTests
     }
 
     [Test]
+    public void TextAutoSizeScaleFollowsDocViewFormat()
+    {
+        // shrink: the smaller axis ratio where the text is larger; text that fits keeps its size
+        Assert.That(AsTextField.TextAutoSizeScale("shrink", 100, 200, 690, 156, 24), Is.EqualTo(156.0 / 200).Within(1e-9));
+        Assert.That(AsTextField.TextAutoSizeScale("shrink", 800, 200, 690, 156, 24), Is.EqualTo(156.0 / 200).Within(1e-9));
+        Assert.That(AsTextField.TextAutoSizeScale("shrink", 100, 100, 690, 156, 24), Is.EqualTo(1));
+        // never below a 6 px line
+        Assert.That(AsTextField.TextAutoSizeScale("shrink", 100, 1000, 690, 50, 24), Is.EqualTo(6.0 / 24).Within(1e-9));
+        // fit grows too, but not on an axis under 20
+        Assert.That(AsTextField.TextAutoSizeScale("fit", 100, 10, 200, 156, 10), Is.EqualTo(2));
+        Assert.That(AsTextField.TextAutoSizeScale("fit", 10, 10, 200, 156, 10), Is.EqualTo(1));
+        Assert.That(AsTextField.TextAutoSizeScale("none", 800, 800, 10, 10, 24), Is.EqualTo(1));
+    }
+
+    [Test]
     public void ReadabilityTextFollowsTheSymbolAndScriptFieldsAreReadable()
     {
         var (rt, _) = Empty();
