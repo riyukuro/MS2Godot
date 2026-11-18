@@ -121,11 +121,12 @@ public partial class HudScene : Node
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         string typed = chatInput?.Edit.Text;
         questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
+        minimap?.GetParent()?.RemoveChild(minimap);           // so is the minimap
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         chat = null; chatInput = null; chatLog = null; chatThumb = null; target = null;
-        mapImage = null; mapPlayer = null; mapArrow = null; mapClip = null;
         BuildHud();
+        if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(GetWindow().Size); }
         if (chatInput != null && typed != null) chatInput.Edit.Text = typed;
         if (chatShown.Count > 0) ShowChatLines();
         questLog?.Relayout(GetWindow().Size);
@@ -388,96 +389,92 @@ public partial class HudScene : Node
         After("m_searchButton", 32, true);
     }
 
-    // ---- minimap: the field's illustrated map image, centred on the player ---------------------------------------
+    // ---- minimap: uiminimapdialog run by its own ActionScript, UIMinimapDialog's C++ side as MinimapController ----------
 
-    MinimapInfo mapInfo; Control mapClip; TextureRect mapImage; MovieClipNode mapPlayer, mapArrow;
-    static readonly Vector2 MapMaskPos = new(2, 82), MapMaskSize = new(288, 222);   // the movie's map area (m_mask) in movie units
-    const int BgAlpha = 30;         // UIMinimapDialog::BuildUIData: bgAlpha for a dialog without saved data
-    const float MapZoom = 1f;       // MinimapDialog m_zoom (0.5 .. 1.5): movie units per image pixel in player-centred mode
+    Control minimapSlot;                    // the minimap's place among the HUD movies
+    MovieDialog minimap;
+    Ms2.Ui.Hud.MinimapController minimapSide;
 
-    void Minimap(Control ui)
+    void Minimap(Control ui) => ui.AddChild(minimapSlot = new Control { Name = "uiminimapdialog", MouseFilter = Control.MouseFilterEnum.Ignore });
+
+    /// <summary>
+    /// The minimap opens once the field's contents exist (the client opens it on field entry, after the load): the field's
+    /// minimap image and camera (mapxblock/&lt;xblock&gt;.xml &lt;minimap&gt;), the marks BuildEntities sends (uiminimapentity.cpp:2900:
+    /// the npcs, then the portals, the taxi, the named interact objects and the map objects), and the local player.
+    /// </summary>
+    void OpenMinimap(World.FieldContents fc)
     {
-        var origin = new Vector2(stage.X - 295, 0);            // the panel's right edge (movie x 295) sits on the stage's right edge
-        // MinimapDialog loads Image/map/minimap/<field>.dds into m_field under m_mask and keeps the player at the mask's centre;
-        // the client places entities with the projection from mapxblock/<xblock>.xml <minimap>
-        try
-        {
-            var x = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{xblock}.xml")));
-            mapInfo = MinimapInfo.Parse(x);
-        }
+        MinimapInfo info = null;
+        try { info = MinimapInfo.Parse(System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{xblock}.xml")))); }
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
-        var tex = mapInfo == null ? null : assets.ImageFile(mapInfo.ImageEntry);
-        if (tex != null)
+        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"));
+        model.Field.Name = MapName();
+        model.Field.Channel = (int)data.Player.Channel;
+        model.Field.Channels = new[] { (int)data.Player.Channel };
+        var path = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value");
+        var c = minimapSide = new Ms2.Ui.Hud.MinimapController
         {
-            mapClip = new Control { Position = (origin + MapMaskPos) * u, Size = MapMaskSize * u, ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore };
-            mapImage = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, Texture = tex, Size = tex.GetSize() * MapZoom * u, MouseFilter = Control.MouseFilterEnum.Ignore };
-            mapClip.AddChild(mapImage);
-        }
-        var r = Place(ui, "uiminimapdialog", 1f, origin);
-        Hide(r, "m_controller", "m_resize", "m_sliderani", "m_report");    // m_report: reportVisible is off in the reference
-        var maxPanel = r.FindClip("m_maxpanel");
-        if (maxPanel != null) Hide(maxPanel, "m_mask");     // the map panel's mask: mapClip clips the map instead
-        // initData -> setAlpha(bgAlpha, mapAlpha) -> MinimapDialogMax.changePanelAlpha(bgAlpha * 0.01): m_panel.alpha, with
-        // UIMinimapDialog::BuildUIData's bgAlpha 30 for a dialog without saved data (mapAlpha 100 leaves the map opaque)
-        if (maxPanel?.Direct("m_panel") is { } panel) { panel.BaseColor = new Color(panel.BaseColor, BgAlpha / 100f); maxPanel.GotoFrame(maxPanel.Frame); }
-        if (mapClip != null)
-        {
-            // MinimapDialogMax's display list is m_frame, m_panel, m_mask over m_field (the map) and m_entities, then m_guide:
-            // the map draws above the panel, so it goes into m_maxpanel right after m_panel, held at the screen scale
-            if (maxPanel?.Direct("m_panel")?.Node is { } panelNode && panelNode.GetParent() is Node2D host)
-            {
-                var t = Transform2D.Identity;                    // the panel's parent in the root's movie units
-                for (Node n = host; n != r && n is Node2D n2; n = n.GetParent()) t = n2.Transform * t;
-                var sc = t.Scale * u;
-                mapClip.Position = t.AffineInverse() * MapMaskPos;
-                mapClip.Scale = new Vector2(1 / sc.X, 1 / sc.Y);
-                host.AddChild(mapClip);
-                host.MoveChild(mapClip, panelNode.GetIndex() + 1);
-            }
-            else { ui.AddChild(mapClip); ui.MoveChild(mapClip, r.GetParent().GetIndex()); }     // under the movie, as before
-        }
-        r.FindClip("m_channel")?.SetText($"Ch. {data.Player.Channel}");
-        r.FindClip("m_fieldname")?.SetText(MapName());
-        MinimapPlayers(r);
-        if (tex != null)
-        {
-            mapPlayer = MinimapEntities.Create(r.Movie, "player", "idle", u);
-            if (mapPlayer != null) { mapPlayer.Position = MapMaskPos + MapMaskSize / 2; r.AddChild(mapPlayer); mapArrow = mapPlayer.Direct("m_arrow")?.Node as MovieClipNode; }
-            // m_guide: the guide arrows' layer, above the map and its entities, at the mask's top left and not clipped by it
-            var guide = new Node2D { Name = "m_guide", Position = MapMaskPos };
-            r.AddChild(guide);
-            mapImage.AddChild(new MinimapPlaces(r.Movie, mapInfo, assets.Packs, mapImage.Size, u, guide, new Rect2(MapMaskPos, MapMaskSize))
-            {
-                PlayerLevel = data.Player.Level, FoundTaxis = data.FoundTaxis, InteractState = data.InteractState,
-            });     // portals, npcs, the taxi and interact objects (MinimapPlaces.cs)
-        }
+            ImageName = info?.ImageEntry,
+            Viewport = info,
+            PlayerImage = path ?? "",       // FUN_141028be0: no UGC profile image -> CommonResource m_strDefaultProfileImagePath
+            LocalPlayer = LocalMinimapPlayer,
+        };
+        try { MinimapMarks(fc, c.Marks); }
+        catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
+        minimap = new MovieDialog(assets, c, model, GetWindow().Size);
+        minimapSlot.AddChild(minimap);
     }
 
     /// <summary>
-    /// The minimap's player row (m_players, MinimapDialogPlayers). UIMinimapDialog::AddProxy sends createPlayer for every
-    /// other player and for the player itself, with BuildPlayerData's imgpath: the character's UGC profile image, or
-    /// CommonResource m_strDefaultProfileImagePath (table/commonResource.xml DEFAULT_PROFILE_IMAGE_PATH) when it has none
-    /// (ugcimagepath.cpp FUN_141028be0). BuildEntities ends with buildPlayers, which fills m_playerlist (a TileCacheList of
-    /// minimap_renderer_players, 42 x 42, spacing 1, no padding, at the list's top left) and shows the row. The player here
-    /// has no profile image and is alone in the field. ProfileRenderer loads the image into m_profile and sizes it to the
-    /// renderer less twice m_profile's offset (configUI, Common.loadCompleteImage).
+    /// The field's proxies and places for BuildEntities: AddProxy's npcs (UpdateNpc: SetFromNpcData), the portals
+    /// (UpdatePortal / SetFromPortal, with their guide arrows), BuildTaxi (the first MS2TaxiStation world object),
+    /// BuildNamed (MS2InteractObject with the server's state) and BuildMapObjects (MS2Minimap). The icons and layers are
+    /// <see cref="MinimapIcons"/>'s ports of UIMinimapEntity's.
     /// </summary>
-    void MinimapPlayers(MovieClipNode r)
+    void MinimapMarks(World.FieldContents fc, List<Ms2.Ui.Hud.MinimapController.Mark> marks)
     {
-        var players = r.FindClip("m_players");
-        var list = players?.Direct("m_playerlist");
-        var path = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value");
-        const string imageRoot = "./Data/Resource/Image/";
-        var tex = path != null && path.StartsWith(imageRoot, StringComparison.OrdinalIgnoreCase) ? assets.ImageFile(path[imageRoot.Length..]) : null;
-        var item = list == null ? null : r.Movie.BuildClass("minimap_renderer_players", u);
-        if (item == null) return;
-        item.Position = list.Base.Origin;                       // the first tile at the list's top left (padding 0)
-        players.AddChild(item);
-        if (tex != null && item.Direct("m_profile") is { Node: MovieClipNode profile } pc)
+        var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, "en"));
+        foreach (var n in fc.SpawnedNpcs)
         {
-            var size = (item.Bounds.Size == Vector2.Zero ? new Vector2(42, 42) : item.Bounds.Size) - pc.Base.Origin * 2;     // m_imgwidth, m_imgheight
-            profile.AddChild(new Sprite2D { Texture = tex, Centered = false, Scale = size / tex.GetSize() });
+            var e = MinimapIcons.Npc(n.Row);
+            if (!e.Visible || !n.Root.Visible) continue;
+            var npc = n;
+            marks.Add(new() { Entity = e, Position = () => World.FieldPortals.ToMs2(npc.Position), Moves = true });
         }
+        foreach (var p in fc.Portals.All)
+        {
+            var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));
+            if (e == null || !e.Visible) continue;
+            var at = p.Position;
+            marks.Add(new() { Entity = e, Position = () => at, ShowGuide = true });
+        }
+        static bool IsModel(FieldEntity e, string model) =>
+            string.Equals(e.ModelName, model, StringComparison.OrdinalIgnoreCase) || e.HasMixin(model);
+        void Place(MinimapIcons.Entity e, Vec3 at) { if (e != null) marks.Add(new() { Entity = e, Position = () => at }); }
+        if (icons.HasTaxi(fc.FieldId) && fc.Map?.Entities.FirstOrDefault(e => IsModel(e, "MS2TaxiStation")) is { } taxi)
+        {
+            int bestLevel = (int)new ClientConstants(assets.Packs).Float("TaxiCallBestDriverLevel", 25);
+            Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), data.Player.Level >= bestLevel), taxi.Position);
+        }
+        foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2InteractObject")) ?? Enumerable.Empty<FieldEntity>())
+        {
+            int id = (int)e.Number("interactID");
+            var (icon, type) = id > 0 ? icons.InteractRow(assets.Packs, id) : ("", 0);
+            if (MinimapIcons.Named(icon, type, data.InteractState) is { Visible: true } named) Place(named, e.Position);
+        }
+        foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2Minimap")) ?? Enumerable.Empty<FieldEntity>())
+            Place(MinimapIcons.MapObject(e.Get("MinimapIconFrame")), e.Position);
+    }
+
+    /// <summary>The local player for RefreshLocalPlayer: its position, GetPlayerHeading and dead state (none offline).</summary>
+    (Vec3, float, bool) LocalMinimapPlayer()
+    {
+        if (player == null) player = FindPlayer(this);
+        if (player == null) return (default, 0, false);
+        float heading = 0;
+        field ??= player.GetParent() as Field ?? FindField(this);
+        if (field != null && player.Visual != null) heading = PlayerHeading(Mathf.RadToDeg(field.CameraYaw), player.FacingRotZ);
+        return (ToMs2(player.GlobalPosition), heading, false);
     }
 
     /// <summary>
@@ -604,21 +601,6 @@ public partial class HudScene : Node
         if (n is Field f) return f;
         foreach (var c in n.GetChildren()) if (FindField(c) is { } r) return r;
         return null;
-    }
-
-    void UpdateMinimap()
-    {
-        if (player == null) { player = FindPlayer(this); if (player == null) return; }
-        var size = mapImage.Texture.GetSize();
-        var p = ToMs2(player.GlobalPosition);
-        var (pu, pv) = mapInfo.ToImage(p);
-        var px = new Vector2((float)pu, (float)pv) * size * MapZoom;           // player in movie units on the scaled image
-        mapImage.Position = (MapMaskSize / 2 - px) * u;
-        if (mapArrow != null && player.Visual != null)
-        {
-            field ??= player.GetParent() as Field ?? FindField(this);
-            if (field != null) mapArrow.RotationDegrees = PlayerHeading(Mathf.RadToDeg(field.CameraYaw), player.FacingRotZ);
-        }
     }
 
     // ---- chat: uimessengerdialog sized and placed from table/default/defaultmessenger0.xml ----------------------------
@@ -1197,25 +1179,12 @@ public partial class HudScene : Node
         }
     }
 
-    /// <summary>
-    /// UIMinimapDialog::vfunc_15 refreshes the local player's place on the minimap when m_timer474.Check(60) passes
-    /// (Unk_IntervalTimer::Check: the first time at once, then on the first frame at least 60 ms after the last refresh,
-    /// re-armed to that frame's tick). Time of the last refresh in ms, 0 before the first.
-    /// </summary>
-    ulong minimapLast;
-    bool MinimapTimer()
-    {
-        ulong now = Time.GetTicksMsec();
-        if (minimapLast != 0 && now - minimapLast < 60) return false;
-        minimapLast = now;
-        return true;
-    }
-
     public override void _Process(double delta)
     {
         if (chatLog != null) FlushChat();
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
-        if (mapImage != null && MinimapTimer()) UpdateMinimap();
+        if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
+        minimapSide?.Process(Time.GetTicksMsec());
         target?.Process(delta);
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();

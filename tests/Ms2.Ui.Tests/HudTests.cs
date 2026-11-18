@@ -125,11 +125,14 @@ public class HudTests
     {
         var m = Model();
         m.Field.Name = "Tria";
-        var c = new MinimapController { ImageName = "map/minimap/02000001.dds" };
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) };
+        c.Marks.Add(new() { Entity = new Ms2.Formats.World.MinimapIcons.Entity("portal", "", "portal", "Exit", true, false), Position = () => default, ShowGuide = true });
         var h = Load(c, m);
         Assert.That(h.RT.Errors, Is.Empty);
         Assert.That(c.FieldClip, Is.Not.Null);
-        Assert.That(c.AddEntity("portal", "portal", "portal", 100, 80, "Exit", true), Is.Not.Null);
+        // the movie's onFieldLoadComplete: BuildEntities through createEntity
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        Assert.That(c.Marks[0].Clip, Is.Not.Null);
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
