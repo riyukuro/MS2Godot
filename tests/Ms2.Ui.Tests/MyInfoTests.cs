@@ -3,6 +3,7 @@ using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -215,5 +216,43 @@ public class MyInfoTests
         Assert.That(Cell(0, 7, "m_statValue"), Is.EqualTo(c.Model.Tables.Common("s_common_percent").Replace("{0}", "120.0")), "a rate stat");
         Assert.That(Cell(0, 8, "m_statName"), Is.EqualTo(c.Model.Tables.Common("s_pc_info_name_shield")));
         Assert.That(Cell(2, 0, "m_statValue"), Is.EqualTo("41"), "defense");
+    }
+
+    [Test]
+    public void SlotTooltipsAreTheItemTooltip()
+    {
+        Packs();
+        var (h, c, _, errors) = Load();
+        var t = c.Model.Tables;
+        // gear tab: RH has the two-handed weapon; the own record is 0x200, so the putoff hint is set
+        var rh = c.GetSlotTooltip(MyInfoController.EquipBag + ".5");
+        Assert.That(rh["tooltip"], Is.EqualTo("export_common_tooltip_kindsItem"));
+        Assert.That(rh["itemName"], Is.EqualTo(t.ItemName(15000001)));
+        Assert.That(rh["itemGrade"], Is.EqualTo(2), "the record's rarity");
+        Assert.That(rh["itemKinds"], Is.EqualTo(ItemTooltip.Kinds(t.Items.Get(15000001).IconCode)));
+        Assert.That(rh["enablePuton"], Is.EqualTo(t.Common("s_msg_rclick_putoff_equip")));
+        Assert.That(rh["tooltipAlign"], Is.EqualTo(5));
+        Assert.That(c.GetSlotTooltip(MyInfoController.EquipBag + ".6"), Is.Empty, "an empty slot: the object without members");
+        Assert.That(c.GetSlotTooltip(MyInfoController.EquipBag + ".99"), Is.Null, "no such slot");
+        // outfit tab: the top
+        c.OnCallback("onChangeTab", new object[] { 1 });
+        var top = c.GetSlotTooltip(MyInfoController.EquipBag + ".8");
+        Assert.That(top["itemName"], Is.EqualTo(t.ItemName(11400021)));
+        Assert.That(top["itemSkin"], Is.EqualTo(true));
+        // badge tab: an empty valid type is its text tooltip; the chat balloon badge is an item tooltip with an empty hint
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        var empty = c.GetSlotTooltip(MyInfoController.GemBag + ".0");
+        Assert.That((empty["tooltip"], empty["text"], empty["tooltipAlign"]), Is.EqualTo(("export_common_tooltip_tooltipText", "$s_tooltip_myinfo_gem_trans", 3)));
+        var badge = c.GetSlotTooltip(MyInfoController.GemBag + ".2");
+        Assert.That(badge["enablePuton"], Is.EqualTo(""));
+        Assert.That(badge.ContainsKey("itemName"), Is.False, "a gem's name (GetGemName) is not ported");
+        Assert.That(errors, Is.Empty);
+
+        // the tooltip movie draws the top's name and hint
+        c.OnCallback("onChangeTab", new object[] { 1 });
+        var shown = TooltipTests.Draw(c.GetSlotTooltip(MyInfoController.EquipBag + ".8"));
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Does.Contain(t.ItemName(11400021)));
+        Assert.That(shown, Has.Some.Contains("right-click"));
     }
 }

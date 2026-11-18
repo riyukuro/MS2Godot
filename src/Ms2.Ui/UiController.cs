@@ -274,5 +274,9 @@ public abstract class UiController
     /// <summary>GameDataModel.getBagSlotBindings(bag): the slot binding names of a bag.</summary>
     public virtual IEnumerable<string> GetBagSlotBindings(string bag) => Array.Empty<string>();
 
+    /// <summary>The slot bound as <paramref name="name"/>'s tooltip (ITooltip::vfunc_0, which NotifyDragSlot::GetSlotTooltip
+    /// calls); null when no slot is bound so; an empty tooltip when the slot has none.</summary>
+    public virtual IDictionary<string, object> GetSlotTooltip(string name) => null;
+
     protected static string Thousands(long n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 }

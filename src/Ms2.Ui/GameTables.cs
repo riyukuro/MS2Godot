@@ -16,7 +16,7 @@ public sealed class GameTables
     readonly Dictionary<string, string> mapNames = new();
     readonly Dictionary<string, string> mapTileDescs = new(), npcFunctionNames = new(), fieldEnterances = new(), raceNames = new();
     readonly Func<string, string> common = _ => null;
-    readonly Dictionary<string, string> titleNames = new();
+    readonly Dictionary<string, string> titleNames = new(), itemNames = new();
     readonly Dictionary<int, string> statNames = new(), specialNames = new(), statOptions = new();
 
     public static readonly GameTables Empty = new();
@@ -44,6 +44,7 @@ public sealed class GameTables
         raceNames = s.Table("racename", "name");
         common = s.Common();
         titleNames = s.Table("titlename", "name");
+        itemNames = s.Table("itemname", "name");
         statNames = CommonTexts(packs, "table/statstringtable.xml", s.Table("stringstatname", "name"));
         statOptions = Options(packs, "table/statstringtable.xml");
         specialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", s.Table("stringspecialabilityname", "name"));
@@ -117,6 +118,8 @@ public sealed class GameTables
     /// <summary>The fishing spots and fishing mastery grades (CFishingTable, CMasteryTable type 1); empty without data.</summary>
     public FishingSpots Fishing { get; } = new(null, null, _ => true);
 
+    /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown.</summary>
+    public string ItemName(int id) => itemNames.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : "";
     /// <summary>A CommonResource member by its commonResource.xml key (e.g. HDR_PATH); "" when absent.</summary>
     public string CommonResource(string key) => commonResource.TryGetValue(key, out var v) ? v : "";
 

@@ -697,6 +697,69 @@ public sealed class MyInfoController : UiController
         return Host.Obj(o.ToArray());
     }
 
+    /// <summary>
+    /// The slots' ITooltip::vfunc_0 through NotifyDragSlot::GetSlotTooltip: null for a name no slot of the bags has; an
+    /// empty object when the slot gives none (GetSlotTooltip makes the object before asking the slot).
+    /// </summary>
+    public override IDictionary<string, object> GetSlotTooltip(string name)
+    {
+        if (name.StartsWith(EquipBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBag.Length + 1), out int slot)
+            && equipBagRecord != null && SlotsOf(equipBagKind).Contains(slot))
+            return EquipTooltip(slot) ?? new AsTooltip();
+        if (name.StartsWith(GemBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBag.Length + 1), out int index)
+            && gemBagRecord != null && (uint)index < GemTypes.Length)
+            return GemTooltip(index) ?? new AsTooltip();
+        return null;
+    }
+
+    /// <summary>
+    /// EquipSlot::vfunc_0 (equipslot.cpp:208): none without a record or a local player; ASTooltip(player, 0x200 for the own
+    /// record (PCInfo m_3c0) else 0x100, 2) over FUN_14120ce90's item; when it fills, SetEnablePuton(GetStringCommon(0x752)).
+    /// The preview line (SetEnablePreview, IsPreviewable) is not ported.
+    /// </summary>
+    AsTooltip EquipTooltip(int slot)
+    {
+        var r = equipBagRecord;
+        if (r == null || !Model.HasLocalPlayer) return null;
+        var tip = new ItemTooltip(Model, r.IsLocal ? 0x200 : 0x100);
+        if (!tip.Fill(EquipSlotItem(r, equipBagKind, slot))) return null;
+        tip.SetEnablePuton(Common("s_msg_rclick_putoff_equip"));                  // 0x752
+        return tip.Data;
+    }
+
+    /// <summary>
+    /// GemSlot::vfunc_0 (gemslot.cpp:227): none without a record, a local player or for a gem type that is not valid; a
+    /// gem item: ASTooltip(player, 0x200 own / 0x100, 2) and, when it fills, SetEnablePuton(vfunc_22), the base
+    /// DragSlot::vfunc_22's "" (dragslot.cpp:142); no item: the text tooltip "$s_tooltip_myinfo_gem_" + Name_140219b10(type) (commonenum.cpp:625),
+    /// align 3.
+    /// </summary>
+    AsTooltip GemTooltip(int index)
+    {
+        var r = gemBagRecord;
+        if (r == null || !Model.HasLocalPlayer) return null;
+        int type = GemTypes[index];
+        if (!IsValidGemType(type)) return null;
+        var e = r.Gems?.FirstOrDefault(g => g.GemType == type);
+        var item = e != null ? InventoryController.ToItem(e, Model.Tables.Items) : null;
+        if (item != null)
+        {
+            var tip = new ItemTooltip(Model, r.IsLocal ? 0x200 : 0x100);
+            if (!tip.Fill(item)) return null;
+            tip.SetEnablePuton("");
+            return tip.Data;
+        }
+        var text = AsTooltip.Text("$s_tooltip_myinfo_gem_" + GemTypeName(type));
+        text?.SetTooltipAlign(3);
+        return text;
+    }
+
+    /// <summary>Name_140219b10 (commonenum.cpp:625): the gem type's name.</summary>
+    static string GemTypeName(int type) => type switch
+    {
+        1 => "trans", 2 => "dmgFont", 3 => "chatBalloon", 4 => "nameTag", 5 => "tomb", 6 => "swim", 7 => "charEffect",
+        8 => "fishing", 9 => "autoMastery", 10 => "effect", 0xb => "petSkin", 0xc => "meta", _ => "",
+    };
+
     /// <summary>The bag name last given to equipBagID.</summary>
     public string ShownBag { get; private set; }
 

@@ -159,7 +159,13 @@ public sealed class UiHost
         {
             foreach (var n in new[] { "notifySlotUse", "notifySlotShiftClick", "notifySlotDragStart", "notifySlotDragEnd" })
                 Static(gm, n, a => { RT.Guard(n, () => Controller.OnCallback(n, a)); return null; });
-            Static(gm, "getSlotTooltip", a => null);
+            // NotifyDragSlot::GetSlotTooltip (notifydragslot.cpp:127): for a bound slot a new object, filled by its vfunc_0
+            Static(gm, "getSlotTooltip", a =>
+            {
+                IDictionary<string, object> t = null;
+                RT.Guard("getSlotTooltip", () => t = Controller.GetSlotTooltip(Rt.ToString(a.ElementAtOrDefault(0))));
+                return t == null ? null : ToAs(t);
+            });
             Static(gm, "getBagSlotBindings", a => ToAs(Controller.GetBagSlotBindings(Rt.ToString(a.ElementAtOrDefault(0)))));
         }
     }
