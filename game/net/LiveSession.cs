@@ -54,6 +54,10 @@ public partial class LiveSession : Node
     public readonly ServerKeyTable KeyTable = new();
     /// <summary>Raised after a KeyTable packet was applied (its mode: 0 load, 7 pages).</summary>
     public event Action<int> KeyTableChanged;
+    /// <summary>The local player's skill book (JobSystem) from the Job packets (OnJob); null before one arrives.</summary>
+    public SkillBook SkillBook { get; private set; }
+    /// <summary>Raised after the local player's skill book changed (the Job packet's mode).</summary>
+    public event Action<int> SkillBookChanged;
     public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
@@ -335,6 +339,13 @@ public partial class LiveSession : Node
                     int mode = KeyTable.Apply(p.Reader());   // CKeyTable::OnKeyTable (keytable.cpp:285); no ExpectEnd: the client ignores trailing bytes
                     GD.Print($"live: key table mode {mode} ({KeyTable.PageCount} pages, page {KeyTable.CurrentPage})");
                     KeyTableChanged?.Invoke(mode);
+                }
+                else if (game.Is(p, Inbound.Job))
+                {
+                    var j = JobPacket.Read(p.Reader());   // CSceneStateGame::OnJob (scenestategame.cpp:7449); no ExpectEnd: the client ignores trailing bytes
+                    bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
+                    if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
+                    GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
                 }
                 else if (game.Is(p, Inbound.GlobalFactor))
                 {
