@@ -1133,6 +1133,9 @@ public partial class HudScene : Node
             Wearer = () => me?.ToPcInfo(now()),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             ActionKeyDown = ActionKeyDown,
+            // a worn item dragged from the character window (its equip slots) and its unequip checks
+            WornSlotItem = name => myInfo != null && !myInfo.IsClosed ? myInfo.WornSlot(name) : null,
+            RequestUnequipWorn = item => myInfo?.RequestUnequip(item),
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
