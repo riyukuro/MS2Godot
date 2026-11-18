@@ -40,6 +40,33 @@ public static class UiFixture
         new() { Id = 30000001, Uid = 1004, InventorySlot = 0, Amount = 3, Rarity = 1 },
     };
 
+    /// <summary>
+    /// FIXTURE character window record without a server: the own FieldAddUser's user block, a Stat packet with all 35 stats
+    /// (three values each, Ms2.Net PlayerStat) and the AttributePoint loads (modes 0 and 1), in the parsed packet shapes, with
+    /// real-shaped values for the HUD fixture's level 21 Knight, not a recorded character.
+    /// </summary>
+    public static Ms2.Net.Packets.MyCharacter Character()
+    {
+        var me = new Ms2.Net.Packets.MyCharacter();
+        me.Apply(new Ms2.Net.Packets.FieldAddUser
+        {
+            ObjectId = 1,
+            User = new Ms2.Net.Packets.UserBlock { AccountId = 1, CharacterId = 2, Name = "Fixture", Level = 21, JobCode = 10, Job = 100, Gender = 0, Motto = "", Picture = "", GuildName = "" },
+        });
+        var stats = new Dictionary<byte, long[]>();
+        for (byte i = 0; i < Ms2.Net.Packets.PlayerStat.Total; i++) stats[i] = new long[] { 0, 0, 0 };
+        void Set(byte stat, long total, long base_, long current) => stats[stat] = new[] { total, base_, current };
+        Set(0, 48, 43, 48); Set(1, 12, 12, 12); Set(2, 4, 4, 4); Set(3, 6, 6, 6);  // str, dex, int, luk
+        Set(4, 2100, 1900, 1630);                                                // health
+        Set(7, 100, 100, 82); Set(10, 120, 120, 100);                            // spirit, stamina
+        Set(0xe, 120, 120, 120); Set(0x11, 62, 55, 62);                           // attack speed, critical rate
+        Set(0x14, 41, 30, 41);                                                   // defense
+        me.Apply(new Ms2.Net.Packets.PlayerStat(1, stats));
+        me.StatPoints.Apply(new Ms2.Net.Packets.AttributePointMessage.Extra(15, Array.Empty<(int, uint)>()));
+        me.StatPoints.Apply(new Ms2.Net.Packets.AttributePointMessage.Stats(15, new (byte, int)[] { (0, 5), (0x11, 7) }));
+        return me;
+    }
+
     /// <summary>A KeyTable packet in the server's layout (Ms2.Net ServerKeyTable): mode 0 with the use-default flag, which
     /// makes the client load DefaultKey.xml and read no pages (OnKeyTable, keytable.cpp:285), so every quick slot is empty.</summary>
     public static Ms2.Net.Packets.ServerKeyTable NewCharacterKeyTable()

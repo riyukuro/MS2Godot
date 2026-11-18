@@ -1,0 +1,604 @@
+using System.Globalization;
+using Ms2.Avm2;
+using Ms2.Avm2.Flash;
+using Ms2.Net.Packets;
+
+namespace Ms2.Ui.Hud;
+
+/// <summary>
+/// UIMyInfoDialog (client/ms2/uimyinfodialog.cpp; UI id 0x2711, the game menu's "characterinfo" entry and key action 400002)
+/// over UIPCInfoDialog (uipcinfodialog.cpp), the C++ side of the character window movie uimyinfodialog
+/// (GetTypeName "MyInfoDialog", @0x14132c030). It shows a <see cref="PcInfo"/> (the dialog's m_spInfo, which vfunc_65 builds
+/// at open from MyPC::vfunc_125): the tabs, the profile (job, level, name, title list, address, architect score, guild,
+/// prestige level, wedding mark, motto, profile image), the stat rows and the attribute points.
+/// <para>Nothing here sends a packet. The motto change, title change, attribute add and reset, profile upload and screenshot
+/// are raised as <see cref="Button"/>; the dialogs the buttons open as <see cref="ToggleDialog"/> / <see cref="OpenDialog"/>.</para>
+/// <para>The parts whose data or code is not ported take it from a source that may be null; a null source leaves the
+/// member unset (or the row's value and detail empty): the Lua scores and crit rate, the equipment abilities, the item
+/// level, the shield, the achievement tally, the profile image path and the symbol.</para>
+/// </summary>
+public sealed class MyInfoController : UiController
+{
+    public override string Movie => "uimyinfodialog";
+    protected override string EntityMethod => "setTodayMemo";
+    public override string TypeName => "MyInfoDialog";
+
+    /// <summary>UIMyInfoDialog's m_strGemBag / m_strEquipBag (its constructor, uimyinfodialog.cpp:203).</summary>
+    public const string GemBag = "MyPcInfoDialog.Gem", EquipBag = "MyPcInfoDialog.Equip";
+
+    /// <summary>MyPC::vfunc_125 at open (vfunc_65) and in RebuildPCInfo; null = no local player (the dialog does not open).</summary>
+    public Func<PcInfo> Record;
+    /// <summary>MyPC::GetStatPointManager (vfunc_87 reads it for the local record).</summary>
+    public StatPointBook StatPoints;
+    /// <summary>GetOffenseScore (@0x141334890): Lua either way (CalePcOffenseScore with feature 0xdf, else CalcPcDamage).</summary>
+    public Func<PcInfo, long> OffenseScore;
+    /// <summary>GetDefenseScore with feature 0xdf: Lua CalePcDefenseScore (without it, Stats2[0x14], ported).</summary>
+    public Func<PcInfo, long> DefenseScoreLua;
+    /// <summary>CLua::FUN_140674a70(value, 0, critical): the crit rate GetBasicStat(0x12) shows.</summary>
+    public Func<long, float, long, float> CritRate;
+    /// <summary>The record's m_3cc / m_3d0 (vfunc_126: the worn weapons' attack); null leaves m_itemLevelInfo.</summary>
+    public Func<PcInfo, (uint Total, uint Additional)?> ItemLevel;
+    /// <summary>AdditionalCliList::GetTotalShieldValue of the local player.</summary>
+    public Func<long> Shield;
+    /// <summary>UIMyInfoDialog::vfunc_104 (@0x141a5ae90): CAchieveManager::GetTally()->Sum().</summary>
+    public Func<uint> AchieveTally;
+    /// <summary>GetProfileImagePath (@0x141336c90): FUN_14016a730(FUN_141028be0(character id, picture, 1, "")).</summary>
+    public Func<PcInfo, string> ProfileImagePath;
+
+    /// <summary>CUIService::ToggleDialog of a button: onSymbolClick 0x4ed5, onWedding 0x4f8c.</summary>
+    public event Action<int> ToggleDialog;
+    /// <summary>CUIService::OpenDialog: OnConfig 0x4e75 (after DAT_1439f9284 = the gem item's slot).</summary>
+    public event Action<int> OpenDialog;
+    /// <summary>A button whose client path sends a request or opens a part not here, by its callback name.</summary>
+    public event Action<string> Button;
+
+    PcInfo info;           // m_spInfo
+    int tab;               // m_nTab
+    bool dirty;            // m_208 (profile at the next vfunc_15)
+    long statsDueMs = -1;  // m_218 (the stat lists 100 ms later)
+
+    public PcInfo Info => info;
+    public int Tab => tab;
+
+    bool Feature(int id) => Model.IsFeatureEnabled(id);
+    string Localize(string key) => Host.Player.Translate?.Invoke(key) ?? key;
+    string Common(string key) => Model.Tables.Common(key) ?? "";
+    object Child(string name) => Host.Child(name);
+
+    /// <summary>
+    /// vfunc_65 (@0x141a58310) then OnLoadComplete: the record from MyPC::vfunc_125, UIPCInfoDialog::OnLoadComplete
+    /// (@0x14132dc20), then UIMyInfoDialog's (@0x141a58ca0): m_closet shown with feature 0xe3; then vfunc_46.
+    /// </summary>
+    public override void OnLoadComplete()
+    {
+        info = Record?.Invoke();
+        base.OnLoadComplete();
+        bool codi = Feature(0x8e);
+        if (info != null && !info.IsLocal) codi = info.CodiActive;
+        if (Host.Entity != null)
+        {
+            var tabs = new List<object>
+            {
+                TabRow(0, "$s_myInfo_game", "equip", "$s_tooltip_myinfo_tab_equip"),
+                TabRow(1, "$s_myInfo_skin", "equip", "$s_tooltip_myinfo_tab_skin"),
+            };
+            if (codi) tabs.Add(TabRow(3, "$s_myInfo_codi", "equip", "$s_tooltip_myinfo_tab_codi"));
+            tabs.Add(TabRow(2, "$s_myInfo_badge", "gem", "$s_tooltip_myinfo_tab_badge"));
+            Host.Invoke("initData", Host.Obj(("dpTab", DataProvider(tabs))));
+        }
+        Profile();
+        Memo();
+        Stats();
+        Bag(tab);
+        SetProfileImage(ProfilePath());
+        // m_myNews's click handler is OnClickMyNews (raised by the movie's click through OnCallback)
+        if (Child("m_screenshot") is { } shot)
+        {
+            bool on = info != null && info.IsLocal && Feature(0xf7);
+            Host.Set(shot, "enabled", on);
+            Host.SetVisible(shot, on);
+        }
+        // m_webGuideButton (FUN_1419260d0) is the web guide's: not here
+        if (Child("m_closet") is { } closet) Host.SetVisible(closet, Feature(0xe3));
+        Vfunc46();
+    }
+
+    object TabRow(int index, string label, string frame, string tooltip) =>
+        Host.Obj(("tabIndex", index), ("label", label), ("equipFrame", frame),
+            ("tooltipData", Host.Obj(("className", "export_common_tooltip_tooltipText"), ("id", tooltip), ("align", "topLeft"))));
+
+    /// <summary>UIPCInfoDialog::vfunc_46 (@0x14132da70): m_myNews hidden without feature 0x3b, m_wedding without 0x104.</summary>
+    void Vfunc46()
+    {
+        if (!Feature(0x3b) && Child("m_myNews") is { } news) Host.SetVisible(news, false);
+        if (!Feature(0x104) && Child("m_wedding") is { } wedding) Host.SetVisible(wedding, false);
+    }
+
+    /// <summary>UIMyInfoDialog::vfunc_67 (@0x141a58630) and UIPCInfoDialog's (@0x14132d530): the bags dropped, the record
+    /// and tab cleared, UIDialog's close.</summary>
+    public override void Close()
+    {
+        info = null;
+        tab = 0;
+        dirty = false; statsDueMs = -1;
+        base.Close();
+    }
+
+    /// <summary>FUN_141a5a560 (@0x141a5a560): the record changed; the profile is rebuilt at the next vfunc_15 and the stat
+    /// lists 100 ms after (m_218.Start(100)).</summary>
+    public void MarkChanged(long nowMs)
+    {
+        if (IsClosed) return;
+        dirty = true;
+        statsDueMs = nowMs + 100;
+    }
+
+    /// <summary>vfunc_15 (@0x141a593e0): RebuildPCInfo(1, 0, 0) when marked, RebuildPCInfo(0, 1, 0) when the timer ran out.</summary>
+    public void Process(long nowMs)
+    {
+        if (IsClosed || Host.Entity == null) return;
+        if (dirty) { Rebuild(true, false); dirty = false; }
+        if (statsDueMs >= 0 && nowMs >= statsDueMs) { Rebuild(false, true); statsDueMs = -1; }
+    }
+
+    /// <summary>RebuildPCInfo (@0x141a5ab10): a new record from MyPC::vfunc_125, then vfunc_84 and / or vfunc_86.</summary>
+    void Rebuild(bool profile, bool stats)
+    {
+        if (info == null) return;
+        var r = Record?.Invoke();
+        if (r == null) return;
+        info = r;
+        if (profile) Profile();
+        if (stats) Stats();
+    }
+
+    // ---- vfunc_84: the profile -------------------------------------------------------------------------------------
+
+    /// <summary>vfunc_84 (@0x14132fb40), then UIMyInfoDialog's SetSymbol (string table 0x27 and the name tag symbol table:
+    /// not here).</summary>
+    void Profile()
+    {
+        if (info == null) { ClearProfile(); return; }
+        JobText(info.SubJob);
+        if (Child("m_level") is { } level) Host.Set(level, "text", info.Level.ToString(CultureInfo.InvariantCulture));
+        Host.Invoke(Host.Entity, "setName", info.Name);
+        Trophy();
+        Address(info.HomeAddress);
+        if (Child("m_interior_point") is { } interior)            // vfunc_102(m_3d8, m_3dc): FormatStringId(0x25, nRank, nPoint)
+        {
+            Host.Set(interior, "enabled", true);
+            Host.Set(interior, "text", Format(Common("s_char_info_home_commend"), info.HomeCommendMonthly, info.HomeCommendPoint));
+        }
+        Titles();
+        if (Child("m_character") is { } ch)                       // vfunc_100: "%s_%d" of the gender and job group
+            Host.Invoke(ch, "gotoAndStop", (info.Gender == 0 ? "MALE" : "FEMALE") + "_" + info.JobGroup.ToString(CultureInfo.InvariantCulture));
+        Guild();
+        Adventure(info.PrestigeLevel);
+        Wedding();
+    }
+
+    /// <summary>ClearProfile (@0x141333090): no name, trophy 0, m_title disabled.</summary>
+    void ClearProfile()
+    {
+        Host.Invoke(Host.Entity, "setName", "");
+        Host.Invoke("setTrophy", 0u);
+        if (Child("m_title") is { } t) Host.Set(t, "enabled", false);
+    }
+
+    /// <summary>vfunc_94 (@0x141333180): m_jobImage to frame "_%d", m_job's text the job name (string table 6).</summary>
+    void JobText(int job)
+    {
+        if (Child("m_jobImage") is { } img) Host.Invoke(img, "gotoAndStop", "_" + ((uint)job).ToString(CultureInfo.InvariantCulture));
+        if (Child("m_job") is { } j) Host.Set(j, "text", Model.Tables.JobName(job));
+    }
+
+    /// <summary>UIMyInfoDialog::vfunc_104 (@0x141a5ae90): setTrophy(the achievement tally's sum).</summary>
+    void Trophy()
+    {
+        if (AchieveTally != null) Host.Invoke("setTrophy", AchieveTally());
+    }
+
+    /// <summary>vfunc_101 (@0x141333dd0): enabled with an address; the local player's empty one is GetStringCommon(0x22).</summary>
+    void Address(string address)
+    {
+        if (Child("m_address") is not { } a) return;
+        Host.Set(a, "enabled", address.Length > 0);
+        Host.Set(a, "text", info.IsLocal && address.Length == 0 ? Common("s_char_info_ugcmap") : address);
+    }
+
+    /// <summary>vfunc_103 (@0x141334120): FormatStringId(0x24, guild, grade); no guild: GetStringCommon(0x21) for the local
+    /// player, else empty; enabled only with a guild.</summary>
+    void Guild()
+    {
+        if (Child("m_guild") is not { } g) return;
+        string text = "";
+        if (info.GuildName.Length == 0) { if (info.IsLocal) text = Common("s_char_info_guild"); }
+        else text = Format(Common("s_char_info_guild_name"), info.GuildName, info.GuildGrade);
+        Host.Set(g, "enabled", info.GuildName.Length > 0);
+        Host.Set(g, "text", text);
+    }
+
+    /// <summary>vfunc_105 (@0x141334390): m_adventureLevel's text, it and its icon hidden for 0.</summary>
+    void Adventure(int level)
+    {
+        if (Child("m_adventureLevel") is { } l)
+        {
+            Host.Set(l, "text", level.ToString(CultureInfo.InvariantCulture));
+            Host.SetVisible(l, level != 0);
+        }
+        if (Child("m_adventureLevelIcon") is { } icon) Host.SetVisible(icon, level != 0);
+    }
+
+    /// <summary>vfunc_106 (@0x141334550): the wedding state's frame (1 promise, 2 marriage, 3 / 4 coolingoff), shown; 0 and 5
+    /// hide it. (Its tooltip, GetWeddingTooltip, is not here.)</summary>
+    void Wedding()
+    {
+        if (Child("m_wedding") is not { } w) return;
+        int s = info.Wedding;
+        if (s == 0 || s == 5) { Host.SetVisible(w, false); return; }
+        string frame = s switch { 1 => "promise", 2 => "marriage", 3 or 4 => "coolingoff", _ => null };
+        if (frame != null) Host.Invoke(w, "gotoAndStop", frame);
+        Host.SetVisible(w, true);
+    }
+
+    /// <summary>vfunc_96 (@0x141333420): the titles sorted by name (qsort CompareTitleNames, wcscmp); the local player's
+    /// list is a "no title" row (id 0) and each title with a name, the shown title selected (its sorted position + 1),
+    /// disabled without titles, min(n + 1, 5) menu rows; another player's is its one title, disabled.</summary>
+    void Titles()
+    {
+        if (Child("m_title") is not { } menu) return;
+        var sorted = info.Titles.OrderBy(id => Model.Tables.TitleName((int)id), StringComparer.Ordinal).ToList();
+        var dp = Host.Get(menu, "dataProvider");
+        Host.Invoke(dp, "cleanUp");                                         // ASDropdownMenu::ClearItems
+        if (info.IsLocal)
+        {
+            Host.Invoke(dp, "push", Host.Obj(("label", Model.Tables.TitleName(0)), ("id", 0)));
+            int selected = 0;
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                string label = Model.Tables.TitleName((int)sorted[i]);
+                if (label.Length == 0) continue;
+                Host.Invoke(dp, "push", Host.Obj(("label", label), ("id", sorted[i])));
+                if (sorted[i] == (uint)info.Title) selected = i + 1;
+            }
+            Host.Set(menu, "selectedIndex", selected);
+            if (sorted.Count == 0) Host.Set(menu, "enabled", false);
+            Host.Set(menu, "menuRowCount", (uint)Math.Min(sorted.Count + 1, 5));
+        }
+        else
+        {
+            if ((uint)info.Title > 0)
+            {
+                Host.Invoke(dp, "push", Host.Obj(("label", Model.Tables.TitleName(info.Title))));
+                Host.Set(menu, "selectedIndex", 0);
+            }
+            Host.Set(menu, "enabled", false);
+        }
+        Host.Invoke(menu, "invalidate");                                    // vfunc_24(true)
+        Host.Invoke(menu, "validateNow");
+    }
+
+    /// <summary>vfunc_85 / vfunc_99 (@0x141333bb0): setTodayMemo(motto, local).</summary>
+    void Memo()
+    {
+        if (info == null) return;
+        Host.Invoke(Host.Entity, "setTodayMemo", info.Motto, info.IsLocal);
+    }
+
+    string ProfilePath() => info == null || ProfileImagePath == null ? "" : ProfileImagePath(info) ?? "";
+
+    /// <summary>vfunc_98 (@0x141333980): setProfile(path) for a non-empty path, m_profile enabled with the "enable" label
+    /// for the local player, else disabled with the "disable" label.</summary>
+    void SetProfileImage(string path)
+    {
+        if (info == null || path.Length == 0) return;
+        Host.Invoke(Host.Entity, "setProfile", path);
+        if (Child("m_profile") is not { } p) return;
+        Host.Set(p, "enabled", info.IsLocal);
+        Host.Set(p, "label", info.IsLocal ? "$s_myInfo_menu_select_profile_enable" : "$s_myInfo_menu_select_profile_disable");
+    }
+
+    // ---- vfunc_86 / vfunc_87: the stats ----------------------------------------------------------------------------
+
+    /// <summary>vfunc_86 (@0x14132ff30): the item level, attack and defense labels, m_statLabelManager.setData(rows), vfunc_87.</summary>
+    void Stats()
+    {
+        if (info == null) return;
+        bool score = Feature(0xdf);
+        if (Child("m_itemLevelInfo") is AsDisplayObject il && ItemLevel?.Invoke(info) is var (total, additional))
+        {
+            Host.SetChildText("detail", Format("{0} + ({1})", total - additional, additional), il);
+            Host.SetChildText("value", total.ToString(CultureInfo.InvariantCulture), il);
+            Host.Invoke(il, "changeTooltipText", Localize("$s_tooltip_myinfo_stat_itemLevel_ohAdditional"));
+        }
+        ScoreLabel("m_attackInfo", OffenseScore?.Invoke(info), score, "attackScore");
+        long? defense = score ? DefenseScoreLua?.Invoke(info) : info.Stats2[0x14];
+        ScoreLabel("m_defenseInfo", defense, score, "defenseScore");
+        if (Child("m_statLabelManager") is { } labels)
+        {
+            var rows = new List<object>();
+            int g = 0, n = 0;
+            foreach (int s in new[] { 4, 7, 10, 0, 1, 2, 3, 0xe }) rows.Add(BasicRow(s, g, n++));
+            rows.Add(ShieldRow(g, n++));
+            g++; n = 0;
+            foreach (var (basic, s) in new[] { (true, 0x1b), (true, 0x1d), (true, 0x17), (true, 0x18), (true, 0x1f), (false, 0x1a), (false, 0x1b),
+                (true, 0xf), (true, 0x11), (true, 0x12), (false, 0x18), (false, 0x19), (false, 0x13), (false, 0x12), (false, 0x17), (false, 0x16),
+                (false, 0x14), (false, 0x15), (false, 0xc), (false, 7), (false, 0x10), (false, 0xce), (true, 0xd), (false, 0x23), (false, 0x36) })
+                rows.Add(basic ? BasicRow(s, g, n++) : SpecialRow(s, g, n++));
+            g++; n = 0;
+            foreach (var (basic, s) in new[] { (true, 0x14), (true, 0x19), (true, 0x1a), (true, 0x10), (true, 0x13), (false, 0x25), (false, 0x26),
+                (false, 0x1d), (false, 0x1c), (false, 0x21), (false, 0x20), (false, 0x1e), (false, 0x1f), (true, 0x15), (false, 0xcc), (false, 0x22),
+                (false, 0x24), (true, 5), (false, 0x37) })
+                rows.Add(basic ? BasicRow(s, g, n++) : SpecialRow(s, g, n++));
+            var array = Host.RT.Construct(Host.RT.GetClass("Array"), Array.Empty<object>());
+            foreach (var r in rows) Host.Invoke(array, "push", r);
+            Host.Invoke(labels, "setData", array);
+        }
+        StatPointRows();
+    }
+
+    /// <summary>The attack / defense label: detail "", value "{0}" of the score; with feature 0xdf the html label text and the
+    /// tooltip {className, text, onDelay 300, offDelay 5000, align 4}. A score not here leaves the value.</summary>
+    void ScoreLabel(string name, long? value, bool feature, string key)
+    {
+        if (Child(name) is not AsDisplayObject l) return;
+        Host.SetChildText("detail", "", l);
+        if (value is long v) Host.SetChildText("value", v.ToString(CultureInfo.InvariantCulture), l);
+        if (!feature) return;
+        if (Host.FindNamed("textField", l) is { } tf) Host.Set(tf, "htmlText", Localize("$s_myInfo_label_" + key));
+        Host.Set(l, "tooltipData", Host.Obj(("className", "export_common_tooltip_tooltipText"), ("text", "$s_tooltip_myinfo_stat_" + key),
+            ("onDelay", 300), ("offDelay", 5000), ("align", 4)));
+    }
+
+    /// <summary>GetAverageStat (@0x141335780): (Stats2[0x1b] + Stats2[0x1c]) * 0.5f.</summary>
+    long AverageStat() => (long)((float)(info.Stats2[0x1b] + info.Stats2[0x1c]) * 0.5f);
+
+    /// <summary>GetSpecialStat (@0x141335d20): base 0, bonus = total = m_3b0[stat] (/ 10 when bTenth); null without the
+    /// equipment abilities.</summary>
+    (float Base, float Bonus, float Total)? Special(int stat, bool tenth)
+    {
+        if (info.Special == null) return null;
+        int v = info.Special.TryGetValue(stat, out var x) ? x : 0;
+        float f = tenth ? v / 10.0f : v;
+        return (0f, f, 0f + f);
+    }
+
+    /// <summary>GetBasicStat (@0x141335940); null when a part it needs is not here.</summary>
+    (float Base, float Bonus, float Total)? Basic(int stat)
+    {
+        float b = info.Stats1[stat], bonus = info.Stats0[stat] - b, t = info.Stats2[stat];
+        if (stat is 4 or 10 or 7) t = info.Stats0[stat];
+        else if (stat is 0x1b or 0x1c) { b = 0f; bonus = AverageStat(); t = bonus; }
+        else if (stat is 0x1f or 0x15) { b /= 10.0f; bonus /= 10.0f; t /= 10.0f; }
+        else if (stat == 0x12)
+        {
+            if (CritRate == null || Special(0xcb, false) is not var (_, crit, _)) return null;
+            long critical = (long)crit;
+            b = CritRate((long)b, 0f, 0) * 100.0f;
+            bonus = (bonus + critical) * 0.1f;
+            t = CritRate((long)t, 0f, critical) * 100.0f;
+        }
+        else if (stat == 0x11)
+        {
+            if (Special(0xca, false) is not var (_, acc, _)) return null;
+            long accuracy = (long)acc;
+            bonus += accuracy;
+            t += accuracy;
+        }
+        return (b, bonus, t);
+    }
+
+    static string F1(float f) => f.ToString("F1", CultureInfo.InvariantCulture);
+    static string I(float f) => ((long)f).ToString(CultureInfo.InvariantCulture);
+
+    object Row(int container, int label, string name, string value, string detail) =>
+        Host.Obj(("containerIndex", (uint)container), ("labelIndex", (uint)label), ("name", name), ("value", value), ("detail", detail));
+
+    /// <summary>BuildBasicStatRow (@0x141335e00): rate stats (0xd, 0xe, 0x12, 0x15, 0x1f) as "{0:0.1f}" in s_common_percent,
+    /// others "{0}"; detail "base+bonus" for a positive bonus, "basebonus" for a negative one, else "-".</summary>
+    object BasicRow(int stat, int container, int label)
+    {
+        string name = Model.Tables.StatName(stat);
+        if (Basic(stat) is not var (b, bonus, t)) return Row(container, label, name, "", "");
+        bool rate = stat is 0xd or 0xe or 0x12 or 0x15 or 0x1f;
+        string value = rate ? Format(Common("s_common_percent"), F1(t)) : I(t);
+        string detail = bonus > 0f ? (rate ? F1(b) + "+" + F1(bonus) : "(" + I(b) + "+" + I(bonus) + ")")
+            : bonus < 0f ? (rate ? F1(b) + F1(bonus) : "(" + I(b) + I(bonus) + ")")
+            : "-";
+        return Row(container, label, name, value, detail);
+    }
+
+    /// <summary>BuildSpecialStatRow (@0x1413363d0): tenths (not 0x36 / 0x37) as "{0:0.1f}" in s_common_percent; detail "-" for
+    /// no bonus.</summary>
+    object SpecialRow(int stat, int container, int label)
+    {
+        string name = Model.Tables.SpecialAbilityName(stat);
+        bool tenth = stat is not (0x36 or 0x37);
+        if (Special(stat, tenth) is not var (b, bonus, t)) return Row(container, label, name, "", "");
+        string value = tenth ? Format(Common("s_common_percent"), F1(t)) : I(t);
+        string detail = bonus == 0f ? "-"
+            : bonus >= 0f ? (tenth ? F1(b) + "+" + F1(bonus) : "(" + I(b) + "+" + I(bonus) + ")")
+            : (tenth ? F1(b) + F1(bonus) : "(" + I(b) + I(bonus) + ")");
+        return Row(container, label, name, value, detail);
+    }
+
+    /// <summary>BuildShieldRow (@0x1413369a0): "s_pc_info_name_shield", the shield total, detail "-".</summary>
+    object ShieldRow(int container, int label) =>
+        Row(container, label, Common("s_pc_info_name_shield"), Shield == null ? "" : Shield().ToString(CultureInfo.InvariantCulture), "-");
+
+    /// <summary>
+    /// vfunc_87 (@0x1413322c0): per cost stat (GetCostIds) m_statPoint{i+1}: m_Label the stat name, m_point Stats0[4] for
+    /// health else Stats2; for the local record m_point orange (0xffa200) with points put in, m_plus disabled with none
+    /// remaining. m_resetStatPoint enabled with points used; m_remainPoint's m_remainStatPoint the remaining (orange when
+    /// any) for the local record, else hidden. (The rows' tooltips, FUN_14132eed0 / FUN_14132f020, are not here.)
+    /// </summary>
+    void StatPointRows()
+    {
+        int remaining = 0, used = 0;
+        if (info.IsLocal)
+        {
+            if (StatPoints == null) return;
+            remaining = StatPoints.Remaining; used = StatPoints.Used;
+        }
+        var ids = StatPointBook.CostIds;
+        for (int i = 0; i < ids.Length; i++)
+        {
+            if (Child("m_statPoint" + (i + 1).ToString(CultureInfo.InvariantCulture)) is not AsDisplayObject row) continue;
+            int stat = ids[i];
+            Host.SetChildText("m_Label", Model.Tables.StatName(stat), row);
+            long v = stat == 4 ? info.Stats0[stat] : info.Stats2[stat];
+            Host.SetChildText("m_point", v.ToString(CultureInfo.InvariantCulture), row);
+            if (info.IsLocal && Host.FindNamed("m_point", row) is { } point)
+                Host.Set(point, "textColor", (uint)StatPoints.GetStatPoints(stat) > 0 ? 0xffa200u : 0xffffffu);
+            if (Host.Child("m_plus", row) is { } plus)
+            {
+                if ((uint)remaining == 0) Host.Set(plus, "enabled", false);
+                else if (!Rt.ToBoolean(Host.Get(plus, "enabled"))) Host.Set(plus, "enabled", true);
+            }
+        }
+        if (Child("m_resetStatPoint") is { } reset) Host.Set(reset, "enabled", (uint)used > 0);
+        if (Child("m_remainPoint") is AsDisplayObject remain && Host.FindNamed("m_remainStatPoint", remain) is { } text)
+        {
+            Host.SetVisible(text, info.IsLocal);
+            if (info.IsLocal)
+            {
+                Host.Set(text, "text", ((uint)remaining).ToString(CultureInfo.InvariantCulture));
+                Host.Set(text, "textColor", (uint)remaining > 0 ? 0xffa200u : 0xffffffu);
+            }
+        }
+    }
+
+    // ---- vfunc_88: the equipment bag -------------------------------------------------------------------------------
+
+    /// <summary>vfunc_88 (@0x141332e00): tab 2 the gem bag (FUN_14126e2f0), else the equip bag of GetEquipBagKindForTab (0 -> 0,
+    /// 1 -> 1, 3 -> 2, else none; CreateEquipSlotBag); equipBagID = the bag's name. The bags' slots are not here (empty).</summary>
+    void Bag(int t)
+    {
+        if (Host.Entity == null || info == null) return;
+        ShownBag = t == 2 ? GemBag : EquipBag;
+        Host.Set(Host.Entity, "equipBagID", ShownBag);       // a setter only: it reads GameDataModel.getBagSlotBindings
+    }
+
+    /// <summary>The bag name last given to equipBagID.</summary>
+    public string ShownBag { get; private set; }
+
+    /// <summary>UIMyInfoDialog::vfunc_90 (@0x141a5b3b0): the base's (m_nTab, vfunc_88); the codi tab (3) checks its period
+    /// (FUN_141a5c410) and shows it (FUN_141a5b6c0); another tab empties m_equip.m_period.</summary>
+    void ChangeTab(int t)
+    {
+        int old = tab;
+        tab = t;
+        Bag(tab);
+        if (t == 3) { CodiTabCheck(old, t); CodiPeriod(); }
+        else PeriodText("");
+    }
+
+    /// <summary>The message box key of FUN_141a5c410 (GetStringCommonByKey).</summary>
+    public const string CodiTabNotActiveKey = "s_char_info_changetab_not_active_codi_tab";
+
+    /// <summary>FUN_141a5c410 (@0x141a5c410): the title layer's period state 0 or 4 shows a type-0 box (FUN_140d73f20, shown
+    /// by FUN_140d73c60) answered by OnCodiTabChangeAnswer with the tab before.</summary>
+    void CodiTabCheck(int before, int t)
+    {
+        if (t != 3 || info == null) return;
+        int state = info.GetCodiPeriodState(Feature(0x8e), ServerTime?.Invoke() ?? 0);
+        if (state != 0 && state != 4) return;
+        var box = MessageBoxQueue.CreateWithCallback(MessageBoxData.CommonByKey(CodiTabNotActiveKey) ?? "", 0, (button, _) => OnCodiTabChangeAnswer(button, before));
+        ShowBox(box);
+    }
+
+    /// <summary>OnCodiTabChangeAnswer (@0x141a5c640): OK (0) puts m_tab back on the tab before (its value as the button
+    /// index, as the client does) when the record has no layer-2 items (m_mapEquip2 empty).</summary>
+    bool OnCodiTabChangeAnswer(int button, int before)
+    {
+        if (button != 0) return true;
+        if (Host.Entity != null && before != tab && info != null && info.CodiItems == 0 && Child("m_tab") is { } bar)
+            Host.Set(bar, "selectedIndex", before);
+        return true;
+    }
+
+    /// <summary>FUN_141a5b6c0 (@0x141a5b6c0) for the codi tab: state 1 "s_char_info_codi_tab_period_fmt" of the time left
+    /// (days / hours / minutes, or "s_item_word_s_shortly"), state 3 "s_char_info_codi_tab_expired", else empty, as
+    /// m_equip.m_period's html text. (The refresh timer m_268 / m_274 is not here.)</summary>
+    void CodiPeriod()
+    {
+        if (Host.Entity == null || tab != 3 || info == null) return;
+        long now = ServerTime?.Invoke() ?? 0;
+        string text = "";
+        switch (info.GetCodiPeriodState(Feature(0x8e), now))
+        {
+            case 1:
+                if (now < info.CodiEnd)
+                {
+                    var left = TimeSpan.FromSeconds(info.CodiEnd - now);
+                    string remain = left.Days > 0 ? Format(Common("s_item_word_d"), left.Days)
+                        : left.Hours > 0 ? Format(Common("s_item_word_h"), left.Hours)
+                        : left.Minutes > 0 ? Format(Common("s_item_word_m"), left.Minutes)
+                        : Common("s_item_word_s_shortly");
+                    text = Format(Common("s_char_info_codi_tab_period_fmt"), remain);
+                }
+                break;
+            case 3: text = Common("s_char_info_codi_tab_expired"); break;
+        }
+        PeriodText(text, true);
+    }
+
+    /// <summary>m_258: m_equip's m_period (SetTextHTMLW for the period, SetTextW("") on another tab).</summary>
+    void PeriodText(string text, bool html = false)
+    {
+        if (Host.Entity == null || Child("m_equip") is not AsDisplayObject equip || Host.FindNamed("m_period", equip) is not { } period) return;
+        Host.Set(period, html ? "htmlText" : "text", text);
+    }
+
+    /// <summary>FUN_140d73c60: the box goes to the message box queue.</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+    /// <summary>GetServerTime (seconds).</summary>
+    public Func<long> ServerTime;
+
+    // ---- vfunc_28: the movie's calls -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// UIMyInfoDialog::vfunc_28 (@0x141a595a0) after UIPCInfoDialog's (@0x14132e890). The callbacks that return 1 there do here;
+    /// those that fall through to the avatar's vfunc_27 return false.
+    /// </summary>
+    public override bool OnCallback(string name, object[] args)
+    {
+        int Arg(int i) => args.Length > i ? (int)Rt.ToNumber(args[i]) : 0;
+        switch (name.ToLowerInvariant())
+        {
+            case "onremoveslot": return true;                                       // vfunc_89: the bags dropped
+            case "onchangetab":                                                     // not returned as handled
+                if (args.Length > 0) ChangeTab(Arg(0));
+                return false;
+            case "ondetailinfo": Stats(); return true;
+            case "onaddstatpoint":                                                  // vfunc_91 -> RequestAdd: a request
+            case "onresetstatpoint":                                                // the reset box, then RequestReset: a request
+            case "onchangeprofile":                                                 // CUgcManager::OpenProfileUpload
+            case "onchangetodaymemo":                                               // the input box, then SendOp::MyInfo
+                Button?.Invoke(name); return true;
+            case "onconfig": OpenDialog?.Invoke(0x4e75); Button?.Invoke(name); return false;
+            case "ontitlechange":                                                   // SendOp::RequestUserEnv mode 1
+            case "onscreenshot": case "onaddstatpointrepeat": case "onaddstatpointstop":
+                Button?.Invoke(name); return false;
+            case "onsymbolclick": ToggleDialog?.Invoke(0x4ed5); return false;
+            case "onwedding": ToggleDialog?.Invoke(0x4f8c); return false;
+            case "onclickmynews": Button?.Invoke(name); return true;
+        }
+        return false;
+    }
+
+    /// <summary>ASDataProvider: a scaleform.clik.data.DataProvider with the values pushed.</summary>
+    object DataProvider(IEnumerable<object> values)
+    {
+        var dp = Host.RT.Construct(Host.RT.GetClass("scaleform.clik.data.DataProvider"), Array.Empty<object>());
+        foreach (var v in values) Host.Invoke(dp, "push", v);
+        return dp;
+    }
+
+    /// <summary>StringFormat: "{n}" replaced by the n-th argument.</summary>
+    static string Format(string f, params object[] args)
+    {
+        for (int i = 0; i < args.Length; i++) f = f.Replace("{" + i + "}", Convert.ToString(args[i], CultureInfo.InvariantCulture));
+        return f;
+    }
+}

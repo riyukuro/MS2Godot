@@ -284,7 +284,7 @@ public partial class HudScene : Node
     /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
     /// dialogs, the quest log.</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.Vfunc55 == false
-                                    || inventory?.IsClosed == false;
+                                    || inventory?.IsClosed == false || myInfo?.IsClosed == false;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -293,6 +293,7 @@ public partial class HudScene : Node
         if (WorldMapOpen) worldMapSide.Close();
         if (optionHost?.Vfunc55 == false) optionHost.Movie.Close();
         if (inventory?.IsClosed == false) inventory.Close();
+        if (myInfo?.IsClosed == false) myInfo.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -710,9 +711,11 @@ public partial class HudScene : Node
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
         if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
         if (k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
+        if (k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
+        if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
         return false;
     }
 
@@ -1002,6 +1005,51 @@ public partial class HudScene : Node
         else if (id == 0x4e3e) ToggleQuestLog();
         else if (id == 0x4e42) ToggleWorldMap();
         else if (id == 0x4e2d) ToggleInventory();
+        else if (id == 0x2711) ToggleMyInfo();      // "characterinfo" (gameeventmanagercli.cpp:486-494)
+    }
+
+    // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
+
+    MovieDialog myInfoMovie;                    // from open until OnEndClose
+    Ms2.Ui.Hud.MyInfoController myInfo;
+    Ms2.Net.Packets.MyCharacter offlineMe;
+
+    /// <summary>CUIService::ToggleDialog(0x2711): open when closed, else vfunc_67.</summary>
+    void ToggleMyInfo()
+    {
+        if (myInfo == null || myInfo.IsClosed) OpenMyInfo();
+        else myInfo.Close();
+    }
+
+    /// <summary>
+    /// Opens the character window over the live session's own character (FieldAddUser, Stat, AttributePoint, UserEnv,
+    /// HomeCommand) or, with no live session, a fixture in those packets' shapes (<see cref="UiFixture.Character"/>). Before
+    /// the own FieldAddUser there is no record and, as UIMyInfoDialog::vfunc_65 without a local player, nothing opens.
+    /// Nothing is sent: the stat point, motto, title, profile and screenshot requests are only logged.
+    /// </summary>
+    void OpenMyInfo()
+    {
+        if (myInfoMovie != null) { myInfoMovie.Host.Unload(); myInfoMovie.QueueFree(); myInfoMovie = null; }
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+        Func<long> now = () => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (me.ToPcInfo(now()) == null) { GD.Print("character: the live session has no own character yet"); return; }
+        var c = new Ms2.Ui.Hud.MyInfoController { Record = () => me.ToPcInfo(now()), StatPoints = me.StatPoints, ServerTime = now };
+        c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
+        c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
+        c.Button += name => GD.Print($"character: {name} is not sent (display only)");
+        void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
+        me.Changed += Changed; me.StatPoints.Changed += Changed;
+        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        c.Unloaded += () =>
+        {
+            me.Changed -= Changed; me.StatPoints.Changed -= Changed;
+            m.Host.Unload();
+            m.QueueFree();
+            if (myInfoMovie == m) myInfoMovie = null;
+        };
+        myInfo = c; myInfoMovie = m;
+        uiRoot.AddChild(m);
     }
 
     // ---- inventory: uiinventorydialog run by its own ActionScript, UIInventoryDialog's C++ side as InventoryController --
@@ -1062,6 +1110,7 @@ public partial class HudScene : Node
     {
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
+        if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);

@@ -15,6 +15,8 @@ public sealed class GameTables
     readonly Dictionary<string, string> mapNames = new();
     readonly Dictionary<string, string> mapTileDescs = new(), npcFunctionNames = new(), fieldEnterances = new(), raceNames = new();
     readonly Func<string, string> common = _ => null;
+    readonly Dictionary<string, string> titleNames = new();
+    readonly Dictionary<int, string> statNames = new(), specialNames = new();
 
     public static readonly GameTables Empty = new();
 
@@ -40,6 +42,9 @@ public sealed class GameTables
         fieldEnterances = s.Table("stringfieldenterance", "name");
         raceNames = s.Table("racename", "name");
         common = s.Common();
+        titleNames = s.Table("titlename", "name");
+        statNames = CommonTexts(packs, "table/statstringtable.xml", s.Table("stringstatname", "name"));
+        specialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", s.Table("stringspecialabilityname", "name"));
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
@@ -55,6 +60,26 @@ public sealed class GameTables
             if (packs.Exists("Xml", path)) DefaultMessengers.Add(GameStrings.Parse(packs.Read("Xml", path)));
         }
     }
+
+    /// <summary>LoadStatDefinitions (stat.cpp:172) / LoadSpecialAbilityStringTable (specialability.cpp:170): per &lt;key id&gt; of
+    /// the table, the name string whose id is its commonStringID (std::map operator[]: "" for a missing one).</summary>
+    static Dictionary<int, string> CommonTexts(PackSet packs, string table, Dictionary<string, string> names)
+    {
+        var d = new Dictionary<int, string>();
+        if (!packs.Exists("Xml", table)) return d;
+        foreach (var e in GameStrings.Parse(packs.Read("Xml", table)).Root.Elements("key"))
+            if (int.TryParse((string)e.Attribute("id"), out int id))
+                d[id] = names.TryGetValue((string)e.Attribute("commonStringID") ?? "", out var n) && n != null ? n : "";
+        return d;
+    }
+
+    /// <summary>GetStatCommonText (stat.cpp:280): the stat's common text, "" past 0x23 or without one.</summary>
+    public string StatName(int stat) => (uint)stat < 0x23 && statNames.TryGetValue(stat, out var n) ? n : "";
+    /// <summary>GetSATypeName (itemsocketsystemutil.cpp:2132): the special ability's common text (SpecialAbilityInfo m_strName).</summary>
+    public string SpecialAbilityName(int type) => specialNames.TryGetValue(type, out var n) ? n : "";
+    /// <summary>CStringTable::FUN_141811980(0x16, id): the title name (table/string.xml 22 = titleName), "" when unknown. The
+    /// reserved word tokens (CReservedWordTable::ReplaceTokensForPc / ForGender, util.cpp:1439) are not replaced.</summary>
+    public string TitleName(int id) => titleNames.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : "";
 
     static (float, float, float) Unpack(uint c) => (((c >> 16) & 0xff) / 255f, ((c >> 8) & 0xff) / 255f, (c & 0xff) / 255f);
     static uint Rgb((float r, float g, float b) c)
