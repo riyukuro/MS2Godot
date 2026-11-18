@@ -9,6 +9,10 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class GameMenuController : UiController
 {
+    /// <summary>The ctor (@0x141935f20) and UIBuiltInDialog's (uibuiltindialog.cpp:19) have no SetTweenEnabled: m_c4 stays 0,
+    /// no open / close tween.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uigamemenudialog";
     protected override string EntityMethod => "addMenuEntity";
 

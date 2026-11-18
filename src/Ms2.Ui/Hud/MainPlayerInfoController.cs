@@ -3,6 +3,10 @@ namespace Ms2.Ui.Hud;
 /// <summary>UIMainPlayerInfo (ms2/client/ms2/uimainplayerinfo.cpp): the HP/SP orb, EP gauge, name tag and the quick slots.</summary>
 public sealed class MainPlayerInfoController : UiController
 {
+    /// <summary>The ctor (@0x1419ee140) and UIBuiltInDialog's (uibuiltindialog.cpp:19) have no SetTweenEnabled: m_c4 stays 0,
+    /// no open / close tween.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uimainplayerinfo";
     protected override string EntityMethod => "enabledExpansionSlotToggle";
 

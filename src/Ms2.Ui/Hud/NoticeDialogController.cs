@@ -10,6 +10,10 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class NoticeDialogController : UiController
 {
+    /// <summary>The ctor (@0x1410084b0) and UIWebBrowserBase's (uiupperhuddialog.cpp:2245) have no SetTweenEnabled: m_c4 stays
+    /// 0, no open / close tween.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uinoticedialog";
     protected override string EntityMethod => "alignment";        // GameEntity's; the dialog is the movie's only GameEntity
     public override string TypeName => "NoticeDialog";            // GetTypeName (:96)

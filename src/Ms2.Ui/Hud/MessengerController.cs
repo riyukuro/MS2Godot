@@ -17,6 +17,10 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class MessengerController : UiController
 {
+    /// <summary>Neither UIMessengerBrowser's ctor (@0x141a20f90) nor UIMessenger's (@0x141a08af0) calls SetTweenEnabled: m_c4
+    /// stays 0, no open / close tween.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uimessengerdialog";
     protected override string EntityMethod => "updateAdditiveButton";
     public override string TypeName => "MessengerDialog";      // GetTypeName (:604)

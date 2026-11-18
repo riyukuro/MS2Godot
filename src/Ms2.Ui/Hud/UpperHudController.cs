@@ -5,6 +5,8 @@ namespace Ms2.Ui.Hud;
 /// <summary>UIUpperHudDialog (ms2/client/ms2/uiupperhuddialog.cpp): the top bar with clock, meso, merat and the buttons.</summary>
 public sealed class UpperHudController : UiController
 {
+    protected override bool IsDialog => false;          // UIHeadUpDisplay is a UIObject, not a UIDialog (uiheadupdisplay.h)
+
     public override string Movie => "uiupperhuddialog";
     protected override string EntityMethod => "arrangePos";
 

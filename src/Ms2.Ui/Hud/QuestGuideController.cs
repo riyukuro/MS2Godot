@@ -10,6 +10,9 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class QuestGuideController : UiController
 {
+    /// <summary>The ctor (@0x141aa97d0) has no SetTweenEnabled: m_c4 stays 0, no open / close tween.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uiquestguidedialog";
     protected override string EntityMethod => "buildAll";
 

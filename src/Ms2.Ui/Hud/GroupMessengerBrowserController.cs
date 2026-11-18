@@ -9,6 +9,9 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class GroupMessengerBrowserController : UiController
 {
+    /// <summary>The ctor (@0x141950770) has no SetTweenEnabled: m_c4 stays 0, no open / close tween.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uigroupmessengerbrowser";
     protected override string EntityMethod => "setData";
     public override string TypeName => "GroupMessengerBrowser";      // GetTypeName (:1449)

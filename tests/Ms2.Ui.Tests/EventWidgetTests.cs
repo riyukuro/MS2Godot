@@ -122,8 +122,8 @@ public class EventWidgetTests
     public void LevelUpRewardIsTheRowForThePlayersJobGroup()
     {
         // 70000001's KR rows: one per job group; 13200167 (recommended for 1 and 10, rank 4, count 1) is a knight's and a
-        // beginner's, 13100171 (70, count 2, clamped to its slot maximum 1) an assassin's
-        foreach (var (job, item, count) in new[] { (10, 13200167, 1u), (1, 13200167, 1u), (70, 13100171, 1u) })
+        // beginner's, 13100171 (70, count 2, clamped to its slot maximum 1) an assassin's, 15100163 (a bow) an archer's
+        foreach (var (job, item, count) in new[] { (10, 13200167, 1u), (1, 13200167, 1u), (70, 13100171, 1u), (50, 15100163, 1u) })
         {
             var model = NewModel();
             var d = LevelUp(model, 3, job).Data();
