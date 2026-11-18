@@ -1076,6 +1076,7 @@ public partial class HudScene : Node, IUiStageHost
             Inventory = live != null ? live.Inventory : OfflineInventory(),
             ActionKeyDown = ActionKeyDown,
             SymbolId = () => me.Insignia, GmGrade = () => me.User?.GmGrade ?? 0,
+            AchieveTally = () => live?.AchieveSum ?? 0,   // the fixture: an empty trophy book
         };
         c.SystemNotice += key => GD.Print($"character: system notice {key}: {hudModel.Tables.Common(key)}");
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
@@ -1083,10 +1084,12 @@ public partial class HudScene : Node, IUiStageHost
         c.Button += name => GD.Print($"character: {name} is not sent (display only)");
         void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
         me.Changed += Changed; me.StatPoints.Changed += Changed;
+        if (live != null) live.AchievesChanged += Changed;
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.Unloaded += () =>
         {
             me.Changed -= Changed; me.StatPoints.Changed -= Changed;
+            if (live != null) live.AchievesChanged -= Changed;
             m.Host.Unload();
             m.QueueFree();
             if (myInfoMovie == m) myInfoMovie = null;

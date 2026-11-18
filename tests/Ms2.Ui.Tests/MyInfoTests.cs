@@ -93,6 +93,21 @@ public class MyInfoTests
     }
 
     [Test]
+    public void TrophyCountIsTheAchieveTally()
+    {
+        Packs();
+        uint sum = 0;
+        var (h, c, _, errors) = Load(x => x.AchieveTally = () => sum);
+        Assert.That(errors, Is.Empty);
+        var point = h.Child("m_trophyPoint");
+        Assert.That(Rt.ToString(h.Get(point, "text")), Is.EqualTo("0"));
+        sum = 1234;                                                    // OnPacket mode 2: FUN_141a5a560, then vfunc_15
+        c.MarkChanged(0);
+        c.Process(0);
+        Assert.That(Rt.ToString(h.Get(point, "text")), Is.EqualTo("1234"));
+    }
+
+    [Test]
     public void SymbolButtonIsTheOwnSymbol()
     {
         Packs();

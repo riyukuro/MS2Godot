@@ -61,6 +61,7 @@ public enum Inbound : ushort {
     RideSync = 0x7A,
     World = 0xB9,
     AttributePoint = 0x45,
+    Achieve = 0x5E,
     UserEnv = 0xA8,
     HomeCommand = 0xB7,
 }

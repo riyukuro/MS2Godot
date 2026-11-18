@@ -75,6 +75,26 @@ public partial class LiveSession : Node
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
     public readonly MyCharacter Me = new();
+    /// <summary>CAchieveManager: the local player's trophies and their tally from the Achieve packets (0x5E); live only.
+    /// The trophy data (Xml achieve/*.xml) is read at the first packet.</summary>
+    public Ms2.Ui.AchieveBook Achieves => achieves ??= new Ms2.Ui.AchieveBook(AchieveTable());
+    Ms2.Ui.AchieveBook achieves;
+    /// <summary>GetTally()->Sum(); 0 before an Achieve packet (the data is not read for it).</summary>
+    public uint AchieveSum => achieves?.Sum ?? 0;
+    /// <summary>Raised when OnPacket refreshes the character window (UIMyInfoDialog::FUN_141a5a560).</summary>
+    public event Action AchievesChanged;
+
+    static Dictionary<int, Ms2.Ui.AchieveData> AchieveTable()
+    {
+        var t0 = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var t = Ms2.Ui.AchieveData.LoadAll(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
+            GD.Print($"live: trophy data {t.Count} trophies in {t0.ElapsedMilliseconds} ms");
+            return t;
+        }
+        catch (Exception e) { GD.Print($"live: trophy data unavailable ({e.Message})"); return new(); }
+    }
 
     /// <summary>The NpcTalk packets (0x4B, UITalkManager::OnTalkPacket) for the talk window; live only.</summary>
     public event Action<NpcTalkMessage> NpcTalkReceived;
@@ -438,6 +458,13 @@ public partial class LiveSession : Node
                     var m = AttributePointMessage.Read(p.Reader());   // OnAttributePoint (scenestategame.cpp:4270): the local player's CStatPointManager
                     if (m != null) Me.StatPoints.Apply(m);
                     GD.Print($"live: attribute points {m?.GetType().Name ?? "other mode"} (total {Me.StatPoints.Total}, used {Me.StatPoints.Used})");
+                }
+                else if (game.Is(p, Inbound.Achieve))
+                {
+                    var m = AchieveMessage.Read(p.Reader());          // CAchieveManager::OnPacket (achievemanager.cpp:499, via networkservice.cpp:679)
+                    bool refresh = m != null && Achieves.Apply(m);
+                    if (refresh) AchievesChanged?.Invoke();
+                    GD.Print($"live: achieve {m?.GetType().Name ?? "other mode"} (tally {Achieves.Sum})");
                 }
                 else if (game.Is(p, Inbound.UserEnv))
                 {
