@@ -122,4 +122,59 @@ public class MyInfoTests
         Assert.That(raised, Is.EqualTo(new[] { "OnAddStatPoint", "OnResetStatPoint", "OnTitleChange" }));
         Assert.That(toggled, Is.EqualTo(new[] { 0x4ed5 }));
     }
+
+    [Test]
+    public void EquipSlotsAreBoundOnTheItemSlotPath()
+    {
+        Packs();
+        var (h, c, _, errors) = Load();
+        Assert.That(errors, Is.Empty);
+        // set_equipBagID gave each m_equip child its name by slotIndex: slot0 = CP (6), slot10 = RH (5), slot11 = LH (4)
+        var equip = (AsDisplayObject)h.Child("m_equip");
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("slot0", equip), "binding")), Is.EqualTo(MyInfoController.EquipBag + ".6"));
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("slot10", equip), "binding")), Is.EqualTo(MyInfoController.EquipBag + ".5"));
+        var rh = c.GetBinding(MyInfoController.EquipBag + ".5");
+        Assert.That(rh, Is.Not.Null);
+        Assert.That(Rt.ToNumber(h.Get(rh, "itemID")), Is.EqualTo(15000001));
+        Assert.That(Rt.IsNullish(h.Get(rh, "grayColor")), Is.True);
+        var lh = c.GetBinding(MyInfoController.EquipBag + ".4");
+        Assert.That(Rt.ToNumber(h.Get(lh, "itemID")), Is.EqualTo(15000001), "an empty LH shows the two-handed RH item");
+        Assert.That(Rt.ToNumber(h.Get(lh, "grayColor")), Is.EqualTo(1));
+        Assert.That(c.GetBinding(MyInfoController.EquipBag + ".6"), Is.Null, "an empty slot");
+        bool skin = c.Model.Tables.Items.Get(11400021).HasSkinType;
+        Assert.That(c.GetBinding(MyInfoController.EquipBag + ".8") is null, Is.EqualTo(skin), "the top is on the outfit tab when it has a skin type");
+        // the outfit tab (1)
+        c.OnCallback("onChangeTab", new object[] { 1 });
+        var top = c.GetBinding(MyInfoController.EquipBag + ".8");
+        Assert.That(top is null, Is.EqualTo(!skin));
+        if (top != null) Assert.That(Rt.ToNumber(h.Get(top, "itemBothEquip")), Is.EqualTo(0));
+        // the gem tab (2): the chat balloon is index 2 (gem type 3)
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        var gem = c.GetBinding(MyInfoController.GemBag + ".2");
+        Assert.That(Rt.ToNumber(h.Get(gem, "itemID")), Is.EqualTo(70200001));
+        Assert.That(Rt.ToNumber(h.Get(gem, "gemSystem")), Is.EqualTo(3));
+        Assert.That(Rt.ToBoolean(h.Get(gem, "lock")), Is.False);
+        Assert.That(Rt.ToBoolean(h.Get(gem, "config")), Is.False, "subtype 3");
+        Assert.That(c.GetBinding(MyInfoController.GemBag + ".0"), Is.Null, "transparency: always valid, no item");
+    }
+
+    [Test]
+    public void GearScoreIsZeroOnlyWithoutLayerZeroItems()
+    {
+        Packs();
+        var (h, _, _, _) = Load();
+        var il = (AsDisplayObject)h.Child("m_itemLevelInfo");
+        string worn = Rt.ToString(h.Get(h.FindNamed("detail", il), "text"));
+        TestContext.WriteLine("movie default detail: " + worn);
+        Assert.That(worn, Is.Not.EqualTo("0 + (0)"), "a worn weapon: the attack getters are not here, the label is left");
+        var (h2, _, _, _) = Load(c =>
+        {
+            var me = UiFixture.Character();
+            me.Apply(new FieldAddUser { ObjectId = 1, User = me.User });
+            c.Record = () => me.ToPcInfo(0);
+        });
+        var il2 = (AsDisplayObject)h2.Child("m_itemLevelInfo");
+        Assert.That(Rt.ToString(h2.Get(h2.FindNamed("value", il2), "text")), Is.EqualTo("0"));
+        Assert.That(Rt.ToString(h2.Get(h2.FindNamed("detail", il2), "text")), Is.EqualTo("0 + (0)"));
+    }
 }

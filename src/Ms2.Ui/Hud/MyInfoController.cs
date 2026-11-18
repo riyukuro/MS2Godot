@@ -2,6 +2,7 @@ using System.Globalization;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Net.Packets;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
@@ -305,7 +306,7 @@ public sealed class MyInfoController : UiController
     {
         if (info == null) return;
         bool score = Feature(0xdf);
-        if (Child("m_itemLevelInfo") is AsDisplayObject il && ItemLevel?.Invoke(info) is var (total, additional))
+        if (Child("m_itemLevelInfo") is AsDisplayObject il && (ItemLevel?.Invoke(info) ?? KnownItemLevel()) is var (total, additional))
         {
             Host.SetChildText("detail", Format("{0} + ({1})", total - additional, additional), il);
             Host.SetChildText("value", total.ToString(CultureInfo.InvariantCulture), il);
@@ -335,6 +336,17 @@ public sealed class MyInfoController : UiController
             Host.Invoke(labels, "setData", array);
         }
         StatPointRows();
+    }
+
+    /// <summary>
+    /// The record's m_3cc / m_3d0 where they are known without the item attack getters: PC::vfunc_125 (pc.cpp:4154) zeroes
+    /// them and vfunc_126 adds only layer-0 items (pc.cpp:4205-4265), so with no layer-0 item they stay 0. With any worn
+    /// layer-0 item the sums need CItem::FUN_140529070 / FUN_140529090 (not in the decomp): null, the label is left.
+    /// </summary>
+    (uint, uint)? KnownItemLevel()
+    {
+        var maps = EquipMaps(info);
+        return maps != null && maps[0].Count == 0 ? (0u, 0u) : null;
     }
 
     /// <summary>The attack / defense label: detail "", value "{0}" of the score; with feature 0xdf the html label text and the
@@ -470,13 +482,169 @@ public sealed class MyInfoController : UiController
 
     // ---- vfunc_88: the equipment bag -------------------------------------------------------------------------------
 
-    /// <summary>vfunc_88 (@0x141332e00): tab 2 the gem bag (FUN_14126e2f0), else the equip bag of GetEquipBagKindForTab (0 -> 0,
-    /// 1 -> 1, 3 -> 2, else none; CreateEquipSlotBag); equipBagID = the bag's name. The bags' slots are not here (empty).</summary>
+    /// <summary>vfunc_88 (@0x141332e00): tab 2 the gem bag (FUN_14126e2f0) over the record, else the equip bag of
+    /// GetEquipBagKindForTab (0 -> 0, 1 -> 1, 3 -> 2, else none; CreateEquipSlotBag) over the record; equipBagID = the bag's
+    /// name. A bag keeps the record it was made with (EquipSlotBag / GemSlotBag m_spPC).</summary>
     void Bag(int t)
     {
         if (Host.Entity == null || info == null) return;
+        if (t == 2) gemBagRecord = info;
+        else
+        {
+            int kind = t switch { 0 => 0, 1 => 1, 3 => 2, _ => 6 };
+            if (kind != 6) { equipBagRecord = info; equipBagKind = kind; }
+        }
         ShownBag = t == 2 ? GemBag : EquipBag;
         Host.Set(Host.Entity, "equipBagID", ShownBag);       // a setter only: it reads GameDataModel.getBagSlotBindings
+    }
+
+    PcInfo equipBagRecord, gemBagRecord;
+    int equipBagKind;
+    PcInfo mapsRecord;
+    Dictionary<int, Item>[] maps;
+
+    /// <summary>EquipSlotBag's slots (equipslot.cpp:426): index -> Unk_InventoryEquipSlot, kind 1 / 2 and kind 0.</summary>
+    static readonly int[] SkinSlots = { 6, 0xe, 0xd, 0xc, 8, 10, 9, 0x10, 7, 0xb, 5, 4 };
+    static readonly int[] GearSlots = { 6, 0xe, 0xf, 0x11, 8, 10, 9, 0x10, 7, 0xb, 5, 4 };
+    /// <summary>GemSlotBag's slots (gemslot.cpp): index -> GemType.</summary>
+    static readonly int[] GemTypes = { 1, 5, 3, 2, 4, 6, 9, 8, 7, 10, 11, 12 };
+
+    static int[] SlotsOf(int kind) => kind == 1 || kind == 2 ? SkinSlots : GearSlots;
+
+    /// <summary>EquipSlotBag::vfunc_15 (equipslot.cpp:478): StringFormat("{0}.{1}", bag, the equip slot); GemSlotBag "%s.%d" of
+    /// the index. (The equip slot is written as its number here; the movie only passes the names back.)</summary>
+    public override IEnumerable<string> GetBagSlotBindings(string bag) =>
+        bag == EquipBag && equipBagRecord != null ? SlotsOf(equipBagKind).Select(s => EquipBag + "." + s.ToString(CultureInfo.InvariantCulture))
+        : bag == GemBag && gemBagRecord != null ? Enumerable.Range(0, GemTypes.Length).Select(i => GemBag + "." + i.ToString(CultureInfo.InvariantCulture))
+        : Array.Empty<string>();
+
+    /// <summary>
+    /// The record's m_mapEquip0 / 1 / 2 (PC::vfunc_126, pc.cpp:4171): per layer, the item at its slot (CItem m_68, the
+    /// packet's equip slot; FUN_140527a20's model group fallback for slot 0 is not here, such an item is left out). The layer
+    /// is CItem::FUN_14052a170 (item.cpp:1629): 2 for the variant-2 outfits, else 1 with a skin type, else 0 (cash or not;
+    /// property.flag08, layer 3, is never loaded: ItemProperty::Load, itemdatastruct.cpp:1122). Null when the record has no
+    /// equipment lists.
+    /// </summary>
+    Dictionary<int, Item>[] EquipMaps(PcInfo r)
+    {
+        if (r?.Equips == null) return null;
+        if (ReferenceEquals(r, mapsRecord)) return maps;
+        var m = new[] { new Dictionary<int, Item>(), new Dictionary<int, Item>(), new Dictionary<int, Item>() };
+        void Add(EquipItem e, bool outfit2)
+        {
+            var it = InventoryController.ToItem(e, Model.Tables.Items);
+            if (it == null || (int)e.Slot == 0) return;
+            int layer = outfit2 ? 2 : it.Data.HasSkinType ? 1 : 0;
+            m[layer][(int)e.Slot] = it;
+        }
+        foreach (var e in r.Equips) Add(e, false);
+        if (r.Outfit2 != null) foreach (var e in r.Outfit2) Add(e, true);
+        mapsRecord = r; maps = m;
+        return m;
+    }
+
+    /// <summary>PCInfo::GetEquipItemByKind (pcinfo.cpp:155): kind 0 / 1 / 2 the layer map, else none.</summary>
+    Item EquipItemByKind(PcInfo r, int kind, int slot) =>
+        kind is >= 0 and <= 2 && EquipMaps(r) is { } m && m[kind].TryGetValue(slot, out var it) ? it : null;
+
+    static int EquipSubtype(ItemData d) => d.Type == 1 ? d.Subtype : 0;
+    /// <summary>CItemData::FUN_14053d460 (itemdata.cpp:893): a two-handed weapon (type 1 subtypes 0x32-0x38, 0x50-0x53). Its
+    /// type-0x17 branch needs the item model's group types (not loaded here): false.</summary>
+    static bool TwoHanded(ItemData d) => d.Type == 1 && EquipSubtype(d) is (>= 0x32 and <= 0x38) or (>= 0x50 and <= 0x53);
+    /// <summary>CItemData::FUN_14053d2b0 (itemdata.cpp:848): equip subtype 0x16 (a suit over the pants).</summary>
+    static bool Suit(ItemData d) => EquipSubtype(d) == 0x16;
+
+    /// <summary>EquipSlot::FUN_14120ce90 (equipslot.cpp:294): the slot's item; an empty LH shows a two-handed RH item, an empty
+    /// PA a suit CL item.</summary>
+    Item EquipSlotItem(PcInfo r, int kind, int slot)
+    {
+        var it = EquipItemByKind(r, kind, slot);
+        if (it != null) return it;
+        if (slot == 4) { it = EquipItemByKind(r, kind, 5); return it != null && TwoHanded(it.Data) ? it : null; }
+        if (slot == 9) { it = EquipItemByKind(r, kind, 8); return it != null && Suit(it.Data) ? it : null; }
+        return null;
+    }
+
+    /// <summary>
+    /// EquipSlot::vfunc_8 (@0x14120cae0) / GemSlot::vfunc_8 (gemslot.cpp:264) for the bags' names; other names go to the base.
+    /// </summary>
+    public override object GetBinding(string name)
+    {
+        if (name.StartsWith(EquipBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBag.Length + 1), out int slot))
+            return EquipBinding(slot);
+        if (name.StartsWith(GemBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBag.Length + 1), out int index))
+            return GemBinding(index);
+        return base.GetBinding(name);
+    }
+
+    /// <summary>
+    /// EquipSlot::vfunc_8: null without a record, a local player or an item; else ASSlot::SetEquipItem with flags 0x49 (| 4
+    /// for the local record): FUN_1409c3860, then itemBothEquip (asitemslot.cpp:1386: a skin item with a layer-0 item at its
+    /// slot, or another item with a layer-1 one; read from the record's maps here, the local player's equipment in the
+    /// client); grayColor for a two-handed item in LH or a suit in PA; disable for the local record's layer-2 slots while the
+    /// title layer is not active.
+    /// </summary>
+    object EquipBinding(int slot)
+    {
+        var r = equipBagRecord;
+        if (r == null || Model == null || !Model.HasLocalPlayer) return null;
+        var item = EquipSlotItem(r, equipBagKind, slot);
+        if (item == null) return null;
+        int flags = 0x49 | (r.IsLocal ? 4 : 0);
+        var o = new List<(string, object)>();
+        if (!ItemSlot.Build(o, item, true, flags, Model, Model.ItemSlotSources)) return null;
+        var m = EquipMaps(r);
+        bool both = item.Data.HasSkinType ? m[0].ContainsKey(slot) : m[1].ContainsKey(slot);
+        o.Add(("itemBothEquip", both ? 1 : 0));
+        if (slot == 4 && TwoHanded(item.Data)) o.Add(("grayColor", 1));
+        else if (slot == 9 && Suit(item.Data)) o.Add(("grayColor", 1));
+        if (r.IsLocal && equipBagKind == 2 && !CodiLayerActive(r)) o.Add(("disable", 1));
+        return Host.Obj(o.ToArray());
+    }
+
+    /// <summary>CEquipmentSlotLayerInfo::IsActive (m_bActive = !FUN_1411df700, equipment.cpp:401): not active while the layer is
+    /// featured (kind 2, feature 0x8e) and never started or ended.</summary>
+    bool CodiLayerActive(PcInfo r)
+    {
+        if (!Feature(0x8e)) return true;
+        if (r.CodiStart == 0) return false;
+        return !(r.CodiEnd > 0 && (ServerTime?.Invoke() ?? 0) >= r.CodiEnd);
+    }
+
+    /// <summary>IsValidGemType (unit_1402226b0_featureenumhelpers.cpp:219): 1, 3, 4 always, the others by their feature.</summary>
+    bool IsValidGemType(int type) => type switch
+    {
+        1 or 3 or 4 => true,
+        5 => Feature(0x67), 6 => Feature(0x68), 2 => Feature(0x66), 7 => Feature(0x69), 8 => Feature(0x6a),
+        9 => Feature(0x9d), 10 => Feature(0x6b), 11 => Feature(0x6c), 12 => Feature(0x6d),
+        _ => false,
+    };
+
+    /// <summary>
+    /// GemSlot::vfunc_8: null without a record or a local player, or for a valid gem type without an item; else "lock" (not a
+    /// valid gem type) and, for a gem item (PCInfo::FindItemByGemType, pcinfo.cpp:113: the first with that gem type),
+    /// FUN_1409c3860 with flags 0x49 (| 4 for the local record), "config" (the local record and subtype 1) and "gemSystem".
+    /// </summary>
+    object GemBinding(int index)
+    {
+        var r = gemBagRecord;
+        if (r == null || Model == null || !Model.HasLocalPlayer || (uint)index >= GemTypes.Length) return null;
+        int type = GemTypes[index];
+        bool locked = !IsValidGemType(type);
+        var e = r.Gems?.FirstOrDefault(g => g.GemType == type);
+        var item = e != null ? InventoryController.ToItem(e, Model.Tables.Items) : null;
+        if (!locked && item == null) return null;
+        var o = new List<(string, object)> { ("lock", locked) };
+        if (item != null && item.Data.IsGemItem)
+        {
+            int flags = 0x49 | (r.IsLocal ? 4 : 0);
+            if (ItemSlot.Build(o, item, true, flags, Model, Model.ItemSlotSources))
+            {
+                o.Add(("config", r.IsLocal && item.Data.Subtype == 1));
+                o.Add(("gemSystem", (int)e.GemType));
+            }
+        }
+        return Host.Obj(o.ToArray());
     }
 
     /// <summary>The bag name last given to equipBagID.</summary>

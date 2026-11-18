@@ -10,7 +10,8 @@ namespace Ms2.Ui.Items;
 public static class ItemSlot
 {
     /// <summary>The flags <see cref="Build"/> handles.</summary>
-    public const int Ported = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x4000 | 0x8000 | 0x10000;
+    /// <remarks>0x40 is not tested by FUN_1409c3860 (asitemslot.cpp:1262-1384); EquipSlot / GemSlot pass it (0x49).</remarks>
+    public const int Ported = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x40 | 0x4000 | 0x8000 | 0x10000;
     /// <summary>The feature FUN_1409c3860 tests for pet ranks (CFeatureManager::IsFeatureEnabled(0x8c)).</summary>
     public const int PetRankFeature = 0x8c;
 

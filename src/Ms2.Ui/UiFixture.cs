@@ -41,7 +41,7 @@ public static class UiFixture
     };
 
     /// <summary>
-    /// FIXTURE character window record without a server: the own FieldAddUser's user block, a Stat packet with all 35 stats
+    /// FIXTURE character window record without a server: the own FieldAddUser's user block, equips and gems, a Stat packet with all 35 stats
     /// (three values each, Ms2.Net PlayerStat) and the AttributePoint loads (modes 0 and 1), in the parsed packet shapes, with
     /// real-shaped values for the HUD fixture's level 21 Knight, not a recorded character.
     /// </summary>
@@ -52,6 +52,13 @@ public static class UiFixture
         {
             ObjectId = 1,
             User = new Ms2.Net.Packets.UserBlock { AccountId = 1, CharacterId = 2, Name = "Fixture", Level = 21, JobCode = 10, Job = 100, Gender = 0, Motto = "", Picture = "", GuildName = "" },
+            // the equip block: a two-handed sword in RH and an outfit top; the gem block: a chat balloon (gem type 3)
+            Equips =
+            {
+                new Ms2.Net.Packets.EquipItem { Id = 15000001, Uid = 2001, Slot = Ms2.Net.Packets.EquipSlot.RH, Rarity = 2, Amount = 1 },
+                new Ms2.Net.Packets.EquipItem { Id = 11400021, Uid = 2002, Slot = Ms2.Net.Packets.EquipSlot.CL, Rarity = 1, Amount = 1 },
+            },
+            Badges = { new Ms2.Net.Packets.EquipItem { Id = 70200001, Uid = 2003, IsBadge = true, BadgeType = 3, GemType = 3, Rarity = 1, Amount = 1 } },
         });
         var stats = new Dictionary<byte, long[]>();
         for (byte i = 0; i < Ms2.Net.Packets.PlayerStat.Total; i++) stats[i] = new long[] { 0, 0, 0 };
