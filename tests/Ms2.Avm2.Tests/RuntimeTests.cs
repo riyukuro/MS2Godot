@@ -48,6 +48,43 @@ public class RuntimeTests
         Assert.That(b.LocalToGlobal(0, 0).X, Is.EqualTo(15));
     }
 
+    [Test]
+    public void VisibleSetterKeepsTimelineMoves()
+    {
+        // a clip whose alpha the timeline animates 0 -> 0.5 -> 1, with the placement's visible flag on
+        static JsonObject Cx(double a) => new() { ["mul"] = new JsonArray(1, 1, 1, a), ["add"] = new JsonArray(0, 0, 0, 0) };
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject { ["1"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1 } } },
+            ["root"] = new JsonObject
+            {
+                ["frames"] = 4,
+                ["children"] = new JsonArray(new JsonObject
+                {
+                    ["id"] = 1, ["depth"] = 1, ["first"] = 0, ["name"] = "arrow", ["visible"] = true, ["color"] = Cx(0),
+                    ["moves"] = new JsonArray(new JsonObject { ["frame"] = 2, ["color"] = Cx(0.5) }, new JsonObject { ["frame"] = 3, ["color"] = Cx(1) }),
+                }),
+            },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        Assert.That(p.Start(), Is.True);
+        var arrow = ((AsContainer)p.Root).Children.Single(c => c.InstanceName == "arrow");
+        arrow.visible = false;
+        arrow.visible = true;
+        Assert.That(arrow.ColorLocked || arrow.MatrixLocked, Is.False);
+        for (int i = 0; i < 3 && ((AsMovieClip)p.Root).Frame < 3; i++) p.Tick();
+        Assert.That(((AsMovieClip)p.Root).Frame, Is.EqualTo(3));
+        Assert.That(arrow.Color.Am, Is.EqualTo(1));
+        // the timeline does not set visible again on its frames
+        arrow.visible = false;
+        ((AsMovieClip)p.Root).gotoAndPlay(1);
+        p.Tick(); p.Tick();
+        Assert.That(arrow.IsVisible, Is.False);
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
     AsTextField Field(Runtime rt, double w, bool wrap)
     {
         var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();

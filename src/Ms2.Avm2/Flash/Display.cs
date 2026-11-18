@@ -79,7 +79,11 @@ public class AsDisplayObject : AsEventDispatcher
     [As] public double rotationY { get; set; }
     [As] public double rotationZ { get; set; }
     [As] public double alpha { get => Color.Am; set { Color = Color with { Am = double.IsNaN(value) ? 0 : value }; ScriptColored(); } }
-    [As] public bool visible { get => IsVisible; set { IsVisible = value; ColorLocked = true; } }
+    /// <summary>
+    /// DisplayObject::visibleSet -> Sprite::SetVisible -> SetVisibleFlag (sfr_as3_07.cpp:5333, sfr_gfx_05b.cpp:1065): unlike
+    /// alpha, x, y, the scales and rotation (SetAcceptAnimMoves(false), sfr_gfx_06.cpp), it does not stop the timeline's moves.
+    /// </summary>
+    [As] public bool visible { get => IsVisible; set => IsVisible = value; }
     [As] public string blendMode { get => Blend; set => Blend = value ?? "normal"; }
     [As] public bool cacheAsBitmap { get => CacheAsBitmapFlag; set => CacheAsBitmapFlag = value; }
     [As] public object opaqueBackground { get; set; }

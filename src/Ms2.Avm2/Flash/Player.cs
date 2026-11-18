@@ -272,11 +272,10 @@ namespace Ms2.Avm2.Flash
         static void ApplyPlacement(AsDisplayObject d, JsonObject pl, bool initial)
         {
             if (initial || !d.MatrixLocked) { if (pl["matrix"] is JsonObject m) d.Matrix = SymbolScope.Matrix(m); }
-            if (initial || !d.ColorLocked)
-            {
-                if (pl["color"] is JsonObject c) d.Color = SymbolScope.Color(c);
-                if (pl["visible"] is JsonNode v) d.IsVisible = (bool)v;
-            }
+            if (initial || !d.ColorLocked) { if (pl["color"] is JsonObject c) d.Color = SymbolScope.Color(c); }
+            // only the placement sets the visible flag; a timeline move does not (DisplayList::MoveDisplayObject,
+            // sfr_gfx_06c.cpp:291), so a script's visible stays
+            if (initial && pl["visible"] is JsonNode v) d.IsVisible = (bool)v;
             if (initial)
             {
                 if (J.I(pl["clipDepth"]) is int cd) d.ClipDepth = cd;
