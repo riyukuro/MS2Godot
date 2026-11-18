@@ -19,6 +19,8 @@ public sealed class Item
     public bool IsNew;                 // m_2c (IsNew :126)
     public bool IsEvent;               // m_30 (IsEvent :140)
     public long ExpiryTime;            // m_80 (IsExpired :1303), server time
+    /// <summary>The record the item was read from (CItem::ReadFromStream's blocks); null for a made item.</summary>
+    public Ms2.Net.Packets.EquipItem Record;
 
     Item(ItemData data) { Data = data; }
 

@@ -162,4 +162,15 @@ public class InventoryTests
         shown.Callback(0, shown);
         Assert.That(sent, Is.EqualTo(new[] { (0, true) }));
     }
+
+    [Test]
+    public void AnOwnedItemKeepsItsRecordsLockAndEnchant()
+    {
+        var model = NewModel();
+        var e = new EquipItem { Id = 15000001, Uid = 9, Rarity = 3, Amount = 1, LockState = 1, UnlockTime = 77 };
+        e.Enchant.Level = 5; e.LimitBreak.Level = 2;
+        var item = InventoryController.ToItem(e, model.Tables.Items);
+        Assert.That((item.LockState, item.UnlockTime, item.EnchantLevel, item.UnlimitedEnchantLevel), Is.EqualTo((1, 77L, 5, 2)));
+        Assert.That(item.Record, Is.SameAs(e));
+    }
 }

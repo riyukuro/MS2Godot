@@ -344,6 +344,11 @@ public sealed class InventoryController : UiController, IInventoryBinding
         item.Uid = e.Uid;
         item.IsNew = e.IsNew;
         item.ExpiryTime = e.ExpiryTime;
+        item.LockState = e.LockState;
+        item.UnlockTime = e.UnlockTime;
+        item.EnchantLevel = e.Enchant.Level;
+        item.UnlimitedEnchantLevel = e.LimitBreak.Level;
+        item.Record = e;
         return item;
     }
 
