@@ -226,6 +226,16 @@ public static class ItemReader {
         return (obj, kind, it);
     }
 
+    /// <summary>OnBadgeEquip mode 0 after the mode (scenestategame.cpp:11011-11022): i32 object id, i32 item id, i64 uid, i32
+    /// rarity, u8 slot (SetSlot: the gem's BadgeSlot), then CItem::ReadFromStream (a gem item: the gem block).</summary>
+    public static (int ObjectId, EquipItem Item) ReadBadgeEquip(ByteReader r) {
+        int obj = r.ReadInt();
+        var it = new EquipItem { IsBadge = true, Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
+        it.BadgeSlot = r.ReadByte();
+        ReadBody(r, it, EquipSlot.Unknown, badge: true);
+        return (obj, it);
+    }
+
     public static EquipItem ReadBadge(ByteReader r) {
         var it = new EquipItem { IsBadge = true, BadgeSlot = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
         ReadBody(r, it, EquipSlot.Unknown, badge: true);

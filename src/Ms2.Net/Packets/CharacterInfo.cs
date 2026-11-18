@@ -238,6 +238,24 @@ public sealed class MyCharacter {
         return true;
     }
 
+    /// <summary>
+    /// CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006) for the own object's PCGemEquip: mode 0 EquipItem
+    /// (gemslot_2.cpp:270): a gem item (GetGem() != 0) goes in by its gem type (EquipByGemType), replacing the one of that
+    /// type; mode 1 RemoveByGemType (:257) of the packet's u8. Returns whether the gems changed.
+    /// STILL-OPEN: mode 0's FUN_140523c40 (the item made from its id and rarity; an unknown id stops it) is not checked.
+    /// </summary>
+    public bool Apply(BadgeEquipMessage b) {
+        if (User == null || b.ObjectId != ObjectId) return false;
+        var gems = Gems ?? Array.Empty<EquipItem>();
+        if (b.Mode == 0 && b.Item != null && b.Item.GemType != 0)
+            Gems = gems.Where(g => g.GemType != b.Item.GemType).Append(b.Item).ToList();
+        else if (b.Mode == 1 && gems.Any(g => g.GemType == b.GemType))
+            Gems = gems.Where(g => g.GemType != b.GemType).ToList();
+        else return false;
+        Changed?.Invoke();
+        return true;
+    }
+
     /// <summary>The own Stat (0x2E): the values of the stats it carries (PC's m_unk_1c0[0..2]).</summary>
     public void Apply(PlayerStat s) {
         foreach (var (stat, v) in s.Values) {

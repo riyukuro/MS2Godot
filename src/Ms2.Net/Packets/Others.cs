@@ -62,6 +62,23 @@ public sealed record ItemPutOn(int ObjectId, byte Kind, EquipItem Item) {
     public static ItemPutOn Read(ByteReader r) { var (o, k, it) = ItemReader.ReadPutOn(r); r.ExpectEnd("ItemPutOn"); return new ItemPutOn(o, k, it); }
 }
 
+/// <summary>
+/// Inbound 0x7F (CSceneStateGame::OnBadgeEquip, scenestategame.cpp:11006): u8 mode. Mode 0 a gem put in a gem slot
+/// (<see cref="ItemReader.ReadBadgeEquip"/>); mode 1 one taken out: i32 object id, u8 the gem type (RemoveByGemType);
+/// mode 4 an error: i16 code. Other modes carry nothing the client reads.
+/// </summary>
+public sealed record BadgeEquipMessage(byte Mode, int ObjectId, EquipItem Item, byte GemType, short Error) {
+    public static BadgeEquipMessage Read(ByteReader r) {
+        byte mode = r.ReadByte();
+        switch (mode) {
+            case 0: { var (o, it) = ItemReader.ReadBadgeEquip(r); return new BadgeEquipMessage(0, o, it, it.GemType, 0); }
+            case 1: return new BadgeEquipMessage(1, r.ReadInt(), null, r.ReadByte(), 0);
+            case 4: return new BadgeEquipMessage(4, 0, null, 0, r.ReadShort());
+            default: return new BadgeEquipMessage(mode, 0, null, 0, 0);
+        }
+    }
+}
+
 /// <summary>Inbound 0x26 (OnItemPutOff): i32 object id, i64 item uid.</summary>
 public sealed record ItemPutOff(int ObjectId, long ItemUid) {
     public static ItemPutOff Read(ByteReader r) { var p = new ItemPutOff(r.ReadInt(), r.ReadLong()); r.ExpectEnd("ItemPutOff"); return p; }

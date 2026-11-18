@@ -117,6 +117,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchQuickSlotState = null;
         unwatchParty?.Invoke();
         unwatchParty = null;
+        unwatchGemErrors?.Invoke();
+        unwatchGemErrors = null;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         restoreScale?.Invoke();
         restoreScale = null;
@@ -458,7 +460,15 @@ public partial class HudScene : Node, IUiStageHost
         SystemText.SystemSound += key => GD.Print($"system text: sound {key} is not played");
         systemText = new MovieDialog(assets, SystemText, NewModel(), GetWindow().Size);
         ui.AddChild(systemText);
+        // OnBadgeEquip mode 4 (scenestategame.cpp:11075): the gem error's system notice, whatever window is open
+        if (Ms2Godot.Net.LiveSession.Instance is { } live)
+        {
+            Action<short> onGemError = e => SystemNotice(Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey(e, hudModel.IsFeatureEnabled(0x4a)));
+            live.GemEquipError += onGemError;
+            unwatchGemErrors = () => live.GemEquipError -= onGemError;
+        }
     }
+    Action unwatchGemErrors;
 
     /// <summary>
     /// FUN_141275260 (unit_141274d10_uihelpers.cpp): the common string of the id through ShowSystemNotice(text, 1, true)
@@ -1099,7 +1109,7 @@ public partial class HudScene : Node, IUiStageHost
         if (me.ToPcInfo(now()) == null) { GD.Print("character: the live session has no own character yet"); return; }
         var c = new Ms2.Ui.Hud.MyInfoController
         {
-            Record = () => me.ToPcInfo(now()), StatPoints = me.StatPoints, ServerTime = now,
+            Record = () => me.ToPcInfo(now()), LocalGems = () => me.Gems, StatPoints = me.StatPoints, ServerTime = now,
             Inventory = live != null ? live.Inventory : OfflineInventory(),
             ActionKeyDown = ActionKeyDown,
             SymbolId = () => me.Insignia, GmGrade = () => me.User?.GmGrade ?? 0,

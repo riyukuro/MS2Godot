@@ -74,6 +74,31 @@ public class ItemBodyTests {
         Assert.That((it.BindingId, it.BindingName), Is.EqualTo((0L, "")));
     }
 
+    /// <summary>Inbound 0x7F (OnBadgeEquip, scenestategame.cpp:11006): mode 0 the gem put on with its slot and gem block,
+    /// mode 1 the object and gem type taken out, mode 4 the error.</summary>
+    [Test] public void TheBadgeEquipModesReadWhatTheClientReads() {
+        var w = new ByteWriter(); w.WriteByte(0); w.WriteInt(1); w.WriteInt(70200001); w.WriteLong(961); w.WriteInt(2); w.WriteByte(5);
+        var full = new ByteWriter(); Body(full, false);
+        var body = full.Buffer.AsSpan(0, full.Length).ToArray();
+        const int status = 143;                                                         // the header, options, enchant and limit break
+        w.WriteBytes(body[..status]);
+        w.WriteBool(true); w.WriteByte(5); w.WriteInt(70200002);                         // CItemGem after the status: has, type 5, gem id
+        w.WriteBytes(body[status..]);                                                   // transfer .. binding, then the marker
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        var on = BadgeEquipMessage.Read(r);
+        Assert.That(r.ReadInt(), Is.EqualTo(-12345), "the whole gem is read");
+        Assert.That((on.Mode, on.ObjectId, on.Item.Id, on.Item.Uid, on.Item.Rarity, on.Item.BadgeSlot, on.Item.GemType, on.Item.IsBadge),
+            Is.EqualTo(((byte) 0, 1, 70200001, 961L, 2, (byte) 5, (byte) 5, true)));
+
+        w = new ByteWriter(); w.WriteByte(1); w.WriteInt(1); w.WriteByte(3);
+        var off = BadgeEquipMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That((off.Mode, off.ObjectId, off.GemType, off.Item), Is.EqualTo(((byte) 1, 1, (byte) 3, (EquipItem) null)));
+
+        w = new ByteWriter(); w.WriteByte(4); w.WriteShort(5);
+        var err = BadgeEquipMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That((err.Mode, err.Error), Is.EqualTo(((byte) 4, (short) 5)));
+    }
+
     [Test] public void TheUgcFlagIsTheReadBlock() {
         var w = new ByteWriter(); w.WriteInt(11400021); w.WriteLong(55); w.WriteByte((byte) EquipSlot.CL); w.WriteInt(1);
         var full = new ByteWriter(); Body(full, false);

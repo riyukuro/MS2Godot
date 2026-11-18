@@ -58,6 +58,8 @@ public partial class LiveSession : Node
     public readonly ServerKeyTable KeyTable = new();
     /// <summary>Raised after a KeyTable packet was applied (its mode: 0 load, 7 pages).</summary>
     public event Action<int> KeyTableChanged;
+    /// <summary>OnBadgeEquip mode 4: the error code (shown as a system notice, <see cref="Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey"/>).</summary>
+    public event Action<short> GemEquipError;
     /// <summary>The local player's skill book (JobSystem): the own FieldAddUser's block (OnAddUser, scenestategame.cpp:11135) and the
     /// Job packets (OnJob); null before one arrives.</summary>
     public SkillBook SkillBook { get; private set; }
@@ -434,6 +436,13 @@ public partial class LiveSession : Node
                     var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
                     bool ownEquipment = Me.Apply(o, WornLayer);
                     GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+                }
+                else if (game.Is(p, Inbound.BadgeEquip))
+                {
+                    var b = BadgeEquipMessage.Read(p.Reader());     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes
+                    bool ownGems = Me.Apply(b);
+                    if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
+                    GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
                 }
                 else if (game.Is(p, Inbound.ItemPutOnOrOff))
                 {

@@ -907,4 +907,61 @@ public class MyInfoTests
         c.SlotDroppedOn(Slot(2), "InventoryDialog.0", bag);
         Assert.That((sent.Count, bag.Refreshed.Count), Is.EqualTo((3, refreshed)));
     }
+
+    /// <summary>The gem slot takes the worn gem from the local actor's PCGemEquip (gemslot.cpp:134), which OnBadgeEquip
+    /// (inbound 0x7f, scenestategame.cpp:11006) keeps: mode 0 puts a gem on by its type, mode 1 takes the type off.</summary>
+    [Test]
+    public void TheGemSlotReadsTheGemsTheBadgePacketsKeep()
+    {
+        Packs();
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 4 };
+        var view = new Ms2.Net.Packets.InventoryView(book);
+        var sent = new List<(long, byte)>(); view.RequestEquipGem = (u, s) => sent.Add((u, s));
+        var me = UiFixture.Character();
+        var (h, c, _, errors) = Load(x => { x.Inventory = view; x.LocalGems = () => me.Gems; });
+        Assert.That(errors, Is.Empty);
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(200 + i * 16); }
+        Ms2.Net.Packets.EquipItem Gem(long uid, byte type, byte slot = 0) => new() { Id = 70200001, Uid = uid, GemType = type, BadgeSlot = slot, IsBadge = true, Amount = 1, Rarity = 1 };
+        var bag = new BagSlots { Table = c.Model.Tables.Items };
+        bag.Cells["InventoryDialog.0"] = Gem(951, 3);
+        bag.Cells["InventoryDialog.1"] = Gem(952, 5);
+        string Slot(int s) => MyInfoController.GemBag + "." + s;
+        int changes = 0;
+        me.Changed += () => changes++;
+
+        // nothing of type 5 worn: 0xff; then the server puts one on at slot 7: the next drop sends 7
+        c.SlotDroppedOn(Slot(1), "InventoryDialog.1", bag);
+        Assert.That(sent.Last(), Is.EqualTo((952L, (byte)0xff)));
+        Assert.That(me.Apply(new BadgeEquipMessage(0, 1, Gem(952, 5, 7), 5, 0)), Is.True);
+        c.SlotDroppedOn(Slot(1), "InventoryDialog.1", bag);
+        Assert.That(sent.Last(), Is.EqualTo((952L, (byte)7)));
+        // the same type again replaces it
+        Assert.That(me.Apply(new BadgeEquipMessage(0, 1, Gem(953, 5, 8), 5, 0)), Is.True);
+        Assert.That(me.Gems.Where(g => g.GemType == 5).Select(g => g.Uid), Is.EqualTo(new[] { 953L }));
+        // the fixture's type-3 gem (slot 3) taken off: the drop sends 0xff
+        c.SlotDroppedOn(Slot(2), "InventoryDialog.0", bag);
+        Assert.That(sent.Last(), Is.EqualTo((951L, (byte)3)));
+        Assert.That(me.Apply(new BadgeEquipMessage(1, 1, null, 3, 0)), Is.True);
+        c.SlotDroppedOn(Slot(2), "InventoryDialog.0", bag);
+        Assert.That(sent.Last(), Is.EqualTo((951L, (byte)0xff)));
+        // another object, a type not worn, a gem with no type and the error mode change nothing
+        Assert.That(me.Apply(new BadgeEquipMessage(0, 7, Gem(954, 4, 2), 4, 0)), Is.False);
+        Assert.That(me.Apply(new BadgeEquipMessage(1, 1, null, 3, 0)), Is.False);
+        Assert.That(me.Apply(new BadgeEquipMessage(0, 1, Gem(955, 0, 2), 0, 0)), Is.False);
+        Assert.That(me.Apply(new BadgeEquipMessage(4, 0, null, 0, 2)), Is.False);
+        Assert.That(changes, Is.EqualTo(3));
+        Assert.That(me.ToPcInfo(0).Gems.Select(g => g.Uid), Is.EqualTo(new[] { 953L }), "the character window's record has them too");
+    }
+
+    [Test]
+    public void TheGemErrorsAreTheirSystemNotices()
+    {
+        var m = NewModel();
+        string[] keys = Enumerable.Range(0, 7).Select(e => MyInfoController.GemEquipErrorKey(e, false)).ToArray();
+        Assert.That(keys, Is.EqualTo(new[] { "s_gem_error_inventory_full", "s_gem_error_InvalidSlot", "s_gem_error_InvalidItem",
+            "s_gem_error_Expired", "s_gem_error_PCBang", "s_gem_error_unknown", "s_gem_error_unknown" }));
+        Assert.That((MyInfoController.GemEquipErrorKey(5, true), MyInfoController.GemEquipErrorKey(-1, true)), Is.EqualTo(("s_gem_error_VIP", "s_gem_error_unknown")));
+        foreach (var k in keys.Append("s_gem_error_VIP")) Assert.That(m.Tables.Common(k), Is.Not.Empty, k);
+    }
 }

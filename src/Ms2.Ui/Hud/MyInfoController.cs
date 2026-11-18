@@ -1087,8 +1087,9 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// <summary>
     /// GemSlot::vfunc_18 (gemslot.cpp:117). The local record (m_spPC, FUN_140dba1c0): no local player: false (no vfunc_10);
     /// a bag slot: FindItemByUid of its item uid; FUN_14126d880 (:194: a gem item, type 7, the local record) and its gem type
-    /// (GetGem()->vfunc_1()) this slot's: the worn gem of that type (PCGemEquip::GetItemByGemType) gives the slot (its
-    /// GetSlot, else -1) and <see cref="EquipGem"/>(item, slot, 0). Else nothing. True: the caller pushes the source again.
+    /// (GetGem()->vfunc_1()) this slot's: the worn gem of that type, from the local actor's PCGemEquip
+    /// (<see cref="LocalGems"/>, GetLocalPlayer()->GetGemEquip()->GetItemByGemType, :134), gives the slot (its GetSlot,
+    /// else -1) and <see cref="EquipGem"/>(item, slot, 0). Else nothing. True: the caller pushes the source again.
     /// </summary>
     bool DroppedOnGemSlot(int index, string source, IDragSlotOwner sourceOwner)
     {
@@ -1100,10 +1101,31 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         if (item == null || item.Data.Type != 7) return true;
         int type = GemTypes[index];
         if ((item.Record?.GemType ?? 0) != type) return true;
-        int slot = r.Gems?.FirstOrDefault(g => g.GemType == type) is { } worn ? worn.BadgeSlot : -1;
+        int slot = (LocalGems != null ? LocalGems() : r.Gems)?.FirstOrDefault(g => g.GemType == type) is { } worn ? worn.BadgeSlot : -1;
         EquipGem(item, slot, false);
         return true;
     }
+
+    /// <summary>The local actor's live PCGemEquip (MyPC::GetGemEquip), which OnBadgeEquip (inbound 0x7f) keeps current;
+    /// unset: the record's gems.</summary>
+    public Func<IReadOnlyList<EquipItem>> LocalGems;
+
+    /// <summary>
+    /// OnBadgeEquip mode 4 (scenestategame.cpp:11075): the i16 error's system notice (FUN_141275260(id, 1, 1)):
+    /// 0 s_gem_error_inventory_full (0xaa9), 1 s_gem_error_InvalidSlot (0xaaa), 2 s_gem_error_InvalidItem (0xaab),
+    /// 3 s_gem_error_Expired (0xaac), 4 s_gem_error_PCBang (0xaad), 5 with feature 0x4a s_gem_error_VIP
+    /// (GetStringCommonByKey), any other s_gem_error_unknown (0xaae) (commonstringtable.cpp:4337-4342).
+    /// </summary>
+    public static string GemEquipErrorKey(int error, bool vipFeature) => error switch
+    {
+        0 => "s_gem_error_inventory_full",
+        1 => "s_gem_error_InvalidSlot",
+        2 => "s_gem_error_InvalidItem",
+        3 => "s_gem_error_Expired",
+        4 => "s_gem_error_PCBang",
+        5 when vipFeature => "s_gem_error_VIP",
+        _ => "s_gem_error_unknown",
+    };
 
     /// <summary>PCBase::IsDead of the local player; no feed yet: false.</summary>
     public Func<bool> LocalPlayerDead = () => false;

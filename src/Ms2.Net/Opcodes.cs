@@ -58,6 +58,7 @@ public enum Inbound : ushort {
     SkillPoint = 0x44,
     SkillBookTree = 0x10C,
     ProxyGameObj = 0x7E,
+    BadgeEquip = 0x7F,
     RideSync = 0x7A,
     World = 0xB9,
     AttributePoint = 0x45,
