@@ -210,6 +210,18 @@ public class RuntimeTests
     }
 
     [Test]
+    public void FontColorTakesAnyHexLengthAndKeepsTheLow24Bits()
+    {
+        // SGMLParser::ParseHexInt then TextFormat::SetColor32: the item grade colours are written as #ffRRGGBB
+        static uint? Color(string html) => HtmlText.Parse(html).Formats[0].Color;
+        Assert.That(Color("<font color='#ff5ad35f'>a</font>"), Is.EqualTo(0x5ad35fu));
+        Assert.That(Color("<font color='#5ad35f'>a</font>"), Is.EqualTo(0x5ad35fu));
+        Assert.That(Color("<font color='#fff'>a</font>"), Is.EqualTo(0xfffu));
+        Assert.That(Color("<font color='#12g'>a</font>"), Is.Null);
+        Assert.That(Color("<font color='#'>a</font>"), Is.Null);
+    }
+
+    [Test]
     public void HtmlTextGetterWritesParagraphsAsScaleform()
     {
         // TextField::GetText(true) -> StyledText::GetHtml: one TEXTFORMAT + P block per paragraph, the last one left out when

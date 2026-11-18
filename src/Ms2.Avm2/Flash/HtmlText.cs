@@ -282,14 +282,23 @@ public static class HtmlText
         return m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
     }
 
-    /// <summary>COLOR="#RRGGBB" (the client parses the colour only after a '#').</summary>
+    /// <summary>
+    /// COLOR="#..." (ParseHtml's HTML_COLOR case, sfr_render_05i.cpp:1300): after a '#', SGMLParser::ParseHexInt
+    /// (text_sgmlparser.h:182) takes any number of hex digits (none, or any other character, fails), shifting each into a
+    /// 32-bit value; TextFormat::SetColor32 (text_core.h:258) keeps its low 24 bits. So "#ff5ad35f", the item grade colours'
+    /// 0xffRRGGBB, is 0x5ad35f.
+    /// </summary>
     static uint? ParseHex(string hex)
     {
         hex = hex.Trim();
-        if (!hex.StartsWith('#')) return null;
-        hex = hex[1..];
-        if (hex.Length != 6 || !uint.TryParse(hex, NumberStyles.HexNumber, null, out uint rgb)) return null;
-        return rgb;
+        if (!hex.StartsWith('#') || hex.Length < 2) return null;
+        uint v = 0;
+        foreach (char c in hex.AsSpan(1))
+        {
+            if (!Uri.IsHexDigit(c)) return null;
+            v = (v << 4) | (uint)Convert.ToInt32(c.ToString(), 16);
+        }
+        return v & 0xFFFFFF;
     }
 
     static bool Entity(string s, int at, out string decoded, out int length)
