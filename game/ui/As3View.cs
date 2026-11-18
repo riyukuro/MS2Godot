@@ -265,39 +265,57 @@ public partial class As3View : Node2D
     void SyncContent(Entry e, NineCtx nine)
     {
         var o = e.Obj;
-        object key; Func<Node2D> make;
-        switch (o)
-        {
-            case AsShape sh when sh.GraphicsOrNull is { Ops.Count: > 0 } g:
-                key = g; make = () => new GraphicsNode(g); break;
-            case AsShape or AsMorphShape when o.Symbol != null && o.Scope != null:
-            {
-                var sn = nine?.With(Xf(o.Matrix.Then(FromXf(nine.Chain.Value))));
-                key = (o.Symbol, sn?.Grid, sn?.Bounds, sn?.Sx, sn?.Sy, sn?.Chain);
-                make = () => new ShapeNode(Scope(o.Scope), o.Symbol, sn); break;
-            }
-            case AsTextField tf when (tf.Symbol?["text"] is JsonObject) && o.Scope != null:
-                key = tf; make = () => new FieldText(tf, Scope(o.Scope)); break;
-            case AsTextField tf:
-                key = tf; make = () => new FieldNode(tf, assets); break;
-            case AsStaticText when (o.Symbol?["text"]) != null && o.Scope != null:
-                key = o.Symbol; make = () => new TextNode(Scope(o.Scope), o.Symbol, 1, 1); break;
-            case AsBitmap bm when bm.bitmapData?.Source is string url:
-                key = (url, bm.bitmapData.width, bm.bitmapData.height);
-                make = () => ResolveImage(url) is { } t ? new Sprite2D { Texture = t, Centered = false, Scale = Fit(t, bm.bitmapData) } : (Node2D)null; break;
-            case AsSprite sp when sp.GraphicsOrNull is { Ops.Count: > 0 } g2:
-                key = g2; make = () => new GraphicsNode(g2); break;
-            default: key = null; make = null; break;
-        }
+        // the key and the node are picked by the same cases (ContentKey, MakeContent); the node is made only when the key
+        // changed, so a frame with nothing new allocates nothing here
+        object key = ContentKey(o, nine, out var sn);
         if (!Equals(key, e.ContentKey))
         {
             if (e.Content != null) { e.Content.GetParent()?.RemoveChild(e.Content); e.Content.QueueFree(); e.Content = null; }
             e.ContentKey = key;
-            if (make != null) { e.Content = make(); if (e.Content != null) e.Holder.AddChild(e.Content); }
+            e.Content = MakeContent(o, sn);
+            if (e.Content != null) e.Holder.AddChild(e.Content);
             e.ContentMaterial = e.Content?.Material;
         }
         if (e.Content is GraphicsNode or FieldNode) e.Content.QueueRedraw();
         if (e.Content is FieldText ft) ft.Sync();
+    }
+
+    /// <summary>
+    /// What a display object's own content is drawn from: its node is rebuilt when this changes. A shape under a scale-9
+    /// grid also keys on the grid it is drawn through (<paramref name="sn"/>); outside a grid its symbol alone is the key.
+    /// </summary>
+    static object ContentKey(AsDisplayObject o, NineCtx nine, out NineCtx sn)
+    {
+        sn = null;
+        switch (o)
+        {
+            case AsShape sh when sh.GraphicsOrNull is { Ops.Count: > 0 } g: return g;
+            case AsShape or AsMorphShape when o.Symbol != null && o.Scope != null:
+                sn = nine?.With(Xf(o.Matrix.Then(FromXf(nine.Chain.Value))));
+                return sn == null ? o.Symbol : (o.Symbol, sn.Grid, sn.Bounds, sn.Sx, sn.Sy, sn.Chain);
+            case AsTextField tf: return tf;
+            case AsStaticText when (o.Symbol?["text"]) != null && o.Scope != null: return o.Symbol;
+            case AsBitmap bm when bm.bitmapData?.Source is string url: return (url, bm.bitmapData.width, bm.bitmapData.height);
+            case AsSprite sp when sp.GraphicsOrNull is { Ops.Count: > 0 } g2: return g2;
+            default: return null;
+        }
+    }
+
+    /// <summary>The node for a display object's content, by the cases of <see cref="ContentKey"/>.</summary>
+    Node2D MakeContent(AsDisplayObject o, NineCtx sn)
+    {
+        switch (o)
+        {
+            case AsShape sh when sh.GraphicsOrNull is { Ops.Count: > 0 } g: return new GraphicsNode(g);
+            case AsShape or AsMorphShape when o.Symbol != null && o.Scope != null: return new ShapeNode(Scope(o.Scope), o.Symbol, sn);
+            case AsTextField tf when (tf.Symbol?["text"] is JsonObject) && o.Scope != null: return new FieldText(tf, Scope(o.Scope));
+            case AsTextField tf: return new FieldNode(tf, assets);
+            case AsStaticText when (o.Symbol?["text"]) != null && o.Scope != null: return new TextNode(Scope(o.Scope), o.Symbol, 1, 1);
+            case AsBitmap bm when bm.bitmapData?.Source is string url:
+                return ResolveImage(url) is { } t ? new Sprite2D { Texture = t, Centered = false, Scale = Fit(t, bm.bitmapData) } : null;
+            case AsSprite sp when sp.GraphicsOrNull is { Ops.Count: > 0 } g2: return new GraphicsNode(g2);
+            default: return null;
+        }
     }
 
     static readonly Dictionary<string, Material> blends = new();
