@@ -21,7 +21,7 @@ public partial class LoadingMovie : Node2D
     {
         Name = "LoadingProgressMovie";
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the loading screen runs interpreted");
-        var model = new UiModel(new GameTables(assets.Packs, assets.Language));
+        var model = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
         window = windowSize;
         Dialog = new MovieDialog(assets, Controller, model, window);
         AddChild(Dialog);

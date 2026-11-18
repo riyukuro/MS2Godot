@@ -407,7 +407,7 @@ public partial class HudScene : Node, IUiStageHost
     void UpperHud(Control ui)
     {
         if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(GetWindow().Size); return; }
-        var model = new UiModel(new GameTables(assets.Packs, "en"));
+        var model = new UiModel(GameTables.Shared(assets.Packs, "en"));
         model.Features.Clear();
         foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat,
             Ms2.Ui.Feature.PvPRankingDuelMode, Ms2.Ui.Feature.ItemSocketSystem, Ms2.Ui.Feature.HabiToken, Ms2.Ui.Feature.ReverseRaid01,
@@ -943,7 +943,7 @@ public partial class HudScene : Node, IUiStageHost
     /// A model for the field's movies: the tables, and the features as the client runs them (CFeatureManager by id and by
     /// name: table/feature.xml within the Live server level, <see cref="Ms2.Ui.LobbyFeatures"/>).
     /// </summary>
-    UiModel NewModel() => new(new GameTables(assets.Packs, "en")) { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
+    UiModel NewModel() => new(GameTables.Shared(assets.Packs, "en")) { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
 
     /// <summary>The HUD movies' model: the tables, features, key tables and the player.</summary>
     void HudModel()

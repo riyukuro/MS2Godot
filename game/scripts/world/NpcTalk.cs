@@ -330,7 +330,7 @@ public sealed partial class NpcTalk : Node
     {
         talking = npc;
         ui ??= new UiAssets(packs);
-        tables ??= new GameTables(packs, "en");
+        tables ??= GameTables.Shared(packs, "en");
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the talk window runs interpreted");
         var size = (Vector2)GetWindow().Size;
         side = new TalkCinematicController

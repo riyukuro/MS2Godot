@@ -21,6 +21,14 @@ public sealed class GameTables
 
     public static readonly GameTables Empty = new();
 
+    // the client reads its tables once (each table singleton loads at startup or on first use) and every window reads the
+    // same ones; nothing changes a GameTables after it is built, so the windows' models share one per pack set and language
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, GameTables>> shared = new();
+
+    /// <summary>The tables of <paramref name="packs"/> in <paramref name="language"/>, built on the first call (main thread).</summary>
+    public static GameTables Shared(PackSet packs, string language) =>
+        shared.GetOrCreateValue(packs).GetOrAdd(language, l => new GameTables(packs, l));
+
     GameTables() { }
 
     public GameTables(PackSet packs, params string[] languages)

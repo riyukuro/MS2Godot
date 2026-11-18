@@ -197,7 +197,7 @@ public partial class CharacterListScene : LobbyFieldScene
     public static MovieDialog OpenList(UiAssets assets, CharacterListController controller, Vector2 window)
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the character list runs interpreted");
-        return new MovieDialog(assets, controller, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
+        return new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), window);
     }
 
     /// <summary>

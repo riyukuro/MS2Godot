@@ -48,7 +48,7 @@ public partial class LoginScene : Control
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the login dialog runs interpreted");
         Controller.Connect += () => GD.Print("login: OnConnect");
         Controller.Connect += () => UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
-        dialog = new MovieDialog(assets, Controller, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
+        dialog = new MovieDialog(assets, Controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), window);
         AddChild(dialog);
         // the client sizes every movie to the back buffer: on a window resize the backdrop runs onResize
         // (GFxMovieBackground::vfunc_16) and the open dialogs align again (UIDialog::vfunc_43 -> alignment)

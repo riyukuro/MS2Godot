@@ -217,7 +217,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         select.Load(uiPacks ?? packs, assets.Language);
         select.SelectCreateJob += j => { job = j; gender = rng.Next(2); SwitchTo(Page.Create); };
         select.Closed += () => { GD.Print("job pick: back to the character list"); Cancelled?.Invoke(); };
-        selectDialog = new MovieDialog(assets, select, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
+        selectDialog = new MovieDialog(assets, select, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), window);
         layer.AddChild(selectDialog);
         selectVideo = new MovieVideo(selectDialog, uiPacks ?? packs, () =>
             selectDialog.Host.Get(selectDialog.Host.Entity, "m_content") is { } content ? selectDialog.Host.Get(content, "m_moviePlayer") : null);
@@ -301,7 +301,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         create.Back += () => SwitchTo(Page.Select);
         create.GuideAsked += () => GD.Print("create: the mouse guide (0x4ea7) is not ported");
         RebuildPreview();
-        createDialog = new MovieDialog(assets, create, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
+        createDialog = new MovieDialog(assets, create, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), window);
         layer.AddChild(createDialog);
         // CustomOption.playMovie: the open category's m_custom VideoPlayer (in m_moviedummy)
         createVideo = new MovieVideo(createDialog, uiPacks ?? packs, () =>
