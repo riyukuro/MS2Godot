@@ -198,7 +198,46 @@ public sealed class MyCharacter {
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();
+        for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
+        dying = false;
+        Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
+    }
+
+    long[] StatsOf(int kind) => kind == 0 ? Stats0 : kind == 1 ? Stats1 : Stats2;
+
+    /// <summary>PCBase::IsDead (pcbase.cpp:1256, m_unk_15c) of the local player: set by the own FieldAddUser with no current
+    /// health and by <see cref="Die"/>, cleared by <see cref="Revive"/>.</summary>
+    public bool Dead;
+    /// <summary>Stands in for GetCurStateId() == 0xc (the death state), which MyPC::vfunc_137 enters (vfunc_59(0xc)) and
+    /// OnRevival leaves (vfunc_59(0x18)). STILL-OPEN: the other state changes of the local player (its state machine is not
+    /// read here), so a death state left another way still blocks <see cref="Die"/>.</summary>
+    bool dying;
+
+    /// <summary>
+    /// The local player's die (OnUserState state 12, scenestategame.cpp:5768; OnDeadUser, :6542): PC::vfunc_137 (pc.cpp:4593)
+    /// not in the death state and with no current health (FUN_141670a00(4) = m_unk_1c0[2][4]): FUN_14166ce50(1); then
+    /// MyPC::vfunc_137 (mypc.cpp:1343) enters the death state. Other objects: nothing. Returns whether the state changed.
+    /// STILL-OPEN: OnUserState calls vfunc_59(state) before vfunc_137; whether that already enters state 12 (which would
+    /// make vfunc_137 do nothing) is not read, so state 12 dies here. The PvP time scale, the revive dialog 0x4e38 and the
+    /// guide occurrence.
+    /// </summary>
+    public bool Die(int objectId) {
+        if (objectId != ObjectId || User == null || dying || Stats2[PlayerStat.Health] != 0) return false;
+        Dead = true; dying = true;
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>OnRevival (scenestategame.cpp:7387) for the local player: FUN_14166ce50(0) and the revival state (0x18).
+    /// Returns whether the dead state changed.</summary>
+    public bool Revive(int objectId) {
+        if (objectId != ObjectId || User == null) return false;
+        dying = false;
+        if (!Dead) return false;
+        Dead = false;
+        Changed?.Invoke();
+        return true;
     }
 
     /// <summary>

@@ -700,7 +700,8 @@ public class MyInfoTests
         var view = new Ms2.Net.Packets.InventoryView(book);
         var sent = new List<long>(); view.RequestUnequip = sent.Add;
         var notices = new List<string>(); var raised = new List<string>();
-        var (h, c, _, errors) = Load(x => { x.Inventory = view; x.SystemNotice += notices.Add; x.Button += raised.Add; });
+        var shown = new List<MessageBoxData>();
+        var (h, c, _, errors) = Load(x => { x.Inventory = view; x.SystemNotice += notices.Add; x.Button += raised.Add; x.ShowBox = shown.Add; });
         Assert.That(errors, Is.Empty);
         long rh = c.Record().Equips.First(e => e.Id == 15000001).Uid;
         string Slot(int s) => MyInfoController.EquipBag + "." + s;
@@ -718,6 +719,12 @@ public class MyInfoTests
         c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 });
         c.ActionKeyDown = _ => false;
         Assert.That((sent.Count, raised.Single()), Is.EqualTo((0, "notifySlotUse")), "the preview key: raised");
+        c.LocalPlayerDead = () => true;
+        c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 });
+        c.OnCallback("notifySlotUse", new object[] { Slot(6), 1 });
+        Assert.That((sent.Count, shown.Count, shown.Last().Msg), Is.EqualTo((0, 1, c.Model.Tables.Common(MyInfoController.DeadKey))),
+            "dead: box 66, no send (inventory.cpp:1282); an empty slot never reaches RequestUnequipItem");
+        c.LocalPlayerDead = () => false;
 
         book.Apply(new Ms2.Net.Packets.ItemMessage.Add(new Ms2.Net.Packets.EquipItem { Id = 15000002, Uid = 900, InventorySlot = 0, Amount = 1 }));
         book.Apply(new Ms2.Net.Packets.ItemMessage.Add(new Ms2.Net.Packets.EquipItem { Id = 15000003, Uid = 901, InventorySlot = 1, Amount = 1 }));

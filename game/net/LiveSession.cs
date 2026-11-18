@@ -444,6 +444,21 @@ public partial class LiveSession : Node
                     if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
                     GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
                 }
+                else if (game.Is(p, Inbound.UserState))
+                {
+                    var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): state 12 dies (PC::vfunc_137)
+                    if (u.State == 12 && Me.Die(u.ObjectId)) GD.Print("live: own player dead (state 12)");
+                }
+                else if (game.Is(p, Inbound.DeadUser))
+                {
+                    var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
+                    if (Me.Die(d.ObjectId)) GD.Print("live: own player dead");
+                }
+                else if (game.Is(p, Inbound.Revival))
+                {
+                    var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
+                    if (Me.Revive(v.ObjectId)) GD.Print("live: own player revived");
+                }
                 else if (game.Is(p, Inbound.ItemPutOnOrOff))
                 {
                     var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer

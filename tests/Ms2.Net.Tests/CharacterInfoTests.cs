@@ -33,6 +33,36 @@ public class CharacterInfoTests {
         Assert.That(HomeCommend.Read(R(w => { w.WriteByte(0); w.WriteLong(1); w.WriteLong(2); })), Is.Null);
     }
 
+    [Test] public void TheDeadStateIsTheOwnPlayersPackets() {
+        Assert.That(DeadUser.Read(R(w => { w.WriteInt(9); w.WriteByte(1); w.WriteByte(7); })), Is.EqualTo(new DeadUser(9, true)), "trailing bytes ignored");
+        Assert.That(Revival.Read(R(w => { w.WriteInt(9); w.WriteByte(2); })), Is.EqualTo(new Revival(9, 2)));
+
+        var me = new MyCharacter();
+        Assert.That((me.Dead, me.Die(9)), Is.EqualTo((false, false)), "before the own FieldAddUser: no local player");
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[1].Health = 400; u.Stats[2].Health = 480;
+        me.Apply(u);
+        Assert.That((me.Dead, me.Stats2[PlayerStat.Health], me.Stats0[PlayerStat.Health]), Is.EqualTo((false, 480L, 500L)), "FieldAddUser's health kinds");
+        Assert.That(me.Die(9), Is.False, "health left: PC::vfunc_137 does nothing");
+        me.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
+        int changed = 0; me.Changed += () => changed++;
+        Assert.That((me.Die(8), me.Dead), Is.EqualTo((false, false)), "another object");
+        Assert.That((me.Die(9), me.Dead, changed), Is.EqualTo((true, true, 1)), "no current health: dead");
+        Assert.That((me.Die(9), changed), Is.EqualTo((false, 1)), "already in the death state");
+        Assert.That((me.Revive(8), me.Dead), Is.EqualTo((false, true)), "another object's revival");
+        Assert.That((me.Revive(9), me.Dead, changed), Is.EqualTo((true, false, 2)));
+        Assert.That(me.Revive(9), Is.False, "not dead: nothing changes");
+        Assert.That(me.Die(9), Is.True, "out of the death state: dies again");
+
+        u.Stats[2].Health = 0;
+        me.Apply(u);
+        Assert.That(me.Dead, Is.True, "a FieldAddUser with no current health: dead (scenestategame.cpp:11185)");
+        Assert.That(me.Die(9), Is.True, "the field entry left the old death state");
+        u.Stats[2].Health = 10;
+        me.Apply(u);
+        Assert.That(me.Dead, Is.False);
+    }
+
     [Test] public void TheRecordIsTheOwnPlayersPackets() {
         var me = new MyCharacter();
         Assert.That(me.ToPcInfo(0), Is.Null, "before the own FieldAddUser");

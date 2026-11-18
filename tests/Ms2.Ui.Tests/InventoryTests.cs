@@ -369,6 +369,12 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.EquipJobKey))), "job 0 is never allowed: box 232");
         record.JobGroup = 10;
+        c.LocalPlayerDead = () => true;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2", 1 });
+        Assert.That((sent.Count, boxes.Count(b => b == t.Common(MyInfoController.DeadKey)), boxes.Last()),
+            Is.EqualTo((count, 2, t.Common(MyInfoController.DeadKey))), "dead: box 66 before the expiry check, no send (inventory.cpp:1241)");
+        c.LocalPlayerDead = () => false;
         c.ActionKeyDown = a => a == 0x49406;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         c.ActionKeyDown = _ => false;
@@ -451,6 +457,18 @@ public class InventoryTests
             "CanUseItem again on the yes: its level check is a system notice (unit_140d1ae30:461)");
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
         Assert.That((sent.Count, raised.Last()), Is.EqualTo((3, "notifySlotUse")), "a function with its own handler: raised");
+        c.LocalPlayerDead = () => true;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((3, t.Common(MyInfoController.DeadKey))), "dead: box 66, no send (inventory.cpp:1211)");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((3, t.Common(InventoryController.ExpiredKey))),
+            "CanUseItem's expiry (:430) comes before RequestUseItem's dead check");
+        int raisedCount = raised.Count;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
+        Assert.That(raised.Count, Is.EqualTo(raisedCount + 1), "dead: an OpenItemBox item still reaches its own handler");
+        Assert.That(InventoryController.NoStateCheckFunctions, Is.EquivalentTo(new[] { "OpenItemBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple" }),
+            "RequestUseItem's checkState 0 functions (inventory.cpp:1205-1207)");
+        c.LocalPlayerDead = () => false;
         // the window closed while the box is up: its yes still uses the item (the client's goes through the global
         // inventory, uimessagebox.cpp:1868; the HUD keeps this controller for it)
         h.Unload();

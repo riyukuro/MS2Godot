@@ -9,6 +9,18 @@ public sealed record UserState(int ObjectId, byte State) {
     public static UserState Read(ByteReader r) { var p = new UserState(r.ReadInt(), r.ReadByte()); r.ExpectEnd("UserState"); return p; }
 }
 
+/// <summary>Inbound 0x34 (CSceneStateGame::OnRevival, scenestategame.cpp:7387): i32 object id, u8 flag (PC::FUN_141661ba0). The
+/// client ignores trailing bytes.</summary>
+public sealed record Revival(int ObjectId, byte Flag) {
+    public static Revival Read(ByteReader r) => new(r.ReadInt(), r.ReadByte());
+}
+
+/// <summary>Inbound 0xA6 (CSceneStateGame::OnDeadUser, scenestategame.cpp:6532): i32 object id, u8 flag (FUN_14028d780: set
+/// = PC::FUN_141661ba0(1)), then the die (PC::vfunc_137). The client ignores trailing bytes.</summary>
+public sealed record DeadUser(int ObjectId, bool Flag) {
+    public static DeadUser Read(ByteReader r) => new(r.ReadInt(), r.ReadByte() != 0);
+}
+
 /// <summary>Inbound 0x2F (OnUserBattle): i32 object id, u8 emotion (the combat stance face).</summary>
 public sealed record UserBattle(int ObjectId, byte Emotion) {
     public static UserBattle Read(ByteReader r) { var p = new UserBattle(r.ReadInt(), r.ReadByte()); r.ExpectEnd("UserBattle"); return p; }

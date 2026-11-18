@@ -84,6 +84,7 @@ public partial class HudScene
             SelfCharacterId = live?.CharacterId ?? PartyFixture.SelfCharacterId,
             Field = SlotFieldData(),
             MapName = id => menuModel.Tables.MapName(id),
+            LocalPlayerDead = () => live?.Me.Dead ?? false,   // PCBase::IsDead; offline: never dead
         };
         c.SlotMenuOpen = () => popupMenu != null && !popupMenu.IsClosed && popupMenu.InfoString == PopupMenuController.PartySlotInfo;
         c.MemberMenu += (x, y, id) => OpenPartySlotMenu(x, y, id);
@@ -155,6 +156,8 @@ public partial class HudScene
                 ProfileImagePath = (_, _) => noProfile,
                 // FUN_141bd1530: the field's users. FIXTURE (offline): an online fixture member on the own map and channel
                 PlayerInField = live != null ? live.UserInField : FixtureUserInField,
+                // PCBase::IsDead; read per open, the menu outlives a session. Offline (null): the fixture's health stands in
+                LocalPlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.Me.Dead,
             };
             c.Send = PartySend;
             c.PlaySound = key => FieldAudio.Instance?.PlayUi(key);

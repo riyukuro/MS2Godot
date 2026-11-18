@@ -45,6 +45,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// <summary>The local player's record (MyPC): its equipment answers the hover's compare and "equipped" line; null: no
     /// equipment is known (nothing is compared or marked equipped).</summary>
     public Func<PcInfo> Wearer;
+    /// <summary>PCBase::IsDead of the local player (the live MyCharacter.Dead); unset: false.</summary>
+    public Func<bool> LocalPlayerDead = () => false;
     /// <summary>CUIService m_n128 (FUN_141adcb40): a Shift key is held (DIK 0x2a / 0x36, uiscenegame.cpp:1128).</summary>
     public Func<bool> ShiftHeld = () => false;
     /// <summary>CInputKeyHandler::IsActionKeyDown(action, 0, 0) (FUN_14025e7c0): the keys of the action are held. Actions read
@@ -492,7 +494,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// <see cref="BindOnUseBox"/>, the item uid and the item entry (its name coloured, count 0), the yes / no labels
     /// (0x477 / 0x478), shown; its yes comes back as <see cref="ConfirmBindUse"/>. Then a function of
     /// <see cref="OwnUseFunctions"/> has its own handler (raised); else FUN_140a63880 = RequestUseItem(uid, "")
-    /// (inventory.cpp:1201): FUN_140a65e30's GetItemUseError (expired without a maid id box 225), then the use request.
+    /// (inventory.cpp:1201): a dead local player gets box 66 (<see cref="MyInfoController.DeadKey"/>) unless the function is
+    /// <see cref="NoStateCheckFunctions"/>; FUN_140a65e30's GetItemUseError (expired without a maid id box 225), then the use
+    /// request.
     /// Nothing is used up here: the server's item packets do.
     /// STILL-OPEN: the function shutdown list (CGameEventValueManager::ShutdownFunctionItem()->IsShutdown of the item id,
     /// notice 0x2f7) and the item sound.
@@ -507,11 +511,15 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return true;
         }
         if (OwnUseFunctions.Contains(d.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
+        if (!NoStateCheckFunctions.Contains(d.FunctionName) && LocalPlayerDead()) { ShowCommonBox(MyInfoController.DeadKey); return true; }   // inventory.cpp:1205-1211
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
         if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return true; }                // GetItemUseError 5 (an expired pet)
         View.RequestUse?.Invoke(item.Uid, "");
         return true;
     }
+
+    /// <summary>RequestUseItem's functions that skip the player state check (checkState 0, inventory.cpp:1205-1207).</summary>
+    public static readonly HashSet<string> NoStateCheckFunctions = new(StringComparer.Ordinal) { "OpenItemBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple" };
 
     /// <summary>The bind boxes' common strings, by key (FUN_14028dfa0 formats them with the player's name).</summary>
     public const string BindOnUseKey = "s_msg_transfer_bind_when_use", BindOnEquipKey = "s_msg_transfer_bind_when_equip";
@@ -579,7 +587,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// <see cref="BindOnEquipBox"/>, the slot asked for and the layer appended, the item uid and entry, yes / no; its yes comes
     /// back as <see cref="ConfirmBindEquip"/>, which asks again with the skip. The send maps the layer as FUN_1401fb870: 2
     /// only with feature 142. Nothing is put on here: the server's equip packets do.
-    /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang, VIP
+    /// A dead local player (IsDead, :1241) gets box 66 (<see cref="MyInfoController.DeadKey"/>) first.
+    /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the PC bang, VIP
     /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
     /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
     /// 0x43, s_item_err_codi_slot, the cube texture block), the warning sounds (s_warningLevel,
@@ -589,6 +598,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     void RequestEquip(Item item, int slot, int layer, bool skipBinding = false)
     {
         if (!Model.HasLocalPlayer) return;
+        if (LocalPlayerDead()) { ShowCommonBox(MyInfoController.DeadKey); return; }      // inventory.cpp:1241
         var d = item.Data;
         long now = View.ServerTime();
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= now;

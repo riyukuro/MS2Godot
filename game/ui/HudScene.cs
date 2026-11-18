@@ -1117,6 +1117,7 @@ public partial class HudScene : Node, IUiStageHost
             ActionKeyDown = ActionKeyDown,
             SymbolId = () => me.Insignia, GmGrade = () => me.User?.GmGrade ?? 0,
             AchieveTally = () => live?.AchieveSum ?? 0,   // the fixture: an empty trophy book
+            LocalPlayerDead = () => me.Dead,              // PCBase::IsDead (FieldAddUser, UserState 12 / DeadUser, Revival)
         };
         c.SystemNotice += SystemNotice;
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
@@ -1226,6 +1227,7 @@ public partial class HudScene : Node, IUiStageHost
             BaseSlots = Ms2Godot.Net.BagSlotTable.Load(assets.Packs),
             MaxSlots = Ms2Godot.Net.BagSlotTable.LoadMax(assets.Packs),
             Wearer = () => me?.ToPcInfo(now()),
+            LocalPlayerDead = () => me.Dead,              // PCBase::IsDead (FieldAddUser, UserState 12 / DeadUser, Revival)
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             ActionKeyDown = ActionKeyDown,
         };

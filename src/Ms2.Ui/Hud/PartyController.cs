@@ -23,7 +23,7 @@ public sealed class PartyController : UiController
     public long SelfCharacterId;
     /// <summary>The current field's data (GetFieldData); null when there is none.</summary>
     public FieldData Field;
-    /// <summary>The local player is dead (PCBase::IsDead); no feed yet: false.</summary>
+    /// <summary>The local player is dead (PCBase::IsDead, the live MyCharacter.Dead); unset: false.</summary>
     public Func<bool> LocalPlayerDead = () => false;
     /// <summary>The popup menu (FindPopupMenu(0x4e39)) is open for a party slot (not IsClosed, GetInfoString "partySlot").</summary>
     public Func<bool> SlotMenuOpen = () => false;

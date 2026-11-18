@@ -69,6 +69,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// is RebuildTally over the started achievements (achievemanager.cpp:756) of RecvOp Achieve 0x5E, which is not decoded,
     /// so 0 (the own party record's trophy is not what the client reads).</summary>
     public Func<int> OwnTrophy = () => 0;
+    /// <summary>PCBase::IsDead of the local player (the live MyCharacter.Dead); null: no live state, the current health stands in.</summary>
+    public Func<bool?> LocalPlayerDead = () => null;
 
     /// <summary>MenuItemClick (vfunc_28, :1830) for an item whose handler is not ported (see the class note), with the target
     /// the menu was opened for.</summary>
@@ -128,7 +130,7 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         {
             X = x, Y = y, Name = self.Name, CharacterId = SelfCharacterId, Level = (ushort)self.Level,
             Image = ProfileImagePath(SelfCharacterId, own?.Picture ?? ""),
-            Alive = self.HpCur > 0,                                     // IsDead == 0 (STILL-OPEN: the HP stands in for the dead state)
+            Alive = !(LocalPlayerDead() ?? self.HpCur <= 0),           // IsDead == 0; no live state (offline): the HP stands in
             Online = true, JobGroup = self.JobGroup, JobCode = self.SubJob, Trophy = OwnTrophy(),
         };
         if (!Open(t, PartySlotFlags, 1)) ResetState();
