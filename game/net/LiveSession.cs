@@ -185,6 +185,13 @@ public partial class LiveSession : Node
         };
     }
 
+    static Ms2.Ui.Items.ItemDataTable itemData;
+    /// <summary>The worn layer of an item (ItemDataTable.WornLayer); null when the item data is missing.</summary>
+    static int? WornLayer(int itemId) {
+        try { return (itemData ??= new Ms2.Ui.Items.ItemDataTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir))).WornLayer(itemId); }
+        catch (Exception e) { GD.Print($"live: item data unavailable ({e.Message})"); return null; }
+    }
+
     static ItemKinds kinds;
     static ItemKinds Kinds() => kinds ??= new ItemKinds(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
 
@@ -346,6 +353,18 @@ public partial class LiveSession : Node
                 {
                     ApplyItems(p);
                     GD.Print($"live: item packet ({Items.All.Count} items)");
+                }
+                else if (game.Is(p, Inbound.ItemPutOn))
+                {
+                    var o = ItemPutOn.Read(p.Reader());        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
+                    bool ownEquipment = Me.Apply(o, WornLayer);
+                    GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+                }
+                else if (game.Is(p, Inbound.ItemPutOff))
+                {
+                    var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
+                    bool ownEquipment = Me.Apply(o, WornLayer);
+                    GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
                 }
                 else if (game.Is(p, Inbound.ItemPutOnOrOff))
                 {
