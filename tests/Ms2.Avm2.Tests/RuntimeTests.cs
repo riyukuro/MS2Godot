@@ -189,4 +189,34 @@ public class RuntimeTests
         }
         finally { (TextMeasure.HeightRatio, TextMeasure.AscentRatio) = (height, ascent); }
     }
+
+    [Test]
+    public void HtmlTextGetterWritesParagraphsAsScaleform()
+    {
+        // TextField::GetText(true) -> StyledText::GetHtml: one TEXTFORMAT + P block per paragraph, the last one left out when
+        // empty, so html appended to the getter's value starts a new line in a multiline field
+        var (rt, _) = Empty();
+        var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();
+        tf.FromSymbol(new JsonObject
+        {
+            ["bounds"] = new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 200, ["h"] = 40 },
+            ["text"] = new JsonObject { ["font"] = "F", ["size"] = 12, ["color"] = "#EEEEEE", ["multiline"] = true, ["html"] = true, ["leading"] = 2, ["initial"] = "" },
+        });
+        Assert.That(tf.htmlText, Is.EqualTo(""));
+        foreach (var row in new[] { "Active", "Long Range / Physical", "a<b" })
+            tf.htmlText = tf.htmlText + "<font color='#AAAAAA'>" + System.Net.WebUtility.HtmlEncode(row) + "</font>";
+        Assert.That(tf.text, Is.EqualTo("Active\rLong Range / Physical\ra<b"));
+        const string P = "<TEXTFORMAT LEADING=\"2\"><P ALIGN=\"LEFT\"><FONT FACE=\"F\" SIZE=\"12\" COLOR=\"#AAAAAA\" KERNING=\"0\">";
+        Assert.That(tf.htmlText, Is.EqualTo(P + "Active</FONT></P></TEXTFORMAT>" + P + "Long Range / Physical</FONT></P></TEXTFORMAT>" + P + "a&lt;b</FONT></P></TEXTFORMAT>"));
+        // runs: a FONT per change of colour or size, B / I / U per run, the default format where the html sets none
+        tf.htmlText = "x<b>y</b><font size='20'>z</font>";
+        Assert.That(tf.htmlText, Is.EqualTo("<TEXTFORMAT LEADING=\"2\"><P ALIGN=\"LEFT\"><FONT FACE=\"F\" SIZE=\"12\" COLOR=\"#EEEEEE\" KERNING=\"0\">x<B>y</B></FONT>"
+            + "<FONT FACE=\"F\" SIZE=\"20\" COLOR=\"#EEEEEE\" KERNING=\"0\">z</FONT></P></TEXTFORMAT>"));
+        // an empty P makes an empty paragraph, which is written when it is not the last
+        tf.htmlText = "<p></p>";
+        Assert.That(tf.htmlText, Is.EqualTo("<TEXTFORMAT LEADING=\"2\"><P ALIGN=\"LEFT\"><FONT FACE=\"F\" SIZE=\"12\" COLOR=\"#EEEEEE\" KERNING=\"0\"></FONT></P></TEXTFORMAT>"));
+        // text clears the html flag: the getter gives the text (textSet)
+        tf.text = "plain";
+        Assert.That(tf.htmlText, Is.EqualTo("plain"));
+    }
 }

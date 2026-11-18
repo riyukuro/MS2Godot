@@ -1,5 +1,6 @@
-using System.Text;
+global using HtmlImage = Ms2.Avm2.Flash.HtmlImage;
 using Godot;
+using Ms2.Avm2.Flash;
 
 namespace Ms2Godot.Ui;
 
@@ -16,192 +17,26 @@ public readonly record struct GlyphStyle(Color? Color, bool Bold, bool Italic, b
 }
 
 /// <summary>
-/// An IMG tag as StyledText::ParseHtml reads it into its HTMLImageTagDesc (sfr_render_05i.cpp:946): SRC (the url), ID,
-/// ALIGN (left, right or baseline; Baseline when none), WIDTH and HEIGHT (whole pixels, 0 or more; 0: the image's own) and
-/// VSPACE and HSPACE (whole pixels).
-/// </summary>
-public sealed record HtmlImage(string Src, string Id, HtmlImageAlign Align, int Width, int Height, int VSpace, int HSpace);
-
-/// <summary>HTMLImageTagInfo alignment (Align_BaseLine is the default).</summary>
-public enum HtmlImageAlign { BaseLine, Left, Right }
-
-/// <summary>
-/// A Flash text field's htmlText as a TextNode shows it (TextNode.SetHtml), parsed the way Scaleform's StyledText::ParseHtml
-/// does it (sfr_render_05i.cpp): the text without its markup and each code point's text format.
-/// <list type="bullet">
-/// <item>Every element but the empty ones (BR, SBR, TAB) opens a stack entry holding the format around it. B, I and U set
-/// bold, italic and underline; FONT sets COLOR (#RRGGBB) and SIZE (a whole number, 0 or more). An end tag closes the top
-/// entry when the names match and is ignored otherwise, except that an unmatched end P or LI closes everything up to its
-/// own element.</item>
-/// <item>BR is a line break in a multiline field only; TAB is a tab.</item>
-/// <item>IMG is an empty element: a space in the field's default text format (not the one of the elements around it)
-/// carrying the tag's image (<see cref="HtmlImage"/>).</item>
-/// <item>In a multiline field a P opened while another P is open starts a new line, an LI starts one unless its paragraph is
-/// still empty, and the end of a P (not an empty P element) or of an LI ends the line.</item>
-/// <item>Entities are decoded.</item>
-/// </list>
-/// The game's strings write a line break as a literal backslash-n; it is a line break here as in the strings the client
-/// shows. A string with no tag and no entity is the text itself.
+/// A Flash text field's htmlText as a TextNode shows it (TextNode.SetHtml): Scaleform's StyledText::ParseHtml
+/// (<see cref="HtmlText.Parse"/>) with the formats per code point. The game's strings write a line break as a literal
+/// backslash-n; it is a line break here as in the strings the client shows.
 /// </summary>
 public static class FlashHtml
 {
-    /// <summary>The text and, per code point, the text format it is in.</summary>
+    /// <summary>The text and, per code point, the text format it is in (<see cref="HtmlText.Parse"/>).</summary>
     public static (string Text, GlyphStyle[] Styles) Parse(string html, bool multiline = true)
     {
-        html = (html ?? "").Replace("\\n", "\n");
-        var text = new StringBuilder(html.Length);
-        var styles = new List<GlyphStyle>(html.Length);
-        var stack = new List<(string Name, GlyphStyle Around)>();
-        var current = default(GlyphStyle);
-        int openP = 0;
-        void Add(char c)
+        var (text, formats) = HtmlText.Parse(html, multiline, '\n', literalNewLines: true);
+        var styles = new GlyphStyle[formats.Length];
+        for (int i = 0; i < formats.Length; i++)
         {
-            if (char.IsLowSurrogate(c) && text.Length > 0 && char.IsHighSurrogate(text[^1])) { text.Append(c); return; }
-            text.Append(c);
-            styles.Add(current);
+            var f = formats[i];
+            Color? color = f.Color is uint rgb ? Color.Color8((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb) : null;
+            styles[i] = new GlyphStyle(color, f.Bold, f.Italic, f.Underline, f.Size) { Image = f.Image };
         }
-        void NewLine() { if (multiline) Add('\n'); }
-        bool ParagraphEmpty() => text.Length == 0 || text[^1] == '\n';
-        for (int i = 0; i < html.Length; i++)
-        {
-            char c = html[i];
-            if (c == '<' && html.IndexOf('>', i + 1) is int end and > 0)
-            {
-                Tag(html.Substring(i + 1, end - i - 1));
-                i = end;
-                continue;
-            }
-            if (c == '&' && Entity(html, i, out string decoded, out int length))
-            {
-                foreach (char d in decoded) Add(d);
-                i += length - 1;
-                continue;
-            }
-            Add(c);
-        }
-        return (text.ToString(), styles.ToArray());
-
-        void Tag(string body)
-        {
-            bool closing = body.StartsWith('/');
-            string rest = closing ? body[1..] : body;
-            int n = 0;
-            while (n < rest.Length && char.IsLetter(rest[n])) n++;
-            string name = rest[..n].ToUpperInvariant();
-            bool selfClosing = !closing && rest.TrimEnd().EndsWith('/');
-            if (closing) { End(name, false); return; }
-            switch (name)
-            {
-                case "BR": case "SBR": NewLine(); return;
-                case "TAB": Add('\t'); return;
-                case "IMG":
-                {
-                    // HTML_IMG: the image char's format is the default text format with the image desc
-                    var saved = current;
-                    current = new GlyphStyle { Image = Image(rest[n..]) };
-                    Add(' ');
-                    current = saved;
-                    return;
-                }
-            }
-            stack.Add((name, current));
-            switch (name)
-            {
-                case "B": current = current with { Bold = true }; break;
-                case "I": current = current with { Italic = true }; break;
-                case "U": current = current with { Underline = true }; break;
-                case "FONT":
-                    if (Attribute(rest[n..], "color") is { } hex && ParseHex(hex) is Color col) current = current with { Color = col };
-                    if (Attribute(rest[n..], "size") is { } sz && int.TryParse(sz.Trim(), out int size) && size >= 0) current = current with { Size = size };
-                    break;
-                case "P":
-                    if (openP > 0) NewLine();                               // a P inside an open P starts a paragraph
-                    openP++;
-                    break;
-                case "LI":
-                    if (!ParagraphEmpty()) NewLine();
-                    break;
-            }
-            if (selfClosing) End(name, true);
-        }
-
-        // SGMLPS_END_ELEMENT / SGMLPS_EMPTY_ELEMENT_FINISHED
-        void End(string name, bool emptyElement)
-        {
-            if (stack.Count == 0) return;
-            if (stack[^1].Name != name)
-            {
-                if (!((name == "P" || name == "LI") && openP > 0)) return;     // a mismatched end tag is ignored
-                while (stack.Count > 0 && stack[^1].Name != name) stack.RemoveAt(stack.Count - 1);
-                if (stack.Count == 0) return;
-            }
-            current = stack[^1].Around;
-            stack.RemoveAt(stack.Count - 1);
-            if (name == "P") { openP--; if (!emptyElement) NewLine(); }   // an empty P element makes no paragraph
-            else if (name == "LI") NewLine();
-        }
+        return (text, styles);
     }
 
     /// <summary>The text with its markup taken out (Parse without the formats).</summary>
     public static string Plain(string html, bool multiline = true) => Parse(html, multiline).Text;
-
-    /// <summary>The IMG attributes (ParseHtml's HTML_SRC ... HTML_HSPACE cases; a value ParseInt rejects is skipped).</summary>
-    static HtmlImage Image(string attrs)
-    {
-        // SGMLParser::ParseInt: an optional sign and decimal digits only, nothing else (a lone sign is 0)
-        static int? Int(string v)
-        {
-            if (string.IsNullOrEmpty(v)) return null;
-            int i = v[0] is '-' or '+' ? 1 : 0, sign = v[0] == '-' ? -1 : 1, r = 0;
-            for (; i < v.Length; i++)
-            {
-                if (v[i] is < '0' or > '9') return null;
-                r = unchecked(r * 10 + (v[i] - '0'));
-            }
-            return r * sign;
-        }
-        var align = (Attribute(attrs, "align") ?? "").Trim().ToUpperInvariant() switch
-        {
-            "LEFT" => HtmlImageAlign.Left, "RIGHT" => HtmlImageAlign.Right, _ => HtmlImageAlign.BaseLine,
-        };
-        int w = Int(Attribute(attrs, "width")) is int a && a >= 0 ? a : 0, h = Int(Attribute(attrs, "height")) is int b && b >= 0 ? b : 0;
-        return new HtmlImage(Attribute(attrs, "src") ?? "", Attribute(attrs, "id") ?? "", align, w, h,
-            Int(Attribute(attrs, "vspace")) ?? 0, Int(Attribute(attrs, "hspace")) ?? 0);
-    }
-
-    static string Attribute(string attrs, string name)
-    {
-        var m = System.Text.RegularExpressions.Regex.Match(attrs, "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>/]+))",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        if (!m.Success) return null;
-        return m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
-    }
-
-    /// <summary>COLOR="#RRGGBB" (the client parses the colour only after a '#').</summary>
-    static Color? ParseHex(string hex)
-    {
-        hex = hex.Trim();
-        if (!hex.StartsWith('#')) return null;
-        hex = hex[1..];
-        if (hex.Length != 6 || !uint.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out uint rgb)) return null;
-        return Color.Color8((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
-    }
-
-    static bool Entity(string s, int at, out string decoded, out int length)
-    {
-        decoded = null; length = 0;
-        int semi = s.IndexOf(';', at + 1);
-        if (semi < 0 || semi - at > 10) return false;
-        string name = s.Substring(at + 1, semi - at - 1);
-        decoded = name switch
-        {
-            "lt" => "<", "gt" => ">", "amp" => "&", "quot" => "\"", "apos" => "'", "nbsp" => "\u00a0",
-            _ when name.StartsWith("#x", StringComparison.OrdinalIgnoreCase) && int.TryParse(name[2..], System.Globalization.NumberStyles.HexNumber, null, out int h) && h is > 0 and <= 0x10ffff and not (>= 0xd800 and <= 0xdfff) => char.ConvertFromUtf32(h),
-            _ when name.StartsWith('#') && int.TryParse(name[1..], out int d) && d is > 0 and <= 0x10ffff and not (>= 0xd800 and <= 0xdfff) => char.ConvertFromUtf32(d),
-            _ => null,
-        };
-        if (decoded == null) return false;
-        length = semi - at + 1;
-        return true;
-    }
 }

@@ -127,25 +127,6 @@ public class AsTextField : AsInteractiveObject
         if (IsHtml || Tr(init) != init) SetHtml(Tr(init)); else Text = init;
     }
 
-    static string Attr(string tag, string name)
-    {
-        var m = Regex.Match(tag, "\\b" + name + "\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>/]+))", RegexOptions.IgnoreCase);
-        return !m.Success ? null : m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Success ? m.Groups[2].Value : m.Groups[3].Value;
-    }
-
-    /// <summary>SGMLParser::ParseInt (sfr_render_05i.cpp:590): an optional sign and decimal digits only.</summary>
-    static int? ParseInt(string v)
-    {
-        if (string.IsNullOrEmpty(v)) return null;
-        int i = v[0] is '-' or '+' ? 1 : 0, sign = v[0] == '-' ? -1 : 1, r = 0;
-        for (; i < v.Length; i++)
-        {
-            if (v[i] is < '0' or > '9') return null;
-            r = unchecked(r * 10 + (v[i] - '0'));
-        }
-        return r * sign;
-    }
-
     /// <summary>Scaleform's translator: a text that is a string-table key ("$s_...") shows the table's value.</summary>
     string Tr(string s) => s.Length > 1 && s[0] == '$' && Class.Runtime.Player?.Translate is { } t ? t(s) ?? s : s;
 
@@ -200,13 +181,6 @@ public class AsTextField : AsInteractiveObject
     }
 
     /// <summary>
-    /// The IMG chars of the html text (SetHtml): each tag's url, WIDTH, HEIGHT and VSPACE by its index in
-    /// <see cref="Text"/>, while Text is still the html's text.
-    /// </summary>
-    Dictionary<int, (string Src, int Width, int Height, int VSpace)> imgTags;
-    string imgText;
-
-    /// <summary>
     /// An IMG char's width, height and ascent in pixels as the client lays it out: TextField::ProcessImageTags
     /// (sfr_gfx_03e.cpp:1441) sizes it by its WIDTH / HEIGHT, else the exported image's (looked up from the field's movie,
     /// <see cref="Player.ExportedImageSize"/>), and moves it up by the image's height + VSPACE scaled to that height; a url
@@ -214,7 +188,7 @@ public class AsTextField : AsInteractiveObject
     /// </summary>
     (double W, double H, double Ascent)? ImageAt(int textIndex)
     {
-        if (imgTags == null || !ReferenceEquals(imgText, Text) || !imgTags.TryGetValue(textIndex, out var t)) return null;
+        if (Formats is not { } f || textIndex < 0 || textIndex >= f.Length || f[textIndex].Image is not HtmlImage t) return null;
         var player = Class.Runtime.Player;
         if (player?.ExportedImageSize?.Invoke(Scope?.Key ?? player.Main?.Key, t.Src) is { } size && size.W > 0 && size.H > 0)
         {
@@ -224,7 +198,7 @@ public class AsTextField : AsInteractiveObject
         return (t.Width, t.Height, 0);
     }
 
-    bool HasImages => imgTags != null && ReferenceEquals(imgText, Text) && imgTags.Count > 0;
+    bool HasImages => Formats is { } f && Array.Exists(f, x => x.Image != null);
 
     /// <summary>
     /// A line's width: the font's advances of its text chars and, for each IMG char, its width plus 40 twips
@@ -368,34 +342,49 @@ public class AsTextField : AsInteractiveObject
         Box = new RectD(x, Box.Y, w, h);
     }
 
+    /// <summary>
+    /// The htmlText setter's document (TextField::htmlTextSet, sfr_as3_13.cpp:3659: the html flag on, then the text parsed
+    /// with StyledText::ParseHtml, <see cref="HtmlText.Parse"/>): <see cref="Text"/> and each char's format. A line break
+    /// the end of the html's last P makes is not kept in Text; <see cref="GetHtml"/> still writes its paragraph.
+    /// </summary>
     public void SetHtml(string html)
     {
         Html = html ?? "";
         IsHtml = true;
-        var s = Regex.Replace(Tr(Html), @"<br\s*/?>|</p>", "\r", RegexOptions.IgnoreCase);
-        // StyledText::ParseHtml (sfr_render_05i.cpp:946): an IMG tag is a space carrying the tag's image
-        var tags = new List<(string, int, int, int)>();
-        s = Regex.Replace(s, @"<img\b[^>]*>", m =>
-        {
-            string a = m.Value;
-            int Px(string name, bool positive) => ParseInt(Attr(a, name)) is int v && (!positive || v >= 0) ? v : 0;
-            tags.Add((Attr(a, "src") ?? "", Px("width", true), Px("height", true), Px("vspace", false)));
-            return "\uE000";
-        }, RegexOptions.IgnoreCase);
-        s = Regex.Replace(s, "<[^>]*>", "");
-        s = s.Replace("&lt;", "<").Replace("&gt;", ">").Replace("&quot;", "\"").Replace("&apos;", "'").Replace("&nbsp;", " ").Replace("&amp;", "&");
-        if (s.EndsWith('\r') && Regex.IsMatch(Html, "</p>\\s*$", RegexOptions.IgnoreCase)) s = s[..^1];
-        imgTags = null;
-        if (tags.Count > 0)
-        {
-            imgTags = new();
-            var chars = s.ToCharArray();
-            for (int i = 0, k = 0; i < chars.Length; i++)
-                if (chars[i] == '\uE000') { imgTags[i] = tags[k++]; chars[i] = ' '; }
-            s = new string(chars);
-        }
+        var (s, formats) = HtmlText.Parse(Tr(Html), multiline, '\r', perChar: true);
+        bool endBreak = s.EndsWith('\r') && Regex.IsMatch(Html, "</p>\\s*$", RegexOptions.IgnoreCase);
+        if (endBreak) s = s[..^1];
         Text = s;
-        imgText = Text;
+        SetFormats(formats, endBreak);
+    }
+
+    /// <summary>The chars' html formats (<see cref="SetHtml"/>), for <see cref="Text"/> while it is the html's text;
+    /// <see cref="formatsBreak"/>: the dropped line break the last format is for.</summary>
+    HtmlFormat[] formats;
+    string formatsText;
+    bool formatsBreak;
+
+    void SetFormats(HtmlFormat[] f, bool endBreak)
+    {
+        formats = f != null && Array.Exists(f, x => !x.IsPlain) ? f : null;
+        formatsText = Text;
+        formatsBreak = endBreak;
+    }
+
+    HtmlFormat[] Formats => formats != null && ReferenceEquals(formatsText, Text) ? formats : null;
+
+    /// <summary>
+    /// StyledText::GetHtml (sfr_render_01c.cpp:1308, <see cref="HtmlText.Build"/>) of the field's document: the text in its
+    /// html formats over the field's default text and paragraph format (TextField::SetTextFieldDef, sfr_gfx_03e.cpp:1413).
+    /// </summary>
+    public string GetHtml()
+    {
+        bool own = ReferenceEquals(formatsText, Text);
+        var doc = own && formatsBreak ? Text + "\r" : Text;
+        double? Opt(object v) => v is { } x && !Rt.IsNullish(x) && Rt.ToNumber(x) != 0 ? Rt.ToNumber(x) : null;
+        var d = new HtmlText.Defaults(FontName, Size, textColor, Format?.align as string ?? "left",
+            Opt(Format?.leftMargin), Opt(Format?.rightMargin), Opt(Format?.indent), Opt(Format?.leading));
+        return HtmlText.Build(doc, Formats, d);
     }
 
     public override RectD LocalBounds() => Box;
@@ -413,13 +402,15 @@ public class AsTextField : AsInteractiveObject
             var v = value ?? "";
             var t = Tr(v);
             if (!ReferenceEquals(t, v) && t != v) SetHtml(t);
-            else { Text = v; Html = null; }
+            else { Text = v; Html = null; IsHtml = false; }       // textSet (sfr_as3_13.cpp:2233): the html flag off
             Changed();
         }
     }
     [As] public string htmlText
     {
-        get => Html ?? "<P ALIGN=\"" + (Format?.align ?? "left") + "\">" + System.Net.WebUtility.HtmlEncode(Text) + "</P>";
+        // htmlTextGet (sfr_as3_13.cpp:2187) -> TextField::GetText(true) (sfr_gfx_03e.cpp:814): an html field's document
+        // as GetHtml writes it, else the text
+        get => IsHtml ? GetHtml() : Text;
         set { SetHtml(value); Changed(); }
     }
     [As] public void appendText(string s) { Text += s ?? ""; Html = null; Changed(); }
