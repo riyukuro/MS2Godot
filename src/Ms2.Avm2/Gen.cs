@@ -18,6 +18,14 @@ public static class GeneratedCode
 
     public static void Register(string hash, CompiledBody[] bodies) { lock (byHash) byHash[hash] = bodies; }
 
+    /// <summary>A block's bodies as ids into the assembly's shared table (-1: none), one per method index.</summary>
+    public static void Register(string hash, CompiledBody[] table, int[] ids)
+    {
+        var b = new CompiledBody[ids.Length];
+        for (int i = 0; i < ids.Length; i++) if (ids[i] >= 0) b[i] = table[ids[i]];
+        Register(hash, b);
+    }
+
     public static CompiledBody[] Find(string hash)
     {
         if (hash == null) return null;

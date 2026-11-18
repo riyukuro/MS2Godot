@@ -179,6 +179,13 @@ public sealed class AbcContext
 
     /// <summary>The translated method bodies registered for this block's hash, by method index (null: none).</summary>
     public CompiledBody[] CompiledBodies;
+    int[][] constOperands;
+    /// <summary><see cref="Translator.ConstOperands"/> of a body, worked out once per block.</summary>
+    public int[] ConstOperands(MethodInfo info)
+    {
+        constOperands ??= new int[Abc.Methods.Length][];
+        return constOperands[info.Index] ??= Translator.ConstOperands(info);
+    }
 
     public sealed class Code
     {
@@ -238,6 +245,10 @@ public sealed class AbcMethod : MethodImpl
     }
     /// <summary>The translated body of this method (<see cref="GeneratedCode"/>), null to interpret it.</summary>
     public readonly CompiledBody Compiled;
+    int[] k;
+    /// <summary>The pool operands of this body in instruction order (<see cref="Translator.ConstOperands"/>): the
+    /// constants a translated body reads, from this movie's own pools.</summary>
+    public int[] K => k ??= Ctx.ConstOperands(Info);
     /// <summary>The runtime's native body for this method, if any: Scaleform replaces the stub bodies the movies carry
     /// for scaleform.gfx.* (e.g. Extensions.isScaleform returns false in the SWF). Resolved on the first call.</summary>
     internal MethodImpl NativeOverride;

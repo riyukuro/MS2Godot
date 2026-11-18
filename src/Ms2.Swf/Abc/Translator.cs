@@ -10,6 +10,10 @@ namespace Ms2.Swf.Abc;
 /// Rt, Runtime). Branches are labels and gotos; a body with exception handlers runs inside one try whose catch picks the
 /// handler as the interpreter does and jumps to it. Classes and traits are not translated: the runtime still builds
 /// them from the player's ABC at load, and the bodies read constants from it.
+/// A body never names a constant pool index: each pool operand is <c>K[j]</c>, the j-th entry of
+/// <see cref="ConstOperands"/> of the running method, which the runtime derives from that method's own bytecode. So a
+/// body is the same text wherever the same code sits (the CLIK and shared ms2 classes every movie carries), and one
+/// translated method serves them all.
 /// </summary>
 public sealed class Translator
 {
@@ -19,35 +23,39 @@ public sealed class Translator
 
     public Translator(AbcFile abc) { this.abc = abc; }
 
-    /// <summary>One C# class for the block: its bodies and a Register() that hands them to GeneratedCode.</summary>
-    public string Class(string className)
+    /// <summary>The placeholder <see cref="Body"/> puts where the method's name goes.</summary>
+    public const string NamePlaceholder = "@NAME@";
+
+    /// <summary>
+    /// The C# of one method body, named <see cref="NamePlaceholder"/>; null when the method has no body or cannot be
+    /// translated (it then runs in the interpreter).
+    /// </summary>
+    public string Body(MethodInfo m)
     {
-        var sb = new StringBuilder();
-        var bodies = new List<int>();
-        var methods = new StringBuilder();
-        for (int i = 0; i < abc.Methods.Length; i++)
+        if (m.Body == null) return null;
+        try
         {
-            var m = abc.Methods[i];
-            if (m.Body == null) continue;
-            string body;
-            try { body = Method(m); }
-            catch (Exception e) { Skipped++; Unsupported.Add("method failed: " + e.Message); continue; }
-            if (body == null) { Skipped++; continue; }
-            methods.Append(body);
-            bodies.Add(i);
+            var t = Method(m);
+            if (t == null) { Skipped++; return null; }
             Methods++;
+            return t;
         }
-        sb.AppendLine($"static class {className}");
-        sb.AppendLine("{");
-        sb.AppendLine("    public static void Register()");
-        sb.AppendLine("    {");
-        sb.AppendLine($"        var b = new CompiledBody[{abc.Methods.Length}];");
-        foreach (int i in bodies) sb.AppendLine($"        b[{i}] = M{i};");
-        sb.AppendLine($"        GeneratedCode.Register(\"{abc.Hash}\", b);");
-        sb.AppendLine("    }");
-        sb.Append(methods);
-        sb.AppendLine("}");
-        return sb.ToString();
+        catch (Exception e) { Skipped++; Unsupported.Add("method failed: " + e.Message); return null; }
+    }
+
+    /// <summary>Opcodes whose first operand is an index into a constant pool of the block (multiname, string, int, uint,
+    /// double, namespace, method or class).</summary>
+    static bool PoolOperand(byte op) => op is 0x04 or 0x05 or 0x2C or 0x2D or 0x2E or 0x2F or 0x31 or 0x40 or 0x45 or 0x46
+        or 0x4A or 0x4C or 0x4E or 0x4F or 0x58 or 0x59 or 0x5D or 0x5E or 0x5F or 0x60 or 0x61 or 0x66 or 0x68 or 0x6A
+        or 0x80 or 0x86 or 0xB2;
+
+    /// <summary>The pool operands of a body in instruction order: what a translated body reads as <c>K</c>.</summary>
+    public static int[] ConstOperands(MethodInfo m)
+    {
+        if (m.Body == null) return Array.Empty<int>();
+        var k = new List<int>();
+        foreach (var x in Disasm.Decode(m.Body.Code)) if (PoolOperand(x.Op)) k.Add(x.A);
+        return k.ToArray();
     }
 
     /// <summary>The usings and pragmas a file of translated classes starts with.</summary>
@@ -63,6 +71,8 @@ public sealed class Translator
         public List<Insn> Ins;
         public int[] Target; public int[][] Cases;
         public (int From, int To, int Target)[] Handlers;
+        /// <summary>Per instruction, its pool operand's index in <see cref="ConstOperands"/>; -1 for none.</summary>
+        public int[] KAt;
     }
 
     Code Decode(MethodInfo m)
@@ -78,9 +88,11 @@ public sealed class Translator
             foreach (var (o, i) in at) if (o >= off && o < best) { best = o; idx = i; }
             return idx;
         }
+        var kAt = new int[ins.Count];
+        for (int i = 0, j = 0; i < ins.Count; i++) kAt[i] = PoolOperand(ins[i].Op) ? j++ : -1;
         return new Code
         {
-            Ins = ins,
+            Ins = ins, KAt = kAt,
             Target = ins.Select(i => i.Target >= 0 ? Idx(i.Target) : -1).ToArray(),
             Cases = ins.Select(i => i.Cases?.Select(Idx).ToArray()).ToArray(),
             Handlers = m.Body.Exceptions.Select(e => (Idx(e.From), Idx(e.To), Idx(e.Target))).ToArray(),
@@ -180,9 +192,9 @@ public sealed class Translator
         bool eh = c.Handlers.Length > 0;
 
         var sb = new StringBuilder();
-        sb.AppendLine($"    static object M{m.Index}(AbcMethod m, object self, object[] args)");
+        sb.AppendLine($"    public static object {NamePlaceholder}(AbcMethod m, object self, object[] args)");
         sb.AppendLine("    {");
-        sb.AppendLine("        var rt = m.Ctx.Rt; var abc = m.Ctx.Abc; var L = Gen.Locals(m, self, args); var S = new List<(object Obj, bool With)>();");
+        sb.AppendLine("        var rt = m.Ctx.Rt; var abc = m.Ctx.Abc; var K = m.K; var L = Gen.Locals(m, self, args); var S = new List<(object Obj, bool With)>();");
         sb.Append("        object ");
         for (int i = 0; i < maxDepth; i++) sb.Append(i == 0 ? "" : ", ").Append($"s{i} = null");
         sb.AppendLine(";");
@@ -220,15 +232,15 @@ public sealed class Translator
     }
 
     /// <summary>The name expression of a multiname whose runtime parts sit on the stack from slot <paramref name="top"/> down.</summary>
-    (string Name, string Key, string Has) NameAt(int mn, int top)
+    (string Name, string Key, string Has) NameAt(int mn, string k, int top)
     {
         switch (abc.Multinames[mn].Kind)
         {
-            case 0x1B: case 0x1C: return ($"Gen.LName(Gen.N(m, {mn}), s{top})", $"Gen.LKey(s{top})", $"Gen.LHas(s{top})");
-            case 0x0F: case 0x10: return ($"Gen.NsName(Gen.N(m, {mn}), s{top})", "null", "false");
+            case 0x1B: case 0x1C: return ($"Gen.LName(Gen.N(m, {k}), s{top})", $"Gen.LKey(s{top})", $"Gen.LHas(s{top})");
+            case 0x0F: case 0x10: return ($"Gen.NsName(Gen.N(m, {k}), s{top})", "null", "false");
             case 0x11: case 0x12: return ($"Gen.NsLName(s{top}, s{top - 1})", "null", "false");
         }
-        return ($"Gen.N(m, {mn})", "null", "false");
+        return ($"Gen.N(m, {k})", "null", "false");
     }
 
     static string Args(int from, int count)
@@ -242,6 +254,7 @@ public sealed class Translator
         var x = c.Ins[i];
         int a = x.A, b = x.B;
         string T(int k) => "s" + (d - 1 - k);        // k-th from the top before the instruction
+        string ka = c.KAt[i] >= 0 ? $"K[{c.KAt[i]}]" : null;   // the pool operand, read through K
         string Push(string v) => $"s{d} = {v};";
         string Go(int t) => $"goto L{t};";
         string Cmp(string cond) => $"if ({cond}) {Go(c.Target[i])}";
@@ -250,8 +263,8 @@ public sealed class Translator
             case 0x01: case 0x02: case 0x09: case 0xEF: case 0xF0: case 0xF1: case 0xF2: case 0xF3: case 0x78: case 0x82: case 0x06: return ";";
             case 0x07: return ";";
             case 0x03: return $"throw new AsThrow({T(0)});";
-            case 0x04: { int r = RCount(a); var nm = NameAt(a, d - 1); return $"{T(r)} = Gen.GetSuper(m, {T(r)}, {nm.Name});"; }
-            case 0x05: { int r = RCount(a); var nm = NameAt(a, d - 2); return $"Gen.SetSuper(m, {T(r + 1)}, {nm.Name}, {T(0)});"; }
+            case 0x04: { int r = RCount(a); var nm = NameAt(a, ka, d - 1); return $"{T(r)} = Gen.GetSuper(m, {T(r)}, {nm.Name});"; }
+            case 0x05: { int r = RCount(a); var nm = NameAt(a, ka, d - 2); return $"Gen.SetSuper(m, {T(r + 1)}, {nm.Name}, {T(0)});"; }
             case 0x08: return $"L[{a}] = Rt.Undef;";
             case 0x0C: return Cmp($"Rt.LessThan({T(1)}, {T(0)}) != true");
             case 0x0D: return Cmp($"Rt.LessThan({T(0)}, {T(1)}) != false");
@@ -292,25 +305,25 @@ public sealed class Translator
             case 0x29: return ";";
             case 0x2A: return Push(T(0));
             case 0x2B: return $"{{ var t = {T(0)}; {T(0)} = {T(1)}; {T(1)} = t; }}";
-            case 0x2C: return Push($"abc.Strings[{a}]");
-            case 0x2D: return Push($"Rt.Box(abc.Ints[{a}])");
-            case 0x2E: return Push($"Rt.Uint(abc.Uints[{a}])");
-            case 0x2F: return Push($"Rt.Num(abc.Doubles[{a}])");
+            case 0x2C: return Push($"abc.Strings[{ka}]");
+            case 0x2D: return Push($"Rt.Box(abc.Ints[{ka}])");
+            case 0x2E: return Push($"Rt.Uint(abc.Uints[{ka}])");
+            case 0x2F: return Push($"Rt.Num(abc.Doubles[{ka}])");
             case 0x30: return $"S.Add(({T(0)}, false));";
-            case 0x31: return Push($"new AsNamespace(rt, m.Ctx.NsAt({a}))");
-            case 0x40: return Push($"Gen.NewFunction(m, S, {a})");
+            case 0x31: return Push($"new AsNamespace(rt, m.Ctx.NsAt({ka}))");
+            case 0x40: return Push($"Gen.NewFunction(m, S, {ka})");
             case 0x41: { int f = d - 2 - a; return $"s{f} = rt.Invoke(s{f}, s{f + 1}, {Args(f + 2, a)}, \"value\");"; }
             case 0x42: { int f = d - 1 - a; return $"s{f} = rt.Construct(s{f}, {Args(f + 1, a)}, \"value\");"; }
             case 0x43: case 0x44: return "throw rt.MakeError(\"VerifyError\", \"callmethod/callstatic not supported\");";
             case 0x45: case 0x4E:
             {
-                int r = RCount(a); int o = d - 1 - b - r; var nm = NameAt(a, o + r);
+                int r = RCount(a); int o = d - 1 - b - r; var nm = NameAt(a, ka, o + r);
                 string call = $"Gen.CallSuper(m, s{o}, {nm.Name}, {Args(o + 1 + r, b)})";
                 return x.Op == 0x45 ? $"s{o} = {call};" : call + ";";
             }
             case 0x46: case 0x4C: case 0x4F:
             {
-                int r = RCount(a); int o = d - 1 - b - r; var nm = NameAt(a, o + r);
+                int r = RCount(a); int o = d - 1 - b - r; var nm = NameAt(a, ka, o + r);
                 string call = $"rt.CallProperty(s{o}, {nm.Name}, {Args(o + 1 + r, b)}, {nm.Key}, {nm.Has})";
                 return x.Op != 0x4F ? $"s{o} = {call};" : call + ";";
             }
@@ -319,26 +332,26 @@ public sealed class Translator
             case 0x49: { int o = d - 1 - a; return $"Gen.ConstructSuper(m, s{o}, {Args(o + 1, a)});"; }
             case 0x4A:
             {
-                int r = RCount(a); int o = d - 1 - b - r; var nm = NameAt(a, o + r);
+                int r = RCount(a); int o = d - 1 - b - r; var nm = NameAt(a, ka, o + r);
                 return $"s{o} = Gen.ConstructProp(rt, s{o}, {nm.Name}, {nm.Key}, {nm.Has}, {Args(o + 1 + r, b)});";
             }
             case 0x53: { int f = d - 1 - a; return $"s{f} = rt.ApplyType(s{f}, {Args(f + 1, a)});"; }
             case 0x55: { int f = d - 2 * a; return $"s{f} = Gen.NewObject(rt, {Args(f, 2 * a)});"; }
             case 0x56: { int f = d - a; return $"s{f} = new AsArray(rt, {Args(f, a)});"; }
             case 0x57: return Push("Gen.NewActivation(m)");
-            case 0x58: return $"{T(0)} = Gen.NewClass(m, S, {a}, {T(0)});";
+            case 0x58: return $"{T(0)} = Gen.NewClass(m, S, {ka}, {T(0)});";
             case 0x59: return "throw rt.MakeError(\"Error\", \"E4X descendants are not supported\");";
             case 0x5A: return Push($"Gen.NewCatch(m, {a})");
             case 0x5D: case 0x5E:
             {
-                int r = RCount(a); int o = d - r; var nm = NameAt(a, d - 1);
+                int r = RCount(a); int o = d - r; var nm = NameAt(a, ka, d - 1);
                 return $"s{o} = Gen.FindProp(m, S, self, {nm.Name}, {(x.Op == 0x5D ? "true" : "false")});";
             }
-            case 0x5F: return Push($"Gen.FindDef(m, S, self, {a})");
-            case 0x60: return Push($"Gen.GetLex(m, S, self, {a})");
+            case 0x5F: return Push($"Gen.FindDef(m, S, self, {ka})");
+            case 0x60: return Push($"Gen.GetLex(m, S, self, {ka})");
             case 0x61: case 0x68:
             {
-                int r = RCount(a); int o = d - 2 - r; var nm = NameAt(a, d - 2);
+                int r = RCount(a); int o = d - 2 - r; var nm = NameAt(a, ka, d - 2);
                 return $"rt.SetProperty(s{o}, {nm.Name}, {T(0)}, {nm.Key}, {nm.Has}, {(x.Op == 0x68 ? "true" : "false")});";
             }
             case 0x62: return Push($"L[{a}]");
@@ -349,12 +362,12 @@ public sealed class Translator
             case 0x65: return Push($"S[{a}].Obj");
             case 0x66:
             {
-                int r = RCount(a); int o = d - 1 - r; var nm = NameAt(a, d - 1);
+                int r = RCount(a); int o = d - 1 - r; var nm = NameAt(a, ka, d - 1);
                 return $"s{o} = rt.GetProperty(s{o}, {nm.Name}, {nm.Key}, {nm.Has});";
             }
             case 0x6A:
             {
-                int r = RCount(a); int o = d - 1 - r; var nm = NameAt(a, d - 1);
+                int r = RCount(a); int o = d - 1 - r; var nm = NameAt(a, ka, d - 1);
                 return $"s{o} = Rt.Box(rt.DeleteProperty(s{o}, {nm.Name}, {nm.Key}, {nm.Has}));";
             }
             case 0x6C: return $"{T(0)} = Gen.GetSlot({T(0)}, {a});";
@@ -367,9 +380,9 @@ public sealed class Translator
             case 0x75: return $"{T(0)} = Rt.Num(Rt.ToNumber({T(0)}));";
             case 0x76: return $"{T(0)} = Rt.Box(Rt.ToBoolean({T(0)}));";
             case 0x77: return $"Gen.CheckNull(rt, {T(0)});";
-            case 0x80: return $"{T(0)} = Gen.Coerce(m, {a}, {T(0)});";
+            case 0x80: return $"{T(0)} = Gen.Coerce(m, {ka}, {T(0)});";
             case 0x85: return $"{T(0)} = Rt.CoerceString({T(0)});";
-            case 0x86: return $"{T(0)} = Gen.AsType(m, {a}, {T(0)});";
+            case 0x86: return $"{T(0)} = Gen.AsType(m, {ka}, {T(0)});";
             case 0x87: return $"{T(1)} = Gen.AsTypeLate(rt, {T(1)}, {T(0)});";
             case 0x90: return $"{T(0)} = Rt.Num(-Rt.ToNumber({T(0)}));";
             case 0x91: return $"{T(0)} = Gen.Inc({T(0)});";
@@ -397,7 +410,7 @@ public sealed class Translator
             case 0xAF: return $"{T(1)} = Rt.Box(Rt.LessThan({T(0)}, {T(1)}) == true);";
             case 0xB0: return $"{T(1)} = Rt.Box(Rt.LessThan({T(1)}, {T(0)}) == false);";
             case 0xB1: return $"{T(1)} = Rt.Box(Gen.InstanceOf(rt, {T(1)}, {T(0)}));";
-            case 0xB2: return $"{T(0)} = Rt.Box(Gen.IsType(m, {a}, {T(0)}));";
+            case 0xB2: return $"{T(0)} = Rt.Box(Gen.IsType(m, {ka}, {T(0)}));";
             case 0xB3: return $"{T(1)} = Rt.Box(Gen.IsTypeLate(rt, {T(1)}, {T(0)}));";
             case 0xB4: return $"{T(1)} = Rt.Box(Gen.In(rt, {T(1)}, {T(0)}));";
             case 0xC0: return $"{T(0)} = Rt.Box(Rt.ToInt32({T(0)}) + 1);";
