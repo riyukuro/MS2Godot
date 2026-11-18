@@ -101,6 +101,7 @@ public sealed partial class NpcTalk : Node
     public override void _ExitTree()
     {
         if (window != null) { window = null; MovieLayerHost.Layers.LeaveTalk(); }   // a field left with the talk open
+        ClosePopupMovie();
         if (live == null) return;
         live.NpcTalkReceived -= OnLiveTalk;
         live.Quests.NpcOffer -= OnQuestOffer;

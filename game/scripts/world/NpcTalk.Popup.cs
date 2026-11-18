@@ -18,6 +18,12 @@ namespace Ms2Godot.World;
 /// as StartQuestTalk does.
 /// STILL-OPEN: the popup is dropped with the field's NpcTalk node on a field move, while the client's dialog stays open
 /// across it.
+/// STILL-OPEN: CQuestManager::UpdateQuestProgress (questmanager_2.cpp:1377, its listener dispatch at :1416), the client's
+/// local recount of the condition types the server does not count (IsConditionTypeCounted == 0: 3, 4, 0x49, 0xad), is not
+/// ported, so a field quest made complete by that recount alone never reaches slot 3 here; when it is ported it should
+/// raise the quest book's ProgressUpdated.
+/// STILL-OPEN: the talk key is Space (FieldContents' key handling), while the labels show the key table's binding of the
+/// talk action 0x493e2; a rebound talk key shows in the label but does not work.
 /// </summary>
 public sealed partial class NpcTalk
 {
@@ -27,6 +33,7 @@ public sealed partial class NpcTalk
     MovieDialog popupMovie;
     CanvasLayer popupLayer;
     UiModel popupModel;
+    static KeyTable popupKeys;                         // the key setting and defaultkey tables, parsed once
     static readonly HashSet<int> popupOpened = new();    // m_198, for the character below
     static long popupOpenedFor;
     static Dictionary<int, List<int>> fieldQuests;     // QuestDataTable m_240
@@ -54,19 +61,32 @@ public sealed partial class NpcTalk
         return fieldQuests.TryGetValue(field, out var l) ? l : Array.Empty<int>();
     }
 
-    /// <summary>The dialog, built on first use; its movie loads only when a talk opens it.</summary>
-    PopupNpcTalkController PopupDialog()
+    /// <summary>NotifyChangeMyPC: ClearOpenedQuests.</summary>
+    void ClearOpenedOnCharacterChange()
     {
-        // NotifyChangeMyPC: ClearOpenedQuests
         long character = live?.CharacterId ?? StubHudData.Instance.Player.CharacterId;
         if (character != popupOpenedFor) { popupOpened.Clear(); popupOpenedFor = character; }
-        if (popup != null) return popup;
+    }
+
+    /// <summary>The popup's UI model, built only when a talk is about to open (StartQuestTalk's feature check, the movie);
+    /// the key table is shared by every field's popup.</summary>
+    UiModel PopupModel()
+    {
+        if (popupModel != null) return popupModel;
         tables ??= GameTables.Shared(packs, GameOptions.StringLanguage);
         popupModel = new UiModel(tables) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f) };
-        popupModel.Keys = new KeyTable(packs, GameOptions.StringLanguage);
+        popupModel.Keys = popupKeys ??= new KeyTable(packs, GameOptions.StringLanguage);
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         popupModel.ServerKeys = live?.KeyTable is { Loaded: true } k ? k : UiFixture.NewCharacterKeyTable();
         popupModel.Keys.Apply(popupModel.ServerKeys);
+        return popupModel;
+    }
+
+    /// <summary>The dialog (a few delegates), built on first use; its model and movie only when a talk opens it.</summary>
+    PopupNpcTalkController PopupDialog()
+    {
+        ClearOpenedOnCharacterChange();
+        if (popup != null) return popup;
         var c = new PopupNpcTalkController
         {
             Opened = popupOpened,
@@ -77,7 +97,7 @@ public sealed partial class NpcTalk
             ReplaceWords = s => Scripts(packs).Resolve(s, PlayerName, player?.Gender),
             NpcName = id => Scripts(packs).NpcDisplayName(id),
             FieldId = () => CurrentField,
-            FeatureEnabled = popupModel.IsFeatureEnabled,
+            FeatureEnabled = id => PopupModel().IsFeatureEnabled(id),
             FieldQuests = FieldQuestsOf,
             Inputs = () => new QuestButtonInputs
             {
@@ -91,13 +111,7 @@ public sealed partial class NpcTalk
             if (live != null) { GD.Print($"npc talk popup: quest {q} complete sent"); live.SendTalk(new QuestCompleteRequest(q, 0, 0)); }
             else GD.Print($"npc talk popup: quest {q} complete: {(Records.Complete(q) ? "rewarded" : "refused")}");
         };
-        c.Unloaded += () =>
-        {
-            if (popupMovie == null) return;
-            popupMovie.Host.Unload();
-            popupMovie.QueueFree();
-            popupMovie = null;
-        };
+        c.Unloaded += ClosePopupMovie;
         return popup = c;
     }
 
@@ -108,7 +122,7 @@ public sealed partial class NpcTalk
         ui ??= new UiAssets(packs);
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the npc talk popup runs interpreted");
         if (popupLayer == null) AddChild(popupLayer = new CanvasLayer { Layer = 10, Name = "PopupNpcTalk" });
-        popupMovie = new MovieDialog(ui, popup, popupModel, GetWindow().Size);
+        popupMovie = new MovieDialog(ui, popup, PopupModel(), GetWindow().Size);
         popupLayer.AddChild(popupMovie);
         GD.Print($"npc talk popup: quest {popup.Quest}");
     }
@@ -116,8 +130,20 @@ public sealed partial class NpcTalk
     /// <summary>NotifyFadeInComplete: the loading screen faded in on the field.</summary>
     public void OnFadeInComplete()
     {
-        PopupDialog().OnFadeInComplete();
-        if (live == null && PopupFixture() is int q and > 0) PopupDialog().StartQuestTalk(q);
+        ClearOpenedOnCharacterChange();
+        // FUN_140e770a0 opens nothing unless m_240 has an active field quest of the field not in m_198: nothing is built
+        if (FieldQuestsOf(CurrentField).Any(q => QuestContext.Get(q)?.IsActive == true && !popupOpened.Contains(q)))
+            PopupDialog().OnFadeInComplete();
+        if (live == null && PopupFixture() is int f and > 0) PopupDialog().StartQuestTalk(f);
+    }
+
+    /// <summary>The popup movie unloads: on Unloaded, and when the field's NpcTalk leaves the tree with the popup up.</summary>
+    void ClosePopupMovie()
+    {
+        if (popupMovie == null) return;
+        popupMovie.Host.Unload();
+        popupMovie.QueueFree();
+        popupMovie = null;
     }
 
     static int? PopupFixture()
