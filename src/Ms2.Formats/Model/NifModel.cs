@@ -5,6 +5,7 @@ namespace Ms2.Formats.Model;
 public sealed class ModelBone
 {
     public string Name;
+    public string FileName;               // the node's name in the file (Name is made unique per model, see NifFile.NodeName)
     public int Parent = -1;               // index into Bones, -1 = child of the scene root
     public Xform Rest;                    // local rest transform (= skin bind pose on shipped humanoids)
     public Xform World;                   // rest transform relative to the scene root
@@ -331,7 +332,7 @@ public sealed class ModelData
                 if (k < 0 || !IsNode(B[(int)k].Type)) continue;
                 var local = XformOf(B[(int)k]);
                 var world = parentWorld.Compose(local);
-                var bone = new ModelBone { Name = nif.NodeName((int)k) ?? $"blk{k}", Parent = parentBone, Rest = local, World = world };
+                var bone = new ModelBone { Name = nif.NodeName((int)k) ?? $"blk{k}", FileName = nif.Name((int)k), Parent = parentBone, Rest = local, World = world };
                 md.Bones.Add(bone);
                 boneOf[(int)k] = md.Bones.Count - 1;
                 Add((int)k, md.Bones.Count - 1, world);

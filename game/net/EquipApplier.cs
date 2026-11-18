@@ -240,7 +240,9 @@ public sealed class EquipApplier
                     skin = new Skin();
                     foreach (var b in md.Bones)
                     {
-                        int bi = skel.FindBone(b.Name);
+                        // by the file's name: an item holding a second copy of the skeleton (11400479_f_strikerredtop
+                        // has three Bip01 trees) binds every copy to the body's bone of that name
+                        int bi = skel.FindBone(b.FileName ?? b.Name);
                         skin.AddBind(bi >= 0 ? bi : 0, ModelBuilder.ToGodot(b.World).AffineInverse());
                     }
                 }
