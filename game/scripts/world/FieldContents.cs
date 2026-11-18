@@ -192,7 +192,7 @@ public partial class FieldContents : Node3D
     /// tree root. A move without one (first entry) starts it here with the move's picture and tip, at the tree root, outside
     /// the field that is being built and kept hidden. Start adopts it either way (BuildOverlay). No move, no loading screen. True when it started one here.
     /// </summary>
-    public static bool CoverLoad(PackSet packs, Node any)
+    public static bool CoverLoad(PackSet packs, Node any, Texture2D screenShot = null)
     {
         coverOwner = any;
         if (carried.Overlay != null && GodotObject.IsInstanceValid(carried.Overlay)) return false;
@@ -210,10 +210,11 @@ public partial class FieldContents : Node3D
             overlay.AddChild(cover);
         }
         catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); carried = (overlay, null); return true; }
-        // the first entry is the lobby's loading screen (UILoadingProgressLobby: vfunc_52 false, no frame)
+        // the first entry: CNetworkService::OnLoginToGame sets the mode to 0x3ed, UILoadingProgress (networkservice.cpp:910),
+        // so the screen is the framed one (vfunc_52 is true on the lobby scene), not UILoadingProgressLobby's
         var picture = Picture(packs, Travel.LoadingImage);
-        cover.Start(picture, picture == null ? ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage()) : null,
-                    Travel.LoadingTip, true, false);
+        cover.Start(picture, picture == null ? screenShot ?? ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage()) : null,
+                    Travel.LoadingTip, true, true);
         shownCover = cover;
         carried = (overlay, cover);
         return true;
@@ -331,7 +332,10 @@ public partial class FieldContents : Node3D
         catch { return null; }
     }
 
-    string PickTip()
+    string PickTip() => PickTip(packs);
+
+    /// <summary>CLoadingDescriptionTable::GetRandomTip: a random loading tip, "" when the data has none.</summary>
+    public static string PickTip(PackSet packs)
     {
         try
         {

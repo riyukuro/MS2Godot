@@ -13,7 +13,7 @@ namespace Ms2Godot.Flow;
 /// The client's scene states offline (CStateService: Logo, Login, Multi = lobby, Game, Loading, Move), as a small state machine
 /// that lives beside the current scene and switches scenes:
 ///   Login (login.tscn) -> Lobby (charselect.tscn; an empty slot goes to Create, charcreate.tscn) -> Loading (the field's
-///   loading picture over the scene change) -> Game (hud.tscn: the field, the player in the chosen character's look, the HUD).
+///   loading screen over the scene change) -> Game (hud.tscn: the field, the player in the chosen character's look, the HUD).
 /// In Game, Esc toggles the client's system menu (Ui.HudScene, uisystemmenudialog): character select goes back to Lobby, exit asks and quits.
 /// The login accepts any id; the character list is the stub list. Args after `--`: --flow-shots DIR runs the whole
 /// flow by script, with a shot at each step, and quits.
@@ -27,8 +27,6 @@ public partial class GameFlow : Node
 
     static GameFlow instance;
     public State Current { get; private set; } = State.Login;
-    CanvasLayer loadingLayer;
-    TextureRect picture;
     int loadingFrames = -1;
     string shotDir;
 
@@ -51,14 +49,6 @@ public partial class GameFlow : Node
         CharacterCreateScene.CharacterCreated += OnCreated;
         CharacterCreateScene.Cancelled += OnCreateCancelled;
 
-        loadingLayer = new CanvasLayer { Layer = 150, Visible = false };
-        var black = new ColorRect { Color = Colors.Black };
-        black.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        loadingLayer.AddChild(black);
-        // placed per frame by PlacePicture (the loading movie's setLocalImageContent), not stretched by anchors
-        picture = new TextureRect { ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale };
-        black.AddChild(picture);
-        AddChild(loadingLayer);
 
         // the system menu's entries that leave the field (Ui.HudScene, uisystemmenudialog): OnSelectCharacter sends RequestQuit, whose answer
         // returns to character select; offline that is the lobby at once (the request packet is not ported)
@@ -101,7 +91,7 @@ public partial class GameFlow : Node
                 if (GetTree().CurrentScene is Ui.LoginScene login) EnterLobbyFrom(login);
                 else Change(LobbyScene);
                 break;
-            case State.Create: loadingLayer.Visible = false; CharacterCreateScene.Enter(GetTree()); break;
+            case State.Create: CharacterCreateScene.Enter(GetTree()); break;
             case State.Loading: BeginLoading(); break;
         }
     }
@@ -117,7 +107,6 @@ public partial class GameFlow : Node
 
     void Change(string path)
     {
-        loadingLayer.Visible = false;
         GetTree().ChangeSceneToFile(path);
     }
 
@@ -255,67 +244,67 @@ public partial class GameFlow : Node
         Go(State.Lobby);
     }
 
-    // ---- loading: the target map's picture over the (blocking) scene change ----------------------------------------
+    // ---- loading: the field's loading screen from the first frame of the scene change --------------------------------
 
+    /// <summary>
+    /// CNetworkService::OnLoginToGame (networkservice.cpp:907-914): the mode goes to 0x3ed (UILoadingProgress), DAT_143ab2874
+    /// to 0, and WorldService::FUN_141bbc580 starts the loading screen at once (CUIService::FUN_141adb900 -> StartProgress,
+    /// worldservice_1.cpp:10019, uiservice.cpp:1316-1332), still on the lobby scene. There the target map is DAT_143ab2874 = 0
+    /// (UILoadingProgress::GetTargetMapId, uiloadingprogress.cpp:243-248), which has no picture (CollectImages skips every
+    /// common row for it, loadingimagetable.cpp:283-297), so the screen shows the screenshot: the select scene without its UI.
+    /// The field's own load carries that screen on (FieldContents.CoverLoad); the scene changes once it has been drawn.
+    /// </summary>
     void BeginLoading()
     {
         int map = Session.Chosen.User.MapA;
         string xblock = null;
+        string tip = "";
         try
         {
             using var packs = new PackSet(Settings.DataDir);
             xblock = FieldData.XBlockOf(packs, map);
             if (xblock == null || !packs.Exists(XBlock.Archive, $"xblock/{xblock.ToLowerInvariant()}.xblock")) { xblock = null; }
-            Travel.LoadingImage = new LoadingImageTable(packs).Pick(map, new Random());
-            picture.Texture = null;
-            if (Travel.LoadingImage != null && packs.Exists(LoadingImageTable.ImageArchive, Travel.LoadingImage))
-            {
-                var img = new Image();
-                if (img.LoadDdsFromBuffer(packs.Read(LoadingImageTable.ImageArchive, Travel.LoadingImage)) == Error.Ok)
-                    picture.Texture = ImageTexture.CreateFromImage(img);
-            }
+            tip = World.FieldContents.PickTip(packs);
         }
         catch (Exception ex) { GD.PushWarning("flow loading: " + ex.Message); }
+        Travel.LoadingImage = null;
+        Travel.LoadingTip = tip;
         // the field scene reads this: the chosen character's field (Tria when the data has no such map), no portal
         Travel.Pending = xblock == null ? null : new Travel.Move(map, xblock, 0, 0);
         Travel.Pending = Net.LiveSession.Decorate(Travel.Pending);
-        GD.Print($"flow: loading map {map} ({xblock ?? "default field"}), picture {Travel.LoadingImage}");
-        loadingLayer.Visible = true;
-        PlacePicture();
-        loadingFrames = 0;                           // the picture draws for a few frames before the scene change blocks
+        GD.Print($"flow: loading map {map} ({xblock ?? "default field"}), screenshot of the select scene");
+        // the screenshot is the scene without the UI (GetScreenshotBuffer(1), uiloadingprogress.cpp:304-325): the canvas
+        // layers are hidden for the one frame captured
+        var hidden = new List<CanvasLayer>();
+        void Hide(Node n)
+        {
+            if (n is CanvasLayer c && c.Layer >= 0 && c.Visible) { c.Visible = false; hidden.Add(c); }
+            foreach (var ch in n.GetChildren()) Hide(ch);
+        }
+        Hide(GetTree().Root);
+        void Captured()
+        {
+            RenderingServer.FramePostDraw -= Captured;
+            var shot = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+            foreach (var c in hidden) if (IsInstanceValid(c)) c.Visible = true;
+            if (Travel.Pending != null) World.FieldContents.CoverLoad(CoverPacks ??= new PackSet(Settings.DataDir), this, shot);
+            loadingFrames = 0;                       // the cover draws for a few frames before the scene change blocks
+        }
+        RenderingServer.FramePostDraw += Captured;
     }
 
-    /// <summary>
-    /// The first entry's picture as the lobby's loading screen places it (UILoadingProgressLobby, no frame): stretched to the
-    /// movie stage (setScreenShotContent), the stage being drawn from <see cref="UiScale.MovieOrigin"/> at the UI scale. The
-    /// field's own cover (the same screen, with the badge) takes over once it is up. The layer is in the viewport's
-    /// (content-scaled) units; the rule is in window pixels, as the client's movie scale comes from the window width.
-    /// </summary>
-    void PlacePicture()
-    {
-        if (picture.Texture == null) { picture.Visible = false; return; }
-        picture.Visible = true;
-        var window = (Vector2)GetWindow().Size;
-        var units = GetViewport().GetVisibleRect().Size;
-        if (window.X <= 0 || window.Y <= 0) return;
-        var r = new Rect2(UiScale.MovieOrigin, UiScale.MovieStage(window) * UiScale.For(window));
-        var toUnits = units / window;
-        picture.Position = r.Position * toUnits;
-        picture.Size = r.Size * toUnits;
-    }
+    /// <summary>The packs the flow's loading screen reads its movie from (kept: the screen outlives the call).</summary>
+    static PackSet CoverPacks;
 
     public override void _Process(double delta)
     {
         if (loadingFrames < 0) return;
-        PlacePicture();
         loadingFrames++;
         if (loadingFrames == 4) GetTree().ChangeSceneToFile(GameScene);
         else if (loadingFrames > 4 && GetTree().CurrentScene?.SceneFilePath == GameScene)
         {
-            // the field's own cover (same picture) is up and drawn this frame, or the field is already built: hand over
-            if (loadingLayer.Visible && (World.FieldContents.CoverUp || Field.LoadComplete)) loadingLayer.Visible = false;
-            // the game state (the ESC menu) starts with the built field, as when the field was built in one frame
-            if (!loadingLayer.Visible && Field.LoadComplete)
+            // the game state (the ESC menu) starts with the built field
+            if (Field.LoadComplete)
             {
                 loadingFrames = -1;
                 Current = State.Game;
@@ -382,7 +371,7 @@ public partial class GameFlow : Node
         await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90);
         Shot("05_charselect_new_character.png");
         Press(Godot.Key.Enter);                                                                       // start with the new character
-        await Frames(2);
+        await Until(() => World.FieldContents.CoverUp, 600); await Frames(10);
         Shot("06_loading.png");
         await Until(() => Current == State.Game); await Frames(240);
         Shot("07_field_hud.png");
