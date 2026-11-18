@@ -258,7 +258,9 @@ public sealed class UiHost
         if (name == null || fn is not AsFunction) return;
         if (!bindings.TryGetValue(name, out var l)) bindings[name] = l = new();
         l.Add((fn, scope));
-        Push(name);
+        // PushBinding pushes to the binding's target, the setter just bound; the ones bound before already hold the value
+        // (pushing them again made binding n slots under one name n*(n+1)/2 setter calls)
+        Push(name, fn, scope);
     }
 
     void Unbind(string name, object fn)
@@ -273,8 +275,13 @@ public sealed class UiHost
     {
         if (!bindings.TryGetValue(name, out var l)) return;
         var v = ToAs(Controller.GetBinding(name));
-        foreach (var (fn, scope) in l.ToArray()) RT.Guard("binding " + name, () => ((AsFunction)fn).Call(Rt.IsNullish(scope) ? null : scope, new[] { v }));
+        foreach (var (fn, scope) in l.ToArray()) Call(name, fn, scope, v);
     }
+
+    void Push(string name, object fn, object scope) => Call(name, fn, scope, ToAs(Controller.GetBinding(name)));
+
+    void Call(string name, object fn, object scope, object v) =>
+        RT.Guard("binding " + name, () => ((AsFunction)fn).Call(Rt.IsNullish(scope) ? null : scope, new[] { v }));
 
     // ---- C++ -> AS --------------------------------------------------------------------------------------------
 
