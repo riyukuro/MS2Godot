@@ -31,7 +31,7 @@ public sealed class ItemKinds
                 {
                     if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
                     // the client loads the element of the selected environment; an item without one has no data (an empty <item id/> row)
-                    if (ItemEnvironment.Select(packs, e) is not { } env) continue;
+                    if (Ms2.Ui.FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
                     var prop = env.Element("property");
                     int.TryParse((string)prop?.Attribute("type"), out int type);
                     int.TryParse((string)prop?.Attribute("skinType"), out int skin);

@@ -236,8 +236,10 @@ public abstract class UiController
 
     public virtual void OnStatus(StatusEvent e) { }
 
-    /// <summary>The value a DataBinding slot name currently holds (null = empty).</summary>
-    public virtual object GetBinding(string name) => null;
+    /// <summary>The value a DataBinding slot name currently holds (null = empty); the model's item slots
+    /// (<see cref="UiModel.ItemSlots"/>) by default.</summary>
+    public virtual object GetBinding(string name)
+        => Host?.Model is { } m && m.ItemSlots.TryGetValue(name, out var slot) ? slot.Value(Host, m, m.ItemSlotSources) : null;
 
     /// <summary>GameDataModel.getBagSlotBindings(bag): the slot binding names of a bag.</summary>
     public virtual IEnumerable<string> GetBagSlotBindings(string bag) => Array.Empty<string>();

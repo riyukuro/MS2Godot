@@ -28,7 +28,7 @@ public sealed class ItemModelSlots
             if (packs.Exists("Xml", entry))
                 foreach (var e in Doc(packs, entry).Root.Elements("item"))
                 {
-                    if (!int.TryParse((string)e.Attribute("id"), out int i) || ItemEnvironment.Select(packs, e) is not { } env) continue;
+                    if (!int.TryParse((string)e.Attribute("id"), out int i) || Ms2.Ui.FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
                     int.TryParse((string)env.Element("tool")?.Attribute("itemPreset"), out int p);
                     var prop = env.Element("property");
                     int.TryParse((string)prop?.Attribute("type"), out int type);

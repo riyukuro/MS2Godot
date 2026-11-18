@@ -21,6 +21,8 @@ public sealed class GameTables
 
     public GameTables(PackSet packs, params string[] languages)
     {
+        Items = new Items.ItemDataTable(packs);
+        GachaBoxes = new Items.GachaBoxTable(packs);
         if (packs.Exists("Xml", "table/nextexp.xml"))
             foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/nextexp.xml")).Descendants("exp"))
                 if (int.TryParse((string)e.Attribute("level"), out var lv) && long.TryParse((string)e.Attribute("value"), out var v))
@@ -54,6 +56,10 @@ public sealed class GameTables
     /// <summary>The job's display name by sub job code (string table 6); the code as text when unknown.</summary>
     public string JobName(int subJob) => jobNames.TryGetValue(subJob.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : subJob.ToString(CultureInfo.InvariantCulture);
     public string Common(string key) => common(key);
+    /// <summary>CItemDataTable, read per file on first use.</summary>
+    public readonly Items.ItemDataTable Items = Ms2.Ui.Items.ItemDataTable.Empty;
+    /// <summary>ItemGachaBoxTable (table/gacha_info.xml), read on first use.</summary>
+    public readonly Items.GachaBoxTable GachaBoxes = Ms2.Ui.Items.GachaBoxTable.Empty;
     /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;

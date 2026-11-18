@@ -101,6 +101,14 @@ public sealed class UiModel
     /// </summary>
     public Func<string, bool> FeatureEnabledByName;
 
+    /// <summary>The item slot bindings by name (CreateItemInfoSlot's Unk_NotifyContext::RegisterBinding), which every
+    /// movie of the model reads through <see cref="UiController.GetBinding"/>.</summary>
+    public readonly Dictionary<string, Items.ItemInfoSlot> ItemSlots = new();
+    /// <summary>The look-ups item slots need from tables not ported yet (<see cref="Items.ItemSlot.Sources"/>).</summary>
+    public Items.ItemSlot.Sources ItemSlotSources;
+    /// <summary>WorldService::GetLocalPlayer is set: a field with the player's character.</summary>
+    public bool HasLocalPlayer;
+
     // ---- what the controllers compute from the state (the client's helper functions) ----
 
     /// <summary>CExpTable::GetNextExp(level) (UIExpBar::GetNextLevelExp, uiexpbar.cpp:137).</summary>
