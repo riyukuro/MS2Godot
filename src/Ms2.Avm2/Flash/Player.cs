@@ -260,6 +260,19 @@ namespace Ms2.Avm2.Flash
                 return bm;
             }
             var cls = ClassForPlacement(pl, scope, out var sym, out var symScope);
+            if (sym == null && pl["id"] is JsonNode iid && (string)pl["kind"] is "subimage" or "image" && PlacedImage(scope, J.Iv(iid)) is { } pi)
+            {
+                // a character id that is no character definition but an image resource (a DefineSubImage or DefineBits tag
+                // placed on a timeline, as CommonJobIcon's job icon frames are): the client makes a Bitmap character of it
+                // (AvmSprite::AddDisplayObject, sfr_as3_16z.cpp:1588-1593, type 8 = CharacterDef::Bitmap, created by
+                // AS3Support::CreateCharacterInstance as an AvmBitmap, sfr_as3_01.cpp:51) drawing that image at its own size
+                var ib = NewBitmap(null, pi.W, pi.H);
+                ib.bitmapData.ImageScope = scope; ib.bitmapData.ImageId = J.Iv(iid);
+                ib.Placement = pl; ib.Depth = J.Iv(pl["depth"]); ApplyPlacement(ib, pl, initial: true);
+                parent.InsertByDepth(ib);
+                if ((string)pl["name"] is string ibn && ibn.Length > 0) { ib.InstanceName = ibn; BindName(parent, ibn, ib); }
+                return ib;
+            }
             var o = ConstructInto(cls, parent, symScope, sym ?? new JsonObject { ["kind"] = "missing" }, pl, J.I(pl["depth"]) ?? 0) as AsDisplayObject;
             if (o == null) return null;
             if ((string)pl["name"] is string nm && nm.Length > 0)
@@ -553,6 +566,16 @@ namespace Ms2.Avm2.Flash
         public Func<string, string, (double W, double H)?> ExportedImageSize;
 
         /// <summary>A Bitmap standing for an image file; the renderer draws it from <see cref="AsBitmapData.Source"/>.</summary>
+        /// <summary>The size of image resource <paramref name="id"/> of a scope (its atlas rectangle, or the whole image), or null.</summary>
+        static (int W, int H)? PlacedImage(SymbolScope scope, int id)
+        {
+            foreach (var n in scope.Layout?["subImages"] as JsonArray ?? new JsonArray())
+                if (J.Iv(n["id"]) == id) return ((int)Math.Round(J.D(n["w"]) ?? 0), (int)Math.Round(J.D(n["h"]) ?? 0));
+            foreach (var n in scope.Layout?["images"] as JsonArray ?? new JsonArray())
+                if (J.Iv(n["id"]) == id) return (J.I(n["width"]) ?? 0, J.I(n["height"]) ?? 0);
+            return null;
+        }
+
         public AsBitmap NewBitmap(string url, int w, int h)
         {
             var bd = (AsBitmapData)RT.GetClass("flash.display.BitmapData").Construct(Rt.Box(w), Rt.Box(h));

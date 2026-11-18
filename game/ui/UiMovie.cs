@@ -28,7 +28,12 @@ public sealed class UiScope
     /// <summary>Texture region (atlas file and rectangle) of a bitmap id used by a shape fill.</summary>
     public (Texture2D Tex, Rect2 Region)? Bitmap(int id)
     {
-        if (!SubImages.TryGetValue(id, out var sub)) return null;
+        if (!SubImages.TryGetValue(id, out var sub))
+        {
+            // a whole image (DefineBits with its file) rather than an atlas rectangle
+            if (!Images.TryGetValue(id, out var whole) || (string)whole["file"] is not string wf || Assets.Atlas(wf) is not { } wt) return null;
+            return (wt, new Rect2(Vector2.Zero, wt.GetSize()));
+        }
         int image = (int)sub["image"];
         if (!Images.TryGetValue(image, out var im)) return null;
         var tex = Assets.Atlas((string)im["file"]);

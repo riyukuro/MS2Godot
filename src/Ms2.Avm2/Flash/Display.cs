@@ -663,6 +663,9 @@ public class AsBitmapData : AsObject
     [As] public int height { get; set; }
     [As] public bool transparent { get; set; } = true;
     public string Source;    // image entry when known
+    /// <summary>An image resource of a movie placed on a timeline (see Player.Instantiate): its scope and character id.</summary>
+    public SymbolScope ImageScope;
+    public int ImageId;
     [AsCtor] void Ctor(object[] a) { width = a.Length > 0 ? Rt.ToInt32(a[0]) : 0; height = a.Length > 1 ? Rt.ToInt32(a[1]) : 0; transparent = a.Length < 3 || Rt.ToBoolean(a[2]); }
     [As] public AsRectangle rect => AsRectangle.New(Class.Runtime, 0, 0, width, height);
     [As] public void dispose() { }
@@ -677,7 +680,7 @@ public class AsBitmapData : AsObject
     [As] public uint getPixel32(int x, int y) => 0;
     [As] public void setPixel(int x, int y, uint c) { }
     [As] public void setPixel32(int x, int y, uint c) { }
-    [As] public AsBitmapData clone() { var b = (AsBitmapData)Class.Construct(Rt.Box(width), Rt.Box(height)); b.Source = Source; return b; }
+    [As] public AsBitmapData clone() { var b = (AsBitmapData)Class.Construct(Rt.Box(width), Rt.Box(height)); b.Source = Source; b.ImageScope = ImageScope; b.ImageId = ImageId; return b; }
 }
 
 [AsClass("flash.display.Bitmap", "flash.display.DisplayObject")]

@@ -126,6 +126,22 @@ switch (pos[0])
         foreach (var er in rt.Errors) Console.WriteLine("ERROR " + er);
         return fails == 0 && rt.Errors.Count == 0 ? 0 : 1;
     }
+    case "popupmenu":
+    {
+        // the decomp's UIPopUpMenu::Open (uipartydialog.cpp:2503): m_30->Invoke("open", {type, menu, posx, posy, name, ..., jobcode})
+        var (rt, p) = src.Open("uipopupmenu", r => r.Budget = 20_000_000);
+        p.External = (n, a) => null;
+        p.Start(); for (int i = 0; i < 5; i++) p.Tick();
+        var dlg = p.FindOwner("open");
+        var item = p.NewObject(("id", 0x66), ("label", "View Character"), ("enable", true));
+        var o = p.NewObject(("type", int.Parse(Environment.GetEnvironmentVariable("PMTYPE") ?? "1")), ("posx", 300.0), ("posy", 200.0), ("name", "FixtureArcher"), ("dirx", 1.0), ("diry", 1),
+            ("level", 23), ("imgpath", ""), ("trophy", 0), ("jobcode", int.Parse(Environment.GetEnvironmentVariable("JOBCODE") ?? "500")));
+        o.SetDynamic("menu", new AsArray(rt, new object[] { item }));
+        p.Call(dlg, "open", o); for (int i = 0; i < 10; i++) p.Tick();
+        if (args.Contains("--tree")) Dump(dlg, 0);
+        foreach (var er in rt.Errors) Console.WriteLine("ERROR " + er);
+        return rt.Errors.Count == 0 ? 0 : 1;
+    }
     case "expbar":
     {
         // the decomp's UIExpBar: m_30->Invoke("setExp", fCur%, fRest%, text, flags)

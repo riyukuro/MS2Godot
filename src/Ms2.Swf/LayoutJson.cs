@@ -124,6 +124,9 @@ public static class LayoutJson
                 foreach (var f in c.Timeline.Frames) foreach (var op in f) if (op.Place?.CharacterId is int cid) Close(m, cid, seen, images);
                 break;
             case CharKind.Button: foreach (var b in c.Button) Close(m, b.CharacterId, seen, images); break;
+            // an image placed on a timeline by its id (a Bitmap character in the player)
+            case CharKind.SubImage: images.Add(id); if (c.AtlasImageId is int pa) images.Add(pa); break;
+            case CharKind.Image: images.Add(id); break;
             case CharKind.Shape:
                 if (c.BitmapFills != null) foreach (var b in c.BitmapFills)
                 {

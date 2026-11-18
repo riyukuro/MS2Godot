@@ -482,6 +482,7 @@ public partial class As3View : Node2D
             case AsTextField tf: return tf;
             case AsStaticText when (o.Symbol?["text"]) != null && o.Scope != null: return o.Symbol;
             case AsBitmap bm when bm.bitmapData?.Source is string url: return (url, bm.bitmapData.width, bm.bitmapData.height);
+            case AsBitmap ib when ib.bitmapData?.ImageScope is { } isc: return (isc, ib.bitmapData.ImageId);
             case AsSprite sp when sp.GraphicsOrNull is { Ops.Count: > 0 } g2: return g2;
             default: return null;
         }
@@ -499,6 +500,10 @@ public partial class As3View : Node2D
             case AsStaticText when (o.Symbol?["text"]) != null && o.Scope != null: return new TextNode(Scope(o.Scope), o.Symbol, 1, 1);
             case AsBitmap bm when bm.bitmapData?.Source is string url:
                 return ResolveImage(url) is { } t ? new Sprite2D { Texture = t, Centered = false, Scale = Fit(t, bm.bitmapData) } : null;
+            case AsBitmap ib when ib.bitmapData?.ImageScope is { } isc:
+                // an image resource placed on a timeline (Player.Instantiate): its atlas region at its own size
+                return Scope(isc).Bitmap(ib.bitmapData.ImageId) is { } r
+                    ? new Sprite2D { Texture = r.Tex, Centered = false, RegionEnabled = true, RegionRect = r.Region } : null;
             case AsSprite sp when sp.GraphicsOrNull is { Ops.Count: > 0 } g2: return new GraphicsNode(g2);
             default: return null;
         }
