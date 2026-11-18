@@ -67,6 +67,7 @@ public enum Inbound : ushort {
     Achieve = 0x5E,
     UserEnv = 0xA8,
     HomeCommand = 0xB7,
+    Ugc = 0x6B,
 }
 
 public enum Outbound : ushort {
@@ -96,4 +97,5 @@ public enum Outbound : ushort {
     RoomDungeon = 0x2B,
     DungeonReward = 0x9D,
     Club = 0x95,
+    Ugc = 0x38,
 }

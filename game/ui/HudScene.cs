@@ -105,6 +105,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _EnterTree()
     {
         restoreScale = ScreenMode.UseWindowPixels(GetWindow());
+        Ms2Godot.Net.ProfileImageService.Images.Ready += ProfileImageReady;
     }
 
     /// <summary>
@@ -121,6 +122,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors = null;
         unbindBoxAnswers?.Invoke();
         unbindBoxAnswers = null;
+        Ms2Godot.Net.ProfileImageService.Images.Ready -= ProfileImageReady;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         restoreScale?.Invoke();
         restoreScale = null;
@@ -512,12 +514,15 @@ public partial class HudScene : Node, IUiStageHost
         if (data.Player.Mastery is { Length: > 1 } mastery) model.Player.FishingMastery = (uint)mastery[1];
         model.Field.Channel = (int)data.Player.Channel;
         model.Field.Channels = new[] { (int)data.Player.Channel };
-        var path = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value");
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        long selfId = live?.CharacterId ?? 0;
         var c = minimapSide = new Ms2.Ui.Hud.MinimapController
         {
             ImageName = info?.ImageEntry,
             Viewport = info,
-            PlayerImage = path ?? "",       // FUN_141028be0: no UGC profile image -> CommonResource m_strDefaultProfileImagePath
+            CharacterId = selfId,
+            // FUN_141028be0(id, picture, 1): the downloaded picture, else (none, or not downloaded yet) the default image
+            PlayerImage = Ms2Godot.Net.ProfileImageService.Images.Path(selfId, live?.Me?.User?.Picture ?? "", true),
             LocalPlayer = LocalMinimapPlayer,
         };
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
@@ -1123,7 +1128,13 @@ public partial class HudScene : Node, IUiStageHost
         c.SystemNotice += SystemNotice;
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
-        c.Button += name => GD.Print($"character: {name} is not sent (display only)");
+        c.Button += name =>
+        {
+            if (name == "onchangeprofile") ChangeProfile();
+            else GD.Print($"character: {name} is not sent (display only)");
+        };
+        // GetProfileImagePath (@0x141336c90): FUN_141028be0(id, picture, 1)
+        c.ProfileImagePath = pc => Ms2Godot.Net.ProfileImageService.Images.Path(pc.CharacterId, pc.Picture, true);
         BindBoxAnswers();
         void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
         me.Changed += Changed; me.StatPoints.Changed += Changed;
@@ -1152,6 +1163,50 @@ public partial class HudScene : Node, IUiStageHost
         c.Unloaded += () => { view?.QueueFree(); view = null; };
         uiRoot.AddChild(m);
     }
+
+    /// <summary>
+    /// UIUGCEventDispatcher::OnProfileImage(character id, key) to the HUD's listeners: the minimap (changePlayer with
+    /// GetProfileImagePath(key, 1)), the popup menu (GetProfileImagePath(key, 0)) and the character window (the key).
+    /// </summary>
+    void ProfileImageReady(long characterId, string key)
+    {
+        var images = Ms2Godot.Net.ProfileImageService.Images;
+        minimapSide?.OnProfileImage(characterId, images.ProfileImagePath(key, true));
+        popupMenu?.OnProfileImage(characterId, images.ProfileImagePath(key, false));
+        myInfo?.OnProfileImage(characterId, key);
+    }
+
+    /// <summary>
+    /// The character window's onchangeprofile (UIMyInfoDialog::OnChangeProfile -> CUgcManager::OpenProfileUpload): in UGC
+    /// mode 1 the "UGC is shut down" notice (common string 0x2e7), else the profile picture's upload.
+    /// STAND-IN: the client opens its upload dialog (0x4e56) to pick an image file; that dialog is not ported, so the
+    /// uploaded picture is the game menu's face portrait (CreatePortrait 92 x 106) as a PNG.
+    /// STILL-OPEN: the blocked-action check (CBlockManager::FindBlockedAction(3)).
+    /// </summary>
+    void ChangeProfile()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (Ms2Godot.Net.ProfileImageService.Images.Mode == 1) { SystemNotice(UgcShutdownKey); return; }
+        if (live == null) { GD.Print("character: no live session, the profile picture is not uploaded"); return; }
+        var image = portrait?.Image?.GetImage();
+        if (image == null || image.IsEmpty()) { GD.Print("character: no portrait to upload yet"); return; }
+        byte[] png = image.SavePngToBuffer();
+        if (png.Length == 0 || png.Length >= Ms2.Ui.ProfileImages.MaxUploadSize) { GD.Print($"character: portrait PNG of {png.Length} bytes is not uploaded"); return; }
+        GD.Print($"character: uploading the portrait as the profile picture ({png.Length} bytes)");
+        live.UploadProfilePicture(png, (code, text) => { if (code != 0) GD.Print($"character: profile upload failed (code {code})"); });
+    }
+
+    /// <summary>The scripted live run's character window click on the profile picture (open the window first; false while
+    /// it is not up).</summary>
+    public bool ClickChangeProfile()
+    {
+        if (myInfo == null || myInfo.IsClosed) { OpenMyInfo(); return false; }
+        myInfo.OnCallback("onchangeprofile", System.Array.Empty<object>());
+        return true;
+    }
+
+    /// <summary>Common string 0x2e7 (commonstringtable.cpp:2365).</summary>
+    const string UgcShutdownKey = "s_msg_ugc_shutdown";
 
     static Ms2.Ui.Hud.AvatarRotateLimit avatarLimit;   // UIAvatarPC::vfunc_1's constants, read once
 

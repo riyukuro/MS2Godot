@@ -359,6 +359,17 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         Host.Set(p, "label", info.IsLocal ? "$s_myInfo_menu_select_profile_enable" : "$s_myInfo_menu_select_profile_disable");
     }
 
+    /// <summary>
+    /// UIPCInfoDialog's UIUGCEventDispatcher listener (uipcinfodialog.cpp:545): a picture for the shown character, while
+    /// the window is open, becomes its picture and is shown again (vfunc_98 of the picture's path).
+    /// </summary>
+    public void OnProfileImage(long characterId, string key)
+    {
+        if (info == null || IsClosed || characterId == 0 || info.CharacterId != characterId) return;
+        info.Picture = key ?? "";
+        SetProfileImage(ProfilePath());
+    }
+
     // ---- vfunc_86 / vfunc_87: the stats ----------------------------------------------------------------------------
 
     /// <summary>vfunc_86 (@0x14132ff30): the item level, attack and defense labels, m_statLabelManager.setData(rows), vfunc_87.</summary>

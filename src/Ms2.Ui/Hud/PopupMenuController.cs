@@ -98,6 +98,19 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
 
     /// <summary>IsClosed (:2351).</summary>
     public bool IsClosed => closed;
+
+    /// <summary>
+    /// vfunc_ugc_1 (@0x141a7e1a0), UIUGCEventDispatcher's profile picture: an open menu on that character shows it,
+    /// SetProfileImage (:2618) setProfileImage(path) for a non-empty path. <paramref name="path"/> is
+    /// GetProfileImagePath(key, 0).
+    /// </summary>
+    public void OnProfileImage(long characterId, string path)
+    {
+        if (closed || target == null || target.CharacterId != characterId || string.IsNullOrEmpty(path)) return;
+        target.Image = path;
+        Host?.Invoke(Host.Entity, "setProfileImage", path);
+    }
+
     /// <summary>GetInfoString (:2363): the opener's tag ("partySlot").</summary>
     public string InfoString => info;
     /// <summary>The open menu's item ids, in order (m_118).</summary>

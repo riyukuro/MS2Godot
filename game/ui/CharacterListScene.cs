@@ -66,12 +66,24 @@ public partial class CharacterListScene : LobbyFieldScene
     /// <summary>The movie's Start button (onClickStart), as a click on it.</summary>
     public void ClickStart() { if (controller?.Host is { } h) h.Invoke(h.Entity, "onClickStart", (object)null); }
 
-    public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); }
+    public override void _EnterTree()
+    {
+        base._EnterTree();
+        LobbyLayout.UseWindowPixels(this);
+        Net.ProfileImageService.Images.Ready += ProfileImageReady;
+    }
+
     public override void _ExitTree()
     {
         if (layer != null) GetViewport().SizeChanged -= QueueRelayout;
+        Net.ProfileImageService.Images.Ready -= ProfileImageReady;
         base._ExitTree();
     }
+
+    /// <summary>UICharacterListDialog's UIUGCEventDispatcher listener (<see cref="CharacterListController.OnProfileImage"/>):
+    /// the character's row gets GetProfileImagePath(key, 1).</summary>
+    void ProfileImageReady(long characterId, string key) =>
+        controller?.OnProfileImage(characterId, Net.ProfileImageService.Images.ProfileImagePath(key, true));
 
     static CharacterEntry Selected()
     {

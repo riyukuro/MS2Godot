@@ -551,6 +551,8 @@ public partial class As3View : Node2D
     {
         if (string.IsNullOrEmpty(url)) return null;
         if (ImageLookup?.Invoke(url) is { } supplied) return supplied;
+        // GetProfileImagePath's "./Custom/Download/Profile/<file>": a downloaded profile picture (none until it is in)
+        if (Ms2.Ui.ProfileImages.FileOfPath(url) is { } profile) return Net.ProfileImageService.Texture(profile);
         var p = url;
         if (p.StartsWith("img://", StringComparison.OrdinalIgnoreCase)) { int c = p.IndexOf(':', 6); p = c >= 0 ? p[(c + 1)..] : p[6..]; }
         p = p.Replace('\\', '/').TrimStart('.', '/');

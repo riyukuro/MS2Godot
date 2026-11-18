@@ -77,8 +77,11 @@ public sealed class LobbyCharacterData
         string format = common("s_char_level_job") ?? "";
         string levelJob = format.Replace("{0}", u.Level.ToString(CultureInfo.InvariantCulture)).Replace("{1}", Lookup(jobNames, u.Job));
         // FUN_141028be0(id, picture, 1, ""): no picture name gives the default profile image, and so does a picture not yet
-        // in the download cache (bNoDownload 1; the download it starts has no server offline)
-        string img = NoProfile;
+        // in the download folder (bNoDownload 1: the download it starts refreshes the row when it is in). In UGC mode 1 the
+        // key is taken as "".
+        var images = Net.ProfileImageService.Images;
+        string img = images.Path(u.CharacterId, images.Mode == 1 ? "" : e.Picture ?? "", true);
+        if (string.IsNullOrEmpty(img)) img = NoProfile;
         return new LobbyCharacterRow(u.Name, u.Gender, u.Job, levelJob, img, Date(u.CreationTime), LastPos(u.MapA),
             u.CharacterId.ToString(CultureInfo.InvariantCulture));
     }

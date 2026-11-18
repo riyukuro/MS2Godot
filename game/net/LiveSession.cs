@@ -2,6 +2,7 @@ using Godot;
 using Ms2.Formats.Model;
 using Ms2.Net;
 using Ms2.Net.Packets;
+using Ms2.Ui;
 using Ms2Godot.Flow;
 using Ms2Godot.Ui;
 using Ms2Godot.Ui.Contracts;
@@ -136,11 +137,14 @@ public partial class LiveSession : Node
         if (!Enabled || Instance != null) return;
         parent.AddChild(Instance = new LiveSession { Name = "LiveSession", ProcessMode = ProcessModeEnum.Always });
         Field.Built += Instance.OnFieldBuilt;
+        ProfileImageService.Attach(Instance);
+        ProfileImageService.Images.Arrived += Instance.PictureArrived;
     }
 
     public override void _ExitTree()
     {
         Field.Built -= OnFieldBuilt;
+        ProfileImageService.Images.Arrived -= PictureArrived;
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
     }
@@ -164,6 +168,13 @@ public partial class LiveSession : Node
             var o = await new LoginClient(login).LoginAsync(host, int.Parse(hp[1]), up[0] + "KR", up.Length > 1 ? up[1] : "", machine);
             if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); LastLoginRefusal = o.Result; return false; }
             accountId = o.Result.AccountId;
+            if (o.Endpoint is { } ugc)
+            {
+                // FUN_1410268a0 / CSoapClient::FUN_14176fcf0: the download host and the upload base
+                ProfileImageService.Images.Host = ugc.Host;
+                ProfileImageService.Images.UploadBase = ugc.UploadBase;
+                GD.Print($"live: web host {ugc.Host}, uploads {(ugc.UploadBase.Length > 0 ? "on" : "off")}");
+            }
             Session.AccountId = up[0];
             Session.Characters = o.Characters.ToList();
             if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
@@ -502,6 +513,15 @@ public partial class LiveSession : Node
                     if (m != null) Me.Apply(m);
                     GD.Print($"live: home command {(m != null ? $"score {m.Point} object {m.ObjectId}" : "other mode")}");
                 }
+                else if (game.Is(p, Inbound.Ugc))
+                {
+                    switch (UgcMessage.Read(p.Reader()))
+                    {
+                        case UgcProfileImage pi: OnProfileImage(pi); break;
+                        case UgcSetMode sm: ProfileImageService.Images.Mode = sm.Value; GD.Print($"live: ugc mode {sm.Value}"); break;
+                        case var other: GD.Print($"live: ugc mode 0x{other.Mode:x2} (not read)"); break;
+                    }
+                }
                 else if (game.Is(p, Inbound.ProxyGameObj))
                 {
                     Me.Apply(ProxyGameObj.Read(p.Reader()));          // the own AddPlayer proxy's trophy counts
@@ -528,6 +548,53 @@ public partial class LiveSession : Node
             catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
         }
         if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
+    }
+
+    /// <summary>
+    /// OnCharacterProfileImage (@0x14188e200) in the field: the PC of the object id, if there is one, gets its picture's path
+    /// (FUN_141028be0 with a download: one starts when the file is not there), and the windows refresh with the key
+    /// (UIUGCEventDispatcher vfunc_1). The PC's own picture changes only when a download arrives (<see cref="PictureArrived"/>).
+    /// STILL-OPEN: the login server's form (object id 0, the lobby's character list) is not read; the lobby has no packet
+    /// pump after the list.
+    /// </summary>
+    void OnProfileImage(UgcProfileImage pi)
+    {
+        var images = ProfileImageService.Images;
+        string key = images.Mode == 1 ? "" : pi.Key ?? "";
+        long id = pi.ObjectId == selfObject ? CharacterId
+            : remote?.Tracker.Snapshot().FirstOrDefault(a => a.Add?.ObjectId == pi.ObjectId)?.Add?.User?.CharacterId ?? 0;
+        GD.Print($"live: profile picture object {pi.ObjectId} char {pi.CharacterId} '{key}'{(id == 0 ? " (no such PC)" : "")}");
+        if (id == 0) return;
+        images.Path(id, key, false);
+        images.Changed(pi.CharacterId, key);
+    }
+
+    /// <summary>CUgcDownloadProfile::ProcessResult (@0x1418714a0), outside the lobby with the own PC there: the key becomes the
+    /// picture of the own PC when the id is its own, else of the field's user of that id.</summary>
+    void PictureArrived(long characterId, string key)
+    {
+        if (game == null || selfObject < 0) return;
+        if (characterId == CharacterId) { if (Me.User != null) Me.User.Picture = key; return; }
+        var u = remote?.Tracker.Snapshot().FirstOrDefault(a => a.Add?.User?.CharacterId == characterId)?.Add?.User;
+        if (u != null) u.Picture = key;
+    }
+
+    /// <summary>
+    /// The own profile picture's upload (CUgcViewerProfile through CSoapClient::UploadUgcFile, kind 5): the PNG posted to the
+    /// web host's urq.aspx; on code 0 the stored key goes to the game server (SendUGCMode11), which sets it and tells the
+    /// field. <paramref name="done"/> gets the answer's code and text.
+    /// </summary>
+    public void UploadProfilePicture(byte[] png, Action<int, string> done)
+    {
+        long id = CharacterId;
+        // DAT_143ab2830: UIServerListDialog::GetServerId(), the picked server
+        var body = ProfileImages.UploadBody(Session.ServerId, ProfileImages.ProfileKind, accountId, id, 0, id, png);
+        ProfileImageService.Upload(body, (code, text) =>
+        {
+            GD.Print($"live: profile upload answer {code} '{text}'");
+            if (code == 0 && game != null) Send(new UgcProfileImageRequest(text));
+            done?.Invoke(code, text);
+        });
     }
 
     /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>
@@ -575,6 +642,27 @@ public partial class LiveSession : Node
         await Until(() => flow.Current == GameFlow.State.Game);
         // MS2_LIVE_HOLD: seconds to stay in the field (a movement script runs meanwhile)
         int hold = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_HOLD"), out var hs) ? hs : 2;
+        // MS2_LIVE_PROFILE_SHOTS=<dir>: open the character window, click its profile picture (the upload), and shoot the
+        // window before the click and once the own picture came back
+        string profileShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PROFILE_SHOTS");
+        if (!string.IsNullOrEmpty(profileShots) && tree.CurrentScene is Ui.HudScene hud)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(profileShots);
+            void Shot(string name) { flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(profileShots, name)); GD.Print("live: shot " + name); }
+            await Frames(240);
+            hud.ClickChangeProfile();
+            await Frames(120);
+            Shot("profile_before.png");
+            bool back = false;
+            void Seen(long id, string key) { if (id == Instance?.CharacterId && !string.IsNullOrEmpty(key)) back = true; }
+            ProfileImageService.Images.Arrived += Seen;     // the download of the new picture finished
+            hud.ClickChangeProfile();
+            await Until(() => back, 60 * 20);
+            ProfileImageService.Images.Arrived -= Seen;
+            GD.Print(back ? "live: own profile picture came back" : "live: no profile picture came back");
+            await Frames(60);
+            Shot("profile_after.png");
+        }
         await Frames(60 * hold);
         bool ok = flow.Current == GameFlow.State.Game;
         GD.Print(ok ? "live: auto run done" : "live: auto run failed");

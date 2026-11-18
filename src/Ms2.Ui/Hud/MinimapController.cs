@@ -33,6 +33,14 @@ public sealed class MinimapController : UiController
     public string PlayerImage = "";
     public long CharacterId;
 
+    /// <summary>vfunc_ugc_1 (@0x141a383b0), UIUGCEventDispatcher's profile picture: changePlayer("%I64u" id, path) once the
+    /// movie is up. <paramref name="path"/> is GetProfileImagePath(key, 1).</summary>
+    public void OnProfileImage(long characterId, string path)
+    {
+        if (characterId == CharacterId) PlayerImage = path ?? "";
+        Host?.Invoke("changePlayer", new object[] { characterId.ToString(System.Globalization.CultureInfo.InvariantCulture), path ?? "" });
+    }
+
     /// <summary>A proxy or place the field holds (WorldService's proxies, the taxi, named and map objects).</summary>
     public sealed class Mark
     {

@@ -265,6 +265,19 @@ public sealed class CharacterListController : UiController
 
     LobbyCharacterRow Find(string sn) => sn == null ? null : Characters.Find(c => c.CharSN == sn);
 
+    /// <summary>
+    /// vfunc_ugc_1 (@0x1418ed310), UIUGCEventDispatcher's profile picture: the character's row (FindCharacter) takes the new
+    /// picture's path and the movie updateProfile(index, path). <paramref name="path"/> is GetProfileImagePath(key, 1).
+    /// </summary>
+    public void OnProfileImage(long characterId, string path)
+    {
+        if (IsClosed) return;
+        int i = Characters.FindIndex(c => c.CharSN == characterId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (i < 0) return;
+        Characters[i] = Characters[i] with { ImgPath = path ?? "" };
+        Host?.Invoke(Host.Entity, "updateProfile", i, path ?? "");
+    }
+
     static string Arg(object[] args) => args.Length > 0 ? Avm2.Rt.ToString(args[0]) : null;
 
     static bool Is(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

@@ -147,13 +147,12 @@ public partial class HudScene
         if (popupMenu == null)
         {
             var live = Ms2Godot.Net.LiveSession.Instance;
-            // FUN_141028be0 with no download: a picture not in the download cache, or none, gives the default profile image
-            string noProfile = (string)assets.Table("table/commonresource.xml")?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value") ?? "";
             var c = new PopupMenuController
             {
                 Party = partyBook,
                 SelfCharacterId = live?.CharacterId ?? PartyFixture.SelfCharacterId,
-                ProfileImagePath = (_, _) => noProfile,
+                // FUN_141028be0(id, picture, 1): a picture not downloaded yet, or none, gives the default image
+                ProfileImagePath = (id, picture) => Ms2Godot.Net.ProfileImageService.Images.Path(id, picture, true),
                 // FUN_141bd1530: the field's users. FIXTURE (offline): an online fixture member on the own map and channel
                 PlayerInField = live != null ? live.UserInField : FixtureUserInField,
                 // PCBase::IsDead; read per open, the menu outlives a session. Offline (null): the fixture's health stands in
