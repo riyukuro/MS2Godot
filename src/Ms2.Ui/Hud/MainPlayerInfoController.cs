@@ -119,6 +119,14 @@ public sealed class MainPlayerInfoController : UiController
         if (!name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
             || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
             return null;
+        // A filled slot stays unbound until the state SkillSlot::vfunc_8 (skillslot.cpp:793) reads is modelled:
+        // - grayColor: IsDisabled (:1283) asks JobSystemCli::vfunc_2 (jobsystemcli.cpp:81). That also counts the skill set,
+        //   the skill-tree level, the lapenshard level (feature 0xd3) and the sub-skill parent's tree level, then the
+        //   cast gate FUN_141765a70 and buff masks.
+        // - iconPath / itemCount / itemPcBang / itemVIP: the inventory (vfunc_25 :1048, FindItemBySkillId) and the
+        //   changeSkill replacement (FUN_141761530).
+        // - totalTime / remainTime / rechargeRemainCount: cooldown and recharge state (unless condition@useCoolDownShowUI is 0).
+        // - Item entries: item data, CanUseItem and the item counts.
         if (Model.ServerKeys is { } t && !t.Entry(t.CurrentPage, i).IsEmpty) return null;
         var d = new List<(string, object)>();                                   // ASSlot(2): an object of movie 2 (asitemslot.cpp:740)
         if (!Model.IsFeatureEnabled(PetRankFeature)) d.Add(("itemPet", 0));    // IsPetItem, no item
