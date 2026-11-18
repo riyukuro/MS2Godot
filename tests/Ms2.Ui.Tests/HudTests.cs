@@ -196,6 +196,32 @@ public class HudTests
     }
 
     [Test]
+    public void UpperHpBarShowsTheTarget()
+    {
+        var m = Model();
+        var mob = new UpperHpBarController.Actor { ObjectId = 7, IsNpc = true, NpcClass = 1, Hp = 600, MaxHp = 1000, BaseMaxHp = 1000, Name = "Mob", TypeName = "Plant", Level = 3 };
+        var c = new UpperHpBarController { LocalTargetId = 1, FindActor = id => id == 7 ? mob : null };
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // a hit by someone else does not bring a new target up
+        c.Hit(mob, 2);
+        Assert.That(c.Shown, Is.EqualTo(0));
+        c.Hit(mob, 1);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.Shown, Is.EqualTo(7));
+        var texts = AllTexts(h.Entity as AsDisplayObject);
+        TestContext.WriteLine(string.Join(" | ", texts));
+        Assert.That(texts, Has.Some.Contains("Mob"));
+        // the per-frame update follows the HP
+        mob.Hp = 250;
+        c.Process();
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(AllTexts(h.Entity as AsDisplayObject), Has.Some.Contains("250"));
+        c.Remove(mob);
+        Assert.That(c.Shown, Is.EqualTo(0));
+    }
+
+    [Test]
     public void MinimapInitDataAndEntities()
     {
         var m = Model();

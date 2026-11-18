@@ -32,7 +32,9 @@ public partial class HudScene : Node
     long callsAtStart, interpAtStart;
     float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
     Player player; Control uiRoot;
-    TargetFrame target;                     // UIUpperHpBar
+    MovieDialog targetBar;                  // uiupperhpbar
+    /// <summary>UIUpperHpBar's C++ side: the target HP bar at the top (Hit / Remove from combat, Process per frame).</summary>
+    public Ms2.Ui.Hud.UpperHpBarController TargetBar { get; private set; }
     DamageText damageText;
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
@@ -123,9 +125,9 @@ public partial class HudScene : Node
         foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
         groupMessenger?.GetParent()?.RemoveChild(groupMessenger);
         upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
+        targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
-        target = null;
         BuildHud();
         if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(GetWindow().Size); }
         foreach (var (m, _) in messengers) m.Relayout(GetWindow().Size);
@@ -164,7 +166,7 @@ public partial class HudScene : Node
         Minimap(uiRoot);
         NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
-        target = new TargetFrame(assets, uiRoot, u, stage);
+        TargetHpBar(uiRoot);
         HudModel();
         Chat(uiRoot);
         Quests(uiRoot);
@@ -378,6 +380,15 @@ public partial class HudScene : Node
         upperHudSide = new Ms2.Ui.Hud.UpperHudController();
         upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
         ui.AddChild(upperHud);
+    }
+
+    /// <summary>The target HP bar (UIUpperHpBar, uiupperhpbar.cpp), run by its movie; kept across relayouts.</summary>
+    void TargetHpBar(Control ui)
+    {
+        if (targetBar != null) { ui.AddChild(targetBar); targetBar.Relayout(GetWindow().Size); return; }
+        TargetBar = new Ms2.Ui.Hud.UpperHpBarController();
+        targetBar = new MovieDialog(assets, TargetBar, NewModel(), GetWindow().Size);
+        ui.AddChild(targetBar);
     }
 
     // ---- minimap: uiminimapdialog run by its own ActionScript, UIMinimapDialog's C++ side as MinimapController ----------
@@ -926,7 +937,7 @@ public partial class HudScene : Node
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());
-        target?.Process(delta);
+        TargetBar?.Process();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
