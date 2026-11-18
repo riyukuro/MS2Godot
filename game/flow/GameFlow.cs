@@ -43,6 +43,7 @@ public partial class GameFlow : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--flow-shots") shotDir = args[i + 1];
         GameOptions.Load();   // the client builds CGameOption (LoadLanguageOption, LoadGameOption) at startup, gameoption.cpp:1678-1685
         ScreenMode.ApplyAtStartup();   // then MS2RenderService::OnInit sizes the window from it (ms2renderservice.cpp:699-743)
+        Ui.MessageBoxLayer.Ensure(this);   // CUIService::CreateAllDialogs registers the one message box layer (uiservice.cpp:2345)
         Session.Reset();
         Session.GameScene = GameScene;
         UiBridge.ToHost += OnHost;
@@ -55,7 +56,7 @@ public partial class GameFlow : Node
         Ui.HudScene.SystemMenuSelectCharacter += () => { if (Current == State.Game) Go(State.Lobby); };
         // OnGameExit: the HUD's message box 0x288 (s_msg_game_over, tag "gameexit"); its yes answer quits
         // (UIMessageBox::HandleGameexitButton: SendRequestQuitAndDisconnect is not ported, PostQuitMessage(0))
-        Ui.HudScene.GameExit += () => GetTree().Quit(0);
+        Ui.MessageBoxLayer.GameExit += () => GetTree().Quit(0);
 
         Net.LiveSession.Attach(this);
         Go(State.Login);
@@ -190,16 +191,13 @@ public partial class GameFlow : Node
         catch (Exception ex) { GD.PushWarning("flow strings: " + ex.Message); commonStrings = _ => null; }
         return commonStrings;
     }
-    /// <summary>STAND-IN for ShowMessageBox / UIMessageBox::UpdateErrorMessage: the client opens uimessagebox.gfx (UIMessageBox); that movie is not built yet (UI lane), so this is a Godot AcceptDialog with the same text and an OK button (one box, the text, OK).</summary>
+    /// <summary>ShowMessageBox(text, 0, 0, "") @0x140d73aa0: a one-button notice in the client's message box layer.</summary>
     void ShowNotice(string text)
     {
         if (string.IsNullOrEmpty(text)) return;
         GD.Print("flow: notice: " + text);
-        var box = new AcceptDialog { DialogText = text, Title = "", Exclusive = true };
-        box.Confirmed += box.QueueFree;
-        box.Canceled += box.QueueFree;
-        AddChild(box);
-        box.PopupCentered();
+        Ui.MessageBoxLayer.Ensure(this);
+        Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, "");
     }
 
     void OnCreateCancelled()
