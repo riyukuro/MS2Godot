@@ -127,9 +127,9 @@ public sealed class PcInfo {
     public int Title;                           // m_38: FUN_141661c50 = m_n10f4
     /// <summary>m_aStats0 / 1 / 2: the Stat packet's three values per stat (PCInfo::ReadStats, pcinfo.cpp:66).</summary>
     public readonly long[] Stats0 = new long[StatCount], Stats1 = new long[StatCount], Stats2 = new long[StatCount];
-    /// <summary>m_3b0: CEquipment::GetAbilityTotal per special ability of the worn equipment; empty until the equipment's
-    /// abilities are read.</summary>
-    public readonly Dictionary<int, int> Special = new();
+    /// <summary>m_3b0: CEquipment::GetAbilityTotal per special ability of the worn equipment; null while the equipment's
+    /// abilities are not read (the rows that need them are left open).</summary>
+    public Dictionary<int, int> Special;
     public byte Gender;                         // m_3c4
     public int Trophy;                          // m_3d4: the proxy's GetTrophyTotal (proxygameobject.cpp:347)
     public int HomeCommendPoint;                // m_3d8: FUN_141662730 = m_n114c
@@ -143,7 +143,20 @@ public sealed class PcInfo {
     public readonly List<uint> Titles = new();  // m_aIds (MyPC: DAT_143ab3268)
     public int Wedding;                         // the wedding state vfunc_106 reads (MyPC fills it from WeddingManager)
     public bool CodiActive;                     // m_508: the title layer's IsActive
+    public long CodiStart, CodiEnd;             // m_510 / m_520: the title layer's period (CEquipmentSlotLayerInfo m_start / m_end)
+    /// <summary>m_mapEquip2's count: the shown items of equip layer 2 (PC::vfunc_126(spInfo, 2), pc.cpp:4180).</summary>
+    public int CodiItems;
     public int PrestigeLevel;                   // m_530: vfunc_141
+
+    /// <summary>CEquipmentSlotLayerInfo::GetPeriodState (equipment.cpp:432) of the title layer (kind 2): 0 without feature
+    /// 0x8e (FUN_1411df7d0), 4 never started, 2 no end, 3 ended (FUN_1411df700), else 1.</summary>
+    public int GetCodiPeriodState(bool feature8e, long serverTime) {
+        if (!feature8e) return 0;
+        if (CodiStart == 0) return 4;
+        if (CodiEnd == 0) return 2;
+        if (CodiEnd > 0 && serverTime >= CodiEnd) return 3;
+        return 1;
+    }
 }
 
 /// <summary>
@@ -161,6 +174,9 @@ public sealed class MyCharacter {
     /// with their character ids: the record reads the own one (FindProxyObject; none = 0).</summary>
     readonly Dictionary<int, (long CharacterId, int Combat, int Adventure, int Lifestyle)> proxies = new();
     public readonly List<uint> Titles = new();
+    /// <summary>The own FieldAddUser's title layer period (SetLayerPeriod, scenestategame.cpp:11248) and its layer-2
+    /// outfits (SetVariant(2), :11250-11264).</summary>
+    public long CodiStart, CodiEnd; public int CodiItems;
     public readonly StatPointBook StatPoints = new();
     public event Action Changed;
 
@@ -169,6 +185,7 @@ public sealed class MyCharacter {
     public void Apply(FieldAddUser u) {
         ObjectId = u.ObjectId; User = u.User; Title = u.Title;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
+        CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         Changed?.Invoke();
     }
 
@@ -222,7 +239,7 @@ public sealed class MyCharacter {
             AccountId = User.AccountId, CharacterId = User.CharacterId, Title = Title, Gender = User.Gender,
             HomeCommendPoint = HomeCommendPoint, HomeCommendMonthly = GetMonthlyCount(serverTime),
             Picture = User.Picture ?? "", Name = User.Name ?? "", GuildName = User.GuildName ?? "", Motto = User.Motto ?? "",
-            PrestigeLevel = User.PrestigeLevel,
+            PrestigeLevel = User.PrestigeLevel, CodiStart = CodiStart, CodiEnd = CodiEnd, CodiItems = CodiItems,
         };
         foreach (var t in proxies.Values)
             if (t.CharacterId == User.CharacterId) { i.Trophy = t.Combat + t.Adventure + t.Lifestyle; break; }

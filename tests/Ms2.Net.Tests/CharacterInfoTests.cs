@@ -64,4 +64,24 @@ public class CharacterInfoTests {
         me.Apply(new UserEnvMessage.TitleChanged(9, 10000005));
         Assert.That(me.ToPcInfo(nextMonth).Title, Is.EqualTo(10000005));
     }
+
+    [Test]
+    public void CodiLayerComesFromTheOwnFieldAddUser()
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "a" }, SkinTabStart = 0, SkinTabEnd = 0 };
+        me.Apply(u);
+        var info = me.ToPcInfo(1000);
+        Assert.That(info.GetCodiPeriodState(true, 1000), Is.EqualTo(4), "never started");
+        Assert.That(info.GetCodiPeriodState(false, 1000), Is.EqualTo(0), "feature 0x8e off");
+        Assert.That(info.CodiItems, Is.Zero);
+        u.SkinTabStart = 500; u.SkinTabEnd = 0; u.Outfit2.Add(new EquipItem { Id = 11300001 });
+        me.Apply(u);
+        info = me.ToPcInfo(1000);
+        Assert.That(info.GetCodiPeriodState(true, 1000), Is.EqualTo(2), "no end");
+        Assert.That(info.CodiItems, Is.EqualTo(1));
+        u.SkinTabEnd = 2000; me.Apply(u);
+        Assert.That(me.ToPcInfo(1000).GetCodiPeriodState(true, 1000), Is.EqualTo(1));
+        Assert.That(me.ToPcInfo(2000).GetCodiPeriodState(true, 2000), Is.EqualTo(3), "ended");
+    }
 }
