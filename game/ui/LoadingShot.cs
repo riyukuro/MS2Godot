@@ -1,0 +1,86 @@
+using Godot;
+using Ms2.Formats.Pack;
+using Ms2.Formats.World;
+
+namespace Ms2Godot.Ui;
+
+/// <summary>
+/// A capture of the loading screen (res://ui/loadingshot.tscn), from its movie (<see cref="LoadingMovie"/>) or, with --hand,
+/// from the hand port (LoadingProgressLogic), in the same state:
+/// <list type="bullet">
+/// <item>--shots DIR: where the shots go (loading_&lt;ms&gt;.png);</item>
+/// <item>--map ID: the loading picture of that map (LoadingImageTable.Pick, the first candidate); none: no picture;</item>
+/// <item>--tip TEXT, --guide (showGuide 1), --noframe (showFrame false), --progress COUNT,TOTAL.</item>
+/// </list>
+/// </summary>
+public partial class LoadingShot : Node
+{
+    string shotDir, picture, tip = "";
+    bool hand, guide, frame = true;
+    int count = -1, total;
+    LoadingMovie movie;
+    LoadingProgressLogic logic;
+    double t;
+    int next;
+    static readonly int[] ShotsMs = { 100, 500, 1000, 2000 };
+
+    public override void _Ready()
+    {
+        var args = OS.GetCmdlineUserArgs();
+        int map = 0;
+        for (int i = 0; i < args.Length; i++)
+            switch (args[i])
+            {
+                case "--shots": shotDir = args[++i]; break;
+                case "--map": map = int.Parse(args[++i]); break;
+                case "--tip": tip = args[++i]; break;
+                case "--guide": guide = true; break;
+                case "--noframe": frame = false; break;
+                case "--hand": hand = true; break;
+                case "--progress": var p = args[++i].Split(','); count = int.Parse(p[0]); total = int.Parse(p[1]); break;
+            }
+        var packs = new PackSet(Settings.DataDir);
+        var assets = new UiAssets(packs);
+        if (map != 0) picture = new LoadingImageTable(packs).Pick(map, new System.Random(0));
+        var layer = new CanvasLayer { Layer = 100 };
+        AddChild(layer);
+        if (hand)
+        {
+            logic = new LoadingProgressLogic(assets);
+            layer.AddChild(logic.Layer);
+            Texture2D tex = null;
+            if (picture != null)
+            {
+                var img = new Image();
+                if (img.LoadDdsFromBuffer(packs.Read(LoadingImageTable.ImageArchive, picture)) == Error.Ok) tex = ImageTexture.CreateFromImage(img);
+            }
+            logic.StartProgress(new LoadingProgressLogic.Start { Picture = tex, Tip = tip, ShowGuide = guide, ShowFrame = frame });
+            if (count >= 0) logic.Progress(count, total);
+        }
+        else
+        {
+            movie = new LoadingMovie(assets, GetWindow().Size);
+            layer.AddChild(movie);
+            GD.Print($"loading movie: load={movie.Dialog.Loaded}, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
+            movie.Controller.StartProgress(new Ms2.Ui.LoadingProgressController.StartInfo
+            {
+                FilePath = picture ?? "", Tip = tip, ShowGuide = guide ? 1 : 0, ShowFrame = frame,
+            });
+            if (count >= 0) movie.Controller.SetProgress("", count, total);
+        }
+    }
+
+    public override void _Process(double delta)
+    {
+        logic?.Process(delta);
+        t += delta * 1000;
+        if (next >= ShotsMs.Length) { GetTree().Quit(); return; }
+        if (t < ShotsMs[next]) return;
+        if (shotDir != null)
+        {
+            System.IO.Directory.CreateDirectory(shotDir);
+            GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, $"loading_{ShotsMs[next]:D4}ms.png"));
+        }
+        next++;
+    }
+}
