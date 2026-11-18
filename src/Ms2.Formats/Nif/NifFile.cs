@@ -79,16 +79,33 @@ public sealed class NifFile
     Dictionary<int, string> nodeNames;
     /// <summary>
     /// A node's name, unique in the file: a name more than one NiNode carries (an effect creature's mirrored leg bones
-    /// named alike) keeps it on its first block and gets "#" + block index on the others. A controller is tied to its
-    /// node block, not to the name, so both sides of a model (its bones, its controllers) use this.
+    /// named alike) keeps it on the block GetObjectByName finds, the first in a preorder depth-first walk from the
+    /// scene root (NiNode.cpp:732-750), and gets "#" + block index on the others. A controller is tied to its node
+    /// block, not to the name, so both sides of a model (its bones, its controllers) use this.
     /// </summary>
     public string NodeName(int block)
     {
         if (nodeNames == null)
         {
             nodeNames = new Dictionary<int, string>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
+            // the walk: each root (a block with children that no block lists as a child) in block order, then any
+            // node it never reached in block order
+            var kids = new Dictionary<int, long[]>();
+            var isChild = new HashSet<long>();
             for (int i = 0; i < Blocks.Count; i++)
+                if (Blocks[i].TryGetValue("Children", out var c) && c is long[] k) { kids[i] = k; foreach (var x in k) isChild.Add(x); }
+            var order = new List<int>();
+            var seenBlock = new HashSet<int>();
+            void Walk(int b)
+            {
+                if (b < 0 || b >= Blocks.Count || !seenBlock.Add(b)) return;
+                order.Add(b);
+                if (kids.TryGetValue(b, out var k)) foreach (var x in k) Walk((int)x);
+            }
+            for (int i = 0; i < Blocks.Count; i++) if (!isChild.Contains(i) && kids.ContainsKey(i)) Walk(i);
+            for (int i = 0; i < Blocks.Count; i++) if (!seenBlock.Contains(i)) order.Add(i);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (int i in order)
             {
                 if (Blocks[i].Type != "NiNode") continue;
                 var n = Name(i);
