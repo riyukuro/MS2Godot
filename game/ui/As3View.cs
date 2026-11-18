@@ -76,6 +76,7 @@ public partial class As3View : Node2D
             if (frameTime > step) frameTime = 0;
         }
         Sync();
+        SampleMouseOver();
     }
 
     // ---- display list sync -------------------------------------------------------------------------------------
@@ -299,23 +300,48 @@ public partial class As3View : Node2D
 
     // ---- input ---------------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Whether the cursor is over the movie, as the game last sampled it. CUIService::FUN_141aec760 (uiservice.cpp:2896-2910)
+    /// hit-tests the UI movie at the cursor when more than 50 ms have passed since the last test (MovieImpl::HitTest,
+    /// HitTest_ShapesNoInvisible) and stores the result on the movie (GFxManager::FUN_1422aef20). The game's mouse handling
+    /// returns early while it is set: CSceneStateGame::OnWndMessage for moves and double clicks (scenestategame.cpp:2034-2048)
+    /// and CMouseController::OnMouseMessage for every mouse message (mousecontroller.cpp:336-344). The movies get every
+    /// mouse message either way (GFxManager::HandleWindowMessage, gfxmanager.cpp:952-966).
+    /// </summary>
+    public bool MouseOverUi { get; private set; }
+    ulong lastMouseTest;
+
+    void SampleMouseOver()
+    {
+        ulong now = Time.GetTicksMsec();
+        if (now - lastMouseTest <= 50) return;
+        lastMouseTest = now;
+        var p = StagePoint(GetViewport().GetMousePosition());
+        MouseOverUi = IsVisibleInTree() && Player.HitTestShapes(p.X, p.Y);
+    }
+
+    /// <summary>A viewport point in stage units (through the canvas layer the view is drawn in).</summary>
+    Vector2 StagePoint(Vector2 viewport) => GetGlobalTransformWithCanvas().AffineInverse() * viewport;
+
     public override void _UnhandledInput(InputEvent ev)
     {
         switch (ev)
         {
             case InputEventMouseMotion mm:
             {
-                var p = ToLocal(mm.Position);
+                var p = StagePoint(mm.Position);
                 Player.MouseMove(p.X, p.Y);
+                if (!MouseOverUi) return;
                 break;
             }
             case InputEventMouseButton mb:
             {
-                var p = ToLocal(mb.Position);
+                var p = StagePoint(mb.Position);
                 Player.MouseMove(p.X, p.Y);
                 if (mb.ButtonIndex == MouseButton.Left) Player.MouseButton(mb.Pressed);
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp) Player.Wheel(3);
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown) Player.Wheel(-3);
+                if (!MouseOverUi) return;   // the click goes on to the game
                 break;
             }
             case InputEventKey k:

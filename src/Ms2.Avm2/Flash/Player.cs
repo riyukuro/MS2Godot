@@ -586,6 +586,113 @@ namespace Ms2.Avm2.Flash
             return Hit(Stage);
         }
 
+        /// <summary>
+        /// MovieImpl::HitTest (0x142570a00) with HitTest_ShapesNoInvisible, the test CUIService::FUN_141aec760 (uiservice.cpp:2905)
+        /// makes at the cursor: the level-0 clip (the Stage in AS3, sfr_as3_18.cpp:4006) is point-tested by its shapes, invisible
+        /// clips skipped. True when the point is on something the movie draws, which keeps the mouse from the game.
+        /// </summary>
+        public bool HitTestShapes(double x, double y)
+        {
+            if (!Stage.GetBounds(null).Contains(x, y)) return false;
+            return PointTest(Stage, x, y, true, true);
+        }
+
+        /// <summary>
+        /// PointTestLocal of the display object at a stage point. A container (DisplayObjContainer::PointTestLocal 0x1425fcfa0,
+        /// Sprite 0x1425dc2e0): not when hit-test disabled, outside its bounds (unless it has a scale-9 grid) or invisible (when
+        /// asked); its script mask must hit; the children are tested topmost first, a clip-depth mask deciding for the children up to
+        /// its clip depth (CalcDisplayListHitTestMaskArray 0x1425fbff0, the mask itself tested by shape) and never hit itself; then a
+        /// sprite's drawing. A shape (ShapeObject 0x14251cac0) hits on its drawing or its definition's fills; a text field
+        /// (TextField 0x1425ba750) on its view rectangle; a bitmap (AvmBitmap 0x14251c9f0) on its image rectangle.
+        /// </summary>
+        static bool PointTest(AsDisplayObject o, double gx, double gy, bool shapes, bool ignoreInvisible)
+        {
+            if (o.HitTestDisabled) return false;
+            var (lx, ly) = o.GlobalToLocal(gx, gy);
+            if (o is AsContainer c)
+            {
+                if (o.Symbol?["scale9"] == null && !o.LocalBounds().Contains(lx, ly)) return false;
+                if (ignoreInvisible && !o.IsVisible) return false;
+                if (o.MaskObject is { } m && !PointTest(m, gx, gy, shapes, ignoreInvisible)) return false;
+                var kids = c.Children;
+                int n = kids.Count;
+                bool[] hit = null;
+                for (int i = 0; i < n; i++)
+                {
+                    if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
+                    if (hit == null) { hit = new bool[n]; Array.Fill(hit, true); }
+                    hit[i] = PointTest(kids[i], gx, gy, true, false);
+                    int k = i + 1;
+                    for (; k < n && kids[k].Depth <= clip; k++) hit[k] = hit[i];
+                    i = k - 1;
+                }
+                for (int i = n - 1; i >= 0; i--)
+                {
+                    var k = kids[i];
+                    if (ignoreInvisible && !k.IsVisible) continue;
+                    if (hit != null && (!hit[i] || k.ClipDepth is > 0)) continue;
+                    if (PointTest(k, gx, gy, shapes, ignoreInvisible)) return true;
+                }
+                return o is AsSprite sp && sp.GraphicsOrNull is { } g && DrawingHit(g, lx, ly, shapes);
+            }
+            switch (o)
+            {
+                case AsTextField:
+                    return (!ignoreInvisible || o.IsVisible) && o.HitsContent(gx, gy);
+                case AsBitmap:
+                    return o.LocalBounds().Contains(lx, ly);
+                case AsShape sh:
+                    if (sh.GraphicsOrNull is { } g && DrawingHit(g, lx, ly, shapes)) return true;
+                    return ShapeDefHit(o.Symbol, lx, ly, shapes);
+                default:
+                    return o.Symbol?["kind"]?.GetValue<string>() == "shape" ? ShapeDefHit(o.Symbol, lx, ly, shapes) : o.HitsContent(gx, gy);
+            }
+        }
+
+        /// <summary>The script drawing (Graphics): its rectangles and ellipses, or only its bounds when not testing shapes.</summary>
+        static bool DrawingHit(AsGraphics g, double x, double y, bool shapes)
+        {
+            if (!g.Bounds.Contains(x, y)) return false;
+            if (!shapes) return true;
+            foreach (var (op, v, _, _) in g.Ops)
+            {
+                if (op == "rect" && x >= v[0] && x < v[0] + v[2] && y >= v[1] && y < v[1] + v[3]) return true;
+                if (op == "ellipse" && v[2] > 0 && v[3] > 0)
+                {
+                    double dx = (x - (v[0] + v[2] / 2)) / (v[2] / 2), dy = (y - (v[1] + v[3] / 2)) / (v[3] / 2);
+                    if (dx * dx + dy * dy <= 1) return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// A shape definition's fills: inside one of its solid fill outlines (even-odd); a bitmap-filled shape by its bounds,
+        /// which is where the movie data stores its bitmap fill area.
+        /// </summary>
+        static bool ShapeDefHit(System.Text.Json.Nodes.JsonObject sym, double x, double y, bool shapes)
+        {
+            if (sym == null) return false;
+            var b = sym["bounds"] is System.Text.Json.Nodes.JsonObject bo ? SymbolScope.Rect(bo) : RectD.None;
+            if (!b.Contains(x, y)) return false;
+            if (!shapes) return true;
+            if (sym["bitmaps"] is System.Text.Json.Nodes.JsonArray bms && bms.Count > 0) return true;
+            if (sym["paths"] is not System.Text.Json.Nodes.JsonArray ps) return false;
+            foreach (var p in ps)
+            {
+                if (p?["pts"] is not System.Text.Json.Nodes.JsonArray a) continue;
+                int n = a.Count / 2;
+                bool inside = false;
+                for (int i = 0, j = n - 1; i < n; j = i++)
+                {
+                    double xi = (double)a[2 * i], yi = (double)a[2 * i + 1], xj = (double)a[2 * j], yj = (double)a[2 * j + 1];
+                    if ((yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+                }
+                if (inside) return true;
+            }
+            return false;
+        }
+
         /// <summary>The interactive object that receives a mouse event for a hit (mouseEnabled / mouseChildren applied).</summary>
         public AsInteractiveObject MouseTarget(double x, double y)
         {
