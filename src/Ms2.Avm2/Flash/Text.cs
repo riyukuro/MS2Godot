@@ -276,8 +276,10 @@ public class AsTextField : AsInteractiveObject
     [As] public double textHeight => TextH();
     [As] public int numLines => Math.Max(1, Lines().Count);
     [As] public string getLineText(int i) { var l = Lines(); return i >= 0 && i < l.Count ? l[i] : throw R.RangeError("Error #2006: The supplied index is out of bounds."); }
-    [As] public int getLineLength(int i) => getLineText(i).Length;
-    [As] public int getLineOffset(int i) { var l = Lines(); int o = 0; for (int k = 0; k < i && k < l.Count; k++) o += l[k].Length; return o; }
+    // Scaleform's TextField::getLineLength / getLineOffset (sfr_as3_13.cpp:1347, :1363; DocView::GetLineLength / GetLineOffset,
+    // sfr_render_03b.cpp:619, :609): a negative line or one past the last gives -1, never a RangeError
+    [As] public int getLineLength(int i) { var l = Lines(); return i >= 0 && i < l.Count ? l[i].Length : -1; }
+    [As] public int getLineOffset(int i) { var l = Lines(); if (i < 0 || i >= l.Count) return -1; int o = 0; for (int k = 0; k < i; k++) o += l[k].Length; return o; }
     [As] public int getLineIndexOfChar(int c) { var l = Lines(); int o = 0; for (int k = 0; k < l.Count; k++) { o += l[k].Length; if (c < o) return k; } return -1; }
     [As] public int getLineIndexAtPoint(double x, double y) => Math.Clamp((int)((y - 2) / TextMeasure.LineHeight(FontName, Size, Leading)), 0, numLines - 1);
     [As] public int getCharIndexAtPoint(double x, double y) => -1;
