@@ -77,4 +77,10 @@ public class QuestPacketTests {
         Assert.That(all.Quests.Select(q => q.Id), Is.EqualTo(new[] { 100, 200, 300 }));
         Assert.That(all.Skipped, Is.Empty); Assert.That(all.Overrun, Is.False);
     }
+
+    [Test] public void AMisreadProgressCountReadsOnlyToTheEnd() {
+        // a progress count read from the wrong offset (here 0x7fffffff) reads ints until the packet ends, as the client's loop does
+        var w = new ByteWriter(); w.WriteByte(3); w.WriteInt(100); w.WriteInt(int.MaxValue); w.WriteInt(5); w.WriteInt(6);
+        Assert.That(() => QuestMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())), Throws.Exception.Not.TypeOf<OutOfMemoryException>());
+    }
 }

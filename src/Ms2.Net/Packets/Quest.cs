@@ -51,7 +51,14 @@ public abstract record QuestMessage {
     public sealed record Other(int Mode) : QuestMessage;
 
     static IReadOnlyList<int> IdList(ByteReader r) { int n = r.ReadInt(); var l = new List<int>(n); for (int i = 0; i < n; i++) l.Add(r.ReadInt()); return l; }
-    static long[] Prog(ByteReader r) { int n = r.ReadInt(); var a = new long[n]; for (int i = 0; i < n; i++) a[i] = r.ReadInt(); return a; }
+    /// <summary>i32 count, then that many i32 progress values. The client reads them one at a time (questmanager_2.cpp:976-980), so a
+    /// count misread from the wrong offset only reads until the packet ends; nothing is sized by it up front.</summary>
+    static long[] Prog(ByteReader r) {
+        int n = r.ReadInt();
+        var a = new List<long>(Math.Clamp(n, 0, r.Available / 4));
+        for (int i = 0; i < n; i++) a.Add(r.ReadInt());
+        return a.ToArray();
+    }
 
     public static QuestMessage Read(ByteReader r) => Read(r, null);
 
