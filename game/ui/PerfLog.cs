@@ -48,6 +48,32 @@ public static class PerfLog
         allocated = GC.GetTotalAllocatedBytes();
     }
 
+    /// <summary>
+    /// One memory line for <paramref name="label"/>, after a full blocking collection: process RSS (/proc/self/status
+    /// VmRSS), the managed heap (live bytes; the GC's committed size), and Godot's object, node, resource and orphan-node
+    /// counts and texture / buffer / video memory.
+    /// </summary>
+    public static void Memory(string label)
+    {
+        if (!On) return;
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        long live = GC.GetTotalMemory(false);
+        var info = GC.GetGCMemoryInfo(GCKind.FullBlocking);
+        double rss = 0;
+        try
+        {
+            foreach (var l in System.IO.File.ReadLines("/proc/self/status"))
+                if (l.StartsWith("VmRSS:")) { rss = long.Parse(l.Split(' ', StringSplitOptions.RemoveEmptyEntries)[1]) / 1024.0; break; }
+        }
+        catch (System.IO.IOException) { }
+        double M(Performance.Monitor m) => Performance.GetMonitor(m);
+        Print($"mem [{label}] rss {rss:0} MB, managed {live / 1048576.0:0.0} MB (committed {info.TotalCommittedBytes / 1048576.0:0}), " +
+              $"objects {M(Performance.Monitor.ObjectCount):0} nodes {M(Performance.Monitor.ObjectNodeCount):0} " +
+              $"resources {M(Performance.Monitor.ObjectResourceCount):0} orphans {M(Performance.Monitor.ObjectOrphanNodeCount):0}, " +
+              $"texture {M(Performance.Monitor.RenderTextureMemUsed) / 1048576.0:0.0} MB buffer {M(Performance.Monitor.RenderBufferMemUsed) / 1048576.0:0.0} MB " +
+              $"video {M(Performance.Monitor.RenderVideoMemUsed) / 1048576.0:0.0} MB, static {M(Performance.Monitor.MemoryStatic) / 1048576.0:0.0} MB");
+    }
+
     /// <summary>Restart the frame window (a state change such as a window opening).</summary>
     public static void Restart() { if (On) { lastTicks = 0; } }
 

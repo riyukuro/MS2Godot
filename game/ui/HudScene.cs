@@ -1422,22 +1422,9 @@ public partial class HudScene : Node, IUiStageHost
     static readonly string[] PerfDialogs = (System.Environment.GetEnvironmentVariable("MS2_PERF_OPEN") ?? "")
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    /// <summary>
-    /// After the field is loaded: 600 idle frames, then for each window in MS2_PERF_OPEN (inventory, myinfo, skill, quest,
-    /// worldmap, shop, options) an open (cold), a close, a second open (warm) and a close, 100 frames apart, each open's
-    /// whole call timed; then MS2_PERF_QUIT quits.
-    /// </summary>
-    void PerfScript()
+    /// <summary>Opens (or closes) one of the MS2_PERF_OPEN windows.</summary>
+    void PerfToggle(string d, bool open)
     {
-        perfFrame++;
-        if (perfFrame == 0) { perfState = "idle"; PerfLog.Restart(); }
-        int at = perfFrame - 600;
-        if (at >= PerfDialogs.Length * 400) { PerfTail(at - PerfDialogs.Length * 400); return; }
-        if (at < 0 || at % 100 != 0) return;
-        int i = at / 400, step = at / 100 % 4;
-        string d = PerfDialogs[i];
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        bool open = step % 2 == 0;
         switch (d)
         {
             case "inventory": ToggleInventory(); break;
@@ -1448,6 +1435,67 @@ public partial class HudScene : Node, IUiStageHost
             case "shop": if (open) OpenShop(); else shop?.Close(); break;
             case "options": if (open) OpenGameOption(0); else CloseAllDialogs(); break;
         }
+    }
+
+    static readonly bool PerfMem = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_MEM"));
+    static readonly int PerfMemHold = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_PERF_MEM_HOLD"), out var h) ? h : 0;
+
+    /// <summary>
+    /// MS2_PERF_MEM: memory lines (<see cref="PerfLog.Memory"/>) after 600 idle frames (field with the HUD), then for each
+    /// window in MS2_PERF_OPEN: 100 frames after opening it, 100 frames after closing it, and 100 frames after 20 more
+    /// open/close cycles (10 frames apart). Then MS2_PERF_MEM_HOLD idle frames ("mem hold" printed first, for a heap dump
+    /// from outside), and MS2_PERF_QUIT quits.
+    /// </summary>
+    void PerfMemory(string label)
+    {
+        PerfLog.Memory(label);
+        lock (MovieDialog.Opened)
+        {
+            var alive = MovieDialog.Opened.Where(x => x.Player.TryGetTarget(out _)).GroupBy(x => x.Movie).Select(g => $"{g.Key} {g.Count()}");
+            PerfLog.Print($"mem [{label}] players made {MovieDialog.Opened.Count}, alive: {string.Join(", ", alive)}");
+        }
+    }
+
+    void PerfMemScript()
+    {
+        const int Per = 700;
+        int at = perfFrame - 600;
+        if (at == 0) { PerfMemory("field + HUD"); return; }
+        if (at < 0) return;
+        int i = at / Per, t = at % Per;
+        if (i >= PerfDialogs.Length)
+        {
+            int e = at - PerfDialogs.Length * Per;
+            if (e == 0) { PerfMemory("end"); PerfLog.Print($"mem hold {PerfMemHold} frames, pid {System.Environment.ProcessId}"); }
+            if (e == PerfMemHold + 1 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) GetTree().Quit(0);
+            return;
+        }
+        string d = PerfDialogs[i];
+        if (t == 1) PerfToggle(d, true);
+        else if (t == 100) { PerfMemory(d + " open"); PerfToggle(d, false); }
+        else if (t == 199) PerfMemory(d + " closed");
+        else if (t >= 200 && t <= 200 + 39 * 10 && (t - 200) % 10 == 0) PerfToggle(d, (t - 200) / 10 % 2 == 0);
+        else if (t == 690) PerfMemory(d + " after 20 cycles");
+    }
+
+    /// <summary>
+    /// After the field is loaded: 600 idle frames, then for each window in MS2_PERF_OPEN (inventory, myinfo, skill, quest,
+    /// worldmap, shop, options) an open (cold), a close, a second open (warm) and a close, 100 frames apart, each open's
+    /// whole call timed; then MS2_PERF_QUIT quits.
+    /// </summary>
+    void PerfScript()
+    {
+        perfFrame++;
+        if (perfFrame == 0) { perfState = "idle"; PerfLog.Restart(); }
+        if (PerfMem) { PerfMemScript(); return; }
+        int at = perfFrame - 600;
+        if (at >= PerfDialogs.Length * 400) { PerfTail(at - PerfDialogs.Length * 400); return; }
+        if (at < 0 || at % 100 != 0) return;
+        int i = at / 400, step = at / 100 % 4;
+        string d = PerfDialogs[i];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool open = step % 2 == 0;
+        PerfToggle(d, open);
         PerfLog.Print($"{(open ? (step == 0 ? "cold open" : "warm open") : "close")} {d}: call {sw.Elapsed.TotalMilliseconds:0.0} ms");
         perfState = open ? d + " open" : "idle";
         PerfLog.Restart();
