@@ -67,6 +67,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-hover") hoverShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots") quickSlotShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
@@ -934,7 +935,8 @@ public partial class HudScene : Node
         hudModel.AlignWidgets = alignWidgets ??= AlignWidgetManager.Load(assets.Table("table/alignwidget.xml")?.Root);
         hudModel.Keys = new KeyTable(assets.Packs, "en");
         // the server's key table when live (OnKeyTable), else the packet a new character gets
-        hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live : UiFixture.NewCharacterKeyTable();
+        hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live
+            : quickSlotShot != null ? QuickSlotShotTable(quickSlotShot) : UiFixture.NewCharacterKeyTable();
         hudModel.Keys.Apply(hudModel.ServerKeys);
         var p = hudModel.Player;
         p.Name = data.Player.Name; p.Level = data.Player.Level;
@@ -957,7 +959,7 @@ public partial class HudScene : Node
     {
         var p = hudModel.Player;
         var window = GetWindow().Size;
-        ui.AddChild(playerInfoMovie = new MovieDialog(assets, new Ms2.Ui.Hud.MainPlayerInfoController(), hudModel, window));
+        ui.AddChild(playerInfoMovie = new MovieDialog(assets, new Ms2.Ui.Hud.MainPlayerInfoController { SlotWorld = QuickSlotWorld }, hudModel, window));
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
         p.AdventureExp = (long)Math.Round(hudModel.Tables.AdventureLevelLvUpExp * data.AdventureExpPercent / 100);
         ui.AddChild(adventureBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.AdventureLevelExpBarController(), hudModel, window));
@@ -1085,6 +1087,57 @@ public partial class HudScene : Node
         uiRoot.AddChild(m);
     }
 
+    Ms2.Ui.Skills.JobSystem slotJobs;
+    object slotJobsBook;
+    Ms2Godot.Net.ItemKinds slotKinds;
+    Ms2.Ui.Skills.SlotField slotField;
+    string slotFieldXBlock;
+
+    /// <summary>
+    /// The player state the HUD quick slots read (SkillSlot): the live session's bag, skill book and own hands, else the offline
+    /// inventory and a new character's book of the HUD's job; the field data of the current xblock. Cooldowns, buffs and the
+    /// skill set have no feed yet and keep their idle values.
+    /// </summary>
+    Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var tables = hudModel.Tables.Skills;
+        object book = live != null ? live.SkillBook : (object)hudModel.Player.SubJob;
+        if (slotJobs == null || !Equals(slotJobsBook, book))
+        {
+            slotJobs = new Ms2.Ui.Skills.JobSystem(tables) { IsFeatureEnabled = hudModel.IsFeatureEnabled };
+            slotJobs.Read(live != null ? live.SkillBook : UiFixture.NewCharacterSkillBook(tables.Jobs, hudModel.Player.SubJob / 10));
+            slotJobsBook = book;
+        }
+        slotKinds ??= new Ms2Godot.Net.ItemKinds(assets.Packs);
+        if (slotFieldXBlock != xblock)
+        {
+            slotFieldXBlock = xblock;
+            FieldData fd = null;
+            try { fd = FieldData.FindByXBlock(assets.Packs, xblock); } catch (Exception e) { GD.PushWarning("quick slot field data: " + e.Message); }
+            slotField = fd == null ? null : new Ms2.Ui.Skills.SlotField
+            {
+                Id = fd.Id, MapType = fd.MapType, CheckFly = fd.CheckFly, CheckClimb = fd.CheckClimb,
+                UseEPSkill = fd.UseEPSkill, UsePet = fd.UsePet, SkillUseDisableMask = fd.SkillUseDisableMask,
+            };
+        }
+        var p = hudModel.Player;
+        // PC::GetWeaponAction: the own RH / LH equips' kinds (GetEquipItemLayer0(5 / 4)), offline the fixture character's;
+        // none when both hands are empty
+        var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+        int Hand(int slot) => me.Equips?.FirstOrDefault(e => (int)e.Slot == slot) is { } eq ? hudModel.Tables.Items.Get(eq.Id)?.EquipSubtype ?? 0 : 0;
+        int rh = Hand(5), lh = Hand(4);
+        return new Ms2.Ui.Skills.SlotWorld
+        {
+            Tables = tables, ItemData = hudModel.Tables.Items.Get, Jobs = slotJobs, HasPc = hudModel.HasLocalPlayer,
+            Level = p.Level, Hp = p.HpCur, Sp = p.SpCur, Ep = p.EpCur, Meso = p.Mesos,
+            Inventory = live != null ? live.Items.All : (OfflineInventory() != null ? offlineBook.All : Array.Empty<Ms2.Net.Packets.EquipItem>()), TabOf = slotKinds.TabOf,
+            Field = slotField, Weapon = rh != 0 || lh != 0 ? (rh, lh) : null,
+        };
+    }
+
+    Ms2.Net.Packets.ItemBook offlineBook;     // the offline inventory's items
+
     Ms2.Net.Packets.InventoryView OfflineInventory()
     {
         if (offlineInventory != null) return offlineInventory;
@@ -1092,6 +1145,7 @@ public partial class HudScene : Node
         var book = new Ms2.Net.Packets.ItemBook { TabOf = kinds.TabOf, BaseSlots = Ms2Godot.Net.BagSlotTable.Load(assets.Packs) };
         foreach (var g in UiFixture.InventoryItems().GroupBy(i => kinds.TabOf(i.Id)))
             book.Apply(new Ms2.Net.Packets.ItemMessage.LoadTab(g.Key, g.ToList()));
+        offlineBook = book;
         return offlineInventory = new Ms2.Net.Packets.InventoryView(book);
     }
 
@@ -1100,6 +1154,19 @@ public partial class HudScene : Node
     MovieDialog skillBookMovie;                 // from open until OnEndClose
     Ms2.Ui.Hud.SkillBookTreeController skillBook;
     int[] skillShot;                            // --skillbook subJob[,level]
+    string quickSlotShot;                       // --quickslots slot:skill[:item[:uid]];...
+
+    /// <summary>The shot's key table: a new character's packet with page 0 holding the given quick slot entries.</summary>
+    static Ms2.Net.Packets.ServerKeyTable QuickSlotShotTable(string spec)
+    {
+        var entries = spec.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(e => e.Split(':').Select(long.Parse).ToArray())
+            .Select(v => ((int)v[0], new Ms2.Net.Packets.QuickSlotEntry((int)v[1], v.Length > 2 ? (int)v[2] : 0, v.Length > 3 ? v[3] : 0))).ToArray();
+        var t = new Ms2.Net.Packets.ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(0, true, null, 0, null)));
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(7, false, null, 0,
+            new IReadOnlyList<(int, Ms2.Net.Packets.QuickSlotEntry)>[] { entries })));
+        return t;
+    }
 
     /// <summary>CUIService::ToggleDialog(0x4f2d): open when closed, else vfunc_67.</summary>
     void ToggleSkillBook()

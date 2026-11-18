@@ -114,36 +114,56 @@ public sealed class MainPlayerInfoController : UiController
     static readonly Dictionary<int, long> SlotKeys = new() { [0x16] = 0x493e3, [0x17] = 0x49401, [0x18] = 0x493e1 };
     const int PetRankFeature = 0x8c;
 
-    /// <summary>SkillSlot::vfunc_8 (skillslot.cpp:793): the slot object a bound quick slot holds. The slot's skill / item is
-    /// the current page's entry (CKeyTable::GetQuickSlotEntry, keytable.cpp:1574). Only empty slots are modelled: no icon,
-    /// IsDisabled = 1 (no skill id, :1306), count 0, no cooldown. A filled slot needs the skill data, skill book and item
-    /// book the client reads there; it stays unbound (null) until those are ported.</summary>
+    /// <summary>The local player state the quick slots read (inventory, skill book, field, ...); null = a world with no player
+    /// state beyond the model's tables and level.</summary>
+    public Func<Skills.SlotWorld> SlotWorld;
+
+    /// <summary>
+    /// SkillSlot::vfunc_8 @0x14175e9e0 (skillslot.cpp:793): the slot object a bound quick slot holds, for the current page's
+    /// entry (CKeyTable::GetQuickSlotEntry, keytable.cpp:1574; all zero = an empty slot). The state comes from
+    /// <see cref="Skills.SkillSlotState"/>; the cooldown and recharge parts read the skill system, which Godot does not run yet,
+    /// so they stay 0.
+    /// </summary>
     public override object GetBinding(string name)
     {
         if (!name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
             || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
             return null;
-        // A filled slot stays unbound until the state SkillSlot::vfunc_8 (skillslot.cpp:793) reads is modelled:
-        // - grayColor: IsDisabled (:1283) asks JobSystemCli::vfunc_2 (jobsystemcli.cpp:81). That also counts the skill set,
-        //   the skill-tree level, the lapenshard level (feature 0xd3) and the sub-skill parent's tree level, then the
-        //   cast gate FUN_141765a70 and buff masks.
-        // - iconPath / itemCount / itemPcBang / itemVIP: the inventory (vfunc_25 :1048, FindItemBySkillId) and the
-        //   changeSkill replacement (FUN_141761530).
-        // - totalTime / remainTime / rechargeRemainCount: cooldown and recharge state (unless condition@useCoolDownShowUI is 0).
-        // - Item entries: item data, CanUseItem and the item counts.
-        if (Model.ServerKeys is { } t && !t.Entry(t.CurrentPage, i).IsEmpty) return null;
+        var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+        var w = SlotWorld?.Invoke() ?? new Skills.SlotWorld { Tables = Model.Tables.Skills, ItemData = Model.Tables.Items.Get, Level = Model.Player.Level, HasPc = Model.HasLocalPlayer };
+        var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
+        int hotkey = Hotkey(i);
+        float total = s.CooldownDuration(), remain = s.CooldownRemain();
+        if (w.HasPc && s.SkillId != 0 && w.Tables.GetSkillData(s.SkillId) is { Condition.UseCoolDownShowUI: false })
+        {
+            total = 0;
+            remain = 0;
+        }
         var d = new List<(string, object)>();                                   // ASSlot(2): an object of movie 2 (asitemslot.cpp:740)
-        if (!Model.IsFeatureEnabled(PetRankFeature)) d.Add(("itemPet", 0));    // IsPetItem, no item
-        d.Add(("iconPath", ""));
-        d.Add(("grayColor", 1));
-        d.Add(("itemCount", 0));
-        d.Add(("itemPcBang", 0));
+        var item = s.Item();
+        if (item != null) d.Add(("itemGrade", item.Rarity));                    // FUN_1409adc90; the ugc tag needs the ugc block (not kept)
+        string icon = s.IconName();
+        if (s.Replacement() is { } r && r.Icon.Length != 0) icon = r.Icon;    // FUN_141761530: the replacement's own icon
+        if (Model.IsFeatureEnabled(PetRankFeature))
+        {
+            if (item != null && w.ItemData(item.Id) is { IsPetItem: true })
+            {
+                d.Add(("itemPetRank", item.Rarity));
+                d.Add(("dropShadowDisable", 1));
+            }
+        }
+        else d.Add(("itemPet", s.IsPetItem ? 1 : 0));
+        d.Add(("iconPath", icon));
+        d.Add(("grayColor", s.IsDisabled(hotkey) ? 1 : 0));
+        d.Add(("itemCount", s.ItemCount(false)));
+        d.Add(("itemPcBang", s.IsPcBangItem ? 1 : 0));
         d.Add(("itemLock", 0));                                                 // FUN_14175cc60 returns 0
-        d.Add(("shortcutKey", HotkeyText(i)));
-        d.Add(("itemVIP", 0));
+        d.Add(("shortcutKey", Model.Keys.GetKeyName(hotkey)));
+        d.Add(("itemVIP", s.IsVipItem ? 1 : 0));
         d.Add(("disableDrag", SlotKeys.ContainsKey(i)));                        // IsFixed (0) || HasKeyBinding (:1433)
-        d.Add(("totalTime", 0.0));                                              // ASSlot::SetTotalTime / SetRemainTime (:1066, :1060)
-        d.Add(("remainTime", 0.0));
+        if (s.RechargeMax > 0) d.Add(("rechargeRemainCount", s.RechargeRemaining));
+        d.Add(("totalTime", (double)total));                                    // ASSlot::SetTotalTime / SetRemainTime (:1066, :1060)
+        d.Add(("remainTime", (double)remain));
         // SetCooldownStrings (:1072): GetStringCommon 0x5cb/0x5ca/0x5cc/0x5ce = s_word_sec/min/hour/day (commonstringtable.cpp:3095)
         d.Add(("cooldownSecStr", Model.Tables.Common("s_word_sec") ?? ""));
         d.Add(("cooldownMinStr", Model.Tables.Common("s_word_min") ?? ""));
@@ -152,12 +172,11 @@ public sealed class MainPlayerInfoController : UiController
         return Host.Obj(d.ToArray());
     }
 
-    /// <summary>GetHotkeyText / GetHotkey(0) (skillslot.cpp:1229, :1235).</summary>
-    string HotkeyText(int slot)
+    /// <summary>GetHotkey(0) (skillslot.cpp:1235); GetHotkeyText (:1229) is its key name.</summary>
+    int Hotkey(int slot)
     {
         var keys = Model.Keys;
-        int key = SlotKeys.TryGetValue(slot, out var action) ? keys.FindKeyByActionAndPriority(action, 0) : keys.FindKeyByQuickSlot(slot, 0);
-        return keys.GetKeyName(key);
+        return SlotKeys.TryGetValue(slot, out var action) ? keys.FindKeyByActionAndPriority(action, 0) : keys.FindKeyByQuickSlot(slot, 0);
     }
 
     public override bool OnCallback(string name, object[] args)

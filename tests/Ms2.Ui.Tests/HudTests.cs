@@ -131,7 +131,11 @@ public class HudTests
         Assert.That(Rt.ToString(h.Get(slot0, "shortcutKey")), Is.EqualTo("A"));
         Assert.That(Rt.ToString(h.Get((AsObject)h.ToAs(c.GetBinding("SlotInfo.skill.0.4")), "shortcutKey")), Is.EqualTo("Q"));
         Assert.That(Rt.ToString(h.Get((AsObject)h.ToAs(c.GetBinding("SlotInfo.skill.0.1")), "shortcutKey")), Is.EqualTo(""));   // cleared, not in the packet
-        Assert.That(c.GetBinding("SlotInfo.skill.0.3"), Is.Null);   // a filled slot: not modelled yet
+        // the filled slot 3 of the current page: skill 10000001's icon (not learnt: no skill book, so gray)
+        var slot3 = (AsObject)h.ToAs(c.GetBinding("SlotInfo.skill.0.3"));
+        TestContext.WriteLine(Rt.ToString(h.Get(slot3, "iconPath")));
+        Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(m.Tables.Skills.GetSkillData(10000001)?.Icon ?? ""));
+        Assert.That(Rt.ToNumber(h.Get(slot3, "grayColor")), Is.EqualTo(1));
     }
 
     [Test]
