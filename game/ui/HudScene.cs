@@ -29,6 +29,9 @@ public partial class HudScene : Node
     const float BottomBars = ExpBarLift + AdventureBarLift;
     const float ExpBarLift = 21 - 2, AdventureBarLift = 21 - 2;
     string shotDir; int frames;
+    string frameCase;                       // --frametime closed|open|scroll: frame times over 300 frames instead of a shot
+    readonly List<double> frameDelta = new(), frameProcess = new(), frameMovie = new(), frameTick = new();
+    long callsAtStart, interpAtStart;
     float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
     Player player; Control uiRoot;
     TargetFrame target;                     // UIUpperHpBar
@@ -47,6 +50,9 @@ public partial class HudScene : Node
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--frametime") frameCase = args[i + 1];
+        if (System.Array.IndexOf(args, "--oracle") >= 0) Ms2.Avm2.Interp.UseOracle = true;
+        if (frameCase != null) DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
         questFixture = args.Contains("--questlog-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
@@ -1271,10 +1277,42 @@ public partial class HudScene : Node
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
         if (frames == 250 && chatInput != null) { chatInput.Edit.Text = "hello from the chat box"; chatInput.Edit.EmitSignal(LineEdit.SignalName.TextSubmitted, chatInput.Edit.Text); }
+        if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
         {
             DirAccess.MakeDirRecursiveAbsolute(shotDir);
             GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "hud.png"));
+            GetTree().Quit();
+        }
+    }
+
+    /// <summary>--frametime: from frame 400 to 700 the frame's delta and Godot's process time; the scroll case wheels the quest list each frame.</summary>
+    void MeasureFrame(double delta)
+    {
+        frames++;
+        if (frameCase == "scroll" && frames >= 380 && questLog != null && questLog.Host.Child("m_questList") is Ms2.Avm2.Flash.AsDisplayObject list)
+        {
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+            var b = list.GetBounds(null);
+            questLog.Player.MouseMove(b.X + b.W / 2, b.Y + b.H / 2);
+            questLog.Player.Wheel((frames / 15) % 2 == 0 ? -1 : 1);
+            As3View.SpentMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+        }
+        if (frames > 400 && frames <= 700)
+        {
+            frameDelta.Add(delta * 1000);
+            frameProcess.Add(Performance.GetMonitor(Performance.Monitor.TimeProcess) * 1000);
+            frameMovie.Add(As3View.SpentMs);
+            frameTick.Add(As3View.TickMs);
+        }
+        if (frames == 400) (callsAtStart, interpAtStart) = (Ms2.Avm2.Interp.CompiledCalls, Ms2.Avm2.Interp.InterpretedCalls);
+        As3View.SpentMs = 0;
+        As3View.TickMs = 0;
+        if (frames == 700)
+        {
+            static string Stat(List<double> v) { var o = v.OrderBy(x => x).ToList(); return $"mean {v.Average():F2} ms p99 {o[(int)Math.Ceiling(o.Count * 0.99) - 1]:F2} ms"; }
+            GD.Print($"FRAMETIME {frameCase} {(Ms2.Avm2.Interp.UseOracle ? "interpreter" : "compiled")} bodies={Ms2.Avm2.GeneratedCode.Count} n={frameDelta.Count} frame: {Stat(frameDelta)} | process: {Stat(frameProcess)} | movies: {Stat(frameMovie)} | of it ticks: {Stat(frameTick)} | calls compiled {Ms2.Avm2.Interp.CompiledCalls - callsAtStart} interpreted {Ms2.Avm2.Interp.InterpretedCalls - interpAtStart}"
+                + (questLog?.Host.Child("m_questList") is { } ql ? $" | list scrollPosition {questLog.Host.Get(ql, "scrollPosition")} rows {questLog.Host.Get(questLog.Host.Get(ql, "dataProvider"), "length")}" : ""));
             GetTree().Quit();
         }
     }

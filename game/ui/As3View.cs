@@ -53,14 +53,26 @@ public partial class As3View : Node2D
     /// <summary>Scale from stage units to this node's units (set by the host to fit the viewport).</summary>
     public float StageScale { get => Scale.X; set => Scale = new Vector2(value, value); }
 
+    /// <summary>Milliseconds all movie views spent in _Process (ticks and display-list sync), and in the ticks alone, since the last reset (frame-time runs).</summary>
+    public static double SpentMs, TickMs;
+
     public override void _Process(double delta)
+    {
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Advance(delta);
+        SpentMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+    }
+
+    void Advance(double delta)
     {
         if (AutoPlay)
         {
             frameTime += delta;
             double step = 1.0 / Math.Max(1, Player.FrameRate);
             int n = 0;
+            long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
             while (frameTime >= step && n++ < 4) { frameTime -= step; Player.Tick(); }
+            TickMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
             if (frameTime > step) frameTime = 0;
         }
         Sync();
