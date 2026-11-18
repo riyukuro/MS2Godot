@@ -505,6 +505,20 @@ public sealed class ItemTooltip
         return d.ShopId > 0;
     }
 
+    /// <summary>
+    /// SetEnablePreview (astooltip.cpp:3829): for an item FUN_141b48950 lets on the character (not expired, CItem::IsExpired
+    /// item.cpp:1303, and IsPreviewable: no doNotPreview, uiugcitemeditdialog.cpp:2326), "enablePreview" is
+    /// s_msg_tooltip_enable_preview with the key of action 0x49406 (FUN_1409e7880: CKeyTable::GetActionKeyName(0x49406, 0)).
+    /// </summary>
+    public void SetEnablePreview(Item item)
+    {
+        if (item?.Data == null) return;
+        if (item.ExpiryTime > 0 && item.ExpiryTime <= new DateTimeOffset(model.Now).ToUnixTimeSeconds()) return;
+        if (item.Data.DoNotPreview != 0) return;
+        var keys = model.Keys;
+        Data["enablePreview"] = CommonF("s_msg_tooltip_enable_preview", keys.GetKeyName(keys.FindKeyByActionAndPriority(0x49406, 0)));
+    }
+
     /// <summary>SetEnablePuton (@0x1409c69b0): nothing with flag 0x100; else "enablePuton".</summary>
     public void SetEnablePuton(string text)
     {

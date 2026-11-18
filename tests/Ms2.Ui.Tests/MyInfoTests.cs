@@ -449,6 +449,29 @@ public class MyInfoTests
     }
 
     [Test]
+    public void PreviewLineIsTheClients()
+    {
+        var m = NewModel();
+        m.Keys = new KeyTable(Packs(), "en");
+        m.Keys.LoadDefaultKeys();
+        var hood = Item.Create(m.Tables.Items, 11400021, 1);
+        var tip = new ItemTooltip(m, 0x200);
+        tip.Fill(hood);
+        tip.SetEnablePreview(hood);
+        // outfits_hover_equipped_top.png: "Hold the [Shift] key and right-click the item to preview it."
+        var shown = TooltipTests.Draw(tip.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Hold the [Shift] key and right-click the item to preview it."));
+        // an expired item gets none
+        var old = Item.Create(m.Tables.Items, 11400021, 1);
+        old.ExpiryTime = 1;
+        var none = new ItemTooltip(m, 0x200);
+        none.Fill(old);
+        none.SetEnablePreview(old);
+        Assert.That(none.Data.ContainsKey("enablePreview"), Is.False);
+    }
+
+    [Test]
     public void UseHintsAreTheClients()
     {
         var m = NewModel();

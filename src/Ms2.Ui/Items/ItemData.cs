@@ -15,6 +15,8 @@ public sealed class ItemData
     // <property> (:340): plain int attributes (FUN_1405402a0 and its kind, XmlQuery -> QueryIntAttribute)
     public int Type, Subtype, IconCode, ItemGroup, SkinType, Rank, Param1, Param2;
     // ItemProperty::Load (itemdatastruct.cpp:1122)
+    /// <summary>ItemProperty doNotPreview: non-zero keeps the item out of the preview (IsPreviewable).</summary>
+    public int DoNotPreview;
     public uint SlotMax = 1;                                   // ctor default 1 (:1115), capped at 99999
     public string SlotIcon = "", Category = "";
     /// <summary>ItemProperty moveDisable (itemdatastruct.cpp:1158) and socketDataId.</summary>
@@ -79,6 +81,7 @@ public sealed class ItemData
             Int(p, "rank", ref d.Rank);                         // Unk_ReadRank (achievedata.cpp:552)
             Int(p, "param1", ref d.Param1);
             Int(p, "param2", ref d.Param2);
+            Int(p, "doNotPreview", ref d.DoNotPreview);         // ItemProperty::Load (itemdatastruct.cpp:1127)
             if (Unsigned(p, "slotMax", out uint slotMax)) d.SlotMax = slotMax;
             d.SlotMax = Math.Min(d.SlotMax, 99999u);
             d.Category = (string)p.Attribute("category") ?? d.Category;

@@ -712,22 +712,24 @@ public sealed class MyInfoController : UiController
         return null;
     }
 
-    /// <summary>
-    /// EquipSlot::vfunc_0 (equipslot.cpp:208): none without a record or a local player; ASTooltip(player, 0x200 for the own
-    /// record (PCInfo m_3c0) else 0x100, 2) over FUN_14120ce90's item; when it fills, SetEnablePuton(GetStringCommon(0x752)).
-    /// The preview line (SetEnablePreview, IsPreviewable) is not ported.
-    /// </summary>
     /// <summary>ASTooltip(the local player, 0x200 for the own record (PCInfo m_3c0) else 0x100, 2). The owner's character
     /// id and name are the record's when it is the local player's; otherwise not known here (the binding's own name).</summary>
     ItemTooltip NewItemTooltip(PcInfo r) => new(Model, r.IsLocal ? 0x200 : 0x100) { Owner = r.IsLocal ? (r.CharacterId, r.Name) : null, Localize = Localize };
 
+    /// <summary>
+    /// EquipSlot::vfunc_0 (equipslot.cpp:208): none without a record or a local player; ASTooltip(player, 0x200 for the own
+    /// record (PCInfo m_3c0) else 0x100, 2) over FUN_14120ce90's item; when it fills, SetEnablePuton(GetStringCommon(0x752)).
+    /// Then, the slot being enabled (MS2DragSlot::IsEnabled; EquipSlot's ctor sets it, equipslot.cpp:112), SetEnablePreview.
+    /// </summary>
     AsTooltip EquipTooltip(int slot)
     {
         var r = equipBagRecord;
         if (r == null || !Model.HasLocalPlayer) return null;
         var tip = NewItemTooltip(r);
-        if (!tip.Fill(EquipSlotItem(r, equipBagKind, slot))) return null;
+        var item = EquipSlotItem(r, equipBagKind, slot);
+        if (!tip.Fill(item)) return null;
         tip.SetEnablePuton(Common("s_msg_rclick_putoff_equip"));                  // 0x752
+        tip.SetEnablePreview(item);
         return tip.Data;
     }
 
