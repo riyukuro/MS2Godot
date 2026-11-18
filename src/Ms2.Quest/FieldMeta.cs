@@ -31,6 +31,26 @@ public sealed class FieldMeta
     /// two outdoor fields reach keeps the one that comes later in that order.
     /// </summary>
     public readonly Dictionary<int, int> ParentFields = new();
+    /// <summary>m_taxi (fieldmetatable.cpp:235): the &lt;taxiStation&gt; fields and their IsHomePrivilege (HasTaxi,
+    /// GetTaxiHomePrivilege).</summary>
+    public readonly Dictionary<int, bool> TaxiStations = new();
+    /// <summary>m_indoorPortals (FUN_1406fc160): field -> the fields its portalIndoor portals lead to, in portal order.</summary>
+    public readonly Dictionary<int, List<int>> IndoorPortals = new();
+
+    /// <summary>FUN_1406fc2f0 (fieldmetatable.cpp:690): the field and every field its indoor portals reach (FUN_1406fc1b0),
+    /// ascending (std::set).</summary>
+    public List<int> ConnectedFields(int field)
+    {
+        var seen = new SortedSet<int> { field };
+        void Walk(int f)
+        {
+            if (!IndoorPortals.TryGetValue(f, out var l)) return;
+            foreach (int n in l)
+                if (seen.Add(n)) Walk(n);
+        }
+        Walk(field);
+        return seen.ToList();
+    }
 
     public static FieldMeta Load(PackSet packs) =>
         Parse(System.Text.Encoding.UTF8.GetString(packs.Read(Archive, Entry)).TrimStart('﻿'));
@@ -51,7 +71,9 @@ public sealed class FieldMeta
                     m.TimedNpcFields.Add((id, Int(f, "id")));
             }
         }
-        var indoorPortals = new Dictionary<int, List<int>>();
+        foreach (var t in root.Elements("taxiStation"))
+            m.TaxiStations[Int(t, "field")] = (string)t.Attribute("IsHomePrivilege") is "1" or "true";
+        var indoorPortals = m.IndoorPortals;
         var outdoor = new Dictionary<int, bool>();          // outdoor[nField] = (indoor == 0): a later fieldPortal of the field decides
         foreach (var fp in root.Elements("fieldPortal"))
         {

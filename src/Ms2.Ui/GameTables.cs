@@ -13,6 +13,7 @@ public sealed class GameTables
     readonly Dictionary<int, long> nextExp = new();
     readonly Dictionary<string, string> jobNames = new();
     readonly Dictionary<string, string> mapNames = new();
+    readonly Dictionary<string, string> mapTileDescs = new();
     readonly Func<string, string> common = _ => null;
 
     public static readonly GameTables Empty = new();
@@ -30,6 +31,7 @@ public sealed class GameTables
         var s = new GameStrings(packs, languages);
         jobNames = s.Table("jobname", "name");
         mapNames = s.Table("mapname", "name");
+        mapTileDescs = s.Table("maptiledesc", "name");
         common = s.Common();
         var k = new ClientConstants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
@@ -78,5 +80,7 @@ public sealed class GameTables
     /// <summary>The default messenger windows' documents (table/default/defaultmessenger&lt;i&gt;.xml), in order.</summary>
     public readonly List<System.Xml.Linq.XDocument> DefaultMessengers = new();
     /// <summary>The map's display name (string table mapname, id = 8-digit map id); null when unknown.</summary>
+    /// <summary>The world map's field description (string table 0x4b, string/&lt;lang&gt;/maptiledesc.xml); null = none.</summary>
+    public string MapTileDesc(int mapId) => mapTileDescs.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
     public string MapName(int mapId) => mapNames.TryGetValue(mapId.ToString("D8", CultureInfo.InvariantCulture), out var n) ? n : null;
 }

@@ -47,6 +47,7 @@ public partial class HudScene : Node
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
     string tooltipShot;                     // --uigen-tooltip NAME: the pointer on that game menu entry (its tooltip shows)
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
+    int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
@@ -62,6 +63,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--worldmap") worldMapShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-tooltip") tooltipShot = args[i + 1];
@@ -123,6 +125,7 @@ public partial class HudScene : Node
         relayoutQueued = false;
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
+        worldMap?.GetParent()?.RemoveChild(worldMap);
         minimap?.GetParent()?.RemoveChild(minimap);           // so is the minimap
         questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
         foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
@@ -138,6 +141,7 @@ public partial class HudScene : Node
         groupMessenger?.Relayout(GetWindow().Size);
         notice?.Relayout(GetWindow().Size);
         questLog?.Relayout(GetWindow().Size);
+        worldMap?.Relayout(GetWindow().Size);
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
     }
@@ -182,6 +186,7 @@ public partial class HudScene : Node
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
+        if (worldMap != null) uiRoot.AddChild(worldMap);
     }
 
     SystemMenuController systemMenu;    // UISystemMenuDialog (0x4e21), its C++ side while the menu is loaded
@@ -278,12 +283,13 @@ public partial class HudScene : Node
 
     /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
     /// dialogs, the quest log.</summary>
-    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || optionHost?.Vfunc55 == false;
+    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.Vfunc55 == false;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
     {
         if (questLog != null && questLogSide?.IsClosed == false) questLogSide.Close();
+        if (WorldMapOpen) worldMapSide.Close();
         if (optionHost?.Vfunc55 == false) optionHost.Movie.Close();
     }
 
@@ -428,6 +434,7 @@ public partial class HudScene : Node
             PlayerImage = path ?? "",       // FUN_141028be0: no UGC profile image -> CommonResource m_strDefaultProfileImagePath
             LocalPlayer = LocalMinimapPlayer,
         };
+        c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
         minimap = new MovieDialog(assets, c, model, GetWindow().Size);
@@ -684,6 +691,9 @@ public partial class HudScene : Node
     {
         if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
         if (k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }       // a DirectInput key code is a physical key
+        if (k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }      // action 400006, DIK 50 (keytable.cpp:744)
+        if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
+        if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         return false;
@@ -844,6 +854,58 @@ public partial class HudScene : Node
     static FieldMeta fieldMeta;
 
 
+    // ---- world map: uiworldmapdialog run by its own ActionScript, UIWorldMapDialog's C++ side as WorldMapController -----
+
+    MovieDialog worldMap;
+    Ms2.Ui.Hud.WorldMapController worldMapSide;     // kept between opens, as the client keeps the dialog (the island indices)
+    static Ms2.Ui.WorldMap.WorldMapTable worldMapTable;    // WorldMapManager, read once
+
+    bool WorldMapOpen => worldMap != null && worldMapSide?.IsClosed == false;
+
+    /// <summary>CUIService::ToggleDialog(0x4e42): M (action 400006), the game menu's entry and the minimap's button.</summary>
+    void ToggleWorldMap()
+    {
+        if (WorldMapOpen) worldMapSide.Close();
+        else OpenWorldMap();
+    }
+
+    /// <summary>
+    /// Opens the world map: its movie with UIWorldMapDialog's C++ side over WorldMapManager's tables (worldmap.xml and its
+    /// files, fielddata, the map names). Offline there is no server: the icon request is answered with no icons and every
+    /// field but this one shows sealed (the visited fields are the server's).
+    /// </summary>
+    void OpenWorldMap()
+    {
+        if (worldMap != null) { worldMap.Host.Unload(); worldMap.QueueFree(); worldMap = null; }
+        var model = NewModel();
+        if (worldMapSide == null)
+        {
+            fieldMeta ??= FieldMeta.Load(assets.Packs);
+            var meta = fieldMeta;
+            try
+            {
+                worldMapTable ??= Ms2.Ui.WorldMap.WorldMapTable.Load(assets.Packs, id => model.Tables.MapName(id),
+                    id => meta.ParentFields.TryGetValue(id, out int p) ? p : null);
+            }
+            catch (Exception e) { GD.PushWarning("world map: " + e.Message); return; }
+            int fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+            worldMapSide = new Ms2.Ui.Hud.WorldMapController
+            {
+                Table = worldMapTable,
+                Meta = meta,
+                FieldId = fieldId,
+                PlayerName = data.Player.Name,
+                PlayerLevel = data.Player.Level,
+                JobGroupId = data.Player.Job <= 1 ? 10 : (data.Player.Job / 10 + 1) * 10,     // the job group: sub job / 10 (HudModel)
+                VisitedFields = new[] { (uint)fieldId },
+            };
+            worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
+        }
+        worldMap = new MovieDialog(assets, worldMapSide, model, GetWindow().Size);
+        uiRoot.AddChild(worldMap);
+    }
+
+
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
     UiModel hudModel;
@@ -913,11 +975,12 @@ public partial class HudScene : Node
     }
 
     /// <summary>CUIService::ToggleDialog for a game menu entry, for the dialogs this HUD has: the system menu (0x4e21, as
-    /// Esc toggles it) and the quest log (0x4e3e).</summary>
+    /// Esc toggles it), the quest log (0x4e3e) and the world map (0x4e42).</summary>
     void GameMenuToggle(int id)
     {
         if (id == 0x4e21) { if (systemMenu == null || systemMenu.IsClosed) OpenSystemMenu(); else systemMenu.Close(); }
         else if (id == 0x4e3e) ToggleQuestLog();
+        else if (id == 0x4e42) ToggleWorldMap();
     }
 
     public override void _Process(double delta)
@@ -929,10 +992,14 @@ public partial class HudScene : Node
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();
+        worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
         if (sysmenuShot >= 0 && frames == 200) Escape();
+        if (worldMapShot >= 0 && frames == 200) ToggleWorldMap();
+        if (worldMapShot >= 1 && frames == 240) worldMapSide?.SetPendingSearch("Henesys");
+        if (worldMapShot >= 2 && frames == 260) worldMapSide?.OnCallback("onClickSearchInfo", new object[] { 2000076u });
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
         if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");

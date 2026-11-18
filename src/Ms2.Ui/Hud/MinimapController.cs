@@ -15,6 +15,9 @@ public sealed class MinimapController : UiController
     public override string Movie => "uiminimapdialog";
     protected override string EntityMethod => "createEntity";
 
+    /// <summary>OnWorldMap: CUIService::ToggleDialog(0x4e42), the world map.</summary>
+    public event Action WorldMap;
+
     /// <summary>The field's minimap image (field minimap table m_strImageName, e.g. map/minimap/02000001.dds); null = none.</summary>
     public string ImageName;
     /// <summary>The field's minimap camera and image rectangles (CMinimap, read by MinimapViewport::InitFromFieldMinimap).</summary>
@@ -261,7 +264,8 @@ public sealed class MinimapController : UiController
             case "OnChangeMode":
                 if (args.Length > 0) FullMap = args[0] is bool b && b;     // m_fullmap (m_212: the named refresh, none here)
                 return true;
-            case "OnToggleMode": case "OnChangeChannel": case "OnCheckIcon": case "OnWheelStepChange": case "OnWorldMap":
+            case "OnWorldMap": WorldMap?.Invoke(); return true;      // ToggleDialog(0x4e42) (uiminimapentity.cpp:1253)
+            case "OnToggleMode": case "OnChangeChannel": case "OnCheckIcon": case "OnWheelStepChange":
             case "OnMorePlayers": case "OnReport": case "OnPopupMenu":
                 return true;        // the other dialogs, server and options they reach are not here
         }
