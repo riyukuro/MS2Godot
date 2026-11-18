@@ -9,7 +9,8 @@ namespace Ms2Godot.Ui;
 /// from the hand port (LoadingProgressLogic), in the same state:
 /// <list type="bullet">
 /// <item>--shots DIR: where the shots go (loading_&lt;ms&gt;.png);</item>
-/// <item>--map ID: the loading picture of that map (LoadingImageTable.Pick, the first candidate); none: no picture;</item>
+/// <item>--map ID: the loading picture of that map (LoadingImageTable.Pick with a fixed seed; the candidates are printed);
+/// --picture FILE: that picture (a file of LoadingImageTable.ImageArchive) instead; neither: no picture;</item>
 /// <item>--tip TEXT, --guide (showGuide 1), --noframe (showFrame false), --progress COUNT,TOTAL.</item>
 /// </list>
 /// </summary>
@@ -33,6 +34,7 @@ public partial class LoadingShot : Node
             {
                 case "--shots": shotDir = args[++i]; break;
                 case "--map": map = int.Parse(args[++i]); break;
+                case "--picture": picture = args[++i]; break;
                 case "--tip": tip = args[++i]; break;
                 case "--guide": guide = true; break;
                 case "--noframe": frame = false; break;
@@ -41,7 +43,12 @@ public partial class LoadingShot : Node
             }
         var packs = new PackSet(Settings.DataDir);
         var assets = new UiAssets(packs);
-        if (map != 0) picture = new LoadingImageTable(packs).Pick(map, new System.Random(0));
+        if (map != 0 && picture == null)
+        {
+            var table = new LoadingImageTable(packs);
+            GD.Print($"loading pictures of {map}: {string.Join(", ", table.Candidates(map, System.DateTime.Now))}");
+            picture = table.Pick(map, new System.Random(0));
+        }
         var layer = new CanvasLayer { Layer = 100 };
         AddChild(layer);
         if (hand)
