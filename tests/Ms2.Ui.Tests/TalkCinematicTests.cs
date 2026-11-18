@@ -187,7 +187,8 @@ public class TalkCinematicTests
         c.SendQuestProgress += progress.Add;
         c.SendNext += i => next = i;
         c.Key(TalkCinematicController.TalkKey.Next);
-        Assert.That(progress, Is.EqualTo(new[] { Quest }));
+        c.Key(TalkCinematicController.TalkKey.Next);    // a second next before the server's answer (Space and the button)
+        Assert.That(progress, Is.EqualTo(new[] { Quest }), "one Quest 0x12");
         Assert.That(next, Is.EqualTo(0));
         Assert.That(rt.Errors, Is.Empty);
     }

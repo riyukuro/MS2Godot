@@ -662,8 +662,10 @@ public sealed class TalkCinematicController : UiController
             if (kind == Kind.QuestProgress)
             {
                 // CQuestProgressCinematicComponent::vfunc_2 (:604) skips the base: nothing once started (it never sets the
-                // flag), and a next requests mode 2, Quest mode 0x12 first for a quest whose m_318.m_0 is set (:611)
-                if (started || msg != 0x493e2) return;
+                // flag), and a next requests mode 2, Quest mode 0x12 first for a quest whose m_318.m_0 is set (:611). The
+                // client's mode 2 goes once until the answer (m_nPending), but its 0x12 goes on every next; here a next while
+                // the mode 2 is pending sends nothing, so Space and the button in one press cannot send 0x12 twice.
+                if (started || msg != 0x493e2 || owner.pending) return;
                 if (owner.Content is { } pc && owner.QuestOf(pc.QuestId) != null && owner.HasSummonPortal(pc.QuestId)) owner.SendQuestProgress?.Invoke(pc.QuestId);
                 owner.RequestNext(0);
                 return;
