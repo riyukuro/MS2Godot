@@ -449,6 +449,39 @@ public class MyInfoTests
     }
 
     [Test]
+    public void UseHintsAreTheClients()
+    {
+        var m = NewModel();
+        ItemTooltip Tip(int id, int flags, bool worn = false)
+        {
+            var tip = new ItemTooltip(m, flags) { OwnerWearsUid = _ => worn };
+            tip.Fill(Item.Create(m.Tables.Items, id, 1));
+            return tip;
+        }
+        // lv10_tooltip_consumable_red_herb.png: "Use by double-clicking your mouse."
+        var herb = Tip(20000028, 0x80);
+        Assert.That(herb.Data["enableUseDbClick"], Is.EqualTo(m.Tables.Common("s_msg_dclick_usable")));
+        Assert.That(herb.Data.ContainsKey("enablePuton"), Is.False);
+        var shown = TooltipTests.Draw(herb.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("double-clicking"));
+        // lv10_tooltip_lifeskill_slot2.png: Iron Ore has neither line
+        var ore = Tip(33000005, 0x80);
+        Assert.That(ore.Data.ContainsKey("enableUseDbClick") || ore.Data.ContainsKey("enablePuton"), Is.False);
+        // an equipment item: the default put-on line; worn by the owner: itemEquip only
+        var hood = Tip(11400021, 0x80);
+        Assert.That(hood.Data["enablePuton"], Is.EqualTo(m.Tables.Common("s_msg_rclick_puton_equip")));
+        var worn = Tip(11400021, 0x80, worn: true);
+        Assert.That(worn.Data["itemEquip"], Is.EqualTo(m.Tables.Common("s_word_equiped")));
+        Assert.That(worn.Data.ContainsKey("enablePuton"), Is.False);
+        // without flag 0x80 / 4, or without an owner player, none of it
+        Assert.That(Tip(20000028, 0x200).Data.ContainsKey("enableUseDbClick"), Is.False);
+        var noOwner = new ItemTooltip(m, 0x80);
+        noOwner.Fill(Item.Create(m.Tables.Items, 20000028, 1));
+        Assert.That(noOwner.Data.ContainsKey("enableUseDbClick"), Is.False);
+    }
+
+    [Test]
     public void StatDescriptionIsTheMainDescription()
     {
         var m = NewModel();

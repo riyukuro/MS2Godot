@@ -155,6 +155,10 @@ public sealed class ItemData
     public bool IsInstallItem => Type == 6;                    // :657
     /// <summary>FUN_14053cbc0 (:663): an equipment item.</summary>
     public bool IsEquipItem => Type == 1;
+    /// <summary>GetEquipSubtype (:509): the subtype of an equipment item, else 0.</summary>
+    public int EquipSubtype => Type == 1 ? Subtype : 0;
+    /// <summary>GetShopId (:1181): param1 of a type 0x14 item, else 0.</summary>
+    public int ShopId => Type == 0x14 ? Param1 : 0;
     /// <summary>HasCubeTextureMesh (:987).</summary>
     public bool HasCubeTextureMesh => UccMesh.Length > 0;
     public bool IsRideItem => Type == 9;                       // :681

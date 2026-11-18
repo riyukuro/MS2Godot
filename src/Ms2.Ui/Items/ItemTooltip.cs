@@ -22,6 +22,12 @@ public sealed class ItemTooltip
     public (long Id, string Name)? Owner;
     /// <summary>GFxManager::Localize: the movie's "$key" strings (korflash.xml); null leaves out the members that need it.</summary>
     public Func<string, string> Localize;
+    /// <summary>The owner player's CEquipment by item uid (PC::GetEquipByUid) for FUN_1409cd750; null: the tooltip has no owner
+    /// player (FUN_1409c6540() == 0) and that block is left out.</summary>
+    public Func<long, bool> OwnerWearsUid;
+    /// <summary>CUIService: the dialog of an id is open (not IsDialogClosed). The item break dialogs (0x4e8d, 0x4e8e) are
+    /// not in this port, so by default none is open.</summary>
+    public Func<int, bool> IsDialogOpen = _ => false;
 
     GameTables Tables => model.Tables;
     string Common(string key) => Tables.Common(key) ?? "";
@@ -70,6 +76,7 @@ public sealed class ItemTooltip
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
+        if ((Flags & 0x80) != 0 || (Flags & 4) != 0) SetUseHints(item);              // FUN_1409cd750
         if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)
             SetCustomizeColor(item);                                              // FUN_1409d2cb0; FUN_1409d3010 after it is not ported
         Data.SetTooltipAlign((Flags & 0x40) != 0 || (Flags & 2) != 0 ? 9 : 5);
@@ -452,6 +459,50 @@ public sealed class ItemTooltip
         if (d.HasSkinType && d.HasCubeTextureMesh && r.Socket.Gems.Count == 0) return false;
         if (d.HasSkinType) return null;                                            // HasBreakReward
         return true;
+    }
+
+    /// <summary>
+    /// FUN_1409cd750 (astooltip.cpp:1736): with an owner player, an item it wears gets itemEquip s_word_equiped (0x58a);
+    /// else, with flag 0x80, an equipment item while neither item break dialog is open (FUN_1409e6c80) gets the default
+    /// enablePuton (0x751) and, for subtype 0x1f / 0x22 (FUN_14053d510), enableCompareSwap (0x765); a usable item
+    /// (CItem::FUN_140525a80) gets enableUseDbClick: a StoryBook s_msg_dclick_readable (0x763), a score item the default
+    /// only when FUN_140525730 holds (not ported: the score items get none), a shop item s_msg_dclick_open_shop, else the
+    /// default s_msg_dclick_usable (0x762). Puton and compare swap are skipped with flag 0x100.
+    /// </summary>
+    public void SetUseHints(Item item)
+    {
+        if (OwnerWearsUid == null) return;
+        var d = item.Data;
+        if (OwnerWearsUid(item.Uid)) { Data["itemEquip"] = Common("s_word_equiped"); return; }
+        if ((Flags & 0x80) == 0) return;
+        if (d.Type == 1 && !IsDialogOpen(0x4e8d) && !IsDialogOpen(0x4e8e))
+        {
+            SetEnablePuton(Common("s_msg_rclick_puton_equip"));                      // SetEnablePutonDefault
+            if (d.EquipSubtype is 0x1f or 0x22 && (Flags & 0x100) == 0)
+                Data["enableCompareSwap"] = Common("s_msg_tooltip_compare_swap");     // SetEnableCompareSwapDefault
+        }
+        if (!IsDoubleClickUsable(item)) return;
+        if (d.FunctionName == "StoryBook") Data["enableUseDbClick"] = Common("s_msg_dclick_readable");
+        else if (d.IsScoreItem) { }
+        else if (d.ShopId > 0) Data["enableUseDbClick"] = Common("s_msg_dclick_open_shop");
+        else Data["enableUseDbClick"] = Common("s_msg_dclick_usable");
+    }
+
+    /// <summary>CItem::FUN_140525a80 (item.cpp:1761): an equipment item with a cube texture mesh and no UGC id; types 2, 5,
+    /// 9, 0xb, 0xc and 0x18; a function other than RecallParty and TreasureMap; or a shop id.</summary>
+    static bool IsDoubleClickUsable(Item item)
+    {
+        var d = item.Data;
+        switch (d.Type)
+        {
+            case 1:
+                if (d.HasCubeTextureMesh && !(item.Record is { HasUgc: true, Ugc.Uid: not 0 })) return true;
+                break;
+            case 2: case 5: case 9: case 0xb: case 0xc: case 0x18:
+                return true;
+        }
+        if (d.FunctionName.Length != 0) return d.FunctionName is not ("RecallParty" or "TreasureMap");
+        return d.ShopId > 0;
     }
 
     /// <summary>SetEnablePuton (@0x1409c69b0): nothing with flag 0x100; else "enablePuton".</summary>
