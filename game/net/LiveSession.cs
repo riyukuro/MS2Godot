@@ -41,6 +41,7 @@ public partial class LiveSession : Node
     public readonly QuestBook Quests = new();
     /// <summary>The item inventory from the ItemInventory packets (OnItemInventory); live only.</summary>
     public readonly ItemBook Items = new();
+    public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
     public CharacterCreateRefused LastRefusal { get; private set; }
 
     public static void Attach(Node parent)
@@ -303,6 +304,11 @@ public partial class LiveSession : Node
                 {
                     var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
                     GD.Print($"live: item put on/off {o}");
+                }
+                else if (game.Is(p, Inbound.GlobalFactor))
+                {
+                    bool first = Factors.Apply(p.Reader());   // CSceneStateGame::OnGlobalFactor (scenestategame.cpp:4851): taken once; the quest reward rescale (QuestRates) reads it
+                    GD.Print($"live: global factor {(first ? "applied" : "ignored (already taken)")}");
                 }
                 else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
