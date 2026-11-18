@@ -19,9 +19,14 @@ public sealed class MainPlayerInfoController : UiController
 
     long prevEp;
 
-    /// <summary>vfunc_43 (uimainplayerinfo.cpp:535): bottom centre, above the bottom bar (FUN_1418dd0c0 = height - 2; the
-    /// second bar of feature 0xbd is off).</summary>
-    public override void Layout(double stageW, double stageH) => Host.Align(Host.Entity, 2, 0, -(BottomBarHeight - 2));
+    /// <summary>DAT_1439f8cd0: the adventure level bar's height, the second bottom bar (feature 0xbd).</summary>
+    public int AdventureBarHeight = 21;
+    public const int AdventureLevelFeature = 0xbd;
+
+    /// <summary>vfunc_43 (uimainplayerinfo.cpp:535): bottom centre, above the bottom bars: FUN_1418dd0c0 = height - 2, and
+    /// FUN_1418dd110 = the adventure bar's height - 2 with feature 0xbd, else 0 (uibuiltindialog.cpp:45, :65).</summary>
+    public override void Layout(double stageW, double stageH)
+        => Host.Align(Host.Entity, 2, 0, -(BottomBarHeight - 2 + (Model.IsFeatureEnabled(AdventureLevelFeature) ? AdventureBarHeight - 2 : 0)));
 
     object PlayerInfo => Host.Child("m_playerInfo");
     object Slot => Host.Child("m_slot");
@@ -93,6 +98,50 @@ public sealed class MainPlayerInfoController : UiController
             case StatusEvent.Name: Host.Invoke(pi, "setName", Pc.NameWithTitle); break;
             case StatusEvent.Level: Host.Invoke(pi, "setLevel", (uint)Pc.Level); break;
         }
+    }
+
+    /// <summary>UIMainPlayerInfo::GetSlotName (uimainplayerinfo.cpp:1074, :1424): the slot bag "SlotInfo.skill.0", 0x19 slots
+    /// named "&lt;bag&gt;.&lt;i&gt;" (FUN_1422cc860).</summary>
+    public const string SlotBag = "SlotInfo.skill.0";
+    public const int SlotCount = 0x19;
+    /// <summary>The SkillSlot ctor's m_kKeys (skillslot.cpp:310): slots 22..24 follow actions 300003, 300033, 300001 instead
+    /// of their quick slot action.</summary>
+    static readonly Dictionary<int, long> SlotKeys = new() { [0x16] = 0x493e3, [0x17] = 0x49401, [0x18] = 0x493e1 };
+    const int PetRankFeature = 0x8c;
+
+    /// <summary>SkillSlot::vfunc_8 (skillslot.cpp:793): the slot object a bound quick slot holds. Only empty slots are
+    /// modelled (no skill or item on the page): no icon, IsDisabled = 1 (no skill id, :1306), count 0, no cooldown.</summary>
+    public override object GetBinding(string name)
+    {
+        if (!name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
+            || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
+            return null;
+        var d = new List<(string, object)>();                                   // ASSlot(2): an object of movie 2 (asitemslot.cpp:740)
+        if (!Model.IsFeatureEnabled(PetRankFeature)) d.Add(("itemPet", 0));    // IsPetItem, no item
+        d.Add(("iconPath", ""));
+        d.Add(("grayColor", 1));
+        d.Add(("itemCount", 0));
+        d.Add(("itemPcBang", 0));
+        d.Add(("itemLock", 0));                                                 // FUN_14175cc60 returns 0
+        d.Add(("shortcutKey", HotkeyText(i)));
+        d.Add(("itemVIP", 0));
+        d.Add(("disableDrag", SlotKeys.ContainsKey(i)));                        // IsFixed (0) || HasKeyBinding (:1433)
+        d.Add(("totalTime", 0.0));                                              // ASSlot::SetTotalTime / SetRemainTime (:1066, :1060)
+        d.Add(("remainTime", 0.0));
+        // SetCooldownStrings (:1072): GetStringCommon 0x5cb/0x5ca/0x5cc/0x5ce = s_word_sec/min/hour/day (commonstringtable.cpp:3095)
+        d.Add(("cooldownSecStr", Model.Tables.Common("s_word_sec") ?? ""));
+        d.Add(("cooldownMinStr", Model.Tables.Common("s_word_min") ?? ""));
+        d.Add(("cooldownHourStr", Model.Tables.Common("s_word_hour") ?? ""));
+        d.Add(("cooldownDayStr", Model.Tables.Common("s_word_day") ?? ""));
+        return Host.Obj(d.ToArray());
+    }
+
+    /// <summary>GetHotkeyText / GetHotkey(0) (skillslot.cpp:1229, :1235).</summary>
+    string HotkeyText(int slot)
+    {
+        var keys = Model.Keys;
+        int key = SlotKeys.TryGetValue(slot, out var action) ? keys.FindKeyByActionAndPriority(action, 0) : keys.FindKeyByQuickSlot(slot, 0);
+        return keys.GetKeyName(key);
     }
 
     public override bool OnCallback(string name, object[] args)

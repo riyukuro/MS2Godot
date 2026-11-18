@@ -61,6 +61,8 @@ public sealed class UiModel
     public readonly PlayerState Player = new();
     public readonly FieldState Field = new();
     public readonly GameTables Tables;
+    /// <summary>CKeyTable: the keys and their bound actions (key captions on the quick slots).</summary>
+    public KeyTable Keys = KeyTable.Empty;
     /// <summary>The client's feature switches (CFeatureManager::IsFeatureEnabled id) the HUD code tests.</summary>
     public readonly HashSet<int> Features = new() { Feature.SearchTooltip, Feature.InputMode, Feature.GamePad };
     /// <summary>The server clock the upper HUD shows (GetServerTime); null = local time.</summary>

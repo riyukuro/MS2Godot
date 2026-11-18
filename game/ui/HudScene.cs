@@ -165,8 +165,7 @@ public partial class HudScene : Node
         target = new TargetFrame(assets, uiRoot, u, stage);
         Chat(uiRoot);
         Quests(uiRoot);
-        Orb(uiRoot);
-        ExpBar(uiRoot);
+        PlayerInfo(uiRoot);
         AdventureBar(uiRoot);
         GameMenu(uiRoot);
         SystemMenuFacts();
@@ -1058,171 +1057,34 @@ public partial class HudScene : Node
     /// <summary>qg_dialog_body's width: the dialog's AS3 width when only the mission entity shows.</summary>
     const float QuestGuideWidth = 298;
 
-    // ---- HP/SP orb and the skill slots ----------------------------------------------------------------------------
+    // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
-    void Orb(Control ui)
+    UiModel hudModel;
+    MovieDialog playerInfoMovie, expBarMovie;
+
+    /// <summary>
+    /// UIMainPlayerInfo (uimainplayerinfo) and UIExpBar (uiexpbar), each run from its own movie with its C++ side as the
+    /// controller (Ms2.Ui.Hud). The model is the HUD's numbers (<see cref="StubHudData"/>); feature 0xbd is on, as the
+    /// adventure level bar under them is drawn.
+    /// </summary>
+    void PlayerInfo(Control ui)
     {
-        const float f = 1f;
-        var r = Place(ui, "uimainplayerinfo", f, Vector2.Zero);
-        // UIMainPlayerInfo::vfunc_43: vfunc_2(2, 0, -(FUN_1418dd0c0() + FUN_1418dd110())); MainPlayerInfo is 705 x 193
-        if (DialogBody(r) is { } body) AlignDialog(r, body, 2, new Vector2(705, 193), 0, -BottomBars);
-        Hide(r, "m_rideeSP", "m_rideeHP", "m_ridee", "m_rideeName", "m_penalty", "m_infinity", "infinity", "m_message", "m_gamePadSkillCommon", "m_cubeItem", "m_cubeControl");
-        r.FindClip("m_playerInfo")?.GotoLabel("stat_show");          // the stat orb fades in with this label
-        var stat = r.FindClip("m_playerInfo.m_stat");
-        StatBar(stat.FindClip("m_hp"), data.HpRatio);
-        StatBar(stat.FindClip("m_sp"), data.SpRatio);
-        stat.SetNamedVisible("m_hpWarning", data.HpRatio <= 0.3);     // StatInfo.setHP: shown at cur / max <= 0.3
-        // m_hpWarning (sym 367) is a plain 40-frame clip with no script: it loops, alpha 0.051 -> 0.398 at f20 -> 0.051
-        if (stat.Direct("m_hpWarning")?.Node is MovieClipNode warning) warning.Loop();
-        // StatInfo.initStat -> setEP(cur, cur, max): pips below uint(cur / max * 6) play "normal", the rest "empty" (calcFrame)
-        if (stat.FindClip("m_ep") is { } ep)
-        {
-            uint n = (uint)((double)data.EpCurrent / data.EpMax * 6);
-            for (int i = 0; i < 6; i++) ep.FindClip("gauge" + i)?.GotoLabel(i < n ? "normal" : "empty");
-        }
-        stat.SetNamedText("m_curHp", data.Player.HpCurrent.ToString()); stat.SetNamedText("m_maxHp", data.Player.HpMax.ToString());
-        stat.SetNamedText("m_curSp", data.SpCurrent.ToString()); stat.SetNamedText("m_maxSp", data.SpMax.ToString());
-        stat.SetNamedText("hpTxt", "Health"); stat.SetNamedText("spTxt", "Spirit");
-        // MainPlayerInfo.setData: m_tag = "LV " + level + " " + jobName + " " + name (m_rideeName.m_tag stays with its hidden parent)
-        // StatInfo.initStat: setJob(jobCode) sends m_job.icon and m_job.battle.icon to "_" + jobCode, and setBattle(battle)
-        // plays m_job.battle from "normal" (out of battle), which fades the battle icon out and stops on its last frame.
+        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
+        hudModel = new UiModel(new GameTables(assets.Packs, "en"));
+        hudModel.Features.Add(Ms2.Ui.Hud.MainPlayerInfoController.AdventureLevelFeature);
+        hudModel.Keys = new KeyTable(assets.Packs, "en");
+        var p = hudModel.Player;
+        p.Name = data.Player.Name; p.Level = data.Player.Level;
         // jobCode is the sub job (uimainplayerinfo.cpp:1405): 100 Knight, 200 Berserker ... 1100 Soul Binder; the stub
-        // numbers its jobs 1, 10, 20 ... 100.
-        int jobCode = data.Player.Job <= 1 ? 100 : (data.Player.Job / 10 + 1) * 100;
-        static void StopAt(MovieClipNode.Child c, string label)       // gotoAndStop(label): the label's own frame
-        {
-            if (c?.Node is MovieClipNode m && m.Labels.TryGetValue(label, out int f)) m.GotoFrame(f);
-        }
-        if (stat?.Direct("m_job")?.Node is MovieClipNode job)
-        {
-            StopAt(job.Direct("icon"), "_" + jobCode);
-            if (job.Direct("battle")?.Node is MovieClipNode battle)
-            {
-                StopAt(battle.Direct("icon"), "_" + jobCode);
-                battle.GotoLabel("normal");                           // gotoAndPlay("normal") runs to the stop() on frame 29
-            }
-        }
-        r.FindClip("m_playerInfo")?.SetNamedText("m_tag", $"LV {data.Player.Level} {StubCharacterList.JobNames.GetValueOrDefault(data.Player.Job, "Beginner")} {data.Player.Name}");
-
-        // slots: playerinfo_dialog_slot shows its "skill" label; the skill list is a fixed grid of 16 slot components (Q W E R / A S D F, 1 2 3 4 / 5 6 7 8)
-        if (r.FindClip("m_slot") is { } slot)
-        {
-            slot.GotoLabel("skill");
-            var list = slot.FindClip("m_skillCommon");
-            list?.GotoLabel("show");
-            string shortcutLetters = "QWERASDF12345678";
-            int n = 0;
-            if (list != null)
-                foreach (var c in list.Children.OrderBy(c => c.Def["depth"]?.GetValue<int>() ?? 0))
-                    if (c.Node is MovieClipNode slotClip && slotClip.ClassName == "playerinfo_slot_skill" && n < shortcutLetters.Length)
-                    {
-                        string key = shortcutLetters[n++].ToString();
-                        var sk = slotClip.FindClip("m_shortcutKey");
-                        if (sk != null) foreach (var cl in sk.AllClips()) foreach (var t in cl.TextFields) t.Text = key;
-                        slotClip.GotoLabel("up");
-                        foreach (var cl in slotClip.AllClips()) foreach (var t in cl.TextFields) if (t.Text != key) t.Text = "";
-                    }
-            // the action slots in m_commonExpansion: pick up, attack, jump (slotIndex 22-24 on Z X C), each with a customBG
-            if (list?.FindClip("m_commonExpansion") is { } expansion)
-            {
-                var actions = new[] { ("__id26_", "slot_skill_itempickup", "Z"), ("__id27_", "slot_skill_fight", "X"), ("__id28_", "slot_skill_jump", "C") };
-                foreach (var (name, bg, key) in actions)
-                    if (expansion.FindClip(name) is { } slotClip)
-                    {
-                        slotClip.GotoLabel("up");
-                        foreach (var cl in slotClip.AllClips()) foreach (var t in cl.TextFields) t.Text = "";
-                        if (slotClip.FindClip("m_shortcutKey") is { } sk) foreach (var cl in sk.AllClips()) foreach (var t in cl.TextFields) t.Text = key;
-                        CustomBG(r.Movie, slotClip, bg);
-                    }
-            }
-            // the skill expansion slots: the default key table puts Insert Home Page Up over Delete End Page Dn; the captions
-            // are the key names (string/<lang>/keyname.xml by key id)
-            if (list?.FindClip("m_skillExpansion") is { } skillExt)
-            {
-                var names = assets.Table($"string/{assets.Language}/keyname.xml")?.Root?.Elements("key")
-                    .GroupBy(k => (string)k.Attribute("id")).ToDictionary(g => g.Key, g => (string)g.First().Attribute("name"));
-                string[] keyIds = { "128", "120", "122", "129", "125", "127" };
-                var extSlots = skillExt.Children.Where(c => c.Node is MovieClipNode m && m.ClassName == "playerinfo_slot_skill")
-                    .OrderBy(c => Math.Round(c.Base.Origin.Y)).ThenBy(c => c.Base.Origin.X).Select(c => (MovieClipNode)c.Node).ToList();
-                for (int i = 0; i < extSlots.Count && i < keyIds.Length; i++)
-                {
-                    var slotClip = extSlots[i];
-                    slotClip.GotoLabel("up");
-                    foreach (var cl in slotClip.AllClips()) foreach (var t in cl.TextFields) t.Text = "";
-                    string key = names?.GetValueOrDefault(keyIds[i]) ?? "";
-                    if (slotClip.FindClip("m_shortcutKey") is { } sk) foreach (var cl in sk.AllClips()) foreach (var t in cl.TextFields) t.Text = key;
-                }
-            }
-            // BaseSlot.clearSlot: no charge gauge on an empty slot
-            foreach (var cl in slot.AllClips().Where(c => c.ClassName == "playerinfo_slot_skill").ToList()) cl.SetNamedVisible("m_recharge", false);
-            // UIMainPlayerInfo::SetShortkeyPageNumber(key table page + 1) -> setShortkeyPageNumber -> m_page.m_pageNum
-            foreach (var cl in slot.AllClips().Where(c => c.Direct("m_pageNum") != null).ToList()) cl.SetNamedText("m_pageNum", "1");
-        }
-    }
-
-    /// <summary>
-    /// The slot's customBG setter: hides m_bg and adds the named class to m_bgLayer at (-1, -1), sized to
-    /// m_bgLayer.width - 2 by m_bgLayer.height - 2 (in the slot's units, set on the child).
-    /// </summary>
-    void CustomBG(UiMovie movie, MovieClipNode slotClip, string className)
-    {
-        if (slotClip.Direct("m_bgLayer") is not { } layerChild || layerChild.Node is not MovieClipNode layer) return;
-        if (movie.BuildClass(className, u) is not { } bg) return;
-        slotClip.SetNamedVisible("m_bg", false);
-        float lw = slotClip.ChildWidth(layerChild), lh = lw;     // m_bgLayer is square (60 x 60 at its scale)
-        if (layer.ContentRect() is { } lb && lb.Size.X > 0) lh = lw * lb.Size.Y / lb.Size.X;
-        var b = bg.ContentRect() ?? new Rect2(0, 0, 60, 60);
-        bg.Position = new Vector2(-1, -1);
-        if (b.Size.X > 0 && b.Size.Y > 0) bg.Scale = new Vector2((lw - 2) / b.Size.X, (lh - 2) / b.Size.Y);
-        layer.AddChild(bg);
-    }
-
-    /// <summary>
-    /// StatusBar.setValue for the orb's vertical bars (m_fullwidth 152, m_vertical): m_mask.height = max(1, 152 x cur / max)
-    /// from its own origin (the bar is placed turned 180 degrees, so it fills from the bottom); onChangeHp/onChangeSp then put
-    /// "line" at y = getTailPosition() + 5 (the mask height as uint, or 152 once it is within 2 of it).
-    /// </summary>
-    static void StatBar(MovieClipNode bar, double ratio)
-    {
-        var mask = bar?.Direct("m_mask");
-        if (mask == null) return;
-        const float full = 152;
-        float h = Math.Max(1f, full * (float)ratio);
-        var b = mask.MaskBounds; var baseT = mask.Base;
-        mask.Override = new Transform2D(baseT.X, new Vector2(0, h / b.Size.Y), baseT.Origin);
-        if (bar.Direct("line") is { } line)
-        {
-            uint tail = (uint)h; int t = tail - 2 < full ? (int)tail : (int)full;
-            line.Base = new Transform2D(line.Base.X, line.Base.Y, new Vector2(line.Base.Origin.X, t + 5));
-        }
-        bar.GotoFrame(bar.Frame);
-    }
-
-    // ---- EXP bar (from the movie) ----------------------------------------------------------------------------------
-
-    /// <summary>
-    /// ExpBar (expbar_entity_body). Its width is the stage width, and configUI's Constraints (REFLOW) stretch m_bg, m_restBg
-    /// and m_bar and keep m_point centred. setSize gives m_bar.m_fullwidth = m_bg.width - 6, and setExp fills the status bar
-    /// (StatusBar.setValue: the mask width is fullwidth x cur / max, at least 1). makeSplit and onStatusChange lay out the
-    /// ticks, m_split and the gain effect (<see cref="BarSplits"/>).
-    /// </summary>
-    void ExpBar(Control ui)
-    {
-        var m = new UiMovie(assets, "uiexpbar");
-        const float bgW = 1920, bgH = 21;
-        UiLayout.Reflow(m, "expbar_entity_body", new Vector2(bgW, bgH), new Vector2(stage.X, bgH),
-            ("m_bg", UiLayout.Edge.Left | UiLayout.Edge.Right), ("m_restBg", UiLayout.Edge.Left | UiLayout.Edge.Right),
-            ("m_point", UiLayout.Edge.CenterH), ("m_bar", UiLayout.Edge.Left | UiLayout.Edge.Right));
-        var r = m.BuildRoot(u);
-        r.Scale = new Vector2(u, u); r.Position = new Vector2(0, stage.Y - 237) * u;
-        var holder = new Node2D(); holder.AddChild(r); ui.AddChild(holder);
-        Hide(r, "m_restBar", "m_restPin", "m_restBg");
-        var body = r.FindClip("__id0_");
-        if (body == null) return;
-        body.FindClip("m_point")?.SetNamedText("textField", $"{data.ExpPercent:0.00}%");
-        float full = stage.X - 6;                                            // setSize: m_bg.width - 6
-        float tail = SetBarValue(body, full, data.ExpPercent);
-        BarSplits(body, "expbar_status_split", full, tail);
+        // numbers its jobs 1, 10, 20 ... 100
+        p.SubJob = data.Player.Job <= 1 ? 100 : (data.Player.Job / 10 + 1) * 100;
+        p.HpCur = data.Player.HpCurrent; p.HpMax = data.Player.HpMax;
+        p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
+        p.EpCur = data.EpCurrent; p.EpMax = data.EpMax;
+        p.Exp = (long)Math.Round(hudModel.NextLevelExp * data.ExpPercent / 100);
+        var window = GetWindow().Size;
+        ui.AddChild(playerInfoMovie = new MovieDialog(assets, new Ms2.Ui.Hud.MainPlayerInfoController(), hudModel, window));
+        ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
     }
 
     /// <summary>

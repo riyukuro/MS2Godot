@@ -11,6 +11,7 @@ namespace Ms2.Ui.Tests;
 public class HudTests
 {
     static PackSet packs;
+    static KeyTable keys;
     static MovieSource src;
     static GameTables tables;
 
@@ -23,8 +24,9 @@ public class HudTests
             packs = new PackSet(d);
             src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
             tables = new GameTables(packs, "en");
+            keys = new KeyTable(packs, "en");
         }
-        var m = new UiModel(tables);
+        var m = new UiModel(tables) { Keys = keys };
         UiFixture.Apply(m);
         m.ServerTime = () => new DateTime(2026, 1, 1, 9, 5, 0);
         return m;
@@ -92,6 +94,12 @@ public class HudTests
         Assert.That(pi, Is.Not.Null);
         var texts = AllTexts(pi);
         TestContext.WriteLine("texts: " + string.Join(" | ", texts));
+        // the quick slots bind "SlotInfo.skill.0.N" and show the key bound to each slot's action (DefaultKey.xml)
+        Assert.That(h.BindingNames, Does.Contain("SlotInfo.skill.0.0").And.Contain("SlotInfo.skill.0.24"));
+        Assert.That(h.RT.Errors, Is.Empty);
+        var slotTexts = AllTexts(h.Child("m_slot") as AsDisplayObject);
+        Assert.That(slotTexts.Where(t => t.StartsWith("textField=")).Take(48).Where((_, n) => n % 2 == 0).Select(t => t[10..]),
+            Is.EqualTo(new[] { "Q", "W", "E", "R", "A", "S", "D", "F", "1", "2", "3", "4", "5", "6", "7", "8", "Insert", "Home", "Page Up", "Delete", "End", "Page Dn", "Z", "X" }));
         Assert.That(texts, Has.Some.Contains("1630"));
         Assert.That(texts, Has.Some.Contains("2100"));
         m.Player.HpCur = 1000; m.Notify(StatusEvent.Hp);
