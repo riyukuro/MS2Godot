@@ -124,32 +124,51 @@ public sealed partial class ReservedWords
     /// Where a file has several available environments the client picks one (FUN_14028f8d0, SelectFeatureElement,
     /// featuremanager.cpp:1049: the higher feature level, then the locale); here the last available one stands in for it.
     /// </summary>
-    public void LoadBold(PackSet packs, Func<XElement, bool> available, IReadOnlyDictionary<int, int> parentField)
+    public void LoadBold(PackSet packs, Func<string, string, bool> availableAttrs, IReadOnlyDictionary<int, int> parentField)
     {
         const string A = "Xml";
+        bool available(XElement e) => availableAttrs((string)e.Attribute("locale"), (string)e.Attribute("feature"));
         XElement Pick(XElement e) => e.Elements("environment").Where(available).LastOrDefault();
         XDocument Doc(string entry)
         {
-            try { return XDocument.Parse(Encoding.UTF8.GetString(packs.Read(A, entry)).TrimStart('﻿')); }
+            try { return XDocument.Parse(Encoding.UTF8.GetString(packs.Read(A, entry)).TrimStart('\ufeff')); }
             catch (System.Xml.XmlException) { return null; }
         }
         var entries = packs.List(A).ToList();
         bool Under(string n, string dir) => n.StartsWith(dir, StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
 
-        // itemdatatable.cpp:743-765: <item id> with a picked environment
+        // itemdatatable.cpp:743-765: <item id> with a picked environment (one available <environment> child is enough)
         itemIds = new();
         foreach (var entry in entries.Where(n => Under(n, "itemdata/")))
-            foreach (var item in Doc(entry)?.Root?.Elements("item") ?? Enumerable.Empty<XElement>())
-                if (Pick(item) != null) itemIds.Add(FieldMissions.Long((string)item.Attribute("id")));
+        {
+            var ids = new List<long>();
+            string id = null;
+            bool picked = false;
+            if (Rows(packs.Read(A, entry), "item",
+                    r => { id = r.GetAttribute("id"); picked = false; },
+                    r => picked |= availableAttrs(r.GetAttribute("locale"), r.GetAttribute("feature")),
+                    () => { if (picked) ids.Add(FieldMissions.Long(id)); }))
+                foreach (var i in ids) itemIds.Add(i);
+        }
 
-        // npcdata.cpp:1449: friendly of the picked environment (FindNpcData)
+        // npcdata.cpp:1449: friendly of the picked environment (FindNpcData), the last available one
         npcFriendly = new();
         foreach (var entry in entries.Where(n => Under(n, "npcdata/")))
-            foreach (var npc in Doc(entry)?.Root?.Elements("npc") ?? Enumerable.Empty<XElement>())
-            {
-                var env = Pick(npc);
-                if (env != null) npcFriendly[FieldMissions.Long((string)npc.Attribute("id"))] = FieldMissions.Int((string)env.Attribute("friendly"));
-            }
+        {
+            var rows = new List<(long Id, int Friendly)>();
+            string id = null, friendly = null;
+            bool picked = false;
+            if (Rows(packs.Read(A, entry), "npc",
+                    r => { id = r.GetAttribute("id"); picked = false; },
+                    r =>
+                    {
+                        if (!availableAttrs(r.GetAttribute("locale"), r.GetAttribute("feature"))) return;
+                        picked = true;
+                        friendly = r.GetAttribute("friendly");
+                    },
+                    () => { if (picked) rows.Add((FieldMissions.Long(id), FieldMissions.Int(friendly))); }))
+                foreach (var (i, f) in rows) npcFriendly[i] = f;
+        }
 
         // gamedictionarymanager.cpp:52-128, 245-: <key id value>, value 0 skipped; no availability test in LoadEntry
         HashSet<long> Dict(string file)
@@ -158,8 +177,11 @@ public sealed partial class ReservedWords
             string entry = entries.FirstOrDefault(n => string.Equals(n, "table/kr/" + file, StringComparison.OrdinalIgnoreCase))
                         ?? entries.FirstOrDefault(n => string.Equals(n, "table/" + file, StringComparison.OrdinalIgnoreCase));
             if (entry == null) return set;
-            foreach (var k in Doc(entry)?.Root?.Elements("key") ?? Enumerable.Empty<XElement>())
-                if (FieldMissions.Int((string)k.Attribute("value")) != 0) set.Add(FieldMissions.Long((string)k.Attribute("id")));
+            var ids = new List<long>();
+            if (Rows(packs.Read(A, entry), "key",
+                    r => { if (FieldMissions.Int(r.GetAttribute("value")) != 0) ids.Add(FieldMissions.Long(r.GetAttribute("id"))); },
+                    null, null))
+                set.UnionWith(ids);
             return set;
         }
         dictNpcs = Dict("monsterwebfinder_npc.xml");
@@ -169,7 +191,11 @@ public sealed partial class ReservedWords
         // fielddata.cpp:573-749: the CFieldData rows (a later duplicate id overrides); worldmapmanager.cpp:392-523: the map tiles
         var searchable = new Dictionary<long, bool>();
         var fd = entries.FirstOrDefault(n => string.Equals(n, "table/fielddata.xml", StringComparison.OrdinalIgnoreCase));
-        foreach (var f in (fd == null ? null : Doc(fd))?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
+        XDocument fdDoc = null;
+        if (fd != null)
+            try { fdDoc = Ms2.Formats.World.FieldData.Document(packs); }     // the session's parsed table, not a second parse
+            catch (System.Xml.XmlException) { }
+        foreach (var f in fdDoc?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
         {
             var env = Pick(f);
             if (env == null) continue;
@@ -212,5 +238,33 @@ public sealed partial class ReservedWords
             long mapped = parentField != null && parentField.TryGetValue((int)id, out int p) ? p : id;   // worldmapmanager.cpp:538
             if (search && tiles.Contains(mapped)) fieldSearch.Add(id);                           // worldmapmanager.cpp:544-547
         }
+    }
+    /// <summary>
+    /// The root's children named <paramref name="row"/> in document order, read as XmlRows reads (the settings and text of
+    /// XDocument.Parse): <paramref name="start"/> on the row's start tag, <paramref name="environment"/> on each of its
+    /// &lt;environment&gt; children (as Elements("environment")), <paramref name="end"/> after the row. False when the file
+    /// is not well-formed, as the document parse throws for it; the caller then keeps none of its rows.
+    /// </summary>
+    static bool Rows(byte[] xml, string row, Action<System.Xml.XmlReader> start, Action<System.Xml.XmlReader> environment, Action end)
+    {
+        try
+        {
+            using var r = Ms2.Formats.Text.XmlRows.Open(xml);
+            string rowAtom = r.NameTable.Add(row), envAtom = r.NameTable.Add("environment");
+            while (r.Read())
+            {
+                if (r.NodeType != System.Xml.XmlNodeType.Element || r.Depth != 1) continue;
+                if ((object)r.LocalName != rowAtom || r.NamespaceURI.Length != 0) continue;
+                start(r);
+                if (!r.IsEmptyElement)
+                    while (r.Read() && r.Depth > 1)
+                        if (environment != null && r.NodeType == System.Xml.XmlNodeType.Element && r.Depth == 2
+                            && (object)r.LocalName == envAtom && r.NamespaceURI.Length == 0)
+                            environment(r);
+                end?.Invoke();
+            }
+            return true;
+        }
+        catch (System.Xml.XmlException) { return false; }
     }
 }

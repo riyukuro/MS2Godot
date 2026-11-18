@@ -838,7 +838,7 @@ public partial class HudScene : Node, IUiStageHost
             questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, "en").Languages, data.Locale, featureOn);
             perf?.Step("quest-table");
             perf?.Done();
-            fieldCodes ??= QuestTable.FieldCodes(assets.Table("table/fielddata.xml"), questTable.Available);
+            fieldCodes ??= QuestTable.FieldCodes(FieldData.Document(assets.Packs), questTable.Available);   // the session's parsed table
             var live = Ms2Godot.Net.LiveSession.Instance;
             var meta = fieldMeta;
             IQuestState state = questFixture ? new QuestShotState(questTable, data.Player.Level)

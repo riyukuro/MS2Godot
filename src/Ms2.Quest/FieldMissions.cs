@@ -71,7 +71,7 @@ public sealed class FieldMissions
             {
                 string entry = $"string/{lang}/{file}.xml";
                 if (!packs.Exists("Xml", entry)) continue;
-                m.Words.AddTable(table, Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))), m.Available, fillOnly: true);
+                m.Words.AddTable(table, packs.Read("Xml", entry), m.Available, fillOnly: true);
             }
 
         foreach (var lang in languages)
@@ -89,11 +89,12 @@ public sealed class FieldMissions
     /// IsElementAvailable (commonutil.cpp): a non-empty locale other than the client's skips the element, as does a
     /// feature that is off.
     /// </summary>
-    public bool Available(XElement e)
+    public bool Available(XElement e) => Available((string)e.Attribute("locale"), (string)e.Attribute("feature"));
+
+    /// <summary><see cref="Available(XElement)"/> on the element's locale and feature attributes (null when missing).</summary>
+    public bool Available(string loc, string feature)
     {
-        var loc = (string)e.Attribute("locale");
         if (!string.IsNullOrEmpty(loc) && !string.Equals(loc, locale, StringComparison.OrdinalIgnoreCase)) return false;
-        var feature = (string)e.Attribute("feature");
         return string.IsNullOrEmpty(feature) || featureOn(feature);
     }
 
@@ -264,6 +265,22 @@ public sealed partial class ReservedWords
         {
             if (available != null && !available(k)) continue;
             file[(uint)FieldMissions.Long((string)k.Attribute("id"))] = ((string)k.Attribute("name") ?? "").Replace("\\n", "\n");
+        }
+        foreach (var (id, s) in file) if (!fillOnly || !d.ContainsKey(id)) d[id] = s;
+    }
+
+    /// <summary>
+    /// <see cref="AddTable(int, XDocument, Func{XElement, bool}, bool)"/> on the file's bytes, read as rows (XmlRows) without
+    /// building the document; <paramref name="available"/> is IsElementAvailable on a key's locale and feature.
+    /// </summary>
+    public void AddTable(int table, byte[] xml, Func<string, string, bool> available, bool fillOnly = false)
+    {
+        if (!tables.TryGetValue(table, out var d)) tables[table] = d = new Dictionary<long, string>();
+        var file = new Dictionary<long, string>();
+        foreach (var k in Ms2.Formats.Text.XmlRows.Elements(xml, "key", rootChildren: true))
+        {
+            if (available != null && !available(k.GetAttribute("locale"), k.GetAttribute("feature"))) continue;
+            file[(uint)FieldMissions.Long(k.GetAttribute("id"))] = (k.GetAttribute("name") ?? "").Replace("\\n", "\n");
         }
         foreach (var (id, s) in file) if (!fillOnly || !d.ContainsKey(id)) d[id] = s;
     }

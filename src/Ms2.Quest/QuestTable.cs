@@ -185,7 +185,7 @@ public sealed partial class QuestTable
             {
                 string entry = $"string/{lang}/{file}.xml";
                 if (!packs.Exists("Xml", entry)) continue;
-                t.Words.AddTable(table, Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))), t.Available, fillOnly: true);
+                t.Words.AddTable(table, packs.Read("Xml", entry), t.Available, fillOnly: true);
             }
 
         t.Words.LoadBold(packs, t.Available, packs.Exists(FieldMeta.Archive, FieldMeta.Entry) ? QuestMapGraph.SharedMeta(packs).ParentFields : null);   // the shared table, not a second read
@@ -235,11 +235,12 @@ public sealed partial class QuestTable
     bool FeatureEnabled(XElement e) => (string)e.Attribute("feature") is not { Length: > 0 } f || featureOn(f);
 
     /// <summary>IsElementAvailable (commonutil.cpp): the client's locale (or none) and an enabled feature (or none).</summary>
-    public bool Available(XElement e)
+    public bool Available(XElement e) => Available((string)e.Attribute("locale"), (string)e.Attribute("feature"));
+
+    /// <summary><see cref="Available(XElement)"/> on the element's locale and feature attributes (null when missing).</summary>
+    public bool Available(string loc, string feature)
     {
-        var loc = (string)e.Attribute("locale");
         if (!string.IsNullOrEmpty(loc) && !string.Equals(loc, locale, StringComparison.OrdinalIgnoreCase)) return false;
-        var feature = (string)e.Attribute("feature");
         return string.IsNullOrEmpty(feature) || featureOn(feature);
     }
 

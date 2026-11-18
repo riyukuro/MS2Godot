@@ -68,6 +68,9 @@ public sealed class FieldData
     /// <summary>The parsed table, once per pack set: a pack entry never changes, the callers only read the tree, and FieldData results are built fresh from it.</summary>
     static XDocument Doc(PackSet packs) => docs.GetValue(packs, p => XDocument.Parse(System.Text.Encoding.UTF8.GetString(p.Read(Archive, Entry))));
 
+    /// <summary>The parsed table shared per pack set (read once; callers must not change it).</summary>
+    public static XDocument Document(PackSet packs) => Doc(packs);
+
     /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
     public static FieldData FindByXBlock(PackSet packs, string xblockName)
     {
