@@ -158,6 +158,13 @@ public sealed class GameTables
     /// <summary>The job's display name by sub job code (string table 6); the code as text when unknown.</summary>
     public string JobName(int subJob) => jobNames.TryGetValue(subJob.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : subJob.ToString(CultureInfo.InvariantCulture);
     public string Common(string key) => common(key);
+    /// <summary>GetStringCommon (commonutil.cpp:860): the common string of the id (CommonString::RegisterIds keys); "" when
+    /// the id or its key is unknown.</summary>
+    public string Common(int id) => Ms2.Formats.Text.CommonStringIds.Key(id) is { } key ? common(key) ?? "" : "";
+    Hud.ServerStringGroup triggerStrings;
+    /// <summary>CServerString m_trigger: string/&lt;language&gt;/stringtrigger.xml, read on first use.</summary>
+    public Hud.ServerStringGroup TriggerStrings => triggerStrings ??= packs == null ? Hud.ServerStringGroup.Empty
+        : Hud.ServerStringGroup.Load(packs, strings.Languages, "stringtrigger.xml", e => FeatureElements.IsAvailable(packs, e), ReservedWords.ReplaceObjectWords);
     /// <summary>CItemDataTable, read per file on first use.</summary>
     public readonly Items.ItemDataTable Items = Ms2.Ui.Items.ItemDataTable.Empty;
     /// <summary>ItemGachaBoxTable (table/gacha_info.xml), read on first use.</summary>

@@ -61,6 +61,8 @@ public partial class LiveSession : Node
     public event Action<int> KeyTableChanged;
     /// <summary>OnBadgeEquip mode 4: the error code (shown as a system notice, <see cref="Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey"/>).</summary>
     public event Action<short> GemEquipError;
+    /// <summary>OnNotice (0x71, scenestategame.cpp:9216): a system notice, routed by <see cref="Ms2.Ui.Hud.NoticeController"/>.</summary>
+    public event Action<NoticeMessage> Notice;
     /// <summary>The local player's skill book (JobSystem): the own FieldAddUser's block (OnAddUser, scenestategame.cpp:11135) and the
     /// Job packets (OnJob); null before one arrives.</summary>
     public SkillBook SkillBook { get; private set; }
@@ -447,6 +449,12 @@ public partial class LiveSession : Node
                     var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
                     bool ownEquipment = Me.Apply(o, WornLayer);
                     GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+                }
+                else if (game.Is(p, Inbound.Notice))
+                {
+                    var n = NoticeMessage.Read(p.Reader());     // CSceneStateGame::OnNotice (scenestategame.cpp:9216); no ExpectEnd: the client ignores trailing bytes
+                    Notice?.Invoke(n);
+                    GD.Print($"live: notice kind {n.Kind} flags 0x{n.Flags:x} text kind {n.Text.Kind}{(n.Text.Formatted ? $" id {n.Text.Id} args {n.Text.Args.Length}" : $" \"{n.Text.Text}\"")}");
                 }
                 else if (game.Is(p, Inbound.BadgeEquip))
                 {

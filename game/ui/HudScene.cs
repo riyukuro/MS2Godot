@@ -128,6 +128,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchParty = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
+        unwatchNotices?.Invoke();
+        unwatchNotices = null;
         unwatchNewItems?.Invoke();
         unwatchNewItems = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
@@ -482,9 +484,37 @@ public partial class HudScene : Node, IUiStageHost
             Action<short> onGemError = e => SystemNotice(Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey(e, hudModel.IsFeatureEnabled(0x4a)));
             live.GemEquipError += onGemError;
             unwatchGemErrors = () => live.GemEquipError -= onGemError;
+            Notices = NewNotices(live);
+            Action<Ms2.Net.Packets.NoticeMessage> onNotice = Notices.OnNotice;
+            live.Notice += onNotice;
+            unwatchNotices = () => live.Notice -= onNotice;
         }
     }
-    Action unwatchGemErrors;
+    Action unwatchGemErrors, unwatchNotices;
+
+    /// <summary>OnNotice (0x71)'s routing; its sinks are this HUD's system text, the shared chat log and the box queue.</summary>
+    public Ms2.Ui.Hud.NoticeController Notices { get; private set; }
+
+    Ms2.Ui.Hud.NoticeController NewNotices(Ms2Godot.Net.LiveSession live)
+    {
+        string lang = (assets.Language ?? "").ToUpperInvariant();
+        return new Ms2.Ui.Hud.NoticeController
+        {
+            Tables = hudModel.Tables,
+            Trigger = hudModel.Tables.TriggerStrings,
+            ReplaceValueWords = t => hudModel.Tables.ReservedWords.ReplaceValueWords(t, hudModel.HasLocalPlayer ? hudModel.Player.Name : null),
+            Language = lang,
+            // DAT_143ab0248, the client's region: an assumption here from the string language (KR 0, JP 1, CN 3, the others 2)
+            Region = lang switch { "KR" => 0, "JP" => 1, "CN" => 3, _ => 2 },
+            ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ShowMessage = (t, type, option) => SystemText?.ShowMessage(t, type, option),
+            ChatLine = ChatLog.AddSystemLine,
+            MessageBox = (t, tag) => MessageBoxQueue.ShowMessageBox(t, 0, null, tag),
+            SystemSound = key => GD.Print($"notice: system sound {key} is not played"),
+            ForcedQuit = () => GD.Print("notice: forced quit (SendRequestQuitAndDisconnect is not ported)"),
+            MaintenanceExit = () => GD.Print("notice: the maintenance exit call is not ported"),   // FUN_140d86260()->vfunc_58(0x289, 0)
+        };
+    }
 
     /// <summary>
     /// FUN_141275260 (unit_141274d10_uihelpers.cpp:265): the common string of the id through ShowSystemNotice(text, 1, true)
