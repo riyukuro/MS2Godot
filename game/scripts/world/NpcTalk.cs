@@ -1,7 +1,9 @@
 using Godot;
 using Ms2.Formats.Pack;
+using Ms2.Net.Packets;
 using Ms2.Formats.World;
 using Ms2.Quest;
+using Ms2Godot.Net;
 using Ms2Godot.Ui;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
@@ -32,6 +34,12 @@ namespace Ms2Godot.World;
 ///   is display only).
 /// - Sounds: npcSoundStart when the talk opens (CNpc::PlayStartSound), each page's voiceID (ShowPage), npcSoundEnd when it ends
 ///   (UITalkManager::ResetTalk -> CNpc::PlayEndSound), all at the npc.
+/// - Live (a <see cref="LiveSession"/>): the server plays its part. The talk key sends NpcTalk mode 1 with the npc's object id
+///   (uitalkcinematic.cpp:1432); the server's mode 1 opens the window and mode 2 shows the next page, each with the talk type,
+///   script id, page and button set, and the client finds the script itself (UITalkManager::FindTalkScript, :1945: type 8 the
+///   npc's select talk, 4 the quest script of the first quest Quest mode 1 listed, 2 or 0x20 the npc's script with that id, 1 its
+///   job talk); mode 0 ends it, mode 3 carries the talk rewards. The quest state is the session's quest book (the login list and
+///   the quest packets, <see cref="LiveQuestState"/>), and the window's sends go out as NpcTalk 0 / 2 / 7 and Quest 2 / 4 / 0x12.
 /// The player stands still while the window is open. Keys (UITalkCinematic::vfunc_13): the action key (Space) is Next, Esc ends
 /// the talk, Up / Down move the choice focus.
 /// </summary>
@@ -41,6 +49,12 @@ public sealed partial class NpcTalk : Node
     readonly List<FieldNpcs.Placed> npcs;
     readonly Player player;
     readonly ClientConstants constants;
+    readonly LiveSession live;             // null offline
+    LiveQuestState liveQuests;             // the live session's quest state, for the client's checks
+    QuestRules liveRules;
+    FieldNpcs.Placed liveRequested;        // NpcTalk mode 1 sent, the server has not answered yet
+    ulong liveRequestedAt;
+    FieldNpcs.Placed liveTalking;          // the server opened a talk with this npc (m_nTalking)
     static NpcScriptTable scripts;
     static GameTables tables;
     static QuestTable questTable;
@@ -57,23 +71,40 @@ public sealed partial class NpcTalk : Node
     NpcScriptTable.Script script;      // the server's script and page (m_nParam, m_nPage)
     int page;
     bool wasScripted;
-    public string PlayerName = "Player";
+    string playerName = "Player";
+    /// <summary>$MyPCName: the live character's name, else the sandbox's.</summary>
+    public string PlayerName { get => live?.Me.User?.Name ?? playerName; set => playerName = value; }
     public bool Open => window != null;
     public int Talks;
     /// <summary>The page shown (0 based) and its script id, for the shots.</summary>
     public int Page => page;
     public int ScriptId => script?.Id ?? 0;
 
-    public NpcTalk(PackSet packs, List<FieldNpcs.Placed> npcs, Player player, ClientConstants constants)
+    public NpcTalk(PackSet packs, List<FieldNpcs.Placed> npcs, Player player, ClientConstants constants, LiveSession live = null)
     {
-        this.packs = packs; this.npcs = npcs; this.player = player; this.constants = constants;
+        this.packs = packs; this.npcs = npcs; this.player = player; this.constants = constants; this.live = live;
         Name = "NpcTalk";
+    }
+
+    public override void _EnterTree()
+    {
+        if (live == null) return;
+        live.NpcTalkReceived += OnLiveTalk;
+        live.Quests.NpcOffer += OnQuestOffer;
+    }
+
+    public override void _ExitTree()
+    {
+        if (live == null) return;
+        live.NpcTalkReceived -= OnLiveTalk;
+        live.Quests.NpcOffer -= OnQuestOffer;
     }
     public NpcTalk() { }
 
     static NpcScriptTable Scripts(PackSet packs) => scripts ??= new NpcScriptTable(packs, new GameStrings(packs, "en"));
 
-    static QuestTable Quests(PackSet packs)
+    /// <summary>The client's quest data (QuestDataTable), loaded once.</summary>
+    public static QuestTable ClientQuests(PackSet packs)
     {
         var d = StubHudData.Instance;
         return questTable ??= QuestTable.Load(packs, new GameStrings(packs, "en").Languages, d.Locale, f => !d.FeaturesOff.Contains(f));
@@ -82,10 +113,39 @@ public sealed partial class NpcTalk : Node
     static QuestScriptTable QuestScripts(PackSet packs) =>
         questScripts ??= new QuestScriptTable(packs, (p, c, k) => FeatureElements.Collect(packs, p, c, k));
 
-    SandboxQuests Records => sandboxQuests ??= new SandboxQuests(Quests(packs));
+    SandboxQuests Records => sandboxQuests ??= new SandboxQuests(ClientQuests(packs));
 
-    /// <summary>The sandbox record's state: 0 none, 1 started, 2 rewarded.</summary>
-    int QuestState(int id) => Records.Get(id)?.State ?? 0;
+    /// <summary>The character's quest records as the client's checks read them: the live session's, else the sandbox's.</summary>
+    IQuestContext QuestContext => live != null ? LiveQuests : Records;
+    QuestRules Rules => live != null ? (liveRules ??= new QuestRules(ClientQuests(packs), LiveQuests)) : Records.Rules;
+
+    LiveQuestState LiveQuests => liveQuests ??= new LiveQuestState(live.Quests, ClientQuests(packs), live.GameSession, live.CharacterId,
+        live.Me.User?.Level ?? StubHudData.Instance.Player.Level, live.FieldId, null) { JobGroup = live.Me.User?.JobCode };
+
+    /// <summary>The record's state: 0 none, 1 started, 2 rewarded.</summary>
+    int QuestState(int id) => QuestContext.Get(id)?.State ?? 0;
+
+    /// <summary>
+    /// FUN_140746ba0(quest, npc, 0) (questdata.cpp @0x140746ba0) is 0: the character has the quest's record, started (state 1),
+    /// the npc completes it (m_2ec), and every condition is met (FUN_1407456d0).
+    /// </summary>
+    bool CanComplete(int quest, int npc) =>
+        QuestContext.Get(quest) is { IsActive: true, Complete: true } && ClientQuests(packs).Quest(quest) is { } d && (npc == 0 || d.CompleteNpc == npc);
+
+    static bool FeatureOn(string name) => !StubHudData.Instance.FeaturesOff.Contains(name);
+
+    /// <summary>FUN_14074b840 (questdata.cpp @0x14074b840): the QuestProgress feature, no conditions, start npc = complete npc.</summary>
+    bool AcceptRedirects(int quest) =>
+        FeatureOn("QuestProgress") && ClientQuests(packs).Quest(quest) is { } d && d.Conditions.Count == 0 && d.StartNpc == d.CompleteNpc;
+
+    /// <summary>FUN_14074b950 (questdata.cpp @0x14074b950): the QuestProgress feature and one following quest that starts at
+    /// this quest's complete npc; that quest, else 0.</summary>
+    int CompleteRedirectTo(int quest)
+    {
+        var t = ClientQuests(packs);
+        if (!FeatureOn("QuestProgress") || t.Quest(quest) is not { } d || d.Following.Count != 1) return 0;
+        return t.Quest((int)d.Following[0]) is { } next && next.StartNpc == d.CompleteNpc ? (int)d.Following[0] : 0;
+    }
 
     /// <summary>
     /// Maple2's QuestManager.GetAvailableQuests in quest id order (the npc's quests that can start, then the started ones it
@@ -97,7 +157,7 @@ public sealed partial class NpcTalk : Node
     {
         var qs = QuestScripts(packs);
         var r = Records;
-        return Quests(packs).Quests.Where(d => (d.StartNpc == npc && r.Rules.CanStart(d.Id, npc) == true)
+        return ClientQuests(packs).Quests.Where(d => (d.StartNpc == npc && r.Rules.CanStart(d.Id, npc) == true)
                                                || (d.CompleteNpc == npc && QuestState(d.Id) == 1))
                                    .Select(d => d.Id).Where(id => qs.ScriptIds(id).Any()).ToList();
     }
@@ -109,7 +169,7 @@ public sealed partial class NpcTalk : Node
         var ids = QuestScripts(packs).ScriptIds(quest).ToList();
         int state = QuestState(quest);
         var (lo, hi) = state == 0 ? (100, 200) : state == 1 ? (200, 300) : (0, 0);
-        if (state == 1 && Quests(packs).Quest(quest)?.CompleteNpc == npc) (lo, hi) = (300, 400);
+        if (state == 1 && ClientQuests(packs).Quest(quest)?.CompleteNpc == npc) (lo, hi) = (300, 400);
         int id = ids.FirstOrDefault(i => i >= lo && i < hi);
         return id == 0 ? null : QuestScripts(packs).Find(quest, id);
     }
@@ -128,12 +188,12 @@ public sealed partial class NpcTalk : Node
     /// </summary>
     int StateString(int quest, int npc)
     {
-        if (Quests(packs).Quest(quest) == null) return 0;
-        var r = Records;
+        if (ClientQuests(packs).Quest(quest) == null) return 0;
+        var r = QuestContext;
         if (r.Get(quest)?.IsRewarded == true) return 0x5dc;
-        if (r.CanComplete(quest, npc)) return 0x5db;
+        if (CanComplete(quest, npc)) return 0x5db;
         if (r.Get(quest)?.IsActive == true) return 0x5da;
-        return r.Rules.CanStart(quest, npc) == true ? 0x5d9 : 0x5d8;
+        return Rules.CanStart(quest, npc) == true ? 0x5d9 : 0x5d8;
     }
 
     /// <summary>SelectStringByQuestKind (cinematiccomponent.cpp:810) with "_epic", "", "_repeat", "_event": by the quest
@@ -149,7 +209,7 @@ public sealed partial class NpcTalk : Node
     /// <summary>The complete talk's reward figures (FUN_140761ba0 ... FUN_140761ea0, FUN_140761c60) from the quest table.</summary>
     TalkCinematicController.QuestReward RewardOf(int quest)
     {
-        var t = Quests(packs);
+        var t = ClientQuests(packs);
         var d = t.Quest(quest);
         if (d == null) return null;
         var ctx = new QuestRewards.Context(StubHudData.Instance.Player.Level, 0);
@@ -176,7 +236,7 @@ public sealed partial class NpcTalk : Node
         foreach (int friendly in new[] { 2, 1 })
         {
             FieldNpcs.Placed best = null; float bestD = float.MaxValue;
-            foreach (var n in npcs)
+            foreach (var n in live != null ? live.TalkNpcs : npcs)
             {
                 if (n.Row.Friendly != friendly || !HasTalk(n.Row) || !n.Root.Visible) continue;
                 var to = n.Position - me;
@@ -235,6 +295,7 @@ public sealed partial class NpcTalk : Node
     public bool Start(FieldNpcs.Placed npc)
     {
         if (window != null || npc == null) return false;
+        if (live != null) return RequestLiveTalk(npc);
         var n = Scripts(packs).Find(npc.Row.Id);
         // Maple2's HandleTalk: the quests (flag 4), the talk script (flag 2), and with more than one of them and a select, flag 8
         talkQuests.Clear();
@@ -254,6 +315,16 @@ public sealed partial class NpcTalk : Node
         else script = FirstScript(n);
         if (script == null || script.Contents.Count == 0) { script = Neutral(); questId = 0; }
         page = 0;
+        OpenWindow(npc, ButtonsOf(0), (flags & 4) != 0 ? talkQuests : Enumerable.Empty<int>());
+        return true;
+    }
+
+    /// <summary>
+    /// The window on <see cref="script"/>'s <see cref="page"/> (FUN_141b1ff80: SetSubScene 0x6200031, the npc's start sound), with the
+    /// button set and the quest list (Quest mode 1 before the talk) the server gave.
+    /// </summary>
+    void OpenWindow(FieldNpcs.Placed npc, int buttonSet, IEnumerable<int> quests)
+    {
         talking = npc;
         ui ??= new UiAssets(packs);
         tables ??= new GameTables(packs, "en");
@@ -263,26 +334,45 @@ public sealed partial class NpcTalk : Node
         {
             Talking = true,
             TalkNpcId = npc.Row.Id,
-            Content = ContentOf(script.Contents[0]),
-            ButtonSet = ButtonsOf(0),
+            Content = ContentOf(script.Contents[page]),
+            ButtonSet = buttonSet,
             Flags = flags,
-            QuestOf = q => Quests(packs).Quest(q) is { } d ? new(Quests(packs).QuestName(q), d.Level, IconSuffix(d)) : null,
+            QuestOf = q => ClientQuests(packs).Quest(q) is { } d ? new(ClientQuests(packs).QuestName(q), d.Level, IconSuffix(d)) : null,
             QuestStateString = q => StateString(q, npc.Row.Id),
             IsQuestActive = q => QuestState(q) == 1,
             IsQuestRewarded = q => QuestState(q) == 2,
             QuestRewardOf = RewardOf,
+            AcceptRedirects = AcceptRedirects,
+            CompleteRedirectTo = CompleteRedirectTo,
+            HasSummonPortal = q => ClientQuests(packs).Quest(q)?.SummonPortalField is > 0,
             NpcName = id => Scripts(packs).NpcDisplayName(id),
             NpcIllust = id => id == npc.Row.Id ? npc.Row.Illust ?? "" : "",
             FileExists = ImageExists,
             ClientWidth = (int)size.X, ClientHeight = (int)size.Y,
             MovieScale = UiScale.ViewportFactor(size.X),
         };
-        side.QuestIds.AddRange((flags & 4) != 0 ? talkQuests : Enumerable.Empty<int>());   // Quest mode 1 before the talk
-        side.SendNext += OnNext;
-        // Maple2's QuestHandler Accept / Complete on the sandbox records
-        side.SendQuestAccept += (q, _) => GD.Print($"talk: quest {q} accept: {(Records.Accept(q) ? "started" : "refused")}");
-        side.SendQuestComplete += (q, _, _) => GD.Print($"talk: quest {q} complete: {(Records.Complete(q) ? "rewarded" : "refused")}");
-        side.SendEnd += () => { };                      // NpcTalk mode 0: nothing to tell offline
+        side.QuestIds.AddRange(quests);
+        if (live != null)
+        {
+            // the client's sends; Quest 2 / 4 carry the talk npc's object id (UITalkManager::GetNpcId is the npc's object id)
+            int obj = npc.ObjectId;
+            side.SendNext += pick => live.SendTalk(new NpcTalkNextRequest(pick));
+            side.SendEnd += () => { liveTalking = null; live.SendTalk(new NpcTalkEndRequest()); };
+            side.SendQuestAccept += (q, _) => { GD.Print($"talk: quest {q} accept sent"); live.SendTalk(new QuestAcceptRequest(q, obj)); };
+            side.SendQuestComplete += (q, _, choice) => { GD.Print($"talk: quest {q} complete sent"); live.SendTalk(new QuestCompleteRequest(q, obj, choice)); };
+            side.SendQuestRedirect += (q, kind) => live.SendTalk(new NpcTalkQuestRedirectRequest(q, kind));
+            side.SendQuestProgress += q => live.SendTalk(new QuestProgressRequest(q));
+        }
+        else
+        {
+            side.SendNext += OnNext;
+            // Maple2's QuestHandler Accept / Complete on the sandbox records
+            side.SendQuestAccept += (q, _) => GD.Print($"talk: quest {q} accept: {(Records.Accept(q) ? "started" : "refused")}");
+            side.SendQuestComplete += (q, _, _) => GD.Print($"talk: quest {q} complete: {(Records.Complete(q) ? "rewarded" : "refused")}");
+            side.SendQuestRedirect += OnQuestRedirect;
+            side.SendQuestProgress += q => GD.Print($"talk: quest {q} progress (Quest mode 0x12; the Maple2 server does not handle it)");
+            side.SendEnd += () => { };                      // NpcTalk mode 0: nothing to tell offline
+        }
         side.TalkReset += () => Sound(talking?.Row.SoundEnd, talking?.Position ?? Vector3.Zero);
         side.PlayVoice += v => Sound(v, talking?.Position ?? Vector3.Zero);
         side.CloseComplete += () => CallDeferred(nameof(Teardown));
@@ -299,7 +389,126 @@ public sealed partial class NpcTalk : Node
         layer.AddChild(window);
         Talks++;
         GD.Print($"talk npc {npc.Row.Id} {npc.Row.Name}: script {script.Id} ({script.Contents.Count} page(s)), illust {npc.Row.Illust}");
+    }
+
+    /// <summary>Maple2's NpcTalkHandler.HandleQuest for the sandbox: NpcTalk mode 7 opens the quest's script for this npc.</summary>
+    void OnQuestRedirect(int quest, short kind)
+    {
+        if (side == null || talking == null) return;
+        flags = 4;
+        questId = quest;
+        script = QuestScript(quest, talking.Row.Id);
+        if (script == null || script.Contents.Count == 0) { side.OnServerEnd(); return; }
+        page = 0;
+        ServerPage();
+    }
+
+    // ---- live -------------------------------------------------------------------------------------------------------
+
+    /// <summary>The talk key on a live npc (uitalkcinematic.cpp:1432): NpcTalk mode 1 with its object id; the window opens on the
+    /// server's answer.</summary>
+    bool RequestLiveTalk(FieldNpcs.Placed npc)
+    {
+        if (liveTalking != null) return false;
+        if (liveRequested != null && Time.GetTicksMsec() - liveRequestedAt < 3000) return false;
+        liveRequested = npc; liveRequestedAt = Time.GetTicksMsec();
+        live.SendTalk(new NpcTalkBeginRequest(npc.ObjectId));
+        GD.Print($"talk: NpcTalk 1 sent to npc {npc.Row.Id} (object {npc.ObjectId})");
         return true;
+    }
+
+    FieldNpcs.Placed LiveNpc(int objectId) => live.TalkNpcs.FirstOrDefault(x => x.ObjectId == objectId);
+
+    /// <summary>Quest mode 1 (questmanager_2.cpp:996): FUN_141b217b0 clears the talk's quest ids, FUN_141b217e0 adds each one.</summary>
+    void OnQuestOffer(int npcObject, IReadOnlyList<int> ids)
+    {
+        talkQuests.Clear();
+        talkQuests.AddRange(ids);
+        GD.Print($"talk: Quest 1 from object {npcObject}: {string.Join(" ", ids)}");
+    }
+
+    /// <summary>UITalkManager::FindTalkScript (uitalkcinematic.cpp:1945) on the talk type and the server's script id.</summary>
+    NpcScriptTable.Script FindTalkScript(FieldNpcs.Placed npc, int param)
+    {
+        var n = Scripts(packs).Find(npc.Row.Id);
+        if ((flags & 8) != 0) return n?.Select;                                    // GetNpcPickTalk(npc, 0)
+        if ((flags & 4) != 0) return talkQuests.Count > 0 ? QuestScripts(packs).Find(talkQuests[0], param) : null;   // FindQuestTalk(m_ids[0], param)
+        if ((flags & 2) != 0 || (flags & 0x20) != 0) return n?.ById(param);         // FUN_140855cd0 -> FUN_140856820(npc, param)
+        if ((flags & 1) != 0) return n?.Scripts.FirstOrDefault(x => x.Kind == "job");   // GetNpcPickTalk(npc, 1)
+        return null;
+    }
+
+    /// <summary>UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971) for the window.</summary>
+    void OnLiveTalk(NpcTalkMessage m)
+    {
+        switch (m)
+        {
+            case NpcTalkMessage.Open o:
+            {
+                liveRequested = null;
+                var npc = LiveNpc(o.ObjectId);
+                if (npc == null || window != null) { GD.Print($"talk: mode 1 for object {o.ObjectId}: {(npc == null ? "no such npc" : "a talk is open")}"); return; }
+                flags = o.Flags; page = o.Page;
+                questId = (flags & 4) != 0 && talkQuests.Count > 0 ? talkQuests[0] : 0;
+                script = FindTalkScript(npc, o.ScriptId);
+                liveTalking = npc;
+                if (script == null || page >= script.Contents.Count)
+                {
+                    // FUN_141b1ff80 without a script opens the npc's talk ui (a shop, a storage ...), not ported here
+                    GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported)");
+                    return;
+                }
+                OpenWindow(npc, o.ButtonSet, (flags & 4) != 0 || (flags & 8) != 0 ? talkQuests : Enumerable.Empty<int>());
+                return;
+            }
+            case NpcTalkMessage.Next n:
+                LivePage(n.Flags, n.QuestId, n.ScriptId, n.Page, n.ButtonSet);
+                return;
+            case NpcTalkMessage.Reload r:
+                LivePage(r.Flags, r.QuestId, r.ScriptId, r.Page, r.ButtonSet);
+                return;
+            case NpcTalkMessage.ReloadNoQuest r:
+                talkQuests.Clear();
+                LivePage(r.Flags, null, r.ScriptId, r.Page, r.ButtonSet);
+                return;
+            case NpcTalkMessage.Close:
+                liveRequested = null; liveTalking = null;
+                side?.OnServerEnd();
+                return;
+            case NpcTalkMessage.RewardMeso x: side?.OnRewardMeso(x.Amount); return;
+            case NpcTalkMessage.RewardMerat x: side?.OnRewardMerat(x.Amount); return;
+            case NpcTalkMessage.RewardExp x: side?.OnRewardExp(x.Amount); return;
+            case NpcTalkMessage.RewardAffinity x: side?.OnRewardAffinity(x.Amount, x.Jackpot); return;
+            default:
+                GD.Print($"talk: {m} not handled by the talk window");
+                return;
+        }
+    }
+
+    /// <summary>Modes 2 / 8 / 9 (FUN_141b204d0, ReloadScript): the quest list becomes the packet's id (mode 9 clears it), the script is
+    /// found again, and its page shown; a page the client cannot show ends the talk (SendNpcTalkMode0).</summary>
+    void LivePage(int newFlags, int? quest, int scriptId, int newPage, int buttonSet)
+    {
+        flags = newFlags; page = newPage;
+        if (quest is { } q) { talkQuests.Clear(); talkQuests.Add(q); }
+        questId = (flags & 4) != 0 && talkQuests.Count > 0 ? talkQuests[0] : 0;
+        var npc = talking ?? liveTalking;
+        if (npc == null) return;
+        script = FindTalkScript(npc, scriptId);
+        if (side == null)
+        {
+            if (script != null && page < script.Contents.Count) OpenWindow(npc, buttonSet, talkQuests.ToList());
+            return;
+        }
+        if (script == null || page >= script.Contents.Count)
+        {
+            GD.Print($"talk: type {flags} script {scriptId} page {page}: not in the client's scripts, the talk ends");
+            side.EndTalk();
+            return;
+        }
+        side.Flags = flags;
+        side.QuestIds.Clear(); side.QuestIds.AddRange(talkQuests);
+        side.OnServerPage(ContentOf(script.Contents[page]), buttonSet);
     }
 
     /// <summary>FUN_141b70ea0 for an illust path (./Data/Resource/Image/...): the image is in the data.</summary>
@@ -360,6 +569,7 @@ public sealed partial class NpcTalk : Node
     /// <summary>The player ends the talk (Esc: NpcTalk mode 0 and ResetTalk).</summary>
     public void End()
     {
+        if (side == null && live != null && liveTalking != null) { liveTalking = null; live.SendTalk(new NpcTalkEndRequest()); return; }
         if (side == null) return;
         if (side.Talking) side.Key(TalkCinematicController.TalkKey.End);
         if (side.Talking) side.EndTalk();       // before the movie is loaded the key does nothing
@@ -375,7 +585,7 @@ public sealed partial class NpcTalk : Node
         if (window == null) return;
         window.Host.Unload();
         layer?.QueueFree();
-        layer = null; window = null; side = null; talking = null; script = null;
+        layer = null; window = null; side = null; talking = null; script = null; liveTalking = null;
         player.ScriptDriven = wasScripted;
         player.Input2 = Vector2.Zero;
     }

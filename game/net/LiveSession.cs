@@ -76,6 +76,29 @@ public partial class LiveSession : Node
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
     public readonly MyCharacter Me = new();
 
+    /// <summary>The NpcTalk packets (0x4B, UITalkManager::OnTalkPacket) for the talk window; live only.</summary>
+    public event Action<NpcTalkMessage> NpcTalkReceived;
+    /// <summary>The talk window's NpcTalk (0x22) and Quest (0x29) sends.</summary>
+    public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
+    public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
+
+    /// <summary>GetQuestData: the client's quest data has the id (the login quest list reads by it, OnQuest mode 0x16).</summary>
+    static bool HasQuestData(int id)
+    {
+        try { return NpcTalk.ClientQuests(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)).Quest(id) != null; }
+        catch (Exception e) { GD.Print($"live: quest data unavailable ({e.Message})"); return true; }
+    }
+
+    QuestMessage ReadQuest(Ms2.Net.Wire.RawPacket p)
+    {
+        var q = QuestMessage.Read(p.Reader(), HasQuestData);   // CQuestManager::OnQuest (questmanager_2.cpp:942); no ExpectEnd: the client ignores trailing bytes
+        if (q is QuestMessage.Load { Skipped.Count: > 0 } l)
+            GD.PushWarning($"live: login quest list: no quest data for {l.Skipped[0]}, so the client misreads the rest of this list " +
+                           $"({l.Quests.Count} quests kept, {l.Skipped.Count} records skipped{(l.Overrun ? ", read past the end" : "")})");
+        return q;
+    }
+
     public static void Attach(Node parent)
     {
         if (!Enabled || Instance != null) return;
@@ -226,7 +249,7 @@ public partial class LiveSession : Node
             if (Inventory == null) { Inventory = new InventoryView(Items); Inventory.RequestSort = (tab, stack) => Send(new ItemInventorySortRequest((byte) tab, stack)); Inventory.ServerTime = () => GameSession?.ServerTime ?? 0; }
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
             if (entry.EarlyFactor is { } fp) GD.Print($"live: global factor {(Factors.Apply(fp.Reader()) ? "applied" : "ignored")} (before the field)");
-            foreach (var qp in entry.EarlyQuests) Quests.Apply(QuestMessage.Read(qp.Reader()));   // the quest states the server sent before the field enter
+            foreach (var qp in entry.EarlyQuests) Quests.Apply(ReadQuest(qp));   // the quest states the server sent before the field enter
             GD.Print($"live: {Quests.All.Count} quests loaded before the field");
             foreach (var ip in entry.EarlyItems) ApplyItems(ip);
             GD.Print($"live: {Items.All.Count} items loaded before the field ({entry.EarlyItems.Count} packets)");
@@ -347,9 +370,15 @@ public partial class LiveSession : Node
                     GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
                     if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z, m.IsPortal);
                 }
+                else if (game.Is(p, Inbound.NpcTalk))
+                {
+                    var t = NpcTalkMessage.Read(p.Reader());   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
+                    GD.Print($"live: npc talk {t}");
+                    NpcTalkReceived?.Invoke(t);
+                }
                 else if (game.Is(p, Inbound.Quest))
                 {
-                    var q = QuestMessage.Read(p.Reader());   // CQuestManager::OnQuest (questmanager_2.cpp:942); no ExpectEnd: the client ignores trailing bytes
+                    var q = ReadQuest(p);
                     Quests.Apply(q);
                     GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
                 }

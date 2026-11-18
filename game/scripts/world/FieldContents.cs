@@ -41,6 +41,7 @@ public partial class FieldContents : Node3D
     NpcTalk talk;
     List<FieldNpcs.Placed> spawned = new();
     int shotNpc;
+    List<int> shotNpcs = new();
     bool actionHeld;
 
     // proof run
@@ -77,7 +78,12 @@ public partial class FieldContents : Node3D
             if (args[i] == "--sandbox-shots" && i + 1 < args.Length) shotDir = args[i + 1];
             if (args[i] == "--sandbox-portal" && i + 1 < args.Length) int.TryParse(args[i + 1], out shotPortal);
             if (args[i] == "--no-npcs") npcs = false;
-            if (args[i] == "--sandbox-npc" && i + 1 < args.Length) int.TryParse(args[i + 1], out shotNpc);
+            if (args[i] == "--sandbox-npc" && i + 1 < args.Length)
+            {
+                // one npc, or a comma list (a live run talks to each in turn)
+                shotNpcs = args[i + 1].Split(',').Select(x => int.TryParse(x, out int v) ? v : 0).Where(v => v != 0).ToList();
+                shotNpc = shotNpcs.FirstOrDefault();
+            }
         }
         try { fieldId = FieldData.FindByXBlock(packs, fieldName)?.Id ?? 0; } catch { }
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -98,6 +104,12 @@ public partial class FieldContents : Node3D
         long tNpcs = sw.ElapsedMilliseconds;
         portals = new FieldPortals(map, fieldId, offline ? Masks(packs) : null);
         string presence = "";
+        if (!offline && player != null && Ms2Godot.Net.LiveSession.Instance is { } liveSession)
+        {
+            // a live field: the server's npcs (FieldAddNpc) are the ones to talk to, and the server answers the talk
+            try { AddChild(talk = new NpcTalk(packs, null, player, Constants(packs), liveSession)); }
+            catch (Exception ex) { GD.PushWarning("live npc talk: " + ex.Message); }
+        }
         if (offline && fnpcs.Spawned.Count > 0)
         {
             try
@@ -130,7 +142,7 @@ public partial class FieldContents : Node3D
             if (Load != null && Load.Total > 0) loading?.Progress(Load.Count, Load.Total); else loading?.Progress(1, 1);
             settleFrames = 3;
         }
-        if (shotDir != null && player != null) PlanShots();
+        if (shotDir != null && player != null) { if (offline) PlanShots(); else PlanLiveTalk(); }
     }
 
     static NpcTable npcTable;
@@ -404,11 +416,17 @@ public partial class FieldContents : Node3D
 
     public override void _PhysicsProcess(double delta)
     {
-        if (player == null || portals == null || !offline || moving) return;
+        if (player == null || portals == null || moving) return;
         if (shotDir != null) { RunSteps((float)delta); return; }
         bool action = Input.IsKeyPressed(Key.Space);
         bool pressed = action && !actionHeld;
         actionHeld = action;
+        if (!offline)
+        {
+            // live: the talk only; the server moves the player through portals
+            if (pressed) talk?.ActionKey();
+            return;
+        }
         if (talk != null && talk.Open) { if (pressed) talk.ActionKey(); return; }
         if (action && TryEnter()) return;
         if (pressed) talk?.ActionKey();
@@ -510,6 +528,56 @@ public partial class FieldContents : Node3D
         }, null));
     }
 
+    /// <summary>
+    /// The live talk proof (--sandbox-shots DIR --sandbox-npc ID[,ID...] on a live session): wait for the server's npcs, then for each
+    /// npc in turn stand in front of it and talk to it through every page, with a shot of each. One npc is talked to twice.
+    /// </summary>
+    void PlanLiveTalk()
+    {
+        DirAccess.MakeDirRecursiveAbsolute(shotDir);
+        player.ProcessPhysicsPriority = 10;
+        Travel.ShotLeg++;
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        FieldNpcs.Placed Find(int id) => live?.TalkNpcs.FirstOrDefault(x => x.Row.Id == id);
+        var order = shotNpcs.Count == 1 ? new List<int> { shotNpcs[0], shotNpcs[0] } : shotNpcs;
+        steps.Enqueue(("wait", 40f, () => order.All(id => Find(id) != null) ? Vector3.One : Vector3.Zero, "1_live_field.png"));
+        steps.Enqueue(("teleport", 0, () =>
+        {
+            GD.Print($"live npcs: {string.Join(" ", live?.TalkNpcs.Select(x => x.Row.Id).Distinct().OrderBy(x => x) ?? Enumerable.Empty<int>())}");
+            return Vector3.Zero;
+        }, null));
+        for (int round = 0; round < order.Count; round++)
+        {
+            int npcId = order[round];
+            string r = round == 0 ? "" : $"r{round + 1}_";
+            steps.Enqueue(("teleport", 0, () =>
+            {
+                var n = Find(npcId);
+                if (n == null) { GD.PushError($"no live npc {npcId}"); return Vector3.Zero; }
+                double yaw = n.Root.Rotation.Y;
+                var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0); player.Face(-front);
+                return Vector3.Zero;
+            }, null));
+            steps.Enqueue(("settle", 1.0f, null, $"1a_{r}npc_{npcId}.png"));
+            steps.Enqueue(("teleport", 0, () => { GD.Print($"talkable: {talk?.FindTalkable()?.Row.Id}"); talk?.ActionKey(); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 3.0f, null, $"1b_{r}talk.png"));
+            for (int k = 1; k <= 12; k++)
+            {
+                int at = k;
+                steps.Enqueue(("teleport", 0, () =>
+                {
+                    if (talk != null && talk.Open) { talk.ActionKey(); GD.Print($"talk page {at}: script {talk.ScriptId} page {talk.Page + 1}"); }
+                    return Vector3.Zero;
+                }, null));
+                steps.Enqueue(("settle", 1.5f, null, $"1c_{r}talk_page{at:00}.png"));
+            }
+            steps.Enqueue(("teleport", 0, () => { talk?.End(); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 2.0f, null, $"1d_{r}talk_closed.png"));
+        }
+        steps.Enqueue(("quit", 0, null, null));
+    }
+
     void RunSteps(float dt)
     {
         if (shotWait > 0 || steps.Count == 0) { player.Input2 = Vector2.Zero; return; }
@@ -529,6 +597,11 @@ public partial class FieldContents : Node3D
                     if (arrived || stepTime >= secs) Finish(shot);
                     return;
                 }
+            case "wait":
+                player.Input2 = Vector2.Zero;
+                stepTime += dt;
+                if (dir() != Vector3.Zero || stepTime >= secs) Finish(shot);
+                return;
             case "enter":
                 {
                     player.Input2 = Vector2.Zero;

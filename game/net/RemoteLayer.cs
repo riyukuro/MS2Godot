@@ -33,6 +33,8 @@ public sealed partial class RemoteLayer : Node3D
     public int UsersSpawned, NpcsAdded;
     public int UserCount => users.Count;
     public int NpcCount => npcs.Count;
+    /// <summary>The field's live npcs for the talk.</summary>
+    public IEnumerable<World.FieldNpcs.Placed> TalkNpcs => npcs.Talkable;
 
     public RemoteLayer(Field field, ModelBuilder mb, long selfCharacterId)
     {

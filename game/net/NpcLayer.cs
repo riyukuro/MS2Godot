@@ -30,6 +30,7 @@ public sealed class NpcLayer
         public bool Placeholder, Dead;
         public float Height = 150;
         public ShaderMaterial HpMat;
+        public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
     }
 
     readonly PackSet packs; readonly ModelBuilder mb; readonly NpcTable table; readonly Node3D parent;
@@ -143,6 +144,7 @@ public sealed class NpcLayer
             if (n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health) { i.HpMat = Combat.HpBar(root, i.Height); i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health); }
         }
         if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
+        i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
         Spawned++;
@@ -173,6 +175,9 @@ public sealed class NpcLayer
             }
         }
     }
+
+    /// <summary>The live npcs that are not dead, for the talk.</summary>
+    public IEnumerable<World.FieldNpcs.Placed> Talkable => inst.Values.Where(x => !x.Dead && x.Talk != null).Select(x => x.Talk);
 
     public (Node3D root, float height, float yaw)? Info(int id) =>
         inst.TryGetValue(id, out var i) ? (i.Root, i.Height, i.Placeholder ? 0 : i.Visual.Rotation.Y) : null;

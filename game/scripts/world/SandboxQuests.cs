@@ -13,7 +13,6 @@ namespace Ms2Godot.World;
 /// </summary>
 public sealed class SandboxQuests : IQuestContext
 {
-    readonly QuestTable table;
     readonly Dictionary<int, QuestRecord> records = new();
     long clock;
 
@@ -21,7 +20,6 @@ public sealed class SandboxQuests : IQuestContext
 
     public SandboxQuests(QuestTable table)
     {
-        this.table = table;
         Rules = new QuestRules(table, this);
     }
 
@@ -40,13 +38,6 @@ public sealed class SandboxQuests : IQuestContext
         records[questId] = r with { State = 2, CompleteTime = ServerTime };
         return true;
     }
-
-    /// <summary>
-    /// FUN_140746ba0(quest, npc, 0) (questdata.cpp @0x140746ba0) is 0: the character has the quest's
-    /// record, started (state 1), the npc completes it (m_2ec), and every condition is met (FUN_1407456d0).
-    /// </summary>
-    public bool CanComplete(int questId, int npcId) =>
-        Get(questId) is { IsActive: true, Complete: true } && table.Quest(questId) is { } d && (npcId == 0 || d.CompleteNpc == npcId);
 
     // ---- IQuestContext: the sandbox character (StubHudData) ----------------------------------------------------------
     public QuestRecord Get(int questId) => records.TryGetValue(questId, out var r) ? r : null;

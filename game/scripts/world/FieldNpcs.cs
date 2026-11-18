@@ -41,6 +41,7 @@ public sealed class FieldNpcs
         public Node3D Root, Body;
         public float Height;          // top of the model above the root, game units
         public bool Mob;              // a region spawn monster (not talkable)
+        public int ObjectId;          // a live npc's FieldAddNpc object id (the talk's npc id on the wire); 0 offline
         public Vector3 Position => Root.GlobalPosition;
     }
     public readonly List<Placed> Spawned = new();

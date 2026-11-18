@@ -58,7 +58,8 @@ public sealed class LiveQuestState : IQuestState, IQuestContext
     public int? Selector => 0;
     public int? Level => PlayerLevel;
     public int? GearScore => null;
-    public int? JobGroup => null;
+    /// <summary>The character's job code (the field's own FieldAddUser); null when not known.</summary>
+    public int? JobGroup { get; init; }
     public int? SubJob => null;
     public long? CharacterTime => null;
     public bool? InGuild => null;
