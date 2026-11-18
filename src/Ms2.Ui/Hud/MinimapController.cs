@@ -12,6 +12,10 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public sealed class MinimapController : UiController
 {
+    /// <summary>The ctor @0x141a35220 (uiminimapentity.cpp:1071) does not call SetTweenEnabled: m_c4 stays 0, so no
+    /// startOpen / startClose.</summary>
+    protected override bool TweenEnabled => false;
+
     public override string Movie => "uiminimapdialog";
     protected override string EntityMethod => "createEntity";
 
