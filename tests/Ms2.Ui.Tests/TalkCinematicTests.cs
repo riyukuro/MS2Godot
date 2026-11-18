@@ -33,7 +33,7 @@ public class TalkCinematicTests
     };
 
     static (UiHost, TalkCinematicController, Player, Runtime) Load(TalkCinematicController.TalkContent first, int buttons,
-                                                                   Action<TalkCinematicController> setup = null)
+                                                                   Action<TalkCinematicController> setup = null, int jobGroup = 0)
     {
         Packs();
         var c = new TalkCinematicController
@@ -49,7 +49,9 @@ public class TalkCinematicTests
         p.StageW = 1837; p.StageH = 1034;
         // the movie translator (GFxManager::Localize; the game's As3View reads korflash): the one key these pages format
         p.Translate = k => k == "$s_talk_script_reward_exp" ? "{0} Experience" : null;
-        var h = new UiHost(p, c, new UiModel(new GameTables(Packs(), "en")));
+        var model = new UiModel(new GameTables(Packs(), "en"));
+        model.Player.JobGroup = jobGroup;
+        var h = new UiHost(p, c, model);
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 60 && !c.IsLoaded; i++) p.Tick();
         foreach (var e in rt.Errors) TestContext.WriteLine("  error: " + e);
@@ -140,7 +142,7 @@ public class TalkCinematicTests
 
     const int Quest = 90000000;     // "A New Path": exp 450, meso 1000, item 20000028 x10 (questdata.xml)
 
-    static TalkCinematicController.QuestReward NewPathReward() => new() { Exp = 450, Meso = 1000, Items = { (20000028, 1, 10) } };
+    static TalkCinematicController.QuestReward NewPathReward() => new() { Exp = 450, Meso = 1000, ChoiceRewards = { (20000028, 1, 10) } };
 
     [Test]
     public void TheAcceptPageAcceptsTheQuestAndAsksForTheNextPage()
@@ -166,6 +168,37 @@ public class TalkCinematicTests
         c.SendQuestAccept += (q, n) => sent = true;
         c.Key(TalkCinematicController.TalkKey.Next);
         Assert.That(sent, Is.False, "IsQuestActive: the accept does nothing");
+    }
+
+    [Test]
+    public void TheQuestTalkReadsItsScriptsAndTheirText()
+    {
+        var qs = new Ms2.Formats.World.QuestScriptTable(Packs(), (e, c, k) => FeatureElements.Collect(Packs(), e, c, k));
+        Assert.That(qs.ScriptIds(Quest), Is.EqualTo(new[] { 100, 200, 300 }), "script/quest/questscript*.xml");
+        var complete = qs.Find(Quest, 300);
+        Assert.That(complete.Contents, Has.Count.EqualTo(1));
+        Assert.That(complete.Contents[0].QuestId, Is.EqualTo(Quest), "FUN_140859160 :595: the page carries the quest id");
+        // $script:0831180104000004$ is in string/en/scriptquest_*.xml, the text of the capture's complete page
+        var npcs = new Ms2.Formats.World.NpcScriptTable(Packs(), new Ms2.Formats.World.GameStrings(Packs(), "en"));
+        Assert.That(npcs.Resolve(complete.Contents[0].Text, "Solo"),
+                    Does.StartWith("Solo, you completed your job advancement! Congratulations!"));
+    }
+
+    [Test]
+    public void TheCompleteRewardKeepsTheItemsOfThePlayersJobAndAddsTheGuildCoins()
+    {
+        // 20000767 is recommended for job group 10, 20000768 for 20 (itemdata/200.xml); the player is a 20
+        var (h, c, p, rt) = Load(new() { Script = "Well done.", QuestId = Quest }, 7, x =>
+        {
+            x.QuestOf = q => q == Quest ? new("A New Path", 10, "_epic") : null;
+            x.QuestRewardOf = q => q == Quest ? new() { Exp = 1, GuildCoin = 3, ChoiceRewards = { (20000767, 1, 1), (20000768, 1, 2) } } : null;
+        }, jobGroup: 20);
+        Assert.That(c.Model.ItemSlots["TalkCinematic_0"].Item.ItemId, Is.EqualTo(20000768), "FUN_140748050: the job group's item only");
+        Assert.That(c.Model.ItemSlots["TalkCinematic_0"].Item.Count, Is.EqualTo(2u));
+        Assert.That(c.Model.ItemSlots["TalkCinematic_1"].Item.ItemId, Is.EqualTo(TalkCinematicController.GuildCoinItem), ":697 the guild coin item");
+        Assert.That(c.Model.ItemSlots["TalkCinematic_1"].Item.Count, Is.EqualTo(3u));
+        Assert.That(c.Model.ItemSlots.ContainsKey("TalkCinematic_2"), Is.False);
+        Assert.That(rt.Errors, Is.Empty);
     }
 
     [Test]

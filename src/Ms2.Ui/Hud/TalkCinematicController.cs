@@ -99,15 +99,18 @@ public sealed class TalkCinematicController : UiController
 
     /// <summary>
     /// The complete talk's reward (CQuestCompleteCinematicComponent::vfunc_5, cinematiccomponent.cpp:664): exp
-    /// (FUN_140761ba0), meso (FUN_140761cc0), karma, lu, guild exp, guild fund, fame points, and the items: the quest's
-    /// choice rewards the player's job may use (FUN_140748050) and the guild coin item (0x1c9c6dd, FUN_140761c60).
+    /// (FUN_140761ba0), meso (FUN_140761cc0), karma, lu, guild exp, guild fund, fame points, the quest's choice rewards
+    /// (m_complete.m_choiceRewards, all of them: the component keeps those of the player's job group) and the guild coins
+    /// (FUN_140761c60).
     /// </summary>
     public sealed class QuestReward
     {
         public long Exp, Meso, Karma, Lu, GuildExp, GuildFund;
-        public int FamePoint;
-        public List<(int ItemId, int Rarity, int Count)> Items = new();
+        public int FamePoint, GuildCoin;
+        public List<(int ItemId, int Rarity, int Count)> ChoiceRewards = new();
     }
+    /// <summary>The guild coin item the complete talk adds for a quest's guild coins (cinematiccomponent.cpp:699).</summary>
+    public const int GuildCoinItem = 0x1c9c6dd;
     public Func<int, QuestReward> QuestRewardOf = _ => null;
 
     /// <summary>SendQuestAccept (:577): Quest mode 2 with the quest and the talk npc (UITalkManager::GetNpcId).</summary>
@@ -485,9 +488,14 @@ public sealed class TalkCinematicController : UiController
         if (r.GuildExp != 0) h.Set(reward, "guildExp", (double)r.GuildExp);
         if (r.GuildFund != 0) h.Set(reward, "guildFund", (double)r.GuildFund);
         if (r.FamePoint != 0) h.Set(reward, "famePoint", r.FamePoint);
-        for (int i = 0; i < r.Items.Count; i++)
+        // :692: the choice rewards with an item that suits the player's job group (FUN_140748050, ItemLimit::IsJobRecommended),
+        // then the guild coins (:697) as the coin item with its rank as the rarity (GetItemRank) and the coins as the count
+        var items = r.ChoiceRewards.Where(x => x.ItemId != 0 && Model.Tables.Items.Get(x.ItemId) is { } d
+                                               && d.IsJobRecommended(Model.Player.JobGroup)).ToList();
+        if (r.GuildCoin != 0) items.Add((GuildCoinItem, Model.Tables.Items.Get(GuildCoinItem)?.Rank ?? 0, r.GuildCoin));
+        for (int i = 0; i < items.Count; i++)      // FillRewardItems (:333)
         {
-            var (id, rarity, count) = r.Items[i];
+            var (id, rarity, count) = items[i];
             var item = Item.Create(Model.Tables.Items, id, rarity);
             if (item == null) continue;
             item.SetCountClamped(count);
