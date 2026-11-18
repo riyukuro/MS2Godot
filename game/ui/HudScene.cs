@@ -1269,6 +1269,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenShop()
     {
+        if (shopMovie != null) { shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
         long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var (info, products) = UiFixture.GearShop(Now());
         var c = new Ms2.Ui.Shop.ShopController
@@ -1283,6 +1284,13 @@ public partial class HudScene : Node, IUiStageHost
         c.ReadShopInfo(info);
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.ReadProducts(products);
+        // the movie goes when the close tween ends (OnEndClose -> Unload), as the other dialogs' movies do
+        c.Unloaded += () =>
+        {
+            m.Host.Unload();
+            m.QueueFree();
+            if (shopMovie == m) shopMovie = null;
+        };
         shop = c; shopMovie = m;
         uiRoot.AddChild(m);
     }
