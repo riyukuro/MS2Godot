@@ -155,4 +155,7 @@ public static class Feature
         Mentoring = 0x91, MesoMarketToken = 0xf3;
     /// <summary>0x43: red merats (CFeatureManager::FUN_14036d650, featuremanager.cpp).</summary>
     public const int RedMerat = 0x43;
+    /// <summary>0xbd: the adventure level bar's layer is hidden and shown with the field's (CUIService FUN_141adb4c0,
+    /// uiservice.cpp:1818).</summary>
+    public const int AdventureLevel = 0xbd;
 }

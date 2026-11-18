@@ -39,6 +39,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
     {
         Name = "PlayerNameTag";
         Layer = 5;                       // with the npcs' tags (NpcPresence), under the HUD
+        MovieLayerHost.Bind(this, Ms2.Ui.CommonDepth.NameTag);   // CUIService::HideWorldUI loads the name tag (0x4e5a) into layer 2
         Offset = UiScale.MovieOrigin;    // the movie's viewport origin (GFxMovie::vfunc_7); vfunc_6 maps the screen point straight to stage units
         offset = constants.Float("OffsetPcNametag", 30);
         packs = ui.Packs;

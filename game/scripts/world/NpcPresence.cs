@@ -171,11 +171,15 @@ public sealed partial class NpcPresence : CanvasLayer
         field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
         // every frame: the range, facing and fade tests with the npc where it is now, then the tag at its head
         var eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
+        // the tags and the bars are drawn in their CommonDepth layers: CUIService::HideWorldUI loads the name tag (0x4e5a)
+        // into layer 2 and the HP bar (0x4e36) into layer 3, which the NPC talk hides
+        bool tagLayer = MovieLayerHost.Layers.IsVisible(Ms2.Ui.CommonDepth.NameTag);
+        bool barLayer = MovieLayerHost.Layers.IsVisible(Ms2.Ui.CommonDepth.HpBar);
         foreach (var t in tags)
         {
             var head = Anchor(t.Npc);
             float d = eye.DistanceTo(t.Npc.Root.GlobalPosition);
-            bool on = d <= HideDistance && !camera.IsPositionBehind(head);
+            bool on = tagLayer && d <= HideDistance && !camera.IsPositionBehind(head);
             t.Node.Visible = on;
             if (!on) continue;
             float alpha = d <= OpaqueDistance ? 1f : ((HideDistance - d) * 0.05f + 40f) / 100f;
@@ -188,7 +192,7 @@ public sealed partial class NpcPresence : CanvasLayer
         {
             if (!b.Active) continue;
             var a = Anchor(b.Npc);
-            if (camera.IsPositionBehind(a)) { b.Update(null); continue; }
+            if (!barLayer || camera.IsPositionBehind(a)) { b.Update(null); continue; }
             var p = camera.UnprojectPosition(a);
             p.Y += (barOffset + Shift(a)) * u;
             b.Update(p);

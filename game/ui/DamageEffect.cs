@@ -42,6 +42,7 @@ public sealed partial class DamageEffect : CanvasLayer
     {
         Name = "DamageEffect";
         Layer = 1;                       // over the 3D view, under the name tags (5) and the HUD (10)
+        MovieLayerHost.Bind(this, Ms2.Ui.CommonDepth.DamageEffect);   // UIDamageEffect's layer is 1 (m_2c, uidamageeffect.cpp:70)
         Offset = UiScale.MovieOrigin;
         minPercent = constants.Float("DamageEffectMinHPPercent", 0);   // the default is the client's constants block
         try { node = new UiMovie(ui, "uidamageeffect").BuildClass("dmgeff_entity_effect"); }

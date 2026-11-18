@@ -1002,6 +1002,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
         hudModel = NewModel();
+        MovieLayerHost.Layers.FeatureEnabled = hudModel.IsFeatureEnabled;   // the adventure level bar's layer (feature 0xbd)
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
         // UIAlignWidgetManager::LoadWidgets (uiservice.cpp:1941): table/alignwidget.xml, one manager for the scene
         hudModel.AlignWidgets = alignWidgets ??= AlignWidgetManager.Load(assets.Table("table/alignwidget.xml")?.Root);

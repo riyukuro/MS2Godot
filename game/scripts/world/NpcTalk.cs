@@ -98,6 +98,7 @@ public sealed partial class NpcTalk : Node
 
     public override void _ExitTree()
     {
+        if (window != null) { window = null; MovieLayerHost.Layers.LeaveTalk(); }   // a field left with the talk open
         if (live == null) return;
         live.NpcTalkReceived -= OnLiveTalk;
         live.Quests.NpcOffer -= OnQuestOffer;
@@ -382,6 +383,7 @@ public sealed partial class NpcTalk : Node
         side.CloseComplete += () => CallDeferred(nameof(Teardown));
         layer = new CanvasLayer { Layer = 20, Name = "TalkCinematic" };
         AddChild(layer);
+        MovieLayerHost.Layers.EnterTalk();             // the field's scene gives way to the talk scene (0x6200031)
         wasScripted = player.ScriptDriven;
         player.ScriptDriven = true;
         player.Input2 = Vector2.Zero;
@@ -605,6 +607,7 @@ public sealed partial class NpcTalk : Node
         window.Host.Unload();
         layer?.QueueFree();
         layer = null; window = null; side = null; talking = null; script = null; liveTalking = null;
+        MovieLayerHost.Layers.LeaveTalk();             // and back to the field's scene
         player.ScriptDriven = wasScripted;
         player.Input2 = Vector2.Zero;
     }

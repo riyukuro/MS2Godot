@@ -81,6 +81,7 @@ public sealed partial class DamageText : CanvasLayer
         showDistance = constants.Float("DamageDistance", Distance);
         Name = "DamageText";
         Layer = 5;                     // with the name tags and HP bars, added after them; the client's order of the movies is not known
+        MovieLayerHost.Bind(this, Ms2.Ui.CommonDepth.Damage);   // UIDamageText's layer is 8 (m_2c, uidamagetext.cpp:207)
         Offset = UiScale.MovieOrigin;
         packs = ui.Packs;
         u = UiScale.For(window);

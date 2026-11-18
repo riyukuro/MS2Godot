@@ -35,6 +35,7 @@ public sealed partial class PlayerHpBar : CanvasLayer
     {
         Name = "PlayerHpBar";
         Layer = 5;                       // with the name tags; added after the own tag
+        MovieLayerHost.Bind(this, Ms2.Ui.CommonDepth.HpBar);     // CUIService::HideWorldUI loads the HP bar (0x4e36) into layer 3
         Offset = UiScale.MovieOrigin;
         this.tag = tag;
         offset = constants.Float("OffsetPcHpbar", 32);
