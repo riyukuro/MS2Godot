@@ -22,10 +22,6 @@ public sealed class StubHudData
     /// shows on its minimap, which only state 1 allows.</summary>
     public int InteractState = 1;
     /// <summary>Features the server has switched off (the reference run had no cash shop, Meret Market or job change quest).</summary>
-    /// <summary>The level-up package quest's reward in the "Navigator" widget (item id, count) and its progress: the gauge
-    /// shows while current &lt; max, the reward button once it is reached.</summary>
-    public int NavigatorRewardItem = 20300327, NavigatorRewardCount = 1;
-    public int NavigatorCurrent = 1, NavigatorMax = 5;
     public HashSet<string> FeaturesOff = new() { "LapentaFrontierQuest" };
 
     public double HpRatio => Player.HpMax == 0 ? 0 : (double)Player.HpCurrent / Player.HpMax;

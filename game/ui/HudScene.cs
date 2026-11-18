@@ -174,7 +174,6 @@ public partial class HudScene : Node
         HudModel();
         NoticeTab(uiRoot, constants);
         Minimap(uiRoot);
-        NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
         TargetHpBar(uiRoot);
         HudModel();
@@ -182,6 +181,7 @@ public partial class HudScene : Node
         Quests(uiRoot);
         PlayerInfo(uiRoot);
         GameMenu(uiRoot);
+        EventWidgets(uiRoot);
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
@@ -509,61 +509,6 @@ public partial class HudScene : Node
     }
 
     /// <summary>
-    /// UILevelUpPackageWidgetDialog ("Navigator", type name LevelUpPackageWidget): an event widget (uieventwidgetdialog).
-    /// table/alignwidget.xml holds it in the alignType 6 widget at offsetX -298, so opening it requests the align layout
-    /// (UISwfEntity::FUN_1422dc450 / vfunc_19) instead of its own default place (UIEventWidgetDialog::vfunc_43, top left at
-    /// (0, 60)). UIAlignWidget::LayoutEntities -> UISwfEntity::vfunc_44 -> ASDisplayObject::vfunc_2(6, -298, 0): x = stage width
-    /// - (int)width - 298, y = 0, with the widget's width from AS3 (EventWidgetDialog.get_width = m_dragBar.width). The widgets
-    /// listed before it take their width off the offset only while shown; none is here. setData: title, reward slot, gauge or
-    /// reward button.
-    /// </summary>
-    void NavigatorWidget(Control ui)
-    {
-        var r = Place(ui, "uieventwidgetdialog", 1f, Vector2.Zero);
-        var dlg = r.AllClips().FirstOrDefault(c => c.Direct("m_title") != null) ?? r;     // the EventWidgetDialog instance
-        // the movie draws the dialog mid-stage: dock its registration point instead (SetPositionInt of the dialog)
-        int w = (int)dlg.ChildWidth(dlg.Direct("m_dragBar"));
-        r.Position = (new Vector2(stage.X - 298 - w, 0) - dlg.Position) * u;
-        dlg.SetNamedText("m_title", assets.Str("$s_levelup_package_widget"));
-        if (dlg.Direct("m_title")?.Node is TextNode title) title.ShrinkToFit();     // TextFieldEx.setTextAutoSize(SHRINK)
-        // EventWidgetDialog.setData: below max the gauge shows "text" and m_gage.width = current / max * (m_back.width - 4)
-        int cur = data.NavigatorCurrent, max = data.NavigatorMax;
-        bool ready = cur >= max;
-        dlg.SetNamedVisible("m_rewardBtn", ready);
-        dlg.SetNamedVisible("m_effect", ready);
-        dlg.SetNamedVisible("m_gageBar", !ready);
-        if (!ready && dlg.FindClip("m_gageBar") is { } gage)
-        {
-            gage.SetNamedText("m_text", $"{cur}/{max}");
-            if (gage.Direct("m_gage") is { } fill && gage.Direct("m_back") is { } back)
-            {
-                // authored widths: the symbol's bounds times the placed x scale
-                float DefWidth(MovieClipNode.Child c) =>
-                    UiBuilder.F(r.Movie.Scope.Symbol((int)c.Def["id"])?["bounds"]?["w"], 0) * Math.Abs(UiBuilder.F(c.Def["matrix"]?["a"], 1));
-                float full = DefWidth(back) - 4, fw = DefWidth(fill);
-                var t = fill.Base;
-                if (fw > 0) fill.Override = new Transform2D(t.X * (full * cur / max / fw), t.Y, t.Origin);
-                gage.GotoFrame(gage.Frame);
-            }
-        }
-        var slot = r.FindClip("m_slot");
-        var icon = assets.ImageFile($"item/icon/{data.NavigatorRewardItem}.png");
-        if (slot != null && icon != null)
-        {
-            var b = slot.ContentRect() ?? new Rect2(0, 0, 60, 60);
-            var spr = new Sprite2D { Texture = icon, Centered = false, Position = b.Position, Scale = b.Size / icon.GetSize() };
-            slot.AddChild(spr);
-            // BaseSlot.setItemCount: an export_slot_itemcount at (0, 39) in m_iconOption, its textField holding the count
-            if (data.NavigatorRewardCount > 0 && r.Movie.BuildClass("export_slot_itemcount", u) is { } count)
-            {
-                foreach (var c in count.AllClips()) foreach (var t in c.TextFields) t.Text = data.NavigatorRewardCount.ToString();
-                count.Position = new Vector2(0, 39);
-                (slot.FindClip("m_iconOption") ?? slot).AddChild(count);
-            }
-        }
-    }
-
-    /// <summary>
     /// UINoticeDialog (0x4ee9), run from its movie with <see cref="NoticeDialogController"/>: the field's HUD opens it when
     /// the NoticeDialogUrl constant is set (CUIService, uiservice.cpp:742; Define default "", unit_1402ab440_constantsblocks
     /// :1510). Loaded once and kept across relayouts.
@@ -870,6 +815,34 @@ public partial class HudScene : Node
         catch (Exception e) { GD.PushWarning("quest log: " + e.Message); return null; }
     }
 
+    List<MovieDialog> eventWidgets;     // the event widgets opened at field entry, kept across a window relayout
+
+    /// <summary>
+    /// UIEventWidgetDialog::FUN_140c59350 (uiservice.cpp:777), at field entry: each event widget whose event is on
+    /// (vfunc_84) opens. The level-up package reads the quest tables and the character's quest state; the burning event's
+    /// contexts are not fed, so it stays closed.
+    /// </summary>
+    void EventWidgets(Control ui)
+    {
+        if (eventWidgets != null)
+        {
+            foreach (var w in eventWidgets) { ui.AddChild(w); w.Relayout(GetWindow().Size); }
+            return;
+        }
+        eventWidgets = new List<MovieDialog>();
+        var log = QuestLogSource();
+        var widgets = new List<Ms2.Ui.Hud.EventWidgetController> { new Ms2.Ui.Hud.BurningEventWidgetController(hudModel) };
+        if (log != null) widgets.Insert(0, new Ms2.Ui.Hud.LevelUpPackageWidgetController(hudModel) { Table = questTable, State = log.State });
+        foreach (var c in widgets)
+        {
+            if (!c.ShouldOpen()) continue;
+            var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+            c.Unloaded += () => { eventWidgets.Remove(m); m.Host.Unload(); m.QueueFree(); };
+            eventWidgets.Add(m);
+            ui.AddChild(m);
+        }
+    }
+
     static FieldMissions fieldMissions;     // the quest and description tables, read once (6,780 quest files)
     static FieldMeta fieldMeta;
 
@@ -931,6 +904,7 @@ public partial class HudScene : Node
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
     UiModel hudModel;
+    AlignWidgetManager alignWidgets;
     MovieDialog playerInfoMovie, expBarMovie, adventureBarMovie;
 
     /// <summary>
@@ -945,6 +919,8 @@ public partial class HudScene : Node
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
         hudModel = NewModel();
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
+        // UIAlignWidgetManager::LoadWidgets (uiservice.cpp:1941): table/alignwidget.xml, one manager for the scene
+        hudModel.AlignWidgets = alignWidgets ??= AlignWidgetManager.Load(assets.Table("table/alignwidget.xml")?.Root);
         hudModel.Keys = new KeyTable(assets.Packs, "en");
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live : UiFixture.NewCharacterKeyTable();
@@ -954,6 +930,7 @@ public partial class HudScene : Node
         // jobCode is the sub job (uimainplayerinfo.cpp:1405): 100 Knight, 200 Berserker ... 1100 Soul Binder; the stub
         // numbers its jobs 1, 10, 20 ... 100
         p.SubJob = data.Player.Job <= 1 ? 100 : (data.Player.Job / 10 + 1) * 100;
+        p.JobGroup = data.Player.Job;       // the job group ids of table/job.xml (1, 10 ... 110)
         p.HpCur = data.Player.HpCurrent; p.HpMax = data.Player.HpMax;
         p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
         p.EpCur = data.EpCurrent; p.EpMax = data.EpMax;
@@ -1112,6 +1089,7 @@ public partial class HudScene : Node
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
+        alignWidgets?.ProcessPendingLayout();      // the end of UISwfEntityManager::UpdateEntities
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());

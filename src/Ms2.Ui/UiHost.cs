@@ -69,6 +69,7 @@ public sealed class UiHost
         // UISwfEntity::OnLoadComplete (uiswfentity.cpp:443): the settings file (vfunc_5), the layout (FUN_1422dc450), then
         // the subclass's OnLoadComplete
         RT.Guard("load transform " + Id, Controller.LoadTransform);
+        Model.AlignWidgets?.Add(Controller);                        // UISwfEntityManager's loaded entities
         Controller.LayoutAndClear(Player.StageW, Player.StageH);
         RT.Guard("OnLoadComplete " + Id, Controller.OnLoadComplete);
         Model.Changed += OnStatus;
@@ -78,7 +79,11 @@ public sealed class UiHost
     void OnStatus(StatusEvent e) => RT.Guard("status " + e, () => Controller.OnStatus(e));
 
     /// <summary>Stops listening to the model (UIStatusEventDispatcher unregister).</summary>
-    public void Unload() => Model.Changed -= OnStatus;
+    public void Unload()
+    {
+        Model.Changed -= OnStatus;
+        Model.AlignWidgets?.Remove(Controller);
+    }
 
     // ---- AS -> C++ --------------------------------------------------------------------------------------------
 

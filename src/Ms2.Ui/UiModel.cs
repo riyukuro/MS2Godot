@@ -29,6 +29,9 @@ public sealed class PlayerState
     public int Level = 1;
     /// <summary>The sub job code (PC::GetSubJob), the id in string/&lt;lang&gt;/jobname.xml (e.g. 100 Knight).</summary>
     public int SubJob;
+    /// <summary>The job group (PC::GetJobGroupId, pc.cpp:1269: the job's jobGroupID in table/job.xml, 1 Beginner, 10 Knight
+    /// ... 110).</summary>
+    public int JobGroup;
     public long HpCur, HpMax, SpCur, SpMax, EpCur, EpMax;
     /// <summary>The exp counter in this level (DAT_143ab28a0) and the rest exp bonus pool (DAT_143ab28a8).</summary>
     public long Exp, RestExp;
@@ -120,6 +123,10 @@ public sealed class UiModel
     public Items.ItemSlot.Sources ItemSlotSources;
     /// <summary>WorldService::GetLocalPlayer is set: a field with the player's character.</summary>
     public bool HasLocalPlayer;
+
+    /// <summary>The align widgets (UIAlignWidgetManager) of the movies sharing this model; null lays every movie out by
+    /// itself.</summary>
+    public AlignWidgetManager AlignWidgets;
 
     // ---- what the controllers compute from the state (the client's helper functions) ----
 

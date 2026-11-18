@@ -59,6 +59,9 @@ public sealed class QuestData
     public int ResetType, DurationMinutes;
     /// <summary>progressMap progressMap (m_fields): the fields of the quest, the first one a field mission's field.</summary>
     public uint[] Fields = Array.Empty<uint>();
+    /// <summary>guide guideType (m_338.m_value, Parse_140217a00 commonenum.cpp:187): 1 level, 2 level_boost, 3
+    /// daily_pick_once, 4 daily_pick_repeat, 5 mission_point, 0 none.</summary>
+    public int GuideType;
     /// <summary>eventMission event (m_350, Parse_140217bd0): 1 levelup_package, 2 stamp, 3 timerun, 4 gallery.</summary>
     public int EventMission;
     /// <summary>The &lt;require&gt; block (m_require).</summary>
@@ -118,7 +121,16 @@ public sealed class CompleteReward
     public int RelativeExp = -1;
     /// <summary>relativeMeso (m_44): the reward contents id (Parse_140217cd0), 0 when absent.</summary>
     public int RelativeMeso;
+    /// <summary>m_choiceRewards: the &lt;v&gt; rows that load (QuestRewardItem::LoadXml, questdata.cpp:895), from the
+    /// client's QuestData.xml (<see cref="QuestTable"/>.AddChoiceRewards).</summary>
+    public readonly List<QuestRewardItem> ChoiceRewards = new();
 }
+
+/// <summary>
+/// CQuestData::QuestRewardItem (questdata.cpp:895): code, rank and count of a &lt;v&gt; row whose feature (if any) is
+/// enabled (IsElementFeatureEnabled, commonutil.cpp:1034; no locale test).
+/// </summary>
+public sealed record QuestRewardItem(int ItemId, int Rank, int Count);
 
 /// <summary>
 /// QuestDataTable's quest and chapter indexes (LoadQuestData, BuildIndexes, FUN_1407503f0, BuildChapterFieldCodes) and
@@ -166,6 +178,8 @@ public sealed partial class QuestTable
             try { t.AddQuests(Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry)))); } catch (System.Xml.XmlException) { }
         }
         t.BuildIndexes();
+        if (packs.Exists("Xml", ChoiceRewardFile))
+            try { t.AddChoiceRewards(Parse(Encoding.UTF8.GetString(packs.Read("Xml", ChoiceRewardFile)))); } catch (System.Xml.XmlException) { }
         if (packs.Exists("Xml", "table/questgrouptable.xml"))
             try { t.AddGroups(Parse(Encoding.UTF8.GetString(packs.Read("Xml", "table/questgrouptable.xml")))); } catch (System.Xml.XmlException) { }
         t.Rewards = QuestRewards.Load(packs, locale, t.Available);
@@ -217,6 +231,35 @@ public sealed partial class QuestTable
         }
         return t;
     }
+
+    /// <summary>QuestDataTable::LoadQuestData's file (GetXmlPath("QuestData", "QuestData.xml"), questdata.cpp:1800).</summary>
+    const string ChoiceRewardFile = "questdata/questdata.xml";
+
+    /// <summary>
+    /// The completeReward &lt;v&gt; rows (m_choiceRewards), which only the client's QuestData.xml has: LoadQuestData
+    /// (questdata.cpp:1810) skips a &lt;quest&gt; whose feature is off (IsElementFeatureEnabled), CQuestData::Load
+    /// (:1425) adds each row QuestRewardItem::LoadXml (:895) takes: one whose feature is on, code, rank and count.
+    /// </summary>
+    void AddChoiceRewards(XDocument doc)
+    {
+        foreach (var q in doc.Root?.Elements("quest") ?? Enumerable.Empty<XElement>())
+        {
+            if (!FeatureEnabled(q) || !uint.TryParse((string)q.Attribute("id"), out uint id) || Quest(id) is not { } d) continue;
+            if (q.Element("completeReward") is not { } reward) continue;
+            foreach (var v in reward.Elements("v"))
+            {
+                if (!FeatureEnabled(v)) continue;
+                int code = 0, itemRank = 0, count = 0;
+                QueryInt(v, "code", ref code);
+                QueryInt(v, "rank", ref itemRank);
+                QueryInt(v, "count", ref count);
+                d.Complete.ChoiceRewards.Add(new QuestRewardItem(code, itemRank, count));
+            }
+        }
+    }
+
+    /// <summary>IsElementFeatureEnabled (commonutil.cpp:1034): no feature, or an enabled one.</summary>
+    bool FeatureEnabled(XElement e) => (string)e.Attribute("feature") is not { Length: > 0 } f || featureOn(f);
 
     /// <summary>IsElementAvailable (commonutil.cpp): the client's locale (or none) and an enabled feature (or none).</summary>
     public bool Available(XElement e)
@@ -276,6 +319,7 @@ public sealed partial class QuestTable
         var require = q.Element("require");
         if (require != null) LoadRequire(require, d);
         if (q.Element("progressMap") is { } progressMap) d.Fields = Split((string)progressMap.Attribute("progressMap"));
+        if (q.Element("guide") is { } guide) d.GuideType = ParseGuideType((string)guide.Attribute("guideType"));
         if (q.Element("eventMission") is { } eventMission) d.EventMission = ParseEventMission((string)eventMission.Attribute("event"));
         var start = q.Element("start");
         if (start != null) QueryUInt(start, "npc", ref d.StartNpc);
@@ -384,6 +428,12 @@ public sealed partial class QuestTable
         "sun" => 1, "mon" => 2, "tue" => 3, "wed" => 4, "thu" => 5, "fri" => 6, "sat" => 7, _ => 0,
     };
 
+    /// <summary>Parse_140217a00 (commonenum.cpp:187), case-insensitive: the guide type.</summary>
+    static int ParseGuideType(string s) => (s ?? "").ToLowerInvariant() switch
+    {
+        "level" => 1, "level_boost" => 2, "mission_point" => 5, "daily_pick_once" => 3, "daily_pick_repeat" => 4, _ => 0,
+    };
+
     /// <summary>Parse_140217bd0 (commonenum.cpp): the event mission kind.</summary>
     static int ParseEventMission(string s) => (s ?? "").ToLowerInvariant() switch
     {
@@ -416,6 +466,11 @@ public sealed partial class QuestTable
 
     /// <summary>GetGroupPickCount (@0x14074e450): 1 when the group has no row.</summary>
     public int GroupPickCount(int groupId) => groupPicks.TryGetValue(groupId, out var g) ? g.Count : 1;
+
+    /// <summary>CollectType3QuestsByGuideType (questdata.cpp:1899): the type 3 quests in quest id order, with the guide
+    /// type when it is not 0.</summary>
+    public List<QuestData> CollectType3QuestsByGuideType(int guideType) =>
+        quests.Values.Where(q => q.Type == 3 && (guideType == 0 || q.GuideType == guideType)).ToList();
 
     /// <summary>m_390: the quests of a group in quest id order, null when none.</summary>
     public IReadOnlyList<uint> GroupQuests(int groupId) => groupQuests.TryGetValue(groupId, out var l) ? l : null;

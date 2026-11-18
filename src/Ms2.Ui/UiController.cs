@@ -32,12 +32,17 @@ public abstract class UiController
     /// </summary>
     public virtual void Layout(double stageW, double stageH)
     {
-        if (IsDialog && !realign && placedFromFile && HasDragBar)
-        {
-            var (x, y) = Position();
-            if ((float)stageW >= x && (float)stageH >= y && x >= 0f && y >= 0f) return;
-        }
+        if (IsDialog && KeepsPlace(stageW, stageH)) return;
         if (Host.Player.FindOwner("alignment") is { } al) Host.Invoke(al, "alignment");
+    }
+
+    /// <summary>The test of UIDialog::vfunc_43: placed from its settings file (m_78), not marked for re-alignment (m_60),
+    /// with a drag bar (vfunc_52), and its top left corner on the stage.</summary>
+    protected bool KeepsPlace(double stageW, double stageH)
+    {
+        if (realign || !placedFromFile || !HasDragBar) return false;
+        var (x, y) = Position();
+        return (float)stageW >= x && (float)stageH >= y && x >= 0f && y >= 0f;
     }
 
     // ---- UIDialog: the dialog's place and its settings file (uidialog.cpp) ---------------------------------------------
@@ -134,11 +139,23 @@ public abstract class UiController
         placedFromFile = true;
     }
 
-    /// <summary>FUN_1422dc450 (uiswfentity.cpp:343): the layout, then m_60 cleared.</summary>
+    /// <summary>
+    /// FUN_1422dc450 (uiswfentity.cpp:347): an entity an align widget holds asks for the widgets' layout (done on the next
+    /// update, <see cref="AlignWidgetManager.ProcessPendingLayout"/>), any other is laid out now; then m_60 cleared.
+    /// </summary>
     public void LayoutAndClear(double stageW, double stageH)
     {
-        Layout(stageW, stageH);
+        if (Model.AlignWidgets is { } aw && aw.HasWidgetForEntity(this, false)) aw.RequestLayout(false);
+        else Layout(stageW, stageH);
         realign = false;
+    }
+
+    /// <summary>UISwfEntity::vfunc_44 (uiswfentity.cpp:587): ASDisplayObject::vfunc_2 on m_30; returns its width, rounded
+    /// up.</summary>
+    internal int AlignTo(int alignType, int dx, int dy)
+    {
+        Host.Align(Host.Entity, alignType, dx, dy);
+        return (int)Math.Ceiling(Rt.ToNumber(Host.Get(Host.Entity, "width")));
     }
 
     /// <summary>
@@ -185,10 +202,15 @@ public abstract class UiController
         SaveTransform();
     }
 
+    /// <summary>m_c4 (SetTweenEnabled, uidialog.cpp:363; 0 in the ctor): the dialog opens and closes with the movie's
+    /// tween. The dialogs ported so far turn it on in their ctors; one that does not overrides this.</summary>
+    protected virtual bool TweenEnabled => true;
+
     /// <summary>
     /// vfunc_67 (uidialog.cpp:607): FUN_141924190 (an unfinished drag ends and saves, m_78 cleared), then FUN_141924330
-    /// with the tween on (OnLoadComplete opens with the tween): stopTweens, the file saved while the dialog was open (m_68
-    /// 0), the closing state and startClose; the movie's OnEndClose unloads it.
+    /// (:393). With the tween on: stopTweens, the file saved while the dialog was open (m_68 0), the closing state and
+    /// startClose; the movie's OnEndClose unloads it. With it off: FUN_1422dc080, the file saved and the movie unloaded
+    /// now, closed (m_c0 2).
     /// </summary>
     public virtual void Close()
     {
@@ -198,6 +220,13 @@ public abstract class UiController
             placedFromFile = false;
             StopDrag();
         }
+        if (!TweenEnabled)
+        {
+            SaveTransform();
+            closed = true;
+            if (closeState != 2) { closeState = 2; Unloaded?.Invoke(); }
+            return;
+        }
         Host.Invoke("stopTweens");
         if (!closed) SaveTransform();
         closeState = 1;
@@ -205,13 +234,14 @@ public abstract class UiController
         closed = true;
     }
 
+    /// <summary>UIDialog::OnLoadComplete (uidialog.cpp:696): open (m_c0 0), shown, and startOpen when the tween is on (m_c4).</summary>
     public virtual void OnLoadComplete()
     {
         if (!IsDialog) return;
         closed = false;
         closeState = 0;
         Host.SetVisible(Host.Entity, true);
-        Host.Invoke("startOpen");
+        if (TweenEnabled) Host.Invoke("startOpen");
     }
 
     /// <summary>A call the subclass's vfunc_28 takes before UIDialog's dialog calls (UIGameOptionDialog's OnCloseDialog);
