@@ -26,6 +26,9 @@ public sealed class ClientConstants
         }
     }
 
+    /// <summary>A string constant (Value&lt;CString&gt;); <paramref name="def"/> when the tables do not set it.</summary>
+    public string String(string key, string def) => values.TryGetValue(key, out var s) && s != null ? s : def;
+
     public float Float(string key, float def) =>
         values.TryGetValue(key, out var s) && float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) ? f : def;
 

@@ -23,6 +23,7 @@ public partial class HudScene : Node
     /// run from their movies; built once and kept over a relayout, as the client keeps its dialogs.</summary>
     readonly List<(MovieDialog Movie, MessengerController Side)> messengers = new();
     MovieDialog groupMessenger;
+    MovieDialog notice;                 // uinoticedialog (UINoticeDialog)
     /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
     /// (DAT_1439f8cd0 - 2) = 19 + 19 with feature 0xbd (the adventure level bar) on.</summary>
     const float ExpBarLift = 21 - 2, AdventureBarLift = 21 - 2;
@@ -124,6 +125,7 @@ public partial class HudScene : Node
         questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
         foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
         groupMessenger?.GetParent()?.RemoveChild(groupMessenger);
+        notice?.GetParent()?.RemoveChild(notice);
         upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
         targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
         hudLayer?.QueueFree();
@@ -132,6 +134,7 @@ public partial class HudScene : Node
         if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(GetWindow().Size); }
         foreach (var (m, _) in messengers) m.Relayout(GetWindow().Size);
         groupMessenger?.Relayout(GetWindow().Size);
+        notice?.Relayout(GetWindow().Size);
         questLog?.Relayout(GetWindow().Size);
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
@@ -162,7 +165,8 @@ public partial class HudScene : Node
         AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
         worldUi = new Node[] { damageEffect, nameTag, playerBar, damageText };
 
-        NoticeTab(uiRoot);
+        HudModel();
+        NoticeTab(uiRoot, constants);
         Minimap(uiRoot);
         NavigatorWidget(uiRoot);
         UpperHud(uiRoot);
@@ -535,18 +539,15 @@ public partial class HudScene : Node
     }
 
     /// <summary>
-    /// UINoticeDialog, the web notice banner, closed: OnLoadComplete plays "hideComplete", which parks m_mainWindow off
-    /// the left edge so only its m_showButton tab shows. vfunc_43 aligns it with vfunc_2(3, 0, 0): left, vertically
-    /// centred at the dialog's AS3 height (UIComponent's, the instance bounds).
+    /// UINoticeDialog (0x4ee9), run from its movie with <see cref="NoticeDialogController"/>: the field's HUD opens it when
+    /// the NoticeDialogUrl constant is set (CUIService, uiservice.cpp:742; Define default "", unit_1402ab440_constantsblocks
+    /// :1510). Loaded once and kept across relayouts.
     /// </summary>
-    void NoticeTab(Control ui)
+    void NoticeTab(Control ui, ClientConstants constants)
     {
-        var r = Place(ui, "uinoticedialog", 1f, Vector2.Zero);
-        if (DialogBody(r) is not { } body) return;
-        body.GotoLabel("hideComplete");
-        body.FindClip("m_mainWindow.m_showButton")?.GotoLabel("up");
-        var b = UiLayout.SymbolOfClass(r.Movie, "UINoticeDialog", out _)?["bounds"];
-        AlignDialog(r, body, 3, new Vector2(UiBuilder.F(b?["w"], 905), UiBuilder.F(b?["h"], 1600)), 0, 0);
+        if (string.IsNullOrEmpty(constants.String("NoticeDialogUrl", ""))) return;
+        notice ??= new MovieDialog(assets, new NoticeDialogController(), hudModel, GetWindow().Size);
+        ui.AddChild(notice);
     }
 
     /// <summary>The xblock of the field this scene runs: a portal move's target (the scene reloads per move), else --field.</summary>
@@ -919,6 +920,7 @@ public partial class HudScene : Node
     public override void _Process(double delta)
     {
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
+        (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());

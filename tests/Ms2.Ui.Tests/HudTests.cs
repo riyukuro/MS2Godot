@@ -336,6 +336,33 @@ public class HudTests
         Assert.That(y, Is.EqualTo(1080 - (int)ht - 300));
     }
 
+    [Test]
+    public void NoticeTabClosedLeftMiddleAndToggles()
+    {
+        var m = Model();
+        var c = new NoticeDialogController();
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // OnLoadComplete: gotoAndStop("hideComplete"); vfunc_43: ASDisplayObject::vfunc_2(3, 0, 0)
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("hideComplete"));
+        double ht = Rt.ToNumber(h.Get(h.Entity, "height"));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "x")), Is.EqualTo(0));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "y")), Is.EqualTo((int)((1080 - (int)ht) * 0.5f)));
+        var show = h.Child("m_showButton", h.Child("m_mainWindow"));
+        Assert.That(show, Is.Not.Null);
+        c.ToggleShowHide();                 // the show button's click: Show
+        for (int i = 0; i < 30; i++) h.Player.Tick();
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("show"));
+        Assert.That(Rt.ToBoolean(h.Get(show, "selected")), Is.True);
+        Assert.That(c.BrowserVisible, Is.True);
+        c.ToggleShowHide();                 // and again: Hide
+        for (int i = 0; i < 30; i++) h.Player.Tick();
+        // gotoAndPlay("hide") plays on to the frame40 stop, in hideComplete
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("hideComplete"));
+        Assert.That(Rt.ToBoolean(h.Get(show, "selected")), Is.False);
+        Assert.That(c.BrowserVisible, Is.False);
+    }
+
     static List<string> AllTexts(AsDisplayObject o)
     {
         var l = new List<string>();
