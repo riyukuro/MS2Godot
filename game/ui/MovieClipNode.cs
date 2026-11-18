@@ -473,7 +473,8 @@ public partial class MovieClipNode : Node2D
     }
 
     /// <summary>A shown child's box in its own coordinates (null when it has none).</summary>
-    Rect2? ChildRect(Child c, bool fitText)
+    /// <param name="sliced">For a hit test: a shape inside a sliced clip is taken where the grid draws it.</param>
+    Rect2? ChildRect(Child c, bool fitText, bool sliced = false)
     {
         Rect2? local = c.Node switch
         {
@@ -481,6 +482,10 @@ public partial class MovieClipNode : Node2D
             TextNode t => fitText ? new Rect2(t.Bounds.Position, new Vector2(t.TextWidth + 4, t.Bounds.Size.Y)) : t.Bounds,
             _ => c.Def["id"] != null && Scope.Symbol((int)c.Def["id"]) is { } sym ? UiBuilder.Rc(sym["bounds"]) : null,
         };
+        // Sprite::PointTestLocal (@0x1425dc2e0): a sprite with a scale-9 grid skips its bounds test and tests its children
+        // as drawn, a shape inside it through the grid (ShapeNode maps its outline the same way)
+        if (sliced && local != null && nine != null && c.Node is not MovieClipNode && c.Node is not TextNode)
+            local = nine.At(nine.Offset + c.Base.Origin).Map(local.Value);
         // a 9-slice child is built at its placed size with a unit matrix: its symbol bounds take the placed scale
         if (local != null && c.Static9 && c.Def["matrix"] is JsonObject m9 && c.Def["id"] != null && Scope.Symbol((int)c.Def["id"])?["bounds"] is { } sb)
         {
@@ -505,7 +510,7 @@ public partial class MovieClipNode : Node2D
             var t = c.Node.Transform;
             if (Mathf.IsZeroApprox(t.Determinant())) continue;          // scaled to nothing: shows nothing
             var local = t.AffineInverse() * p;
-            if (c.Node is MovieClipNode mc ? mc.HitTest(local) : ChildRect(c, false) is { } b && b.HasPoint(local)) return true;
+            if (c.Node is MovieClipNode mc ? mc.HitTest(local) : ChildRect(c, false, true) is { } b && b.HasPoint(local)) return true;
         }
         return false;
     }
