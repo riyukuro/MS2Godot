@@ -14,6 +14,7 @@ public sealed class ColorPalettes
     public const int SkinPalette = 10000;      // the palette the client lists skin colours from
 
     readonly Dictionary<int, List<(Rgba c0, Rgba c1, Rgba c2)>> rows = new();
+    readonly Dictionary<int, List<Rgba>> visible = new();
 
     public ColorPalettes(PackSet packs)
     {
@@ -23,6 +24,9 @@ public sealed class ColorPalettes
         {
             if (!int.TryParse((string)p.Attribute("id"), out int id)) continue;
             rows[id] = p.Elements("color").Select(c => (Hex((string)c.Attribute("ch0")), Hex((string)c.Attribute("ch1")), Hex((string)c.Attribute("ch2")))).ToList();
+            // ItemColorEx m_n38 (CItemDataTable palette load): the palette attribute, ch0 without one
+            visible[id] = p.Elements("color").Select(c => string.IsNullOrEmpty((string)c.Attribute("palette"))
+                ? Hex((string)c.Attribute("ch0")) : Hex((string)c.Attribute("palette"))).ToList();
         }
     }
 
@@ -42,6 +46,10 @@ public sealed class ColorPalettes
 
     /// <summary>The rows of a palette (empty when unknown).</summary>
     public IReadOnlyList<(Rgba c0, Rgba c1, Rgba c2)> Rows(int palette) => rows.TryGetValue(palette, out var list) ? list : Array.Empty<(Rgba, Rgba, Rgba)>();
+
+    /// <summary>The colour a palette row shows in the UI (ItemColorEx m_n38, the visibleColor of buildColors).</summary>
+    public Rgba Visible(int palette, int index) =>
+        visible.TryGetValue(palette, out var list) && index >= 0 && index < list.Count ? list[index] : default;
 
     public EquipColor? Equip(int palette, int index) =>
         Get(palette, index) is { } c ? new EquipColor(c.c0, c.c1, c.c2, index, palette) : null;

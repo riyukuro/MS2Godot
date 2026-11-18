@@ -36,8 +36,11 @@ public sealed class ItemCustomize
     public readonly List<List<Preset>> PonyCustoms = new();
     public string Movie = "";
 
-    /// <summary>ItemModelHead::FUN_1405471d0: the item list marks the tile editable (the option panel opens on it).</summary>
-    public bool Editable => Type != Kind.None && (Scale || Rotation || Translation);
+    /// <summary>ItemModelHead::FUN_1405471d0 (rotation, translation or scale): WriteItemInfo's editable.</summary>
+    public bool Editable => Scale || Rotation || Translation;
+
+    /// <summary>The item has a customize controller (FUN_1414131e0 makes one for hair, a face decal and a cap).</summary>
+    public bool HasController => Type != Kind.None;
 
     /// <summary>EditItems::GetFlags: 1 size, 2 size of a morph, 4 angle, 8 position.</summary>
     public int EditFlags => (Scale ? (Morph ? 2 : 1) : 0) | (Rotation ? 4 : 0) | (Translation ? 8 : 0);
@@ -92,10 +95,20 @@ public sealed class ItemCustomize
 /// </summary>
 public sealed class CustomValues
 {
-    public readonly float[] Scale = { 0, 0 };
-    public readonly Vector3[] Position = new Vector3[2], Rotation = new Vector3[2];   // hair: per pony part
+    public float[] Scale = { 0, 0 };
+    public Vector3[] Position = new Vector3[2], Rotation = new Vector3[2];   // hair: per pony part
     public float X, Y, DecalScale, Angle;                                             // decal: uv offset, scale, radians
     public int Pick = -1;
+
+    /// <summary>A copy (the dialog's m_items keeps a clone of the worn item).</summary>
+    public CustomValues Clone()
+    {
+        var v = (CustomValues)MemberwiseClone();
+        Array.Copy(Scale, v.Scale = new float[2], 2);
+        Array.Copy(Position, v.Position = new Vector3[2], 2);
+        Array.Copy(Rotation, v.Rotation = new Vector3[2], 2);
+        return v;
+    }
 
     public static CustomValues New(ItemCustomize c, Random rng)
     {

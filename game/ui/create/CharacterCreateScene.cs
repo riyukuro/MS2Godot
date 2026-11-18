@@ -14,7 +14,9 @@ namespace Ms2Godot.Ui.Create;
 /// client's own movie with UICharacterCreateSelectDialog's C++ side (<see cref="CharacterCreateSelectController"/>).
 /// Create: SelectCreateJob loads the job's create map (table/lobbyfield.xml createMap, e.g. the "Character" xblock),
 /// the camera is the field's Camera0 entity, the preview character stands at SpawnPointPC0 in its idle pose, dressed
-/// by CreateLook, and uicharactercreatedialog runs on top. Create builds the CharacterManagement request and prints it.
+/// by CreateLook, and uicharactercreatedialog runs on top as the client's own movie with UICharacterCreateDialog's C++
+/// side (<see cref="CharacterCreateController"/>). Create asks for the name (a STAND-IN box: uimessagebox has no movie
+/// port yet) and builds the CharacterManagement request.
 /// A change of field reloads this scene (the page, job and gender carry over in static state).
 /// User args (after --): --page select|create, --job CODE, --gender male|female, --shots DIR (scripted shots, then quit).
 /// </summary>
@@ -52,15 +54,20 @@ public partial class CharacterCreateScene : LobbyFieldScene
         return tree.ChangeSceneToFile(ScenePath);
     }
 
-    /// <summary>The server refused the request: shows its message in the name prompt, which opens again.</summary>
-    /// <summary>Scripted runs: types the name into the open create screen and confirms it.</summary>
-    public static void ConfirmScripted(string name) => current?.custom?.Confirm(name);
+    /// <summary>Scripted runs: the page's Create, then the name typed into the box and OK.</summary>
+    public static void ConfirmScripted(string name)
+    {
+        if (current?.create is not { } c) return;
+        c.OnCallback("OnCreate", Array.Empty<object>());
+        current.SubmitName(name);
+    }
     /// <summary>Scripted runs: the job page's Create button for its selected job (onClickCreate), which opens the look page.</summary>
     public static void PickJobScripted() { if (current?.select != null && page == Page.Select) current.ClickCreate(); }
     /// <summary>Scripted runs: the job page's back button (CharacterCreateSelectDialog.onClickPrev), as a click on it.</summary>
     public static void ClickPrevScripted() { if (page == Page.Select && current?.selectDialog?.Host is { } h) h.Invoke(h.Entity, "onClickPrev", (object)null); }
-    public static bool OnCreatePage => current != null && page == Page.Create && current.custom != null;
-    public static void CreateFailed(string message) => current?.custom?.ShowCreateError(message);
+    public static bool OnCreatePage => current != null && page == Page.Create && current.create?.State == 1;
+    /// <summary>The server refused the request (the flow shows its message): failCreate, the page takes input again.</summary>
+    public static void CreateFailed() => current?.create?.CreateRefused();
 
     static CharacterCreateScene current;
     public override void _EnterTree() { base._EnterTree(); LobbyLayout.UseWindowPixels(this); current = this; }
@@ -75,15 +82,17 @@ public partial class CharacterCreateScene : LobbyFieldScene
     CreateTables tables;
     UiAssets assets;
     CanvasLayer layer;
-    MovieClipNode createRoot;
     /// <summary>uicharacterlistdialog behind the job page.</summary>
     MovieDialog listDialog;
     /// <summary>uicharactercreateselectdialog, its C++ side and the picture of its job preview VideoPlayer.</summary>
     MovieDialog selectDialog;
     CharacterCreateSelectController select;
     MovieVideo selectVideo;
-    CharacterCreateLogic custom;
-    UiWidgets.MouseRouter mouse;
+    /// <summary>uicharactercreatedialog, its C++ side and the picture of the open category's guide VideoPlayer.</summary>
+    MovieDialog createDialog;
+    CharacterCreateController create;
+    MovieVideo createVideo;
+    NamePromptStandIn prompt;
     ModelBuilder builder;
     FieldMap map;
     string shotDir;
@@ -156,11 +165,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
         // the job page's movies align again in place (UIDialog::vfunc_43 -> alignment), as on the character list
         listDialog?.Relayout(window);
         selectDialog?.Relayout(window);
-        if (custom == null) return;
-        bool optionsOpen = custom.Options.Visible;     // read while the old page is still in the tree
-        if (createRoot != null) { layer.RemoveChild(createRoot); createRoot.QueueFree(); }
-        createRoot = null;
-        BuildCreate(custom, optionsOpen);
+        createDialog?.Relayout(window);
+        prompt?.Center();
     }
 
     /// <summary>The window in pixels (LobbyLayout.UseWindowPixels), its UI scale and movie stage (LobbyLayout).</summary>
@@ -257,58 +263,90 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     // ---- create ----
 
-    /// <summary>The create page; with <paramref name="old"/> it is rebuilt over that page's look and state.</summary>
-    void BuildCreate(CharacterCreateLogic old = null, bool optionsOpen = false)
+    /// <summary>
+    /// The create page: the preview actor (CSceneStateMulti::FUN_14174ec40 on the map's load: a random gender's look with the
+    /// job outfit's select rows), then uicharactercreatedialog (OnLoadComplete -> initData; the movie pops up after
+    /// buildCurrentItems). Its OnEndPopdown goes back to the job page (0x4c8: the select scene, then the job pick reopens).
+    /// </summary>
+    void BuildCreate()
     {
-        var (_, u, stage) = Screen();
-        var movie = new UiMovie(assets, UICharacterCreateDialogContract.Movie);
-        createRoot = movie.BuildRoot(u);
-        createRoot.Scale = new Vector2(u, u);
-        UiWidgets.ApplyInspector(createRoot, UICharacterCreateDialogContract.Inspector);
-        layer.AddChild(createRoot);
-        // the add-blend sparkles (m_eff, the title strips) draw as black boxes without blend modes: leave them out
-        foreach (var clip in createRoot.AllClips().ToList())
+        var window = Screen().Window;
+        var look = new CreateLook(packs, new ColorPalettes(packs), assets.Language) { Rng = rng };
+        look.Create(gender, job, true);
+        create = new CharacterCreateController
         {
-            bool any = false;
-            foreach (var ch in clip.Children)
-                if (ch.Def?["blend"] is { } b && (int)b == 8) { ch.Last = -1; any = true; }
-            if (any) clip.GotoFrame(clip.Frame);
-        }
-        // CharacterCreateDialog.alignment: the dialog at the centre right for m_bg (applyScale(m_bg)), then
-        // btnsAlignment(m_guide, getUIScale, m_guide.height, globalToLocal(0, stageHeight)): the guide button at the
-        // stage's bottom left
-        float guideH = createRoot.FindClip("m_guide") is { } g ? LobbyLayout.AsHeight(g) : 0;
-        var (at, r) = LobbyLayout.CenterRightOfBg(createRoot, createRoot.FindClip("m_content.m_bg"), stage, u);
-        if (createRoot.ChildNamed("m_guide") is { } guide)
-        {
-            guide.Override = new Transform2D(0, LobbyLayout.BtnsAlignment(LobbyLayout.StageBottomLeftInDialog(at, r, stage), guideH, stage));
-            createRoot.GotoFrame(createRoot.Frame);
-        }
-        var look = old?.Look ?? new CreateLook(packs, new ColorPalettes(packs));
-        custom = new CharacterCreateLogic(movie, createRoot, look);
-        custom.LookChanged += RebuildPreview;
-        custom.Back += () => SwitchTo(Page.Select);
-        custom.Created += (packet, bytes) => CharacterCreated?.Invoke(packet, bytes);
-        if (old != null) custom.Restore(old, Flow.Session.ServerInfo(assets), assets, optionsOpen);
-        else
-        {
-            custom.InitData(gender, job, Flow.Session.ServerInfo(assets), assets);
-            RebuildPreview();
-        }
-        mouse = new UiWidgets.MouseRouter(createRoot);
+            Look = look,
+            Server = Flow.Session.ServerInfo(assets),
+            NoCharacters = Flow.Session.List().Count == 0,
+            Common = k => assets.Str("$" + k) is var t && !t.StartsWith('$') ? t : null,
+            CheckName = CheckName,
+        };
+        create.LookChanged += RebuildPreview;
+        create.NameAsked += OpenPrompt;
+        create.NameError += m => prompt?.SetError(m);
+        create.CreateRequested += Created;
+        create.Back += () => SwitchTo(Page.Select);
+        create.GuideAsked += () => GD.Print("create: the mouse guide (0x4ea7) is not ported");
+        RebuildPreview();
+        createDialog = new MovieDialog(assets, create, new UiModel(new GameTables(assets.Packs, assets.Language)), window);
+        layer.AddChild(createDialog);
+        // CustomOption.playMovie: the open category's m_custom VideoPlayer (in m_moviedummy)
+        createVideo = new MovieVideo(createDialog, uiPacks ?? packs, () =>
+            CurrentContent() is { } content && createDialog.Host.Get(content, "m_custom") is Ms2.Avm2.AsObject custom
+                ? createDialog.Host.Get(custom, "m_moviePlayer") : null);
+        createDialog.AddChild(createVideo);
     }
 
     void RebuildPreview()
     {
-        if (custom == null) return;
-        gender = custom.Look.Gender;
+        if (create == null) return;
+        gender = create.Look.Gender;
         ClearPreview();
         try
         {
-            var (visual, anim) = custom.Look.Build(builder);
+            var (visual, anim) = create.Look.Build(builder);
             ShowPreview(visual, anim);
         }
         catch (Exception ex) { GD.PushWarning("preview: " + ex.Message); }
+    }
+
+    /// <summary>The name box (STAND-IN for the client's uimessagebox input box: one line, up to 12 characters, OK and Cancel).</summary>
+    void OpenPrompt()
+    {
+        if (prompt != null) return;
+        prompt = new NamePromptStandIn(assets.Str("$s_charcreate_input_name") is var t && !t.StartsWith('$') ? t : "");
+        prompt.Ok += text => { if (create.SubmitName(text)) ClosePrompt(); };
+        prompt.Cancel += ClosePrompt;
+        layer.AddChild(prompt);
+        prompt.Center();
+    }
+
+    void ClosePrompt() { prompt?.QueueFree(); prompt = null; }
+
+    /// <summary>Scripted runs: the name into the open box, then OK.</summary>
+    void SubmitName(string name)
+    {
+        if (create.SubmitName(name)) ClosePrompt();
+    }
+
+    void Created(Ms2.Net.Packets.CreateCharacter packet)
+    {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        w.WriteShort((short)packet.Op);
+        packet.Write(w);
+        var bytes = w.ToArray();
+        GD.Print($"create request: {packet.Op} {bytes.Length} bytes, gender {packet.Gender}, job {packet.JobGroup}, name \"{packet.Name}\", " +
+                 $"items {string.Join(" ", Ms2.Net.Packets.CreateCharacter.DecodeItems(packet.Items).Select(i => $"{i.Slot}:{i.Id}/{i.Color.Index}"))}");
+        CharacterCreated?.Invoke(packet, bytes);
+    }
+
+    Ms2.Formats.Text.BanTextChecker nameChecker;
+
+    /// <summary>FUN_141276a30: the client's text checker (BanTextChecker.CheckCharacterName); null when the name passes.</summary>
+    string CheckName(string name)
+    {
+        nameChecker ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language);
+        return nameChecker.CheckCharacterName(name, out var message) == 0 ? null : message;
     }
 
     /// <summary>A page on another field: reload the scene (static state keeps the page, job and gender).</summary>
@@ -326,11 +364,11 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     public override void _Input(InputEvent e)
     {
-        if (custom?.PromptOpen == true) return;
-        mouse?.Handle(e);
-        if (e is InputEventMouse m) custom?.OnMouse(m);
-        // the job page's Enter does nothing (CharacterCreateSelectDialog.onEnterKey returns)
-        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter) custom?.OnCreate();
+        if (prompt != null) return;
+        // UICharacterCreateDialog::vfunc_13: Enter (key 0x1c) while the page takes input -> onEnterKey; the job page's Enter
+        // does nothing (CharacterCreateSelectDialog.onEnterKey returns)
+        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter && create?.OnEnterKey() == true)
+            GetViewport().SetInputAsHandled();
     }
 
     // ---- scripted shots ----
@@ -345,6 +383,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
     public override void _Process(double delta)
     {
         base._Process(delta);
+        create?.Update();
         if (shotDir == null) return;
         frame++;
         if (resizeTo is { } to) { ResizeShots(to); return; }
@@ -358,30 +397,36 @@ public partial class CharacterCreateScene : LobbyFieldScene
         }
         else
         {
+            // the guide video's first frame decoded before a shot (scripted runs only)
+            if (frame is 59 or 89 or 349 or 399) { createVideo?.Sync(); createVideo?.Player.ShowFirstFrame(); }
             if (frame == 60) Save($"create_page_{job}.png");
-            if (frame == 61) custom.SelectCategory(0, true);
-            if (frame == 62 && custom.Look.SlotItems(Ms2.Net.Packets.EquipSlot.HR) is { Count: > 1 } hair) custom.ChangeItem(hair[1]);
-            if (frame == 63) custom.ChangeColor(3);
+            if (frame == 61) { var hair = Renderer("m_editItemList", 1); ClickObj(hair); }
+            if (frame == 66) ClickObj(Renderer("m_colorList", 3));
             if (frame == 90) Save($"create_hair_{job}.png");
-            if (frame == 91) custom.ChangeGender(1 - custom.Look.Gender, true);
+            if (frame == 91) ClickObj(Content(create.Look.Gender == 0 ? "m_female" : "m_male"));
             if (frame == 120) Save($"create_gender_{job}.png");
-            if (frame == 121) custom.OnRandom();
+            if (frame == 121) ClickObj(Content("m_random"));
             if (frame == 150) Save($"create_random_{job}.png");
-            if (frame == 151) { custom.SelectCategory(2, true); PickEditable(Ms2.Net.Packets.EquipSlot.FD); }
-            if (frame == 152) { custom.Options.SetSlider(0, 0.5f); custom.Options.SetSlider(1, 90); custom.Options.ClickPosition(1); }
-            if (frame == 180) Save($"create_custom_makeup_{job}.png");
-            if (frame == 181) { custom.SelectCategory(0, true); PickEditable(Ms2.Net.Packets.EquipSlot.HR); }
-            if (frame == 182) custom.Options.SetSlider(0, 0.4f);
-            if (frame == 210) Save($"create_custom_hair_{job}.png");
-            if (frame == 211) { custom.OnCreate(); custom.Confirm("Tester01"); }
-            if (frame == 215) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
+            for (int c = 1; c < 7; c++)
+            {
+                if (frame == 150 + c * 20) ClickCategory(c);
+                if (frame == 150 + c * 20 + 19) Save($"create_category{c}_{job}.png");
+            }
+            if (frame == 300) { ClickCategory(2); }
+            if (frame == 320) { PickEditable(); }
+            if (frame == 350) Save($"create_custom_makeup_{job}.png");
+            if (frame == 351) ClickCategory(0);
+            if (frame == 371) PickEditable();
+            if (frame == 400) Save($"create_custom_hair_{job}.png");
+            if (frame == 401) ClickObj(Content("m_create"));
+            if (frame == 420) { Save($"create_name_prompt_{job}.png"); SubmitName("Tester01"); }
+            if (frame == 430) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
         }
     }
 
     /// <summary>
     /// --resize WxH: the page in a changed state (job page: the neighbour tab clicked; create page: the makeup category with
-    /// an editable item and its option panel open, and the name prompt open with a name typed), one shot, then the window
-    /// resized and a second shot.
+    /// an editable item and its option panel open, and the name box open), one shot, then the window resized and a second shot.
     /// </summary>
     void ResizeShots(Vector2I to)
     {
@@ -389,20 +434,75 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (frame == 45)
         {
             if (page == Page.Select) ClickTab(NeighbourTab());
-            else { custom.SelectCategory(2, true); PickEditable(Ms2.Net.Packets.EquipSlot.FD); custom.OnCreate(); custom.PromptText = "Tester01"; }
+            else ClickCategory(2);
         }
+        if (frame == 65 && page == Page.Create) PickEditable();
+        if (frame == 80 && page == Page.Create) ClickObj(Content("m_create"));
         if (frame == 90) Save($"{name}_before.png");
         if (frame == 91) GetWindow().Size = to;
         if (frame == 150) { Save($"{name}_resized_{to.X}x{to.Y}.png"); packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
     }
 
-    /// <summary>Scripted runs: wear the slot's first editable item, preferring one with position presets.</summary>
-    void PickEditable(Ms2.Net.Packets.EquipSlot slot)
+    // ---- the create movie's objects, for the scripted shots ----
+
+    /// <summary>The open category's CharacterCreateContent (m_content.m_page.getCurrentContent()), or null.</summary>
+    Ms2.Avm2.AsObject CurrentContent()
     {
-        var ids = custom.Look.SlotItems(slot).Where(i => custom.Look.Customize(i).Editable).ToList();
-        int id = ids.FirstOrDefault(i => custom.Look.Customize(i).Positions.Count > 0, ids.FirstOrDefault());
-        if (id != 0) custom.ChangeItem(id);
-        GD.Print($"custom {slot}: item {id}, flags {custom.Look.Customize(id).EditFlags}");
+        var h = createDialog?.Host;
+        if (h?.Entity == null || h.Get(h.Get(h.Entity, "m_content"), "m_page") is not Ms2.Avm2.AsObject page) return null;
+        return h.Invoke(page, "getCurrentContent") as Ms2.Avm2.AsObject;
+    }
+
+    object Content(string child)
+    {
+        var h = createDialog.Host;
+        return h.Get(h.Get(h.Entity, "m_content"), child);
+    }
+
+    /// <summary>The renderer of the open category's list (m_editItemList or m_colorList) at <paramref name="index"/>.</summary>
+    object Renderer(string list, int index)
+    {
+        var h = createDialog.Host;
+        var content = CurrentContent();
+        return content == null ? null : h.Invoke(h.Get(content, list), "getRendererAt", index);
+    }
+
+    /// <summary>A click at the middle of a movie display object.</summary>
+    void ClickObj(object o)
+    {
+        if (o is not Ms2.Avm2.Flash.AsDisplayObject d) { GD.Print("create shots: nothing to click"); return; }
+        var b = d.GetBounds(null);
+        float s = UiScale.For(Screen().Window);
+        ClickAt(UiScale.MovieOrigin + new Vector2((float)(b.X + b.W / 2), (float)(b.Y + b.H / 2)) * s);
+    }
+
+    /// <summary>The category button <paramref name="index"/> of m_page (its ButtonGroup), clicked.</summary>
+    void ClickCategory(int index)
+    {
+        var h = createDialog.Host;
+        var group = h.Get(h.Get(h.Get(h.Entity, "m_content"), "m_page"), "m_categoryGroup");
+        ClickObj(group == null ? null : h.Invoke(group, "getButtonAt", index));
+    }
+
+    /// <summary>Scripted runs: the open category's first editable item, preferring one with position presets, clicked.</summary>
+    void PickEditable()
+    {
+        var h = createDialog.Host;
+        var content = CurrentContent();
+        var dp = content == null ? null : h.Get(h.Get(content, "m_editItemList"), "dataProvider");
+        int n = dp == null ? 0 : (int)Ms2.Avm2.Rt.ToNumber(h.Get(dp, "length"));
+        int pick = -1, fallback = -1;
+        for (int i = 0; i < n; i++)
+        {
+            var row = h.Get(dp, i.ToString());
+            if (!Ms2.Avm2.Rt.ToBoolean(h.Get(row, "editable"))) continue;
+            int id = int.TryParse(Ms2.Avm2.Rt.ToString(h.Get(row, "itemid")), out int v) ? v : 0;
+            if (fallback < 0) fallback = i;
+            if (create.Look.Customize(id).Positions.Count > 0) { pick = i; break; }
+        }
+        if (pick < 0) pick = fallback;
+        GD.Print($"create shots: editable row {pick} of {n}");
+        if (pick >= 0) ClickObj(Renderer("m_editItemList", pick));
     }
 
     void Save(string name)

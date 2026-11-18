@@ -8,40 +8,71 @@ using Ms2Godot.Net;
 namespace Ms2Godot.Ui.Create;
 
 /// <summary>
-/// The look being created: gender, job, the item worn in each category and its palette row, and the skin row.
-/// Categories follow UICharacterCreateDialog (GetItemTabAndCategory / FUN_1418e46c0): 0 hair (HR), 1 face (FA),
-/// 2 makeup (FD), 3 skin (the skin colour item 10100001), 4 top (CL), 5 bottom (PA), 6 shoes (SH).
-/// The items a category offers are CItemDefaultData::GetSlotItems: table/defaultitems.xml rows of job 0 and the job,
-/// for the slot, whose itemdata genderLimit fits (FUN_1418e6950).
+/// The lobby actor being created (the preview PC of CSceneStateMulti create mode): gender, job, the item worn in each
+/// equip slot with its palette row and customize values, and the skin row.
+/// Items come from CItemDefaultData (table/defaultitems.xml): per job code (0 = every job) and gender, the items of each
+/// slot, in file order (common lists first). A row counts when it is visible or a base item of group type 0x12; an item
+/// whose genderLimit is 2 goes to both genders' lists; an overall (subtype 22) in the top list (CL) is in the bottom list
+/// (PA) as well (TDefaultItems::AddSlotItem). The skin is the avatar colour item 10100001 and its palette.
 /// </summary>
 public sealed class CreateLook
 {
-    public const int SkinItem = 0x9a1d21;              // the skin colour row of the skin category (10100001)
-    public static readonly EquipSlot[] CategorySlot = { EquipSlot.HR, EquipSlot.FA, EquipSlot.FD, EquipSlot.SK, EquipSlot.CL, EquipSlot.PA, EquipSlot.SH };
+    public const int SkinItem = 0x9a1d21;              // CItemData::IsAvatarColorItem (10100001)
+    const int OverallSubtype = 0x16;                   // CItemData::FUN_14053d2b0
+    /// <summary>CItemDefaultData s_aSlots that hold lists (the rest stay empty in the table).</summary>
+    static readonly EquipSlot[] ListSlots = { EquipSlot.HR, EquipSlot.FA, EquipSlot.FD, EquipSlot.CL, EquipSlot.PA, EquipSlot.SH };
+
+    /// <summary>A defaultitems row (DefaultItemData): id, saleTag, select.</summary>
+    public sealed record Row(int Id, int SaleTag, bool Select);
 
     readonly PackSet packs;
     readonly ColorPalettes palettes;
-    readonly XDocument defaults;
     readonly Dictionary<int, XElement> dataRoots = new(), modelRoots = new();
     readonly Dictionary<int, string> itemNames = new();
+    // job code -> gender -> slot -> rows (TDefaultItems::m_mapSlotItems); base items per gender (ms_aMaps)
+    readonly Dictionary<int, Dictionary<EquipSlot, List<Row>>[]> lists = new();
+    readonly Dictionary<EquipSlot, int>[] baseItems = { new(), new() };
 
     public int Gender, JobCode;
     public readonly Dictionary<EquipSlot, int> Items = new();        // slot -> item id
     public readonly Dictionary<EquipSlot, int> Rows = new();         // slot -> palette row
     public int SkinRow;
-    /// <summary>The customize values of each item worn so far (the dialog's m_items: a new item starts from vfunc_4).</summary>
+    /// <summary>The customize values of each item worn so far.</summary>
     public readonly Dictionary<int, CustomValues> Custom = new();
     readonly Dictionary<int, ItemCustomize> customizes = new();
-    readonly Random customRng = new();
+    public Random Rng = new();
 
     public CreateLook(PackSet packs, ColorPalettes palettes, string lang = "en")
     {
         this.packs = packs; this.palettes = palettes;
-        defaults = Load("table/defaultitems.xml");
         var names = Load($"string/{lang}/itemname.xml");
         if (names != null)
             foreach (var k in names.Root.Elements("key"))
                 if (int.TryParse((string)k.Attribute("id"), out int id)) itemNames.TryAdd(id, (string)k.Attribute("name"));
+        LoadDefaults(Load("table/defaultitems.xml"));
+    }
+
+    CreateLook(CreateLook o)
+    {
+        packs = o.packs; palettes = o.palettes; dataRoots = o.dataRoots; modelRoots = o.modelRoots; itemNames = o.itemNames;
+        lists = o.lists; baseItems = o.baseItems; customizes = o.customizes; Rng = o.Rng;
+        Gender = o.Gender; JobCode = o.JobCode; SkinRow = o.SkinRow;
+        foreach (var (k, v) in o.Items) Items[k] = v;
+        foreach (var (k, v) in o.Rows) Rows[k] = v;
+        foreach (var (k, v) in o.Custom) Custom[k] = v.Clone();
+    }
+
+    /// <summary>BackUpCharacterInfo: the look as it is now (gender, job, items, colours, customize values).</summary>
+    public CreateLook Snapshot() => new(this);
+
+    /// <summary>CSceneStateMulti::FUN_14174ee00: the actor made again from a backup.</summary>
+    public void Restore(CreateLook b)
+    {
+        Gender = b.Gender; JobCode = b.JobCode; SkinRow = b.SkinRow;
+        Items.Clear(); Rows.Clear(); Custom.Clear();
+        foreach (var (k, v) in b.Items) Items[k] = v;
+        foreach (var (k, v) in b.Rows) Rows[k] = v;
+        foreach (var (k, v) in b.Custom) Custom[k] = v.Clone();
     }
 
     XDocument Load(string entry) => packs.Exists("Xml", entry)
@@ -54,99 +85,210 @@ public sealed class CreateLook
         return root?.Elements(element).FirstOrDefault(e => (string)e.Attribute("id") == id.ToString());
     }
 
+    XElement Data(int id) => Find(dataRoots, "itemdata", id, "item");
+    XElement Model(int id) => Find(modelRoots, "itemmodel", ModelId(id), "ItemModel");
+
+    /// <summary>
+    /// CItemDefaultData load: each key's slots, each item that is visible or a base item (the rows carry no locale or
+    /// feature, so IsElementAvailable passes them all); a non-base item whose model slot is not the list's slot is dropped.
+    /// Base items set the gender's default for the slot and join the list only when visible or of group type 0x12.
+    /// </summary>
+    void LoadDefaults(XDocument doc)
+    {
+        if (doc == null) return;
+        foreach (var key in doc.Root.Elements("key"))
+        {
+            int job = int.TryParse((string)key.Attribute("jobCode"), out int j) ? j : 0;
+            if (!lists.TryGetValue(job, out var byGender)) lists[job] = byGender = new[] { new Dictionary<EquipSlot, List<Row>>(), new() };
+            foreach (var slotEl in key.Elements("slot"))
+            {
+                if (!Enum.TryParse<EquipSlot>((string)slotEl.Attribute("name"), out var slot)) continue;
+                foreach (var it in slotEl.Elements("item"))
+                {
+                    bool visible = (string)it.Attribute("visible") == "1", isBase = (string)it.Attribute("base") == "1";
+                    if (!visible && !isBase) continue;
+                    if (!int.TryParse((string)it.Attribute("id"), out int id) || Data(id) == null) continue;
+                    if (!isBase && ModelSlot(id) != slot) continue;
+                    int gender = GenderLimit(id);
+                    var row = new Row(id, int.TryParse((string)it.Attribute("saleTag"), out int tag) ? tag : 0, (string)it.Attribute("select") == "1");
+                    if (isBase)
+                    {
+                        if (gender == 2) { baseItems[0][slot] = id; baseItems[1][slot] = id; }
+                        else if (gender is 0 or 1) baseItems[gender][slot] = id;
+                        // CItemData::FUN_14053cf40: group type 0x12 (the ears)
+                        if (!visible && ModelSlot(id) != EquipSlot.ER) continue;
+                    }
+                    for (int g = 0; g < 2; g++)
+                        if (gender == 2 || gender == g) AddSlotItem(byGender[g], slot, row);
+                }
+            }
+        }
+    }
+
+    void AddSlotItem(Dictionary<EquipSlot, List<Row>> map, EquipSlot slot, Row row)
+    {
+        if (!map.TryGetValue(slot, out var list)) map[slot] = list = new();
+        list.Add(row);
+        if (slot == EquipSlot.CL && IsOverall(row.Id)) AddSlotItem(map, EquipSlot.PA, row);
+    }
+
     public string ItemName(int id) => itemNames.GetValueOrDefault(id, "");
 
     /// <summary>The item's slotIcon (itemdata property), a Resource/Image path.</summary>
-    public string IconPath(int id) => (string)Find(dataRoots, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("slotIcon");
+    public string IconPath(int id) => (string)Data(id)?.Descendants("property").FirstOrDefault()?.Attribute("slotIcon") ?? "";
+
+    /// <summary>The item's guide movie (itemdata property movie).</summary>
+    public string MovieOf(int id) => (string)Data(id)?.Descendants("property").FirstOrDefault()?.Attribute("movie") ?? "";
+
+    /// <summary>CItemData::GetEquipSubtype: the property subtype of an equip (type 1).</summary>
+    public int Subtype(int id)
+    {
+        var p = Data(id)?.Descendants("property").FirstOrDefault();
+        return (string)p?.Attribute("type") == "1" && int.TryParse((string)p.Attribute("subtype"), out int s) ? s : 0;
+    }
+
+    /// <summary>CItemData::FUN_14053d2b0: an overall (top and bottom in one).</summary>
+    public bool IsOverall(int id) => Subtype(id) == OverallSubtype;
+
+    /// <summary>GetModelOrEmpty()->GetFirstGroupType(): the item model's first slot, the equip slot the item goes to.</summary>
+    public EquipSlot? ModelSlot(int id) =>
+        Enum.TryParse<EquipSlot>((string)Model(id)?.Element("slots")?.Element("slot")?.Attribute("name"), out var s) ? s : null;
 
     /// <summary>The item model's customize options (cached), and the guide movie of its itemdata property.</summary>
     public ItemCustomize Customize(int id)
     {
         if (customizes.TryGetValue(id, out var c)) return c;
         if (id == SkinItem) return customizes[id] = new ItemCustomize();
-        var movie = (string)Find(dataRoots, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("movie");
-        return customizes[id] = ItemCustomize.Read(Find(modelRoots, "itemmodel", ModelId(id), "ItemModel"), movie);
+        return customizes[id] = ItemCustomize.Read(Model(id), MovieOf(id));
     }
 
     /// <summary>The item's customize values, made as a new item makes them the first time it is worn.</summary>
     public CustomValues ValuesOf(int id)
     {
-        if (!Custom.TryGetValue(id, out var v)) Custom[id] = v = CustomValues.New(Customize(id), customRng);
+        if (!Custom.TryGetValue(id, out var v)) Custom[id] = v = CustomValues.New(Customize(id), Rng);
         return v;
     }
 
     public int GenderLimit(int id)
     {
-        var e = Find(dataRoots, "itemdata", id, "item");
-        var limit = e?.Descendants("limit").FirstOrDefault();
+        var limit = Data(id)?.Descendants("limit").FirstOrDefault();
         return int.TryParse((string)limit?.Attribute("genderLimit"), out int g) ? g : 2;
     }
 
     /// <summary>The item's model id (a tool itemPreset replaces it, as for the female copies of the starter outfits).</summary>
     int ModelId(int id)
     {
-        var data = Find(dataRoots, "itemdata", id, "item");
+        var data = Data(id);
         return int.TryParse((string)data?.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int pre) && pre != 0 ? pre : id;
     }
 
-    /// <summary>The item model's customize block: colour palette and default row, or (0, 0) when the item takes no dye.</summary>
+    /// <summary>
+    /// The item model's customize block (CItemData::FUN_14053e260 / FUN_14053e2b0): colour palette and default row, (0, -1)
+    /// when the item takes no dye; the default row is -1 when the model names none (defaultColorIndex "-1").
+    /// </summary>
     public (int Palette, int DefaultRow) Palette(int id)
     {
-        if (id == SkinItem) return (ColorPalettes.SkinPalette, 0);
-        var cust = Find(modelRoots, "itemmodel", ModelId(id), "ItemModel")?.Element("customize");
-        if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return (0, 0);
-        int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);
-        return (pal, idx);
+        var cust = Model(id)?.Element("customize");
+        if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return (0, -1);
+        var first = ((string)cust.Attribute("defaultColorIndex") ?? "-1").Split(',')[0];
+        return (pal, int.TryParse(first, out int idx) ? idx : -1);
     }
 
     public IReadOnlyList<(Rgba c0, Rgba c1, Rgba c2)> PaletteRows(int palette) => palettes.Rows(palette);
 
-    /// <summary>CItemDefaultData::GetSlotItems(job, gender, slot) filtered by gender.</summary>
-    public List<int> SlotItems(EquipSlot slot)
+    /// <summary>The palette row's UI colour (visibleColor) and its ch0 (realColor).</summary>
+    public Rgba Visible(int palette, int row) => palettes.Visible(palette, row);
+
+    /// <summary>
+    /// CItemExtraData::InitColorsFromPalette (GetPaletteColorOrRandom): the model's default row when it names one inside
+    /// the palette, else a random row.
+    /// </summary>
+    public int NewRow(int id)
     {
-        var list = new List<int>();
-        if (slot == EquipSlot.SK) { list.Add(SkinItem); return list; }
-        if (defaults == null) return list;
+        var (pal, def) = Palette(id);
+        int n = pal == 0 ? 0 : PaletteRows(pal).Count;
+        if (n == 0) return -1;
+        return def != -1 && def < n ? def : Rng.Next(n);
+    }
+
+    /// <summary>CItemDefaultData::GetSlotItems(job, gender, slot): the common rows, then the job's.</summary>
+    public List<Row> SlotRows(EquipSlot slot)
+    {
+        var list = new List<Row>();
+        if (JobCode == 0 || Gender is not (0 or 1)) return list;
         foreach (var job in new[] { 0, JobCode })
-            foreach (var k in defaults.Root.Elements("key").Where(k => (string)k.Attribute("jobCode") == job.ToString()))
-                foreach (var s in k.Elements("slot").Where(s => (string)s.Attribute("name") == slot.ToString()))
-                    foreach (var it in s.Elements("item"))
-                        if (int.TryParse((string)it.Attribute("id"), out int id) && !list.Contains(id))
-                        {
-                            int g = GenderLimit(id);
-                            if (g == 2 || g == Gender) list.Add(id);
-                        }
+            if (lists.TryGetValue(job, out var g) && g[Gender].TryGetValue(slot, out var rows)) list.AddRange(rows);
         return list;
     }
 
-    /// <summary>CSceneStateMulti::FUN_14174ec40 for a fresh gender: the starter look (first fitting items, default rows).</summary>
-    public void Reset(int gender, int jobCode)
+    /// <summary>
+    /// CItemDefaultData::GetCreateItems and the look it makes (CSceneStateMulti::FUN_14174ec40, TCreateCharInfo): per slot
+    /// the list's select row when <paramref name="selected"/> (the job's own row winning), else a random row of the common
+    /// and job lists; an overall top keeps the bottom off. Each item gets InitColorsFromPalette colours and new customize
+    /// values; the skin colour is the avatar colour item's (TCreateCharInfo::FUN_14107ae00).
+    /// </summary>
+    public void Create(int gender, int jobCode, bool selected)
     {
         Gender = gender; JobCode = jobCode;
-        Items.Clear(); Rows.Clear(); SkinRow = 0; Custom.Clear();
-        var (items, _) = StarterLook.Build(packs, palettes, gender, jobCode);
-        foreach (var it in items) { Items[it.Slot] = it.Id; Rows[it.Slot] = it.Color.Index; }
-    }
-
-    /// <summary>OnRandom: a random item and row for every category (fresh items, so fresh customize values).</summary>
-    public void Randomize(Random rng)
-    {
-        Custom.Clear();
-        foreach (var slot in new[] { EquipSlot.HR, EquipSlot.FA, EquipSlot.FD, EquipSlot.CL, EquipSlot.PA, EquipSlot.SH })
+        Items.Clear(); Rows.Clear(); Custom.Clear();
+        SkinRow = NewRow(SkinItem);
+        int top = 0, bottom = 0;
+        foreach (var slot in ListSlots)
         {
-            var list = SlotItems(slot);
-            if (list.Count == 0) continue;
-            int id = list[rng.Next(list.Count)];
-            Items[slot] = id;
-            var (pal, def) = Palette(id);
-            int n = pal == 0 ? 0 : PaletteRows(pal).Count;
-            Rows[slot] = n > 0 ? rng.Next(n) : def;
+            List<Row> common = lists.TryGetValue(0, out var c) && c[gender].TryGetValue(slot, out var cl) ? cl : null;
+            List<Row> job = lists.TryGetValue(jobCode, out var j) && j[gender].TryGetValue(slot, out var jl) ? jl : null;
+            int count = (common?.Count ?? 0) + (job?.Count ?? 0);
+            if (count == 0) continue;
+            Row pick = null;
+            if (selected) pick = job?.LastOrDefault(r => r.Select) ?? common?.LastOrDefault(r => r.Select);
+            if (pick == null)
+            {
+                int i = Rng.Next(count);
+                pick = common != null && i < common.Count ? common[i] : job[i - (common?.Count ?? 0)];
+            }
+            if (slot == EquipSlot.CL) top = pick.Id;
+            else if (slot == EquipSlot.PA) bottom = pick.Id;
+            else Wear(pick.Id);
         }
-        int skins = PaletteRows(ColorPalettes.SkinPalette).Count;
-        SkinRow = skins > 0 ? rng.Next(skins) : 0;
+        // the top and bottom go last: an overall top alone, else the top and a different bottom (an overall drawn from the
+        // bottom list goes on in the top's slot, as the PC equips by the model's slot)
+        if (top != 0 && IsOverall(top)) Wear(top);
+        else
+        {
+            if (top != 0) Wear(top);
+            if (bottom != 0 && bottom != top) Wear(bottom);
+        }
+        // the gender's base items fill the slots the lists left empty (the ears)
+        foreach (var (slot, id) in baseItems[gender])
+            if (!Items.ContainsKey(slot)) { Items[slot] = id; Rows[slot] = NewRow(id); }
     }
 
-    public int RowOf(EquipSlot slot) => slot == EquipSlot.SK ? SkinRow : Rows.TryGetValue(slot, out int r) && r >= 0 ? r : Palette(Items.GetValueOrDefault(slot)).DefaultRow;
+    void Wear(int id)
+    {
+        var slot = ModelSlot(id) ?? EquipSlot.CL;
+        if (slot == EquipSlot.CL && IsOverall(id)) { Items.Remove(EquipSlot.PA); Rows.Remove(EquipSlot.PA); }
+        Items[slot] = id;
+        Rows[slot] = NewRow(id);
+        ValuesOf(id);
+    }
+
+    /// <summary>
+    /// Customize::EquipItemId / EquipItem: the item goes to its model's slot (an overall takes the bottom off; a bottom takes
+    /// an overall off), with <paramref name="row"/> and <paramref name="values"/> when the dialog kept the item from earlier
+    /// (m_items), else as a new item. Returns the slot.
+    /// </summary>
+    public EquipSlot Equip(int id, int? row = null, CustomValues values = null)
+    {
+        var slot = ModelSlot(id) ?? EquipSlot.CL;
+        if (slot == EquipSlot.CL && IsOverall(id)) { Items.Remove(EquipSlot.PA); Rows.Remove(EquipSlot.PA); }
+        if (slot == EquipSlot.PA && Items.TryGetValue(EquipSlot.CL, out int t) && IsOverall(t)) { Items.Remove(EquipSlot.CL); Rows.Remove(EquipSlot.CL); }
+        Items[slot] = id;
+        Rows[slot] = row ?? NewRow(id);
+        if (values != null) Custom[id] = values.Clone(); else { Custom.Remove(id); ValuesOf(id); }
+        return slot;
+    }
+
+    public int RowOf(EquipSlot slot) => Rows.TryGetValue(slot, out int r) ? r : -1;
 
     public EquipColor ColorOf(EquipSlot slot)
     {
@@ -155,9 +297,10 @@ public sealed class CreateLook
         return pal == 0 ? default : palettes.Equip(pal, RowOf(slot)) ?? default;
     }
 
-    public SkinColor? Skin => palettes.Skin(SkinRow);
+    /// <summary>The skin colour pair (ch0 lit, ch2 shade) of the avatar colour item's palette row.</summary>
+    public SkinColor? Skin => palettes.Get(Palette(SkinItem).Palette, SkinRow) is { } c ? new SkinColor(c.c0, c.c2) : null;
 
-    /// <summary>The worn items as EquipApplier takes them (ears from the starter look as well).</summary>
+    /// <summary>The worn items as EquipApplier takes them.</summary>
     public List<EquipItem> Equips()
     {
         var list = new List<EquipItem>();
@@ -176,8 +319,9 @@ public sealed class CreateLook
     {
         var skin = Skin ?? default;
         return new CreateCharacter((byte)Gender, (short)JobCode, name, Argb(skin.Primary), Argb(skin.Secondary), PacketItems(), elapsedSeconds);
-        static int Argb(Rgba c) => c.A << 24 | c.R << 16 | c.G << 8 | c.B;
     }
+
+    public static int Argb(Rgba c) => c.A << 24 | c.R << 16 | c.G << 8 | c.B;
 
     /// <summary>The preview body: the gender's body NIF with idle, dressed through EquipApplier with the skin colour.</summary>
     public (Node3D Visual, AnimationPlayer Anim) Build(ModelBuilder builder)
