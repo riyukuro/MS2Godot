@@ -86,7 +86,17 @@ public sealed class UiHost
     {
         // one-argument shell calls from the shared library classes' initialize()
         if (ev == "dataBindingInit" || ev == "gameDataModelInit") { RT.Guard(ev, InstallShared); return null; }
-        if (ev == "Tooltip" || ev == "MouseCursor") return null;        // forwarded to the tooltip / cursor movies
+        bool own = false;
+        RT.Guard("movie event " + ev, () => own = Controller.OnMovieEvent(ev, args));
+        if (own) return null;
+        if (ev == "Tooltip")
+        {
+            // GFxMovieMain::vfunc_4 (gfxmoviemain.cpp:130): FindMovie(5)->vfunc_3(args[0], the rest), the tooltip movie
+            if (args.Length > 0 && Tooltips is { } t)
+                RT.Guard("Tooltip", () => t.Call(Rt.ToString(args[0]), args.Skip(1).Select(FromAs).ToArray()));
+            return null;
+        }
+        if (ev == "MouseCursor") return null;                           // forwarded to the cursor movie
         if (args.Length == 0) return null;
         var name = Rt.ToString(args[0]);
         var rest = args.Skip(1).ToArray();
@@ -329,6 +339,23 @@ public sealed class UiHost
         SetVisible(t, visible);
         return true;
     }
+
+    /// <summary>The run's tooltip movie (GFxManager::FindMovie(5), GFxMovieTooltip), which every movie's "Tooltip" calls
+    /// go to; null = none hosted.</summary>
+    public static ITooltipMovie Tooltips;
+
+    /// <summary>
+    /// An AS value as plain C# values, the copy GFxMovieTooltip::vfunc_3 makes of a call's objects into its own movie
+    /// (GFxObjectAdapter / GFxArrayAdapter @0x1422f13b0 / @0x1422f1760): objects as member maps and arrays as lists,
+    /// nested ones copied too, other values as they are.
+    /// </summary>
+    public static object FromAs(object v) => v switch
+    {
+        AsArray a => a.Items.Select(FromAs).ToList(),
+        AsFunction => v,
+        AsObject o => o.DynamicKeys.ToDictionary(k => k, k => FromAs(o.GetDynamic(k))),
+        _ => v,
+    };
 
     /// <summary>An ASObj value object with the given members.</summary>
     public AsObject Obj(params (string Key, object Value)[] members)

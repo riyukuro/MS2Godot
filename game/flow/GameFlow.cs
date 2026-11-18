@@ -46,6 +46,7 @@ public partial class GameFlow : Node
         GameOptions.Load();   // the client builds CGameOption (LoadLanguageOption, LoadGameOption) at startup, gameoption.cpp:1678-1685
         ScreenMode.ApplyAtStartup();   // then MS2RenderService::OnInit sizes the window from it (ms2renderservice.cpp:699-743)
         Ui.MessageBoxLayer.Ensure(this);   // CUIService::CreateAllDialogs registers the one message box layer (uiservice.cpp:2345)
+        Ui.TooltipLayer.Ensure(this);      // GFxManager's init loads the one tooltip movie (LoadTooltipMovie, gfxmanager.cpp:135)
         Session.Reset();
         Session.GameScene = GameScene;
         UiBridge.ToHost += OnHost;

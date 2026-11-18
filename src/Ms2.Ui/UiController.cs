@@ -221,8 +221,18 @@ public abstract class UiController
     /// <summary>ExternalInterface callback from the movie; true = handled.</summary>
     public virtual bool OnCallback(string name, object[] args) => false;
 
-    /// <summary>MS2DataModel.getUserData(id, name, args): the members of the returned object, or null.</summary>
-    public virtual IDictionary<string, object> GetUserData(string name, object[] args) => null;
+    /// <summary>MS2DataModel.getUserData(id, name, args) (vfunc_45): the members of the returned object, or null.
+    /// UIObject's (uiobject.cpp:117) answers "getTooltip" with <see cref="GetTooltip"/> (vfunc_49).</summary>
+    public virtual IDictionary<string, object> GetUserData(string name, object[] args)
+        => name == "getTooltip" ? GetTooltip(args) : null;
+
+    /// <summary>vfunc_49 (UIObject's @0x14131edf0 is empty): the tooltip of a movie item whose tooltip text is
+    /// "#callback" (TooltipManager.showTooltipMouseEvent passes the item's name), an <see cref="AsTooltip"/>; null = none.</summary>
+    public virtual IDictionary<string, object> GetTooltip(object[] args) => null;
+
+    /// <summary>The movie's ExternalInterface events other than its dialog calls (GFxMovie vfunc_4 of the movie's own
+    /// class, e.g. GFxMovieTooltip's "initializeClass"); true = handled.</summary>
+    public virtual bool OnMovieEvent(string ev, object[] args) => false;
 
     public virtual void OnStatus(StatusEvent e) { }
 

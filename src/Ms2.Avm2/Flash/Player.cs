@@ -159,6 +159,11 @@ namespace Ms2.Avm2.Flash
                 // tooltips and modal canvases go into them)
                 if (InGame && RT.GetClass("scaleform.ms2.common.CommonDepth") is { } cd)
                     RT.CallProperty(cd, Name.Public("init"), new object[] { Stage });
+                // and starts the tooltip manager on the stage (Main.addedToStage: TooltipManager.init(stage)), so the dialogs'
+                // items register their tooltips with it; started with CommonPath.flash already off it keeps the game's
+                // MS2DataModel.getUserData instead of installing its authoring stand-in
+                if (InGame && RT.GetClass("scaleform.ms2.manager.TooltipManager") is { } tm)
+                    RT.CallProperty(tm, Name.Public("init"), new object[] { Stage });
                 var rootSym = new JsonObject { ["kind"] = "sprite", ["timeline"] = Layout["root"]?.DeepClone() };
                 var name = (string)Layout["documentClass"];
                 var cls = name == null ? null : RT.GetClass(name);

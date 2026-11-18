@@ -171,6 +171,49 @@ public sealed class GameMenuController : UiController
     }
 
     /// <summary>
+    /// vfunc_49 @0x141937a30 (uigamemenudialog.cpp:1082): the entry's name (its "_event" cut off): "characterability" gets
+    /// GetCharacterAbilityTooltip, a name with "mushking" FUN_14193e0e0; any other the definition's m_strTip, or
+    /// m_strTipOff while its top entry's button is disabled, through FUN_14193dd90.
+    /// </summary>
+    public override IDictionary<string, object> GetTooltip(object[] args)
+    {
+        string name = Rt.ToString(args.ElementAtOrDefault(0));
+        int cut = name.IndexOf("_event", StringComparison.Ordinal);
+        if (cut >= 0) name = name[..cut];
+        if (name == "characterability") return CharacterAbilityTooltip();
+        if (name.Contains("mushking", StringComparison.Ordinal)) return MushkingTooltip();
+        var def = Table?.FindByName(name);
+        if (def == null) return null;
+        string tip = def.Tooltip;
+        if (MenuItem(name) is { } b && !Rt.ToBoolean(Host.Get(b, "enabled"))) tip = def.DisabledTooltip;   // ASDisplayObject::IsEnabled
+        return KeyTooltip(def.Id, tip, def.KeyBind);
+    }
+
+    /// <summary>FUN_14193dd90 @0x14193dd90: the common string <paramref name="key"/> formatted with "[key]" of the key
+    /// command (CKeyTable::GetActionKeyName(action, 0); nothing without a key), as a text tooltip, aligned 3 for a child
+    /// entry (IsChildMenu).</summary>
+    AsTooltip KeyTooltip(int id, string key, int action)
+    {
+        string keyName = Model.Keys.GetKeyName(Model.Keys.FindKeyByActionAndPriority(action, 0));
+        string bracket = keyName.Length > 0 ? "[" + keyName + "]" : "";
+        var tip = AsTooltip.Text(Common(key, bracket));
+        if (tip != null && Table.IsChild(id)) tip.SetTooltipAlign(3);
+        return tip;
+    }
+
+    /// <summary>FUN_14028dfa0: the common string by key formatted with the arguments ("" when there is none).</summary>
+    string Common(string key, params object[] args) => string.IsNullOrEmpty(key) ? "" : Ms2.Quest.ClientFormat.Format(Model.Tables.Common(key), args);
+
+    /// <summary>GetCharacterAbilityTooltip @0x14193df10: s_tooltip_gamemenu_enable_characterability when the level opens
+    /// the abilities (FUN_1401e0800) and the constant's quest (m_6dd0) is rewarded, else the disable text. Neither the
+    /// level rule nor the quest state is here, so the disable text.</summary>
+    AsTooltip CharacterAbilityTooltip() => AsTooltip.Text(Common("s_tooltip_gamemenu_disable_characterability"));
+
+    /// <summary>FUN_14193e0e0 @0x14193e0e0: s_tooltip_gamemenu_mushking_royal, plus a kill and a time exp line while the
+    /// game rule's event buffs are not 0 (none here).</summary>
+    AsTooltip MushkingTooltip() => AsTooltip.Text(Common("s_tooltip_gamemenu_mushking_royal"));
+
+    /// <summary>
     /// vfunc_28 @0x141936e30: the movie's buttons, else an entry's name (its "_event" cut off): the definition's m_onClick
     /// or, without one, ToggleDialog(m_nUiId). (Entries below 0x41 also send guide trigger 0x1f; the guide is not here.)
     /// </summary>

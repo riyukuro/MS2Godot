@@ -45,6 +45,7 @@ public partial class HudScene : Node
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
+    string tooltipShot;                     // --uigen-tooltip NAME: the pointer on that game menu entry (its tooltip shows)
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     static DungeonRooms dungeonRooms;
@@ -63,6 +64,7 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-tooltip") tooltipShot = args[i + 1];
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -178,6 +180,7 @@ public partial class HudScene : Node
         GameMenu(uiRoot);
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
+        TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
     }
 
@@ -938,6 +941,7 @@ public partial class HudScene : Node
         if (msgboxShot == 2 && frames == 230) optionDialog?.FUN_141943a30();               // the movie's OnInit (Defaults)
         if (msgboxShot == 3 && frames == 230) optionHost?.MessageBox(0x84b, "OnSaveAndCheck");   // OnCloseDialog with a page changed
         if (frames == 250 && messengers.Count > 0) TypeChat(messengers[0], "HelloWorld");
+        if (tooltipShot != null && frames == 200) HoverGameMenu(tooltipShot);
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == 300)
         {
@@ -945,6 +949,18 @@ public partial class HudScene : Node
             GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "hud.png"));
             GetTree().Quit();
         }
+    }
+
+    /// <summary>The shot's pointer on a game menu entry's button (a point of its own art, not its closed drop-down).</summary>
+    void HoverGameMenu(string name)
+    {
+        var h = gameMenuMovie?.Host;
+        if (h?.Child("m_menus") is not Ms2.Avm2.AsObject menus) return;
+        if (h.Invoke(h.Invoke(menus, "getChildByName", name), "getChildByName", "m_button") is not Ms2.Avm2.Flash.AsDisplayObject button) return;
+        var b = button.GetBounds(null);
+        for (double y = b.Y; y < b.Y + b.H; y += 2)
+            for (double x = b.X; x < b.X + b.W; x += 2)
+                if (gameMenuMovie.Player.MouseTarget(x, y) == button) { gameMenuMovie.Player.MouseMove(x + 12, y + 12); return; }
     }
 
     /// <summary>The shot's chat: Return focuses the input, then the text is typed into the movie.</summary>
