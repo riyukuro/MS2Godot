@@ -105,6 +105,8 @@ public sealed class SocketGem {
 /// the creation time (ASTooltip::SetItemCreateTime).</summary>
 public sealed class UgcLook {
     public long Uid; public string Author = ""; public long CreationTime;
+    /// <summary>The look's state byte, the last one CUgcItemLook::Read (0x140893250) reads (m_n60); CUgcItemLook::FUN_140893520 tests it for 2.</summary>
+    public byte State;
 }
 
 /// <summary>
@@ -132,7 +134,7 @@ public static class ItemReader {
         var look = new UgcLook { Uid = r.ReadLong() };
         r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
         look.Author = r.ReadUnicodeString(); look.CreationTime = r.ReadLong();
-        r.ReadUnicodeString(); r.ReadByte();
+        r.ReadUnicodeString(); look.State = r.ReadByte();
         return look;
     }
 

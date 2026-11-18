@@ -82,13 +82,14 @@ public class ItemBodyTests {
         w.WriteBytes(body[..cut]);
         // UgcItemLook, then the blueprint
         w.WriteLong(5); w.WriteUnicodeString("5"); w.WriteUnicodeString("Look"); w.WriteByte(0); w.WriteInt(0); w.WriteLong(0); w.WriteLong(0);
-        w.WriteUnicodeString("Maker"); w.WriteLong(1700000000); w.WriteUnicodeString(""); w.WriteByte(0);
+        w.WriteUnicodeString("Maker"); w.WriteLong(1700000000); w.WriteUnicodeString(""); w.WriteByte(2);
         w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteLong(0); w.WriteLong(0); w.WriteUnicodeString("");
         w.WriteBytes(body[cut..]);
         var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
         var it = ItemReader.ReadEquip(r);
         Assert.That(it.HasUgc, Is.True);
         Assert.That((it.Ugc.Uid, it.Ugc.Author, it.Ugc.CreationTime), Is.EqualTo((5L, "Maker", 1700000000L)));
+        Assert.That(it.Ugc.State, Is.EqualTo((byte) 2), "the look's last byte");
         Assert.That(r.ReadInt(), Is.EqualTo(-12345));
     }
 
