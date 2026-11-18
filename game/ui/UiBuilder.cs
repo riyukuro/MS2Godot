@@ -270,6 +270,7 @@ public partial class TextNode : Node2D
         }
         else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
         Label.PivotOffset = Vector2.Zero;
+        ApplyLineAdvance();
         AddChild(snap);
         snap.AddChild(lineShift);
         lineShift.AddChild(Label);
@@ -500,12 +501,23 @@ public partial class TextNode : Node2D
 
     (float Height, float Leading) lineRatios = (1, 0);
 
+    /// <summary>
+    /// The label's line pitch is Scaleform's line advance: ParagraphFormatter::FinalizeLine (sfr_render_03b.cpp:1743) starts
+    /// the next line IRound(lineHeight + leading) below, lineHeight = IRound(ascent + descent). Godot's own pitch is the
+    /// font chain's line box, taller than that.
+    /// </summary>
+    void ApplyLineAdvance()
+    {
+        var (_, advance) = LineMetrics();
+        var ls = Label.LabelSettings;
+        ls.LineSpacing = advance / Label.Scale.Y - ls.Font.GetHeight(ls.FontSize);
+    }
+
     /// <summary>Sets the label's line spacing to the Scaleform line advance and returns AS3 textHeight.</summary>
     public float FlashTextHeight()
     {
+        ApplyLineAdvance();
         var (height, advance) = LineMetrics();
-        var ls = Label.LabelSettings;
-        ls.LineSpacing = advance / Label.Scale.Y - ls.Font.GetHeight(ls.FontSize);
         return height + (NumLines - 1) * advance + SizedHeightMove();
     }
 
