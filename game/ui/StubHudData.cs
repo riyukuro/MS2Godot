@@ -12,6 +12,8 @@ public sealed class StubHudData
     public int EpMax = 120, EpCurrent = 120;
     public double ExpPercent = 3.87, AdventureExpPercent = 0;
     public long Mesos = 0, Merets = 0;
+    /// <summary>The ServerEnter wallet longs (<see cref="ServerEnter.Wallet"/>), null before a live entry.</summary>
+    public long[] Wallet;
     public string Locale = "KR";
     /// <summary>The fields whose taxi station the player has found (the login packet's list, OnTaxi adds to it). The
     /// reference run had found Tria's: its minimap shows the station enabled.</summary>

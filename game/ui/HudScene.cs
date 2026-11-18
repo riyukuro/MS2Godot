@@ -384,12 +384,23 @@ public partial class HudScene : Node
         if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(GetWindow().Size); return; }
         var model = new UiModel(new GameTables(assets.Packs, "en"));
         model.Features.Clear();
-        foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat })
+        foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat,
+            Ms2.Ui.Feature.PvPRankingDuelMode, Ms2.Ui.Feature.ItemSocketSystem, Ms2.Ui.Feature.HabiToken, Ms2.Ui.Feature.ReverseRaid01,
+            Ms2.Ui.Feature.Mentoring, Ms2.Ui.Feature.MesoMarketToken, Ms2.Ui.Feature.RedMerat })
             if (id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1])
                 && !data.FeaturesOff.Contains(Ms2.Ui.FeatureTable.Names[id - 1]))
                 model.Features.Add(id);
         model.Player.Mesos = data.Mesos;
         model.Player.Merats = data.Merets;
+        // OnServerEnter (scenestategame.cpp:2087-2104): 4 merat wallet kinds (FUN_1409304d0), the red merat balance, then
+        // the token currencies 4, 5, 6, 7, 0xc, 0xd, 0xe, 0xf, 0x10 (DAT_143ab28b0..28f0)
+        if (data.Wallet is { Length: >= 14 } w)
+        {
+            System.Array.Copy(w, model.Player.MeratWallet, 4);
+            model.Player.RedMerat = w[4];
+            int[] tokens = { 4, 5, 6, 7, 0xc, 0xd, 0xe, 0xf, 0x10 };
+            for (int i = 0; i < tokens.Length; i++) model.Player.Tokens[tokens[i]] = w[5 + i];
+        }
         upperHudSide = new Ms2.Ui.Hud.UpperHudController();
         upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
         ui.AddChild(upperHud);

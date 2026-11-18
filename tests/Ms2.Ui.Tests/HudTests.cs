@@ -238,6 +238,33 @@ public class HudTests
     }
 
     [Test]
+    public void UpperHudTokenAndMeratTooltips()
+    {
+        var m = Model();
+        m.Features.Add(Feature.PvPRankingDuelMode);
+        m.Features.Add(Feature.RedMerat);
+        m.Player.Tokens[4] = 1234; m.Player.Tokens[6] = 5;
+        m.Player.MeratWallet = new long[] { 100, 20, 0, 7 };
+        m.Player.RedMerat = 3;
+        var c = new UpperHudController();
+        Load(c, m);
+        var t = c.GetUserData("getTooltip", new object[] { "m_tokenPocketButton" });
+        Assert.That(t["text"], Is.EqualTo(m.Tables.Common("s_upper_hud_token_pocket")
+            + "\n<img src='export_common_icon_honor' vspace='-6'/> 1,234 / " + N(m.Tables.TokenCaps[4])
+            + "\n<img src='export_common_icon_lu' vspace='-6'/> 5 / " + N(m.Tables.TokenCaps[6])));
+        static string N(long n) => n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        Assert.That((t["onDelay"], t["tooltipAlign"], t["offsetX"], t["offsetY"]), Is.EqualTo((0, 7, 5, 0x16)));
+        TestContext.WriteLine("token pocket: " + string.Join(" | ", TooltipTests.Draw(t)));
+        var mt = c.GetUserData("getTooltip", new object[] { "m_marat" });
+        var shown = TooltipTests.Draw(mt);
+        TestContext.WriteLine("merat: " + mt["text"] + " => " + string.Join(" | ", shown));
+        Assert.That((string)mt["text"], Does.Contain("120").And.Contain("7").And.Not.Contain("{"));
+        Assert.That(c.GetUserData("getTooltip", new object[] { "m_effectHotTime" }), Is.Null, "no hot time event, no tooltip");
+        c.HotTimeTexts.Add("Hot time A"); c.HotTimeTexts.Add("Hot time B");
+        Assert.That(c.GetUserData("getTooltip", new object[] { "m_effectHotTime" })["text"], Is.EqualTo("Hot time A\nHot time B"));
+    }
+
+    [Test]
     public void MinimapFieldNameTooltip()
     {
         var m = Model();

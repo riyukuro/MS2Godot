@@ -33,6 +33,16 @@ public sealed class PlayerState
     /// <summary>The exp counter in this level (DAT_143ab28a0) and the rest exp bonus pool (DAT_143ab28a8).</summary>
     public long Exp, RestExp;
     public long Mesos, Merats;
+    /// <summary>The merat wallet by kind, 0 cash, 1 free, 2 market, 3 event (g_143ab2a78, set by FUN_1409304d0 from the
+    /// ServerEnter wallet, scenestategame.cpp:2104), and the red merat balance (SetRedMeratBalance).</summary>
+    public long[] MeratWallet = new long[4];
+    public long RedMerat;
+    /// <summary>The token currencies by currency id (4 honor, 5 karma, 6 lu, 7 habi, 0xc reverse coin, 0xd mentor, 0xe
+    /// mentee, 0xf star point, 0x10 meso market token): DAT_143ab28b0..28f0, from ServerEnter and OnCurrencyToken
+    /// (scenestategame.cpp:2093, :7103).</summary>
+    public readonly Dictionary<int, long> Tokens = new();
+    /// <summary>IsStarPointEventActive (meratmarketbasketinfo.cpp:2574): the star shop game event names a known npc.</summary>
+    public bool StarPointEvent;
     /// <summary>The prestige counters (CSceneStateGame::OnPrestige, scenestategame.cpp:8815): the exp in this level
     /// (DAT_143ab2958), the player's adventure level (PC vfunc_141), the level at or below which a level shows full
     /// (DAT_143ab2960) and the exp shown for the level above it (DAT_143ab2968).</summary>
@@ -130,4 +140,10 @@ public static class Feature
     public const int VersionText = 0xc9;
     /// <summary>0x3d: merats (UIUpperHudDialog vfunc_46 hides m_marat without it, uiupperhuddialog.cpp:462; vfunc_oa0_14).</summary>
     public const int Merat = 0x3d;
+    /// <summary>The token pocket's currencies (UIUpperHudDialog FUN_1413586c0, uiupperhuddialog.cpp:845): 0x11 honor,
+    /// 0x2e karma, 0xc habi, 0x76 reverse coin, 0x91 mentor and mentee, 0xf3 meso market token.</summary>
+    public const int PvPRankingDuelMode = 0x11, ItemSocketSystem = 0x2e, HabiToken = 0xc, ReverseRaid01 = 0x76,
+        Mentoring = 0x91, MesoMarketToken = 0xf3;
+    /// <summary>0x43: red merats (CFeatureManager::FUN_14036d650, featuremanager.cpp).</summary>
+    public const int RedMerat = 0x43;
 }

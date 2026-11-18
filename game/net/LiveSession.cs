@@ -210,6 +210,7 @@ public partial class LiveSession : Node
             login.Dispose(); login = null;
             answered = false;
             syncNumber = entry.Sync?.Number ?? 0;
+            StubHudData.Instance.Wallet = entry.Enter?.Wallet;
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
             GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");

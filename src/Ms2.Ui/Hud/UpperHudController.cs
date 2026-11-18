@@ -120,6 +120,94 @@ public sealed class UpperHudController : UiController
         Host.SetChildText("badgeCount", MaidReady.ToString(), maid);
     }
 
+    /// <summary>vfunc_49 @0x1413565c0 (uiupperhuddialog.cpp:386): the token pocket, hot time and merat tooltips.</summary>
+    public override IDictionary<string, object> GetTooltip(object[] args) => Ms2.Avm2.Rt.ToString(args.ElementAtOrDefault(0)) switch
+    {
+        "m_tokenPocketButton" => TokenPocketTooltip(),
+        "m_effectHotTime" => HotTimeTooltip(),
+        "m_marat" => MeratTooltip(),
+        _ => null,
+    };
+
+    /// <summary>A text tooltip shown at once (ASTooltip(1, 2), SetTooltipClass tooltipText, SetOnDelay(0), align 7).</summary>
+    static AsTooltip TextTooltip(string text, int offsetX, int offsetY)
+    {
+        var tip = new AsTooltip();
+        tip["tooltip"] = "export_common_tooltip_tooltipText";
+        tip["onDelay"] = 0;
+        tip.SetTooltipAlign(7);
+        tip["offsetX"] = offsetX;
+        tip["offsetY"] = offsetY;
+        tip["text"] = text;
+        return tip;
+    }
+
+    /// <summary>FUN_1413586c0 (uiupperhuddialog.cpp:845): s_upper_hud_token_pocket and a line per token currency, each
+    /// behind its feature (the star point line while the star point event runs).</summary>
+    AsTooltip TokenPocketTooltip()
+    {
+        var text = new System.Text.StringBuilder(Model.Tables.Common("s_upper_hud_token_pocket") ?? "");
+        if (Model.IsFeatureEnabled(Feature.PvPRankingDuelMode)) text.Append(CurrencyLine(4));
+        if (Model.IsFeatureEnabled(Feature.ItemSocketSystem)) text.Append(CurrencyLine(5));
+        text.Append(CurrencyLine(6));
+        if (Model.IsFeatureEnabled(Feature.HabiToken)) text.Append(CurrencyLine(7));
+        if (Model.IsFeatureEnabled(Feature.ReverseRaid01)) text.Append(CurrencyLine(0xc));
+        if (Model.IsFeatureEnabled(Feature.Mentoring)) { text.Append(CurrencyLine(0xd)); text.Append(CurrencyLine(0xe)); }
+        if (Pc.StarPointEvent) text.Append(CurrencyLine(0xf));
+        if (Model.IsFeatureEnabled(Feature.MesoMarketToken)) text.Append(CurrencyLine(0x10));
+        return TextTooltip(text.ToString(), 5, 0x16);
+    }
+
+    /// <summary>FUN_141900120(currency, icon, newline) (uicommon.cpp): "\n&lt;img src='icon' vspace='v'/&gt; amount[ / cap]",
+    /// the amount and cap from GetCurrencyAmountAndCap (uicommon.cpp), the icon from FUN_1418fe870.</summary>
+    string CurrencyLine(int currency)
+    {
+        if (!Model.Tables.TokenCaps.TryGetValue(currency, out long cap)) return "";
+        Pc.Tokens.TryGetValue(currency, out long amount);
+        var (icon, vspace) = currency switch
+        {
+            4 => ("export_common_icon_honor", -6), 5 => ("export_common_icon_treva", -6), 6 => ("export_common_icon_lu", -6),
+            7 => ("export_common_icon_habi", -6), 0xc => ("export_common_icon_reverse_coin", -7),
+            0xd => ("export_common_icon_mentor_token", -4), 0xe => ("export_common_icon_mentee_token", -4),
+            0xf => ("export_common_icon_star_point", -6), _ => ("export_common_icon_meso_market_token", -4),
+        };
+        var line = $"\n<img src='{icon}' vspace='{vspace}'/> {Thousands(amount)}";
+        return cap == 0 ? line : line + " / " + Thousands(cap);
+    }
+
+    /// <summary>GetHotTimeTooltip @0x141358b20 (uiupperhuddialog.cpp:877): the game rule's hot time event texts joined by
+    /// line breaks. The hot time events (GetGameRule()->GetHotTimeEvents) are not fed: <see cref="HotTimeTexts"/>.</summary>
+    AsTooltip HotTimeTooltip()
+    {
+        var text = string.Join("\n", HotTimeTexts.Where(t => !string.IsNullOrEmpty(t)));
+        return text.Length == 0 ? null : TextTooltip(text, 0x16, 8);
+    }
+
+    /// <summary>The running hot time events' texts (SAHotTimeEventContext m_28) the player may see.</summary>
+    public List<string> HotTimeTexts = new();
+
+    /// <summary>GetMeratTooltip @0x141358df0 (uiupperhuddialog.cpp:913): s_upper_hud_merat around one
+    /// s_upper_hud_merat_raw line for the free name with cash + free, one per non-zero market / event kind, and with
+    /// red merats (feature 0x43) s_common_meratname_red with s_common_redmerat.</summary>
+    AsTooltip MeratTooltip()
+    {
+        string Common(string key) => Model.Tables.Common(key) ?? "";
+        string line = Common("s_upper_hud_merat_raw"), fmt = Common("s_common_merat");
+        string Kind(int k) => k switch
+        {
+            0 => Common("s_common_meratname_cash"), 1 => Common("s_common_meratname_free"),
+            2 => Common("s_common_meratname_market"), 3 => Common("s_common_meratname_event"), _ => "",
+        };
+        string Line(string name, string value) => Ms2.Quest.ClientFormat.Format(line, name, value);
+        var w = Pc.MeratWallet;
+        var list = new System.Text.StringBuilder(Line(Kind(1), Ms2.Quest.ClientFormat.Format(fmt, Thousands(w[0] + w[1]))));
+        for (int i = 2; i < w.Length; i++)
+            if (w[i] != 0) list.Append(Line(Kind(i), Ms2.Quest.ClientFormat.Format(fmt, Thousands(w[i]))));
+        if (Model.IsFeatureEnabled(Feature.RedMerat))
+            list.Append(Line(Common("s_common_meratname_red"), Ms2.Quest.ClientFormat.Format(Common("s_common_redmerat"), Thousands(Pc.RedMerat))));
+        return TextTooltip(Ms2.Quest.ClientFormat.Format(Common("s_upper_hud_merat"), list.ToString()), 5, 0x19);
+    }
+
     public override void OnStatus(StatusEvent e)
     {
         // vfunc_oa0_11 / vfunc_oa0_14 (uiupperhuddialog.cpp:437, 446): the merat text only with feature 0x3d

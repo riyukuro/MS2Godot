@@ -43,6 +43,7 @@ public sealed class GameTables
         MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
         MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
         MeratConsumeChannelChat = (uint)k.Float("MeratConsumeChannelChat", MeratConsumeChannelChat);
+        foreach (var (cur, key) in TokenCapKeys) TokenCaps[cur] = (long)k.Float(key, TokenCaps[cur]);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
@@ -79,6 +80,15 @@ public sealed class GameTables
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
     public int MaxChatLength = 50;
     public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
+    /// <summary>The token caps by currency (GetCurrencyAmountAndCap, uicommon.cpp): Client::Constants HonorTokenMax,
+    /// KarmaTokenMax, LuTokenMax, HabiTokenMax, ReverseCoinMax, MentorTokenMax, MenteeTokenMax (Define default 4000 each,
+    /// unit_1402ab440_constantsblocks.cpp:972-978); 0xf and 0x10 have no cap.</summary>
+    public readonly Dictionary<int, long> TokenCaps = new() { [4] = 4000, [5] = 4000, [6] = 4000, [7] = 4000, [0xc] = 4000, [0xd] = 4000, [0xe] = 4000, [0xf] = 0, [0x10] = 0 };
+    static readonly (int, string)[] TokenCapKeys =
+    {
+        (4, "HonorTokenMax"), (5, "KarmaTokenMax"), (6, "LuTokenMax"), (7, "HabiTokenMax"), (0xc, "ReverseCoinMax"),
+        (0xd, "MentorTokenMax"), (0xe, "MenteeTokenMax"),
+    };
     /// <summary>The chat colour constants (table/colorconstants.xml; Define defaults 0xffffff, constantsblocks.cpp:1426-1437),
     /// read as the subject colours s_color10 / 16..20 (texttohtml.cpp:300-310).</summary>
     public readonly Dictionary<string, uint> ChatTextColors = new()
