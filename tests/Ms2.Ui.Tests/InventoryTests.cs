@@ -414,4 +414,13 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
         Assert.That((sent.Count, raised.Last()), Is.EqualTo((2, "notifySlotUse")), "a function with its own handler: raised");
     }
+
+    [Test]
+    public void ThePreviewActionIsOnTheShiftKeys()
+    {
+        var keys = new KeyTable(Packs(), "en");
+        keys.LoadDefaultKeys();
+        Assert.That(keys.KeysOfAction(0x49406).OrderBy(k => k), Is.EqualTo(new[] { 42, 54 }), "defaultkey.xml: DIK_LSHIFT, DIK_RSHIFT");
+        Assert.That(keys.KeysOfAction(0), Is.Empty);
+    }
 }

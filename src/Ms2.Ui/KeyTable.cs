@@ -116,6 +116,10 @@ public sealed class KeyTable : IKeyTable
         return 0;
     }
 
+    /// <summary>The keys m_actionKeys holds for an action, any priority (CKeyTable::IsActionKeyDown walks them, keytable.cpp:1037).</summary>
+    public IEnumerable<int> KeysOfAction(long action) =>
+        action == 0 ? Enumerable.Empty<int>() : keys.Where(p => p.Value.Code == action).Select(p => p.Key);
+
     /// <summary>FindKeyByQuickSlot (:1202).</summary>
     public int FindKeyByQuickSlot(int index, int priority)
         => index < 0 || index >= QuickSlotActionCount ? 0 : FindKeyByActionAndPriority(FirstQuickSlotAction + index, priority);
