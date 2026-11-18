@@ -318,6 +318,10 @@ public abstract class UiController
     public virtual object GetBinding(string name)
         => Host?.Model is { } m && m.ItemSlots.TryGetValue(name, out var slot) ? slot.Value(Host, m, m.ItemSlotSources) : null;
 
+    /// <summary>BindData::vfunc_9 (DragSlot base @0x1422c8dd0: nothing): NotifyBinding::CreateBindingImpl's SetData gave the
+    /// binding <paramref name="name"/> its AS data, the object that called DataBinding.createBinding (a slot).</summary>
+    public virtual void OnBindData(string name, object data) { }
+
     /// <summary>GameDataModel.getBagSlotBindings(bag): the slot binding names of a bag.</summary>
     public virtual IEnumerable<string> GetBagSlotBindings(string bag) => Array.Empty<string>();
 

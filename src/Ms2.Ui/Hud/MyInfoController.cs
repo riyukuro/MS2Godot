@@ -635,6 +635,22 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     }
 
     /// <summary>
+    /// EquipSlot::vfunc_9 (@0x14120cd40) / GemSlot::vfunc_9 (@0x14126e080): the bound slot's m_strSlotType is its equip slot's
+    /// name (FUN_1405451e0) / gem type's name, which EquipSlot.setSlotType / setSlotBg read for the empty slot's frame and
+    /// silhouette (UIMyInfoDialog_slotbg_&lt;type&gt;); without it the slot keeps its instance name and shows neither.
+    /// </summary>
+    public override void OnBindData(string name, object data)
+    {
+        string type = null;
+        if (name.StartsWith(EquipBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBag.Length + 1), out int slot))
+            type = ItemModelTable.SlotName(slot);
+        else if (name.StartsWith(GemBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBag.Length + 1), out int index)
+                 && index >= 0 && index < GemTypes.Length)
+            type = GemTypeName(GemTypes[index]);
+        if (type != null) Host.Set(data, "m_strSlotType", type);
+    }
+
+    /// <summary>
     /// EquipSlot::vfunc_8 (@0x14120cae0) / GemSlot::vfunc_8 (gemslot.cpp:264) for the bags' names; other names go to the base.
     /// </summary>
     public override object GetBinding(string name)

@@ -169,6 +169,23 @@ public class MyInfoTests
     }
 
     [Test]
+    public void EmptyEquipSlotsShowTheirSlotTypesSilhouette()
+    {
+        Packs();
+        var (h, c, _, errors) = Load();
+        Assert.That(errors, Is.Empty);
+        var equip = (AsDisplayObject)h.Child("m_equip");
+        var cp = h.FindNamed("slot0", equip);
+        Assert.That(Rt.ToString(h.Get(cp, "m_strSlotType")), Is.EqualTo("CP"));
+        var bg = h.Get(h.Get(cp, "m_slotType"), "m_bg");                   // setSlotBg's m_slotBg
+        Assert.That(Rt.ToNumber(h.Get(bg, "numChildren")), Is.EqualTo(1));
+        Assert.That(Rt.ToString(h.Get(h.Invoke(bg, "getChildAt", 0), "type")), Is.EqualTo("CP"), "UIMyInfoDialog_slotbg_CP");
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("slot10", equip), "m_strSlotType")), Is.EqualTo("RH"));
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("slot2", (AsDisplayObject)h.Child("m_equip")), "m_strSlotType")), Is.EqualTo("chatBalloon"));
+    }
+
+    [Test]
     public void EquipSlotsAreBoundOnTheItemSlotPath()
     {
         Packs();

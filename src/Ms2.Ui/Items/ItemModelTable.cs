@@ -81,4 +81,7 @@ public sealed class ItemModelTable
 
     /// <summary>Parse_14021bdc0 (commonenum.cpp:1401): HR 1 through OH 19 in this order, exact case; anything else 0.</summary>
     public static int SlotType(string name) => Array.IndexOf(SlotNames, name) + 1;
+
+    /// <summary>Name_14021c050 (commonenum.cpp:1000): the equip slot's name, "" outside 1-19.</summary>
+    public static string SlotName(int slot) => slot is >= 1 and <= 19 ? SlotNames[slot - 1] : "";
 }

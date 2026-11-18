@@ -258,6 +258,8 @@ public sealed class UiHost
         if (name == null || fn is not AsFunction) return;
         if (!bindings.TryGetValue(name, out var l)) bindings[name] = l = new();
         l.Add((fn, scope));
+        // CreateBindingImpl: SetData(the scope) runs the BindData's vfunc_9 before PushBinding
+        if (!Rt.IsNullish(scope)) RT.Guard("binding data " + name, () => Controller.OnBindData(name, scope));
         // PushBinding pushes to the binding's target, the setter just bound; the ones bound before already hold the value
         // (pushing them again made binding n slots under one name n*(n+1)/2 setter calls)
         Push(name, fn, scope);
