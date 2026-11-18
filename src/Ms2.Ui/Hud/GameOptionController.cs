@@ -137,6 +137,33 @@ public sealed class GameOptionController : UiController, IOptionTab
         return true;
     }
 
+    /// <summary>ASDropdownMenu::ClearItems (the provider's cleanUp) and AddItemRow ({label, index} pushed).</summary>
+    public bool SetItemRows(string name, IReadOnlyList<(string Label, int Index)> rows)
+    {
+        if (Child(name) is not { } c) return false;
+        var dp = Host.Get(c, "dataProvider");
+        if (Rt.IsNullish(dp)) return true;
+        Host.Invoke(dp, "cleanUp");
+        foreach (var r in rows) Host.Invoke(dp, "push", new Dictionary<string, object> { ["label"] = r.Label, ["index"] = r.Index });
+        return true;
+    }
+
+    /// <summary>ASDropdownMenu::SetMenuRowCount ("menuRowCount", unsigned).</summary>
+    public void SetMenuRowCount(string name, int rows)
+    {
+        if (Child(name) is { } c) Host.Set(c, "menuRowCount", (uint)rows);
+    }
+
+    /// <summary>dataProvider.requestItemAt(selectedIndex).index (ASDataProvider::GetItemAt @0x1422df140).</summary>
+    public int? GetSelectedItemIndex(string name)
+    {
+        if (Child(name) is not { } c) return null;
+        var dp = Host.Get(c, "dataProvider");
+        if (Rt.IsNullish(dp)) return null;
+        var item = Host.Invoke(dp, "requestItemAt", Host.Get(c, "selectedIndex"));
+        return Rt.IsNullish(item) ? null : Rt.ToInt32(Host.Get(item, "index"));
+    }
+
     /// <summary>GetTabComponent(type)->Invoke("getResolution") (@0x14124bf20).</summary>
     public int GetResolution(int tabType)
     {

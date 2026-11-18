@@ -25,6 +25,14 @@ public interface IOptionTab
     void SetText(string name, string text);
     /// <summary>UIComponent::SetEnabled ("enabled").</summary>
     void SetEnabled(string name, bool enabled);
+    /// <summary>ASDropdownMenu::ClearItems @0x1422dfc10 then AddItemRow @0x1422dfc70 per row ({label, index}); false when
+    /// there is no such dropdown.</summary>
+    bool SetItemRows(string name, IReadOnlyList<(string Label, int Index)> rows);
+    /// <summary>ASDropdownMenu::SetMenuRowCount @0x1422df5f0 ("menuRowCount").</summary>
+    void SetMenuRowCount(string name, int rows);
+    /// <summary>GetDataProvider()->GetItemAt(GetSelectedIndex()) ("requestItemAt") and its "index" member; null when there is
+    /// no dropdown or the item is undefined or null.</summary>
+    int? GetSelectedItemIndex(string name);
     /// <summary>ASMovieClip::vfunc_3 on a clip found by getTabChild (show 1 / hide 0); false when there is no clip.</summary>
     bool SetClipShown(string name, bool shown);
     /// <summary>The resolution dropdown (FillResolutionCombo @0x14124d080): ClearItems, then SetScrollBar("export_scroll")
@@ -139,6 +147,18 @@ public interface IGameOptionDialogHost
     GameOption.CharacterFlag MouseControlFlag { get; }
     /// <summary>GetStatusChar: the character file's "status"/"displayLearningQuestV2".</summary>
     GameOption.CharacterFlag LearningQuestFlag { get; }
+    // ---- the Language page ----
+    /// <summary>DAT_143ab0248, the client region (0 KR, 1 JP, 2 NA, 3 CN).</summary>
+    int Region { get; }
+    /// <summary>CLocaleLanguage::GetLocaleData(0) @0x14064f070: gameoptionlocale.xml's row for the region (the last row in
+    /// debug mode); null without the table.</summary>
+    GameOptionLocale.Row LocaleData { get; }
+    /// <summary>GetVoice @0x1406516c0: the voice set at start (CGameOption::LoadLanguageOption, gameoption.cpp:1847).</summary>
+    int RunningVoice { get; }
+    /// <summary>_access(path, 0) == 0: the CN voice check's sound files.</summary>
+    bool FileExists(string path);
+    /// <summary>ShowMessageBox(text, 0, 0, ""): a notice with the given text.</summary>
+    void TextNotice(string text);
     /// <summary>CMouseController::HasMode: the mouse camera is on (GetCameraFovStep / SetCameraFovStep pick its fov step).</summary>
     bool MouseCameraMode { get; }
     /// <summary>ShowMessageBox(BlockFormat(id), 1, page, tag): a yes/no box whose answer goes to the page's OnMessage.</summary>
@@ -304,7 +324,7 @@ public sealed class GameOptionDialog
         Add(11, Plain);
         if (gamePad) Add(12, Plain);
         Add(13, Plain);
-        Add(14, Plain);                                  // CGameOptionLanguage
+        Add(14, (k, t) => new LanguageOptionPage(k, t)); // CGameOptionLanguage
         Add(16, Plain);                                  // CGameOptionAccount
         if (host.IsFeatureEnabled(0x117)) Add(15, Plain); // CGameOptionPersonalInfoAgreement
     }
@@ -916,6 +936,132 @@ public sealed class CommunityOptionPage : OptionPage
     /// <summary>@0x14124aa70: FUN_14125d2d0 / FUN_14125d740 compare every switch.</summary>
     public override int vfunc_14() =>
         !GameOption.SameFields(State, Host.Options.CommunityOption) || !GameOption.SameFields(Account, Host.AccountCommunity) ? 1 : 0;
+}
+
+/// <summary>CGameOptionLanguage (gameoptionlanguage.cpp): the language, region and voice dropdowns, filled from
+/// gameoptionlocale.xml's row; the state is CGameOption's language block (languageIndex, voiceIndex).</summary>
+public sealed class LanguageOptionPage : OptionPage
+{
+    public GameOption.Language State = new(0);
+    public LanguageOptionPage(int id, int type) : base(id, type) { }
+
+    static GameOption.Language Copy(GameOption.Language l) => new(0) { LanguageIndex = l.LanguageIndex, VoiceIndex = l.VoiceIndex };
+
+    /// <summary>@0x140cfb4e0: n 0 copies the block, otherwise the dropdowns are filled (FUN_140cfbf50).</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0) State = Copy(Host.Options.LanguageOption);
+        else Fill();
+        base.vfunc_3(n);
+    }
+
+    /// <summary>FUN_140cfbf50 (@0x140cfbf50): each dropdown gets ClearItems and a {label, index} row per code; three rows or
+    /// fewer set menuRowCount, one row disables it. NA's region dropdown holds the connect block's region name
+    /// ("stage" when empty), selected and disabled.</summary>
+    void Fill()
+    {
+        var row = Host.LocaleData;
+        if (row == null) return;
+        FillList("m_languageSelect", row.Languages, c => "s_gameoption_language_" + c, GameOptionLocale.GetLanguageId);
+        if (Host.Region == 2)
+        {
+            string region = Host.Options.ConnectOption.Region;
+            if (string.IsNullOrEmpty(region)) region = "stage";
+            if (Tab.SetItemRows("m_regionSelect", new[] { (Host.CommonByKey("s_gameoption_region_" + region), 0) }))
+            {
+                Tab.SetMenuRowCount("m_regionSelect", 1);
+                Tab.SetSelectedIndex("m_regionSelect", 0);
+                Tab.SetEnabled("m_regionSelect", false);
+            }
+        }
+        else FillList("m_regionSelect", row.Regions, c => "s_gameoption_region_" + c, GameOptionLocale.RegionId);
+        FillList("m_voiceSelect", row.Voices, c => "s_gameoption_voice_" + c, GameOptionLocale.GetLanguageId);
+    }
+
+    void FillList(string name, string[] codes, Func<string, string> key, Func<string, int> index)
+    {
+        var rows = codes.Select(c => (Host.CommonByKey(key(c)), index(c))).ToList();
+        if (!Tab.SetItemRows(name, rows)) return;
+        if (codes.Length <= 3) Tab.SetMenuRowCount(name, codes.Length);
+        if (codes.Length == 1) Tab.SetEnabled(name, false);
+    }
+
+    /// <summary>@0x140cfb590: each dropdown selects the row whose code matches. The client's region loop counts the region
+    /// codes but compares the voice codes to the region's code; kept.</summary>
+    public override void vfunc_6()
+    {
+        var row = Host.LocaleData;
+        if (row == null) return;
+        Select("m_languageSelect", row.Languages.Length, i => row.Languages[i], GameOptionLocale.LanguageCode(State.LanguageIndex));
+        Select("m_regionSelect", row.Regions.Length, i => i < row.Voices.Length ? row.Voices[i] : null, GameOptionLocale.RegionCode(Host.Region));
+        Select("m_voiceSelect", row.Voices.Length, i => row.Voices[i], GameOptionLocale.LanguageCode(State.VoiceIndex));
+    }
+
+    void Select(string name, int count, Func<int, string> code, string want)
+    {
+        for (int i = 0; i < count; i++)
+            if (string.Equals(code(i), want, StringComparison.OrdinalIgnoreCase)) { Tab.SetSelectedIndex(name, i); break; }
+    }
+
+    /// <summary>@0x140cfb9e0: the selected rows' "index".</summary>
+    public override void vfunc_7()
+    {
+        if (Tab.GetSelectedItemIndex("m_languageSelect") is int l) State.LanguageIndex = l;
+        if (Tab.GetSelectedItemIndex("m_voiceSelect") is int v) State.VoiceIndex = v;
+    }
+
+    static readonly string[] KorVoiceFiles =
+    {
+        "./Data/Sound/MS2Sound_AttackVoice_Kor_def.fsb", "./Data/Sound/MS2Sound_Emotion_Kor_def.fsb",
+        "./Data/Sound/MS2Sound_Voice_Kor_def.fsb", "./Data/Sound/MS2Sound_Voice2_Kor_def.fsb",
+        "./Data/Sound/MS2Sound_Voice3_Kor_def.fsb", "./Data/Sound/MS2Sound_Voice4_Kor_def.fsb",
+        "./Data/Sound/MS2Sound_Voice5_Kor_def.fsb", "./Data/Sound/MS2Sound_Voice6_Kor_def.fsb",
+    };
+
+    /// <summary>FUN_140cfbcd0 (@0x140cfbcd0): only CN checks; its Chinese voice is always there, the Korean one needs its
+    /// sound files.</summary>
+    bool VoiceAvailable(int voice)
+    {
+        if (Host.Region != 3) return true;
+        if (voice == 3) return true;
+        if (voice == 0) return KorVoiceFiles.All(Host.FileExists);
+        return false;
+    }
+
+    /// <summary>@0x140cfcb20: a changed language asks for a restart; a changed voice is checked (a missing one goes back with
+    /// s_gameoption_voice_select_warning) and asks for a restart when it differs from the running voice; then stored.</summary>
+    public override void vfunc_10()
+    {
+        base.vfunc_10();
+        var stored = Host.Options.LanguageOption;
+        bool restart = State.LanguageIndex != stored.LanguageIndex;
+        if (State.VoiceIndex != stored.VoiceIndex)
+        {
+            bool ok = VoiceAvailable(State.VoiceIndex);
+            if (!ok)
+            {
+                State.VoiceIndex = stored.VoiceIndex;
+                Tab.SetSelectedIndex("m_voiceSelect", State.VoiceIndex);
+                Host.TextNotice(Host.CommonByKey("s_gameoption_voice_select_warning"));
+            }
+            else if (Host.RunningVoice != State.VoiceIndex) restart = true;
+        }
+        if (restart) Host.TextNotice(Host.CommonByKey("s_gameoption_voice_select_restart"));
+        Host.Options.LanguageOption = Copy(State);
+    }
+
+    /// <summary>@0x140cfce00: reset to the region's values, read the default game document, refill.</summary>
+    public override void vfunc_12()
+    {
+        base.vfunc_12();
+        State = new GameOption.Language(Host.Region);
+        State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument());
+        vfunc_6();
+    }
+
+    /// <summary>@0x140cfceb0.</summary>
+    public override int vfunc_14() =>
+        State.LanguageIndex != Host.Options.LanguageOption.LanguageIndex || State.VoiceIndex != Host.Options.LanguageOption.VoiceIndex ? 1 : 0;
 }
 
 /// <summary>CGameOptionGraphicDefault (gameoption.cpp). The page state is a copy of the graphic and optimizer options

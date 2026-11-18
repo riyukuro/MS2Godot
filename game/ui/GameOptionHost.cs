@@ -239,6 +239,32 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void ApplyStatus(GameOption.Status state) => GD.Print("options: status stored (the hp and exp bars read it when hosted)");
     public void SendRideMode(bool disableSingleRiding) { }   // no server offline
 
+    // ---- the Language page ------------------------------------------------------------------------------------------
+
+    public int Region => GameOptions.RegionIndex;
+
+    GameOptionLocale locale;
+
+    /// <summary>GetLocaleData(0): not in debug mode (IsDebugMode is the GM build's), so the region's row.</summary>
+    public GameOptionLocale.Row LocaleData
+    {
+        get
+        {
+            if (locale == null)
+            {
+                const string entry = "table/gameoptionlocale.xml";
+                locale = packs.Exists("Xml", entry)
+                    ? GameOptionLocale.Parse(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\ufeff')))
+                    : new GameOptionLocale();
+            }
+            return locale.GetLocaleData(Region, false);
+        }
+    }
+
+    public int RunningVoice => GameOptions.Voice;
+    public bool FileExists(string path) => System.IO.File.Exists(path);
+    public void TextNotice(string text) => Box(text, null, null, null);
+
     /// <summary>A tab with no controls (no movie loaded): reads null, ignores writes.</summary>
     sealed class NoTab : IOptionTab
     {
@@ -252,6 +278,9 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         public string GetText(string n) => null;
         public void SetText(string n, string v) { }
         public void SetEnabled(string n, bool v) { }
+        public bool SetItemRows(string n, IReadOnlyList<(string Label, int Index)> r) => false;
+        public void SetMenuRowCount(string n, int r) { }
+        public int? GetSelectedItemIndex(string n) => null;
         public bool SetClipShown(string n, bool v) => false;
         public bool SetResolutionRows(string n, IReadOnlyList<ResolutionRow> r, int s) => false;
         public int GetResolution(int t) => -1;

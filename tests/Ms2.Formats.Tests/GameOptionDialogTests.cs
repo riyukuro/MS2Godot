@@ -28,6 +28,12 @@ public class GameOptionDialogTests
         public void SetText(string n, string v) => Text[n] = v;
         public readonly Dictionary<string, bool> Enabled = new();
         public void SetEnabled(string n, bool v) => Enabled[n] = v;
+        public readonly Dictionary<string, List<(string Label, int Index)>> Items = new();
+        public readonly Dictionary<string, int> MenuRows = new();
+        public bool SetItemRows(string n, IReadOnlyList<(string Label, int Index)> r) { Items[n] = r.ToList(); return true; }
+        public void SetMenuRowCount(string n, int r) => MenuRows[n] = r;
+        public int? GetSelectedItemIndex(string n) =>
+            Items.TryGetValue(n, out var l) && Index.TryGetValue(n, out var i) && i >= 0 && i < l.Count ? l[i].Index : null;
         public bool SetClipShown(string n, bool v) { Shown[n] = v; return true; }
         public bool SetResolutionRows(string n, IReadOnlyList<ResolutionRow> rows, int sel) { Rows = rows.ToList(); RowSelected = sel; return true; }
         public int GetResolution(int type) => Resolution;
@@ -99,6 +105,12 @@ public class GameOptionDialogTests
         public GameOption.CharacterFlag MouseControlFlag { get; } = GameOption.CharacterFlag.MouseControl();
         public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
         public bool MouseCameraMode { get; set; }
+        public int Region { get; set; }
+        public GameOptionLocale.Row LocaleData { get; set; }
+        public int RunningVoice { get; set; }
+        public readonly HashSet<string> Files = new();
+        public bool FileExists(string path) => Files.Contains(path);
+        public void TextNotice(string text) => Log.Add("text " + text);
         public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
         public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
         public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
@@ -122,6 +134,68 @@ public class GameOptionDialogTests
         d.Call("OnOpenTab", 6);
         d.Call("OnTabInit", 6);
         return (GraphicOptionPage)d.GetPageByIndex(6);
+    }
+
+    static readonly GameOptionLocale.Row NaRow = new("NA", new[] { "en", "de", "pt" }, new[] { "na" }, new[] { "en" });
+    static readonly GameOptionLocale.Row CnRow = new("CN", new[] { "cn" }, new[] { "cn" }, new[] { "cn", "kr" });
+
+    static LanguageOptionPage ShowLanguage(GameOptionDialog d)
+    {
+        d.Call("OnOpenTab", 12);
+        d.Call("OnTabInit", 12);
+        return (LanguageOptionPage)d.Page(14);
+    }
+
+    [Test]
+    public void LanguagePageFillsFromTheLocaleRow()
+    {
+        var h = new FakeHost { Region = 2, LocaleData = NaRow };
+        h.Opt.ConnectOption.Region = "";
+        h.Opt.LanguageOption.LanguageIndex = 5;   // DE
+        var (d, _) = Open(h);
+        ShowLanguage(d);
+        Assert.That(h.T.Items["m_languageSelect"], Is.EqualTo(new[]
+        {
+            ("s_gameoption_language_en", 2), ("s_gameoption_language_de", 5), ("s_gameoption_language_pt", 6),
+        }));
+        Assert.That(h.T.MenuRows["m_languageSelect"], Is.EqualTo(3));
+        Assert.That(h.T.Enabled.ContainsKey("m_languageSelect"), Is.False, "three rows stay enabled");
+        Assert.That(h.T.Index["m_languageSelect"], Is.EqualTo(1), "DE selected");
+        Assert.That(h.T.Items["m_regionSelect"], Is.EqualTo(new[] { ("s_gameoption_region_stage", 0) }), "NA: the connect region, stage when empty");
+        Assert.That(h.T.Enabled["m_regionSelect"], Is.False);
+        Assert.That(h.T.Enabled["m_voiceSelect"], Is.False, "one voice row disables the list");
+        Assert.That(d.IsNoPageChanged(), Is.True);
+    }
+
+    [Test]
+    public void LanguageChangeAsksForARestart()
+    {
+        var h = new FakeHost { Region = 2, LocaleData = NaRow, RunningVoice = 2 };
+        var (d, _) = Open(h);
+        var p = ShowLanguage(d);
+        h.T.Index["m_languageSelect"] = 2;   // PT
+        p.vfunc_7();
+        Assert.That(p.vfunc_14(), Is.EqualTo(1));
+        p.vfunc_10();
+        Assert.That(h.Log, Does.Contain("text s_gameoption_voice_select_restart"));
+        Assert.That(h.Opt.LanguageOption.LanguageIndex, Is.EqualTo(6));
+    }
+
+    [Test]
+    public void ChinaKoreanVoiceNeedsItsSoundFiles()
+    {
+        var h = new FakeHost { Region = 3, LocaleData = CnRow, RunningVoice = 3 };
+        h.Opt.LanguageOption.LanguageIndex = 3;
+        h.Opt.LanguageOption.VoiceIndex = 3;
+        var (d, _) = Open(h);
+        var p = ShowLanguage(d);
+        h.T.Index["m_voiceSelect"] = 1;   // kr
+        p.vfunc_7();
+        p.vfunc_10();
+        Assert.That(h.Log, Does.Contain("text s_gameoption_voice_select_warning"));
+        Assert.That(h.Log, Does.Not.Contain("text s_gameoption_voice_select_restart"));
+        Assert.That(h.Opt.LanguageOption.VoiceIndex, Is.EqualTo(3), "the missing voice goes back");
+        Assert.That(h.T.Index["m_voiceSelect"], Is.EqualTo(3), "the client selects the voice enum as the row index");
     }
 
     [Test]

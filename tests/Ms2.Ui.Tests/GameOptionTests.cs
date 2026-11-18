@@ -74,6 +74,12 @@ public class GameOptionTests
         public GameOption.CharacterFlag MouseControlFlag { get; } = GameOption.CharacterFlag.MouseControl();
         public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
         public bool MouseCameraMode => false;
+        public int Region => 0;
+        public GameOptionLocale.Row LocaleData =>
+            GameOptionLocale.Parse(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/gameoptionlocale.xml")).TrimStart('\ufeff'))).GetLocaleData(0, false);
+        public int RunningVoice => 0;
+        public bool FileExists(string path) => false;
+        public void TextNotice(string text) => Log.Add("text " + text);
         public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
         public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
         public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
@@ -214,5 +220,20 @@ public class GameOptionTests
                 break;
         }
         Assert.That(host.Dialog.IsNoPageChanged(), Is.True, "reading the controls back leaves the page unchanged");
+    }
+
+    /// <summary>The KR row of gameoptionlocale.xml has one code per list: each dropdown gets one row, one menu row, and is
+    /// disabled; the language and voice read back as 0.</summary>
+    [Test]
+    public void LanguagePageFillsTheLocaleRows()
+    {
+        var (h, host) = Load(12);   // the language page is type 12 without the game pad pages
+        var c = host.Movie;
+        foreach (var n in new[] { "m_languageSelect", "m_regionSelect", "m_voiceSelect" })
+        {
+            Assert.That(c.GetSelectedIndex(n), Is.EqualTo(0), n);
+            Assert.That(c.GetSelectedItemIndex(n), Is.EqualTo(0), n);
+        }
+        Assert.That(host.Dialog.IsNoPageChanged(), Is.True);
     }
 }

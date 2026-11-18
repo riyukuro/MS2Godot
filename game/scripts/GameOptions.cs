@@ -160,6 +160,9 @@ public static class GameOptions
         }
     }
 
+    /// <summary>SetVoice at load (CGameOption::LoadLanguageOption, gameoption.cpp:1847): the voice in use until a restart.</summary>
+    public static int Voice { get; private set; }
+
     /// <summary>True when the user file was missing or outdated and the shipped default was read instead.</summary>
     public static bool FromDefault { get; private set; }
 
@@ -195,6 +198,7 @@ public static class GameOptions
             doc ??= new XDocument(new XElement("ms2"));
         }
         finally { packs?.Dispose(); }
+        Voice = current.LanguageOption.VoiceIndex;
         var g = current.GraphicOption;
         GD.Print($"options: {(FromDefault ? "default" : "GameOption.xml")}, {g.Width}x{g.Height} mode {g.ScreenMode} row {g.ResolutionIndex}, music {current.SoundOption.CategoryVolume(2):F2}");
     }
