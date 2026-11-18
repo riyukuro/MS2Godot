@@ -48,9 +48,40 @@ public sealed class QuestData
     public readonly CompleteReward Complete = new();
     /// <summary>m_conditions: the &lt;condition&gt; rows that load (CConditionCommonData::Load), in order.</summary>
     public readonly List<QuestCondition> Conditions = new();
+    /// <summary>basic autoStart (m_2d).</summary>
+    public bool AutoStart;
+    /// <summary>basic eventTag (m_schedule): the term tag the quest runs in, empty for none.</summary>
+    public string Schedule = "";
+    /// <summary>
+    /// basic usePeriod: a day name (FUN_14028e160: sun 1 .. sat 7) is the weekday the quest resets on (m_resetType); any
+    /// other text is its duration in minutes (atoi, m_durationMinutes).
+    /// </summary>
+    public int ResetType, DurationMinutes;
+    /// <summary>progressMap progressMap (m_fields): the fields of the quest, the first one a field mission's field.</summary>
+    public uint[] Fields = Array.Empty<uint>();
+    /// <summary>eventMission event (m_350, Parse_140217bd0): 1 levelup_package, 2 stamp, 3 timerun, 4 gallery.</summary>
+    public int EventMission;
+    /// <summary>The &lt;require&gt; block (m_require).</summary>
+    public readonly QuestRequire Require = new();
 
     /// <summary>HasProperty (questdata.cpp).</summary>
     public bool HasProperty(int bit) => (Properties & (1 << bit)) != 0;
+}
+
+/// <summary>CQuestData::Require (questdata.h; ctor 0x140747910): the &lt;require&gt; attributes.</summary>
+public sealed class QuestRequire
+{
+    public int Level, MaxLevel, AchievementGrade, UnreqAchievementGrade, GroupId, FameGrade, MasteryType, MasteryGrade, Mentor, Mentee, Vip;
+    public uint Achievement, GearScore, Dungeon, UnrequireDungeon, EnterDungeon;
+    public int UnreqAchievement;
+    /// <summary>m_guildLevel: -1 when absent (no guild rule), 0 not in a guild, else the lowest guild level.</summary>
+    public int GuildLevel = -1;
+    public int GuildNpcLevel;
+    /// <summary>alliance (Parse_14021a330).</summary>
+    public int Alliance;
+    public int[] Job = Array.Empty<int>(), SubJob = Array.Empty<int>(), UnrequireGroup = Array.Empty<int>(), DayOfWeek = Array.Empty<int>();
+    public uint[] Unrequire = Array.Empty<uint>(), ProgressQuest = Array.Empty<uint>(), Equipment = Array.Empty<uint>(),
+                  DungeonBeginner = Array.Empty<uint>();
 }
 
 /// <summary>CQuestData::CompleteReward (questdata.h; ctor 0x140748100): the &lt;completeReward&gt; attributes.</summary>
@@ -76,6 +107,8 @@ public sealed partial class QuestTable
 
     readonly SortedDictionary<uint, QuestData> quests = new();          // m_quests, a std::map: quest id order
     readonly Dictionary<int, List<uint>> chapterQuests = new();         // m_chapter
+    readonly Dictionary<int, List<uint>> groupQuests = new();           // m_390: group id -> its quests in id order
+    readonly Dictionary<int, (int Count, int Kind)> groupPicks = new(); // m_3d8: QuestGroupTable.xml
     List<int> chapterOrder = new();                                     // m_chapter's CAtlMap order
     readonly Dictionary<int, Chapter> chapters = new();                 // s_chapters
     readonly Dictionary<uint, QuestDescription> descriptions = new();   // s_quests: the CQuestUIData rows
@@ -109,6 +142,8 @@ public sealed partial class QuestTable
             try { t.AddQuests(Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry)))); } catch (System.Xml.XmlException) { }
         }
         t.BuildIndexes();
+        if (packs.Exists("Xml", "table/questgrouptable.xml"))
+            try { t.AddGroups(Parse(Encoding.UTF8.GetString(packs.Read("Xml", "table/questgrouptable.xml")))); } catch (System.Xml.XmlException) { }
         t.Rewards = QuestRewards.Load(packs, locale, t.Available);
 
         foreach (var (table, file) in ReservedWords.Tables)
@@ -204,12 +239,16 @@ public sealed partial class QuestTable
             int bit = ParseProperty(p.Trim());
             if (bit < 4) d.Properties |= 1 << bit;
         }
+        QueryBool(basic, "autoStart", ref d.AutoStart);
+        d.Schedule = (string)basic.Attribute("eventTag") ?? "";
+        string period = (string)basic.Attribute("usePeriod") ?? "";
+        int reset = DayNumber(period);
+        if (reset != 0) d.ResetType = reset;
+        else d.DurationMinutes = FieldMissions.Int(period);
         var require = q.Element("require");
-        if (require != null)
-        {
-            d.RequireQuest = Split((string)require.Attribute("quest"));
-            d.SelectableQuest = Split((string)require.Attribute("selectableQuest"));
-        }
+        if (require != null) LoadRequire(require, d);
+        if (q.Element("progressMap") is { } progressMap) d.Fields = Split((string)progressMap.Attribute("progressMap"));
+        if (q.Element("eventMission") is { } eventMission) d.EventMission = ParseEventMission((string)eventMission.Attribute("event"));
         var start = q.Element("start");
         if (start != null) QueryUInt(start, "npc", ref d.StartNpc);
         var complete = q.Element("complete");
@@ -238,6 +277,91 @@ public sealed partial class QuestTable
         return d;
     }
 
+    /// <summary>The &lt;require&gt; attributes (CQuestData::Load); groupID is kept only for a quest that is not locked.</summary>
+    static void LoadRequire(XElement e, QuestData d)
+    {
+        var r = d.Require;
+        QueryUShort(e, "level", ref r.Level);
+        QueryUShort(e, "maxLevel", ref r.MaxLevel);
+        QueryUInt(e, "achievement", ref r.Achievement);
+        QueryInt(e, "achievementGrade", ref r.AchievementGrade);
+        QueryUInt(e, "gearScore", ref r.GearScore);
+        QueryUShort(e, "guildNpcLevel", ref r.GuildNpcLevel);
+        QueryUInt(e, "dungeon", ref r.Dungeon);
+        QueryUInt(e, "unrequireDungeon", ref r.UnrequireDungeon);
+        QueryUInt(e, "enterDungeon", ref r.EnterDungeon);
+        if ((string)e.Attribute("alliance") is { } alliance) r.Alliance = QuestRewards.ParseAlliance(alliance);
+        QueryInt(e, "fameGrade", ref r.FameGrade);
+        QueryInt(e, "masteryType", ref r.MasteryType);
+        QueryInt(e, "masteryGrade", ref r.MasteryGrade);
+        r.DungeonBeginner = Split((string)e.Attribute("dungeonBeginner"));
+        QueryInt(e, "mentor", ref r.Mentor);
+        QueryInt(e, "mentee", ref r.Mentee);
+        QueryInt(e, "vip", ref r.Vip);
+        r.Equipment = Split((string)e.Attribute("equipment"));
+        r.SubJob = SplitInt((string)e.Attribute("subJob"));
+        r.ProgressQuest = Split((string)e.Attribute("progressQuest"));
+        string guildLevel = (string)e.Attribute("guildLevel") ?? "";
+        if (guildLevel.Length > 0) r.GuildLevel = FieldMissions.Int(guildLevel);
+        var unreq = ((string)e.Attribute("unreqAchievement") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+        if (unreq.Length == 2)
+        {
+            r.UnreqAchievement = FieldMissions.Int(unreq[0]);
+            r.UnreqAchievementGrade = FieldMissions.Int(unreq[1]);
+        }
+        d.RequireQuest = Split((string)e.Attribute("quest"));
+        d.SelectableQuest = Split((string)e.Attribute("selectableQuest"));
+        r.Job = SplitInt((string)e.Attribute("job"));
+        r.Unrequire = Split((string)e.Attribute("unrequire"));
+        r.UnrequireGroup = SplitInt((string)e.Attribute("unrequireGroup"));
+        r.DayOfWeek = SplitInt((string)e.Attribute("dayOfWeek"));
+        int group = 0;
+        QueryInt(e, "groupID", ref group);
+        if (group != 0 && !d.Locking) r.GroupId = group;
+    }
+
+    /// <summary>FUN_14028e160: the day number of a three letter day name (sun 1 .. sat 7, any case), 0 for anything else.</summary>
+    public static int DayNumber(string s) => s.ToLowerInvariant() switch
+    {
+        "sun" => 1, "mon" => 2, "tue" => 3, "wed" => 4, "thu" => 5, "fri" => 6, "sat" => 7, _ => 0,
+    };
+
+    /// <summary>Parse_140217bd0 (commonenum.cpp): the event mission kind.</summary>
+    static int ParseEventMission(string s) => (s ?? "").ToLowerInvariant() switch
+    {
+        "levelup_package" => 1, "stamp" => 2, "timerun" => 3, "gallery" => 4, _ => 0,
+    };
+
+    /// <summary>
+    /// QuestDataTable::LoadQuestGroupTable (@0x140750120): each available &lt;group&gt; of &lt;ms2&gt;: id, pickCount (1 when
+    /// absent) and dependency (ParseScope: global 0, character 1, account 2). A later row of an id replaces it.
+    /// </summary>
+    public void AddGroups(XDocument doc)
+    {
+        if (doc.Root is not { Name.LocalName: "ms2" } root) return;
+        foreach (var g in root.Elements("group"))
+        {
+            if (!Available(g)) continue;
+            int id = 0, count = 1;
+            QueryInt(g, "id", ref id);
+            QueryInt(g, "pickCount", ref count);
+            int kind = (string)g.Attribute("dependency") is { } dep ? ParseScope(dep) : 0;
+            groupPicks[id] = (count, kind);
+        }
+    }
+
+    /// <summary>ParseScope (@0x140751440).</summary>
+    static int ParseScope(string s) => s.ToLowerInvariant() switch { "character" => 1, "account" => 2, _ => 0 };
+
+    /// <summary>GetGroupPickKind (@0x14074e390): 0 when the group has no row.</summary>
+    public int GroupPickKind(int groupId) => groupPicks.TryGetValue(groupId, out var g) ? g.Kind : 0;
+
+    /// <summary>GetGroupPickCount (@0x14074e450): 1 when the group has no row.</summary>
+    public int GroupPickCount(int groupId) => groupPicks.TryGetValue(groupId, out var g) ? g.Count : 1;
+
+    /// <summary>m_390: the quests of a group in quest id order, null when none.</summary>
+    public IReadOnlyList<uint> GroupQuests(int groupId) => groupQuests.TryGetValue(groupId, out var l) ? l : null;
+
     /// <summary>ParseProperty (questdata.cpp): the bit of a property name, 4 for an unknown one.</summary>
     static int ParseProperty(string s) => s.ToLowerInvariant() switch
     {
@@ -264,6 +388,13 @@ public sealed partial class QuestTable
             l.Add(id);
         }
         chapterOrder = FieldMeta.AtlMapOrder(insertOrder);
+        groupQuests.Clear();
+        foreach (var (id, d) in quests)
+            if (d.Require.GroupId != 0)
+            {
+                if (!groupQuests.TryGetValue(d.Require.GroupId, out var g)) groupQuests[d.Require.GroupId] = g = new List<uint>();
+                g.Add(id);
+            }
 
         foreach (var (id, d) in quests)
         {
@@ -476,6 +607,13 @@ public sealed partial class QuestTable
         if (s != null && ScanInt(s, out long n)) v = (int)(uint)n;
     }
 
+    /// <summary>QueryUnsignedAttribute into an unsigned field.</summary>
+    public static void QueryUInt(XElement e, string name, ref uint v)
+    {
+        var s = (string)e.Attribute(name);
+        if (s != null && ScanInt(s, out long n)) v = (uint)n;
+    }
+
     /// <summary>QueryBoolAttribute (MS2's TinyXML 2.6): true / yes / 1 and false / no / 0, any case; anything else leaves it.</summary>
     public static void QueryBool(XElement e, string name, ref bool v)
     {
@@ -505,6 +643,17 @@ public sealed partial class QuestTable
     /// <summary>XmlSplit over ",": each part's unsigned value.</summary>
     static uint[] Split(string s) =>
         FieldMissions.Tokens(s, ",").Select(p => (uint)FieldMissions.Long(p)).ToArray();
+
+    /// <summary>XmlSplit over "," into an int array: each part's atoi.</summary>
+    static int[] SplitInt(string s) => FieldMissions.Tokens(s, ",").Select(FieldMissions.Int).ToArray();
+
+    /// <summary>QueryUnsignedAttribute into an unsigned short (XmlGetAttr's unsigned short form keeps the low 16 bits).</summary>
+    static void QueryUShort(XElement e, string name, ref int v)
+    {
+        int n = v;
+        QueryUInt(e, name, ref n);
+        v = (ushort)n;
+    }
 
     static XDocument Parse(string text) => XDocument.Parse(text.TrimStart('﻿'));
 }
