@@ -42,6 +42,7 @@ public sealed class MainPlayerInfoController : UiController
         if (Pc.Riding) OnRiding(true);
         Host.Invoke("enabledExpansionSlotToggle", true);
         Host.Invoke("expansionSlotActive", SkillMinimize, CommonMinimize);
+        if (Model.ServerKeys is { Loaded: true } t) ShortkeyPage = t.CurrentPage + 1;   // SetShortkeyPageNumber(m_nQuickSlotPage + 1)
         Host.Invoke("setShortkeyPageNumber", ShortkeyPage);
         prevEp = Pc.EpCur;
     }
@@ -109,13 +110,16 @@ public sealed class MainPlayerInfoController : UiController
     static readonly Dictionary<int, long> SlotKeys = new() { [0x16] = 0x493e3, [0x17] = 0x49401, [0x18] = 0x493e1 };
     const int PetRankFeature = 0x8c;
 
-    /// <summary>SkillSlot::vfunc_8 (skillslot.cpp:793): the slot object a bound quick slot holds. Only empty slots are
-    /// modelled (no skill or item on the page): no icon, IsDisabled = 1 (no skill id, :1306), count 0, no cooldown.</summary>
+    /// <summary>SkillSlot::vfunc_8 (skillslot.cpp:793): the slot object a bound quick slot holds. The slot's skill / item is
+    /// the current page's entry (CKeyTable::GetQuickSlotEntry, keytable.cpp:1574). Only empty slots are modelled: no icon,
+    /// IsDisabled = 1 (no skill id, :1306), count 0, no cooldown. A filled slot needs the skill data, skill book and item
+    /// book the client reads there; it stays unbound (null) until those are ported.</summary>
     public override object GetBinding(string name)
     {
         if (!name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
             || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
             return null;
+        if (Model.ServerKeys is { } t && !t.Entry(t.CurrentPage, i).IsEmpty) return null;
         var d = new List<(string, object)>();                                   // ASSlot(2): an object of movie 2 (asitemslot.cpp:740)
         if (!Model.IsFeatureEnabled(PetRankFeature)) d.Add(("itemPet", 0));    // IsPetItem, no item
         d.Add(("iconPath", ""));

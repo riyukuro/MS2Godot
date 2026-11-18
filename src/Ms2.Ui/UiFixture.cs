@@ -23,6 +23,17 @@ public static class UiFixture
         p.Mesos = 1_284_530; p.Merats = 350;
         p.Channel = 3;
         m.Field.Channel = 3; m.Field.Channels = new[] { 1, 2, 3, 4, 5 };
+        m.ServerKeys = NewCharacterKeyTable();
+        m.Keys.Apply(m.ServerKeys);
         m.FixtureLabel = Label;
+    }
+
+    /// <summary>A KeyTable packet in the server's layout (Ms2.Net ServerKeyTable): mode 0 with the use-default flag, which
+    /// makes the client load DefaultKey.xml and read no pages (OnKeyTable, keytable.cpp:285), so every quick slot is empty.</summary>
+    public static Ms2.Net.Packets.ServerKeyTable NewCharacterKeyTable()
+    {
+        var t = new Ms2.Net.Packets.ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(0, true, null, 0, null)));
+        return t;
     }
 }

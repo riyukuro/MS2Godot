@@ -1,3 +1,4 @@
+using Ms2.Net.Packets;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
@@ -96,6 +97,27 @@ public class HudTests
         Assert.That(y, Is.EqualTo(1080 - 19 - 21).Within(1));
         var ud = c.GetUserData("getExp", Array.Empty<object>());
         Assert.That((string)ud["text"], Does.Contain($"{m.Player.AdventureExp:N0} / {m.Tables.AdventureLevelLvUpExp:N0}"));
+    }
+
+    [Test]
+    public void MainPlayerInfoTakesTheServerKeyTable()
+    {
+        var m = Model();
+        // the player's saved bindings: slot 0's action on key 30 (A) and slot 4's on key 16 (Q); page 2 of 3 is current
+        var bindings = new[] { new KeyBinding(30, 1, 500001, 0, 0), new KeyBinding(16, 1, 500005, 0, 0) };
+        var pages = new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>(), new[] { (3, new QuickSlotEntry(10000001, 0, 0)) }, Array.Empty<(int, QuickSlotEntry)>() };
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, bindings, 1, pages)));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var c = new MainPlayerInfoController();
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.ShortkeyPage, Is.EqualTo(2));
+        var slot0 = (AsObject)h.ToAs(c.GetBinding("SlotInfo.skill.0.0"));
+        Assert.That(Rt.ToString(h.Get(slot0, "shortcutKey")), Is.EqualTo("A"));
+        Assert.That(Rt.ToString(h.Get((AsObject)h.ToAs(c.GetBinding("SlotInfo.skill.0.4")), "shortcutKey")), Is.EqualTo("Q"));
+        Assert.That(Rt.ToString(h.Get((AsObject)h.ToAs(c.GetBinding("SlotInfo.skill.0.1")), "shortcutKey")), Is.EqualTo(""));   // cleared, not in the packet
+        Assert.That(c.GetBinding("SlotInfo.skill.0.3"), Is.Null);   // a filled slot: not modelled yet
     }
 
     [Test]

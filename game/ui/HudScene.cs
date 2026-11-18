@@ -1054,6 +1054,9 @@ public partial class HudScene : Node
         hudModel = new UiModel(new GameTables(assets.Packs, "en"));
         hudModel.Features.Add(Ms2.Ui.Hud.MainPlayerInfoController.AdventureLevelFeature);
         hudModel.Keys = new KeyTable(assets.Packs, "en");
+        // the server's key table when live (OnKeyTable), else the packet a new character gets
+        hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live : UiFixture.NewCharacterKeyTable();
+        hudModel.Keys.Apply(hudModel.ServerKeys);
         var p = hudModel.Player;
         p.Name = data.Player.Name; p.Level = data.Player.Level;
         // jobCode is the sub job (uimainplayerinfo.cpp:1405): 100 Knight, 200 Berserker ... 1100 Soul Binder; the stub

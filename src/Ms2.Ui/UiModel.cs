@@ -68,6 +68,9 @@ public sealed class UiModel
     public readonly GameTables Tables;
     /// <summary>CKeyTable: the keys and their bound actions (key captions on the quick slots).</summary>
     public KeyTable Keys = KeyTable.Empty;
+    /// <summary>The server's KeyTable packet state (Ms2.Net): the bindings applied to <see cref="Keys"/> and the quick slot pages
+    /// with the current page. Null = none received.</summary>
+    public Ms2.Net.Packets.ServerKeyTable ServerKeys;
     /// <summary>The client's feature switches (CFeatureManager::IsFeatureEnabled id) the HUD code tests.</summary>
     public readonly HashSet<int> Features = new() { Feature.SearchTooltip, Feature.InputMode, Feature.GamePad };
     /// <summary>The server clock the upper HUD shows (GetServerTime); null = local time.</summary>
