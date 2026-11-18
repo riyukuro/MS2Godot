@@ -335,6 +335,44 @@ public class MyInfoTests
     }
 
     [Test]
+    public void LockLinesAreTheClients()
+    {
+        var flash = GameStrings.Parse(Packs().Read("Xml", "string/en/korflash.xml")).Root.Elements("key")
+            .Where(e => e.Attribute("id").Value.StartsWith("$s_itemlock_tooltip_msg"))
+            .ToDictionary(e => (string)e.Attribute("id"), e => (string)e.Attribute("value"));
+        var now = new DateTime(2026, 11, 18, 12, 0, 0);
+        var m = NewModel();
+        m.ServerTime = () => now;
+        long t0 = new DateTimeOffset(now).ToUnixTimeSeconds();
+        var r = new EquipItem { Id = 12200398, Uid = 9, Rarity = 1, Amount = 1 };
+        ItemTooltip Tip(int state, long unlock)
+        {
+            var item = Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items);
+            item.LockState = state; item.UnlockTime = unlock;
+            var tip = new ItemTooltip(m, 0x200) { Localize = k => flash[k] };
+            tip.Fill(item);
+            return tip;
+        }
+        var locked = Tip(1, 0);
+        Assert.That((locked.Data["itemIconLock"], locked.Data["itemIconUnLock"]), Is.EqualTo((true, false)));
+        Assert.That(locked.Data["itemLockInfo"], Is.EqualTo("<FONT color='#FF4040'>This item is locked.</FONT>"));
+        var shown = TooltipTests.Draw(locked.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("This item is locked."));
+
+        // unlocking in 2 h 5 min 30 s: hours and whole minutes
+        var unlocking = Tip(0, t0 + 2 * 3600 + 5 * 60 + 30);
+        Assert.That((unlocking.Data["itemIconLock"], unlocking.Data["itemIconUnLock"]), Is.EqualTo((false, true)));
+        Assert.That(unlocking.Data["itemLockInfo"], Is.EqualTo("<FONT color='#FF4040'>This item will be unlocked in 2 hour(s) and 5 minute(s).</FONT>"));
+        // under a minute left: at least 1 minute, the no-hours text
+        Assert.That(Tip(0, t0 + 20).Data["itemLockInfo"], Is.EqualTo("<FONT color='#FF4040'>This item will be unlocked in 1 minute(s).</FONT>"));
+        // unlocked: neither icon, no line
+        var open = Tip(0, t0 - 5);
+        Assert.That((open.Data["itemIconLock"], open.Data["itemIconUnLock"]), Is.EqualTo((false, false)));
+        Assert.That(open.Data.ContainsKey("itemLockInfo"), Is.False);
+    }
+
+    [Test]
     public void ItemDescriptionsAreTheStringTablesRows()
     {
         var t = new GameTables(Packs(), "en");

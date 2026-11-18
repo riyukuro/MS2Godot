@@ -719,7 +719,7 @@ public sealed class MyInfoController : UiController
     /// </summary>
     /// <summary>ASTooltip(the local player, 0x200 for the own record (PCInfo m_3c0) else 0x100, 2). The owner's character
     /// id and name are the record's when it is the local player's; otherwise not known here (the binding's own name).</summary>
-    ItemTooltip NewItemTooltip(PcInfo r) => new(Model, r.IsLocal ? 0x200 : 0x100) { Owner = r.IsLocal ? (r.CharacterId, r.Name) : null };
+    ItemTooltip NewItemTooltip(PcInfo r) => new(Model, r.IsLocal ? 0x200 : 0x100) { Owner = r.IsLocal ? (r.CharacterId, r.Name) : null, Localize = Localize };
 
     AsTooltip EquipTooltip(int slot)
     {

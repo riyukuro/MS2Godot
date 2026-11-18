@@ -20,6 +20,8 @@ public sealed class ItemTooltip
     /// <summary>The tooltip's owner (m_40, the local player: EquipSlot::vfunc_0) by character id (PCBase::FUN_141656a80)
     /// and name, for a binding's owner name (CItemTransfer::GetBindingOwnerName); null: the binding's own name.</summary>
     public (long Id, string Name)? Owner;
+    /// <summary>GFxManager::Localize: the movie's "$key" strings (korflash.xml); null leaves out the members that need it.</summary>
+    public Func<string, string> Localize;
 
     GameTables Tables => model.Tables;
     string Common(string key) => Tables.Common(key) ?? "";
@@ -60,6 +62,7 @@ public sealed class ItemTooltip
         SetNotExchange(item);                                                     // SetItemSellPrice
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
+        SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
         if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)
@@ -222,6 +225,33 @@ public sealed class ItemTooltip
         }
         if (!string.IsNullOrEmpty(r.CoupleName)) text = Join(text, CommonF("s_couple_effect_partner", r.CoupleName));
         Data["notExchange"] = text;
+    }
+
+    /// <summary>
+    /// ASTooltip::SetItemLockInfo (astooltip.cpp:2681): lock state 0 with an unlock time ahead of the server time shows
+    /// the unlock icon and the time left in hours and minutes (at least one minute; $s_itemlock_tooltip_msg_unlock, or
+    /// _unlock2 under an hour); state 1 shows the lock icon and $s_itemlock_tooltip_msg_lock; else neither icon.
+    /// </summary>
+    public void SetItemLockInfo(Item item)
+    {
+        long now = new DateTimeOffset(model.Now).ToUnixTimeSeconds();
+        if (item.LockState == 0 && item.UnlockTime > now)
+        {
+            Data["itemIconLock"] = false;
+            Data["itemIconUnLock"] = true;
+            long remain = item.UnlockTime - now;
+            int hours = (int)(remain / 3600);
+            int minutes = Math.Max((int)(remain % 3600 / 60), 1);
+            if (Localize == null) return;
+            Data["itemLockInfo"] = hours > 0
+                ? Ms2.Quest.ClientFormat.Format(Localize("$s_itemlock_tooltip_msg_unlock"), hours, minutes)
+                : Ms2.Quest.ClientFormat.Format(Localize("$s_itemlock_tooltip_msg_unlock2"), minutes);
+            return;
+        }
+        bool locked = item.LockState == 1;
+        Data["itemIconLock"] = locked;
+        Data["itemIconUnLock"] = false;
+        if (locked && Localize != null) Data["itemLockInfo"] = Localize("$s_itemlock_tooltip_msg_lock");
     }
 
     static string Join(string text, string line) => text.Length == 0 ? line : text + "\n" + line;
