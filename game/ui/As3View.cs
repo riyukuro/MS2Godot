@@ -208,6 +208,8 @@ public partial class As3View : Node2D
                 make = () => new ShapeNode(Scope(o.Scope), o.Symbol, nine?.At(new Vector2((float)o.Matrix.Tx, (float)o.Matrix.Ty) + nine.Offset)); break;
             case AsMorphShape when o.Symbol != null && o.Scope != null:
                 key = o.Symbol; make = () => new ShapeNode(Scope(o.Scope), o.Symbol); break;
+            case AsTextField tf when (tf.Symbol?["text"] is JsonObject) && o.Scope != null:
+                key = tf; make = () => new FieldText(tf, Scope(o.Scope)); break;
             case AsTextField tf:
                 key = tf; make = () => new FieldNode(tf, assets); break;
             case AsStaticText when (o.Symbol?["text"]) != null && o.Scope != null:
@@ -227,6 +229,7 @@ public partial class As3View : Node2D
             if (e.Content != null) e.Holder.SetMeta("as3content", e.Content); else if (e.Holder.HasMeta("as3content")) e.Holder.RemoveMeta("as3content");
         }
         if (e.Content is GraphicsNode or FieldNode) e.Content.QueueRedraw();
+        if (e.Content is FieldText ft) ft.Sync();
     }
 
     static readonly Dictionary<string, Material> blends = new();
@@ -394,5 +397,90 @@ public partial class FieldNode : Node2D
             y += lineH;
         }
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+    }
+}
+
+/// <summary>
+/// A text field of the movie's layout, drawn by the layout's text node (<see cref="TextNode"/>: Scaleform's line layout,
+/// glyph-cache raster, html runs with their colours, sizes and underlines, drop shadows and glows) from the field's
+/// current state: its box and text format as the ActionScript left them, its text or html text, and its filters (the ones
+/// ActionScript set, else its timeline placement's). The node is built again when the box, the format or the screen
+/// scale changes; the text is set again when the field changes. The first line starts where DocView::Format's vertical
+/// alignment puts it (<see cref="AsTextField.FirstLineTop"/>).
+/// </summary>
+public partial class FieldText : Node2D
+{
+    readonly AsTextField tf;
+    readonly UiScope scope;
+    TextNode node;
+    string built;
+    int version = -1;
+
+    public FieldText(AsTextField tf, UiScope scope)
+    {
+        this.tf = tf; this.scope = scope;
+        // a field made during a sync pass is synced before its holder joins the tree: it syncs once it is in
+        TreeEntered += () => Callable.From(Sync).CallDeferred();
+    }
+
+    public void Sync()
+    {
+        if (!IsInsideTree()) return;
+        var gs = GetGlobalTransform().Scale;
+        float sx = Math.Max(0.001f, Math.Abs(gs.X)), sy = Math.Max(0.001f, Math.Abs(gs.Y));
+        var f = tf.Format;
+        string D(object v) => v == null || Rt.IsNullish(v) ? "" : Rt.ToString(v);
+        var filters = Filters();
+        string key = string.Join("|", tf.Box.X, tf.Box.Y, tf.Box.W, tf.Box.H, D(f?.font), D(f?.size), D(f?.color), D(f?.align),
+            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString());
+        if (key != built)
+        {
+            node?.QueueFree();
+            node = null;
+            var def = (JsonObject)tf.Symbol["text"].DeepClone();
+            if (f?.font is string font) def["fontClass"] = font;
+            if (f?.size is { } size && !Rt.IsNullish(size)) def["size"] = Rt.ToNumber(size);
+            if (f?.color is { } c && !Rt.IsNullish(c)) def["color"] = $"#{Rt.ToUint32(c) & 0xffffff:x6}";
+            if (f?.align is string align) def["align"] = align;
+            if (f?.leading is { } l && !Rt.IsNullish(l)) def["leading"] = Rt.ToNumber(l);
+            def["wordWrap"] = tf.wordWrap;
+            def["multiline"] = tf.multiline;
+            def["initial"] = "";
+            var sym = new JsonObject
+            {
+                ["bounds"] = new JsonObject { ["x"] = tf.Box.X, ["y"] = tf.Box.Y, ["w"] = tf.Box.W, ["h"] = tf.Box.H },
+                ["text"] = def,
+            };
+            node = new TextNode(scope, sym, sx, sy);
+            AddChild(node);
+            if (filters != null) node.ApplyFilters(filters, sy);
+            built = key;
+            version = -1;
+        }
+        if (tf.Version == version) return;
+        version = tf.Version;
+        if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
+        else node.Text = tf.Text;
+        node.Position = new Vector2(0, (float)(tf.FirstLineTop(node.NumLines) - (tf.Box.Y + 2)));
+    }
+
+    /// <summary>The field's filters as the layout writes them: the ones ActionScript set (angle in degrees), else the placement's.</summary>
+    JsonArray Filters()
+    {
+        if (tf.Filters is not AsArray a) return tf.PlaceFilters;
+        var list = new JsonArray();
+        foreach (var x in a.Items)
+            switch (x)
+            {
+                case AsDropShadowFilter d:
+                    list.Add(new JsonObject { ["type"] = "dropShadow", ["color"] = $"#{d.color & 0xffffff:x6}", ["blurX"] = d.blurX, ["blurY"] = d.blurY,
+                        ["angle"] = d.angle * Math.PI / 180, ["distance"] = d.distance, ["strength"] = d.strength });
+                    break;
+                case AsGlowFilter g:
+                    list.Add(new JsonObject { ["type"] = "glow", ["color"] = $"#{g.color & 0xffffff:x6}", ["blurX"] = g.blurX, ["blurY"] = g.blurY,
+                        ["strength"] = g.strength });
+                    break;
+            }
+        return list;
     }
 }
