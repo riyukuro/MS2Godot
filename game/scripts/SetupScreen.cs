@@ -5,7 +5,8 @@ namespace Ms2Godot;
 /// <summary>
 /// Main scene. When the data folder and nif.xml are configured it hands over to the field scene; otherwise it asks for the
 /// client's Data folder and for nif.xml (download it from the niftools nifxml repository, or point to a local file) and
-/// saves the choice to user://settings.cfg.
+/// saves the choice to user://settings.cfg. Then, when the UI code for this client's Gfx.m2d is not built yet, it builds it
+/// with a progress bar (<see cref="UiCode"/>), loads it and goes on.
 /// </summary>
 public partial class SetupScreen : Control
 {
@@ -24,10 +25,15 @@ public partial class SetupScreen : Control
     FileDialog dirDialog, fileDialog;
     HttpRequest http;
     string pending;
+    System.Threading.Tasks.Task<Ms2.UiGen.UiGenerator.Result> uiBuild;
+    ProgressBar uiBar;
+    Label uiLabel;
+    volatile string uiPhase = "Checking the UI code";
+    double uiFrac;
 
     public override void _Ready()
     {
-        if (Settings.Ready) { CallDeferred(nameof(Continue)); return; }
+        if (Settings.Ready) { CallDeferred(nameof(PrepareUiCode)); return; }
         dataDir = Settings.DataDir;
         nifPath = Settings.NifXml;
         SetAnchorsPreset(LayoutPreset.FullRect);
@@ -126,6 +132,55 @@ public partial class SetupScreen : Control
         var err = Settings.Save(dataDir, nifPath);
         if (err != Error.Ok) { status.Text = "Could not save the settings: " + err; return; }
         // the environment overrides the file; nothing to do for it here
+        foreach (var c in GetChildren()) c.QueueFree();
+        PrepareUiCode();
+    }
+
+    /// <summary>
+    /// The UI code of this client: loaded when built, else built now on a worker thread (translating every UI movie's
+    /// ActionScript and compiling it takes about 20 seconds). A failed build is logged and the game goes on: the movies
+    /// then run in the interpreter.
+    /// </summary>
+    void PrepareUiCode()
+    {
+        var data = Settings.DataDir;
+        var center = new CenterContainer();
+        center.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(center);
+        var box = new VBoxContainer { CustomMinimumSize = new Vector2(560, 0) };
+        center.AddChild(box);
+        uiLabel = new Label { Text = "Building the UI from your client's movies (first launch with this client)..." };
+        uiBar = new ProgressBar { MinValue = 0, MaxValue = 1, Step = 0.001 };
+        box.AddChild(uiLabel);
+        box.AddChild(uiBar);
+        uiBuild = System.Threading.Tasks.Task.Run(() =>
+        {
+            if (UiCode.Built(data)) return null;
+            return UiCode.Build(data, (phase, f) => { uiPhase = phase; uiFrac = f; });
+        });
+        SetProcess(true);
+    }
+
+    public override void _Process(double delta)
+    {
+        if (uiBuild == null) return;
+        if (!uiBuild.IsCompleted)
+        {
+            uiBar.Value = uiFrac;
+            uiLabel.Text = uiPhase + "...";
+            return;
+        }
+        var task = uiBuild;
+        uiBuild = null;
+        if (task.IsFaulted) GD.PushWarning("UI code build failed: " + task.Exception?.GetBaseException().Message);
+        else if (task.Result is { } r)
+        {
+            GD.Print($"UI code built: {r.Bodies} bodies, {r.Distinct} distinct, {r.MoviesAllCompiled}/{r.MoviesWithCode} movies, " +
+                     $"{r.DllBytes / 1048576.0:F1} MB, read {r.ReadSeconds:F1} s, translate {r.TranslateSeconds:F1} s, compile {r.CompileSeconds:F1} s");
+            foreach (var e in r.Errors) GD.PushWarning("UI code: " + e);
+        }
+        try { UiCode.Load(Settings.DataDir); }
+        catch (System.Exception e) { GD.PushWarning("UI code load failed: " + e.Message); }
         Continue();
     }
 
