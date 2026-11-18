@@ -60,7 +60,19 @@ public sealed class UiStage : IDropStage
         Add(host.Player, mouse, drawOrder, shown);
         host.DragSlots = DragSlots;
         DragSlots.Add(host.Controller as IDragSlotOwner);
-        if (unloadWatched.TryAdd(host, null)) host.Controller.Unloaded += () => { Remove(host); host.Player.CancelDrag(); };
+        if (!unloadWatched.TryAdd(host, null)) return;
+        // the handler leaves with its dialog: a controller kept across opens (the quest log's, the world map's) gets a new
+        // host per open, and a handler left on it would keep every closed dialog's player alive
+        var controller = host.Controller;
+        Action unloaded = null;
+        unloaded = () =>
+        {
+            controller.Unloaded -= unloaded;
+            unloadWatched.Remove(host);
+            Remove(host);
+            host.Player.CancelDrag();
+        };
+        controller.Unloaded += unloaded;
     }
 
     // once per movie and per dialog, held weakly: a closed dialog's runtime is not kept, and a dialog that leaves and

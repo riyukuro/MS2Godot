@@ -48,7 +48,7 @@ public class DialogSettingsTests
     static MovieSource src;
     static GameTables tables;
 
-    static UiHost Open(MemoryFolder folder)
+    static UiHost Open(MemoryFolder folder, QuestDialogController c = null)
     {
         if (packs == null)
         {
@@ -58,7 +58,7 @@ public class DialogSettingsTests
             src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
             tables = new GameTables(packs, "en");
         }
-        var c = new QuestDialogController();
+        c ??= new QuestDialogController();
         var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
         p.StageW = 1920; p.StageH = 1080;
         var h = new UiHost(p, c, new UiModel(tables)) { Folder = folder, ClientStageW = 1920, ClientStageH = 1080 };
@@ -141,5 +141,29 @@ public class DialogSettingsTests
         Assert.That(unloaded, Is.True, "startClose's tween ends with OnEndClose");
         Assert.That(c.IsClosed, Is.True);
         Assert.That(c.OpenTab, Is.EqualTo(2), "UIQuestDialog::vfunc_67 keeps the tab (m_180)");
+    }
+    static int UnloadedHandlers(UiController c) =>
+        (typeof(UiController).GetField("Unloaded", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .GetValue(c) as Delegate)?.GetInvocationList().Length ?? 0;
+
+    [Test]
+    public void AKeptControllerDropsEachClosedDialogsStageHandler()
+    {
+        // the HUD keeps one quest log controller and gives it a new movie per open; the stage's unload handler for each
+        // movie must leave with it, or every closed movie's player stays reachable from the controller
+        var folder = new MemoryFolder();
+        var stage = new UiStage();
+        var c = new QuestDialogController();
+        for (int open = 0; open < 3; open++)
+        {
+            var h = Open(folder, c);
+            stage.Add(h, () => (0, 0), () => 0);
+            Assert.That(UnloadedHandlers(c), Is.EqualTo(1), $"open {open}: one handler, the open movie's");
+            Call(h, "OnCloseDialog");
+            for (int i = 0; i < 60 && !c.IsClosed; i++) h.Player.Tick();
+            Assert.That(c.IsClosed, Is.True);
+            Assert.That(UnloadedHandlers(c), Is.EqualTo(0), $"open {open}: none left after the unload");
+            Assert.That(h.Player.DropStage, Is.Null, "the unloaded movie left the stage");
+        }
     }
 }
