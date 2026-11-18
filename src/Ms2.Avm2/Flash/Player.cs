@@ -345,7 +345,8 @@ namespace Ms2.Avm2.Flash
             JsonObject last = null;
             foreach (JsonObject m in mv) if (J.Iv(m["frame"]) <= f) last = m;
             if (last == null) { ApplyPlacement(o, pl, initial: false); return; }
-            if (!o.MatrixLocked && (bool?)last["hasMatrix"] != false && last["matrix"] is JsonObject mm) o.Matrix = SymbolScope.Matrix(mm);
+            // PlaceObject2 with PlaceFlagHasMatrix: the layout writes an identity matrix as null (LayoutJson Mx), so null = identity here
+            if (!o.MatrixLocked && (bool?)last["hasMatrix"] != false) o.Matrix = SymbolScope.Matrix(last["matrix"]);
             if (!o.ColorLocked && last["color"] is JsonObject c) o.Color = SymbolScope.Color(c);
         }
 
