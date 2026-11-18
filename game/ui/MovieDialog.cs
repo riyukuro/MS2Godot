@@ -24,19 +24,57 @@ public partial class MovieDialog : Node2D
 
     public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window, ICharacterFolder folder = null)
     {
+        var perf = PerfLog.On ? new PerfLog.Steps("open " + controller.Movie) : null;
         // the movies are parsed once per pack set and shared by every open (the client's loader keeps a movie's definition
         // once loaded); the runtime, player and display list are still made on each open
         var src = MovieSource.FromParsed(assets.Dependency);
+        if (perf != null)
+        {
+            // the same reads and parses Open does, first, so each is timed on its own
+            void Prefetch(string key, HashSet<string> seen)
+            {
+                if (!seen.Add(key) || src.Movie(key) is not { } m) return;
+                foreach (var g in m.Imports) Prefetch(System.IO.Path.GetFileNameWithoutExtension(g.Url), seen);
+            }
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            Prefetch(controller.Movie, keys);
+            perf.Step("swf-parse+read");
+            foreach (var k in keys) src.Abc(k);
+            perf.Step("abc-parse");
+        }
         var (rt, p) = src.Open(controller.Movie, r => r.Budget = 20_000_000);
+        perf?.Step("layout+abc-load");
         Player = p;
         Resize(window);
         view = new As3View(p, assets);
         AddChild(view);
         Place(window);
-        Host = new UiHost(p, controller, model) { Folder = folder ?? CharacterFolder.ForChosen() };
+        perf?.Step("view");
+        Host = new UiHost(p, controller, model) { Folder = folder ?? CharacterFolder.ForChosen(), Mark = perf == null ? null : perf.Step };
         SetClientStage(window);
         Loaded = Host.Load();
         foreach (var e in rt.Errors) GD.PushWarning($"[{controller.Movie}] {e}");
+        if (perf != null) { openPerf = perf; openedAt = System.Diagnostics.Stopwatch.GetTimestamp(); }
+        if (PerfLog.On) lock (Opened) Opened.Add((controller.Movie, new WeakReference<FlashPlayer>(p)));
+    }
+
+    /// <summary>MS2_PERF: every movie player made, weakly held, to count the ones still alive after their windows closed.</summary>
+    public static readonly List<(string Movie, WeakReference<FlashPlayer> Player)> Opened = new();
+
+    PerfLog.Steps openPerf;
+    long openedAt;
+
+    // processed only while an open is being timed (MS2_PERF): no per-frame call otherwise
+    public override void _Ready() => SetProcess(openPerf != null);
+
+    public override void _Process(double delta)
+    {
+        SetProcess(false);
+        if (openPerf == null) return;
+        // the first frame after the open: the time until this node is processed (the view's first sync and draw follow it)
+        openPerf.Extra("to-first-frame", System.Diagnostics.Stopwatch.GetElapsedTime(openedAt).TotalMilliseconds);
+        openPerf.Done();
+        openPerf = null;
     }
 
     void Resize(Vector2 window)

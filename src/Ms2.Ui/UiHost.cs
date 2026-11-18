@@ -65,11 +65,16 @@ public sealed class UiHost
 
     // ---- load -------------------------------------------------------------------------------------------------
 
+    /// <summary>Timing marks of <see cref="Load"/>'s steps (null: none).</summary>
+    public Action<string> Mark;
+
     /// <summary>Constructs the movie and runs the client's load sequence. Returns false when the document class failed.</summary>
     public bool Load(int frames = 5)
     {
         if (!Player.Start()) return false;
+        Mark?.Invoke("as-construct");
         for (int i = 0; i < frames; i++) Player.Tick();        // configUI runs in the first frames, before the client's OnLoadComplete
+        Mark?.Invoke("as-frames");
         Entity = Controller.FindEntity();
         if (Entity == null) { RT.NoteMissing("ui entity of " + Id); return false; }
         // the part of a subclass's OnLoadComplete that runs before it calls UIDialog's (UIShopDialog: initShop), then
@@ -81,6 +86,7 @@ public sealed class UiHost
         Controller.LayoutAndClear(Player.StageW, Player.StageH);
         RT.Guard("OnLoadComplete " + Id, Controller.OnLoadComplete);
         Model.Changed += OnStatus;
+        Mark?.Invoke("controller-init");
         return true;
     }
 

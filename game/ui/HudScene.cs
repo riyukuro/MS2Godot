@@ -1411,8 +1411,80 @@ public partial class HudScene : Node, IUiStageHost
         uiRoot.AddChild(m);
     }
 
+    // ---- MS2_PERF: the timing run (PerfLog) -------------------------------------------------------------------------
+
+    string perfState = "loading";
+    int perfFrame = -1;
+    static readonly string[] PerfDialogs = (System.Environment.GetEnvironmentVariable("MS2_PERF_OPEN") ?? "")
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    /// <summary>
+    /// After the field is loaded: 600 idle frames, then for each window in MS2_PERF_OPEN (inventory, myinfo, skill, quest,
+    /// worldmap, shop, options) an open (cold), a close, a second open (warm) and a close, 100 frames apart, each open's
+    /// whole call timed; then MS2_PERF_QUIT quits.
+    /// </summary>
+    void PerfScript()
+    {
+        perfFrame++;
+        if (perfFrame == 0) { perfState = "idle"; PerfLog.Restart(); }
+        int at = perfFrame - 600;
+        if (at >= PerfDialogs.Length * 400) { PerfTail(at - PerfDialogs.Length * 400); return; }
+        if (at < 0 || at % 100 != 0) return;
+        int i = at / 400, step = at / 100 % 4;
+        string d = PerfDialogs[i];
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool open = step % 2 == 0;
+        switch (d)
+        {
+            case "inventory": ToggleInventory(); break;
+            case "myinfo": ToggleMyInfo(); break;
+            case "skill": ToggleSkillBook(); break;
+            case "quest": ToggleQuestLog(); break;
+            case "worldmap": ToggleWorldMap(); break;
+            case "shop": if (open) OpenShop(); else shop?.Close(); break;
+            case "options": if (open) OpenGameOption(0); else CloseAllDialogs(); break;
+        }
+        PerfLog.Print($"{(open ? (step == 0 ? "cold open" : "warm open") : "close")} {d}: call {sw.Elapsed.TotalMilliseconds:0.0} ms");
+        perfState = open ? d + " open" : "idle";
+        PerfLog.Restart();
+    }
+
+    /// <summary>
+    /// After the windows: 200 idle frames, 200 with a mouse move each frame (no window open), then inventory, character and skill
+    /// book opened and 200 frames idle and 200 with mouse moves; then inventory opened and closed 10 times, a full collection, and
+    /// the count of movie players still alive by movie.
+    /// </summary>
+    void PerfTail(int t)
+    {
+        void Mode(string s) { perfState = s; PerfLog.Restart(); }
+        if (perfState.StartsWith("mouse")) Input.ParseInputEvent(new InputEventMouseMotion { Position = new Vector2(300 + t % 400, 200 + t % 300), Relative = new Vector2(1, 1) });
+        switch (t)
+        {
+            case 0: CloseAllDialogs(); Mode("idle, 0 open"); break;
+            case 200: Mode("mouse, 0 open"); break;
+            case 400: ToggleInventory(); ToggleMyInfo(); ToggleSkillBook(); Mode("idle, 3 open"); break;
+            case 500: Mode("idle, 3 open"); break;
+            case 700: Mode("mouse, 3 open"); break;
+            case 900: CloseAllDialogs(); skillBook?.Close(); Mode("idle"); break;
+        }
+        if (t == 990 || t == 1250) PerfViews(t);
+        if (t >= 1000 && t < 1200 && t % 10 == 0) ToggleInventory();
+        if (t == 1250)
+        {
+            GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+            lock (MovieDialog.Opened)
+            {
+                var alive = MovieDialog.Opened.Where(x => x.Player.TryGetTarget(out _)).GroupBy(x => x.Movie).Select(g => $"{g.Key} {g.Count()}");
+                PerfLog.Print($"players made {MovieDialog.Opened.Count}, alive after GC: {string.Join(", ", alive)}");
+            }
+            PerfLog.Print($"managed heap after GC {GC.GetTotalMemory(false) / 1048576.0:0} MB");
+        }
+        if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) GetTree().Quit(0);
+    }
+
     public override void _Process(double delta)
     {
+        PerfLog.Frame(perfState);
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         shop?.Process();                                                        // UIShopDialog::vfunc_72
@@ -1432,6 +1504,7 @@ public partial class HudScene : Node, IUiStageHost
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
+        if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
@@ -1615,6 +1688,19 @@ public partial class HudScene : Node, IUiStageHost
             m.Movie.Player.Key(code, ch, true, char.IsUpper(ch), false);
             m.Movie.Player.Key(code, 0, false, false, false);
         }
+    }
+
+    /// <summary>MS2_PERF: every movie view in the tree (processed each frame), with whether it is drawn.</summary>
+    void PerfViews(int t)
+    {
+        var list = new List<string>();
+        void Walk(Node n)
+        {
+            if (n is As3View v) list.Add($"{v.Player.Main.Key}{(v.IsVisibleInTree() ? "" : " (hidden)")}");
+            foreach (var c in n.GetChildren()) Walk(c);
+        }
+        Walk(GetTree().Root);
+        PerfLog.Print($"t={t}: {list.Count} movie views in the tree: {string.Join(", ", list)}");
     }
 
     /// <summary>--frametime: from frame 400 to 700 the frame's delta and Godot's process time; the scroll case wheels the quest list each frame.</summary>
