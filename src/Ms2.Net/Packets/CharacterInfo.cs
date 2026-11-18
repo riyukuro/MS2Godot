@@ -147,6 +147,13 @@ public sealed class PcInfo {
     /// <summary>m_mapEquip2's count: the shown items of equip layer 2 (PC::vfunc_126(spInfo, 2), pc.cpp:4180).</summary>
     public int CodiItems;
     public int PrestigeLevel;                   // m_530: vfunc_141
+    /// <summary>The worn items the record's equip maps (m_mapEquip0 / 1 / 2, PC::vfunc_126) are built from: the own
+    /// FieldAddUser's equips (CItem variant unset: their layer comes from the item data, CItem::FUN_14052a170) and its
+    /// layer-2 outfits (SetVariant(2)); null while not known.</summary>
+    public IReadOnlyList<EquipItem> Equips, Outfit2;
+    /// <summary>The gem items (m_aItems: PCGemEquip::GetItems, pc.cpp:4160) from the own FieldAddUser's gem block; null while
+    /// not known.</summary>
+    public IReadOnlyList<EquipItem> Gems;
 
     /// <summary>CEquipmentSlotLayerInfo::GetPeriodState (equipment.cpp:432) of the title layer (kind 2): 0 without feature
     /// 0x8e (FUN_1411df7d0), 4 never started, 2 no end, 3 ended (FUN_1411df700), else 1.</summary>
@@ -177,6 +184,8 @@ public sealed class MyCharacter {
     /// <summary>The own FieldAddUser's title layer period (SetLayerPeriod, scenestategame.cpp:11248) and its layer-2
     /// outfits (SetVariant(2), :11250-11264).</summary>
     public long CodiStart, CodiEnd; public int CodiItems;
+    /// <summary>The own FieldAddUser's equips, layer-2 outfits and gems (PCGemEquip::ReadFromStream, gemslot_2.cpp:92).</summary>
+    public IReadOnlyList<EquipItem> Equips, Outfit2, Gems;
     public readonly StatPointBook StatPoints = new();
     public event Action Changed;
 
@@ -186,6 +195,7 @@ public sealed class MyCharacter {
         ObjectId = u.ObjectId; User = u.User; Title = u.Title;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
+        Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();
         Changed?.Invoke();
     }
 
@@ -240,6 +250,7 @@ public sealed class MyCharacter {
             HomeCommendPoint = HomeCommendPoint, HomeCommendMonthly = GetMonthlyCount(serverTime),
             Picture = User.Picture ?? "", Name = User.Name ?? "", GuildName = User.GuildName ?? "", Motto = User.Motto ?? "",
             PrestigeLevel = User.PrestigeLevel, CodiStart = CodiStart, CodiEnd = CodiEnd, CodiItems = CodiItems,
+            Equips = Equips, Outfit2 = Outfit2, Gems = Gems,
         };
         foreach (var t in proxies.Values)
             if (t.CharacterId == User.CharacterId) { i.Trophy = t.Combat + t.Adventure + t.Lifestyle; break; }

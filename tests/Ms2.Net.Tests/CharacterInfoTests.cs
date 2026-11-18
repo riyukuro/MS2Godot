@@ -84,4 +84,21 @@ public class CharacterInfoTests {
         Assert.That(me.ToPcInfo(1000).GetCodiPeriodState(true, 1000), Is.EqualTo(1));
         Assert.That(me.ToPcInfo(2000).GetCodiPeriodState(true, 2000), Is.EqualTo(3), "ended");
     }
+
+    [Test]
+    public void TheRecordCarriesTheOwnEquipsOutfitsAndBadges()
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "a" } };
+        u.Equips.Add(new EquipItem { Id = 15000001 });
+        u.Outfit2.Add(new EquipItem { Id = 11300001 });
+        u.Badges.Add(new EquipItem { Id = 70200001, GemType = 3 });
+        me.Apply(u);
+        var i = me.ToPcInfo(0);
+        Assert.That(i.Equips.Select(e => e.Id), Is.EqualTo(new[] { 15000001 }));
+        Assert.That(i.Outfit2.Select(e => e.Id), Is.EqualTo(new[] { 11300001 }));
+        Assert.That(i.Gems.Single().GemType, Is.EqualTo((byte)3));
+        u.Equips.Clear(); me.Apply(u);
+        Assert.That(me.ToPcInfo(0).Equips, Is.Empty, "a later FieldAddUser replaces the lists");
+    }
 }

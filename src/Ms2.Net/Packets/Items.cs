@@ -19,6 +19,9 @@ public sealed class EquipItem {
     /// <summary>Badge records only: the badge type (equip slot is meaningless then).</summary>
     public byte BadgeType;
     public bool IsBadge;
+    /// <summary>The gem block's type (CItemGem::vfunc_4: the gem's CGemBase m_nType, what GetGem()->vfunc_1() returns); 0 without
+    /// a gem.</summary>
+    public byte GemType;
     /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
     public short InventorySlot;
     /// <summary>CItem::m_2c (IsNew 0x1405268f0, SetNew 0x1405268d0; ctor default 0). Set only by OnItemInventory mode 7 (scenestategame.cpp:2844); cleared by InvenSlot::vfunc_14 0x141406a60 / vfunc_20 0x141408cd0 and the tab clear FUN_14199be00.</summary>
@@ -177,6 +180,7 @@ public static class ItemReader {
             // CItemGem::vfunc_4 0x1405a7920: bool has; u8 type, i32 gem id, then the gem (type 1 transparency: 10 bytes, type 11 pet skin: i32)
             if (r.ReadBool()) {
                 byte type = r.ReadByte();
+                it.GemType = type;
                 r.ReadInt();
                 if (type == 1) { for (int i = 0; i < 10; i++) r.ReadByte(); }
                 else if (type == 11) r.ReadInt();
