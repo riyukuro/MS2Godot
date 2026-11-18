@@ -11,7 +11,7 @@ namespace Ms2Godot.Ui;
 /// Draws the display list of a movie run by its own ActionScript (Ms2.Avm2's <see cref="Player"/>) and feeds it Godot input.
 /// One Godot node per display object, kept in sync each frame: shapes are the layout's <see cref="ShapeNode"/>, text fields
 /// are drawn from the runtime's lines (with its English fitting), bitmaps from Resource/Image, Graphics rects and
-/// ellipses directly. Masks (timeline clip depths and script masks) clip to the mask's bounds.
+/// ellipses directly. Masks (timeline clip depths and script masks) clip to the mask's own shapes (<see cref="MaskShape"/>).
 /// </summary>
 public partial class As3View : Node2D
 {
@@ -30,7 +30,7 @@ public partial class As3View : Node2D
         public Node2D Holder;            // transform, visibility, colour
         public Node2D Content;           // what the object itself draws (shape, text, bitmap, graphics)
         public object ContentKey;
-        public MaskRect Mask;            // set when this object masks following siblings or is masked by script
+        public MaskShape Mask;           // set when this object masks following siblings or is masked by script
         public int Seen;
     }
 
@@ -111,7 +111,7 @@ public partial class As3View : Node2D
         var wanted = new List<Node>();
         var content = (into.HasMeta("as3content") ? into.GetMeta("as3content").AsGodotObject() : null) as Node2D;
         if (content != null) wanted.Add(content);
-        MaskRect clip = null; int clipEnd = 0;
+        MaskShape clip = null; int clipEnd = 0;
         foreach (var k in c.Children)
         {
             if (clip != null && k.Depth > clipEnd) clip = null;
@@ -119,8 +119,8 @@ public partial class As3View : Node2D
             if (k.ClipDepth is int cd && k.Depth != int.MinValue)
             {
                 // a timeline mask: following depths up to its clip depth draw only inside it; the mask itself is not drawn
-                e.Mask ??= new MaskRect();
-                e.Mask.Rect = Rect(k.Matrix.Apply(k.LocalBounds()));
+                e.Mask ??= new MaskShape();
+                e.Mask.Set(MaskShape.Polygons(k, Mat.Identity));
                 e.Holder.Visible = false;
                 Reparent(e.Holder, into, wanted);
                 Reparent(e.Mask, into, wanted);
@@ -131,8 +131,10 @@ public partial class As3View : Node2D
             Node2D top = e.Holder;
             if (k.MaskObject != null)
             {
-                e.Mask ??= new MaskRect();
-                e.Mask.Rect = Rect(k.MaskObject.GetBounds(c));
+                e.Mask ??= new MaskShape();
+                var mo = k.MaskObject;
+                var toC = (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(c.ToGlobalMatrix().Inverse());
+                e.Mask.Set(MaskShape.Polygons(mo, toC));
                 if (e.Holder.GetParent() != e.Mask) { e.Holder.GetParent()?.RemoveChild(e.Holder); e.Mask.AddChild(e.Holder); }
                 top = e.Mask;
             }
@@ -273,7 +275,6 @@ public partial class As3View : Node2D
         return u;
     }
 
-    static Rect2 Rect(RectD r) => r.IsEmpty ? new Rect2() : new Rect2((float)r.X, (float)r.Y, (float)r.W, (float)r.H);
 
     /// <summary>
     /// An image the host supplies for a url, asked first (null: not the host's). The client binds some movie images to its
@@ -341,13 +342,85 @@ public partial class As3View : Node2D
     };
 }
 
-/// <summary>Clips its children to a rectangle (a Flash mask, by its bounds); the rectangle itself is not shown.</summary>
-public partial class MaskRect : Node2D
+/// <summary>
+/// Clips its children to a Flash mask's shapes; the mask itself is not shown. Scaleform draws a mask's subtree into the
+/// stencil with colour writes off (HAL::PushMask_BeginSubmit, MaskPrimitive::EmitToHAL, sfr_render_04f.cpp:721) and then
+/// draws the masked content where the stencil reached the mask (HAL::EndMaskSubmit, sfr_d3d9_01e.cpp:367): the mask's
+/// coverage counts, not its colour or alpha. So the node draws each shape's fill polygons opaque, without edge smoothing,
+/// in the masked content's parent space.
+/// </summary>
+public partial class MaskShape : Node2D
 {
-    Rect2 rect;
-    public Rect2 Rect { get => rect; set { if (rect != value) { rect = value; QueueRedraw(); } } }
-    public MaskRect() { ClipChildren = ClipChildrenMode.Only; }
-    public override void _Draw() { if (rect.Size.X > 0 && rect.Size.Y > 0) DrawRect(rect, Colors.White); }
+    List<Vector2[]> polys = new();
+
+    public MaskShape() { ClipChildren = ClipChildrenMode.Only; }
+
+    /// <summary>The mask's polygons this frame; redrawn only when they changed.</summary>
+    public void Set(List<Vector2[]> p)
+    {
+        bool same = p.Count == polys.Count;
+        for (int i = 0; same && i < p.Count; i++) same = p[i].AsSpan().SequenceEqual(polys[i]);
+        if (same) return;
+        polys = p;
+        QueueRedraw();
+    }
+
+    public override void _Draw()
+    {
+        foreach (var poly in polys)
+            if (poly.Length >= 3 && Geometry2D.TriangulatePolygon(poly).Length > 0) DrawColoredPolygon(poly, Colors.White);
+    }
+
+    /// <summary>
+    /// The fill polygons of a mask object and its visible descendants, mapped by <paramref name="toSpace"/> (from the mask's
+    /// parent space). Shapes give the layout's fill paths, Graphics their filled rectangles and ellipses; a shape whose
+    /// fills are only bitmaps (the layout keeps no outline for those) and a text field give their bounds.
+    /// </summary>
+    public static List<Vector2[]> Polygons(AsDisplayObject mask, Mat toSpace)
+    {
+        var list = new List<Vector2[]>();
+        Collect(mask, toSpace, list, true);
+        return list;
+    }
+
+    static void Collect(AsDisplayObject o, Mat parentToSpace, List<Vector2[]> list, bool root)
+    {
+        if (!root && !o.IsVisible) return;
+        var m = o.Matrix.Then(parentToSpace);
+        Vector2 P(double x, double y) { var (gx, gy) = m.Apply(x, y); return new Vector2((float)gx, (float)gy); }
+        Vector2[] Box(RectD r) => new[] { P(r.X, r.Y), P(r.X + r.W, r.Y), P(r.X + r.W, r.Y + r.H), P(r.X, r.Y + r.H) };
+        bool drew = false;
+        if (o.Symbol?["paths"] is JsonArray ps)
+            foreach (var p in ps)
+            {
+                if (p["pts"] is not JsonArray a || a.Count < 6) continue;
+                var pts = new Vector2[a.Count / 2];
+                for (int i = 0; i < pts.Length; i++) pts[i] = P((double)a[2 * i], (double)a[2 * i + 1]);
+                list.Add(pts);
+                drew = true;
+            }
+        if (!drew && (o.Symbol?["bitmaps"] is JsonArray || o is AsTextField || o is AsStaticText))
+        {
+            var b = o.LocalBounds();
+            if (!b.IsEmpty) list.Add(Box(b));
+        }
+        var g = o switch { AsSprite sp => sp.GraphicsOrNull, AsShape sh => sh.GraphicsOrNull, _ => null };
+        if (g != null)
+            foreach (var (op, v, _, alpha) in g.Ops)
+            {
+                if (alpha <= 0) continue;
+                if (op == "rect") { list.Add(Box(new RectD(v[0], v[1], v[2], v[3]))); continue; }
+                var pts = new Vector2[24];
+                for (int i = 0; i < pts.Length; i++)
+                {
+                    double t = i * Math.PI * 2 / pts.Length;
+                    pts[i] = P(v[0] + v[2] / 2 * (1 + Math.Cos(t)), v[1] + v[3] / 2 * (1 + Math.Sin(t)));
+                }
+                list.Add(pts);
+            }
+        if (o is AsContainer c)
+            foreach (var k in c.Children) Collect(k, m, list, false);
+    }
 }
 
 /// <summary>Rectangles and ellipses drawn by ActionScript through flash.display.Graphics.</summary>
