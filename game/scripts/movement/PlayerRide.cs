@@ -128,6 +128,10 @@ public partial class Player
     public void RideOff()
     {
         if (Mount == null) return;
+        // PCBase::vfunc_121 reads m_spB10->FUN_141671a30() first (pcbase.cpp:3395): m_spB10 is the mount, a Ridee with
+        // no mount of its own, so it is its controller's IsOnGround (pcbase.cpp:2532-2540): the last move touched down,
+        // and no jump or lift (gameobjectcontrollerphysxhelpers.cpp:487-490). Our mount moves the rider's one body.
+        bool mountOnGround = Grounded && !jumping;
         RemoveChild(Mount.Visual);
         Mount.Visual.QueueFree();
         Mount = null;
@@ -137,7 +141,15 @@ public partial class Player
         // PCBase::vfunc_121 clears the jump, the controller velocity and the fall timer before the state change
         // (pcbase.cpp:3408)
         StopJump();
-        Enter(MoveState.Idle);
+        if (mountOnGround) Enter(MoveState.Idle);
+        else
+        {
+            // ClearCollisionFlags, then StateFall with StateFallData(the mount's m_posC10) (pcbase.cpp:3409-3415): the
+            // fall keeps the start the mount already had (StateFall::vfunc_4 -> FUN_141676060, statefall.cpp:98-106,
+            // pcbase.cpp:3644-3650), which is our one fallStartY
+            nxHit = 0;
+            Enter(MoveState.Fall);
+        }
     }
 
     /// <summary>
