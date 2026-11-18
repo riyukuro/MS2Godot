@@ -52,6 +52,7 @@ public sealed class GameTables
         ItemSockets = new Items.ItemSocketTable(packs);
         ItemModels = new Items.ItemModelTable(packs);
         GemstoneUpgrades = new Items.GemstoneUpgradeTable(packs);
+        Lapenshards = new Items.LapenshardTable(packs);
         // CGloabalFactor::LoadMultiControl (gloabalfactor.cpp:128): Table/multicontrol.xml, the locale folder first; the
         // tooltip reads only type equipmentSellPrice (3), keyed by rank
         foreach (var path in new[] { "table/kr/multicontrol.xml", "table/multicontrol.xml" })
@@ -204,6 +205,8 @@ public sealed class GameTables
     public float EquipmentSellRate(int rank) => equipmentSellRates.TryGetValue(rank, out var v) ? v : 1f;
     /// <summary>Table/itemGemstoneUpgrade.xml (CItemGemStoneUpgradeTable); empty without data.</summary>
     public readonly Items.GemstoneUpgradeTable GemstoneUpgrades = Ms2.Ui.Items.GemstoneUpgradeTable.Empty;
+    /// <summary>Table/itemLapenshardUpgrade.xml (CItemLapenshardTable); empty without data.</summary>
+    public readonly Items.LapenshardTable Lapenshards = Ms2.Ui.Items.LapenshardTable.Empty;
     /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;
@@ -394,6 +397,10 @@ public sealed class GameTables
     /// <summary>CStringTable::FUN_141811980(0x53, id): string table 83 "stringShopTitle", a shop's title by shop id; "" when unknown.</summary>
     public string ShopTitle(int id) => Lazy(ref shopTitles, "stringshoptitle", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     Dictionary<string, string> categoryNames, shopTitles;
+    /// <summary>CStringTable::FUN_141811980(0x4d, id): string table 77 "jobGroupName", a job group's name (1 Beginner, 10
+    /// Knight ... 110, 999); "" when unknown.</summary>
+    public string JobGroupName(int id) => Lazy(ref jobGroupNames, "jobgroupname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> jobGroupNames;
     /// <summary>CStringTable::FUN_141811980(0x27, id): string table 39 "nametagSymbolTitle", a name tag symbol's name; ""
     /// when unknown.</summary>
     public string NametagSymbolTitle(int id) => Lazy(ref nametagSymbolTitles, "nametagsymboltitle", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";

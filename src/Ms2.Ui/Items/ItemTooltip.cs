@@ -72,6 +72,7 @@ public sealed class ItemTooltip
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
         SetStatDescription(item);                                                 // FUN_1409d1d30
+        SetExtraDescription(item);                                                // FUN_1409d64a0
         SetExtraComment(item);
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
@@ -159,6 +160,164 @@ public sealed class ItemTooltip
         string main = Tables.ItemDescription(item.Data.Id, "mainDescription");
         if (main.Length > 0) Data["statDescription"] = new Dictionary<string, object> { ["type"] = 0, ["text"] = main };
     }
+
+    /// <summary>
+    /// ASTooltip::FUN_1409d64a0 (astooltip.cpp:3014), "extraDescription": with the local player, { text, color } rows in
+    /// this order: the item level (AddItemLevelRow), the level limit (AddLevelLimitRow), the name row (FUN_1409de140;
+    /// a gemstone adds its equip-part row, FUN_1409df760), the enabled jobs (AddJobLimitRows), the VIP and wedding
+    /// limits. The level comes from CItem::FUN_140529070 / FUN_140529090 (<see cref="ItemLevels.Of"/>).
+    /// STILL-OPEN, so the member is left out: an install item (its housing category row, FUN_1409dea00, reads
+    /// CItemDataTable::GetHousing, not ported), and a VIP or wedding item (PC::IsVip and WeddingManager::IsInProgress
+    /// pick the row color; neither state is in the port).
+    /// </summary>
+    public void SetExtraDescription(Item item)
+    {
+        if (!model.HasLocalPlayer) return;                                    // FUN_1409c6540() == 0
+        var d = item.Data;
+        if (d.IsInstallItem || d.Vip || d.Wedding) return;
+        var (level, additional) = ItemLevels.Of(item) ?? (0, 0);
+        var rows = new List<object>();
+        AddItemLevelRow(rows, d, item.Rarity, level, additional);
+        AddLevelLimitRow(rows, d);
+        AddNameRow(rows, d, item.Rarity);
+        if (d.IsGemstone) AddGemPartRow(rows, d);                             // FUN_14053d840: FUN_1409df760
+        AddJobLimitRows(rows, d);
+        Data["extraDescription"] = rows;
+    }
+
+    static Dictionary<string, object> Row(string text, string color) => new() { ["text"] = text, ["color"] = color };
+
+    /// <summary>AddItemLevelRow (astooltip.cpp:4311): equipment without a skin type; level 0 shows the rank's base level.</summary>
+    void AddItemLevelRow(List<object> rows, ItemData d, int rarity, int level, int additional)
+    {
+        if (!d.IsEquip || d.HasSkinType) return;
+        int nBase = level - additional, nAdd = additional;
+        if (level <= 0) { nBase = ItemLevels.Base(d, rarity); nAdd = 0; }   // FUN_14053f0d0
+        rows.Add(Row(nAdd > 0 ? CommonF("s_common_item_level_with_value_additional", nBase, nAdd)
+            : CommonF("s_common_item_level_with_value", nBase), "aaaaaa"));
+    }
+
+    /// <summary>AddLevelLimitRow (astooltip.cpp:4341): "%s %d" of s_word_require_level (0x589) and the limit, red below it.
+    /// Not for a type 0x13 item (FUN_14053c8b0) or limit 1.</summary>
+    void AddLevelLimitRow(List<object> rows, ItemData d)
+    {
+        if (d.Type == 0x13 || d.LevelLimit == 1) return;
+        string text = Common("s_word_require_level") + " " + d.LevelLimit.ToString(CultureInfo.InvariantCulture);
+        rows.Add(Row(text, d.IsLevelAllowed(model.Player.Level) ? "aaaaaa" : "ff4040"));
+    }
+
+    /// <summary>
+    /// FUN_1409de140 (astooltip.cpp:4189): the rank name (none at rank 0) with the item's kind name; with a rank, a
+    /// suffix (FUN_1409df920: s_word_designed 0x58c for a cube texture mesh, s_word_skin 0x594 for a skin type) picks
+    /// s_item_tooltip_icon_code_param3 over _param2. A cash item puts s_word_cash (0x593) in front ("{0} {1}").
+    /// </summary>
+    void AddNameRow(List<object> rows, ItemData d, int rank)
+    {
+        string code = rank == 0 ? "" : RankName(rank);
+        string name = ItemNameText(d);
+        string body;
+        if (code.Length == 0) body = name;
+        else
+        {
+            string suffix = d.HasCubeTextureMesh ? Common("s_word_designed") : d.HasSkinType ? Common("s_word_skin") : "";
+            body = suffix.Length == 0 ? CommonF("s_item_tooltip_icon_code_param2", code, name)
+                : CommonF("s_item_tooltip_icon_code_param3", code, suffix, name);
+        }
+        rows.Add(Row(d.IsCashItem ? Common("s_word_cash") + " " + body : body, "aaaaaa"));
+    }
+
+    /// <summary>CStringTable::GetRankName (stringtable.cpp:909): s_word_rank_%02d (rank 0: common 0x4f9; the name row
+    /// never asks for it).</summary>
+    string RankName(int rank) => Common("s_word_rank_" + rank.ToString("00", CultureInfo.InvariantCulture));
+
+    /// <summary>GetItemNameText (unit_141274d10_uihelpers.cpp:1051): equipment by its slot name (string table 8), a
+    /// lapenshard by its color (GetLapenshardName :1082: mask 1 red, 2 blue, 4 green), else the icon code's name.</summary>
+    string ItemNameText(ItemData d)
+    {
+        if (d.IsEquip) return Tables.SlotName(d.EquipSubtype);
+        if (d.IsLapenshard)
+        {
+            switch (Tables.Lapenshards.Mask(d.Id))
+            {
+                case 1: return Common("s_word_iconcode_lapenshard_red");
+                case 2: return Common("s_word_iconcode_lapenshard_blue");
+                case 4: return Common("s_word_iconcode_lapenshard_green");
+            }
+        }
+        return IconCodeName(d.IconCode);
+    }
+
+    static readonly string[] IconCodeKeys =
+    {
+        "none", "weapon", "armor", "accessory", "active", "passive", "potion", "scroll", "action", "etc", "land", "building",
+        "interior", "souvenir", "riding", "mannequin", "store", "electronics", "coupon", "action_skillbook", "gem", "storybook",
+        "maid", "package", "random", "crystal", "airtaxi", "dungeonkey", "workbench_cook", "workbench_alchemy", "workbench_biz",
+        "buffportion", "trigger_controller", "interior_pack", "pet", "fishing_rod", "music_instrument", "music_note", "petfood",
+        "bait", "gemstone", "jeweldust", "coin", "quest", "glide_item", "petequip", "pettaminggoods", "petgoods",
+        "interiorskill", "interiormessage", "lapenshard",
+    };
+
+    /// <summary>GetIconCodeName (unit_141274d10_uihelpers.cpp:980): s_word_iconcode_* for codes 0..0x32, 0x34 blueprint
+    /// and 0x35 capsule (common 0x52c-0x55b); any other code gets common 0 (s_empty_string).</summary>
+    public string IconCodeName(int code) => code switch
+    {
+        >= 0 and <= 0x32 => Common("s_word_iconcode_" + IconCodeKeys[code]),
+        0x34 => Common("s_word_iconcode_blueprint"),
+        0x35 => Common("s_word_iconcode_capsule"),
+        _ => Common("s_empty_string"),
+    };
+
+    /// <summary>FUN_1409df760 (astooltip.cpp:4398): a gemstone with an upgrade row shows its equip parts
+    /// (FUN_1406285d0, itemsocketsystemutil.cpp:566: weapon, armor, accessory, skin joined by ", "; mask 0xf and up "").</summary>
+    void AddGemPartRow(List<object> rows, ItemData d)
+    {
+        var gem = Tables.GemstoneUpgrades.Find(d.Id);
+        if (gem == null) return;
+        rows.Add(Row(EquipPartsText(gem.Mask), "aaaaaa"));
+    }
+
+    string EquipPartsText(uint mask)
+    {
+        if (mask >= 0xf) return "";
+        var parts = new List<string>();
+        if ((mask & 1) != 0) parts.Add(IconCodeName(1));
+        if ((mask & 2) != 0) parts.Add(IconCodeName(2));
+        if ((mask & 4) != 0) parts.Add(IconCodeName(3));
+        if ((mask & 8) != 0) parts.Add(Common("s_word_skin"));
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// AddJobLimitRows (astooltip.cpp:4276) with FUN_1409e68a0 (:5480): the jobLimit ids this server offers
+    /// (FUN_1402226b0: 1 with feature 0xe7, 10-80, 90 / 100 / 110 with features 8 / 0x12 / 0x25) by job group name
+    /// (string table 0x4d), as s_word_enable_jobs; gray when the player's job (a beginner counts as 10) or job 1 is
+    /// listed, else red. The disableJobLimit row (FUN_1409e6aa0) tests the empty output text, so it never shows.
+    /// </summary>
+    void AddJobLimitRows(List<object> rows, ItemData d)
+    {
+        int job = model.Player.JobGroup == 1 ? 10 : model.Player.JobGroup;
+        bool allowed = false;
+        var names = new List<string>();
+        foreach (int id in d.JobLimit)
+        {
+            if (!JobOffered(id)) continue;
+            if (id == 1 || id == job) allowed = true;
+            names.Add(Tables.JobGroupName(id));
+        }
+        if (names.Count == 0) return;
+        rows.Add(Row(CommonF("s_word_enable_jobs", string.Join(", ", names)), allowed ? "aaaaaa" : "ff4040"));
+    }
+
+    /// <summary>FUN_1402226b0 (unit_1402226b0_featureenumhelpers.cpp:70).</summary>
+    bool JobOffered(int id) => id switch
+    {
+        1 => model.IsFeatureEnabled(0xe7),
+        10 or 20 or 30 or 40 or 50 or 60 or 70 or 80 => true,
+        90 => model.IsFeatureEnabled(8),
+        100 => model.IsFeatureEnabled(0x12),
+        110 => model.IsFeatureEnabled(0x25),
+        _ => false,
+    };
 
     /// <summary>CItemData::IsCustomizable (itemdata.cpp:1286): a model whose color is on with a palette and one default color.</summary>
     bool IsCustomizable(ItemData d) =>

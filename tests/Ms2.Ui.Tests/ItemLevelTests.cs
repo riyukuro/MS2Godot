@@ -45,7 +45,8 @@ public class ItemLevelTests
         int b = ItemLevels.Base(Data(1, 0x1f, 0x50), 4);
         Assert.That(ItemLevels.Of(Make(Data(1, 0x1f, 0x50), 4, enchant: 15)), Is.EqualTo(((int, int)?)(b + b * 2, b * 2)));
         Assert.That(ItemLevels.Of(Make(Data(1, 0x1f, 0x50), 4, enchant: 16)), Is.EqualTo(((int, int)?)(b, 0)), "past 15: no rate");
-        Assert.That(ItemLevels.Of(Make(Data(1, 0x1f, 0x50), 4, plus: 2)), Is.Null, "the plus level is Lua");
+        int plus2 = ItemLevels.UnlimitedEnchantLevel(2, 0, 0x1f);
+        Assert.That(ItemLevels.Of(Make(Data(1, 0x1f, 0x50), 4, plus: 2)), Is.EqualTo(((int, int)?)(b + plus2, plus2)), "the Lua chunk's plus level");
         Assert.That(ItemLevels.Of(Make(Data(1, 0x1f, 0x50), 4, plus: 2), (plus, max, sub) => plus * 10 + sub),
             Is.EqualTo(((int, int)?)(b + 20 + 0x1f, 20 + 0x1f)));
     }

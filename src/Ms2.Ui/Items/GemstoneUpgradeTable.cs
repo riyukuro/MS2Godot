@@ -12,8 +12,9 @@ namespace Ms2.Ui.Items;
 /// </summary>
 public sealed class GemstoneUpgradeTable
 {
-    /// <summary>CItemGemStoneData: m_nLinked (NextItemID) and the ingredient item ids in file order.</summary>
-    public sealed record Row(int NextItemId, IReadOnlyList<int> Ingredients);
+    /// <summary>CItemGemStoneData: m_nLinked (NextItemID), the ingredient item ids in file order and m_nMask (the EquipPart
+    /// bits, <see cref="EquipPartMask"/>).</summary>
+    public sealed record Row(int NextItemId, IReadOnlyList<int> Ingredients, uint Mask = 7);
 
     readonly PackSet packs;
     Dictionary<int, Row> rows;
@@ -50,24 +51,28 @@ public sealed class GemstoneUpgradeTable
                 var tokens = value.Split(':', StringSplitOptions.RemoveEmptyEntries);
                 ingredients.Add(tokens.Length > 0 ? ItemData.Atoi(tokens[0]) : 0);
             }
-            string parts = ((string)e.Attribute("EquipPart") ?? "").Trim();
-            uint mask = 7;
-            if (parts.Length != 0)
-            {
-                var list = parts.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(ItemData.Atoi).ToList();
-                if (list.Count != 0)
-                {
-                    mask = 0;
-                    foreach (int part in list)
-                    {
-                        if (part - 1 < 0) { mask = 7; break; }
-                        mask |= 1u << (part - 1);
-                    }
-                }
-            }
+            uint mask = EquipPartMask(e);                       // the ctor's m_nMask is 7 (:85)
             if ((mask & 8) != 0 && mask != 8) break;
-            rows[id] = new Row(next, ingredients);
+            rows[id] = new Row(next, ingredients, mask);
         }
         return rows;
+    }
+
+    /// <summary>The EquipPart list of a row as Load reads it (itemgemstonedata.cpp:188, the same in
+    /// itemlapensharddata.cpp:274): bit part - 1 for each part, 7 for no attribute or a part below 1; a list with no
+    /// number keeps the data's constructor value <paramref name="unset"/> (7 for a gemstone, 0 for a lapenshard).</summary>
+    public static uint EquipPartMask(XElement e, uint unset = 7)
+    {
+        string parts = ((string)e.Attribute("EquipPart") ?? "").Trim();
+        if (parts.Length == 0) return 7;
+        var list = parts.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(ItemData.Atoi).ToList();
+        if (list.Count == 0) return unset;
+        uint mask = 0;
+        foreach (int part in list)
+        {
+            if (part - 1 < 0) return 7;
+            mask |= 1u << (part - 1);
+        }
+        return mask;
     }
 }

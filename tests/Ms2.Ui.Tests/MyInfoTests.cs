@@ -365,6 +365,84 @@ public class MyInfoTests
     }
 
     [Test]
+    public void UnlimitedEnchantItemLevelIsTheLuaChunks()
+    {
+        // calcUnlimitedEnchantItemLevel (luautil.cpp:1181 and its Lua chunk), by plus level
+        var want = new Dictionary<int, int> { [0] = 84295, [1] = 85138, [5] = 88510, [9] = 91882, [10] = 92725, [15] = 96940, [19] = 100312,
+            [20] = 101576, [35] = 120543, [50] = 144567, [77] = 212425, [99] = 294192, [100] = 0 };
+        foreach (var (plus, level) in want) Assert.That(ItemLevels.UnlimitedEnchantLevel(plus, 0, 0), Is.EqualTo(level), "plus " + plus);
+    }
+
+    static List<string> RowTexts(AsTooltip data) =>
+        ((IEnumerable<object>)data["extraDescription"]).Cast<Dictionary<string, object>>().Select(r => r["text"] + " #" + r["color"]).ToList();
+
+    [Test]
+    public void ExtraDescriptionIsTheClientsRows()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        m.Player.Level = 1; m.Player.JobGroup = 10;
+        var t = m.Tables;
+        ItemTooltip Tip(EquipItem r) { var tip = new ItemTooltip(m, 0x200); tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, t.Items)); return tip; }
+
+        var weapon = new EquipItem { Id = 15000001, Uid = 10, Rarity = 2, Amount = 1 };
+        var wd = t.Items.Get(15000001);
+        var rows = RowTexts(Tip(weapon).Data);
+        TestContext.WriteLine($"15000001 (levelLimit {wd.LevelLimit}, jobs {string.Join(",", wd.JobLimit)}): " + string.Join(" | ", rows));
+        Assert.That(rows, Is.EqualTo(new[] { "<FONT color='#FFFFFF'>Gear Score 105</FONT> #aaaaaa", "Requires Level 10 #ff4040",
+            "Rare Two-handed Greatsword #aaaaaa" }), "the rank's base level; level 1 is below the limit");
+        m.Player.Level = 10;
+        Assert.That(RowTexts(Tip(weapon).Data)[1], Is.EqualTo("Requires Level 10 #aaaaaa"));
+
+        // +10 adds nothing below gear score 70 and data rank 4 (FUN_14053f390); 15000307 (gear score 70, rank 4) adds it
+        var low = Ms2.Ui.Hud.InventoryController.ToItem(weapon, t.Items);
+        low.EnchantLevel = 10;
+        Assert.That(ItemLevels.Of(low), Is.EqualTo(((int, int)?)(105, 0)));
+        var item = Ms2.Ui.Hud.InventoryController.ToItem(new EquipItem { Id = 15000307, Uid = 13, Rarity = 4, Amount = 1 }, t.Items);
+        item.EnchantLevel = 10;
+        var (lvl, add) = ItemLevels.Of(item).Value;
+        TestContext.WriteLine($"+10: level {lvl} additional {add}");
+        Assert.That(add, Is.GreaterThan(0));
+        var enchanted = new ItemTooltip(m, 0x200);
+        enchanted.Fill(item);
+        Assert.That(RowTexts(enchanted.Data)[0], Does.StartWith($"<FONT color='#FFFFFF'>Gear Score {lvl - add}").And.Contain(add.ToString()));
+
+        // a gemstone: its rank and kind, then the part it fits (EquipPart 3: accessory)
+        var gem = RowTexts(Tip(new EquipItem { Id = 40200001, Uid = 11, Rarity = 3, Amount = 1 }).Data);
+        TestContext.WriteLine("40200001: " + string.Join(" | ", gem));
+        Assert.That(gem, Is.EqualTo(new[] { "Exceptional Gemstone #aaaaaa", "Accessory #aaaaaa" }));
+
+        // a lapenshard is named by its color (EquipPart 1: red)
+        var lapen = RowTexts(Tip(new EquipItem { Id = 41000011, Uid = 12, Rarity = 4, Amount = 1 }).Data);
+        TestContext.WriteLine("41000011: " + string.Join(" | ", lapen));
+        Assert.That(lapen, Is.EqualTo(new[] { "Requires Level 60 #ff4040", "Epic Red Lapenshard #aaaaaa" }));
+
+        // jobLimit 10,20,90: the names this server offers, gray for a listed job (a beginner counts as a Knight), else red
+        var top = new EquipItem { Id = 11400003, Uid = 14, Rarity = 1, Amount = 1 };
+        var jobs = RowTexts(Tip(top).Data);
+        TestContext.WriteLine("11400003: " + string.Join(" | ", jobs));
+        string names = string.Join(", ", new[] { 10, 20, 90 }.Where(j => j != 90 || m.IsFeatureEnabled(8)).Select(t.JobGroupName));
+        Assert.That(jobs[^1], Is.EqualTo(Ms2.Quest.ClientFormat.Format(t.Common("s_word_enable_jobs"), names) + " #aaaaaa"));
+        Assert.That(jobs, Is.EqualTo(new[] { "<FONT color='#FFFFFF'>Gear Score 32</FONT> #aaaaaa", "Requires Level 10 #aaaaaa", "Normal Top #aaaaaa",
+            "Job: Knight, Berserker, Runeblade #aaaaaa" }));
+        var drawn = TooltipTests.Draw(Tip(top).Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", drawn));
+        Assert.That(drawn, Has.Some.Contains("Gear Score 32"));
+        Assert.That(drawn, Has.Some.Contains("Job: Knight, Berserker, Runeblade"));
+        m.Player.JobGroup = 1;
+        Assert.That(RowTexts(Tip(top).Data)[^1], Does.EndWith("#aaaaaa"));
+        m.Player.JobGroup = 30;
+        Assert.That(RowTexts(Tip(top).Data)[^1], Does.EndWith("#ff4040"));
+
+        // a VIP item's row color needs PC::IsVip: not ported, so the member is left out
+        Assert.That(t.Items.Get(15000001).Vip, Is.False);
+
+        // no local player: the client returns first
+        m.HasLocalPlayer = false;
+        Assert.That(Tip(weapon).Data.ContainsKey("extraDescription"), Is.False);
+    }
+
+    [Test]
     public void DyeLineIsTheClientsForACustomizableOutfit()
     {
         // the Green Hood Uniform's model 12200398: <customize color="1" colorPalette="10" defaultColorIndex="13">

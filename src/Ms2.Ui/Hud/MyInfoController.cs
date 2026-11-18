@@ -425,8 +425,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// The record's m_3cc / m_3d0: PC::vfunc_125 (pc.cpp:4154) zeroes them and vfunc_126 adds the layer-0 items' levels
     /// (<see cref="ItemLevels.Worn"/>; layers 1 and 2 add nothing). PC::CanUseItem here is its first test,
     /// <see cref="ItemLevels.Usable"/>; its PC bang, VIP, wedding and owner tests are not (the shown player's worn items
-    /// passed them when worn). Null, the label left, when a level needs Lua (a plus level, two one-handed
-    /// weapons).
+    /// passed them when worn). Null, the label left, when a level needs Lua (two one-handed weapons:
+    /// CalcOHItemAdditionalLevel).
     /// </summary>
     (uint, uint)? KnownItemLevel()
     {

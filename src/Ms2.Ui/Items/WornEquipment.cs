@@ -91,7 +91,7 @@ public sealed class WornEquipment
     /// an LH item: RH, or LH with feature 0xda when the RH item's level (CItem m_b0, <paramref name="itemLevel"/>) is above the
     /// LH one's; only RH: LH. Other weapons 0. When 0, CItem::FUN_140526c30, m_68, as CItem::FUN_140523c40 sets it for a bag
     /// item (item.cpp:2782): 5 for subtype 0x1f / 0x22, else the model's first group type (FUN_140527a20 with m_68 0).
-    /// The level is <see cref="ItemLevels.Of"/>; when either is not known (a plus level's Lua part) the RH result stays.
+    /// The level is <see cref="ItemLevels.Of"/>; when either is not known the RH result stays.
     /// </summary>
     public int EquipSlotFor(Item item, ItemModelTable models, Func<int, bool> feature, Func<Item, bool> canUse, Func<Item, int?> itemLevel = null)
     {

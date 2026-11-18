@@ -70,8 +70,9 @@ public sealed class ItemData
     /// <summary>ItemProperty "sell price" (itemdatastruct.cpp:1136): the &lt;property&gt;&lt;sell price&gt; list, each token
     /// read with atoi (XmlConvert, xmlattr.h).</summary>
     public List<long> SellPrices = new();
-    /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt;.</summary>
-    public int InstallObjCode;
+    /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt; and space (bit 1 outdoors, bits 2 / 4
+    /// indoors too, as the tooltip's FUN_1409de630 reads them).</summary>
+    public int InstallObjCode, InstallSpace;
 
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
@@ -130,7 +131,11 @@ public sealed class ItemData
             if (!xml) d.FunctionArgs.AddRange(s.Split(',', StringSplitOptions.RemoveEmptyEntries));
         }
         if (env.Element("tool") is { } tool) Int(tool, "itemPreset", ref d.ItemPreset);
-        if (env.Element("install") is { } inst) Int(inst, "objCode", ref d.InstallObjCode);
+        if (env.Element("install") is { } inst)
+        {
+            Int(inst, "objCode", ref d.InstallObjCode);
+            Int(inst, "space", ref d.InstallSpace);
+        }
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
         if (env.Element("life") is { } life)
         {
@@ -145,6 +150,7 @@ public sealed class ItemData
     }
 
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
+
     /// <summary>CMsTime(y, m, d, h, min, s) (mstime.cpp:43): _mkgmtime64 of the fields when each is in range, else 0.</summary>
     static long MsTimeFields(int y, int mo, int d, int h, int mi, int s)
     {

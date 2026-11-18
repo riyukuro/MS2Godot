@@ -10,8 +10,8 @@ public static class ItemLevels
     /// <summary>
     /// UpdateItemLevel: (CItem m_b0, m_b4), the total and the additional level. Not an equipment item (FUN_14053cbc0, type
     /// 1): (0, 0). Else the base (FUN_14053f0d0 of the rarity), the additional FUN_14053f390(base, enchant level) and, with a
-    /// plus (unlimited enchant) level, Lua CalcUnlimitedEnchantItemLevel(plus, unlimitedEnchantMaxGrade, equip subtype) on top;
-    /// the total is additional + base. Null for a plus level when <paramref name="unlimitedEnchant"/> is not given.
+    /// plus (unlimited enchant) level, Lua CalcUnlimitedEnchantItemLevel(plus, unlimitedEnchantMaxGrade, equip subtype) on top
+    /// (<see cref="UnlimitedEnchantLevel"/> unless <paramref name="unlimitedEnchant"/> is given); the total is additional + base.
     /// </summary>
     public static (int Total, int Additional)? Of(Item item, Func<int, int, int, int> unlimitedEnchant = null)
     {
@@ -22,10 +22,30 @@ public static class ItemLevels
         int plus = item.UnlimitedEnchantLevel;
         if (plus > 0)
         {
-            if (unlimitedEnchant == null) return null;
-            additional += unlimitedEnchant(plus, d.UnlimitedEnchantMaxGrade, d.EquipSubtype);
+            additional += (unlimitedEnchant ?? UnlimitedEnchantLevel)(plus, d.UnlimitedEnchantMaxGrade, d.EquipSubtype);
         }
         return (additional + nBase, additional);
+    }
+
+    static readonly double[] UnlimitedRange = { 0, 0.2, 0.41, 0.71, 1.02, 1.43, 1.94, 2.55, 3.26, 4.08 };
+    static readonly double[] UnlimitedCoefficient = { 0.02, 0.02, 0.03, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.1 };
+
+    /// <summary>
+    /// CLua::CalcUnlimitedEnchantItemLevel (commonfiles/luautil.cpp:1181, called from item.cpp:1562): the client chunk's
+    /// calcUnlimitedEnchantItemLevel(plus, maxGrade, subtype) (Data/lua/Precompiled.m2d luapack64.o, source lines
+    /// 1229-1246; the last two arguments are unused): base 42147.909, q = floor(plus / 10), coef =
+    /// unlimitedEnchantItemLevelCoefficientRange[q] + unlimitedEnchantItemLevelCoefficient[q] * (plus - q * 10), and
+    /// base * additionalItemLevelCoefficientNA[15] (2) + base * coef, truncated by lua_tointeger. From plus 100 the tables
+    /// have no row, the call fails and CLua returns 0.
+    /// </summary>
+    public static int UnlimitedEnchantLevel(int plus, int maxGrade, int subtype)
+    {
+        const double baseLevel = 42147.909;
+        double q = Math.Floor(plus / 10.0);
+        if (q < 0 || q >= UnlimitedRange.Length) return 0;
+        double r = plus - q * 10;
+        double coef = UnlimitedRange[(int)q] + UnlimitedCoefficient[(int)q] * r;
+        return (int)(baseLevel * 2 + baseLevel * coef);
     }
 
     /// <summary>
@@ -100,7 +120,7 @@ public static class ItemLevels
     /// others add up. Then by that count: none, the slot 5 levels are added; one (or more than two), they are added divided
     /// by <paramref name="divisor"/> (BothHandGearScorePenaltyDiv), in float as the exe adds them to the unsigned sums; two,
     /// Lua CalcOHItemAdditionalLevel(low, high, low max, high max) of the two hands' levels is added, here
-    /// <paramref name="oneHanded"/>. Null when an item level or the Lua part is not known.
+    /// <paramref name="oneHanded"/>. Null when an item level or the two-hand Lua part is not known.
     /// </summary>
     public static (uint Total, uint Additional)? Worn(IReadOnlyDictionary<int, Item> layer0, float divisor, Func<Item, bool> canUse,
         Func<int, int, int, int> unlimitedEnchant = null, Func<uint, uint, uint, uint, (int Min, int Max)?> oneHanded = null)
