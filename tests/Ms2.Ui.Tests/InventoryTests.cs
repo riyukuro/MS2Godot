@@ -3,6 +3,7 @@ using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -172,5 +173,24 @@ public class InventoryTests
         var item = InventoryController.ToItem(e, model.Tables.Items);
         Assert.That((item.LockState, item.UnlockTime, item.EnchantLevel, item.UnlimitedEnchantLevel), Is.EqualTo((1, 77L, 5, 2)));
         Assert.That(item.Record, Is.SameAs(e));
+    }
+
+    [Test]
+    public void TheWornItemComparedIsTheClients()
+    {
+        var model = NewModel(); var t = model.Tables;
+        EquipItem E(int id, long uid, EquipSlot slot) => new() { Id = id, Uid = uid, Slot = slot, Rarity = 1 };
+        Item Hover(int id) => InventoryController.ToItem(E(id, 999, EquipSlot.Unknown), t.Items);
+        var top = new PcInfo { Equips = new[] { E(11400001, 1, EquipSlot.CL), E(13000001, 2, EquipSlot.RH), E(14000001, 3, EquipSlot.LH) } };
+        var worn = WornEquipment.Of(top, t.Items);
+        Assert.That(worn.ForCompare(Hover(11400001), t.ItemModels, false)?.Uid, Is.EqualTo(1L), "the model's first group, CL");
+        Assert.That(worn.ForCompare(Hover(11400021), t.ItemModels, false), Is.Null, "a skin item looks in layer 1");
+        Assert.That(worn.ForCompare(Hover(15300001), t.ItemModels, false)?.Uid, Is.EqualTo(2L), "two-handed: RH first");
+        Assert.That((worn.ForCompare(Hover(13100001), t.ItemModels, false)?.Uid, worn.ForCompare(Hover(13100001), t.ItemModels, true)?.Uid),
+            Is.EqualTo((2L, 3L)), "subtype 0x1f: RH, LH with Shift");
+        var leftOnly = WornEquipment.Of(new PcInfo { Equips = new[] { E(14000001, 3, EquipSlot.LH) } }, t.Items);
+        Assert.That(leftOnly.ForCompare(Hover(15300001), t.ItemModels, false)?.Uid, Is.EqualTo(3L), "two-handed: then LH");
+        Assert.That((worn.Wears(3), worn.Wears(999)), Is.EqualTo((true, false)));
+        Assert.That(WornEquipment.Of(new PcInfo(), t.Items), Is.Null, "no equipment lists");
     }
 }

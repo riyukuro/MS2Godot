@@ -568,27 +568,12 @@ public sealed class MyInfoController : UiController
         : bag == GemBag && gemBagRecord != null ? Enumerable.Range(0, GemTypes.Length).Select(i => GemBag + "." + i.ToString(CultureInfo.InvariantCulture))
         : Array.Empty<string>();
 
-    /// <summary>
-    /// The record's m_mapEquip0 / 1 / 2 (PC::vfunc_126, pc.cpp:4171): per layer, the item at its slot (CItem m_68, the
-    /// packet's equip slot; FUN_140527a20's model group fallback for slot 0 is not here, such an item is left out). The layer
-    /// is CItem::FUN_14052a170 (item.cpp:1629): 2 for the variant-2 outfits, else 1 with a skin type, else 0 (cash or not;
-    /// property.flag08, layer 3, is never loaded: ItemProperty::Load, itemdatastruct.cpp:1122). Null when the record has no
-    /// equipment lists.
-    /// </summary>
+    /// <summary>The record's equipment layer maps (<see cref="WornEquipment.Layers"/>), kept for the record.</summary>
     Dictionary<int, Item>[] EquipMaps(PcInfo r)
     {
         if (r?.Equips == null) return null;
         if (ReferenceEquals(r, mapsRecord)) return maps;
-        var m = new[] { new Dictionary<int, Item>(), new Dictionary<int, Item>(), new Dictionary<int, Item>() };
-        void Add(EquipItem e, bool outfit2)
-        {
-            var it = InventoryController.ToItem(e, Model.Tables.Items);
-            if (it == null || (int)e.Slot == 0) return;
-            int layer = outfit2 ? 2 : it.Data.HasSkinType ? 1 : 0;
-            m[layer][(int)e.Slot] = it;
-        }
-        foreach (var e in r.Equips) Add(e, false);
-        if (r.Outfit2 != null) foreach (var e in r.Outfit2) Add(e, true);
+        var m = WornEquipment.Layers(r, Model.Tables.Items);
         mapsRecord = r; maps = m;
         return m;
     }
