@@ -283,7 +283,8 @@ public partial class HudScene : Node
 
     /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
     /// dialogs, the quest log.</summary>
-    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.Vfunc55 == false;
+    bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.Vfunc55 == false
+                                    || inventory?.IsClosed == false;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -291,6 +292,7 @@ public partial class HudScene : Node
         if (questLog != null && questLogSide?.IsClosed == false) questLogSide.Close();
         if (WorldMapOpen) worldMapSide.Close();
         if (optionHost?.Vfunc55 == false) optionHost.Movie.Close();
+        if (inventory?.IsClosed == false) inventory.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -695,8 +697,9 @@ public partial class HudScene : Node
 
     /// <summary>
     /// The scene's action keys and an open dialog's Escape, while nothing takes typing. UISceneGame::vfunc_13 runs the
-    /// action keys (IsActionKeyPressed 0x61a87, the quest log, action 400007: DIK 38, L, in table/default/defaultkey.xml)
-    /// through CKeyTable::FUN_14142b300, which toggles the dialog (keytable.cpp: case 400007, ToggleDialog(0x4e3e)).
+    /// action keys (IsActionKeyPressed 0x61a87, the quest log, action 400007: DIK 38, L; the inventory, action 400001: DIK 23, I;
+    /// in table/default/defaultkey.xml) through CKeyTable::FUN_14142b300, which toggles the dialog (keytable.cpp: case 400007,
+    /// ToggleDialog(0x4e3e); case 400001, ToggleDialog(0x4e2d)).
     /// UIDialog::vfunc_13: Escape closes an open dialog (vfunc_69 -> vfunc_67).
     /// </summary>
     bool DialogKeys(InputEvent e)
@@ -706,8 +709,10 @@ public partial class HudScene : Node
         if (k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }      // action 400006, DIK 50 (keytable.cpp:744)
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
         if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
+        if (k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
+        if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         return false;
     }
 
@@ -993,11 +998,64 @@ public partial class HudScene : Node
         if (id == 0x4e21) { if (systemMenu == null || systemMenu.IsClosed) OpenSystemMenu(); else systemMenu.Close(); }
         else if (id == 0x4e3e) ToggleQuestLog();
         else if (id == 0x4e42) ToggleWorldMap();
+        else if (id == 0x4e2d) ToggleInventory();
+    }
+
+    // ---- inventory: uiinventorydialog run by its own ActionScript, UIInventoryDialog's C++ side as InventoryController --
+
+    MovieDialog inventoryMovie;                 // from open until OnEndClose
+    Ms2.Ui.Hud.InventoryController inventory;
+    Ms2.Net.Packets.InventoryView offlineInventory;
+
+    /// <summary>CUIService::ToggleDialog(0x4e2d): open when closed (vfunc_55), else vfunc_67.</summary>
+    void ToggleInventory()
+    {
+        if (inventory == null || inventory.IsClosed) OpenInventory();
+        else inventory.Close();
+    }
+
+    /// <summary>
+    /// Opens the inventory over the live session's bag (the item packets) or, offline, a fixture bag in the item packet's
+    /// shape (<see cref="UiFixture.InventoryItems"/>). Requests stay unsent: the sort, the slot expansion, the bank call,
+    /// item use and the dialogs the buttons open are only logged.
+    /// </summary>
+    void OpenInventory()
+    {
+        if (inventoryMovie != null) { inventoryMovie.Host.Unload(); inventoryMovie.QueueFree(); inventoryMovie = null; }
+        var view = Ms2Godot.Net.LiveSession.Instance?.Inventory ?? OfflineInventory();
+        var c = new Ms2.Ui.Hud.InventoryController
+        {
+            View = view,
+            BaseSlots = Ms2Godot.Net.BagSlotTable.Load(assets.Packs),
+            MaxSlots = Ms2Godot.Net.BagSlotTable.LoadMax(assets.Packs),
+        };
+        c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
+        c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
+        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        c.Unloaded += () =>
+        {
+            m.Host.Unload();
+            m.QueueFree();
+            if (inventoryMovie == m) inventoryMovie = null;
+        };
+        inventory = c; inventoryMovie = m;
+        uiRoot.AddChild(m);
+    }
+
+    Ms2.Net.Packets.InventoryView OfflineInventory()
+    {
+        if (offlineInventory != null) return offlineInventory;
+        var kinds = new Ms2Godot.Net.ItemKinds(assets.Packs);
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = kinds.TabOf, BaseSlots = Ms2Godot.Net.BagSlotTable.Load(assets.Packs) };
+        foreach (var g in UiFixture.InventoryItems().GroupBy(i => kinds.TabOf(i.Id)))
+            book.Apply(new Ms2.Net.Packets.ItemMessage.LoadTab(g.Key, g.ToList()));
+        return offlineInventory = new Ms2.Net.Packets.InventoryView(book);
     }
 
     public override void _Process(double delta)
     {
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
+        if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);

@@ -11,7 +11,12 @@ namespace Ms2Godot.Net;
 /// (Constants +0x74d8..), each used when its feature attribute is on (IsFeatureEnabledByName); BagRenewal01 (id 116) gates the whole table.
 /// </summary>
 public static class BagSlotTable {
-    public static Func<int, int> Load(PackSet packs) {
+    public static Func<int, int> Load(PackSet packs) => Read(packs, BagSlots.Base);
+
+    /// <summary>The expand maximum per tab (FUN_140a66750), from the same entries.</summary>
+    public static Func<int, int> LoadMax(PackSet packs) => Read(packs, BagSlots.Max);
+
+    static Func<int, int> Read(PackSet packs, Func<int, bool, Func<string, int[]>, int> pick) {
         var values = new Dictionary<string, int[]>();
         if (packs.Exists("Xml", "table/constants.xml")) {
             var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")).TrimStart('﻿'));
@@ -23,6 +28,6 @@ public static class BagSlotTable {
             }
         }
         bool renewal = LobbyFeatures.IsEnabled(packs, "BagRenewal01");
-        return tab => BagSlots.Base(tab, renewal, k => values.GetValueOrDefault(k));
+        return tab => pick(tab, renewal, k => values.GetValueOrDefault(k));
     }
 }

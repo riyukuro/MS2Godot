@@ -93,6 +93,12 @@ public sealed class InventoryView {
         pending |= PendingNew | PendingExpand | PendingRebuild;
     }
 
+    /// <summary>vfunc_67 0x141997330's tail: the bag dropped (FUN_14140ed60) and m_19c = 0; the view stops calling the UI until bound again.</summary>
+    public void Unbind() {
+        binding = null;
+        pending = 0;
+    }
+
     /// <summary>GetTabButtonIndex 0x14199d920: m_1a8[tab], 0 for a tab outside the array.</summary>
     public int TabButton(int tab) => tab < 0 || tab >= TabButtons.Length ? 0 : TabButtons[tab];
 

@@ -28,6 +28,18 @@ public static class UiFixture
         m.FixtureLabel = Label;
     }
 
+    /// <summary>
+    /// FIXTURE bag for the inventory without a server: items in the parsed shape of the item packet the server sends at login
+    /// (ItemInventory mode 8, LoadTab: id, uid, slot, amount; Ms2.Net ItemMessage), with real item ids, not a recorded bag.
+    /// </summary>
+    public static IReadOnlyList<Ms2.Net.Packets.EquipItem> InventoryItems() => new Ms2.Net.Packets.EquipItem[]
+    {
+        new() { Id = 15000001, Uid = 1001, InventorySlot = 0, Amount = 1, Rarity = 2 },
+        new() { Id = 20000004, Uid = 1002, InventorySlot = 0, Amount = 120, Rarity = 1 },
+        new() { Id = 20000013, Uid = 1003, InventorySlot = 1, Amount = 5, Rarity = 1 },
+        new() { Id = 30000001, Uid = 1004, InventorySlot = 0, Amount = 3, Rarity = 1 },
+    };
+
     /// <summary>A KeyTable packet in the server's layout (Ms2.Net ServerKeyTable): mode 0 with the use-default flag, which
     /// makes the client load DefaultKey.xml and read no pages (OnKeyTable, keytable.cpp:285), so every quick slot is empty.</summary>
     public static Ms2.Net.Packets.ServerKeyTable NewCharacterKeyTable()
