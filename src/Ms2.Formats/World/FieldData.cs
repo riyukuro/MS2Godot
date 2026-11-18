@@ -40,6 +40,10 @@ public sealed class FieldData
     public float SimpleShadow = 0.5f;
     /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
     public bool CheckClimb = true;
+    /// <summary>&lt;property checkFly&gt; (CFieldData default 0), &lt;ui useEPSkill usePet&gt; (CFieldDataCli, default 1; fielddatacli.cpp:228).</summary>
+    public bool CheckFly, UseEPSkill = true, UsePet = true;
+    /// <summary>&lt;property skillUseDisable&gt;: a comma list of skill main types, each a bit of m_nSkillUseDisableMask (fielddata.cpp:707).</summary>
+    public uint SkillUseDisableMask;
     /// <summary>&lt;ui instancingGrid&gt;: the hardware-instancing cell edge (CFieldDataCli m_nInstancingGrid, default 0 = one cell);
     /// WorldService::FUN_141bc72f0 hands it to HardwareInstancingService::SetCellSize before BuildInstancings.</summary>
     public int InstancingGrid;
@@ -77,6 +81,12 @@ public sealed class FieldData
             }
             var prop = env.Element("property") ?? fd.Element("property");
             if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
+            if ((string)prop?.Attribute("checkFly") is { } cf) o.CheckFly = cf != "0";
+            if ((string)prop?.Attribute("skillUseDisable") is { } sud)
+                foreach (var t in sud.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bit)) o.SkillUseDisableMask |= 1u << bit;
+            if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
+            if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
             if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
             if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
             if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;

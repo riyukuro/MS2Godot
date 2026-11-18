@@ -11,12 +11,38 @@ public sealed class SkillLevelData
     /// <summary>m_nCooldown in ms; GetCooldown (:917) is it times 0.001.</summary>
     public uint CooldownMs;
     public string StringParam = "";
+    /// <summary>&lt;level meso&gt; (:928).</summary>
+    public int Meso;
+    /// <summary>The skill the level belongs to (SkillLevelData(SkillData*); GetSkill / GetSkillId).</summary>
+    public SkillData Skill;
+    /// <summary>HasSequenceName @0x140804450 (:873): a &lt;motion&gt; of the level has a sequenceName (SkillMotionData::Load :1161).</summary>
+    public bool HasSequenceName;
 
     public float Cooldown => CooldownMs * 0.001f;
 }
 
 /// <summary>A &lt;condition&gt;&lt;weapon lh rh&gt; of a skill (SkillCondition::Load @0x1407e6f20, skilloverlapcompare.cpp:554).</summary>
 public readonly record struct SkillWeapon(int LeftHand, int RightHand);
+
+/// <summary>
+/// &lt;basic&gt;&lt;condition&gt; (SkillCondition::Load @0x1407e6f20, skilloverlapcompare.cpp:522); the ctor (:443) leaves every flag 0.
+/// The weapons are <see cref="SkillData.Weapons"/>.
+/// </summary>
+public sealed class SkillCondition
+{
+    public bool UseCoolDownShowUI, OnlyShadowWorld, OnlyFlyableMap, AllowBattleRidingState, OnlyBattleRidingState;
+    public int Sp;
+    public readonly List<uint> RequireEffect = new(), RequireMapCodes = new();
+    public readonly List<int> HasNotAdditionalEffectGroup = new();
+}
+
+/// <summary>&lt;basic&gt;&lt;changeSkill&gt; (Unk_SkillBlockB0::Load @0x1408034a0, skillleveldata.cpp:600): the effect checks and the skills
+/// they swap in, as comma lists.</summary>
+public sealed class SkillChange
+{
+    public readonly List<uint> CheckEffectId = new(), CheckEffectOverlapCount = new(), ChangeSkillId = new();
+    public readonly List<ushort> CheckEffectLevel = new();
+}
 
 /// <summary>One &lt;skill&gt; of skilldata/*.xml (SkillData::Load @0x1407e9130, commonfiles/skilloverlapcompare.cpp:814): the basic
 /// block's parts the skill window and its tooltip read, and the levels.</summary>
@@ -29,6 +55,12 @@ public sealed class SkillData
     public uint Tooltip;
     public ushort MaxLevelRaw;
     public readonly List<SkillWeapon> Weapons = new();
+    public readonly SkillCondition Condition = new();
+    public readonly SkillChange Change = new();
+    /// <summary>&lt;ui disableChangeSkillIconEffect&gt;.</summary>
+    public bool DisableChangeSkillIconEffect;
+    /// <summary>&lt;stateAttr rechargeMaxCount cooldownGroupID&gt;.</summary>
+    public uint RechargeMaxCount, CooldownGroupId;
     readonly Dictionary<ushort, SkillLevelData> levels = new();
 
     /// <summary>
@@ -48,14 +80,40 @@ public sealed class SkillData
             s.Icon = (string)ui.Attribute("icon") ?? "";
             s.AttackType = Xml.Int(ui, "attackType");
             s.Tooltip = Xml.UInt(ui, "tooltip");
+            s.DisableChangeSkillIconEffect = Xml.Bool(ui, "disableChangeSkillIconEffect");
         }
         if (basic.Element("kinds") is { } kinds)
         {
             s.RangeType = Xml.Int(kinds, "rangeType");
             s.Element = Xml.Int(kinds, "element");
         }
+        if (basic.Element("stateAttr") is { } state)
+        {
+            s.RechargeMaxCount = Xml.UInt(state, "rechargeMaxCount");
+            s.CooldownGroupId = Xml.UInt(state, "cooldownGroupID");
+        }
+        if (basic.Element("changeSkill") is { } ch)
+        {
+            static List<string> T(XElement e, string n) => Xml.Tokens((string)e.Attribute(n));
+            s.Change.CheckEffectId.AddRange(T(ch, "changeSkillCheckEffectID").Select(t => (uint)Xml.Atoi(t)));
+            s.Change.CheckEffectLevel.AddRange(T(ch, "changeSkillCheckEffectLevel").Select(t => (ushort)Xml.Atoi(t)));
+            s.Change.CheckEffectOverlapCount.AddRange(T(ch, "changeSkillCheckEffectOverlapCount").Select(t => (uint)Xml.Atoi(t)));
+            s.Change.ChangeSkillId.AddRange(T(ch, "changeSkillID").Select(t => (uint)Xml.Atoi(t)));
+        }
         if (basic.Element("condition") is { } cond)
+        {
+            var c = s.Condition;
+            c.UseCoolDownShowUI = Xml.Bool(cond, "useCoolDownShowUI");
+            c.OnlyShadowWorld = Xml.Bool(cond, "onlyShadowWorld");
+            c.OnlyFlyableMap = Xml.Bool(cond, "onlyFlyableMap");
+            c.AllowBattleRidingState = Xml.Bool(cond, "allowBattleRidingState");
+            c.OnlyBattleRidingState = Xml.Bool(cond, "onlyBattleRidingState");
+            c.Sp = Xml.Int(cond, "sp");
+            foreach (var r in cond.Elements("requireEffect")) c.RequireEffect.Add(Xml.UInt(r, "code"));
+            foreach (var r in cond.Elements("requireMapCodes")) c.RequireMapCodes.Add(Xml.UInt(r, "code"));
+            foreach (var r in cond.Elements("hasNotAdditionalEffectGroup")) c.HasNotAdditionalEffectGroup.Add(Xml.Int(r, "id"));
             foreach (var w in cond.Elements("weapon")) s.Weapons.Add(new SkillWeapon(Xml.Int(w, "lh"), Xml.Int(w, "rh")));
+        }
         foreach (var l in collect(e, "level", "value"))
         {
             var lv = new SkillLevelData
@@ -65,6 +123,9 @@ public sealed class SkillData
                 Ep = Xml.Int(l, "ep"),
                 CooldownMs = Xml.UInt(l, "cooldown"),
                 StringParam = (string)l.Attribute("stringParam") ?? "",
+                Meso = Xml.Int(l, "meso"),
+                Skill = s,
+                HasSequenceName = l.Elements("motion").Any(m => !string.IsNullOrEmpty((string)m.Attribute("sequenceName"))),
             };
             if (lv.Level < 1) return s;
             s.levels[lv.Level] = lv;
@@ -79,6 +140,16 @@ public sealed class SkillData
     public uint OriginId => OriginIdRaw != 0 ? OriginIdRaw : Id;
     /// <summary>FUN_1407e9de0 (:1053): main type 6 is a passive skill.</summary>
     public bool IsPassive => MainType == 6;
+    /// <summary>IsEmotion @0x1407e9d30 (:1018): main types 14 and 15.</summary>
+    public bool IsEmotion => MainType is 14 or 15;
+    /// <summary>FUN_1407e9d70 (:1035): main types 3, 5, 7, 10, 17, 18, 19 (the item / ride / pet / glide kinds).</summary>
+    public bool IsItemKind => MainType is 3 or 5 or 7 or 10 or 17 or 18 or 19;
+    /// <summary>FUN_1407e9ea0 (:1082): main types 3, 5, 17, 18.</summary>
+    public bool IsItemCountKind => MainType is 3 or 5 or 17 or 18;
+    /// <summary>FUN_1407e9bd0 (:965): the action of main types 7, 10, 11, 12, 13 (0x1e glide, 0x26, 0x1c, 0x20, 0x1d climb), else 0.</summary>
+    public int ActionKind => MainType switch { 7 => 0x1e, 10 => 0x26, 11 => 0x1c, 12 => 0x20, 13 => 0x1d, _ => 0 };
+    /// <summary>GetCooldownKey @0x1407e9c40 (:985): the cooldown group in the high word, the id in the low one.</summary>
+    public ulong CooldownKey => ((ulong)CooldownGroupId << 32) | Id;
 }
 
 /// <summary>
