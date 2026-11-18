@@ -1297,7 +1297,10 @@ public partial class HudScene : Node
         while (queue.Count > 0)
         {
             var d = queue.Dequeue();
-            if (d != o && Ms2.Avm2.Rt.ToString(h.Get(d, "name")) == name) return d;
+            // "prop=value" picks the descendant whose AS property has that value (e.g. m_skillID=10500021), else by name
+            if (d != o && (name.IndexOf('=') is var eq and > 0
+                    ? Ms2.Avm2.Rt.ToString(h.Get(d, name[..eq])) == name[(eq + 1)..]
+                    : Ms2.Avm2.Rt.ToString(h.Get(d, "name")) == name)) return d;
             if (d is Ms2.Avm2.Flash.AsContainer c) foreach (var k in c.Children) queue.Enqueue(k);
         }
         return null;
