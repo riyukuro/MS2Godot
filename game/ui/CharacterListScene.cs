@@ -187,20 +187,12 @@ public partial class CharacterListScene : LobbyFieldScene
         if (next != null && ReferenceEquals(prev, next)) return;
         Flow.Session.SelectedIndex = index >= 0 ? index : logic.SelectedIndex;
         logic.MouseEnabled = false;
-        // The restored client (front-end captures, clips 1_b/1_d/1_g): on the select map already up the field is not loaded
-        // again and keeps animating, and the new character appears in one frame (a hard cut); on another job's map the old
-        // map and character crossfade into the new ones, with no black frame and no loading screen.
-        int nextMap = tables?.SelectMap(SelectedJobGroup()) ?? -1;
-        if (tables != null && nextMap == mapId) CallDeferred(MethodName.SwapPreview);
-        else CrossfadeReload();
-    }
-
-
-    /// <summary>The same select map: the field stays, the preview is replaced (PreviewSelectedCharacter) and input comes back.</summary>
-    void SwapPreview()
-    {
-        PreviewSelected();
-        logic.MouseEnabled = true;
+        // WorldService::LoadMap returns early only while that map is still loading (m_state 2; a loaded map is at 4,
+        // HandleWorldLoadedMessage result 4), so the select map already up is loaded again too, and the preview comes
+        // back through the world-loaded callback (CSceneStateMulti::vfunc_1 -> PreviewSelectedCharacter). The restored
+        // client's captures agree: on the same job the old character crossfades into the new one over about 0.4 s,
+        // starting about 0.6 s after the click, as on a job change (front-end clips 1_b, eagle e2/e3).
+        CrossfadeReload();
     }
 
     /// <summary>The frame on screen when the map changes; the next scene fades it out over its own first frames.</summary>
