@@ -535,9 +535,13 @@ namespace Ms2.Avm2.Flash
 
         internal void LoadInto(AsLoader l, string url)
         {
-            // Scaleform reads the game's image files synchronously: the load completes inside load()
-            bool image = url != null && !url.EndsWith(".swf", StringComparison.OrdinalIgnoreCase) && !url.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase);
-            if (image) Finish(); else Later(Finish);
+            // Only the "simg://" and "simgps://" protocols load inside load() (LoaderImpl::IsProtocolImage sets sync for
+            // the 's' prefix only, sfr_gfx_02f.cpp:1046-1074; MovieRoot::AddNewLoadQueueEntry processes those at once,
+            // sfr_as3_16.cpp:2162-2183). Everything else, "img://" included, goes on the load queue and fires its
+            // init / complete events when MovieRoot::ProcessLoadQueueEntry runs it (sfr_as3_18.cpp:8314), so a listener
+            // added after load() still hears them.
+            bool sync = url != null && (url.StartsWith("simg://", StringComparison.OrdinalIgnoreCase) || url.StartsWith("simgps://", StringComparison.OrdinalIgnoreCase));
+            if (sync) Finish(); else Later(Finish);
             void Finish()
             {
                 LoadUrl?.Invoke(l, url);
