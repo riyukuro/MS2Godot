@@ -305,11 +305,11 @@ The project contains no local paths. The paths are looked up in this order:
 
 ### Window
 
-The window works like the client's windowed mode (`CWindowService::InitInstance`, window style `0xCA0000`: a caption,
-the system menu and a minimise box, with no maximise box and no sizing frame). It cannot be maximised or resized by
-dragging; it starts at 1280x720, centred. The client changes the size only through Options -> Resolution, which this
-project does not have yet. The front-end scenes (login, character select, character create) still lay themselves out
-again when the window size changes, for that path.
+The client's windowed mode (`CWindowService::InitInstance`, window style `0xCA0000`: a caption, the system menu and a
+minimise box, with no maximise box and no sizing frame) cannot be maximised or resized by dragging; it changes size only
+through Options -> Resolution. This project does not have that option yet, so for now its window stays resizable and
+starts at 1280x720, centred. It will take the client's fixed window once the resolution option exists. The front-end
+scenes (login, character select, character create) lay themselves out again when the window size changes.
 
 Not the client: the client's full-screen option switches the display itself to the chosen resolution (an exclusive
 display mode, not a window stretched over the desktop). This project has no full-screen option.
