@@ -368,6 +368,17 @@ public sealed class ModelBuilder
         var hair = m.Material == "MS2CharacterHairMaterial" && m.Tangents != null && m.Textures.TryGetValue("shader1", out var hn) ? Texture(hn) : null;
         sm.SetShaderParameter(ShaderParam.HasHair, hair != null);
         if (hair != null) sm.SetShaderParameter(ShaderParam.HairTex, hair);
+        // MS2StandardMaterial (and its alpha-boost name) adds the glow map's colour after lighting
+        // (HandleMS2PostLightTextureApplication, ms2standardmaterial.cpp:1542-1555; NiStandardMaterial::HandleGlowMap:
+        // TEXTURE_RGB_APPLY_ADD of the glow rgb), scaled by the GlowModifier attribute when the mesh has one (:252-257,
+        // HandleGlowModifier :1353-1363)
+        var glow = m.Material is "MS2StandardMaterial" or "MS2AlphaBoostMaterial" && m.Textures.TryGetValue("glow", out var gwn) ? Texture(gwn) : null;
+        sm.SetShaderParameter(ShaderParam.HasGlow, glow != null);
+        if (glow != null)
+        {
+            sm.SetShaderParameter(ShaderParam.GlowTex, glow);
+            sm.SetShaderParameter(ShaderParam.GlowScale, m.ExtraFloats.GetValueOrDefault("GlowModifier", 1f));
+        }
         bool test = m.AlphaTestOn || m.AlphaTest;
         sm.SetShaderParameter(ShaderParam.AlphaTest, test);
         sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);

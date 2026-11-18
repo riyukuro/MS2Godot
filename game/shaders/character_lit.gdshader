@@ -17,7 +17,8 @@
 //   half-lambert term, so it never drops to zero on the dark side. Hair averages that with an anisotropic term: its
 //   tangent map gives a direction T in the surface plane and the highlight follows 1 - (T.H)^2.
 // - Final: emissive + scene ambient * material ambient + diffuse * colour boost * material diffuse, clamped, times
-//   the dyed texture, plus the specular; gamma space, as field_lit.gdshader.
+//   the dyed texture, plus the glow map (MS2StandardMaterial meshes, times GlowModifier), plus the specular; gamma
+//   space, as field_lit.gdshader.
 //
 // Not done: face decals.
 shader_type spatial;
@@ -63,6 +64,9 @@ uniform bool has_hair = false;
 uniform bool specular_on = false;
 uniform vec3 mat_specular = vec3(0.0);
 uniform float spec_power = 1.0;
+uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool has_glow = false;
+uniform float glow_scale = 1.0;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
 
@@ -146,5 +150,9 @@ void fragment() {
 	}
 
 	vec3 lit = clamp(emissive + (own ? own_ambient : ms2_ambient) * mat_ambient + diffuse * mat_diffuse, 0.0, 1.0);
-	ALBEDO = to_linear(lit * t.rgb + spec);
+	vec3 c = lit * t.rgb;
+	if (has_glow) {
+		c += texture(glow_tex, UV).rgb * glow_scale;
+	}
+	ALBEDO = to_linear(c + spec);
 }

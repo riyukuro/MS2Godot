@@ -26,7 +26,7 @@ static class ShaderParam
         FresnelBoost = "fresnel_boost",
         FresnelExponent = "fresnel_exponent",
         GlossTex = "gloss_tex",
-        GlowTex = "glow_tex",
+        GlowTex = "glow_tex", GlowScale = "glow_scale",
         HairTex = "hair_tex",
         HasCtrl = "has_ctrl",
         HasDark = "has_dark",
