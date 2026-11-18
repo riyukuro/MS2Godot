@@ -164,7 +164,10 @@ switch (pos[0])
         var meta = Ms2.Quest.FieldMeta.Load(packs);
         var fd = System.Xml.Linq.XDocument.Load(new MemoryStream(packs.Read("Xml", "table/fielddata.xml")));
         var codes = Ms2.Quest.QuestTable.FieldCodes(fd, table.Available);
-        var log = new Ms2.Quest.QuestLog(table, new Ms2.Quest.QuestShotState(table, 30)) { Meta = meta, FieldCodes = codes };
+        Ms2.Quest.IQuestState qstate = pos.Count > 5
+            ? new Ms2.Quest.QuestShotState(table, int.Parse(pos[5].Split(':')[0]), pos[5].Split(':')[1].Split(',').Select(int.Parse))
+            : new Ms2.Quest.QuestShotState(table, 30);
+        var log = new Ms2.Quest.QuestLog(table, qstate) { Meta = meta, FieldCodes = codes };
         var c = new Ms2.Ui.Hud.QuestDialogController { Log = log, OpenTab = tab, OpenSubTab = sub };
         var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
         p.StageW = 1920; p.StageH = 1080;
@@ -189,6 +192,19 @@ switch (pos[0])
         h.Set(list, "scrollPosition", scroll);
         for (int i = 0; i < 5; i++) p.Tick();
         Show($"after scrollPosition={scroll}");
+        if (pos.Count > 4)
+        {
+            // questlog TAB SUBTAB SCROLL SELECT [LEVEL:ID,ID..]: the detail pane of a selected quest (SelectQuest)
+            table.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(packs, Ms2.Ui.FeatureTable.Names[id - 1]);
+            var detail = Ms2.Quest.QuestDetail.Select(log, int.Parse(pos[4]), c.GetSubTabFilter(), c.Detail);
+            foreach (var (k, v) in detail?.Members ?? new()) Console.WriteLine($"setData {k} = {(v is Ms2.Quest.QuestInfoObject o ? string.Join(", ", o.Members.Select(m => $"{m.Name}={m.Value}")) : v)}");
+            c.SelectQuest(int.Parse(pos[4]));
+            for (int i = 0; i < 10; i++) p.Tick();
+            var sbi = new StringBuilder();
+            DumpTo(sbi, (AsDisplayObject)h.Child("m_questInfo"), 0);
+            Console.WriteLine($"-- detail of {pos[4]}");
+            Console.Write(sbi);
+        }
         foreach (var e in rt.Errors.Take(10)) Console.WriteLine("ERROR " + e);
         foreach (var (k, n) in rt.Missing.Take(20)) Console.WriteLine($"MISSING {k} x{n}");
         // the hand port's rows over the same tree (QuestLogTree.RequestItemRange, as QuestDialog draws them)

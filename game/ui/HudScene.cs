@@ -37,6 +37,10 @@ public partial class HudScene : Node
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
     QuestDialog questDialog;                // UIQuestDialog, the quest log
     int[] questShot;                        // --questlog TAB,SUBTAB[,ROW[,SCROLL]]: the shot opens the quest log on these tabs (clicks a row, scrolls the list)
+    int[] uigenQuest;                       // --uigen-questlog TAB,SUBTAB[,QUEST]: the shot opens the quest log from its own movie, selecting the quest
+    string questState;                      // --questlog-state LEVEL:ID,ID,..[:TRACKING]: the shot's quest state is these quests in progress at that level
+    MovieDialog movieQuestLog;
+    static DungeonRooms dungeonRooms;
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
     public override void _Ready()
@@ -45,6 +49,8 @@ public partial class HudScene : Node
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         questFixture = args.Contains("--questlog-fixture");
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-questlog") uigenQuest = args[i + 1].Split(',').Select(int.Parse).ToArray();
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(new PackSet(dataDir));
@@ -838,6 +844,63 @@ public partial class HudScene : Node
         }
     }
 
+    /// <summary>
+    /// The quest log run from its movie (uiquestdialog) with UIQuestDialog's C++ side (QuestDialogController), for a shot:
+    /// the translated code is loaded when it is built for this data, the tab and sub-tab are the ones it opens on.
+    /// </summary>
+    void OpenMovieQuestLog()
+    {
+        if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the quest log runs interpreted");
+        var log = QuestLogSource();
+        if (log == null) return;
+        if (questState != null)
+        {
+            var parts = questState.Split(':');
+            log.State = new QuestShotState(questTable, int.Parse(parts[0]), parts[1].Split(',').Select(int.Parse), parts.Length > 2 ? int.Parse(parts[2]) : 0);
+        }
+        // CFeatureManager by id for the bold words' dictionary links (feature 0x2f)
+        questTable.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length
+                                                && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]);
+        var model = new Ms2.Ui.UiModel(new Ms2.Ui.GameTables(assets.Packs, "en"))
+        { FeatureEnabledByName = f => Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, f) };
+        var fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+        var c = new Ms2.Ui.Hud.QuestDialogController
+        {
+            Log = log, OpenTab = uigenQuest[0], OpenSubTab = uigenQuest[1],
+            Detail = new QuestDetailContext
+            {
+                FieldId = fieldId,
+                LocalTm = Ms2.Net.MsTime.LocalTm,
+                Map = QuestMapGraph.From(fieldMeta),
+                // offline: the player is alive in this field, no party search, the server time unknown (no end time line)
+                Buttons = (d, q) => QuestCommon.Buttons(d, q, new QuestButtonInputs
+                {
+                    FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
+                    DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
+                }, fieldMeta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
+            },
+        };
+        var t = System.Diagnostics.Stopwatch.StartNew();
+        movieQuestLog = new MovieDialog(assets, c, model, GetWindow().Size);
+        GD.Print($"movie quest log: load={movieQuestLog.Loaded} in {t.ElapsedMilliseconds} ms, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
+        uiRoot.AddChild(movieQuestLog);
+    }
+
+    /// <summary>A click on the quest's row (the row the client's getIndex gives, ScrollToQuest), as the player selects it.</summary>
+    void ClickMovieQuest(int id)
+    {
+        if (movieQuestLog == null) return;
+        var h = movieQuestLog.Host;
+        int index = Ms2.Avm2.Rt.ToInt32(h.Invoke("getIndex", (uint)id));
+        var list = h.Child("m_questList");
+        if (index < 0 || list == null) { GD.PushWarning($"quest {id} is not in the list"); return; }
+        int scroll = Ms2.Avm2.Rt.ToInt32(h.Get(list, "scrollPosition"));
+        if (h.Invoke(list, "getRendererAt", index - scroll) is not Ms2.Avm2.Flash.AsDisplayObject r) { GD.PushWarning("no renderer for row " + index); return; }
+        var b = r.GetBounds(null);
+        movieQuestLog.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
+        movieQuestLog.Step(10);
+    }
+
     static QuestTable questTable;           // the quest log's tables, read when the log first lists (QuestDataTable, CQuestUIData)
     static Dictionary<int, (int Continent, int Region)> fieldCodes;
 
@@ -1189,6 +1252,8 @@ public partial class HudScene : Node
         target?.Process(delta);
         questDialog?.Process(delta);
         if (shotDir == null) return;
+        if (uigenQuest != null && frames == 200) OpenMovieQuestLog();
+        if (uigenQuest != null && frames == 230 && uigenQuest.Length > 2) ClickMovieQuest(uigenQuest[2]);
         if (questShot != null && frames == 200) questDialog.Open();
         if (questShot != null && frames == 210) questDialog.ClickTab(false, questShot[0]);
         if (questShot != null && frames == 220 && questShot.Length > 1) questDialog.ClickTab(true, questShot[1]);
