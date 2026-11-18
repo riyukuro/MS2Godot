@@ -22,4 +22,12 @@ public class CameraMathTests {
         (x, y, z) = CameraMath.Euler(0, -1, 0, 0, 0, 0);
         Is3(x, y, z, (90f, 90f, 0f));
     }
+    [Test] public void Float32PerturbedHangleZeroEyeStaysAtPole() {
+        var (x, y, z) = CameraMath.Euler(1e-7, -1, Math.Cos(50 * Math.PI / 180), 0, 0, 0);
+        Is3(x, y, z, (57.27f, 90f, 0f));
+    }
+    [Test] public void NegativePoleGivesPositiveX() {
+        var (x, y, z) = CameraMath.Euler(0, 1, Math.Cos(50 * Math.PI / 180), 0, 0, 0);
+        Is3(x, y, z, (122.73f, -90f, 0f));
+    }
 }

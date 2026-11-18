@@ -239,7 +239,7 @@ public partial class Player
     /// floats follow); Speed = m_pos48 = m_posBF4 = the camera mode's Euler rotation m_setting.m_18 in degrees as int16 (FUN_140afdd40 over the eye and look, ported in Ms2.Net CameraMath; cameramode.cpp:316-331,
     /// targetcameramode.cpp:302,872). It is refreshed with every record while CameraMgr::m_1b0 != 0, which is set at field camera setup (camera.cpp:803 via 1847) and cleared only at teardown (camera.cpp:855; mypc.cpp:2291, 1256),
     /// so it follows the camera; Unknown1 = m_n54 = CameraMgr::GetModeType() when the record is made (mypc.cpp:2331; ridee.cpp:947), 2 for the field's CTargetCameraMode (camera.cpp:780-783, 2020). 17 is CHomeCameraMode
-    /// (homecameramode.h:57), housing only (camera.cpp:1938-1941). Sniff check (kms2-sniffs, builds 2493-2549): Unknown1 = 17 appears only on map 62000000 (housing, builds 2495-2511 incl. the 2525 era files), every other map carries 2. Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime x1000 (the record's age, ms).
+    /// (homecameramode.h:57), housing only (camera.cpp:1938-1941); Unknown1 must become 17 while the player is in a home (CHomeCameraMode) once live housing exists, we always send 2 now. Sniff check (kms2-sniffs, builds 2493-2549): Unknown1 = 17 appears only on map 62000000 (housing, builds 2495-2511 incl. the 2525 era files), every other map carries 2. Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime x1000 (the record's age, ms).
     /// The move direction is in game axes (x, -z godot, y godot).
     /// </summary>
     Ms2.Net.Packets.StateSync LiveRecord(SyncRecord q)

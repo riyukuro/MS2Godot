@@ -19,10 +19,13 @@ public static class CameraMath
         double ux = ry * dz - rz * dy, uy = rz * dx - rx * dz, uz = rx * dy - ry * dx;   // right x dir
         double[,] m = { { dx, ux, rx }, { dy, uy, ry }, { dz, uz, rz } };   // NiMatrix3(dir, up, right) takes columns
         double ax, ay, az;
-        if (m[0, 2] < 1)
+        // ToEulerAnglesXYZ (Matrix3_Win32.cpp:938-971): the pole cases start within EE_RIGHT_ANGLE_EPSILON (1e-3 rad) of +-90 deg, not only at exactly +-1.
+        const double eps = 1e-3;
+        double y = Math.Asin(Math.Clamp(m[0, 2], -1, 1));
+        if (y < Math.PI / 2 - eps)
         {
-            if (m[0, 2] > -1) { ax = Math.Atan2(-m[1, 2], m[2, 2]); ay = Math.Asin(m[0, 2]); az = Math.Atan2(-m[0, 1], m[0, 0]); }
-            else { ax = -Math.Atan2(-m[1, 0], m[1, 1]); ay = -Math.PI / 2; az = 0; }
+            if (y > -(Math.PI / 2 - eps)) { ax = Math.Atan2(-m[1, 2], m[2, 2]); ay = y; az = Math.Atan2(-m[0, 1], m[0, 0]); }
+            else { ax = -Math.Atan2(m[1, 0], m[1, 1]); ay = -Math.PI / 2; az = 0; }
         }
         else { ax = Math.Atan2(m[1, 0], m[1, 1]); ay = Math.PI / 2; az = 0; }
         const double k = 57.2957764;
