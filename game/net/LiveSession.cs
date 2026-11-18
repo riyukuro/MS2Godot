@@ -299,6 +299,11 @@ public partial class LiveSession : Node
                     ApplyItems(p);
                     GD.Print($"live: item packet ({Items.All.Count} items)");
                 }
+                else if (game.Is(p, Inbound.ItemPutOnOrOff))
+                {
+                    var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
+                    GD.Print($"live: item put on/off {o}");
+                }
                 else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
             catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }

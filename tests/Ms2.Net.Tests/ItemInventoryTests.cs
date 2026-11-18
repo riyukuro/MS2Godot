@@ -100,4 +100,12 @@ public class ItemInventoryTests {
             book.Apply(ItemMessage.Read(r2, book.Get)); Assert.That(book.Get(14), Is.Null); Assert.That(r2.Available, Is.EqualTo(BodyLen));
         } finally { ItemReader.Known = null; }
     }
+
+    [Test] public void PutOnOrOffModesFollowTheClientReader() {
+        static ItemPutOnOrOff Rd(System.Action<ByteWriter> f) { var w = new ByteWriter(); f(w); return ItemPutOnOrOff.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())); }
+        Assert.That(Rd(w => { w.WriteByte(2); w.WriteLong(77); }), Is.EqualTo(new ItemPutOnOrOff.Equip(77)));
+        Assert.That(Rd(w => { w.WriteByte(3); w.WriteLong(78); }), Is.EqualTo(new ItemPutOnOrOff.Unequip(78)));
+        Assert.That(Rd(w => { w.WriteByte(5); w.WriteInt(9); w.WriteLong(79); w.WriteByte(4); w.WriteByte(1); }), Is.EqualTo(new ItemPutOnOrOff.MoveWorn(9, 79, 4, 1)));
+        Assert.That(Rd(w => { w.WriteByte(4); }), Is.EqualTo(new ItemPutOnOrOff.Other(4)));
+    }
 }

@@ -29,6 +29,7 @@ public enum Inbound : ushort {
     UserSync = 0x1C,
     UserChat = 0x1D,
     Emote = 0x1F,
+    ItemPutOnOrOff = 0x20,
     ItemInventory = 0x21,
     ItemPutOn = 0x25,
     ItemPutOff = 0x26,

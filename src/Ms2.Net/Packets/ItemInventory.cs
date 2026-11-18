@@ -137,3 +137,26 @@ public sealed class ItemBook {
         extra[tab] = count;
     }
 }
+
+/// <summary>
+/// Inbound 0x20, CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575, 0x141712fb0). Modes 2 and 3 only make the client send its own
+/// equip (Unk_Inventory::FUN_140a621c0) or unequip (RequestUnequipItem) request for the uid; mode 5 moves a worn item (CEquipment::FUN_1411e4150).
+/// The client ignores trailing bytes and any other mode.
+/// </summary>
+public abstract record ItemPutOnOrOff {
+    public sealed record Equip(long Uid) : ItemPutOnOrOff;                                  // mode 2
+    public sealed record Unequip(long Uid) : ItemPutOnOrOff;                                // 3
+    /// <summary>Mode 5: the player (object id) moves a worn item to <paramref name="Slot"/>; <paramref name="Type"/> is the layer byte FUN_140222f60 maps.</summary>
+    public sealed record MoveWorn(int ObjectId, long Uid, byte Slot, byte Type) : ItemPutOnOrOff;
+    public sealed record Other(int Mode) : ItemPutOnOrOff;
+
+    public static ItemPutOnOrOff Read(ByteReader r) {
+        int mode = r.ReadByte();
+        return mode switch {
+            2 => new Equip(r.ReadLong()),
+            3 => new Unequip(r.ReadLong()),
+            5 => new MoveWorn(r.ReadInt(), r.ReadLong(), r.ReadByte(), r.ReadByte()),
+            _ => new Other(mode),
+        };
+    }
+}
