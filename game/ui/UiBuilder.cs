@@ -270,6 +270,7 @@ public partial class TextNode : Node2D
             Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy) / RasterScale;
         }
         else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
+        ViewHeight = Bounds.Size.Y * asy / RasterScale;
         Label.PivotOffset = Vector2.Zero;
         ApplyLineAdvance();
         AddChild(snap);
@@ -326,6 +327,12 @@ public partial class TextNode : Node2D
     }
     LineFace face;
 
+    /// <summary>The field's height in label units (the label's height as built; Godot raises the label to fit its lines).</summary>
+    float ViewHeight;
+
+    /// <summary>The lines <see cref="AlignBottom"/> shows, -1 when it was not called.</summary>
+    int bottomCap = -1;
+
     /// <summary>
     /// Scaleform places every centred or right-aligned line by its exact width: the sum of the glyph advances, each rounded
     /// to a twip (ParagraphFormatter, advance = IRound(advance * Scale), width = the running sum), at
@@ -344,6 +351,10 @@ public partial class TextNode : Node2D
         var ls = Label.LabelSettings;
         bool exact = align == HorizontalAlignment.Center || align == HorizontalAlignment.Right;
         var all = Layout();
+        // the label draws the lines that fit the field (FitLines), the bottom alignment's count at most
+        int fit = FitLines(all), cap = fit < all.Count - Label.LinesSkipped ? fit : -1;
+        if (bottomCap >= 0) cap = cap < 0 ? bottomCap : Math.Min(cap, bottomCap);
+        if (Label.MaxLinesVisible != cap) Callable.From(() => Label.MaxLinesVisible = cap).CallDeferred();
         int lines = exact ? all.Count : 0;
         bool plainFace = ls != null && ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
         bool perLine = lines > 1 && plainFace;
@@ -578,7 +589,7 @@ public partial class TextNode : Node2D
         int lines = NumLines, fit = Math.Max(1, 1 + (int)Math.Floor((room - lineHeight) / advance));
         int shown = Math.Min(lines, fit);
         float height = lineHeight + (shown - 1) * advance;
-        Label.MaxLinesVisible = shown;
+        Label.MaxLinesVisible = bottomCap = shown;
         Label.Position = new Vector2(Label.Position.X, Bounds.Position.Y + BaselineShift + Math.Max(0, room - height));
     }
 

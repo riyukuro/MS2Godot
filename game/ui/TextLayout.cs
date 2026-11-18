@@ -175,16 +175,12 @@ public partial class TextNode
     {
         var all = Layout();
         var res = new List<LayoutLine>();
-        int spacing = (int)Label.LabelSettings.LineSpacing;
-        double fit = Math.Ceiling(Label.Size.Y + spacing), total = 0;
+        int fit = FitLines(all);
         float top = 0;
         for (int i = Label.LinesSkipped; i < all.Count; i++)
         {
             var l = all[i];
-            total += l.Pitch;
-            // LineBuffer::IsLineVisible (sfr_render_04d.cpp:365): the first visible line shows even when it runs past the
-            // bottom (its top is in the view); the others only when they fit
-            if (total > fit && i > Label.LinesSkipped) break;
+            if (res.Count >= fit) break;
             if (Label.MaxLinesVisible >= 0 && res.Count >= Label.MaxLinesVisible) break;
             l.Top = top;
             l.Baseline = top + l.Ascent;
@@ -192,6 +188,28 @@ public partial class TextNode
             res.Add(l);
         }
         return res;
+    }
+
+    /// <summary>
+    /// How many lines from the first unskipped one LineBuffer::IsLineVisible (sfr_render_04d.cpp:365 @0x1426696b0) shows:
+    /// the first always (its top is in the view), each other one when its bottom (its top plus its height, the line's
+    /// advance less the leading) is at most the text rect's height (the field less its 2 px gutters) plus half a gutter.
+    /// Measured against the field, not the label: Godot raises a label to its minimum size, all its lines.
+    /// </summary>
+    int FitLines(List<LayoutLine> all)
+    {
+        if (!(Bounds.Size.Y > 0)) return all.Count - Label.LinesSkipped;
+        var (height, advance) = LineMetrics();
+        double k = ViewHeight / Bounds.Size.Y;                                  // label units per field unit
+        double room = (Bounds.Size.Y - 4 + 1) * k, leading = (advance - height) * k, top = 0;
+        int n = 0;
+        for (int i = Label.LinesSkipped; i < all.Count; i++)
+        {
+            if (i > Label.LinesSkipped && top + all[i].Pitch - leading > room) break;
+            n++;
+            top += all[i].Pitch;
+        }
+        return n;
     }
 
     /// <summary>True when the glyph is past the label's visible character count.</summary>
