@@ -54,6 +54,12 @@ public sealed class FieldData
     public int ChannelGroupId;
     /// <summary>m_nMapLevel (fielddata.h +0x74): &lt;drop maplevel&gt;.</summary>
     public int MapLevel;
+    /// <summary>m_nRecallOtherUserProhibit: &lt;cashCall RecallOtherUserProhibit&gt; (fielddata.cpp:740); IsRecallOtherUserAllowed is 0 when set (:811).</summary>
+    public bool RecallOtherUserProhibit;
+    /// <summary>m_nGlobalSplit: &lt;split globalSplit&gt; (fielddata.cpp:731).</summary>
+    public bool GlobalSplit;
+    /// <summary>m_nCheckPartyObserve: &lt;property checkPartyObserve&gt; (fielddata.cpp:693).</summary>
+    public bool CheckPartyObserve;
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
@@ -106,6 +112,9 @@ public sealed class FieldData
         if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
         if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
         if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
+        o.RecallOtherUserProhibit = Flag(env.Element("cashCall"), "RecallOtherUserProhibit");
+        o.GlobalSplit = Flag(env.Element("split"), "globalSplit");
+        o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
         if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
         var fov = env.Element("fov");
@@ -131,6 +140,10 @@ public sealed class FieldData
         var env = fd?.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
         return (string)env?.Element("xblock")?.Attribute("name");
     }
+
+    /// <summary>XmlGetAttr of an int flag: nonzero when the element has the attribute with a nonzero number.</summary>
+    static bool Flag(XElement e, string name) =>
+        (string)e?.Attribute(name) is { } v && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n != 0;
 
     static void Read(XElement e, string name, ref float v)
     {

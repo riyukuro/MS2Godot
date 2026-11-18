@@ -26,6 +26,7 @@ public enum Inbound : ushort {
     FieldAddUser = 0x17,
     FieldRemoveUser = 0x18,
     Quest = 0x52,
+    Party = 0x53,
     Shop = 0x51,
     GlobalFactor = 0xD6,
     UserSync = 0x1C,

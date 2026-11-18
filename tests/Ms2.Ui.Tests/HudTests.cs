@@ -165,6 +165,49 @@ public class HudTests
     }
 
     [Test]
+    public void PartyWindowShowsTheFixtureParty()
+    {
+        // UIPartyDialog: RefreshAll's initMembers with each member's FillMemberObject, then the party packets' window calls
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, MapName = id => id == 2000001 ? "Tria" : "Field" };
+        book.MemberAdded += c.AddMember;
+        book.MemberRemoved += c.RemoveMember;
+        book.MemberUpdated += c.UpdateMember;
+        book.ChiefChanged += c.ChangeChief;
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        for (int i = 0; i < 120; i++) h.Player.Tick();      // the movie adds the members one by one on a 100 ms timer
+        AsObject Member(long id) => h.Invoke(h.Entity, "getMemberAni", id.ToString()) as AsObject;
+        foreach (long id in new long[] { 2, 3, 4, 5 }) Assert.That(Member(id), Is.Not.Null, $"member {id}");
+        AsObject Data(long id) => (AsObject)h.Get(Member(id), "object");
+        Assert.That(Rt.ToBoolean(h.Get(Data(2), "chief")), Is.True);
+        // the own member leads; the leader passes to member 3 (OnPartyLeaderChange -> changeChief)
+        book.Apply(new PartyLeaderChange(3), PartyFixture.SelfCharacterId, true);
+        Assert.That(Rt.ToBoolean(h.Get(Data(2), "chief")), Is.False);
+        Assert.That(Rt.ToBoolean(h.Get(Data(3), "chief")), Is.True);
+        // the channel members: member 4 is in another map and channel ("diff"), member 3 is with the own member
+        var elsewhere = c.MemberObject(book.Find(4), 0x80);
+        Assert.That(elsewhere["ch"], Is.EqualTo("diff"));
+        Assert.That(elsewhere["chName"], Is.EqualTo(m.Tables.Common("s_party_ch").Replace("{0}", "1")));
+        Assert.That(c.MemberObject(book.Find(3), 0x80)["ch"], Is.EqualTo(""));
+        // member 4 leaves (removeMember): the movie takes it out of its map
+        book.Apply(new PartyLeave(4, false), PartyFixture.SelfCharacterId, true);
+        Assert.That(Member(4), Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // the tooltip: online with channel and map, offline
+        string Tip(long id) => (string)c.GetUserData("getTooltip", new object[] { id.ToString() })?["text"];
+        Assert.That(Tip(3), Is.EqualTo(m.Tables.Common("s_tooltip_party").Replace("{0}", m.Tables.Common("s_word_online"))
+            .Replace("{1}", m.Tables.Common("s_tooltip_party_ch").Replace("{0}", m.Player.Channel.ToString()) + " Field")));
+        Assert.That(Tip(5), Is.EqualTo(m.Tables.Common("s_word_offline")));
+        // the movie's right click raises the member menu (raise-only in phase 1)
+        long menuFor = 0;
+        c.MemberMenu += (x, y, id) => menuFor = id;
+        Assert.That(c.OnCallback("onPopupMenu", new object[] { 10.0, 20.0, "3" }), Is.True);
+        Assert.That(menuFor, Is.EqualTo(3));
+    }
+
+    [Test]
     public void MainPlayerInfoInitAndStatusEvents()
     {
         var m = Model();

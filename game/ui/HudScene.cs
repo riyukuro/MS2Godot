@@ -60,6 +60,7 @@ public partial class HudScene : Node
         if (System.Array.IndexOf(args, "--oracle") >= 0) Ms2.Avm2.Interp.UseOracle = true;
         if (frameCase != null) DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
         questFixture = args.Contains("--questlog-fixture");
+        partyFixture = args.Contains("--party-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
@@ -77,6 +78,7 @@ public partial class HudScene : Node
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         BuildHud();
+        WatchParty();
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
     }
@@ -101,6 +103,8 @@ public partial class HudScene : Node
     {
         unwatchQuickSlotState?.Invoke();
         unwatchQuickSlotState = null;
+        unwatchParty?.Invoke();
+        unwatchParty = null;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         restoreScale?.Invoke();
         restoreScale = null;
@@ -149,6 +153,7 @@ public partial class HudScene : Node
         worldMap?.Relayout(GetWindow().Size);
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
+        partyMovie?.Relayout(GetWindow().Size);
     }
 
     /// <summary>

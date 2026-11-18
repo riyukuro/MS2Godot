@@ -39,6 +39,10 @@ public partial class LiveSession : Node
     public int CharacterLimit;
     /// <summary>The quest state the quest packets build (live only; the quest log reads it, offline it stays empty).</summary>
     public readonly QuestBook Quests = new();
+    /// <summary>CPartyManager's party from the party packets (0x53); live only.</summary>
+    public readonly PartyBook Party = new();
+    /// <summary>The party window is loaded and open (FUN_141924630), for OnPartyMemberJoin's add-or-open; set by the HUD.</summary>
+    public Func<bool> PartyWindowOpen = () => false;
     /// <summary>The game server session (its time sync), null before the field enter.</summary>
     public ClientSession GameSession => game?.Session;
     /// <summary>The entered character's id (DAT_143ab2828), 0 before the field enter.</summary>
@@ -348,6 +352,12 @@ public partial class LiveSession : Node
                     var q = QuestMessage.Read(p.Reader());   // CQuestManager::OnQuest (questmanager_2.cpp:942); no ExpectEnd: the client ignores trailing bytes
                     Quests.Apply(q);
                     GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
+                }
+                else if (game.Is(p, Inbound.Party))
+                {
+                    var m = PartyMessage.Read(p.Reader());   // CPartyManager::OnParty (partymanager.cpp:447); no ExpectEnd: the client ignores trailing bytes
+                    Party.Apply(m, CharacterId, PartyWindowOpen());
+                    GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
                 }
                 else if (game.Is(p, Inbound.ItemInventory))
                 {
