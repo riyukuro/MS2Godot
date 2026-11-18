@@ -283,10 +283,16 @@ public class AsContainer : AsInteractiveObject
 
     static bool IsAncestorOf(AsDisplayObject a, AsDisplayObject d) { for (var p = d.Parent; p != null; p = p.Parent) if (p == a) return true; return false; }
 
+    /// <summary>
+    /// GFx DisplayObjectContainer::removeChild @0x142451dc0: a null child is TypeError 2007; a child of another container
+    /// is returned unchanged with no error (AvmDisplayObjContainer::RemoveChild @0x142522570 finds no index and returns),
+    /// where Flash Player throws ArgumentError 2025. Movies rely on it (MessageBox.popDown removes the box from both popup
+    /// canvases).
+    /// </summary>
     [As] public AsDisplayObject removeChild(AsDisplayObject child)
     {
-        if (child == null || child.Parent != this) throw RT.ArgumentError("Error #2025: The supplied DisplayObject must be a child of the caller.");
-        RemoveChildInternal(child, true);
+        if (child == null) throw RT.TypeError("Error #2007: Parameter child must be non-null.");
+        if (child.Parent == this) RemoveChildInternal(child, true);
         return child;
     }
 
