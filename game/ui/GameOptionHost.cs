@@ -59,6 +59,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         [0x84b] = "s_gameoption_modified_warning",    // 2123
         [0x84d] = "s_gameoption_quality_warning",     // 2125
         [0x84e] = "s_gameoption_restart_warning",     // 2126
+        [0x852] = "s_gameoption_confirm_reset_layout", // 2130
     };
 
     public string Common(int id)
@@ -142,7 +143,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public bool QuickSlotsBound => true;
 
     public void SaveGameSettings() => GameOptions.Save();
-    public void SaveCharacterSettings() => GD.Print("options: SaveCharacterSettings: the character settings file is not written");
+    public void SaveCharacterSettings() => GameOptions.SaveCharacterSettings();
     public void SendBuddyMode20() { }                         // no server offline
     public void OpenSecondaryPassword() => GD.Print("options: the secondary password dialog is not available");
     public bool AgreementRedCircle => false;
@@ -197,6 +198,47 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void ApplySoundVolumes(SoundVolumes volumes) => FieldAudio.Instance?.ApplyVolumes(volumes);
     public void UpdateInstrumentVolume() { }
 
+    // ---- the Game pages --------------------------------------------------------------------------------------------
+
+    public GameOption.AccountCommunity AccountCommunity
+    {
+        get => GameOptions.AccountCommunity;
+        set => GameOptions.AccountCommunity = value;
+    }
+
+    XDocument defaultAccount;
+    bool defaultAccountRead;
+
+    public XDocument DefaultAccountDocument
+    {
+        get
+        {
+            if (defaultAccountRead) return defaultAccount;
+            defaultAccountRead = true;
+            const string entry = "table/default/defaultaccountoption.xml";
+            if (packs.Exists("Xml", entry))
+                defaultAccount = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\ufeff'));
+            return defaultAccount;
+        }
+    }
+
+    public GameOption.CharacterFlag MouseControlFlag => GameOptions.MouseControl;
+    public GameOption.CharacterFlag LearningQuestFlag => GameOptions.LearningQuest;
+
+    /// <summary>CMouseController::HasMode: the mouse camera mode is not ported, so the keyboard camera's fov step.</summary>
+    public bool MouseCameraMode => false;
+
+    public void PageMessageBox(int stringId, string tag, OptionPage listener) =>
+        Box(Common(stringId), Common(0x476), answer => listener.OnMessage(tag, answer), null);
+
+    public void ApplyCamera(GameOption.Camera camera) => GD.Print("options: camera option stored (CameraMgr and BGTransparencyMgr are not ported)");
+    public void ApplyInterface(GameOption.Interface state) => GD.Print("options: interface stored (the damage meters and the damage effect are not hosted)");
+    public void SetMouseControl(bool on) => GD.Print($"options: mouse control {(on ? "on" : "off")} (CMouseController is not ported)");
+    public void ResetUiLayout() => GD.Print("options: UI layout reset (UISwfEntityManager::ResetLayout is not ported)");
+    public void UiScaleChanged(float scale) { }   // the UI scale is read from the option at layout (UiScale)
+    public void ApplyStatus(GameOption.Status state) => GD.Print("options: status stored (the hp and exp bars read it when hosted)");
+    public void SendRideMode(bool disableSingleRiding) { }   // no server offline
+
     /// <summary>A tab with no controls (no movie loaded): reads null, ignores writes.</summary>
     sealed class NoTab : IOptionTab
     {
@@ -209,6 +251,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         public void SetSelectedIndex(string n, int v) { }
         public string GetText(string n) => null;
         public void SetText(string n, string v) { }
+        public void SetEnabled(string n, bool v) { }
         public bool SetClipShown(string n, bool v) => false;
         public bool SetResolutionRows(string n, IReadOnlyList<ResolutionRow> r, int s) => false;
         public int GetResolution(int t) => -1;

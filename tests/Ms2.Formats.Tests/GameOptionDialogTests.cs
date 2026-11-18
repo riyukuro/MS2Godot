@@ -26,6 +26,8 @@ public class GameOptionDialogTests
         public void SetSelectedIndex(string n, int v) => Index[n] = v;
         public string GetText(string n) => Text.TryGetValue(n, out var v) ? v : null;
         public void SetText(string n, string v) => Text[n] = v;
+        public readonly Dictionary<string, bool> Enabled = new();
+        public void SetEnabled(string n, bool v) => Enabled[n] = v;
         public bool SetClipShown(string n, bool v) { Shown[n] = v; return true; }
         public bool SetResolutionRows(string n, IReadOnlyList<ResolutionRow> rows, int sel) { Rows = rows.ToList(); RowSelected = sel; return true; }
         public int GetResolution(int type) => Resolution;
@@ -92,6 +94,19 @@ public class GameOptionDialogTests
         public bool AppActive => Active;
         public void ApplySoundVolumes(SoundVolumes v) => Volumes = v;
         public void UpdateInstrumentVolume() => Log.Add("instrument");
+        public GameOption.AccountCommunity AccountCommunity { get; set; } = new();
+        public System.Xml.Linq.XDocument DefaultAccountDocument => null;
+        public GameOption.CharacterFlag MouseControlFlag { get; } = GameOption.CharacterFlag.MouseControl();
+        public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
+        public bool MouseCameraMode { get; set; }
+        public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
+        public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
+        public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
+        public void SetMouseControl(bool on) => Log.Add("mouse " + on);
+        public void ResetUiLayout() => Log.Add("layout");
+        public void UiScaleChanged(float s) => Log.Add("uiscale " + s);
+        public void ApplyStatus(GameOption.Status s) => Log.Add("status");
+        public void SendRideMode(bool d) => Log.Add("ride " + d);
     }
 
     static (GameOptionDialog, FakeHost) Open(FakeHost h = null)
@@ -203,7 +218,7 @@ public class GameOptionDialogTests
         Assert.That(h.Windows, Is.EqualTo(new[] { new WindowRequest(false, true, 1920, 1080) }));
         var g = h.Opt.GraphicOption;
         Assert.That((g.ScreenMode, g.ResolutionIndex, g.Width, g.Height, g.Vsync, g.ShadowLevel), Is.EqualTo((2, 0, 1920, 1080, false, 3)));
-        Assert.That(h.Log.SkipWhile(l => !l.StartsWith("fps")), Is.EqualTo(new[] { "fps False", "notice 84e", "instrument", "savechar", "save", "buddy" }),
+        Assert.That(h.Log.SkipWhile(l => !l.StartsWith("fps")), Is.EqualTo(new[] { "fps False", "notice 84e", "instrument", "savechar", "save", "uiscale 1", "buddy" }),
             "vsync only notifies; the file is written after every page saved");
         h.Windows.Clear();
         d.OnSave();
@@ -219,7 +234,7 @@ public class GameOptionDialogTests
         Assert.That(h.Log.Last(), Is.EqualTo("box 84a OnSave"));
         Assert.That(h.Log, Does.Not.Contain("save"));
         d.OnMessage("OnSave", 0);
-        Assert.That(h.Log.TakeLast(3), Is.EqualTo(new[] { "save", "buddy", "apply False" }));
+        Assert.That(h.Log.TakeLast(4), Is.EqualTo(new[] { "save", "uiscale 1", "buddy", "apply False" }));   // the Interface page's vfunc_11 after the save
     }
 
     [Test]

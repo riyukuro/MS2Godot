@@ -106,6 +106,12 @@ public sealed class GameOptionController : UiController, IOptionTab
         if (Child(name) is { } c) Host.Set(c, "text", text ?? "");
     }
 
+    /// <summary>UIComponent::SetEnabled ("enabled").</summary>
+    public void SetEnabled(string name, bool enabled)
+    {
+        if (Child(name) is { } c) Host.Set(c, "enabled", enabled);
+    }
+
     /// <summary>ASDisplayObject::vfunc_3 @0x1422bfc60: the display info's visible flag.</summary>
     public bool SetClipShown(string name, bool shown)
     {

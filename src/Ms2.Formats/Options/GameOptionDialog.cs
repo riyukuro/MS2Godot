@@ -23,6 +23,8 @@ public interface IOptionTab
     void SetSelectedIndex(string name, int index);
     string GetText(string name);
     void SetText(string name, string text);
+    /// <summary>UIComponent::SetEnabled ("enabled").</summary>
+    void SetEnabled(string name, bool enabled);
     /// <summary>ASMovieClip::vfunc_3 on a clip found by getTabChild (show 1 / hide 0); false when there is no clip.</summary>
     bool SetClipShown(string name, bool shown);
     /// <summary>The resolution dropdown (FillResolutionCombo @0x14124d080): ClearItems, then SetScrollBar("export_scroll")
@@ -127,6 +129,38 @@ public interface IGameOptionDialogHost
     void ApplySoundVolumes(SoundVolumes volumes);
     /// <summary>CInstrumentManager::UpdateVolume(true).</summary>
     void UpdateInstrumentVolume();
+
+    // ---- the Game pages (Camera, Interface, Status, Battle, Community) ----
+    /// <summary>CGameOption's account block (m_account, AccountOption.xml), the Community page's request switches.</summary>
+    GameOption.AccountCommunity AccountCommunity { get; set; }
+    /// <summary>CGameOption::FUN_1412442c0, DefaultAccountOption.xml (the Community page's reset).</summary>
+    System.Xml.Linq.XDocument DefaultAccountDocument { get; }
+    /// <summary>GetInterfaceChar: the character file's "interface"/"EnableMouseControl".</summary>
+    GameOption.CharacterFlag MouseControlFlag { get; }
+    /// <summary>GetStatusChar: the character file's "status"/"displayLearningQuestV2".</summary>
+    GameOption.CharacterFlag LearningQuestFlag { get; }
+    /// <summary>CMouseController::HasMode: the mouse camera is on (GetCameraFovStep / SetCameraFovStep pick its fov step).</summary>
+    bool MouseCameraMode { get; }
+    /// <summary>ShowMessageBox(BlockFormat(id), 1, page, tag): a yes/no box whose answer goes to the page's OnMessage.</summary>
+    void PageMessageBox(int stringId, string tag, OptionPage listener);
+    /// <summary>CGameOptionCamera::vfunc_10's camera side (@0x141248f10): the field's camera option switch, CameraMgr's
+    /// scale and loose steps, and BGTransparencyMgr::SetUserFlags.</summary>
+    void ApplyCamera(GameOption.Camera camera);
+    /// <summary>CGameOptionInterface::vfunc_10's dialogs (@0x1412569a0): the damage meters (0x4edf, 0x4f23) open or close
+    /// by their switches, and the damage effect (0x4e3c) takes the alpha.</summary>
+    void ApplyInterface(GameOption.Interface state);
+    /// <summary>FUN_14125bd20: CMouseController::SetEnabled and the upper hud's input mode.</summary>
+    void SetMouseControl(bool on);
+    /// <summary>UISwfEntityManager::ResetLayout: every dialog's saved place is dropped.</summary>
+    void ResetUiLayout();
+    /// <summary>CGameOptionInterface::vfunc_11 (@0x141256b50): CUIService::FUN_141adbe00(scale, 0), and when the scale
+    /// changed, UISwfEntityManager::vfunc_6.</summary>
+    void UiScaleChanged(float scale);
+    /// <summary>CGameOptionStatus::vfunc_10's hud side (@0x14125ae50): the upper hp bar (0x4e3d) and the exp bars
+    /// (0x4e27, 0x4f66) follow the switches.</summary>
+    void ApplyStatus(GameOption.Status state);
+    /// <summary>MyPC::SendRequestRideMode6 (CGameOptionCommunity::vfunc_10, @0x14124a8d0).</summary>
+    void SendRideMode(bool disableSingleRiding);
 }
 
 /// <summary>Unk_SoundFlag: "sound"/"disableJobSound" (FUN_1412603d0 / FUN_141260410, gameoptionstruct.cpp:2823-2836).</summary>
@@ -232,6 +266,8 @@ public class OptionPage
     /// <summary>Reset to the defaults.</summary>
     public virtual void vfunc_12() { }
     public virtual void vfunc_13() { }
+    /// <summary>IMessageListener::OnMessage: the answer of a box the page opened (0 yes).</summary>
+    public virtual void OnMessage(string tag, int answer) { }
     /// <summary>The page state differs from the stored option.</summary>
     public virtual int vfunc_14() => 0;
 }
@@ -254,11 +290,11 @@ public sealed class GameOptionDialog
         void Add(int key, Func<int, int, OptionPage> make) => Add2(make(key, order++));
         void Add2(OptionPage p) { p.Attach(this); pages[p.Id] = p; }
         OptionPage Plain(int k, int t) => new(k, t);
-        Add(1, Plain);                                   // CGameOptionCamera
-        Add(2, Plain);                                   // CGameOptionInterface
-        Add(3, Plain);                                   // CGameOptionStatus
-        Add(4, Plain);                                   // CGameOptionBattle
-        Add(5, Plain);                                   // CGameOptionCommunity
+        Add(1, (k, t) => new CameraOptionPage(k, t));
+        Add(2, (k, t) => new InterfaceOptionPage(k, t));
+        Add(3, (k, t) => new StatusOptionPage(k, t));
+        Add(4, (k, t) => new BattleOptionPage(k, t));
+        Add(5, (k, t) => new CommunityOptionPage(k, t));
         Add(6, (k, t) => new GraphicOptionPage(k, t));
         Add(7, (k, t) => new SoundOptionPage(k, t));
         bool gamePad = host.IsFeatureEnabled(0xb5);
@@ -464,6 +500,422 @@ public sealed class GameOptionDialog
         Simple = false;
         Tab = 1;
     }
+}
+
+/// <summary>CGameOptionCamera (gameoption.cpp:397-557).</summary>
+public sealed class CameraOptionPage : OptionPage
+{
+    public GameOption.Camera State = new();
+    public CameraOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x1412488c0.</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0) State = Host.Options.CameraOption.Clone();
+        base.vfunc_3(n);
+    }
+
+    /// <summary>GetCameraFovStep @0x14125b6e0.</summary>
+    int FovStep => Host.MouseCameraMode ? State.CameraFovStepMouseMode : State.CameraFovStep;
+
+    /// <summary>@0x141248960.</summary>
+    public override void vfunc_6()
+    {
+        Tab.SetSelected("m_enableBgTransparency", State.BgTransparency);
+        Tab.SetSelected("m_enableVibrateEffect", State.VibrateEffect);
+        Tab.SetValue("m_cameraLooseStep", State.CameraLooseStep);
+        Tab.SetValue("m_cameraFovStep", FovStep);
+    }
+
+    /// <summary>@0x141248c40; the fov step goes back by SetCameraFovStep @0x14125b720.</summary>
+    public override void vfunc_7()
+    {
+        if (Tab.IsSelected("m_enableBgTransparency") is bool t) State.BgTransparency = t;
+        if (Tab.IsSelected("m_enableVibrateEffect") is bool v) State.VibrateEffect = v;
+        if (Tab.GetValue("m_cameraLooseStep") is float l) State.CameraLooseStep = (int)l;
+        if (Tab.GetValue("m_cameraFovStep") is float f)
+        {
+            if (Host.MouseCameraMode) State.CameraFovStepMouseMode = (int)f;
+            else State.CameraFovStep = (int)f;
+        }
+    }
+
+    /// <summary>@0x141248f10: stored, then the camera follows.</summary>
+    public override void vfunc_10()
+    {
+        base.vfunc_10();
+        Host.Options.CameraOption = State.Clone();
+        Host.ApplyCamera(State);
+    }
+
+    /// <summary>@0x1412491c0: reset, the default document's camera block, refill.</summary>
+    public override void vfunc_12()
+    {
+        base.vfunc_12();
+        State = new GameOption.Camera();
+        State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument());
+        vfunc_6();
+    }
+
+    /// <summary>@0x141249270: memcmp of the 0x10-byte block.</summary>
+    public override int vfunc_14() => GameOption.SameFields(State, Host.Options.CameraOption) ? 0 : 1;
+}
+
+/// <summary>CGameOptionInterface (gameoptionstruct.cpp:189-431): the interface block and the character file's mouse
+/// control switch.</summary>
+public sealed class InterfaceOptionPage : OptionPage
+{
+    public GameOption.Interface State = new();
+    public bool MouseControl;
+    public InterfaceOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x1412559a0.</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0)
+        {
+            State = Host.Options.InterfaceOption.Clone();
+            MouseControl = Host.MouseControlFlag.Value;
+        }
+        base.vfunc_3(n);
+    }
+
+    /// <summary>@0x141255a40: onResetUILayout asks first (0x852 s_gameoption_confirm_reset_layout). The client returns 0
+    /// after opening the box.</summary>
+    public override int vfunc_5(string method, object[] args)
+    {
+        if (string.Equals(method, "onResetUILayout", StringComparison.OrdinalIgnoreCase))
+            Host.PageMessageBox(0x852, "resetSwfLayout", this);
+        return 0;
+    }
+
+    /// <summary>@0x141255b50: yes resets the layout.</summary>
+    public override void OnMessage(string tag, int answer)
+    {
+        if (answer == 0 && tag == "resetSwfLayout") Host.ResetUiLayout();
+    }
+
+    /// <summary>@0x141255c10. The UI scale slider runs 80..120 the other way round (200 - scale * 100).</summary>
+    public override void vfunc_6()
+    {
+        Tab.SetSelected("m_enableMouseControl", MouseControl);
+        Tab.SetSelected("m_closeDialogAll", State.EnableCloseAllDlg);
+        Tab.SetSelected("m_autoDesc", State.EnableAutoDesc);
+        Tab.SetSelected("m_showTipText", State.EnableShowTipText);
+        Tab.SetEnabled("m_showDamageMeter", State.IndividualDamageMeterAllowed);
+        Tab.SetSelected("m_showDamageMeter", State.EnableIndividualDamageMeter);
+        Tab.SetEnabled("m_showChaosDamageMeter", State.ChaosDamageMeterAllowed);
+        Tab.SetSelected("m_showChaosDamageMeter", State.EnableChaosDamageMeter);
+        Tab.SetValue("m_sliderUI", 200.0f - State.UIScale * 100.0f);
+        Tab.SetValue("m_damageTextScaleStep", State.DamageTextScaleStep);
+        Tab.SetValue("m_damageEffectAlphaStep", State.DamageEffectAlpha);
+    }
+
+    /// <summary>@0x1412562f0. The chaos meter switch is read only with feature 0xbe (PartyDamageMeter).</summary>
+    public override void vfunc_7()
+    {
+        if (Tab.IsSelected("m_enableMouseControl") is bool m) MouseControl = m;
+        if (Tab.IsSelected("m_closeDialogAll") is bool c) State.EnableCloseAllDlg = c;
+        if (Tab.IsSelected("m_autoDesc") is bool a) State.EnableAutoDesc = a;
+        if (Tab.IsSelected("m_showTipText") is bool t) State.EnableShowTipText = t;
+        if (Tab.IsSelected("m_showDamageMeter") is bool d) State.EnableIndividualDamageMeter = d;
+        if (Tab.IsSelected("m_showChaosDamageMeter") is bool x && Host.IsFeatureEnabled(0xbe)) State.EnableChaosDamageMeter = x;
+        if (Tab.GetValue("m_sliderUI") is float s) State.UIScale = (200 - (int)s) / 100.0f;
+        if (Tab.GetValue("m_damageTextScaleStep") is float ds) State.DamageTextScaleStep = (int)ds;
+        if (Tab.GetValue("m_damageEffectAlphaStep") is float da) State.DamageEffectAlpha = (int)da;
+    }
+
+    /// <summary>@0x1412569a0: the meters and the damage effect, the mouse control switch (FUN_14125bd20), the blocks back,
+    /// then the character file.</summary>
+    public override void vfunc_10()
+    {
+        base.vfunc_10();
+        Host.ApplyInterface(State);
+        Host.MouseControlFlag.Value = MouseControl;
+        Host.SetMouseControl(MouseControl);
+        Host.Options.InterfaceOption = State.Clone();
+        Host.SaveCharacterSettings();
+    }
+
+    /// <summary>@0x141256b50.</summary>
+    public override void vfunc_11() => Host.UiScaleChanged(State.UIScale);
+
+    /// <summary>@0x141256bb0: both blocks from the default game document, refill, then the layout reset.</summary>
+    public override void vfunc_12()
+    {
+        base.vfunc_12();
+        var doc = Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument();
+        State = new GameOption.Interface();
+        State.Load(doc, Host.IsFeatureEnabled(0xbe));
+        var flag = GameOption.CharacterFlag.MouseControl();
+        flag.Load(doc);
+        MouseControl = flag.Value;
+        vfunc_6();
+        Host.ResetUiLayout();
+    }
+
+    /// <summary>@0x141256ca0: memcmp of the 0x18-byte interface block only (the mouse switch is not compared).</summary>
+    public override int vfunc_14() => GameOption.SameFields(State, Host.Options.InterfaceOption) ? 0 : 1;
+}
+
+/// <summary>CGameOptionStatus (gameoptionstruct.cpp:704-1067): the status block and the character file's learning quest
+/// switch.</summary>
+public sealed class StatusOptionPage : OptionPage
+{
+    public GameOption.Status State = new(true);
+    public bool LearningQuest;
+    public StatusOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x141258a50.</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0)
+        {
+            State = Host.Options.StatusOption.Clone();
+            LearningQuest = Host.LearningQuestFlag.Value;
+        }
+        base.vfunc_3(n);
+    }
+
+    static readonly (string Name, Func<GameOption.Status, bool> Get, Action<GameOption.Status, bool> Set)[] Checks =
+    {
+        ("m_displayMyName", s => s.DisplayMyName, (s, v) => s.DisplayMyName = v),
+        ("m_displayPlayerSymbol", s => s.DisplayPlayerSymbol, (s, v) => s.DisplayPlayerSymbol = v),
+        ("m_displayFriendlyName", s => s.DisplayFriendlyName, (s, v) => s.DisplayFriendlyName = v),
+        ("m_displayEnemyName", s => s.DisplayEnemyName, (s, v) => s.DisplayEnemyName = v),
+        ("m_displayNpcName", s => s.DisplayNpcName, (s, v) => s.DisplayNpcName = v),
+        ("m_displayMonsterName", s => s.DisplayMonsterName, (s, v) => s.DisplayMonsterName = v),
+        ("m_displayPcIllust", s => s.DisplayPcIllust, (s, v) => s.DisplayPcIllust = v),
+        ("m_displayMonsterGaugeValue", s => s.DisplayMonsterGaugeValue, (s, v) => s.DisplayMonsterGaugeValue = v),
+        ("m_displayExpValue", s => s.DisplayExpValue, (s, v) => s.DisplayExpValue = v),
+        ("m_displayOnlyMyEffectToMonster", s => s.DisplayOnlyMyEffectToMonster, (s, v) => s.DisplayOnlyMyEffectToMonster = v),
+        ("m_displayMyHpGauge", s => s.DisplayMyHpGauge, (s, v) => s.DisplayMyHpGauge = v),
+        ("m_displayMyShieldGauge", s => s.DisplayMyShieldGauge, (s, v) => s.DisplayMyShieldGauge = v),
+        ("m_displayPartyHpGauge", s => s.DisplayPartyHpGauge, (s, v) => s.DisplayPartyHpGauge = v),
+        ("m_displayPartyShieldGauge", s => s.DisplayPartyShieldGauge, (s, v) => s.DisplayPartyShieldGauge = v),
+        ("m_displayMonsterHpGauge", s => s.DisplayMonsterHpGauge, (s, v) => s.DisplayMonsterHpGauge = v),
+    };
+
+    static readonly (string Name, Func<GameOption.Status, bool> Get, Action<GameOption.Status, bool> Set)[] Balloons =
+    {
+        ("m_displayNormalChatBalloon", s => s.DisplayNormalChatBalloon, (s, v) => s.DisplayNormalChatBalloon = v),
+        ("m_displayPartyChatBalloon", s => s.DisplayPartyChatBalloon, (s, v) => s.DisplayPartyChatBalloon = v),
+        ("m_displayGuildChatBalloon", s => s.DisplayGuildChatBalloon, (s, v) => s.DisplayGuildChatBalloon = v),
+    };
+
+    /// <summary>@0x141258b10. The pet switches only with feature 0x8c.</summary>
+    public override void vfunc_6()
+    {
+        foreach (var c in Checks) Tab.SetSelected(c.Name, c.Get(State));
+        Tab.SetSelectedIndex("m_bossMonsterNotify", State.DisplayBossMonsterNotify);
+        foreach (var c in Balloons) Tab.SetSelected(c.Name, c.Get(State));
+        if (Host.IsFeatureEnabled(0x8c))
+        {
+            Tab.SetSelected("m_displayShowOnlyMyPet", State.DisplayShowOnlyMyPet);
+            Tab.SetSelected("m_displayHideMyPet", State.DisplayHideMyPet);
+        }
+        Tab.SetSelected("m_displayHideSmartPush", State.DisplayHideSmartPush);
+        Tab.SetSelected("m_displayLearningQuest", LearningQuest);
+        Tab.SetSelected("m_displayHideHighlightMenu", State.DisplayHideHighlightMenu);
+    }
+
+    /// <summary>@0x141259c40.</summary>
+    public override void vfunc_7()
+    {
+        foreach (var c in Checks) if (Tab.IsSelected(c.Name) is bool v) c.Set(State, v);
+        if (Tab.GetSelectedIndex("m_bossMonsterNotify") is int b) State.DisplayBossMonsterNotify = b;
+        foreach (var c in Balloons) if (Tab.IsSelected(c.Name) is bool v) c.Set(State, v);
+        if (Host.IsFeatureEnabled(0x8c))
+        {
+            if (Tab.IsSelected("m_displayShowOnlyMyPet") is bool p) State.DisplayShowOnlyMyPet = p;
+            if (Tab.IsSelected("m_displayHideMyPet") is bool h) State.DisplayHideMyPet = h;
+        }
+        if (Tab.IsSelected("m_displayHideSmartPush") is bool sp) State.DisplayHideSmartPush = sp;
+        if (Tab.IsSelected("m_displayLearningQuest") is bool lq) LearningQuest = lq;
+        if (Tab.IsSelected("m_displayHideHighlightMenu") is bool hm) State.DisplayHideHighlightMenu = hm;
+    }
+
+    /// <summary>@0x14125ae50: the hud bars, the blocks back (the pet change hooks FUN_14125b130 / FUN_14125b140 are empty),
+    /// then the character file.</summary>
+    public override void vfunc_10()
+    {
+        base.vfunc_10();
+        Host.ApplyStatus(State);
+        Host.Options.StatusOption = State.Clone();
+        Host.LearningQuestFlag.Value = LearningQuest;
+        Host.SaveCharacterSettings();
+    }
+
+    /// <summary>@0x14125afe0 (no CBaseOption::vfunc_12 call): both from the default game document, refill.</summary>
+    public override void vfunc_12()
+    {
+        var doc = Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument();
+        State = new GameOption.Status(Host.Options.StatusOption.RegionKr);
+        State.Load(doc);
+        var flag = GameOption.CharacterFlag.LearningQuest();
+        flag.Load(doc);
+        LearningQuest = flag.Value;
+        vfunc_6();
+    }
+
+    /// <summary>@0x14125b0b0: the 0x1c-byte block, then the 1-byte flag.</summary>
+    public override int vfunc_14() =>
+        !GameOption.SameFields(State, Host.Options.StatusOption) || LearningQuest != Host.LearningQuestFlag.Value ? 1 : 0;
+}
+
+/// <summary>CGameOptionBattle (gameoption.cpp:180-395). The damage forms are 1 mine, 3 party, 7 all; the other damage
+/// form is a bit set (1 size, 2 alpha).</summary>
+public sealed class BattleOptionPage : OptionPage
+{
+    public GameOption.Battle State = new();
+    public BattleOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x141246dd0.</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0) State = Host.Options.BattleOption.Clone();
+        base.vfunc_3(n);
+    }
+
+    static readonly (string Name, Func<GameOption.Battle, bool> Get, Action<GameOption.Battle, bool> Set)[] Checks =
+    {
+        ("m_displayMyGiveRecovery", s => s.DisplayMyGiveRecovery, (s, v) => s.DisplayMyGiveRecovery = v),
+        ("m_displayMyTakeRecovery", s => s.DisplayMyTakeRecovery, (s, v) => s.DisplayMyTakeRecovery = v),
+        ("m_displayPartyRecovery", s => s.DisplayPartyRecovery, (s, v) => s.DisplayPartyRecovery = v),
+        ("m_displayGetMeso", s => s.DisplayGetMeso, (s, v) => s.DisplayGetMeso = v),
+        ("m_displayGetExp", s => s.DisplayGetExp, (s, v) => s.DisplayGetExp = v),
+        ("m_displayEpGauge", s => s.DisplayEpGauge, (s, v) => s.DisplayEpGauge = v),
+    };
+
+    static readonly (string Suffix, int Value)[] Forms = { ("Mine", 1), ("Party", 3), ("All", 7) };
+
+    /// <summary>@0x141246e70: one radio per form is selected (a form outside 1/3/7 selects none).</summary>
+    public override void vfunc_6()
+    {
+        foreach (var c in Checks) Tab.SetSelected(c.Name, c.Get(State));
+        foreach (var (suffix, value) in Forms) if (State.GiveDamage == value) Tab.SetSelected("m_giveDamage" + suffix, true);
+        foreach (var (suffix, value) in Forms) if (State.TakeDamage == value) Tab.SetSelected("m_takeDamage" + suffix, true);
+        Tab.SetSelected("m_diffSize", (State.OtherDamageForm & 1) != 0);
+        Tab.SetSelected("m_diffAlpha", (State.OtherDamageForm & 2) != 0);
+    }
+
+    /// <summary>@0x141247770: the first selected radio of each group; the other form is rebuilt from the boxes there are.</summary>
+    public override void vfunc_7()
+    {
+        foreach (var c in Checks) if (Tab.IsSelected(c.Name) is bool v) c.Set(State, v);
+        foreach (var (suffix, value) in Forms)
+            if (Tab.IsSelected("m_giveDamage" + suffix) == true) { State.GiveDamage = value; break; }
+        foreach (var (suffix, value) in Forms)
+            if (Tab.IsSelected("m_takeDamage" + suffix) == true) { State.TakeDamage = value; break; }
+        int diff = 0;
+        if (Tab.IsSelected("m_diffSize") is bool size)
+        {
+            if (size) diff |= 1;
+            State.OtherDamageForm = diff;
+        }
+        if (Tab.IsSelected("m_diffAlpha") is bool alpha)
+        {
+            if (alpha) diff |= 2;
+            State.OtherDamageForm = diff;
+        }
+    }
+
+    /// <summary>@0x141248140.</summary>
+    public override void vfunc_10()
+    {
+        base.vfunc_10();
+        Host.Options.BattleOption = State.Clone();
+    }
+
+    /// <summary>@0x141248190.</summary>
+    public override void vfunc_12()
+    {
+        base.vfunc_12();
+        State = new GameOption.Battle();
+        State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument(), Host.IsFeatureEnabled(0x66));
+        vfunc_6();
+    }
+
+    /// <summary>@0x141248240: memcmp of the 0x14-byte block.</summary>
+    public override int vfunc_14() => GameOption.SameFields(State, Host.Options.BattleOption) ? 0 : 1;
+}
+
+/// <summary>CGameOptionCommunity (gameoption.cpp:560-783): the game file's balloons and riding switch, and the account
+/// file's request switches.</summary>
+public sealed class CommunityOptionPage : OptionPage
+{
+    public GameOption.Community State = new();
+    public GameOption.AccountCommunity Account = new();
+    public CommunityOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x1412493a0.</summary>
+    public override void vfunc_3(int n)
+    {
+        if (n == 0)
+        {
+            State = Host.Options.CommunityOption.Clone();
+            Account = Host.AccountCommunity.Clone();
+        }
+        base.vfunc_3(n);
+    }
+
+    static readonly (string Name, Func<GameOption.AccountCommunity, bool> Get, Action<GameOption.AccountCommunity, bool> Set)[] Requests =
+    {
+        ("m_displayChatComfirmSuper", s => s.DisplayChatComfirmSuper, (s, v) => s.DisplayChatComfirmSuper = v),
+        ("m_displayChatComfirmWorld", s => s.DisplayChatComfirmWorld, (s, v) => s.DisplayChatComfirmWorld = v),
+        ("m_displayChatComfirmChannel", s => s.DisplayChatComfirmChannel, (s, v) => s.DisplayChatComfirmChannel = v),
+        ("m_disablePartyRequest", s => s.DisablePartyRequest, (s, v) => s.DisablePartyRequest = v),
+        ("m_disableBuddyRequest", s => s.DisableBuddyRequest, (s, v) => s.DisableBuddyRequest = v),
+        ("m_disableGuildRequest", s => s.DisableGuildRequest, (s, v) => s.DisableGuildRequest = v),
+        ("m_disableGroupRequest", s => s.DisableGroupRequest, (s, v) => s.DisableGroupRequest = v),
+        ("m_disableWhisperNotify", s => s.DisableWhisperNotify, (s, v) => s.DisableWhisperNotify = v),
+        ("m_disableTradeRequest", s => s.DisableTradeRequest, (s, v) => s.DisableTradeRequest = v),
+        ("m_disableHomeRequest", s => s.DisableHomeRequest, (s, v) => s.DisableHomeRequest = v),
+        ("m_disableCoupleEmotionRequest", s => s.DisableCouplemotionRequest, (s, v) => s.DisableCouplemotionRequest = v),
+    };
+
+    /// <summary>@0x141249460.</summary>
+    public override void vfunc_6()
+    {
+        Tab.SetSelected("m_displayMyChatBalloon", State.DisplayMyChatBalloon);
+        Tab.SetSelected("m_displayOtherChatBalloon", State.DisplayOtherChatBalloon);
+        Tab.SetSelected("m_disableSingleRiding", State.DisableSingleRiding);
+        foreach (var r in Requests) Tab.SetSelected(r.Name, r.Get(Account));
+    }
+
+    /// <summary>@0x141249e50.</summary>
+    public override void vfunc_7()
+    {
+        if (Tab.IsSelected("m_displayMyChatBalloon") is bool m) State.DisplayMyChatBalloon = m;
+        if (Tab.IsSelected("m_displayOtherChatBalloon") is bool o) State.DisplayOtherChatBalloon = o;
+        if (Tab.IsSelected("m_disableSingleRiding") is bool r) State.DisableSingleRiding = r;
+        foreach (var q in Requests) if (Tab.IsSelected(q.Name) is bool v) q.Set(Account, v);
+    }
+
+    /// <summary>@0x14124a8d0: a changed riding switch goes to the server, then both blocks back.</summary>
+    public override void vfunc_10()
+    {
+        base.vfunc_10();
+        if (Host.Options.CommunityOption.DisableSingleRiding != State.DisableSingleRiding) Host.SendRideMode(State.DisableSingleRiding);
+        Host.Options.CommunityOption = State.Clone();
+        Host.AccountCommunity = Account.Clone();
+    }
+
+    /// <summary>@0x14124a990: the account block from DefaultAccountOption.xml, the game block from the default game
+    /// document, refill.</summary>
+    public override void vfunc_12()
+    {
+        base.vfunc_12();
+        Account = new GameOption.AccountCommunity();
+        State = new GameOption.Community();
+        Account.Load(Host.DefaultAccountDocument ?? new System.Xml.Linq.XDocument());
+        State.Load(Host.DefaultGameDocument ?? new System.Xml.Linq.XDocument());
+        vfunc_6();
+    }
+
+    /// <summary>@0x14124aa70: FUN_14125d2d0 / FUN_14125d740 compare every switch.</summary>
+    public override int vfunc_14() =>
+        !GameOption.SameFields(State, Host.Options.CommunityOption) || !GameOption.SameFields(Account, Host.AccountCommunity) ? 1 : 0;
 }
 
 /// <summary>CGameOptionGraphicDefault (gameoption.cpp). The page state is a copy of the graphic and optimizer options

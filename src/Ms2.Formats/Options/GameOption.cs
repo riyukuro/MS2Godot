@@ -84,8 +84,11 @@ public sealed class GameOption
         OptimizerOption.Save(doc);
         LanguageOption.Save(doc);
         ChromaOption.Save(doc);
-        Xml.WriteInt(doc, "option", "version", Version);
+        SetOptionVersion(doc);
     }
+
+    /// <summary>SetOptionVersion (gameoption.cpp:2101): &lt;option version="21"/&gt; on any option file.</summary>
+    public static void SetOptionVersion(XDocument doc) => Xml.WriteInt(doc, "option", "version", Version);
 
     static XElement Section(XDocument doc, string name) => doc.Root?.Element(name);
 
@@ -113,6 +116,8 @@ public sealed class GameOption
         }
 
         /// <summary>The mouse-mode fov step is read back from the document, not written (gameoptionstruct.cpp:1161).</summary>
+        public Camera Clone() => (Camera)MemberwiseClone();
+
         public void Save(XDocument d)
         {
             Xml.WriteBool(d, "camera", "bgTransparency", BgTransparency);
@@ -129,6 +134,9 @@ public sealed class GameOption
         public bool EnableCloseAllDlg, EnableAutoDesc = true, EnableShowTipText = true, EnableIndividualDamageMeter, EnableChaosDamageMeter;
         public float UIScale = 1f;
         public int DamageEffectAlpha = 100, DamageTextScaleStep = 100;
+        /// <summary>m_b14 / m_b15: the damage meter switches may be used (reset on, not in the file; the page enables its
+        /// check boxes by them and IsIndividualDamageMeterOn / IsChaosDamageMeterOn test them, :1268-1280).</summary>
+        public bool IndividualDamageMeterAllowed = true, ChaosDamageMeterAllowed = true;
 
         /// <param name="partyDamageMeter">feature 0xbe: without it the chaos damage meter is forced off (:1238-1239)</param>
         public void Load(XDocument d, bool partyDamageMeter)
@@ -147,6 +155,8 @@ public sealed class GameOption
             DamageEffectAlpha = Math.Clamp(DamageEffectAlpha, 0, 100);
             if (!partyDamageMeter) EnableChaosDamageMeter = false;
         }
+
+        public Interface Clone() => (Interface)MemberwiseClone();
 
         public void Save(XDocument d)
         {
@@ -172,7 +182,10 @@ public sealed class GameOption
         public bool DisplayShowOnlyMyPet, DisplayHideMyPet, DisplayHideSmartPush, DisplayHideHighlightMenu;
 
         /// <param name="regionKr">IsRegionKR: the PC illustration starts on (:1364-1366)</param>
-        public Status(bool regionKr) => DisplayPcIllust = regionKr;
+        public Status(bool regionKr) { RegionKr = regionKr; DisplayPcIllust = regionKr; }
+
+        /// <summary>The region the reset used (a property, so the vfunc_14 field compare does not see it).</summary>
+        public bool RegionKr { get; }
 
         public void Load(XDocument d)
         {
@@ -201,6 +214,8 @@ public sealed class GameOption
             Xml.ReadBool(d, "status", "DisplayHideHighlightMenu", ref DisplayHideHighlightMenu);
             DisplayBossMonsterNotify = Math.Clamp(DisplayBossMonsterNotify, 0, 2);
         }
+
+        public Status Clone() => (Status)MemberwiseClone();
 
         public void Save(XDocument d)
         {
@@ -282,6 +297,8 @@ public sealed class GameOption
             }
         }
 
+        public Battle Clone() => (Battle)MemberwiseClone();
+
         public void Save(XDocument d)
         {
             Xml.WriteBool(d, "battle", "DisplayMyGiveRecovery", DisplayMyGiveRecovery);
@@ -311,12 +328,75 @@ public sealed class GameOption
             Xml.ReadBool(d, "community", "disableSingleRiding", ref DisableSingleRiding);
         }
 
+        public Community Clone() => (Community)MemberwiseClone();
+
         public void Save(XDocument d)
         {
             Xml.WriteBool(d, "community", "displayMyChatBalloon", DisplayMyChatBalloon);
             Xml.WriteBool(d, "community", "displayOtherChatBalloon", DisplayOtherChatBalloon);
             Xml.WriteBool(d, "community", "disableSingleRiding", DisableSingleRiding);
         }
+    }
+
+    /// <summary>The account file's community block (Unk_CommunityStateB, AccountOption.xml): reset FUN_14125d360
+    /// gameoptionstruct.cpp:1735-1749, load :1752-1767, save :1770-1784. "Comfirm" and "Couplemotion" are the client's
+    /// spellings.</summary>
+    public sealed class AccountCommunity
+    {
+        public bool DisplayChatComfirmSuper = true, DisplayChatComfirmWorld = true, DisplayChatComfirmChannel = true;
+        public bool DisablePartyRequest, DisableBuddyRequest, DisableGuildRequest, DisableGroupRequest, DisableWhisperNotify;
+        public bool DisableTradeRequest, DisableHomeRequest, DisableCouplemotionRequest;
+
+        static readonly string[] Keys =
+        {
+            "displayChatComfirmSuper", "displayChatComfirmWorld", "displayChatComfirmChannel", "disablePartyRequest",
+            "disableBuddyRequest", "disableGuildRequest", "disableGroupRequest", "disableWhisperNotify", "disableTradeRequest",
+            "disableHomeRequest", "disableCouplemotionRequest",
+        };
+
+        bool[] Values() => new[]
+        {
+            DisplayChatComfirmSuper, DisplayChatComfirmWorld, DisplayChatComfirmChannel, DisablePartyRequest,
+            DisableBuddyRequest, DisableGuildRequest, DisableGroupRequest, DisableWhisperNotify, DisableTradeRequest,
+            DisableHomeRequest, DisableCouplemotionRequest,
+        };
+
+        void Set(bool[] v)
+        {
+            (DisplayChatComfirmSuper, DisplayChatComfirmWorld, DisplayChatComfirmChannel, DisablePartyRequest) = (v[0], v[1], v[2], v[3]);
+            (DisableBuddyRequest, DisableGuildRequest, DisableGroupRequest, DisableWhisperNotify) = (v[4], v[5], v[6], v[7]);
+            (DisableTradeRequest, DisableHomeRequest, DisableCouplemotionRequest) = (v[8], v[9], v[10]);
+        }
+
+        public void Load(XDocument d)
+        {
+            var v = Values();
+            for (int i = 0; i < Keys.Length; i++) Xml.ReadBool(d, "community", Keys[i], ref v[i]);
+            Set(v);
+        }
+
+        public void Save(XDocument d)
+        {
+            var v = Values();
+            for (int i = 0; i < Keys.Length; i++) Xml.WriteBool(d, "community", Keys[i], v[i]);
+        }
+
+        public AccountCommunity Clone() => (AccountCommunity)MemberwiseClone();
+    }
+
+    /// <summary>One switch of the character file (Unk_InterfaceFlag "interface"/"EnableMouseControl" :1291-1310,
+    /// Unk_StatusFlag "status"/"displayLearningQuestV2" :1512-1531): reset off, read and written by its key.</summary>
+    public sealed class CharacterFlag
+    {
+        readonly string section, key;
+        public bool Value;
+        public CharacterFlag(string section, string key) { this.section = section; this.key = key; }
+        public static CharacterFlag MouseControl() => new("interface", "EnableMouseControl");
+        public static CharacterFlag LearningQuest() => new("status", "displayLearningQuestV2");
+        /// <summary>True when the attribute was there (the client's readers return 1 then).</summary>
+        public bool Load(XDocument d) => Xml.ReadBool(d, section, key, ref Value);
+        public void Save(XDocument d) => Xml.WriteBool(d, section, key, Value);
+        public CharacterFlag Clone() => (CharacterFlag)MemberwiseClone();
     }
 
     /// <summary>Graphic (Unk_GraphicState): reset FUN_14125d8c0 gameoptionstruct.cpp:1908-1931, load LoadGameOptionGraphic
@@ -585,13 +665,14 @@ public sealed class GameOption
         static XElement Section(XDocument d, string section) => d.Root?.Element(section);
 
         /// <summary>ReadGameOptionBool (:3911-3929): an empty or missing attribute leaves the value; "true"/"false" in any case
-        /// set it; any other text leaves it.</summary>
-        public static void ReadBool(XDocument d, string section, string key, ref bool value)
+        /// set it; any other text leaves it. True when the attribute has text (the client returns 1 then).</summary>
+        public static bool ReadBool(XDocument d, string section, string key, ref bool value)
         {
             var s = (string)Section(d, section)?.Attribute(key);
-            if (string.IsNullOrEmpty(s)) return;
+            if (string.IsNullOrEmpty(s)) return false;
             if (s.Equals("true", StringComparison.OrdinalIgnoreCase)) value = true;
             if (s.Equals("false", StringComparison.OrdinalIgnoreCase)) value = false;
+            return true;
         }
 
         /// <summary>ReadGameOptionInt (:3932-3939): TiXmlElement::Attribute(name, int*) (tinyxml.cpp:562-576) parses with

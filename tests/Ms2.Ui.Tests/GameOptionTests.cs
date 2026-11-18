@@ -69,6 +69,19 @@ public class GameOptionTests
         public bool AppActive => true;
         public void ApplySoundVolumes(SoundVolumes v) => Volumes = v;
         public void UpdateInstrumentVolume() { }
+        public GameOption.AccountCommunity AccountCommunity { get; set; } = new();
+        public XDocument DefaultAccountDocument => null;
+        public GameOption.CharacterFlag MouseControlFlag { get; } = GameOption.CharacterFlag.MouseControl();
+        public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
+        public bool MouseCameraMode => false;
+        public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
+        public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
+        public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
+        public void SetMouseControl(bool on) => Log.Add("mouse " + on);
+        public void ResetUiLayout() => Log.Add("layout");
+        public void UiScaleChanged(float s) { }
+        public void ApplyStatus(GameOption.Status s) => Log.Add("status");
+        public void SendRideMode(bool d) => Log.Add("ride " + d);
     }
 
     static (UiHost, Host) Load(int tab)
@@ -154,5 +167,52 @@ public class GameOptionTests
         Select(2);
         Assert.That(host.Dialog.Tab, Is.EqualTo(7));
         Assert.That(Enabled(), Is.True, "Sound page: Apply still enabled");
+    }
+
+    /// <summary>The Game tab's pages fill from the option state, not the movie's own control defaults: Camera's switches
+    /// and steps, Battle's damage-form radios, Community's account switches; Interface's meter boxes follow m_b14/m_b15.</summary>
+    [TestCase(1)]
+    [TestCase(2)]
+    [TestCase(3)]
+    [TestCase(4)]
+    [TestCase(5)]
+    public void GamePagesShowTheOptions(int tab)
+    {
+        var (h, host) = Load(tab);
+        var c = host.Movie;
+        var o = host.Opt;
+        switch (tab)
+        {
+            case 1:
+                Assert.That(c.IsSelected("m_enableBgTransparency"), Is.EqualTo(o.CameraOption.BgTransparency));
+                Assert.That(c.IsSelected("m_enableVibrateEffect"), Is.EqualTo(o.CameraOption.VibrateEffect));
+                Assert.That(c.GetValue("m_cameraLooseStep"), Is.EqualTo((float)o.CameraOption.CameraLooseStep));
+                Assert.That(c.GetValue("m_cameraFovStep"), Is.EqualTo((float)o.CameraOption.CameraFovStep));
+                break;
+            case 2:
+                Assert.That(c.IsSelected("m_autoDesc"), Is.EqualTo(o.InterfaceOption.EnableAutoDesc));
+                Assert.That(c.GetValue("m_sliderUI"), Is.EqualTo(200f - o.InterfaceOption.UIScale * 100f));
+                Assert.That(c.GetValue("m_damageTextScaleStep"), Is.EqualTo((float)o.InterfaceOption.DamageTextScaleStep));
+                break;
+            case 3:
+                Assert.That(c.IsSelected("m_displayMyName"), Is.EqualTo(o.StatusOption.DisplayMyName));
+                Assert.That(c.IsSelected("m_displayPcIllust"), Is.EqualTo(o.StatusOption.DisplayPcIllust));
+                Assert.That(c.GetSelectedIndex("m_bossMonsterNotify"), Is.EqualTo(o.StatusOption.DisplayBossMonsterNotify));
+                break;
+            case 4:
+                Assert.That(o.BattleOption.GiveDamage, Is.EqualTo(7));
+                Assert.That(c.IsSelected("m_giveDamageAll"), Is.True);
+                Assert.That(c.IsSelected("m_takeDamageParty"), Is.True, "take 3 = party");
+                Assert.That(c.IsSelected("m_diffSize"), Is.True);
+                Assert.That(c.IsSelected("m_diffAlpha"), Is.True);
+                break;
+            case 5:
+                Assert.That(c.IsSelected("m_displayMyChatBalloon"), Is.EqualTo(o.CommunityOption.DisplayMyChatBalloon));
+                Assert.That(c.IsSelected("m_displayChatComfirmSuper"), Is.Null, "this movie has no Super box; the page skips it");
+                Assert.That(c.IsSelected("m_displayChatComfirmWorld"), Is.EqualTo(host.AccountCommunity.DisplayChatComfirmWorld));
+                Assert.That(c.IsSelected("m_disablePartyRequest"), Is.EqualTo(host.AccountCommunity.DisablePartyRequest));
+                break;
+        }
+        Assert.That(host.Dialog.IsNoPageChanged(), Is.True, "reading the controls back leaves the page unchanged");
     }
 }
