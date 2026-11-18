@@ -35,6 +35,8 @@ public sealed class EquipItem {
     /// <summary>The UGC block was read: CItem has m_spUgc exactly when it reads it (both on HasCubeTextureMesh or
     /// FUN_140526010, item.cpp:2672 and :2774).</summary>
     public bool HasUgc;
+    /// <summary>The UGC block's look (CItem::GetUgcLook); null without one.</summary>
+    public UgcLook Ugc;
     /// <summary>CItemStatus (itemsocketsystemutil.cpp:1868): the option sets, the enchant and the limit break.</summary>
     public ItemOptions Options = new();
     public ItemEnchant Enchant = new();
@@ -99,6 +101,12 @@ public sealed class SocketGem {
 /// <summary>The blocks CItem::ReadFromStream reads after the item status, in this order: ugc, gem (a badge), custom music score, pet.</summary>
 [Flags] public enum ItemExtra { None = 0, Ugc = 1, Gem = 2, Music = 4, Pet = 8 }
 
+/// <summary>CUgcItemLook (ugcdef.cpp:1551), the fields the item tooltip reads: m_18 the UGC id, m_48 the author and m_50
+/// the creation time (ASTooltip::SetItemCreateTime).</summary>
+public sealed class UgcLook {
+    public long Uid; public string Author = ""; public long CreationTime;
+}
+
 /// <summary>
 /// Readers for the item records (CItem::ReadFromStream, item.cpp:2655). An equip record carries its slot byte, which picks the
 /// body's appearance variant (HR, FD, CP); an inventory record takes it from <see cref="SlotOf"/>. The extra blocks (ugc, gem,
@@ -119,10 +127,13 @@ public static class ItemReader {
     /// </summary>
     public static Func<int, bool> Known;
 
-    /// <summary>UgcItemLook (CUgcItemLook::Read): i64 id, file name, item name, u8, i32, i64 account, i64 character, author, i64 creation time, url, u8.</summary>
-    public static void ReadUgcLook(ByteReader r) {
-        r.ReadLong(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
-        r.ReadUnicodeString(); r.ReadLong(); r.ReadUnicodeString(); r.ReadByte();
+    /// <summary>UgcItemLook (CUgcItemLook::Read, ugcdef.cpp:1551): i64 id, file name, item name, u8, i32, i64 account, i64 character, author, i64 creation time, url, u8.</summary>
+    public static UgcLook ReadUgcLook(ByteReader r) {
+        var look = new UgcLook { Uid = r.ReadLong() };
+        r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
+        look.Author = r.ReadUnicodeString(); look.CreationTime = r.ReadLong();
+        r.ReadUnicodeString(); r.ReadByte();
+        return look;
     }
 
     /// <summary>A pet item as FieldAddUser carries it: i32 id, i64 uid, i32 rarity, then the item body with a pet block.</summary>
@@ -242,7 +253,7 @@ public static class ItemReader {
         var extra = forceExtra ?? (badge ? ItemExtra.Gem : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None);
         it.HasUgc = (extra & ItemExtra.Ugc) != 0;
         if (it.HasUgc) {
-            ReadUgcLook(r);
+            it.Ugc = ReadUgcLook(r);
             // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
             r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
         }
