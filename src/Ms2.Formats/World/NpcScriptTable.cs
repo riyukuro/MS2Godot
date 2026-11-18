@@ -11,11 +11,37 @@ namespace Ms2.Formats.World;
 /// </summary>
 public sealed class NpcScriptTable
 {
+    /// <summary>
+    /// A &lt;content&gt; (CCinematicContent::vfunc_2, scriptcontent.cpp:250, after CScriptContent's text / voiceID / illust :62).
+    /// </summary>
     public sealed class Content
     {
         public string Text, VoiceId, Illust;
         /// <summary>The &lt;distractor&gt; choices: the text and the scripts its goto lists ("51", or "61,62,...").</summary>
         public List<(string Text, int[] Goto)> Distractors = new();
+        /// <summary>m_buttonSet ("buttonSet", :253): the page's own button set, which GetTalkButtonSet takes first.</summary>
+        public int ButtonSet;
+        /// <summary>m_openTalkReward ("openTalkReward", :255): the page shows the talk rewards (FillTalkReward).</summary>
+        public bool OpenTalkReward;
+        public int FunctionId, OtherNpcTalk, SpeakerNpc, Redirect;
+        public string LeftIllust, RightIllust, SpeakerIllust, ImagePlate, Movie;
+        /// <summary>m_questId: the quest of a quest script's page (FUN_140859160, talkscript.cpp:595), 0 for npc scripts.</summary>
+        public int QuestId;
+
+        public static Content Parse(XElement c, int questId = 0)
+        {
+            var ct = new Content
+            {
+                Text = (string)c.Attribute("text"), VoiceId = (string)c.Attribute("voiceID"), Illust = (string)c.Attribute("illust"),
+                ButtonSet = Int(c, "buttonSet"), OpenTalkReward = Bool(c, "openTalkReward"), FunctionId = Int(c, "functionID"),
+                OtherNpcTalk = Int(c, "otherNpcTalk"), LeftIllust = (string)c.Attribute("leftIllust"),
+                RightIllust = (string)c.Attribute("rightIllust"), SpeakerIllust = (string)c.Attribute("speakerIllust"),
+                SpeakerNpc = Int(c, "speakerNpc"), ImagePlate = (string)c.Attribute("imagePlate"), Movie = (string)c.Attribute("movie"),
+                Redirect = Int(c, "redirect"), QuestId = questId,
+            };
+            foreach (var d in c.Elements("distractor")) ct.Distractors.Add(((string)d.Attribute("text"), Ints(d, "goto")));
+            return ct;
+        }
     }
 
     public sealed class Script
@@ -23,6 +49,8 @@ public sealed class NpcScriptTable
         public string Kind;          // select, script, job, monologue
         public int Id;
         public bool RandomPick;
+        /// <summary>m_questId of a quest script (LoadQuestTalks, talkscript.cpp:660), 0 for npc scripts.</summary>
+        public int QuestId;
         public List<Content> Contents = new();
     }
 
@@ -56,16 +84,7 @@ public sealed class NpcScriptTable
                 foreach (var s in n.Elements())
                 {
                     var sc = new Script { Kind = s.Name.LocalName, Id = Int(s, "id"), RandomPick = Int(s, "randomPick") != 0 };
-                    foreach (var c in s.Elements("content"))
-                    {
-                        var ct = new Content
-                        {
-                            Text = (string)c.Attribute("text"), VoiceId = (string)c.Attribute("voiceID"),
-                            Illust = (string)c.Attribute("illust"),
-                        };
-                        foreach (var d in c.Elements("distractor")) ct.Distractors.Add(((string)d.Attribute("text"), Ints(d, "goto")));
-                        sc.Contents.Add(ct);
-                    }
+                    foreach (var c in s.Elements("content")) sc.Contents.Add(Content.Parse(c));
                     npc.Scripts.Add(sc);
                 }
             }
@@ -75,6 +94,9 @@ public sealed class NpcScriptTable
     }
 
     static int Int(XElement e, string a) => int.TryParse((string)e.Attribute(a), out int v) ? v : 0;
+
+    /// <summary>XmlGetBool: "1" or "true".</summary>
+    static bool Bool(XElement e, string a) => (string)e.Attribute(a) is { } v && (v == "1" || v.Equals("true", StringComparison.OrdinalIgnoreCase));
 
     static int[] Ints(XElement e, string a) => ((string)e.Attribute(a) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Select(x => int.TryParse(x, out int v) ? v : 0).Where(v => v != 0).ToArray();
