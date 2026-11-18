@@ -27,7 +27,7 @@ public sealed class EquipApplier
     readonly Dictionary<int, Dictionary<int, XElement>> docs = new();
     readonly Dictionary<string, ModelData> nifs = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<ModelMesh, ArrayMesh> meshes = new();
-    public int Resolved, NoModelEntry, NoAsset, Loaded, Failed, MissingItemIds;
+    public int Resolved, NoModelEntry, NoAsset, Loaded, Failed, MissingItemIds, NotAttached;
     public readonly HashSet<int> MissingIds = new();
 
     public EquipApplier(PackSet packs, ModelBuilder mb)
@@ -138,11 +138,21 @@ public sealed class EquipApplier
                     var g = (string)c.Attribute("gender");
                     if (g == null || g == gender.ToString()) cut.Add((string)c.Attribute("name"));
                 }
-                var made = isNif ? Attach(skel, body, md, asset, item, gender) : AttachKfm(skel, body, asset, item, gender, -1);
-                if (made == null) { MissingIds.Add(item.Id); continue; }
-                if (DyeOf(item, im) is { } dye)
-                    foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
-                added.AddRange(made);
+                // FUN_141200ca0 (equipmodel.cpp:714-720) hangs a replace="1" part through vfunc_13 and every other part through
+                // vfunc_12, which returns before CreateAttachNode when the part name is empty (CNifModel, nifmodel.cpp:232-238;
+                // CKfmModel, kfmmodel.cpp:518-524). The part name is the asset's targetnode (CEquipModel::GetPartName,
+                // equipmodel.cpp:1084-1101, ModelPart +0x10). Such a model loads, but nothing of it is hung on the character.
+                // The 10 CP assets with no targetnode and no selfnode (11301083 penguin, 11300895 Angel Pinkbean, ...) show
+                // their creature through the item's characterIdle effect instead (itemdata <effect characterIdle>).
+                if (string.IsNullOrEmpty((string)asset.Attribute("targetnode")) && (string)asset.Attribute("replace") != "1") NotAttached++;
+                else
+                {
+                    var made = isNif ? Attach(skel, body, md, asset, item, gender) : AttachKfm(skel, body, asset, item, gender, -1);
+                    if (made == null) { MissingIds.Add(item.Id); continue; }
+                    if (DyeOf(item, im) is { } dye)
+                        foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
+                    added.AddRange(made);
+                }
                 int ponyIndex = 0;
                 foreach (var pony in slot.Elements("asset").Where(a => a != asset && (string)a.Attribute("pony") == "1"
                              && ((string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString())))
