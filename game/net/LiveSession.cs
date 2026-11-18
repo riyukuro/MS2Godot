@@ -80,6 +80,8 @@ public partial class LiveSession : Node
     public event Action<NpcTalkMessage> NpcTalkReceived;
     /// <summary>The talk window's NpcTalk (0x22) and Quest (0x29) sends.</summary>
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
+    public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
     /// <summary>

@@ -1,5 +1,7 @@
 using Ms2.Formats.World;
+using Ms2.Net.Wire;
 using Ms2.Net.Packets;
+using Ms2.Quest;
 
 namespace Ms2.Ui.Hud;
 
@@ -22,10 +24,15 @@ public sealed class PopupMenuTarget
 /// The C++ side of the character popup menu, UIPopUpMenu (client/ms2/uipartydialog.cpp:1799; UI id 0x4e39, LoadSwf(0x1d) =
 /// movie uipopupmenu, AS PopUpMenuFactory). Ported for the party window's member slots (UIPartyDialog::FUN_141a77760, :794):
 /// the item list by the target and the own party state (FUN_141a83810, :2723) and the movie's "open" object (Open, :2454).
-/// The items' handlers (RegisterMenuHandlers, :2417: leave, invite, kick, leader change, trade, whisper ...) are not
-/// ported: a click is raised only.
+/// Of the items' handlers (RegisterMenuHandlers, :2417) the party ones are ported (leave, invite, kick and leader change
+/// with their confirm boxes, vote kick, ready check) and View Own Character; the others raise <see cref="ItemClicked"/>.
+/// STILL-OPEN, by handler: 0x65 Whisper (FUN_141a84da0 -> UIMessengerBrowser FUN_141a252a0 -> UIMessenger FUN_141a14bb0:
+/// the messenger's whisper start is not ported); 0x66 View Character (SendCharacterInfo, :3135, needs UIPCInfoDialog 0x4ec8:
+/// none); 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); the buddy and block items
+/// (FUN_141a83ed0 -> the community dialog 0x4e4e, EditBuddyMemo); 0x1f5 Report; 0x1f6 group chat; 0x1f7 / 0x1f8 / 0x1fb house
+/// visit, home invite, furnishing rights; 0x2bd guild invite.
 /// </summary>
-public sealed class PopupMenuController : UiController
+public sealed class PopupMenuController : UiController, IMessageBoxListener
 {
     public override string Movie => "uipopupmenu";
     protected override string EntityMethod => "test_makeData";     // only PopUpMenuFactory has it
@@ -61,8 +68,17 @@ public sealed class PopupMenuController : UiController
     /// achievement feed, so 0.</summary>
     public Func<int> OwnTrophy = () => 0;
 
-    /// <summary>MenuItemClick (vfunc_28, :1830): the item's handler. Raised only, with the target it was opened for.</summary>
+    /// <summary>MenuItemClick (vfunc_28, :1830) for an item whose handler is not ported (see the class note), with the target
+    /// the menu was opened for.</summary>
     public event Action<int, PopupMenuTarget> ItemClicked;
+    /// <summary>FUN_141a84d40 (:3116), View Own Character on the own PC: OpenDialog(0x2711), UIMyInfoDialog.</summary>
+    public event Action OpenMyInfo;
+    /// <summary>FUN_140710590: a packet to the game server.</summary>
+    public Action<IOutPacket> Send = _ => { };
+    /// <summary>The message box queue's show (FUN_14151f150).</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+    /// <summary>FUN_14151f200: the queue's next box, after OnMessage's answer.</summary>
+    public Action NextBox = MessageBoxQueue.Next;
 
     int mode;                                   // m_80
     int menuType;                               // m_84
@@ -281,12 +297,91 @@ public sealed class PopupMenuController : UiController
         else if (message is PartyLeaderChange && Party.IsLeader(SelfCharacterId)) ClosePopup();
     }
 
-    /// <summary>vfunc_28 (:1830) "MenuItemClick"(id).</summary>
+    /// <summary>vfunc_28 (:1830) "MenuItemClick"(id): the item's handler from m_160; the menu stays as it is (the movie hides
+    /// its list, and <see cref="Update"/> closes it).</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (!string.Equals(name, "MenuItemClick", StringComparison.OrdinalIgnoreCase)) return false;
         int id = args.Length > 0 ? (int)(uint)Avm2.Rt.ToNumber(args[0]) : 0;     // GetUInt
-        if (Registered(id)) ItemClicked?.Invoke(id, target);
+        if (Registered(id)) ItemClick(id);
         return false;
+    }
+
+    /// <summary>The handler of item <paramref name="id"/> (RegisterMenuHandlers, :2417) on the open target (m_90 its name,
+    /// m_a8 its character id).</summary>
+    public void ItemClick(int id)
+    {
+        string name = target?.Name ?? "";                               // m_90
+        long charId = target?.CharacterId ?? 0;                         // m_a8
+        switch (id)
+        {
+            case ViewOwnCharacter:                                      // FUN_141a84d40 (:3116)
+                if (SelfCharacterId != 0 && SelfCharacterId == charId) OpenMyInfo?.Invoke();
+                break;
+            case LeaveParty:                                            // SendPartyMode3 (:3160) -> CPartyManager (partymanager.cpp:819)
+                Send(new PartyLeaveRequest());
+                break;
+            case InviteToParty:                                         // InviteToParty (:3166) -> SendPartyMode1 (partymanager.cpp:761)
+                if (name.Length != 0) Send(new PartyInviteRequest(name));
+                break;
+            case KickFromParty:                                         // ConfirmExpelPartyMember (:3173)
+                if (name.Length != 0) Confirm("s_party_check_expel_member", "expelMember", name);
+                break;
+            case MakePartyLeader:                                       // ConfirmChangePartyChief (:3183)
+                if (name.Length != 0) Confirm("s_party_check_change_chief", "changeChief", name);
+                break;
+            case VoteToKick:                                            // ShowVoteKickConfirm (:3193)
+                if (charId != 0)
+                {
+                    // ShowYesNoMessageBox with FUN_14028dfa0 (the key's text formatted with the name); the box keeps the
+                    // character id (Append<__int64>, read back by OnVoteKickMsgBox with FUN_141a02f10): captured here
+                    string text = ClientFormat.Format(Model?.Tables.Common("s_party_vote_kick_user_confirm") ?? "", name);
+                    ShowBox(MessageBoxQueue.CreateWithCallback(text, 1, (button, _) => OnVoteKickAnswer(button, charId)));
+                }
+                break;
+            case ReadyCheck:                                            // FUN_141a853a0 -> SendPartyMode46 (partymanager.cpp:810)
+                Send(new PartyReadyCheckRequest());
+                break;
+            default:
+                ItemClicked?.Invoke(id, target);
+                break;
+        }
+    }
+
+    /// <summary>ShowMessageBox(FormatStringId(id, name), 1, this, "<paramref name="tag"/>:name"); the ids 0x33f and 0x340
+    /// are the common strings s_party_check_change_chief and s_party_check_expel_member (commonstringtable.cpp:2432-2433).</summary>
+    void Confirm(string key, string tag, string name)
+    {
+        string text = ClientFormat.Format(Model?.Tables.Common(key) ?? "", name);
+        ShowBox(MessageBoxQueue.Create(1, text, this, $"{tag}:{name}"));
+    }
+
+    /// <summary>OnVoteKickMsgBox (:1946): yes sends SendPartyMode45 (partymanager.cpp:730), which needs the member
+    /// (FindMemberByCharId); the box closes either way.</summary>
+    bool OnVoteKickAnswer(int button, long charId)
+    {
+        if (button != 0) return true;
+        if (Party.Find(charId) != null) Send(new PartyVoteKickRequest(charId));
+        return true;
+    }
+
+    /// <summary>
+    /// OnMessage (:1886) from the message box: on yes (0) the tag split on ":" into two: "changeChief" sends the leader
+    /// change with the name, "expelMember" SendPartyMode4 (partymanager.cpp:717: the member by name, case-insensitive,
+    /// and its character id; nothing without one). Then always FUN_14151f200, handled.
+    /// </summary>
+    public bool OnMessageBox(MessageBoxController sender, int button, string tag)
+    {
+        if (button == 0)
+        {
+            var parts = (tag ?? "").Split(':', 2);                      // FUN_14028cd00(tag, args, ":", 2)
+            if (parts.Length == 2)
+            {
+                if (parts[0] == "changeChief") Send(new PartyLeaderChangeRequest(parts[1]));
+                else if (parts[0] == "expelMember" && Party.FindByName(parts[1]) is { } m) Send(new PartyKickRequest(m.CharacterId));
+            }
+        }
+        NextBox();
+        return true;
     }
 }

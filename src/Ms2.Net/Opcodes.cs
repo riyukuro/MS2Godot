@@ -86,4 +86,9 @@ public enum Outbound : ushort {
     RequestSkillBookTree = 0xA2,
     NpcTalk = 0x22,
     Quest = 0x29,
+    // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
+    Party = 0x2C,
+    RoomDungeon = 0x2B,
+    DungeonReward = 0x9D,
+    Club = 0x95,
 }

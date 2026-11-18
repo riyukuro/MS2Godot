@@ -1,6 +1,8 @@
 using System.Globalization;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
+using Ms2.Quest;
 
 namespace Ms2.Ui.Hud;
 
@@ -37,12 +39,17 @@ public sealed class PartyController : UiController
     public event Action<long> ObserveMember;
     /// <summary>onPartyRecall (:668): FUN_141a77eb0's checks, then the recall scroll or the merat box. Raised only.</summary>
     public event Action Recall;
-    /// <summary>m_enterDungeon's click (OnEnterDungeonClick, :859): SendRoomDungeon(0). Raised only.</summary>
-    public event Action EnterDungeon;
-    /// <summary>m_createClub's click (OnCreateClubClick, :865). Raised only.</summary>
-    public event Action CreateClub;
-    /// <summary>m_giveUpDungeon's click (OnGiveUpDungeonClick, :888). Raised only.</summary>
-    public event Action GiveUpDungeon;
+    /// <summary>FUN_140710590: a packet to the game server.</summary>
+    public Action<IOutPacket> Send = _ => { };
+    /// <summary>The message box queue's show (FUN_14151f150).</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+    /// <summary>ShowSystemNotice(text, 1, 1): a center notice (the host shows or logs it).</summary>
+    public event Action<string> SystemNotice;
+    /// <summary>CBanTextChecker::CheckClubName (commonstringtable.cpp:988): null when the name passes, else the message.</summary>
+    public Func<string, string> ClubNameError = _ => null;
+    /// <summary>CClubClientManager::IsClubLimitReached (clubcli.cpp:577): the clubs and club invites number 3 or more.
+    /// STILL-OPEN: the club packets are not read, so never.</summary>
+    public Func<bool> ClubLimitReached = () => false;
 
     bool open;
     public bool IsOpen => open;
@@ -58,9 +65,9 @@ public sealed class PartyController : UiController
         base.OnLoadComplete();
         open = true;
         VotePageInit();
-        Click("m_createClub", () => CreateClub?.Invoke());
-        Click("m_enterDungeon", () => EnterDungeon?.Invoke());
-        Click("m_giveUpDungeon", () => GiveUpDungeon?.Invoke());
+        Click("m_createClub", OnCreateClubClick);
+        Click("m_enterDungeon", OnEnterDungeonClick);
+        Click("m_giveUpDungeon", OnGiveUpDungeonClick);
         RefreshAll();
     }
 
@@ -75,6 +82,72 @@ public sealed class PartyController : UiController
     {
         open = false;
         base.Close();
+    }
+
+    /// <summary>OnEnterDungeonClick (:859): CPartyManager::SendRoomDungeon(0).</summary>
+    public void OnEnterDungeonClick() => Send(new RoomDungeonEnterRequest(0));
+
+    /// <summary>OnGiveUpDungeonClick (:888): FUN_140d74090, a yes / no box of s_party_dungeon_giveup answered by
+    /// SendDungeonReward (:783): yes sends DungeonReward 5; the box closes either way.</summary>
+    public void OnGiveUpDungeonClick() =>
+        ShowBox(MessageBoxQueue.CreateWithCallback(Common("s_party_dungeon_giveup"), 1, (button, _) =>
+        {
+            if (button == 0) Send(new DungeonGiveUpRequest());
+            return true;
+        }));
+
+    /// <summary>
+    /// OnCreateClubClick (:865): the leader only. With the club limit reached the notice BlockFormat(0x381, 3)
+    /// (s_club_err_full_club, commonstringtable.cpp:2498); else a type 10 box of s_party_create_club formatted with
+    /// ClubNameLengthMax / 2 and ClubNameLengthMax, its input (SetInput(2, "", max, 0, 0)) answered by OnCreateClubMsgBox.
+    /// </summary>
+    public void OnCreateClubClick()
+    {
+        if (!Party.IsLeader(SelfCharacterId)) return;
+        if (ClubLimitReached())
+        {
+            SystemNotice?.Invoke(ClientFormat.Format(Common("s_club_err_full_club"), 3));
+            return;
+        }
+        int max = Model?.Tables.ClubNameLengthMax ?? 12;
+        var box = MessageBoxQueue.Create(10, ClientFormat.Format(Common("s_party_create_club"), max / 2, max), null, "");
+        box.SetInput(2, "", max, 0, 0);
+        box.Callback = OnCreateClubAnswer;
+        ShowBox(box);                                                   // FUN_140d73c60
+    }
+
+    /// <summary>OnCreateClubMsgBox (:770): not OK closes; the input (FUN_141a02d50, the clicked tag) trimmed of ","; empty
+    /// keeps the box open; else FUN_140b15c10 and close.</summary>
+    bool OnCreateClubAnswer(int button, MessageBoxData box)
+    {
+        if (button != 0) return true;
+        string name = (box.ClickedTag ?? "").Trim(',');
+        if (name.Length == 0) return false;
+        CreateClub(name);
+        return true;
+    }
+
+    /// <summary>
+    /// CClubClientManager::FUN_140b15c10 (clubcli.cpp:890): the club limit (notice 0x381), the name length within
+    /// ClubNameLengthMin..Max (silent), no space (FUN_141275260(0x386) s_club_err_clubname_has_blank), in a party and its
+    /// leader (0x36c s_club_err_create_no_party: commonstringtable.cpp:2477, :2503), the ban-text check (its message);
+    /// then Club 1 with the name.
+    /// </summary>
+    public bool CreateClub(string name)
+    {
+        name ??= "";
+        if (ClubLimitReached())
+        {
+            SystemNotice?.Invoke(ClientFormat.Format(Common("s_club_err_full_club"), 3));
+            return false;
+        }
+        int min = Model?.Tables.ClubNameLengthMin ?? 2, max = Model?.Tables.ClubNameLengthMax ?? 12;
+        if (name.Length < min || name.Length > max) return false;
+        if (name.Contains(' ')) { SystemNotice?.Invoke(Common("s_club_err_clubname_has_blank")); return false; }
+        if (!Party.IsInParty || !Party.IsLeader(SelfCharacterId)) { SystemNotice?.Invoke(Common("s_club_err_create_no_party")); return false; }
+        if (ClubNameError(name) is { } error) { SystemNotice?.Invoke(error); return false; }
+        Send(new ClubCreateRequest(name));
+        return true;
     }
 
     /// <summary>RefreshAll @0x141a792b0 (:1087): the buttons, then initMembers with each member's object (flags 0x1ff).</summary>

@@ -24,7 +24,16 @@ public partial class HudScene
     MovieDialog popupMovie;
     CanvasLayer popupLayer;
 
+    Ms2.Formats.Text.BanTextChecker partyNameChecker;
+
     bool PartyWindowOpen => party != null && !party.IsClosed;
+
+    /// <summary>FUN_140710590 for the party window and the popup menu: the session's send; offline the packet is logged.</summary>
+    void PartySend(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (Ms2Godot.Net.LiveSession.Instance is { } live) live.SendParty(packet);
+        else GD.Print($"party: offline, not sent: {packet}");
+    }
 
     /// <summary>Takes the session's party (or the fixture) and follows its window calls; opens the window for a party already
     /// formed, as OnPartyInfo did before this scene was built.</summary>
@@ -80,10 +89,14 @@ public partial class HudScene
         c.MemberMenu += (x, y, id) => OpenPartySlotMenu(x, y, id);
         c.ObserveMember += id => GD.Print($"party: observe {id}: StartObserving is not ported");
         c.Recall += () => GD.Print("party: recall: not ported");
-        c.EnterDungeon += () => GD.Print("party: enter dungeon (SendRoomDungeon 0): not ported");
-        c.CreateClub += () => GD.Print("party: create club: not ported");
-        c.GiveUpDungeon += () => GD.Print("party: give up dungeon: not ported");
         c.Vote += yes => GD.Print($"party: vote {(yes ? "yes" : "no")}: not ported");
+        c.Send = PartySend;
+        c.SystemNotice += text => GD.Print($"party: system notice: {text}");    // ShowSystemNotice: the notices are not ported
+        c.ClubNameError = name =>
+        {
+            partyNameChecker ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language);
+            return partyNameChecker.CheckClubName(name, out var message) == 0 ? null : message;
+        };
         if (partyLayer == null) AddChild(partyLayer = new CanvasLayer { Layer = 10 });
         var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
         c.Unloaded += () =>
@@ -132,6 +145,8 @@ public partial class HudScene
                 // FUN_141bd1530: the field's users. FIXTURE (offline): an online fixture member on the own map and channel
                 PlayerInField = live != null ? live.UserInField : FixtureUserInField,
             };
+            c.Send = PartySend;
+            c.OpenMyInfo += () => { if (myInfo == null || myInfo.IsClosed) OpenMyInfo(); };     // OpenDialog(0x2711)
             c.ItemClicked += (id, t) => GD.Print($"popup menu: item {id} ({menuModel.Tables.PopupMenuName(id)}) for {t?.Name}: its handler is not ported");
             if (popupLayer == null) AddChild(popupLayer = new CanvasLayer { Layer = 11 });
             var m = new MovieDialog(assets, c, menuModel ??= NewModel(), GetWindow().Size);

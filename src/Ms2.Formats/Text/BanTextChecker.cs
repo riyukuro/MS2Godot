@@ -278,6 +278,10 @@ public sealed class BanTextChecker
     public int CheckCharacterName(string name, out string message, bool shortForm = true) =>
         Check(name, (Checks)0xdf, new Limit(2, shortForm ? 12 : 24, false, false, false, true, false), out message);
 
+    /// <summary>CBanTextChecker::CheckClubName (commonstringtable.cpp:988): CheckTypes(0xd8, true): the reserved words, the
+    /// banned words, the start-with words and the whole banned words; no limit scan.</summary>
+    public int CheckClubName(string name, out string message) => Check(name, (Checks)0xd8, default, out message);
+
     /// <summary>A common string by key (stringcommon.xml), or null.</summary>
     public string CommonString(string key) => commonString?.Invoke(key);
 

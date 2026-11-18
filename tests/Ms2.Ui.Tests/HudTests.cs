@@ -255,6 +255,117 @@ public class HudTests
     }
 
     [Test]
+    public void PartySlotMenuItemsSendTheClientRequests()
+    {
+        // UIPopUpMenu's party handlers (RegisterMenuHandlers): leave / ready check send at once, kick and leader change ask
+        // first (OnMessage on yes), the vote kick asks with its own callback; the own slot's view opens the own info
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PopupMenuController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, ProfileImagePath = (_, _) => "" };
+        var sent = new List<object>();
+        var boxes = new List<MessageBoxData>();
+        int nexts = 0, myInfo = 0;
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.NextBox = () => nexts++;
+        c.OpenMyInfo += () => myInfo++;
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        c.OpenForPartySlot(100, 200, PartyFixture.SelfCharacterId, m.Player);
+        c.ItemClick(PopupMenuController.ViewOwnCharacter);
+        c.ItemClick(PopupMenuController.LeaveParty);
+        c.ItemClick(PopupMenuController.ReadyCheck);
+        Assert.That(myInfo, Is.EqualTo(1));
+        Assert.That(sent, Is.EqualTo(new object[] { new PartyLeaveRequest(), new PartyReadyCheckRequest() }));
+        c.ClosePopup();
+        sent.Clear();
+
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        c.ItemClick(PopupMenuController.ViewOwnCharacter);              // not the own character
+        Assert.That(myInfo, Is.EqualTo(1));
+        c.ItemClick(PopupMenuController.KickFromParty);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That(boxes[0].Type, Is.EqualTo(1));
+        Assert.That(boxes[0].Extra, Is.EqualTo("expelMember:FixtureArcher"));
+        Assert.That(boxes[0].Listener, Is.SameAs(c));
+        Assert.That(boxes[0].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_party_check_expel_member"), "FixtureArcher")));
+        c.OnMessageBox(null, 1, boxes[0].Extra);                        // no: nothing sent, the box goes on
+        Assert.That(sent, Is.Empty);
+        Assert.That(nexts, Is.EqualTo(1));
+        c.OnMessageBox(null, 0, boxes[0].Extra);
+        Assert.That(sent, Is.EqualTo(new object[] { new PartyKickRequest(3) }));
+        c.OnMessageBox(null, 0, "expelMember:NoSuchMember");            // no member by that name: nothing
+        Assert.That(sent, Has.Count.EqualTo(1));
+        c.ItemClick(PopupMenuController.MakePartyLeader);
+        Assert.That(boxes[1].Extra, Is.EqualTo("changeChief:FixtureArcher"));
+        c.OnMessageBox(null, 0, boxes[1].Extra);
+        Assert.That(sent[^1], Is.EqualTo(new PartyLeaderChangeRequest("FixtureArcher")));
+        c.ItemClick(PopupMenuController.VoteToKick);
+        Assert.That(boxes[2].HasCallback, Is.True);
+        Assert.That(boxes[2].Callback(1, boxes[2]), Is.True);
+        Assert.That(sent, Has.Count.EqualTo(2));
+        Assert.That(boxes[2].Callback(0, boxes[2]), Is.True);
+        Assert.That(sent[^1], Is.EqualTo(new PartyVoteKickRequest(3)));
+        // an unported item still raises
+        int raised = 0;
+        c.ItemClicked += (_, _) => raised++;
+        c.ItemClick(PopupMenuController.Whisper);
+        Assert.That(raised, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void PartyWindowButtonsSendTheClientRequests()
+    {
+        // UIPartyDialog: enter dungeon sends at once, give up asks, create club asks for a name and checks it (CreateClub)
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, MapName = _ => "Field" };
+        var sent = new List<object>();
+        var boxes = new List<MessageBoxData>();
+        var notices = new List<string>();
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.SystemNotice += notices.Add;
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        c.OnEnterDungeonClick();
+        Assert.That(sent, Is.EqualTo(new object[] { new RoomDungeonEnterRequest(0) }));
+        c.OnGiveUpDungeonClick();
+        Assert.That(boxes[0].Type, Is.EqualTo(1));
+        Assert.That(boxes[0].Msg, Is.EqualTo(m.Tables.Common("s_party_dungeon_giveup")));
+        boxes[0].Callback(1, boxes[0]);
+        Assert.That(sent, Has.Count.EqualTo(1));
+        boxes[0].Callback(0, boxes[0]);
+        Assert.That(sent[^1], Is.EqualTo(new DungeonGiveUpRequest()));
+        sent.Clear();
+
+        c.OnCreateClubClick();
+        var box = boxes[1];
+        Assert.That(box.Type, Is.EqualTo(10));
+        Assert.That(box.InputMaxChars, Is.EqualTo(m.Tables.ClubNameLengthMax));
+        box.ClickedTag = "ab cd";
+        Assert.That(box.Callback(0, box), Is.True);
+        Assert.That(notices, Is.EqualTo(new[] { m.Tables.Common("s_club_err_clubname_has_blank") }));
+        box.ClickedTag = "a";                                           // too short: silent
+        box.Callback(0, box);
+        Assert.That(notices, Has.Count.EqualTo(1));
+        box.ClickedTag = "";                                            // empty: the box stays
+        Assert.That(box.Callback(0, box), Is.False);
+        Assert.That(sent, Is.Empty);
+        box.ClickedTag = "Club1,";
+        Assert.That(box.Callback(0, box), Is.True);
+        Assert.That(sent, Is.EqualTo(new object[] { new ClubCreateRequest("Club1") }));
+        // not the leader: no box, and a create is refused
+        book.Apply(new PartyLeaderChange(3), PartyFixture.SelfCharacterId, true);
+        c.OnCreateClubClick();
+        Assert.That(boxes, Has.Count.EqualTo(2));
+        Assert.That(c.CreateClub("Club2"), Is.False);
+        Assert.That(notices[^1], Is.EqualTo(m.Tables.Common("s_club_err_create_no_party")));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MainPlayerInfoInitAndStatusEvents()
     {
         var m = Model();
