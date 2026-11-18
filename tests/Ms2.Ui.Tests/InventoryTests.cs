@@ -195,6 +195,28 @@ public class InventoryTests
     }
 
     [Test]
+    public void TheRightClickEquipSlotIsTheClients()
+    {
+        var model = NewModel(); var t = model.Tables;
+        EquipItem E(int id, long uid, EquipSlot slot) => new() { Id = id, Uid = uid, Slot = slot, Rarity = 1 };
+        Item Bag(int id) => InventoryController.ToItem(E(id, 999, EquipSlot.Unknown), t.Items);
+        WornEquipment Worn(params EquipItem[] e) => WornEquipment.Of(new PcInfo { Equips = e }, t.Items);
+        int Slot(WornEquipment w, int id, bool usable = true) => w.EquipSlotFor(Bag(id), t.ItemModels, _ => false, _ => usable);
+        var both = Worn(E(13000001, 2, EquipSlot.RH), E(14000001, 3, EquipSlot.LH));
+        var rightOnly = Worn(E(13000001, 2, EquipSlot.RH));
+        var none = Worn();
+        Assert.That(Slot(none, 15300001), Is.EqualTo(5), "two-handed: RH");
+        Assert.That((Slot(both, 13100001), Slot(rightOnly, 13100001), Slot(none, 13100001)), Is.EqualTo((5, 4, 5)),
+            "subtype 0x1f: both hands RH, only RH then LH, no RH then RH");
+        Assert.That(Slot(rightOnly, 13100001, usable: false), Is.EqualTo(5), "an unusable worn item is no item");
+        Assert.That(Slot(Worn(E(15300001, 2, EquipSlot.RH)), 13100001), Is.EqualTo(5), "a two-handed RH item");
+        Assert.That(Slot(none, 13000001), Is.EqualTo(t.ItemModels.Get(t.Items.Get(13000001).ItemPreset).FirstSlotType), "another weapon: the model's first group");
+        Assert.That(Slot(none, 11400001), Is.EqualTo(t.ItemModels.Get(t.Items.Get(11400001).ItemPreset).FirstSlotType), "no weapon: the model's first group");
+        Assert.That(both.EquipSlotFor(Bag(13100001), t.ItemModels, f => f == 0xda, _ => true, it => it.Uid == 2 ? 10 : 5), Is.EqualTo(4),
+            "feature 0xda: the higher-level RH item is kept, LH");
+    }
+
+    [Test]
     public void TheHoverTooltipIsTheClients()
     {
         Packs();
