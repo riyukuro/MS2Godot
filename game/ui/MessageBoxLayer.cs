@@ -35,7 +35,7 @@ public partial class MessageBoxLayer : CanvasLayer
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) return null;
         instance = new MessageBoxLayer { Name = "MessageBoxLayer", Layer = 12, ProcessMode = ProcessModeEnum.Always };
-        instance.Build(new UiAssets(new PackSet(dataDir)), any.GetTree().Root);
+        instance.Build(new UiAssets(PackSet.Shared(dataDir)), any.GetTree().Root);
         any.GetTree().Root.CallDeferred(Node.MethodName.AddChild, instance);   // the movie runs from now; the node joins the tree next
         return instance;
     }
