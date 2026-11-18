@@ -29,6 +29,7 @@ public partial class GameFlow : Node
     public State Current { get; private set; } = State.Login;
     int loadingFrames = -1;
     string shotDir;
+    bool boxScript;
 
     public static void Start(SceneTree tree)
     {
@@ -41,6 +42,7 @@ public partial class GameFlow : Node
     {
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--flow-shots") shotDir = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--flow-msgbox") { shotDir = args[i + 1]; boxScript = true; }
         GameOptions.Load();   // the client builds CGameOption (LoadLanguageOption, LoadGameOption) at startup, gameoption.cpp:1678-1685
         ScreenMode.ApplyAtStartup();   // then MS2RenderService::OnInit sizes the window from it (ms2renderservice.cpp:699-743)
         Ui.MessageBoxLayer.Ensure(this);   // CUIService::CreateAllDialogs registers the one message box layer (uiservice.cpp:2345)
@@ -61,7 +63,7 @@ public partial class GameFlow : Node
         Net.LiveSession.Attach(this);
         Go(State.Login);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
-        if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = Script(); }
+        if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }
     }
 
     /// <summary>The client restores the desktop's display mode on WM_CLOSE and WM_DESTROY (windowservice.cpp:772-790).</summary>
@@ -130,11 +132,16 @@ public partial class GameFlow : Node
             else if (method == UICharacterListDialogContract.ToHost.OnCreatePC) Go(State.Create);
             else if (method == UICharacterListDialogContract.ToHost.OnDeletePC)
             {
-                // the real dialog asks for a confirmation first; here the request goes out at once
+                // vfunc_28 "OnDeletePC": the confirmation box; its OK with the character's name sends the delete
                 var list = Session.List();
                 var victim = Session.SelectedIndex >= 0 && Session.SelectedIndex < list.Count ? list[Session.SelectedIndex] : null;
-                if (victim == null || Net.LiveSession.Instance is not { } live) return;
-                if (!live.Busy) DeleteLive(live, victim);
+                if (victim == null) return;
+                Ui.MessageBoxLayer.Ensure(this);
+                var k = DeleteConstants();
+                FrontEndBoxes.DeleteConfirm(victim, k.Level, k.Wait, new FrontEndBoxes.DeleteListener(victim.User.Name, () =>
+                {
+                    if (Net.LiveSession.Instance is { } live && !live.Busy) DeleteLive(live, victim);
+                }));
             }
             else if (method == UICharacterListDialogContract.ToHost.OnGameStart && a.Length > 0)
             {
@@ -156,7 +163,29 @@ public partial class GameFlow : Node
     // The live requests are awaited, so the continuation runs on Godot's context and may touch the session and the scene tree.
     async void LoginLive(Net.LiveSession live)
     {
-        if (await live.LoginAsync()) Go(State.Lobby);
+        if (await live.LoginAsync()) { Go(State.Lobby); return; }
+        if (live.LastLoginRefusal is { } r)
+        {
+            Ui.MessageBoxLayer.Ensure(this);
+            FrontEndBoxes.LoginRefused(r.State, r.Const1);
+        }
+    }
+
+    (int Level, uint Wait)? deleteConstants;
+    /// <summary>CharacterDestroyDivisionLevel and CharacterDestroyWaitSecond (constantsblocks.cpp:979-980, defaults 20 and
+    /// 86400; table/constants.xml overrides them).</summary>
+    (int Level, uint Wait) DeleteConstants()
+    {
+        if (deleteConstants is { } k) return k;
+        try
+        {
+            using var packs = new PackSet(Settings.DataDir);
+            var c = new ClientConstants(packs);
+            k = ((int)c.Float("CharacterDestroyDivisionLevel", 20), (uint)c.Float("CharacterDestroyWaitSecond", 86400));
+        }
+        catch (Exception ex) { GD.PushWarning("flow constants: " + ex.Message); k = (20, 86400); }
+        deleteConstants = k;
+        return k;
     }
 
     async void DeleteLive(Net.LiveSession live, CharacterEntry victim)
@@ -184,6 +213,7 @@ public partial class GameFlow : Node
             }
             return;
         }
+        Ms2.Ui.Hud.MessageBoxQueue.Next();   // vfunc_79: the create answer closes the name box (FUN_14151f200)
         Session.SelectedIndex = Session.List().Count - 1;
         Go(State.Lobby);
     }
@@ -230,6 +260,7 @@ public partial class GameFlow : Node
         catch (Exception ex) { GD.PushWarning("flow create: " + ex.Message); }
         var e = Session.Add(request, subJob1);
         Session.SelectedIndex = Session.List().IndexOf(e);
+        Ms2.Ui.Hud.MessageBoxQueue.Next();   // as on the server's answer: the name box closes (vfunc_79, FUN_14151f200)
         Go(State.Lobby);
     }
 
@@ -333,6 +364,36 @@ public partial class GameFlow : Node
     void ClickRow(Func<Ui.CharacterListScene, int> row)
     {
         if (GetTree().CurrentScene is Ui.CharacterListScene s) s.SelectRow(row(s));
+    }
+
+    /// <summary>--flow-msgbox DIR: the front-end's message boxes, one shot each, then quit.</summary>
+    async Task BoxScript()
+    {
+        var layer = Ui.MessageBoxLayer.Instance;
+        await Until(() => InScene(LoginScene)); await Frames(90);
+        FrontEndBoxes.LoginRefused(3, 0); await Frames(30);                      // LoginResult state 3: s_login_err_pwd
+        Shot("mb_login_pwd.png");
+        layer?.Click(0); await Frames(30);
+        UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
+        await Until(() => Current == State.Lobby && InScene(LobbyScene)); await Frames(90); await LobbyReady();
+        ClickRow(_ => 2); await Frames(5); await LobbyReady(); await Frames(30);              // a character under CharacterDestroyDivisionLevel
+        UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC); await Frames(30);
+        Shot("mb_delete.png");
+        layer?.Tick(0); await Frames(10);
+        Shot("mb_delete_ticked.png");
+        layer?.Click(0); await Frames(30);                                        // OK with no name: s_char_err_delete_name
+        Shot("mb_delete_wrong_name.png");
+        layer?.Click(0); await Frames(30);
+        ClickRow(_ => Session.List().Count); await Frames(5); await LobbyReady();          // the empty slot
+        Press(Godot.Key.Enter);
+        await Until(() => Current == State.Create && InScene(CreateScene)); await Frames(120);
+        Ui.Create.CharacterCreateScene.PickJobScripted();
+        await Until(() => Ui.Create.CharacterCreateScene.OnCreatePage); await Frames(120);
+        Ui.Create.CharacterCreateScene.OpenNameBoxScripted(); await Frames(30);
+        Shot("mb_name.png");
+        layer?.Click(0); await Frames(30);                                        // OK with no name: s_char_err_input under the input
+        Shot("mb_name_empty.png");
+        GetTree().Quit(0);
     }
 
     async Task Script()

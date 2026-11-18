@@ -75,9 +75,13 @@ public partial class LiveSession : Node
     }
 
     /// <summary>Login and the character list; the list replaces the stub list. False when the server refuses.</summary>
+    /// <summary>The server's LoginResult when the last login was refused (null when it failed otherwise or succeeded).</summary>
+    public LoginResult LastLoginRefusal { get; private set; }
+
     public async Task<bool> LoginAsync()
     {
         Busy = true;
+        LastLoginRefusal = null;
         try
         {
             var hp = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN").Split(':');
@@ -87,7 +91,7 @@ public partial class LiveSession : Node
             login = new TcpTransport();
             // the real client appends its region code to the id
             var o = await new LoginClient(login).LoginAsync(host, int.Parse(hp[1]), up[0] + "KR", up.Length > 1 ? up[1] : "", machine);
-            if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); return false; }
+            if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); LastLoginRefusal = o.Result; return false; }
             accountId = o.Result.AccountId;
             Session.AccountId = up[0];
             Session.Characters = o.Characters.ToList();
@@ -387,6 +391,11 @@ public partial class LiveSession : Node
             int n0 = Session.List().Count;
             Session.SelectedIndex = n0 - 1;
             UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC);
+            await Frames(30);   // the confirmation box: the checkbox, the character's name, OK
+            MessageBoxLayer.Instance?.Tick(0);
+            MessageBoxLayer.Instance?.Type(Session.List()[n0 - 1].User.Name);
+            await Frames(30);
+            MessageBoxLayer.Instance?.Click(0);
             await Until(() => Session.List().Count < n0, 600); await Frames(60);
             bool gone = Session.List().Count == n0 - 1 && flow.Current == GameFlow.State.Lobby;
             GD.Print(gone ? $"live: delete run done, {n0} -> {Session.List().Count}" : "live: delete run failed");

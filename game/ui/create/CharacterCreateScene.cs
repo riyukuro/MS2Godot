@@ -61,6 +61,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
         c.OnCallback("OnCreate", Array.Empty<object>());
         current.SubmitName(name);
     }
+    /// <summary>Scripted runs: the look page's Create (OnCreate), which opens the name box.</summary>
+    public static void OpenNameBoxScripted() => current?.create?.OnCallback("OnCreate", Array.Empty<object>());
     /// <summary>Scripted runs: the job page's Create button for its selected job (onClickCreate), which opens the look page.</summary>
     public static void PickJobScripted() { if (current?.select != null && page == Page.Select) current.ClickCreate(); }
     /// <summary>Scripted runs: the job page's back button (CharacterCreateSelectDialog.onClickPrev), as a click on it.</summary>
@@ -76,8 +78,8 @@ public partial class CharacterCreateScene : LobbyFieldScene
     {
         if (current?.create is not { } c) return false;
         c.CreateRefused();
-        if (Ms2Godot.Net.CreateRefusalText.InNameBox(kind)) { current.prompt?.SetError(text); return true; }
-        current.ClosePrompt();
+        if (Ms2Godot.Net.CreateRefusalText.InNameBox(kind)) { MessageBoxLayer.Instance?.Controller.UpdateErrorMessage(text); return true; }
+        ClosePrompt();
         return false;
     }
 
@@ -104,7 +106,6 @@ public partial class CharacterCreateScene : LobbyFieldScene
     MovieDialog createDialog;
     CharacterCreateController create;
     MovieVideo createVideo;
-    NamePromptStandIn prompt;
     ModelBuilder builder;
     FieldMap map;
     string shotDir;
@@ -178,7 +179,6 @@ public partial class CharacterCreateScene : LobbyFieldScene
         listDialog?.Relayout(window);
         selectDialog?.Relayout(window);
         createDialog?.Relayout(window);
-        prompt?.Center();
     }
 
     /// <summary>The window in pixels (LobbyLayout.UseWindowPixels), its UI scale and movie stage (LobbyLayout).</summary>
@@ -296,7 +296,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         };
         create.LookChanged += RebuildPreview;
         create.NameAsked += OpenPrompt;
-        create.NameError += m => prompt?.SetError(m);
+        create.NameError += m => MessageBoxLayer.Instance?.Controller.UpdateErrorMessage(m);   // UIMessageBox::UpdateErrorMessage
         create.CreateRequested += Created;
         create.Back += () => SwitchTo(Page.Select);
         create.GuideAsked += () => GD.Print("create: the mouse guide (0x4ea7) is not ported");
@@ -323,21 +323,17 @@ public partial class CharacterCreateScene : LobbyFieldScene
         catch (Exception ex) { GD.PushWarning("preview: " + ex.Message); }
     }
 
-    /// <summary>The name box (STAND-IN for the client's uimessagebox input box: one line, up to 12 characters, OK and Cancel).</summary>
+    /// <summary>OnCreate: the client's name box in the message box layer (FUN_140d73e40(10, 1), callback FUN_1418e7790).</summary>
     void OpenPrompt()
     {
-        if (prompt != null) return;
-        prompt = new NamePromptStandIn(assets.Str("$s_charcreate_input_name") is var t && !t.StartsWith('$') ? t : "");
-        // the box stays open after the request goes out (FUN_1418e7790 returns false); CreateFailed closes it or shows the error
-        prompt.Ok += text => create.SubmitName(text);
-        prompt.Cancel += ClosePrompt;
-        layer.AddChild(prompt);
-        prompt.Center();
+        MessageBoxLayer.Ensure(this);
+        Flow.FrontEndBoxes.NameBox(text => create.SubmitName(text));
     }
 
-    void ClosePrompt() { prompt?.QueueFree(); prompt = null; }
+    /// <summary>FUN_14151f200: the shown box (the name box) closes.</summary>
+    static void ClosePrompt() => Ms2.Ui.Hud.MessageBoxQueue.Next();
 
-    /// <summary>Scripted runs: the name into the open box, then OK.</summary>
+    /// <summary>Scripted runs: the name as the box's OK would pass it.</summary>
     void SubmitName(string name) => create.SubmitName(name);
 
     /// <summary>Scripted runs: the server's refusal of the sent request, as the flow passes it on.</summary>
@@ -345,7 +341,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
     {
         string text = Ms2Godot.Net.CreateRefusalText.For(kind, "Tester01", create.Common);
         bool inBox = CreateFailed(kind, text);
-        GD.Print($"create shots: refusal {kind}: state {create.State}, in the name box {inBox}, box open {prompt != null}, text \"{text}\"");
+        GD.Print($"create shots: refusal {kind}: state {create.State}, in the name box {inBox}, box open {MessageBoxLayer.Instance?.Shown == true}, text \"{text}\"");
     }
 
     void Created(Ms2.Net.Packets.CreateCharacter packet)
@@ -383,7 +379,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     public override void _Input(InputEvent e)
     {
-        if (prompt != null) return;
+        if (MessageBoxLayer.Instance?.Shown == true) return;   // a shown box takes the keys (UIMessageBox::vfunc_13)
         // UICharacterCreateDialog::vfunc_13: Enter (key 0x1c) while the page takes input -> onEnterKey; the job page's Enter
         // does nothing (CharacterCreateSelectDialog.onEnterKey returns)
         if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter && create?.OnEnterKey() == true)

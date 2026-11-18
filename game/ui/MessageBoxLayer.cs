@@ -106,6 +106,24 @@ public partial class MessageBoxLayer : CanvasLayer
         if (key != null && controller.ProcessKey(key)) GetViewport().SetInputAsHandled();
     }
 
+    /// <summary>Scripted runs: text into the shown box's m_textInput, as typed.</summary>
+    public void Type(string text)
+    {
+        if (movie == null || !Shown) return;
+        var h = movie.Host;
+        var input = h.Get(controller.MovieBox(), "m_textInput");
+        if (!Ms2.Avm2.Rt.IsNullish(input)) h.Set(input, "text", text);
+    }
+
+    /// <summary>Scripted runs: the shown box's m_checkbox<paramref name="n"/> ticked (its select event enables OK).</summary>
+    public void Tick(int n)
+    {
+        if (movie == null || !Shown) return;
+        var h = movie.Host;
+        var check = h.Get(controller.MovieBox(), "m_checkbox" + n);
+        if (!Ms2.Avm2.Rt.IsNullish(check)) h.Set(check, "selected", true);
+    }
+
     /// <summary>A scripted click on the shown box's button <paramref name="n"/> (m_button0..2, the centre of its bounds).</summary>
     public void Click(int n)
     {
