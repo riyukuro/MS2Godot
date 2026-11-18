@@ -217,11 +217,41 @@ public partial class CharacterListScene : LobbyFieldScene
     /// </summary>
     async void CrossfadeReload()
     {
-        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        var image = await CaptureField();
         if (!IsInsideTree()) return;
-        fadeFrom = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+        fadeFrom = image != null ? ImageTexture.CreateFromImage(image) : null;
         reselecting = true;
         Reload();
+    }
+
+    /// <summary>
+    /// The field alone as the camera sees it: the dialog stays on screen over the crossfade, so the kept frame must not
+    /// hold it (a frame with the dialog showed through the new, translucent dialog: the old row's swap arrows stayed as
+    /// a faint pair). One render of the same world through a copy of the camera, in a viewport the size of the window.
+    /// </summary>
+    async Task<Image> CaptureField()
+    {
+        var vp = GetViewport();
+        if (vp.GetCamera3D() is not { } cam) return null;
+        var sub = new SubViewport
+        {
+            Size = (Vector2I)vp.GetTexture().GetSize(), World3D = vp.World3D, RenderTargetUpdateMode = SubViewport.UpdateMode.Once,
+            Msaa3D = vp.Msaa3D, ScreenSpaceAA = vp.ScreenSpaceAA, UseTaa = vp.UseTaa, UseDebanding = vp.UseDebanding,
+            Scaling3DMode = vp.Scaling3DMode, Scaling3DScale = vp.Scaling3DScale, PositionalShadowAtlasSize = vp.PositionalShadowAtlasSize,
+        };
+        var copy = new Camera3D
+        {
+            Projection = cam.Projection, Fov = cam.Fov, Size = cam.Size, Near = cam.Near, Far = cam.Far, KeepAspect = cam.KeepAspect,
+            HOffset = cam.HOffset, VOffset = cam.VOffset, CullMask = cam.CullMask, Environment = cam.Environment, Attributes = cam.Attributes,
+        };
+        sub.AddChild(copy);
+        AddChild(sub);
+        copy.GlobalTransform = cam.GlobalTransform;
+        copy.Current = true;
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        var image = sub.GetTexture().GetImage();
+        sub.QueueFree();
+        return image;
     }
 
     void Reload()
