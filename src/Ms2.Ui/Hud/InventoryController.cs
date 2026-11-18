@@ -282,7 +282,13 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         return false;
     }
 
-    /// <summary>Scaleform Value::GetInt of a callback argument: its number, 0 for one that is not a number (NaN or infinite).</summary>
+    /// <summary>
+    /// A callback's int argument (NotifyDragSlot::SlotUse's button, notifydragslot.cpp:42). The client's Value::GetInt
+    /// (gfx_value.h:237) returns the union's IValue without a type check, so only an int Value (VT_Int) has a defined
+    /// result; another type reads other bits of the union (a double's low word, a string's pointer). Here a number is
+    /// truncated to an int, and anything else (NaN or infinite) is 0. That last case is the port's own choice; there is
+    /// no client value to match.
+    /// </summary>
     internal static int ArgInt(object v)
     {
         double d = Rt.ToNumber(v);

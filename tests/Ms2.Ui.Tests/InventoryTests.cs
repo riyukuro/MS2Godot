@@ -365,8 +365,6 @@ public class InventoryTests
         Assert.That(shownBoxes.Last(), Is.SameAs(bind), "no second box");
         Assert.That(c.ConfirmBindEquip(99, 0, 0), Is.False, "an item the inventory no longer has: the handler's 0");
         count = sent.Count;
-        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", "x" });
-        Assert.That(sent.Count, Is.EqualTo(count), "a button that is not a number is 0, the double click");
         record.JobGroup = 0;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.EquipJobKey))), "job 0 is never allowed: box 232");
@@ -377,7 +375,7 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.9", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "the preview key, a double click or an empty cell send nothing");
-        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(3), "the preview and the double clicks (no function) are raised");
+        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(2), "the preview and the double click (no function) are raised");
         model.HasLocalPlayer = false;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "no local player");
