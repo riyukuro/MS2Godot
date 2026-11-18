@@ -32,6 +32,9 @@ public sealed class InventoryController : UiController, IInventoryBinding
     public Func<PcInfo> Wearer;
     /// <summary>CUIService m_n128 (FUN_141adcb40): a Shift key is held (DIK 0x2a / 0x36, uiscenegame.cpp:1128).</summary>
     public Func<bool> ShiftHeld = () => false;
+    /// <summary>CInputKeyHandler::IsActionKeyDown(action, 0, 0) (FUN_14025e7c0): the keys of the action are held. Actions read
+    /// here: 0x49406 (MS2DragSlot::vfunc_19, the right-click preview) and 0x4940d (FUN_1414056b0, the skin tab put-on).</summary>
+    public Func<int, bool> ActionKeyDown = _ => false;
     /// <summary>DAT_143af62d0, initData's second argument (the dev mode: the auto pick-up option button enabled).</summary>
     public bool DevMode;
 
@@ -39,7 +42,8 @@ public sealed class InventoryController : UiController, IInventoryBinding
     public event Action<int> ToggleDialog;
     /// <summary>A button whose client path sends a request or opens a part not here (by its callback name): OnClickSort,
     /// onClickSlotExpand, onClickOpenBank, onClickItemOption, onClickItemMerge, onClickItemEnchantTransform,
-    /// onClickUnlimitedEnchant, onClickItemRemakeOption, OnItemSearch, notifySlotUse, notifySlotDragEnd (a drop off the bag).</summary>
+    /// onClickUnlimitedEnchant, onClickItemRemakeOption, OnItemSearch, notifySlotUse (the double click, the preview and the
+    /// right-click modes other than put-on), notifySlotDragEnd (a drop off the bag).</summary>
     public event Action<string> Button;
 
     /// <summary>m_1f0 (BuildTabList @0x14199d1c0): the tab buttons in order, by name and tab.</summary>
@@ -253,8 +257,9 @@ public sealed class InventoryController : UiController, IInventoryBinding
             case "onclickitemenchant": ToggleDialog?.Invoke(0x4e91); return true;           // OnClickItemEnchant @0x14199aaa0
             case "onclicksort": OnClickSort(); return true;
             case "notifyslotdragend": return SlotDragEnd(args);
+            case "notifyslotuse": return SlotUse(args);
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
-            case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand": case "notifyslotuse":
+            case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand":
                 Button?.Invoke(name); return true;
             // these two fall through to "return 0" in the client (:945-951, :979-981)
             case "onclickitemremakeoption": case "onclickopenbank":
@@ -294,6 +299,80 @@ public sealed class InventoryController : UiController, IInventoryBinding
         Host.Push(SlotName(from));
         return true;
     }
+
+    /// <summary>
+    /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) for a slot of this bag: the button is the second argument (0 without
+    /// one). Button 1, the right click: MS2DragSlot::vfunc_19 (ms2dragslot.cpp:60; the slot is enabled) with action 0x49406
+    /// held is the preview (vfunc_16, not ported: raised), else <see cref="RightClick"/>. Button 0, the double click, and
+    /// other names are raised (notifySlotUse). The client guards neither against a repeat: each call goes through.
+    /// </summary>
+    bool SlotUse(object[] args)
+    {
+        int i = args.Length > 0 ? SlotIndexOf(args[0]) : -1;
+        int button = args.Length > 1 ? Convert.ToInt32(args[1], System.Globalization.CultureInfo.InvariantCulture) : 0;
+        if (i < 0 || button != 1 || ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
+        RightClick(i);
+        return true;
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_14 (invenslot.cpp:904): none for an empty cell; the item's new flag cleared (SetNew(0), FUN_14199bc00);
+    /// then by FUN_14140d3e0 (<see cref="UseMode"/>): mode 6 puts it on, FUN_140a621c0(uid, 0, FUN_1414056b0) =
+    /// RequestEquipItem(item, 0, layer, 0) (<see cref="RequestEquip"/>). FUN_1414056b0 (:601): 0 for a non-skin item; a skin
+    /// item 1, or with feature 0x8e 2 unless action 0x4940d is held. The other modes (7 the quick slot, 12 the gem, 15 the
+    /// UGC rename) are not ported and are raised.
+    /// </summary>
+    void RightClick(int i)
+    {
+        if (View?.ItemAt(View.Tab, i) is not { } e || Model == null) return;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return;
+        View.ClearNew(e.Uid);
+        if (UseMode(item) != 6) { Button?.Invoke("notifySlotUse"); return; }
+        int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
+        RequestEquip(item, layer);
+    }
+
+    /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
+    public const string LowLevelKey = "s_item_err_puton_low_level", ExpiredKey = "s_item_err_puton_expired";
+
+    /// <summary>
+    /// Unk_Inventory::RequestEquipItem (inventory.cpp:1236) with slot 0 and no binding skip: no local player, nothing.
+    /// FUN_140a65e30 (:1630) on GetItemUseError (:1572): an expired item (CItem::IsExpired, server time) without a maid id:
+    /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError's level: box 224 for the
+    /// wearer's level below levelLimit; then an expired item that is not a pet (CItem::FUN_140528980): nothing, no box. The
+    /// slot is <see cref="WornEquipment.EquipSlotFor"/> (FUN_141420a70; worn items usable as PC::CanUseItem's expiry and
+    /// codi-layer parts). CanEquipItem (:1418): not an equipment item with model groups none of type 0 (FUN_14053c710):
+    /// nothing (its layer checks, s_item_err_Invalid_slot_codi and box 0xd3, cannot fail: the layer is 1 or 2 only for a skin
+    /// item, 2 only with feature 0x8e). No record: no worn item. The send maps the layer as FUN_1401fb870: 2 only with feature 142.
+    /// Nothing is put on here: the server's equip packets do.
+    /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the dead check (box 66), the PC bang,
+    /// gender, job, VIP and wedding requirements (their item limits and player states are not in the port), the rest of
+    /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
+    /// 0x43, s_item_err_codi_slot, the cube texture block), the bind-on-equip box (17, s_msg_transfer_bind_when_equip) and
+    /// the item sound.
+    /// </summary>
+    void RequestEquip(Item item, int layer)
+    {
+        if (!Model.HasLocalPlayer) return;
+        var d = item.Data;
+        long now = View.ServerTime();
+        bool expired = item.ExpiryTime > 0 && item.ExpiryTime < now;
+        if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
+        var record = Wearer?.Invoke();
+        if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
+        if (expired && !d.IsPetItem) return;
+        var models = Model.Tables.ItemModels;
+        if (d.Type != 1 || models.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return;
+        var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
+        bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime < now && !w.Data.IsPetItem) && (record?.CodiActive == true || !IsLayer2(w));
+        bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
+        int slot = worn.EquipSlotFor(item, models, Feature, CanUse);
+        byte mode = layer switch { 1 => 1, 2 => Feature(142) ? (byte)2 : (byte)1, _ => 0 };
+        View.RequestEquip?.Invoke(item.Uid, (byte)slot, mode);
+    }
+
+    void ShowCommonBox(string key) => ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(key) ?? "", null, ""));
 
     /// <summary>The message box text GetStringCommon(0x2a1) (commonstringtable.cpp:2289).</summary>
     public const string ExpiredItemsKey = "s_msg_item_remove_expired_item_in_inventory";

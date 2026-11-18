@@ -290,4 +290,60 @@ public class InventoryTests
         c.OnCallback("notifySlotDragEnd", new object[] { "InventoryDialog.0", null });
         Assert.That((sent.Count, raised.Last()), Is.EqualTo((1, "notifySlotDragEnd")), "a drop off the bag is not ported: raised");
     }
+
+    [Test]
+    public void ARightClickSendsTheEquipOnly()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[]
+        {
+            new EquipItem { Id = 13100001, Uid = 10, InventorySlot = 0, Amount = 1, Rarity = 1 },                    // subtype 0x1f
+            new EquipItem { Id = 11400001, Uid = 11, InventorySlot = 1, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = 11400001, Uid = 12, InventorySlot = 2, Amount = 1, Rarity = 1, ExpiryTime = 500 },
+            new EquipItem { Id = 11400021, Uid = 13, InventorySlot = 3, Amount = 1, Rarity = 1 },                    // a skin item
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        var record = new PcInfo { Level = 50, Equips = new[] { new EquipItem { Id = 13000001, Uid = 2, Slot = EquipSlot.RH, Rarity = 1 } } };
+        c.Wearer = () => record;
+        int gear = c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Tab == 1).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", gear);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var sent = new List<(long, byte, byte)>(); c.View.RequestEquip = (u, s, m) => sent.Add((u, s, m));
+        var raised = new List<string>(); c.Button += raised.Add;
+        var boxes = new List<string>(); c.ShowBox = b => boxes.Add(b.Msg);
+        var t = model.Tables;
+        Assert.That(t.Common(InventoryController.ExpiredKey), Is.Not.Empty);
+        Assert.That(t.Common(InventoryController.LowLevelKey), Is.Not.Empty);
+
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0", 1 }), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (10L, (byte)4, (byte)0) }), "subtype 0x1f with only RH worn: LH, layer 0");
+        Assert.That(c.View.ItemAt(c.View.Tab, 0)?.Uid, Is.EqualTo(10L), "nothing is put on until the server says so");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
+        Assert.That(sent.Last(), Is.EqualTo((11L, (byte)t.ItemModels.Get(t.Items.Get(11400001).ItemPreset).FirstSlotType, (byte)0)));
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.3", 1 });
+        byte layer = model.IsFeatureEnabled(0x8e) ? (byte)2 : (byte)1;
+        Assert.That(sent.Last().Item3, Is.EqualTo(layer == 2 && model.IsFeatureEnabled(142) ? 2 : 1), "a skin item's layer, mapped as FUN_1401fb870");
+        int count = sent.Count;
+
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2", 1 });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.ExpiredKey))), "expired: box 225, no send");
+        record.Level = 0;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((count, t.Common(InventoryController.LowLevelKey))), "level: box 224, no send");
+        record.Level = 50;
+        c.ActionKeyDown = a => a == 0x49406;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
+        c.ActionKeyDown = _ => false;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.9", 1 });
+        Assert.That(sent.Count, Is.EqualTo(count), "the preview key, a double click or an empty cell send nothing");
+        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(2), "the preview and the double click are raised");
+        model.HasLocalPlayer = false;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
+        Assert.That(sent.Count, Is.EqualTo(count), "no local player");
+    }
 }
