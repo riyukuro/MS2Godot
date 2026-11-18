@@ -46,6 +46,14 @@ public sealed record ItemUnequipRequest(long Uid) : IOutPacket {
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(1); w.WriteLong(Uid); }
 }
 
+/// <summary>Outbound 0x19 (SendOp::RequestItemUse): Unk_Inventory::RequestUseItem (inventory.cpp:1201), the payload as FUN_1401fbc40
+/// writes it: i64 the item's uid, then the argument as a unicode string ("" from a plain use). The client uses up nothing itself:
+/// the server's item packets do.</summary>
+public sealed record ItemUseRequest(long Uid, string Argument) : IOutPacket {
+    public Outbound Op => Outbound.RequestItemUse;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteLong(Uid); w.WriteUnicodeString(Argument ?? ""); }
+}
+
 /// <summary>What the game server sent from the key check up to the field enter request.</summary>
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
     /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>

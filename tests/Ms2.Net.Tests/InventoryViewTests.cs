@@ -103,6 +103,12 @@ public class InventoryViewTests {
         Assert.That(v.TabOfItem(30000001), Is.EqualTo(3));
     }
 
+    [Test] public void TheUseRequestIsTheClients() {
+        var w = new ByteWriter(); new ItemUseRequest(0x0102030405060708, "ab").Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 8, 7, 6, 5, 4, 3, 2, 1, 2, 0, (byte)'a', 0, (byte)'b', 0 }));
+        Assert.That((ushort)new ItemUseRequest(1, "").Op, Is.EqualTo(0x19));
+    }
+
     [Test] public void SortWithAnExpiredItemWaitsForTheBoxAnswer() {
         var b = Book(); var v = new InventoryView(b) { ServerTime = () => 1000 }; var sent = new List<(int, bool)>(); v.RequestSort = (t, s) => sent.Add((t, s));
         b.Apply(new ItemMessage.Add(It(30000001, 1, 0))); b.Apply(new ItemMessage.Add(new EquipItem { Id = 30000002, Uid = 2, InventorySlot = 1, Amount = 1, ExpiryTime = 2000 }));

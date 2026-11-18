@@ -52,6 +52,8 @@ public sealed class InventoryView {
     public Action<long, byte, byte> RequestEquip { get; set; }
     /// <summary>The unequip request (<see cref="ItemUnequipRequest"/>, Unk_Inventory::RequestUnequipItem): the worn item's uid.</summary>
     public Action<long> RequestUnequip { get; set; }
+    /// <summary>The use request (<see cref="ItemUseRequest"/>, Unk_Inventory::RequestUseItem): (item uid, argument).</summary>
+    public Action<long, string> RequestUse { get; set; }
     public int Pending => pending;
     /// <summary>m_1a8: the tab button index of each tab (-1 = the tab has no button and is skipped); identity until the UI tells.</summary>
     public int[] TabButtons { get; set; } = Enumerable.Range(0, ItemBook.Tabs).ToArray();
