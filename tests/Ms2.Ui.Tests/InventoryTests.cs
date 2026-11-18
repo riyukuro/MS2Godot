@@ -350,4 +350,54 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "no local player");
     }
+
+    [Test]
+    public void ADoubleClickSendsTheUseOnly()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        bool Plain(ItemData d) => d is { HasFunction: true, HasCubeTextureMesh: false, IsScoreItem: false, LevelLimit: <= 1, GenderLimit: 2, JobLimit.Count: 0 }
+            && !InventoryController.OwnUseFunctions.Contains(d.FunctionName) && !d.IsPetItem && !d.HasMaidId;
+        int plain = Enumerable.Range(20000000, 2000).Concat(Enumerable.Range(20300000, 2000)).FirstOrDefault(id => t.Items.Get(id) is { } d && Plain(d));
+        Assert.That(plain, Is.Not.Zero, "an item with a plain use");
+        TestContext.WriteLine($"plain use item {plain}: {t.Items.Get(plain).FunctionName}");
+        int tab = plain / 10000000;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(tab, new[]
+        {
+            new EquipItem { Id = plain, Uid = 20, InventorySlot = 0, Amount = 3, Rarity = 1 },
+            new EquipItem { Id = plain, Uid = 21, InventorySlot = 1, Amount = 1, Rarity = 1, ExpiryTime = 500 },
+            new EquipItem { Id = 20300327, Uid = 22, InventorySlot = 2, Amount = 1, Rarity = 1 },                    // OpenItemBox
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        var record = new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+        c.Wearer = () => record;
+        int shown = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == tab).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", shown);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+        var raised = new List<string>(); c.Button += raised.Add;
+        var boxes = new List<string>(); c.ShowBox = b => boxes.Add(b.Msg);
+
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" }), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (20L, "") }), "the uid and an empty argument");
+        Assert.That(c.View.ItemAt(c.View.Tab, 0)?.Amount, Is.EqualTo(3), "nothing is used up until the server says so");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0", 0 });
+        Assert.That(sent, Has.Count.EqualTo(2), "a repeat goes through, as in the client");
+        c.ShiftHeld = () => true;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        c.ShiftHeld = () => false;
+        Assert.That(sent, Has.Count.EqualTo(2), "Shift held: nothing");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((2, t.Common(InventoryController.ExpiredKey))), "expired: box 225");
+        record.JobGroup = 0;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That((sent.Count, boxes.Last()), Is.EqualTo((2, t.Common(InventoryController.DisabledJobKey))), "job 0: s_item_err_disable_job");
+        record.JobGroup = 10;
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.2" });
+        Assert.That((sent.Count, raised.Last()), Is.EqualTo((2, "notifySlotUse")), "a function with its own handler: raised");
+    }
 }

@@ -302,14 +302,20 @@ public sealed class InventoryController : UiController, IInventoryBinding
 
     /// <summary>
     /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) for a slot of this bag: the button is the second argument (0 without
-    /// one). Button 1, the right click: MS2DragSlot::vfunc_19 (ms2dragslot.cpp:60; the slot is enabled) with action 0x49406
-    /// held is the preview (vfunc_16, not ported: raised), else <see cref="RightClick"/>. Button 0, the double click, and
-    /// other names are raised (notifySlotUse). The client guards neither against a repeat: each call goes through.
+    /// one). Button 0, the double click: nothing while Shift is held (GetKeyState(VK_SHIFT)), else <see cref="DoubleClick"/>.
+    /// Button 1, the right click: MS2DragSlot::vfunc_19 (ms2dragslot.cpp:60; the slot is enabled) with action 0x49406 held is
+    /// the preview (vfunc_16, not ported: raised), else <see cref="RightClick"/>. Other names are raised (notifySlotUse). The
+    /// client guards neither against a repeat: each call goes through.
     /// </summary>
     bool SlotUse(object[] args)
     {
         int i = args.Length > 0 ? SlotIndexOf(args[0]) : -1;
         int button = args.Length > 1 ? Convert.ToInt32(args[1], System.Globalization.CultureInfo.InvariantCulture) : 0;
+        if (i >= 0 && button == 0)
+        {
+            if (!ShiftHeld()) DoubleClick(i);
+            return true;
+        }
         if (i < 0 || button != 1 || ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
         RightClick(i);
         return true;
@@ -331,6 +337,57 @@ public sealed class InventoryController : UiController, IInventoryBinding
         if (UseMode(item) != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, layer);
+    }
+
+    /// <summary>
+    /// The functions with a handler of their own (RegisterItemUseFuncs, unit_140d1ae30_itemfunctiondispatch.cpp:373): UseItem
+    /// runs it in place of the plain use request. None is ported: such an item's use is raised.
+    /// </summary>
+    public static readonly IReadOnlySet<string> OwnUseFunctions = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "OpenItemBox", "OpenItemBoxWithKey", "OpenDungeonItemBox", "CallAirTaxi", "CallMedic", "CallBlackMarket", "OpenBank",
+        "LevelPotion", "OpenInstrument", "ExpandInven", "ChangeCharName", "ChangeGuildName", "ChangeGender", "ResetAbilityCoolTime",
+        "RecallGuild", "RecallWedding", "RecallParty", "EnchantScroll", "FishingRod", "UGCMapPackage", "SelectItemBox",
+        "OpenItemBoxLullu", "OpenItemBoxLulluSimple", "OpenPetBox", "ItemRemakeScroll", "ItemRePackingScroll", "PetTraining",
+        "OpenWebPage", "ItemSocketScroll", "ItemExchangeScroll", "ItemExtraction", "PetExtraction", "QuestScroll", "ItemMergeRevert",
+        "OpenMassive", "ItemActiveCodiTab", "ItemChangeBeauty", "InstallBillBoard", "OpenCoupleEffectBox", "SuperWorldChat",
+        "WeddingChat", "TreasureMap", "CreateReactor", "FestivalEvent", "BlueprintImport", "ChatEmoticonAdd",
+        "OpenItemBoxLimitedQuantity", "OpenGachaBox", "QuestStart",
+    };
+
+    /// <summary>The common strings the use checks show (commonstringtable.cpp; the level and job ones by key).</summary>
+    public const string UseLevelKey = "s_err_not_enough_level";
+
+    /// <summary>
+    /// InvenSlot::vfunc_13 (invenslot.cpp:765): no local player or an empty cell, nothing. A cube texture item (UGC edit) and a
+    /// music score item (the score dialogs) come first and are not ported: raised. An item with a function: FUN_140a661e0
+    /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
+    /// id): box 225 (0xe1); the level: ShowMessageBox(s_err_not_enough_level); the job: s_item_err_disable_job; the gender: box
+    /// 45. Then TryUseItem / UseItem (unit_140d1ae30_itemfunctiondispatch.cpp:532, :491): a function of
+    /// <see cref="OwnUseFunctions"/> has its own handler (raised); else FUN_140a63880 = RequestUseItem(uid, "")
+    /// (inventory.cpp:1201): FUN_140a65e30's GetItemUseError (expired without a maid id box 225, the same limits), then the use
+    /// request. Nothing is used up here: the server's item packets do. The other kinds (a shop id, a pet, an emotion, an
+    /// equipment item, FUN_14053c8b0) are not ported: raised.
+    /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe) checks,
+    /// the use cooldown (FUN_141409060, box 0x55), the function shutdown list (notice 0x2f7), the bind-on-use box (0x11,
+    /// s_msg_transfer_bind_when_use), the dead check (box 66) and the item sound.
+    /// </summary>
+    void DoubleClick(int i)
+    {
+        if (Model == null || !Model.HasLocalPlayer || View?.ItemAt(View.Tab, i) is not { } e) return;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item == null) return;
+        var d = item.Data;
+        if (d.HasCubeTextureMesh || d.IsScoreItem || !d.HasFunction) { Button?.Invoke("notifySlotUse"); return; }
+        var record = Wearer?.Invoke();
+        bool expired = item.ExpiryTime > 0 && item.ExpiryTime < View.ServerTime();
+        if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
+        if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(UseLevelKey); return; }
+        if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return; }
+        if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
+        if (OwnUseFunctions.Contains(d.FunctionName)) { Button?.Invoke("notifySlotUse"); return; }
+        if (expired && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }                     // GetItemUseError 5 (an expired pet)
+        View.RequestUse?.Invoke(item.Uid, "");
     }
 
     /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
