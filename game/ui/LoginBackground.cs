@@ -111,6 +111,17 @@ public static class LoginBackground
         }
     }
 
+    /// <summary>
+    /// GFxMovieBackground::GotoAndPlay (gfxmoviebackground.cpp, @0x14127ab60): on a loaded background the movie's
+    /// bgGotoAndPlay(label) is invoked and the call answers 1. The backdrop's AS is not run here, so the title clip goes to
+    /// the label when it has one. STILL-OPEN: bgGotoAndPlay's body (the BG_*_Login movies carry no endTitleAni label).
+    /// </summary>
+    public static bool GotoAndPlay(MovieClipNode content, string label)
+    {
+        if (Title(content) is { } t && t.HasLabel(label)) t.GotoLabel(label, true);
+        return true;
+    }
+
     /// <summary>The title animation: the movie's first sprite, which stops on its last frame (endShowTitle).</summary>
     public static MovieClipNode Title(MovieClipNode content) =>
         content.Children.FirstOrDefault(c => c.Node is MovieClipNode)?.Node as MovieClipNode;
