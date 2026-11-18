@@ -117,6 +117,13 @@ public sealed class MessageBoxData
     /// <summary>Append&lt;unsigned&gt; (0x140534050, uimessageboxdata.h:216): an argument, as its decimal text.</summary>
     public void Append(uint n) => Args.Add(n.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
+    /// <summary>Append&lt;int&gt; (0x140533ff0, uimessageboxdata.h:214): an argument, as its signed decimal text.</summary>
+    public void Append(int n) => Args.Add(n.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>FUN_141a02e50 (unit_141a00db0.cpp:557): GetArg&lt;int&gt; (uiclosetdialog.cpp:235), FUN_1407181a0 (_wtoi) of the
+    /// argument's text; <paramref name="def"/> past the last argument.</summary>
+    public int ArgInt(int index, int def) => (uint)index < (uint)Args.Count ? WToI(Args[index]) : def;
+
     /// <summary>FUN_141a02e90 (unit_141a00db0.cpp:565): GetIntArg (actionkeyobject.cpp:3363) of the argument, _wtoi of its
     /// text; <paramref name="def"/> past the last argument.</summary>
     public uint ArgUInt(int index, uint def) => (uint)index < (uint)Args.Count ? (uint)WToI(Args[index]) : def;

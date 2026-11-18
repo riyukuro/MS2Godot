@@ -46,6 +46,20 @@ public sealed record ItemUnequipRequest(long Uid) : IOutPacket {
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(1); w.WriteLong(Uid); }
 }
 
+/// <summary>Outbound 0x16 (SendOp::ItemEquip) mode 2: EquipSlot::vfunc_18's swap (equipslot.cpp:169-177), u8 2 then FUN_1401fb9a0
+/// (unit_1401f9eb0_packetpayloadserializers.cpp:609): i64 the dragged worn item's uid, u8 the target equip slot.</summary>
+public sealed record ItemSwapEquipRequest(long Uid, byte Slot) : IOutPacket {
+    public Outbound Op => Outbound.ItemEquip;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(2); w.WriteLong(Uid); w.WriteByte(Slot); }
+}
+
+/// <summary>Outbound 0x47 (SendOp::BadgeEquip, opcodes.h:376) mode 0: EquipGem (gemslot_2.cpp:441), u8 0 then FUN_1401fd190
+/// (unit_1401f9eb0_packetpayloadserializers.cpp:987): i64 the gem item's uid, u8 the gem slot (-1, no worn gem, as 0xff).</summary>
+public sealed record GemEquipRequest(long Uid, byte Slot) : IOutPacket {
+    public Outbound Op => Outbound.BadgeEquip;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(0); w.WriteLong(Uid); w.WriteByte(Slot); }
+}
+
 /// <summary>Outbound 0x19 (SendOp::RequestItemUse): Unk_Inventory::RequestUseItem (inventory.cpp:1201), the payload as FUN_1401fbc40
 /// writes it: i64 the item's uid, then the argument as a unicode string ("" from a plain use). The client uses up nothing itself:
 /// the server's item packets do.</summary>

@@ -52,6 +52,11 @@ public sealed class InventoryView {
     public Action<long, byte, byte> RequestEquip { get; set; }
     /// <summary>The unequip request (<see cref="ItemUnequipRequest"/>, Unk_Inventory::RequestUnequipItem): the worn item's uid.</summary>
     public Action<long> RequestUnequip { get; set; }
+    /// <summary>The worn item swap (<see cref="ItemSwapEquipRequest"/>, EquipSlot::vfunc_18): (the dragged worn item's uid, the target
+    /// equip slot).</summary>
+    public Action<long, byte> RequestSwapEquip { get; set; }
+    /// <summary>The gem equip (<see cref="GemEquipRequest"/>, EquipGem): (the gem item's uid, the gem slot, 0xff for none).</summary>
+    public Action<long, byte> RequestEquipGem { get; set; }
     /// <summary>The use request (<see cref="ItemUseRequest"/>, Unk_Inventory::RequestUseItem): (item uid, argument).</summary>
     public Action<long, string> RequestUse { get; set; }
     public int Pending => pending;

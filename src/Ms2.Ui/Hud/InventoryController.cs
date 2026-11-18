@@ -4,6 +4,21 @@ using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
+/// <summary>The owner of the inventory's bag slots (InvenSlot: AsDragSlot's TypeCast 0x6200023 casts a drag slot to it),
+/// with the inventory's (g_143ab2a90, Unk_Inventory) lookup and equip request.</summary>
+public interface IInvenSlotOwner : IDragSlotOwner
+{
+    /// <summary>InvenSlot::GetItemUid: the slot's item uid (m_nItemUid, 0 for an empty cell); null for a name that is not one
+    /// of the bag's slots.</summary>
+    long? InvenSlotUid(string name);
+    /// <summary>Unk_Inventory::FindItemByUid: null when the inventory has no item of the uid.</summary>
+    Item FindItem(long uid);
+    /// <summary>Unk_Inventory::CanEquipItem(item, slot, layer) (inventory.cpp:1418), its boxes shown.</summary>
+    bool CanEquipItem(Item item, int slot, int layer);
+    /// <summary>Unk_Inventory::RequestEquipItem(item, slot, layer, 0) (inventory.cpp:1236) with its checks.</summary>
+    void RequestEquipItem(Item item, int slot, int layer);
+}
+
 /// <summary>
 /// UIInventoryDialog (client/ms2/uiinventorydialog.cpp; UI id 0x4e2d), the C++ side of the inventory movie uiinventorydialog,
 /// over an <see cref="InventoryView"/> (the client's g_143ab2a90 as the dialog reads it). The movie draws the window, the tab
@@ -14,7 +29,7 @@ namespace Ms2.Ui.Hud;
 /// <para>Nothing here sends a packet: the sort, the slot expansion, the bank call and item use are raised as
 /// <see cref="Button"/> / <see cref="ToggleDialog"/> for the host to leave unsent.</para>
 /// </summary>
-public sealed class InventoryController : UiController, IInventoryBinding, IDragSlotOwner
+public sealed class InventoryController : UiController, IInventoryBinding, IInvenSlotOwner
 {
     public override string Movie => "uiinventorydialog";
     protected override string EntityMethod => "changeMoney";
@@ -571,10 +586,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IDrag
         if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
         if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(d.Type == 1 ? EquipJobKey : DisabledJobKey); return; }
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
+        if (!CanEquipItem(item, slot, layer)) return;
         var models = Model.Tables.ItemModels;
-        if (d.Type != 1 || models.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return;
-        if (layer == 2 && (!Feature(0x8e) || !d.HasSkinType)) { ShowCommonBox(InvalidCodiSlotKey); return; }
-        if (layer == 1 && !d.HasSkinType) { ShowCommonBox(InvalidSlotKey); return; }
         var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
         bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime <= now && !w.Data.IsPetItem && !w.Data.HasMaidId)
             && (record?.CodiActive == true || !IsLayer2(w));
@@ -593,9 +606,31 @@ public sealed class InventoryController : UiController, IInventoryBinding, IDrag
         View.RequestEquip?.Invoke(item.Uid, (byte)selected, mode);
     }
 
+    /// <summary>The part of CanEquipItem (inventory.cpp:1418) the port has (see <see cref="RequestEquip"/>): not an equipment
+    /// item with model groups none of type 0 (FUN_14053c710): false; layer 2 without feature 0x8e or a skin type: box
+    /// s_item_err_Invalid_slot_codi; layer 1 without a skin type: box 0xd3 (211). The slot is not read (its acceptance is
+    /// STILL-OPEN, see <see cref="RequestEquip"/>).</summary>
+    public bool CanEquipItem(Item item, int slot, int layer)
+    {
+        var d = item.Data;
+        if (d.Type != 1 || Model.Tables.ItemModels.Get(d.ItemPreset) is not { SlotTypes.Count: > 0 } model || model.SlotTypes.Contains(0)) return false;
+        if (layer == 2 && (!Feature(0x8e) || !d.HasSkinType)) { ShowCommonBox(InvalidCodiSlotKey); return false; }
+        if (layer == 1 && !d.HasSkinType) { ShowCommonBox(InvalidSlotKey); return false; }
+        return true;
+    }
+
+    /// <summary>RequestEquipItem(item, slot, layer, 0): <see cref="RequestEquip"/>.</summary>
+    public void RequestEquipItem(Item item, int slot, int layer) { if (Model != null && View != null) RequestEquip(item, slot, layer); }
+
+    /// <summary>InvenSlot::GetItemUid of a slot of the shown tab.</summary>
+    public long? InvenSlotUid(string name) => SlotIndexOf(name) is int i and >= 0 ? View?.ItemAt(View.Tab, i)?.Uid ?? 0 : null;
+
+    /// <summary>FindItemByUid over the view (<see cref="InventoryView.FindByUid"/>).</summary>
+    public Item FindItem(long uid) => View?.FindByUid(uid) is { } e && Model != null ? ToItem(e, Model.Tables.Items) : null;
+
     /// <summary>CItemTransfer::HasBindingRule (itemsocketsystemutil.cpp:2788, rule &amp; 8) and no binding (HasBinding, :2795): the
     /// client asks first, box 17 / 0x11, and sends only on its confirm.</summary>
-    static bool NeedsBindConfirm(Item item) => item.Record?.Transfer is { } t && (t.Rule & 8) != 0 && !t.HasBinding;
+    internal static bool NeedsBindConfirm(Item item) => item.Record?.Transfer is { } t && (t.Rule & 8) != 0 && !t.HasBinding;
 
     /// <summary>The bind boxes' tags (s_useBindEquipItem inventory.cpp:196, s_strUseBindFuncItem
     /// unit_140d1ae30_itemfunctiondispatch.cpp:304), which UIMessageBox::HandlePlainTag answers (uimessagebox.cpp:1052-1061).</summary>

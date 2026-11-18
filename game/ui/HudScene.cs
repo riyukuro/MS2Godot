@@ -1082,6 +1082,8 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"character: {name} is not sent (display only)");
+        // the gem bind box's yes (UIMessageBox::HandleUseBindGemEquipItemButton) goes back to the character window
+        if (MessageBoxLayer.Instance?.Controller is { } boxes) boxes.UseBindGemEquipItem = (uid, slot) => c.ConfirmBindGemEquip(uid, slot);
         void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
         me.Changed += Changed; me.StatPoints.Changed += Changed;
         if (live != null) live.AchievesChanged += Changed;
@@ -1276,6 +1278,8 @@ public partial class HudScene : Node, IUiStageHost
             RequestMove = (uid, slot) => GD.Print($"inventory: move {uid} to cell {slot} is not sent (offline)"),
             RequestEquip = (uid, slot, kind) => GD.Print($"inventory: equip {uid} at slot {slot} kind {kind} is not sent (offline)"),
             RequestUnequip = uid => GD.Print($"inventory: unequip {uid} is not sent (offline)"),
+            RequestSwapEquip = (uid, slot) => GD.Print($"inventory: swap {uid} to slot {slot} is not sent (offline)"),
+            RequestEquipGem = (uid, slot) => GD.Print($"inventory: gem {uid} at slot {slot} is not sent (offline)"),
         };
     }
 

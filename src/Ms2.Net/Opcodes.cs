@@ -76,6 +76,7 @@ public enum Outbound : ushort {
     ItemEquip = 0x16,
     RequestItemInventory = 0x17,
     RequestItemUse = 0x19,
+    BadgeEquip = 0x47,
     RequestTimeSync = 0x0B,
     ResponseClientTickSync = 0x0C,
     ResponseFieldEnter = 0x10,

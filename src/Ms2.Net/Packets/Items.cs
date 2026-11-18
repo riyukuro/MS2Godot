@@ -16,8 +16,10 @@ public sealed class EquipItem {
     public EquipColor Color;
     /// <summary>Hair: back length, back pos 1, 2 (x,y,z each), front length, front pos 1, 2. Decal: 4 floats. Cap: 4 vec3 + 1 float. Else empty.</summary>
     public float[] Appearance = Array.Empty<float>();
-    /// <summary>Badge records only: the badge type (equip slot is meaningless then).</summary>
-    public byte BadgeType;
+    /// <summary>Badge records only: the worn gem's slot (CItem m_5c, GetSlot): the record's first u8, as
+    /// Unk_PayloadItemWire::FUN_1401fce90 writes it (unit_1401f9eb0_packetpayloadserializers.cpp:958) and OnBadgeEquip sets it
+    /// (scenestategame.cpp:11007). The equip slot is meaningless then.</summary>
+    public byte BadgeSlot;
     public bool IsBadge;
     /// <summary>The gem block's type (CItemGem::vfunc_4: the gem's CGemBase m_nType, what GetGem()->vfunc_1() returns); 0 without
     /// a gem.</summary>
@@ -225,7 +227,7 @@ public static class ItemReader {
     }
 
     public static EquipItem ReadBadge(ByteReader r) {
-        var it = new EquipItem { IsBadge = true, BadgeType = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
+        var it = new EquipItem { IsBadge = true, BadgeSlot = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
         ReadBody(r, it, EquipSlot.Unknown, badge: true);
         return it;
     }

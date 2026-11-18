@@ -993,15 +993,167 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public void RefreshSlot(string name) { if (IsDragSlot(name)) Host.Push(name); }
 
     /// <summary>
-    /// The destination's vfunc_18. EquipSlot::vfunc_18 (equipslot.cpp:151): the put-on from a bag slot (FUN_14120d2e0, then
-    /// RequestEquipItem) and the swap with another equip slot (CanSwapEquippedItems, ItemEquip mode 2) are not ported:
-    /// raised; then, either way, the source's vfunc_10. GemSlot::vfunc_18 (gemslot.cpp:117) is not ported: raised.
+    /// The destination's vfunc_18. An equip slot: <see cref="DroppedOnEquipSlot"/>; a gem slot: <see cref="DroppedOnGemSlot"/>.
+    /// Both end with the source's vfunc_10 (pushed again: nothing is worn until the server's equip packets say so), except a
+    /// gem slot without a local player. Their sounds (vfunc_20 / vfunc_21) are not here.
     /// </summary>
     public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
     {
-        Button?.Invoke("notifySlotDragEnd");
-        if (IsEquipSlot(name)) sourceOwner.RefreshSlot(source);
+        if (IsEquipSlot(name)) DroppedOnEquipSlot(int.Parse(name.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture), source, sourceOwner);
+        else if (GetBagSlotBindings(GemBag).Contains(name))
+        {
+            if (!DroppedOnGemSlot(int.Parse(name.AsSpan(GemBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture), source, sourceOwner)) return;
+        }
+        sourceOwner.RefreshSlot(source);
     }
+
+    /// <summary>
+    /// EquipSlot::vfunc_18 (equipslot.cpp:151). A bag slot (InvenSlot, <see cref="IInvenSlotOwner"/>): FindItemByUid of its
+    /// item uid; found and <see cref="CanPutOn"/>: RequestEquipItem(item, m_nSlot, m_nKind, 0). Another equip slot
+    /// (FUN_14120d560): its item (vfunc_25) and this slot's; when <see cref="CanSwapEquippedItems"/> over this bag's record
+    /// (m_spPC): the swap request (ItemEquip mode 2: the dragged item's uid, this slot). Any other source: nothing.
+    /// </summary>
+    void DroppedOnEquipSlot(int slot, string source, IDragSlotOwner sourceOwner)
+    {
+        var r = equipBagRecord;
+        if (r == null || Model == null) return;
+        if (sourceOwner is IInvenSlotOwner bag && bag.InvenSlotUid(source) is long uid)
+        {
+            if (bag.FindItem(uid) is { } item && CanPutOn(item, slot, bag)) bag.RequestEquipItem(item, slot, equipBagKind);
+        }
+        else if (sourceOwner is IEquipSlotOwner equips && equips.IsEquipSlot(source))
+        {
+            var from = equips.WornSlot(source)?.Item;
+            var mine = EquipSlotItem(r, equipBagKind, slot);
+            if (CanSwapEquippedItems(from, mine, r)) Inventory?.RequestSwapEquip?.Invoke(from.Uid, (byte)slot);
+        }
+    }
+
+    /// <summary>
+    /// EquipSlot::FUN_14120d2e0 (equipslot.cpp:358): not the local record (FUN_14120d1f0: m_spPC and PCInfo m_3c0): false. Kind
+    /// 1 or 2 and the item has no skin type (CItem::HasSkin, item.cpp:850): kind 2 box s_item_err_Invalid_slot_codi, else box
+    /// 0xd3 (211); false. The item's model (GetModelOrEmpty) without this slot's group type: box 0xd3; false. Then
+    /// CanEquipItem(item, m_nSlot, m_nKind) (<see cref="IInvenSlotOwner.CanEquipItem"/>).
+    /// </summary>
+    bool CanPutOn(Item item, int slot, IInvenSlotOwner bag)
+    {
+        if (equipBagRecord is not { IsLocal: true }) return false;
+        if (equipBagKind is 1 or 2 && !item.Data.HasSkinType)
+        {
+            ShowCommonBox(equipBagKind == 2 ? InventoryController.InvalidCodiSlotKey : InventoryController.InvalidSlotKey);
+            return false;
+        }
+        if (Model.Tables.ItemModels.Get(item.Data.ItemPreset)?.HasSlotType(slot) != true)
+        {
+            ShowCommonBox(InventoryController.InvalidSlotKey);
+            return false;
+        }
+        return bag.CanEquipItem(item, slot, equipBagKind);
+    }
+
+    /// <summary>The box GetStringCommon(0xd5) (commonstringtable.cpp:1830) shows.</summary>
+    public const string SwapHandsKey = "s_item_err_cash_putoff";
+
+    /// <summary>
+    /// CanSwapEquippedItems @0x141421230 (unit_1414210f0.cpp:49): no first item, or one that is not equip subtype 0x1f / 0x22
+    /// (CItemData::FUN_14053d510, itemdata.cpp:925): false. The record's layer-0 items (GetEquipItemSet1) at slots 4 and 5:
+    /// both: each, and the second item when there is one, must be of those subtypes; neither: the second item, when there is
+    /// one, must be; only one: box 0xd5; false. Else true.
+    /// </summary>
+    bool CanSwapEquippedItems(Item first, Item second, PcInfo r)
+    {
+        static bool Swappable(Item i) => i.Data.EquipSubtype is 0x1f or 0x22;
+        if (first == null || !Swappable(first)) return false;
+        var four = EquipItemByKind(r, 0, 4);
+        var five = EquipItemByKind(r, 0, 5);
+        if (four != null && five != null)
+        {
+            if (!Swappable(four) || !Swappable(five)) return false;
+            if (second != null && !Swappable(second)) return false;
+        }
+        else if (four == null && five == null)
+        {
+            if (second != null && !Swappable(second)) return false;
+        }
+        else
+        {
+            ShowCommonBox(SwapHandsKey);
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// GemSlot::vfunc_18 (gemslot.cpp:117). The local record (m_spPC, FUN_140dba1c0): no local player: false (no vfunc_10);
+    /// a bag slot: FindItemByUid of its item uid; FUN_14126d880 (:194: a gem item, type 7, the local record) and its gem type
+    /// (GetGem()->vfunc_1()) this slot's: the worn gem of that type (PCGemEquip::GetItemByGemType) gives the slot (its
+    /// GetSlot, else -1) and <see cref="EquipGem"/>(item, slot, 0). Else nothing. True: the caller pushes the source again.
+    /// </summary>
+    bool DroppedOnGemSlot(int index, string source, IDragSlotOwner sourceOwner)
+    {
+        var r = gemBagRecord;
+        if (r == null || !r.IsLocal || (uint)index >= GemTypes.Length) return true;
+        if (Model == null || !Model.HasLocalPlayer) return false;
+        if (sourceOwner is not IInvenSlotOwner bag || bag.InvenSlotUid(source) is not long uid) return true;
+        var item = bag.FindItem(uid);
+        if (item == null || item.Data.Type != 7) return true;
+        int type = GemTypes[index];
+        if ((item.Record?.GemType ?? 0) != type) return true;
+        int slot = r.Gems?.FirstOrDefault(g => g.GemType == type) is { } worn ? worn.BadgeSlot : -1;
+        EquipGem(item, slot, false);
+        return true;
+    }
+
+    /// <summary>PCBase::IsDead of the local player; no feed yet: false.</summary>
+    public Func<bool> LocalPlayerDead = () => false;
+
+    /// <summary>The gem bind box's tag (s_useBindGemEquipItem, gemslot_2.cpp:31), which HandlePlainTag answers
+    /// (uimessagebox.cpp:1062).</summary>
+    public const string BindOnGemEquipBox = "useBindGemEquipItem";
+
+    /// <summary>The box GetStringCommon(0x42) (commonstringtable.cpp:1683) shows.</summary>
+    public const string DeadKey = "s_err_unable";
+
+    /// <summary>
+    /// EquipGem @0x141271960 (gemslot_2.cpp:441): no item or no local player: false. Dead: box 0x42; false. Unless
+    /// <paramref name="skipBinding"/>, an item that binds on equip and is not bound (HasBindingRule, no HasBinding) asks first:
+    /// box 17 with s_msg_transfer_bind_when_equip and the player's name (vfunc_77), tag <see cref="BindOnGemEquipBox"/>, the
+    /// slot appended (Append&lt;int&gt;), the item uid and entry (FUN_140527b10 the name, 1, 0, -1, -1, 1), buttons 1143 / 1144,
+    /// shown; true. Else the gem equip request (BadgeEquip mode 0: the uid, the slot as an unsigned char); true. Nothing is
+    /// put on here: the server's badge packets do.
+    /// STILL-OPEN: the item's material sound (CEffectService::FUN_1411a5110, "ms2sound/sound/item").
+    /// </summary>
+    public bool EquipGem(Item item, int slot, bool skipBinding)
+    {
+        if (item == null || Model == null || !Model.HasLocalPlayer) return false;
+        if (LocalPlayerDead()) { ShowCommonBox(DeadKey); return false; }
+        if (!skipBinding && InventoryController.NeedsBindConfirm(item))
+        {
+            string text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(InventoryController.BindOnEquipKey) ?? "", Pc.Name);
+            var box = MessageBoxQueue.Create(17, text, null, BindOnGemEquipBox);
+            box.Append(slot);
+            box.ItemUid = item.Uid;
+            box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item) ?? "", 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+            box.SetButtonLabelIds(1143, 1144, 0);
+            ShowBox(box);
+            return true;
+        }
+        Inventory?.RequestEquipGem?.Invoke(item.Uid, (byte)slot);
+        return true;
+    }
+
+    /// <summary>HandleUseBindGemEquipItemButton @0x1419fe110 (uimessagebox.cpp:1907), the yes: FindItemByUid of the box's item
+    /// uid, then EquipGem(item, arg 0, 1). False when the inventory no longer has the item (the handler's 0).</summary>
+    public bool ConfirmBindGemEquip(long uid, int slot)
+    {
+        if (Inventory?.FindByUid(uid) is not { } e || Model == null) return false;
+        var item = InventoryController.ToItem(e, Model.Tables.Items);
+        if (item == null) return false;
+        EquipGem(item, slot, true);
+        return true;
+    }
+
+    void ShowCommonBox(string key) => ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(key) ?? "", null, ""));
 
     /// <summary>
     /// The open FUN_1422aeed0(2) branch picks vfunc_12 or vfunc_17; for both slot kinds both are vfunc_10

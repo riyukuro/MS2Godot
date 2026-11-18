@@ -727,4 +727,169 @@ public class MyInfoTests
         Assert.That((w?.Item.Uid, w?.Slot, w?.Kind), Is.EqualTo(((long?)rh, (int?)5, (int?)0)), "LH shows the RH item: its own slot");
         Assert.That(c.WornSlot(Slot(6)).HasValue || c.WornSlot("InventoryDialog.0").HasValue, Is.False, "an empty slot or another name");
     }
+
+    /// <summary>An inventory's bag slots, "InventoryDialog.N", over the records given (InvenSlot / Unk_Inventory).</summary>
+    sealed class BagSlots : IInvenSlotOwner
+    {
+        public readonly Dictionary<string, Ms2.Net.Packets.EquipItem> Cells = new();
+        public ItemDataTable Table;
+        public readonly List<(long Uid, int Slot, int Layer)> Checked = new(), Equipped = new();
+        public readonly List<string> Refreshed = new();
+        public bool IsDragSlot(string name) => name.StartsWith("InventoryDialog.", StringComparison.Ordinal);
+        public long? InvenSlotUid(string name) => IsDragSlot(name) ? (Cells.TryGetValue(name, out var r) ? r.Uid : 0) : null;
+        public Item FindItem(long uid) => Cells.Values.FirstOrDefault(r => r.Uid == uid) is { } r ? InventoryController.ToItem(r, Table) : null;
+        public bool CanEquipItem(Item item, int slot, int layer) { Checked.Add((item.Uid, slot, layer)); return true; }
+        public void RequestEquipItem(Item item, int slot, int layer) => Equipped.Add((item.Uid, slot, layer));
+        public void RefreshSlot(string name) => Refreshed.Add(name);
+        public void SlotDropUnresolved(string name) { }
+    }
+
+    /// <summary>Another character window's equip slots, "MyPcInfoDialog.Equip.N", with the dragged items given.</summary>
+    sealed class WornSlots : IEquipSlotOwner
+    {
+        public readonly Dictionary<string, Item> Worn = new();
+        public readonly List<string> Refreshed = new();
+        public bool IsDragSlot(string name) => IsEquipSlot(name);
+        public bool IsEquipSlot(string name) => name.StartsWith(MyInfoController.EquipBag + ".", StringComparison.Ordinal);
+        public (Item Item, int Slot, int Kind)? WornSlot(string name) => Worn.TryGetValue(name, out var i) ? (i, 5, 0) : null;
+        public void RequestUnequip(Item item) { }
+        public void RefreshSlot(string name) => Refreshed.Add(name);
+        public void SlotDropUnresolved(string name) { }
+    }
+
+    [Test]
+    public void ABagItemDroppedOnAnEquipSlotIsPutOnThere()
+    {
+        Packs();
+        var shown = new List<MessageBoxData>();
+        var (h, c, _, errors) = Load(x => x.ShowBox = shown.Add);
+        Assert.That(errors, Is.Empty);
+        var bag = new BagSlots { Table = c.Model.Tables.Items };
+        bag.Cells["InventoryDialog.0"] = new Ms2.Net.Packets.EquipItem { Id = 11400021, Uid = 901, Amount = 1, Rarity = 1 };  // an outfit top
+        bag.Cells["InventoryDialog.1"] = new Ms2.Net.Packets.EquipItem { Id = 13000001, Uid = 902, Amount = 1, Rarity = 1 };  // a one-handed RH weapon (slot 5)
+        string Slot(int s) => MyInfoController.EquipBag + "." + s;
+
+        c.SlotDroppedOn(Slot(5), "InventoryDialog.0", bag);
+        Assert.That((bag.Equipped.Count, bag.Checked.Count, shown.Single().Msg), Is.EqualTo((0, 0, c.Model.Tables.Common(InventoryController.InvalidSlotKey))),
+            "the item's model has no RH group type: box 0xd3, CanEquipItem not asked");
+        Assert.That(bag.Refreshed, Is.EqualTo(new[] { "InventoryDialog.0" }), "the source is pushed again (vfunc_10)");
+        shown.Clear();
+        c.SlotDroppedOn(Slot(5), "InventoryDialog.1", bag);
+        Assert.That((bag.Checked.Single(), bag.Equipped.Single(), shown.Count), Is.EqualTo(((902L, 5, 0), (902L, 5, 0), 0)),
+            "CanEquipItem then RequestEquipItem(item, m_nSlot, m_nKind)");
+        c.SlotDroppedOn(Slot(5), "InventoryDialog.7", bag);
+        c.SlotDroppedOn(Slot(5), "QuickSlot.1", bag);
+        Assert.That((bag.Equipped.Count, shown.Count), Is.EqualTo((1, 0)), "an empty cell or a name that is no bag slot: nothing");
+    }
+
+    [Test]
+    public void AnEquippedItemDroppedOnAnotherHandIsSwapped()
+    {
+        Packs();
+        var model = new GameTables(Packs(), "en").Items;
+        Ms2.Net.Packets.EquipItem Rec(int id, long uid, Ms2.Net.Packets.EquipSlot s) => new() { Id = id, Uid = uid, Slot = s, Amount = 1, Rarity = 1 };
+        var rh = Rec(13100001, 5001, Ms2.Net.Packets.EquipSlot.RH);   // equip subtype 0x1f
+        var lh = Rec(13400001, 5002, Ms2.Net.Packets.EquipSlot.LH);   // equip subtype 0x22
+        var two = Rec(15000001, 5003, Ms2.Net.Packets.EquipSlot.RH);  // equip subtype 0x32, two-handed
+        var top = Rec(11400021, 5004, Ms2.Net.Packets.EquipSlot.CL);
+        string Slot(int s) => MyInfoController.EquipBag + "." + s;
+
+        (MyInfoController, List<MessageBoxData>, List<(long, byte)>) Window(params Ms2.Net.Packets.EquipItem[] worn)
+        {
+            var shown = new List<MessageBoxData>();
+            var sent = new List<(long, byte)>();
+            var view = new Ms2.Net.Packets.InventoryView(new Ms2.Net.Packets.ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 2 });
+            view.RequestSwapEquip = (u, s) => sent.Add((u, s));
+            var me = UiFixture.Character();
+            var (_, c, _, errors) = Load(x =>
+            {
+                x.Record = () => { var p = me.ToPcInfo(0); p.Equips = worn; return p; };
+                x.ShowBox = shown.Add;
+                x.Inventory = view;
+            });
+            Assert.That(errors, Is.Empty);
+            return (c, shown, sent);
+        }
+        var src = new WornSlots();
+        void Drag(Ms2.Net.Packets.EquipItem r) => src.Worn[Slot(5)] = InventoryController.ToItem(r, model);
+
+        // both hands hold swappable items: the RH item onto LH is sent (ItemEquip mode 2, its uid, slot 4)
+        var (c, shown, sent) = Window(rh, lh, top);
+        Drag(rh);
+        c.SlotDroppedOn(Slot(4), Slot(5), src);
+        Assert.That((sent.Single(), shown.Count), Is.EqualTo(((5001L, (byte)4), 0)));
+        Assert.That(src.Refreshed, Is.EqualTo(new[] { Slot(5) }), "the source is pushed again: the server's packets swap them");
+        // the dragged item is not of subtype 0x1f / 0x22: false, no box
+        Drag(two);
+        c.SlotDroppedOn(Slot(4), Slot(5), src);
+        Assert.That((sent.Count, shown.Count), Is.EqualTo((1, 0)));
+        // a slot that is no equip slot of the source: nothing
+        c.SlotDroppedOn(Slot(4), "QuickSlot.1", src);
+        Assert.That(sent.Count, Is.EqualTo(1));
+
+        // one hand only: box 0xd5
+        (c, shown, sent) = Window(rh, top);
+        Drag(rh);
+        c.SlotDroppedOn(Slot(4), Slot(5), src);
+        Assert.That((sent.Count, shown.Single().Msg), Is.EqualTo((0, c.Model.Tables.Common(MyInfoController.SwapHandsKey))));
+
+        // neither hand: sent while this slot's item, when there is one, is swappable
+        (c, shown, sent) = Window(top);
+        Drag(rh);
+        c.SlotDroppedOn(Slot(4), Slot(5), src);
+        Assert.That((sent.Single(), shown.Count), Is.EqualTo(((5001L, (byte)4), 0)));
+    }
+
+    [Test]
+    public void ABagGemDroppedOnItsGemSlotIsEquipped()
+    {
+        Packs();
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 4 };
+        var view = new Ms2.Net.Packets.InventoryView(book);
+        var sent = new List<(long, byte)>(); view.RequestEquipGem = (u, s) => sent.Add((u, s));
+        var shown = new List<MessageBoxData>();
+        var (h, c, _, errors) = Load(x => { x.Inventory = view; x.ShowBox = shown.Add; });
+        Assert.That(errors, Is.Empty);
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(200 + i * 16); }
+        Ms2.Net.Packets.EquipItem Gem(long uid, byte type) => new() { Id = 70200001, Uid = uid, GemType = type, Amount = 1, Rarity = 1 };
+        var bag = new BagSlots { Table = c.Model.Tables.Items };
+        bag.Cells["InventoryDialog.0"] = Gem(951, 3);
+        bag.Cells["InventoryDialog.1"] = Gem(952, 5);
+        string Slot(int s) => MyInfoController.GemBag + "." + s;
+
+        // slot 2 is gem type 3: the worn type-3 gem's slot (BadgeSlot 3)
+        c.SlotDroppedOn(Slot(2), "InventoryDialog.0", bag);
+        Assert.That((sent.Single(), shown.Count), Is.EqualTo(((951L, (byte)3), 0)));
+        Assert.That(bag.Refreshed, Is.EqualTo(new[] { "InventoryDialog.0" }));
+        // slot 1 is gem type 5, none worn: GetSlot -1 as an unsigned char
+        c.SlotDroppedOn(Slot(1), "InventoryDialog.1", bag);
+        Assert.That(sent.Last(), Is.EqualTo((952L, (byte)0xff)));
+        // another gem type than the slot's: nothing
+        c.SlotDroppedOn(Slot(1), "InventoryDialog.0", bag);
+        Assert.That(sent.Count, Is.EqualTo(2));
+
+        // binds on equip: box 17 with the slot as its argument; the yes equips it without asking again
+        c.Model.Player.Name = "Tester";
+        var bind = Gem(953, 3); bind.Transfer.Rule = 8; bind.InventorySlot = 0;
+        bag.Cells["InventoryDialog.2"] = bind;
+        book.Apply(new Ms2.Net.Packets.ItemMessage.Add(bind));
+        c.SlotDroppedOn(Slot(2), "InventoryDialog.2", bag);
+        var box = shown.Single();
+        Assert.That((sent.Count, box.Type, box.Extra, box.ItemUid, box.ArgInt(0, -1)), Is.EqualTo((2, 17, MyInfoController.BindOnGemEquipBox, 953L, 3)));
+        Assert.That(box.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(c.Model.Tables.Common(InventoryController.BindOnEquipKey), "Tester")), "the local player's name (vfunc_77)");
+        Assert.That(c.ConfirmBindGemEquip(953, box.ArgInt(0, 0)), Is.True);
+        Assert.That((sent.Last(), shown.Count), Is.EqualTo(((953L, (byte)3), 1)));
+        Assert.That(c.ConfirmBindGemEquip(99, 3), Is.False, "an item the inventory no longer has: the handler's 0");
+
+        // dead: box 0x42, nothing sent
+        c.LocalPlayerDead = () => true;
+        c.SlotDroppedOn(Slot(2), "InventoryDialog.0", bag);
+        Assert.That((sent.Count, shown.Last().Msg), Is.EqualTo((3, c.Model.Tables.Common(MyInfoController.DeadKey))));
+        // no local player: false, the source is not pushed again
+        c.Model.HasLocalPlayer = false;
+        int refreshed = bag.Refreshed.Count;
+        c.SlotDroppedOn(Slot(2), "InventoryDialog.0", bag);
+        Assert.That((sent.Count, bag.Refreshed.Count), Is.EqualTo((3, refreshed)));
+    }
 }
