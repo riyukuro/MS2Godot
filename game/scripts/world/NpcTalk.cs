@@ -454,8 +454,13 @@ public sealed partial class NpcTalk : Node
                 liveTalking = npc;
                 if (script == null || page >= script.Contents.Count)
                 {
-                    // FUN_141b1ff80 without a script opens the npc's talk ui (a shop, a storage ...), not ported here
-                    GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported)");
+                    // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui (OpenTalkUi: a shop,
+                    // a storage ...), and closing that ui ends the talk with SendNpcTalkMode0. STILL-OPEN: those talk uis are not
+                    // ported (searched: no OpenTalkUi / GetTalkUiId port in game/ or src/Ms2.Ui), so the talk ends at once, as
+                    // if the ui were closed, rather than leaving the server's talk open.
+                    GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported), NpcTalk 0 sent");
+                    liveTalking = null;
+                    live.SendTalk(new NpcTalkEndRequest());
                     return;
                 }
                 OpenWindow(npc, o.ButtonSet, (flags & 4) != 0 || (flags & 8) != 0 ? talkQuests : Enumerable.Empty<int>());
