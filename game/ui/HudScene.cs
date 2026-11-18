@@ -98,6 +98,8 @@ public partial class HudScene : Node
     /// </summary>
     public override void _ExitTree()
     {
+        unwatchQuickSlotState?.Invoke();
+        unwatchQuickSlotState = null;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         restoreScale?.Invoke();
         restoreScale = null;
@@ -959,7 +961,9 @@ public partial class HudScene : Node
     {
         var p = hudModel.Player;
         var window = GetWindow().Size;
-        ui.AddChild(playerInfoMovie = new MovieDialog(assets, new Ms2.Ui.Hud.MainPlayerInfoController { SlotWorld = QuickSlotWorld }, hudModel, window));
+        playerInfo = new Ms2.Ui.Hud.MainPlayerInfoController { SlotWorld = QuickSlotWorld };
+        ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));
+        WatchQuickSlotState();
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
         p.AdventureExp = (long)Math.Round(hudModel.Tables.AdventureLevelLvUpExp * data.AdventureExpPercent / 100);
         ui.AddChild(adventureBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.AdventureLevelExpBarController(), hudModel, window));
@@ -1089,14 +1093,37 @@ public partial class HudScene : Node
 
     Ms2.Ui.Skills.JobSystem slotJobs;
     object slotJobsBook;
+    Ms2.Ui.Hud.MainPlayerInfoController playerInfo;
+    ulong slotRefreshTick;
+    Action unwatchQuickSlotState;
+    Ms2.Ui.Skills.WeaponActionTable weaponActions;
+
+    /// <summary>
+    /// The live events that change what the quick slots show. The client queues a gray refresh on a bag item added or
+    /// removed (UIMainPlayerInfo::vfunc_21 / vfunc_22, uimainplayerinfo.cpp:839), after UpdateSlotForItem rebinds the item's
+    /// slot (:1357); here a bag change queues the gray state and item count of every slot. The skill book (the own
+    /// FieldAddUser's, which arrives after the HUD is built, or a Job packet) and a key table packet rebind every slot.
+    /// </summary>
+    void WatchQuickSlotState()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live == null) return;
+        Action<int> onBook = _ => playerInfo.RebindSlots();
+        Action<long> onBag = _ => playerInfo.QueueSlotRefresh(Ms2.Ui.Hud.MainPlayerInfoController.RefreshGray | Ms2.Ui.Hud.MainPlayerInfoController.RefreshItemCount);
+        Action<int> onKeys = _ => playerInfo.RebindSlots();
+        live.SkillBookChanged += onBook;
+        live.Items.Changed += onBag;
+        live.KeyTableChanged += onKeys;
+        unwatchQuickSlotState = () => { live.SkillBookChanged -= onBook; live.Items.Changed -= onBag; live.KeyTableChanged -= onKeys; };
+    }
     Ms2Godot.Net.ItemKinds slotKinds;
     Ms2.Ui.Skills.SlotField slotField;
-    string slotFieldXBlock;
+    int? slotFieldId;
 
     /// <summary>
     /// The player state the HUD quick slots read (SkillSlot): the live session's bag, skill book and own hands, else the offline
-    /// inventory and a new character's book of the HUD's job; the field data of the current xblock. Cooldowns, buffs and the
-    /// skill set have no feed yet and keep their idle values.
+    /// inventory and a new character's book of the HUD's job; the field data of the current map id (offline: the field of the
+    /// HUD's xblock). Cooldowns, buffs and the skill set have no feed yet and keep their idle values.
     /// </summary>
     Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
     {
@@ -1110,11 +1137,13 @@ public partial class HudScene : Node
             slotJobsBook = book;
         }
         slotKinds ??= new Ms2Godot.Net.ItemKinds(assets.Packs);
-        if (slotFieldXBlock != xblock)
+        int? fieldId = live?.FieldId;
+        if (slotField == null || slotFieldId != fieldId)
         {
-            slotFieldXBlock = xblock;
+            slotFieldId = fieldId;
             FieldData fd = null;
-            try { fd = FieldData.FindByXBlock(assets.Packs, xblock); } catch (Exception e) { GD.PushWarning("quick slot field data: " + e.Message); }
+            try { fd = fieldId is { } id ? FieldData.FindById(assets.Packs, id) : FieldData.FindByXBlock(assets.Packs, xblock); }
+            catch (Exception e) { GD.PushWarning("quick slot field data: " + e.Message); }
             slotField = fd == null ? null : new Ms2.Ui.Skills.SlotField
             {
                 Id = fd.Id, MapType = fd.MapType, CheckFly = fd.CheckFly, CheckClimb = fd.CheckClimb,
@@ -1122,18 +1151,24 @@ public partial class HudScene : Node
             };
         }
         var p = hudModel.Player;
-        // PC::GetWeaponAction: the own RH / LH equips' kinds (GetEquipItemLayer0(5 / 4)), offline the fixture character's;
-        // none when both hands are empty
+        // PC::GetWeaponAction: the action PC::UpdateWeaponAction (pc.cpp:2838) picks for the own hands, offline the fixture
+        // character's. Its hands are the layer 5 item, else FUN_141655ee0(slot, 1), the layer 0 item for a PC with no clone;
+        // the equips here are layer 0.
+        // STILL-OPEN: no layer 5 hands, and the equips are FieldAddUser's (no ItemPutOn / ItemPutOff yet), so a weapon
+        // change does not reach the slots.
+        weaponActions ??= assets.Table("table/weaponaction.xml") is { } wa ? Ms2.Ui.Skills.WeaponActionTable.Load(wa) : Ms2.Ui.Skills.WeaponActionTable.Empty;
         var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
-        int Hand(int slot) => me.Equips?.FirstOrDefault(e => (int)e.Slot == slot) is { } eq ? hudModel.Tables.Items.Get(eq.Id)?.EquipSubtype ?? 0 : 0;
-        int rh = Hand(5), lh = Hand(4);
-        return new Ms2.Ui.Skills.SlotWorld
+        Ms2.Net.Packets.EquipItem Hand(int slot) => me.Equips?.FirstOrDefault(e => (int)e.Slot == slot);
+        var world = new Ms2.Ui.Skills.SlotWorld
         {
             Tables = tables, ItemData = hudModel.Tables.Items.Get, Jobs = slotJobs, HasPc = hudModel.HasLocalPlayer,
             Level = p.Level, Hp = p.HpCur, Sp = p.SpCur, Ep = p.EpCur, Meso = p.Mesos,
             Inventory = live != null ? live.Items.All : (OfflineInventory() != null ? offlineBook.All : Array.Empty<Ms2.Net.Packets.EquipItem>()), TabOf = slotKinds.TabOf,
-            Field = slotField, Weapon = rh != 0 || lh != 0 ? (rh, lh) : null,
+            Field = slotField,
         };
+        world.Weapon = weaponActions.HeldAction(Hand(5), Hand(4), hudModel.Tables.Items.Get, world.CanUse) is { } action
+            ? (action.RightHand, action.LeftHand) : null;
+        return world;
     }
 
     Ms2.Net.Packets.ItemBook offlineBook;     // the offline inventory's items
@@ -1251,6 +1286,12 @@ public partial class HudScene : Node
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         alignWidgets?.ProcessPendingLayout();      // the end of UISwfEntityManager::UpdateEntities
+        // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:639): the queued slot refresh, when its 200 ms timer fires
+        if (playerInfo != null && Time.GetTicksMsec() - slotRefreshTick >= 200)
+        {
+            slotRefreshTick = Time.GetTicksMsec();
+            playerInfo.FlushSlotRefresh();
+        }
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());

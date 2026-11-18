@@ -103,6 +103,7 @@ public sealed class MainPlayerInfoController : UiController
             case StatusEvent.Name: Host.Invoke(pi, "setName", Pc.NameWithTitle); break;
             case StatusEvent.Level: Host.Invoke(pi, "setLevel", (uint)Pc.Level); break;
         }
+        if (e is StatusEvent.Hp or StatusEvent.Sp or StatusEvent.Ep or StatusEvent.Level) QueueSlotRefresh(RefreshGray);     // :717-763
     }
 
     /// <summary>UIMainPlayerInfo::GetSlotName (uimainplayerinfo.cpp:1074, :1424): the slot bag "SlotInfo.skill.0", 0x19 slots
@@ -154,8 +155,11 @@ public sealed class MainPlayerInfoController : UiController
         }
         else d.Add(("itemPet", s.IsPetItem ? 1 : 0));
         d.Add(("iconPath", icon));
-        d.Add(("grayColor", s.IsDisabled(hotkey) ? 1 : 0));
-        d.Add(("itemCount", s.ItemCount(false)));
+        bool gray = s.IsDisabled(hotkey);
+        int count = s.ItemCount(false);
+        d.Add(("grayColor", gray ? 1 : 0));
+        d.Add(("itemCount", count));
+        shown[i] = (gray, count, s.RechargeRemaining);
         d.Add(("itemPcBang", s.IsPcBangItem ? 1 : 0));
         d.Add(("itemLock", 0));                                                 // FUN_14175cc60 returns 0
         d.Add(("shortcutKey", Model.Keys.GetKeyName(hotkey)));
@@ -170,6 +174,56 @@ public sealed class MainPlayerInfoController : UiController
         d.Add(("cooldownHourStr", Model.Tables.Common("s_word_hour") ?? ""));
         d.Add(("cooldownDayStr", Model.Tables.Common("s_word_day") ?? ""));
         return Host.Obj(d.ToArray());
+    }
+
+    // ---- the slot refresh: queued flags flushed every 200 ms ----
+
+    public const int RefreshGray = 1, RefreshItemCount = 2, RefreshRecharge = 4;
+    /// <summary>The gray state, item count and recharge count each slot last showed (SkillSlot m_nDisabled, m_nItemCount,
+    /// m_nRecharge).</summary>
+    readonly (bool Gray, int ItemCount, int Recharge)[] shown = new (bool, int, int)[SlotCount];
+    int pendingRefresh;
+
+    /// <summary>FUN_1419f37f0 (uimainplayerinfo.cpp:1527): queue a refresh of every slot. The client queues
+    /// <see cref="RefreshGray"/> on a level, HP, SP or EP change (vfunc_oa0_9/3/4/5, :713-763) and on a bag item added or removed
+    /// (vfunc_21/22, :839-849); gray | recharge on buff and cooldown changes.</summary>
+    public void QueueSlotRefresh(int flags) => pendingRefresh |= flags;
+
+    /// <summary>
+    /// UIMainPlayerInfo::FUN_1419f3590 (uimainplayerinfo.cpp:1476), which the panel's vfunc_15 runs when its 200 ms timer fires
+    /// (:640): SkillSlotBag::RefreshAllSlots (skillslot.cpp:1590) gives each slot SkillSlot::FUN_14175f280 (:912) with the queued
+    /// flags, and a slot whose gray state, item count or recharge count changed is updated. The client passes only the
+    /// changed members to the slot's updateData; here the slot's whole vfunc_8 object is pushed again (its other members
+    /// read the same state).
+    /// </summary>
+    public void FlushSlotRefresh()
+    {
+        int flags = pendingRefresh;
+        if (flags == 0) return;
+        pendingRefresh = 0;
+        if (Model.ServerKeys is not { } t) return;
+        var w = SlotWorld?.Invoke();
+        if (w == null) return;
+        for (int i = 0; i < SlotCount; i++)
+        {
+            var e = t.Entry(t.CurrentPage, i);
+            var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
+            var was = shown[i];
+            bool changed = ((flags & RefreshGray) != 0 && s.IsDisabled(Hotkey(i)) != was.Gray)
+                || ((flags & RefreshItemCount) != 0 && s.ItemCount(false) != was.ItemCount)
+                || ((flags & RefreshRecharge) != 0 && s.RechargeRemaining != was.Recharge);
+            if (changed) Host.Push(SlotBag + "." + i);
+        }
+    }
+
+    /// <summary>
+    /// Pushes every slot again (each SkillSlot's vfunc_8 rebuild): when the player state the slots read first arrives or is
+    /// replaced (the own FieldAddUser's skill book, a Job packet), and for a bag change, where the client's UpdateSlotForItem
+    /// (uimainplayerinfo.cpp:1357) rebinds the item's slot (vfunc_10) before queueing the gray refresh.
+    /// </summary>
+    public void RebindSlots()
+    {
+        for (int i = 0; i < SlotCount; i++) Host.Push(SlotBag + "." + i);
     }
 
     /// <summary>GetHotkey(0) (skillslot.cpp:1235); GetHotkeyText (:1229) is its key name.</summary>

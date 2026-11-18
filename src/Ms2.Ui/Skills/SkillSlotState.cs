@@ -67,7 +67,8 @@ public sealed class SlotWorld
     public bool RideAllowed;
     /// <summary>CFieldData::FUN_1403744a0: the field of the id has map type 9.</summary>
     public Func<int, bool> IsMapType9 = _ => false;
-    /// <summary>PC::GetWeaponAction: the held weapon's right and left hand kinds; null without one.</summary>
+    /// <summary>PC::GetWeaponAction (pc.cpp:2573): the hand kinds of the action <see cref="WeaponActionTable.HeldAction"/> picks
+    /// (PC::UpdateWeaponAction); null when the table has no row for the hands.</summary>
     public (int Right, int Left)? Weapon;
     /// <summary>MyPC::GetLapenshardSkillLevel.</summary>
     public Func<uint, ushort> LapenshardLevel = _ => 0;
@@ -80,8 +81,11 @@ public sealed class SlotWorld
 
     /// <summary>
     /// PC::CanUseItem (pc.cpp:4683) over what an inventory record carries: an expired item that is not a pet (FUN_140528980 :1717),
-    /// a PC bang item outside a PC bang, a VIP item without VIP, a wedding item without a wedding (each unless item flag 1).
-    /// Not modelled: the maid id of an expired item, the music score checks, the owner bind (FUN_1406343b0) and the codi layer.
+    /// a PC bang item outside a PC bang, a VIP item without VIP, a wedding item without a wedding. The client skips the last
+    /// three for an item with flag 1 (CItem::HasFlags(1), item.cpp:1003), which only MarkPreviewItem (customize.cpp:210) sets on
+    /// a preview copy, so a bag or equipped item never has it.
+    /// STILL-OPEN: nothing feeds <see cref="InPcBang"/>, <see cref="IsVip"/> or <see cref="HasWedding"/> yet (all false), and
+    /// the maid id of an expired item, the music score checks, the owner bind (FUN_1406343b0) and the codi layer are not modelled.
     /// </summary>
     public bool CanUseItemDefault(EquipItem item, DateTimeOffset now)
     {
@@ -220,7 +224,7 @@ public sealed record SkillSlotState(SlotWorld W, uint SkillId, int ItemId, long 
     SkillData Skill(uint id) => W.Tables.GetSkillData(id);
 
     /// <summary>
-    /// FUN_141761530 (:1250 of the helpers): while riding the skill's level 1, else its JobSystemCli level; the first changeSkill
+    /// SkillSlot::FUN_141761530 (skillslot.cpp:1382): while riding the skill's level 1, else its JobSystemCli level; the first changeSkill
     /// check whose effect is on gives the replacement, unless it is the skill itself.
     /// </summary>
     public SkillData Replacement()

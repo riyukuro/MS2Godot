@@ -117,6 +117,24 @@ public class SkillSlotStateTests
     }
 
     [Test]
+    public void TheHeldWeaponActionFollowsTheTable()
+    {
+        var t = WeaponActionTable.Load(XDocument.Parse("<ms2><allowWeapon rh=\"32\" lh=\"41\" />"
+            + "<weapon rh=\"0\" lh=\"0\" /><weapon rh=\"32\" lh=\"0\" /><weapon rh=\"32\" lh=\"41\" /><weapon rh=\"51\" lh=\"0\" /></ms2>"));
+        static EquipItem Equip(int id) => new() { Id = id, Uid = id };
+        // an equip whose item id is its subtype
+        Func<int, ItemData> data = id => id is 32 or 40 or 41 or 51 ? new ItemData { Type = 1, Subtype = id } : null;
+        Func<EquipItem, bool> canUse = _ => true;
+        Assert.That(t.HeldAction(null, null, data, canUse), Is.EqualTo(new WeaponAction(0, 0, 0, "")), "bare hands");
+        Assert.That(t.HeldAction(Equip(32), Equip(41), data, canUse)?.LeftHand, Is.EqualTo(41));
+        Assert.That(t.HeldAction(Equip(32), Equip(40), data, canUse)?.LeftHand, Is.EqualTo(0), "rh 32 allows only lh 41");
+        var bow = Equip(51);
+        Assert.That(t.HeldAction(bow, bow, data, canUse)?.RightHand, Is.EqualTo(51), "one item in both hands counts once");
+        Assert.That(t.HeldAction(bow, null, data, _ => false), Is.EqualTo(new WeaponAction(0, 0, 0, "")), "an unusable bow is no bow");
+        Assert.That(t.HeldAction(Equip(41), null, data, canUse), Is.Null, "no row for (41, 0)");
+    }
+
+    [Test]
     public void AnItemSlotChecksItsItem()
     {
         var t = Skills();

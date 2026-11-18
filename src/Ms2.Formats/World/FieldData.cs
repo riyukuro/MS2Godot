@@ -69,43 +69,58 @@ public sealed class FieldData
             var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
             var xb = (string)env?.Element("xblock")?.Attribute("name");
             if (xb == null || !xb.Equals(xblockName, StringComparison.OrdinalIgnoreCase)) continue;
-            var o = new FieldData { Id = (int?)fd.Attribute("id") ?? 0, XBlock = xb };
-            var cam = env.Element("camera");
-            if (cam != null)
-            {
-                Read(cam, "distance", ref o.Camera.Distance);
-                Read(cam, "hangle", ref o.Camera.HAngleDeg);
-                Read(cam, "vangle", ref o.Camera.VAngleDeg);
-                Read(cam, "zoomOutHeightOffset", ref o.Camera.ZoomOutHeightOffset);
-                Read(cam, "zoomInHeightOffset", ref o.Camera.ZoomInHeightOffset);
-            }
-            var prop = env.Element("property") ?? fd.Element("property");
-            if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
-            if ((string)prop?.Attribute("checkFly") is { } cf) o.CheckFly = cf != "0";
-            if ((string)prop?.Attribute("skillUseDisable") is { } sud)
-                foreach (var t in sud.Split(',', StringSplitOptions.RemoveEmptyEntries))
-                    if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bit)) o.SkillUseDisableMask |= 1u << bit;
-            if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
-            if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
-            if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
-            if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
-            if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
-            if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
-            var fov = env.Element("fov");
-            if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
-            var sh = env.Element("shadow");
-            if (sh != null) Read(sh, "simpleshadow", ref o.SimpleShadow);
-            var hdr = env.Element("hdr");
-            if (hdr != null)
-            {
-                Read(hdr, "threshold", ref o.Hdr.Threshold);
-                Read(hdr, "offset", ref o.Hdr.Offset);
-                Read(hdr, "bloomscale", ref o.Hdr.BloomScale);
-                Read(hdr, "glowscale", ref o.Hdr.GlowScale);
-            }
-            return o;
+            return FromEntry(fd);
         }
         return null;
+    }
+
+    /// <summary>The entry of a field (map) id, or null when the table lacks it or the entry has no default xblock.</summary>
+    public static FieldData FindById(PackSet packs, int fieldId)
+    {
+        var fd = Doc(packs).Root.Elements("fieldData").FirstOrDefault(f => (int?)f.Attribute("id") == fieldId);
+        return fd == null ? null : FromEntry(fd);
+    }
+
+    static FieldData FromEntry(XElement fd)
+    {
+        var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+        var xb = (string)env?.Element("xblock")?.Attribute("name");
+        if (xb == null) return null;
+        var o = new FieldData { Id = (int?)fd.Attribute("id") ?? 0, XBlock = xb };
+        var cam = env.Element("camera");
+        if (cam != null)
+        {
+            Read(cam, "distance", ref o.Camera.Distance);
+            Read(cam, "hangle", ref o.Camera.HAngleDeg);
+            Read(cam, "vangle", ref o.Camera.VAngleDeg);
+            Read(cam, "zoomOutHeightOffset", ref o.Camera.ZoomOutHeightOffset);
+            Read(cam, "zoomInHeightOffset", ref o.Camera.ZoomInHeightOffset);
+        }
+        var prop = env.Element("property") ?? fd.Element("property");
+        if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
+        if ((string)prop?.Attribute("checkFly") is { } cf) o.CheckFly = cf != "0";
+        if ((string)prop?.Attribute("skillUseDisable") is { } sud)
+            foreach (var t in sud.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bit)) o.SkillUseDisableMask |= 1u << bit;
+        if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
+        if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
+        if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
+        if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
+        if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
+        if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
+        var fov = env.Element("fov");
+        if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
+        var sh = env.Element("shadow");
+        if (sh != null) Read(sh, "simpleshadow", ref o.SimpleShadow);
+        var hdr = env.Element("hdr");
+        if (hdr != null)
+        {
+            Read(hdr, "threshold", ref o.Hdr.Threshold);
+            Read(hdr, "offset", ref o.Hdr.Offset);
+            Read(hdr, "bloomscale", ref o.Hdr.BloomScale);
+            Read(hdr, "glowscale", ref o.Hdr.GlowScale);
+        }
+        return o;
     }
 
     /// <summary>The xblock name of a field id (its default environment), or null.</summary>
