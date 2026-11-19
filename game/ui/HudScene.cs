@@ -47,6 +47,9 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog systemText;                 // uisystemtext
     /// <summary>UISystemText's C++ side: the system lines across the upper middle (the red warnings and the rest).</summary>
     public Ms2.Ui.Hud.SystemTextController SystemText { get; private set; }
+    MovieDialog castingBar;                 // uicastingbar
+    /// <summary>UICastingBar's C++ side: the cast gauge a caster starts (StartCasting) and is called back from.</summary>
+    public Ms2.Ui.Hud.CastingBarController CastingBar { get; private set; }
     DamageText damageText;
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
@@ -138,6 +141,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchBuddies = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
+        CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
         unwatchNotices?.Invoke();
         unwatchNotices = null;
         unwatchChat?.Invoke();
@@ -198,6 +202,7 @@ public partial class HudScene : Node, IUiStageHost
         upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
         targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
         systemText?.GetParent()?.RemoveChild(systemText);     // and the system lines
+        castingBar?.GetParent()?.RemoveChild(castingBar);     // and the cast gauge
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         BuildHud();
@@ -246,6 +251,7 @@ public partial class HudScene : Node, IUiStageHost
         UpperHud(uiRoot);
         TargetHpBar(uiRoot);
         SystemTextLines(uiRoot);
+        CastingGauge(uiRoot);
         HudModel();
         Chat(uiRoot);
         Quests(uiRoot);
@@ -521,6 +527,18 @@ public partial class HudScene : Node, IUiStageHost
         TargetBar = new Ms2.Ui.Hud.UpperHpBarController();
         targetBar = new MovieDialog(assets, TargetBar, NewModel(), GetWindow().Size);
         ui.AddChild(targetBar);
+    }
+
+    /// <summary>
+    /// The cast gauge (UICastingBar, uicameraeditdialog.cpp:903), run by its movie; loaded with the game scene
+    /// (FUN_141ada6f0, uiservice.cpp:818) and kept across relayouts.
+    /// </summary>
+    void CastingGauge(Control ui)
+    {
+        if (castingBar != null) { ui.AddChild(castingBar); castingBar.Relayout(GetWindow().Size); return; }
+        CastingBar = new Ms2.Ui.Hud.CastingBarController();
+        castingBar = new MovieDialog(assets, CastingBar, NewModel(), GetWindow().Size);
+        ui.AddChild(castingBar);
     }
 
     /// <summary>
@@ -2461,6 +2479,7 @@ public partial class HudScene : Node, IUiStageHost
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();
         SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
+        CastingBar?.Process();               // UICastingBar::vfunc_15: an expired cast finishes
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15

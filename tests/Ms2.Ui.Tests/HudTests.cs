@@ -1355,4 +1355,79 @@ public class HudTests
         Assert.That(p.RenderInvalidated, Is.False);
         Assert.That(h.RT.Errors, Is.Empty);
     }
+
+    sealed class Caster : ICastingEventListener
+    {
+        public int Finished, Cancelled;
+        public void OnCastingFinished() => Finished++;
+        public void OnCastingCancelled() => Cancelled++;
+    }
+
+    [Test]
+    public void ACastShowsTheGaugeAndFinishesWhenItsTimerExpires()
+    {
+        // StartCastingText (FUN_1418e15d0): the timer starts, the text fields are bound and the movie's startCasting runs with
+        // the param's default labels ("show", "yellow"); vfunc_15 finishes the cast once the timer is past the duration
+        long now = 1000;
+        var c = new CastingBarController { NowMs = () => now };
+        var h = Load(c, Model());
+        Assert.That(h.RT.Errors, Is.Empty);
+        var caster = new Caster();
+        c.StartCastingText(caster, "Cast", 3000, true, true, "Done");
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.IsCasting, Is.True);
+        Assert.That(c.Listener, Is.SameAs(caster));
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "visible")), Is.True);
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("show"));
+        Assert.That(Rt.ToString(h.Get(h.Child("m_text1"), "text")), Is.EqualTo("Cast"));
+        Assert.That(Rt.ToString(h.Get(h.Child("m_text2"), "text")), Is.EqualTo("Cast"));
+        c.SetCastTime("1.5");               // the bound time lines
+        Assert.That(Rt.ToString(h.Get(h.Child("m_timetext1"), "text")), Is.EqualTo("1.5"));
+        now += 2999;
+        c.Process();
+        Assert.That(caster.Finished, Is.Zero);
+        now += 1;
+        c.Process();                        // expired: FinishCasting(end) stops the gauge with the end text
+        Assert.That(caster.Finished, Is.EqualTo(1));
+        Assert.That(caster.Cancelled, Is.Zero);
+        Assert.That(c.IsCasting, Is.False);
+        Assert.That(c.Listener, Is.Null);
+        Assert.That(Rt.ToString(h.Get(h.Child("m_text1"), "text")), Is.EqualTo("Done"));
+        Assert.That(Rt.ToString(h.Get(h.Entity, "currentLabel")), Is.EqualTo("hide"));
+        c.Process();                        // the timer was reset: no second call
+        Assert.That(caster.Finished, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ANewCastCancelsTheRunningOneAndTheMovieCompletesAZeroLengthCast()
+    {
+        long now = 0;
+        var c = new CastingBarController { NowMs = () => now };
+        var h = Load(c, Model());
+        var a = new Caster();
+        var b = new Caster();
+        c.StartCastingText(a, "A", 5000, false, true, "");
+        c.StartCasting(b, new CastingParam { Text = "B", Duration = 5000 });
+        Assert.That(a.Cancelled, Is.EqualTo(1));
+        Assert.That(a.Finished, Is.Zero);
+        Assert.That(c.Listener, Is.SameAs(b));
+        Assert.That(Rt.ToString(h.Get(h.Child("m_text1"), "text")), Is.EqualTo("B"));
+        // the movie's OnCastingComplete (vfunc_28) finishes the cast
+        Assert.That(c.OnCallback("OnCastingComplete", Array.Empty<object>()), Is.True);
+        Assert.That(b.Finished, Is.EqualTo(1));
+        Assert.That(c.IsCasting, Is.False);
+        // a cast without a duration: the movie's startCasting calls onCastingComplete at once
+        var z = new Caster();
+        c.StartCastingText(z, "Z", 0, false, true, "");
+        Assert.That(z.Finished, Is.EqualTo(1));
+        Assert.That(c.Listener, Is.Null);
+        // vfunc_3 (leaving the game scene) drops a running cast without calling its caster
+        var d = new Caster();
+        c.StartCastingText(d, "D", 5000, false, true, "");
+        c.Hide();
+        Assert.That(d.Finished + d.Cancelled, Is.Zero);
+        Assert.That(c.Listener, Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
 }
