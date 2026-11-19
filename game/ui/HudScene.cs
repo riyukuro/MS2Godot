@@ -1547,6 +1547,7 @@ public partial class HudScene : Node, IUiStageHost
             var changed = model.Player.Apply(live.Me, Ms2Godot.Flow.Session.Chosen?.User);
             foreach (var e in changed) model.Notify(e);
             if (model != hudModel) return;
+            OwnMinimapPicture(live);
             if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(model.Player.Name);
             if (changed.Contains(Ms2.Ui.StatusEvent.Hp))
             {
@@ -1557,6 +1558,19 @@ public partial class HudScene : Node, IUiStageHost
         Sync();
         live.Me.Changed += Sync;
         unwatchLivePlayer += () => live.Me.Changed -= Sync;
+    }
+
+    /// <summary>
+    /// The minimap's own circle (createPlayer's imgpath, FUN_141028be0(id, picture, 1)) once the own PC is known: the
+    /// first field's minimap is built before the own FieldAddUser brings the user block's picture, so it starts with the
+    /// default image and gets the picture by changePlayer here (a picture not downloaded yet follows from
+    /// <see cref="ProfileImageReady"/>).
+    /// </summary>
+    void OwnMinimapPicture(Ms2Godot.Net.LiveSession live)
+    {
+        if (minimapSide == null || live.Me.User == null) return;
+        var path = Ms2Godot.Net.ProfileImageService.Images.Path(live.CharacterId, live.Me.User.Picture ?? "", true);
+        if (path != minimapSide.PlayerImage) minimapSide.OnProfileImage(live.CharacterId, path);
     }
 
     /// <summary>The HUD player's level: the live character's (<see cref="WatchLivePlayer"/>) or the fixture's.</summary>

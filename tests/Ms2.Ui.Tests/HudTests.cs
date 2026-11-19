@@ -1295,6 +1295,21 @@ public class HudTests
     }
 
     [Test]
+    public void TheOwnPictureAtLoadIsDrawn()
+    {
+        // BuildPlayerData: createPlayer with the downloaded picture's path; the list's build draws it.
+        var m = Model();
+        m.Field.Name = "Tria";
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false), CharacterId = 77, PlayerImage = "./Custom/Download/Profile/x_1_2.png" };
+        var h = Load(c, m);
+        var p = h.Player;
+        for (int i = 0; i < 10; i++) p.Tick();
+        var r = Tree(p.Root).Single(o => o.Class?.Name == "minimap_renderer_players");
+        TestContext.WriteLine($"dirty '{r.GetPublic("m_dirtyProfile")}' loaded '{h.Get(r.GetPublic("m_profile"), "imgpath")}'");
+        Assert.That(Rt.ToString(h.Get(r.GetPublic("m_profile"), "imgpath")), Does.EndWith("x_1_2.png"));
+    }
+
+    [Test]
     public void APlayerCirclePictureChangeWaitsForTheNextStageInvalidate()
     {
         // vfunc_ugc_1 (@0x141a383b0): changePlayer; ProfileRenderer.profile keeps the path and draws it on Event.RENDER,
