@@ -49,20 +49,59 @@ public sealed class FieldNavigation
     /// Makes sure the field's navmesh is in <paramref name="cacheDir"/> under the name <see cref="Load"/> looks for, and
     /// deletes the field's other navmesh files there (another key or version: a load never reads them, such as the file
     /// of the data before a patch). True when it was built, false when the file was there, null when the field has no
-    /// navigation geometry.
+    /// navigation geometry. With <paramref name="inputs"/> (a key of the data the geometry is built from, such as the
+    /// archives' index hashes and nif.xml's), the result is recorded next to the file for <see cref="Current"/>.
     /// </summary>
-    public static bool? Prepare(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir)
+    public static bool? Prepare(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir,
+        string inputs = null)
     {
         var (geometry, path) = Locate(packs, assets, spec, flats, xblock, cacheDir);
-        if (geometry == null) return null;
-        if (Directory.Exists(cacheDir))
-            foreach (var f in Directory.EnumerateFiles(cacheDir, $"{xblock}.v*.navmesh"))
-                if (!string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.Ordinal))
-                    try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
-        if (Cached(xblock, path) != null) return false;
-        Build(xblock, geometry, path, default);
-        return true;
+        bool? built = null;
+        if (geometry != null)
+        {
+            if (Directory.Exists(cacheDir))
+                foreach (var f in Directory.EnumerateFiles(cacheDir, $"{xblock}.v*.navmesh"))
+                    if (!string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.Ordinal))
+                        try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            built = Cached(xblock, path) == null;
+            if (built == true) Build(xblock, geometry, path, default);
+        }
+        if (inputs != null && (geometry == null || File.Exists(path)))
+            try
+            {
+                Directory.CreateDirectory(cacheDir);
+                var rec = RecordPath(xblock, cacheDir);
+                var tmp = $"{rec}.{Guid.NewGuid():N}.tmp";
+                File.WriteAllText(tmp, $"{RecordKey(inputs)}\t{(path == null ? "" : Path.GetFileName(path))}\n");
+                File.Move(tmp, rec, true);
+            }
+            catch (IOException) { } catch (UnauthorizedAccessException) { }   // not recorded: the next launch checks again
+        return built;
     }
+
+    /// <summary>
+    /// Whether <see cref="Prepare"/> recorded this field for the same <paramref name="inputs"/>, builder version and
+    /// DotRecast version, and the file it named is still there: a launch then skips the geometry (about 0.2 s and 120 MB
+    /// of allocations for the start field) that the key is computed from.
+    /// </summary>
+    public static bool Current(string xblock, string cacheDir, string inputs)
+    {
+        try
+        {
+            var rec = RecordPath(xblock, cacheDir);
+            if (!File.Exists(rec)) return false;
+            var line = File.ReadAllText(rec).TrimEnd('\n');
+            int tab = line.IndexOf('\t');
+            if (tab < 0 || line[..tab] != RecordKey(inputs)) return false;
+            var name = line[(tab + 1)..];
+            return name.Length == 0 || (Path.GetFileName(name) == name && File.Exists(Path.Combine(cacheDir, name)));
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    static string RecordPath(string xblock, string cacheDir) => Path.Combine(cacheDir, $"{xblock}.inputs");
+    static string RecordKey(string inputs) => $"v{NavConfig.Version};dotrecast={typeof(DtNavMesh).Assembly.GetName().Version};{inputs}";
 
     /// <summary>The field's navigation geometry (null when it has none) and the cache file its navmesh goes in.</summary>
     static (NavGeometry geometry, string path) Locate(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir)

@@ -37,15 +37,25 @@ public partial class NavDebug : Node3D
     /// globalized) unless the file its load looks for is there (<see cref="FieldNavigation.Prepare"/>: the same name and
     /// key, so a data patch builds it again; the field's files of another key are deleted). The setup step's, so the first
     /// session after an install loads it like a later one rather than building it (seconds of CPU and some 700 MB of
-    /// allocations on worker threads during the session's first minute). The seconds it took, or -1 when there was a file
-    /// (or no geometry). Other fields are built on their first visit.
+    /// allocations on worker threads during the session's first minute). The key is computed from the field's geometry, so
+    /// a launch whose inputs (every archive's index file, nif.xml) are the ones recorded with the file skips it
+    /// (<see cref="FieldNavigation.Current"/>). The seconds it took, or -1 when there was a file (or no geometry). Other
+    /// fields are built on their first visit.
     /// </summary>
     public static double BuildStart(PackSet packs, string nifXml, string dir)
     {
+        var inputs = Inputs(packs.DataDir, nifXml);
+        if (FieldNavigation.Current(Field.StartField, dir, inputs)) return -1;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var built = FieldNavigation.Prepare(packs, AssetIndex.For(packs), Ms2Godot.ModelBuilder.SharedSpec(nifXml), new FlatLibrary(packs), Field.StartField, dir);
+        var built = FieldNavigation.Prepare(packs, AssetIndex.For(packs), Ms2Godot.ModelBuilder.SharedSpec(nifXml), new FlatLibrary(packs),
+            Field.StartField, dir, inputs);
         return built == true ? sw.Elapsed.TotalSeconds : -1;
     }
+
+    /// <summary>The hashes (the stamps file's, read again only for a changed file) of every archive's index file and nif.xml.</summary>
+    static string Inputs(string dataDir, string nifXml) =>
+        string.Join(",", PackIndex.Archives(dataDir).Select(a => a + "=" + UiCode.Stamps.Hash(System.IO.Path.Combine(dataDir, a + ".m2h"))))
+        + ",nif=" + UiCode.Stamps.Hash(nifXml);
 
     public override void _UnhandledInput(InputEvent e)
     {

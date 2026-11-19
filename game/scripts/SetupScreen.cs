@@ -201,8 +201,11 @@ public partial class SetupScreen : Control
                 try
                 {
                     uiPhase = "Building the start field's navigation";
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    long b0 = System.GC.GetTotalAllocatedBytes();
                     double s = NavDebug.BuildStart(packs, nif, navDir);
                     if (s >= 0) GD.Print($"navmesh {Field.StartField} built in {s:F1} s");
+                    else if (Ui.PerfLog.On) GD.Print($"navmesh {Field.StartField}: current, checked in {sw.Elapsed.TotalMilliseconds:F1} ms, {(System.GC.GetTotalAllocatedBytes() - b0) >> 10} KB allocated");
                 }
                 catch (System.Exception e) { GD.PushWarning("navmesh build failed: " + e.GetBaseException().Message); }
             return r;

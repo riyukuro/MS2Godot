@@ -129,6 +129,14 @@ public class NavigationTests
             Assert.That(File.Exists(exact), Is.True);
             Assert.That(File.Exists(staleKey), Is.False);
             Assert.That(FieldNavigation.Load(packs, assets, spec, flats, Tria, dir), Is.Not.Null);
+
+            // the record a later launch checks instead of the geometry
+            Assert.That(FieldNavigation.Current(Tria, dir, "a"), Is.False, "nothing recorded");
+            Assert.That(FieldNavigation.Prepare(packs, assets, spec, flats, Tria, dir, "a"), Is.False);
+            Assert.That(FieldNavigation.Current(Tria, dir, "a"), Is.True, "recorded with its inputs");
+            Assert.That(FieldNavigation.Current(Tria, dir, "b"), Is.False, "other inputs (a patched archive)");
+            File.Delete(exact);
+            Assert.That(FieldNavigation.Current(Tria, dir, "a"), Is.False, "the file it named is gone");
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
