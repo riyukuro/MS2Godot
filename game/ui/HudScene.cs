@@ -531,6 +531,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(GetWindow().Size); return; }
         var model = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
+        if (GatePath != null) model.ServerTime = () => GateClock;   // the perf gate: no minute change mid-run
         model.Features.Clear();
         foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat,
             Ms2.Ui.Feature.PvPRankingDuelMode, Ms2.Ui.Feature.ItemSocketSystem, Ms2.Ui.Feature.HabiToken, Ms2.Ui.Feature.ReverseRaid01,
@@ -2702,6 +2703,7 @@ public partial class HudScene : Node, IUiStageHost
         CommunityTick();                     // UICommunityDialog::vfunc_72
         characterAbility?.Process(Time.GetTicksMsec());     // UICharacterAbilityDialog::vfunc_72: the reset button's time
         if (PerfLog.On) PerfScript();
+        if (GatePath != null) GateStep();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);

@@ -1,0 +1,79 @@
+# Perf regression gate
+
+One command measures the game's CPU-side cost, headless. A second compares the result with the stored baseline and exits 1 on a regression.
+
+```sh
+MS2_DATA=... MS2_NIFXML=... tools/perfgate/run.sh SCRATCH            # the merge gate's run: setup + 2 sessions
+MS2_DATA=... MS2_NIFXML=... tools/perfgate/run.sh --full SCRATCH     # setup + 3 sessions, as the baseline runs use
+dotnet run --project tools/PerfGate -- compare tools/perfgate/baseline.json SCRATCH/run.json
+```
+
+`SCRATCH` must be empty or must not exist. Run the gate in a heavy slot: it builds the game, then runs Godot three times (four with `--full`). `compare` exits 1 when a count metric is past its limit or missing. It only records times (`PERFGATE_TIMES=1` lists them against the baseline).
+
+## What a run measures
+
+`run.sh` does a fresh install (`setup.tscn` into `SCRATCH/xdg`). Then it runs three sessions of the offline field with the HUD (`hud.tscn` with `MS2_PERF_GATE`; `game/ui/HudScene.PerfGate.cs`). The first session is `install` (the first launch after setup). The next is `session` (a later launch); `--full` runs two of those. Each session runs with `--fixed-fps 60`, so it follows the same frame schedule whatever the frames' wall time:
+
+- `field.<case>.*`: the field load, from process start to the first HUD frame. It covers wall time, bytes allocated on all threads, collections, engine objects and nodes, and JIT-compiled methods.
+- `idle.<case>.*`: 300 frames with no dialog open. `idle_3_open.<case>.*`: 300 frames with inventory, myinfo and skill open. Each records:
+  - bytes per frame on the main thread and on all threads, and collections;
+  - the field effects' bytes per effect frame (`EffectInstance.Count`) and their µs per effect frame;
+  - the median and worst frame time.
+- `open.<dialog>.<install|session|repeat>.*`: covers inventory, myinfo, skill, quest, worldmap, shop and options. Each dialog gets its first open of the session (`install` or `session`), then 3 repeat opens. Each open records:
+  - bytes, collections, JIT-compiled methods and time, from its toggle to the end of the third frame after it;
+  - the engine objects and nodes it added;
+  - `kept_objects`, the objects still alive 35 frames after its close.
+- `opens.<install|session|repeat>.sum_ms`: every dialog's open time, summed per session.
+
+Every window starts 15 frames after a full collection, and its object counts are read after one. So a window's collections come from its own allocation, its object counts are live objects, and finalizer frees from earlier garbage don't land in it. Two once-per-session costs are moved out of every window, in the gate session only:
+
+- The HUD clock is fixed, so its once-a-minute redraw never lands in one.
+- GodotSharp's wrapper tracker (`DisposablesTracker`, a `ConcurrentDictionary`) is grown past twice its size after the field load. Its one growth in a session rebuilds every entry, about 3.3 MB at the field's ~60,000 wrappers. Before this, that rebuild landed in one of the first 8 opens, whichever crossed the growth point.
+
+## What is checked
+
+`compare` checks the **counts**: main-thread bytes, objects, nodes, kept objects, collections, and the methods the main thread JIT-compiled. It holds each at its worst value.
+
+It records the following without checking them (`PERFGATE_TIMES=1` prints them against the baseline):
+
+- **Times**: the machine's load moves them several times over.
+- **JIT methods on every thread**: the tiering thread's recompiles land in a window or not. myinfo repeats saw 30 to 157.
+- **Bytes on every thread** in an open or idle window: the install session's background cache build lands in whichever window it overlaps. Inventory's install-session first open saw 36 to 371 MB.
+- **Collections in the install session's windows**, for the same reason: they are process-wide.
+
+The field load keeps its all-thread bytes and collections checked. They are the only counts it has, and their spread is in the baseline.
+
+## Limits (`PerfGate baseline`)
+
+The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A count's limit is the baseline max plus the larger of two amounts: the spread the baseline runs showed, or a floor. The floors are:
+
+| Kind | Floor |
+|---|---|
+| bytes | 2% or 16 KB |
+| bytes per effect frame | 5% or 8 B |
+| objects, nodes | 3% or 16 |
+| kept objects | 3% or 64 |
+| JIT methods (main thread) | 2% or 8 |
+| collections | 1 |
+
+The noise behind the floors comes from 5 runs (13 sessions) of the same tree on a loaded machine:
+
+- **Main-thread bytes:** every dialog's first open stays within 0.3% of its median, and its repeats within 1%. No open was more than 1 MB above its dialog's median. The 3.3 MB tracker rebuild is the size of a regression the limits catch: the earlier runs, made before the pre-grow, fail on exactly that open.
+- **JIT methods (main thread):** repeats compile 4 to 13 methods per open. First opens move by up to 9 (myinfo 356 to 365), and the field load by up to 31 of 10,050.
+- **Objects and nodes:** first opens are the same in every run. Repeats stay within ±4, except where noted below.
+- **Kept objects:** most dialogs are exact. Options (−43 to 54), shop repeats (−22 to 79) and skill's first repeat (−4 to 506) move. Real leaks are in the hundreds: worldmap's first open keeps 966.
+- **Collections:** most are exact. The others move by 1, and the field load by up to 7.
+
+Leave-one-out over those 5 runs (a baseline from 4, compare the 5th) passes 5 of 5.
+
+**Runtime:** about 130 s for `run.sh` (setup 30 s, then about 50 s per session) and about 180 s for `--full`. That excludes the build and any wait for a heavy slot.
+
+## Changing the baseline
+
+`tools/perfgate/baseline.json` changes only in a commit that carries a `Perf-baseline: <reason>` trailer, and the reviewer has to accept the reason. `tools/perfgate/check-trailer.sh RANGE` lists every commit in RANGE that touches the baseline, with its reason, and exits 1 if one has no reason. To make a new baseline, run the gate at least three times on the new tip and build the baseline from those runs:
+
+```sh
+dotnet run --project tools/PerfGate -- baseline tools/perfgate/baseline.json R1/run.json R2/run.json R3/run.json
+```
+
+Use `--full` runs, or mix them with plain runs: either way every metric gets values from both cases.

@@ -342,12 +342,19 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         probeInst++; probeTicks += ticks; probeBytes += bytes; probeFrameTicks += ticks;
     }
 
+    /// <summary>The perf gate (HudScene MS2_PERF_GATE): while set, every effect's _Process adds its managed bytes, wall
+    /// ticks and one instance to the totals below.</summary>
+    public static bool Count;
+    public static long CountBytes, CountTicks, CountInstances;
+
     public override void _Process(double delta)
     {
-        if (!ProbeOn) { Tick(delta); return; }
+        if (!ProbeOn && !Count) { Tick(delta); return; }
         long b0 = GC.GetAllocatedBytesForCurrentThread(), s0 = System.Diagnostics.Stopwatch.GetTimestamp();
         Tick(delta);
-        Probe(System.Diagnostics.Stopwatch.GetTimestamp() - s0, GC.GetAllocatedBytesForCurrentThread() - b0);
+        long ticks = System.Diagnostics.Stopwatch.GetTimestamp() - s0, bytes = GC.GetAllocatedBytesForCurrentThread() - b0;
+        if (Count) { CountBytes += bytes; CountTicks += ticks; CountInstances++; }
+        if (ProbeOn) Probe(ticks, bytes);
     }
 
     void Tick(double delta)
