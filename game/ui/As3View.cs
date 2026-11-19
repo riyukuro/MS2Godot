@@ -64,7 +64,7 @@ public partial class As3View : Node2D
     /// The children each parent node was last given (<see cref="Apply"/>), in order: a parent given the same list again with
     /// the same child count keeps its children as they are, without reading them back or moving them.
     /// </summary>
-    readonly Dictionary<Node, List<Node>> applied = new();
+    readonly Ms2.Ui.AppliedChildLists<Node, Node> applied = new();
 
     public As3View(FlashPlayer player, UiAssets assets)
     {
@@ -248,7 +248,7 @@ public partial class As3View : Node2D
     /// </summary>
     void SyncChildren(AsContainer c, Node2D into, Node2D content, NineCtx nine, Material blend, bool deep)
     {
-        var wanted = new List<Node>();
+        var wanted = applied.Rent();
         if (content != null) wanted.Add(content);
         MaskShape clip = null; List<Node> clipped = null; int clipEnd = 0;
         List<(MaskShape Mask, List<Node> Kids)> clips = null;
@@ -285,6 +285,7 @@ public partial class As3View : Node2D
         }
         if (clips != null) foreach (var (mask, kids) in clips) Apply(mask, kids);
         Apply(into, wanted);
+        applied.Return(wanted);
     }
 
     /// <summary>
@@ -295,13 +296,8 @@ public partial class As3View : Node2D
     /// </summary>
     void Apply(Node2D into, List<Node> want)
     {
-        if (applied.TryGetValue(into, out var last) && last.Count == want.Count && into.GetChildCount() == want.Count)
-        {
-            bool same = true;
-            for (int i = 0; same && i < want.Count; i++) same = ReferenceEquals(last[i], want[i]);
-            if (same) return;
-        }
-        applied[into] = want;
+        if (into.GetChildCount() == want.Count && applied.IsApplied(into, want)) return;
+        applied.Set(into, want);
         var keep = new HashSet<Node>(want);
         bool changed = false;
         foreach (var n in want)
