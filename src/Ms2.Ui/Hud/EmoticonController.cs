@@ -110,7 +110,10 @@ public sealed class EmoticonController : UiController
     public bool ProgressiveLoading = true;
     /// <summary>The time in ms (GetTickCountMs2): the timer and the 1000 ms quest tick.</summary>
     public Func<long> TickMs = () => Environment.TickCount64;
-    /// <summary>CFameTable IsOfficerNpc / GetSymbolByOfficerNpc: the officer npc's alliance symbol, null for none.</summary>
+    /// <summary>
+    /// CFameTable IsOfficerNpc / GetSymbolByOfficerNpc (<see cref="FameTable"/>): the officer npc kind's alliance symbol,
+    /// null for a kind that is not an officer's.
+    /// </summary>
     public Func<int, string> OfficerSymbol = _ => null;
     /// <summary>The quest's data for the suffix (SelectStringByQuestId).</summary>
     public Func<int, QuestData> QuestOf = _ => null;

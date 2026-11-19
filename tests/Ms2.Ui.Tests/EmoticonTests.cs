@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
@@ -274,5 +275,64 @@ public class EmoticonTests
         Assert.That(c.QuestMovieName(1, 1), Is.EqualTo("emoticon_movie_quest_progress"));
         Assert.That(c.QuestMovieName(1, 4), Is.EqualTo(""));
         Assert.That(c.QuestMovieName(1, 0), Is.EqualTo("emoticon_movie_quest_start"));
+    }
+
+    /// <summary>
+    /// The officer npcs of fameDef.xml (CFameTable): each def's officer kind is an officer npc and shows the first def's
+    /// symbol (by alliance) of that kind, lower case, as "emoticon_movie_npc_{symbol}" over the npc.
+    /// </summary>
+    [Test]
+    public void AnOfficerNpcShowsItsAlliancesSymbol()
+    {
+        Model();
+        var fame = tables.Fame;
+        Assert.That(fame.Defs, Is.Not.Empty);
+        foreach (var d in fame.Defs)
+        {
+            Assert.That(fame.IsOfficerNpc(d.OfficerNpcKind), Is.True, $"alliance {d.Alliance}");
+            var first = fame.Defs.First(x => x.OfficerNpcKind == d.OfficerNpcKind);
+            Assert.That(fame.GetSymbolByOfficerNpc(d.OfficerNpcKind), Is.EqualTo(first.Symbol));
+            Assert.That(first.Symbol, Is.EqualTo(first.Symbol.ToLowerInvariant()).And.Not.Empty);
+        }
+        Assert.That(fame.IsOfficerNpc(0xb), Is.False);
+        Assert.That(fame.GetSymbolByOfficerNpc(0xb), Is.EqualTo(""));
+
+        var c = new EmoticonController { OfficerSymbol = k => fame.IsOfficerNpc(k) ? fame.GetSymbolByOfficerNpc(k) : null };
+        var h = Load(c);
+        var def = fame.Defs.First();
+        var npc = new EmoticonController.Actor { ObjectId = 1, IsNpc = true, ActorAdded = true, NpcKind = def.OfficerNpcKind, Friendly = 2, Distance = 100 };
+        var e = c.SpawnNpc(npc, () => NpcQuestMarks.Mark.None);
+        Assert.That(e, Is.Not.Null);
+        c.Process(At);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(e.Opened, Is.EqualTo("emoticon_movie_npc_" + def.Symbol));
+        Assert.That(Shown(h, e), Is.Not.Null);
+    }
+
+    /// <summary>LoadFameDef's rules on a made table: an unavailable season is skipped, a later def of an alliance replaces
+    /// it (its old kind stays an officer npc with no symbol), the symbol is lowered and a missing attribute is 0 / "".</summary>
+    [Test]
+    public void TheFameDefsFollowLoadFameDef()
+    {
+        var doc = XDocument.Parse("""
+            <ms2>
+              <season name="SkyFotress"><fame alliance="DarkWind" officerNpcKind="100" symbol="DarkWind" /></season>
+              <season name="Georg" skip="1"><fame alliance="Georg" officerNpcKind="108" symbol="Georg" /></season>
+              <season name="KritiasExped">
+                <fame alliance="darkwind" officerNpcKind="105" symbol="MapleUnion" isExped="1" />
+                <fame alliance="GreenHood" />
+              </season>
+            </ms2>
+            """);
+        var fame = new FameTable(doc, s => s.Attribute("skip") == null);
+        Assert.That(fame.Defs.Select(d => d.Alliance), Is.EqualTo(new[] { 1, 5 }));
+        var dark = fame.Defs.Single(d => d.Alliance == FameTable.Alliance("DarkWind"));
+        Assert.That(dark, Is.EqualTo(new FameTable.Def(1, 105, "mapleunion", 1, 2)));
+        Assert.That(fame.IsOfficerNpc(100), Is.True);
+        Assert.That(fame.GetSymbolByOfficerNpc(100), Is.EqualTo(""));
+        Assert.That(fame.GetSymbolByOfficerNpc(105), Is.EqualTo("mapleunion"));
+        Assert.That(fame.IsOfficerNpc(108), Is.False);
+        Assert.That(fame.Defs.Single(d => d.Alliance == 5), Is.EqualTo(new FameTable.Def(5, 0, "", 0, 2)));
+        Assert.That(FameTable.Empty.Defs, Is.Empty);
     }
 }

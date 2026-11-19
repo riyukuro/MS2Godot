@@ -94,6 +94,8 @@ public sealed class GameTables
         // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
         XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
         Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
+        // CFameTable::LoadFameDef (famegradedata.cpp:606): GetXmlPath("Table", "fameDef.xml")
+        Fame = new FameTable(Xml("table/famedef.xml"), e => FeatureElements.IsAvailable(packs, e));
         var k = FeatureElements.Constants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
@@ -176,6 +178,8 @@ public sealed class GameTables
 
     /// <summary>The fishing spots and fishing mastery grades (CFishingTable, CMasteryTable type 1); empty without data.</summary>
     public FishingSpots Fishing { get; } = new(null, null, _ => true);
+    /// <summary>CFameTable's fameDef.xml part (the officer npcs' alliance symbols); empty without data.</summary>
+    public FameTable Fame { get; } = FameTable.Empty;
 
     /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown; names
     /// holding "$" get the object words (e.g. "$map:02000302$ Treasure Key"), as CStringTable::Load @0x141810f70 does for

@@ -29,9 +29,8 @@ namespace Ms2Godot.World;
 ///   (<see cref="NpcTalk"/>).
 /// - The quest kind comes from the character's quest records through <see cref="NpcTalk.QuestMark"/> (offline the
 ///   sandbox's, live the session's QuestBook).
-/// STILL-OPEN: the officer npcs' alliance symbol (CFameTable GetSymbolByOfficerNpc) is not loaded, so those npcs show
-/// their kind's movie or none; the chat balloon test (Actor.BalloonActive) is not fed, as the npcs' balloons are not
-/// ported.
+/// - An officer npc kind (fameDef.xml's officerNpcKind) shows its alliance's symbol movie (<see cref="FameTable"/>).
+/// STILL-OPEN: the chat balloon test (Actor.BalloonActive) is not fed, as the npcs' balloons are not ported.
 /// </summary>
 public sealed partial class NpcEmoticons : CanvasLayer
 {
@@ -94,6 +93,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
             VisibleDistance = constants.Float("EmoticonVisibleDistance", 2500),
             NpcOffset = constants.Float("OffsetNpcEmoticon", -30),
             QuestOf = quests.Quest,
+            // GetNpcMovieName (uiemoticon.cpp:125-126): IsOfficerNpc, then GetSymbolByOfficerNpc
+            OfficerSymbol = k => tables.Fame.IsOfficerNpc(k) ? tables.Fame.GetSymbolByOfficerNpc(k) : null,
             ProgressiveLoading = ProgressiveLoading.Value,
             SceneHidesEmoticons = () => MovieLayerHost.Layers.InTalk,     // the cut scene sub scenes are not ported
         };
