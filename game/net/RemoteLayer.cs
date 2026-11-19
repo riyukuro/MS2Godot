@@ -20,6 +20,8 @@ public sealed partial class RemoteLayer : Node3D
         public Node3D Root, Visual; public AnimationPlayer Anim;
         public Vector3 Target; public float TargetYaw; public string Name, Current = "";
         public Vector3 LastPos; public float Speed;
+        public int ObjectId; public long CharacterId; public string Picture = "";
+        public Func<Vector3> Anchor;
     }
 
     readonly ModelBuilder builder;
@@ -27,6 +29,7 @@ public sealed partial class RemoteLayer : Node3D
     readonly NpcLayer npcs;
     readonly CombatLayer combat;
     readonly LiveNameTags tags;
+    readonly PackSet packs;
     readonly Dictionary<int, Remote> users = new();
     readonly Dictionary<byte, (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run)> bodies = new();
     readonly long selfCharacter;
@@ -37,6 +40,11 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>The field's live npcs for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> TalkNpcs => npcs.Talkable;
 
+    /// <summary>One other player in the field: its object, name, picture key, root and Eff_UI anchor.</summary>
+    public readonly record struct Pc(int ObjectId, long CharacterId, string Name, string Picture, Node3D Root, Func<Vector3> Anchor);
+    /// <summary>The other players shown now (the own PC is not among them).</summary>
+    public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor));
+
     public RemoteLayer(Field field, ModelBuilder mb, long selfCharacterId)
     {
         Name = "RemoteLayer";
@@ -45,7 +53,7 @@ public sealed partial class RemoteLayer : Node3D
         builder = mb;
         // the field build searched map textures only; the character bodies need the character pack's own textures too
         if (!mb.TextureArchives.Contains(ModelBuilder.ModelArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
-        var packs = field.Packs;
+        var packs = this.packs = field.Packs;
         equip = new EquipApplier(packs, mb) { Palettes = new Look.ColorPalettes(packs) };
         var table = new Ms2.Formats.World.NpcTable(packs);
         Tracker.NpcLayoutOf = id => { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); };
@@ -85,6 +93,10 @@ public sealed partial class RemoteLayer : Node3D
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
+        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? "";
+        var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
+        var model = visual.GetNodeOrNull<Node3D>("Model");
+        r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
         root.Position = r.Target; r.LastPos = r.Target;
         visual.Rotation = new Vector3(0, Mathf.DegToRad(r.TargetYaw), 0);
         anim.Play("idle"); r.Current = "idle";

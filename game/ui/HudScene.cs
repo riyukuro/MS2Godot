@@ -574,7 +574,7 @@ public partial class HudScene : Node, IUiStageHost
             live.UserChat += onChat;
             Action<Ms2.Net.Packets.ChatItemLinks> onLinks = ChatLog.OnItemLinks;
             live.UserChatItemLink += onLinks;
-            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; ChatLog.SendPacket = null; };
+            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; ChatLog.SendPacket = null; ChatLog.ChatBalloon = null; };
         }
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;
@@ -594,6 +594,8 @@ public partial class HudScene : Node, IUiStageHost
         };
         ChatLog.SystemSound = key => GD.Print($"chat: system sound {key} is not played");
         ChatLog.LocalCharacterId = () => live.CharacterId;
+        // ShowChatBalloon (:2940): the line over its speaker, through the live field's balloon layer
+        ChatLog.ChatBalloon = (name, text, type) => Ms2Godot.World.NpcEmoticons.Live?.Speakers?.Show(name, text, type);
         ChatLog.ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         ChatLog.SendPacket = chat =>
         {

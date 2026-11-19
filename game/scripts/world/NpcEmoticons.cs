@@ -34,6 +34,11 @@ namespace Ms2Godot.World;
 ///   npc, its entity made on first use by CNpc::vfunc_85 (<see cref="ChatBalloonController.NpcBalloon"/>), which the
 ///   emoticon's hide test asks for each frame (<see cref="EmoticonController.Actor.Balloon"/>). The balloon sits in
 ///   CommonDepth ChatBalloon (7).
+/// - The players' chat balloons (a live field): the own PC and the remote layer's players get a balloon actor each,
+///   kept by object id as the client's PC map m_118 is; a chat line shows over its speaker through
+///   <see cref="ChatSpeakerBalloon"/> (UIMessengerBrowser::ShowChatBalloon, wired from the HUD's chat). A PC's balloon is
+///   PC::vfunc_85 (<see cref="ChatBalloonController.PcBalloon"/>), its offset OffsetPcChatballoon (the PC constructor's
+///   m_f168, pc.cpp:661), its picture the PC's profile image (FUN_141028be0(id, picture, 1)).
 /// - The idle monologues (<see cref="NpcMonologue"/>): each npc's frame runs CNpc::UpdateMonologue, which shows a
 ///   &lt;monologue&gt; of the npc's scripts in its balloon. STILL-OPEN: the mobs (not in this layer) run it in the client too.
 /// </summary>
@@ -48,6 +53,14 @@ public sealed partial class NpcEmoticons : CanvasLayer
         public bool Spawned;
     }
 
+    sealed class Pc
+    {
+        public ChatBalloonController.Actor Balloon;
+        public string Name = "";
+        public Node3D Root;
+        public Func<Vector3> Anchor;
+    }
+
     readonly UiAssets assets;
     readonly ClientConstants constants;
     readonly NpcTalk talk;
@@ -57,6 +70,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
     readonly Dictionary<ChatBalloonController.Actor, Npc> byBalloon = new();
     readonly Dictionary<NpcMonologue.Npc, Npc> byMonologue = new();
     readonly NpcQuestMarks marks;
+    readonly SortedDictionary<int, Pc> pcs = new();             // by object id, as WorldService m_118
+    readonly Dictionary<ChatBalloonController.Actor, Pc> byPcBalloon = new();
+    ChatSpeakerBalloon speakers;
     EmoticonController controller;
     MovieDialog movie;
     ChatBalloonController balloons;
@@ -75,6 +91,10 @@ public sealed partial class NpcEmoticons : CanvasLayer
     public EmoticonController Controller => controller;
     /// <summary>The chat balloons' controller (null when the movie did not load).</summary>
     public ChatBalloonController Balloons => balloons;
+    /// <summary>The chat lines' balloons over the players (null when the balloon movie did not load).</summary>
+    public ChatSpeakerBalloon Speakers => speakers;
+    /// <summary>The live field's layer, while it is in the tree (the HUD's chat shows its lines through it).</summary>
+    public static NpcEmoticons Live { get; private set; }
     /// <summary>The per-frame cost (quest ticks and placing, not the movie's own frame) in ms, summed, and the frames counted.</summary>
     public double FrameMs;
     public int Frames;
@@ -142,7 +162,18 @@ public sealed partial class NpcEmoticons : CanvasLayer
             AddChild(balloonMovie);
         }
         catch (Exception e) { GD.PushWarning("chat balloon movie: " + e.Message); balloons = null; balloonMovie = null; }
-        if (balloons == null || talk == null) return;
+        if (balloons == null) return;
+        speakers = new ChatSpeakerBalloon(balloons)
+        {
+            Distance = constants.Float("ChatBalloonDistance", 2000),
+            LocalPlayer = () => { SyncPcs(); return pcs.Values.FirstOrDefault(p => p.Balloon.IsMyPc)?.Balloon; },
+            FindPc = name => pcs.Values.FirstOrDefault(p => p.Name == name)?.Balloon,
+            Talking = () => talk?.TalkingNpc != null,
+            Status = () => GameOptions.Current.StatusOption,
+            Common = tables.Common,
+            ReplaceValueWords = t => tables.ReservedWords.ReplaceValueWords(t, Ms2Godot.Net.LiveSession.Instance?.Me.User?.Name),
+        };
+        if (talk == null) return;
         monologue = new NpcMonologue(balloons, talk.ScriptTable)
         {
             // MS2Ticks: the tables' seconds in ms (ParseTick)
@@ -219,11 +250,57 @@ public sealed partial class NpcEmoticons : CanvasLayer
             npcs.Remove(gone);
         }
         foreach (var n in now) Add(n);
+        SyncPcs();
+    }
+
+    /// <summary>
+    /// The live field's PCs: the own one (the session's FieldAddUser object, the walkable player) and the remote layer's;
+    /// a new one gets its balloon actor, a gone one's balloon is released (PCBase::vfunc_16), and each picture path is
+    /// asked again (FUN_141028be0(id, picture, 1), as the balloon's open does).
+    /// </summary>
+    void SyncPcs()
+    {
+        if (!live || balloons == null || Ms2Godot.Net.LiveSession.Instance is not { } s) return;
+        var now = new Dictionary<int, (long Char, string Name, string Picture, Node3D Root, Func<Vector3> Anchor, bool Me)>();
+        if (s.SelfObjectId >= 0 && s.Me.User is { } me && Viewer is Player p && IsInstanceValid(p))
+        {
+            var dummies = EffectDummyTable.Load(assets.Packs).Pc(p.Gender);
+            now[s.SelfObjectId] = (me.CharacterId, me.Name ?? "", me.Picture ?? "", p,
+                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>("Model"), p.RootName) ?? p.GlobalPosition, true);
+        }
+        foreach (var r in s.FieldPcs)
+            if (IsInstanceValid(r.Root)) now[r.ObjectId] = (r.CharacterId, r.Name, r.Picture, r.Root, r.Anchor, false);
+        foreach (var gone in pcs.Keys.Where(k => !now.ContainsKey(k)).ToList())
+        {
+            balloons.RemovePc(pcs[gone].Balloon);
+            byPcBalloon.Remove(pcs[gone].Balloon);
+            pcs.Remove(gone);
+        }
+        foreach (var (id, v) in now)
+        {
+            if (!pcs.TryGetValue(id, out var x) || x.Root != v.Root)
+            {
+                if (x != null) { balloons.RemovePc(x.Balloon); byPcBalloon.Remove(x.Balloon); }
+                var b = new ChatBalloonController.Actor
+                {
+                    ObjectId = id,
+                    IsPc = true,
+                    IsMyPc = v.Me,
+                    ActorAdded = true,
+                    Offset = constants.Float("OffsetPcChatballoon", 210),
+                };
+                pcs[id] = x = new Pc { Balloon = b };
+                byPcBalloon[b] = x;
+            }
+            x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor;
+            x.Balloon.ProfileImage = Ms2Godot.Net.ProfileImageService.Images.Path(v.Char, v.Picture, true);
+        }
     }
 
     public override void _EnterTree()
     {
         if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; }
+        if (live) Live = this;
         sizeSource = GetViewport();
         sizeSource.SizeChanged += Relayout;
         Relayout();
@@ -233,6 +310,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     {
         if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; }
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
+        if (Live == this) Live = null;
     }
 
     void Relayout()
@@ -270,6 +348,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
             controller.NpcTick(a, () => QuestMark(a));
             if (monologue != null && n.Monologue != null) monologue.Update(n.Monologue, (float)delta);    // CNpc::vfunc_53
         }
+        // GameObject m_unk_bc of the PCs: from the focus (the local player)
+        foreach (var x in pcs.Values) if (IsInstanceValid(x.Root)) x.Balloon.Distance = eye.DistanceTo(x.Root.GlobalPosition);
         bool layer = MovieLayerHost.Layers.IsVisible(CommonDepth.Emoticon);
         controller.Process(Project);
         bool balloonLayer = MovieLayerHost.Layers.IsVisible(CommonDepth.ChatBalloon);
@@ -293,8 +373,14 @@ public sealed partial class NpcEmoticons : CanvasLayer
         (float, float)? ProjectBalloon(ChatBalloonController.Actor b)
         {
             if (!balloonLayer) return null;
-            if (!byBalloon.TryGetValue(b, out var n) || !IsInstanceValid(n.Placed.Root)) return null;
-            var anchor = NpcPresence.Dummy(n.Placed, "Eff_UI") ?? n.Placed.Root.GlobalPosition;
+            Vector3 anchor;
+            if (byPcBalloon.TryGetValue(b, out var pc))
+            {
+                if (!IsInstanceValid(pc.Root)) return null;
+                anchor = pc.Anchor?.Invoke() ?? pc.Root.GlobalPosition;
+            }
+            else if (!byBalloon.TryGetValue(b, out var n) || !IsInstanceValid(n.Placed.Root)) return null;
+            else anchor = NpcPresence.Dummy(n.Placed, "Eff_UI") ?? n.Placed.Root.GlobalPosition;
             if (camera.IsPositionBehind(anchor)) return null;
             var p = camera.UnprojectPosition(anchor);
             return ((float)(Math.Floor(p.X / u * 20.0) / 20.0), (float)(Math.Floor(p.Y / u * 20.0) / 20.0));

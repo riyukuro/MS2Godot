@@ -231,6 +231,10 @@ public partial class LiveSession : Node
     public void SendChat(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
+    /// <summary>The field's other players (the remote layer's), none before the field is built.</summary>
+    public IEnumerable<RemoteLayer.Pc> FieldPcs => remote?.Pcs ?? Enumerable.Empty<RemoteLayer.Pc>();
+    /// <summary>The own FieldAddUser object id, -1 before it.</summary>
+    public int SelfObjectId => selfObject;
     /// <summary>
     /// WorldService::FUN_141bd1530 (worldservice_1.cpp:6210): the field's user object with this character id, here whether
     /// the field's users (FieldAddUser, kept by the tracker) hold one. False before the field is built.

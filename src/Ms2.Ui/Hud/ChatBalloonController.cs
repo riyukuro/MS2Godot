@@ -14,9 +14,10 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// The npc side is CNpc::vfunc_85 (@0x1410904c0, <see cref="NpcBalloon"/>): the npc's balloon, made on first use.
 /// The npc monologue (UITalkManager::ShowNpcMonologue, called by CNpc::UpdateMonologue) shows through
-/// <see cref="NpcMonologue"/>. STILL-OPEN: PCBase::ShowChatBalloon's (pcbase.cpp:1664) other callers, the chat's
-/// (UIMessengerBrowser::ShowChatBalloon) and the talk and cut scene ones, are not ported; the PCs' and pets' balloons (pc.cpp:1589,
-/// cubespawnobject.cpp:242) and the gem skins (itemgem.cpp:674/688) have no caller here.
+/// <see cref="NpcMonologue"/>. A PC's is PC::vfunc_85 (@0x1416573b0, <see cref="PcBalloon"/>); a chat line shows over its
+/// speaker through <see cref="ChatSpeakerBalloon"/> (UIMessengerBrowser::ShowChatBalloon). STILL-OPEN: PCBase::ShowChatBalloon's
+/// (pcbase.cpp:1664) talk and cut scene callers are not ported; the pets' balloons (cubespawnobject.cpp:242) and the gem skins
+/// (itemgem.cpp:674/688) have no caller here.
 /// </para>
 /// </summary>
 public sealed class ChatBalloonController : UiController
@@ -292,6 +293,31 @@ public sealed class ChatBalloonController : UiController
         if (a == null) return;
         Release(a.ObjectId);
         npcBalloons.Remove(a);
+    }
+
+    // ---- the PC side (pc.cpp) ----------------------------------------------------------------------------------------
+
+    readonly Dictionary<Actor, Entity> pcBalloons = new();      // PC m_spAA8
+
+    /// <summary>
+    /// PC::vfunc_85 (@0x1416573b0, pc.cpp:1589): the PC's balloon (m_spAA8), made by GetChatBalloonEntity(m_unk_70) on first
+    /// use. Unlike CNpc's there is no ProgressiveLoading test. The PC keeps its pointer after a release, until its teardown.
+    /// </summary>
+    public Entity PcBalloon(Actor a)
+    {
+        if (a == null) return null;
+        if (pcBalloons.TryGetValue(a, out var e)) return e;
+        e = GetEntity(a);
+        if (e != null) pcBalloons[a] = e;
+        return e;
+    }
+
+    /// <summary>The PC's teardown (PCBase::vfunc_16, pcbase.cpp:894): FUN_1418fbe30 releases its balloon.</summary>
+    public void RemovePc(Actor a)
+    {
+        if (a == null) return;
+        Release(a.ObjectId);
+        pcBalloons.Remove(a);
     }
 
     // ---- the frame (UIHudEntity::vfunc_15, uihudentity.cpp @0x140f49950) ----------------------------------------------

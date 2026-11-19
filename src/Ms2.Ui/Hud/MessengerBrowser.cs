@@ -542,7 +542,7 @@ public sealed class MessengerBrowser
     public Func<string, string> Announcement = _ => null;
     /// <summary>CUserCommandCli::ExecuteInternal(text), a type 10 line. STILL-OPEN: the user commands are not ported.</summary>
     public Action<string> UserCommand;
-    /// <summary>ShowChatBalloon(name, text, type), the speech balloon over the speaker. STILL-OPEN: not ported.</summary>
+    /// <summary>ShowChatBalloon(name, text, type), the speech balloon over the speaker (<see cref="ChatSpeakerBalloon.Show"/>).</summary>
     public Action<string, string, int> ChatBalloon;
     /// <summary>CFeatureManager::IsFeatureEnabled; the model's when null.</summary>
     public Func<int, bool> FeatureEnabled;
