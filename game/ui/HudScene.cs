@@ -668,28 +668,36 @@ public partial class HudScene : Node, IUiStageHost
     /// The inventory the item arrows ask (UIInventoryDialog: GetItemsInCategory(GetSelectedTab) with each item's
     /// slot and what IsItemMatchingKind matches on, and the movie's scroll page, GetScrollPosition
     /// uiinventorydialog.cpp:1125). Null while the inventory is closed, as the client's dialog lookup fails then.
+    /// The list and the record are reused across calls — the pane asks on the main thread once per frame an arrow
+    /// is up and reads the answer at once, so no caller holds or re-enters between a fill and its read, and a
+    /// steady frame allocates nothing.
     /// </summary>
     Ms2.Ui.Guide.GuideInventory GuideInventoryOf()
     {
         var inv = inventory;
         if (inv == null || inventoryMovie == null || inv.IsClosed) return null;
         long now = Ms2Godot.Net.LiveSession.Instance?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var items = new List<Ms2.Ui.Guide.GuideInventoryItem>();
+        guideItems.Clear();
         foreach (var cell in inv.View.Cells(inv.View.Tab))          // the tab's cells by slot, the client's array order
         {
             if (cell.Empty) continue;
             var it = inv.View.FindByUid(cell.Uid);
             if (it == null) continue;
             var d = hudModel.Tables.Items.Get(it.Id);
-            items.Add(new Ms2.Ui.Guide.GuideInventoryItem(it.InventorySlot, it.Id, d?.Type ?? 0, d?.IconCode ?? 0,
+            guideItems.Add(new Ms2.Ui.Guide.GuideInventoryItem(it.InventorySlot, it.Id, d?.Type ?? 0, d?.IconCode ?? 0,
                 d?.HasCubeTextureMesh ?? false, it is { HasUgc: true, Ugc.Uid: not 0 },
                 !(it.ExpiryTime > 0 && it.ExpiryTime <= now)));      // FUN_140528980: not expired
         }
         var host = inventoryMovie.Host;
         var list = host.Child("m_itemBagEx");
-        int page = list == null ? 0 : (int)Rt.ToNumber(host.Get(list, "scrollPosition"));
-        return new Ms2.Ui.Guide.GuideInventory { Items = items, ScrollPage = page };
+        guideInventory.Items = guideItems;
+        guideInventory.ScrollPage = list == null ? 0 : (int)Rt.ToNumber(host.Get(list, "scrollPosition"));
+        return guideInventory;
     }
+
+    /// <summary>The reused list and record of <see cref="GuideInventoryOf"/> (cleared and refilled per call).</summary>
+    readonly List<Ms2.Ui.Guide.GuideInventoryItem> guideItems = new();
+    readonly Ms2.Ui.Guide.GuideInventory guideInventory = new() { Items = System.Array.Empty<Ms2.Ui.Guide.GuideInventoryItem>() };
 
     /// <summary>
     /// The inventory tab bar's and its button's places of a name (GetTabBar + FindTabIndexByName +
