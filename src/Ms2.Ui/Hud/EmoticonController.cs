@@ -92,8 +92,11 @@ public sealed class EmoticonController : UiController
         /// no ridee or a ridee that rides too), FUN_141674bc0. STILL-OPEN: no field actor reports any of them yet.
         /// </summary>
         public bool Hidden;
-        /// <summary>vfunc_85 (the chat balloon entity) active. STILL-OPEN: no chat balloon yet, always false.</summary>
-        public bool BalloonActive;
+        /// <summary>
+        /// PCBase vfunc_85, the actor's chat balloon entity (for an npc CNpc::vfunc_85, <see cref="ChatBalloonController.NpcBalloon"/>,
+        /// which makes it on first use). The hide test asks for it each frame; an active one (m_4c) hides the clip.
+        /// </summary>
+        public Func<ChatBalloonController.Entity> Balloon;
     }
 
     /// <summary>
@@ -393,7 +396,7 @@ public sealed class EmoticonController : UiController
     {
         var a = e.Actor;
         if (a == null) return 1;
-        if (a.BalloonActive && e.Kind != 1 && e.Kind != 3) return 1;
+        if (a.Balloon?.Invoke() is { Active: true } && e.Kind != 1 && e.Kind != 3) return 1;
         if (SceneHidesEmoticons())
         {
             if (e.Kind != 2) return 1;

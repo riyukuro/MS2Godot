@@ -30,11 +30,20 @@ namespace Ms2Godot.World;
 /// - The quest kind comes from the character's quest records through <see cref="NpcTalk.QuestMark"/> (offline the
 ///   sandbox's, live the session's QuestBook).
 /// - An officer npc kind (fameDef.xml's officerNpcKind) shows its alliance's symbol movie (<see cref="FameTable"/>).
-/// STILL-OPEN: the chat balloon test (Actor.BalloonActive) is not fed, as the npcs' balloons are not ported.
+/// - The npcs' chat balloons (UIChatBalloon, <see cref="ChatBalloonController"/>) share the layer: one balloon actor per
+///   npc, its entity made on first use by CNpc::vfunc_85 (<see cref="ChatBalloonController.NpcBalloon"/>), which the
+///   emoticon's hide test asks for each frame (<see cref="EmoticonController.Actor.Balloon"/>). The balloon sits in
+///   CommonDepth ChatBalloon (7).
 /// </summary>
 public sealed partial class NpcEmoticons : CanvasLayer
 {
-    sealed class Npc { public FieldNpcs.Placed Placed; public EmoticonController.Actor Actor; public bool Spawned; }
+    sealed class Npc
+    {
+        public FieldNpcs.Placed Placed;
+        public EmoticonController.Actor Actor;
+        public ChatBalloonController.Actor Balloon;
+        public bool Spawned;
+    }
 
     readonly UiAssets assets;
     readonly ClientConstants constants;
@@ -42,9 +51,12 @@ public sealed partial class NpcEmoticons : CanvasLayer
     readonly bool live;
     readonly Dictionary<FieldNpcs.Placed, Npc> npcs = new();
     readonly Dictionary<EmoticonController.Actor, Npc> byActor = new();
+    readonly Dictionary<ChatBalloonController.Actor, Npc> byBalloon = new();
     readonly NpcQuestMarks marks;
     EmoticonController controller;
     MovieDialog movie;
+    ChatBalloonController balloons;
+    MovieDialog balloonMovie;
     Camera3D camera;
     Field field;
     Viewport sizeSource;
@@ -56,6 +68,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
     public Node3D Viewer;
     /// <summary>The controller (null when the movie did not load).</summary>
     public EmoticonController Controller => controller;
+    /// <summary>The chat balloons' controller (null when the movie did not load).</summary>
+    public ChatBalloonController Balloons => balloons;
     /// <summary>The per-frame cost (quest ticks and placing, not the movie's own frame) in ms, summed, and the frames counted.</summary>
     public double FrameMs;
     public int Frames;
@@ -105,6 +119,24 @@ public sealed partial class NpcEmoticons : CanvasLayer
             AddChild(movie);
         }
         catch (Exception e) { GD.PushWarning("emoticon movie: " + e.Message); controller = null; movie = null; }
+        if (controller == null) return;
+        var community = GameOptions.Current.CommunityOption;
+        balloons = new ChatBalloonController
+        {
+            Duration = (int)constants.Float("ChatBalloonDuration", 5000),
+            VisibleDistance = constants.Float("ChatBalloonDistance", 2000),
+            DefaultImage = tables.CommonResource("DEFAULT_PROFILE_IMAGE_PATH"),
+            DisplayMyBalloon = () => community.DisplayMyChatBalloon,
+            DisplayOtherBalloon = () => community.DisplayOtherChatBalloon,
+            ProgressiveLoading = ProgressiveLoading.Value,
+            SceneShowsBalloons = () => !MovieLayerHost.Layers.InTalk,     // the cut scene sub scenes are not ported
+        };
+        try
+        {
+            balloonMovie = new MovieDialog(assets, balloons, new UiModel(tables), new Vector2(1280, 720));
+            AddChild(balloonMovie);
+        }
+        catch (Exception e) { GD.PushWarning("chat balloon movie: " + e.Message); balloons = null; balloonMovie = null; }
     }
 
     void Add(FieldNpcs.Placed n)
@@ -120,7 +152,22 @@ public sealed partial class NpcEmoticons : CanvasLayer
             Icon = n.Row.Icon ?? "",
             HasQuests = marks.HasQuests(n.Row.Id),
         };
-        npcs[n] = byActor[a] = new Npc { Placed = n, Actor = a };
+        var x = new Npc { Placed = n, Actor = a };
+        if (balloons != null)
+        {
+            var b = new ChatBalloonController.Actor
+            {
+                ObjectId = a.ObjectId,
+                IsNpc = true,
+                Portrait = n.Row.Portrait ?? "",
+                // the CNpc constructor's m_f168 (npcactorandvibrate.cpp:492)
+                Offset = constants.Float("OffsetNpcChatballoon", 210),
+            };
+            x.Balloon = b;
+            byBalloon[b] = x;
+            a.Balloon = () => balloons.NpcBalloon(b);
+        }
+        npcs[n] = byActor[a] = x;
     }
 
     void OnNameTag(FieldNpcs.Placed n, string text)
@@ -144,6 +191,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         {
             controller.Release(npcs[gone].Actor.ObjectId);
             byActor.Remove(npcs[gone].Actor);
+            if (npcs[gone].Balloon is { } b) { balloons?.RemoveNpc(b); byBalloon.Remove(b); }
             npcs.Remove(gone);
         }
         foreach (var n in now) Add(n);
@@ -168,6 +216,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         var size = GetViewport().GetVisibleRect().Size;
         u = UiScale.For(size);
         movie?.Relayout(size);
+        balloonMovie?.Relayout(size);
     }
 
     public override void _Process(double delta)
@@ -183,12 +232,14 @@ public sealed partial class NpcEmoticons : CanvasLayer
         {
             if (!IsInstanceValid(n.Placed.Root)) continue;
             n.Actor.Distance = eye.DistanceTo(n.Placed.Root.GlobalPosition);
+            if (n.Balloon != null) n.Balloon.Distance = n.Actor.Distance;
             var a = n.Actor;
             if (!n.Spawned)
             {
                 // the actor's add, then the spawn (EnterWorld waits for the preload response queued after ActorAdded)
                 if (n.Placed.Body == null || !IsInstanceValid(n.Placed.Body)) continue;
                 EmoticonController.OnActorAdded(a);
+                if (n.Balloon != null) n.Balloon.ActorAdded = true;
                 controller.SpawnNpc(a, () => QuestMark(a));
                 n.Spawned = true;
             }
@@ -196,6 +247,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
         }
         bool layer = MovieLayerHost.Layers.IsVisible(CommonDepth.Emoticon);
         controller.Process(Project);
+        bool balloonLayer = MovieLayerHost.Layers.IsVisible(CommonDepth.ChatBalloon);
+        balloons?.Process(ProjectBalloon);
         FrameMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         Frames++;
 
@@ -209,6 +262,17 @@ public sealed partial class NpcEmoticons : CanvasLayer
             float shift = field == null ? 0 : PlayerNameTag.PitchShift(field, anchor);
             // SetPositionFloat: the screen point times GetMovieScale, in whole twips
             return ((float)(Math.Floor(p.X / u * 20.0) / 20.0), (float)(Math.Floor(p.Y / u * 20.0) / 20.0), shift);
+        }
+
+        // UIHudEntity's projection of the actor's vfunc_10 anchor ("Eff_UI"); the balloon's vfunc_6 has no pitch shift
+        (float, float)? ProjectBalloon(ChatBalloonController.Actor b)
+        {
+            if (!balloonLayer) return null;
+            if (!byBalloon.TryGetValue(b, out var n) || !IsInstanceValid(n.Placed.Root)) return null;
+            var anchor = NpcPresence.Dummy(n.Placed, "Eff_UI") ?? n.Placed.Root.GlobalPosition;
+            if (camera.IsPositionBehind(anchor)) return null;
+            var p = camera.UnprojectPosition(anchor);
+            return ((float)(Math.Floor(p.X / u * 20.0) / 20.0), (float)(Math.Floor(p.Y / u * 20.0) / 20.0));
         }
     }
 }
