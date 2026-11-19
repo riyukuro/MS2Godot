@@ -162,6 +162,31 @@ public class BlackMarketDialogTests
     }
 
     [Test]
+    public void AnErrorAnswerUnlocksThroughItsType()
+    {
+        // vfunc_79 @0x1418cf920 takes the error's type (mode 0) as the action the pages wait for.
+        var r = new Rig();
+        r.Search(r.Product(1));
+        r.C.OnCallback("OnClickBuy", new object[] { "1", "sale" });
+        r.Answer(0, 0);
+        Assert.That(r.C.Locked, Is.True);
+        r.Book.OnBlackMarket(new BlackMarketMessage.Error(3, 5, 0, 0, 0));
+        Assert.That(r.C.Locked, Is.True, "an error of the cancel's type does not answer the buy");
+        r.Book.OnBlackMarket(new BlackMarketMessage.Error(5, 5, 0, 0, 0));
+        Assert.That(r.C.Locked, Is.False, "an error of type 5 answers the buy");
+        Assert.That(r.Book.SearchProducts[0].Item.Count, Is.EqualTo(1u), "an error changes nothing local");
+
+        r.Book.OnBlackMarket(new BlackMarketMessage.OwnList(new[] { r.Product(4, seller: 77) }));
+        r.C.OnCallback("onChangeTab", new object[] { 1 });
+        r.C.OnCallback("OnClickCancelSell", new object[] { "4" });
+        r.Answer(r.Boxes.Count - 1, 0);
+        Assert.That(r.C.Locked, Is.True);
+        r.Book.OnBlackMarket(new BlackMarketMessage.Error(3, 5, 0, 0, 0));
+        Assert.That(r.C.Locked, Is.False, "an error of type 3 answers the cancel");
+        Assert.That(r.Book.OwnProducts, Has.Count.EqualTo(1), "an error removes nothing");
+    }
+
+    [Test]
     public void CancelSendsOnlyOnYes()
     {
         var r = new Rig();
