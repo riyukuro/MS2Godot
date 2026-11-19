@@ -165,7 +165,7 @@ public sealed class ReflectionDump
         foreach (DictionaryEntry e in d)
         {
             if (n++ >= MaxItems) { entries["…"] = (d.Count - MaxItems) + " more"; break; }
-            string key = e.Key == null ? "null" : (e.Key.GetType().IsPrimitive || e.Key is string || e.Key.GetType().IsEnum || IsBcl(e.Key.GetType())) ? e.Key.ToString() : e.Key.GetType().Name;
+            string key = e.Key == null ? "null" : (e.Key.GetType().IsPrimitive || e.Key is string || e.Key.GetType().IsEnum) ? e.Key.ToString() : e.Key.GetType().Name;
             if (entries.ContainsKey(key)) key += "#" + n;
             entries[key] = Value(e.Value, depth + 1);
         }

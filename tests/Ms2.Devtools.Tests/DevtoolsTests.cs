@@ -253,6 +253,26 @@ public class ServerTests
         Assert.That(JsonNode.Parse(line)["error"].GetValue<string>(), Does.Contain("too long"));
     }
 
+    static bool TrickleIsClosed(byte[] bytes)
+    {
+        using var s = new DebugServer("tok") { FirstLineTimeoutMs = 300 };
+        using var c = Connect(s);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var stream = c.GetStream();
+        try
+        {
+            for (int i = 0; i < 40 && sw.ElapsedMilliseconds < 4000; i++) { stream.Write(bytes, 0, bytes.Length); stream.Flush(); Thread.Sleep(200); }
+        }
+        catch (IOException) { }
+        return sw.ElapsedMilliseconds < 2500;   // the writes stop failing or the loop ends only after the server closed
+    }
+
+    [Test]
+    public void ABytePerReadTrickleCannotOutlastTheFirstLineDeadline() => Assert.That(TrickleIsClosed(new[] { (byte)'{' }), Is.True);
+
+    [Test]
+    public void BlankLinesTrickleCannotOutlastTheFirstLineDeadline() => Assert.That(TrickleIsClosed(new[] { (byte)'\n' }), Is.True);
+
     [Test]
     public void ASilentNewConnectionIsClosedAfterTheFirstLineTimeout()
     {

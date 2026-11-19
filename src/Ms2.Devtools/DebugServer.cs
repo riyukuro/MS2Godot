@@ -17,7 +17,7 @@ public sealed class DebugServer : IDisposable
     public const int MaxConnections = 8;
     public const int RequestTimeoutMs = 15000;
 
-    /// <summary>A new connection must send a request with the right token within this long, or it is closed.</summary>
+    /// <summary>A new connection must send a request with the right token within this long of connecting (one deadline, not per read), or it is closed.</summary>
     public int FirstLineTimeoutMs { get; set; } = 5000;
 
     /// <summary>An authenticated connection that sends nothing for this long is closed.</summary>
@@ -79,13 +79,16 @@ public sealed class DebugServer : IDisposable
             c.NoDelay = true;
             using var stream = c.GetStream();
             bool authed = false;
-            stream.ReadTimeout = FirstLineTimeoutMs;
+            var sinceConnect = System.Diagnostics.Stopwatch.StartNew();
             var buf = new byte[8192];
             var line = new MemoryStream();
             while (!stopped)
             {
+                // before the first authenticated request the whole wait is one deadline, however the bytes trickle in
+                stream.ReadTimeout = authed ? IdleTimeoutMs : (int)Math.Max(1, FirstLineTimeoutMs - sinceConnect.ElapsedMilliseconds);
                 int n = stream.Read(buf, 0, buf.Length);
                 if (n <= 0) return;
+                if (!authed && sinceConnect.ElapsedMilliseconds >= FirstLineTimeoutMs) return;
                 for (int i = 0; i < n; i++)
                 {
                     byte b = buf[i];
@@ -97,7 +100,7 @@ public sealed class DebugServer : IDisposable
                     string refusal = Refuse(req);
                     if (refusal != null && !authed) { Reply(stream, refusal); return; }
                     Reply(stream, refusal ?? Queue.Submit(req, RequestTimeoutMs));
-                    if (!authed) { authed = true; stream.ReadTimeout = IdleTimeoutMs; }
+                    authed = true;
                 }
             }
         }

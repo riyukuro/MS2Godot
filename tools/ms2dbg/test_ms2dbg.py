@@ -22,6 +22,9 @@ class Handler(socketserver.StreamRequestHandler):
     def handle(self):
         req = json.loads(self.rfile.readline())
         self.server.seen.append(req)
+        if req.get("mode") == "notobject" or req.get("cmd") == "notobject":
+            self.wfile.write(b"[1, 2]\n")
+            return
         if req.get("token") != TOKEN:
             out = {"id": req["id"], "ok": False, "error": "bad token"}
         elif req["cmd"] == "boom":
@@ -92,6 +95,34 @@ class ClientTests(unittest.TestCase):
                 ms2dbg.request(p, "ping")
 
 
+class NotObjectTests(unittest.TestCase):
+    def test_non_object_reply_is_a_debug_error(self):
+        with Fake() as f:
+            with self.assertRaises(ms2dbg.DebugError):
+                ms2dbg.request(f.file, "notobject")
+
+    def test_info_path_skips_a_dead_game(self):
+        with tempfile.TemporaryDirectory() as home:
+            for name, pid in (("alive", os.getpid()), ("dead", 2 ** 22 + 12345)):
+                d = os.path.join(home, ".local/share/godot/app_userdata", name)
+                os.makedirs(d)
+                with open(os.path.join(d, "debug.json"), "w") as fh:
+                    json.dump({"port": 1, "token": "x", "pid": pid}, fh)
+            # the dead game's file is the newest
+            os.utime(os.path.join(home, ".local/share/godot/app_userdata/dead/debug.json"), (2e9, 2e9))
+            old = {k: os.environ.get(k) for k in ("HOME", "MS2_DEBUG_FILE")}
+            os.environ["HOME"] = home
+            os.environ.pop("MS2_DEBUG_FILE", None)
+            try:
+                self.assertIn("alive", ms2dbg.info_path())
+            finally:
+                for k, v in old.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+
+
 def run(args, stdin=None, env_file=None):
     env = {k: v for k, v in os.environ.items() if k != "MS2_DEBUG_FILE"}
     if env_file:
@@ -149,6 +180,13 @@ class McpTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             class F: file = os.path.join(d, "none.json")
             out = self.talk(F, [{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "ping", "arguments": {}}},
+                                {"jsonrpc": "2.0", "id": 2, "method": "ping"}])
+            self.assertTrue(out[0]["result"]["isError"])
+            self.assertEqual(out[1]["result"], {})
+
+    def test_server_survives_a_bad_reply(self):
+        with Fake() as f:
+            out = self.talk(f, [{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "ping", "arguments": {"mode": "notobject"}}},
                                 {"jsonrpc": "2.0", "id": 2, "method": "ping"}])
             self.assertTrue(out[0]["result"]["isError"])
             self.assertEqual(out[1]["result"], {})
