@@ -75,6 +75,10 @@ public sealed class GroupMessengerBrowserController : UiController, IGroupMessen
     public Func<string, bool> IsBlinded = _ => false;
     /// <summary>The window's open (UIDialog vfunc_65: the movie made and loaded); false when it could not be opened.</summary>
     public Func<GroupMessengerController, bool> OpenWindow = _ => true;
+    /// <summary>FindInviteGroupDialog (@0x14194dd10, :1398): the invite dialog (UI id 0x4e90) when it is made.</summary>
+    public Func<InviteGroupDialogController> FindInviteDialog = () => null;
+    /// <summary>CUIService::OpenDialog of a UI id.</summary>
+    public Action<int> OpenDialog = _ => { };
 
     /// <summary>The open windows by slot.</summary>
     public IReadOnlyCollection<GroupMessengerController> Windows => windows.Values;
@@ -191,17 +195,39 @@ public sealed class GroupMessengerBrowserController : UiController, IGroupMessen
         CloseGroupWindow(oid);
     }
 
-    /// <summary>OnMemberInvited (@0x1419519e0, :1698): the window's invite line (AddInvitedMessage).</summary>
-    public void OnMemberInvited(int oid, string name, string member) => FindWindowByGroupId(oid)?.AddInvitedMessage(name, member);
+    /// <summary>
+    /// FUN_141951720 (:1661): an invite sent to the chat; the window's part (FUN_14194a320) is empty, then the invite
+    /// dialog's list (FUN_14199fd10).
+    /// </summary>
+    public void OnInviteSent(int oid, string name, string text) => FindInviteDialog()?.OnMemberChanged();
 
-    /// <summary>FUN_141951a70 (:1710): the window's left (0) or refused (1) line.</summary>
-    public void OnMemberRemoved(int oid, string name, int reason) => FindWindowByGroupId(oid)?.AddMemberRemovedMessage(name, reason);
+    /// <summary>OnMemberInvited (@0x1419519e0, :1698): the window's invite line (AddInvitedMessage), then the invite dialog's list.</summary>
+    public void OnMemberInvited(int oid, string name, string member)
+    {
+        FindWindowByGroupId(oid)?.AddInvitedMessage(name, member);
+        FindInviteDialog()?.OnMemberChanged();
+    }
 
-    /// <summary>OnGroupMemberOnline (@0x141951af0, :1722).</summary>
-    public void OnGroupMemberOnline(int oid, string name) => FindWindowByGroupId(oid)?.AddMemberOnlineMessage(name);
+    /// <summary>FUN_141951a70 (:1710): the window's left (0) or refused (1) line, then the invite dialog's list.</summary>
+    public void OnMemberRemoved(int oid, string name, int reason)
+    {
+        FindWindowByGroupId(oid)?.AddMemberRemovedMessage(name, reason);
+        FindInviteDialog()?.OnMemberChanged();
+    }
 
-    /// <summary>OnGroupMemberOffline (@0x141951b70, :1734).</summary>
-    public void OnGroupMemberOffline(int oid, string name) => FindWindowByGroupId(oid)?.AddMemberOfflineMessage(name);
+    /// <summary>OnGroupMemberOnline (@0x141951af0, :1722), then the invite dialog's list.</summary>
+    public void OnGroupMemberOnline(int oid, string name)
+    {
+        FindWindowByGroupId(oid)?.AddMemberOnlineMessage(name);
+        FindInviteDialog()?.OnMemberChanged();
+    }
+
+    /// <summary>OnGroupMemberOffline (@0x141951b70, :1734), then the invite dialog's list.</summary>
+    public void OnGroupMemberOffline(int oid, string name)
+    {
+        FindWindowByGroupId(oid)?.AddMemberOfflineMessage(name);
+        FindInviteDialog()?.OnMemberChanged();
+    }
 
     /// <summary>QueueTalkLog (@0x141951c50, :1755): a line of a speaker not blinded is kept for the next frame (<see cref="Process"/>).</summary>
     public void QueueTalkLog(int oid, string name, string message)

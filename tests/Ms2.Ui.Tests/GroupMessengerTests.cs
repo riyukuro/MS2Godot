@@ -234,13 +234,125 @@ public class GroupMessengerTests
         Assert.That(bh.RT.Errors, Is.Empty);
         Assert.That(loadErrors, Is.Empty);
     }
+
+    // ---- UIInviteGroupDialog -----------------------------------------------------------------------------------------
+
+    readonly List<PartyMember> party = new();
+    readonly List<BuddyInfo> friends = new();
+    readonly List<int> opened = new();
+    readonly List<MessageBoxData> boxes = new();
+
+    static PartyMember PartyOf(long id, string name, bool offline) =>
+        new() { User = new PartyUser { CharacterId = id, Name = name, Level = 10 }, Offline = offline };
+    static BuddyInfo FriendOf(long id, string name, bool online) => new() { CharacterId = id, Name = name, Online = online, Level = 20 };
+
+    /// <summary>Chat 1 of this character and character 100; the party has this character, 101 (offline) and 102, the
+    /// friends 102 again, 100, 103 and 104 (offline).</summary>
+    (GroupMessengerBrowserController, InviteGroupDialogController) Invite(UiModel m, Func<GroupMessengerController, bool> open = null)
+    {
+        party.Clear(); friends.Clear(); opened.Clear(); boxes.Clear();
+        var b = Browser(m, open);
+        b.Book.ShownBox = () => boxes.LastOrDefault();
+        b.Book.ShowBox = boxes.Add;
+        b.Book.AddChat(Chat(1).With(100, "Al"));
+        party.AddRange(new[] { PartyOf(PartyFixture.SelfCharacterId, "Me", false), PartyOf(101, "Bea", true), PartyOf(102, "Cy", false) });
+        friends.AddRange(new[] { FriendOf(102, "Cy", true), FriendOf(100, "Al", true), FriendOf(103, "Di", true), FriendOf(104, "Ed", false) });
+        var d = new InviteGroupDialogController(b) { PartyMembers = () => party, Buddies = () => friends, BoxShown = () => false };
+        b.FindInviteDialog = () => d;
+        b.OpenDialog = opened.Add;
+        b.OpenJoinedChatWindows();
+        return (b, d);
+    }
+
+    [Test]
+    public void TheWindowOpensTheInviteDialogForItsChatWhichListsThePartyThenFriendsNotInIt()
+    {
+        var (b, d) = Invite(new UiModel(null) { HasLocalPlayer = true });
+        var w = b.FindWindowByGroupId(1);
+        Assert.That(w.IsGroupMember(100), Is.True);
+        Assert.That(w.IsGroupMember(101), Is.False);
+        // no chat yet (m_180 0): only an id already listed is skipped
+        Assert.That(d.CollectEntries().Select(e => e.Id), Is.EqualTo(new long[] { PartyFixture.SelfCharacterId, 101, 102, 100, 103, 104 }));
+        Assert.That(w.OnCallback("OnShowInviteDialog", Array.Empty<object>()), Is.True);
+        Assert.That(d.GroupId, Is.EqualTo(1));
+        Assert.That(opened, Is.EqualTo(new[] { InviteGroupDialogController.UiId }));
+        var entries = d.CollectEntries();
+        Assert.That(entries.Select(e => (e.Id, e.Kind)), Is.EqualTo(new[] { (101L, 0), (102L, 1), (103L, 1), (104L, 0) }));
+        Assert.That(entries.Select(e => e.Name), Is.EqualTo(new[] { "Bea", "Cy", "Di", "Ed" }));
+        Assert.That(entries.Select(e => e.Info), Is.EqualTo(new[] { "c20 10", "c20 10", "c20 20", "c20 20" }));
+        // the movie's OnInvite: one invite to the chat each
+        Assert.That(d.OnCallback("OnInvite", new object[] { "Di" }), Is.True);
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GroupChatInviteRequest("Di", 1) }));
+        // no invite dialog made: the window's call does nothing more
+        b.FindInviteDialog = () => null;
+        opened.Clear();
+        Assert.That(w.OnCallback("OnShowInviteDialog", Array.Empty<object>()), Is.True);
+        Assert.That(opened, Is.Empty);
+    }
+
+    [Test]
+    public void TheInviteDialogListsTheOnlineRowsLimitsTheCountAndRefreshesWhileOpen()
+    {
+        var m = Model();
+        UiHost h = null;
+        InviteGroupDialogController d = null;
+        var (b, dialog) = Invite(m);
+        d = dialog;
+        b.OpenDialog = id => { opened.Add(id); h = Load(d, m); };
+        b.FindWindowByGroupId(1).OnCallback("OnShowInviteDialog", Array.Empty<object>());
+        Assert.That(h, Is.Not.Null);
+        object Rows() => h.Get(h.Get(h.Child("m_userList"), "dataProvider"), "length");
+        Assert.That(Rt.ToNumber(Rows()), Is.EqualTo(2), "only kind 1: Cy and Di");
+        Assert.That(Rt.ToNumber(h.Get(h.Child("m_userList"), "rowCount")), Is.EqualTo(2));
+        Assert.That(Rt.ToString(h.Get(h.Child("m_userCount"), "text")), Is.EqualTo("c48a 0"));
+
+        // the checked rows and the chat's two members over 20: the button off and the box once
+        var button = h.Child("m_inviteFromComunity");
+        Assert.That(d.OnCallback("OnChangeUserCount", new object[] { 19u }), Is.False);
+        Assert.That(Rt.ToString(h.Get(h.Child("m_userCount"), "text")), Is.EqualTo("c48a 19"));
+        Assert.That(h.Get(button, "enabled"), Is.False);
+        d.OnCallback("OnChangeUserCount", new object[] { 19u });
+        Assert.That(boxes.Select(x => (x.Msg, x.Extra)), Is.EqualTo(new[] { ("c814 {0}", "c814 {0}") }));
+        d.OnCallback("OnChangeUserCount", new object[] { 18u });
+        Assert.That(h.Get(button, "enabled"), Is.True);
+
+        // Enter invites the typed name
+        Assert.That(d.OnKey(false), Is.False);
+        h.Set(h.Child("m_textInput"), "text", "Fay");
+        Assert.That(d.OnKey(true), Is.True);
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GroupChatInviteRequest("Fay", 1) }));
+        d.BoxShown = () => true;
+        Assert.That(d.OnKey(true), Is.True, "the input is focused");
+        h.Set(h.Child("m_textInput"), "focused", false);
+        Assert.That(d.OnKey(true), Is.False, "a box is shown and the input is not focused");
+        Assert.That(sent.Count, Is.EqualTo(2));
+        d.BoxShown = () => false;
+
+        // an invite sent and a member online refresh the list
+        friends.Add(FriendOf(105, "Fay", true));
+        b.Book.Apply(new GroupChatInviteSent("Me", "Fay", 1));
+        Assert.That(Rt.ToNumber(Rows()), Is.EqualTo(3));
+        friends.Add(FriendOf(106, "Gus", true));
+        b.OnGroupMemberOnline(1, "Al");
+        Assert.That(Rt.ToNumber(Rows()), Is.EqualTo(4));
+
+        // closed: the chat id cleared and no refresh
+        d.Close();
+        for (int i = 0; i < 60; i++) h.Player.Tick();
+        Assert.That(d.GroupId, Is.EqualTo(0));
+        Assert.That(d.IsClosed, Is.True);
+        friends.Add(FriendOf(107, "Hal", true));
+        b.OnMemberInvited(1, "Me", "Hal");
+        Assert.That(Rt.ToNumber(Rows()), Is.EqualTo(4));
+        Assert.That(loadErrors, Is.Empty);
+    }
 }
 
 static class GroupChatTestExtensions
 {
-    public static GroupChat With(this GroupChat c, long characterId)
+    public static GroupChat With(this GroupChat c, long characterId, string name = "Me")
     {
-        c.AddMember(new GroupChatMember { State = 1, User = new PartyUser { Name = "Me", CharacterId = characterId } });
+        c.AddMember(new GroupChatMember { State = 1, User = new PartyUser { Name = name, CharacterId = characterId } });
         return c;
     }
 }

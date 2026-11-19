@@ -359,6 +359,9 @@ public sealed class GroupMessengerController : UiController, IMessageBoxListener
         Validate(list);
     }
 
+    /// <summary>IsGroupMember (@0x14194b9d0, :1061): the chat has a member of the character id.</summary>
+    public bool IsGroupMember(long characterId) => browser.Book.FindChat(GroupId) is { } chat && chat.HasMemberById(characterId);
+
     // ---- the movie's calls -----------------------------------------------------------------------------------------
 
     /// <summary>
@@ -366,7 +369,8 @@ public sealed class GroupMessengerController : UiController, IMessageBoxListener
     /// (FUN_141953160); OnShowUserList / OnHideUserList; OnShowConfigDialog shows box 0x15 tagged groupEdit with the
     /// name and the alpha; OnLeaveGroupMessenger box 1 of common 0x81b with the name, tagged groupExit;
     /// OnBuildScrollingList; eventTextInput drops the links not put in by <see cref="SetInputText"/>; scrollPosition is
-    /// kept. STILL-OPEN: OnShowInviteDialog (0x4e90), OnPopupMenu and the emoticon events are not ported.
+    /// kept. OnShowInviteDialog (:655) sets the invite dialog's chat (FindInviteGroupDialog 0x4e90, SetGroupId) and opens it.
+    /// STILL-OPEN: OnPopupMenu and the emoticon events are not ported.
     /// </summary>
     public override bool OnCallback(string name, object[] args)
     {
@@ -374,7 +378,13 @@ public sealed class GroupMessengerController : UiController, IMessageBoxListener
         {
             case "eventfocusin": browser.Names.MakeCurrent(Name); return true;           // vfunc_85
             case "onhidedialog": browser.MinimizeWindow(Name); return true;
-            case "onshowinvitedialog": return true;
+            case "onshowinvitedialog":
+                if (browser.FindInviteDialog() is { } invite)
+                {
+                    invite.SetGroupId(GroupId);
+                    browser.OpenDialog(InviteGroupDialogController.UiId);
+                }
+                return true;
             case "onshowuserlist": userList = true; RefreshWindow(); return false;
             case "onhideuserlist": userList = false; RefreshWindow(); return false;
             case "onshowconfigdialog":

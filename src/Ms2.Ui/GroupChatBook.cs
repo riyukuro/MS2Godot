@@ -16,6 +16,8 @@ public interface IGroupMessengerUi
     void OnInvited(int oid, string inviter, string second);
     /// <summary>RemoveGroup.</summary>
     void RemoveGroup(int oid);
+    /// <summary>FUN_141951720: an invite to the chat was sent.</summary>
+    void OnInviteSent(int oid, string first, string second);
     /// <summary>OnMemberInvited: <paramref name="member"/> joined, invited by <paramref name="name"/>.</summary>
     void OnMemberInvited(int oid, string name, string member);
     /// <summary>FUN_141951a70: a member left (reason 0) or refused (1).</summary>
@@ -172,7 +174,8 @@ public sealed class GroupChatBook
             case GroupChatCreated c:                                // OnPacketChatCreated (:608)
                 if (FindChat(c.Oid) != null) ui?.OnChatCreated(c.Oid);
                 break;
-            case GroupChatInviteSent:                               // FUN_14137f640 (:618): FUN_141951720, not ported
+            case GroupChatInviteSent s:                             // FUN_14137f640 (:618)
+                if (FindChat(s.Oid) != null) ui?.OnInviteSent(s.Oid, s.First, s.Second);
                 break;
             case GroupChatInvited i:                                // FUN_14137f790 (:630)
                 if (RefuseInvite()) { SendLeave(i.Oid, 1); return; }

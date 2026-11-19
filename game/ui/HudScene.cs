@@ -1095,6 +1095,27 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     GroupMessengerBrowserController groupBrowser;
+    InviteGroupDialogController groupInvite;
+    MovieDialog groupInviteMovie;
+    bool GroupInviteOpen => groupInviteMovie != null && !groupInvite.IsClosed;
+
+    /// <summary>CUIService::OpenDialog(0x4e90) from a group window's OnShowInviteDialog: the invite dialog's movie.</summary>
+    void OpenGroupInvite()
+    {
+        if (GroupInviteOpen) { groupInvite.RefreshUserList(); return; }
+        if (groupInviteMovie != null) { groupInviteMovie.Host.Unload(); groupInviteMovie.QueueFree(); groupInviteMovie = null; }
+        groupInviteMovie = new MovieDialog(assets, groupInvite, hudModel, GetWindow().Size);
+        GD.Print($"groupchat: invite dialog load={groupInviteMovie.Loaded} (chat {groupInvite.GroupId})");
+        uiRoot.AddChild(groupInviteMovie);
+    }
+
+    /// <summary>The invite dialog's vfunc_13: UIDialog's first (Escape closes), then its Enter. It is modal, so it is asked first.</summary>
+    bool GroupInviteKeys(InputEventKey k)
+    {
+        if (!GroupInviteOpen) return false;
+        if (k.Keycode == Key.Escape) { groupInvite.Close(); return true; }
+        return groupInvite.OnKey(k.Keycode is Key.Enter or Key.KpEnter);
+    }
     Action<string> groupLink;
     readonly List<(MovieDialog Movie, GroupMessengerController Side)> groupWindows = new();
     bool groupChatFixture;
@@ -1141,6 +1162,14 @@ public partial class HudScene : Node, IUiStageHost
             groupMessenger?.GetParent()?.AddChild(m);   // during the browser's own load it is added after it (Chat)
             return true;
         };
+        b.FindInviteDialog = () => groupInvite;
+        b.OpenDialog = id => { if (id == InviteGroupDialogController.UiId) OpenGroupInvite(); };
+        groupInvite = new InviteGroupDialogController(b)
+        {
+            PartyMembers = () => live?.Party.Members ?? (IEnumerable<Ms2.Net.Packets.PartyMember>)System.Array.Empty<Ms2.Net.Packets.PartyMember>(),
+            Buddies = () => live?.Buddies.Buddies ?? (IEnumerable<Ms2.Net.Packets.BuddyInfo>)System.Array.Empty<Ms2.Net.Packets.BuddyInfo>(),
+        };
+        groupInvite.Unloaded += () => { groupInviteMovie?.Host.Unload(); groupInviteMovie?.QueueFree(); groupInviteMovie = null; };
         book.Messenger = () => b;
         groupLink = b.LinkToCurrent;
         ChatLog.GroupLink = groupLink;
@@ -1232,6 +1261,7 @@ public partial class HudScene : Node, IUiStageHost
         if (MailKeys(k)) return true;
         if (TradeKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
+        if (GroupInviteKeys(k)) return true;
         if (CommunityKeys(k)) return true;
         if (GuildKeys(k)) return true;
         return false;

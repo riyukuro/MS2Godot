@@ -15,6 +15,7 @@ public class GroupChatBookTests
         public void OnChatCreated(int oid) => Calls.Add($"created {oid}");
         public void OnInvited(int oid, string inviter, string second) => Calls.Add($"invited {oid} {inviter} {second}");
         public void RemoveGroup(int oid) => Calls.Add($"remove {oid}");
+        public void OnInviteSent(int oid, string first, string second) => Calls.Add($"sent {oid} {first} {second}");
         public void OnMemberInvited(int oid, string name, string member) => Calls.Add($"member {oid} {name} {member}");
         public void OnMemberRemoved(int oid, string name, int reason) => Calls.Add($"left {oid} {name} {reason}");
         public void OnGroupMemberOnline(int oid, string name) => Calls.Add($"online {oid} {name}");
@@ -78,6 +79,17 @@ public class GroupChatBookTests
         b.Invite(7, "Ann");
         Assert.That(sent, Is.EqualTo(new IOutPacket[] {
             new GroupChatCreateRequest(new string('a', GroupChatBook.MaxNameLength)), new GroupChatInviteRequest("Ann", 7) }));
+    }
+
+    [Test]
+    public void AnInviteSentToAKnownChatReachesTheMessenger()
+    {
+        var b = Book();
+        b.Apply(new GroupChatInviteSent("Me", "Ann", 7));               // no chat 7: nothing
+        b.Apply(new GroupChatAdd(Chat(7, "Me")));
+        b.Apply(new GroupChatInviteSent("Me", "Ann", 7));
+        Assert.That(ui.Calls, Is.EqualTo(new[] { "sent 7 Me Ann" }));
+        Assert.That(sent, Is.Empty);
     }
 
     [Test]
