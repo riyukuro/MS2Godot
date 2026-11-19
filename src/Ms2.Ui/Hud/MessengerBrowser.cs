@@ -123,8 +123,8 @@ public sealed class PanelSetting
 /// UIMessengerBrowser (uimessenger.cpp), the side all chat windows share: the log of chat lines (m_logs, at most 500), the
 /// lines not yet shown (m_pendingLogs), the windows, and the panel statics (s_nGlobal and the shared screen setting
 /// DAT_143adda48, messengerdata.cpp:600). The browser's own movie and its listener slots other than the item gain are not
-/// ported; nor are the linked items (RecvOp 0x1e, vfunc_85) and the font size rewrite of the log (FUN_141a27ad0 :3873).
-/// A user's chat line (RecvOp 0x1d) goes in through <see cref="OnUserChat"/>.
+/// ported; nor is the font size rewrite of the log (FUN_141a27ad0 :3873). A user's chat line (RecvOp 0x1d) goes in
+/// through <see cref="OnUserChat"/>, the items lines link (RecvOp 0x1e) through <see cref="OnItemLinks"/>.
 /// </summary>
 public sealed class MessengerBrowser
 {
@@ -239,13 +239,102 @@ public sealed class MessengerBrowser
         pending.Clear();
     }
 
-    /// <summary>FUN_141a23c20 (:3114): the log, the pending lines and the shown count cleared (of what it clears, the
-    /// rest is not ported).</summary>
+    /// <summary>FUN_141a23c20 (:3114): the log, the linked items, the pending lines and the shown count cleared (of what
+    /// it clears, the rest is not ported).</summary>
     public void Clear()
     {
         shown = 0;
         logs.Clear();
+        linkedItems.Clear();
         pending.Clear();
+    }
+
+    // ---- RecvOp 0x1e: the linked items ------------------------------------------------------------------------------
+
+    /// <summary>m_linkedItems (+0x268, a CAtlMap of item uid to CItem): the items chat lines link.</summary>
+    readonly Dictionary<long, Item> linkedItems = new();
+
+    /// <summary>
+    /// vfunc_85 (@0x141a22cd0, :2963): each item, made from its id and rarity with its uid and read body (see
+    /// <see cref="Ms2.Net.Packets.ChatItemLinks"/>), set in the linked items by uid. STILL-OPEN: SetObjectId(g_upperTargetId)
+    /// is not modelled.
+    /// </summary>
+    public void OnItemLinks(Ms2.Net.Packets.ChatItemLinks links)
+    {
+        if (Model == null) return;
+        foreach (var e in links.Items)
+        {
+            var item = InventoryController.ToItem(e, Model.Tables.Items);
+            if (item == null) continue;
+            item.Slot = -1;                                  // a made item: the ctor's slot; the body has none
+            linkedItems[e.Uid] = item;
+        }
+    }
+
+    /// <summary>FUN_141a263d0 (:3596): the linked item of the uid; null when there is none.</summary>
+    public Item LinkedItem(long uid) => linkedItems.TryGetValue(uid, out var item) ? item : null;
+
+    /// <summary>
+    /// ColorItemLinks (@0x141a25ad0, :3486): every "&lt;A HREF=" .. "/A&gt;" of the html (FindLinks) wrapped in
+    /// FUN_14183e930's "&lt;FONT color='#%x'&gt;" of its linked item's grade colour (CItemDataTable::GetTextColor), white
+    /// (0xffffff) when the uid links none; CStringW::Replace replaces every copy of the link, each time it is found.
+    /// </summary>
+    public string ColorItemLinks(string html)
+    {
+        foreach (var link in FindLinks(html, "<A HREF=", "/A>"))
+        {
+            uint color = LinkedItem(LinkUid(link)) is { } item ? Tables.Items.TextColor(item.Rarity) : 0xffffff;
+            html = html.Replace(link, $"<FONT color='#{color:x}'>{link}</FONT>", StringComparison.Ordinal);
+        }
+        return html;
+    }
+
+    /// <summary>
+    /// FindLinks (@0x140d2c080, unit_140d2a7e0_chatlinkhelpers.cpp:396): every text from a <paramref name="begin"/> through
+    /// the next <paramref name="end"/>, in order; none for an empty text, begin or end.
+    /// </summary>
+    public static List<string> FindLinks(string text, string begin, string end)
+    {
+        var links = new List<string>();
+        if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(begin) || string.IsNullOrEmpty(end)) return links;
+        int pos = 0;
+        while (true)
+        {
+            int first = text.IndexOf(begin, pos, StringComparison.Ordinal);
+            if (first < 0) break;
+            int last = text.IndexOf(end, first, StringComparison.Ordinal);
+            if (last < 0) break;
+            last += end.Length - 1;
+            pos = last + 1;
+            links.Add(text.Substring(first, last - first + 1));
+        }
+        return links;
+    }
+
+    /// <summary>
+    /// FUN_140d2caf0 (chatlinkhelpers.cpp:521), a link's item uid: of each "&lt;" .. "&gt;" group (FUN_14028cf00,
+    /// commonutil.cpp:544, which looks for the "&gt;" from the end of the last group, not from the "&lt;"), the second of its
+    /// ","-separated numbers (FUN_140d2f020: CStringW::Tokenize, so empty parts are skipped; each _wtoi64) when it has more
+    /// than two; else 0. For 'event:itemTooltip,{uid},..' that is the uid.
+    /// </summary>
+    public static long LinkUid(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        int pos = 0;
+        while (true)
+        {
+            int open = text.IndexOf('<', pos);
+            if (open == -1) break;
+            int close = text.IndexOf('>', pos);
+            if (close == -1) break;
+            if (close >= open)
+            {
+                var ids = text.Substring(open, close - open + 1).Split(',', StringSplitOptions.RemoveEmptyEntries);
+                if (ids.Length > 2) return NumberText.ParseInt64W(ids[1]);
+            }
+            pos = close + 1;
+        }
+        return 0;
     }
 
     // ---- sending: UIMessenger::SendChat (@0x141a10660, :4208) and FUN_141276f80 (unit_141274d10_uihelpers.cpp:913) ----
@@ -401,8 +490,8 @@ public sealed class MessengerBrowser
     /// <see cref="MessengerController.WhisperFrom"/>, the notify dialog and the whisper sound); 0x11 and 0x1a the text as a
     /// logged notice; 0xd / 0xe the same, or FUN_141add1f0 for string id 0x35; 0xf only when the announcement is usable;
     /// 0x10 / 0x19 for the local player's own line FormatStringId(0xac7 / 0xaca, the item's name) as a logged notice.
-    /// Type 10 is a user command and ends it. Other than a whisper sent (4), a blocked name or character ends it. STILL-OPEN:
-    /// ColorItemLinks (the item links) is not ported. The balloon, then for 0x12 s_guild_chat_mega_phone as a guild
+    /// Type 10 is a user command and ends it. Other than a whisper sent (4), a blocked name or character ends it. The item
+    /// links are coloured (<see cref="ColorItemLinks"/>, :2939). The balloon, then for 0x12 s_guild_chat_mega_phone as a guild
     /// megaphone notice with its sound. The html is the wedding line for 0x19 (read only with feature 0x104, else the line
     /// is dropped; STILL-OPEN: FUN_141841180 needs the wedding table, so "") or <see cref="ChatHtml.Line"/> at the shared
     /// font size, and goes into the log (FUN_141a26e00) and the report log (<see cref="ReportLine"/>) by its kind
@@ -452,6 +541,7 @@ public sealed class MessengerBrowser
         }
         if (type == 10) { UserCommand?.Invoke(text); return; }
         if (type != 4 && IsBlockedBuddy(name, charId)) return;
+        text = ColorItemLinks(text);
         ChatBalloon?.Invoke(name, text, type);
         if (type == 0x12)
         {

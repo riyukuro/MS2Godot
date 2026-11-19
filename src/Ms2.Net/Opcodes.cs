@@ -32,6 +32,7 @@ public enum Inbound : ushort {
     GlobalFactor = 0xD6,
     UserSync = 0x1C,
     UserChat = 0x1D,
+    UserChatItemLink = 0x1E,
     Notice = 0x71,
     Emote = 0x1F,
     ItemPutOnOrOff = 0x20,

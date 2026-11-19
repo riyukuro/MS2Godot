@@ -728,6 +728,33 @@ public class HudTests
     }
 
     [Test]
+    public void MessengerItemLinksColourAndTooltip()
+    {
+        var (c, h, m, _, _) = ChatWindow();
+        c.Browser.OnItemLinks(new ChatItemLinks(new[] { new EquipItem { Id = 15000001, Uid = 101, Rarity = 3, Amount = 1 } }));
+        Assert.That(c.Browser.LinkedItem(101)?.ItemId, Is.EqualTo(15000001));
+        // the uid is the link's second ","-separated number; FindLinks takes each "<A HREF=" through the next "/A>"
+        string link = "<A HREF='event:itemTooltip,101,15000001,3,0'>[Item]</A>", other = "<A HREF='event:itemTooltip,999,1,1,0'>[X]</A>";
+        Assert.That(MessengerBrowser.LinkUid(link), Is.EqualTo(101));
+        Assert.That(MessengerBrowser.LinkUid("<a,b>"), Is.EqualTo(0));
+        Assert.That(MessengerBrowser.FindLinks($"x{link}y{other}", "<A HREF=", "/A>"), Is.EqualTo(new[] { link, other }));
+        Assert.That(c.Browser.ColorItemLinks($"x{link}y{other}"),
+            Is.EqualTo($"x<FONT color='#{m.Tables.Items.TextColor(3):x}'>{link}</FONT>y<FONT color='#ffffff'>{other}</FONT>"));
+        Assert.That(c.Browser.ColorItemLinks("plain"), Is.EqualTo("plain"));
+        // getUserData "getTooltip": the linked item's tooltip with its close button; nothing for an unlinked uid
+        var tip = c.GetUserData("getTooltip", new object[] { "101" });
+        Assert.That(tip, Is.Not.Null);
+        Assert.That(tip["closeButton"], Is.EqualTo(true));
+        Assert.That(c.GetUserData("getTooltip", new object[] { "999" }), Is.Null);
+        Assert.That(c.GetUserData("itemPreview", new object[] { "101" }), Is.Null);
+        m.HasLocalPlayer = false;
+        Assert.That(c.GetUserData("getTooltip", new object[] { "101" }), Is.Null);
+        c.Browser.Clear();
+        Assert.That(c.Browser.LinkedItem(101), Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MessengerWhisperCommand()
     {
         var (c, h, m, sent, notices) = ChatWindow();

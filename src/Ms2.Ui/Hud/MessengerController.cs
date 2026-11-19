@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Avm2;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
@@ -709,6 +710,37 @@ public sealed class MessengerController : UiController
         Host.Set(textInput, "htmlText", "<FONT></FONT>");
         Validate(textInput);
         return true;
+    }
+
+    /// <summary>The local player's CEquipment by item uid (PC::GetEquipByUid) for a linked item's tooltip
+    /// (<see cref="ItemTooltip.OwnerWearsUid"/>); null leaves that block out.</summary>
+    public Func<long, bool> OwnerWearsUid;
+
+    /// <summary>
+    /// UIMessenger::vfunc_45 (@0x141a0a900, :4623), the movie's getUserData. Nothing without a local player. "getTooltip":
+    /// the linked item of the argument's uid (_atoi64, <see cref="MessengerBrowser.LinkedItem"/>) in an ASTooltip of the
+    /// local player with flags 2 (FUN_1409e0d40 / <see cref="ItemTooltip.Fill"/>), its close button (ShowCloseButton,
+    /// astooltip.cpp:159: "closeButton" true) and SetEnablePreview; nothing when the uid links none or the fill fails.
+    /// STILL-OPEN: "itemPreview" (ItemPreviewMgr's OpenPreview while IsHudOn), "getAchieve", "whisper", "menu",
+    /// "moveToHome", "billDialog", "searchFromMeratmarket", "itemSelect", "hyperLinkLeft" and the rest are not ported and
+    /// answer nothing.
+    /// </summary>
+    public override IDictionary<string, object> GetUserData(string name, object[] args)
+    {
+        if (Model?.HasLocalPlayer != true) return null;
+        if (name != "getTooltip") return null;
+        var item = Browser.LinkedItem(NumberText.ParseInt64W(args.Length > 0 ? Rt.ToString(args[0]) : ""));
+        if (item == null) return null;
+        var tip = new ItemTooltip(Model, 2)
+        {
+            Owner = (Browser.LocalCharacterId(), Model.Player.Name),
+            Localize = key => Host.Player.Translate?.Invoke(key) ?? key,
+            OwnerWearsUid = OwnerWearsUid,
+        };
+        if (!tip.Fill(item)) return null;
+        tip.Data["closeButton"] = true;
+        tip.SetEnablePreview(item);
+        return tip.Data;
     }
 
     /// <summary>vfunc_28 (:3943), the window's calls after UIDialog's.</summary>

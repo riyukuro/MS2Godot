@@ -507,7 +507,9 @@ public partial class HudScene : Node, IUiStageHost
             WireUserChat(live);
             Action<Ms2.Net.Packets.ChatMessage, Func<Ms2.Net.Packets.WeddingChatHall>> onChat = ChatLog.OnUserChat;
             live.UserChat += onChat;
-            unwatchChat = () => { live.UserChat -= onChat; ChatLog.SendPacket = null; };
+            Action<Ms2.Net.Packets.ChatItemLinks> onLinks = ChatLog.OnItemLinks;
+            live.UserChatItemLink += onLinks;
+            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; ChatLog.SendPacket = null; };
         }
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;

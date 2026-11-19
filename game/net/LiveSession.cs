@@ -66,6 +66,8 @@ public partial class LiveSession : Node
     /// <summary>UIMessengerBrowser::vfunc_84 (0x1d, uimessenger.cpp:2829): a user's chat line, and the packet's reader for the
     /// <see cref="WeddingChatHall"/> after a type 0x19 line (the handler reads it only with feature 0x104).</summary>
     public event Action<ChatMessage, Func<WeddingChatHall>> UserChat;
+    /// <summary>UIMessengerBrowser::vfunc_85 (0x1e, uimessenger.cpp:2963): the items the chat lines link, by uid.</summary>
+    public event Action<ChatItemLinks> UserChatItemLink;
     /// <summary>The local player's skill book (JobSystem): the own FieldAddUser's block (OnAddUser, scenestategame.cpp:11135) and the
     /// Job packets (OnJob); null before one arrives.</summary>
     public SkillBook SkillBook { get; private set; }
@@ -537,6 +539,12 @@ public partial class LiveSession : Node
                     var c = ChatMessage.Read(r);                // UIMessengerBrowser::vfunc_84 (uimessenger.cpp:2829); no ExpectEnd: the client ignores trailing bytes
                     UserChat?.Invoke(c, () => WeddingChatHall.Read(r));
                     GD.Print($"live: chat type 0x{c.Type:x} from {c.Name}{(c.Common ? $" common {c.CommonId}" : "")}");
+                }
+                else if (game.Is(p, Inbound.UserChatItemLink))
+                {
+                    var links = ChatItemLinks.Read(p.Reader());  // UIMessengerBrowser::vfunc_85 (uimessenger.cpp:2963); no ExpectEnd: the client ignores trailing bytes
+                    UserChatItemLink?.Invoke(links);
+                    GD.Print($"live: chat item links {links.Items.Count}");
                 }
                 else if (game.Is(p, Inbound.BadgeEquip))
                 {

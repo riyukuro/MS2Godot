@@ -61,3 +61,34 @@ public class ChatTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 }
+
+/// <summary>RecvOp 0x1e, the items chat lines link (UIMessengerBrowser::vfunc_85, uimessenger.cpp:2963).</summary>
+public class ChatItemLinkTests {
+    static int BodyLen(int id) { var r = new ByteReader(new byte[400]); ItemReader.ReadItem(r, id, 1); return r.Position; }
+
+    static void Link(ByteWriter w, long uid, int id, int rarity, int amount) {
+        w.WriteLong(uid); w.WriteInt(id); w.WriteInt(rarity);
+        var body = new byte[BodyLen(id)]; System.BitConverter.GetBytes(amount).CopyTo(body, 0); w.WriteBytes(body);
+    }
+
+    [Test]
+    public void ReadsEachLinkedItem() {
+        var w = new ByteWriter(); w.WriteInt(2); Link(w, 101, 11300001, 3, 1); Link(w, 102, 20000001, 1, 7);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        var links = ChatItemLinks.Read(r);
+        Assert.That(links.Items.Select(i => (i.Uid, i.Id, i.Rarity, i.Amount)),
+            Is.EqualTo(new[] { (101L, 11300001, 3, 1), (102L, 20000001, 1, 7) }));
+        Assert.That(r.Available, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void StopsAtAnUnknownItem() {
+        var was = ItemReader.Known;
+        try {
+            ItemReader.Known = id => id != 20000002;
+            var w = new ByteWriter(); w.WriteInt(3); Link(w, 1, 20000001, 1, 1); Link(w, 2, 20000002, 1, 1); Link(w, 3, 20000003, 1, 1);
+            var links = ChatItemLinks.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+            Assert.That(links.Items.Select(i => i.Uid), Is.EqualTo(new long[] { 1 }));
+        } finally { ItemReader.Known = was; }
+    }
+}

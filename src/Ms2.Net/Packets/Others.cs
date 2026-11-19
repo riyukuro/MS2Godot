@@ -155,6 +155,29 @@ public sealed record ChatMessage(long AccountId, long CharacterId, string Name, 
 }
 
 /// <summary>
+/// Inbound 0x1E, the items chat lines link (UIMessengerBrowser::vfunc_85 @0x141a22cd0, uimessenger.cpp:2963, the handler
+/// of RecvOp 0x1e its ctor registers at :2699): u32 count, then per item i64 uid, i32 item id, i32 rarity and the body
+/// CItem::ReadFromStream reads into the item FUN_140523c40 made. For an id the item data does not know the client makes no
+/// item and reads no body, and its next loop reads the body's bytes as the next record; this reader stops there instead
+/// (<see cref="ItemReader.Known"/>).
+/// </summary>
+public sealed record ChatItemLinks(IReadOnlyList<EquipItem> Items) {
+    public static ChatItemLinks Read(ByteReader r) {
+        uint count = (uint)r.ReadInt();
+        var items = new List<EquipItem>();
+        for (uint i = 0; i < count; i++) {
+            long uid = r.ReadLong();
+            int id = r.ReadInt(), rarity = r.ReadInt();
+            if (ItemReader.Known != null && !ItemReader.Known(id)) break;
+            var it = ItemReader.ReadItem(r, id, rarity);
+            it.Uid = uid;                                   // SetItemUid before ReadFromStream
+            items.Add(it);
+        }
+        return new ChatItemLinks(items);
+    }
+}
+
+/// <summary>
 /// Outbound 0x11 (SendOp::UserChat), a chat line to send: FUN_141276f80 (unit_141274d10_uihelpers.cpp:913) writes the
 /// Unk_CommandChat record with FUN_1401fa700 (unit_1401f9eb0_packetpayloadserializers.cpp:415): i32 kind (+4), unicode
 /// message (+8), unicode target (+0x10, the whisper's name), i64 value (+0x18, the club id of a club line).
