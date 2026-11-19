@@ -171,8 +171,16 @@ public sealed class GameTables
     /// <summary>The fishing spots and fishing mastery grades (CFishingTable, CMasteryTable type 1); empty without data.</summary>
     public FishingSpots Fishing { get; } = new(null, null, _ => true);
 
-    /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown.</summary>
-    public string ItemName(int id) => itemNames.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : "";
+    /// <summary>CStringTable::FUN_141811980(1, id): the item name (string table 1, itemname.xml), "" when unknown; names
+    /// holding "$" get the object words (e.g. "$map:02000302$ Treasure Key"), as CStringTable::Load @0x141810f70 does for
+    /// every table at load (stringtable.cpp:640).</summary>
+    public string ItemName(int id)
+    {
+        var key = id.ToString(CultureInfo.InvariantCulture);
+        if (!itemNames.TryGetValue(key, out var n) || n == null) return "";
+        if (n.Contains('$')) itemNames[key] = n = ReservedWords.ReplaceObjectWords(n);
+        return n;
+    }
     /// <summary>A CommonResource member by its commonResource.xml key (e.g. HDR_PATH); "" when absent.</summary>
     public string CommonResource(string key) => commonResource.TryGetValue(key, out var v) ? v : "";
 
