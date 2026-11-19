@@ -697,7 +697,8 @@ public sealed partial class NpcTalk : Node
     /// when it is gone or out of talk range: CNpc::IsInTalkRange (npcactorandvibrate.cpp:1379), always in range with property
     /// tag 0x1a, else the distance from the player (FUN_14123daa0 from WorldService's focus position) within TalkableDistance
     /// (default 400) plus the npc's capsule radius. An npc re-added under the same object id is the one talked to from then on.
-    /// Live only: the sandbox's npcs never leave. STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(2)) is not ported.
+    /// It also ends while a guide event restricts talking (CGuideManager::IsRestricted(2), :1627).
+    /// Live only: the sandbox's npcs never leave.
     /// </summary>
     void EndTalkIfNpcGone()
     {
@@ -712,8 +713,9 @@ public sealed partial class NpcTalk : Node
         }
         bool inRange = now != null && (now.Row.HasTag("26")
             || (now.Position - player.GlobalPosition).Length() <= constants.Float("TalkableDistance", 400) + now.Row.CapsuleRadius);
-        if (inRange) return;
-        GD.Print($"talk: npc {npc.Row.Id} (object {npc.ObjectId}) {(now == null ? "is gone" : "is out of talk range")}, the talk ends");
+        bool restricted = inRange && Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ActionTalk) == true;
+        if (inRange && !restricted) return;
+        GD.Print($"talk: npc {npc.Row.Id} (object {npc.ObjectId}) {(now == null ? "is gone" : restricted ? "is held by the guide" : "is out of talk range")}, the talk ends");
         if (side != null && side.Talking) side.EndTalk();
         else { liveTalking = null; talking = null; live.SendTalk(new NpcTalkEndRequest()); }
     }

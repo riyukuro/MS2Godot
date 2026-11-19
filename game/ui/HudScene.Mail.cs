@@ -130,6 +130,7 @@ public partial class HudScene
     /// </summary>
     void OpenMail()
     {
+        if (GuideRefusesOpen("MailListDialog")) return;
         if (MailOpen) return;
         if (mailMovie != null) { mailMovie.Host.Unload(); mailMovie.QueueFree(); mailMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;

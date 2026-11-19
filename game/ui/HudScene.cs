@@ -427,6 +427,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenGameOption(int page)
     {
+        if (GuideRefusesOpen("GameOptionDialog")) return;
         if (optionDialog == null)
         {
             optionHost = new GameOptionHost(this, assets.Packs, commonStrings);
@@ -641,6 +642,19 @@ public partial class HudScene : Node, IUiStageHost
             ForcedQuit = () => GD.Print("notice: forced quit (SendRequestQuitAndDisconnect is not ported)"),
             MaintenanceExit = () => GD.Print("notice: the maintenance exit call is not ported"),   // FUN_140d86260()->vfunc_58(0x289, 0)
         };
+    }
+
+    /// <summary>
+    /// UIDialog::vfunc_73's guide test (uidialog.cpp:668), run by vfunc_65 before a closed dialog opens: while a running
+    /// guide event holds the dialog of the type name shut (<see cref="Ms2.Ui.Guide.GuideManager.RefusesDialogOpen"/>) the
+    /// open is refused with notice 2187 (FUN_141275260(0x88b, 1, 1)). STILL-OPEN: the system menu dialog has no type name
+    /// in the port and is not tested; the HUD movies made at the field entry are not either.
+    /// </summary>
+    bool GuideRefusesOpen(string typeName)
+    {
+        if (!Ms2.Ui.Guide.GuideManager.RefusesDialogOpen(typeName)) return false;
+        SystemNotice(Ms2.Ui.Guide.GuideManager.DialogLimitNotice);
+        return true;
     }
 
     /// <summary>
@@ -1023,6 +1037,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenQuestLog()
     {
+        if (GuideRefusesOpen("QuestDialog")) return;
         if (questLog != null) { questLog.Host.Unload(); questLog.QueueFree(); questLog = null; }
         if (questLogSide == null)
         {
@@ -1164,6 +1179,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenWorldMap()
     {
+        if (GuideRefusesOpen("WorldMapDialog")) return;
         if (worldMap != null) { worldMap.Host.Unload(); worldMap.QueueFree(); worldMap = null; }
         var model = NewModel();
         if (worldMapSide == null)
@@ -1220,6 +1236,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenLevelUpGuide()
     {
+        if (GuideRefusesOpen("LevelUpGuideDialog")) return;
         if (levelUpGuideMovie != null) { levelUpGuideMovie.Host.Unload(); levelUpGuideMovie.QueueFree(); levelUpGuideMovie = null; }
         var log = QuestLogSource();
         if (log == null) return;
@@ -1288,6 +1305,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenGameDictionary()
     {
+        if (GuideRefusesOpen("GameDictionaryDialog")) return;
         if (gameDictionaryMovie != null) { gameDictionaryMovie.Host.Unload(); gameDictionaryMovie.QueueFree(); gameDictionaryMovie = null; }
         if (QuestLogSource() == null) return;
         SetWordFeatures();
@@ -1436,6 +1454,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenAdventureLevel()
     {
+        if (GuideRefusesOpen("AdventureLevelDialog")) return;
         if (adventureLevelMovie != null) { adventureLevelMovie.Host.Unload(); adventureLevelMovie.QueueFree(); adventureLevelMovie = null; }
         if (adventureLevel == null)
         {
@@ -1769,6 +1788,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenMyInfo()
     {
+        if (GuideRefusesOpen("MyInfoDialog")) return;
         if (myInfoMovie != null) { myInfoMovie.Host.Unload(); myInfoMovie.QueueFree(); myInfoMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;
         var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
@@ -1885,6 +1905,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>CUIService::ToggleDialog(0x4e56) when it is not up: the upload dialog's movie over the HUD.</summary>
     void OpenUploadDialog()
     {
+        if (GuideRefusesOpen("UGCImageUploadDialog")) return;
         if (uploadDialogMovie != null) { uploadDialogMovie.Host.Unload(); uploadDialogMovie.QueueFree(); uploadDialogMovie = null; }
         var c = new Ms2.Ui.Hud.UgcImageUploadController(Ugc());
         BindBoxAnswers();
@@ -2068,6 +2089,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenInventory()
     {
+        if (GuideRefusesOpen("InventoryDialog")) return;
         if (inventoryMovie != null) { inventoryMovie.Host.Unload(); inventoryMovie.QueueFree(); inventoryMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;
         var view = live != null ? live.Inventory : OfflineInventory();
@@ -2254,6 +2276,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenShop()
     {
+        if (GuideRefusesOpen("ShopDialog")) return;
         if (shopMovie != null) { shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
         long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var (info, products) = UiFixture.GearShop(Now());
@@ -2346,6 +2369,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void OpenSkillBook()
     {
+        if (GuideRefusesOpen(hudModel.IsFeatureEnabled(0xca) ? "SkillBookTreeDialog_jobchange01" : "SkillBookTreeDialog")) return;
         if (skillBookMovie != null) { skillBookMovie.Host.Unload(); skillBookMovie.QueueFree(); skillBookMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;
         var tables = hudModel.Tables.Skills;

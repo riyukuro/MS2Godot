@@ -113,6 +113,7 @@ public partial class HudScene
     /// </summary>
     void OpenCommunity()
     {
+        if (GuideRefusesOpen("CommunityDialog")) return;
         if (CommunityOpen) return;
         if (communityMovie != null) { communityMovie.Host.Unload(); communityMovie.QueueFree(); communityMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;
@@ -174,6 +175,7 @@ public partial class HudScene
     /// <summary>OpenDialog(0x4e4e) from the query's OnMessage: its movie with UICommunityQueryDialog's C++ side.</summary>
     void OpenCommunityQuery()
     {
+        if (GuideRefusesOpen("CommunityQueryDialog")) return;
         if (CommunityQueryOpen) return;
         if (communityQueryMovie != null) { communityQueryMovie.Host.Unload(); communityQueryMovie.QueueFree(); communityQueryMovie = null; }
         communityQueryMovie = new MovieDialog(assets, communityQuery, hudModel, GetWindow().Size);

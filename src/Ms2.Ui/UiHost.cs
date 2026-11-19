@@ -71,7 +71,11 @@ public sealed class UiHost
     /// <summary>Constructs the movie and runs the client's load sequence. Returns false when the document class failed.</summary>
     public bool Load(int frames = 5)
     {
-        if (Controller.IsDialogEntity) Model.TopLayer = Id;        // UIDialog's open: FUN_1422d4dd0(m_20)
+        if (Controller.IsDialogEntity)
+        {
+            Model.TopLayer = Id;                                    // UIDialog's open: FUN_1422d4dd0(m_20)
+            Guide.GuideManager.Current?.QueueOccurrence(Guide.GuideOccurrence.Dialog, 0);   // vfunc_65 (uidialog.cpp:585)
+        }
         if (!Player.Start()) return false;
         Mark?.Invoke("as-construct");
         for (int i = 0; i < frames; i++) Player.Tick();        // configUI runs in the first frames, before the client's OnLoadComplete

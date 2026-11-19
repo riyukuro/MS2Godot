@@ -62,10 +62,16 @@ public sealed class GuideManager
     readonly SortedDictionary<string, int> names = new(StringComparer.Ordinal);
 
     /// <summary>s_limitCounts[25] and s_dialogLimits (guideaction.cpp): how many running events hold each limit.</summary>
-    readonly int[] limitCounts = new int[25];
+    readonly int[] limitCounts = new int[LimitCount];
+    /// <summary>The number of limits (s_limitCounts[25]).</summary>
+    public const int LimitCount = 25;
     readonly Dictionary<string, int> dialogLimits = new(StringComparer.Ordinal);
 
     public GuideManager(GuideWorld world) => World = world;
+
+    /// <summary>FUN_1409331e0: the session's guide; null offline and before the guide tables are loaded. The hooks of the
+    /// client's controllers reach it through this (every client call site tests the pointer first).</summary>
+    public static GuideManager Current { get; set; }
 
     /// <summary>The events in id order.</summary>
     public IEnumerable<GuideEntity> Entities => entities.Values;
@@ -74,6 +80,8 @@ public sealed class GuideManager
     public IReadOnlyList<string> LoadErrors => errors;
     /// <summary>The queued events in queue order.</summary>
     public IEnumerable<GuideEntity> Queued => queue;
+    /// <summary>The occurrence kinds queued for the next update.</summary>
+    public IReadOnlyCollection<int> PendingOccurrences => pending;
     /// <summary>The saved steps in save id order.</summary>
     public IEnumerable<KeyValuePair<int, int>> SavedSteps => steps;
     /// <summary>The occurrences the index files an event under with a sub key (m_setIndexed).</summary>
@@ -548,4 +556,74 @@ public sealed class GuideManager
 
     /// <summary>IsDialogLimited (@0x141383a70): a running event holds the dialog of a type name shut.</summary>
     public bool IsDialogLimited(string name) => dialogLimits.TryGetValue(name, out int n) && n > 0;
+
+    /// <summary>The common string key of 0x88b (2187), the notice a refused dialog open shows.</summary>
+    public const string DialogLimitNotice = "s_tutorial_dialog_limit";
+    /// <summary>The common string key of 0x889 (2185), the notice a refused equip or unequip shows.</summary>
+    public const string ItemPutOnOffNotice = "s_tutorial_itemputonoff_limit";
+
+    /// <summary>
+    /// UIDialog::vfunc_73's first test (uidialog.cpp:668): the open of a dialog of the type name is refused while a running
+    /// event holds it shut; the caller then shows <see cref="DialogLimitNotice"/> (FUN_141275260(0x88b, 1, 1)). False
+    /// without a guide. STILL-OPEN: the test's other half, WorldService::HasTutorial with the dialog's m_168 cleared
+    /// (FUN_141926960, set by uidialog.cpp:1119), has no tutorial state here.
+    /// </summary>
+    public static bool RefusesDialogOpen(string typeName) => Current?.IsDialogLimited(typeName) == true;
+
+    // ---- the listeners (guideentity_1b.cpp @0x14138e990..0x14138ec70) ------------------------------------------------
+
+    /// <summary>vfunc_2 (@0x14138e990, the item add of the inventory listener): with a valid item (CItem::FUN_140528980),
+    /// the AddItem trigger of its id and the AddItemByIconType trigger of its icon code, then the DesignItem and
+    /// CountItem occurrences.</summary>
+    public void OnItemAdded(int itemId, bool valid)
+    {
+        if (!valid) return;
+        AddTrigger(GuideTrigger.AddItem, itemId);
+        AddTrigger(GuideTrigger.AddItemByIconType, World.IconCodeOf(itemId));
+        QueueOccurrence(GuideOccurrence.DesignItem, 0);
+        QueueOccurrence(GuideOccurrence.CountItem, 0);
+    }
+
+    /// <summary>vfunc_3 (@0x14138ea00, the item remove): with a valid item, the DesignItem and CountItem occurrences.</summary>
+    public void OnItemRemoved(bool valid)
+    {
+        if (!valid) return;
+        QueueOccurrence(GuideOccurrence.DesignItem, 0);
+        QueueOccurrence(GuideOccurrence.CountItem, 0);
+    }
+
+    /// <summary>vfunc_4 / vfunc_5 (@0x14138ead0 / 0x14138ea70, an item's amount or slot changed): with a valid item, the
+    /// CountItem occurrence.</summary>
+    public void OnItemChanged(bool valid)
+    {
+        if (!valid) return;
+        QueueOccurrence(GuideOccurrence.CountItem, 0);
+    }
+
+    /// <summary>vfunc_ugc_5 (@0x14138eb30): a home bought.</summary>
+    public void OnBuyHome() => AddTrigger(GuideTrigger.BuyHome, 0);
+
+    /// <summary>vfunc_ugc_6 (@0x14138eb60): a home sold.</summary>
+    public void OnSellHome() => AddTrigger(GuideTrigger.SellHome, 0);
+
+    /// <summary>OnLearnEmotion (@0x14138eb90).</summary>
+    public void OnLearnEmotion(int emotionId) => AddTrigger(GuideTrigger.LearnEmotion, emotionId);
+
+    /// <summary>OnUseSkill (@0x14138ebd0).</summary>
+    public void OnUseSkill(int skillId) => AddTrigger(GuideTrigger.UseSkill, skillId);
+
+    /// <summary>OnChangeMyLevel (@0x14138ec10).</summary>
+    public void OnChangeMyLevel() => QueueOccurrence(GuideOccurrence.MyPlayerLevel, 0);
+
+    /// <summary>OnDungeonEnterState (@0x14138ec40).</summary>
+    public void OnDungeonEnterState() => QueueOccurrence(GuideOccurrence.EnterDungeon, 0);
+
+    /// <summary>vfunc_oa0_7 (@0x14138ec70, the job event of UIStatusEventDispatcher::NotifyStatusChanged 4, which passes the
+    /// sub job): in the game scene (0x620000c) the JobCode occurrence, and the Job trigger unless the sub job is 1.</summary>
+    public void OnJobChanged(int subJob)
+    {
+        if (World.SceneId != 0x620000c) return;
+        QueueOccurrence(GuideOccurrence.JobCode, 0);
+        if (subJob != 1) AddTrigger(GuideTrigger.Job, 0);
+    }
 }

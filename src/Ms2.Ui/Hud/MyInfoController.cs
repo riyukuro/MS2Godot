@@ -1084,14 +1084,15 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
 
     /// <summary>
     /// EquipSlot::vfunc_14 (equipslot.cpp:121): the slot's item (vfunc_25, <see cref="EquipSlotItem"/>), none: nothing; else
-    /// Unk_Inventory::RequestUnequipItem (inventory.cpp:1278): no local player, nothing; the local player's worn item of the uid
+    /// Unk_Inventory::RequestUnequipItem (inventory.cpp:1278): while the guide restricts taking items off (IsRestricted(5),
+    /// :1279): notice 2185 (<see cref="Guide.GuideManager.ItemPutOnOffNotice"/>); no local player, nothing; the local player's worn item of the uid
     /// (PC::FUN_141655b80), none (a record not the local player's): nothing; CItem::HasAnyEquipSlotOf (a model group of
     /// <see cref="FixedPartGroups"/>): box 207 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(207), 0)); FUN_140a655b0
     /// (:1563): no empty cell in the item's tab (<see cref="Ms2.Net.Packets.InventoryView.HasEmptyCell"/>): system notice 67.
     /// Then the unequip request: nothing is taken off here, the server's equip packets do. A dead local player (IsDead, :1282)
     /// gets box 66 (<see cref="DeadKey"/>) before the item is looked up; FUN_140a655b0's own dead check (:1568) is then never
     /// reached.
-    /// STILL-OPEN: the guide restriction (IsRestricted(5), notice 2185) and the sounds (the warning DAT_143ab78e8, the item's
+    /// STILL-OPEN: the sounds (the warning DAT_143ab78e8, the item's
     /// material sound).
     /// </summary>
     void Unequip(int slot)
@@ -1106,7 +1107,10 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public void RequestUnequip(Item item)
     {
         var r = equipBagRecord;
-        if (item == null || r == null || Model == null || !Model.HasLocalPlayer) return;
+        if (item == null || r == null || Model == null) return;
+        if (Guide.GuideManager.Current?.IsRestricted(Guide.GuideLimit.ItemPutOff) == true)
+        { SystemNotice?.Invoke(Guide.GuideManager.ItemPutOnOffNotice); return; }
+        if (!Model.HasLocalPlayer) return;
         if (LocalPlayerDead()) { ShowCommonBox(DeadKey); return; }       // inventory.cpp:1282
         if (!r.IsLocal || Inventory == null) return;
         var model = Model.Tables.ItemModels.Get(item.Data.ItemPreset);

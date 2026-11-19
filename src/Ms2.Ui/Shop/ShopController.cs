@@ -188,10 +188,9 @@ public sealed class ShopController : UiController
     /// (iconName: the header's icon, else the npc's shop icon, else its icon; strGender; checkEnableItems; the title:
     /// the shop's title row, else for an npc s_title_shop with its name; dpTab; notice), m_money, the reset data, the
     /// countdown, the group's tabs and the ready flag. The npc talk (type 1), the web guide (type 3), the star, gacha and
-    /// preview parts are not ported.
-    /// STILL-OPEN: the last step, CGuideManager::AddTrigger(ShopOpen = 0x20, shop id) for a shop id other than 0
-    /// (uishopdialog.cpp:943; the trigger names, guideentity_1.cpp:42), waits for a guide system. The only guide that tests
-    /// it is the FameContents shop guide (table/guide_famecontents.xml event 80082: shops 206-211). The npc overhead icon
+    /// preview parts are not ported. The last step is CGuideManager::AddTrigger(ShopOpen = 0x20, shop id) for a shop id other
+    /// than 0 (uishopdialog.cpp:943); the only guide that tests it is the FameContents shop guide
+    /// (table/guide_famecontents.xml event 80082: shops 206-211). The npc overhead icon
     /// seen through the translucent title bar is not the dialog's: it is the npc's UIEmoticon movie (npc iconName, e.g.
     /// emoticon_movie_npc_equip, uiemoticon.cpp:101) at its Eff_UI point.
     /// </summary>
@@ -237,6 +236,7 @@ public sealed class ShopController : UiController
         UpdateSerial(info.ResetTime);
         SetTab(group, true);
         ready = true;
+        if (info.ShopId != 0) Guide.GuideManager.Current?.AddTrigger(Guide.GuideTrigger.ShopOpen, info.ShopId);
     }
 
     /// <summary>

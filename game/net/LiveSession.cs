@@ -3,6 +3,7 @@ using Ms2.Formats.Model;
 using Ms2.Net;
 using Ms2.Net.Packets;
 using Ms2.Ui;
+using Ms2.Ui.Guide;
 using Ms2Godot.Flow;
 using Ms2Godot.Ui;
 using Ms2Godot.Ui.Contracts;
@@ -326,6 +327,7 @@ public partial class LiveSession : Node
     {
         Field.Built -= OnFieldBuilt;
         ProfileImageService.Images.Arrived -= PictureArrived;
+        StopGuide();
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
     }
@@ -473,6 +475,7 @@ public partial class LiveSession : Node
             Items.BaseSlots ??= BaseSlotTable();
             if (Inventory == null) { Inventory = new InventoryView(Items); Inventory.RequestSort = (tab, stack) => Send(new ItemInventorySortRequest((byte) tab, stack)); Inventory.RequestMove = (uid, slot) => Send(new ItemInventoryMoveRequest(uid, slot)); Inventory.RequestEquip = (uid, slot, mode) => Send(new ItemEquipRequest(uid, slot, mode)); Inventory.RequestUnequip = uid => Send(new ItemUnequipRequest(uid)); Inventory.RequestSwapEquip = (uid, slot) => Send(new ItemSwapEquipRequest(uid, slot)); Inventory.RequestEquipGem = (uid, slot) => Send(new GemEquipRequest(uid, slot)); Inventory.RequestUse = (uid, arg) => Send(new ItemUseRequest(uid, arg)); Inventory.ServerTime = () => GameSession?.ServerTime ?? 0; }
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
+            StartGuide();   // before the early packets: the guide record (0x89) is among them
             // what the server sent before the field enter, in arrival order, through the read loop's handler (no HUD exists yet):
             // the adventure level, quest, item, trophy, title and key table loads among them
             entry.Replay(Handle, () =>
@@ -487,6 +490,7 @@ public partial class LiveSession : Node
             syncNumber = entry.Sync?.Number ?? 0;
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
+            guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
             GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");
             return true;
         }
@@ -507,7 +511,7 @@ public partial class LiveSession : Node
         if (entry == null) return;
         remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
-        field.TreeExiting += () => { remote = null; };   // the field is freed: its tracker stops filling Events
+        field.TreeExiting += () => { remote = null; guide?.StopAndUpdate(); };   // the map's unload (worldservice_1.cpp:10021)   // the field is freed: its tracker stops filling Events
         GD.Print("live: remote layer ready");
     }
 
@@ -575,6 +579,7 @@ public partial class LiveSession : Node
     {
         if (game == null) { PumpLogin(); return; }
         while (game.Incoming.TryDequeue(out var p)) Handle(p);
+        guide?.Tick();
         if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
 
@@ -623,6 +628,7 @@ public partial class LiveSession : Node
             {
                 var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
                 bool selfLevel = Me.Apply(l);
+                if (selfLevel) guide?.OnChangeMyLevel();   // NotifyChangeMyLevel (CGuideManager::OnChangeMyLevel)
                 GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
             }
             else if (game.Is(p, Inbound.SyncNumber))
@@ -646,7 +652,9 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Quest))
             {
                 var q = ReadQuest(p);
+                bool known = QuestKnownBefore(q);
                 Quests.Apply(q);
+                GuideOnQuest(q, known);
                 GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
             }
             else if (game.Is(p, Inbound.Party))
@@ -704,7 +712,11 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserState))
             {
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
-                if (Me.ApplyUserState(u.ObjectId, u.State)) GD.Print($"live: own player dead (state {u.State})");
+                if (Me.ApplyUserState(u.ObjectId, u.State))
+                {
+                    GD.Print($"live: own player dead (state {u.State})");
+                    guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1350)
+                }
             }
             else if (game.Is(p, Inbound.DeadUser))
             {
@@ -714,7 +726,11 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Revival))
             {
                 var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
-                if (Me.Revive(v.ObjectId)) GD.Print("live: own player revived");
+                if (Me.Revive(v.ObjectId))
+                {
+                    GD.Print("live: own player revived");
+                    guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // OnRevival of the own player (scenestategame.cpp:7405)
+                }
             }
             else if (game.Is(p, Inbound.ItemPutOnOrOff))
             {
@@ -727,11 +743,18 @@ public partial class LiveSession : Node
                 GD.Print($"live: key table mode {mode} ({KeyTable.PageCount} pages, page {KeyTable.CurrentPage})");
                 KeyTableChanged?.Invoke(mode);
             }
+            else if (game.Is(p, Inbound.GuideRecord))
+            {
+                var r = GuideRecordIn.Read(p.Reader());   // CSceneStateGame::OnGuideRecord (scenestategame.cpp:3878): CGuideManager::ReceiveStates
+                guide?.ReceiveStates(r);
+                GD.Print($"live: guide record {r.Steps.Count} step(s) bits 0x{r.Bits:x}");
+            }
             else if (game.Is(p, Inbound.Job))
             {
                 var j = JobPacket.Read(p.Reader());   // CSceneStateGame::OnJob (scenestategame.cpp:7449); no ExpectEnd: the client ignores trailing bytes
                 bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
                 if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
+                if (selfJob && j.Mode is 0 or 2 or 7) guide?.OnJobChanged(Me.User?.Job ?? 0);   // NotifyStatusChanged(4) with the sub job (scenestategame.cpp:7463/7485/7506)
                 GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
             }
             else if (game.Is(p, Inbound.AttributePoint))

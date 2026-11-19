@@ -715,7 +715,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         EquipJobKey = "s_item_err_puton_job", DisabledJobKey = "s_item_err_disable_job";
 
     /// <summary>
-    /// Unk_Inventory::RequestEquipItem(item, slot, layer, skipBinding) (inventory.cpp:1236): no local player, nothing.
+    /// Unk_Inventory::RequestEquipItem(item, slot, layer, skipBinding) (inventory.cpp:1236): while the guide restricts putting
+    /// items on (CGuideManager::IsRestricted(4), :1237): notice 2185 (<see cref="Guide.GuideManager.ItemPutOnOffNotice"/>);
+    /// no local player, nothing.
     /// FUN_140a65e30 (:1630) on GetItemUseError (:1572): an expired item (CItem::IsExpired, server time) without a maid id:
     /// box 225 (FUN_140d73bc0: ShowMessageBox(GetStringCommon(id), 0)); GetItemRequirementError (:1586) on the wearer's record:
     /// gender box 45, job box 232 for an equipment item else 233, level box 224. A slot of 0 is
@@ -728,7 +730,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// back as <see cref="ConfirmBindEquip"/>, which asks again with the skip. The send maps the layer as FUN_1401fb870: 2
     /// only with feature 142. Nothing is put on here: the server's equip packets do.
     /// A dead local player (IsDead, :1241) gets box 66 (<see cref="MyInfoController.DeadKey"/>) first.
-    /// STILL-OPEN: the guide restriction (CGuideManager::IsRestricted(4), box 2185), the PC bang, VIP
+    /// STILL-OPEN: the PC bang, VIP
     /// and wedding requirements (their player states are not in the port), the music score part of FUN_140528980, the rest of
     /// CanEquipItem (PC::vfunc_132 / CItem::FUN_140525e50 slot acceptance, the worn two-slot pair boxes 0xd2 / 0xd4 / 0xd6 /
     /// 0x43, s_item_err_codi_slot, the cube texture block), the warning sounds (s_warningLevel,
@@ -737,6 +739,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// </summary>
     void RequestEquip(Item item, int slot, int layer, bool skipBinding = false)
     {
+        if (Guide.GuideManager.Current?.IsRestricted(Guide.GuideLimit.ItemPutOn) == true)
+        { SystemNotice?.Invoke(Guide.GuideManager.ItemPutOnOffNotice); return; }
         if (!Model.HasLocalPlayer) return;
         if (LocalPlayerDead()) { ShowCommonBox(MyInfoController.DeadKey); return; }      // inventory.cpp:1241
         var d = item.Data;

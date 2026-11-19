@@ -93,6 +93,7 @@ public partial class HudScene
     /// <summary>OpenDialog(0x4e45) = FUN_141924680: opens only a closed dialog; the movie loads and OnLoadComplete fills it.</summary>
     void OpenParty()
     {
+        if (GuideRefusesOpen("PartyDialog")) return;
         if (PartyWindowOpen || partyBook == null) return;
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the party window runs interpreted");
         menuModel ??= NewModel();

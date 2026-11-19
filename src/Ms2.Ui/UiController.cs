@@ -232,8 +232,8 @@ public abstract class UiController
             case "onstartdrag": dragging = true; return true;     // vfunc_76
             case "onstopdrag": StopDrag(); return true;           // vfunc_77
             case "ontopmostlayer": return true;                   // vfunc_78: BringToFront; one movie per window here
-            case "onendclose":
-                if (closeState != 2) { closeState = 2; Unloaded?.Invoke(); }
+            case "onendclose":      // m_c0 not 2: closed, the guide's dialog occurrence (3), Unload
+                if (closeState != 2) { closeState = 2; Guide.GuideManager.Current?.QueueOccurrence(Guide.GuideOccurrence.Dialog, 0); Unloaded?.Invoke(); }
                 return true;
         }
         return false;
@@ -266,6 +266,7 @@ public abstract class UiController
         {
             placedFromFile = false;
             StopDrag();
+            Guide.GuideManager.Current?.QueueOccurrence(Guide.GuideOccurrence.Dialog, 0);   // FUN_141924190 (uidialog.cpp:380)
         }
         if (!TweenEnabled)
         {

@@ -1106,6 +1106,15 @@ public class MyInfoTests
         long rh = c.Record().Equips.First(e => e.Id == 15000001).Uid;
         string Slot(int s) => MyInfoController.EquipBag + "." + s;
 
+        var guide = new Ms2.Ui.Guide.GuideManager(new Ms2.Ui.Guide.GuideWorld());
+        guide.AddLimit(Ms2.Ui.Guide.GuideLimit.ItemPutOff);
+        Ms2.Ui.Guide.GuideManager.Current = guide;
+        try { c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 }); }
+        finally { Ms2.Ui.Guide.GuideManager.Current = null; }
+        Assert.That((sent.Count, notices.Single()), Is.EqualTo((0, Ms2.Ui.Guide.GuideManager.ItemPutOnOffNotice)),
+            "the guide holds taking off: notice 2185, no send (inventory.cpp:1279)");
+        notices.Clear();
+
         Assert.That(c.OnCallback("notifySlotUse", new object[] { Slot(5), 1 }), Is.True);
         Assert.That(sent, Is.EqualTo(new[] { rh }), "the worn item's uid");
         Assert.That(c.Record().Equips.Any(e => e.Uid == rh), Is.True, "nothing is taken off until the server says so");

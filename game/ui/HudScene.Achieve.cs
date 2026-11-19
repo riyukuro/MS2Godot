@@ -82,6 +82,7 @@ public partial class HudScene
     /// </summary>
     void OpenAchieve()
     {
+        if (GuideRefusesOpen("AchieveDialog")) return;
         if (AchieveOpen) return;
         if (achieveMovie != null) { achieveMovie.Host.Unload(); achieveMovie.QueueFree(); achieveMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;

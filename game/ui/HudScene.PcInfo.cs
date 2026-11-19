@@ -50,6 +50,7 @@ public partial class HudScene
     /// </summary>
     void OpenPcInfo()
     {
+        if (GuideRefusesOpen("MyInfoDialog")) return;
         if (pcInfoMovie != null) { pcInfoMovie.Host.Unload(); pcInfoMovie.QueueFree(); pcInfoMovie = null; }
         if (pcInfoRequests.Info == null) return;
         var live = Ms2Godot.Net.LiveSession.Instance;

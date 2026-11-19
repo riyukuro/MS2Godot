@@ -371,6 +371,16 @@ public class InventoryTests
         Assert.That(t.Common(InventoryController.ExpiredKey), Is.Not.Empty);
         Assert.That(t.Common(InventoryController.LowLevelKey), Is.Not.Empty);
 
+        var notices = new List<string>(); c.SystemNotice += notices.Add;
+        var guide = new Ms2.Ui.Guide.GuideManager(new Ms2.Ui.Guide.GuideWorld());
+        guide.AddLimit(Ms2.Ui.Guide.GuideLimit.ItemPutOn);
+        Ms2.Ui.Guide.GuideManager.Current = guide;
+        try { c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0", 1 }); }
+        finally { Ms2.Ui.Guide.GuideManager.Current = null; }
+        Assert.That((sent.Count, notices.Single()), Is.EqualTo((0, Ms2.Ui.Guide.GuideManager.ItemPutOnOffNotice)),
+            "the guide holds putting on: notice 2185, no send (inventory.cpp:1237)");
+        notices.Clear();
+
         Assert.That(c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0", 1 }), Is.True);
         Assert.That(sent, Is.EqualTo(new[] { (10L, (byte)4, (byte)0) }), "subtype 0x1f with only RH worn: LH, layer 0");
         Assert.That(c.View.ItemAt(c.View.Tab, 0)?.Uid, Is.EqualTo(10L), "nothing is put on until the server says so");

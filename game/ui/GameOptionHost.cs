@@ -124,8 +124,9 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     /// 0x6200085).</summary>
     public int SceneId => 0;
 
-    /// <summary>CGuideManager::IsRestricted: no guide restriction offline.</summary>
-    public bool GuideRestricted(int n) => false;
+    /// <summary>CGuideManager::IsRestricted (@0x14138c900): a running guide event holds the limit; none offline (no guide).</summary>
+    public bool GuideRestricted(int n) => n >= 0 && n < Ms2.Ui.Guide.GuideManager.LimitCount
+        && Ms2.Ui.Guide.GuideManager.Current?.IsRestricted((Ms2.Ui.Guide.GuideLimit)n) == true;
 
     /// <summary>FUN_141944250's test: the key settings are not changed here, so the default key table's quick-slot keys
     /// stand.</summary>

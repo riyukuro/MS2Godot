@@ -120,6 +120,7 @@ public partial class HudScene
 
     void OpenCharacterAbility()
     {
+        if (GuideRefusesOpen("CharacterAbilityDialog")) return;
         if (characterAbility == null) CharacterAbility();
         if (characterAbilityMovie != null) { characterAbilityMovie.Host.Unload(); characterAbilityMovie.QueueFree(); characterAbilityMovie = null; }
         characterAbilityMovie = new MovieDialog(assets, characterAbility, hudModel, GetWindow().Size);
