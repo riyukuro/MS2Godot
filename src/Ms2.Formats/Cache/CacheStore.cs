@@ -74,6 +74,9 @@ public sealed class CacheStore
 
     public byte[] Read(string piece, string key) => CacheFile.Read(PathOf(piece, key), key);
 
+    /// <summary>The file of the key is there and its body matches its checksum (read whole: the setup step's check).</summary>
+    public bool IsWhole(string piece, string key) => CacheFile.IsWhole(PathOf(piece, key), key);
+
     /// <summary>Writes the piece's file, then removes the piece's files of other builds (and of other configurations when
     /// <paramref name="onlyConfig"/>: a piece whose configuration is the hash of its input has one current file).</summary>
     public void Write(string piece, string key, ReadOnlySpan<byte> body, bool onlyConfig = false)
@@ -156,7 +159,8 @@ public sealed class CacheStore
         return fresh;
     }
 
-    /// <summary>Builds the piece's file when it is not there (the setup step); true when it was built.</summary>
+    /// <summary>Builds the piece's file when it is not there whole (the setup step: a damaged body is built again here,
+    /// never at a first open); true when it was built.</summary>
     public bool Ensure<T>(string piece, string config, string build, Func<T> parse) where T : class =>
         Ensure(piece, config, build, parse, t => Snapshot.Write(t));
 
@@ -164,7 +168,7 @@ public sealed class CacheStore
     public bool Ensure<T>(string piece, string config, string build, Func<T> parse, Func<T, byte[]> write, bool onlyConfig = false) where T : class
     {
         var key = Key(piece, config, build);
-        if (Has(piece, key)) return false;
+        if (IsWhole(piece, key)) return false;
         var bytes = write(parse());
         Directory.CreateDirectory(Dir);
         Write(piece, key, bytes, onlyConfig);

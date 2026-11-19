@@ -149,6 +149,15 @@ public class SnapshotTests
             Assert.That(o5.Source, Is.EqualTo("parse"), "a damaged file is parsed again, not half-read");
             Assert.That(store.Ensure("root", "cfg", "b2", parse), Is.False);
             Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.True);
+            // a body damaged on disk (its header intact) is built again by the setup step, not left for a first open
+            var path = store.PathOf("root", CacheStore.Key("root", "cfg2", "b2"));
+            var y = File.ReadAllBytes(path); y[^1] ^= 1; File.WriteAllBytes(path, y);
+            Assert.That(store.Has("root", CacheStore.Key("root", "cfg2", "b2")), Is.True, "the header still names the key");
+            Assert.That(store.IsWhole("root", CacheStore.Key("root", "cfg2", "b2")), Is.False);
+            Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.True);
+            Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.False);
+            store.Get("root", "cfg2", "b2", parse, _ => { }, out var o6);
+            Assert.That(o6.Source, Is.EqualTo("cache"));
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
