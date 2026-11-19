@@ -17,9 +17,9 @@ namespace Ms2Godot.Ui;
 /// 0.5 x (w, h) / max(w, h) at near 10, far 100000, so the vertical field of view is 2 atan(0.5 h / max(w, h)).</item>
 /// <item>Turning (<see cref="AvatarControl"/>): FromEulerAnglesXYZ of the avatar's angles about the pivot, the avatar
 /// position raised to its bound's centre but at most 25 above Eff_Body (vfunc_13).</item>
+/// <item>Re-dress: a live session's put-on / put-off (MyCharacter's equip lists replaced, CSceneStateGame::OnItemPutOn /
+/// OnItemPutOff) builds the model again from the new lists, keeping the turn and the zoom.</item>
 /// </list>
-/// STILL-OPEN: the client re-dresses the avatar when the player's equipment changes; this view keeps the look it was
-/// built with.
 /// </summary>
 public sealed partial class AvatarView : Node
 {
@@ -33,6 +33,10 @@ public sealed partial class AvatarView : Node
     float pivot;
     AvatarControl control;
     readonly AvatarZoom zoom = new(EyeDistance, MinDistance, MaxDistance, ZoomSpeed, ZoomSteps);
+    PackSet packs;
+    string nifXml;
+    object dressedWith;
+    Ms2.Net.Packets.MyCharacter me;
 
     /// <summary>The render target the movie shows.</summary>
     public Texture2D Image => view?.GetTexture();
@@ -52,10 +56,16 @@ public sealed partial class AvatarView : Node
     public static AvatarView Create(PackSet packs, string nifXml, Vector2I size, AvatarControl control)
     {
         if (string.IsNullOrEmpty(nifXml) || control == null) return null;
-        var av = new AvatarView { Name = "AvatarView", control = control };
+        var av = new AvatarView { Name = "AvatarView", control = control, packs = packs, nifXml = nifXml };
+        av.dressedWith = av.Worn();
         if (!av.BuildModel(packs, nifXml, size)) { av.QueueFree(); return null; }
         control.Turned += av.Turn;
         control.Zoom += av.zoom.Start;
+        if (Ms2Godot.Net.LiveSession.Active && Ms2Godot.Net.LiveSession.Instance.Me is { } me)
+        {
+            av.me = me;
+            me.Changed += av.Redress;
+        }
         av.Turn();
         av.Place();
         return av;
@@ -65,27 +75,56 @@ public sealed partial class AvatarView : Node
     {
         try
         {
-            var builder = new ModelBuilder(new Ms2.Formats.Nif.NifSpec(nifXml), packs);
-            var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs);
             view = new SubViewport
             {
                 Size = size, TransparentBg = true, OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always,
             };
             AddChild(view);
-            copy = visual;
-            view.AddChild(copy);
+            Dress(packs, nifXml);
             float fov = 2f * MathF.Atan(0.5f * size.Y / Math.Max(size.X, size.Y));
             camera = new Camera3D
             {
                 Fov = Mathf.RadToDeg(fov), Near = Near, Far = Far, KeepAspect = Camera3D.KeepAspectEnum.Height, Current = true,
             };
             view.AddChild(camera);
-            if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
-            PortraitView.OwnLights(copy);
-            pivot = PivotHeight(copy);
             return true;
         }
         catch (Exception ex) { GD.PushWarning("avatar view: " + ex.Message); return false; }
+    }
+
+    /// <summary>The model in the player's current look (<see cref="Look.PlayerLook"/>), in its idle, lit, with its pivot.</summary>
+    void Dress(PackSet packs, string nifXml)
+    {
+        var builder = new ModelBuilder(new Ms2.Formats.Nif.NifSpec(nifXml), packs);
+        var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs);
+        copy = visual;
+        view.AddChild(copy);
+        if (anim.HasAnimation("idle")) anim.Play("idle");     // Idle_A
+        PortraitView.OwnLights(copy);
+        pivot = PivotHeight(copy);
+    }
+
+    /// <summary>The live equip lists the model was dressed from (replaced, not edited, on a put-on / put-off).</summary>
+    object Worn() => Ms2Godot.Net.LiveSession.Active && Ms2Godot.Net.LiveSession.Instance.Me is { } m ? (m.Equips, m.Outfit2) : null;
+
+    /// <summary>MyCharacter.Changed: a new model when the equip lists changed (on the main thread).</summary>
+    void Redress()
+    {
+        var worn = Worn();
+        if (Equals(worn, dressedWith)) return;
+        dressedWith = worn;
+        Callable.From(() =>
+        {
+            if (!IsInstanceValid(this) || view == null) return;
+            try
+            {
+                var old = copy;
+                Dress(packs, nifXml);
+                old?.QueueFree();
+                Turn();
+            }
+            catch (Exception ex) { GD.PushWarning("avatar view: re-dress: " + ex.Message); }
+        }).CallDeferred();
     }
 
     /// <summary>The bound's centre height, at most <see cref="PivotRaise"/> above Eff_Body.</summary>
@@ -148,6 +187,7 @@ public sealed partial class AvatarView : Node
 
     public override void _ExitTree()
     {
+        if (me != null) { me.Changed -= Redress; me = null; }
         if (control == null) return;
         control.Turned -= Turn;
         control.Zoom -= zoom.Start;
