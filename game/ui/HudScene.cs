@@ -129,6 +129,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchParty = null;
         unwatchAchieves?.Invoke();
         unwatchAchieves = null;
+        unwatchMails?.Invoke();
+        unwatchMails = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
         unwatchNotices?.Invoke();
@@ -343,7 +345,7 @@ public partial class HudScene : Node, IUiStageHost
     /// dialogs, the quest log.</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false
-                                    || AchieveOpen;
+                                    || AchieveOpen || MailOpen;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -354,6 +356,7 @@ public partial class HudScene : Node, IUiStageHost
         if (inventory?.IsClosed == false) inventory.Close();
         if (myInfo?.IsClosed == false) myInfo.Close();
         if (AchieveOpen) achieve.Close();
+        if (MailOpen) mail.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -858,6 +861,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
+        if (MailKeys(k)) return true;
         return false;
     }
 
@@ -1354,6 +1358,7 @@ public partial class HudScene : Node, IUiStageHost
         var c = gameMenu = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable, NotifyCount = CommunityNotifyCount };
         c.ToggleDialog += GameMenuToggle;
         WatchAchieves();
+        WatchMails();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
@@ -1372,6 +1377,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x2711) ToggleMyInfo();      // "characterinfo" (gameeventmanagercli.cpp:486-494)
         else if (id == 0x4efa) ToggleLevelUpGuide();
         else if (id == 0x4f0b) ToggleGameDictionary();
+        else if (id == 0x4e49) ToggleMail();
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
     }
@@ -2104,6 +2110,7 @@ public partial class HudScene : Node, IUiStageHost
         SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
+        MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
         if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
@@ -2125,6 +2132,7 @@ public partial class HudScene : Node, IUiStageHost
             else ToggleGameDictionary();
         }
         if (openShot == "achieve" && frames == 200) ToggleAchieve();
+        if (openShot == "mail" && frames == 200) ToggleMail();
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)

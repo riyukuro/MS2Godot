@@ -33,12 +33,13 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// FUN_141938ae0 (uigamemenudialog.cpp:1318) for the ids of this file: 0x4e73 is CAchieveManager::GetRewardTotal(0), the
-    /// trophies whose reward can be taken. STILL-OPEN: the client leaves the count as it was when there is no local player
+    /// FUN_141938ae0 (uigamemenudialog.cpp:1318) for the community ids this HUD has: 0x4e49 is CUserMail::GetUnreadCount, the
+    /// unread mails; 0x4e73 is CAchieveManager::GetRewardTotal(0), the trophies whose reward can be taken. STILL-OPEN: the client leaves the count as it was when there is no local player
     /// (the early return before setNotifyCount); here the count is still set.
     /// </summary>
     int CommunityNotifyCount(int id) => id switch
     {
+        0x4e49 => Ms2Godot.Net.LiveSession.Instance?.Mails.Unread ?? 0,      // CUserMail::GetUnreadCount
         0x4e73 => Ms2Godot.Net.LiveSession.Instance?.Achieves.GetRewardTotal(0) ?? 0,
         _ => 0,
     };

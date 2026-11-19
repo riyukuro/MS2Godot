@@ -124,6 +124,15 @@ public partial class LiveSession : Node
     /// <summary>Raised when OnPacket refreshes the character window (UIMyInfoDialog::FUN_141a5a560).</summary>
     public event Action AchievesChanged;
 
+    /// <summary>CUserMail (g_143ab2ee0): the player's mails from the Mail packets (0x54, CSceneStateGame::OnMail); live
+    /// only. Until the HUD sets its texts the book resolves with an empty set (no system mail template).</summary>
+    public Ms2.Ui.MailBook Mails => mails ??= new Ms2.Ui.MailBook(Ms2.Ui.MailTexts.Empty()) { CharacterId = () => CharacterId };
+    Ms2.Ui.MailBook mails;
+    /// <summary>IsDialogClosed(0x4e49) == 0: the mail list is open (set by the HUD).</summary>
+    public Func<bool> MailListOpen = () => false;
+    /// <summary>The mail dialogs' sends (Mail 0x2D).</summary>
+    public void SendMail(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+
     /// <summary>The trophy data with its load order (GetListFromTable walks it).</summary>
     static Ms2.Ui.AchieveBook AchieveBook()
     {
@@ -581,6 +590,12 @@ public partial class LiveSession : Node
                     bool refresh = m != null && Achieves.Apply(m);
                     if (refresh) AchievesChanged?.Invoke();
                     GD.Print($"live: achieve {m?.GetType().Name ?? "other mode"} (tally {Achieves.Sum})");
+                }
+                else if (game.Is(p, Inbound.Mail))
+                {
+                    var m = MailMessage.Read(p.Reader());             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
+                    if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                    GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
                 }
                 else if (game.Is(p, Inbound.UserEnv))
                 {
