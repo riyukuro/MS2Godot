@@ -245,7 +245,8 @@ public sealed class TradeBook
         if ((ulong)characterId > 0) SendAsk(characterId);
     }
 
-    /// <summary>CanStartTrade @0x14185d8b0: the dialog open or a partner set: notice 0x841 (FUN_140f8ff40(0x841, 1, 1)), 0.</summary>
+    /// <summary>CanStartTrade @0x14185d8b0: the dialog open or a partner set: notice 0x841 (FUN_140f8ff40(0x841, 1, 1)), 0.
+    /// Its client callers (uiinventorydialog.cpp:1559, uigamemenudialog.cpp:1815) are not ported, so nothing calls it yet.</summary>
     public bool CanStartTrade()
     {
         if (Dialog() != null || (ulong)Partner > 0)

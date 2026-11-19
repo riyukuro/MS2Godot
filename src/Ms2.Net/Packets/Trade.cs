@@ -41,14 +41,19 @@ public sealed record TradeMessage(byte Code) {
     /// the id (FUN_140523c40 fails: the client closes the dialog, vfunc_67, :577).</summary>
     public EquipItem Item { get; init; }
 
+    /// <summary>OnTrade's read: every known code is read to its end (ExpectEnd), except code 8 with an item the item data
+    /// does not know, whose body is left unread as the client leaves it (it returns at :577); other codes are not read
+    /// past the code.</summary>
     public static TradeMessage Read(ByteReader r) {
         byte c = r.ReadByte();
+        TradeMessage m;
         switch (c) {
-            case 0: return new(c) { Name = r.ReadUnicodeString(), Id = r.ReadLong() };
-            case 1: return new(c) { Flag = r.ReadByte(), Name = r.ReadUnicodeString(), ItemId = r.ReadInt(), Level = (ushort)r.ReadInt() };
-            case 4: return new(c) { Name = r.ReadUnicodeString() };
-            case 5: return new(c) { Id = r.ReadLong() };
-            case 6: return new(c) { Flag = r.ReadByte() };
+            case 0: m = new(c) { Name = r.ReadUnicodeString(), Id = r.ReadLong() }; break;
+            case 1: m = new(c) { Flag = r.ReadByte(), Name = r.ReadUnicodeString(), ItemId = r.ReadInt(), Level = (ushort)r.ReadInt() }; break;
+            case 2: case 13: case 14: m = new(c); break;
+            case 4: m = new(c) { Name = r.ReadUnicodeString() }; break;
+            case 5: m = new(c) { Id = r.ReadLong() }; break;
+            case 6: m = new(c) { Flag = r.ReadByte() }; break;
             case 8: {
                 byte mine = r.ReadByte();
                 int id = r.ReadInt();
@@ -57,20 +62,24 @@ public sealed record TradeMessage(byte Code) {
                 int itemSlot = r.ReadInt();                // nCount (:569) -> SetSlot (:582), the table slot
                 int amount = r.ReadInt();                  // nSlotInItem (:570) -> SetCountClamped (:581)
                 int slot = r.ReadInt();                    // nSlot (:571) -> SetTradeSlotItem
-                EquipItem it = null;
-                if (ItemReader.Known == null || ItemReader.Known(id)) {
-                    it = ItemReader.ReadItem(r, id, rarity);
-                    it.Uid = uid;                          // SetItemUid after ReadFromStream (:580)
-                    it.Amount = amount;
-                    it.InventorySlot = (short)itemSlot;       // CItem's slot (GetSlot), here the trade table's
-                }
-                return new(c) { Flag = mine, Id = uid, TradeSlot = slot, Item = it };
+                if (ItemReader.Known != null && !ItemReader.Known(id))
+                    // FUN_140523c40 fails: the client closes the dialog and returns (:577) with the item body unread, so
+                    // there is no end to check here.
+                    return new(c) { Flag = mine, Id = uid, TradeSlot = slot };
+                var it = ItemReader.ReadItem(r, id, rarity);
+                it.Uid = uid;                              // SetItemUid after ReadFromStream (:580)
+                it.Amount = amount;
+                it.InventorySlot = (short)itemSlot;        // CItem's slot (GetSlot), here the trade table's
+                m = new(c) { Flag = mine, Id = uid, TradeSlot = slot, Item = it };
+                break;
             }
-            case 9: return new(c) { Flag = r.ReadByte(), TradeSlot = r.ReadInt(), Id = r.ReadLong() };
-            case 10: return new(c) { Flag = r.ReadByte(), Meso = r.ReadLong() };
-            case 11: case 12: return new(c) { Flag = r.ReadByte() };
+            case 9: m = new(c) { Flag = r.ReadByte(), TradeSlot = r.ReadInt(), Id = r.ReadLong() }; break;
+            case 10: m = new(c) { Flag = r.ReadByte(), Meso = r.ReadLong() }; break;
+            case 11: case 12: m = new(c) { Flag = r.ReadByte() }; break;
             default: return new(c);
         }
+        r.ExpectEnd($"Trade code {c}");
+        return m;
     }
 }
 

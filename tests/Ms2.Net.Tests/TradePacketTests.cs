@@ -69,4 +69,45 @@ public class TradePacketTests {
             Assert.That((m.Flag, m.Id, m.TradeSlot, m.Item, r.Available), Is.EqualTo(((byte)1, 11L, 3, (EquipItem)null, 0)));
         } finally { ItemReader.Known = keep; }
     }
+    static void Item8(ByteWriter w, int id, bool body) {
+        w.WriteByte(8); w.WriteByte(1); w.WriteInt(id); w.WriteLong(11); w.WriteInt(1); w.WriteInt(4); w.WriteInt(2); w.WriteInt(3);
+        if (body) ItemReader.WriteEmptyBody(w, 2);
+    }
+
+    [Test]
+    public void AKnownItemIsReadToTheEnd() {
+        var r = R(w => Item8(w, 20000001, true));
+        var m = TradeMessage.Read(r);
+        Assert.That((m.Item.Id, m.Item.Uid, m.Item.Amount, m.Item.InventorySlot, m.TradeSlot, r.Available),
+            Is.EqualTo((20000001, 11L, 2, (short)4, 3, 0)));
+    }
+
+    [Test]
+    public void EachKnownCodeChecksItsEnd() {
+        var codes = new (byte, Action<ByteWriter>)[] {
+            (0, w => { w.WriteUnicodeString("a"); w.WriteLong(1); }),
+            (1, w => { w.WriteByte(0); w.WriteUnicodeString("a"); w.WriteInt(1); w.WriteInt(1); }),
+            (2, _ => { }), (4, w => w.WriteUnicodeString("a")), (5, w => w.WriteLong(1)), (6, w => w.WriteByte(1)),
+            (8, w => { }), (9, w => { w.WriteByte(1); w.WriteInt(1); w.WriteLong(1); }), (10, w => { w.WriteByte(1); w.WriteLong(1); }),
+            (11, w => w.WriteByte(1)), (12, w => w.WriteByte(1)), (13, _ => { }), (14, _ => { }),
+        };
+        foreach (var (c, body) in codes) {
+            Action<ByteWriter> write = c == 8 ? w => Item8(w, 20000001, true) : w => { w.WriteByte(c); body(w); };
+            Assert.That(() => TradeMessage.Read(R(w => { write(w); w.WriteByte(0); })), Throws.TypeOf<PacketLayoutException>(), $"code {c}");
+        }
+        var keep = ItemReader.Known;
+        try {
+            ItemReader.Known = _ => false;
+            var r = R(w => Item8(w, 1, true));
+            Assert.That(TradeMessage.Read(r).Item, Is.Null);
+            Assert.That(r.Available, Is.GreaterThan(0), "an unknown item's body stays unread, with no end check");
+        } finally { ItemReader.Known = keep; }
+        Assert.That(TradeMessage.Read(R(w => { w.WriteByte(0x30); w.WriteByte(0); })).Code, Is.EqualTo((byte)0x30), "another code is not read on");
+    }
+
+    [Test]
+    public void MesoChecksItsEnd() {
+        Assert.That(MesoUpdate.Read(R(w => { w.WriteLong(5); w.WriteInt(2); })), Is.EqualTo(new MesoUpdate(5, 2)));
+        Assert.That(() => MesoUpdate.Read(R(w => { w.WriteLong(5); w.WriteInt(2); w.WriteByte(0); })), Throws.TypeOf<PacketLayoutException>());
+    }
 }

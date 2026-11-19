@@ -127,6 +127,8 @@ public static class NumberText
     /// ParseInt64W (commonfiles/packetlogger.cpp:171) = _wtoi64: optional blanks, sign, digits up to the first other
     /// character; 64-bit wrap on overflow; 0 when no digits.
     /// </summary>
+    // The CRT's _wtoi64 saturates at the 64-bit limits on overflow (errno ERANGE); this wraps instead, so the two differ
+    // only for inputs past the 64-bit range.
     public static long ParseInt64W(string s)
     {
         int i = 0;

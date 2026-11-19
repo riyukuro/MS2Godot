@@ -216,7 +216,7 @@ public sealed class PartyVote {
     }
 }
 
-/// <summary>A mode the party window does not use (search, votes, dungeon matching, notices); its body is not read.</summary>
+/// <summary>A mode the party window does not use (search, dungeon matching, notices); its body is not read.</summary>
 public sealed record PartyOtherMode(int OtherMode) : PartyMessage(OtherMode);
 
 /// <summary>One member of mode 9: the offline flag, the record (its counters are read past).</summary>

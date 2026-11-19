@@ -386,22 +386,6 @@ public sealed class GameTables
     /// <summary>Client::Constants TradeFeePercent (Define default 10: unit_1402ab440_constantsblocks.cpp:1009):
     /// GetTradeFeePercent (+0x5fc0).</summary>
     public int TradeFeePercent = 10;
-
-    /// <summary>
-    /// FUN_14087d150 (unit_14087d0c0_trademesolimits.cpp): the trade fee of <paramref name="meso"/>: 0 for 0; else
-    /// meso * TradeFeePercent / 100 (integer), then multiplied by (1 - rate) in float (__int64 *= float) and truncated,
-    /// never below 0. The rate is the fee reduction (UITradeDialogEx::UpdateFee: the equipment's ability rate 0x40).
-    /// </summary>
-    public long TradeFee(long meso, float rate)
-    {
-        if (meso == 0) return 0;
-        long fee = meso * TradeFeePercent / 100;
-        fee = (long)(fee * (1.0f - rate));
-        return fee < 0 ? 0 : fee;
-    }
-
-    /// <summary>FUN_14087d200 (unit_14087d0c0_trademesolimits.cpp): 0 is valid; else TradeMinMeso &lt;= meso &lt;= TradeMaxMeso.</summary>
-    public bool TradeMesoValid(long meso) => meso == 0 || (meso >= TradeMinMeso && meso <= TradeMaxMeso);
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>
