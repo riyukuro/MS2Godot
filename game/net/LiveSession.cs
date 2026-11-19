@@ -786,7 +786,7 @@ public partial class LiveSession : Node
             {
                 var m = GroupChatMessage.Read(p.Reader());   // CGroupChatManager::OnGroupChat (@0x14137f2f0, groupchatmanager.cpp:577)
                 GroupChats.Apply(m);
-            groupChatPackets++;
+                groupChatPackets++;
                 GD.Print($"live: group chat {m.GetType().Name} ({GroupChats.ChatCount} chats)");
             }
             else if (game.Is(p, Inbound.ItemInventory))

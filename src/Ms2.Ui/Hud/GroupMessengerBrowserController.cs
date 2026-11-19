@@ -142,12 +142,13 @@ public sealed class GroupMessengerBrowserController : UiController, IGroupMessen
     /// <summary>
     /// vfunc_15 (@0x141951470, :1623), each frame while shown and loaded: each line queued since (QueueTalkLog) with its item links
     /// coloured (ColorItemLinks) goes to its chat's window (AddChatMessage), and the list is refreshed for a minimized
-    /// one; then the queue is cleared.
+    /// one; then the queue is cleared. Run every frame: the queue is walked in place (no copy), as nothing in the loop queues
+    /// a line (only the GroupChat packets do, through <see cref="QueueTalkLog"/>).
     /// </summary>
     public void Process()
     {
-        if (!Loaded) return;
-        foreach (var (group, name, text) in pending.ToArray())
+        if (!Loaded || pending.Count == 0) return;
+        foreach (var (group, name, text) in pending)
         {
             string msg = ColorItemLinks(text);
             if (FindWindowByGroupId(group) is not { } w) continue;

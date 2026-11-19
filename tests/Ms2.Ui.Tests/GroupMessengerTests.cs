@@ -160,6 +160,29 @@ public class GroupMessengerTests
     }
 
     [Test]
+    public void TheFrameProcessCopiesNoQueue()
+    {
+        // Process runs every frame: past each line's own colouring and window lookup it allocates nothing (no copy of the queue)
+        var m = Model();
+        var b = Browser(m);
+        Load(b, m);
+        const int lines = 200;
+        void Queue() { for (int i = 0; i < lines; i++) b.QueueTalkLog(99, "Al", "hi"); }   // no window for chat 99
+        Queue(); b.Process();                                          // warm up
+        long start = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < lines; i++) { b.ColorItemLinks("hi"); b.FindWindowByGroupId(99); }
+        long colour = GC.GetAllocatedBytesForCurrentThread() - start;
+        Queue();
+        start = GC.GetAllocatedBytesForCurrentThread();
+        b.Process();
+        long process = GC.GetAllocatedBytesForCurrentThread() - start;
+        Assert.That(process, Is.LessThanOrEqualTo(colour + 256), $"Process {process} B, per-line work {colour} B");
+        start = GC.GetAllocatedBytesForCurrentThread();
+        b.Process();                                                   // an empty queue
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - start, Is.Zero);
+    }
+
+    [Test]
     public void TheFixtureWindowsLoadShowTheirLinesAndSendTheTypedLine()
     {
         var m = Model();
