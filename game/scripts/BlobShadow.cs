@@ -65,16 +65,16 @@ public partial class BlobShadow : MeshInstance3D
     // either, so a still owner re-casts only now and then (a moving owner every frame).
     PhysicsRayQueryParameters3D query;
     Vector3 lastPos = new(float.NaN, 0, 0);
-    int idleFrames;
-    const int RecastEvery = 90;
+    float idleTime;
+    const float RecastEvery = 1.5f;       // seconds (90 frames at 60 fps) a still owner keeps its last cast
     const float MovedSq = 1f;
 
     public override void _Process(double delta)
     {
         var owner = GetParent<Node3D>();
         var pos = owner.GlobalPosition;
-        if (pos.DistanceSquaredTo(lastPos) < MovedSq && ++idleFrames < RecastEvery) return;
-        idleFrames = 0;
+        if (pos.DistanceSquaredTo(lastPos) < MovedSq && (idleTime += (float)delta) < RecastEvery) return;
+        idleTime = 0;
         lastPos = pos;
         var from = pos + Vector3.Up * 60;
         if (query == null)

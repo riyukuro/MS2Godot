@@ -229,7 +229,8 @@ public partial class Player
     }
 
     /// <summary>RideeInterpolator each frame, after the mount's pose: the rider on the seat.</summary>
-    public override void _Process(double delta)
+    /// <summary>The rider sits on the mount's seat after the frame's step (the end of Player._Process).</summary>
+    void SeatOnMount()
     {
         if (Mount == null) return;
         Visual.GlobalTransform = Mount.Seat();

@@ -21,7 +21,7 @@ public partial class MouseMove : Node
     {
         this.player = player;
         this.camera = camera;
-        ProcessPhysicsPriority = -5;      // before the player reads its input
+        ProcessPriority = -5;      // before the player reads its input (Player.ProcessPriority -1)
     }
 
     public override void _UnhandledInput(InputEvent e)
@@ -53,7 +53,7 @@ public partial class MouseMove : Node
 
     public bool Moving => dir != Vector3.Zero;
 
-    public override void _PhysicsProcess(double delta)
+    public override void _Process(double delta)
     {
         if (!Moving) { player.MouseInput = Vector2.Zero; return; }
         if (MoveInput.Read().Move != Vector2.Zero) { Stop(); return; }

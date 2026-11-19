@@ -560,8 +560,11 @@ public partial class Field : Node3D
             if (Mathf.Abs(camVel) >= 5f)
             {
                 camVelActive = true;
-                if (!camBlocked) camVel *= 0.9f;
-                var pos = placedEye.Value + (look - placedEye.Value).Normalized() * camVel;
+                // the client's pass decays m_84 by 0.9 and moves the eye by m_84 once a frame, at its 60 fps: kept per
+                // 60 fps frame here, so the zoom's coast and speed per second are the same at any frame rate
+                float frames = dt > 0 ? FrameRate.Frames((float)dt) : 1f;
+                if (!camBlocked) camVel *= Mathf.Pow(0.9f, frames);
+                var pos = placedEye.Value + (look - placedEye.Value).Normalized() * camVel * frames;
                 if (Planar(prevLook ?? look, look) > Planar(prevEye ?? pos, pos)) passes++;
                 float maxDist = cam.Distance + PlayerHeight;
                 bool outside = camDist < MinCameraDistance || camDist > maxDist;
@@ -657,8 +660,11 @@ public partial class Field : Node3D
         float speed = Mathf.Abs(looseUpdate) * dt;
         if (looseNow != looseFinal)
             looseNow = Mathf.Abs(looseNow - looseFinal) < speed ? looseFinal : looseNow + (looseNow > looseFinal ? -speed : speed);
-        float t = dt * dist * looseNow + blend;
-        if (t > 1f) return (shownCam = placed).Value;
+        // vfunc_39 closes t = dt * distance * loose (+ the blend) of the gap each frame: at the client's 60 fps that is
+        // t60 = distance * loose / 60 + blend a frame, taken here as the same share per second at any frame rate
+        float t60 = dist * looseNow / FrameRate.Reference + blend;
+        if (t60 > 1f) return (shownCam = placed).Value;
+        float t = FrameRate.Ease(t60, dt);
         var view = (shown.Basis.Z + t * (placed.Basis.Z - shown.Basis.Z)).Normalized();
         var up = (shown.Basis.Y + t * (placed.Basis.Y - shown.Basis.Y)).Normalized();
         var side = up.Cross(view).Normalized();

@@ -618,7 +618,6 @@ public partial class FieldContents : Node3D
     void PlanShots()
     {
         DirAccess.MakeDirRecursiveAbsolute(shotDir);
-        player.ProcessPhysicsPriority = 10;      // after Field (keyboard input) and this node (scripted input)
         player.ScriptDriven = true;
         int leg = Travel.ShotLeg++;
         if (leg == 0 && emoticonNpcs != null) { PlanEmoticons(); return; }
@@ -796,7 +795,6 @@ public partial class FieldContents : Node3D
     void PlanLiveTalk()
     {
         DirAccess.MakeDirRecursiveAbsolute(shotDir);
-        player.ProcessPhysicsPriority = 10;
         Travel.ShotLeg++;
         var live = Ms2Godot.Net.LiveSession.Instance;
         FieldNpcs.Placed Find(int id) => live == null ? null : Pick(live.TalkNpcs, id);

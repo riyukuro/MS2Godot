@@ -332,12 +332,12 @@ public partial class ReplayField : Field
             // glide toward the latest recorded position (records come every ~50-100 ms); snap when far (teleport, field change)
             var d = a.Target - a.Root.Position;
             if (d.Length() > 400) a.Root.Position = a.Target;
-            else a.Root.Position += d * Mathf.Min(1f, dt * 12f);
+            else a.Root.Position += d * FrameRate.Ease(12f / FrameRate.Reference, dt);   // the share dt * 12 gave at 60 fps, per second at any rate
             float want = Mathf.DegToRad(a.TargetYaw);
             float cur = a.Visual.Rotation.Y;
-            a.Visual.Rotation = new Vector3(0, Mathf.LerpAngle(cur, want, Mathf.Min(1f, dt * 14f)), 0);
+            a.Visual.Rotation = new Vector3(0, Mathf.LerpAngle(cur, want, FrameRate.Ease(14f / FrameRate.Reference, dt)), 0);
             float sp = (a.Root.Position - a.LastPos).Length() / Mathf.Max(dt, 1e-4f);
-            a.Speed = Mathf.Lerp(a.Speed, sp, Mathf.Min(1f, dt * 8f));
+            a.Speed = Mathf.Lerp(a.Speed, sp, FrameRate.Ease(8f / FrameRate.Reference, dt));
             a.LastPos = a.Root.Position;
             if (a.Current == "skill")
             {
@@ -369,7 +369,7 @@ public partial class ReplayField : Field
         else if (actors.Count > 0) focus = actors.Values.Aggregate(Vector3.Zero, (s, a) => s + a.Root.Position) / actors.Count;
         else return;
         focus += new Vector3(0, 60, 0);
-        camFocus = camInit ? camFocus.Lerp(focus, Mathf.Min(1f, dt * 4f)) : focus; camInit = true;
+        camFocus = camInit ? camFocus.Lerp(focus, FrameRate.Ease(4f / FrameRate.Reference, dt)) : focus; camInit = true;
         var back = new Vector3(Mathf.Sin(yaw) * Mathf.Cos(pitch), Mathf.Sin(pitch), Mathf.Cos(yaw) * Mathf.Cos(pitch));
         camera.LookAtFromPosition(camFocus + back * dist, camFocus, Vector3.Up);
     }

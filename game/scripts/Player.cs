@@ -112,7 +112,17 @@ public partial class Player : CharacterBody3D
         return p;
     }
 
-    public override void _Ready() => MoveProof.Attach(this);
+    /// <summary>The longest frame the body steps at once: a hitch keeps its time (a 200 ms frame moves 200 ms), only a
+    /// field load's frame is cut.</summary>
+    const double MaxStepDt = 0.25;
+
+    public override void _Ready()
+    {
+        // PCBase::vfunc_53 (pcbase.cpp:3733): the client steps the PC once per drawn frame with that frame's time, so the
+        // body moves in _Process, before the camera (Field, priority 0) and the name tags / bars that read its position
+        ProcessPriority = -1;
+        MoveProof.Attach(this);
+    }
 
     /// <summary>Back to StateIdle with no motion (after a teleport).</summary>
     public void ResetMotion()
@@ -158,9 +168,17 @@ public partial class Player : CharacterBody3D
         return (right * input.X + fwd * input.Y).Normalized();
     }
 
-    public override void _PhysicsProcess(double delta)
+    public override void _Process(double delta)
     {
-        float dt = (float)delta;
+        Step(delta);
+        SeatOnMount();
+    }
+
+    void Step(double delta)
+    {
+        // WorldService::OnTick (worldservice_1.cpp:9679-9703) passes the scheduler's game-time delta with no clamp in the
+        // client source; only a frame longer than a quarter second (a field load) is cut to it
+        float dt = (float)Math.Min(delta, MaxStepDt);
         if (!ScriptDriven)
         {
             var k = MoveInput.Read();

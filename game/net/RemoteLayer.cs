@@ -206,11 +206,11 @@ public sealed partial class RemoteLayer : Node3D
         {
             var d = a.Target - a.Root.Position;
             if (d.Length() > 400) a.Root.Position = a.Target;
-            else a.Root.Position += d * Mathf.Min(1f, dt * 12f);
+            else a.Root.Position += d * FrameRate.Ease(12f / FrameRate.Reference, dt);   // the share dt * 12 gave at 60 fps, per second at any rate
             float cur = a.Visual.Rotation.Y;
-            a.Visual.Rotation = new Vector3(0, Mathf.LerpAngle(cur, Mathf.DegToRad(a.TargetYaw), Mathf.Min(1f, dt * 14f)), 0);
+            a.Visual.Rotation = new Vector3(0, Mathf.LerpAngle(cur, Mathf.DegToRad(a.TargetYaw), FrameRate.Ease(14f / FrameRate.Reference, dt)), 0);
             float sp = (a.Root.Position - a.LastPos).Length() / Mathf.Max(dt, 1e-4f);
-            a.Speed = Mathf.Lerp(a.Speed, sp, Mathf.Min(1f, dt * 8f));
+            a.Speed = Mathf.Lerp(a.Speed, sp, FrameRate.Ease(8f / FrameRate.Reference, dt));
             a.LastPos = a.Root.Position;
             string anim = a.Speed < 25 ? "idle" : a.Speed < 220 ? "walk" : "run";
             if (anim != a.Current) { a.Anim.Play(anim, 0.15); a.Current = anim; }

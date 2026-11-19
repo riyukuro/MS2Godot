@@ -43,8 +43,9 @@ public partial class MoveProof : Node
             var s = l.Trim();
             if (s.Length == 0 || s.StartsWith('#')) continue;
             steps.Enqueue(s.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+            names.Add(s);
         }
-        ProcessPhysicsPriority = -10;      // before the player
+        ProcessPriority = -10;      // before the player (Player.ProcessPriority -1)
     }
 
     public static void Attach(Player p)
@@ -59,8 +60,97 @@ public partial class MoveProof : Node
         if (dir == null) return;
         DirAccess.MakeDirRecursiveAbsolute(dir);
         var lines = script != null ? System.IO.File.ReadAllLines(script) : DefaultScript.Split('\n');
-        p.AddChild(new MoveProof(p, dir, lines) { Name = "MoveProof" });
+        var proof = new MoveProof(p, dir, lines) { Name = "MoveProof" };
+        p.AddChild(proof);
+        string trace = null;
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--move-trace") trace = args[i + 1];
+        if (trace != null) p.AddChild(proof.trace = new MoveTrace(p, proof, trace) { Name = "MoveTrace" });
     }
+
+    MoveTrace trace;
+    int stepIndex, uneven;
+    string stepName = "";
+
+    /// <summary>
+    /// `--move-trace FILE`: after the camera and everything else that frame (priority 1000), one line per drawn frame of
+    /// the frame time, the script step, the state, whether input is held, the body's position (MS2 axes), its facing and
+    /// its point on the screen. At the end it prints, per script step, the time, the ground distance and its rate, the
+    /// rise and drop, the time off the ground and the turn (with the time it took), and for the walk frames (input held,
+    /// Walk, on the ground) the jitter signature of a fixed-tick body under a per-frame camera: frames that moved under a
+    /// tenth of the median speed's share of their frame time, and those followed by one over 1.5 shares (a still frame,
+    /// then a double step).
+    /// </summary>
+    public partial class MoveTrace : Node
+    {
+        readonly Player player;
+        readonly MoveProof proof;
+        readonly string path;
+        readonly System.Text.StringBuilder sb = new("dt step state input x y z yaw sx sy\n");
+        bool has;
+        Vector3 prev;
+        readonly List<(float d, float dt)> walk = new();
+        readonly List<string> steps = new();
+        int step = -1;
+        float time, dist, z0, zMax, zMin, air, yaw0, yawPrev, turnTime;
+
+        public MoveTrace(Player player, MoveProof proof, string path) { this.player = player; this.proof = proof; this.path = path; ProcessPriority = 1000; }
+
+        static float Ms2Yaw(Player p) => Mathf.RadToDeg(p.Visual.Rotation.Y);
+
+        public override void _Process(double delta)
+        {
+            var cam = GetViewport().GetCamera3D();
+            var pos = player.GlobalPosition;
+            var screen = cam != null ? cam.UnprojectPosition(pos) : Vector2.Zero;
+            bool input = player.Input2 != Vector2.Zero;
+            float dt = (float)delta, yaw = Ms2Yaw(player);
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            sb.Append(string.Format(ci, "{0:F6} {1} {2} {3} {4:F3} {5:F3} {6:F3} {7:F2} {8:F3} {9:F3}\n", delta, proof.stepIndex, player.State, input ? 1 : 0, pos.X, -pos.Z, pos.Y, yaw, screen.X, screen.Y));
+            if (proof.stepIndex != step) { EndStep(); step = proof.stepIndex; time = dist = air = turnTime = 0; z0 = zMax = zMin = pos.Y; yaw0 = yawPrev = yaw; }
+            else if (has)
+            {
+                var d = pos - prev; d.Y = 0;
+                time += dt;
+                dist += d.Length();
+                zMax = Mathf.Max(zMax, pos.Y); zMin = Mathf.Min(zMin, pos.Y);
+                if (player.State is Player.MoveState.Jump or Player.MoveState.Fall) air += dt;
+                if (Mathf.Abs(Mathf.AngleDifference(Mathf.DegToRad(yawPrev), Mathf.DegToRad(yaw))) > 1e-4f) turnTime = time;
+                if (input && player.State == Player.MoveState.Walk && player.Grounded) walk.Add((d.Length(), dt));
+            }
+            yawPrev = yaw;
+            prev = pos; has = true;
+        }
+
+        void EndStep()
+        {
+            if (step < 0) return;
+            float turn = Mathf.RadToDeg(Mathf.AngleDifference(Mathf.DegToRad(yaw0), Mathf.DegToRad(yawPrev)));
+            steps.Add(string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "[move] step {0} {1}: time {2:0.000} dist {3:0.0} rate {4:0.0}/s rise {5:0.0} drop {6:0.0} air {7:0.000} turn {8:0.0} in {9:0.000}",
+                step, proof.StepName(step), time, dist, time > 0 ? dist / time : 0, zMax - z0, z0 - zMin, air, turn, turnTime));
+        }
+
+        public void Finish()
+        {
+            EndStep();
+            System.IO.File.WriteAllText(path, sb.ToString());
+            foreach (var l in steps) GD.Print(l);
+            var rates = walk.Where(w => w.dt > 0).Select(w => w.d / w.dt).OrderBy(r => r).ToList();
+            float med = rates.Count > 0 ? rates[rates.Count / 2] : 0;
+            int still = 0, pairs = 0;
+            for (int i = 0; i < walk.Count; i++)
+            {
+                float share = med * walk[i].dt;
+                if (walk[i].d >= 0.1f * share) continue;
+                still++;
+                if (i + 1 < walk.Count && walk[i + 1].d > 1.5f * med * walk[i + 1].dt) pairs++;
+            }
+            GD.Print($"[move] trace walk frames {walk.Count}, median speed {med:0.0}/s, still frames {still}, still-then-double {pairs}, frame time min/max {(walk.Count > 0 ? walk.Min(w => w.dt) * 1000 : 0):0.0}/{(walk.Count > 0 ? walk.Max(w => w.dt) * 1000 : 0):0.0} ms");
+        }
+    }
+
+    string StepName(int i) => i < names.Count ? names[i] : "end";
+    readonly List<string> names = new();
 
     // Tria (02000001_tw_tria): south of the spawn point a flowerbed, then the plaza edge over the water; a ladder
     // column at (2100, -3900) from z 2700 to 3600.
@@ -140,9 +230,9 @@ hold 0.8
         return new Vector2(w.Dot(right), w.Dot(fwd));
     }
 
-    public override void _PhysicsProcess(double delta)
+    void Step(double delta, bool sameFrame = false)
     {
-        frame++;
+        if (!sameFrame) frame++;
         player.ScriptDriven = true;
         if (player.State != lastState)
         {
@@ -152,11 +242,13 @@ hold 0.8
         if (settle >= 0) return;
         if (steps.Count == 0)
         {
-            GD.Print($"[move] done; last fall height {player.LastFallHeight:0}");
+            GD.Print($"[move] done at {Ms2Pos()}; last fall height {player.LastFallHeight:0}");
+            trace?.Finish();
             GetTree().Quit(0);
             return;
         }
         var s = steps.Peek();
+        int queued = steps.Count;
         float dt = (float)delta;
         switch (s[0])
         {
@@ -183,11 +275,27 @@ hold 0.8
                     : player.State.ToString() == s[1] || t >= secs;
                 if (s[0] == "until" && t >= secs && player.State.ToString() != s[1])
                     GD.Print($"[move] timeout waiting for {s[1]} (state {player.State})");
-                if (done) { player.JumpHeld = false; Next(); }
+                if (done)
+                {
+                    player.JumpHeld = false;
+                    // a hold keeps the script's clock: the frame's time past its end counts toward the next step, so the
+                    // steps start on the same script times (to a frame) at any frame rate
+                    float over = s[0] == "hold" ? t - secs : 0f;
+                    Next();
+                    t = over;
+                }
                 break;
             }
             case "shot":
                 settle = 2;
+                break;
+            case "hitch":                      // one long frame: this frame takes MS more (the next frame's time holds it)
+                OS.DelayMsec(int.Parse(s[1]));
+                Next();
+                break;
+            case "uneven":                     // every other frame takes MS more (0: off)
+                uneven = int.Parse(s[1]);
+                Next();
                 break;
             case "dash":
                 player.StartDash();
@@ -232,12 +340,16 @@ hold 0.8
                 Next();
                 break;
         }
+        // a command that takes no time (tp, hitch, uneven, dash, click, ...) lets the next step run in the same frame
+        if (steps.Count < queued && s[0] is not ("hold" or "until" or "shot")) Step(0, true);
     }
 
     public override void _Process(double delta)
     {
+        Step(delta);                       // the script's input for this frame's player step
+        if (uneven > 0 && Engine.GetProcessFrames() % 2 == 0) OS.DelayMsec(uneven);   // per drawn frame
         if (settle < 0 || --settle > 0) return;
-        var s = steps.Dequeue();
+        var s = steps.Dequeue(); stepIndex++;
         var path = System.IO.Path.Combine(dir, s[1] + ".png");
         GetViewport().GetTexture().GetImage().SavePng(path);
         GD.Print($"[move] shot {s[1]} state {player.State} anim {player.CurrentAnim} at {Ms2Pos()} ground {player.GroundDistance:0} water {player.OnWater}");
@@ -275,7 +387,7 @@ hold 0.8
         GD.Print($"[move] walls: {n} found");
     }
 
-    void Next() { steps.Dequeue(); t = 0; }
+    void Next() { steps.Dequeue(); t = 0; stepIndex++; }
 
     string Ms2Pos()
     {
