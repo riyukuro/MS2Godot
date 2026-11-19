@@ -93,7 +93,7 @@ public sealed partial class FrameProbe : Node
             string[] top;
             lock (gate)
             {
-                top = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(bytes, k => k.Value), 12), k => $"  sites {k.Value / 1024} KB {k.Key}"));
+                top = System.Linq.Enumerable.ToArray(System.Linq.Enumerable.Select(System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(bytes, k => k.Value), 12), k => $"  sites {k.Value / 1024} KB {k.Key}")); // perf-ok: env-gated probe, once per window
                 bytes.Clear();
             }
             foreach (var l in top) GD.Print(l);
