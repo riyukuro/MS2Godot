@@ -259,6 +259,141 @@ public class GuideEventTests
     }
 
     [Test]
+    public void InventoryAndSkillArrowsResolveTheirKinds()
+    {
+        // UIGuideEventArrowDialog::vfunc_2's kind resolvers (uiguideeventarrow.cpp:569-581): the skill slot's grid
+        // math (GetSkillSlotPosition :677-700), the inventory item's first-match walk with the scroll page's window
+        // (GetInventoryItemPosition :717-752, IsItemMatchingKind :703-714) and the tab bar's button place
+        // (GetInventoryTabPosition :755-778) — over fake roots, so the client's own formulas are the assert.
+        Model();
+        var c = new GuideEventController
+        {
+            Strings = GuideStrings.Parse(packs, "en"),
+            DialogOfName = n => n switch
+            {
+                "MainPlayerInfo" => new FakeDialog(new FakeNode(100, 200)),
+                "InventoryDialog" => new FakeDialog(new FakeNode(300, 400)),
+                _ => null,
+            },
+            // the kinds 2-6 ask the inventory by its id (Unk_BreakDialog<UIInventoryDialog>(0x4e2d))
+            DialogOfId = id => id == 0x4e2d ? new FakeDialog(new FakeNode(300, 400)) : null,
+            // CKeyTable::FindQuickSlotBySkillAndItemUid: the lesson's skill sits in slot 5, another skill in none
+            SkillQuickSlot = skill => skill == 10900031 ? 5 : -1,
+            InventoryOf = () => new GuideInventory
+            {
+                // the equip tab's items by slot: an expired match first, then the weapon (kind 5's), a type-2 item,
+                // a UGC cube item, and an item of the type the kind 3 arrow asks
+                Items = new[]
+                {
+                    new GuideInventoryItem(0, 15400274, 1, 40, false, false, false),
+                    new GuideInventoryItem(6, 15000224, 1, 40, false, false, true),
+                    new GuideInventoryItem(12, 11200005, 2, 51, true, false, true),
+                    new GuideInventoryItem(18, 11300006, 3, 52, true, true, true),
+                    new GuideInventoryItem(24, 11400007, 3, 53, false, false, true),
+                },
+                ScrollPage = 0,
+            },
+            InventoryTabOf = name => name == "equip" ? ((double)14, 64, 0, 31) : null,
+        };
+        var h = Load(c);
+        Ms2.Avm2.Flash.AsContainer Panel()
+        {
+            var root = (Ms2.Avm2.Flash.AsContainer)h.Entity;
+            return root.Children.FirstOrDefault(k => string.IsNullOrEmpty(k.InstanceName)) as Ms2.Avm2.Flash.AsContainer;
+        }
+        static void Place(GuideEventController c, int id, double x, double y, string because)
+        {
+            var p = c.ArrowPosition(id);
+            Assert.That(p, Is.Not.Null, because);
+            Assert.That(p.Value.X, Is.EqualTo(x).Within(0.5), because);
+            Assert.That(p.Value.Y, Is.EqualTo(y).Within(0.5), because);
+        }
+
+        // the skill lesson's row (guide_tutorial_10012000.xml, event 10012052): the arrow at the quick slot of the
+        // skill 10900031 — slot 5 of the 4-7 range, slot % 4 = 1: baseX = -68 + 0x44 + 0x20
+        c.AddArrow(new GuideDialogArrow(10012052, new(-4, 0, 0), 2, 2, 10012053, 0, "MainPlayerInfo", -1,
+            Array.Empty<string>(), Array.Empty<string>(), "myInfoSkillID", 10900031));
+        c.Process();
+        Place(c, 10012052, 100 - 68 + 0x44 + 0x20 + 57 - 4, 200 + 103, "the grid place of slot 5 plus the row's offset");
+        Assert.That(Rt.ToBoolean(h.Get(Panel().Children.Single(), "visible")), Is.True, "the movie draws it");
+
+        // a skill no quick slot holds hides it (FindQuickSlotBySkillAndItemUid's -1)
+        c.ReleaseArrow(10012052);
+        c.AddArrow(new GuideDialogArrow(1, new(0, 0, 0), 2, 2, 10012053, 0, "MainPlayerInfo", -1,
+            Array.Empty<string>(), Array.Empty<string>(), "myInfoSkillID", 10200001));
+        c.Process();
+        Assert.That(c.ArrowPosition(1), Is.Null, "no slot: hidden");
+        c.ReleaseArrow(1);
+
+        // the equip lesson's row (guide_tutorial_100.xml, event 210): the arrow at the first valid item of the kind —
+        // the expired one is skipped, the weapon's slot 6 is col 1, row 1 of page 0's window
+        c.AddArrow(new GuideDialogArrow(214, new(110, 50, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            Array.Empty<string>(), new[] { "InventoryDialog", "MyInfoDialog" }, "inventoryItemID", 15000224));
+        c.Process();
+        Place(c, 214, 300 + 0x3f + 17 + 110, 400 + 0x3e + 99 + 50, "col 1 of the page, plus the row's offset");
+        Assert.That(Rt.ToBoolean(h.Get(Panel().Children.Single(), "visible")), Is.True, "the movie draws it");
+        c.ReleaseArrow(214);
+
+        // kind 3 matches the data's type: the first valid item of type 3 is the UGC cube one (slot 18, col 1 row 3)
+        c.AddArrow(new GuideDialogArrow(215, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            Array.Empty<string>(), Array.Empty<string>(), "inventoryItemType", 3));
+        c.Process();
+        Place(c, 215, 300 + 0x3f + 17, 400 + 3 * 0x3e + 99, "the first valid item of the type");
+        c.ReleaseArrow(215);
+
+        // kind 4 matches the icon code; kind 2 a cube mesh item without a UGC id (the UGC one fails, the slot 12 one matches)
+        c.AddArrow(new GuideDialogArrow(216, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            Array.Empty<string>(), Array.Empty<string>(), "inventoryIconType", 51));
+        c.Process();
+        Place(c, 216, 300 + 0x3f + 17, 400 + 2 * 0x3e + 99, "the icon's item is row 2");
+        c.ReleaseArrow(216);
+        c.AddArrow(new GuideDialogArrow(217, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            Array.Empty<string>(), Array.Empty<string>(), "inventoryDesignItem", 0));
+        c.Process();
+        Place(c, 217, 300 + 0x3f + 17, 400 + 2 * 0x3e + 99, "the UGC cube item does not match kind 2");
+        c.ReleaseArrow(217);
+
+        // an item outside the scroll page's window fails the lookup — the client does not look past the first match
+        c.InventoryOf = () => new GuideInventory { Items = new[] { new GuideInventoryItem(40, 15000224, 1, 40, false, false, true) }, ScrollPage = 0 };
+        c.AddArrow(new GuideDialogArrow(218, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            Array.Empty<string>(), Array.Empty<string>(), "inventoryItemID", 15000224));
+        c.Process();
+        Assert.That(c.ArrowPosition(218), Is.Null, "the first match is off the page");
+        c.ReleaseArrow(218);
+
+        // the gates hide a resolved kind too (vfunc_2's, before the switch)
+        c.InventoryOf = null;
+        c.DialogArrowBlocked = () => true;
+        c.AddArrow(new GuideDialogArrow(219, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            new[] { "equip" }, Array.Empty<string>(), "inventoryTab", 0));
+        c.Process();
+        Assert.That(c.ArrowPosition(219), Is.Null, "the cinematic gate");
+        c.ReleaseArrow(219);
+        c.DialogArrowBlocked = () => false;
+
+        // the tab arrow (event 210's lesson row shape): the tab bar's and the equip button's places sum from the root
+        c.AddArrow(new GuideDialogArrow(220, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            new[] { "equip" }, Array.Empty<string>(), "inventoryTab", 0));
+        c.Process();
+        Place(c, 220, 300 + 14 + 0, 400 + 64 + 31, "the tab's button resolves");
+        Assert.That(Rt.ToBoolean(h.Get(Panel().Children.Single(), "visible")), Is.True, "the movie draws it");
+        c.ReleaseArrow(220);
+
+        // a name no tab of the inventory holds, and the inventory not there at all, hide the arrow
+        c.AddArrow(new GuideDialogArrow(221, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            new[] { "nosuchtab" }, Array.Empty<string>(), "inventoryTab", 0));
+        c.Process();
+        Assert.That(c.ArrowPosition(221), Is.Null, "no such tab");
+        c.ReleaseArrow(221);
+        c.DialogOfId = null;
+        c.AddArrow(new GuideDialogArrow(222, new(0, 0, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1,
+            new[] { "equip" }, Array.Empty<string>(), "inventoryTab", 0));
+        c.Process();
+        Assert.That(c.ArrowPosition(222), Is.Null, "no inventory: hidden");
+        c.ReleaseArrow(222);
+    }
+
+    [Test]
     public void EscClosesTheTooltipsBeforeTheGuidesTextTip()
     {
         // FUN_1418fcb70's order (uichatballoon.cpp:524-532): with a tooltip open and a guide text tip showing, the
@@ -594,6 +729,14 @@ public class GuideEventTests
         readonly GuideNode root;
         public FakeMenuDialog(GuideNode root) => this.root = root;
         public override string TypeName => "GameMenuDialog";
+        public override bool Hidden => false;
+        public override GuideNode Root => root;
+    }
+
+    sealed class FakeDialog : GuideDialog
+    {
+        readonly GuideNode root;
+        public FakeDialog(GuideNode root) => this.root = root;
         public override bool Hidden => false;
         public override GuideNode Root => root;
     }

@@ -278,7 +278,7 @@ public interface IGuideEventPane
 public record GuideArrow(int EntityId, Vector3 Offset, int Direction, int Align, int TextId);
 
 /// <summary>An arrow at a dialog's control (UIArrowDialog). <see cref="PosKind"/> is customPosType's text
-/// (SetKindFromName; STILL-OPEN until the arrow controller).</summary>
+/// (SetKindFromName).</summary>
 public record GuideDialogArrow(int EntityId, Vector3 Offset, int Direction, int Align, int TextId, int DialogId, string DialogName,
     int ChildIndex, IReadOnlyList<string> ChildPath, IReadOnlyList<string> FocusDialogs, string PosKind, int PosValue)
     : GuideArrow(EntityId, Offset, Direction, Align, TextId);
@@ -287,6 +287,22 @@ public record GuideDialogArrow(int EntityId, Vector3 Offset, int Direction, int 
 /// and half width, or <see cref="Fail"/> when the movie's getChildObjectPos gave no object — the client's whole
 /// lookup fails then (:920-921).</summary>
 public readonly record struct GuideMenuMoved(bool Fail, double X, double Y, double HalfWidth);
+
+/// <summary>The inventory as the item and tab arrows ask it (UIInventoryDialog): the selected tab's items in slot
+/// order with what the kinds match on, and the movie's scroll page. The HUD builds it from its open inventory.</summary>
+public sealed class GuideInventory
+{
+    /// <summary>GetItemsInCategory(GetSelectedTab) (inventory.cpp:986): the tab's items by slot; the arrow walks them
+    /// for the first valid one its kind matches.</summary>
+    public IReadOnlyList<GuideInventoryItem> Items;
+    /// <summary>GetScrollPosition (uiinventorydialog.cpp:1125): the movie's slot list scroll — the first visible row.</summary>
+    public int ScrollPage;
+}
+
+/// <summary>One item of the selected tab as IsItemMatchingKind (@0x14195f600) reads it: the item id, the data's type
+/// and icon code, a cube texture mesh without a UGC id, and the item's validity (CItem FUN_140528980, item.cpp:1717
+/// without its pet, maid and score exceptions).</summary>
+public readonly record struct GuideInventoryItem(int Slot, int ItemId, int Type, int IconCode, bool CubeMesh, bool UgcId, bool Valid);
 
 /// <summary>The side NPC talk popup's content (SideNpcTalk): kind 0 talk, 1 movie, 2 cutin, 3 talkbottom.</summary>
 public record GuideSideTalk(int Kind, string Usm, IReadOnlyList<int> ScriptIds, string Illust, long Duration, string Voice, string Sound);

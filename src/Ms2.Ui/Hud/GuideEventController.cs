@@ -272,6 +272,18 @@ public sealed class GuideEventController : UiController, IGuideEventPane
     /// <see cref="GameMenuController.MenuChildPos"/>.
     /// </summary>
     public Func<string, GuideNode, GuideMenuMoved?> GameMenuChildPos;
+    /// <summary>CKeyTable::FindQuickSlotBySkillAndItemUid(skillId, 0) (keytable.cpp:1584): the current quick slot
+    /// page's slot of a skill — 0 with no page, -1 when none holds it. The kind 1 arrows read it; the HUD wires its
+    /// key table, null keeps them hidden.</summary>
+    public Func<int, int> SkillQuickSlot;
+    /// <summary>UIInventoryDialog as the item arrows ask it (uiguideeventarrow.cpp:717-752): the selected tab's items
+    /// in slot order with what IsItemMatchingKind (@0x14195f600) matches on, and the movie's scroll page
+    /// (GetScrollPosition, uiinventorydialog.cpp:1125). Null when the inventory is not there.</summary>
+    public Func<GuideInventory> InventoryOf;
+    /// <summary>The inventory tab bar's and its button's places of a name (uiguideeventarrow.cpp:755-778: GetTabBar,
+    /// FindTabIndexByName + GetButtonAt): (the bar's x and y, the button's x and y). Null when the inventory holds
+    /// no tab of the name.</summary>
+    public Func<string, (double TabsX, double TabsY, double ButtonX, double ButtonY)?> InventoryTabOf;
     /// <summary>The loop effect while an arrow shows (UpdateArrowSound): the effect's name plays and a handle comes
     /// back (CEffectService FUN_1411a49c0). STILL-OPEN: no effect service is wired anywhere yet (the Effect action's
     /// own hook is the same gap), so the host leaves these null and the arrows are silent.</summary>
@@ -483,9 +495,9 @@ public sealed class GuideEventController : UiController, IGuideEventPane
     /// <summary>
     /// UIGuideEventArrowDialog (@0x14195e040): an arrow at a dialog's control. The kind is customPosType's
     /// (<see cref="ArrowKindOf"/>); a kind's own lookups fail while their dialog is not there, as the client's do.
-    /// STILL-OPEN: the kinds past 0 (the skill slot 1, the inventory 2-6, the minimap 7-8, the house marks, the party
-    /// camera, the messenger, the cube palette), whose position sources are not ported; and the focus dialog gate
-    /// (FUN_141960510, the m_scenes list — no table fills it, so it always passes).
+    /// STILL-OPEN: the kinds past the port's sources (the minimap marks 7-8, the house mark, the party camera, the
+    /// messenger, the cube palette) and the focus dialog gate (FUN_141960510, the m_scenes list — no table fills it,
+    /// so it always passes).
     /// </summary>
     sealed class PaneDialogArrow : PaneArrow
     {
@@ -497,8 +509,14 @@ public sealed class GuideEventController : UiController, IGuideEventPane
         {
             if (Pane.DialogArrowBlocked?.Invoke() == true) return null;
             var kind = ArrowKindOf(dialog.PosKind);
-            if (kind != 0) return null;                 // the kinds past the dialog paths (STILL-OPEN above)
-            var p = TargetPosition();
+            var p = kind switch
+            {
+                0 => TargetPosition(),
+                1 => SkillSlotPosition(),
+                >= 2 and <= 5 => InventoryItemPosition(kind),
+                6 => InventoryTabPosition(),
+                _ => null,      // the minimap, house, party, messenger and cube kinds (STILL-OPEN above)
+            };
             if (p == null) return null;
             return (p.Value.X + dialog.Offset.X, p.Value.Y + dialog.Offset.Y);
         }
@@ -509,13 +527,20 @@ public sealed class GuideEventController : UiController, IGuideEventPane
         {
             var d = dialog.DialogId != 0 ? Pane.DialogOfId?.Invoke(dialog.DialogId) : null;
             d ??= Pane.DialogOfName?.Invoke(dialog.DialogName);
-            if (d == null) return null;
-            var root = d.Root;
+            var root = d?.Root;
             if (root == null) return null;
             // dynamic_cast&lt;UIGameMenuDialog*&gt;: the type name the port's registry matches
             if (string.Equals(d.TypeName, "GameMenuDialog", StringComparison.OrdinalIgnoreCase))
                 return GameMenuPathPosition(root);
             return ElementPathPosition(root);
+        }
+
+        /// <summary>The dialog's movie root (GuideUIById / GuideUIByName, uiguideeventarrow.cpp:629-647).</summary>
+        GuideNode DialogRoot()
+        {
+            var d = dialog.DialogId != 0 ? Pane.DialogOfId?.Invoke(dialog.DialogId) : null;
+            d ??= Pane.DialogOfName?.Invoke(dialog.DialogName);
+            return d?.Root;
         }
 
         /// <summary>
@@ -567,5 +592,80 @@ public sealed class GuideEventController : UiController, IGuideEventPane
             if (last != null) x += last.WidthCeil / 2;
             return (x, y);
         }
+
+        /// <summary>
+        /// GetSkillSlotPosition (@0x14195e3f0, uiguideeventarrow.cpp:677-700): MainPlayerInfo's root plus the quick
+        /// slot's grid place — the slot's range base, slot % 4 * 0x44 + 0x20, then +57 / +103. The skill's slot is
+        /// CKeyTable::FindQuickSlotBySkillAndItemUid(m_param, 0).
+        /// </summary>
+        (double X, double Y)? SkillSlotPosition()
+        {
+            // GuideUIByName2("MainPlayerInfo"), the by-name lookup the port's registry answers
+            var root = Pane.DialogOfName?.Invoke("MainPlayerInfo")?.Root;
+            if (root == null) return null;
+            int slot = Pane.SkillQuickSlot?.Invoke(dialog.PosValue) ?? -1;
+            if (slot == -1) return null;
+            double baseX, baseY;
+            if (slot >= 0 && slot <= 3) { baseX = -88; baseY = -68; }
+            else if (slot > 3 && slot <= 7) { baseX = -68; baseY = 0; }
+            else if (slot > 7 && slot <= 11) { baseX = 380; baseY = -68; }
+            else { baseX = 400; baseY = 0; }
+            baseX += slot % 4 * 0x44 + 0x20;
+            var (x, y, _) = root.Position;
+            return (x + baseX + 57, y + baseY + 103);
+        }
+
+        /// <summary>
+        /// GetInventoryItemPosition (@0x14195e6e0, uiguideeventarrow.cpp:717-752): the inventory movie's root plus the
+        /// first valid item of the selected tab the kind matches — its slot must fall in the scroll page's window
+        /// (start = page * 6, end = (page + 6) * 6; a match outside it fails the lookup, the client does not look
+        /// further), col * 0x3f + 17 and row * 0x3e + 99.
+        /// </summary>
+        (double X, double Y)? InventoryItemPosition(int kind)
+        {
+            var root = InventoryRoot();
+            if (root == null || Pane.InventoryOf?.Invoke() is not { } inv) return null;
+            foreach (var item in inv.Items)
+            {
+                if (!item.Valid) continue;                                   // CItem::FUN_140528980
+                if (!ItemMatchesKind(item, kind)) continue;                 // IsItemMatchingKind @0x14195f600
+                int start = inv.ScrollPage * 6;
+                if (item.Slot < start || item.Slot >= start + 6 * 6) return null;
+                int col = (item.Slot - start) % 6 + 1;
+                int row = (item.Slot - start) / 6;
+                var (x, y, _) = root.Position;
+                return (x + col * 0x3f + 17, y + row * 0x3e + 99);
+            }
+            return null;
+        }
+
+        /// <summary>IsItemMatchingKind (@0x14195f600): kind 2 a cube mesh item without a UGC id, 3 the data's type,
+        /// 4 the data's icon code, 5 the item id.</summary>
+        bool ItemMatchesKind(GuideInventoryItem item, int kind) => kind switch
+        {
+            2 => item.CubeMesh && !item.UgcId,
+            3 => item.Type == dialog.PosValue,
+            4 => item.IconCode == dialog.PosValue,
+            5 => item.ItemId == dialog.PosValue,
+            _ => false,
+        };
+
+        /// <summary>GetInventoryTabPosition (@0x14195ead0, uiguideeventarrow.cpp:755-778): the inventory movie's root
+        /// plus the tab bar's and its button's places of the path's tab name (FindTabIndexByName + GetButtonAt, an
+        /// empty path fails as the client's does).</summary>
+        (double X, double Y)? InventoryTabPosition()
+        {
+            var root = InventoryRoot();
+            if (root == null || dialog.ChildPath.Count == 0) return null;
+            var place = Pane.InventoryTabOf?.Invoke(dialog.ChildPath[0]);
+            if (place == null) return null;
+            var (x, y, _) = root.Position;
+            var p = place.Value;
+            return (x + p.TabsX + p.ButtonX, y + p.TabsY + p.ButtonY);
+        }
+
+        /// <summary>Unk_BreakDialog&lt;UIInventoryDialog&gt;(0x4e2d) — the inventory dialog by its id, whose movie root
+        /// the item and tab arrows sum from.</summary>
+        GuideNode InventoryRoot() => Pane.DialogOfId?.Invoke(0x4e2d)?.Root;
     }
 }

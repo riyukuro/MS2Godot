@@ -70,7 +70,7 @@ public partial class HudScene : Node, IUiStageHost
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve: the shot opens that window, as I, P or Y does
     string guideShot;                       // --uigen-guide summary:TEXTID|tip:TEXTID|tutorial:TEXTID: the guide pane shows that text
-    int arrowShot;                          // --uigen-arrow 170|200|60540: the shot points that game menu arrow (the tables' rows)
+    int arrowShot;                          // --uigen-arrow 170|200|60540|210|10012052: the shot points that table arrow (the rows' event ids)
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
@@ -604,10 +604,16 @@ public partial class HudScene : Node, IUiStageHost
             // the arrows' position sources (the client's singletons, uiguideeventarrow.cpp): the dialog registry, the
             // camera projection and the gates
             DialogOfName = FindGuideDialog,
+            DialogOfId = FindGuideDialogOf,
             ArrowBlocked = GuidePopupOrBoxOpen,
             DialogArrowBlocked = GuideCinematicOrBox,
             ProjectWorld = ProjectGuideWorld,
             GameMenuChildPos = GameMenuChildPos,
+            // CKeyTable::FindQuickSlotBySkillAndItemUid over the session's key table (the kind 1 arrows)
+            SkillQuickSlot = skill => hudModel.ServerKeys?.FindQuickSlotBySkillAndItemUid(skill, 0) ?? -1,
+            // the inventory's own state the kind 2-6 arrows ask
+            InventoryOf = GuideInventoryOf,
+            InventoryTabOf = GuideInventoryTabOf,
         };
         guideEvent = new MovieDialog(assets, GuideEvent, NewModel(), GetWindow().Size);
         ui.AddChild(guideEvent);
@@ -621,8 +627,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// CUIService::FindObjectByName (the guide's dialog lookups): the open movies' controllers by their type name. The
     /// HUD holds one movie per dialog, as the client holds one dialog object per UI class, and its always-on movies
-    /// (the game menu, the minimap) answer like the client's. By id: the guide's tables always name the dialog too, so
-    /// the id lookup is not wired (STILL-OPEN if an arrow kind needs it).
+    /// (the game menu, the minimap, the main player info) answer like the client's.
     /// </summary>
     public Ms2.Ui.Guide.GuideDialog FindGuideDialog(string name)
     {
@@ -650,6 +655,64 @@ public partial class HudScene : Node, IUiStageHost
     bool GuidePopupOrBoxOpen() =>
         Ms2.Ui.Hud.DialogGates.AnyDialogShown(MovieDialog.Live)
         || (popupMenu != null && !popupMenu.IsClosed) || MessageBoxLayer.Instance?.Shown == true;
+
+    /// <summary>
+    /// CUIService::FindObject(id) as the guide's arrows use it (Unk_BreakDialog&lt;UIInventoryDialog&gt;(0x4e2d),
+    /// uiguideeventarrow.cpp:719): the id's type name. The other ids the guide's tables name this way come with the
+    /// arrow kinds that ask them (the minimap's marks, the party camera, the messenger, the cube palette).
+    /// </summary>
+    public Ms2.Ui.Guide.GuideDialog FindGuideDialogOf(int id) =>
+        id == 0x4e2d ? FindGuideDialog("InventoryDialog") : null;
+
+    /// <summary>
+    /// The inventory the item arrows ask (UIInventoryDialog: GetItemsInCategory(GetSelectedTab) with each item's
+    /// slot and what IsItemMatchingKind matches on, and the movie's scroll page, GetScrollPosition
+    /// uiinventorydialog.cpp:1125). Null while the inventory is closed, as the client's dialog lookup fails then.
+    /// </summary>
+    Ms2.Ui.Guide.GuideInventory GuideInventoryOf()
+    {
+        var inv = inventory;
+        if (inv == null || inventoryMovie == null || inv.IsClosed) return null;
+        long now = Ms2Godot.Net.LiveSession.Instance?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var items = new List<Ms2.Ui.Guide.GuideInventoryItem>();
+        foreach (var cell in inv.View.Cells(inv.View.Tab))          // the tab's cells by slot, the client's array order
+        {
+            if (cell.Empty) continue;
+            var it = inv.View.FindByUid(cell.Uid);
+            if (it == null) continue;
+            var d = hudModel.Tables.Items.Get(it.Id);
+            items.Add(new Ms2.Ui.Guide.GuideInventoryItem(it.InventorySlot, it.Id, d?.Type ?? 0, d?.IconCode ?? 0,
+                d?.HasCubeTextureMesh ?? false, it is { HasUgc: true, Ugc.Uid: not 0 },
+                !(it.ExpiryTime > 0 && it.ExpiryTime <= now)));      // FUN_140528980: not expired
+        }
+        var host = inventoryMovie.Host;
+        var list = host.Child("m_itemBagEx");
+        int page = list == null ? 0 : (int)Rt.ToNumber(host.Get(list, "scrollPosition"));
+        return new Ms2.Ui.Guide.GuideInventory { Items = items, ScrollPage = page };
+    }
+
+    /// <summary>
+    /// The inventory tab bar's and its button's places of a name (GetTabBar + FindTabIndexByName +
+    /// GetButtonAt, uiguideeventarrow.cpp:755-778): the bar is the movie's m_tab, the name's index the tab list's
+    /// (uiinventorydialog.cpp:1305 — the client's m_1f0 pairs). Null while the inventory is closed or the name is no
+    /// tab of it.
+    /// </summary>
+    (double TabsX, double TabsY, double ButtonX, double ButtonY)? GuideInventoryTabOf(string name)
+    {
+        var inv = inventory;
+        if (inv == null || inventoryMovie == null || inv.IsClosed) return null;
+        int index = -1;
+        for (int i = 0; i < inv.Tabs.Count; i++)
+            if (string.Equals(inv.Tabs[i].Name, name, StringComparison.Ordinal)) { index = i; break; }
+        if (index < 0) return null;
+        var host = inventoryMovie.Host;
+        var bar = host.Child("m_tab");
+        if (bar == null) return null;
+        var button = host.Invoke(bar, "getButtonAt", index);
+        if (button == null || Rt.IsNullish(button)) return null;
+        return (Rt.ToNumber(host.Get(bar, "x")), Rt.ToNumber(host.Get(bar, "y")),
+            Rt.ToNumber(host.Get(button, "x")), Rt.ToNumber(host.Get(button, "y")));
+    }
 
     /// <summary>UIGuideEventArrowDialog::vfunc_2's gates (uiguideeventarrow.cpp:569-575): the cinematic sub scene or a
     /// shown message box.</summary>
@@ -2836,14 +2899,19 @@ public partial class HudScene : Node, IUiStageHost
         }
         if (arrowShot != 0 && frames == 200)
         {
-            // --uigen-arrow: the tables' own uiArrowDialog rows at the game menu — the inventory button and the
-            // character info one of guide_tutorial_100.xml (events 170 and 200) and the menu group of
-            // guide_mapleguide.xml (event 60540, its text is the mouse-over lesson)
+            // --uigen-arrow: the tables' own uiArrowDialog rows — the game menu's inventory button and character info
+            // one (guide_tutorial_100.xml events 170 and 200) and the menu group (guide_mapleguide.xml event 60540);
+            // the equip lesson's weapon in the open inventory (event 210's keyboard row) and the skill lesson's
+            // quick slot (guide_tutorial_10012000.xml event 10012052's row)
             Ms2.Ui.Guide.GuideDialogArrow a = arrowShot switch
             {
                 170 => new(170, new(-80, 23, 0), 2, 1, 2, 0, "GameMenuDialog", -1, new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0),
                 200 => new(200, new(-80, 23, 0), 1, 1, 3, 0, "GameMenuDialog", -1, new[] { "m_menus", "characterinfo", "m_button" }, Array.Empty<string>(), "", 0),
                 60540 => new(60540, new(-20, 0, 0), 2, 1, 5, 0, "GameMenuDialog", -1, new[] { "m_menus", "charactergroup" }, Array.Empty<string>(), "", 0),
+                210 => new(214, new(110, 50, 0), 0, 1, 3191, 0x4e2d, "InventoryDialog", -1, Array.Empty<string>(),
+                    new[] { "InventoryDialog", "MyInfoDialog" }, "inventoryItemID", 15000224),
+                10012052 => new(10012052, new(-4, 0, 0), 2, 2, 10012053, 0, "MainPlayerInfo", -1, Array.Empty<string>(),
+                    Array.Empty<string>(), "myInfoSkillID", 10900031),
                 _ => null,
             };
             if (a != null)
@@ -2852,6 +2920,24 @@ public partial class HudScene : Node, IUiStageHost
                 // the tutorial's scene for the two buttons: the pointer over the character group's button opens its
                 // dropdown, so the moved entry's place resolves (the mouse-over lesson of event 60540's text)
                 if (arrowShot is 170 or 200) HoverGroupDropdown();
+                // the equip lesson's scene: the character's bag holds the starter weapon and the inventory is open
+                if (arrowShot == 210)
+                {
+                    var kinds = new Ms2Godot.Net.ItemKinds(assets.Packs);
+                    OfflineInventory();
+                    offlineBook.Apply(new Ms2.Net.Packets.ItemMessage.LoadTab(kinds.TabOf(15000224),
+                        new[] { new Ms2.Net.Packets.EquipItem { Id = 15000224, Uid = 5001, InventorySlot = 1, Amount = 1 } }));
+                    OpenInventory();
+                }
+                // the skill lesson's scene: the lesson's skill sits in the current quick slot page's first slot
+                if (arrowShot == 10012052)
+                {
+                    var keys = new Ms2.Net.Packets.ServerKeyTable();
+                    keys.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(0, true, null, 0,
+                        new[] { new[] { (0, new Ms2.Net.Packets.QuickSlotEntry(10900031, 0, 0)) } })));
+                    hudModel.ServerKeys = keys;
+                    playerInfo.RebindSlots();
+                }
             }
         }
         if (skillShot != null && frames == 200)

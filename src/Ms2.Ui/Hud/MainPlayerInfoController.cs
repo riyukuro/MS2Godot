@@ -13,6 +13,10 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip
     /// <summary>UIMainPlayerInfo is a UIBuiltInDialog (uimainplayerinfo.h:59): the ctor's flag 0 (vfunc_56).</summary>
     public override bool AlwaysOn => true;
 
+    /// <summary>GetTypeName @0x1419eea30 (uimainplayerinfo.cpp:415): "MainPlayerInfo". The guide's lookups find the
+    /// panel by it (GuideUIByName2, uiguideeventarrow.cpp:679).</summary>
+    public override string TypeName => "MainPlayerInfo";
+
     /// <summary>CGameOption game pad state m_bExpand, and the pad kind (2 = no key captions).</summary>
     public bool SlotExpand;
     public bool PadShowsKeys = true;
