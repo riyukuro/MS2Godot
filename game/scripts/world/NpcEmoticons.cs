@@ -134,6 +134,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
     /// (optimizer.cpp:381), the folder GameOption.xml is in (GetOptionFolder "../../Config/" @0x1412755b0,
     /// unit_141274d10_uihelpers.cpp:401-404; GetOptionFilePath gameoption.cpp:1700), not the client's root.
     /// </summary>
+    /// <summary>The PC model node's name the balloon anchor reads every frame.</summary>
+    static readonly NodePath ModelPath = "Model";
+
     static readonly Lazy<bool> ProgressiveLoading = new(() =>
         Ms2.Formats.Options.Optimization.ProgressiveLoading(System.IO.Path.GetDirectoryName(GameOptions.FilePath)));
 
@@ -302,7 +305,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         {
             var dummies = EffectDummyTable.Load(assets.Packs).Pc(p.Gender);
             now[s.SelfObjectId] = (me.CharacterId, me.Name ?? "", me.Picture ?? "", p,
-                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>("Model"), p.RootName) ?? p.GlobalPosition, true, s.Me.Gems,
+                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>(ModelPath), p.RootName) ?? p.GlobalPosition, true, s.Me.Gems,
                 s.Me.PremiumTime, me.PcBangGrade, s.Me.WeddingState);
         }
         foreach (var r in s.FieldPcs)
@@ -340,7 +343,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 };
                 x.Gems.CanUse = g => g.Record is { } rec && PcItemUse.CanUseItem(rec, tables?.Items.Get(rec.Id), use);
                 // PCGemEquip::ReadFromStream of the PC's packet, then FUN_141270610 at its model's load (PC::vfunc_12)
-                x.Gems.Set((v.Gems ?? Array.Empty<Ms2.Net.Packets.EquipItem>()).Select(g => ((int)g.GemType, new GemEquip.Gem(g.Id, g.GemId) { Record = g })));
+                x.Gems.Set((v.Gems ?? Array.Empty<Ms2.Net.Packets.EquipItem>()).Select(g => ((int)g.GemType, new GemEquip.Gem(g.Id, g.GemId) { Record = g })));  // perf-ok: once per PC balloon made, not per frame
                 x.Gems.ApplyAll();
             }
             x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor;
