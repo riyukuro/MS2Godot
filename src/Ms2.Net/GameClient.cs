@@ -123,20 +123,31 @@ public sealed class GameClient {
 
     /// <summary>Connects to the game endpoint (host overrides the address in the packet when given), answers RequestKey and reads up to RequestFieldEnter.
     /// The key is account id, then the token as the two i32 the client writes (WriteLoginEnter, classobject.cpp:260-266: token1 is the low half), the same 8 bytes as a little-endian u64.</summary>
-    public static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(LoginToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false) {
+    public static Task<(GameEntry entry, TcpTransport game)> EnterAsync(LoginToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false) {
         if (!go.Ok) throw new InvalidOperationException("LoginToGame error " + go.Error + " " + go.Message);
+        return EnterAsync(host ?? go.Address.ToString(), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor);
+    }
+
+    /// <summary>The same entry after a GameToGame (CSceneStateMove::OnUpdate @0x14174cb70 connects to the stored address, OnRequestKey
+    /// answers with the stored tokens, OnMoveResult 0 goes to the game state, networkservice.cpp:899-902).</summary>
+    public static Task<(GameEntry entry, TcpTransport game)> EnterAsync(GameToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false) {
+        if (!go.Ok) throw new InvalidOperationException("GameToGame error " + go.Error);
+        return EnterAsync(host ?? go.Address.ToString(), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor);
+    }
+
+    static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(string address, ushort port, ulong token, long accountId, byte[] machineId, int timeoutMs, CancellationToken ct, bool requestGlobalFactor) {
         var game = new TcpTransport();
         try {
-            await game.ConnectAsync(host ?? go.Address.ToString(), go.Port, ct);
+            await game.ConnectAsync(address, port, ct);
             ServerEnter enter = null; SyncNumber sync = null; var early = new List<Ms2.Net.Wire.RawPacket>(); int beforeEnter = -1; bool keyed = false;
             while (true) {
                 var p = await NextAsync(game, timeoutMs, ct);
                 if (game.OpOf(p) is Inbound gop) switch (gop) {
                     case Inbound.RequestKey:
-                        await game.SendAsync(new ResponseKey(accountId, go.Token, machineId), ct); break;
+                        await game.SendAsync(new ResponseKey(accountId, token, machineId), ct); break;
                     case Inbound.MoveResult: {
                         var m = MoveResult.Read(p.Reader());
-                        if (m.Error != 0) throw new InvalidDataException("game server refused the key, move error " + m.Error);
+                        if (m.Error != 0) throw new MoveRefusedException(m.Error);
                         keyed = true;
                         break;
                     }
@@ -156,4 +167,9 @@ public sealed class GameClient {
             }
         } catch { game.Dispose(); throw; }
     }
+}
+
+/// <summary>The game server's MoveResult with an error after the key (OnMoveResult: the client shows GetFieldMoveErrorMessage's box).</summary>
+public sealed class MoveRefusedException(byte error) : IOException("game server refused the key, move error " + error) {
+    public byte Error { get; } = error;
 }

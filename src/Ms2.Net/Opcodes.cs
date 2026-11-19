@@ -17,6 +17,7 @@ public enum Inbound : ushort {
     CharMaxCount = 0xB8,
     MoveResult = 0x0D,
     LoginToGame = 0x0E,
+    GameToGame = 0x10,      // RecvOp (opcodes.h:24): CNetworkService::OnGameToGame
     ResponseTimeSync = 0x11,
     RequestHeartbeat = 0x12,
     RequestClientTickSync = 0x13,

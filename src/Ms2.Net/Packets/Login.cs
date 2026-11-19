@@ -82,6 +82,26 @@ public sealed record MoveResult(byte Error) {
     public static MoveResult Read(ByteReader r) { var p = new MoveResult(r.ReadByte()); r.ExpectEnd("MoveResult"); return p; }
 }
 
+/// <summary>
+/// Inbound 0x10, the move to another game server (CNetworkService::OnGameToGame @0x14153be30, networkservice.cpp:942): u8
+/// result; on 0, i32 token1, i32 token2, u32 ip, u16 port, i32 field, u8 kind. The client stores them (DAT_143ab284c/2850 the
+/// tokens, DAT_143ab2a48 the address as FUN_14028bd10 makes it, the same 4 bytes as LoginToGame's, DAT_143ab2848 the port,
+/// DAT_143ab2890 the field, DAT_143ab284a the kind, which only RestoreServerAddress reads, networkservice.cpp:585: 0x11 lets a
+/// failed reconnect go back to the saved address). An error returns with nothing more read (networkservice.cpp:955).
+/// </summary>
+public sealed record GameToGame(byte Error, int Token1, int Token2, byte[] Ip, ushort Port, int FieldId, byte Kind) {
+    public bool Ok => Error == 0;
+    public System.Net.IPAddress Address => Ip == null ? null : new System.Net.IPAddress(Ip);
+    /// <summary>The two tokens as ResponseKey carries them (WriteLoginEnter: token1 is the low half).</summary>
+    public ulong Token => (uint) Token1 | (ulong) (uint) Token2 << 32;
+    public static GameToGame Read(ByteReader r) {
+        byte err = r.ReadByte();
+        if (err != 0) return new GameToGame(err, 0, 0, null, 0, 0, 0);
+        var p = new GameToGame(0, r.ReadInt(), r.ReadInt(), r.ReadBytes(4), r.ReadUShort(), r.ReadInt(), r.ReadByte());
+        r.ExpectEnd("GameToGame"); return p;
+    }
+}
+
 /// <summary>Inbound 0x12 and 0x13: one i32, to be echoed.</summary>
 public sealed record TickRequest(int Tick) {
     public static TickRequest Read(ByteReader r) { var p = new TickRequest(r.ReadInt()); r.ExpectEnd("TickRequest"); return p; }

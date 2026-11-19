@@ -194,7 +194,8 @@ public class GameClientTests {
         var s = (await accept).GetStream();
         await s.WriteAsync(srv.HelloFrame);
         await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(3)));
-        Assert.ThrowsAsync<InvalidDataException>(async () => await enter.WaitAsync(TimeSpan.FromSeconds(10)));
+        var refused = Assert.ThrowsAsync<MoveRefusedException>(async () => await enter.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.That(refused!.Error, Is.EqualTo(3));   // the code for GetFieldMoveErrorMessage's box
         l.Stop();
     }
 
