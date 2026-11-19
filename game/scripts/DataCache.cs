@@ -61,7 +61,8 @@ public static class DataCache
                 var dir = System.IO.Path.Combine(UiCode.RootPath, "data-" + key[..16].ToLowerInvariant());
                 System.IO.Directory.CreateDirectory(dir);
                 var inputs = System.IO.Path.Combine(dir, InputsFile);
-                if (!System.IO.File.Exists(inputs)) System.IO.File.WriteAllLines(inputs, hashes);
+                // a list missing or cut short (a process stopped while writing it before it was written this way) is written again
+                if (!(InputsOf(dir) is { } had && had.SequenceEqual(hashes))) WriteInputs(inputs, hashes);
                 s = new CacheStore(dir);
             }
             catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException)
@@ -70,6 +71,23 @@ public static class DataCache
             }
             storeData = dataDir;
             return store = s;
+        }
+    }
+
+    /// <summary>Writes the folder's archive hashes whole or not at all (a temporary file renamed into place): a folder whose
+    /// list is cut short would read as made for other archives and be pruned with its tables.</summary>
+    internal static void WriteInputs(string path, string[] hashes)
+    {
+        var tmp = path + ".tmp" + System.Environment.ProcessId;
+        try
+        {
+            System.IO.File.WriteAllLines(tmp, hashes);
+            System.IO.File.Move(tmp, path, true);
+        }
+        catch
+        {
+            try { System.IO.File.Delete(tmp); } catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { }
+            throw;
         }
     }
 
