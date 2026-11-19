@@ -62,7 +62,7 @@ public sealed partial class NpcGroundSpace : Node3D
             return null;
         s.ray.Query.From = from;
         s.ray.Query.To = to;
-        var hit = PhysicsServer3D.SpaceGetDirectState(s.space).IntersectRay(s.ray.Query);
-        return hit.Count == 0 ? null : (Vector3)hit["position"];
+        using var hit = PhysicsServer3D.SpaceGetDirectState(s.space).IntersectRay(s.ray.Query);
+        return hit.Count == 0 ? null : (Vector3)hit[PhysicsKeys.Position];
     }
 }

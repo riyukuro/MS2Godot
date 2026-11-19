@@ -279,7 +279,8 @@ public sealed class NxController
             q.Motion = Vector3.Zero;
             q.Margin = Mathf.Max(unsafeD - t, 0) + 0.01f;
             var ri = space.GetRestInfo(q);
-            if (ri.Count == 0) break;
+            if (ri.Count == 0) { ri.Dispose(); break; }
+            info?.Dispose();
             info = ri;
             if (shapeNode.Shape is not CapsuleShape3D cap) break;
             var n0 = (Vector3)ri[PhysicsKeys.Normal];
@@ -301,6 +302,7 @@ public sealed class NxController
         var rid = (Rid)info[PhysicsKeys.Rid];
         int shapeIdx = (int)info[PhysicsKeys.Shape];
         var collider = GodotObject.InstanceFromId((ulong)info[PhysicsKeys.ColliderId]);
+        info.Dispose();
         bool mesh = PhysicsServer3D.ShapeGetType(PhysicsServer3D.BodyGetShape(rid, shapeIdx)) == PhysicsServer3D.ShapeType.ConcavePolygon;
         var face = mesh ? FaceNormal(rid, shapeIdx, point, dir) ?? normal : normal;
         return new Contact(safe, normal, collider, mesh, face, shapeIdx);

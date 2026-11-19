@@ -264,8 +264,8 @@ hold 0.8
                 var from = stand + new Vector3(0, 90, 0);
                 var rq = PhysicsRayQueryParameters3D.Create(from, from + FieldBuilder.ToGodotPoint(new Vec3(-dx, -dy, 0)) * 58f);
                 rq.Exclude = new Godot.Collections.Array<Rid> { player.GetRid() };
-                var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(rq);
-                if (hit.Count == 0 || Mathf.Abs(((Vector3)hit["position"] - from).Length() - 35f) > 3f) continue;
+                using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(rq);
+                if (hit.Count == 0 || Mathf.Abs(((Vector3)hit[PhysicsKeys.Position] - from).Length() - 35f) > 3f) continue;
                 var at = new Transform3D(Basis.Identity, stand + new Vector3(0, 2, 0));
                 if (player.TestMove(at, Vector3.Up * 0.1f) || !player.TestMove(at, Vector3.Down * 10f)) continue;   // room, and a floor
                 GD.Print($"[move] wall face {face} cube ({p.X:0}, {p.Y:0}, {p.Z:0}) {up} high; stand at ({p.X + dx * 110:0}, {p.Y + dy * 110:0}, {p.Z + 5:0})");

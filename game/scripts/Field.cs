@@ -702,27 +702,35 @@ public partial class Field : Node3D
         var skip = player.GetRid();
         foreach (var from in p)
         {
-            var hit = space.IntersectRay(occRay.Set(from, look, skip));
+            using var hit = space.IntersectRay(occRay.Set(from, look, skip));
             if (hit.Count == 0)
             {
-                if (space.IntersectRay(occRay.Set(look, from, skip)).Count > 0) return true;
+                using var behind = space.IntersectRay(occRay.Set(look, from, skip));
+                if (behind.Count > 0) return true;
             }
             else
             {
                 // the back cast from the hit runs the whole corner-to-target length, past the corner
                 // (targetcameramode.cpp:768-772, homecameramode.cpp:622-626)
-                var at = (Vector3)hit["position"];
+                var at = (Vector3)hit[PhysicsKeys.Position];
                 var dir = (from - look).Normalized();
                 var to = at + dir * from.DistanceTo(look);
                 var back = space.IntersectRay(occRay.Set(at, to, skip));
-                // The back cast starts on the face the front ray hit, and Godot reports that shape again at distance 0 (and
-                // a grid neighbour sharing the face too). PhysX ignores a box whose ray starts inside it, on the face included
-                // ("Rays starting from inside the box are ignored", NxIntersectionSegmentBox.h:81); the restored client's
-                // view at such a spot does not change either. So a hit at the start point does not count, whatever shape it
-                // is: the cast goes on from just past it, and any shape behind still blocks.
-                if (back.Count > 0 && ((Vector3)back["position"]).DistanceTo(at) < StartEps)
-                    back = space.IntersectRay(occRay.Set(at + dir * StartEps, to, skip));
-                if (back.Count > 0) return true;
+                try
+                {
+                    // The back cast starts on the face the front ray hit, and Godot reports that shape again at distance 0 (and
+                    // a grid neighbour sharing the face too). PhysX ignores a box whose ray starts inside it, on the face included
+                    // ("Rays starting from inside the box are ignored", NxIntersectionSegmentBox.h:81); the restored client's
+                    // view at such a spot does not change either. So a hit at the start point does not count, whatever shape it
+                    // is: the cast goes on from just past it, and any shape behind still blocks.
+                    if (back.Count > 0 && ((Vector3)back[PhysicsKeys.Position]).DistanceTo(at) < StartEps)
+                    {
+                        back.Dispose();
+                        back = space.IntersectRay(occRay.Set(at + dir * StartEps, to, skip));
+                    }
+                    if (back.Count > 0) return true;
+                }
+                finally { back.Dispose(); }
             }
         }
         return false;

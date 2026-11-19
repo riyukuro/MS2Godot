@@ -30,10 +30,10 @@ public partial class MouseMove : Node
         if (Ms2.Ui.FieldMoveCover.Up) return;       // no field to click under a move's loading screen
         var from = camera.ProjectRayOrigin(mb.Position);
         var to = from + camera.ProjectRayNormal(mb.Position) * 20000f;
-        var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));
+        using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));
         if (hit.Count == 0) return;
-        var p = (Vector3)hit["position"];
-        var n = (Vector3)hit["normal"];
+        var p = (Vector3)hit[PhysicsKeys.Position];
+        var n = (Vector3)hit[PhysicsKeys.Normal];
         if (player.Cubes.CubeAt(p - n) == null) return;     // only cube blocks are picked
         Go(p);
     }
@@ -72,8 +72,8 @@ public partial class MouseMove : Node
         {
             probeT = 0;
             var from = player.GlobalPosition + new Vector3(0, MoveConfig.MouseProbeUp, 0);
-            var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, from + dir * MoveConfig.MouseProbeLen, player.GetRid()));
-            if (hit.Count > 0 && player.Cubes.CubeAt((Vector3)hit["position"] - (Vector3)hit["normal"]) != null) { Stop(); return; }
+            using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, from + dir * MoveConfig.MouseProbeLen, player.GetRid()));
+            if (hit.Count > 0 && player.Cubes.CubeAt((Vector3)hit[PhysicsKeys.Position] - (Vector3)hit[PhysicsKeys.Normal]) != null) { Stop(); return; }
         }
         // the world direction as camera relative input
         var fwd = new Vector3(-Mathf.Sin(player.CameraYaw), 0, -Mathf.Cos(player.CameraYaw));

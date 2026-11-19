@@ -79,16 +79,16 @@ public partial class LobbyFieldScene : Field
         var space = GetWorld3D().DirectSpaceState;
         for (int i = 0; i < 16; i++)
         {
-            var hit = space.IntersectRay(q);
+            using var hit = space.IntersectRay(q);
             if (hit.Count == 0) return;
-            var col = hit["collider"].AsGodotObject();
+            var col = hit[PhysicsKeys.Collider].AsGodotObject();
             int group = col is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
             if ((GroundGroups & (1u << group)) != 0)
             {
-                preview.GlobalPosition = (Vector3)hit["position"] + Vector3.Up;
+                preview.GlobalPosition = (Vector3)hit[PhysicsKeys.Position] + Vector3.Up;
                 return;
             }
-            exclude.Add((Rid)hit["rid"]);
+            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
             q.Exclude = exclude;
         }
     }

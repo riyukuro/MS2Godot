@@ -101,12 +101,12 @@ public partial class Player
         var space = GetWorld3D().DirectSpaceState;
         for (int i = 0; i < 16; i++)
         {
-            var hit = space.IntersectRay(q);
+            using var hit = space.IntersectRay(q);
             if (hit.Count == 0) return null;
             var col = hit[PhysicsKeys.Collider].AsGodotObject() as Node;
             int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
-            if ((groups & (1u << group)) != 0) return ((Vector3)hit["position"], (Vector3)hit["normal"]);
-            exclude.Add((Rid)hit["rid"]);
+            if ((groups & (1u << group)) != 0) return ((Vector3)hit[PhysicsKeys.Position], (Vector3)hit[PhysicsKeys.Normal]);
+            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
             q.Exclude = exclude;
         }
         return null;
