@@ -75,6 +75,7 @@ public class BlackMarketDialogTests
                 ShowBox = Boxes.Add, ShowText = t => Shown.Add("box " + t), Notice = t => Shown.Add("notice " + t),
                 ShowTerms = (bit, title, text, cb) => Boxes.Add(new MessageBoxData(0) { Msg = "terms", Callback = cb }),
                 AgreeTerms = _ => { }, ServerTime = () => 50, OwnAccountId = () => 77,
+                Table = tables.BlackMarket,   // the categories the client has loaded before initData (blackmarkettable.xml)
             };
             Book.Dialog = () => C;
             var (rt, p) = src.Open(C.Movie, r => r.Budget = 20_000_000);
@@ -83,6 +84,7 @@ public class BlackMarketDialogTests
             Assert.That(H.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
             for (int i = 0; i < 10; i++) p.Tick();
             foreach (var e in rt.Errors) TestContext.WriteLine("  error: " + e);
+            Assert.That(rt.Errors, Is.Empty, "the dialog's init logs no AS3 error");
         }
 
         public BlackMarketProduct Product(long id, int count = 1, long seller = 5, long expire = 100) => new()
