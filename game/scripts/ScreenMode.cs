@@ -22,7 +22,8 @@ namespace Ms2Godot;
 public static class ScreenMode
 {
     static ScreenModes modes;
-    static readonly List<Window> pixelScopes = new();
+    // the windows in window pixels: the open scopes and the content scale each had before its first scope
+    static readonly Dictionary<Window, (int Scopes, Window.ContentScaleModeEnum Mode, Vector2I Size, Window.ContentScaleAspectEnum Aspect)> pixelScopes = new();
 
     /// <summary>The display's mode list: the system's modes (<see cref="DisplayNative.Enumerate"/>), or only the desktop
     /// size when they cannot be read.</summary>
@@ -126,25 +127,33 @@ public static class ScreenMode
             var inset = DisplayServer.WindowGetPosition() - DisplayServer.WindowGetPositionWithDecorations();
             w.Position = DisplayServer.ScreenGetPosition(Screen) + new Vector2I(place.OuterX, place.OuterY) + inset;
         }
-        foreach (var s in pixelScopes) SetPixels(s);
+        foreach (var s in pixelScopes.Keys) SetPixels(s);
         GD.Print($"display: window {w.Mode} borderless={w.Borderless} at {w.Position} size {w.Size}{(Emulated is { } e ? $", content {e.X}x{e.Y}" : "")}");
     }
 
     /// <summary>
     /// Scenes that lay out in window pixels (the lobby, the HUD) call this instead of switching the content scale off: off
-    /// normally, or the emulated w x h on Linux in the full window. Returns the restore action for when the scene leaves.
+    /// normally, or the emulated w x h on Linux in the full window. Returns the restore action for when the scene leaves
+    /// (it runs once). Scopes nest: the content scale the window had before the first one comes back when the last one
+    /// ends, so a scene change between two such scenes, or one under the loading screen (which holds its own scope,
+    /// <see cref="Ui.LoadingMovie"/>), never turns the stretch on in between.
     /// </summary>
     public static Action UseWindowPixels(Window w)
     {
-        var (mode, size, aspect) = (w.ContentScaleMode, w.ContentScaleSize, w.ContentScaleAspect);
-        pixelScopes.Add(w);
+        if (pixelScopes.TryGetValue(w, out var s)) pixelScopes[w] = s with { Scopes = s.Scopes + 1 };
+        else pixelScopes[w] = (1, w.ContentScaleMode, w.ContentScaleSize, w.ContentScaleAspect);
         SetPixels(w);
+        bool ended = false;
         return () =>
         {
+            if (ended || !pixelScopes.TryGetValue(w, out var open)) return;
+            ended = true;
+            if (open.Scopes > 1) { pixelScopes[w] = open with { Scopes = open.Scopes - 1 }; return; }
             pixelScopes.Remove(w);
-            w.ContentScaleSize = size;
-            w.ContentScaleAspect = aspect;
-            w.ContentScaleMode = mode;
+            if (!GodotObject.IsInstanceValid(w)) return;
+            w.ContentScaleSize = open.Size;
+            w.ContentScaleAspect = open.Aspect;
+            w.ContentScaleMode = open.Mode;
         };
     }
 

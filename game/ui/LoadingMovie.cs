@@ -6,10 +6,14 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The loading screen run from its own movie (uiloadingprogress) with UILoadingProgress's C++ side
 /// (<see cref="LoadingProgressController"/>), for the flow scenes. A <see cref="MovieDialog"/> sized to the window's pixel
-/// size, drawn through the inverse of the root's final transform: the screen lives at the tree root across a field
-/// change while the HUD scene turns the root's canvas_items stretch on and off, so the movie keeps the window's own
-/// pixels either way (as GFxMovie draws to the device). A new window size gives the movie its new stage
-/// (<see cref="MovieDialog.Relayout"/>).
+/// size, as GFxMovie draws to the device. The screen lives at the tree root across a scene change (the lobby or the
+/// HUD leaving, the next scene entering), so it holds the window-pixel scope itself while it is in the tree
+/// (<see cref="ScreenMode.UseWindowPixels"/>): the leaving scene's scope ending does not turn the project's canvas_items
+/// stretch back on under it. Before, the stretch came on when the old scene left and off when the new one entered, in
+/// the same frame after this node's _Process had taken the stretched transform's inverse, so the frame drawn before the
+/// new scene's long first build showed the screen shrunk to the top-left (1/1.436 of a 1920 x 1034 window). It is still
+/// drawn through the inverse of the root's final transform, for a window whose stretch is on before the screen comes.
+/// A new window size gives the movie its new stage (<see cref="MovieDialog.Relayout"/>).
 /// </summary>
 public partial class LoadingMovie : Node2D
 {
@@ -72,7 +76,19 @@ public partial class LoadingMovie : Node2D
 
     public LoadingMovie() { }
 
-    public override void _EnterTree() => Fit();
+    System.Action endPixels;
+
+    public override void _EnterTree()
+    {
+        endPixels = ScreenMode.UseWindowPixels(GetWindow());
+        Fit();
+    }
+
+    public override void _ExitTree()
+    {
+        endPixels?.Invoke();
+        endPixels = null;
+    }
 
     public override void _Process(double delta) => Fit();
 
