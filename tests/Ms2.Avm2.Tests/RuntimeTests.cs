@@ -96,6 +96,32 @@ public class RuntimeTests
     }
 
     [Test]
+    public void GotoRunsTheFrameActionsAtOnceEvenForTheCurrentFrame()
+    {
+        // MovieClip::gotoAndStop/gotoAndPlay (GotoFrameAndRun, sfr_as3_07.cpp): FrameCounter::QueueFrameActions and the
+        // action levels run inside the call, so every frameConstructed and exitFrame listener hears it before it returns;
+        // a missing label returns first, play state untouched.
+        var (rt, p) = Empty();
+        var mc = (AsMovieClip)rt.GetClass("flash.display.MovieClip").Construct();
+        var other = (AsDisplayObject)rt.GetClass("flash.display.Sprite").Construct();
+        p.Stage.addChild(mc);
+        var seen = new List<string>();
+        AsPlainFunction On(string tag) => new(rt, new NativeMethod(tag, (_, a) => { seen.Add(tag); return Rt.Undef; }));
+        mc.addEventListener("frameConstructed", On("mc"));
+        other.addEventListener("frameConstructed", On("other"));
+        mc.addEventListener("exitFrame", On("exit"));
+        mc.play();
+        p.Call(mc, "gotoAndStop", new object[] { 1 });
+        Assert.That(seen, Is.EqualTo(new[] { "mc", "other", "exit" }));
+        Assert.That(mc.isPlaying, Is.False);
+        seen.Clear();
+        mc.play();
+        p.Call(mc, "gotoAndStop", new object[] { "nolabel" });
+        Assert.That(seen, Is.Empty);
+        Assert.That(mc.isPlaying, Is.True);
+    }
+
+    [Test]
     public void ADraggedSpriteFollowsTheMouseAndAReleaseOverNothingReachesTheStage()
     {
         var (rt, p) = Empty();

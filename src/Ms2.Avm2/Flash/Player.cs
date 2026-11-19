@@ -449,6 +449,17 @@ namespace Ms2.Avm2.Flash
                 });
         }
 
+        /// <summary>
+        /// FrameCounter::QueueFrameActions (@0x14251ff60) and the action levels 0..3 run right after (ExecuteActionQueue
+        /// @0x1424fa320), as GotoFrameAndRun does: frameConstructed to every listener, the pending frame scripts, exitFrame.
+        /// </summary>
+        internal void RunFrameActions()
+        {
+            SendBroadcast("frameConstructed");
+            RunFrameScripts();
+            SendBroadcast("exitFrame");
+        }
+
         internal void AddTimer(AsTimer t) { if (!timers.Contains(t)) timers.Add(t); }
         internal void RemoveTimer(AsTimer t) => timers.Remove(t);
         public void Later(Action a) => later.Add(a);

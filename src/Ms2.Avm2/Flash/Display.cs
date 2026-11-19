@@ -495,14 +495,17 @@ public class AsMovieClip : AsSprite
 
     [As] public void play() => Playing = true;
     [As] public void stop() => Playing = false;
-    [As] public void gotoAndStop(object frame, string scene = null) { Playing = false; Goto(frame); }
-    [As] public void gotoAndPlay(object frame, string scene = null) { Playing = true; Goto(frame); }
+    // MovieClip::gotoAndStop/gotoAndPlay (@0x14244e1d0/@0x14244e0e0, GotoFrameAndRun): the frame changes only when it
+    // differs, then the frame actions are queued (FUN_142520080, FrameCounter::QueueFrameActions) and run at once, even
+    // for the current frame. A label that is not found returns before both.
+    [As] public void gotoAndStop(object frame, string scene = null) { if (Goto(frame)) { Playing = false; P.RunFrameActions(); } }
+    [As] public void gotoAndPlay(object frame, string scene = null) { if (Goto(frame)) { Playing = true; P.RunFrameActions(); } }
     [As] public void nextFrame() { Playing = false; if (Frame + 1 < totalFrames) P.GotoFrame(this, Frame + 1, true); }
     [As] public void prevFrame() { Playing = false; if (Frame > 0) P.GotoFrame(this, Frame - 1, true); }
     [As] public void nextScene() { }
     [As] public void prevScene() { }
 
-    void Goto(object frame)
+    bool Goto(object frame)
     {
         int f;
         if (frame is string s && !double.TryParse(s, out _))
@@ -512,13 +515,14 @@ public class AsMovieClip : AsSprite
             {
                 // Flash throws #2109 here; Scaleform (what the game ran) logs it and leaves the clip where it is
                 P?.Warn($"frame label {s} not found in {Class.Name}");
-                return;
+                return false;
             }
             f = hit.Value.Frame;
         }
         else f = Rt.ToInt32(frame) - 1;
         f = Math.Clamp(f, 0, totalFrames - 1);
         P.GotoFrame(this, f, true);
+        return true;
     }
 
     /// <summary>addFrameScript(frame, fn, frame, fn, ...): frames are 0-based.</summary>
