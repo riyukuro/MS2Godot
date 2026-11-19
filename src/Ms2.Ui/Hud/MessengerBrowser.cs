@@ -295,10 +295,19 @@ public sealed class MessengerBrowser
     }
 
     /// <summary>
-    /// FUN_140d2d060 (:586): <see cref="ItemLink"/> put in the chat log's input (m_pLog, FUN_141a24fb0). STILL-OPEN: the
-    /// group messenger's copy (m_pMessenger, UIGroupMessengerBrowser::FUN_141953660) is not ported yet.
+    /// FUN_140d2d060 (:586): <see cref="ItemLink"/> put in the chat log's input (m_pLog, FUN_141a24fb0), then in the group
+    /// messenger's (m_pMessenger, UIGroupMessengerBrowser::FUN_141953660, <see cref="GroupLink"/>).
     /// </summary>
-    public void LinkItem(int id, int grade, long uid) => AppendToInput(ItemLink(id, grade, uid));
+    public void LinkItem(int id, int grade, long uid)
+    {
+        string link = ItemLink(id, grade, uid);
+        AppendToInput(link);
+        GroupLink?.Invoke(link);
+    }
+
+    /// <summary>The game state's m_pMessenger, UIGroupMessengerBrowser::FUN_141953660: the link in the current group
+    /// window's input; null without the group messenger.</summary>
+    public Action<string> GroupLink;
 
     /// <summary>
     /// FUN_140d2e2b0 (:716): the href 'event:itemTooltip,{uid},3,{uid},{id},{grade}' (CHATLINK_ITEM_UID; the uid and
@@ -324,12 +333,14 @@ public sealed class MessengerBrowser
         "<a href=" + href + "><FONT color='" + color + "'>[" + (text ?? "").Replace("&", "&amp;") + "]</FONT></a>";
 
     /// <summary>
-    /// FUN_141a24fb0 (uimessenger.cpp:3332): AppendToInput on each window whose name is GetState()->GetCurrentName();
-    /// the port's chat log has the one window, which is always the current one.
+    /// FUN_141a24fb0 (uimessenger.cpp:3332): AppendToInput on each window whose name is GetState()->GetCurrentName()
+    /// (<see cref="GetCurrentName"/>; a group window's focus makes another name the current one).
     /// </summary>
     public void AppendToInput(string link)
     {
-        foreach (var w in Windows) w?.AppendToInput(link);
+        string current = GetCurrentName();
+        foreach (var w in Windows.ToArray())
+            if (w != null && w.Name == current) w.AppendToInput(link);
     }
 
     /// <summary>
@@ -726,6 +737,22 @@ public sealed class MessengerBrowser
         RemoveName(name);
         names.AddLast(name);
         currentName = name;
+    }
+
+    /// <summary>Unk_MdNames::GetCurrentName (@0x1414829e0, messengerdata.cpp:754): with no current name the next one is
+    /// taken first (<see cref="SelectNextName"/>).</summary>
+    public string GetCurrentName()
+    {
+        if (currentName.Length == 0) SelectNextName();
+        return currentName;
+    }
+
+    /// <summary>Unk_MdNames::SelectNextName (@0x141482bb0, messengerdata.cpp:788): with no names the chat log's first
+    /// window's (GetFirstWindowName), else the tail name, which leaves the list.</summary>
+    void SelectNextName()
+    {
+        if (names.Count == 0) currentName = Windows.Count > 0 ? Windows[0].Name : "";
+        else { currentName = names.Last.Value; names.RemoveLast(); }
     }
 
     /// <summary>Unk_MdNames::RemoveName (messengerdata.cpp:813).</summary>

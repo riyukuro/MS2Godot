@@ -142,7 +142,7 @@ public abstract class UiController
     /// drag bar transform.rateX / rateY, the position over the client size times the UI scale (DAT_143af62d4 / 62d8 times
     /// FUN_141276490). m_7c is 1 for every dialog here (UIDialog ctor, UIQuestDialog :295), so no width and height.
     /// </summary>
-    public void SaveTransform()
+    public virtual void SaveTransform()
     {
         if (!IsDialog || Host.Entity == null || Host.Folder == null) return;
         var s = new DialogSettings(TypeName);

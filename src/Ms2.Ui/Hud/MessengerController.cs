@@ -388,11 +388,13 @@ public sealed class MessengerController : UiController
 
     /// <summary>
     /// vfunc_13 (:810), a key pressed while the window is shown: Return (FUN_141a17700) and Escape (FUN_141a12260); true =
-    /// used. FUN_141a12f30 (:1604) lets keys through for the current window when the input is focused or Tab is not held
-    /// (one window here: Unk_MdNames' current name is this one's).
+    /// used. FUN_141a12f30 (:1604) lets keys through only for the current window (Unk_MdNames' current name,
+    /// <see cref="MessengerBrowser.GetCurrentName"/>; a focused group window takes it), and then when the input is
+    /// focused or Tab is not held.
     /// </summary>
     public bool OnKey(int dik, bool escape)
     {
+        if (Browser.GetCurrentName() != Name) return false;
         if (!InputFocused && IsKeyDown(DikTab)) return false;
         if (dik == DikReturn) { ReturnKey(); return true; }
         if (escape) return Release();

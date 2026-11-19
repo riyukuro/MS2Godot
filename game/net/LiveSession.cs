@@ -43,6 +43,8 @@ public partial class LiveSession : Node
     public readonly QuestBook Quests = new();
     /// <summary>CPartyManager's party from the party packets (0x53); live only.</summary>
     public readonly PartyBook Party = new();
+    /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
+    public readonly Ms2.Ui.GroupChatBook GroupChats = new();
     /// <summary>The party window is loaded and open (FUN_141924630), for OnPartyMemberJoin's add-or-open; set by the HUD.</summary>
     public Func<bool> PartyWindowOpen = () => false;
     /// <summary>The game server session (its time sync), null before the field enter.</summary>
@@ -279,6 +281,9 @@ public partial class LiveSession : Node
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+
+    /// <summary>CGroupChatManager's sends (GroupChat 0x4C).</summary>
+    public void SendGroupChat(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
 
     /// <summary>CPartyManager::SendPartyMode2 (partymanager.cpp:743): the answer to the last invite, with its name and kind.</summary>
     public void AnswerPartyInvite(int answer)
@@ -775,6 +780,12 @@ public partial class LiveSession : Node
                 if (m is PartyInvite invite)        // OnPartyInvite (partymanager.cpp:968); no PvP state yet, so no PvP point
                     Ms2.Ui.Hud.PartyInviteBox.OnInvite(invite, GameOptions.AccountCommunity.DisablePartyRequest, false, AnswerPartyInvite);
                 GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
+            }
+            else if (game.Is(p, Inbound.GroupChat))
+            {
+                var m = GroupChatMessage.Read(p.Reader());   // CGroupChatManager::OnGroupChat (@0x14137f2f0, groupchatmanager.cpp:577)
+                GroupChats.Apply(m);
+                GD.Print($"live: group chat {m.GetType().Name} ({GroupChats.ChatCount} chats)");
             }
             else if (game.Is(p, Inbound.ItemInventory))
             {

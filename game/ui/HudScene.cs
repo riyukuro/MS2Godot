@@ -86,6 +86,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.ApplyFpsCap();
         questFixture = args.Contains("--questlog-fixture");
         partyFixture = args.Contains("--party-fixture");
+        groupChatFixture = args.Contains("--groupchat-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
@@ -176,6 +177,11 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMeso?.Invoke();
         unwatchMeso = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
+        if (groupBrowser != null)
+        {
+            if (ReferenceEquals(ChatLog.GroupLink, groupLink)) ChatLog.GroupLink = null;
+            groupBrowser.Book.Messenger = () => null;     // a live session's book outlives this scene
+        }
         unwatchLivePlayer?.Invoke();
         unwatchLivePlayer = null;
         unbindBoxAnswers?.Invoke();
@@ -219,6 +225,7 @@ public partial class HudScene : Node, IUiStageHost
         questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
         foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
         groupMessenger?.GetParent()?.RemoveChild(groupMessenger);
+        foreach (var (m, _) in groupWindows) m.GetParent()?.RemoveChild(m);     // and the group chat windows
         notice?.GetParent()?.RemoveChild(notice);
         upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
         targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
@@ -231,6 +238,7 @@ public partial class HudScene : Node, IUiStageHost
         if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(GetWindow().Size); }
         foreach (var (m, _) in messengers) m.Relayout(GetWindow().Size);
         groupMessenger?.Relayout(GetWindow().Size);
+        foreach (var (m, _) in groupWindows) m.Relayout(GetWindow().Size);
         notice?.Relayout(GetWindow().Size);
         questLog?.Relayout(GetWindow().Size);
         worldMap?.Relayout(GetWindow().Size);
@@ -988,7 +996,8 @@ public partial class HudScene : Node, IUiStageHost
                 var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true, ChatLog) { IsKeyDown = DikHeld };
                 messengers.Add((new MovieDialog(assets, c, hudModel, window), c));
             }
-            groupMessenger = new MovieDialog(assets, new GroupMessengerBrowserController(), hudModel, window);
+            groupBrowser = NewGroupBrowser();
+            groupMessenger = new MovieDialog(assets, groupBrowser, hudModel, window);   // its load opens the joined chats' windows
             if (!welcomeShown)
             {
                 ChatLog.AddSystemLine(hudModel.Tables.Common("s_msg_chatting_welcome"), Ms2.Ui.Hud.TalkKind.SystemNotice);
@@ -1007,6 +1016,61 @@ public partial class HudScene : Node, IUiStageHost
         }
         foreach (var (m, _) in messengers) ui.AddChild(m);
         ui.AddChild(groupMessenger);
+        foreach (var (m, _) in groupWindows) if (m.GetParent() == null) ui.AddChild(m);
+    }
+
+    GroupMessengerBrowserController groupBrowser;
+    Action<string> groupLink;
+    readonly List<(MovieDialog Movie, GroupMessengerController Side)> groupWindows = new();
+    bool groupChatFixture;
+
+    /// <summary>
+    /// UIGroupMessengerBrowser and CGroupChatManager: the session's group chats (GroupChat 0x8B, sent with 0x4C), or offline
+    /// with --groupchat-fixture <see cref="GroupChatFixture"/>'s, else an empty book whose sends are logged. Each window the
+    /// browser opens (OpenChatWindow) is its own movie in this HUD's chat layer; an item linked in the chat also goes to the
+    /// current group window's input (FUN_141953660).
+    /// </summary>
+    GroupMessengerBrowserController NewGroupBrowser()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var book = live?.GroupChats ?? new GroupChatBook();
+        Func<string> localName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : "";
+        book.Common = hudModel.Tables.Common;
+        book.LocalName = localName;
+        book.Send = live != null ? live.SendGroupChat : packet => GD.Print($"groupchat: offline, not sent: {packet}");
+        var b = new GroupMessengerBrowserController
+        {
+            Book = book,
+            Names = ChatLog,
+            Common = hudModel.Tables.Common,
+            LocalName = localName,
+            LocalCharacterId = () => live?.CharacterId ?? (groupChatFixture ? PartyFixture.SelfCharacterId : 0),
+            PlaySound = key => FieldAudio.Instance?.PlayUi(key),
+            ShowSystemNotice = (text, type, log) =>     // ShowSystemNotice, as the user chat's (WireUserChat)
+            {
+                SystemText?.ShowMessage(text, type, 0);
+                if (log) ChatLog.AddSystemLine(text, TalkKind.SystemNotice);
+            },
+        };
+        b.OpenWindow = w =>
+        {
+            var m = new MovieDialog(assets, w, hudModel, GetWindow().Size);
+            if (!m.Loaded) { m.QueueFree(); return false; }
+            groupWindows.Add((m, w));
+            w.Unloaded += () =>
+            {
+                groupWindows.RemoveAll(x => x.Side == w);
+                m.Host.Unload();
+                m.QueueFree();
+            };
+            groupMessenger?.GetParent()?.AddChild(m);   // during the browser's own load it is added after it (Chat)
+            return true;
+        };
+        book.Messenger = () => b;
+        groupLink = b.LinkToCurrent;
+        ChatLog.GroupLink = groupLink;
+        if (live == null && groupChatFixture && hudModel.HasLocalPlayer) GroupChatFixture.Apply(book, hudModel.Player);
+        return b;
     }
 
     Action unwatchNewItems;
@@ -1038,22 +1102,28 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (e is not InputEventKey k) return false;
         foreach (var (m, c) in messengers)
-        {
-            if (!m.Loaded || !m.IsVisibleInTree()) continue;
-            if (k.Pressed && !k.Echo && !UiFocus.IsTyping)
-            {
-                if ((k.Keycode == Key.Enter && c.OnKey(MessengerController.DikReturn, false))
-                    || (k.Keycode == Key.Escape && c.OnKey(DikEscape, true)))
-                    return true;
-            }
-            if (!c.InputActive) continue;
-            if (k.Keycode is Key.Enter or Key.Escape) return true;
-            uint code = As3View.FlashKeyCode(k.Keycode);
-            if (code == 0 && k.Unicode == 0) return true;
-            m.Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
-            return true;
-        }
+            if (ChatKey(k, m, c.OnKey, () => c.InputActive) is { } used) return used;
+        foreach (var (m, c) in groupWindows.ToArray())     // UIGroupMessenger::vfunc_13 (:523), the same keys
+            if (ChatKey(k, m, c.OnKey, () => c.InputActive) is { } used) return used;
         return false;
+    }
+
+    /// <summary>One chat window's turn at a key: null passes it to the next window.</summary>
+    static bool? ChatKey(InputEventKey k, MovieDialog m, Func<int, bool, bool> onKey, Func<bool> inputActive)
+    {
+        if (!m.Loaded || !m.IsVisibleInTree()) return null;
+        if (k.Pressed && !k.Echo && !UiFocus.IsTyping)
+        {
+            if ((k.Keycode == Key.Enter && onKey(MessengerController.DikReturn, false))
+                || (k.Keycode == Key.Escape && onKey(DikEscape, true)))
+                return true;
+        }
+        if (!inputActive()) return null;
+        if (k.Keycode is Key.Enter or Key.Escape) return true;
+        uint code = As3View.FlashKeyCode(k.Keycode);
+        if (code == 0 && k.Unicode == 0) return true;
+        m.Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
+        return true;
     }
 
     const int DikEscape = 1;
@@ -2671,6 +2741,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.Frame(perfState);
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
+        groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         shop?.Process();                                                        // UIShopDialog::vfunc_72
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
