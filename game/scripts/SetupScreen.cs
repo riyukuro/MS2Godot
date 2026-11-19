@@ -145,6 +145,8 @@ public partial class SetupScreen : Control
     void PrepareUiCode(bool setup)
     {
         var data = Settings.DataDir;
+        var nif = Settings.NifXml;
+        var navDir = ProjectSettings.GlobalizePath("user://navmesh");
         var center = new CenterContainer();
         center.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(center);
@@ -194,6 +196,15 @@ public partial class SetupScreen : Control
                     else if (Ui.PerfLog.On) GD.Print($"table cache: all current, checked in {sw.Elapsed.TotalMilliseconds:F0} ms");
                 }
                 catch (System.Exception e) { GD.PushWarning("table cache build failed: " + e.GetBaseException().Message); }
+            // the start field's navmesh, once per install (NavConfig.Version): else the first session builds it while it plays
+            if (packs != null)
+                try
+                {
+                    uiPhase = "Building the start field's navigation";
+                    double s = NavDebug.BuildStart(packs, nif, navDir);
+                    if (s >= 0) GD.Print($"navmesh {Field.StartField} built in {s:F1} s");
+                }
+                catch (System.Exception e) { GD.PushWarning("navmesh build failed: " + e.GetBaseException().Message); }
             return r;
             }
             finally { Ms2.Formats.Cache.CacheStore.CheckBodies = false; }

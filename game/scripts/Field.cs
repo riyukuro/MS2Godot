@@ -17,6 +17,9 @@ namespace Ms2Godot;
 /// </summary>
 public partial class Field : Node3D
 {
+    /// <summary>The field a session opens in when nothing names another (Tria): the setup step builds its navmesh.</summary>
+    public const string StartField = "02000001_tw_tria";
+
     /// <summary>The scene-tree group every field joins, so the HUD finds it without walking the tree.</summary>
     public const string Group = "field";
     public Field() { AddToGroup(Group); }
@@ -62,7 +65,7 @@ public partial class Field : Node3D
 
     async System.Threading.Tasks.Task LoadField()
     {
-        string fieldName = FieldNameFor("02000001_tw_tria");
+        string fieldName = FieldNameFor(StartField);
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++)
         {

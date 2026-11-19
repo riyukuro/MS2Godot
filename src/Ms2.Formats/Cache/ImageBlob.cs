@@ -27,10 +27,15 @@ public static class ImageBlob
     /// <summary>The most an LZ4 block decodes to per byte of it.</summary>
     const int MaxRatio = 255;
 
-    public static byte[] Write(Kind kind, int w, int h, ReadOnlySpan<byte> bytes)
+    /// <summary>
+    /// The body of an image. The encoder's worst-case buffer comes from <paramref name="pool"/> when given (a build's own
+    /// pool: a worker reuses one buffer atlas after atlas, and the pool goes with the build), else it is a new array; the
+    /// shared pool is not used, as its buffers would stay per thread in the process the player goes on to play in.
+    /// </summary>
+    public static byte[] Write(Kind kind, int w, int h, ReadOnlySpan<byte> bytes, System.Buffers.ArrayPool<byte> pool = null)
     {
-        // the encoder's worst-case buffer is pooled (a worker reuses it atlas after atlas); the body is the size it encodes to
-        var buf = System.Buffers.ArrayPool<byte>.Shared.Rent(LZ4Codec.MaximumOutputSize(bytes.Length));
+        int max = LZ4Codec.MaximumOutputSize(bytes.Length);
+        var buf = pool != null ? pool.Rent(max) : new byte[max];
         try
         {
             int n = bytes.Length == 0 ? 0 : LZ4Codec.Encode(bytes, buf, LZ4Level.L06_HC);
@@ -43,7 +48,7 @@ public static class ImageBlob
             buf.AsSpan(0, n).CopyTo(body.AsSpan(Head));
             return body;
         }
-        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buf); }
+        finally { pool?.Return(buf); }
     }
 
     /// <summary>The image of a body; throws InvalidDataException on a body that does not decode to its stated length.</summary>

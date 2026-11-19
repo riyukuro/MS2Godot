@@ -28,8 +28,13 @@ public static class PrecompiledImage
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException or InvalidOperationException) { return null; }
     }
 
-    /// <summary>The runtime the images are compiled against and run on (its version: a runtime update compiles them again).</summary>
-    public static string Runtime => Environment.Version.ToString();
+    /// <summary>
+    /// The runtime the images are compiled against and run on, by its major and minor version, the same rule as the build's
+    /// library images (<see cref="RuntimeMismatch"/>): precompiled code stays valid across a servicing update of the same
+    /// major and minor version (the runtime itself rejects a method whose dependencies changed and runs the JIT for it), so
+    /// a patch update keeps the images and a new major or minor version compiles them again.
+    /// </summary>
+    public static string Runtime => $"{Environment.Version.Major}.{Environment.Version.Minor}";
 
     static string Prefix(string dll) => Path.GetFileNameWithoutExtension(dll) + ".r2r-";
 

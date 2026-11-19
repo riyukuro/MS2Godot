@@ -201,28 +201,28 @@ public class ImageCacheTests
         var dll = Copy(typeof(object), "Lib.dll");
         var il = PrecompiledImage.Mvid(dll);
         Assume.That(il?.r2r, Is.True, "the runtime's own library is precompiled");
-        var image = PrecompiledImage.NameOf(dll, il.Value.id, "8.0.1");
-        Assert.That(PrecompiledImage.ImageOf(dll, "8.0.1", out var note), Is.Null);
+        var image = PrecompiledImage.NameOf(dll, il.Value.id, "8.0");
+        Assert.That(PrecompiledImage.ImageOf(dll, "8.0", out var note), Is.Null);
         Assert.That(note, Is.Null);
         File.Copy(dll, image);
-        Assert.That(PrecompiledImage.ImageOf(dll, "8.0.1", out _), Is.EqualTo(image));
-        Assert.That(PrecompiledImage.ImageOf(dll, "8.0.2", out note), Is.Null, "a new runtime is no image");
+        Assert.That(PrecompiledImage.ImageOf(dll, "8.0", out _), Is.EqualTo(image));
+        Assert.That(PrecompiledImage.ImageOf(dll, "9.0", out note), Is.Null, "a new runtime is no image");
         Assert.That(note, Does.Contain(Path.GetFileName(image)));
         // another module under the name of this one's image (the module version id in the name is this one's)
         File.Delete(image);
         File.Copy(typeof(System.Linq.Enumerable).Assembly.Location, image);
         Assume.That(PrecompiledImage.Mvid(image)?.r2r, Is.True);
-        Assert.That(PrecompiledImage.ImageOf(dll, "8.0.1", out _), Is.Null, "the module version id is checked");
+        Assert.That(PrecompiledImage.ImageOf(dll, "8.0", out _), Is.Null, "the module version id is checked");
     }
 
     [Test]
     public void AMissingOrFailingCompilerLeavesNoImageAndNoTmp()
     {
         var dll = Copy(typeof(object), "Lib.dll");
-        var stale = PrecompiledImage.NameOf(dll, Guid.NewGuid(), "8.0.1");
+        var stale = PrecompiledImage.NameOf(dll, Guid.NewGuid(), "8.0");
         File.WriteAllBytes(stale, new byte[] { 1 });
         var warnings = new List<string>();
-        Assert.That(PrecompiledImage.Compile(Path.Combine(dir, "none"), dll, "8.0.1", Array.Empty<string>(), TimeSpan.FromSeconds(30), warnings.Add), Is.Null);
+        Assert.That(PrecompiledImage.Compile(Path.Combine(dir, "none"), dll, "8.0", Array.Empty<string>(), TimeSpan.FromSeconds(30), warnings.Add), Is.Null);
         Assert.That(warnings, Has.Count.EqualTo(1));
         Assert.That(Directory.GetFiles(dir).Select(Path.GetFileName), Is.EqualTo(new[] { "Lib.dll" }), "the stale image is pruned");
         if (OperatingSystem.IsWindows()) return;   // the failing compilers below are shell scripts
@@ -234,7 +234,7 @@ public class ImageCacheTests
             File.SetUnixFileMode(compiler, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             warnings.Clear();
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            Assert.That(PrecompiledImage.Compile(compiler, dll, "8.0.1", Array.Empty<string>(), TimeSpan.FromSeconds(timeout), warnings.Add), Is.Null);
+            Assert.That(PrecompiledImage.Compile(compiler, dll, "8.0", Array.Empty<string>(), TimeSpan.FromSeconds(timeout), warnings.Add), Is.Null);
             Assert.That(sw.Elapsed.TotalSeconds, Is.LessThan(20));
             Assert.That(warnings, Has.Count.EqualTo(1));
             Assert.That(Directory.GetFiles(dir).Select(Path.GetFileName).Order(StringComparer.Ordinal), Is.EqualTo(new[] { "Lib.dll", "crossgen2" }), body);
@@ -249,6 +249,19 @@ public class ImageCacheTests
         File.WriteAllText(Path.Combine(dir, PrecompiledImage.RuntimeFile), "8.0.6\n");
         Assert.That(PrecompiledImage.RuntimeMismatch(dir, "8.0.11"), Is.Null, "a servicing update keeps the images");
         Assert.That(PrecompiledImage.RuntimeMismatch(dir, "9.0.1"), Does.Contain("8.0.6"));
+        // the images' own name follows the same rule: a servicing update keeps them
+        Assert.That(PrecompiledImage.Runtime, Is.EqualTo($"{Environment.Version.Major}.{Environment.Version.Minor}"));
+    }
+
+    [Test]
+    public void AnEncodeWithOrWithoutAPoolGivesTheSameBody()
+    {
+        var dds = Dds(64, 32);
+        var pool = System.Buffers.ArrayPool<byte>.Create(1 << 20, 2);
+        var pooled = ImageCache.Encode(dds, pool);
+        Assert.That(ImageCache.Encode(dds, pool), Is.EqualTo(pooled), "a reused buffer encodes the same");
+        Assert.That(ImageCache.Encode(dds), Is.EqualTo(pooled));
+        Assert.That(ImageCache.Compare(ImageBlob.Read(pooled), dds), Is.Null);
     }
 
     [Test]

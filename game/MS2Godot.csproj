@@ -53,7 +53,8 @@
     <Ms2Precompile Condition="'$(Ms2Precompile)' == ''">true</Ms2Precompile>
     <Ms2SharedRuntime>$(NetCoreTargetingPackRoot)/../shared/Microsoft.NETCore.App/$(BundledNETCoreAppPackageVersion)</Ms2SharedRuntime>
   </PropertyGroup>
-  <ItemGroup Condition="'$(Ms2Precompile)' == 'true'">
+  <!-- the compiler package: with PublishReadyToRun the SDK downloads it itself (the same version; a second item is NU1505) -->
+  <ItemGroup Condition="'$(Ms2Precompile)' == 'true' And '$(PublishReadyToRun)' != 'true'">
     <PackageDownload Include="Microsoft.NETCore.App.Crossgen2.$(Crossgen2Rid)" Version="[$(BundledNETCoreAppPackageVersion)]" />
   </ItemGroup>
   <Target Name="PrecompileLibraries" AfterTargets="Build" DependsOnTargets="_PrecompileInputs" Condition="'$(Ms2Precompile)' == 'true'"

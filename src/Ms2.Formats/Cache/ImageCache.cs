@@ -9,10 +9,10 @@ namespace Ms2.Formats.Cache;
 public static class ImageCache
 {
     /// <summary>The body of an archive DDS file: its pixels, or the file itself when the pixel code does not take it.</summary>
-    public static byte[] Encode(byte[] dds)
+    public static byte[] Encode(byte[] dds, System.Buffers.ArrayPool<byte> pool = null)
     {
         var rgba = DdsPixels.ToRgba(dds, out int w, out int h);
-        return rgba != null ? ImageBlob.Write(ImageBlob.Kind.Rgba, w, h, rgba) : ImageBlob.Write(ImageBlob.Kind.File, 0, 0, dds);
+        return rgba != null ? ImageBlob.Write(ImageBlob.Kind.Rgba, w, h, rgba, pool) : ImageBlob.Write(ImageBlob.Kind.File, 0, 0, dds, pool);
     }
 
     /// <summary>
@@ -67,6 +67,9 @@ public static class ImageCache
     /// <summary>The most one build worker holds at once (a 4096 square atlas: file, pixels, encoder buffer, written body).</summary>
     public const long WorkerBytes = 256L << 20;
 
+    /// <summary>The largest encode buffer a build pools (LZ4's worst case for a 4096 square atlas); a larger one is not kept.</summary>
+    const int EncodeBufferMax = 128 << 20;
+
     /// <summary><see cref="Workers"/> for a machine of <paramref name="cores"/> cores and <paramref name="memory"/> bytes.</summary>
     public static int WorkersFor(int cores, long memory) =>
         (int)Math.Clamp(Math.Min(cores - 1, memory / 4 / WorkerBytes), 1, 64);
@@ -95,11 +98,13 @@ public static class ImageCache
         sw.Restart();
         int done = 0, bad = 0;
         long bytes = 0;
+        // the encode buffers: this build's own pool (one per worker, up to a 4096 square atlas's), dropped with the build
+        var pool = System.Buffers.ArrayPool<byte>.Create(EncodeBufferMax, opts.MaxDegreeOfParallelism);
         Parallel.ForEach(missing, opts, n =>
         {
             try
             {
-                var body = Encode(read(n));
+                var body = Encode(read(n), pool);
                 store.Write(piece(n), key(n), body, onlyConfig: true);
                 Interlocked.Add(ref bytes, body.Length);
                 Interlocked.Increment(ref done);

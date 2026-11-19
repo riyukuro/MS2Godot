@@ -26,7 +26,7 @@ public static class Precompiled
 
     /// <summary>
     /// The libraries with an image that were bound before <see cref="Preload"/> ran (from memory: their code is the JIT's).
-    /// Empty when the images went in first; the perf runs fail on any (MS2_PERF_QUIT exits 3).
+    /// Empty when the images went in first; a launch warns of any, and the perf runs fail on any (MS2_PERF_QUIT exits 3).
     /// </summary>
     public static IReadOnlyList<string> Early { get; private set; } = Array.Empty<string>();
 
@@ -92,6 +92,8 @@ public static class Precompiled
             catch (Exception e) when (e is IOException or BadImageFormatException) { GD.PushWarning($"precompiled code: {image}: {e.Message}"); }
         }
         Early = early;
+        // a launch says it too (the perf runs fail on it): a library bound before the images runs its code under the JIT
+        if (early.Count > 0) GD.PushWarning($"precompiled code: bound from memory before the images, their code runs under the JIT: {string.Join(", ", early)}");
         var runtime = PrecompiledImage.RuntimeMismatch(Path.Combine(AssemblyDir, "r2r"), PrecompiledImage.Runtime);
         Summary = $"{n} precompiled from {AssemblyDir} in {sw.Elapsed.TotalMilliseconds:F0} ms" + (runtime != null ? "; " + runtime : "")
             + (early.Count > 0 ? $"; already loaded from memory: {string.Join(", ", early)}" : "");

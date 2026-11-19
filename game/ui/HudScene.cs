@@ -109,7 +109,7 @@ public partial class HudScene : Node, IUiStageHost
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(PackSet.Shared(dataDir));   // the field's pack set: its archives and the per-pack-set UI caches are shared
 
-        xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
+        xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? Field.StartField;   // as Field picks it; the field scene consumes the move
         xblockFieldId = XblockFieldId();
         AddChild(fieldScene = GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         BuildHud();
