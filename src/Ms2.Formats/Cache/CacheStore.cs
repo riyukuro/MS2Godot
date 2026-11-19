@@ -144,14 +144,15 @@ public sealed class CacheStore
         var sw = System.Diagnostics.Stopwatch.StartNew();
         if (mode == "off") { outcome.Source = "off"; var p = parse(); outcome.ParseMs = sw.Elapsed.TotalMilliseconds; return p; }
         var key = Key(piece, config, build);
+        // whatever goes wrong reading the cache (a damaged file, a reader's bug), the piece is parsed: the cache is never
+        // why a table fails; the outcome says what went wrong
         T cached = null;
-        var body = Read(piece, key);
-        if (body != null)
+        try
         {
-            try { cached = read(body); outcome.Bytes = body.Length; }
-            catch (Exception e) when (e is InvalidDataException or InvalidCastException or ArgumentException or TypeLoadException)
-            { cached = null; outcome.Diff = "unreadable: " + e.Message; }
+            var body = Read(piece, key);
+            if (body != null) { cached = read(body); outcome.Bytes = body.Length; }
         }
+        catch (Exception e) { cached = null; outcome.Diff = "unreadable: " + e.GetType().Name + ": " + e.Message; }
         outcome.ReadMs = sw.Elapsed.TotalMilliseconds;
         if (cached != null && mode != "check") { outcome.Source = "cache"; return cached; }
         sw.Restart();
@@ -172,7 +173,7 @@ public sealed class CacheStore
             Write(piece, key, bytes, onlyConfig);
             outcome.Bytes = bytes.Length;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { outcome.Diff = "not written: " + e.Message; }
+        catch (Exception e) { outcome.Diff = "not written: " + e.GetType().Name + ": " + e.Message; }   // the parse is returned all the same
         outcome.WriteMs = sw.Elapsed.TotalMilliseconds;
         return fresh;
     }

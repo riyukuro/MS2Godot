@@ -320,4 +320,25 @@ public class SnapshotTests
         }
         finally { Directory.Delete(dir, true); }
     }
+    [Test]
+    public void AnyCacheReadOrWriteFailureParsesTheTable()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-cachestore-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new CacheStore(dir);
+            string parse() => "parsed";
+            // a writer that throws what no cache code expects: the parse is returned, the outcome says why nothing was written
+            var a = store.Get("p", "c", "b", parse, _ => throw new NotSupportedException("writer"), b => "cached", (x, y) => null, out var o1);
+            Assert.That((a, o1.Source), Is.EqualTo(("parsed", "parse")));
+            Assert.That(o1.Diff, Does.StartWith("not written: NotSupportedException"));
+            store.Get("p", "c", "b", parse, _ => new byte[] { 1 }, b => "cached", (x, y) => null, out _);
+            // a reader that throws (a reader's bug on a whole file): parsed again
+            var b = store.Get("p", "c", "b", parse, _ => new byte[] { 1 }, _ => throw new NullReferenceException(), (x, y) => null, out var o2);
+            Assert.That((b, o2.Source), Is.EqualTo(("parsed", "parse")));
+            Assert.That(o2.Diff, Does.StartWith("unreadable: NullReferenceException"));
+            Assert.That(store.Get("p", "c", "b", parse, _ => new byte[] { 1 }, _ => "cached", (x, y) => null, out _), Is.EqualTo("cached"));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }
