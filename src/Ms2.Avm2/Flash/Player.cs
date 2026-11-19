@@ -1248,7 +1248,7 @@ namespace Ms2.Avm2.Flash
                 if (!mouseEventExLooked) { mouseEventExLooked = true; mouseEventExClass = RT.GetClass("scaleform.gfx.MouseEventEx"); }
                 var e = (AsMouseEvent)(mouseEventExClass ?? mouseEventClass).Construct(type);
                 e.bubbles = bubbles; e.cancelable = false;
-                e.localX = lx; e.localY = ly; e.StageX = MouseX; e.StageY = MouseY; e.buttonDown = MouseDown; e.relatedObject = related; e.delta = delta;
+                e.localX = lx; e.localY = ly; e.StageX = MouseX; e.StageY = MouseY; e.buttonDown = MouseDown; e.relatedObject = related; e.delta = delta; e.ButtonIdx = button;
                 if (mouseEventExClass != null)
                 {
                     RT.SetProperty(e, Name.Public("mouseIdx"), Rt.Box(0));
@@ -1375,7 +1375,7 @@ namespace Ms2.Avm2.Flash
                     if (a.Length == 0 || a[0] is not AsMouseEvent e) return Rt.Undef;
                     own ??= RightClickOwnClasses.Select(rt.GetClass).Where(c => c != null).ToArray();
                     if (own.Any(c => rt.IsType(e.target, c))) return Rt.Undef;          // useRClickEvent
-                    if (Rt.ToNumber(rt.GetProperty(e, Name.Public("buttonIdx"))) != RightButton) return Rt.Undef;
+                    if (e.ButtonIdx != RightButton) return Rt.Undef;
                     e.stopImmediatePropagation();
                     e.stopPropagation();
                     if (e.target is not { } target) return Rt.Undef;                     // dispatchMouseEventToTarget

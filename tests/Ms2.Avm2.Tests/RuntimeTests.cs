@@ -511,6 +511,29 @@ public class RuntimeTests
     }
 
     [Test]
+    public void ARightPressInAMovieWithoutMouseEventExStillBecomesARightMouseDown()
+    {
+        // the client's VM has scaleform.gfx.MouseEventEx built in (ASVM::MouseEventExClass, sfr_as3_15.cpp:3570), and
+        // CreateMouseEventObject (sfr_as3_09.cpp:2325-2328) sets buttonIdx on every player-made event; a movie whose ABC does
+        // not declare the class used to make Main's right-button listener throw a ReferenceError on every press
+        var (rt, p) = Empty();
+        p.Start();                      // Main's stage listeners go on here
+        var s = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        s.graphics.beginFill(0xffffff); s.graphics.drawRect(0, 0, 40, 40);
+        p.Stage.addChild(s);
+        var seen = new List<string>();
+        foreach (var type in new[] { "mouseDown", "rightMouseDown" })
+            p.Call(s, "addEventListener", new object[] { type, new AsPlainFunction(rt, new NativeMethod(type, (_, a) => { seen.Add(type); return Rt.Undef; })) });
+        p.MouseMove(10, 10);
+        p.MouseButton(true, Player.RightButton);
+        p.MouseButton(false, Player.RightButton);
+        p.MouseButton(true);
+        p.MouseButton(false);
+        Assert.That(rt.Errors, Is.Empty);
+        Assert.That(seen, Is.EqualTo(new[] { "rightMouseDown", "mouseDown" }), "the right press only as rightMouseDown, the left as mouseDown");
+    }
+
+    [Test]
     public void DropTargetIsTheTopmostEntityUnderTheMouseOtherThanTheDraggedSprite()
     {
         // Sprite::dropTargetGet -> MovieImpl::GetTopMostEntity(mouse, 0, testAll true, ignore the dragged sprite)

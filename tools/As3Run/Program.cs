@@ -386,8 +386,11 @@ switch (pos[0])
                 // the event the player builds for a real pointer (Player.MouseEv): the movie's MouseEventEx, left button
                 var e = (AsMouseEvent)mouseCls.Construct(type);
                 e.bubbles = type is not ("rollOver" or "rollOut"); e.cancelable = false; e.buttonDown = type == "mouseDown";
-                rt.SetProperty(e, Name.Public("mouseIdx"), Rt.Box(0));
-                rt.SetProperty(e, Name.Public("buttonIdx"), Rt.Box(0));
+                if (mouseCls.Name.EndsWith("MouseEventEx"))
+                {
+                    rt.SetProperty(e, Name.Public("mouseIdx"), Rt.Box(0));
+                    rt.SetProperty(e, Name.Public("buttonIdx"), Rt.Box(0));
+                }
                 o.Dispatch(e);
             }
             foreach (var o in objs)

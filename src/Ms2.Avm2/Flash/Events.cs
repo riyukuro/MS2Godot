@@ -169,6 +169,10 @@ public class AsMouseEvent : AsEvent
     [As] public bool buttonDown { get; set; }
     [As] public int delta { get; set; }
     public double StageX, StageY;
+    /// <summary>The button of a player-made event (EventDispatcher::CreateMouseEventObject, sfr_as3_09.cpp:2325-2328, writes
+    /// MouseEventEx.buttonIdx = evtId.ButtonId). The client's VM has MouseEventEx built in; a movie whose ABC does not declare
+    /// it still gets the index here, which Main's right-button listeners read.</summary>
+    public int ButtonIdx;
     [As] public double stageX => Target is AsDisplayObject d ? d.LocalToGlobal(localX, localY).X : StageX;
     [As] public double stageY => Target is AsDisplayObject d ? d.LocalToGlobal(localX, localY).Y : StageY;
     [As] public void updateAfterEvent() { }
