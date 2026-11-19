@@ -35,7 +35,19 @@ public static class GameOptions
     /// <summary>The KMS2 client's region index, DAT_143ab0248 = 0 (KR, localepath.cpp:505-542).</summary>
     public const int RegionIndex = 0;
 
-    static GameOption current;
+    // published last by Load (volatile): a thread that sees it sees the language, the voice and the document it came with
+    static volatile GameOption current;
+    static readonly object loadGate = new();
+    /// <summary>How many times the options were read (a test checks that threads asking at once read them once).</summary>
+    internal static int Loads;
+
+    /// <summary>The options of the first use, read once: the field prefetch (a pool thread) and the UI (the main thread) ask
+    /// at the same time, and the second waits for the first's load instead of reading the file again over it.</summary>
+    static void EnsureLoaded()
+    {
+        if (current != null) return;
+        lock (loadGate) if (current == null) Load();
+    }
 
     static XDocument doc;
 
@@ -155,7 +167,7 @@ public static class GameOptions
     {
         get
         {
-            if (current == null) Load();
+            EnsureLoaded();
             return current;
         }
     }
@@ -172,7 +184,7 @@ public static class GameOptions
     /// Windows UI language (gameoption.cpp:1840-1844) is not ported: <see cref="RegionIndex"/> is KR.
     /// IsNexonPlatform (unit_1406c3230_atlbytearrayglue.cpp:88) is taken as 0, so the argument wins over the file.
     /// </summary>
-    public static int Language { get { if (current == null) Load(); return language; } }
+    public static int Language { get { EnsureLoaded(); return language; } }
     static int language;
 
     /// <summary>The string folder of <see cref="Language"/> in Xml.m2d (string/&lt;folder&gt;/*.xml, g_strLocaleDir2;
@@ -191,19 +203,26 @@ public static class GameOptions
     public static bool FromDefault { get; private set; }
 
     /// <summary>Reads the user file or the default (see the class summary). With no data folder the options stay at their
-    /// reset values over an empty document, as the client's do when it cannot read either file.</summary>
+    /// reset values over an empty document, as the client's do when it cannot read either file. One load at a time; the
+    /// options read by another thread meanwhile are the previous load's until this one is complete.</summary>
     public static void Load()
     {
-        current = new GameOption(RegionIndex);
-        doc = null;
+        lock (loadGate) LoadLocked();
+    }
+
+    static void LoadLocked()
+    {
+        System.Threading.Interlocked.Increment(ref Loads);
+        var o = new GameOption(RegionIndex);
+        XDocument doc = null;
         var path = FilePath;
         var user = ReadFile(path);
-        FromDefault = user == null || !GameOption.IsCurrent(user);
+        bool fromDefault = user == null || !GameOption.IsCurrent(user);
         PackSet packs = null;
         try
         {
             if (Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))) packs = PackSet.Shared(data);
-            if (FromDefault)
+            if (fromDefault)
             {
                 if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
                 if (packs != null && packs.Exists("Xml", DefaultEntry)) doc = Parse(packs.Read("Xml", DefaultEntry));
@@ -214,22 +233,26 @@ public static class GameOptions
                 GD.PushWarning("options: no GameOption.xml and no default, using reset values");
                 doc = new XDocument(new XElement("ms2"));
             }
-            current.Load(doc, name => packs != null && Ms2.Ui.LobbyFeatures.IsEnabled(packs, name));
+            o.Load(doc, name => packs != null && Ms2.Ui.LobbyFeatures.IsEnabled(packs, name));
         }
         catch (Exception ex)
         {
             GD.PushWarning("options: " + ex.Message);
             doc ??= new XDocument(new XElement("ms2"));
         }
-        Voice = current.LanguageOption.VoiceIndex;
-        language = current.LanguageOption.LanguageIndex;
+        int voice = o.LanguageOption.VoiceIndex, lang = o.LanguageOption.LanguageIndex;
         if (LanguageArgument() is { } code)
         {
-            language = GameOptionLocale.LanguageByCode(code, 0);    // DAT_143ab0240 starts at 0 (KR)
-            Voice = GameOptionLocale.LanguageByCode(code, 0);
+            lang = GameOptionLocale.LanguageByCode(code, 0);    // DAT_143ab0240 starts at 0 (KR)
+            voice = GameOptionLocale.LanguageByCode(code, 0);
         }
-        var g = current.GraphicOption;
-        GD.Print($"options: {(FromDefault ? "default" : "GameOption.xml")}, {g.Width}x{g.Height} mode {g.ScreenMode} row {g.ResolutionIndex}, music {current.SoundOption.CategoryVolume(2):F2}");
+        Voice = voice;
+        language = lang;
+        FromDefault = fromDefault;
+        GameOptions.doc = doc;
+        current = o;
+        var g = o.GraphicOption;
+        GD.Print($"options: {(fromDefault ? "default" : "GameOption.xml")}, {g.Width}x{g.Height} mode {g.ScreenMode} row {g.ResolutionIndex}, music {o.SoundOption.CategoryVolume(2):F2}");
     }
 
     /// <summary>SaveGameSettings: the blocks into the kept documents (the community request switches into the account
