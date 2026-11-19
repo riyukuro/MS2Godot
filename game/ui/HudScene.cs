@@ -1381,6 +1381,15 @@ public partial class HudScene : Node, IUiStageHost
         return true;
     }
 
+    /// <summary>The scripted live run's chat line: typed into the first chat window and sent as Return would
+    /// (<see cref="Ms2.Ui.Hud.MessengerController.SubmitLine"/>); false without a window.</summary>
+    public bool SubmitChatLine(string line)
+    {
+        if (messengers.Count == 0) return false;
+        messengers[0].Side.SubmitLine(Ms2.Ui.Hud.MessengerController.Escape(line), "");
+        return true;
+    }
+
     static Ms2.Ui.Hud.AvatarRotateLimit avatarLimit;   // UIAvatarPC::vfunc_1's constants, read once
 
     /// <summary>

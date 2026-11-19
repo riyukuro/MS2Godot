@@ -731,6 +731,34 @@ public partial class LiveSession : Node
             await Frames(60);
             Shot("profile_after.png");
         }
+        // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at
+        // most 5 s) and 2 s more; "~N" waits N s instead. With MS2_LIVE_CHAT_SHOTS=<dir> the screen is shot after each as
+        // chat_<n>.png
+        string chat = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAT");
+        if (!string.IsNullOrEmpty(chat) && tree.CurrentScene is Ui.HudScene chatHud)
+        {
+            string chatShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAT_SHOTS");
+            if (!string.IsNullOrEmpty(chatShots)) DirAccess.MakeDirRecursiveAbsolute(chatShots);
+            await Frames(240);
+            int n = 0;
+            foreach (var line in chat.Split('|'))
+            {
+                if (line.StartsWith('~') && int.TryParse(line.AsSpan(1), out int wait)) await Frames(60 * wait);   // "~N": wait N s, then shoot
+                else
+                {
+                    bool back = false;
+                    void Seen(Ms2.Net.Packets.ChatMessage m, Func<Ms2.Net.Packets.WeddingChatHall> _) => back = true;
+                    if (Instance != null) Instance.UserChat += Seen;
+                    GD.Print($"live: chat line {n}: {(chatHud.SubmitChatLine(line) ? "sent" : "no chat window")}");
+                    await Until(() => back, 60 * 5);
+                    if (Instance != null) Instance.UserChat -= Seen;
+                    await Frames(120);
+                }
+                if (!string.IsNullOrEmpty(chatShots))
+                    flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(chatShots, $"chat_{n}.png"));
+                n++;
+            }
+        }
         await Frames(60 * hold);
         bool ok = flow.Current == GameFlow.State.Game;
         GD.Print(ok ? "live: auto run done" : "live: auto run failed");
