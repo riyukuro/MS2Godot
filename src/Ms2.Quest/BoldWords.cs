@@ -112,6 +112,14 @@ public sealed partial class ReservedWords
         return name;
     }
 
+    /// <summary>CReservedWordTable::GetWorldMapLink (reservedwordtable.cpp:392): the "worldmap" link in the colour when
+    /// WorldMapManager::HasFieldSearchInfo(id), else the map name (string table 3).</summary>
+    public string GetWorldMapLink(long id, string color)
+    {
+        string name = Get(MapName, id);
+        return fieldSearch.Contains(id) ? $"<u><a href='event:worldmap,{id}'><FONT color='{color}'>{name}</FONT></a></u>" : name;
+    }
+
     /// <summary>Rw_MapBold (reservedwordtable.cpp:1022-1037): "" for id 0; the "worldmap" link when WorldMapManager::HasFieldSearchInfo(id), else the map name.</summary>
     string MapBold(long id)
     {

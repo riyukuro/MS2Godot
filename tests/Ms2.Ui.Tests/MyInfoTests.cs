@@ -845,8 +845,11 @@ public class MyInfoTests
     [Test]
     public void MasteryRecipeTableIsTheClients()
     {
-        // FUN_14026b9d0: three ',' parts, the id before ':', the third part the count; id 0 or another part count adds none
-        Assert.That(MasteryRecipeTable.ParseIngredient("40201610:GemstoneA10,4,1"), Is.EqualTo(new MasteryRecipeTable.Ingredient(40201610, 1)));
+        // FUN_14026b9d0: three ',' parts, the id and the tag around ':', the third part the count; id 0 or another part
+        // count adds none
+        Assert.That(ItemTags.ByName("GemstoneA10"), Is.Not.Zero);
+        Assert.That(MasteryRecipeTable.ParseIngredient("40201610:GemstoneA10,4,1"),
+            Is.EqualTo(new MasteryRecipeTable.Ingredient(40201610, 1, ItemTags.ByName("GemstoneA10"))));
         Assert.That(MasteryRecipeTable.ParseIngredient("33000014,,2,5"), Is.EqualTo(new MasteryRecipeTable.Ingredient(33000014, 5)), "Tokenize skips empty tokens");
         Assert.That(MasteryRecipeTable.ParseIngredient("33000014,0"), Is.Null);
         Assert.That(MasteryRecipeTable.ParseIngredient("0,0,3"), Is.Null);
@@ -862,6 +865,24 @@ public class MyInfoTests
         Assert.That(t.IngredientRecipes(7), Is.Null);
         Assert.That((MasteryRecipeTable.TypeKey(3), MasteryRecipeTable.TypeKey(11), MasteryRecipeTable.TypeKey(2)),
             Is.EqualTo(("s_mastery_mining", "s_mastery_pettaming", (string)null)));
+    }
+
+    [Test]
+    public void MasteryGradesAndOddsAreTheClients()
+    {
+        // Grade (:355): one below the first grade above the value, else the last grade
+        var t = new MasteryRecipeTable(System.Xml.Linq.XDocument.Parse("<ms2 />"), System.Xml.Linq.XDocument.Parse(
+            "<ms2><mastery type='3'><v grade='1' value='0' /><v grade='2' value='100' /><v grade='3' value='300' /></mastery></ms2>"));
+        Assert.That((t.Grade(3, 0), t.Grade(3, 99), t.Grade(3, 100), t.Grade(3, 5000)), Is.EqualTo((1, 1, 2, 3)));
+        Assert.That((t.MaxGrade(3), t.MaxGrade(4), t.Grade(12, 0)), Is.EqualTo((3, 0, 0)));
+        Assert.That((MasteryRecipeTable.MakeID(3, 2), MasteryRecipeTable.TypeFromID(3002), MasteryRecipeTable.GradeFromID(3002)),
+            Is.EqualTo((3002, 3, 2)));
+        // the Lua success odds (high 10, normal 100: the last count is 60)
+        Assert.That(MasteryRecipeTable.LuaGatheringSuccessProp(5, 10, 100), Is.EqualTo(100));
+        Assert.That(MasteryRecipeTable.LuaGatheringSuccessProp(10, 10, 100), Is.EqualTo(100));
+        Assert.That(MasteryRecipeTable.LuaGatheringSuccessProp(20, 10, 100), Is.EqualTo(96.98179412008142).Within(1e-9));
+        Assert.That(MasteryRecipeTable.LuaGatheringSuccessProp(59, 10, 100), Is.EqualTo(27.53287682315494).Within(1e-9));
+        Assert.That(MasteryRecipeTable.LuaGatheringSuccessProp(60, 10, 100), Is.EqualTo(0));
     }
 
     [Test]

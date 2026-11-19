@@ -268,6 +268,7 @@ public partial class HudScene : Node, IUiStageHost
         if (unwatchPrestige == null) WatchPrestige();       // a window relayout keeps it
         CharacterAbility();
         if (unwatchMeso == null) WatchMeso();               // a window relayout keeps it
+        Mastery();
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
@@ -605,6 +606,7 @@ public partial class HudScene : Node, IUiStageHost
             live.SendChat(chat);
         };
         ChatLog.IsInParty = () => live.Party.IsInParty;
+        live.MasteryTable = hudModel.Tables.MasteryRecipes;   // OnMastery's grade of an exp value
         // FUN_140d2e2b0's held containers: the bag (g_143ab2a90.FindItemByUid)
         ChatLog.FindHeldItem = uid => live.Inventory?.FindByUid(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
         ChatLog.CommandHooks.ChatLine = ChatLog.AddSystemLine;
@@ -1740,6 +1742,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4f2d) ToggleSkillBook();
         else if (id == 0x4f67) ToggleAdventureLevel();
         else if (id == GameMenuController.CharacterAbilityUiId) ToggleCharacterAbility();
+        else if (id == 0x4f1e) ToggleMastery();
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
@@ -2538,6 +2541,7 @@ public partial class HudScene : Node, IUiStageHost
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();
         SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
+        mastery?.Process(Godot.Time.GetTicksMsec());
         CastingBar?.Process();               // UICastingBar::vfunc_15: an expired cast finishes
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
@@ -2557,6 +2561,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "learningquest" && frames == 200) OpenLearningQuest();
         if (openShot == "adventurelevel" && frames == 200) ToggleAdventureLevel();
         if (openShot == "characterability" && frames == 200) ToggleCharacterAbility();
+        if (openShot == "mastery" && frames == 200) ToggleMastery();
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)

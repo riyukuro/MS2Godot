@@ -78,13 +78,17 @@ public sealed class StatPointBook {
 /// UserEnv (0xA8; CSceneStateGame::OnUserEnv, scenestategame.cpp:4414), the modes the character window reads: 0 a title
 /// gained (added to the title list DAT_143ab3268), 1 a player's shown title changed (PC::FUN_141661c70, m_n10f4), 2 the
 /// title list, 3 the collection grades (DAT_143ab30e0: i32 count, then i32 id, u8 grade each; the trophy dialog redraws
-/// after it). The other modes (templates, masteries, fame) are read as null.
+/// after it), 8 the gathering counts (g_143ab3150: i32 count, then i32 id, i32 count each, the mastery recipes' success
+/// odds), 9 the mastery grade rewards received (DAT_143ab31a0: i32 count, then i32 id, u8 value each;
+/// scenestategame.cpp:4469-4490). The other modes (templates, fame) are read as null.
 /// </summary>
 public abstract record UserEnvMessage {
     public sealed record TitleAdded(int Id) : UserEnvMessage;
     public sealed record TitleChanged(int ObjectId, int Title) : UserEnvMessage;
     public sealed record Titles(IReadOnlyList<uint> Ids) : UserEnvMessage;
     public sealed record Collection(IReadOnlyDictionary<uint, byte> Grades) : UserEnvMessage;
+    public sealed record GatheringCounts(IReadOnlyDictionary<int, int> Counts) : UserEnvMessage;
+    public sealed record MasteryRewards(IReadOnlyDictionary<uint, byte> Received) : UserEnvMessage;
 
     public static UserEnvMessage Read(ByteReader r) {
         switch (r.ReadByte()) {
@@ -101,6 +105,18 @@ public abstract record UserEnvMessage {
                 var g = new Dictionary<uint, byte>();
                 for (uint i = 0; i < n; i++) { uint id = (uint) r.ReadInt(); g[id] = r.ReadByte(); }   // DAT_143ab30e0.SetAt
                 return new Collection(g);
+            }
+            case 8: {
+                uint n = (uint) r.ReadInt();
+                var g = new Dictionary<int, int>();
+                for (uint i = 0; i < n; i++) { int id = r.ReadInt(); g[id] = r.ReadInt(); }     // g_143ab3150.SetAt
+                return new GatheringCounts(g);
+            }
+            case 9: {
+                uint n = (uint) r.ReadInt();
+                var g = new Dictionary<uint, byte>();
+                for (uint i = 0; i < n; i++) { uint id = (uint) r.ReadInt(); g[id] = r.ReadByte(); }   // DAT_143ab31a0.SetAt
+                return new MasteryRewards(g);
             }
         }
         return null;

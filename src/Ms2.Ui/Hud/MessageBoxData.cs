@@ -192,6 +192,16 @@ public sealed class MessageBoxData
         ItemEntry = e;
     }
 
+    /// <summary>m_reqItems: the items type 0x23 lists (SetRequiredItems, uimessageboxdata.h:273): item id, rarity, count.</summary>
+    public readonly List<(int ItemId, int Rarity, int Count)> RequiredItems = new();
+
+    /// <summary>SetRequiredItems: the items the box lists as required.</summary>
+    public void SetRequiredItems(IEnumerable<(int ItemId, int Rarity, int Count)> items)
+    {
+        RequiredItems.Clear();
+        RequiredItems.AddRange(items);
+    }
+
     /// <summary>SetCheckbox0 @0x141a024e0.</summary>
     public void SetCheckbox0(string label, bool selected) { Flags |= 8; Check0 = label ?? ""; Check0Selected = selected; }
 
@@ -360,6 +370,7 @@ public sealed class MessageBoxData
                 }
             }
         }
+        if (Type == 0x23 && model != null) o["requireItems"] = FillRequireItems(model);
         if ((Flags & 8) != 0)
         {
             if (Check0.Length > 0) o["checkbox0"] = Check0;
@@ -380,6 +391,28 @@ public sealed class MessageBoxData
         // uimessageboxdata.cpp:226-230: each extra value is set on the object (FUN_1409adbe0), in the map's key order
         foreach (var kv in Values) o[kv.Key] = kv.Value;
         return o;
+    }
+
+    /// <summary>FillRequireItemsObj @0x141a05bd0: per required item the bag "MsgBoxRequieData_&lt;id&gt;_&lt;i&gt;" (the item
+    /// with its count clamped to the stack, the count as the slot text) and the entry {binding, itemCount}; an item the
+    /// table lacks is left out.</summary>
+    List<object> FillRequireItems(UiModel model)
+    {
+        var list = new List<object>();
+        for (int i = 0; i < RequiredItems.Count; i++)
+        {
+            var (itemId, rarity, count) = RequiredItems[i];
+            var item = Items.Item.Create(model.Tables.Items, itemId, rarity);
+            if (item == null) continue;
+            item.SetCountClamped(count);
+            string bind = "MsgBoxRequieData_" + Id.ToString(System.Globalization.CultureInfo.InvariantCulture) + "_" +
+                i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            model.ItemSlots.Remove(bind);
+            model.ItemSlots[bind] = new Items.ItemInfoSlot(bind, item, 0, 0, 0)
+            { CountText = count.ToString(System.Globalization.CultureInfo.InvariantCulture) };
+            list.Add(new Dictionary<string, object> { ["binding"] = bind, ["itemCount"] = (uint)count });
+        }
+        return list;
     }
 
     /// <summary>The record's item bindings go (CMsgBoxDataItem's destructor @0x141a06590: DestroyItemInfoSlot of its bind

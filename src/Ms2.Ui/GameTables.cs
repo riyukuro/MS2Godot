@@ -619,7 +619,7 @@ public sealed class GameTables
     {
         string file = table switch
         {
-            1 => "itemname", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname",
+            1 => "itemname", 0x2f => "stringmasteryreceipename", 0x30 => "stringmasteryreceipedesc", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname",
             0x3b => "petname", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
         };
         if (file == null) return "";

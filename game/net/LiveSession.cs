@@ -143,6 +143,17 @@ public partial class LiveSession : Node
     /// for the dialog and the game menu (OnCharacterAbility tells them only then).</summary>
     public event Action<CharacterAbilityMessage> CharacterAbilityReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
+    /// <summary>The own mastery exp, grade rewards received and gathering counts (OnMastery, UserEnv modes 8/9);
+    /// session-lived, the exp read from the user block on the first use.</summary>
+    public readonly Ms2.Ui.MasteryData Mastery = new();
+    /// <summary>CMasteryTable, which the grade of an exp value comes from; set by the HUD that reads it.</summary>
+    public Ms2.Ui.Items.MasteryRecipeTable MasteryTable;
+    /// <summary>A Mastery packet (0xCD) after it was applied to <see cref="Mastery"/>; mode 0 carries the gain, the old
+    /// grade and whether the grade changed.</summary>
+    public event Action<MasteryMessage, uint, int, bool> MasteryReceived;
+    /// <summary>UserEnv mode 8 or 9 replaced the gathering counts or the received rewards.</summary>
+    public event Action MasteryEnvChanged;
+
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
     public readonly MyCharacter Me = new();
@@ -767,11 +778,29 @@ public partial class LiveSession : Node
                     CharacterAbilityReceived?.Invoke(m);
                 GD.Print($"live: character ability {m?.GetType().Name ?? "other mode"} ({CharacterAbility.Ids.Count} learned)");
             }
+            else if (game.Is(p, Inbound.Mastery))
+            {
+                var m = MasteryMessage.Read(p.Reader());          // CSceneStateGame::OnMastery (scenestategame.cpp:3920)
+                if (m != null && Me.User != null)                 // only with a local player
+                {
+                    if (!Mastery.Loaded) Mastery.Load(Me.User.Mastery);
+                    uint gain = 0; int oldGrade = 0; bool up = false;
+                    if (m is MasteryMessage.ExpChanged e)
+                    {
+                        var table = MasteryTable ?? Ms2.Ui.Items.MasteryRecipeTable.Empty;
+                        (gain, oldGrade, up) = Mastery.SetExp(e.Type, e.Exp, table.Grade);
+                        if (Me.User.Mastery is { } mx && (uint)e.Type < mx.Length) mx[e.Type] = e.Exp;
+                    }
+                    else if (m is MasteryMessage.RewardReceived r) Mastery.MarkReceived(r.RewardId);
+                    MasteryReceived?.Invoke(m, gain, oldGrade, up);
+                }
+                GD.Print($"live: mastery {m?.GetType().Name ?? "other mode"}");
+            }
             else if (game.Is(p, Inbound.UserEnv))
             {
                 var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept
                 if (m is UserEnvMessage.Collection c) { CollectionGrades = c.Grades; CollectionChanged?.Invoke(); }
-                else if (m != null) Me.Apply(m);
+                else if (m != null) { Me.Apply(m); if (Mastery.Apply(m)) MasteryEnvChanged?.Invoke(); }
                 GD.Print($"live: user env {m?.GetType().Name ?? "other mode"} ({Me.Titles.Count} titles)");
             }
             else if (game.Is(p, Inbound.HomeCommand))
