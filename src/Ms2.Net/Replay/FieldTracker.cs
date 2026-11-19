@@ -23,9 +23,13 @@ public sealed record SkillDamageEvent(double Time, SkillDamage Damage) : ReplayE
 /// <summary>An npc's health from a Stat packet: current and maximum.</summary>
 public sealed record NpcHpEvent(double Time, int ObjectId, long Current, long Max) : ReplayEvent(Time);
 /// <summary>A player's stat list (OnStat for a PC, scenestategame.cpp:9424): the health pair (4) is the head bar's.</summary>
-public sealed record UserStatEvent(double Time, PlayerStat Stat) : ReplayEvent(Time);
+public sealed record UserStatEvent(double Time, PcStat Stat) : ReplayEvent(Time);
 /// <summary>OnUserBattle (0x2F): a player's battle stance, SetEmotion's byte (1 in battle, 0 out).</summary>
 public sealed record UserBattleEvent(double Time, int ObjectId, byte Emotion) : ReplayEvent(Time);
+/// <summary>An npc's emotion bit changed (CNpc::ApplySyncBlock @0x1410918e0 reads the block's flags bit 2 and calls
+/// SetEmotion, whose change guard is pcbase.cpp:1268): the battle stance, true in battle. CNpc::vfunc_66 activates the
+/// npc's hp bar on a change to true, only while it is alive.</summary>
+public sealed record NpcStanceEvent(double Time, int ObjectId, bool Battle) : ReplayEvent(Time);
 
 /// <summary>
 /// Turns packets into field events and keeps the current player table. Fed from the read loop (inbound packets) and from the
@@ -39,7 +43,7 @@ public sealed class FieldTracker {
         public FieldAddUser Add;
     }
 
-    public sealed class NpcState { public int ObjectId, NpcId, Moves; public Vector3 Position; public float YawDegrees; }
+    public sealed class NpcState { public int ObjectId, NpcId, Moves; public Vector3 Position; public float YawDegrees; public bool Emotion; }
 
     readonly object gate = new();
     readonly Dictionary<int, NpcState> npcs = new();
@@ -60,8 +64,8 @@ public sealed class FieldTracker {
 
     public IReadOnlyList<Actor> Snapshot() { lock (gate) return actors.Values.Select(a => new Actor { ObjectId = a.ObjectId, Name = a.Name, Gender = a.Gender, IsSelf = a.IsSelf, Position = a.Position, YawDegrees = a.YawDegrees, Moves = a.Moves, Add = a.Add }).ToList(); }
 
-    /// <summary>Player stat packets the reader rejected (the server's Update(entity) form; the client cannot decode it either).</summary>
-    public int PlayerStatDrops;
+    /// <summary>Stat packets the reader could not take (a body shorter than the count's branch reads).</summary>
+    public int StatDrops;
 
     /// <summary>The wire numbering the packets arrive in (the connection's profile).</summary>
     public ProtocolProfile Profile = ProtocolProfile.Kms2525;
@@ -108,7 +112,13 @@ public sealed class FieldTracker {
                 NpcControl c;
                 lock (gate) c = NpcControl.Read(p.Reader(), id => npcs.TryGetValue(id, out var st) && NpcLayoutOf(st.NpcId).IsBoss);
                 foreach (var b in c.Blocks) {
-                    lock (gate) { if (!npcs.TryGetValue(b.ObjectId, out var st)) continue; st.Position = b.Position.ToVector3(); st.YawDegrees = b.RotationZ; st.Moves++; }
+                    lock (gate) {
+                        if (!npcs.TryGetValue(b.ObjectId, out var st)) continue;
+                        st.Position = b.Position.ToVector3(); st.YawDegrees = b.RotationZ; st.Moves++;
+                        // ApplySyncBlock -> SetEmotion: the block's emotion bit, the event only on a change
+                        bool emotion = b.Emotion;
+                        if (st.Emotion != emotion) { st.Emotion = emotion; Events.Enqueue(new NpcStanceEvent(Time, b.ObjectId, emotion)); }
+                    }
                     Events.Enqueue(new NpcMovedEvent(Time, b));
                 }
                 break;
@@ -121,16 +131,15 @@ public sealed class FieldTracker {
                 break;
             }
             case Ms2.Net.Inbound.Stat: {
-                bool isNpc; int id = BitConverter.ToInt32(p.Body, 0);
-                lock (gate) isNpc = npcs.ContainsKey(id);
+                // OnStat picks the actor first (WorldService::FUN_141bd1200): the npc's reader (CNpc::vfunc_90's form),
+                // a PC's PC::vfunc_90 (pc.cpp:1645), and an id nobody added is dropped as the client drops it.
+                bool isNpc, isPc; int id = BitConverter.ToInt32(p.Body, 0);
+                lock (gate) { isNpc = npcs.ContainsKey(id); isPc = !isNpc && actors.ContainsKey(id); }
                 if (isNpc) {
                     var st = NpcStat.Read(p.Reader());
                     if (st.IsHealth) Events.Enqueue(new NpcHpEvent(Time, id, st.Current, st.Max));
-                } else {
-                    // OnStat for a player: the same packet, PCBase::vfunc_90's list form. The kms2525 server also writes a
-                    // StatsPacket.Update(entity) form with the same 0x23 count but a body the client's reader does not
-                    // decode; the read rejects it (PlayerStatDrops).
-                    try { Events.Enqueue(new UserStatEvent(Time, PlayerStat.Read(p.Reader()))); } catch { PlayerStatDrops++; }
+                } else if (isPc) {
+                    try { Events.Enqueue(new UserStatEvent(Time, PcStat.Read(p.Reader()))); } catch { StatDrops++; }
                 }
                 break;
             }

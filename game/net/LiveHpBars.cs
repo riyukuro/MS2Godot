@@ -35,15 +35,20 @@ public sealed partial class LiveHpBars : CanvasLayer
     {
         public Node3D Root; public Func<Vector3> Anchor; public float Offset;
         public NpcHpBar Npc; public NpcRow Row;          // npcs
-        public PcHpBar Pc;                              // players
+        public PcHpBar Pc; public long CharId;           // players
     }
 
     readonly Dictionary<Node3D, Entry> bars = new();
     readonly UiMovie movie;
     readonly float npcOffset, pcOffset, distance;
+    /// <summary>ReleaseEntity's free list (UIHpBar's m_78): a bar whose actor left is kept for the next one.</summary>
+    readonly Stack<MovieClipNode> pool = new();
     float u = 1;
     Field field;
     Camera3D camera;
+    /// <summary>Whether a character is in the local player's party (CPartyManager::IsMemberByCharId with a party), the gate
+    /// FUN_1419923f0 re-reads every frame for a player's bar; on when null.</summary>
+    public Func<long, bool> InParty;
 
     public LiveHpBars(Ms2.Formats.Pack.PackSet packs)
     {
@@ -82,18 +87,18 @@ public sealed partial class LiveHpBars : CanvasLayer
     {
         Remove(npc.Root);
         if (movie == null || npc.Row == null || !npc.Row.HpBar) return null;
-        var bar = new NpcHpBar(npc, movie, u, this, spawnCur, spawnMax);
+        var bar = new NpcHpBar(npc, movie, u, this, spawnCur, spawnMax, pool);
         bars[npc.Root] = new Entry { Root = npc.Root, Anchor = anchor, Offset = npcOffset, Npc = bar, Row = npc.Row };
         return bar;
     }
 
     /// <summary>A party member's bar (PC::vfunc_80), hung from the Eff_UI dummy of the pc table's row for its gender.</summary>
-    public PcHpBar AddPc(Node3D root, Func<Vector3> anchor)
+    public PcHpBar AddPc(Node3D root, Func<Vector3> anchor, long characterId)
     {
         Remove(root);
         if (movie == null) return null;
-        var bar = new PcHpBar(movie, u, this);
-        bars[root] = new Entry { Root = root, Anchor = anchor, Offset = pcOffset, Pc = bar };
+        var bar = new PcHpBar(movie, u, this, pool);
+        bars[root] = new Entry { Root = root, Anchor = anchor, Offset = pcOffset, Pc = bar, CharId = characterId };
         return bar;
     }
 
@@ -103,8 +108,12 @@ public sealed partial class LiveHpBars : CanvasLayer
         if (root != null && bars.Remove(root, out var e)) { e.Npc?.Release(); e.Pc?.Release(); }
     }
 
-    /// <summary>FUN_1419923f0: the option of the actor's kind; a friendly-2 npc shares the party option (vfunc_116).</summary>
-    bool Shown(Entry e) => e.Pc != null ? PartyGauge : e.Row != null && (e.Row.Friendly == 2 ? PartyGauge : MonsterGauge);
+    /// <summary>FUN_1419923f0, which vfunc_8 re-reads every frame: the option of the actor's kind, and for a player the
+    /// party too (a member who leaves loses the bar at once; one who joins gains it at its next stat, stance or hit).
+    /// A friendly-2 npc row shares the party option (CNpc::vfunc_116's value).</summary>
+    bool Shown(Entry e) =>
+        e.Pc != null ? PartyGauge && (InParty?.Invoke(e.CharId) ?? true)
+                     : e.Row != null && (e.Row.Friendly == 2 ? PartyGauge : MonsterGauge);
 
     public override void _Process(double delta)
     {
@@ -117,20 +126,23 @@ public sealed partial class LiveHpBars : CanvasLayer
         foreach (var e in bars.Values)
         {
             if (!IsInstanceValid(e.Root)) { (gone ??= new()).Add(e.Root); continue; }
+            // the frame loop's own gates first (vfunc_15: the layer's flag, vfunc_8's option read, the projection of
+            // vfunc_10), then the bar's vfunc_8 rules, the distance check last (Entity::vfunc_8's m_54)
             Vector2? p = null;
+            bool far = true;
             if (layer && Shown(e))
             {
                 var a = e.Anchor();
-                // vfunc_8's m_54: the actor's distance from the camera mode's point, HpBarDistance at most
-                if (!camera.IsPositionBehind(a) && eye.DistanceTo(e.Root.GlobalPosition) <= distance)
+                if (!camera.IsPositionBehind(a))
                 {
+                    far = eye.DistanceTo(e.Root.GlobalPosition) > distance;   // Entity::vfunc_8: FUN_140f48e20() > m_54
                     var s = camera.UnprojectPosition(a);
                     s.Y += (e.Offset + (field == null ? 0 : PlayerNameTag.PitchShift(field, a))) * u;
                     p = s;
                 }
             }
-            e.Npc?.Update(p);
-            e.Pc?.Update(p);
+            e.Npc?.Update(p, far);
+            e.Pc?.Update(p, far);
         }
         if (gone != null) foreach (var r in gone) Remove(r);
     }
@@ -141,7 +153,8 @@ public sealed partial class LiveHpBars : CanvasLayer
 /// friendly gauge (both relation ids are 1 without PvP, FUN_141992580). An hp change shows it (FUN_141992230's PC
 /// branch) and the battle stance or a hurt spawn activates it (FUN_141992180 through UpdateHpBar), whose keep-alive is
 /// never cleared: once active it stays up at full HP too, as for the own PC's <see cref="PlayerHpBar"/>. vfunc_8 hides
-/// it while it is not shown, dead (hp 0) or inactive; the stance, damage or the keep-alive shows it again.
+/// it while it is not shown or dead (hp 0) — its stance and damage rules only run inside the frame loop, which an
+/// inactive entity never reaches, so the keep-alive covers them — then the distance check (Entity::vfunc_8's m_54).
 /// </summary>
 public sealed class PcHpBar
 {
@@ -150,13 +163,14 @@ public sealed class PcHpBar
     long cur, max;
     bool dirty;
 
-    public PcHpBar(UiMovie movie, float u, Node parent) => clip = new HpBarClip(movie, u, parent);
+    public PcHpBar(UiMovie movie, float u, Node parent, Stack<MovieClipNode> pool = null) => clip = new HpBarClip(movie, u, parent, pool);
 
-    /// <summary>PC::vfunc_10: a hurt spawn activates the bar without showing it; the spawn stance is kept.</summary>
+    /// <summary>The spawn: PC::vfunc_10 activates a hurt spawn's bar, and OnAddUser applies the packet's emotion byte
+    /// with SetEmotion (scenestategame.cpp:11188, a change from the ctor's 0), which runs UpdateHpBar. Not shown.</summary>
     public void Spawn(long cur, long max, bool inBattle)
     {
         InBattle = inBattle;
-        if (cur != max) Activate(cur, max);
+        if (cur != max || inBattle) Activate(cur, max);
     }
 
     /// <summary>PCBase::UpdateHpBar(false) on a stance change (SetEmotion -> the battle state, pc.cpp:1253): the hp pair
@@ -192,16 +206,16 @@ public sealed class PcHpBar
         if (!Shown) Shown = byLocalPlayer;
     }
 
-    /// <summary>UIHpBar::Entity::vfunc_8 for a PC: not shown or dead (hp 0) hides; the battle stance, damage or the
-    /// keep-alive shows.</summary>
-    bool Hidden => !Shown || cur <= 0 || !(InBattle || cur != max || Active);
+    /// <summary>UIHpBar::Entity::vfunc_8 for a PC: not shown or dead (hp 0) hides.</summary>
+    bool Hidden => !Shown || cur <= 0;
 
-    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped, vfunc_8 decides, vfunc_6 places at the
-    /// screen point, vfunc_7 hides without one.</summary>
-    public void Update(Vector2? screen)
+    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped, vfunc_8 decides with the distance
+    /// check last, vfunc_6 places at the screen point, vfunc_7 hides without one.</summary>
+    public void Update(Vector2? screen, bool far = false)
     {
         if (!Active) return;
-        if (screen == null || Hidden) { clip.Hide(); return; }
+        if (Hidden || far) { clip.Hide(); return; }
+        if (screen == null) { clip.Hide(); return; }
         clip.Draw(screen.Value, 1, true, cur, max, ref dirty);
     }
 

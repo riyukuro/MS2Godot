@@ -21,7 +21,7 @@ public sealed partial class RemoteLayer : Node3D
         public Vector3 Target; public float TargetYaw; public string Name, Current = "";
         public Vector3 LastPos; public float Speed;
         public int ObjectId; public long CharacterId; public string Picture = "";
-        public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance
+        public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance (m_unk_160)
         public PcHpBar Bar;
         public Func<Vector3> Anchor;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
@@ -76,7 +76,11 @@ public sealed partial class RemoteLayer : Node3D
             InParty = id => LiveSession.Instance?.Party is { } p && p.PartyId != 0 && p.Find(id) != null,
         });
         npcs.Tags = tags;
-        field.AddChild(bars = new LiveHpBars(packs));
+        field.AddChild(bars = new LiveHpBars(packs)
+        {
+            // FUN_1419923f0 re-reads the party per frame for a player's bar; the same lookup the client's IsMemberByCharId does
+            InParty = id => LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(id) != null,
+        });
         npcs.Bars = bars;
     }
 
@@ -115,8 +119,9 @@ public sealed partial class RemoteLayer : Node3D
         root.Position = r.Target; r.LastPos = r.Target;
         visual.Rotation = new Vector3(0, Mathf.DegToRad(r.TargetYaw), 0);
         anim.Play("idle"); r.Current = "idle";
-        // PC::vfunc_10: a hurt spawn makes a party member's bar active at once (not shown)
-        if (r.HpCur != r.HpMax) EnsureBar(r)?.Spawn(r.HpCur, r.HpMax, r.InBattle);
+        // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,
+        // a change from the ctor's 0): either runs UpdateHpBar, so a member's bar is made active at once (not shown)
+        if (r.HpCur != r.HpMax || r.InBattle) EnsureBar(r)?.Spawn(r.HpCur, r.HpMax, r.InBattle);
         return r;
     }
 
@@ -127,7 +132,7 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>The member's bar, made on demand (PC::vfunc_80 is called from UpdateHpBar, OnStat and a hit, so the
     /// entity is made at the first of those, not at the spawn).</summary>
-    PcHpBar EnsureBar(Remote r) => r.Bar ??= CanPcBar(r.CharacterId) ? bars.AddPc(r.Root, r.Anchor) : null;
+    PcHpBar EnsureBar(Remote r) => r.Bar ??= CanPcBar(r.CharacterId) ? bars.AddPc(r.Root, r.Anchor, r.CharacterId) : null;
 
     void Drain()
     {
@@ -157,25 +162,32 @@ public sealed partial class RemoteLayer : Node3D
                 case UserStatEvent st:
                     // OnStat (vfunc_74 -> FUN_141992230): an hp change shows the member's bar
                     if (!users.TryGetValue(st.Stat.ObjectId, out var su)) break;
-                    if (st.Stat.TryGet(PlayerStat.Health, out long hpMax, out long hpCur)) { su.HpMax = hpMax; su.HpCur = hpCur; }
+                    if (st.Stat.TryGet(PcStat.Health, out long hpMax, out long hpCur)) { su.HpMax = hpMax; su.HpCur = hpCur; }
                     EnsureBar(su)?.Stat(su.HpCur, su.HpMax);
                     break;
                 case UserBattleEvent bat:
-                    // OnUserBattle -> SetEmotion: the stance byte; a change runs UpdateHpBar on both sides
+                    // OnUserBattle -> SetEmotion: the change guard (pcbase.cpp:1268) runs UpdateHpBar only on a change;
+                    // the state 0xe skip (scenestategame.cpp:3269) is not ported (no remote state here). STILL-OPEN: the
+                    // ridee's and the own target's emotion (spRidee / FUN_141bd3620) need ridees and pets.
                     if (!users.TryGetValue(bat.ObjectId, out var sb)) break;
+                    if (sb.InBattle == (bat.Emotion != 0)) break;
                     sb.InBattle = bat.Emotion != 0;
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
                     break;
                 case SkillDamageEvent dmg:
-                    // PCBase::vfunc_112 on each target: a hit shows an off bar only for the local player's hit
+                    // FUN_141671c20: only a record the skill's damage flag set reaches vfunc_112, and only with an entry
+                    // (a miss or a block carries none); the target's own sight-range check drops out-of-sight hits
                     bool byLocal = dmg.Damage.OwnerId == Tracker.SelfObjectId;
                     foreach (var t in dmg.Damage.Targets)
                     {
+                        if (!t.Hits.Any(h => h.Damage > 0)) continue;
                         npcs.Damaged(t.TargetId, byLocal);
-                        if (users.TryGetValue(t.TargetId, out var hit) && hit.Bar != null) hit.Bar.Hit(byLocal);
+                        // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
+                        if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
                     }
                     break;
                 case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
+                case NpcStanceEvent st: npcs.Stance(st.ObjectId, st.Battle); break;
                 case NpcAddedEvent na: npcs.Add(na); NpcsAdded++; break;
                 case NpcRemovedEvent nr: npcs.Remove(nr.ObjectId, nr.Dead); break;
                 case NpcMovedEvent nm: npcs.Move(nm); break;

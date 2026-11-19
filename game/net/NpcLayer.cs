@@ -29,6 +29,7 @@ public sealed class NpcLayer
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public bool Placeholder, Dead;
         public float Height = 150;
+        public long HpCur, HpMax;                 // the npc's stat pair (FieldAddNpc, then the Stat packets)
         public ShaderMaterial HpMat;                 // a replay's stand-in quad
         public World.NpcHpBar Bar;                  // a live field's movie bar
         public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
@@ -148,15 +149,23 @@ public sealed class NpcLayer
         i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
         if (Bars != null)
         {
+            // the anchor's row and model node are looked up once (UIHudEntity::Entity caches its anchor node, m_20);
+            // a row with another parent keeps the full walk
+            var modelNode = i.Placeholder ? null : i.Visual?.GetNodeOrNull<Node3D>("Model");
+            var effUi = modelNode != null ? Ms2.Formats.World.EffectDummyTable.Find(row.EffectDummies, "Eff_UI") : null;
+            Func<Godot.Vector3> anchor = effUi != null && effUi.ParentNode == "Scene Root"
+                ? () => World.DummyAnchor.Point(effUi, modelNode, "Scene Root") ?? root.GlobalPosition
+                : () => World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition;
             // CNpc::vfunc_80: the row's hpBar flag makes the entity (hidden until active and shown); CNpc::vfunc_12's
             // property tag 2 row is shown and filled from the spawn stat
-            i.Bar = Bars.AddNpc(i.Talk, () => World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition, n.Stats[2].Health, n.Stats[0].Health);
+            i.Bar = Bars.AddNpc(i.Talk, anchor, n.Stats[2].Health, n.Stats[0].Health);
         }
         else if (Combat != null && n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health)
         {
             i.HpMat = Combat.HpBar(root, i.Height);
             i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health);
         }
+        i.HpCur = n.Stats[2].Health; i.HpMax = n.Stats[0].Health;
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
         Spawned++;
@@ -204,23 +213,29 @@ public sealed class NpcLayer
         if (seq != null) Play(i, seq.Id);
     }
 
-    /// <summary>PCBase::vfunc_112 on an npc: a hit sets the shown flag only while it is off, and only for the local player's.</summary>
+    /// <summary>PCBase::vfunc_112 on an npc (CNpc::vfunc_112 @0x141090820 returns early for a dead npc whose corpse is
+    /// hittable): a hit sets the shown flag only while it is off, and only for the local player's. A dead npc's bar never
+    /// draws either way.</summary>
     public void Damaged(int id, bool byLocalPlayer)
     {
-        if (inst.TryGetValue(id, out var i) && i.Bar is { Shown: false }) i.Bar.Shown = byLocalPlayer;
+        if (inst.TryGetValue(id, out var i) && !i.Dead && i.Bar is { Shown: false }) i.Bar.Shown = byLocalPlayer;
     }
 
-    /// <summary>An hp update: the bar is filled (and made active by the first stat, standing in for the battle stance the
-    /// server never sends); at 0 the death sequence plays and the body stays until it is removed.</summary>
+    /// <summary>CNpc::vfunc_66 (@0x1410935b0): the emotion changed to battle, so a living npc's bar is made active with
+    /// its current stat pair (UpdateHpBar = FUN_141992180); a living-out change does nothing to it.</summary>
+    public void Stance(int id, bool battle)
+    {
+        if (!battle || !inst.TryGetValue(id, out var i) || i.Dead || i.Bar == null) return;
+        i.Bar.Activate(i.HpCur, i.HpMax);
+    }
+
+    /// <summary>An hp update (OnStat, FUN_141992230): the bar is filled, never activated; at 0 the death sequence plays
+    /// and the body stays until it is removed.</summary>
     public void SetHp(int id, long cur, long max)
     {
         if (!inst.TryGetValue(id, out var i) || max <= 0) return;
-        if (i.Bar != null)
-        {
-            // OnStat (FUN_141992230) only marks the change; the client activates the bar on the npc's battle stance
-            // (CNpc::vfunc_66), which this server never sends, so the first stat stands in for the activation.
-            if (i.Bar.Active) i.Bar.Stat(cur, max); else i.Bar.Activate(cur, max);
-        }
+        i.HpCur = cur; i.HpMax = max;
+        if (i.Bar != null) i.Bar.Stat(cur, max);
         else if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
         i.HpMat?.SetShaderParameter(ShaderParam.Fill, Mathf.Clamp((float)cur / max, 0f, 1f));
         if (cur <= 0 && !i.Dead)

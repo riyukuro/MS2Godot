@@ -5,10 +5,15 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The drawn part of a UIHpBar::Entity, one uihpbar movie hpbar_entity_HPBar instance, shared by the npc and PC bars.
 /// <list type="bullet">
-/// <item>Open (vfunc_5, AS open): "_rank" + rank, the gauge at the guide's place and height; m_c0 = ceil(guide width).</item>
-/// <item>Width (vfunc_6, when the HP changed): (int)((float)cur / (float)max x m_c0), left-anchored; no tween, no trail;
-/// label "friendly" or "hostile".</item>
+/// <item>Open (vfunc_5, AS open): "_rank" + rank, the gauge at the guide's place and height; m_c0 = ceil(guide width).
+/// The open's walk of the movie is kept per rank (the frame's children and the guide's placement never change), so a
+/// hide-and-show opens without re-reading the timeline.</item>
+/// <item>Width (vfunc_6, when the HP changed): (int)((float)cur / (float)max x m_c0), left-anchored, SetWidthInt: the
+/// gauge is built once per open at the guide's full width and then resized in place through its scale-9 context (the
+/// corners keep their size, no rebuild per hit); label "friendly" or "hostile", set only when it changed.</item>
 /// <item>A bar that was hidden (vfunc_7) opens again when it is next drawn.</item>
+/// <item>Free (ReleaseEntity) hands the clip back to <paramref name="pool"/>, the free list the client keeps its cache
+/// clips in (UIHpBar's m_78), instead of freeing it; the next Build takes from it.</item>
 /// </list>
 /// </summary>
 public sealed class HpBarClip
@@ -16,12 +21,16 @@ public sealed class HpBarClip
     readonly UiMovie movie;
     readonly float u;
     readonly Node parent;
+    readonly Stack<MovieClipNode> pool;
     MovieClipNode node, gauge;
     Vector2 guidePos; float guideH; int fullWidth;
     int gaugeSymbol;                        // m_renderHp's symbol (hpbar_large_3)
+    int openRank = -1;                      // the open walk is kept per rank
     bool needsOpen = true;
+    bool? gaugeFriendly;                     // the label the gauge sits on
 
-    public HpBarClip(UiMovie movie, float u, Node parent) { this.movie = movie; this.u = u; this.parent = parent; }
+    public HpBarClip(UiMovie movie, float u, Node parent, Stack<MovieClipNode> pool = null)
+    { this.movie = movie; this.u = u; this.parent = parent; this.pool = pool; }
 
     /// <summary>The guide's full width at the current rank (m_c0), 0 before the bar first opens.</summary>
     public int FullWidth => fullWidth;
@@ -37,25 +46,26 @@ public sealed class HpBarClip
     {
         if (movie == null || node == null && !Build()) return;
         node.Visible = true;
-        if (needsOpen) { Open(rank); dirty = true; }
+        if (needsOpen || rank != openRank) { Open(rank); dirty = true; }
         if (dirty) { SetWidth(friendly, cur, max); dirty = false; }
         node.Position = UiScale.StagePoint(screen, u);   // SetPositionFloat (uihpbar.cpp:171, 480, 618)
     }
 
     bool Build()
     {
-        node = movie.BuildClass("hpbar_entity_HPBar", u);
+        node = pool is { Count: > 0 } ? pool.Pop() : movie.BuildClass("hpbar_entity_HPBar", u);
         if (node == null) return false;
         node.Scale = new Vector2(u, u);
-        parent.AddChild(node);
+        node.Visible = false;
+        if (node.GetParent() == null) parent.AddChild(node);   // a pooled clip keeps its layer, the pool is per layer
         return true;
     }
 
     /// <summary>AS open: the rank's frame, and the guide's place and size there (read before it is hidden).</summary>
     void Open(int rank)
     {
-        gauge?.QueueFree();
-        gauge = null;
+        needsOpen = false; openRank = rank;
+        gauge?.QueueFree(); gauge = null; gaugeFriendly = null;    // the frame may name another gauge symbol
         node.GotoLabel("_rank" + rank);
         var guide = node.Children.FirstOrDefault(c => c.Name == "m_guideHp" && node.Frame >= c.First && node.Frame <= c.Last);
         var bounds = guide?.Def?["id"] is { } id && node.Scope.Symbol((int)id)?["bounds"] is { } b ? UiBuilder.Rc(b) : new Rect2(0, 0, 58, 5);
@@ -67,7 +77,6 @@ public sealed class HpBarClip
         gaugeSymbol = render?.Def?["id"] is { } rid ? (int)rid : 0;
         foreach (var c in node.Children)                                     // configUI hides the guide; the gauge is drawn below
             if (c.Name is "m_guideHp" or "m_renderHp") c.Node.Visible = false;
-        needsOpen = false;
     }
 
     /// <summary>An instance's placement matrix at a frame, from the timeline (a 9-slice instance's node is built at scale 1).</summary>
@@ -85,21 +94,28 @@ public sealed class HpBarClip
 
     void SetWidth(bool friendly, long cur, long max)
     {
-        gauge?.QueueFree();
-        gauge = null;
+        if (gauge == null)
+        {
+            gauge = movie.BuildSymbolSized(gaugeSymbol, u, fullWidth, guideH);
+            if (gauge == null) return;
+            gauge.Position = guidePos;
+            node.AddChild(gauge);
+        }
+        if (gaugeFriendly != friendly) { gauge.GotoLabel(friendly ? "friendly" : "hostile"); gaugeFriendly = friendly; }
         int w = Width(cur, max, fullWidth);
-        if (w <= 0) return;
-        gauge = movie.BuildSymbolSized(gaugeSymbol, u, w, guideH);
-        if (gauge == null) return;
-        gauge.GotoLabel(friendly ? "friendly" : "hostile");
-        gauge.Position = guidePos;
-        node.AddChild(gauge);
+        gauge.Visible = w > 0;
+        // SetWidthInt without the rebuild: the gauge's shapes draw through their scale-9 context, so the new width is a
+        // context update (the corners keep their size) and a redraw
+        foreach (var c in gauge.Children)
+            if (c.Node is ShapeNode s && s.Nine is { } ctx) { ctx.Sx = w / Math.Max(ctx.Bounds.Size.X, 0.001f); s.QueueRedraw(); }
     }
 
-    /// <summary>The actor left the world (ReleaseEntity).</summary>
+    /// <summary>The actor left the world (ReleaseEntity): back to the free list, or freed without one.</summary>
     public void Free()
     {
-        node?.QueueFree();
-        node = null; gauge = null; needsOpen = true;
+        gauge?.QueueFree(); gauge = null; gaugeFriendly = null;
+        if (node != null && pool != null) { node.Visible = false; pool.Push(node); }
+        else node?.QueueFree();
+        node = null; needsOpen = true; openRank = -1;
     }
 }

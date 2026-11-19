@@ -28,10 +28,11 @@ public sealed class NpcHpBar
     bool dirty;
     readonly HpBarClip clip;
 
-    public NpcHpBar(FieldNpcs.Placed npc, UiMovie movie, float u, Node parent, long? spawnCur = null, long? spawnMax = null)
+    public NpcHpBar(FieldNpcs.Placed npc, UiMovie movie, float u, Node parent, long? spawnCur = null, long? spawnMax = null,
+        System.Collections.Generic.Stack<MovieClipNode> pool = null)
     {
         Npc = npc;
-        clip = new HpBarClip(movie, u, parent);
+        clip = new HpBarClip(movie, u, parent, pool);
         // CNpc::vfunc_12 (@0x14108f710): a property tag 2 npc's bar is shown and set from its HP stat (current, max) at spawn.
         // Those stats come with the server's FieldAddNpc; the offline stand-in spawns the npc whole, at its row's stat hp.
         if (npc.Row.AlwaysDisplayHpBar) { Shown = true; Activate(spawnCur ?? npc.Row.Hp, spawnMax ?? npc.Row.Hp); }
@@ -56,11 +57,13 @@ public sealed class NpcHpBar
         if (Active && changed) dirty = true;
     }
 
-    /// <summary>One frame (UIHudEntity::vfunc_15) with the anchor's screen point, or null when it cannot be projected.</summary>
-    public void Update(Vector2? screen)
+    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped; vfunc_8's rules (the shown flag, dead)
+    /// run first and the distance check (Entity::vfunc_8's m_54, in the base) last; vfunc_6 places at the screen point,
+    /// vfunc_7 hides without one. The npc's vfunc_8 has no timer of its own (see the class comment).</summary>
+    public void Update(Vector2? screen, bool far = false)
     {
         if (!Active) return;
-        if (screen == null || !Shown || Dead) { clip.Hide(); return; }
+        if (!Shown || Dead || far || screen == null) { clip.Hide(); return; }
         clip.Draw(screen.Value, Rank, Npc.Row.Friendly == 1, cur, max, ref dirty);
     }
 

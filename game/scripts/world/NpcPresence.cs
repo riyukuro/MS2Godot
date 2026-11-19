@@ -30,6 +30,10 @@ public sealed partial class NpcPresence : CanvasLayer
 
     readonly List<Tag> tags = new();
     readonly Dictionary<FieldNpcs.Placed, NpcHpBar> bars = new();
+    /// <summary>The bar anchors: each npc's Eff_UI row and model node looked up once, the point per frame.</summary>
+    readonly Dictionary<FieldNpcs.Placed, Func<Vector3>> barAnchor = new();
+    /// <summary>ReleaseEntity's free list (UIHpBar's m_78): a bar whose npc left is kept for the next one.</summary>
+    readonly Stack<MovieClipNode> barPool = new();
     readonly ClientConstants constants;
     float tagOffset, barOffset;
     Field field;
@@ -160,7 +164,17 @@ public sealed partial class NpcPresence : CanvasLayer
         }
         // the bars after the tags: which of the two the client draws on top is not known (both are separate movies)
         foreach (var n in npcs)
-            if (n.Row.HpBar && barMovie != null) bars[n] = new NpcHpBar(n, barMovie, u, this);
+            if (n.Row.HpBar && barMovie != null)
+            {
+                bars[n] = new NpcHpBar(n, barMovie, u, this, pool: barPool);
+                // the anchor's row and model node are looked up once (UIHudEntity::Entity caches its node, m_20);
+                // a row with another parent keeps the full walk
+                var modelNode = n.Body?.GetNodeOrNull<Node3D>("Model");
+                var effUi = modelNode != null ? EffectDummyTable.Find(n.Row.EffectDummies, "Eff_UI") : null;
+                barAnchor[n] = effUi != null && effUi.ParentNode == "Scene Root"
+                    ? (Func<Vector3>)(() => DummyAnchor.Point(effUi, modelNode, "Scene Root") ?? n.Root.GlobalPosition)
+                    : () => Dummy(n, "Eff_UI") ?? n.Root.GlobalPosition;
+            }
         Npcs = npcs.ToList();
     }
 
@@ -227,7 +241,7 @@ public sealed partial class NpcPresence : CanvasLayer
         foreach (var b in bars.Values)
         {
             if (!b.Active) continue;
-            var a = Anchor(b.Npc);
+            var a = barAnchor.TryGetValue(b.Npc, out var point) ? point() : Anchor(b.Npc);
             if (!barLayer || camera.IsPositionBehind(a)) { b.Update(null); continue; }
             var p = camera.UnprojectPosition(a);
             p.Y += (barOffset + Shift(a)) * u;

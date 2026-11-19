@@ -105,9 +105,11 @@ public sealed record NpcStat(int ObjectId, byte Flag, byte Stat, long[] Values, 
 }
 
 /// <summary>
-/// Inbound 0x2E for a player (CSceneStateGame::OnStat, scenestategame.cpp:9424, then PCBase::vfunc_90): i32 object id, u8 command (0), u8 count.
-/// Writer: StatsPacket.Update(entity, attributes) / Init in the kms2525 server. count 35 (BASIC_TOTAL) = Init: every attribute in index order without
-/// the id byte; otherwise count x (u8 attribute, total, base, current), i64 for Health (4), i32 for the rest.
+/// Inbound 0x2E for the own player (CSceneStateGame::OnStat, scenestategame.cpp:9424, then PCBase::vfunc_90, pcbase.cpp:2409):
+/// i32 object id, u8 command (0), u8 count. Writer: StatsPacket.Init / Update(entity, attributes) in the kms2525 server.
+/// count 35 (BASIC_TOTAL) = Init: every attribute in index order without the id byte; otherwise count x (u8 attribute,
+/// total, base, current), i64 for Health (4), i32 for the rest. This is the self reader: the own packet is consumed by the
+/// session before the field tracker; another player's packet uses <see cref="PcStat"/> (PC::vfunc_90's other 0x23 form).
 /// </summary>
 public sealed record PlayerStat(int ObjectId, IReadOnlyDictionary<byte, long[]> Values) {
     public const int Total = 35, Health = 4, Spirit = 7, Stamina = 10;
@@ -125,6 +127,42 @@ public sealed record PlayerStat(int ObjectId, IReadOnlyDictionary<byte, long[]> 
     }
     public bool TryGet(byte attribute, out long total, out long current) {
         if (Values.TryGetValue(attribute, out var v)) { total = v[0]; current = v[2]; return true; }
+        total = current = 0; return false;
+    }
+}
+
+/// <summary>
+/// Inbound 0x2E for another player's actor (OnStat's PCBase is a PC, so PC::vfunc_90, pc.cpp:1645; FieldAddUser's stat
+/// block goes through PC::vfunc_91, the same body): i32 object id, u8 command, u8 count. 0x23 = the same block
+/// FieldAddUser carries, three stat rows (total, base, current) of i64 health, i32 attack speed (0xd), i32 movement
+/// speed (0xe), i32 jump height (0x20), i32 mount speed (0x16); any other count x (u8 stat, 3 values, i64 for health 4
+/// else i32, IsPercentStat stat.cpp:314). No end check: PC::vfunc_90 consumes only what the count's branch reads, so the
+/// self form the server broadcasts on a skill use (StatsPacket.Init, the 35-attribute body) is read as its first three
+/// rows and the rest is left unread, exactly as the client leaves it.
+/// </summary>
+public sealed record PcStat(int ObjectId, IReadOnlyDictionary<byte, long[]> Values) {
+    public const byte Health = 4, AttackSpeed = 0xd, MovementSpeed = 0xe, JumpHeight = 0x20, MountSpeed = 0x16;
+    public static PcStat Read(ByteReader r) {
+        int id = r.ReadInt(); r.ReadByte(); byte count = r.ReadByte();
+        var d = new Dictionary<byte, long[]>();
+        if (count == 0x23) {
+            for (byte kind = 0; kind < 3; kind++) {
+                void Set(byte s, long v) { if (!d.TryGetValue(s, out var a)) d[s] = a = new long[3]; a[kind] = v; }
+                Set(Health, r.ReadLong()); Set(AttackSpeed, r.ReadInt()); Set(MovementSpeed, r.ReadInt());
+                Set(JumpHeight, r.ReadInt()); Set(MountSpeed, r.ReadInt());
+            }
+        } else {
+            for (int n = 0; n < count; n++) {
+                byte s = r.ReadByte();
+                var v = new long[3];
+                for (int i = 0; i < 3; i++) v[i] = s == Health ? r.ReadLong() : (uint) r.ReadInt();
+                d[s] = v;
+            }
+        }
+        return new PcStat(id, d);
+    }
+    public bool TryGet(byte stat, out long total, out long current) {
+        if (Values.TryGetValue(stat, out var v)) { total = v[0]; current = v[2]; return true; }
         total = current = 0; return false;
     }
 }

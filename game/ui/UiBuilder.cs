@@ -151,6 +151,10 @@ public partial class ShapeNode : Node2D
     readonly NineCtx nine;
     readonly List<(Color Color, Vector2[] Pts)> paths = new();
 
+    /// <summary>The scale-9 context the shapes' pieces are mapped through at draw time; the gauge's in-place resize
+    /// mutates its Sx, as the client's SetWidthInt re-draws the clip at a new width.</summary>
+    public NineCtx Nine => nine;
+
     public ShapeNode(UiScope scope, JsonObject sym, NineCtx nine = null)
     {
         this.nine = nine;
