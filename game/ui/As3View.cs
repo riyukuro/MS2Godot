@@ -263,7 +263,7 @@ public partial class As3View : Node2D
             {
                 // a timeline mask: following depths up to its clip depth draw only inside it; the mask itself is not drawn
                 if (e.Mask == null) { e.Mask = new MaskShape(); byNode[e.Mask] = e; }
-                if (visit) Checked(e.Mask.Set(MaskShape.Polygons(k, Mat.Identity)), "clip mask polygons", e);
+                if (visit) Checked(e.Mask.Refresh(k, Mat.Identity), "clip mask polygons", e);
                 wanted.Add(e.Holder);
                 wanted.Add(e.Mask);
                 clip = e.Mask; clipEnd = (int)k.ClipDepth;
@@ -276,7 +276,7 @@ public partial class As3View : Node2D
                 if (e.Mask == null) { e.Mask = new MaskShape(); byNode[e.Mask] = e; }
                 var mo = k.MaskObject;
                 toC ??= c.ToGlobalMatrix().Inverse();
-                Checked(e.Mask.Set(MaskShape.Polygons(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value))), "script mask polygons", e);
+                Checked(e.Mask.Refresh(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value)), "script mask polygons", e);
                 if (e.Holder.GetParent() != e.Mask) { Checked(true, "masked holder parent", e); e.Holder.GetParent()?.RemoveChild(e.Holder); e.Mask.AddChild(e.Holder); }
                 top = e.Mask;
             }
@@ -783,12 +783,52 @@ public partial class MaskShape : Node2D
 
     public MaskShape() { ClipChildren = ClipChildrenMode.Only; }
 
-    /// <summary>The mask's polygons this frame; redrawn only when they changed (then true).</summary>
-    public bool Set(List<Vector2[]> p)
+    readonly List<Vector2[]> scratch = new(), spare = new();
+
+    /// <summary>
+    /// <see cref="Set"/> with the mask's polygons built into this node's own scratch arrays: the per-frame check allocates
+    /// nothing while the polygons are unchanged (arrays are reused by length; a changed set keeps its own arrays).
+    /// </summary>
+    public bool Refresh(AsDisplayObject mask, Mat toSpace)
+    {
+        scratch.Clear();
+        Collect(mask, toSpace, scratch, true, spare);
+        if (!Same(scratch))
+        {
+            spare.AddRange(polys);          // the replaced polygons' arrays are the next frame's scratch
+            var p = new List<Vector2[]>(scratch);
+            scratch.Clear();
+            return Apply(p);
+        }
+        spare.AddRange(scratch);
+        scratch.Clear();
+        return false;
+    }
+
+    bool Same(List<Vector2[]> p)
     {
         bool same = p.Count == polys.Count;
         for (int i = 0; same && i < p.Count; i++) same = p[i].AsSpan().SequenceEqual(polys[i]);
-        if (same) return false;
+        return same;
+    }
+
+    static Vector2[] Arr(List<Vector2[]> spare, int n)
+    {
+        if (spare != null)
+            for (int i = spare.Count - 1; i >= 0; i--)
+                if (spare[i].Length == n) { var a = spare[i]; spare.RemoveAt(i); return a; }
+        return new Vector2[n];
+    }
+
+    /// <summary>The mask's polygons this frame; redrawn only when they changed (then true).</summary>
+    public bool Set(List<Vector2[]> p)
+    {
+        if (Same(p)) return false;
+        return Apply(p);
+    }
+
+    bool Apply(List<Vector2[]> p)
+    {
         polys = p;
         // A mask that is one axis-aligned rectangle clips with the canvas item's clip rectangle instead of clip_children:
         // Godot does not nest clip_children (an inner one draws its polygons as plain white shapes over the content), and
@@ -835,7 +875,7 @@ public partial class MaskShape : Node2D
     public static List<Vector2[]> Polygons(AsDisplayObject mask, Mat toSpace)
     {
         var list = new List<Vector2[]>();
-        Collect(mask, toSpace, list, true);
+        Collect(mask, toSpace, list, true, null);
         return list;
     }
 
@@ -844,19 +884,19 @@ public partial class MaskShape : Node2D
     /// <summary>A layout path's point list as numbers, read once per path.</summary>
     static double[] Points(JsonArray a) => points.GetValue(a, x => x.Select(v => (double)v).ToArray());
 
-    static void Collect(AsDisplayObject o, Mat parentToSpace, List<Vector2[]> list, bool root)
+    static void Collect(AsDisplayObject o, Mat parentToSpace, List<Vector2[]> list, bool root, List<Vector2[]> spare)
     {
         if (!root && !o.IsVisible) return;
         var m = o.Matrix.Then(parentToSpace);
         Vector2 P(double x, double y) { var (gx, gy) = m.Apply(x, y); return new Vector2((float)gx, (float)gy); }
-        Vector2[] Box(RectD r) => new[] { P(r.X, r.Y), P(r.X + r.W, r.Y), P(r.X + r.W, r.Y + r.H), P(r.X, r.Y + r.H) };
+        Vector2[] Box(RectD r) { var b = Arr(spare, 4); b[0] = P(r.X, r.Y); b[1] = P(r.X + r.W, r.Y); b[2] = P(r.X + r.W, r.Y + r.H); b[3] = P(r.X, r.Y + r.H); return b; }
         bool drew = false;
         if (o.Symbol?["paths"] is JsonArray ps)
             foreach (var p in ps)
             {
                 if (p["pts"] is not JsonArray a || a.Count < 6) continue;
                 var d = Points(a);
-                var pts = new Vector2[d.Length / 2];
+                var pts = Arr(spare, d.Length / 2);
                 for (int i = 0; i < pts.Length; i++) pts[i] = P(d[2 * i], d[2 * i + 1]);
                 list.Add(pts);
                 drew = true;
@@ -872,7 +912,7 @@ public partial class MaskShape : Node2D
             {
                 if (alpha <= 0) continue;
                 if (op == "rect") { list.Add(Box(new RectD(v[0], v[1], v[2], v[3]))); continue; }
-                var pts = new Vector2[24];
+                var pts = Arr(spare, 24);
                 for (int i = 0; i < pts.Length; i++)
                 {
                     double t = i * Math.PI * 2 / pts.Length;
@@ -881,7 +921,7 @@ public partial class MaskShape : Node2D
                 list.Add(pts);
             }
         if (o is AsContainer c)
-            foreach (var k in c.Children) Collect(k, m, list, false);
+            foreach (var k in c.Children) Collect(k, m, list, false, spare);
     }
 }
 
