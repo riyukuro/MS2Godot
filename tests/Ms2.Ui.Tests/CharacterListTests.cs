@@ -65,4 +65,49 @@ public class CharacterListTests
         Assert.That(ImgPath(1), Does.EndWith(pic));
         Assert.That(ImgPath(0), Does.Not.EndWith(pic));
     }
+    [Test]
+    public void DoubleClickOnACharacterStartsTheGame()
+    {
+        // CharacterListDialog listens to m_charlist's itemDoubleClick (onDoubleClickCharacter -> clickStart -> OnGameStart, as
+        // the Start button), which CLIK's CoreList raises from its renderers' doubleClick (setupRenderer: doubleClickEnabled =
+        // true). The client hands WM_LBUTTONDBLCLK to the movie as a plain mouse down (@0x1422da5a0) and GFx makes the second
+        // release within 300 ms at the same pixel a doubleClick (sfr_as3_17.cpp:7133-7163).
+        var (h, c) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var started = new List<string>();
+        c.GameStart += started.Add;
+        var p = h.Player;
+        var r = h.Invoke(h.Entity, "getCharacterRenderer", 1) as AsDisplayObject;
+        Assert.That(r, Is.Not.Null, "row 1's renderer");
+        var b = r.GetBounds(null);
+        double x = b.X + b.W / 2, y = b.Y + b.H / 2;
+        void Press() { p.MouseMove(x, y); p.MouseButton(true); p.MouseButton(false); }
+        void Wait(double ms) { for (double t = p.RT.TimerMs + ms; p.RT.TimerMs < t;) p.Tick(); }
+
+        // the scene's fade-in turns the input on; a click on another row selects it and turns the input off until its
+        // preview's fade-in (OnSelectCharacter, FadeInComplete), so the double click is on the selected row
+        var selected = new List<string>();
+        c.SelectCharacter += selected.Add;
+        c.Previewed("11");      // the first row's preview from the list's load
+        c.FadeInComplete();
+        Press();
+        p.Tick();
+        Assert.That(selected, Is.EqualTo(new[] { "12" }), "a click selects the row");
+        c.Previewed("12");
+        c.FadeInComplete();
+        Wait(400);
+
+        // two clicks 400 ms apart are two clicks
+        Press();
+        Wait(400);
+        Assert.That(started, Is.Empty, "one click selects only");
+        Press();
+        p.Tick();
+        Assert.That(started, Is.Empty, "clicks 400 ms apart do not start");
+
+        // then a click within 300 ms of the last one: a double click on that row
+        Wait(200);
+        Press();
+        p.Tick();
+        Assert.That(started, Is.EqualTo(new[] { "12" }), "the double click starts the game with that row");
+    }
 }

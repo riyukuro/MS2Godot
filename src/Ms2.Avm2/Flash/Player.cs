@@ -1401,6 +1401,12 @@ namespace Ms2.Avm2.Flash
         public const int LeftButton = 0, RightButton = 1, MiddleButton = 2;
 
         readonly AsInteractiveObject[] pressedBy = new AsInteractiveObject[3];     // GetMouseButtonDownEntity(buttonIdx)
+        // MouseState::DblClick[buttonIdx] (GetDoubleClickInfo): the last click's time (ms, 0 = none) and stage pixel
+        readonly (double Time, int X, int Y)[] lastClick = new (double, int, int)[3];
+
+        /// <summary>GenerateMouseEvents' double-click window: a second release within this many ms of the last click, at the
+        /// same stage pixel (sfr_as3_17.cpp:7140, GFX_DOUBLE_CLICK_TIME_MS).</summary>
+        public const double DoubleClickMs = 300;
         /// <summary>
         /// A mouse button (<see cref="LeftButton"/>, <see cref="RightButton"/>, <see cref="MiddleButton"/>). MovieRoot::
         /// GenerateMouseEvents (sfr_as3_17.cpp:7007) runs per button index: the mouse up, the wheel and the mouse move go to
@@ -1408,7 +1414,10 @@ namespace Ms2.Avm2.Flash
         /// reaches the stage's listeners (DragManager's MOUSE_UP); the mouse down likewise (activeEntitySafe, :7265), and
         /// the click goes where both went, each with that button's index as buttonIdx. Only a left press moves the focus
         /// (MovieImpl's mouse handling, sfr_gfx_01i.cpp:3673), and MouseEvent.buttonDown is the left button (ButtonsMask &amp; 1,
-        /// sfr_as3_09.cpp:1708). main.gfx's stage listeners turn the right button's events into the right* events
+        /// sfr_as3_09.cpp:1708). A second release soon after a click at the same pixel is a doubleClick instead of a click
+        /// when the target has doubleClickEnabled (<see cref="DoubleClickMs"/>): the client hands a WM_LBUTTONDBLCLK to the
+        /// movie as a plain mouse down (GFxMovieEventHandler @0x1422da5a0), so the press after a double click is no different
+        /// here. main.gfx's stage listeners turn the right button's events into the right* events
         /// (<see cref="ListenForRightButton"/>).
         /// </summary>
         public void MouseButton(bool down, int button = LeftButton)
@@ -1428,8 +1437,20 @@ namespace Ms2.Avm2.Flash
             else
             {
                 var pressed = pressedBy[button];
-                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseUp", button: button);
-                if ((t ?? Stage) == pressed) MouseEv(pressed, "click", button: button);
+                var top = t ?? (AsInteractiveObject)Stage;
+                MouseEv(top, "mouseUp", button: button);
+                if (top == pressed)     // IsMouseInsideEntityLast: the release is over the entity the press went to
+                {
+                    // sfr_as3_17.cpp:7133-7163: a release within 300 ms of the last click at the same pixel is a double click;
+                    // the topmost entity gets doubleClick when its doubleClickEnabled is set, and click otherwise
+                    double tm = RT.TimerMs;
+                    int ax = (int)MouseX, ay = (int)MouseY;
+                    ref var dci = ref lastClick[button];
+                    bool dblClick = dci.Time != 0 && tm <= dci.Time + DoubleClickMs && dci.X == ax && dci.Y == ay;
+                    if (dblClick && top.doubleClickEnabled) MouseEv(top, "doubleClick", button: button);
+                    else MouseEv(pressed, "click", button: button);
+                    dci = (dblClick ? 0 : Math.Max(tm, double.Epsilon), ax, ay);
+                }
                 pressedBy[button] = null;
             }
         }
