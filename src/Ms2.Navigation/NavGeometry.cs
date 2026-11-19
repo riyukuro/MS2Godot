@@ -109,7 +109,11 @@ public sealed class NavGeometry
             {
                 var d = e.Vector("GeneratePhysXDimension");
                 if (d.X == 0 && d.Y == 0 && d.Z == 0) d = new Vec3(150, 150, 150);
-                g.AddBox(xf, d.X, d.Y, d.Z, 0, fluid ? Water : 0);
+                // CubeMapInformationService::GeneratePhysX (0x1410c5680, cubemapinformationservice_3.cpp:4306-4345): the
+                // box stands on the entity's Position and is turned by Rotation.z only (globalPose.M.rotZ); the entity's
+                // x/y rotation and its scale are not read
+                var boxXf = new Xform(e.Position, Quat.FromAxis(2, e.RotationDeg.Z * Math.PI / 180).ToMatrix(), 1);
+                g.AddBox(boxXf, d.X, d.Y, d.Z, 0, fluid ? Water : 0);
             }
             // PropService::HandleSceneGraphAddedMessage (PropService.cpp:460-465, exe 0x142062560) returns before
             // AddPhysXPropToPropData for an entity whose GeneratePhysX (0x38141815) is set, whatever its model: such an
