@@ -422,7 +422,13 @@ public partial class Field : Node3D
         // The field shader draws the sun itself (ms2_sun_*); from this light it reads only the shadow, which scales the
         // shader's own sun term (field_lit.gdshader light()), so the sun is counted once. Its shadow is the light's
         // CastShadows, forced off below the mapObject shadow level (MS2LightService::UpdateLightShadow, ms2lightservice.cpp:356-385)
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMaxDistance = 4000 };
+        // The casters draw into the shadow map from their back faces: NiShadowRenderClick passes the generator's
+        // GetRenderBackfaces (NiShadowRenderClick.cpp:32-33, true from NiShadowGenerator.cpp:59, 104) to
+        // NiDX9ShadowWriteShader, which flips each draw mode's cull (NiDX9ShadowWriteShader.cpp:19-31, 56-67): DRAW_CCW
+        // casts from the back faces, DRAW_CW from the front, DRAW_BOTH from both. ShadowReverseCullFace flips the caster's
+        // own cull mode the same way. STILL-OPEN: no client call to SetRenderBackfaces was found by name; an inlined
+        // flag write on the generator would not show in that search.
+        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMaxDistance = 4000, ShadowReverseCullFace = true };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
