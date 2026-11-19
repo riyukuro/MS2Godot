@@ -229,7 +229,7 @@ public partial class Field : Node3D
     readonly System.Diagnostics.Stopwatch frameClock = new();
     ProcessModeEnum loadProcessMode;
     bool loadVisible;
-    readonly List<CanvasLayer> hiddenLayers = new();
+    StagedLayers layers;            // the field's canvas layers, hidden while it loads
 
     /// <summary>True once the field is built (the client's IsLoadingComplete); false while a field load is under way.</summary>
     public static bool LoadComplete { get; private set; }
@@ -272,12 +272,9 @@ public partial class Field : Node3D
         frameClock.Restart();
     }
 
-    /// <summary>A Node3D's visibility does not reach canvas layers: the field's own (the backdrop) are hidden one by one.</summary>
-    void HideLayers()
-    {
-        foreach (var n in FindChildren("*", nameof(CanvasLayer), true, false))
-            if (n is CanvasLayer l && l.Visible) { l.Visible = false; hiddenLayers.Add(l); }
-    }
+    /// <summary>A Node3D's visibility does not reach canvas layers: the field's own (the backdrop) are hidden one by one.
+    /// The layers are tracked as they enter the field (StagedLayers), not searched for in the whole field every frame.</summary>
+    void HideLayers() => (layers ??= new StagedLayers(this)).Hide();
 
     /// <summary>A field that leaves the tree while it loads (its scene changed) drops the move and the loading screen it
     /// took here, before the next scene's field starts its own load in the same scene change (its awaiter only stops it
@@ -285,6 +282,7 @@ public partial class Field : Node3D
     public override void _ExitTree()
     {
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
+        layers?.Stop();
         // the root viewport outlives the field: a size change during the scene change (the HUD scene restoring the window's
         // content scale mode as it leaves) must not reach a field that is no longer in the tree
         if (rasterSource != null) { rasterSource.SizeChanged -= RasterOrigin; rasterSource = null; }
@@ -297,8 +295,8 @@ public partial class Field : Node3D
     {
         if (!began || restored) return;
         restored = true;
-        foreach (var l in hiddenLayers) if (IsInstanceValid(l)) l.Visible = true;
-        hiddenLayers.Clear();
+        layers?.Restore();
+        layers = null;
         Visible = loadVisible;
         ProcessMode = loadProcessMode;
     }
