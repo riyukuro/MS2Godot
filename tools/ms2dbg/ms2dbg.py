@@ -26,7 +26,7 @@ COMMANDS = {
         "path": ("s", "node path"), "props": ("l", "engine property names to read"),
         "csharp": ("b", "dump the C# object"), "member": ("s", "reach into it, e.g. 'meshes[0].world'"),
         "depth": ("i", "C# dump depth (default 3, max 8)"), "items": ("i", "collection items shown (default 24)"),
-        "statics": ("b", "include static fields"), "getters": ("b", "run computed property getters")}),
+        "statics": ("b", "include static fields")}),
     "material": ("Every material a node draws with: shader, render mode, every parameter's current value, instance uniforms.", {
         "path": ("s", "MeshInstance3D / CanvasItem path"), "surface": ("i", "one mesh surface only")}),
     "find": ("Node paths by engine/C# type, name pattern or group.", {
@@ -59,9 +59,14 @@ def info_path(explicit=None):
     p = explicit or os.environ.get("MS2_DEBUG_FILE")
     if p:
         return p
-    found = sorted(glob.glob(os.path.expanduser("~/.local/share/godot/app_userdata/*/debug.json")), key=os.path.getmtime)
-    if found:
-        return found[-1]
+    found = sorted(glob.glob(os.path.expanduser("~/.local/share/godot/app_userdata/*/debug.json")), key=os.path.getmtime, reverse=True)
+    for f in found:  # newest first; a port file whose game has exited is skipped
+        try:
+            with open(f) as fh:
+                os.kill(int(json.load(fh)["pid"]), 0)
+            return f
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
     raise DebugError("no port file: set MS2_DEBUG_FILE (the same value the game was started with) or pass --file")
 
 
@@ -99,6 +104,8 @@ def request(info_file, cmd, args=None, timeout=TIMEOUT):
         resp = json.loads(buf.decode())
     except ValueError:
         raise DebugError("bad answer from the game")
+    if not isinstance(resp, dict):
+        raise DebugError("bad answer from the game (not an object)")
     if not resp.get("ok"):
         raise DebugError(str(resp.get("error")))
     return resp.get("result")
@@ -176,8 +183,8 @@ def mcp_serve(explicit):
                 continue
             try:
                 text, err = json.dumps(request(info_path(explicit), name, args), indent=1), False
-            except DebugError as e:
-                text, err = str(e), True
+            except Exception as e:  # one bad call must not end the server
+                text, err = str(e) or type(e).__name__, True
             send({"jsonrpc": "2.0", "id": mid, "result": {"content": [{"type": "text", "text": text}], "isError": err}})
         else:
             send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "method not found"}})

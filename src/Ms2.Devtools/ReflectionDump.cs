@@ -7,9 +7,10 @@ namespace Ms2.Devtools;
 
 /// <summary>
 /// Read-only dump of a managed object's state by reflection: public and private instance fields (auto-property backing
-/// fields show under the property's name), optionally static fields and computed property getters. Depth-limited, cycles cut
+/// fields show under the property's name), optionally static fields. Depth-limited, cycles cut
 /// (an object that is its own ancestor shows as "$cycle"), large collections truncated, and the total work bounded. Only
-/// collections that report a Count are enumerated; no other method of the target is called.
+/// framework and engine collection types are enumerated; no method of a game type runs (no getters, no indexers, no
+/// ToString).
 /// </summary>
 public sealed class ReflectionDump
 {
@@ -18,7 +19,6 @@ public sealed class ReflectionDump
     public int MaxStringLength = 256;
     public int MaxValues = 4000;
     public bool IncludeStatics;
-    public bool CallGetters;
 
     /// <summary>Renders values the dump should not recurse into (engine objects, vectors, variants); null = not handled.</summary>
     public Func<object, JsonNode> Custom;
@@ -55,7 +55,7 @@ public sealed class ReflectionDump
             }
             foreach (int ix in indexes)
             {
-                if (cur is IList list && ix >= 0 && ix < list.Count) cur = list[ix];
+                if (cur != null && IsSafe(cur.GetType()) && cur is IList list && ix >= 0 && ix < list.Count) cur = list[ix];
                 else { error = "index " + ix + " out of range or not a list"; return null; }
             }
         }
@@ -106,10 +106,13 @@ public sealed class ReflectionDump
         if (!t.IsValueType) ancestors.Add(o);
         try
         {
-            if (o is IDictionary dict) return Dictionary(dict, t, depth);
-            if (o is Array arr) return Items(arr, arr.Length, depth);
-            if (o is ICollection col) return Items(col, col.Count, depth);
-            if (o is IEnumerable && CountOf(o, t) is int cnt) return Items((IEnumerable)o, cnt, depth);
+            if (IsSafe(t))
+            {
+                if (o is IDictionary dict) return Dictionary(dict, t, depth);
+                if (o is Array arr) return Items(arr, arr.Length, depth);
+                if (o is ICollection col) return Items(col, col.Count, depth);
+                if (o is IEnumerable && CountOf(o, t) is int cnt) return Items((IEnumerable)o, cnt, depth);
+            }
             return Members(o, t, depth);
         }
         finally { if (!t.IsValueType) ancestors.RemoveAt(ancestors.Count - 1); }
@@ -129,12 +132,15 @@ public sealed class ReflectionDump
         return null;
     }
 
+    /// <summary>Framework and engine types: their enumerators, counts and indexers are not game code.</summary>
+    static bool IsSafe(Type t) => IsBcl(t) || t.Assembly.GetName().Name == "GodotSharp";
+
     static bool IsBcl(Type t) => t.Assembly == typeof(object).Assembly || t.Assembly == typeof(HashSet<>).Assembly || t.Assembly.GetName().Name is "System.Collections" or "System.Collections.Concurrent";
 
     static JsonNode Brief(object o, Type t)
     {
         var obj = new JsonObject { ["$type"] = t.Name };
-        if (o is ICollection c) obj["count"] = c.Count;
+        if (o is ICollection c && IsSafe(t)) obj["count"] = c.Count;
         return obj;
     }
 
@@ -159,7 +165,7 @@ public sealed class ReflectionDump
         foreach (DictionaryEntry e in d)
         {
             if (n++ >= MaxItems) { entries["…"] = (d.Count - MaxItems) + " more"; break; }
-            string key = e.Key?.ToString() ?? "null";
+            string key = e.Key == null ? "null" : (e.Key.GetType().IsPrimitive || e.Key is string || e.Key.GetType().IsEnum || IsBcl(e.Key.GetType())) ? e.Key.ToString() : e.Key.GetType().Name;
             if (entries.ContainsKey(key)) key += "#" + n;
             entries[key] = Value(e.Value, depth + 1);
         }
@@ -182,15 +188,9 @@ public sealed class ReflectionDump
             if (IncludeStatics)
                 foreach (var f in c.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
                     if (!f.IsLiteral && !f.FieldType.IsPointer) Put(obj, "static " + f.Name, c, () => f.GetValue(null), depth);
-            if (CallGetters)
-                foreach (var p in c.GetProperties(Inst))
-                    if (p.GetIndexParameters().Length == 0 && p.CanRead && !IsAutoProperty(c, p)) Put(obj, p.Name + "()", c, () => p.GetValue(o), depth);
         }
         return obj;
     }
-
-    static bool IsAutoProperty(Type c, PropertyInfo p) =>
-        c.GetField("<" + p.Name + ">k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly) != null;
 
     static string BackingName(string n) => n.StartsWith('<') && n.EndsWith(">k__BackingField") ? n[1..^16] : null;
 

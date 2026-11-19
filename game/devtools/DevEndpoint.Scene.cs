@@ -67,7 +67,7 @@ public partial class DevEndpoint
         return o;
     }
 
-    /// <summary>node {path, props[], csharp, member, depth, items, statics, getters}: engine properties and/or the C# state.</summary>
+    /// <summary>node {path, props[], csharp, member, depth, items, statics}: engine properties and/or the C# state.</summary>
     JsonNode NodeProps(Request r)
     {
         var n = Resolve(r);
@@ -101,7 +101,6 @@ public partial class DevEndpoint
                 MaxDepth = Math.Clamp(r.GetInt("depth", 3), 0, 8),
                 MaxItems = Math.Clamp(r.GetInt("items", 24), 1, 256),
                 IncludeStatics = r.GetBool("statics"),
-                CallGetters = r.GetBool("getters"),
                 Custom = Struct,
                 StopAt = t => t.Assembly == typeof(GodotObject).Assembly,
             };

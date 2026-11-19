@@ -33,7 +33,7 @@ public sealed class Request
             r.Token = r.GetString("token");
             if (string.IsNullOrEmpty(r.Cmd)) r.ParseError = "missing cmd";
         }
-        catch (JsonException e) { r.ParseError = "bad JSON: " + e.Message; }
+        catch (Exception e) when (e is JsonException or ArgumentException) { r.ParseError = "bad JSON: " + e.Message; }
         return r;
     }
 

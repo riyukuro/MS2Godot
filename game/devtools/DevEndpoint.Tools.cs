@@ -106,6 +106,7 @@ public partial class DevEndpoint
         if (string.IsNullOrEmpty(dir)) dir = ProjectSettings.GlobalizePath("user://");
         Directory.CreateDirectory(dir);
         string path = Path.Combine(dir, name);
+        if (new FileInfo(path).LinkTarget != null) throw new IOException("refusing to write through a symbolic link: " + name);
         var img = GetViewport().GetTexture()?.GetImage();
         if (img == null || img.IsEmpty()) throw new InvalidOperationException("the viewport has no image (headless display?)");
         var err = img.SavePng(path);
@@ -178,9 +179,10 @@ public partial class DevEndpoint
                 "left" => MouseButton.Left, "right" => MouseButton.Right, "middle" => MouseButton.Middle,
                 "wheel_up" => MouseButton.WheelUp, "wheel_down" => MouseButton.WheelDown, _ => throw new ArgumentException("unknown mouse " + what),
             };
+            var mask = button switch { MouseButton.Left => MouseButtonMask.Left, MouseButton.Right => MouseButtonMask.Right, MouseButton.Middle => MouseButtonMask.Middle, _ => (MouseButtonMask)0 };
             Godot.Input.ParseInputEvent(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
             foreach (bool down in pressed is { } one ? new[] { one } : new[] { true, false })
-                Godot.Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = button, Pressed = down, Position = pos, GlobalPosition = pos, ButtonMask = down ? MouseButtonMask.Left : 0 });
+                Godot.Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = button, Pressed = down, Position = pos, GlobalPosition = pos, ButtonMask = down ? mask : 0 });
             return new JsonObject { ["sent"] = "mouse " + what, ["at"] = Struct(pos) };
         }
         if (r.GetString("action") is { } action)

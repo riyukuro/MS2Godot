@@ -59,7 +59,7 @@ public partial class DevEndpoint : Node
         if (logger != null) { OS.RemoveLogger(logger); logger = null; }
         server?.Dispose();
         server = null;
-        try { if (!string.IsNullOrEmpty(infoFile) && System.IO.File.Exists(infoFile)) System.IO.File.Delete(infoFile); } catch { }
+        if (!string.IsNullOrEmpty(infoFile)) Ms2.Devtools.DebugServer.RemoveInfoFile(infoFile);
         if (instance == this) instance = null;
     }
 

@@ -32,15 +32,15 @@ stderr with exit code 1. `--help` lists every command and argument.
 | --- | --- |
 | `ping` | pid, frame, fps, and the endpoint's own per-frame cost |
 | `tree path= depth= filter=` | names, types, visibility, transforms |
-| `node path= props= csharp=true member= depth= items= statics= getters=` | engine properties and the C# state (fields, auto-properties, base-class privates; cycles cut, large collections truncated) |
+| `node path= props= csharp=true member= depth= items= statics=` | engine properties and the C# state (fields, auto-properties, base-class privates; cycles cut, large collections truncated) |
 | `material path= surface=` | shader, render mode, every parameter's current value, instance uniforms, priority, blend mode |
-| `find type= name= group= under=` | node paths |
+| `find type= name= group= under=` | node paths; `type` and `name` are case-insensitive substring matches (no `*`) |
 | `pick x= y=` | 3D nodes along the camera ray at the pixel, UI controls and AS3 display objects |
 | `screenshot file=door.png` | viewport PNG under `MS2_DEBUG_OUT` |
-| `monitors names=` | Performance monitors and managed GC counts and bytes |
+| `monitors names=` | Performance monitors (enum names, any case) and managed GC counts and bytes; with no names: fps, process times, memory, object and node counts, render objects, primitives, draw calls and video, texture and buffer memory |
 | `input key=Space` / `mouse=left x= y=` / `action=` | send an input event (the only command that changes the game) |
 | `log since=` | print output, `push_error` and `push_warning` lines after a sequence number |
-| `as3 movie= path=` | no args lists the movies; with `movie` a display-list and variable view |
+| `as3 movie= path= depth=` | no args lists the movies; with `movie` a display-list and variable view; `depth` (default 1, at most 6) is how many child levels show |
 
 There is no eval, no method call and no property write. A request that throws returns an error and never reaches the game.
 
@@ -62,13 +62,18 @@ same commands as tools. The port file is looked up on every call, so the server 
 
 ## Reading the numbers
 
-- Requests run on the main thread inside `_Process`, 4 ms per frame at most; a heavy `tree`/`node` dump delays that frame.
+- Requests run on the main thread inside `_Process`. The 4 ms budget only applies between requests: at least one request runs
+  per frame, and a heavy `tree`/`node` dump delays that frame by its own cost.
+- A request waits up to 15 s for the main thread; after that the client gets a timeout error and the request is skipped if it has not started.
 - `ping` reports `endpoint.processMs` over `endpoint.frames`: the time spent in the endpoint's per-frame check, idle frames
   included. With no client it is a single volatile read.
 - `pick` tests 3D nodes by bounding box: a `MultiMeshInstance3D` is one box for its whole batch.
 
 ## Safety
 
-Loopback only, token per run, file mode 0600, 8 connections at most, 1 MiB per request, 15 s per request. Treat the port
-file like a credential for that game process. The endpoint never ships in release exports; check with
+Loopback only, token per run, file mode 0600, 8 connections at most, 1 MiB per request, 15 s per request. A connection must
+send a request with the token within 5 s and is closed after 30 s of silence. The `node` dump reads fields only and runs no
+game code (no property getters, no game collection methods). Treat the port
+file like a credential for that game process. The endpoint is compiled into Debug and ExportDebug builds and stays off unless `MS2_DEBUG=1` is set; it is absent from Release
+and ExportRelease exports. Check with
 `grep -c DevEndpoint MS2Godot.dll` on the exported assembly (0 expected).

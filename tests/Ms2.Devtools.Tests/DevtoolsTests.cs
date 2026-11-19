@@ -150,8 +150,6 @@ public class ServerTests
             var stream = c.GetStream();
             var reader = new StreamReader(stream, Encoding.UTF8);
             void Write(string l) { var b = Encoding.UTF8.GetBytes(l + "\n"); stream.Write(b, 0, b.Length); }
-            Write("{\"id\":1,\"cmd\":\"ping\",\"token\":\"bad\"}");
-            Assert.That(JsonNode.Parse(reader.ReadLine())["ok"].GetValue<bool>(), Is.False);
             Write("{\"id\":2,\"cmd\":\"ping\",\"token\":\"tok\"}");
             var ok = JsonNode.Parse(reader.ReadLine());
             Assert.That(ok["id"].GetValue<int>(), Is.EqualTo(2));
@@ -178,6 +176,137 @@ public class ServerTests
         }
         finally { File.Delete(file); }
     }
+
+    // ---- connection limits ------------------------------------------------------------------------------------------
+
+    static TcpClient Connect(DebugServer s)
+    {
+        var c = new TcpClient();
+        c.Connect("127.0.0.1", s.Port);
+        c.ReceiveTimeout = 5000;
+        return c;
+    }
+
+    static void WriteLine(TcpClient c, string l) { var b = Encoding.UTF8.GetBytes(l + "\n"); c.GetStream().Write(b, 0, b.Length); }
+
+    /// <summary>True when the server closed the connection (end of stream or reset) within the receive timeout.</summary>
+    static bool ClosedByServer(TcpClient c)
+    {
+        try { return c.GetStream().ReadByte() < 0; }
+        catch (IOException) { return true; }
+    }
+
+    [Test]
+    public void AWrongTokenOnTheFirstLineGetsAnErrorAndTheConnectionCloses()
+    {
+        using var s = new DebugServer("tok");
+        using var c = Connect(s);
+        WriteLine(c, "{\"id\":1,\"cmd\":\"ping\",\"token\":\"bad\"}");
+        var reader = new StreamReader(c.GetStream(), Encoding.UTF8);
+        Assert.That(JsonNode.Parse(reader.ReadLine())["ok"].GetValue<bool>(), Is.False);
+        Assert.That(ClosedByServer(c), Is.True);
+    }
+
+    [Test]
+    public void ADuplicateKeyIsAnErrorLineNotADroppedConnection()
+    {
+        var r = Request.Parse("{\"cmd\":\"a\",\"cmd\":\"b\",\"token\":\"t\"}");
+        Assert.That(r.ParseError, Does.Contain("bad JSON"));
+        using var s = new DebugServer("tok");
+        using var c = Connect(s);
+        WriteLine(c, "{\"cmd\":\"a\",\"cmd\":\"b\"}");
+        var reader = new StreamReader(c.GetStream(), Encoding.UTF8);
+        Assert.That(JsonNode.Parse(reader.ReadLine())["ok"].GetValue<bool>(), Is.False);
+    }
+
+    [Test]
+    public void AConnectionBeyondTheCapIsClosedAndAFreedSlotIsReused()
+    {
+        using var s = new DebugServer("tok") { FirstLineTimeoutMs = 60000 };
+        var held = new List<TcpClient>();
+        try
+        {
+            for (int i = 0; i < DebugServer.MaxConnections; i++) { held.Add(Connect(s)); Thread.Sleep(30); }
+            using var extra = Connect(s);
+            Assert.That(ClosedByServer(extra), Is.True, "the ninth connection is refused");
+            held[0].Close();
+            Thread.Sleep(300);
+            using var again = Connect(s);
+            again.ReceiveTimeout = 500;
+            Assert.That(() => again.GetStream().ReadByte(), Throws.InstanceOf<IOException>(), "accepted: it waits for a request instead of being closed");
+        }
+        finally { foreach (var c in held) c.Close(); }
+    }
+
+    [Test]
+    public void ALineOverTheLimitIsAnsweredWithAnErrorAndClosed()
+    {
+        using var s = new DebugServer("tok") { FirstLineTimeoutMs = 60000 };
+        using var c = Connect(s);
+        var chunk = new byte[64 * 1024];
+        Array.Fill(chunk, (byte)'x');
+        var stream = c.GetStream();
+        var reader = new StreamReader(stream, Encoding.UTF8);
+        try { for (int sent = 0; sent <= Request.MaxLineBytes + chunk.Length; sent += chunk.Length) stream.Write(chunk, 0, chunk.Length); }
+        catch (IOException) { }
+        string line = reader.ReadLine();
+        Assert.That(JsonNode.Parse(line)["error"].GetValue<string>(), Does.Contain("too long"));
+    }
+
+    [Test]
+    public void ASilentNewConnectionIsClosedAfterTheFirstLineTimeout()
+    {
+        using var s = new DebugServer("tok") { FirstLineTimeoutMs = 300 };
+        using var c = Connect(s);
+        Assert.That(ClosedByServer(c), Is.True);
+    }
+
+    [Test]
+    public void AnAuthenticatedConnectionIsClosedAfterTheIdleTimeout()
+    {
+        using var s = new DebugServer("tok") { FirstLineTimeoutMs = 5000, IdleTimeoutMs = 300 };
+        var pump = new CancellationTokenSource();
+        var main = Task.Run(() => { while (!pump.IsCancellationRequested) { s.Queue.Drain(_ => new JsonObject(), 5); Thread.Sleep(1); } });
+        try
+        {
+            using var c = Connect(s);
+            WriteLine(c, "{\"id\":1,\"cmd\":\"ping\",\"token\":\"tok\"}");
+            var reader = new StreamReader(c.GetStream(), Encoding.UTF8);
+            Assert.That(JsonNode.Parse(reader.ReadLine())["ok"].GetValue<bool>(), Is.True);
+            Assert.That(ClosedByServer(c), Is.True);
+        }
+        finally { pump.Cancel(); main.Wait(2000); }
+    }
+
+    [Test]
+    public void DisposeAnswersWaitingRequestsWithAnError()
+    {
+        var s = new DebugServer("tok");
+        var waiting = Task.Run(() => s.Handle("{\"id\":5,\"cmd\":\"tree\",\"token\":\"tok\"}"));
+        while (s.Queue.Idle) Thread.Sleep(1);
+        s.Dispose();
+        Assert.That(waiting.Wait(3000), Is.True, "not left to wait out the request timeout");
+        var j = JsonNode.Parse(waiting.Result);
+        Assert.That(j["ok"].GetValue<bool>(), Is.False);
+        Assert.That(j["error"].GetValue<string>(), Does.Contain("stopped"));
+    }
+
+    [Test]
+    public void TheInfoFileIsRemovedOnlyByTheProcessItNames()
+    {
+        using var s = new DebugServer();
+        string file = Path.Combine(Path.GetTempPath(), "devtools-test-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            File.WriteAllText(file, "{\"port\":1,\"token\":\"x\",\"pid\":" + (Environment.ProcessId + 1) + "}");
+            DebugServer.RemoveInfoFile(file);
+            Assert.That(File.Exists(file), Is.True, "another game's file stays");
+            s.WriteInfoFile(file);
+            DebugServer.RemoveInfoFile(file);
+            Assert.That(File.Exists(file), Is.False);
+        }
+        finally { File.Delete(file); }
+    }
 }
 
 public class ReflectionDumpTests
@@ -192,8 +321,10 @@ public class ReflectionDumpTests
         Assert.That(j["Next"]!.GetValue<string>(), Is.EqualTo("brief"));  // nested objects go through the renderer
     }
 
+#pragma warning disable CS0414 // read only through reflection
     class Node1 { public string Name = "root"; int hidden = 5; public Node1 Next; public Node1 Back; public int Auto { get; set; } = 9; public int Computed => throw new Exception("getter ran"); public static int Counter = 3; public Action Callback = () => { }; }
     class Base { int secret = 11; }
+#pragma warning restore CS0414
     class Derived : Base { public int Open = 1; }
     class Holder { public List<int> Many = Enumerable.Range(0, 500).ToList(); public Dictionary<string, int> Map = new() { ["a"] = 1 }; public HashSet<string> Set = new() { "x" }; public int[] Arr = { 1, 2, 3 }; public string Long = new string('z', 5000); }
 
@@ -204,17 +335,46 @@ public class ReflectionDumpTests
         Assert.That(j["Name"].GetValue<string>(), Is.EqualTo("root"));
         Assert.That(j["hidden"].GetValue<int>(), Is.EqualTo(5));
         Assert.That(j["Auto"].GetValue<int>(), Is.EqualTo(9));
-        Assert.That(j.ContainsKey("Computed"), Is.False, "computed getters are not run by default");
+        Assert.That(j.ContainsKey("Computed"), Is.False, "computed getters never run");
         Assert.That(j.ContainsKey("static Counter"), Is.False);
         Assert.That(j["Callback"].GetValue<string>(), Does.StartWith("<"));
     }
 
     [Test]
-    public void OptionsAddStaticsAndGetters()
+    public void StaticsOptionAddsStaticFields()
     {
-        var j = new ReflectionDump { IncludeStatics = true, CallGetters = true }.Dump(new Node1()) as JsonObject;
+        var j = new ReflectionDump { IncludeStatics = true }.Dump(new Node1()) as JsonObject;
         Assert.That(j["static Counter"].GetValue<int>(), Is.EqualTo(3));
-        Assert.That(j["Computed()"].GetValue<string>(), Does.StartWith("<error"), "a throwing getter is reported, not thrown");
+        Assert.That(j.ContainsKey("Computed()"), Is.False);
+    }
+
+    class GameList : List<int>
+    {
+        public static bool Ran;
+        public new int Count { get { Ran = true; return base.Count; } }
+        public new IEnumerator<int> GetEnumerator() { Ran = true; return base.GetEnumerator(); }
+    }
+    class GameKey { public override string ToString() { GameList.Ran = true; return "k"; } }
+    class GameCollection : System.Collections.ICollection
+    {
+        public int Count { get { GameList.Ran = true; return 1; } }
+        public bool IsSynchronized => false;
+        public object SyncRoot => this;
+        public void CopyTo(Array a, int i) { GameList.Ran = true; }
+        public System.Collections.IEnumerator GetEnumerator() { GameList.Ran = true; return new[] { 1 }.GetEnumerator(); }
+        public int Field = 4;
+    }
+
+    [Test]
+    public void GameCollectionTypesRunNoGameCode()
+    {
+        GameList.Ran = false;
+        var j = new ReflectionDump().Dump(new GameCollection()) as JsonObject;
+        Assert.That(j["Field"].GetValue<int>(), Is.EqualTo(4), "dumped as an object, not enumerated");
+        var d = new ReflectionDump().Dump(new Dictionary<GameKey, int> { [new GameKey()] = 1 }) as JsonObject;
+        Assert.That(((JsonObject)d["entries"]).ContainsKey("GameKey"), Is.True);
+        Assert.That(ReflectionDump.Navigate(new GameCollection(), "x", out var err), Is.Null);
+        Assert.That(GameList.Ran, Is.False, "no game Count, enumerator or ToString ran");
     }
 
     [Test]

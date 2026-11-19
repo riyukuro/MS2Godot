@@ -17,6 +17,12 @@ public sealed class DebugServer : IDisposable
     public const int MaxConnections = 8;
     public const int RequestTimeoutMs = 15000;
 
+    /// <summary>A new connection must send a request with the right token within this long, or it is closed.</summary>
+    public int FirstLineTimeoutMs { get; set; } = 5000;
+
+    /// <summary>An authenticated connection that sends nothing for this long is closed.</summary>
+    public int IdleTimeoutMs { get; set; } = 30000;
+
     readonly TcpListener listener;
     readonly Thread acceptor;
     readonly List<TcpClient> clients = new();
@@ -72,6 +78,8 @@ public sealed class DebugServer : IDisposable
         {
             c.NoDelay = true;
             using var stream = c.GetStream();
+            bool authed = false;
+            stream.ReadTimeout = FirstLineTimeoutMs;
             var buf = new byte[8192];
             var line = new MemoryStream();
             while (!stopped)
@@ -85,7 +93,11 @@ public sealed class DebugServer : IDisposable
                     string text = Encoding.UTF8.GetString(line.GetBuffer(), 0, (int)line.Length);
                     line.SetLength(0);
                     if (text.Trim().Length == 0) continue;
-                    Reply(stream, Handle(text));
+                    var req = Request.Parse(text);
+                    string refusal = Refuse(req);
+                    if (refusal != null && !authed) { Reply(stream, refusal); return; }
+                    Reply(stream, refusal ?? Queue.Submit(req, RequestTimeoutMs));
+                    if (!authed) { authed = true; stream.ReadTimeout = IdleTimeoutMs; }
                 }
             }
         }
@@ -109,7 +121,7 @@ public sealed class DebugServer : IDisposable
     /// <summary>Writes {port, token, pid} to <paramref name="path"/> (replacing it in one step).</summary>
     static FileStreamOptions Private()
     {
-        var o = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
+        var o = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
         if (!OperatingSystem.IsWindows()) o.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
         return o;
     }
@@ -117,10 +129,20 @@ public sealed class DebugServer : IDisposable
     public void WriteInfoFile(string path)
     {
         var o = new JsonObject { ["port"] = Port, ["token"] = Token, ["pid"] = Environment.ProcessId };
-        string tmp = path + ".tmp";
+        string tmp = path + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
         using (var f = new FileStream(tmp, Private()))
             f.Write(Encoding.UTF8.GetBytes(o.ToJsonString()));
         File.Move(tmp, path, true);
+    }
+
+    /// <summary>Deletes the info file only if it still names this process (another game may have replaced it).</summary>
+    public static void RemoveInfoFile(string path)
+    {
+        try
+        {
+            if (JsonNode.Parse(File.ReadAllText(path)) is JsonObject o && o["pid"]?.GetValue<int>() == Environment.ProcessId) File.Delete(path);
+        }
+        catch { }
     }
 
     public void Dispose()
