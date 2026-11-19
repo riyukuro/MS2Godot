@@ -69,6 +69,7 @@ public sealed partial class TwoSidedSpace : Node3D
         s.query.Shape = shape;
         s.query.Transform = xform;
         s.query.CollisionMask = groups;
-        return PhysicsServer3D.SpaceGetDirectState(s.space).IntersectShape(s.query, 1).Count > 0;
+        using var found = (Godot.Collections.Array)PhysicsServer3D.SpaceGetDirectState(s.space).IntersectShape(s.query, 1);   // the underlying Array is tracked
+        return found.Count > 0;
     }
 }

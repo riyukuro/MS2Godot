@@ -214,7 +214,8 @@ public sealed class NxController
         var q = Query(uint.MaxValue, false);
         q.Transform = new Transform3D(Basis.Identity, body.GlobalPosition) * shapeNode.Transform;
         var world = body.GetWorld3D();
-        return world.DirectSpaceState.IntersectShape(q, 1).Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, uint.MaxValue);
+        using var found = (Godot.Collections.Array)world.DirectSpaceState.IntersectShape(q, 1);   // the underlying Array is tracked
+        return found.Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, uint.MaxValue);
     }
 
     /// <summary>The body's shape with the body at <paramref name="at"/> against every shape of a group in
@@ -224,7 +225,8 @@ public sealed class NxController
         var q = Query(groups, false);
         q.Transform = at * shapeNode.Transform;
         var world = body.GetWorld3D();
-        return world.DirectSpaceState.IntersectShape(q, 1).Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, groups);
+        using var found = (Godot.Collections.Array)world.DirectSpaceState.IntersectShape(q, 1);   // the underlying Array is tracked
+        return found.Count > 0 || TwoSidedSpace.Overlaps(world, shapeNode.Shape, q.Transform, groups);
     }
 
     static bool IsController(GodotObject o) =>

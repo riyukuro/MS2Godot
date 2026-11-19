@@ -190,7 +190,10 @@ void main() {
     {
         // the cache copies the uniforms into its own set, so the wrappers are disposed here (they ran at ~9 a frame
         // and sat in the SDK's disposables tracker until a GC finalized them)
-        var array = new Array<RDUniform>(uniforms);
+        // an Array<T> only wraps a non-generic Array, and that one is what the tracker holds: build it under `using`
+        using var raw = new Godot.Collections.Array();
+        foreach (var u in uniforms) raw.Add(u);
+        var array = new Array<RDUniform>(raw);
         var set = UniformSetCacheRD.GetCache(shaders[mode], 0, array);
         foreach (var u in uniforms) u.Dispose();
         var pc = new float[] { step.X, step.Y, Threshold, Offset, BloomScale, GlowScale, 0, 0 };
