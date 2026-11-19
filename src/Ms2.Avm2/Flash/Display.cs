@@ -480,6 +480,7 @@ public class AsMovieClip : AsSprite
     public readonly Dictionary<JsonObject, AsDisplayObject> Live = new(ReferenceEqualityComparer.Instance);
     public bool TimelineBuilt;
     public int LastScriptFrame = -1;
+    internal bool ScriptQueued;             // in the player's scriptQueue (Flag_NeedExecuteFrame set)
 
     [As] public int currentFrame => Frame + 1;
     [As] public int totalFrames => Math.Max(1, TL?.Frames ?? 1);
@@ -553,7 +554,83 @@ public sealed class Timeline
         var t = new Timeline { Scope = scope, Frames = J.I(tl?["frames"]) ?? 1 };
         if (tl?["labels"] is JsonArray la) foreach (var l in la) t.Labels.Add((J.Iv(l["frame"]), (string)l["name"]));
         if (tl?["children"] is JsonArray ch) foreach (var c in ch) t.Placements.Add((JsonObject)c);
+        t.Tracks = tl == null ? Array.Empty<Track>() : TrackCache.GetValue(tl, Compile);
         return t;
+    }
+
+    /// <summary>Per placement (in <see cref="Placements"/> order): its frame span and its moves, read once per layout timeline.</summary>
+    public Track[] Tracks = Array.Empty<Track>();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<JsonObject, Track[]> TrackCache = new();
+
+    static Track[] Compile(JsonObject tl)
+    {
+        if (tl["children"] is not JsonArray ch) return Array.Empty<Track>();
+        var r = new Track[ch.Count];
+        for (int i = 0; i < r.Length; i++) r[i] = new Track((JsonObject)ch[i]);
+        return r;
+    }
+
+    /// <summary>
+    /// A placement's frame span and its timeline moves (the PlaceObject moves of later frames), with the move frames as
+    /// ints and each move's matrix and colour transform parsed on first use, so a playing clip's frame does not walk the
+    /// layout JSON.
+    /// </summary>
+    public sealed class Track
+    {
+        public readonly int First, Last;            // Last = int.MaxValue: shown to the end
+        public readonly JsonObject[] Moves;         // null: the placement has no moves list
+        readonly int[] frames;
+        readonly bool sorted;
+        readonly Mat[] mats;
+        readonly Cx[] colors;
+        readonly byte[] state;                      // 1 parsed, 2 sets the matrix, 4 sets the colour
+
+        public Track(JsonObject pl)
+        {
+            First = J.Iv(pl["first"]);
+            Last = pl["last"] is JsonNode l ? J.Iv(l) : int.MaxValue;
+            if (pl["moves"] is not JsonArray mv) return;
+            Moves = new JsonObject[mv.Count]; frames = new int[mv.Count]; sorted = true;
+            for (int i = 0; i < Moves.Length; i++)
+            {
+                Moves[i] = (JsonObject)mv[i]; frames[i] = J.Iv(Moves[i]["frame"]);
+                if (i > 0 && frames[i] < frames[i - 1]) sorted = false;
+            }
+            mats = new Mat[Moves.Length]; colors = new Cx[Moves.Length]; state = new byte[Moves.Length];
+        }
+
+        public bool AliveAt(int f) => First <= f && f <= Last;
+
+        /// <summary>The last move (in list order) whose frame is at or before <paramref name="f"/>; -1 when none.</summary>
+        public int MoveAt(int f)
+        {
+            if (sorted)
+            {
+                int lo = 0, hi = frames.Length;             // first index with frame > f
+                while (lo < hi) { int m = (lo + hi) >> 1; if (frames[m] <= f) lo = m + 1; else hi = m; }
+                return lo - 1;
+            }
+            int k = -1;
+            for (int i = 0; i < frames.Length; i++) if (frames[i] <= f) k = i;
+            return k;
+        }
+
+        /// <summary>Move <paramref name="k"/>'s matrix (null when it keeps the matrix) and colour transform (null when it keeps it).</summary>
+        public void Get(int k, out Mat? m, out Cx? c)
+        {
+            int s = System.Threading.Volatile.Read(ref state[k]);
+            if (s == 0)
+            {
+                var mv = Moves[k];
+                s = 1;
+                // PlaceObject2 with PlaceFlagHasMatrix: the layout writes an identity matrix as null (LayoutJson Mx), so null = identity
+                if ((bool?)mv["hasMatrix"] != false) { mats[k] = SymbolScope.Matrix(mv["matrix"]); s |= 2; }
+                if (mv["color"] is JsonObject cj) { colors[k] = SymbolScope.Color(cj); s |= 4; }
+                System.Threading.Volatile.Write(ref state[k], (byte)s);
+            }
+            m = (s & 2) != 0 ? mats[k] : null;
+            c = (s & 4) != 0 ? colors[k] : null;
+        }
     }
 }
 

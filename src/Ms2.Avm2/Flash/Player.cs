@@ -226,7 +226,7 @@ namespace Ms2.Avm2.Flash
                 case AsMovieClip mc when sym["timeline"] is JsonObject tl:
                     mc.TL = Timeline.From(tl, scope);
                     BuildFrame(mc, 0);
-                    scriptQueue.Add(mc);
+                    MarkScript(mc);
                     break;
                 case AsTextField tf: tf.FromSymbol(sym); break;
                 case AsSimpleButton sb: BuildButton(sb, sym, scope); break;
@@ -351,16 +351,18 @@ namespace Ms2.Avm2.Flash
         {
             mc.Frame = f;
             if (mc.TL == null) return;
-            foreach (var pl in mc.TL.Placements)
+            var pls = mc.TL.Placements; var tracks = mc.TL.Tracks;
+            for (int i = 0; i < pls.Count; i++)
             {
-                bool alive = AliveAt(pl, f);
+                var pl = pls[i]; var tr = tracks[i];
+                bool alive = tr.AliveAt(f);
                 mc.Live.TryGetValue(pl, out var cur);
                 if (alive && cur == null)
                 {
                     var o = Instantiate(mc, pl, mc.TL.Scope);
-                    if (o != null) { mc.Live[pl] = o; ApplyMoves(o, pl, f); if (mc.OnStage) EnterStage(o); }
+                    if (o != null) { mc.Live[pl] = o; ApplyMoves(o, pl, tr, f); if (mc.OnStage) EnterStage(o); }
                 }
-                else if (alive) ApplyMoves(cur, pl, f);
+                else if (alive) ApplyMoves(cur, pl, tr, f);
                 else if (cur != null)
                 {
                     mc.Live.Remove(pl);
@@ -369,15 +371,14 @@ namespace Ms2.Avm2.Flash
             }
         }
 
-        static void ApplyMoves(AsDisplayObject o, JsonObject pl, int f)
+        static void ApplyMoves(AsDisplayObject o, JsonObject pl, Timeline.Track tr, int f)
         {
-            if (pl["moves"] is not JsonArray mv) return;
-            JsonObject last = null;
-            foreach (JsonObject m in mv) if (J.Iv(m["frame"]) <= f) last = m;
-            if (last == null) { ApplyPlacement(o, pl, initial: false); return; }
-            // PlaceObject2 with PlaceFlagHasMatrix: the layout writes an identity matrix as null (LayoutJson Mx), so null = identity here
-            if (!o.MatrixLocked && (bool?)last["hasMatrix"] != false) o.Matrix = SymbolScope.Matrix(last["matrix"]);
-            if (!o.ColorLocked && last["color"] is JsonObject c) o.Color = SymbolScope.Color(c);
+            if (tr.Moves == null) return;
+            int k = tr.MoveAt(f);
+            if (k < 0) { ApplyPlacement(o, pl, initial: false); return; }
+            tr.Get(k, out var m, out var c);
+            if (!o.MatrixLocked && m is Mat mm) o.Matrix = mm;
+            if (!o.ColorLocked && c is Cx cc) o.Color = cc;
         }
 
         /// <summary>
@@ -394,8 +395,10 @@ namespace Ms2.Avm2.Flash
                     if (!AliveAt(pl, f) || J.Iv(pl["first"]) > f) { mc.Live.Remove(pl); if (o.Parent == mc) mc.RemoveChildInternal(o, true); }
             }
             BuildFrame(mc, f);
-            if (!scriptQueue.Contains(mc)) scriptQueue.Add(mc);
+            MarkScript(mc);
         }
+
+        void MarkScript(AsMovieClip mc) { if (!mc.ScriptQueued) { mc.ScriptQueued = true; scriptQueue.Add(mc); } }
 
         /// <summary>
         /// One entry of the action queue's AL_Frame level (MovieRoot::ActionEntry): a frameConstructed/exitFrame event for
@@ -414,6 +417,7 @@ namespace Ms2.Avm2.Flash
             if (events) QueueBroadcast("frameConstructed");
             foreach (var mc in scriptQueue)
             {
+                mc.ScriptQueued = false;
                 if (mc.LastScriptFrame == mc.Frame) continue;
                 mc.LastScriptFrame = mc.Frame;
                 if (mc.FrameScripts.ContainsKey(mc.Frame)) frameActions.Add(NewAction(mc, null, mc.Frame));
@@ -571,7 +575,7 @@ namespace Ms2.Avm2.Flash
                         if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
                 }
                 BuildFrame(mc, next);
-                if (!scriptQueue.Contains(mc)) scriptQueue.Add(mc);
+                MarkScript(mc);
             }
             // the children as they are now (a child added by a frame is advanced next frame), in a pooled copy
             if (o is AsContainer c && c.Children.Count is int n and > 0)
