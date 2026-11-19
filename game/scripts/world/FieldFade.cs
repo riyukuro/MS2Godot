@@ -139,8 +139,8 @@ public partial class FieldFade : Node
 
     static bool InFrustum(Godot.Collections.Array<Plane> planes, Vector3 c, float r)
     {
-        foreach (var p in planes)
-            if (p.DistanceTo(c) > r) return false;
+        for (int i = 0, n = planes.Count; i < n; i++)     // indexed: foreach boxes an enumerator per target
+            if (planes[i].DistanceTo(c) > r) return false;
         return true;
     }
 

@@ -29,6 +29,7 @@ public sealed partial class FrameProbe : Node
         Census("window " + n);
         Sampler?.Print();
         total = 0; max = 0; ms = 0; gc0 = GC.CollectionCount(0);
+        last = GC.GetAllocatedBytesForCurrentThread();      // the census above allocates MBs (reflection); not the next frame's
     }
 
     /// <summary>Prints how many wrappers GodotSharp's DisposablesTracker holds, by type (its dictionaries are what rebuilds every
