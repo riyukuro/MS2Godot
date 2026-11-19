@@ -101,13 +101,21 @@ public sealed class NavGeometry
                 if (d.X > 0 && d.Y > 0 && d.Z > 0) g.AddBox(xf, d.X, d.Y, d.Z, -d.Z / 2, 0);
                 continue;
             }
-            if (fluid && !e.Bool("GeneratePhysX")) { /* water volume without a box: only its NIF meshes */ }
-            else if (e.Bool("GeneratePhysX") && e.HasMixin("MS2CubeProp"))
+            bool generate = e.Bool("GeneratePhysX");
+            // FUN_1410cf160 (cubemapinformationservice_3.cpp:4026-4052) runs FUN_1410c5570, the GeneratePhysX box, for an
+            // MS2CubeProp and for any other MS2PhysXProp (0xc9cd2193; MS2CubeProp contains it), but not for an MS2SalePost
+            // (0xf01a7608), which it tests first
+            if (generate && !e.HasMixin("MS2SalePost") && (e.HasMixin("MS2CubeProp") || e.HasMixin("MS2PhysXProp")))
             {
                 var d = e.Vector("GeneratePhysXDimension");
                 if (d.X == 0 && d.Y == 0 && d.Z == 0) d = new Vec3(150, 150, 150);
                 g.AddBox(xf, d.X, d.Y, d.Z, 0, fluid ? Water : 0);
             }
+            // PropService::HandleSceneGraphAddedMessage (PropService.cpp:460-465, exe 0x142062560) returns before
+            // AddPhysXPropToPropData for an entity whose GeneratePhysX (0x38141815) is set, whatever its model: such an
+            // entity gets no NIF PhysX prop, so its only geometry is the box above. A water volume without GeneratePhysX
+            // keeps its NIF meshes
+            if (generate) continue;
             var llid = e.Get("NifAsset");
             if (llid == null || !llid.StartsWith("urn:llid:")) continue;
             if (!nifs.TryGetValue(llid, out var meshes))
