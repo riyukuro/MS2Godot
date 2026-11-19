@@ -81,7 +81,7 @@ public sealed class NativeArt
                 foreach (var (_, v) in lib)
                     list.Add(new UiScope(new JsonObject
                     {
-                        ["symbols"] = v["symbols"]?.DeepClone(), ["images"] = v["images"]?.DeepClone(), ["subImages"] = v["subImages"]?.DeepClone(),
+                        ["symbols"] = Ms2.Swf.LayoutCodec.Clone(v["symbols"]), ["images"] = v["images"]?.DeepClone(), ["subImages"] = v["subImages"]?.DeepClone(),
                     }, assets));
         }
         scopes[movie] = list;
@@ -119,8 +119,7 @@ public sealed class NativeArt
         if (cls == null) return null;
         foreach (var m in new[] { movie }.Concat(SharedMovies))
             foreach (var sc in ScopesOf(m))
-                foreach (var (id, sym) in sc.Symbols)
-                    if ((string)sym["class"] == cls) return (sc, int.Parse(id));
+                if (sc.Symbols.OfClass(cls, out var id) != null) return (sc, id);
         return null;
     }
 
@@ -133,7 +132,7 @@ public sealed class NativeArt
         {
             var sc = ScopesOf(m);
             if (sc.Count == 0) continue;
-            bool own = sc.Any(s => s.Symbols.Any(kv => (string)kv.Value["class"] == symbol.Split('/')[0])) || symbol.StartsWith('#');
+            bool own = sc.Any(s => s.Symbols.Named.Any(n => n.Class == symbol.Split('/')[0])) || symbol.StartsWith('#');
             if (own) return (double?)sc[0].Layout["fps"] ?? 30;
         }
         return 30;

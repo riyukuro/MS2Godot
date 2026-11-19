@@ -10,7 +10,8 @@ public sealed class UiScope
     public UiAssets Assets;
     public Dictionary<int, JsonObject> SubImages = new();
     public Dictionary<int, JsonObject> Images = new();
-    public JsonObject Symbols;
+    /// <summary>The scope's symbols by id (a stored layout's are decoded as they are asked for).</summary>
+    public Ms2.Swf.LayoutSymbols Symbols;
     /// <summary>The movie the scope's symbols are defined in (a library's own movie) and the root movie that loads it: where an
     /// IMG tag's export name is looked up (UiAssets.ExportedImage).</summary>
     public string MovieKey, RootKey;
@@ -18,12 +19,12 @@ public sealed class UiScope
     public UiScope(JsonObject layout, UiAssets assets)
     {
         Layout = layout; Assets = assets;
-        Symbols = layout["symbols"] as JsonObject ?? new JsonObject();
+        Symbols = Ms2.Swf.LayoutSymbols.Of(layout["symbols"]) ?? Ms2.Swf.LayoutSymbols.Of(new JsonObject());
         foreach (var n in layout["images"] as JsonArray ?? new JsonArray()) Images[(int)n["id"]] = (JsonObject)n;
         foreach (var n in layout["subImages"] as JsonArray ?? new JsonArray()) SubImages[(int)n["id"]] = (JsonObject)n;
     }
 
-    public JsonObject Symbol(int id) => Symbols.TryGetPropertyValue(id.ToString(), out var n) ? (JsonObject)n : null;
+    public JsonObject Symbol(int id) => Symbols.Get(id);
 
     /// <summary>Texture region (atlas file and rectangle) of a bitmap id used by a shape fill.</summary>
     public (Texture2D Tex, Rect2 Region)? Bitmap(int id)
@@ -58,7 +59,7 @@ public sealed class UiMovie
         if (layout["library"] is JsonObject lib)
             foreach (var (k, v) in lib) library[k] = new UiScope(new JsonObject
             {
-                ["symbols"] = v["symbols"]?.DeepClone(), ["images"] = v["images"]?.DeepClone(), ["subImages"] = v["subImages"]?.DeepClone(),
+                ["symbols"] = Ms2.Swf.LayoutCodec.Clone(v["symbols"]), ["images"] = v["images"]?.DeepClone(), ["subImages"] = v["subImages"]?.DeepClone(),
             }, assets) { MovieKey = k, RootKey = name };
     }
 
@@ -90,8 +91,7 @@ public sealed class UiMovie
     public MovieClipNode BuildClassSized(string className, double scale, float w, float h)
     {
         foreach (var sc in library.Values.Prepend(Scope))
-            foreach (var (id, sym) in sc.Symbols)
-                if ((string)sym["class"] == className) return BuildSized(sc, int.Parse(id), sym, scale, w, h);
+            if (sc.Symbols.OfClass(className, out var id) is { } sym) return BuildSized(sc, id, sym, scale, w, h);
         return null;
     }
 
@@ -123,13 +123,12 @@ public sealed class UiMovie
     {
         if (className == null || (Math.Abs(csx - 1) <= 1e-3 && Math.Abs(csy - 1) <= 1e-3)) return null;
         foreach (var sc in library.Values.Append(Scope))
-            foreach (var (id, sym) in sc.Symbols)
-                if ((string)sym["class"] == className)
-                {
-                    if (sym["scale9"] == null || sym["bounds"] == null || (string)sym["kind"] != "sprite") return null;
-                    var b = UiBuilder.Rc(sym["bounds"]);
-                    return BuildSized(sc, int.Parse(id), sym, scale, b.Size.X * (float)csx, b.Size.Y * (float)csy);
-                }
+            if (sc.Symbols.OfClass(className, out var id) is { } sym)
+            {
+                if (sym["scale9"] == null || sym["bounds"] == null || (string)sym["kind"] != "sprite") return null;
+                var b = UiBuilder.Rc(sym["bounds"]);
+                return BuildSized(sc, id, sym, scale, b.Size.X * (float)csx, b.Size.Y * (float)csy);
+            }
         return null;
     }
 
@@ -137,10 +136,8 @@ public sealed class UiMovie
     {
         if (className == null) return null;
         foreach (var (key, sc) in library)
-            foreach (var (id, sym) in sc.Symbols)
-                if ((string)sym["class"] == className) return UiBuilder.BuildSprite(this, sc, int.Parse(id), sx, sy);
-        foreach (var (id, sym) in Scope.Symbols)
-            if ((string)sym["class"] == className) return UiBuilder.BuildSprite(this, Scope, int.Parse(id), sx, sy);
+            if (sc.Symbols.OfClass(className, out var id) != null) return UiBuilder.BuildSprite(this, sc, id, sx, sy);
+        if (Scope.Symbols.OfClass(className, out var own) != null) return UiBuilder.BuildSprite(this, Scope, own, sx, sy);
         return null;
     }
 }

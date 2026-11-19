@@ -149,7 +149,9 @@ public sealed class UiAssets
     // Opened on the main thread only.
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Ms2.Avm2.Flash.MovieSource> sources = new();
 
-    public Ms2.Avm2.Flash.MovieSource Movies => sources.GetValue(Packs, p => { var ui = new UiAssets(p); return Ms2.Avm2.Flash.MovieSource.FromParsed(ui.Dependency); });
+    public Ms2.Avm2.Flash.MovieSource Movies => sources.GetValue(Packs, p => { var ui = new UiAssets(p); var s = Ms2.Avm2.Flash.MovieSource.FromParsed(ui.Dependency);
+        s.Layouts = (k, withLibrary, full, plain) => LayoutCache.Get(p, k, withLibrary, full, plain);
+        return s; });
 
     /// <summary>Parses the shared dependency movies on a worker thread while the field loads.</summary>
     public static void Prefetch(PackSet packs, params string[] keys)
@@ -158,20 +160,16 @@ public sealed class UiAssets
         System.Threading.Tasks.Task.Run(() => { foreach (var k in keys) try { ui.Dependency(k); } catch { } try { ui.FontBytes("$Font_SD_Neo_1"); } catch { } });
     }
 
-    // A movie's layout is parsed once per pack set, like the dependency movies above, and every load gets its own copy of
-    // that template: the parse is pure, so the copy is what a fresh parse would give. The template itself is never handed
+    // A movie's layout is read once per pack set (from the install's layout file, LayoutCache, else parsed), and every load
+    // gets its own copy of that template: the copy is what a fresh parse would give. The template itself is never handed
     // out, so nothing a build or a dialog does to its layout reaches the next load. The movie is still built on each load.
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<JsonObject>>> layouts = new();
-
     public JsonObject LoadLayout(string movie)
     {
         var packs = Packs;
-        var template = layouts.GetOrCreateValue(packs).GetOrAdd(movie, k => new Lazy<JsonObject>(() =>
-        {
-            var entry = k.EndsWith(".gfx") ? k : k + ".gfx";
-            return LayoutJson.Build(SwfMovie.Parse(packs.Read("Resource/Gfx", entry)), k, Dependency);
-        })).Value;
-        return (JsonObject)template.DeepClone();
+        JsonObject Parse() => LayoutJson.Build(SwfMovie.Parse(packs.Read("Resource/Gfx", movie.EndsWith(".gfx") ? movie : movie + ".gfx")), movie, Dependency);
+        // a key named with its extension builds a layout named so (not the file's)
+        var template = movie.EndsWith(".gfx") ? Parse() : LayoutCache.Get(packs, movie, true, Parse, null);
+        return (JsonObject)Ms2.Swf.LayoutCodec.Clone(template);
     }
 
     /// <summary>

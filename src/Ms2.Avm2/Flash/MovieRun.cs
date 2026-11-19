@@ -44,13 +44,23 @@ public sealed class MovieSource
 
     readonly Dictionary<string, JsonObject> layouts = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Where the layouts come from when set (the game's per-install files): given the movie key, whether its imports'
+    /// symbols are wanted (a main movie) or not (a library), and the two builds it stands for, it returns that layout.
+    /// Unset, the layouts are built here.
+    /// </summary>
+    public Func<string, bool, Func<JsonObject>, Func<JsonObject>, JsonObject> Layouts { get; set; }
+
     /// <summary>The layout of a movie used as a library (built once; read-only).</summary>
     public JsonObject Layout(string key)
     {
         key = Path.GetFileNameWithoutExtension(key);
         if (layouts.TryGetValue(key, out var l)) return l;
         var m = Movie(key);
-        layouts[key] = l = m == null ? null : LayoutJson.Build(m, key, null);
+        var k0 = key;
+        layouts[key] = l = m == null ? null
+            : Layouts != null ? Layouts(key, false, () => LayoutJson.Build(m, k0, k => Movie(k)), () => LayoutJson.Build(m, k0, null))
+            : LayoutJson.Build(m, key, null);
         return l;
     }
 
@@ -61,7 +71,7 @@ public sealed class MovieSource
     JsonObject MainLayout(string key, SwfMovie m)
     {
         if (mains.TryGetValue(key, out var l)) return l;
-        return mains[key] = LayoutJson.Build(m, key, k => Movie(k));
+        return mains[key] = Layouts != null ? Layouts(key, true, () => LayoutJson.Build(m, key, k => Movie(k)), null) : LayoutJson.Build(m, key, k => Movie(k));
     }
 
     /// <summary>A runtime and player for one movie, its imports' code loaded first. The document class is not constructed yet (call Start).</summary>

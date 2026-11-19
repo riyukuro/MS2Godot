@@ -132,6 +132,11 @@ public static class DataCache
             if (PackIndex.BuildCache(archives[i], System.IO.Path.Combine(packs.DataDir, archives[i] + ".m2d"), s)) built.Add("index " + archives[i]);
             progress?.Invoke(phase, 0.95 + 0.05 * (i + 1) / archives.Count);
         }
+        // the movies' layouts (keyed by the Gfx archive, in the UI code's folder): a dialog's first open reads its file
+        const string layoutPhase = "Reading the client's UI layouts";
+        progress?.Invoke(layoutPhase, 0);
+        int layouts = LayoutCache.BuildAll(packs, f => progress?.Invoke(layoutPhase, f));
+        if (layouts > 0) built.Add(layouts + " layouts");
         return built;
     }
 }

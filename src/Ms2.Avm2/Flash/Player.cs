@@ -20,11 +20,11 @@ namespace Ms2.Avm2.Flash
     public sealed class SymbolScope
     {
         public string Key;
-        public JsonObject Symbols;
+        public Ms2.Swf.LayoutSymbols Symbols;
         public JsonObject Layout;          // the movie layout (main) or library entry
         public readonly Dictionary<string, int> Classes = new();
 
-        public JsonObject Get(int id) => Symbols?[id.ToString()] as JsonObject;
+        public JsonObject Get(int id) => Symbols?.Get(id);
         public static RectD Rect(JsonObject b) => b == null ? RectD.None : new RectD(J.D(b["x"]) ?? 0, J.D(b["y"]) ?? 0, J.D(b["w"]) ?? 0, J.D(b["h"]) ?? 0);
         public static Mat Matrix(JsonNode m) => m is not JsonObject o ? Mat.Identity
             : new Mat(J.D(o["a"]) ?? 1, J.D(o["b"]) ?? 0, J.D(o["c"]) ?? 0, J.D(o["d"]) ?? 1, J.D(o["x"]) ?? 0, J.D(o["y"]) ?? 0);
@@ -117,25 +117,25 @@ namespace Ms2.Avm2.Flash
             var st = layout["stage"] as JsonObject;
             StageW = J.D(st?["width"]) ?? 1024; StageH = J.D(st?["height"]) ?? 768;
             FrameRate = J.D(layout["fps"]) ?? 30;
-            Main = new SymbolScope { Key = (string)layout["movie"], Symbols = layout["symbols"] as JsonObject, Layout = layout };
+            Main = new SymbolScope { Key = (string)layout["movie"], Symbols = Ms2.Swf.LayoutSymbols.Of(layout["symbols"]), Layout = layout };
             if (layout["library"] is JsonObject lib)
                 foreach (var (key, node) in lib)
                 {
-                    var sc = new SymbolScope { Key = key, Symbols = node["symbols"] as JsonObject, Layout = (JsonObject)node };
+                    var sc = new SymbolScope { Key = key, Symbols = Ms2.Swf.LayoutSymbols.Of(node["symbols"]), Layout = (JsonObject)node };
                     if (node["classes"] is JsonObject cl) foreach (var (cn, id) in cl) { sc.Classes[cn] = J.Iv(id); classSymbols.TryAdd(cn, (sc, J.Iv(id))); }
                 }
             if (Main.Symbols != null)
-                foreach (var (id, s) in Main.Symbols)
-                    if ((string)s["class"] is string cn) { Main.Classes[cn] = int.Parse(id); classSymbols[cn] = (Main, int.Parse(id)); }
+                foreach (var n in Main.Symbols.Named)
+                    if (n.Class is string cn) { Main.Classes[cn] = n.Id; classSymbols[cn] = (Main, n.Id); }
             // the imported movies' own symbols (shared libraries: every class they link, not only those this movie names)
             if (imported != null)
                 foreach (var (key, il) in imported)
                 {
-                    if (il?["symbols"] is not JsonObject isyms) continue;
+                    if (Ms2.Swf.LayoutSymbols.Of(il?["symbols"]) is not { } isyms) continue;
                     var sc = new SymbolScope { Key = key, Symbols = isyms, Layout = il };
-                    foreach (var (id, s) in isyms)
-                        foreach (var cn in new[] { (string)s["class"], (string)s["export"] })
-                            if (cn != null) { sc.Classes[cn] = int.Parse(id); classSymbols.TryAdd(cn, (sc, int.Parse(id))); }
+                    foreach (var n in isyms.Named)
+                        foreach (var cn in new[] { n.Class, n.Export })
+                            if (cn != null) { sc.Classes[cn] = n.Id; classSymbols.TryAdd(cn, (sc, n.Id)); }
                 }
             rt.AutoClass = AutoClass;
             rt.OnBeforeConstruct += BeforeConstruct;
@@ -686,7 +686,7 @@ namespace Ms2.Avm2.Flash
         /// </summary>
         public AsDisplayObject LoadMovie(AsLoader l, string key, JsonObject layout)
         {
-            var sc = new SymbolScope { Key = key, Symbols = layout["symbols"] as JsonObject, Layout = layout };
+            var sc = new SymbolScope { Key = key, Symbols = Ms2.Swf.LayoutSymbols.Of(layout["symbols"]), Layout = layout };
             if (sc.Symbols != null)
                 foreach (var (id, s) in sc.Symbols)
                     if ((string)s["class"] is string cn) { sc.Classes[cn] = int.Parse(id); classSymbols.TryAdd(cn, (sc, int.Parse(id))); }

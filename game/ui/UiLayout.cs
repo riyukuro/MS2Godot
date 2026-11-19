@@ -45,10 +45,7 @@ public static class UiLayout
     /// <summary>The timeline of the symbol exported as <paramref name="className"/> in the movie's own scope.</summary>
     public static JsonObject SymbolOfClass(UiMovie movie, string className, out int id)
     {
-        foreach (var (k, sym) in movie.Scope.Symbols)
-            if ((string)sym["class"] == className) { id = int.Parse(k); return (JsonObject)sym; }
-        id = -1;
-        return null;
+        return movie.Scope.Symbols.OfClass(className, out id);
     }
 
     /// <summary>
