@@ -487,21 +487,76 @@ public class GuideEventTests
     }
 
     [Test]
-    public void TheWorldArrowHidesWhileAWindowDialogIsOpen()
+    public void TheWorldArrowIsBlockedOnlyByAWindowDialog()
     {
-        // FUN_141274f80's first gate (unit_141274d10_uihelpers.cpp:183): CUIService::FUN_141adcbb0's walk — an open
-        // dialog that is not an always-on one (vfunc_56's flag, UIBuiltInDialog: the game menu never blocks) hides
-        // the world arrow; closing the window shows it again.
+        // FUN_141274f80's first gate (unit_141274d10_uihelpers.cpp:183): CUIService::FUN_141adcbb0's walk over the
+        // registry — every HUD-resident movie at field entry is shown and none blocks, because the client's
+        // always-on flag (vfunc_56) covers the built-ins and the chat, the quest tracker, the notice banner, the
+        // group messenger bar, the party window and the event widget; one open window (the inventory) blocks.
         Model();
-        var menu = new GameMenuController { Table = GameMenuTable.Load(packs, Model().IsFeatureEnabled) };
-        var (mrt, mp) = src.Open(menu.Movie, r => r.Budget = 20_000_000);
-        mp.StageW = 1280; mp.StageH = 720;
-        var mh = new UiHost(mp, menu, Model());
-        Assert.That(mh.Load(), Is.True, "game menu load: " + string.Join("; ", mrt.Errors));
-        for (int i = 0; i < 10; i++) mp.Tick();
-        Assert.That(menu.AlwaysOn, Is.True, "UIBuiltInDialog's flag 0");
-        Assert.That(menu.IsClosed, Is.False, "the menu movie is open");
+        var shown = new List<Ms2.Ui.UiController>();
+        T Open<T>(T c) where T : Ms2.Ui.UiController
+        {
+            var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+            p.StageW = 1280; p.StageH = 720;
+            var host = new UiHost(p, c, Model());
+            Assert.That(host.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+            for (int i = 0; i < 10; i++) p.Tick();
+            shown.Add(c);
+            return c;
+        }
 
+        // the HUD's own movies at field entry: the built-ins and the head-up strips
+        var menu = Open(new GameMenuController { Table = GameMenuTable.Load(packs, Model().IsFeatureEnabled) });
+        Open(new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) });
+        Open(new MainPlayerInfoController());
+        Open(new UpperHudController());
+        Open(new ExpBarController());
+        Open(new AdventureLevelExpBarController());
+        Open(new ScreenMaskController(""));
+        Open(new TooltipController());
+        // the flag-0 dialog windows that live on the HUD: the chat, the quest tracker, the notice banner, the group
+        // messenger bar, the party window, the event widget
+        Open(new MessengerController(Model().Tables.DefaultMessengers[0], "messengerdialog0.xml", true));
+        Open(new NoticeDialogController());
+        var quests = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
+        quests.AddQuests(System.Xml.Linq.XDocument.Parse("""
+            <ms2><quest id="1"><basic questType="0" standardLevel="3" /><condition type="npc" code="7" value="1" /></quest></ms2>
+            """));
+        quests.BuildIndexes();
+        quests.AddDescriptions(System.Xml.Linq.XDocument.Parse("""<ms2><quest questID="1" name="First" /></ms2>"""));
+        Open(new QuestGuideController { Table = quests, State = new Ms2.Quest.QuestShotState(quests, 10, new[] { 1 }, tracking: 1) });
+        Open(new GroupMessengerBrowserController());
+        var partyBook = Ms2.Ui.Hud.PartyFixture.Book(2000062, Model().Player);
+        var party = Open(new PartyController { Party = partyBook, SelfCharacterId = Ms2.Ui.Hud.PartyFixture.SelfCharacterId, MapName = _ => "Field" });
+        partyBook.MemberAdded += party.AddMember;
+        Open(new Ms2.Ui.Hud.BurningEventWidgetController(Model()));
+
+        foreach (var c in shown)
+            if (c.IsDialogEntity && c is not Ms2.Ui.Hud.EventWidgetController)
+                Assert.That(c.IsClosed, Is.False, c.Movie + " is shown");
+        // the event widget opens only while its event runs (ShouldOpen), so with none it reads closed as the
+        // client's no-event one does — its flag-0 is what keeps it from ever blocking
+        Assert.That(shown.OfType<Ms2.Ui.Hud.EventWidgetController>().Single().AlwaysOn, Is.True);
+        Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(shown), Is.False,
+            "the always-on HUD never blocks the world arrow");
+
+        // the pane over the HUD's registry, and a world arrow through it
+        Ms2.Ui.UiController[] registry = shown.ToArray();
+        var pane = new GuideEventController
+        {
+            Strings = GuideStrings.Parse(packs, "en"),
+            ProjectWorld = _ => (400, 300),
+            ArrowBlocked = () => Ms2.Ui.Hud.DialogGates.AnyDialogShown(registry),
+        };
+        var h = Load(pane);
+        pane.AddArrow(new GuideArrow(50, new(0, 0, 0), 2, 1, 0));
+        pane.Process();
+        var p = pane.ArrowPosition(50).Value;
+        Assert.That(p.X, Is.EqualTo(400).Within(0.5), "the arrow shows over the whole HUD");
+        Assert.That(p.Y, Is.EqualTo(300).Within(0.5));
+
+        // one open window among them blocks
         var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
         var inv = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
         var (irt, ip) = src.Open(inv.Movie, r => r.Budget = 20_000_000);
@@ -510,29 +565,16 @@ public class GuideEventTests
         Assert.That(ih.Load(), Is.True, "inventory load: " + string.Join("; ", irt.Errors));
         for (int i = 0; i < 10; i++) { ip.Tick(); inv.Process(); }
         Assert.That(inv.AlwaysOn, Is.False, "a window dialog");
-        Assert.That(inv.IsClosed, Is.False, "the inventory is open");
-
-        // the HUD's gate over its dialogs (DialogGates.AnyDialogShown), and the world arrow behind it
-        var c = new GuideEventController
-        {
-            Strings = GuideStrings.Parse(packs, "en"),
-            ProjectWorld = _ => (400, 300),
-            ArrowBlocked = () => Ms2.Ui.Hud.DialogGates.AnyDialogShown(new Ms2.Ui.UiController[] { menu, inv }),
-        };
-        var h = Load(c);
-        c.AddArrow(new GuideArrow(50, new(0, 0, 0), 2, 1, 0));
-        c.Process();
-        Assert.That(c.ArrowPosition(50), Is.Null, "the open window blocks the world arrow");
+        registry = shown.Append(inv).ToArray();
+        Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(registry), Is.True, "the open window blocks");
+        pane.Process();
+        Assert.That(pane.ArrowPosition(50), Is.Null, "the world arrow hides");
 
         inv.Close();
         for (int i = 0; i < 30 && !inv.IsClosed; i++) { ip.Tick(); inv.Process(); }
-        Assert.That(inv.IsClosed, Is.True, "the close finished");
-        Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(new Ms2.Ui.UiController[] { menu, inv }), Is.False,
-            "the always-on game menu alone never blocks");
-        c.Process();
-        var p = c.ArrowPosition(50).Value;
-        Assert.That(p.X, Is.EqualTo(400).Within(0.5), "the arrow shows over the always-on menu");
-        Assert.That(p.Y, Is.EqualTo(300).Within(0.5));
+        registry = shown.ToArray();
+        pane.Process();
+        Assert.That(pane.ArrowPosition(50), Is.Not.Null, "closed again: the arrow shows");
     }
 
     sealed class FakeNode : GuideNode

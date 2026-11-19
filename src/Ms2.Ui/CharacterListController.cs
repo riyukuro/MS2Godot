@@ -15,6 +15,10 @@ public sealed record LobbyCharacterRow(string CharName, int Gender, int JobCode,
 public sealed class CharacterListController : UiController
 {
     public override string Movie => "uicharacterlistdialog";
+
+    /// <summary>UICharacterListDialog's ctor sets the flag 0 (uicharacterlistdialog.cpp:556): vfunc_56, an
+    /// always-on one.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "buildCharacterList";
 
     /// <summary>

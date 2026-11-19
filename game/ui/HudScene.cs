@@ -635,28 +635,12 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// FUN_141274f80 (unit_141274d10_uihelpers.cpp:181-191): CUIService::FUN_141adcbb0's any-shown-window gate first —
-    /// an open dialog that is not an always-on one (the game menu, the main player info, the minimap never block;
-    /// the group messenger browser and the ad push the client adds are not in this HUD) — then a popup menu or a
-    /// shown message box.
+    /// an open dialog that is not an always-on one (the movie registry's list; the group messenger browser and the
+    /// ad push the client adds are not in this HUD) — then a popup menu or a shown message box.
     /// </summary>
     bool GuidePopupOrBoxOpen() =>
-        Ms2.Ui.Hud.DialogGates.AnyDialogShown(OpenMovieControllers())
+        Ms2.Ui.Hud.DialogGates.AnyDialogShown(MovieDialog.Live)
         || (popupMenu != null && !popupMenu.IsClosed) || MessageBoxLayer.Instance?.Shown == true;
-
-    /// <summary>The live movies' controllers (CUIService's m_mapDlg walk, uiservice.cpp:1252): every movie this HUD
-    /// holds; the ones not loaded answer closed, so they fail <see cref="DialogGates.AnyDialogShown"/>'s own test
-    /// like the client's unloaded dialogs fail vfunc_55's.</summary>
-    IEnumerable<Ms2.Ui.UiController> OpenMovieControllers()
-    {
-        var found = new List<Ms2.Ui.UiController>();
-        void Walk(Node n)
-        {
-            if (n is MovieDialog { Loaded: true } m) found.Add(m.Host.Controller);
-            foreach (var c in n.GetChildren()) Walk(c);
-        }
-        Walk(this);
-        return found;
-    }
 
     /// <summary>UIGuideEventArrowDialog::vfunc_2's gates (uiguideeventarrow.cpp:569-575): the cinematic sub scene or a
     /// shown message box.</summary>

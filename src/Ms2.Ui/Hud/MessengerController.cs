@@ -26,6 +26,9 @@ public sealed class MessengerController : UiController
     protected override bool TweenEnabled => false;
 
     public override string Movie => "uimessengerdialog";
+
+    /// <summary>UIMessenger's ctor sets the flag 0 (uimessenger.cpp:595): vfunc_56, an always-on one.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "updateAdditiveButton";
     public override string TypeName => "MessengerDialog";      // GetTypeName (:604)
 

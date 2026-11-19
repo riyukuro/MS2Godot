@@ -14,6 +14,10 @@ public sealed class QuestGuideController : UiController
     protected override bool TweenEnabled => false;
 
     public override string Movie => "uiquestguidedialog";
+
+    /// <summary>UIQuestGuideDialog's ctor sets the flag 0 (uiquesteventlistener.cpp:338): vfunc_56, an always-on
+    /// one — the quest tracker never blocks the guide's own arrows.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "buildAll";
 
     public QuestTable Table;

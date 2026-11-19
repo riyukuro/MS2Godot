@@ -8,6 +8,9 @@ namespace Ms2.Ui;
 public sealed class LoginDialogController : UiController
 {
     public override string Movie => "uilogindialog";
+
+    /// <summary>UILoginDialog's ctor sets the flag 0 (uilogindialog.cpp:171): vfunc_56, an always-on one.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "initData";
 
     /// <summary>

@@ -22,6 +22,14 @@ public partial class MovieDialog : Node2D
     public bool Loaded { get; }
     readonly As3View view;
 
+    /// <summary>
+    /// The live movies' controllers (CUIService's dialog registry, m_mapDlg): a movie joins while the tree holds it
+    /// and leaves when the tree drops it (the enter and exit below), so the always-on gate reads a list instead of
+    /// walking the scene every frame. The head-up strips sit in it too and the gate's own dialog test keeps them
+    /// out, as the client's registry holds only dialogs.
+    /// </summary>
+    public static readonly System.Collections.Generic.List<UiController> Live = new();
+
     public MovieDialog(UiAssets assets, UiController controller, UiModel model, Vector2 window, ICharacterFolder folder = null)
     {
         var perf = PerfLog.On ? new PerfLog.Steps("open " + controller.Movie) : null;
@@ -119,6 +127,7 @@ public partial class MovieDialog : Node2D
         for (var n = GetParent(); n != null; n = n.GetParent())
             if (n is IUiStageHost h && h.UiStage != null) { stage = h.UiStage; break; }
         stage?.Add(Host, view.StageMouse, DrawOrder, view.IsVisibleInTree);
+        if (Host?.Controller is { } c) Live.Add(c);        // CUIService's registry: in while the tree holds it
     }
 
     public override void _ExitTree()
@@ -126,6 +135,7 @@ public partial class MovieDialog : Node2D
         Player.CancelDrag();             // closed mid-drag: no capture left behind
         stage?.Remove(Host);
         stage = null;
+        if (Host?.Controller is { } c) Live.Remove(c);
     }
 
     UiStage stage;

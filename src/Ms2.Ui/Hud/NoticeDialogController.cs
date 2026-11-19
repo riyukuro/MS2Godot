@@ -15,6 +15,9 @@ public sealed class NoticeDialogController : UiController
     protected override bool TweenEnabled => false;
 
     public override string Movie => "uinoticedialog";
+
+    /// <summary>UINoticeDialog's ctor sets the flag 0 (uinoticedialog.cpp:86): vfunc_56, an always-on one.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "alignment";        // GameEntity's; the dialog is the movie's only GameEntity
     public override string TypeName => "NoticeDialog";            // GetTypeName (:96)
 

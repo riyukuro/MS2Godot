@@ -14,6 +14,9 @@ namespace Ms2.Ui.Hud;
 public sealed class PartyController : UiController
 {
     public override string Movie => "uipartydialog";
+
+    /// <summary>UIPartyDialog's ctor sets the flag 0 (uipartydialog.cpp:401): vfunc_56, an always-on one.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "initMembers";
     public override string TypeName => "PartyDialog";      // GetTypeName @0x141a74d50 (:410)
 

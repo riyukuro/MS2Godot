@@ -13,6 +13,10 @@ public sealed class GroupMessengerBrowserController : UiController
     protected override bool TweenEnabled => false;
 
     public override string Movie => "uigroupmessengerbrowser";
+
+    /// <summary>UIGroupMessengerBrowser's ctor sets the flag 0 (uigroupmessenger.cpp:1439): vfunc_56, an always-on
+    /// one — the group messenger browser of FUN_141adcbb0's own check, which never blocks it there.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "setData";
     public override string TypeName => "GroupMessengerBrowser";      // GetTypeName (:1449)
 

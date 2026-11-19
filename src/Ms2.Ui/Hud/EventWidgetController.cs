@@ -12,6 +12,10 @@ namespace Ms2.Ui.Hud;
 public abstract class EventWidgetController : UiController
 {
     public override string Movie => "uieventwidgetdialog";     // vfunc_7 "EventWidgetDialog"
+
+    /// <summary>UIEventWidgetDialog's ctor sets the flag 0 (uileveluppackagewidgetdialog.cpp:159): vfunc_56, an
+    /// always-on one.</summary>
+    public override bool AlwaysOn => true;
     protected override string EntityMethod => "setData";
     public override string TypeName => "EventWidgetDialog";   // GetTypeName (@0x140c58e60)
 
