@@ -26,9 +26,9 @@ public sealed class AbcContext
         sets = new Ns[abc.NsSets.Length][];
         for (int i = 0; i < sets.Length; i++) sets[i] = abc.NsSets[i].Select(x => ns[x]).ToArray();
         names = new Name?[abc.Multinames.Length];
-        typeNames = new string[abc.Multinames.Length];
         Classes = new AsClass[abc.Instances.Length];
-        code = new Code[abc.Methods.Length];
+        var sh = Shared.GetValue(abc, a => new BlockCache(a));
+        typeNames = sh.TypeNames; code = sh.Code; constOperands = sh.ConstOperands;
         activationTraits = new TraitTable[abc.Methods.Length];
         CompiledBodies = GeneratedCode.Find(abc.Hash);
     }
@@ -186,13 +186,27 @@ public sealed class AbcContext
 
     /// <summary>The translated method bodies registered for this block's hash, by method index (null: none).</summary>
     public CompiledBody[] CompiledBodies;
-    int[][] constOperands;
-    /// <summary><see cref="Translator.ConstOperands"/> of a body, worked out once per block.</summary>
-    public int[] ConstOperands(MethodInfo info)
+    readonly int[][] constOperands;
+    /// <summary><see cref="Translator.ConstOperands"/> of a body, worked out once per block in this process.</summary>
+    public int[] ConstOperands(MethodInfo info) => constOperands[info.Index] ??= Translator.ConstOperands(info);
+
+    /// <summary>
+    /// What a block's contexts work out from the block alone, kept per block for the process (each open of a movie makes a
+    /// new runtime and contexts, the block is MovieSource's): decoded bodies, pool operands and type names. Names stay
+    /// per context, since each context has its own private namespaces. The entries are written once and only read
+    /// after; two threads filling the same entry store equal values.
+    /// </summary>
+    sealed class BlockCache
     {
-        constOperands ??= new int[Abc.Methods.Length][];
-        return constOperands[info.Index] ??= Translator.ConstOperands(info);
+        public readonly Code[] Code;
+        public readonly int[][] ConstOperands;
+        public readonly string[] TypeNames;
+        public BlockCache(AbcFile abc)
+        {
+            Code = new Code[abc.Methods.Length]; ConstOperands = new int[abc.Methods.Length][]; TypeNames = new string[abc.Multinames.Length];
+        }
     }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<AbcFile, BlockCache> Shared = new();
 
     public sealed class Code
     {

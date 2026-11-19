@@ -79,27 +79,24 @@ public sealed partial class Runtime
         var c = NewNativeClass(at.Name, super, cls => (AsObject)Activator.CreateInstance(t), at.Dynamic);
         c.NativeType = t;
         c.IsFinal = at.Final;
-        const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
-        foreach (var mi in t.GetMethods(all))
+        var refl = Reflected.GetValue(t, tt => new Members(tt));
+        foreach (var (mi, isCtor, asAt) in refl.Methods)
         {
-            if (mi.GetCustomAttribute<AsCtorAttribute>() != null)
+            if (isCtor)
             {
                 var m = mi;
                 var baseCtor = super?.Ctor;
                 c.Ctor = new NativeMethod(at.Name + "/ctor", (self, a) => { CheckSelf(t, self, at.Name); m.Invoke(self, new object[] { a }); return Rt.Undef; });
                 continue;
             }
-            var asAt = mi.GetCustomAttribute<AsAttribute>();
             if (asAt == null || mi.IsSpecialName) continue;
             var name = asAt.Name ?? mi.Name;
             var impl = new NativeMethod(at.Name + "/" + name, Caller(t, mi, at.Name));
             var table = mi.IsStatic ? c.Traits : c.InstanceTraits;
             table.Set(new Binding { Ns = Ns.Public, Local = name, Kind = BindingKind.Method, Method = impl });
         }
-        foreach (var pi in t.GetProperties(all))
+        foreach (var (pi, asAt) in refl.Props)
         {
-            var asAt = pi.GetCustomAttribute<AsAttribute>();
-            if (asAt == null) continue;
             var name = asAt.Name ?? pi.Name;
             var g = pi.GetGetMethod(true); var s = pi.GetSetMethod(true);
             bool isStatic = (g ?? s).IsStatic;
@@ -108,14 +105,28 @@ public sealed partial class Runtime
             if (s != null) b.Setter = new NativeMethod(at.Name + "/set " + name, Caller(t, s, at.Name));
             (isStatic ? c.Traits : c.InstanceTraits).Set(b);
         }
-        foreach (var fi in t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly))
+        foreach (var (fi, asAt) in refl.Fields)
         {
-            var asAt = fi.GetCustomAttribute<AsAttribute>();
-            if (asAt == null) continue;
             Const(c, asAt.Name ?? fi.Name, ToAs(fi.GetValue(null)));
         }
         return c;
     }
+
+    /// <summary>A native type's [As] members, read once per process (each open binds the flash classes into a new runtime).</summary>
+    sealed class Members
+    {
+        public readonly List<(MethodInfo Method, bool IsCtor, AsAttribute As)> Methods = new();
+        public readonly List<(PropertyInfo Property, AsAttribute As)> Props = new();
+        public readonly List<(FieldInfo Field, AsAttribute As)> Fields = new();
+        public Members(Type t)
+        {
+            const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+            foreach (var mi in t.GetMethods(all)) Methods.Add((mi, mi.GetCustomAttribute<AsCtorAttribute>() != null, mi.GetCustomAttribute<AsAttribute>()));
+            foreach (var pi in t.GetProperties(all)) if (pi.GetCustomAttribute<AsAttribute>() is { } a) Props.Add((pi, a));
+            foreach (var fi in t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)) if (fi.GetCustomAttribute<AsAttribute>() is { } a) Fields.Add((fi, a));
+        }
+    }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Type, Members> Reflected = new();
 
     void CheckSelf(Type t, object self, string cls)
     {

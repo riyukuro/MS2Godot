@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <TieredPGO>true</TieredPGO>
+    <RootNamespace>As3Bench</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ms2.Avm2/Ms2.Avm2.csproj" />
+    <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
+    <ProjectReference Include="../../src/Ms2.Ui/Ms2.Ui.csproj" />
+  </ItemGroup>
+</Project>
