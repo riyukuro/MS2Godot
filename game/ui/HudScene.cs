@@ -239,6 +239,8 @@ public partial class HudScene : Node, IUiStageHost
         systemText?.GetParent()?.RemoveChild(systemText);     // and the system lines
         castingBar?.GetParent()?.RemoveChild(castingBar);     // and the cast gauge
         guideEvent?.GetParent()?.RemoveChild(guideEvent);     // and the guide pane
+        if (eventWidgets != null)                             // and the event widgets (EventWidgets adds them back)
+            foreach (var w in eventWidgets) w.GetParent()?.RemoveChild(w);
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         BuildHud();

@@ -49,6 +49,7 @@ public partial class HudScene
             {
                 Table = table,
                 Data = data,
+                World = hudModel,
                 CastingBar = CastingBar,
                 ItemCount = id => live == null ? 0 : Ms2.Ui.Items.InventoryCount.ById(live.Items.All, hudModel.Tables.Items, id, 0,
                     live.CharacterId, MasteryNow()),

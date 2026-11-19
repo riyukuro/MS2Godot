@@ -208,4 +208,34 @@ public class MasteryControllerTests
         Assert.That(boxes, Has.Count.EqualTo(1), "main tab 1 opens it");
         foreach (var e in rt.Errors) TestContext.WriteLine("  error: " + e);
     }
+    /// <summary>
+    /// CMasteryManager::GetTotalClaimableRewardLevels (masterymanager.cpp:78) reads the local player from the world, not the dialog:
+    /// the game menu asks for it (FUN_141938ae0(0x4f1e)) before the mastery movie was ever loaded, as on a window relayout. Without
+    /// a host it counts on the HUD's model, as the loaded dialog does; without a local player it is 0 (masterymanager.cpp:90).
+    /// </summary>
+    [Test]
+    public void ClaimableCountWorksBeforeTheMovieLoads()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var tables = new GameTables(new PackSet(d), "en");
+        var model = new UiModel(tables) { HasLocalPlayer = true };
+        var data = new MasteryData();
+        Array.Fill(data.Exp, uint.MaxValue - 1);       // every grade reached, none received
+        var closed = new MasteryController { Table = tables.MasteryRecipes, Data = data, World = model };
+        var hosted = new MasteryController { Table = tables.MasteryRecipes, Data = data };
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject(), ["root"] = new JsonObject(),
+        };
+        new UiHost(new Player(new Runtime(), layout), hosted, model);
+        int n = hosted.TotalClaimableRewardLevels();
+        Assert.That(n, Is.GreaterThan(0), "the data has grade rewards for the default job");
+        Assert.That(closed.TotalClaimableRewardLevels(), Is.EqualTo(n), "no host: the HUD's model");
+        model.HasLocalPlayer = false;
+        Assert.That(closed.TotalClaimableRewardLevels(), Is.EqualTo(0), "no local player");
+        Assert.That(new MasteryController { Table = tables.MasteryRecipes, Data = data }.TotalClaimableRewardLevels(), Is.EqualTo(0),
+                    "no model at all");
+    }
 }

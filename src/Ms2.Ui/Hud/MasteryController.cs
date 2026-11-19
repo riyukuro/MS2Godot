@@ -95,7 +95,14 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         public bool HasTotal => Total != 0;
     }
 
-    Func<int, Items.ItemData> ItemData => id => Model.Tables.Items.Get(id);
+    Func<int, Items.ItemData> ItemData => id => Manager.Tables.Items.Get(id);
+
+    /// <summary>
+    /// The model the CMasteryManager side reads before the dialog's movie is loaded (the game menu's count, FUN_141938ae0(0x4f1e)):
+    /// the HUD's, whose player is WorldService::GetLocalPlayer. Once the movie is loaded it is the host's model.
+    /// </summary>
+    public UiModel World { get; init; }
+    UiModel Manager => Host?.Model ?? World;
 
     ItemSlotBinder Reward => reward ??= new ItemSlotBinder(Model, "MasteryDialog_Reward") { IconType = 0x11 };
     ItemSlotBinder Require => require ??= new ItemSlotBinder(Model, "MasteryDialog_Require") { IconType = 1 };
@@ -197,13 +204,17 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         return n != 0 ? ClientFormat.Format(Common("s_mastery_subtab_mastery_name_and_reward"), name, n) : name;
     }
 
-    /// <summary>CMasteryManager::HasRewards: the grade has rewards for the player's job group.</summary>
+    /// <summary>CMasteryManager::HasRewards @0x140b6d250 (masterymanager.cpp:111): the grade has rewards for the local player's
+    /// job group; false without a local player.</summary>
     bool HasRewards(int type, int level) =>
-        Table.Rewards(MasteryRecipeTable.MakeID(type, level), Pc.JobGroup, ItemData).Count > 0;
+        Manager is { HasLocalPlayer: true } m
+        && Table.Rewards(MasteryRecipeTable.MakeID(type, level), m.Player.JobGroup, ItemData).Count > 0;
 
-    /// <summary>CMasteryManager::CountClaimableRewardLevels: the grades reached whose rewards were not received.</summary>
+    /// <summary>CMasteryManager::CountClaimableRewardLevels @0x140b6d140 (masterymanager.cpp:87): the grades reached whose rewards
+    /// were not received; 0 without a local player (GetLocalPlayer null), which is also the case with no model at all.</summary>
     public int ClaimableRewardLevels(int type)
     {
+        if (Manager is not { HasLocalPlayer: true }) return 0;
         int n = 0;
         uint exp = Data.Get(type);
         for (int level = 1; level <= Table.MaxGrade(type); level++)
