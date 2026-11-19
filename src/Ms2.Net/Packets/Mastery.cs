@@ -10,10 +10,10 @@ namespace Ms2.Net.Packets;
 /// <item>1: a grade reward received: i32 the reward id (type * 1000 + grade, put in DAT_143ab31a0 with 1), i32 a count
 /// of (i32 item id, u16 amount) for the reward notice;</item>
 /// <item>2: a craft done: u16 the type, i32 a count of (i32 item id, u16 amount);</item>
-/// <item>3: u16 a result shown by CMasteryManager::FUN_140b6d710;</item>
-/// <item>4: i32 a count of i32 ids (DAT_143ab3128), read as null here.</item>
+/// <item>3: u16 a result shown by CMasteryManager::FUN_140b6d710.</item>
 /// </list>
-/// The client reads the item lists only when the reward notice 0x4e5d exists, which a game scene always has.
+/// OnMastery has no other modes (the switch ends at 3); anything else reads as null. The item lists go to the reward
+/// notice 0x4e5d, which a game scene always has.
 /// </summary>
 public abstract record MasteryMessage {
     public sealed record ExpChanged(int Type, int Exp, int SubType) : MasteryMessage;
@@ -56,8 +56,8 @@ public sealed record MasteryRewardRequest(int RewardId) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(1); w.WriteInt(RewardId); }
 }
 
-/// <summary>Outbound Mastery 0x92 mode 2 (UIMasteryDialog::OnCastingFinished for a manufacturing craft): u8 2, i32 the
-/// recipe id.</summary>
+/// <summary>Outbound Mastery 0x92 mode 2 (UIMasteryDialog::OnCastingFinished for a recipe craft: Unk_MasteryCraft type 0,
+/// which the exe's IsMagicScroll names): u8 2, i32 the recipe id.</summary>
 public sealed record MasteryCraftRequest(int RecipeId) : IOutPacket {
     public Outbound Op => Outbound.Mastery;
     public void Write(ByteWriter w) { w.WriteByte(2); w.WriteInt(RecipeId); }

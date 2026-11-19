@@ -151,6 +151,9 @@ public partial class LiveSession : Node
     /// <summary>A Mastery packet (0xCD) after it was applied to <see cref="Mastery"/>; mode 0 carries the gain, the old
     /// grade and whether the grade changed.</summary>
     public event Action<MasteryMessage, uint, int, bool> MasteryReceived;
+    /// <summary>A hit on the own player (OnSkillDamage 0x3D): the damage record's total (negative when the player is the
+    /// victim), one per target record (MyPC::vfunc_113 posts NotifyDamagedMyPC of each, mypc.cpp:1265).</summary>
+    public event Action<long> SelfDamaged;
     /// <summary>UserEnv mode 8 or 9 replaced the gathering counts or the received rewards.</summary>
     public event Action MasteryEnvChanged;
 
@@ -777,6 +780,13 @@ public partial class LiveSession : Node
                 if (m != null && CharacterAbility.Apply(m, id => table == null || table.GetAbility(id) != null))
                     CharacterAbilityReceived?.Invoke(m);
                 GD.Print($"live: character ability {m?.GetType().Name ?? "other mode"} ({CharacterAbility.Ids.Count} learned)");
+            }
+            else if (game.Is(p, Inbound.SkillDamage))
+            {
+                var d = SkillDamage.Read(p.Reader());
+                if (d.Raw == null && selfObject > 0)          // the own FieldAddUser id is unknown before it arrives
+                    foreach (var t in d.Targets)
+                        if (t.TargetId == selfObject) SelfDamaged?.Invoke(t.Hits.Sum(h => h.Damage));
             }
             else if (game.Is(p, Inbound.Mastery))
             {

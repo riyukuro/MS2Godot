@@ -13,23 +13,32 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 /// <remarks>
 /// STILL-OPEN: main tab 2 (housing, furniture and the pet taming list) and main tab 3 (magic scroll): their sub-tabs, lists and
-/// pages are not ported; those tabs show empty sub-tabs and their callbacks do nothing.
+/// pages are not ported; those tabs show empty sub-tabs and their callbacks do nothing. The game menu's mastery count has no
+/// housing part (FUN_141938ae0(0x4f1e) adds FUN_140930e10's housing grades, which need that tab).
 /// STILL-OPEN: the equipment's ability rate (CEquipment::GetAbilityRate, types 3 to 6 adjust the reward count, types 7 to 10 the
 /// mastery points shown) is not tracked, so it is 0 here and the numbers are the unadjusted ones.
 /// STILL-OPEN: the home text of the production recipes of types 5 and 6 (the house service: "my home" or "other's home") needs
 /// the house service, so only the success description shows.
+/// STILL-OPEN: OnMastery mode 0's own-field refresh (WorldService::FUN_141bc5e20(6), the field's gathering objects' state
+/// effects) and the mode 1/2 item lists for the reward notice (URewardNotify 0x4e5d); the fishing, instrument and pet taming
+/// branches of mode 0 (their notices, the fishing book 0x4ee6, the instrument dialog 0x4eec) are other systems'.
 /// </remarks>
 public sealed class MasteryController : UiController, IMessageBoxListener, ICastingEventListener
 {
-    public override string TypeName => "MasteryDialog";           // GetTypeName (@0x140eaec30)
+    public override string TypeName => "MasteryDialog";           // GetTypeName (@0x140eae470)
     public override string Movie => "uimasterydialog";
     protected override string EntityMethod => "setPage";
 
-    /// <summary>The chat's id for the debug command (UIMessengerBrowser 0x4e61).</summary>
+    /// <summary>The recipe list's row height (SetIntMember("rowHeight", 0x4c), FUN_140eb0da0:821).</summary>
     public const int ListRowHeight = 0x4c;
 
     /// <summary>Unk_MasteryCraft::m_nType: 0 a recipe craft (Mastery mode 2), 1 a magic scroll craft (not ported).</summary>
     public const int CraftRecipe = 0, CraftScroll = 1;
+
+    /// <summary>Unk_MasteryResult (masterymanager.cpp): why a craft may not run. FUN_140b6d470's values: 1 the mastery is
+    /// below the recipe's, 3 none of its required quests is in progress, 2 the mesos are short (DAT_143ab2898), 4 an
+    /// ingredient is short, 5 no player.</summary>
+    public enum CraftBlock { None = 0, Mastery = 1, Meso = 2, Quest = 3, Item = 4, NoPlayer = 5 }
 
     public MasteryRecipeTable Table = MasteryRecipeTable.Empty;
     public MasteryData Data = new();
@@ -44,6 +53,13 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
     public Func<long, string, string> WorldMapLink = (_, name) => name;
     /// <summary>The debug mode flag (IsDebugMode) the page shows the debug button for.</summary>
     public Func<bool> IsDebugMode = () => false;
+    /// <summary>ShowSystemNotice(text, 1, 1) (FUN_1412751f0): the craft result's notice, also a chat line.</summary>
+    public Action<string> Notice;
+    /// <summary>The count the box's text input holds (GetInputText @0x141a04da0); "" without the box's movie.</summary>
+    public Func<MessageBoxData, string> CountInput = box => MessageBoxQueue.Layer?.InputText(box) ?? "";
+
+    /// <summary>Unk_MasteryCraft's state (m_craft) for the tests: a craft is cast only once its total is set.</summary>
+    public (int Type, int Total, int Done, bool Pending) CraftState => (craft.Type, craft.Total, craft.Done, craft.Pending != 0);
 
     /// <summary>Mastery mode 1 with the reward id (<see cref="Ms2.Net.Packets.MasteryRewardRequest"/>).</summary>
     public event Action<int> SendReward;
@@ -88,8 +104,9 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
     // ---- lifecycle ------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// vfunc_67 (@0x140eae9a0), the close: the cast bar cancelled while a craft has its total, the craft reset, the three
-    /// binders cleared, the selection forgotten, the sub-tab per main tab and the main tab read back for the next open.
+    /// vfunc_67 (@0x140eae520), the close: the cast bar cancelled while a craft has its total (FUN_1418e1390), the craft
+    /// reset, the three binders cleared, the selection forgotten; then the movie's remembered sub-tabs (the
+    /// m_lastSelectedIndex array, an int each, 0 for a non-int) and main tab read back for the next open.
     /// </summary>
     public override void Close()
     {
@@ -99,33 +116,31 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
             craft.Reset();
             reward?.Clear(); require?.Clear(); mastery?.Clear();
             selected = 0;
-            if (Host.Child("m_lastSelectedIndex") is { } _) { }
-            int main = MainTabIndex();
-            if (main >= 0) { mainTab = main; int sub = SubTabIndex(); if (sub >= 0 && main < lastSelected.Length) lastSelected[main] = sub; }
+            if (Host.Get(Host.Entity, "m_lastSelectedIndex") is Ms2.Avm2.AsArray last)
+                for (int i = 0; i < lastSelected.Length; i++)
+                {
+                    object v = i < last.Items.Count ? last.Items[i] : null;
+                    lastSelected[i] = v is int n ? n : 0;            // Value::IsInt (FUN_140ebb1e0), else 0
+                }
+            if (Host.Child("m_mainTab") is { } tab) mainTab = Rt.ToInt32(Host.Get(tab, "selectedIndex"));
         }
         base.Close();
     }
 
     /// <summary>
-    /// OnLoadComplete (@0x140eaea90): UIDialog's, the close button, the web guide button hidden, the remembered sub-tabs
-    /// handed to the movie, the main tab selected, the magic scroll tab hidden without feature 0x5a, the tab marks.
+    /// OnLoadComplete (@0x140eae8a0): UIDialog's, the web guide button hidden, the remembered sub-tabs handed to the movie
+    /// (m_lastSelectedIndex), the main tab selected, the magic scroll tab hidden without feature 0x5a, the tab marks. The
+    /// close button is the movie's own (m_close's click runs its onCloseDialog, which ends in OnEndClose); the client
+    /// never binds it here.
     /// </summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
-        BindCloseButton("m_close");
         if (Host.Child("m_webGuideButton") is { } web) Host.Set(web, "visible", false);
         Host.Set(Host.Entity, "m_lastSelectedIndex", lastSelected.Select(i => (object)i).ToList());
         if (Host.Child("m_mainTab") is { } tab) Host.Invoke(tab, "setSelectedButtonByIndex", mainTab);
         if (!Model.IsFeatureEnabled(0x5a) && Host.Child("m_magicScroll") is { } scrollTab) Host.Set(scrollTab, "visible", false);
         UpdateMainTabRewards();
-    }
-
-    void BindCloseButton(string name)
-    {
-        if (Host.Child(name) is not { } b) { Host.RT.NoteMissing("mastery dialog: " + name); return; }
-        Func<object[], object> f = _ => { Close(); return null; };
-        Host.Invoke(b, "addEventListener", "buttonClick", f, false, 0, false);
     }
 
     /// <summary>SetMainTab (@0x140eafde0 neighbour): the tab the next open selects.</summary>
@@ -198,6 +213,15 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         return n;
     }
 
+    /// <summary>CMasteryManager::GetTotalClaimableRewardLevels (masterymanager.cpp:78): the claimable count of all types,
+    /// the game menu's mastery count (FUN_141938ae0(0x4f1e)) without the housing grades (FUN_140930e10, STILL-OPEN).</summary>
+    public int TotalClaimableRewardLevels()
+    {
+        int n = 0;
+        for (int type = 0; type < 12; type++) n += ClaimableRewardLevels(type);
+        return n;
+    }
+
     /// <summary>
     /// UpdateSubTabs (@0x140eafde0): once the movie is loaded, the sub-tab bar emptied and one label per mastery type of the
     /// main tab (the second pair with feature 0x59). Tabs 2 and 3 are not ported: their bar stays empty.
@@ -245,6 +269,15 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
             UpdateMainTabRewards();
         }
         if (type == CurrentType()) SetPendingSub(type);
+    }
+
+    /// <summary>FUN_140eb4be0 (@0x140eb4be0): the sub-tabs and the main tab marks redone, no pending refresh (a reward was
+    /// received, OnMastery mode 1).</summary>
+    public void UpdateSubTabsAndRewards()
+    {
+        if (Host?.Entity == null) return;
+        UpdateSubTabs();
+        UpdateMainTabRewards();
     }
 
     /// <summary>SetPendingSub (@0x140eb5260): ignored while closed or for another sub-tab's type.</summary>
@@ -317,7 +350,7 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         return false;
     }
 
-    /// <summary>vfunc_49 (@0x140eae6c0), after UIObject's: "masteryRecipe" on main tab 1: the recipe's first reward item as a tooltip.</summary>
+    /// <summary>vfunc_49 (@0x140eaed30), after UIObject's: "masteryRecipe" on main tab 1: the recipe's first reward item as a tooltip.</summary>
     public override IDictionary<string, object> GetTooltip(object[] args)
     {
         if (args is not { Length: > 1 } || Rt.ToString(args[0]) != "masteryRecipe") return null;
@@ -394,7 +427,7 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         return Host.Obj(fields.ToArray());
     }
 
-    /// <summary>AddLevelGuide (@0x140eb0d00): a grade pushed into the guide bar (a reward was received).</summary>
+    /// <summary>AddLevelGuide (@0x140eb0bf0): a grade pushed into the guide bar (a reward was received).</summary>
     public void AddLevelGuide(int type, int index)
     {
         if (!Model.HasLocalPlayer || Host?.Entity == null || Host.Child("m_levelControl") is not { } level) return;
@@ -585,6 +618,9 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         foreach (var ing in r.Ingredients)
         {
             uint need = IngredientNeed(r, ing);
+            // the client divides without a zero test (GetMaxCraftCount:1559, nCan = nHave / nNeed): a need of 0 cannot
+            // happen for a real row (LuaCraftRequireItemCount returns its first argument, a recipe count >= 1), so this
+            // skip only keeps C# from dividing by zero.
             if (need == 0) continue;
             max = Math.Min((int)(Have(ing) / need), max);
         }
@@ -594,12 +630,57 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
     // ---- crafting -------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// FUN_140eb55e0 (@0x140eb55e0): the craft button. The box type 0x23 shows the item, the ingredients and a count input
-    /// up to the craftable count; its answer is <see cref="OnCraftCountInput"/>.
+    /// CMasteryManager::FUN_140b6d470 (masterymanager.cpp:139): the craft precheck, in the client's order: no player (5),
+    /// the mastery below the recipe's (1), no required quest in progress (3), the mesos short (2), an ingredient short
+    /// (4). 0 when the craft may run (also for a recipe the table lacks; the caller returns before that).
     /// </summary>
-    void OpenCraftBox(int id)
+    public CraftBlock CraftBlocked(int id)
     {
-        if (Table.Find(id) is not { } r || r.Rewards.Count == 0) return;
+        if (!Model.HasLocalPlayer) return CraftBlock.NoPlayer;
+        if (Table.Find(id) is not { } r) return CraftBlock.None;
+        if (r.RequireMastery != 0 && Data.Get(r.Type) < r.RequireMastery) return CraftBlock.Mastery;
+        if (!RecipeVisible(r)) return CraftBlock.Quest;
+        if (r.RequireMeso != 0 && Pc.Mesos < r.RequireMeso) return CraftBlock.Meso;
+        foreach (var ing in r.Ingredients)
+            if (Have(ing) < ing.Count) return CraftBlock.Item;      // the raw m_c, not CalcIngredientCount
+        return CraftBlock.None;
+    }
+
+    /// <summary>
+    /// CMasteryManager::FUN_140b6d710 (masterymanager.cpp:176): the notice of a craft result. 1 to 4 the lack kinds, 0xc
+    /// the anti-addiction text, 7 the invalid level with the value, 5 the unknown with the value; anything else an empty
+    /// notice (the client shows it, too). The precheck's answer and Mastery mode 3's result (scenestategame.cpp:4047).
+    /// </summary>
+    public void ShowCraftResult(int result)
+    {
+        string text = result switch
+        {
+            (int) CraftBlock.Mastery => Common("s_mastery_error_lack_mastery"),
+            (int) CraftBlock.Meso => Common("s_mastery_error_lack_meso"),
+            (int) CraftBlock.Quest => Common("s_mastery_error_lack_quest"),
+            (int) CraftBlock.Item => Common("s_mastery_error_lack_item"),
+            0xc => Common("s_anti_addiction_cannot_receive"),
+            7 => ClientFormat.Format(Common("s_mastery_error_invalid_level"), (uint)result),
+            (int) CraftBlock.NoPlayer => ClientFormat.Format(Common("s_mastery_error_unknown"), (uint)result),
+            _ => "",
+        };
+        Notice?.Invoke(text);
+    }
+
+    /// <summary>
+    /// FUN_140eb55e0 (@0x140eb55e0): the craft button. The precheck first (FUN_140b6d470): a nonzero result shows its
+    /// notice (FUN_140b6d710) and no box. The box type 0x23 shows the item, the ingredients and a count input up to the
+    /// craftable count; its answer is <see cref="OnCraftCountInput"/>.
+    /// </summary>
+    public void OpenCraftBox(int id)
+    {
+        if (Table.Find(id) is not { } r) return;
+        if (CraftBlocked(id) is { } block && block != CraftBlock.None)
+        {
+            ShowCraftResult((int)block);
+            return;
+        }
+        if (r.Rewards.Count == 0) return;
         var first = r.Rewards[0];
         var item = Item.Create(Model.Tables.Items, first.ItemId, first.Rank);
         if (item == null) return;
@@ -617,12 +698,12 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
         ShowBox(box);
     }
 
-    /// <summary>OnRecipeCraftCountInput (@0x140eb5fa0): on the craft button the count typed (commas removed) starts the craft.</summary>
+    /// <summary>OnRecipeCraftCountInput (@0x140eb4c70): on the craft button the count typed (commas removed) starts the craft.</summary>
     bool OnCraftCountInput(int result, MessageBoxData box)
     {
         if (result != 0) return true;
         CancelCraft();
-        string text = (MessageBoxQueue.Layer?.InputText(box) ?? "").Replace(",", "");
+        string text = (CountInput(box) ?? "").Replace(",", "");
         craft.Type = CraftRecipe;
         craft.Total = int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n) ? n : 0;
         craft.Id = box.ArgInt(0, 0);
