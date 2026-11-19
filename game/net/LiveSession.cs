@@ -1435,11 +1435,21 @@ public partial class LiveSession : Node
                     GD.Print($"live: group chat create {n}: {Instance?.GroupChats.ChatCount ?? 0} chats (was {before})");
                     await Frames(120);
                 }
+                else if (line == "@groupinvite") { GD.Print($"live: group invite dialog {n}: {chatHud.OpenGroupInviteDialog()}"); await Frames(60); }   // "@groupinvite": the current group window's invite button
+                else if (line.StartsWith("@invite:") && Instance != null)
+                {
+                    // "@invite:<name>": the name typed into the open invite dialog and Enter; waits for a group chat packet (at most 5 s)
+                    int before = Instance.groupChatPackets;
+                    GD.Print($"live: group invite {n}: {chatHud.InviteFromGroupDialog(line.Substring(8))}");
+                    await Until(() => Instance == null || Instance.groupChatPackets > before, 60 * 5);
+                    GD.Print($"live: group invite {n}: {(Instance != null && Instance.groupChatPackets > before ? "a packet came" : "nothing came")}");
+                    await Frames(120);
+                }
                 else if (line.StartsWith("@group:") && Instance != null)
                 {
                     // "@group:<text>": the text sent from the current group window; waits for a group chat packet (at most 5 s)
                     int before = Instance.groupChatPackets;
-                    GD.Print($"live: group chat line {n}: {(chatHud.SubmitGroupLine(line.Substring(7)) ? "sent" : "no group window")}");
+                    GD.Print($"live: group chat line {n}: {(chatHud.SubmitGroupLine(line.Substring(7)) ? "sent" : "not sent")}");
                     await Until(() => Instance == null || Instance.groupChatPackets > before, 60 * 5);
                     GD.Print($"live: group chat line {n}: {(Instance != null && Instance.groupChatPackets > before ? "a packet came" : "nothing came")}");
                     await Frames(120);

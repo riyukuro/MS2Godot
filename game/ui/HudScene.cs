@@ -2284,8 +2284,28 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>The scripted live run's group chat: the browser movie's OnCreateDefaultGroupMessenger call (its insert button).</summary>
     public void CreateGroupChat() => groupBrowser?.OnCallback("OnCreateDefaultGroupMessenger", System.Array.Empty<object>());
 
+    /// <summary>The scripted live run's invite button: the current group window's (else the last one's) OnShowInviteDialog.</summary>
+    public string OpenGroupInviteDialog()
+    {
+        var windows = groupBrowser?.Windows.ToList();
+        var w = windows?.FirstOrDefault(x => x.Name == ChatLog.GetCurrentName()) ?? windows?.LastOrDefault();
+        if (w?.Host == null) return "no group window";
+        w.OnCallback("OnShowInviteDialog", System.Array.Empty<object>());
+        return GroupInviteOpen ? $"open for chat {groupInvite.GroupId}" : "not open";
+    }
+
+    /// <summary>The scripted live run's invite: the name typed into the open invite dialog, then Enter (its vfunc_13).</summary>
+    public string InviteFromGroupDialog(string name)
+    {
+        if (!GroupInviteOpen || groupInvite.Host?.Entity == null) return "no invite dialog";
+        var h = groupInvite.Host;
+        h.Set(h.Child("m_textInput"), "text", name);
+        return groupInvite.OnKey(true) ? "sent" : "keys not taken";
+    }
+
     /// <summary>
-    /// The scripted live run's group chat line: in the current group window (else the last one), Return to focus the input
+    /// The scripted live run's group chat line: in the current group window (else the last one), shown first from its browser
+    /// row when minimized (an invited chat's window opens minimized; the row's OnToggleDialog), Return to focus the input
     /// when it is not, the text typed, Return to send. False with no loaded group window.
     /// </summary>
     public bool SubmitGroupLine(string text)
@@ -2293,6 +2313,7 @@ public partial class HudScene : Node, IUiStageHost
         var windows = groupBrowser?.Windows.ToList();
         var w = windows?.FirstOrDefault(x => x.Name == ChatLog.GetCurrentName()) ?? windows?.LastOrDefault();
         if (w?.Host == null) return false;
+        if (w.Minimized) groupBrowser.OnCallback("OnToggleDialog", new object[] { w.Name });
         ChatLog.MakeCurrent(w.Name);
         if (!w.InputActive) w.OnKey(Ms2.Ui.Hud.MessengerController.DikReturn, false);
         var h = w.Host;
