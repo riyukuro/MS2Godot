@@ -1,6 +1,4 @@
 using System;
-using System.IO;
-using Ms2.Formats.Pack;
 using NUnit.Framework;
 
 namespace Ms2Godot.Tests;
@@ -8,18 +6,28 @@ namespace Ms2Godot.Tests;
 [TestFixture]
 public class FixtureReleaseTests
 {
-    [Test]
-    public void SharedPackSetIsNotDisposedByAFixtureRelease()
+    sealed class Holder : IDisposable
     {
-        var dir = Path.Combine(Path.GetTempPath(), "fixrel" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.Combine(dir, "Resource"));
-        try
-        {
-            var shared = PackSet.Shared(dir);
-            Assert.That(FixtureReleaseAttribute.ShouldDispose(shared), Is.False, "the session's pack set is handed out again");
-            Assert.That(FixtureReleaseAttribute.ShouldDispose(new PackSet(dir)), Is.True, "a fixture's own pack set is disposed");
-            Assert.That(FixtureReleaseAttribute.ShouldDispose(new MemoryStream()), Is.True);
-        }
-        finally { Directory.Delete(dir, true); }
+        public bool Disposed;
+        public void Dispose() => Disposed = true;
+    }
+
+    static class Statics
+    {
+        public static Holder Mine;
+        public static readonly Holder Fixed = new();
+        public static int Count = 3;
+    }
+
+    [Test]
+    public void ReleaseNullsTheStaticFieldsAndNeverDisposes()
+    {
+        var shared = new Holder();
+        Statics.Mine = shared; // stands for an instance the product code also hands out (the session's pack set)
+        FixtureReleaseAttribute.Release(typeof(Statics));
+        Assert.That(Statics.Mine, Is.Null, "the fixture's reference is dropped");
+        Assert.That(shared.Disposed, Is.False, "a shared instance stays usable");
+        Assert.That(Statics.Fixed, Is.Not.Null, "readonly fields are left alone");
+        Assert.That(Statics.Count, Is.EqualTo(3), "value-type fields are left alone");
     }
 }

@@ -29,16 +29,9 @@ public sealed class FixtureReleaseAttribute : Attribute, ITestAction
 
     public void AfterTest(ITest test) { }
 
-    /// <summary>False for an instance the product code hands out again (the session's shared pack set): a fixture that holds it
-    /// only drops its reference; what the fixture built itself is disposed.</summary>
-    internal static bool ShouldDispose(object v)
-    {
-        if (v is not Ms2.Formats.Pack.PackSet p) return true;
-        var dir = p.DataDir;
-        return dir == null || !ReferenceEquals(Ms2.Formats.Pack.PackSet.Shared(dir), p);
-    }
-
-    static void Release(Type t)
+    /// <summary>Only nulls the fields; it never disposes. A handle nobody else holds is freed by its finalizer after the
+    /// collection below, and one the product code hands out again (the session's shared pack set) stays alive through its owner.</summary>
+    internal static void Release(Type t)
     {
         const BindingFlags F = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
         foreach (var f in t.GetFields(F))
@@ -46,7 +39,6 @@ public sealed class FixtureReleaseAttribute : Attribute, ITestAction
             if (f.IsInitOnly || f.IsLiteral || f.FieldType.IsValueType) continue;
             var v = f.GetValue(null);
             if (v == null) continue;
-            if (v is IDisposable d && ShouldDispose(v)) try { d.Dispose(); } catch { }
             f.SetValue(null, null);
         }
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
