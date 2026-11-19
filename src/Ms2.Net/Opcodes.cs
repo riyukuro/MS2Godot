@@ -43,6 +43,8 @@ public enum Inbound : ushort {
     Revival = 0x34,
     UserState = 0x36,
     DeadUser = 0xA6,
+    ExpUp = 0x37,
+    LevelUp = 0x38,
     SkillUse = 0x3C,
     SkillDamage = 0x3D,
     SkillSync = 0x3E,

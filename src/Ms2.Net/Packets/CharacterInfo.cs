@@ -340,6 +340,32 @@ public sealed class MyCharacter {
     }
 
     /// <summary>The own Stat (0x2E): the values of the stats it carries (PC's m_unk_1c0[0..2]).</summary>
+    /// <summary>The exp counter in this level (DAT_143ab28a0) and the rest exp pool (DAT_143ab28a8): ServerEnter
+    /// (scenestategame.cpp:2085-2086), then ExpUp (scenestategame.cpp:4140-4141, mode 1 :4184).</summary>
+    public long Exp, RestExp;
+
+    public void Apply(ServerEnter e) {
+        if (e == null) return;
+        Exp = e.Exp; RestExp = e.RestExp;
+        Changed?.Invoke();
+    }
+
+    public void Apply(ExpUp e) {
+        if (e.Mode == 0) { Exp = e.Total; RestExp = e.Rest; }
+        else if (e.Mode == 1) RestExp = e.Rest;
+        else return;
+        Changed?.Invoke();
+    }
+
+    /// <summary>OnLevelUp (scenestategame.cpp:9511) for the own object: PC::vfunc_131(level). Returns whether it is the
+    /// own object.</summary>
+    public bool Apply(LevelUp l) {
+        if (User == null || l.ObjectId != ObjectId) return false;
+        User.Level = (short) l.Level;
+        Changed?.Invoke();
+        return true;
+    }
+
     public void Apply(PlayerStat s) {
         foreach (var (stat, v) in s.Values) {
             if (stat >= PcInfo.StatCount) continue;

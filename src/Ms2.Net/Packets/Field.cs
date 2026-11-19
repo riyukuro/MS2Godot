@@ -56,6 +56,27 @@ public sealed class ServerEnter {
     static int[] ReadInts(ByteReader r) { int n = (ushort) r.ReadShort(); var a = new int[n]; for (int i = 0; i < n; i++) a[i] = r.ReadInt(); return a; }
 }
 
+/// <summary>
+/// Inbound 0x37 (CSceneStateGame::OnExpUp, scenestategame.cpp:4129): u8 mode. Mode 0: i64 gained exp, u16 message type, i64
+/// the exp counter (DAT_143ab28a0), i64 the rest exp (DAT_143ab28a8), i32 an npc id (the gain shows over that npc when it is in
+/// the field), bool. Mode 1: i64 the rest exp only. Other modes carry nothing the client reads.
+/// </summary>
+public sealed record ExpUp(byte Mode, long Gained, int Type, long Total, long Rest, int NpcId, bool Flag) {
+    public static ExpUp Read(ByteReader r) {
+        byte mode = r.ReadByte();
+        if (mode == 0) {
+            long gained = r.ReadLong(); int type = (ushort) r.ReadShort(); long total = r.ReadLong(), rest = r.ReadLong();
+            return new ExpUp(0, gained, type, total, rest, r.ReadInt(), r.ReadByte() != 0);
+        }
+        return mode == 1 ? new ExpUp(1, 0, 0, 0, r.ReadLong(), 0, false) : new ExpUp(mode, 0, 0, 0, 0, 0, false);
+    }
+}
+
+/// <summary>Inbound 0x38 (CSceneStateGame::OnLevelUp, scenestategame.cpp:9511): i32 object id, u16 the new level.</summary>
+public sealed record LevelUp(int ObjectId, int Level) {
+    public static LevelUp Read(ByteReader r) => new(r.ReadInt(), (ushort) r.ReadShort());
+}
+
 /// <summary>Inbound 0x7E sub command 3 (AddPlayer proxy). Other sub commands are returned with only the command set.</summary>
 public sealed class ProxyGameObj {
     public byte Command;

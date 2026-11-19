@@ -1,6 +1,7 @@
 using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
+using Ms2.Net.Packets;
 using Ms2Godot.Net;
 
 namespace Ms2Godot.Look;
@@ -37,12 +38,25 @@ public static class PlayerLook
         try
         {
             var palettes = new ColorPalettes(packs);
-            var (items, skin) = StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
+            var (items, skin) = Live() ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
             var equip = new EquipApplier(packs, builder) { Palettes = palettes };
             equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
-            GD.Print($"player look: {dir}, job {job}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
+            GD.Print($"player look: {dir}, job {job}{(LiveSession.Active ? " (live)" : "")}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
         }
         catch (Exception ex) { GD.PushWarning("player look: " + ex.Message); }
         return (visual, anim, md, dir);
+    }
+
+    /// <summary>
+    /// The live character's look: the own FieldAddUser's equips and skin colour (CSceneStateGame::OnAddUser,
+    /// scenestategame.cpp:11135, the user block and the equip list it reads into the PC) once it is in, before it the chosen
+    /// character list entry's (CCharacterInfo::Read, the same user block and equip list). Null offline: the starter look.
+    /// </summary>
+    static (IReadOnlyList<EquipItem> items, SkinColor? skin)? Live()
+    {
+        if (!LiveSession.Active) return null;
+        if (LiveSession.Instance.Me is { User: { } u, Equips: { } worn }) return (worn, u.Skin);
+        if (Flow.Session.Chosen is { User: { } c } chosen) return (chosen.Equips, c.Skin);
+        return null;
     }
 }

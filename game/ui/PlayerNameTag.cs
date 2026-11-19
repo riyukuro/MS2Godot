@@ -34,6 +34,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
     Field field;
     Player player;
     Camera3D camera;
+    Color color;                         // NameTagColorMyPC
 
     public PlayerNameTag(UiAssets ui, ClientConstants constants, string name, Vector2 window)
     {
@@ -44,7 +45,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
         offset = constants.Float("OffsetPcNametag", 30);
         packs = ui.Packs;
         var (r, g, b) = constants.Color("NameTagColorMyPC", (1f, 0.812f, 0.106f));
-        var color = new Color(r, g, b);
+        color = new Color(r, g, b);
         try
         {
             var movie = new UiMovie(ui, "uinametag");
@@ -65,6 +66,12 @@ public sealed partial class PlayerNameTag : CanvasLayer
     }
 
     public PlayerNameTag() { }
+
+    /// <summary>The PC's name changed (the own FieldAddUser, OnAddUser's SetName): setData's name line again.</summary>
+    public void SetName(string name)
+    {
+        if (node?.FindClip("m_name") is { } nameClip) NpcPresence.SetLabel(nameClip, name, null, color);
+    }
 
     public override void _Process(double delta)
     {

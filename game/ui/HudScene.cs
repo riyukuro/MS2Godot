@@ -136,6 +136,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchNewItems?.Invoke();
         unwatchNewItems = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
+        unwatchLivePlayer?.Invoke();
+        unwatchLivePlayer = null;
         unbindBoxAnswers?.Invoke();
         unbindBoxAnswers = null;
         Ms2Godot.Net.ProfileImageService.Images.Ready -= ProfileImageReady;
@@ -213,7 +215,7 @@ public partial class HudScene : Node, IUiStageHost
         var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
         AddChild(damageEffect = new DamageEffect(assets, constants, window));                             // UIDamageEffect
         damageEffect.Hp(data.Player.HpCurrent, data.Player.HpMax);
-        var nameTag = new PlayerNameTag(assets, constants, data.Player.Name, window);                     // the own PC's UINameTag
+        var nameTag = playerNameTag = new PlayerNameTag(assets, constants, data.Player.Name, window);     // the own PC's UINameTag
         AddChild(nameTag);
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
@@ -644,7 +646,7 @@ public partial class HudScene : Node, IUiStageHost
         if (icons.HasTaxi(fc.FieldId) && fc.Map?.Entities.FirstOrDefault(e => IsModel(e, "MS2TaxiStation")) is { } taxi)
         {
             int bestLevel = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("TaxiCallBestDriverLevel", 25);
-            Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), data.Player.Level >= bestLevel), taxi.Position);
+            Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), PlayerLevel >= bestLevel), taxi.Position);
         }
         foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2InteractObject")) ?? Enumerable.Empty<FieldEntity>())
         {
@@ -1000,7 +1002,7 @@ public partial class HudScene : Node, IUiStageHost
             var meta = fieldMeta;
             IQuestState state = questFixture ? new QuestShotState(questTable, data.Player.Level)
                 : live?.GameSession != null
-                    ? new Ms2Godot.Net.LiveQuestState(live.Quests, questTable, live.GameSession, live.CharacterId, data.Player.Level,
+                    ? new Ms2Godot.Net.LiveQuestState(live.Quests, questTable, live.GameSession, live.CharacterId, PlayerLevel,
                                                       live.FieldId, f => meta.ParentFields.TryGetValue(f, out int p) ? p : null)
                     : new NoQuestState(data.Player.Level);
             return new QuestLog(questTable, state) { Meta = fieldMeta, FieldCodes = fieldCodes };
@@ -1081,9 +1083,10 @@ public partial class HudScene : Node, IUiStageHost
                 Table = worldMapTable,
                 Meta = meta,
                 FieldId = fieldId,
-                PlayerName = data.Player.Name,
-                PlayerLevel = data.Player.Level,
-                JobGroupId = data.Player.Job <= 1 ? 10 : (data.Player.Job / 10 + 1) * 10,     // the job group: sub job / 10 (HudModel)
+                PlayerName = Ms2Godot.Net.LiveSession.Active ? hudModel.Player.Name : data.Player.Name,
+                PlayerLevel = PlayerLevel,
+                // the job group: live the user block's (WatchLivePlayer), the fixture's sub job / 10 (HudModel)
+                JobGroupId = Ms2Godot.Net.LiveSession.Active ? hudModel.Player.JobGroup : data.Player.Job <= 1 ? 10 : (data.Player.Job / 10 + 1) * 10,
                 VisitedFields = new[] { (uint)fieldId },
                 Npcs = World.FieldContents.Npcs(assets.Packs),
                 Rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e)),
@@ -1267,10 +1270,43 @@ public partial class HudScene : Node, IUiStageHost
             ServerTime = () => session?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
         (hudModel.ItemSlotSources ??= new()).UsableState = itemUse.UsableState;
+        WatchLivePlayer(hudModel);
     }
 
     /// <summary>Unk_Inventory::GetItemUseError for the HUD's player (<see cref="HudModel"/>).</summary>
     Ms2.Ui.Items.ItemUse itemUse;
+
+    PlayerNameTag playerNameTag;
+    Action unwatchLivePlayer;
+
+    /// <summary>
+    /// Live, the HUD player is the session's own character (<see cref="Ms2.Ui.PlayerStateLive"/>: the own FieldAddUser, Stat,
+    /// ServerEnter / ExpUp and LevelUp, each field from the client's handler), the chosen character list entry before the own
+    /// FieldAddUser; each change sends its status event, and the name tag, the own HP bar and the low-HP effect follow
+    /// (OnAddUser's SetName, OnStat's PCBase::vfunc_74). Offline the fixture stays.
+    /// </summary>
+    void WatchLivePlayer(Ms2.Ui.UiModel model)
+    {
+        if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        void Sync()
+        {
+            var changed = model.Player.Apply(live.Me, Ms2Godot.Flow.Session.Chosen?.User);
+            foreach (var e in changed) model.Notify(e);
+            if (model != hudModel) return;
+            if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(model.Player.Name);
+            if (changed.Contains(Ms2.Ui.StatusEvent.Hp))
+            {
+                damageEffect?.Hp(model.Player.HpCur, model.Player.HpMax);
+                playerBar?.Stat(model.Player.HpCur, model.Player.HpMax);
+            }
+        }
+        Sync();
+        live.Me.Changed += Sync;
+        unwatchLivePlayer += () => live.Me.Changed -= Sync;
+    }
+
+    /// <summary>The HUD player's level: the live character's (<see cref="WatchLivePlayer"/>) or the fixture's.</summary>
+    int PlayerLevel => Ms2Godot.Net.LiveSession.Active && hudModel != null ? hudModel.Player.Level : data.Player.Level;
 
     /// <summary>
     /// UIMainPlayerInfo (uimainplayerinfo), UIExpBar (uiexpbar) and UIAdventureLevelExpBar (uiadventurelevelexpbar), each run from its own movie with its C++ side as the

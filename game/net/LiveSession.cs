@@ -332,6 +332,7 @@ public partial class LiveSession : Node
             answered = false;
             syncNumber = entry.Sync?.Number ?? 0;
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
+            Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
             GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");
@@ -442,6 +443,18 @@ public partial class LiveSession : Node
                 {
                     var b = BuffPacket.Read(p.Reader());
                     if (b.OwnerObjectId == selfObject) OwnBuff(b);
+                }
+                else if (game.Is(p, Inbound.ExpUp))
+                {
+                    var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
+                    Me.Apply(e);
+                    GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
+                }
+                else if (game.Is(p, Inbound.LevelUp))
+                {
+                    var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
+                    bool selfLevel = Me.Apply(l);
+                    GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
                 }
                 else if (game.Is(p, Inbound.SyncNumber))
                 {
