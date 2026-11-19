@@ -286,6 +286,14 @@ public sealed class BanTextChecker
     /// banned words, the start-with words and the whole banned words; no limit scan.</summary>
     public int CheckClubName(string name, out string message) => Check(name, (Checks)0xd8, default, out message);
 
+    /// <summary>CBanTextChecker::CheckBuddyMemo (@0x140226220, commonstringtable.cpp:964): CheckTypes(0xd8, true), the same
+    /// tables as the club name; the friend dialogs' block memo.</summary>
+    public int CheckBuddyMemo(string memo, out string message) => Check(memo, (Checks)0xd8, default, out message);
+
+    /// <summary>CBanTextChecker::FUN_140226260 (commonstringtable.cpp:970): CheckTypes(0xd8, true) again; the friend request's
+    /// message.</summary>
+    public int CheckInviteMessage(string text, out string message) => Check(text, (Checks)0xd8, default, out message);
+
     /// <summary>A common string by key (stringcommon.xml), or null.</summary>
     public string CommonString(string key) => commonString?.Invoke(key);
 

@@ -71,6 +71,7 @@ public enum Inbound : ushort {
     Achieve = 0x5E,
     Mail = 0x54,            // RecvOp Mail (commonfiles/opcodes.h): CSceneStateGame::OnMail
     Prestige = 0x11C,
+    Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
     UserEnv = 0xA8,
     HomeCommand = 0xB7,
     Ugc = 0x6B,
@@ -111,6 +112,8 @@ public enum Outbound : ushort {
     // SendOp: the trophy dialog's sends
     Achieve = 0x46,
     Mail = 0x2D,            // SendOp Mail (commonfiles/opcodes.h): the mail dialogs' sends
+    Buddy = 0x30,           // SendOp Buddy (commonfiles/opcodes.h): CBuddyManager::SendBuddyRequest, SendBuddyMode20
+    EventReward = 0x97,     // SendOp EventReward (commonfiles/opcodes.h): the friend dialog's VIP row (mode 5)
     RequestUserEnv = 0x69,
     Prestige = 0xAC,
     CharacterInfo = 0x1E,       // SendOp::CharacterInfo (commonfiles/opcodes.h)

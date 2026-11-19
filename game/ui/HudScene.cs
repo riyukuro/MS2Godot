@@ -134,6 +134,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMails = null;
         unwatchPcInfo?.Invoke();
         unwatchPcInfo = null;
+        unwatchBuddies?.Invoke();
+        unwatchBuddies = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
         unwatchNotices?.Invoke();
@@ -354,7 +356,8 @@ public partial class HudScene : Node, IUiStageHost
     /// dialogs, the quest log.</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false
-                                    || AchieveOpen || MailOpen || PcInfoOpen;
+                                    || AchieveOpen || MailOpen || PcInfoOpen
+                                    || CommunityOpen || CommunityQueryOpen;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -367,6 +370,8 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveOpen) achieve.Close();
         if (MailOpen) mail.Close();
         if (PcInfoOpen) pcInfo.Close();
+        if (CommunityQueryOpen) communityQuery.Close();
+        if (CommunityOpen) community.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -877,6 +882,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
         if (MailKeys(k)) return true;
+        if (CommunityKeys(k)) return true;
         return false;
     }
 
@@ -1604,6 +1610,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchAchieves();
         WatchMails();
         c.MenuAction += def => { if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest(); };
+        WatchBuddies();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
@@ -1623,6 +1630,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4efa) ToggleLevelUpGuide();
         else if (id == 0x4f0b) ToggleGameDictionary();
         else if (id == 0x4e49) ToggleMail();
+        else if (id == 0x4e4d) ToggleCommunity();
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
         else if (id == 0x4f67) ToggleAdventureLevel();
@@ -2416,6 +2424,7 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
         learningQuest?.Update();             // UILearningQuestDialog::vfunc_72: the new learning quest after MarkDirty
+        CommunityTick();                     // UICommunityDialog::vfunc_72
         if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
@@ -2440,6 +2449,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         if (openShot == "achieve" && frames == 200) ToggleAchieve();
         if (openShot == "mail" && frames == 200) ToggleMail();
+        if (openShot == "community" && frames == 200) ToggleCommunity();
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)

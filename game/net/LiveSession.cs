@@ -153,6 +153,26 @@ public partial class LiveSession : Node
     public Func<bool> MailListOpen = () => false;
     /// <summary>The mail dialogs' sends (Mail 0x2D).</summary>
     public void SendMail(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>CBuddyManager: the friends, requests and blocks from the Buddy packets (0x61, CSceneStateGame::OnBuddy); live
+    /// only. Its sends (Buddy 0x30) go out while the game connection is up.</summary>
+    public Ms2.Ui.BuddyBook Buddies => buddies ??= new Ms2.Ui.BuddyBook { Send = SendBuddy };
+    Ms2.Ui.BuddyBook buddies;
+    /// <summary>The open friend dialogs' vfunc_79 on a Buddy packet, after the book took it (set by the HUD).</summary>
+    public event Action<BuddyMessage> BuddyPacket;
+    /// <summary>The friend dialogs' sends (Buddy 0x30, EventReward 0x97).</summary>
+    public void SendBuddy(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
+    /// <summary>The field's users for the friend dialog's nearby tab: the own one and the others the tracker holds
+    /// (FieldAddUser); empty before the field is built.</summary>
+    public IEnumerable<UserBlock> FieldUsers()
+    {
+        if (Me.User != null) yield return Me.User;
+        if (remote == null) yield break;
+        foreach (var a in remote.Tracker.Snapshot())
+            if (a.Add?.User is { } u && u.CharacterId != CharacterId) yield return u;
+    }
 
     /// <summary>The trophy data with its load order (GetListFromTable walks it).</summary>
     static Ms2.Ui.AchieveBook AchieveBook()
@@ -633,6 +653,12 @@ public partial class LiveSession : Node
                 var m = MailMessage.Read(p.Reader());             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
                 if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
+            }
+            else if (game.Is(p, Inbound.Buddy))
+            {
+                var m = BuddyMessage.Read(p.Reader());            // CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy (buddymanager.cpp:95)
+                if (m != null) { Buddies.Apply(m); BuddyPacket?.Invoke(m); }
+                GD.Print($"live: buddy protocol {m?.Protocol.ToString() ?? "?"} ({Buddies.Count} entries, {Buddies.ReceivedCount} received)");
             }
             else if (game.Is(p, Inbound.Prestige))
             {
