@@ -14,7 +14,9 @@ namespace Ms2Godot.World;
 /// Field creates it before FieldBuilder runs (FieldBuilder.DrawsInstance hands it the animated models) and starts it once the
 /// player exists. Keys: the action key (Space) in a portal moves to its target field; elsewhere it talks to the npc in front.
 /// User args: --sandbox-shots DIR (scripted walk Tria -> portal -> target field -> back, with screenshots, then quit),
-/// --sandbox-portal ID (the Tria portal that walk uses, default 20), --no-npcs.
+/// --sandbox-portal ID (the Tria portal that walk uses, default 20), --no-npcs. The talk shots (--sandbox-npc ID) talk to the
+/// first spawned npc of that id; --sandbox-npc-near X,Y (map x, y) picks the one closest to that point instead, and
+/// --sandbox-stand X,Y stands the player there facing it (default: 120 in front of it).
 /// </summary>
 public partial class FieldContents : Node3D
 {
@@ -42,6 +44,7 @@ public partial class FieldContents : Node3D
     List<FieldNpcs.Placed> spawned = new();
     int shotNpc;
     List<int> shotNpcs = new();
+    Vector2? shotNpcNear, shotStand;    // --sandbox-npc-near, --sandbox-stand (map x, y)
     bool liveQuestSends;            // --sandbox-quest-sends: the live shot run presses next on quest pages too
     bool actionHeld;
 
@@ -86,6 +89,8 @@ public partial class FieldContents : Node3D
                 shotNpcs = args[i + 1].Split(',').Select(x => int.TryParse(x, out int v) ? v : 0).Where(v => v != 0).ToList();
                 shotNpc = shotNpcs.FirstOrDefault();
             }
+            if (args[i] == "--sandbox-npc-near" && i + 1 < args.Length) shotNpcNear = MapXY(args[i + 1]);
+            if (args[i] == "--sandbox-stand" && i + 1 < args.Length) shotStand = MapXY(args[i + 1]);
         }
         try { fieldId = FieldData.FindByXBlock(packs, fieldName)?.Id ?? 0; } catch { }
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -495,16 +500,50 @@ public partial class FieldContents : Node3D
         }
     }
 
+    static Vector2? MapXY(string arg)
+    {
+        var v = arg.Split(',');
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        return v.Length == 2 && float.TryParse(v[0], System.Globalization.NumberStyles.Float, inv, out float x)
+            && float.TryParse(v[1], System.Globalization.NumberStyles.Float, inv, out float y) ? new Vector2(x, y) : null;
+    }
+
+    /// <summary>The talk shots' npc of this id: the first spawned, or with --sandbox-npc-near the one closest to that map point.</summary>
+    FieldNpcs.Placed Pick(IEnumerable<FieldNpcs.Placed> npcs, int id)
+    {
+        var all = npcs.Where(x => x.Row.Id == id);
+        if (shotNpcNear is not { } near) return all.FirstOrDefault();
+        var at = FieldBuilder.ToGodotPoint(new Vec3(near.X, near.Y, 0));
+        return all.OrderBy(x => new Vector2(x.Position.X - at.X, x.Position.Z - at.Z).LengthSquared()).FirstOrDefault();
+    }
+
+    /// <summary>Stands the player before the talk shots' npc, facing it: at --sandbox-stand, else 120 in front of it.</summary>
+    void StandBefore(FieldNpcs.Placed n)
+    {
+        if (shotStand is { } s)
+        {
+            var p = FieldBuilder.ToGodotPoint(new Vec3(s.X, s.Y, 0));
+            p.Y = n.Position.Y + 20;
+            player.GlobalPosition = p;
+            var to = n.Position - p; to.Y = 0;
+            if (to.LengthSquared() > 0) player.Face(to.Normalized());
+            GD.Print($"talk npc {n.Row.Id} at {n.Position.X:0},{-n.Position.Z:0}; player stands at {s.X:0},{s.Y:0}");
+            return;
+        }
+        double yaw = n.Root.Rotation.Y;
+        var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+        player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0); player.Face(-front);
+        var at = player.GlobalPosition;
+        GD.Print($"talk npc {n.Row.Id} at {n.Position.X:0},{-n.Position.Z:0}; player stands at {at.X:0},{-at.Z:0}");
+    }
+
     /// <summary>Proof of the npc presence and talk: stand before an npc with a name tag and a script, talk, page, close, walk into it.</summary>
     void PlanTalk()
     {
-        var n = spawned.FirstOrDefault(x => shotNpc != 0 ? x.Row.Id == shotNpc
-            : x.Row.Nametag && x.Row.Friendly == 2 && !x.Row.CapsuleIgnore && x.Row.Illust != null
+        var n = shotNpc != 0 ? Pick(spawned, shotNpc) : spawned.FirstOrDefault(x => x.Row.Nametag && x.Row.Friendly == 2 && !x.Row.CapsuleIgnore && x.Row.Illust != null
               && packs.Exists("Resource/Image", $"quest/illust/{x.Row.Illust.ToLowerInvariant()}.dds"));
         if (n == null || talk == null) { GD.Print("no npc for the talk shots"); return; }
-        double yaw = n.Root.Rotation.Y;
-        var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
-        steps.Enqueue(("teleport", 0, () => { player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0); player.Face(-front); return Vector3.Zero; }, null));
+        steps.Enqueue(("teleport", 0, () => { StandBefore(n); return Vector3.Zero; }, null));
         steps.Enqueue(("settle", 1.2f, null, "1a_npc_nametag.png"));
         // a chosen npc is talked to twice: a quest giver's first talk accepts (the select's first choice is its first quest),
         // the second shows the started quest's progress or complete talk
@@ -550,7 +589,7 @@ public partial class FieldContents : Node3D
         player.ProcessPhysicsPriority = 10;
         Travel.ShotLeg++;
         var live = Ms2Godot.Net.LiveSession.Instance;
-        FieldNpcs.Placed Find(int id) => live?.TalkNpcs.FirstOrDefault(x => x.Row.Id == id);
+        FieldNpcs.Placed Find(int id) => live == null ? null : Pick(live.TalkNpcs, id);
         var order = shotNpcs.Count == 1 ? new List<int> { shotNpcs[0], shotNpcs[0] } : shotNpcs;
         steps.Enqueue(("wait", 40f, () => order.All(id => Find(id) != null) ? Vector3.One : Vector3.Zero, "1_live_field.png"));
         steps.Enqueue(("teleport", 0, () =>
@@ -566,9 +605,7 @@ public partial class FieldContents : Node3D
             {
                 var n = Find(npcId);
                 if (n == null) { GD.PushError($"no live npc {npcId}"); return Vector3.Zero; }
-                double yaw = n.Root.Rotation.Y;
-                var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
-                player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0); player.Face(-front);
+                StandBefore(n);
                 return Vector3.Zero;
             }, null));
             steps.Enqueue(("settle", 1.0f, null, $"1a_{r}npc_{npcId}.png"));
