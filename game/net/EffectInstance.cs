@@ -143,6 +143,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt) { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt); }
             ms.Add = add;
             if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter(FxParam.Tint, Tint(em, 0, add));
+            mat.SetShaderParameter(FxParam.Alpha, (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
             if (em.Flip != null) ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
             ms.Mat = mat;
             ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false), MaterialOverride = mat, Name = m.Name ?? "mesh" };
@@ -257,7 +258,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             ms.Node.Transform = World(d.Node, t, camLocal);
             ms.Node.Visible = !nd.Culled;
             if (d.Colors.Count > 0) ms.Mat.SetShaderParameter(FxParam.Tint, Tint(d, t, ms.Add));
-            if (d.Alpha != null) ms.Mat.SetShaderParameter(FxParam.Alpha, (float)d.Alpha(d.AlphaCtl.Local(t)));
+            if (d.Alpha != null) ms.Mat.SetShaderParameter(FxParam.Alpha, (float)d.Opacity(t));
             if (d.Uv.Count > 0)
             {
                 Vector2 off = Vector2.Zero, sc = Vector2.One; float rot = 0;

@@ -53,6 +53,12 @@ public sealed class EffectMesh
     public Func<double, double> Alpha; public TimeCtl AlphaCtl;
     public List<UvOp> Uv = new();
     public FlipAnim Flip;
+
+    /// <summary>The material alpha at effect time t: an NiAlphaController's value replaces the NiMaterialProperty alpha (its
+    /// m_fAlpha, the controller's target), else the static alpha read from the file (1 without a material: NiMaterialProperty's
+    /// default). The client's opacity is this times the base map's alpha (NiStandardMaterial HandleColorAccumulation and
+    /// CompositeFinalRGBAColor; ms2standardmaterial.cpp:758-791).</summary>
+    public double Opacity(double t) => Alpha != null ? Alpha(AlphaCtl.Local(t)) : Mesh.MaterialAlpha;
 }
 
 public enum EmitterKind { Mesh, Box, Sphere, Cylinder, Other }
