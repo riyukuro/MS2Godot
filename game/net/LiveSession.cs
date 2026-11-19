@@ -467,6 +467,7 @@ public partial class LiveSession : Node
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
         Busy = true;
+        regionSkills.Clear();                     // a new field: no region skill object survives it
         try
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
@@ -937,7 +938,8 @@ public partial class LiveSession : Node
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
                 // region skill object). One event per target record (MyPC::vfunc_113 posts each).
                 var d = SkillDamage.Read(p.Reader());
-                // mode 3's caster test is PCBase (players, npcs and pets; the tracker keeps the first two)
+                // mode 3's caster test is PCBase (players, npcs and pets; the tracker keeps the first two, and a pet
+                // is a PCBase in the client, so a pet's DoT on the own player cancels there but not here yet)
                 foreach (var total in Ms2.Ui.Hud.MasteryEvents.SelfRecords(d, selfObject,
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))

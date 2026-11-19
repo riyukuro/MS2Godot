@@ -22,12 +22,14 @@ public class MasteryEventsTests
     [Test]
     public void ModeThreeNeedsItsPcAndModeFiveItsRegion()
     {
-        // mode 6 as the reader builds it: no owner, one record per target (the record's id is the target)
+        // mode 6 as the reader builds it: no owner (0, not in the field), one record per target; the record's own id is
+        // the target, so the object test must look at it and not at the unset owner
         var splash = Damage(6, 0, 0, 5, -2);
+        Assert.That(MasteryEvents.SelfRecords(splash, 5, _ => true, id => id == 5, _ => true), Is.EqualTo(new long[] { -2 }),
+            "mode 6: the record's own object (5) is in the field");
         Assert.That(MasteryEvents.SelfRecords(splash, 5, _ => true, _ => false, _ => true), Is.Empty,
-            "mode 6: the record's object is not in the field");
-        Assert.That(MasteryEvents.SelfRecords(splash, 5, _ => true, _ => true, _ => true), Is.EqualTo(new long[] { -2 }));
-        Assert.That(MasteryEvents.SelfRecords(splash, 6, _ => true, _ => true, _ => true), Is.Empty, "not the own object");
+            "mode 6: no object in the field, no record");
+        Assert.That(MasteryEvents.SelfRecords(splash, 6, _ => true, id => id == 5, _ => true), Is.Empty, "not the own object");
 
         var d3 = Damage(3, 77, 0, 5, -10);
         Assert.That(MasteryEvents.SelfRecords(d3, 5, _ => false, _ => true, _ => true), Is.Empty, "mode 3: the owner PC is not in the field");
@@ -88,7 +90,7 @@ public class MasteryEventsTests
         return new GameTables(new Ms2.Formats.Pack.PackSet(d), "en").Items;
     }
 
-    const int Potion = 20000004, PetItem = 60000001;      // a consumable and a pet (itemdata/002 and /600)
+    const int Potion = 20000004, PetItem = 60000001, MaidItem = 50800001;   // consumable, pet and maid (itemdata/002, /600, /508)
 
     [Test]
     public void TheCountSkipsItemsTheCharacterMayNotUse()
@@ -111,11 +113,15 @@ public class MasteryEventsTests
     }
 
     [Test]
-    public void APetIsUsableAfterItsExpiryWhereAnItemIsNot()
+    public void APetAndAMaidItemAreUsableAfterTheirExpiryWhereAnItemIsNot()
     {
         var table = Table();
         Assert.That(table.Get(PetItem)?.IsPetItem, Is.True, "the pet item's data");
-        var items = new[] { new EquipItem { Id = PetItem, Rarity = 1, Amount = 1, ExpiryTime = 50 } };
-        Assert.That(InventoryCount.ById(items, table, PetItem, 0, 1, 1000), Is.EqualTo(1), "a pet is exempt from IsExpired");
+        var pet = new[] { new EquipItem { Id = PetItem, Rarity = 1, Amount = 1, ExpiryTime = 50 } };
+        Assert.That(InventoryCount.ById(pet, table, PetItem, 0, 1, 1000), Is.EqualTo(1), "a pet is exempt from IsExpired");
+
+        Assert.That(table.Get(MaidItem)?.HasMaidId, Is.True, "the maid item's data");
+        var maid = new[] { new EquipItem { Id = MaidItem, Rarity = 1, Amount = 1, ExpiryTime = 50 } };
+        Assert.That(InventoryCount.ById(maid, table, MaidItem, 0, 1, 1000), Is.EqualTo(1), "HasMaidId keeps an expired maid usable");
     }
 }
