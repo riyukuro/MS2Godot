@@ -170,6 +170,9 @@ public partial class LiveSession : Node
     /// <summary>A hit on the own player (OnSkillDamage 0x3D): the damage record's total (negative when the player is the
     /// victim), one per target record (MyPC::vfunc_113 posts NotifyDamagedMyPC of each, mypc.cpp:1265).</summary>
     public event Action<long> SelfDamaged;
+    /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
+    /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
+    readonly HashSet<int> regionSkills = new();
     /// <summary>UserEnv mode 8 or 9 replaced the gathering counts or the received rewards.</summary>
     public event Action MasteryEnvChanged;
 
@@ -523,6 +526,7 @@ public partial class LiveSession : Node
     void OnFieldBuilt(Field field, ModelBuilder builder)
     {
         if (entry == null) return;
+        regionSkills.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
@@ -919,12 +923,23 @@ public partial class LiveSession : Node
                     CharacterAbilityReceived?.Invoke(m);
                 GD.Print($"live: character ability {m?.GetType().Name ?? "other mode"} ({CharacterAbility.Ids.Count} learned)");
             }
+            else if (game.Is(p, Inbound.RegionSkill))
+            {
+                // OnRegionSkill (scenestategame.cpp:7721): mode 0 adds the region skill object of the id, mode 1 removes it.
+                // Only the ids are kept (the object's Init is not ported); mode 5's damage needs one.
+                var r = p.Reader();
+                int mode = r.ReadByte(), id = r.ReadInt();
+                if (mode == 0) regionSkills.Add(id); else if (mode == 1) regionSkills.Remove(id);
+            }
             else if (game.Is(p, Inbound.SkillDamage))
             {
+                // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
+                // region skill object). One event per target record (MyPC::vfunc_113 posts each).
                 var d = SkillDamage.Read(p.Reader());
-                if (d.Raw == null && selfObject > 0)          // the own FieldAddUser id is unknown before it arrives
-                    foreach (var t in d.Targets)
-                        if (t.TargetId == selfObject) SelfDamaged?.Invoke(t.Hits.Sum(h => h.Damage));
+                foreach (var total in Ms2.Ui.Hud.MasteryEvents.SelfRecords(d, selfObject,
+                             id => remote?.Tracker.HasActor(id) ?? (id == selfObject),
+                             id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))
+                    SelfDamaged?.Invoke(total);
             }
             else if (game.Is(p, Inbound.Mastery))
             {

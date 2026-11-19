@@ -48,6 +48,12 @@ public sealed class FieldTracker {
     public RequestFieldEnter Field { get; private set; }
     public double Time { get; set; }
 
+    /// <summary>FindPCById's test (a PC in the field): the actor map has the object id.</summary>
+    public bool HasActor(int objectId) { lock (gate) return actors.ContainsKey(objectId); }
+
+    /// <summary>FindObjectById's test: an actor or an npc has the object id.</summary>
+    public bool HasObject(int objectId) { lock (gate) return actors.ContainsKey(objectId) || npcs.ContainsKey(objectId); }
+
     public IReadOnlyList<Actor> Snapshot() { lock (gate) return actors.Values.Select(a => new Actor { ObjectId = a.ObjectId, Name = a.Name, Gender = a.Gender, IsSelf = a.IsSelf, Position = a.Position, YawDegrees = a.YawDegrees, Moves = a.Moves, Add = a.Add }).ToList(); }
 
     /// <summary>The wire numbering the packets arrive in (the connection's profile).</summary>

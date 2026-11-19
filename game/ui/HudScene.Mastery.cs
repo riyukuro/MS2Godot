@@ -24,6 +24,9 @@ public partial class HudScene
     /// The quest tables' CReservedWordTable for the recipes' habitat links (CMasteryReceipe::m_strHabitat, its Load calls
     /// GetWorldMapLink(id, "#909090")): the map names and the world map's searchable fields.
     /// </summary>
+    /// <summary>The server clock (GetServerTime), the item expiry test's now.</summary>
+    long MasteryNow() => Ms2Godot.Net.LiveSession.Instance?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
     Ms2.Quest.QuestTable MasteryQuestTable() =>
         questTable ??= Ms2.Quest.QuestTable.Load(assets.Packs, new Ms2.Formats.World.GameStrings(assets.Packs, assets.Language).Languages,
                                                  data.Locale, f => !data.FeaturesOff.Contains(f));
@@ -47,16 +50,17 @@ public partial class HudScene
                 Table = table,
                 Data = data,
                 CastingBar = CastingBar,
-                ItemCount = id => live == null ? 0 : live.Items.All.Where(i => i.Id == id).Sum(i => i.Amount),
+                ItemCount = id => live == null ? 0 : Ms2.Ui.Items.InventoryCount.ById(live.Items.All, hudModel.Tables.Items, id, 0,
+                    live.CharacterId, MasteryNow()),
                 ItemCountByTag = tag => live == null ? 0 : live.Items.All
                     .Where(i => ItemTags.ByName(hudModel.Tables.Items.Get(i.Id)?.StringTag) == tag).Sum(i => i.Amount),
                 IsQuestActive = id => live?.Quests.Get((int)id)?.State == 1,
                 WorldMapLink = (id, color) => MasteryQuestTable().Words.GetWorldMapLink(id, color),
                 Notice = text =>
                 {
-                    if (string.IsNullOrEmpty(text) || SystemText == null) return;
-                    SystemText.ShowMessage(text, Ms2.Ui.Hud.SystemTextController.Warning, 0);
-                    ChatLog.AddSystemLine(text, Ms2.Ui.Hud.TalkKind.SystemNotice);
+                    if (SystemText == null) return;      // ShowSystemNotice needs the system text, then shows even ""
+                    SystemText.ShowMessage(text ?? "", Ms2.Ui.Hud.SystemTextController.Warning, 0);
+                    ChatLog.AddSystemLine(text ?? "", Ms2.Ui.Hud.TalkKind.SystemNotice);
                 },
             };
             c.SendReward += id =>
@@ -78,24 +82,27 @@ public partial class HudScene
             };
         }
         Action<long> onBag = _ => { if (masteryMovie != null) mastery.OnItemChanged(-1); };
-        // CSceneStateGame::OnMastery (scenestategame.cpp:3920). Mode 0 is the mastery dialog's types only (the fishing,
-        // instrument and pet taming branches are other systems'), its tabs redone on a grade up alone; mode 1 has no
-        // pending refresh; mode 3 is the craft result notice; the item lists go to the reward notice 0x4e5d (STILL-OPEN).
+        // CSceneStateGame::OnMastery (scenestategame.cpp:3920) over MasteryEvents' decisions. The client's early return
+        // without a local player is the live session's (it raises these only with the own user block). STILL-OPEN for types
+        // 5 and 6: CFunctionCubeService::FUN_141232260 (the housing cubes) and WorldService::FUN_141bc5e20(6) (the field's
+        // category 6 objects' state effects) are not ported; the item lists go to the reward notice 0x4e5d.
         Action<MasteryMessage, uint, int, bool> onMastery = (m, gain, oldGrade, up) =>
         {
             switch (m)
             {
                 case MasteryMessage.ExpChanged e:
-                    if (e.Type is 1 or 2 or 0xb) break;
-                    mastery.OnMasteryChanged(e.Type, up);                          // FUN_140eb4c10(nType, bGradeUp)
-                    if (up) gameMenu?.UpdateNotifyCount(0x4f1e);                   // FUN_141938190 on a grade up
+                {
+                    var u = MasteryEvents.OnExpChanged(e.Type, up);
+                    if (u.Dialog) mastery.OnMasteryChanged(e.Type, u.Tabs);        // FUN_140eb4c10(nType, bGradeUp)
+                    if (u.GameMenu) gameMenu?.UpdateNotifyCount(0x4f1e);           // FUN_141938190 on a grade up
                     break;
+                }
                 case MasteryMessage.RewardReceived r:
                 {
-                    uint id = (uint)r.RewardId;
-                    mastery.AddLevelGuide(MasteryRecipeTable.TypeFromID(id), MasteryRecipeTable.GradeFromID(id));
-                    mastery.UpdateSubTabsAndRewards();                             // FUN_140eb4be0, no pending sub
-                    gameMenu?.UpdateNotifyCount(0x4f1e);
+                    var u = MasteryEvents.OnRewardReceived((uint)r.RewardId);
+                    if (u.LevelGuide) mastery.AddLevelGuide(u.Type, u.Grade);
+                    if (u.Dialog) mastery.UpdateSubTabsAndRewards();               // FUN_140eb4be0, no pending sub
+                    if (u.GameMenu) gameMenu?.UpdateNotifyCount(0x4f1e);
                     break;
                 }
                 case MasteryMessage.Crafted c: mastery.SetPendingSub(c.Type); break;   // mode 2
@@ -104,7 +111,7 @@ public partial class HudScene
         };
         // MyPC::vfunc_113 posts the damage record of a hit on the own player (mypc.cpp:1265); the dialog cancels the
         // craft when its total damage is negative (OnDamagedMyPC).
-        Action<long> onDamage = total => mastery.OnDamaged(total);
+        Action<long> onDamage = total => { if (MasteryEvents.CancelsCraft(total)) mastery.OnDamaged(total); };
         if (live != null)
         {
             live.Items.Changed += onBag;

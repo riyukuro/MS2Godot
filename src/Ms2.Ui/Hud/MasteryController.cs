@@ -19,9 +19,11 @@ namespace Ms2.Ui.Hud;
 /// mastery points shown) is not tracked, so it is 0 here and the numbers are the unadjusted ones.
 /// STILL-OPEN: the home text of the production recipes of types 5 and 6 (the house service: "my home" or "other's home") needs
 /// the house service, so only the success description shows.
-/// STILL-OPEN: OnMastery mode 0's own-field refresh (WorldService::FUN_141bc5e20(6), the field's gathering objects' state
-/// effects) and the mode 1/2 item lists for the reward notice (URewardNotify 0x4e5d); the fishing, instrument and pet taming
-/// branches of mode 0 (their notices, the fishing book 0x4ee6, the instrument dialog 0x4eec) are other systems'.
+/// STILL-OPEN: OnMastery mode 0's own-field refresh for types 5 and 6 (CFunctionCubeService::FUN_141232260, the housing
+/// cubes, and WorldService::FUN_141bc5e20(6), the field's category 6 objects' state effects) and the mode 1/2 item lists for
+/// the reward notice (URewardNotify 0x4e5d); the fishing, instrument and pet taming branches of mode 0 (their notices, the
+/// fishing book 0x4ee6, the instrument dialog 0x4eec) are other systems'. The client's OnMastery returns early without a
+/// local player; the live session raises these messages only with the own user block (LiveSession.MasteryReceived).
 /// </remarks>
 public sealed class MasteryController : UiController, IMessageBoxListener, ICastingEventListener
 {

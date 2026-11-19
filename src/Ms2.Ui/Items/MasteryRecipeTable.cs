@@ -40,10 +40,19 @@ public sealed class MasteryRecipeTable
         /// <summary>IconPath (:141): JoinResourcePath("MasteryReceipe", "{id}.png").</summary>
         public string IconPath => "MasteryReceipe/" + Id.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".png";
 
-        /// <summary>m_strHabitat (Load, :115): CReservedWordTable::GetWorldMapLink(id, "#909090") of each habitat map,
-        /// joined by ", ".</summary>
-        public string HabitatText(Func<long, string, string> worldMapLink) =>
-            string.Join(", ", Habitats.Select(h => worldMapLink?.Invoke(h, "#909090") ?? ""));
+        /// <summary>m_strHabitat (Load, :114-119): CReservedWordTable::GetWorldMapLink(id, "#909090") of each habitat
+        /// map, each later one after ", " only when the text already has something (an empty first link keeps no
+        /// separator).</summary>
+        public string HabitatText(Func<long, string, string> worldMapLink)
+        {
+            var s = "";
+            foreach (var h in Habitats)
+            {
+                if (s.Length != 0) s += ", ";
+                s += worldMapLink?.Invoke(h, "#909090") ?? "";
+            }
+            return s;
+        }
     }
 
     /// <summary>CIngredientInfo: m_a (the item id), m_c (the count) and m_b (the item tag after the id's ':',

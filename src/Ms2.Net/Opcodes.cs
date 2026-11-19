@@ -29,6 +29,7 @@ public enum Inbound : ushort {
     FieldPortal = 0x48,     // RecvOp (scenestategame.h:98): CSceneStateGame::OnFieldPortal
     EnterUgcMap = 0xAA,     // RecvOp (scenestategame.h:182): CSceneStateGame::OnEnterUgcMap
     NpcTalk = 0x4B,
+    RegionSkill = 0x4C,         // RecvOp RegionSkill (commonfiles/opcodes.h): CSceneStateGame::OnRegionSkill
     Quest = 0x52,
     Party = 0x53,
     Shop = 0x51,

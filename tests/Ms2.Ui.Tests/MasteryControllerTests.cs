@@ -82,6 +82,26 @@ public class MasteryControllerTests
         Assert.That(c.CraftBlocked(id), Is.EqualTo(expected));
     }
 
+    /// <summary>The HUD's ItemCount (InventoryCount) makes the precheck refuse an ingredient bound to another character,
+    /// as FN_140a5f180's CanUseItem test does.</summary>
+    [Test]
+    public void AnUnusableIngredientBlocksTheCraft()
+    {
+        var c = Make(out var model, out var boxes, out var notices);
+        var bag = new List<Ms2.Net.Packets.EquipItem>();
+        c.ItemCount = id => InventoryCount.ById(bag, model.Tables.Items, id, 0, 100, 1000);
+        c.Table = new MasteryRecipeTable(XDocument.Parse(
+            "<ms2receipe><receipe id='70000010' masteryType='7' requireItem1='20000004:0,0,1' rewardItem1='20000004,1,1'/></ms2receipe>"));
+        bag.Add(new Ms2.Net.Packets.EquipItem { Id = 20000004, Rarity = 1, Amount = 1,
+            Transfer = { HasBinding = true, BindingId = 999 } });
+        Assert.That(c.CraftBlocked(70000010), Is.EqualTo(MasteryController.CraftBlock.Item));
+        c.OpenCraftBox(70000010);
+        Assert.That(boxes, Is.Empty, "no box for the unusable ingredient");
+        Assert.That(notices, Has.Count.EqualTo(1));
+        bag[0].Transfer.BindingId = 100;                       // now the character's own
+        Assert.That(c.CraftBlocked(70000010), Is.EqualTo(MasteryController.CraftBlock.None));
+    }
+
     [Test]
     public void ThePrecheckBlocksTheCraftBoxAndShowsItsNotice()
     {
