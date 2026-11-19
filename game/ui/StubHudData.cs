@@ -21,8 +21,28 @@ public sealed class StubHudData
     /// <summary>The field's interact objects' state from the server (1 = reactable). The reference run's extract station
     /// shows on its minimap, which only state 1 allows.</summary>
     public int InteractState = 1;
-    /// <summary>Features the server has switched off (the reference run had no cash shop, Meret Market or job change quest).</summary>
-    public HashSet<string> FeaturesOff = new() { "LapentaFrontierQuest" };
+    /// <summary>
+    /// The features the run's client has off: every name in table/feature.xml whose level is above the Live server type's (or
+    /// left at zero), the set CFeatureManager::IsFeatureEnabledByName answers no for (featuremanager.cpp:832; there is no
+    /// server list). Read once from the data, empty without one.
+    /// </summary>
+    static HashSet<string> featuresOff;
+    public HashSet<string> FeaturesOff
+    {
+        get
+        {
+            if (featuresOff != null) return featuresOff;
+            try
+            {
+                string dir = Settings.DataDir;
+                featuresOff = string.IsNullOrEmpty(dir)
+                    ? new HashSet<string>()
+                    : Ms2.Ui.LobbyFeatures.Disabled(Ms2.Formats.Pack.PackSet.Shared(dir));
+            }
+            catch (Exception e) { Godot.GD.PushWarning("features: " + e.Message); featuresOff = new HashSet<string>(); }
+            return featuresOff;
+        }
+    }
     /// <summary>The offline player's object id (its buffs' owner and caster).</summary>
     public int ObjectId = 1;
     /// <summary>The own buffs, as the own FieldAddUser's list would add them. The reference run shows Snipe (10500111 level 1,

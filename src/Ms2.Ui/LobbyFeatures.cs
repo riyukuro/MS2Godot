@@ -16,6 +16,8 @@ public static class LobbyFeatures
     {
         public int Server;
         public readonly Dictionary<string, int> Names = new();
+        /// <summary>Every feature name in table/feature.xml, including the ones its level leaves off (LoadFeature skips those).</summary>
+        public readonly HashSet<string> All = new(StringComparer.Ordinal);
     }
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Levels> sets = new();
@@ -42,6 +44,20 @@ public static class LobbyFeatures
         return l.Names.TryGetValue(feature, out int level) && level <= l.Server;
     }
 
+    /// <summary>
+    /// The names of table/feature.xml that are off in this client (a level above the server type's, or none at all): the set the
+    /// client's IsFeatureEnabledByName answers no for. A name absent from the table is off to the client too but cannot be
+    /// listed here (it is not in the data); callers with a name of their own pass it to <see cref="IsEnabled"/>.
+    /// </summary>
+    public static HashSet<string> Disabled(PackSet packs)
+    {
+        var l = Load(packs);
+        var off = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var name in l.All)
+            if (!l.Names.TryGetValue(name, out int level) || level > l.Server) off.Add(name);
+        return off;
+    }
+
     /// <summary>The levels as read (the server type's, then each feature's), hashed: part of a cache key of the tables whose
     /// rows are picked by feature (a loose feature.xml changes it).</summary>
     public static string Stamp(PackSet packs)
@@ -60,7 +76,11 @@ public static class LobbyFeatures
             if ((string)s.Attribute("type") == ServerType && int.TryParse((string)s.Attribute(Locale), out int l)) levels.Server = l;
         foreach (var f in Xml(packs, "table/feature.xml")?.Root.Elements("feature") ?? Enumerable.Empty<XElement>())
             // a level of 0 (or no KR attribute) is skipped, so the feature stays off (CFeatureManager::LoadFeature, featuremanager.cpp:804-806)
-            if ((string)f.Attribute("name") is { } name && int.TryParse((string)f.Attribute(Locale), out int l) && l != 0) levels.Names[name] = l;
+            if ((string)f.Attribute("name") is { } name)
+            {
+                levels.All.Add(name);
+                if (int.TryParse((string)f.Attribute(Locale), out int l) && l != 0) levels.Names[name] = l;
+            }
         return levels;
     }
 
