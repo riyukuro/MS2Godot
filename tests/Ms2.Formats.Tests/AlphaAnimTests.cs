@@ -10,12 +10,7 @@ public class AlphaAnimTests
 {
     const string Archive = "Resource/Model/Map";
 
-    static (PackSet, NifSpec) Env()
-    {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
-        return (new PackSet(data), new NifSpec(nx));
-    }
+    static (PackSet, NifSpec) Env() => NifEnv.Open();
 
     /// <summary>
     /// The workstone's glow plane has material alpha 0 and a looping alpha controller over 0..1.67 s whose Bezier keys

@@ -9,12 +9,7 @@ public class EffectColorTests
 {
     const string Archive = "Resource/Model/Effect";
 
-    static (PackSet, NifSpec) Env()
-    {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
-        return (new PackSet(data), new NifSpec(nx));
-    }
+    static (PackSet, NifSpec) Env() => NifEnv.Open();
 
     /// <summary>The quest navigator beam has no colour controller: its orange comes from the NiMaterialProperty emissive colour.</summary>
     [Test]
