@@ -12,7 +12,14 @@ public sealed class NativeMethod : MethodImpl
 {
     readonly Func<object, object[], object> fn;
     public NativeMethod(string name, Func<object, object[], object> fn) { Name = name; this.fn = fn; }
-    public override object Invoke(object self, object[] args) => fn(self, args);
+    /// <summary>Sees every native call on this thread before it runs (the equivalence tests trace the interpreter and the
+    /// compiled code; per thread, so a test's observer never sees another thread's movies).</summary>
+    [ThreadStatic] public static Action<NativeMethod, object, object[]> Observer;
+    public override object Invoke(object self, object[] args)
+    {
+        Observer?.Invoke(this, self, args);
+        return fn(self, args);
+    }
 }
 
 /// <summary>Any AS3 object: traits of its class (slots, methods, accessors), dynamic properties and the prototype chain.</summary>

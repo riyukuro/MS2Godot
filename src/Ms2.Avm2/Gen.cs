@@ -26,6 +26,9 @@ public static class GeneratedCode
         Register(hash, b);
     }
 
+    /// <summary>Drops a block's bodies (new contexts of it run in the interpreter).</summary>
+    public static void Remove(string hash) { lock (byHash) byHash.Remove(hash); }
+
     public static CompiledBody[] Find(string hash)
     {
         if (hash == null) return null;

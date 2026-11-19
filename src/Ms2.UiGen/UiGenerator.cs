@@ -90,6 +90,29 @@ public static class UiGenerator
         res.Blocks = blocks.Count;
         res.ReadSeconds = sw.Elapsed.TotalSeconds;
 
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dllPath)));
+        string tmp = dllPath + ".tmp";
+        HashSet<string> lost;
+        using (var fs = File.Create(tmp)) lost = Compile(blocks, fs, res, sourceDir, progress, assemblyDirs);
+        if (lost == null) { File.Delete(tmp); return res; }
+        File.Move(tmp, dllPath, true);      // the finished file appears at once, so a stopped build leaves no half assembly
+        res.DllBytes = new FileInfo(dllPath).Length;
+        res.MoviesAllCompiled = movieBlocks.Count(kv => kv.Value.Count > 0 && kv.Value.All(h => !lost.Contains(h)));
+        res.FailedMovies = movieBlocks.Where(kv => kv.Value.Any(lost.Contains)).Select(kv => kv.Key).ToList();
+        progress("Done", 1);
+        return res;
+    }
+
+    /// <summary>
+    /// Translates <paramref name="blocks"/> (by hash) and writes the compiled assembly to <paramref name="output"/>; the
+    /// statistics go to <paramref name="res"/>. Returns the blocks that lost a body to a file with errors (they run those
+    /// in the interpreter), or null when nothing could be emitted.
+    /// </summary>
+    public static HashSet<string> Compile(IReadOnlyDictionary<string, AbcFile> blocks, Stream output, Result res, string sourceDir = null,
+                                          Action<string, double> progress = null, IEnumerable<string> assemblyDirs = null)
+    {
+        progress ??= (_, _) => { };
+        var sw = Stopwatch.StartNew();
         // every body's text; the same text is one shared method, whichever block it came from
         var bodyId = new Dictionary<string, int>(StringComparer.Ordinal);
         var bodies = new List<string>();
@@ -98,7 +121,7 @@ public static class UiGenerator
         int done = 0;
         foreach (var (hash, abc) in blocks)
         {
-            progress("Translating the UI code", 0.3 + 0.2 * done++ / blocks.Count);
+            progress("Translating the UI code", 0.3 + 0.2 * done++ / Math.Max(1, blocks.Count));
             var t = new Translator(abc);
             var ids = new int[abc.Methods.Length];
             for (int i = 0; i < ids.Length; i++)
@@ -169,7 +192,7 @@ public static class UiGenerator
             for (int f = 0; f < texts.Count; f++) File.WriteAllText(Path.Combine(sourceDir, Name(f)), texts[f]);
             File.WriteAllText(Path.Combine(sourceDir, Name(-1)), init);
         }
-        res.TranslateSeconds = sw.Elapsed.TotalSeconds - res.ReadSeconds;
+        res.TranslateSeconds = sw.Elapsed.TotalSeconds;
 
         // compile; a body file with errors is left out (its bodies run in the interpreter) and Init is made again
         progress("Compiling the UI code", 0.55);
@@ -188,21 +211,27 @@ public static class UiGenerator
                 .Append(CSharpSyntaxTree.ParseText(InitText(badFiles), parse, Name(-1), Encoding.UTF8)), refs, opts);
         res.BadBodyFiles = badFiles.Count;
         progress("Compiling the UI code", 0.85);
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(dllPath)));
-        string tmp = dllPath + ".tmp";
-        using (var fs = File.Create(tmp))
-        {
-            var r = comp.Emit(fs);
-            if (!r.Success) foreach (var d in r.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(10)) res.Errors.Add("emit: " + d);
-        }
-        if (res.Errors.Any(e => e.StartsWith("emit: "))) { File.Delete(tmp); return res; }
-        File.Move(tmp, dllPath, true);      // the finished file appears at once, so a stopped build leaves no half assembly
+        var r = comp.Emit(output);
+        if (!r.Success) { foreach (var d in r.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Take(10)) res.Errors.Add("emit: " + d); return null; }
         res.CompileSeconds = tc.Elapsed.TotalSeconds;
-        res.DllBytes = new FileInfo(dllPath).Length;
-        var lost = blockIds.Where(kv => kv.Value.Any(id => id >= 0 && badFiles.Contains(fileOf[id]))).Select(kv => kv.Key).ToHashSet();
-        res.MoviesAllCompiled = movieBlocks.Count(kv => kv.Value.Count > 0 && kv.Value.All(h => !lost.Contains(h)));
-        res.FailedMovies = movieBlocks.Where(kv => kv.Value.Any(lost.Contains)).Select(kv => kv.Key).ToList();
-        progress("Done", 1);
+        return blockIds.Where(kv => kv.Value.Any(id => id >= 0 && badFiles.Contains(fileOf[id]))).Select(kv => kv.Key).ToHashSet();
+    }
+
+    /// <summary>
+    /// Translates and compiles <paramref name="blocks"/> in memory and registers their bodies in this process (a test
+    /// harness runs them against the interpreter). Returns the build statistics.
+    /// </summary>
+    public static Result LoadInMemory(IEnumerable<AbcFile> blocks)
+    {
+        var res = new Result();
+        var map = new Dictionary<string, AbcFile>();
+        foreach (var b in blocks) map.TryAdd(b.Hash, b);
+        res.Blocks = map.Count;
+        using var ms = new MemoryStream();
+        if (Compile(map, ms, res) == null) return res;
+        res.DllBytes = ms.Length;
+        var asm = System.Reflection.Assembly.Load(ms.ToArray());
+        asm.GetType("Ms2UiGen").GetMethod("Init").Invoke(null, null);
         return res;
     }
 
