@@ -158,6 +158,8 @@ public static class DataCache
         progress?.Invoke(phase, 0.9);
         if (Ms2.Ui.GameTables.BuildCache(packs, quests.Language, s)) built.Add("gametables");
         progress?.Invoke(phase, 0.95);
+        if (Ms2.Ui.Guide.GuideTable.BuildCache(packs, s)) built.Add("guide events");
+        if (Ms2.Ui.Guide.GuideStrings.BuildCache(packs, quests.Language, s)) built.Add("guide strings");
         // a table built: the archive was read, so its bytes are hashed again; a folder named for other bytes than the ones
         // its files were built from (a file changed under its stamp) is removed and the tables are built in the folder of
         // the file as it is, so no session reads tables of other bytes

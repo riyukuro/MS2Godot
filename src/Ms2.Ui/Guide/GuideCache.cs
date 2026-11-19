@@ -33,9 +33,8 @@ public static class GuideCache
     /// <summary>Parses the guide tables of <paramref name="packs"/> and writes <paramref name="path"/>.</summary>
     public static void Build(PackSet packs, string path) => Write(GuideTable.Parse(packs), path);
 
-    /// <summary>Writes <paramref name="table"/> to <paramref name="path"/> (through a temporary file, so a stopped build
-    /// leaves no partial cache).</summary>
-    public static void Write(GuideTable table, string path)
+    /// <summary>The cache body of <paramref name="table"/> (the store's file wraps it).</summary>
+    public static byte[] WriteBody(GuideTable table)
     {
         var strings = new List<string>();
         var ids = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -58,19 +57,29 @@ public static class GuideCache
         }
         bw.Flush();
 
+        var w = new MemoryStream();
+        var b = new BinaryWriter(w, Encoding.UTF8);
+        b.Write(Magic);
+        b.Write(Version);
+        b.Write(strings.Count);
+        foreach (var s in strings) b.Write(s);
+        b.Write((int)body.Length);
+        body.WriteTo(w);
+        b.Write(EndMagic);
+        b.Flush();
+        return w.ToArray();
+    }
+
+    /// <summary>Writes <paramref name="table"/> to <paramref name="path"/> (through a temporary file, so a stopped build
+    /// leaves no partial cache).</summary>
+    public static void Write(GuideTable table, string path) => Atomic(path, WriteBody(table));
+
+    /// <summary>A file written whole or not at all (a temporary file renamed into place).</summary>
+    static void Atomic(string path, byte[] bytes)
+    {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
         string tmp = path + ".tmp";
-        using (var fs = File.Create(tmp))
-        using (var w = new BinaryWriter(fs, Encoding.UTF8))
-        {
-            w.Write(Magic);
-            w.Write(Version);
-            w.Write(strings.Count);
-            foreach (var s in strings) w.Write(s);
-            w.Write((int)body.Length);
-            body.WriteTo(fs);
-            w.Write(EndMagic);
-        }
+        File.WriteAllBytes(tmp, bytes);
         File.Move(tmp, path, true);
     }
 
@@ -103,12 +112,15 @@ public static class GuideCache
     }
 
     /// <summary>The table in <paramref name="path"/>; null when the file is missing or fails its checks.</summary>
-    public static GuideTable Read(string path)
+    public static GuideTable Read(string path) =>
+        path == null || !File.Exists(path) ? null : ReadBody(File.ReadAllBytes(path));
+
+    /// <summary>The table of a cache body; null when it fails its checks. The store's file holds the body, so a body
+    /// that fails is its reader's bug or a damaged write.</summary>
+    public static GuideTable ReadBody(byte[] bytes)
     {
-        if (path == null || !File.Exists(path)) return null;
         try
         {
-            var bytes = File.ReadAllBytes(path);
             var r = new BinaryReader(new MemoryStream(bytes, false), Encoding.UTF8);
             if (r.ReadUInt32() != Magic || r.ReadInt32() != Version) return null;
             int n = r.ReadInt32();
@@ -195,38 +207,40 @@ public static class GuideCache
 
     /// <summary>Writes <paramref name="strings"/> to <paramref name="path"/> (through a temporary file, so a stopped
     /// build leaves no partial cache): the texts and voices as loaded, over the union of their ids, in id order.</summary>
-    public static void WriteStrings(GuideStrings strings, string path)
+    public static void WriteStrings(GuideStrings strings, string path) => Atomic(path, WriteStringsBody(strings));
+
+    /// <summary>The strings cache body of <paramref name="strings"/> (the store's file wraps it).</summary>
+    public static byte[] WriteStringsBody(GuideStrings strings)
     {
         var texts = strings.TextMap;
         var voices = strings.VoiceMap;
         var ids = new SortedSet<uint>(texts.Keys);
         ids.UnionWith(voices.Keys);
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
-        string tmp = path + ".tmp";
-        using (var fs = File.Create(tmp))
-        using (var w = new BinaryWriter(fs, Encoding.UTF8))
+        var w = new MemoryStream();
+        var b = new BinaryWriter(w, Encoding.UTF8);
+        b.Write(StringsMagic);
+        b.Write(Version);
+        b.Write(ids.Count);
+        foreach (var id in ids)
         {
-            w.Write(StringsMagic);
-            w.Write(Version);
-            w.Write(ids.Count);
-            foreach (var id in ids)
-            {
-                w.Write(id);
-                w.Write(texts.TryGetValue(id, out var t) ? t : "");
-                w.Write(voices.TryGetValue(id, out var v) ? v : "");
-            }
-            w.Write(StringsEndMagic);
+            b.Write(id);
+            b.Write(texts.TryGetValue(id, out var t) ? t : "");
+            b.Write(voices.TryGetValue(id, out var v) ? v : "");
         }
-        File.Move(tmp, path, true);
+        b.Write(StringsEndMagic);
+        b.Flush();
+        return w.ToArray();
     }
 
     /// <summary>The strings in <paramref name="path"/>; null when the file is missing or fails its checks.</summary>
-    public static GuideStrings ReadStrings(string path)
+    public static GuideStrings ReadStrings(string path) =>
+        path == null || !File.Exists(path) ? null : ReadStringsBody(File.ReadAllBytes(path));
+
+    /// <summary>The strings of a cache body; null when it fails its checks. The store's file holds the body.</summary>
+    public static GuideStrings ReadStringsBody(byte[] bytes)
     {
-        if (path == null || !File.Exists(path)) return null;
         try
         {
-            var bytes = File.ReadAllBytes(path);
             var r = new BinaryReader(new MemoryStream(bytes, false), Encoding.UTF8);
             if (r.ReadUInt32() != StringsMagic || r.ReadInt32() != Version) return null;
             int count = r.ReadInt32();

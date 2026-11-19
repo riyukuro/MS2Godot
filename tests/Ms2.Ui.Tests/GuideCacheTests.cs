@@ -80,9 +80,6 @@ public class GuideCacheTests
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
         var dir = TempDir();
         var path = Path.Combine(dir, GuideCache.FileName("test"));
-        var keepOf = GuideTable.CacheOf;
-        var keepLog = GuideTable.Log;
-        var keepMode = Environment.GetEnvironmentVariable("MS2_UICACHE");
         try
         {
             using var packs = new PackSet(d);
@@ -110,34 +107,79 @@ public class GuideCacheTests
             Assert.That(b.EntityCount, Is.EqualTo(a.EntityCount));
             Assert.That(b.LoadErrors, Is.EqualTo(a.LoadErrors));
 
-            // Load: the cache when it is there; off parses; check parses and logs a difference
-            var logged = new List<string>();
-            GuideTable.CacheOf = _ => path;
-            GuideTable.Log = logged.Add;
-            Environment.SetEnvironmentVariable("MS2_UICACHE", null);
-            Assert.That(GuideCache.FirstDifference(parsed, GuideTable.Load(packs)), Is.Null);
-            Environment.SetEnvironmentVariable("MS2_UICACHE", "off");
-            Assert.That(GuideCache.FirstDifference(parsed, GuideTable.Load(packs)), Is.Null);
-            Environment.SetEnvironmentVariable("MS2_UICACHE", "check");
-            GuideTable.Load(packs);
-            Assert.That(logged, Is.Empty);
-
-            var changed = GuideCache.Read(path);
-            changed.Files.First(f => f.Events.Count > 0).Events[0].SetAttributeValue("id", "0");
-            GuideCache.Write(changed, path);
-            var fromCheck = GuideTable.Load(packs);
-            Assert.That(logged, Has.Count.EqualTo(1).And.Some.Contains("differs"));
-            Assert.That(GuideCache.FirstDifference(parsed, fromCheck), Is.Null);
-
+            // a bad body reads as null and the load falls back to the parse
             File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
-            Environment.SetEnvironmentVariable("MS2_UICACHE", null);
-            Assert.That(GuideCache.FirstDifference(parsed, GuideTable.Load(packs)), Is.Null); // a bad cache falls back to the parse
+            Assert.That(GuideCache.Read(path), Is.Null);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    /// <summary>The store's flow over the guide pieces: built at setup (once), read from the cache, another language
+    /// another file, =check reads both and reports, =off parses (the GameTables cache test's shape).</summary>
+    [Test]
+    public void TheStoreBuildsReadsAndChecksTheGuidePieces()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-guide-store-" + Guid.NewGuid().ToString("N"));
+        var store = new Ms2.Formats.Cache.CacheStore(dir);
+        var outcomes = new List<Ms2.Formats.Cache.CacheStore.Outcome>();
+        var (of, logged) = (Ms2.Formats.Cache.CacheStore.Of, Ms2.Formats.Cache.CacheStore.Logged);
+        string keepMode = Environment.GetEnvironmentVariable("MS2_UICACHE");
+        try
+        {
+            using var packs = new PackSet(d);
+            Ms2.Formats.Cache.CacheStore.Of = p => p == packs ? store : null;
+            Ms2.Formats.Cache.CacheStore.Logged = outcomes.Add;
+
+            // built at setup, once; another language is another file
+            Assert.That(GuideTable.BuildCache(packs, store), Is.True);
+            Assert.That(GuideTable.BuildCache(packs, store), Is.False, "built once");
+            Assert.That(GuideStrings.BuildCache(packs, "en", store), Is.True);
+            Assert.That(GuideStrings.BuildCache(packs, "en", store), Is.False, "built once");
+            Assert.That(GuideStrings.BuildCache(packs, "kr", store), Is.True, "another language another file");
+
+            outcomes.Clear();
+            var cachedTable = GuideTable.Load(packs);
+            var cachedStrings = GuideStrings.Load(packs, "en");
+            Assert.That(outcomes.Select(o => (o.Piece, o.Source)),
+                Is.EqualTo(new[] { ("guide", "cache"), ("guidestrings", "cache") }));
+            var parsedTable = GuideTable.Parse(packs);
+            var parsedStrings = GuideStrings.Parse(packs, "en");
+            Assert.That(GuideCache.FirstDifference(parsedTable, cachedTable), Is.Null);
+            Assert.That(GuideCache.FirstStringsDifference(parsedStrings, cachedStrings), Is.Null);
+            Assert.That(cachedStrings.Text(420), Is.Empty, "the SurvivalTutorial key is skipped either way");
+
+            // =check reads both and reports the first difference; the table stays the cache's
+            Environment.SetEnvironmentVariable("MS2_UICACHE", "check");
+            outcomes.Clear();
+            Assert.That(GuideCache.FirstDifference(parsedTable, GuideTable.Load(packs)), Is.Null);
+            Assert.That(outcomes.All(o => o.Source == "check" && o.Diff == null), Is.True);
+
+            // a damaged file reads as nothing (its checksum fails in CacheFile) and the piece is parsed — the cache is
+            // never why a table fails — and the parse rewrites it, so the next load reads it again
+            var file = Directory.GetFiles(store.Dir, "guide-*.bin").Single();
+            var body = File.ReadAllBytes(file);
+            body[body.Length / 2] ^= 0xFF;
+            File.WriteAllBytes(file, body);
+            outcomes.Clear();
+            Assert.That(GuideCache.FirstDifference(parsedTable, GuideTable.Load(packs)), Is.Null);
+            Assert.That(outcomes.Single().Source, Is.EqualTo("parse"));
+            Assert.That(outcomes.Single().Diff, Is.Null, "the damaged file is quietly not used");
+            outcomes.Clear();
+            Assert.That(GuideCache.FirstDifference(parsedTable, GuideTable.Load(packs)), Is.Null);
+            Assert.That(outcomes.Single().Source, Is.EqualTo("check"), "the rewritten file is read again (check compares it)");
+            Assert.That(outcomes.Single().Diff, Is.Null);
+
+            Environment.SetEnvironmentVariable("MS2_UICACHE", "off");
+            outcomes.Clear();
+            Assert.That(GuideCache.FirstDifference(parsedTable, GuideTable.Load(packs)), Is.Null);
+            Assert.That(outcomes.All(o => o.Source == "off"), Is.True);
         }
         finally
         {
             Environment.SetEnvironmentVariable("MS2_UICACHE", keepMode);
-            GuideTable.CacheOf = keepOf;
-            GuideTable.Log = keepLog;
+            (Ms2.Formats.Cache.CacheStore.Of, Ms2.Formats.Cache.CacheStore.Logged) = (of, logged);
             if (Directory.Exists(dir)) Directory.Delete(dir, true);
         }
     }

@@ -28,29 +28,32 @@ public sealed class GuideTable
     /// <summary>GetXmlPath("Table", name).</summary>
     public static string PathOf(string name) => "table/" + name;
 
-    /// <summary>The per-install <see cref="GuideCache"/> file of a data folder (the game sets it: user://uigen/KEY/...);
-    /// null = none, the tables are parsed.</summary>
-    public static Func<string, string> CacheOf = _ => null;
-    /// <summary>Where MS2_UICACHE=check reports a difference between the cache and the parse.</summary>
-    public static Action<string> Log = _ => { };
+    const string CachePiece = "guide";
+
+    /// <summary>The cache configuration: the feature levels the events and imports are picked by.</summary>
+    static string CacheConfig(PackSet packs) => LobbyFeatures.Stamp(packs);
+
+    /// <summary>The code the cached table's form depends on: the guide's, the string tables' and the XML readers'.</summary>
+    static string CacheBuild => Ms2.Formats.Cache.CacheStore.Build(typeof(GuideTable).Assembly, typeof(GameStrings).Assembly, typeof(Ms2.Quest.QuestTable).Assembly);
 
     /// <summary>
-    /// The tables of <paramref name="packs"/>: from this install's cache when it is there and passes its checks, else parsed.
-    /// MS2_UICACHE=off always parses; MS2_UICACHE=check parses, reads the cache too and logs the first difference.
+    /// The tables of <paramref name="packs"/>: from this install's cache store when it holds them, else parsed (and the
+    /// file written for the next session). MS2_UICACHE=off parses; =check reads the cache too and reports the first
+    /// difference. The setup step builds the file (<see cref="BuildCache"/>).
     /// </summary>
     public static GuideTable Load(PackSet packs)
     {
-        string mode = Environment.GetEnvironmentVariable("MS2_UICACHE");
-        string path = packs?.DataDir is { } dir ? CacheOf(dir) : null;
-        if (path == null || mode == "off") return Parse(packs);
-        if (mode == "check")
-        {
-            var parsed = Parse(packs);
-            if (GuideCache.FirstDifference(parsed, GuideCache.Read(path)) is { } diff) Log("guide cache: " + diff);
-            return parsed;
-        }
-        return GuideCache.Read(path) ?? Parse(packs);
+        var store = Ms2.Formats.Cache.CacheStore.Of?.Invoke(packs);
+        if (store == null) return Parse(packs);
+        var t = store.Get(CachePiece, CacheConfig(packs), CacheBuild, () => Parse(packs),
+            GuideCache.WriteBody, GuideCache.ReadBody, GuideCache.FirstDifference, out var outcome);
+        Ms2.Formats.Cache.CacheStore.Logged?.Invoke(outcome);
+        return t;
     }
+
+    /// <summary>Writes the cache file of the tables when it is missing (the setup step); true when it was written.</summary>
+    public static bool BuildCache(PackSet packs, Ms2.Formats.Cache.CacheStore cache) =>
+        cache.Ensure(CachePiece, CacheConfig(packs), CacheBuild, () => Parse(packs), GuideCache.WriteBody);
 
     /// <summary>The tables parsed from the XML (the cache's reference).</summary>
     public static GuideTable Parse(PackSet packs)

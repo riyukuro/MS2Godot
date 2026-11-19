@@ -87,9 +87,6 @@ public class GuideEventTests
         Model();
         var dir = Path.Combine(Path.GetTempPath(), "ms2-guide-strings-" + Guid.NewGuid().ToString("N"));
         var path = Path.Combine(dir, GuideCache.StringsFileName("test", "en"));
-        var keepOf = GuideStrings.CacheOf;
-        var keepLog = GuideStrings.Log;
-        var keepMode = Environment.GetEnvironmentVariable("MS2_UICACHE");
         try
         {
             using (var shared = new PackSet(packs.DataDir))
@@ -112,18 +109,8 @@ public class GuideEventTests
             // a changed text is a difference
             var changed = GuideCache.ReadStrings(path);
             Assert.That(GuideCache.FirstStringsDifference(changed, GuideStrings.Parse(packs, "en")), Is.Null);
-            // Load: the cache when it is there; off parses; a bad cache falls back to the parse
-            GuideStrings.CacheOf = (d, lang) => path;
-            GuideStrings.Log = _ => { };
-            Environment.SetEnvironmentVariable("MS2_UICACHE", null);
-            Assert.That(GuideCache.FirstStringsDifference(GuideStrings.Parse(packs, "en"), GuideStrings.Load(packs, "en")), Is.Null);
-            File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
-            Assert.That(GuideCache.FirstStringsDifference(GuideStrings.Parse(packs, "en"), GuideStrings.Load(packs, "en")), Is.Null);
-            Environment.SetEnvironmentVariable("MS2_UICACHE", "off");
-            Assert.That(GuideStrings.Load(packs, "en").Text(10720), Does.Not.Contain("$"), "the object words replaced");
 
-            // a corrupted cache reads as null: cut short, a trailing byte, another version, a bad end mark
-            GuideCache.WriteStrings(GuideStrings.Parse(packs, "en"), path);
+            // a corrupted body reads as null: cut short, a trailing byte, another version, a bad end mark
             var bytes = File.ReadAllBytes(path);
             File.WriteAllBytes(path, bytes[..^6]);
             Assert.That(GuideCache.ReadStrings(path), Is.Null);
@@ -136,13 +123,7 @@ public class GuideEventTests
             File.WriteAllBytes(path, m);
             Assert.That(GuideCache.ReadStrings(path), Is.Null);
         }
-        finally
-        {
-            Environment.SetEnvironmentVariable("MS2_UICACHE", keepMode);
-            GuideStrings.CacheOf = keepOf;
-            GuideStrings.Log = keepLog;
-            if (Directory.Exists(dir)) Directory.Delete(dir, true);
-        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
     [Test]

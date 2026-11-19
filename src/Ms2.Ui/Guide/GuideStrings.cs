@@ -21,11 +21,6 @@ public sealed class GuideStrings
     readonly Dictionary<uint, string> texts = new();
     readonly Dictionary<uint, string> voices = new();
 
-    /// <summary>The per-install <see cref="GuideCache"/> file of a data folder and language (the game sets it:
-    /// user://uigen/KEY/stringguide-LANG-XMLKEY-vN.bin); null = none, the table is parsed.</summary>
-    public static Func<string, string, string> CacheOf = (_, _) => null;
-    /// <summary>Where MS2_UICACHE=check reports a difference between the cache and the parse.</summary>
-    public static Action<string> Log = _ => { };
     /// <summary>The tables built this run, per data folder and language (the client builds one per run).</summary>
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet,
         System.Collections.Concurrent.ConcurrentDictionary<string, GuideStrings>> shared = new();
@@ -34,25 +29,33 @@ public sealed class GuideStrings
     public static GuideStrings Shared(PackSet packs, string language) =>
         packs == null ? new() : shared.GetOrCreateValue(packs).GetOrAdd(language ?? "", l => Load(packs, l));
 
+    const string CachePiece = "guidestrings";
+
+    /// <summary>The cache configuration: the language's folder (the object words of the load are its tables') and the
+    /// feature levels the key rows are picked by.</summary>
+    static string CacheConfig(PackSet packs, string language) => $"{language}|{LobbyFeatures.Stamp(packs)}";
+
+    /// <summary>The code the cached strings' form depends on: the guide's, the string tables' and the XML readers'.</summary>
+    static string CacheBuild => Ms2.Formats.Cache.CacheStore.Build(typeof(GuideStrings).Assembly, typeof(GameStrings).Assembly, typeof(Ms2.Quest.QuestTable).Assembly);
+
     /// <summary>
-    /// The strings of <paramref name="packs"/> in <paramref name="language"/>: from this install's cache when it is there
-    /// and passes its checks, else parsed. MS2_UICACHE=off always parses; MS2_UICACHE=check parses, reads the cache too
-    /// and logs the first difference.
+    /// The strings of <paramref name="packs"/> in <paramref name="language"/>: from this install's cache store when it
+    /// holds them, else parsed (and the file written for the next session). MS2_UICACHE=off parses; =check reads the
+    /// cache too and reports the first difference. The setup step builds the file (<see cref="BuildCache"/>).
     /// </summary>
     public static GuideStrings Load(PackSet packs, string language)
     {
-        string mode = Environment.GetEnvironmentVariable("MS2_UICACHE");
-        string path = packs?.DataDir is { } dir ? CacheOf(dir, language) : null;
-        if (path == null || mode == "off") return Parse(packs, language);
-        if (mode == "check")
-        {
-            var parsed = Parse(packs, language);
-            if (GuideCache.FirstStringsDifference(parsed, GuideCache.ReadStrings(path)) is { } diff)
-                Log("guide strings cache: " + diff);
-            return parsed;
-        }
-        return GuideCache.ReadStrings(path) ?? Parse(packs, language);
+        var store = Ms2.Formats.Cache.CacheStore.Of?.Invoke(packs);
+        if (store == null) return Parse(packs, language);
+        var s = store.Get(CachePiece, CacheConfig(packs, language), CacheBuild, () => Parse(packs, language),
+            GuideCache.WriteStringsBody, GuideCache.ReadStringsBody, GuideCache.FirstStringsDifference, out var outcome);
+        Ms2.Formats.Cache.CacheStore.Logged?.Invoke(outcome);
+        return s;
     }
+
+    /// <summary>Writes the cache file of the strings when it is missing (the setup step); true when it was written.</summary>
+    public static bool BuildCache(PackSet packs, string language, Ms2.Formats.Cache.CacheStore cache) =>
+        cache.Ensure(CachePiece, CacheConfig(packs, language), CacheBuild, () => Parse(packs, language), GuideCache.WriteStringsBody);
 
     /// <summary>The table parsed from the XML (the cache's reference).</summary>
     public static GuideStrings Parse(PackSet packs, string language)
