@@ -14,6 +14,7 @@ for (int i = 0; i < args.Length; i++)
 if (string.IsNullOrEmpty(data) || dll == null) { Console.Error.WriteLine("usage: UiGen --dll FILE [--out DIR] [--data DIR] (MS2_DATA)"); return 2; }
 var r = UiGenerator.Build(data, dll, outDir);
 Console.WriteLine($"movies {r.Movies}, with code {r.MoviesWithCode}; ABC blocks {r.Blocks}; method bodies {r.Bodies} translated, {r.Skipped} skipped; {r.Distinct} distinct");
+if (r.Fallbacks.Count > 0) Console.WriteLine("as version 3: " + string.Join(", ", r.Fallbacks.Select(f => $"{f.Key} {f.Value}")));
 if (r.Unsupported.Count > 0) Console.WriteLine("unsupported: " + string.Join(", ", r.Unsupported.Take(30)));
 foreach (var e in r.Errors) Console.WriteLine("  " + e);
 Console.WriteLine($"read {r.ReadSeconds:F1} s, translate {r.TranslateSeconds:F1} s, source {r.SourceBytes / 1048576.0:F1} MB in {r.BodyFiles + 1} files");

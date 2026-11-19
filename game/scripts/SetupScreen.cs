@@ -230,12 +230,22 @@ public partial class SetupScreen : Control
         else if (task.Result is { } r)
         {
             GD.Print($"UI code built: {r.Bodies} bodies, {r.Distinct} distinct, {r.MoviesAllCompiled}/{r.MoviesWithCode} movies, " +
-                     $"{r.DllBytes / 1048576.0:F1} MB, read {r.ReadSeconds:F1} s, translate {r.TranslateSeconds:F1} s, compile {r.CompileSeconds:F1} s");
+                     $"{r.DllBytes / 1048576.0:F1} MB, read {r.ReadSeconds:F1} s, translate {r.TranslateSeconds:F1} s, compile {r.CompileSeconds:F1} s" +
+                     FallbackText(r));
             foreach (var e in r.Errors) GD.PushWarning("UI code: " + e);
         }
         try { UiCode.Load(Settings.DataDir); }
         catch (System.Exception e) { GD.PushWarning("UI code load failed: " + e.Message); }
         Continue();
+    }
+
+    /// <summary>The bodies built as version 3, by reason, for the build line (once, when the UI build finishes).</summary>
+    static string FallbackText(Ms2.UiGen.UiGenerator.Result r)
+    {
+        if (r.Fallbacks.Count == 0) return "";
+        var sb = new System.Text.StringBuilder("; as version 3: ");
+        foreach (var f in r.Fallbacks) sb.Append(sb.Length > 16 ? ", " : "").Append(f.Key).Append(' ').Append(f.Value);
+        return sb.ToString();
     }
 
     void Continue() => GetTree().ChangeSceneToFile("res://flow/flow.tscn");

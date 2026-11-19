@@ -55,7 +55,7 @@ public static class GeneratedCode
 /// What translated code calls for each AVM2 instruction: the interpreter's own semantics (<see cref="Interp"/>), so the
 /// two paths differ only in dispatch. Every member mirrors one interpreter case.
 /// </summary>
-public static class Gen
+public static partial class Gen
 {
     /// <summary>The method's registers: this, the parameters coerced to their types (optional ones defaulted), the rest array.</summary>
     public static object[] Locals(AbcMethod m, object self, object[] args)

@@ -20,8 +20,12 @@ public sealed class Translator
     readonly AbcFile abc;
     public int Methods, Skipped;
     public readonly HashSet<string> Unsupported = new();
+    /// <summary>Version 4: registers and the scope stack in C# locals (the scope helpers take the stack as a span).
+    /// A method that needs what it cannot do is translated as version 3, counted here by reason.</summary>
+    public readonly bool V4;
+    public readonly Dictionary<string, int> Fallbacks = new();
 
-    public Translator(AbcFile abc) { this.abc = abc; }
+    public Translator(AbcFile abc, bool v4 = false) { this.abc = abc; V4 = v4; }
 
     /// <summary>The placeholder <see cref="Body"/> puts where the method's name goes.</summary>
     public const string NamePlaceholder = "@NAME@";
@@ -151,6 +155,66 @@ public sealed class Translator
 
     static bool Ends(byte op) => op is 0x03 or 0x10 or 0x1B or 0x47 or 0x48;
 
+    // the method being translated as version 4: its scope depth per instruction and its register count
+    bool v4;
+    int[] sdepth;
+    int regs, used;
+    /// <summary>The deepest local scope stack of a version 4 body: the size of Gen.ScopeStack (Ms2.Avm2), kept equal by hand.</summary>
+    public const int ScopeMax = 32;
+
+    string Reg(int a) => v4 ? "r" + a : $"L[{a}]";
+    string Scopes(int i)
+    {
+        if (!v4) return "S";
+        int k = sdepth[i];
+        return k == 0 ? "default" : $"Gen.Sc(in c, {k})";
+    }
+
+    static bool RegOp(byte op) => op is 0x08 or 0x62 or 0x63 or 0x92 or 0x94 or 0xC2 or 0xC3 or 0x32;
+
+    /// <summary>Why <paramref name="m"/> cannot be version 4 (null when it can): fills the scope depths and register count.</summary>
+    string V4Check(MethodInfo m, Code c, int[] depth)
+    {
+        var ins = c.Ins; int n = ins.Count;
+        regs = Math.Max(m.Body.LocalCount, m.ParamCount + 2);
+        used = 1;
+        var sd = new int[n + 1];
+        Array.Fill(sd, -1);
+        var work = new Stack<int>();
+        string bad = null;
+        void Reach(int i, int d)
+        {
+            if (i < 0 || i > n) return;
+            if (sd[i] == -1) { sd[i] = d; work.Push(i); }
+            else if (sd[i] != d) bad ??= "scope depth";
+        }
+        Reach(0, 0);
+        foreach (var h in c.Handlers) Reach(h.Target, 0);
+        while (work.Count > 0 && bad == null)
+        {
+            int i = work.Pop();
+            if (i >= n || depth[i] < 0) continue;
+            var x = ins[i];
+            int d = sd[i];
+            switch (x.Op)
+            {
+                case 0x1C: return "with";
+                case 0x30: if (++d > ScopeMax) return "scope depth > " + ScopeMax; break;
+                case 0x1D: if (--d < 0) return "scope underflow"; break;
+                case 0x65: if (x.A >= d) return "scope index"; break;
+            }
+            if (RegOp(x.Op) && (x.A >= regs || x.Op == 0x32 && x.B >= regs)) return "register range";
+            if (x.Op is >= 0xD0 and <= 0xD7 && (x.Op & 3) >= regs) return "register range";
+            if (RegOp(x.Op)) used = Math.Max(used, Math.Max(x.A, x.Op == 0x32 ? x.B : 0) + 1);
+            if (x.Op is >= 0xD0 and <= 0xD7) used = Math.Max(used, (x.Op & 3) + 1);
+            if (x.Op == 0x1B) { foreach (int t in c.Cases[i]) Reach(t, d); continue; }
+            if (x.Op >= 0x0C && x.Op <= 0x1A) Reach(c.Target[i], d);
+            if (!Ends(x.Op)) Reach(i + 1, d);
+        }
+        sdepth = sd;
+        return bad;
+    }
+
     string Method(MethodInfo m)
     {
         var c = Decode(m);
@@ -190,14 +254,15 @@ public sealed class Translator
         }
         foreach (var h in c.Handlers) labels.Add(h.Target);
         bool eh = c.Handlers.Length > 0;
+        v4 = false;
+        if (V4)
+        {
+            var why = V4Check(m, c, depth);
+            if (why != null) Fallbacks[why] = Fallbacks.GetValueOrDefault(why) + 1;
+            else v4 = true;
+        }
 
         var sb = new StringBuilder();
-        sb.AppendLine($"    public static object {NamePlaceholder}(AbcMethod m, object self, object[] args)");
-        sb.AppendLine("    {");
-        sb.AppendLine("        var rt = m.Ctx.Rt; var abc = m.Ctx.Abc; var K = m.K; var L = Gen.Locals(m, self, args); var S = new List<(object Obj, bool With)>();");
-        sb.Append("        object ");
-        for (int i = 0; i < maxDepth; i++) sb.Append(i == 0 ? "" : ", ").Append($"s{i} = null");
-        sb.AppendLine(";");
         string ind = "        ";
         if (eh)
         {
@@ -224,11 +289,32 @@ public sealed class Translator
         if (eh)
         {
             sb.AppendLine("            }");
-            sb.AppendLine("            catch (Exception ex) when (Gen.Catchable(ex)) { E = Gen.Handler(m, ex, P, out s0); S.Clear(); }");
+            sb.AppendLine($"            catch (Exception ex) when (Gen.Catchable(ex)) {{ E = Gen.Handler(m, ex, P, out s0);{(v4 ? "" : " S.Clear();")} }}");
             sb.AppendLine("        }");
         }
         sb.AppendLine("    }");
-        return sb.ToString();
+
+        var head = new StringBuilder();
+        head.AppendLine($"    public static object {NamePlaceholder}(AbcMethod m, object self, object[] args)");
+        head.AppendLine("    {");
+        if (!v4) head.AppendLine("        var rt = m.Ctx.Rt; var abc = m.Ctx.Abc; var K = m.K; var L = Gen.Locals(m, self, args); var S = new List<(object Obj, bool With)>();");
+        else
+        {
+            head.Append("        var rt = m.Ctx.Rt; var abc = m.Ctx.Abc; var K = m.K;");
+            head.AppendLine();
+            // Only the registers the code uses, each filled at run time from the method's signature (Gen.Reg), and the
+            // parameters past them coerced for their side effects (Gen.Params): the text does not depend on the signature,
+            // so bodies with the same code share one method, as in version 3.
+            head.Append("        object r0 = self");
+            for (int i = 1; i < used; i++) head.Append($", r{i} = Gen.Reg(m, args, {i})");
+            head.AppendLine(";");
+            head.AppendLine($"        Gen.Params(m, args, {used});");
+            if (sdepth.Max() > 0) head.AppendLine("        Gen.ScopeStack c = default;");
+        }
+        head.Append("        object ");
+        for (int i = 0; i < maxDepth; i++) head.Append(i == 0 ? "" : ", ").Append($"s{i} = null");
+        head.AppendLine(";");
+        return head.Append(sb).ToString();
     }
 
     /// <summary>The name expression of a multiname whose runtime parts sit on the stack from slot <paramref name="top"/> down.</summary>
@@ -265,7 +351,7 @@ public sealed class Translator
             case 0x03: return $"throw new AsThrow({T(0)});";
             case 0x04: { int r = RCount(a); var nm = NameAt(a, ka, d - 1); return $"{T(r)} = Gen.GetSuper(m, {T(r)}, {nm.Name});"; }
             case 0x05: { int r = RCount(a); var nm = NameAt(a, ka, d - 2); return $"Gen.SetSuper(m, {T(r + 1)}, {nm.Name}, {T(0)});"; }
-            case 0x08: return $"L[{a}] = Rt.Undef;";
+            case 0x08: return $"{Reg(a)} = Rt.Undef;";
             case 0x0C: return Cmp($"Rt.LessThan({T(1)}, {T(0)}) != true");
             case 0x0D: return Cmp($"Rt.LessThan({T(0)}, {T(1)}) != false");
             case 0x0E: return Cmp($"Rt.LessThan({T(0)}, {T(1)}) != true");
@@ -290,11 +376,11 @@ public sealed class Translator
                 return sw.ToString();
             }
             case 0x1C: return $"S.Add(({T(0)}, true));";
-            case 0x1D: return "S.RemoveAt(S.Count - 1);";
+            case 0x1D: return v4 ? $"Gen.At(ref c, {sdepth[i] - 1}) = null;" : "S.RemoveAt(S.Count - 1);";
             case 0x1E: return $"{T(1)} = Gen.NextName(rt, {T(1)}, {T(0)});";
             case 0x23: return $"{T(1)} = Gen.NextValue(rt, {T(1)}, {T(0)});";
             case 0x1F: return $"{T(1)} = Gen.HasNext({T(1)}, {T(0)});";
-            case 0x32: return Push($"Gen.HasNext2(ref L[{a}], ref L[{b}])");
+            case 0x32: return Push($"Gen.HasNext2(ref {Reg(a)}, ref {Reg(b)})");
             case 0x20: return Push("null");
             case 0x21: return Push("Rt.Undef");
             case 0x24: return Push($"Rt.Box({a})");
@@ -309,9 +395,9 @@ public sealed class Translator
             case 0x2D: return Push($"Rt.Box(abc.Ints[{ka}])");
             case 0x2E: return Push($"Rt.Uint(abc.Uints[{ka}])");
             case 0x2F: return Push($"Rt.Num(abc.Doubles[{ka}])");
-            case 0x30: return $"S.Add(({T(0)}, false));";
+            case 0x30: return v4 ? $"Gen.At(ref c, {sdepth[i]}) = {T(0)};" : $"S.Add(({T(0)}, false));";
             case 0x31: return Push($"new AsNamespace(rt, m.Ctx.NsAt({ka}))");
-            case 0x40: return Push($"Gen.NewFunction(m, S, {ka})");
+            case 0x40: return Push(v4 ? $"Gen.NewFunctionV(m, {Scopes(i)}, {ka})" : $"Gen.NewFunction(m, S, {ka})");
             case 0x41: { int f = d - 2 - a; return $"s{f} = rt.Invoke(s{f}, s{f + 1}, {Args(f + 2, a)}, \"value\");"; }
             case 0x42: { int f = d - 1 - a; return $"s{f} = rt.Construct(s{f}, {Args(f + 1, a)}, \"value\");"; }
             case 0x43: case 0x44: return "throw rt.MakeError(\"VerifyError\", \"callmethod/callstatic not supported\");";
@@ -339,27 +425,29 @@ public sealed class Translator
             case 0x55: { int f = d - 2 * a; return $"s{f} = Gen.NewObject(rt, {Args(f, 2 * a)});"; }
             case 0x56: { int f = d - a; return $"s{f} = new AsArray(rt, {Args(f, a)});"; }
             case 0x57: return Push("Gen.NewActivation(m)");
-            case 0x58: return $"{T(0)} = Gen.NewClass(m, S, {ka}, {T(0)});";
+            case 0x58: return v4 ? $"{T(0)} = Gen.NewClassV(m, {Scopes(i)}, {ka}, {T(0)});" : $"{T(0)} = Gen.NewClass(m, S, {ka}, {T(0)});";
             case 0x59: return "throw rt.MakeError(\"Error\", \"E4X descendants are not supported\");";
             case 0x5A: return Push($"Gen.NewCatch(m, {a})");
             case 0x5D: case 0x5E:
             {
                 int r = RCount(a); int o = d - r; var nm = NameAt(a, ka, d - 1);
-                return $"s{o} = Gen.FindProp(m, S, self, {nm.Name}, {(x.Op == 0x5D ? "true" : "false")});";
+                string strict = x.Op == 0x5D ? "true" : "false";
+                if (v4) return $"s{o} = Gen.FindPropS(m, {Scopes(i)}, self, {nm.Name}, {strict});";
+                return $"s{o} = Gen.FindProp(m, S, self, {nm.Name}, {strict});";
             }
-            case 0x5F: return Push($"Gen.FindDef(m, S, self, {ka})");
-            case 0x60: return Push($"Gen.GetLex(m, S, self, {ka})");
+            case 0x5F: return Push(v4 ? $"Gen.FindDefV(m, {Scopes(i)}, self, {ka})" : $"Gen.FindDef(m, S, self, {ka})");
+            case 0x60: return Push(v4 ? $"Gen.GetLexV(m, {Scopes(i)}, self, {ka})" : $"Gen.GetLex(m, S, self, {ka})");
             case 0x61: case 0x68:
             {
                 int r = RCount(a); int o = d - 2 - r; var nm = NameAt(a, ka, d - 2);
                 return $"rt.SetProperty(s{o}, {nm.Name}, {T(0)}, {nm.Key}, {nm.Has}, {(x.Op == 0x68 ? "true" : "false")});";
             }
-            case 0x62: return Push($"L[{a}]");
-            case 0x63: return $"L[{a}] = {T(0)};";
-            case 0xD0: case 0xD1: case 0xD2: case 0xD3: return Push($"L[{x.Op - 0xD0}]");
-            case 0xD4: case 0xD5: case 0xD6: case 0xD7: return $"L[{x.Op - 0xD4}] = {T(0)};";
-            case 0x64: return Push("Gen.GlobalScope(m, S)");
-            case 0x65: return Push($"S[{a}].Obj");
+            case 0x62: return Push(Reg(a));
+            case 0x63: return $"{Reg(a)} = {T(0)};";
+            case 0xD0: case 0xD1: case 0xD2: case 0xD3: return Push(Reg(x.Op - 0xD0));
+            case 0xD4: case 0xD5: case 0xD6: case 0xD7: return $"{Reg(x.Op - 0xD4)} = {T(0)};";
+            case 0x64: return Push(v4 ? $"Gen.GlobalScopeV(m, {Scopes(i)})" : "Gen.GlobalScope(m, S)");
+            case 0x65: return Push(v4 ? $"Gen.At(ref c, {a})" : $"S[{a}].Obj");
             case 0x66:
             {
                 int r = RCount(a); int o = d - 1 - r; var nm = NameAt(a, ka, d - 1);
@@ -372,8 +460,8 @@ public sealed class Translator
             }
             case 0x6C: return $"{T(0)} = Gen.GetSlot({T(0)}, {a});";
             case 0x6D: return $"Gen.SetSlot(rt, {T(1)}, {a}, {T(0)});";
-            case 0x6E: return Push($"Gen.GetGlobalSlot(m, S, {a})");
-            case 0x6F: return $"Gen.SetGlobalSlot(m, S, {a}, {T(0)});";
+            case 0x6E: return Push(v4 ? $"Gen.GetGlobalSlotV(m, {Scopes(i)}, {a})" : $"Gen.GetGlobalSlot(m, S, {a})");
+            case 0x6F: return v4 ? $"Gen.SetGlobalSlotV(m, {Scopes(i)}, {a}, {T(0)});" : $"Gen.SetGlobalSlot(m, S, {a}, {T(0)});";
             case 0x70: case 0x71: case 0x72: return $"{T(0)} = Rt.ToString({T(0)});";
             case 0x73: return $"{T(0)} = Rt.Box(Rt.ToInt32({T(0)}));";
             case 0x74: return $"{T(0)} = Rt.Uint(Rt.ToUint32({T(0)}));";
@@ -387,8 +475,8 @@ public sealed class Translator
             case 0x90: return $"{T(0)} = Rt.Num(-Rt.ToNumber({T(0)}));";
             case 0x91: return $"{T(0)} = Gen.Inc({T(0)});";
             case 0x93: return $"{T(0)} = Gen.Dec({T(0)});";
-            case 0x92: return $"L[{a}] = Gen.Inc(L[{a}]);";
-            case 0x94: return $"L[{a}] = Gen.Dec(L[{a}]);";
+            case 0x92: return $"{Reg(a)} = Gen.Inc({Reg(a)});";
+            case 0x94: return $"{Reg(a)} = Gen.Dec({Reg(a)});";
             case 0x95: return $"{T(0)} = Rt.TypeOf({T(0)});";
             case 0x96: return $"{T(0)} = Rt.Box(!Rt.ToBoolean({T(0)}));";
             case 0x97: return $"{T(0)} = Rt.Box(~Rt.ToInt32({T(0)}));";
@@ -415,8 +503,8 @@ public sealed class Translator
             case 0xB4: return $"{T(1)} = Rt.Box(Gen.In(rt, {T(1)}, {T(0)}));";
             case 0xC0: return $"{T(0)} = Rt.Box(Rt.ToInt32({T(0)}) + 1);";
             case 0xC1: return $"{T(0)} = Rt.Box(Rt.ToInt32({T(0)}) - 1);";
-            case 0xC2: return $"L[{a}] = Rt.Box(Rt.ToInt32(L[{a}]) + 1);";
-            case 0xC3: return $"L[{a}] = Rt.Box(Rt.ToInt32(L[{a}]) - 1);";
+            case 0xC2: return $"{Reg(a)} = Rt.Box(Rt.ToInt32({Reg(a)}) + 1);";
+            case 0xC3: return $"{Reg(a)} = Rt.Box(Rt.ToInt32({Reg(a)}) - 1);";
             case 0xC4: return $"{T(0)} = Rt.Box(-Rt.ToInt32({T(0)}));";
             case 0xC5: return $"{T(1)} = Rt.Box(Rt.ToInt32({T(1)}) + Rt.ToInt32({T(0)}));";
             case 0xC6: return $"{T(1)} = Rt.Box(Rt.ToInt32({T(1)}) - Rt.ToInt32({T(0)}));";

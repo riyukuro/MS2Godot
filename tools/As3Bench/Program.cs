@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.Tracing;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
@@ -12,9 +13,14 @@ using Ms2.Ui.WorldMap;
 
 // As3Bench: headless warm opens of UI dialogs (the game's MovieDialog path without the Godot view): src.Open, UiHost.Load,
 // first ticks. Times each phase; run under a sampling profiler for the breakdown.
-//   As3Bench [--gen DLL] [--n N] [--only a,b] [--loop SECONDS]   (MS2_DATA)
+//   As3Bench [--gen DLL] [--n N] [--only a,b] [--loop SECONDS] [--alloc]   (MS2_DATA)
+// --alloc: what the first open and a repeat open allocate, by type (the runtime's allocation sampling, one sample
+// per ~100 KB), to explain where the bytes go.
+// --idle N: each dialog opened, 60 ticks to settle, then N idle ticks measured: ms, bytes and AS calls per tick (the
+// player's tick only; the Godot view sync is not in it). With --alloc the idle bytes by type, with --count (a COUNTERS
+// build) what the idle ticks call.
 string data = Environment.GetEnvironmentVariable("MS2_DATA");
-int n = 15; string only = null; double loop = 0; bool micro = false, count = false;
+int n = 15; string only = null; double loop = 0; bool micro = false, count = false, alloc = false; int idle = 0;
 for (int i = 0; i < args.Length; i++)
     switch (args[i])
     {
@@ -25,6 +31,8 @@ for (int i = 0; i < args.Length; i++)
         case "--interp": Interp.UseOracle = true; break;
         case "--micro": micro = true; break;
         case "--count": count = true; break;
+        case "--alloc": alloc = true; break;
+        case "--idle": idle = int.Parse(args[++i]); break;
     }
 var packs = new PackSet(data);
 var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
@@ -113,6 +121,70 @@ var phases = new[] { "open", "load", "tick1", "ticks" };
     return (t, rt.Errors.Count, Interp.CompiledCalls + Interp.InterpretedCalls - calls0, GC.GetAllocatedBytesForCurrentThread() - a0, (GC.GetTotalPauseDuration() - p0).TotalMilliseconds);
 }
 
+if (idle > 0)
+{
+    using var l = alloc ? new AllocListener() : null;
+    foreach (var d in dialogs)
+    {
+        var c = d.Make();
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 200_000_000, c.Libraries);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, c, Model());
+        d.Pre?.Invoke(c); h.Load(); d.Post?.Invoke(c);
+        for (int i = 0; i < 60; i++) p.Tick();
+        int e0 = rt.Errors.Count;
+        if (l != null) { Thread.Sleep(1500); lock (l.ByType) l.ByType.Clear(); l.On = true; }
+#if COUNTERS
+        if (count) { ProfCounters.Reset(); ProfCounters.On = true; }
+#endif
+        long a0 = GC.GetAllocatedBytesForCurrentThread(), calls0 = Interp.CompiledCalls + Interp.InterpretedCalls;
+        int g0 = GC.CollectionCount(0);
+        var sw = Stopwatch.StartNew();
+        for (int i = 0; i < idle; i++) p.Tick();
+        double ms = sw.Elapsed.TotalMilliseconds;
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - a0, calls = Interp.CompiledCalls + Interp.InterpretedCalls - calls0;
+        Console.WriteLine($"== {d.Name} idle: {ms / idle:0.000} ms/tick, {bytes / (double)idle:0} B/tick, AS calls/tick {calls / (double)idle:0.0}, " +
+                          $"gen0 {GC.CollectionCount(0) - g0}, new errors {rt.Errors.Count - e0}");
+#if COUNTERS
+        if (count)
+        {
+            ProfCounters.On = false;
+            void Top(string what, Dictionary<string, long> m, int k) => Console.WriteLine($"  {what}: " + string.Join(", ", m.OrderByDescending(x => x.Value).Take(k).Select(x => $"{x.Key} {x.Value / (double)idle:0.#}")));
+            Top("natives/tick", ProfCounters.Natives, 25); Top("AS methods/tick", ProfCounters.Methods, 25); Top("names/tick", ProfCounters.Names, 25);
+        }
+#endif
+        if (l != null)
+        {
+            l.On = false; Thread.Sleep(1500);
+            Dictionary<string, long> m; lock (l.ByType) { m = new(l.ByType); l.ByType.Clear(); }
+            long all = m.Values.Sum();
+            foreach (var (k, v) in m.OrderByDescending(x => x.Value).Take(20)) Console.WriteLine($"  {v / (double)idle,9:0} B/tick {100.0 * v / Math.Max(all, 1),5:0.0}%  {k}");
+        }
+    }
+    return 0;
+}
+
+if (alloc)
+{
+    using var l = new AllocListener();
+    foreach (var d in dialogs)
+    {
+        void Show(string what)
+        {
+            Thread.Sleep(1500);         // the runtime delivers its events a little later
+            Dictionary<string, long> m; lock (l.ByType) { m = new(l.ByType); l.ByType.Clear(); }
+            long all = m.Values.Sum();
+            Console.WriteLine($"== {d.Name} {what}: sampled {all / 1e6:0.0} MB");
+            foreach (var (k, v) in m.OrderByDescending(x => x.Value).Take(25)) Console.WriteLine($"  {v / 1e6,7:0.00} MB {100.0 * v / all,5:0.0}%  {k}");
+        }
+        l.On = true; OneOpen(d); l.On = false; Show("first open");
+        for (int i = 0; i < 5; i++) OneOpen(d);
+        Thread.Sleep(1500); lock (l.ByType) l.ByType.Clear();
+        l.On = true; OneOpen(d); l.On = false; Show("repeat open");
+    }
+    return 0;
+}
+
 #if COUNTERS
 if (count)
 {
@@ -145,3 +217,24 @@ foreach (var d in dialogs)
 return 0;
 
 record Dlg(string Name, Func<UiController> Make, Action<UiController> Pre, Action<UiController> Post);
+
+/// <summary>The runtime's allocation ticks (GCAllocationTick, one per ~100 KB allocated) summed by type.</summary>
+sealed class AllocListener : EventListener
+{
+    public readonly Dictionary<string, long> ByType = new();
+    public volatile bool On;
+    protected override void OnEventSourceCreated(EventSource s)
+    {
+        if (s.Name == "Microsoft-Windows-DotNETRuntime") EnableEvents(s, EventLevel.Verbose, (EventKeywords)0x1);
+    }
+    protected override void OnEventWritten(EventWrittenEventArgs e)
+    {
+        if (!On || e.EventName == null || !e.EventName.StartsWith("GCAllocationTick", StringComparison.Ordinal) || e.PayloadNames == null) return;
+        int ti = e.PayloadNames.IndexOf("TypeName"), ai = e.PayloadNames.IndexOf("AllocationAmount64");
+        if (ai < 0) ai = e.PayloadNames.IndexOf("AllocationAmount");
+        if (ti < 0 || ai < 0) return;
+        string t = e.Payload[ti] as string ?? "?";
+        long a = Convert.ToInt64(e.Payload[ai]);
+        lock (ByType) ByType[t] = ByType.GetValueOrDefault(t) + a;
+    }
+}

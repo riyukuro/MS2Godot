@@ -17,14 +17,22 @@ namespace Ms2.Ui.Tests;
 /// The translated UI code (<see cref="Translator"/>, built in memory from every movie of MS2_DATA) against the
 /// interpreter: each flow runs once per engine and must leave the same trace. The trace is every AS method entered,
 /// every native call with its receiver and arguments, trace() output, the runtime's errors and missing APIs, the
-/// player's warnings and the display list at the end; the first line that differs is reported.
+/// player's warnings and the display list at the end; the first line that differs is reported. Each translator
+/// version runs as its own fixture (3: the boxed stack and register array; 4: registers and scope stack in locals). By default
+/// only the shipped version (<see cref="UiGenerator.Version"/>) runs: every fixture loads its own build of all the
+/// movies, which the process keeps, so two of them overrun the test memory cap. MS2_EQ_VERSIONS=3,4 runs both.
 /// Both engines share the player runtime, so a change there that reorders what a flow does would pass here; for that the
 /// interpreter's traces of one build are checked against another's: MS2_EQ_TRACE_OUT=dir writes them, MS2_EQ_TRACE_BASE=dir
 /// (written by the build before the change) compares with them. The traces hold client data and stay out of the tree.
 /// </summary>
 [NonParallelizable]
+[TestFixtureSource(nameof(Versions))]
 public class As3EquivalenceTests
 {
+    public static IEnumerable<int> Versions =>
+        (Environment.GetEnvironmentVariable("MS2_EQ_VERSIONS") is { Length: > 0 } v ? v.Split(',').Select(int.Parse) : new[] { UiGenerator.Version });
+    readonly int version;
+    public As3EquivalenceTests(int version) { this.version = version; }
     static PackSet packs;
     static MovieSource src;
     static GameTables tables;
@@ -51,10 +59,12 @@ public class As3EquivalenceTests
             try { foreach (var (_, abc) in src.Abc(k)) blocks.Add(abc); } catch (Exception e) { unread.Add($"{k} ({e.GetType().Name})"); }
         if (unread.Count > 0) TestContext.Progress.WriteLine($"{unread.Count} movies not read: {string.Join(", ", unread)}");
         Assert.That(blocks, Is.Not.Empty, "the movies' code was read");
-        build = UiGenerator.LoadInMemory(blocks);
+        hashes.Clear();
+        build = UiGenerator.LoadInMemory(blocks, version);
         hashes.AddRange(blocks.Select(b => b.Hash).Distinct());
-        TestContext.Progress.WriteLine($"translated {build.Blocks} blocks: {build.Bodies} bodies ({build.Distinct} distinct), {build.Skipped} left to the interpreter; " +
-                                       $"translate {build.TranslateSeconds:F1} s, compile {build.CompileSeconds:F1} s; errors: {string.Join("; ", build.Errors.Take(3))}");
+        TestContext.Progress.WriteLine($"v{version}: translated {build.Blocks} blocks: {build.Bodies} bodies ({build.Distinct} distinct), {build.Skipped} left to the interpreter; " +
+                                       $"translate {build.TranslateSeconds:F1} s, compile {build.CompileSeconds:F1} s; errors: {string.Join("; ", build.Errors.Take(3))}" +
+                                       (build.Fallbacks.Count > 0 ? "; as version 3: " + string.Join(", ", build.Fallbacks.Select(f => $"{f.Key} {f.Value}")) : ""));
         Assert.That(build.Ok, Is.True, "the translated code compiles");
     }
 
@@ -63,6 +73,8 @@ public class As3EquivalenceTests
     {
         foreach (var h in hashes) GeneratedCode.Remove(h);
         NativeMethod.Observer = null; Interp.OnCall = null; Interp.UseOracle = false;
+        build = null; tables = null; src = null; packs = null;
+        GC.Collect();
     }
 
     // ---- the trace ---------------------------------------------------------------------------------------------

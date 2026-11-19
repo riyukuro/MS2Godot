@@ -18,7 +18,7 @@ namespace Ms2.UiGen;
 public static class UiGenerator
 {
     /// <summary>Raise when the translator's output changes, so the cached assemblies are built again.</summary>
-    public const int Version = 3;
+    public const int Version = 4;
     /// <summary>The file name of the built assembly.</summary>
     public const string DllName = "Ms2.UiCode.dll";
 
@@ -28,6 +28,8 @@ public static class UiGenerator
         public long SourceBytes, DllBytes;
         public double ReadSeconds, TranslateSeconds, CompileSeconds;
         public List<string> Errors = new(), Unsupported = new(), FailedMovies = new();
+        /// <summary>Version 4: the bodies translated as version 3 instead, by reason.</summary>
+        public SortedDictionary<string, int> Fallbacks = new(StringComparer.Ordinal);
         public bool Ok => DllBytes > 0;
     }
 
@@ -109,7 +111,7 @@ public static class UiGenerator
     /// in the interpreter), or null when nothing could be emitted.
     /// </summary>
     public static HashSet<string> Compile(IReadOnlyDictionary<string, AbcFile> blocks, Stream output, Result res, string sourceDir = null,
-                                          Action<string, double> progress = null, IEnumerable<string> assemblyDirs = null)
+                                          Action<string, double> progress = null, IEnumerable<string> assemblyDirs = null, int version = Version)
     {
         progress ??= (_, _) => { };
         var sw = Stopwatch.StartNew();
@@ -122,7 +124,7 @@ public static class UiGenerator
         foreach (var (hash, abc) in blocks)
         {
             progress("Translating the UI code", 0.3 + 0.2 * done++ / Math.Max(1, blocks.Count));
-            var t = new Translator(abc);
+            var t = new Translator(abc, v4: version >= 4);
             var ids = new int[abc.Methods.Length];
             for (int i = 0; i < ids.Length; i++)
             {
@@ -133,6 +135,7 @@ public static class UiGenerator
             }
             res.Bodies += t.Methods; res.Skipped += t.Skipped;
             unsupported.UnionWith(t.Unsupported);
+            foreach (var (why, k) in t.Fallbacks) res.Fallbacks[why] = res.Fallbacks.GetValueOrDefault(why) + k;
             blockIds[hash] = ids;
         }
         bodyId = null;
@@ -219,16 +222,16 @@ public static class UiGenerator
 
     /// <summary>
     /// Translates and compiles <paramref name="blocks"/> in memory and registers their bodies in this process (a test
-    /// harness runs them against the interpreter). Returns the build statistics.
+    /// harness runs them against the interpreter), translated as <paramref name="version"/> (3 or 4). Returns the build statistics.
     /// </summary>
-    public static Result LoadInMemory(IEnumerable<AbcFile> blocks)
+    public static Result LoadInMemory(IEnumerable<AbcFile> blocks, int version = Version)
     {
         var res = new Result();
         var map = new Dictionary<string, AbcFile>();
         foreach (var b in blocks) map.TryAdd(b.Hash, b);
         res.Blocks = map.Count;
         using var ms = new MemoryStream();
-        if (Compile(map, ms, res) == null) return res;
+        if (Compile(map, ms, res, version: version) == null) return res;
         res.DllBytes = ms.Length;
         var asm = System.Reflection.Assembly.Load(ms.ToArray());
         asm.GetType("Ms2UiGen").GetMethod("Init").Invoke(null, null);
