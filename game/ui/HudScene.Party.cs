@@ -159,6 +159,8 @@ public partial class HudScene
                 LocalPlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.Me.Dead,
             };
             c.Send = PartySend;
+            // FUN_141a83ed0: the buddy and block items' UIMsg to UICommunityQueryDialog (0x4e4e)'s OnMessage
+            c.BuddyQuery = (query, kind, name, buddyId, charId) => CommunityQuery().OnQuery(query, kind, name, buddyId, charId);
             c.Messenger = ChatLog;                                  // Unk_MdState m_48: the chat windows' browser
             c.PlaySound = key => FieldAudio.Instance?.PlayUi(key);
             c.OpenMyInfo += () => { if (myInfo == null || myInfo.IsClosed) OpenMyInfo(); };     // OpenDialog(0x2711)
@@ -172,6 +174,7 @@ public partial class HudScene
             popupLayer.AddChild(m);
         }
         popupMenu.Field = SlotFieldData();
+        popupMenu.Buddies = CommunityBook();                        // CBuddyManager: live, or the offline book
         popupMenu.OpenForPartySlot(x, y, characterId, hudModel.Player);
     }
 }

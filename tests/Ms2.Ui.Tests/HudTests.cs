@@ -280,6 +280,71 @@ public class HudTests
     }
 
     [Test]
+    public void PartySlotBuddyItemsFollowTheBuddyList()
+    {
+        // FUN_141a847c0 / FUN_141a84860 by FindByAccount: a friend gets 300 for 0x12d, a blocked entry 0x191 + 0x192 for 400 and
+        // no 0x12d, a waiting request no 0x12d; the items go to the query dialog through FUN_141a83ed0 (OnMessage)
+        var m = Model();
+        var party = PartyFixture.Book(2000062, m.Player);
+        var buddies = new BuddyBook();
+        buddies.Add(new BuddyInfo { Id = 1, CharacterId = 3, Name = "FixtureArcher" });
+        buddies.Add(new BuddyInfo { Id = 2, CharacterId = 4, Name = "FixturePriest", Blocked = true, Memo = "spam" });
+        buddies.Add(new BuddyInfo { Id = 3, CharacterId = 5, Name = "FixtureWizard", Waiting = true });
+        var boxes = new List<MessageBoxData>();
+        var query = new CommunityQueryController(buddies) { Common = m.Tables.Common, ShowBox = boxes.Add, NextBox = () => { } };
+        int opens = 0;
+        query.OpenRequested += () => opens++;
+        var c = new PopupMenuController
+        {
+            Party = party, Buddies = buddies, SelfCharacterId = PartyFixture.SelfCharacterId, ProfileImagePath = (_, _) => "",
+            BuddyQuery = (r, k, n, b, ch) => query.OnQuery(r, k, n, b, ch),
+        };
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        int[] Menu(long id)
+        {
+            c.OpenForPartySlot(100, 200, id, m.Player);
+            var items = c.Items.ToArray();
+            c.ClosePopup();
+            return items;
+        }
+        Assert.That(Menu(3), Does.Contain(PopupMenuController.Unfriend).And.Contain(PopupMenuController.Block).And.Not.Contain(PopupMenuController.AddFriend));
+        Assert.That(Menu(4), Does.Contain(PopupMenuController.Unblock).And.Contain(PopupMenuController.EditBlockReason)
+                                 .And.Not.Contain(PopupMenuController.Block).And.Not.Contain(PopupMenuController.AddFriend));
+        Assert.That(Menu(5), Does.Contain(PopupMenuController.Block).And.Not.Contain(PopupMenuController.AddFriend).And.Not.Contain(PopupMenuController.Unfriend));
+        // the remove item asks first (OnMessage result 1, mode 6): the 0x5f8 box on the query; the party slot's m_d0 is 0
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        c.ItemClick(PopupMenuController.Unfriend);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That((boxes[0].Type, boxes[0].Extra, boxes[0].Listener), Is.EqualTo((1, "delBuddy", (object)query)));
+        Assert.That(boxes[0].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common(0x5f8), "FixtureArcher")));
+        c.ItemClick(PopupMenuController.Block);                         // result 0, mode 2: the closed dialog opens
+        Assert.That((opens, query.Mode), Is.EqualTo((1, 2)));
+        c.ClosePopup();
+        c.OpenForPartySlot(100, 200, 4, m.Player);
+        c.ItemClick(PopupMenuController.Unblock);
+        Assert.That((boxes[^1].Extra, boxes[^1].Msg), Is.EqualTo(("delBanBuddy", Ms2.Quest.ClientFormat.Format(m.Tables.Common(0x5f9), "FixturePriest"))));
+        c.ItemClick(PopupMenuController.EditBlockReason);
+        Assert.That((opens, query.Mode), Is.EqualTo((2, 4)));
+        // with a buddy id (m_d0), the entry's own id is sent, and an add for a received request shows 0x623 instead
+        var received = new BuddyBook();
+        received.Add(new BuddyInfo { Id = 7, CharacterId = 5, Name = "FixtureWizard", Received = true });
+        var asked = new List<string>();
+        c.Buddies = received;
+        c.BuddyId = 99;
+        c.BuddyQuery = (r, k, n, b, ch) => asked.Add($"{r} {k} {n} {b} {ch}");
+        c.ShowBox = boxes.Add;
+        c.ClosePopup();
+        c.OpenForPartySlot(100, 200, 5, m.Player);
+        c.ItemClick(PopupMenuController.AddFriend);
+        Assert.That(asked, Is.Empty);
+        Assert.That((boxes[^1].Type, boxes[^1].Msg), Is.EqualTo((0, m.Tables.Common(0x623))));
+        c.ItemClick(PopupMenuController.Block);
+        Assert.That(asked, Is.EqualTo(new[] { "0 2 FixtureWizard 7 5" }));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void PartySlotMenuItemsSendTheClientRequests()
     {
         // UIPopUpMenu's party handlers (RegisterMenuHandlers): leave / ready check send at once, kick and leader change ask

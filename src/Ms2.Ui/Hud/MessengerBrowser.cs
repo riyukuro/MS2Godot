@@ -15,6 +15,9 @@ public static class TalkKind
 {
     /// <summary>RequireSetting "item" (FUN_1414818b0): the item gain lines (FUN_141a24890).</summary>
     public const int Item = 9;
+    /// <summary>NoticeSetting "friend" (FUN_141481040, messengerdata.cpp:299): the buddy lines (CBuddyManager::OnBuddy's
+    /// FUN_1412751b0(.., 12)).</summary>
+    public const int Friend = 0xc;
     /// <summary>SystemSetting "event" and "notice" (FUN_1414813b0): the welcome line and the chat copies of the notices.</summary>
     public const int SystemEvent = 0x13, SystemNotice = 0x14;
     /// <summary>SubjectSetting::FUN_141481e90 never hides it: the top layer notices (ShowTopLayerNotify @0x141275400).</summary>

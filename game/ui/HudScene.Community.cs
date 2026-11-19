@@ -59,7 +59,7 @@ public partial class HudScene
             SystemText.ShowMessage(text, type, 0);
             if (log) ChatLog.AddSystemLine(text, TalkKind.SystemNotice);
         }
-        void Chat(string text, int kind) => ChatLog.AddSystemLine(text, TalkKind.SystemNotice);
+        void Chat(string text, int kind) => ChatLog.AddSystemLine(text, kind);       // OnBuddy passes 12, TalkKind.Friend
         void Box(string text) => MessageBoxQueue.ShowMessageBox(text, 0, null, "");
         void Sound(string key) => FieldAudio.Instance?.PlayUi(key);
         void Rebuild()

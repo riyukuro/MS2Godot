@@ -133,7 +133,7 @@ public sealed class CommunityQueryController : UiController, IMessageBoxListener
     void ShowText(string text) => ShowBox(MessageBoxQueue.Create(0, text, null, ""));
 
     /// <summary>OnMessage from the message box: yes (0) runs the tag's request, any other button the movie's errorName;
-    /// then FUN_14151f200.</summary>
+    /// then FUN_14151f200. Not handled: it returns 0 (uibuddyeventlistener.cpp:1796).</summary>
     public bool OnMessageBox(MessageBoxController sender, int button, string tag)
     {
         if (button == 0)
@@ -165,7 +165,7 @@ public sealed class CommunityQueryController : UiController, IMessageBoxListener
         }
         else if (!NoMovie) Host.Invoke(Host.Entity, "errorName");
         NextBox();
-        return true;
+        return false;
     }
 
     /// <summary>vfunc_28 (@0x1418da8c0): OnOk(mode, name, memo) runs the mode (1 handled); OnCancel closes (answers 0).</summary>

@@ -92,6 +92,9 @@ public sealed class BuddyBook
     public BuddyInfo FindByName(string name) =>
         list.FirstOrDefault(b => string.Compare(b.Name, name, StringComparison.OrdinalIgnoreCase) == 0);
 
+    /// <summary>FindBuddy (@0x140ae4c30, buddymanager.cpp:207): by id, else by account, else by name.</summary>
+    public BuddyInfo FindBuddy(long id, long characterId, string name) => FindById(id) ?? FindByAccount(characterId) ?? FindByName(name);
+
     /// <summary>FUN_140ae4d70: the character is a friend (not blocked, no request either way).</summary>
     public bool IsFriend(long characterId) => FindByAccount(characterId) is { IsFriend: true };
 

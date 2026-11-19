@@ -26,10 +26,11 @@ public sealed class PopupMenuTarget
 /// the item list by the target and the own party state (FUN_141a83810, :2723) and the movie's "open" object (Open, :2454).
 /// Of the items' handlers (RegisterMenuHandlers, :2417) the party ones are ported (leave, invite, kick and leader change
 /// with their confirm boxes, vote kick, ready check), Whisper (the chat window's whisper start), Invite to My Home, View
-/// Own Character, View Character (the other player's window, UIPCInfoDialog 0x4ec8) and the furnishing rights grant
-/// (listed only in the own home, see InOwnHome); the others raise <see cref="ItemClicked"/>.
-/// STILL-OPEN, by handler: 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); the buddy and block items
-/// (FUN_141a83ed0 -> the community dialog 0x4e4e, EditBuddyMemo); 0x1f5 Report (CUserReportData to the client platform's
+/// Own Character, View Character (the other player's window, UIPCInfoDialog 0x4ec8), the furnishing rights grant
+/// (listed only in the own home, see InOwnHome) and the buddy and block items (FUN_141a83ed0 to the community query dialog
+/// 0x4e4e, <see cref="BuddyQuery"/>); the others raise <see cref="ItemClicked"/>.
+/// STILL-OPEN, by handler: 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); EditBuddyMemo's
+/// community dialog branch (0x4e4d open on its memo tab; the party slots' m_d0 is 0, so it is not taken); 0x1f5 Report (CUserReportData to the client platform's
 /// vfunc_48); 0x1f6 group chat (FUN_141a86920 :3371 -> UIGroupMessengerBrowser FUN_141951f70, uigroupmessenger.cpp:1784: with no
 /// group chat CGroupChatManager::Create sends GroupChat u8 1 + name, with any a choice box (type 0x16, common 0x81a) of
 /// the chats; the chat count comes from the GroupChat packets, not decoded); 0x1f7 Visit House (FUN_141a86970 :3378: the checks
@@ -57,6 +58,14 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
 
     /// <summary>CPartyManager's party.</summary>
     public PartyBook Party = new();
+    /// <summary>CBuddyManager's list (the buddy and block items' FindByAccount, FUN_141a83ed0's FindBuddy).</summary>
+    public BuddyBook Buddies = new();
+    /// <summary>FUN_141a83ed0's UIMsg to the 0x4e4e dialog's OnMessage (FUN_140ae5a30(0x4e4e)): the query, the kind, the name,
+    /// the buddy id and the character id (FUN_140719530 strings). Null = no dialog, nothing happens.</summary>
+    public Action<int, int, string, string, string> BuddyQuery;
+    /// <summary>m_d0: the buddy id the menu was opened with. The party window's Unk_PopupMenuInfo (FUN_141a77760) leaves it
+    /// 0, so FUN_141a83ed0 sends id 0 and skips FindBuddy for a party slot.</summary>
+    public long BuddyId;
     /// <summary>DAT_143ab2828: the own character id.</summary>
     public long SelfCharacterId;
     /// <summary>The current field's data (GetFieldData); null = none, the menu stays allowed.</summary>
@@ -219,11 +228,10 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// <summary>
     /// FUN_141a83810 (:2723) for the party slot's flags (0x63fe): trade, the character items, the group chat, the house
     /// visit, the home invite, the buddy item, the party items, the guild invite, the furnishing rights, the block items
-    /// and the report, in that order. STILL-OPEN, the feeds not decoded: the buddy list (CBuddyManager::FindBuddy by account,
-    /// character id and name, RecvOp Buddy 0x61) for FUN_141a847c0 (a friend: 300, else 0x12d unless blocked or pending) and
-    /// FUN_141a84860 (blocked: 0x191 and 0x192, else 400); the own guild (CGuildManager::IsInGuild, the guild id of RecvOp
-    /// Guild 0x8A; the ServerEnter guild is SetTargetGuild, not the own one) for FUN_141a84b40. So every target counts as no
-    /// buddy and the own character as in no guild.
+    /// and the report, in that order. The buddy and block items read the buddy list by the target's character id
+    /// (CBuddyManager::FindByAccount, :2748 and :2759). STILL-OPEN, a feed not decoded: the own guild
+    /// (CGuildManager::IsInGuild, the guild id of RecvOp Guild 0x8A; the ServerEnter guild is SetTargetGuild, not the own
+    /// one) for FUN_141a84b40, so the own character counts as in no guild.
     /// </summary>
     void BuildItems(int flags, int kind, PopupMenuTarget t)
     {
@@ -243,13 +251,40 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if ((flags & 0x80) != 0 && kind == 2 && online) Add(InviteToGroupChat);                           // FUN_141a84980 (:3018)
         if ((flags & 0x100) != 0 && kind == 2 && OtherCharacter(id)) Add(VisitHouse);                     // FUN_141a849c0 (:3025)
         if ((flags & 0x200) != 0 && kind == 2 && OtherCharacter(id)) Add(InviteToMyHome);                 // AddRequestHomeMenu: FUN_1418fd5d0
-        if ((flags & 8) != 0 && kind != 1 && id != 0) Add(AddFriend);                                      // FUN_141a847c0 (:2963), no buddy
+        if ((flags & 8) != 0 && kind != 1 && id != 0) AddBuddyItem(Buddies.FindByAccount(id));             // FUN_141a847c0 (:2963)
         if ((flags & 4) != 0) AddPartyItems(kind, t.Name, online);
         // 0x4000 FUN_141a84b40 (:3074): InviteToGuild needs the own guild (CGuildManager::IsInGuild): none
         if ((flags & 0x2000) != 0 && kind == 2 && OtherCharacter(id) && InOwnHome() && Registered(GrantFurnishingRights))
             Add(GrantFurnishingRights);                                                                    // AddRequestCubeMenu: FUN_1418fd670
-        if ((flags & 0x10) != 0 && kind != 1 && id != 0) Add(Block);                                       // FUN_141a84860 (:2984), no buddy
+        if ((flags & 0x10) != 0 && kind != 1 && id != 0) AddBlockItems(Buddies.FindByAccount(id));         // FUN_141a84860 (:2984)
         if ((flags & 0x40) != 0 && kind != 1 && online) Add(Report);                                       // AddReportMenu (:3011)
+    }
+
+    /// <summary>FUN_141a847c0 (:2963): no entry, 0x12d (add); a friend (IsFriend), 300 (remove); another entry, 0x12d unless
+    /// it is blocked (FUN_1401cc5b0) or its request is waiting (FUN_1401cc660). (Its null local player test is
+    /// FUN_141a83810's own.)</summary>
+    void AddBuddyItem(BuddyInfo buddy)
+    {
+        if (buddy == null) Add(AddFriend);
+        else if (!buddy.IsFriend)
+        {
+            if (buddy.Blocked || buddy.Waiting) return;
+            Add(AddFriend);
+        }
+        else Add(Unfriend);
+    }
+
+    /// <summary>FUN_141a84860 (:2984): not blocked (or no entry), 400 (block); blocked, 0x191 (unblock) and 0x192 (the block
+    /// memo).</summary>
+    void AddBlockItems(BuddyInfo buddy)
+    {
+        if (buddy == null || !buddy.Blocked)
+        {
+            Add(Block);
+            return;
+        }
+        Add(Unblock);
+        Add(EditBlockReason);
     }
 
     /// <summary>AddPartyMenus (:2915).</summary>
@@ -394,10 +429,47 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
             case GrantFurnishingRights:                                 // SendRequestCube (:3424): feature 0x100
                 if (Model != null && Model.IsFeatureEnabled(0x100)) Send(new FurnishingRightsRequest(name));
                 break;
+            case Unfriend:                                              // FUN_141a853c0 (:3211)
+                if (name.Length != 0) QueryBuddy(1, 6, name, charId);
+                break;
+            case AddFriend:                                             // FUN_141a85410 (:3217)
+                if (name.Length != 0) QueryBuddy(0, 1, name, charId);
+                break;
+            case Block:                                                 // FUN_141a85460 (:3224)
+                if (name.Length != 0) QueryBuddy(0, 2, name, charId);
+                break;
+            case Unblock:                                               // FUN_141a854b0 (:3231)
+                if (name.Length != 0) QueryBuddy(1, 7, name, charId);
+                break;
+            case EditBlockReason:                                       // EditBuddyMemo (:3238): the 0x4e4d branch needs m_d0
+                if (name.Length != 0) QueryBuddy(0, 4, name, charId);
+                break;
             default:
                 ItemClicked?.Invoke(id, target);
                 break;
         }
+    }
+
+    /// <summary>
+    /// FUN_141a83ed0 (:2816): with a buddy id (m_d0), the entry FindBuddy(m_d0, m_a8, m_90) gives its own id, and an add query
+    /// (kind 1) for an entry whose request was received (FUN_1401cc5d0) shows the 0x623 box
+    /// (s_buddy_err_already_receive_from_this_char, FUN_140d73bc0) instead. Then UIMsg(query, kind, m_90, the buddy id and
+    /// m_a8 as strings, FUN_140719530) to the 0x4e4e dialog's OnMessage.
+    /// </summary>
+    void QueryBuddy(int query, int kind, string name, long charId)
+    {
+        long buddyId = BuddyId;
+        if (buddyId != 0 && Buddies.FindBuddy(BuddyId, charId, name) is { } buddy)
+        {
+            buddyId = buddy.Id;
+            if (kind == 1 && buddy.Received)
+            {
+                ShowBox(MessageBoxQueue.Create(0, Model?.Tables.Common(0x623) ?? "", null, ""));
+                return;
+            }
+        }
+        BuddyQuery?.Invoke(query, kind, name, buddyId.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            charId.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>
