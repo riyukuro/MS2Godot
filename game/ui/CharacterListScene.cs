@@ -303,6 +303,12 @@ public partial class CharacterListScene : LobbyFieldScene
             Compositor = cam.Compositor,   // the bloom and its gamma -> linear conversion (the buffer holds gamma values)
         };
         sub.AddChild(copy);
+        // the field backdrop (FieldBackdrop) is a canvas layer of the window, which the environment draws as the 3D
+        // background; the copy viewport has its own canvas, so it gets a copy of those layers (without, the sky was the empty clear colour)
+        if ((cam.Environment ?? vp.World3D?.Environment) is { BackgroundMode: Godot.Environment.BGMode.Canvas } env)
+            foreach (var node in vp.FindChildren("*", nameof(CanvasLayer), true, false))
+                if (node is CanvasLayer { Visible: true } bg && bg.Layer <= env.BackgroundCanvasMaxLayer && bg.GetViewport() == vp)
+                    sub.AddChild(bg.Duplicate());
         AddChild(sub);
         copy.GlobalTransform = cam.GlobalTransform;
         copy.Current = true;

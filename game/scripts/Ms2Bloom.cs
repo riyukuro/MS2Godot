@@ -17,6 +17,7 @@ namespace Ms2Godot;
 /// as it is, and the final pass converts the sum to linear once, for Godot's linear -> sRGB output. Threshold, offset and
 /// bloomscale come from the field's &lt;hdr&gt; entry (client defaults 0.27, 30, 2).
 /// A 3D view without the bloom (UI character views) still needs that conversion: <see cref="GammaOut"/> runs only it.
+/// <see cref="GammaGuard"/> catches a view without either, or a failed setup, and converts through the camera's environment instead.
 /// </summary>
 public partial class Ms2Bloom : CompositorEffect
 {
@@ -27,6 +28,11 @@ public partial class Ms2Bloom : CompositorEffect
 
     /// <summary>A compositor for a 3D view that draws the gamma-valued shaders without the bloom.</summary>
     public static Compositor GammaOut() => new() { CompositorEffects = new Array<CompositorEffect> { new Ms2Bloom { ConvertOnly = true } } };
+
+    /// <summary>Set on the render thread: 0 until the passes are set up, 1 when they are, -1 when they could not be (GammaGuard then falls back).</summary>
+    volatile int setup;
+    public bool Ready => setup != 0;
+    public bool Failed => setup < 0;
 
     RenderingDevice rd;
     readonly Rid[] shaders = new Rid[4], pipes = new Rid[4];
@@ -102,7 +108,12 @@ void main() {
     void Init()
     {
         rd = RenderingServer.GetRenderingDevice();
-        if (rd == null) return;
+        if (rd == null)
+        {
+            GD.PushError("bloom: no RenderingDevice");
+            setup = -1;
+            return;
+        }
         for (int m = 0; m < 4; m++)
         {
             var spirv = rd.ShaderCompileSpirVFromSource(new RDShaderSource
@@ -114,6 +125,7 @@ void main() {
             {
                 GD.PushError("bloom shader: " + spirv.CompileErrorCompute);
                 rd = null;
+                setup = -1;
                 return;
             }
             shaders[m] = rd.ShaderCreateFromSpirV(spirv);
@@ -127,6 +139,7 @@ void main() {
             RepeatU = RenderingDevice.SamplerRepeatMode.ClampToEdge,
             RepeatV = RenderingDevice.SamplerRepeatMode.ClampToEdge,
         });
+        setup = 1;
     }
 
     Rid Target(Vector2I size) => rd.TextureCreate(new RDTextureFormat
@@ -176,7 +189,10 @@ void main() {
     public override void _RenderCallback(int effectCallbackType, RenderData renderData)
     {
         if (rd == null || effectCallbackType != (int)EffectCallbackTypeEnum.PostTransparent) return;
-        if (renderData.GetRenderSceneBuffers() is not RenderSceneBuffersRD buffers) return;
+        // disposed here, on the render thread: a wrapper left to the GC finalizer can hold the last reference to a freed
+        // viewport's buffers (the character list's capture), and their textures then fail to free off the render thread
+        using var sceneBuffers = renderData.GetRenderSceneBuffers();
+        if (sceneBuffers is not RenderSceneBuffersRD buffers) return;
         var size = buffers.GetInternalSize();
         if (ConvertOnly)
         {

@@ -6,6 +6,10 @@ config/name="MS2Godot"
 run/main_scene="res://setup.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
+[autoload]
+
+GammaGuard="*res://scripts/GammaGuard.cs"
+
 [display]
 
 window/size/viewport_width=1280
