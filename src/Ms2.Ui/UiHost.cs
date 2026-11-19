@@ -107,21 +107,22 @@ public sealed class UiHost
     void OnStatus(StatusEvent e) => RT.Guard("status " + e, () => Controller.OnStatus(e));
 
     /// <summary>
-    /// The dialog's movie is taken down: UISwfEntity::Unload (uiswfentity.cpp:241) has the loader manager unload the swf
-    /// (UnloadSwf, uiswfentitymanager.cpp:215 → ASMovieClipLoader's "unloadSwf", asmoviecliploader.cpp:47), whose AS side
-    /// (scaleform.ms2.loader.msLoader.unloadSwf) removes the dialog's clip from its layer and unloads its Loader, so the
-    /// dialog's content leaves the stage. The removedFromStage that runs down its display tree makes every element
-    /// registered with the movie's TooltipManager destroy its tooltip (TooltipManager.appendMouseEvent's
-    /// REMOVED_FROM_STAGE listener → handleRemovedFromStage → destroyTooltipByOwner → "Tooltip" "destroyTooltip", and
-    /// UIComponent.handleRemoveFromStage → unregisterMouseEvent likewise), so a dialog closed while one of its tooltips
-    /// shows leaves none behind in the run's tooltip movie. Then the model listeners go (UIStatusEventDispatcher
-    /// unregister, the rest of UISwfEntity::Unload).
+    /// The dialog's movie is taken down, in UISwfEntity::Unload's order (uiswfentity.cpp:241): first the entity's listeners go
+    /// (vfunc_26, before the swf is dropped: the status dispatcher unregister and the widget alignment list here), then the
+    /// loader manager unloads the swf (UnloadSwf, uiswfentitymanager.cpp:215 → ASMovieClipLoader's "unloadSwf",
+    /// asmoviecliploader.cpp:47, whose AS side, scaleform.ms2.loader.msLoader.unloadSwf, removes the dialog's clip from its
+    /// layer and unloads its Loader). The removedFromStage that runs down its display tree makes every element registered
+    /// with the movie's TooltipManager destroy its tooltip (TooltipManager.appendMouseEvent's REMOVED_FROM_STAGE listener →
+    /// handleRemovedFromStage → destroyTooltipByOwner → "Tooltip" "destroyTooltip", and UIComponent.handleRemoveFromStage →
+    /// unregisterMouseEvent likewise), so a dialog closed while one of its tooltips shows leaves none behind in the run's
+    /// tooltip movie; the unload also stops the content (listeners, timers: <see cref="AsLoader.unloadAndStop"/>). vfunc_27
+    /// follows.
     /// </summary>
     public void Unload()
     {
-        if (Player?.HostLoader is { } loader) RT.Guard("unload " + Id, () => loader.unloadAndStop());
         Model.Changed -= OnStatus;
         Model.AlignWidgets?.Remove(Controller);
+        if (Player?.HostLoader is { } loader) RT.Guard("unload " + Id, () => loader.unloadAndStop());
     }
 
     // ---- AS -> C++ --------------------------------------------------------------------------------------------

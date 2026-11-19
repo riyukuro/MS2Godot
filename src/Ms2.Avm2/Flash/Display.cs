@@ -851,7 +851,15 @@ public class AsLoader : AsContainer
     [As] public void load(AsObject request, AsObject context = null) => P?.LoadInto(this, request?.GetPublic("url") is string u ? u : null);
     [As] public void loadBytes(params object[] a) { }
     [As] public void unload() { foreach (var c in Children.ToList()) RemoveChildInternal(c, true); }
-    [As] public void unloadAndStop(bool gc = true) => unload();
+    /// <summary>
+    /// Loader::unloadAndStop (sfr_as3_07.cpp:5160 -> MovieRoot::UnloadMovie(dropAll: true), sfr_as3_19.cpp:8453): the content
+    /// leaves the stage and is stopped — its listeners, timers and tweens (ForceShutdown and ShutdownTimersForMovieDef on the
+    /// movie's definition) — so nothing of the unloaded movie runs afterwards. Our loader holds the document of a movie whose
+    /// timers are the player's (one Player per movie), hence every timer of the player stops. Sounds are the host's (the UI
+    /// movies' playSound is not played here), and the stage listeners the movie added itself stay: the client drops them by
+    /// movie definition, which this runtime does not track (STILL-OPEN).
+    /// </summary>
+    [As] public void unloadAndStop(bool gc = true) => P?.UnloadAndStop(this);
     [As] public void close() { }
 }
 

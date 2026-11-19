@@ -37,6 +37,19 @@ public class AsEventDispatcher : AsObject
 
     [As] public bool hasEventListener(string type) => (bubble?.ContainsKey(type ?? "") ?? false) || (capture?.ContainsKey(type ?? "") ?? false);
 
+    /// <summary>
+    /// Every listener of this object goes (Loader::unloadAndStop's ForceShutdown drops the loaded content's listeners,
+    /// sfr_as3_19.cpp:8453): the broadcast kinds stop hearing it too, so a detached object gets no more enterFrame.
+    /// </summary>
+    internal void RemoveAllListeners()
+    {
+        if (bubble != null)
+            foreach (var k in bubble.Keys)
+                if (BroadcastTypes.Contains(k)) RT.Player?.Broadcast(k, this, false);
+        bubble?.Clear();
+        capture?.Clear();
+    }
+
     [As] public bool willTrigger(string type)
     {
         for (AsObject o = this; o != null; o = (o as AsDisplayObject)?.Parent)
@@ -290,6 +303,8 @@ public class AsTimer : AsEventDispatcher
     [As] public void start() { if (running) return; running = true; next = RT.TimerMs + Math.Max(1, delay); RT.Player?.AddTimer(this); }
     [As] public void stop() { running = false; RT.Player?.RemoveTimer(this); }
     [As] public void reset() { stop(); currentCount = 0; }
+    /// <summary>The player takes the timer out of its run without the movie calling stop (Loader::unloadAndStop).</summary>
+    internal void Halt() => running = false;
 
     /// <summary>Fires TIMER events that are due (called by the player each frame).</summary>
     internal void Pump()

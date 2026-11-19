@@ -595,6 +595,35 @@ namespace Ms2.Avm2.Flash
         internal void RemoveTimer(AsTimer t) => timers.Remove(t);
         public void Later(Action a) => later.Add(a);
 
+        /// <summary>
+        /// A loader's content goes away (Loader::unloadAndStop, <see cref="AsLoader"/>): the content is off the stage, its
+        /// listeners are dropped (ForceShutdown: no enterFrame/exitFrame, so its tweens stop too), the player's timers stop
+        /// (ShutdownTimersForMovieDef) and its clips' queued frame actions are dropped.
+        /// </summary>
+        internal void UnloadAndStop(AsLoader loader)
+        {
+            foreach (var c in loader.Children.ToList())
+            {
+                loader.RemoveChildInternal(c, true);
+                StopContent(c);
+            }
+            StopTimers();
+        }
+
+        void StopContent(AsDisplayObject o)
+        {
+            if (o is AsEventDispatcher d) d.RemoveAllListeners();
+            if (o is AsMovieClip mc) DropFrameActions(mc);
+            if (o is AsContainer cont) foreach (var k in cont.Children) StopContent(k);
+        }
+
+        /// <summary>The timers a movie started stop with it (ShutdownTimersForMovieDef).</summary>
+        void StopTimers()
+        {
+            foreach (var t in timers) t.Halt();
+            timers.Clear();
+        }
+
         /// <summary>One frame: deferred loads, enterFrame, timeline advance, frame scripts, exitFrame, timers and timeouts, render.</summary>
         public void Tick(bool advanceTimelines = true)
         {

@@ -306,6 +306,36 @@ public class RuntimeTests
         Assert.That(b.LocalToGlobal(0, 0).X, Is.EqualTo(15));
     }
 
+    /// <summary>
+    /// Loader.unloadAndStop (sfr_as3_07.cpp:5160 -> MovieRoot::UnloadMovie, sfr_as3_19.cpp:8453): the unloaded content does
+    /// not run again — its enterFrame listeners are gone (and with them its tweens) and the movie's timers are stopped —
+    /// though the player stays and keeps ticking.
+    /// </summary>
+    [Test]
+    public void UnloadAndStopStopsTheContent()
+    {
+        var (rt, p) = Empty();
+        Runtime.Current = rt;
+        var loader = (AsLoader)rt.GetClass("flash.display.Loader").Construct();
+        p.Stage.addChild(loader);
+        var content = (AsContainer)rt.GetClass("flash.display.Sprite").Construct();
+        loader.addChild(content);
+        int frames = 0, ticks = 0;
+        content.addEventListener("enterFrame", new AsPlainFunction(rt, new NativeMethod("f", (s, args) => { frames++; return Rt.Undef; })));
+        var timer = (AsTimer)rt.GetClass("flash.utils.Timer").Construct(10.0, 0);
+        timer.addEventListener("timer", new AsPlainFunction(rt, new NativeMethod("t", (s, args) => { ticks++; return Rt.Undef; })));
+        timer.start();
+        for (int i = 0; i < 4; i++) p.Tick();
+        Assert.That(frames, Is.GreaterThan(0), "the content is on the stage and hears enterFrame");
+        Assert.That(ticks, Is.GreaterThan(0), "its timer runs");
+        loader.unloadAndStop();
+        Assert.That(loader.numChildren, Is.Zero, "the content is gone");
+        int f = frames, t = ticks;
+        for (int i = 0; i < 10; i++) p.Tick();
+        Assert.That(frames, Is.EqualTo(f), "no enterFrame of the unloaded content");
+        Assert.That(ticks, Is.EqualTo(t), "no timer of the unloaded movie");
+    }
+
     [Test]
     public void SetChildIndexIgnoresANonChildAndAnIndexPastTheEnd()
     {
