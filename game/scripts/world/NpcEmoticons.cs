@@ -363,7 +363,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         balloonMovie?.Relayout(size);
     }
 
-    public override void _Process(double delta) 
+    public override void _Process(double delta)
     {
         if (controller == null) return;
         camera ??= GetViewport().GetCamera3D();

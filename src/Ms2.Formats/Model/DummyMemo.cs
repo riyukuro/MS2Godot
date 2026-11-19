@@ -8,7 +8,8 @@ namespace Ms2.Formats.Model;
 /// The last result of one model's dummy lookups, kept with what it was computed from. A dummy's world point is a function of
 /// the rows, the dummy's name, the model root's name and the model root's transform, so while a model stands still (an idle
 /// npc, drawn every frame by its name tag, HP bar and emoticon) the point is the one computed before, and no matrices are
-/// built. A lookup with any of them changed is computed again.
+/// built. A lookup with any of them changed is computed again. The rows must not be mutated after load: the memo compares
+/// the list instance and its count, not the rows' contents.
 /// </summary>
 public sealed class DummyMemo
 {

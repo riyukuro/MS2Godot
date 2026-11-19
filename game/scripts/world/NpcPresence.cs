@@ -201,7 +201,7 @@ public sealed partial class NpcPresence : CanvasLayer
             }
     }
 
-    public override void _Process(double delta) 
+    public override void _Process(double delta)
     {
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;
