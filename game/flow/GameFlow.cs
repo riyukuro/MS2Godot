@@ -216,6 +216,9 @@ public partial class GameFlow : Node
             return;
         }
         Ms2.Ui.Hud.MessageBoxQueue.Next();   // vfunc_79: the create answer closes the name box (FUN_14151f200)
+        // FUN_141880600: the new character's picture, shot from the create page and uploaded (its answer sets the list's key)
+        var png = await CharacterCreateScene.ProfileShot();
+        if (png != null) live.UploadNewCharacterPicture(e.User.CharacterId, png);
         Session.SelectedIndex = Session.List().Count - 1;
         Go(State.Lobby);
     }

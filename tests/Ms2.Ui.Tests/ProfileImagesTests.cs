@@ -103,4 +103,12 @@ public class ProfileImagesTests
         var r = new Maple2.PacketLib.Tools.ByteReader(o.ToArray());
         Assert.That((r.ReadByte(), r.ReadUnicodeString()), Is.EqualTo(((byte)0x0b, Key)));
     }
+
+    [Test]
+    public void ShotRectCutsTheHeadBetweenEffUiAndEffBody()
+    {
+        // n 199, margin 39: top 200.7 + 39, bottom 400.2 - 19.5, half width (380 - 239) / 2 = 70 about x 640
+        Assert.That(ProfileImages.ShotRect(640f, 200.7f, 400.2f), Is.EqualTo((570u, 239u, 710u, 380u)));
+        Assert.That(ProfileImages.ShotRect(100f, 0f, 100f), Is.EqualTo((65u, 20u, 135u, 90u)));
+    }
 }

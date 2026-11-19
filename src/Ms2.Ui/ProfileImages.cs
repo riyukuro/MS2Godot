@@ -153,4 +153,26 @@ public sealed class ProfileImages
 
     /// <summary>The answer as bytes (FUN_140188f50 reads it as a narrow string).</summary>
     public static (int Code, string Text) ParseUploadReply(byte[] body) => ParseUploadReply(body == null ? "" : Encoding.UTF8.GetString(body));
+
+    // ---- the new character's picture: CUgcManager::FUN_141880600 (@0x141880600) -----------------------------------------
+
+    /// <summary>The thumbnail's side (CUgcImageConverter::ConvertThumbnail: 0x6b).</summary>
+    public const int ThumbnailSize = 107;
+
+    /// <summary>
+    /// The screen rect of the shot of a just-made character, from its Eff_UI point (<paramref name="topX"/>,
+    /// <paramref name="topY"/>) and its Eff_Body point's height <paramref name="bottomY"/> in screen pixels (y down): a
+    /// fifth of the gap off the top, a tenth off the bottom, and a square centred on Eff_UI's x as wide as the rest is tall.
+    /// The fields are unsigned as in the client's NiRect&lt;unsigned int&gt;; right and bottom are exclusive (the D3DX source rect).
+    /// </summary>
+    public static (uint Left, uint Top, uint Right, uint Bottom) ShotRect(float topX, float topY, float bottomY)
+    {
+        int n = (int)(bottomY - topY);
+        int margin = (int)(n * 0.2f);
+        uint top = (uint)(topY + margin);
+        uint bottom = (uint)(bottomY - margin * 0.5f);
+        n = (int)(bottom - top);
+        n = (int)(n * 0.5);
+        return ((uint)(topX - n), top, (uint)(topX + n), bottom);
+    }
 }

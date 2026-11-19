@@ -324,11 +324,15 @@ public sealed class CreateLook
 
     public static int Argb(Rgba c) => c.A << 24 | c.R << 16 | c.G << 8 | c.B;
 
+    /// <summary>The root node's name in the last built body's file (the effect dummies' "Scene Root" parent).</summary>
+    public string RootName { get; private set; }
+
     /// <summary>The preview body: the gender's body NIF with idle, dressed through EquipApplier with the skin colour.</summary>
     public (Node3D Visual, AnimationPlayer Anim) Build(ModelBuilder builder)
     {
         string dir = Gender == 0 ? "male" : "female";
         var md = builder.LoadModel($"{dir}/{(Gender == 0 ? "m_body.nif" : "f_body.nif")}");
+        RootName = md.RootName;
         var visual = builder.Build(md, Gender == 0 ? "Male" : "Female");
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         var lib = anim.GetAnimationLibrary("");

@@ -3,6 +3,7 @@ using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2Godot.Look;
+using Ms2Godot.World;
 using Ms2Godot.Ui.Contracts;
 using Ms2.Ui;
 
@@ -415,6 +416,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
             // the guide video's first frame decoded before a shot (scripted runs only)
             if (frame is 59 or 89 or 349 or 399) { createVideo?.Sync(); createVideo?.Player.ShowFirstFrame(); }
             if (frame == 60) Save($"create_page_{job}.png");
+            if (frame == 60) _ = SaveProfileShot($"create_profile_{job}.png");
             if (frame == 61) { var hair = Renderer("m_editItemList", 1); ClickObj(hair); }
             if (frame == 66) ClickObj(Renderer("m_colorList", 3));
             if (frame == 90) Save($"create_hair_{job}.png");
@@ -523,6 +525,77 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (pick < 0) pick = fallback;
         GD.Print($"create shots: editable row {pick} of {n}");
         if (pick >= 0) ClickObj(Renderer("m_editItemList", pick));
+    }
+
+    /// <summary>
+    /// CUgcManager::FUN_141880600 (@0x141880600) on the create answer: the preview character's head from the scene alone
+    /// (GetScreenshotBuffer(1), the render without the UI), cut by <see cref="ProfileImages.ShotRect"/> between its Eff_UI
+    /// point and its Eff_Body bone, then ConvertThumbnail's 107x107 PNG. Null off the create page, without the points, or
+    /// for a rect outside the screen. The scene is drawn again into a viewport of the screen's size with the field camera's
+    /// view (the field's bloom pass, a compositor effect of the main camera, is not in the shot).
+    /// </summary>
+    public static async System.Threading.Tasks.Task<byte[]> ProfileShot()
+    {
+        var s = current;
+        if (s == null || page != Page.Create || s.preview == null || s.camera == null || s.create == null) return null;
+        var visual = s.preview.GetChildCount() > 0 ? s.preview.GetChild(0) as Node3D : null;
+        var model = visual?.GetNodeOrNull<Node3D>("Model");
+        if (model == null) return null;
+        var rows = EffectDummyTable.Load(s.packs).Pc(s.create.Look.Gender);
+        var top = DummyAnchor.Point(rows, "Eff_UI", model, s.create.Look.RootName);
+        // Eff_Body: the body's own node when it has one, else its row's parent bone (Bip01 Spine1; the row's offset is 0)
+        var sk = model.GetNodeOrNull<Skeleton3D>(ModelBuilder.SkeletonName);
+        int bone = sk?.FindBone("Eff_Body") ?? -1;
+        if (bone < 0 && sk != null && rows?.FirstOrDefault(r => r.Name == "Eff_Body") is { } row) bone = sk.FindBone(row.ParentNode);
+        if (top == null || bone < 0) { GD.Print($"profile shot: no {(top == null ? "Eff_UI" : "Eff_Body")} point"); return null; }
+        var body = (sk.GlobalTransform * sk.GetBoneGlobalPose(bone)).Origin;
+
+        var main = s.GetViewport();
+        var size = main.GetTexture().GetSize();
+        var visible = main.GetVisibleRect().Size;
+        Vector2 scale = new(visible.X > 0 ? size.X / visible.X : 1, visible.Y > 0 ? size.Y / visible.Y : 1);
+        var t = s.camera.UnprojectPosition(top.Value) * scale;
+        var b = s.camera.UnprojectPosition(body) * scale;
+        var r = ProfileImages.ShotRect(t.X, t.Y, b.Y);
+        if (r.Right <= r.Left || r.Bottom <= r.Top || r.Right > size.X || r.Bottom > size.Y)
+        {
+            GD.Print($"profile shot: rect {r} outside {size}");
+            return null;
+        }
+
+        var vp = new SubViewport { Size = (Vector2I)size, World3D = main.World3D, RenderTargetUpdateMode = SubViewport.UpdateMode.Once, TransparentBg = false };
+        var c = s.camera;
+        var cam = new Camera3D
+        {
+            Projection = c.Projection, Fov = c.Fov, Size = c.Size, FrustumOffset = c.FrustumOffset, Near = c.Near, Far = c.Far,
+            KeepAspect = c.KeepAspect, Environment = c.Environment, Attributes = c.Attributes, CullMask = c.CullMask,
+        };
+        vp.AddChild(cam);
+        s.AddChild(vp);
+        cam.GlobalTransform = c.GlobalTransform;
+        cam.Current = true;
+        try
+        {
+            for (int i = 0; i < 2; i++) await s.ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+            var img = vp.GetTexture().GetImage();
+            if (img == null) return null;
+            var head = img.GetRegion(new Rect2I((int)r.Left, (int)r.Top, (int)(r.Right - r.Left), (int)(r.Bottom - r.Top)));
+            head.Convert(Image.Format.Rgba8);
+            head.Resize(ProfileImages.ThumbnailSize, ProfileImages.ThumbnailSize, Image.Interpolation.Trilinear);
+            if (OS.GetEnvironment("MS2_PROFILE_SHOT") is { Length: > 0 } keep) head.SavePng(keep);   // the shot, for a look
+            GD.Print($"profile shot: rect {r} of {size}");
+            return head.SavePngToBuffer();
+        }
+        finally { vp.QueueFree(); }
+    }
+
+    async System.Threading.Tasks.Task SaveProfileShot(string name)
+    {
+        var png = await ProfileShot();
+        if (png == null) return;
+        DirAccess.MakeDirRecursiveAbsolute(shotDir);
+        System.IO.File.WriteAllBytes(System.IO.Path.Combine(shotDir, name), png);
+        GD.Print("saved " + name);
     }
 
     void Save(string name)

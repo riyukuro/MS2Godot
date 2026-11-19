@@ -484,7 +484,7 @@ public partial class LiveSession : Node
 
     public override void _Process(double delta)
     {
-        if (game == null) return;
+        if (game == null) { PumpLogin(); return; }
         while (game.Incoming.TryDequeue(out var p)) Handle(p);
         if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
@@ -723,8 +723,7 @@ public partial class LiveSession : Node
     /// OnCharacterProfileImage (@0x14188e200) in the field: the PC of the object id, if there is one, gets its picture's path
     /// (FUN_141028be0 with a download: one starts when the file is not there), and the windows refresh with the key
     /// (UIUGCEventDispatcher vfunc_1). The PC's own picture changes only when a download arrives (<see cref="PictureArrived"/>).
-    /// STILL-OPEN: the login server's form (object id 0, the lobby's character list) is not read; the lobby has no packet
-    /// pump after the list.
+    /// The login server's form (object id 0) is read in the lobby (<see cref="OnLobbyProfileImage"/>).
     /// </summary>
     void OnProfileImage(UgcProfileImage pi)
     {
@@ -751,6 +750,66 @@ public partial class LiveSession : Node
     /// <summary>CUgcUploadCtrl's user: DAT_143ab2830 (UIServerListDialog::GetServerId(), the picked server), the account and
     /// the own character.</summary>
     public Ms2.Ui.Hud.UgcUser UgcUser => new(Session.ServerId, accountId, CharacterId);
+
+    /// <summary>
+    /// The lobby's login packets between requests: a request's own reply comes while it is <see cref="Busy"/>, so the ones
+    /// read here would only be skipped by the next request. The Ugc profile picture answer is applied
+    /// (<see cref="OnLobbyProfileImage"/>), the rest dropped.
+    /// </summary>
+    void PumpLogin()
+    {
+        if (Busy || login == null) return;
+        while (login.Incoming.TryDequeue(out var p))
+        {
+            if (!login.Is(p, Inbound.Ugc)) continue;
+            try { if (UgcMessage.Read(p.Reader()) is UgcProfileImage pi) OnLobbyProfileImage(pi); }
+            catch (Exception ex) { GD.PushWarning("live: lobby ugc: " + ex.Message); }
+        }
+    }
+
+    /// <summary>
+    /// OnCharacterProfileImage (@0x14188e200) with object id 0, the login server's answer to the list's Ugc 11: the character
+    /// list's entry gets the key (SetCharacterText) and its file is downloaded when it is not there (FUN_141884e30); the
+    /// download refreshes the row. The client does this only while the character list is the scene (0x620000d); here the
+    /// entry is kept in any lobby scene, as the list opens from it after the create screen's deferred scene change.
+    /// </summary>
+    void OnLobbyProfileImage(UgcProfileImage pi)
+    {
+        var images = ProfileImageService.Images;
+        string key = images.Mode == 1 ? "" : pi.Key ?? "";
+        var e = Session.Characters?.FirstOrDefault(c => c.User.CharacterId == pi.CharacterId);
+        GD.Print($"live: lobby profile picture char {pi.CharacterId} '{key}'{(e == null ? " (not on the list)" : "")}");
+        if (e == null) return;
+        e.Picture = key;
+        images.Path(pi.CharacterId, key, false);
+    }
+
+    /// <summary>
+    /// CUgcManager::FUN_141880600's upload for a character just made (<paramref name="png"/>: its 107x107 shot): kind 5 with
+    /// the user's type and account and the new character's id (also the upload's value), posted to urq.aspx. The answer
+    /// (FUN_141882d80 outside the field, which reads no code: the text is the key) goes to the character list's
+    /// FUN_1418ed4e0: Ugc 11 with the key on the login connection when the character is on the list. No upload base
+    /// (result 1): SendUGCMode0 on the login connection.
+    /// </summary>
+    public void UploadNewCharacterPicture(long characterId, byte[] png)
+    {
+        if (png == null || png.Length == 0 || png.Length >= ProfileImages.MaxUploadSize) return;
+        var body = ProfileImages.UploadBody(Session.ServerId, ProfileImages.ProfileKind, accountId, characterId, 0, characterId, png);
+        bool sent = ProfileImageService.Post(body, text =>
+        {
+            GD.Print($"live: new character picture uploaded for {characterId}: '{text}'");
+            if (Session.Characters?.Any(c => c.User.CharacterId == characterId) == true) SendLogin(new UgcProfileImageRequest(text ?? ""));
+        });
+        if (!sent) { GD.Print("live: no upload base, the new character gets no picture"); SendLogin(new UgcUploadFailedRequest()); }
+    }
+
+    void SendLogin(Ms2.Net.Wire.IOutPacket pk)
+    {
+        var l = login;
+        if (l == null || game != null) return;
+        l.SendAsync(pk).ContinueWith(t => GD.PushWarning($"live: login send {pk.GetType().Name} failed: {t.Exception?.GetBaseException().Message}"),
+            System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
+    }
 
     /// <summary>CUgcManager's SendUGCMode* packets, while the game connection is up.</summary>
     public void SendUgc(Ms2.Net.Wire.IOutPacket packet)
@@ -780,6 +839,16 @@ public partial class LiveSession : Node
             Ms2Godot.Ui.Create.CharacterCreateScene.ConfirmScripted(newName);
             await Until(() => flow.Current == GameFlow.State.Lobby && Session.List().Count > before, 600); await Frames(60);
             if (Session.List().Count <= before) { GD.PushWarning("live: create did not add a character"); tree.Quit(1); return; }
+            // the new character's picture (FUN_141880600's upload, then the login server's Ugc answer) and its download
+            var made = Session.List().Last();
+            await Until(() => !string.IsNullOrEmpty(made.Picture) && ProfileImageService.Images.Exists(ProfileImages.FileName(made.Picture)), 900); await Frames(60);
+            GD.Print($"live: new character {made.User.CharacterId} picture '{made.Picture}'");
+            // MS2_LIVE_CREATE_SHOTS=<dir>: the list with the new character's row (create_list.png)
+            if (System.Environment.GetEnvironmentVariable("MS2_LIVE_CREATE_SHOTS") is { Length: > 0 } listShots)
+            {
+                DirAccess.MakeDirRecursiveAbsolute(listShots);
+                flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(listShots, "create_list.png"));
+            }
         }
         if (System.Environment.GetEnvironmentVariable("MS2_LIVE_DELETE") == "1")   // delete the last character through the dialog's OnDeletePC, then stop
         {
