@@ -703,6 +703,52 @@ public class RuntimeTests
         Assert.That(dragged.dropTarget, Is.SameAs(tf));
     }
 
+    /// <summary>A text field's x / y is the geometry data's position, which Scaleform recomputes (as the text
+    /// rectangle's corner) only after a change that sets Flags_NeedUpdateGeomData (TextField::UpdateAndGetGeomData,
+    /// sfr_gfx_03f.cpp:949): a text set does, appendText does not. Setting x stores it rounded to whole twips with
+    /// Alg::IRound, and the matrix setter stores the new origin (Transform::matrixSet, sfr_as3_11.cpp:1815).</summary>
+    [Test]
+    public void TextFieldPositionFollowsTheGeometryData()
+    {
+        var (rt, _) = Empty();
+        AsTextField Centred()
+        {
+            var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();
+            tf.autoSize = "center"; tf.text = "abcd";
+            return tf;
+        }
+        static double Twips(double px) => (px > 0 ? (int)(px * 20 + 0.5) : (int)(px * 20 - 0.5)) / 20.0;
+
+        // autoSize CENTER shrinks the 100 px rectangle around its centre: x is its corner
+        var a = Centred();
+        double box = a.Box.X;
+        Assert.That(box, Is.GreaterThan(10), "the rectangle moved off the origin");
+        Assert.That(a.x, Is.EqualTo(Twips(box)));
+        // appendText reformats (the rectangle moves) but leaves the flag: x keeps its value
+        double x0 = a.x;
+        a.appendText("efghijkl");
+        Assert.That(a.Box.X, Is.LessThan(box - 1), "the rectangle grew");
+        Assert.That(a.x, Is.EqualTo(x0), "appendText does not recompute the position");
+        // a text set marks it: x follows the rectangle
+        a.text = "ab";
+        Assert.That(a.x, Is.EqualTo(Twips(a.Box.X)));
+
+        // a rotated field reads back the x it was given once the rotation's recompute has run (SetX leaves the flag, so
+        // a read before it would give the corner again); a half twip below zero rounds away from zero
+        var r = Centred();
+        r.rotation = 30;
+        _ = r.x;
+        r.x = 12.3; r.y = -0.125;
+        Assert.That(r.x, Is.EqualTo(12.3));
+        Assert.That(r.y, Is.EqualTo(-0.15), "IRound(-2.5 twips) = -3");
+
+        // the matrix setter: the position is the new matrix origin, not the rectangle's corner
+        var m = Centred();
+        _ = m.x;
+        m.transform.matrix = AsMatrix.New(rt, new Mat(1, 0, 0, 1, 50, 60));
+        Assert.That((m.x, m.y), Is.EqualTo((50.0, 60.0)));
+    }
+
     [Test]
     public void VisibleSetterKeepsTimelineMoves()
     {

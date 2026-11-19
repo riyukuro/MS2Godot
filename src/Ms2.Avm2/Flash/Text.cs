@@ -121,7 +121,7 @@ public class AsTextField : AsInteractiveObject
         if (sym?["bounds"] is JsonObject b) Box = SymbolScope.Rect(b);
         var t = sym?["text"] as JsonObject;
         Format = (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct();
-        if (t == null) return;
+        if (t == null) { LoadGeom(); return; }
         Format.font = (string)t["fontClass"] ?? (string)t["font"];
         Format.size = Rt.Num(J.D(t["size"]) ?? 12);
         if ((string)t["color"] is string c) Format.color = Rt.Uint(Convert.ToUInt32(c.TrimStart('#')[..6], 16));
@@ -143,7 +143,13 @@ public class AsTextField : AsInteractiveObject
         Variable = (string)t["variable"];
         var init = (string)t["initial"] ?? "";
         if (IsHtml || Tr(init) != init) SetHtml(Tr(init)); else Text = init;
+        LoadGeom();
     }
+
+    /// <summary>A placed field takes its position once its text is in: TextField::OnEventLoad forces the geometry data
+    /// after SetTextValue and Format when the field has none (sfr_gfx_03e.cpp:1000-1010). The placement matrix is
+    /// applied before this runs (ConstructInto).</summary>
+    void LoadGeom() { if (geomX == null) UpdateGeom(force: true); }
 
     /// <summary>Scaleform's translator: a text that is a string-table key ("$s_...") shows the table's value.</summary>
     string Tr(string s) => s.Length > 1 && s[0] == '$' && Class.Runtime.Player?.Translate is { } t ? t(s) ?? s : s;
@@ -425,26 +431,60 @@ public class AsTextField : AsInteractiveObject
 
     public override RectD LocalBounds() => Box;
 
-    /// <summary>x / y are where the text rectangle's top-left corner sits in the parent, not the matrix origin: the
-    /// geometry data's position is the matrix applied to the view rect's top-left, rounded to whole twips
-    /// (TextField::GetX / GetY @0x1425b95f0 / @0x1425b9690, sfr_gfx_03e.cpp:760; UpdateAndGetGeomData @0x1425beb10,
-    /// sfr_gfx_03f.cpp:949). Reading the view rect first runs a pending reformat (DocView::GetViewRect), so an
-    /// autoSize CENTER field that grew reads its new left edge.
-    /// STILL-OPEN: the client caches the position in its geometry data and recomputes it only after a change that sets
-    /// Flags_NeedUpdateGeomData (a text, size, scale or rotation change; SetX / SetY store it); this reads it live.</summary>
-    protected override double GetX() { var b = Box; var m = Matrix; return Twips(m.A * b.X + m.C * b.Y + m.Tx); }
-    protected override double GetY() { var b = Box; var m = Matrix; return Twips(m.B * b.X + m.D * b.Y + m.Ty); }
-    static double Twips(double px) => Math.Floor(px * 20 + 0.5) / 20;
+    /// <summary>The geometry data's position, in twips: null until the field has geometry data
+    /// (DisplayObjectBase::pGeomData). needGeom is Flags_NeedUpdateGeomData (0x2000). A field the script makes
+    /// starts with it set (TextField::InitInstance calls SetWidth / SetHeight and SetTextValue, sfr_as3_13.cpp:1217).
+    /// Setting text or htmlText sets it (TextField::SetTextValue, sfr_gfx_03f.cpp:771), and so do width, height, scaleX,
+    /// scaleY, rotation (:797 / :369 / :882 / :911 / :422), autoSize and wordWrap (sfr_as3_13.cpp:2158 / :2653).
+    /// appendText, replaceText, the formats and a timeline move do not, so x / y keep their last value after those.
+    /// STILL-OPEN: SetAcceptAnimMoves(true) with the movie's continueAnimation flag drops the geometry data
+    /// (sfr_gfx_06.cpp:1001), so x / y would read the matrix origin again. Not modelled.</summary>
+    int? geomX, geomY;
+    bool needGeom = true;
+    internal bool NeedGeom { get => needGeom; set => needGeom = value; }
+
+    /// <summary>TextField::UpdateAndGetGeomData (@0x1425beb10, sfr_gfx_03f.cpp:949) gets the stored geometry data, or,
+    /// with none, the matrix origin truncated to twips (DisplayObjectBase::GetGeomData, sfr_gfx_06.cpp:447). Forced, or
+    /// with Flags_NeedUpdateGeomData set, it stores the matrix applied to the view rect's top-left, rounded to twips,
+    /// and clears the flag. Reading the view rect first runs a pending reformat (DocView::GetViewRect).</summary>
+    (int X, int Y) UpdateGeom(bool force = false)
+    {
+        if (force || needGeom)
+        {
+            var b = Box; var m = Matrix;
+            geomX = IRound((m.A * b.X + m.C * b.Y + m.Tx) * 20);
+            geomY = IRound((m.B * b.X + m.D * b.Y + m.Ty) * 20);
+            needGeom = false;
+        }
+        return geomX is int x ? (x, geomY.Value) : ((int)(float)(Matrix.Tx * 20), (int)(float)(Matrix.Ty * 20));
+    }
+    /// <summary>Alg::IRound (sf_alg.h:20): halves round away from zero.</summary>
+    static int IRound(double a) => a > 0.0 ? (int)(a + 0.5) : (int)(a - 0.5);
+
+    /// <summary>The matrix or matrix3D setter stores the new origin, truncated to twips, as the position and leaves
+    /// the flag as it was (Transform::matrixSet / matrix3DSet, sfr_as3_11.cpp:1815 / :2006).</summary>
+    internal void StoreGeomOrigin() { geomX = (int)(float)(Matrix.Tx * 20); geomY = (int)(float)(Matrix.Ty * 20); }
+    /// <summary>DisplayObjectBase::SetX / SetY call SetAcceptAnimMoves(0), which makes geometry data from the matrix
+    /// when there is none (sfr_gfx_06.cpp:1192, :978).</summary>
+    void EnsureGeom() { if (geomX == null) StoreGeomOrigin(); }
+
+    /// <summary>x / y are the geometry data's position: the text rectangle's top-left corner in the parent when it was
+    /// last computed, not the matrix origin (TextField::GetX / GetY @0x1425b95f0 / @0x1425b9690, sfr_gfx_03e.cpp:760).</summary>
+    protected override double GetX() => UpdateGeom().X / 20.0;
+    protected override double GetY() => UpdateGeom().Y / 20.0;
 
     /// <summary>Puts the text rectangle's left side at x: the parent point (x, x) (Point(T v) sets both,
-    /// render_types2d.h:32) taken into the field's space, moved left by the view rect's x and taken back to the parent
-    /// gives the new matrix origin's x; an infinite x is 0 (TextField::SetX @0x1425be380, sfr_gfx_03f.cpp:861).</summary>
+    /// render_types2d.h:32) is taken into the field's space, moved left by the view rect's x and taken back to the
+    /// parent, which gives the new matrix origin's x. An infinite x is 0. The geometry data keeps x rounded to twips,
+    /// and the flag is left as it was (TextField::SetX @0x1425be380, sfr_gfx_03f.cpp:861).</summary>
     protected override void SetX(double v)
     {
         if (double.IsInfinity(v)) v = 0;
         var m = Matrix;
         var (px, py) = m.Inverse().Apply(v, v);
+        EnsureGeom();
         base.SetX(m.Apply(px - Box.X, py).X);
+        geomX = IRound(v * 20);
     }
 
     /// <summary>Puts the text rectangle's top at y, from the point (0, y) (TextField::SetY @0x1425be670, sfr_gfx_03f.cpp:890).</summary>
@@ -453,8 +493,11 @@ public class AsTextField : AsInteractiveObject
         if (double.IsInfinity(v)) v = 0;
         var m = Matrix;
         var (px, py) = m.Inverse().Apply(0, v);
+        EnsureGeom();
         base.SetY(m.Apply(px, py - Box.Y).Y);
+        geomY = IRound(v * 20);
     }
+    protected override void ScaledOrRotated() => needGeom = true;
     public override bool HitsContent(double gx, double gy) { var (lx, ly) = GlobalToLocal(gx, gy); return Box.Contains(lx, ly); }
     protected override bool DefaultTabEnabled => type == "input";
 
@@ -471,6 +514,7 @@ public class AsTextField : AsInteractiveObject
             if (!ReferenceEquals(t, v) && t != v) SetHtml(t);
             else { Text = v; Html = null; IsHtml = false; }       // textSet (sfr_as3_13.cpp:2233): the html flag off
             Changed();
+            needGeom = true;
         }
     }
     [As] public string htmlText
@@ -478,7 +522,7 @@ public class AsTextField : AsInteractiveObject
         // htmlTextGet (sfr_as3_13.cpp:2187) -> TextField::GetText(true) (sfr_gfx_03e.cpp:814): an html field's document
         // as GetHtml writes it, else the text
         get => IsHtml ? GetHtml() : Text;
-        set { SetHtml(value); Changed(); }
+        set { SetHtml(value); Changed(); needGeom = true; }
     }
     [As] public void appendText(string s) { Text += s ?? ""; Html = null; Changed(); }
     [As] public void replaceText(int b, int e, string s) { b = Math.Clamp(b, 0, Text.Length); e = Math.Clamp(e, b, Text.Length); Text = Text[..b] + (s ?? "") + Text[e..]; Html = null; Changed(); }
@@ -517,16 +561,16 @@ public class AsTextField : AsInteractiveObject
     // DisplayObject.widthSet / heightSet call the object's SetWidth / SetHeight; TextField's (sfr_gfx_03f.cpp:792 / :364)
     // set the view rectangle's width / height to the value from its left / top, in the field's own pixels: the field's
     // scale is not divided out (CLIK's Constraints.update relies on it: a counter-scaled TextField gets the width unadjusted)
-    [As] public new double width { get => Box.W * scaleX; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, value, Box.H); Version++; } }
-    [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value); Version++; } }
+    [As] public new double width { get => Box.W * scaleX; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, value, Box.H); needGeom = true; Version++; } }
+    [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value); needGeom = true; Version++; } }
 
     public string autoSizeMode = "none";
-    [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Version++; autoSizePending = true; } }
+    [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Version++; autoSizePending = true; needGeom = true; } }
     [As] public string type { get; set; } = "dynamic";
     bool multilineFlag;
     [As] public bool multiline { get => multilineFlag; set { if (multilineFlag != value) { multilineFlag = value; MarkChanged(); } } }
     bool wordWrapFlag;
-    [As] public bool wordWrap { get => wordWrapFlag; set { if (wordWrapFlag != value) { wordWrapFlag = value; autoSizePending = true; MarkChanged(); } } }
+    [As] public bool wordWrap { get => wordWrapFlag; set { if (wordWrapFlag != value) { wordWrapFlag = value; autoSizePending = true; MarkChanged(); } needGeom = true; } }
     [As] public bool selectable { get; set; } = true;
     [As] public bool displayAsPassword { get; set; }
     [As] public int maxChars { get; set; }

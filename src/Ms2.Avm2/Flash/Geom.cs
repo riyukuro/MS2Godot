@@ -204,7 +204,7 @@ public class AsTransform : AsObject
     internal AsDisplayObject Owner;
     [AsCtor] void Ctor(object[] a) { Owner = a.Length > 0 ? a[0] as AsDisplayObject : null; }
     // Not nulled in 3D: Transform::matrixGet/Set keep working on the 2D matrix of a 3D object (the 3D state sits in matrix3D).
-    [As] public AsMatrix matrix { get => AsMatrix.New(Class.Runtime, Owner?.Matrix ?? Mat.Identity); set { if (Owner != null && value != null) { Owner.Matrix = value.M; Owner.ScriptMoved(); } } }
+    [As] public AsMatrix matrix { get => AsMatrix.New(Class.Runtime, Owner?.Matrix ?? Mat.Identity); set { if (Owner != null && value != null) { Owner.Matrix = value.M; Owner.ScriptMoved(); (Owner as AsTextField)?.StoreGeomOrigin(); } } }
     [As] public AsColorTransform colorTransform
     {
         get { var c = (AsColorTransform)Class.Runtime.GetClass("flash.geom.ColorTransform").Construct(); c.Value = Owner?.Color ?? Cx.Identity; return c; }
@@ -308,13 +308,18 @@ public class AsTransform : AsObject
                 double ys = Math.Sqrt(m[0, 1] * m[0, 1] + m[1, 1] * m[1, 1] + m[2, 1] * m[2, 1]);
                 double zs = Math.Sqrt(m[0, 2] * m[0, 2] + m[1, 2] * m[1, 2] + m[2, 2] * m[2, 2]);
                 Euler(m, xs, ys, zs, out var rx, out var ry, out var rz);
-                Owner.x = tx / TwipsPerPixel; Owner.y = ty / TwipsPerPixel; Owner.z = tz / TwipsPerPixel;
+                // SetMatrix3D sets the matrix's translation itself: not through x / y, which a text field takes as its text
+                // rectangle's corner (TextField::SetX). A text field keeps its geometry flag; its position is the new origin.
+                var tf = Owner as AsTextField; bool flag = tf?.NeedGeom ?? false;
+                var m2 = Owner.Matrix; m2.Tx = tx / TwipsPerPixel; m2.Ty = ty / TwipsPerPixel; Owner.Matrix = m2; Owner.ScriptMoved();
+                Owner.z = tz / TwipsPerPixel;
                 Owner.rotation = rz * 180 / Math.PI;
                 Owner.rotationX = rx * 180 / Math.PI; Owner.rotationY = ry * 180 / Math.PI;
                 Owner.scaleX = xs; Owner.scaleY = ys; Owner.scaleZ = zs;
                 var keep = new double[3, 3];
                 for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) keep[i, j] = m[i, j];
                 Owner.Held3x3 = keep; Owner.Is3D = true;      // after the property writes, which clear it
+                if (tf != null) { tf.NeedGeom = flag; tf.StoreGeomOrigin(); }
             }
             else if (Owner.Is3D || Owner.z != 0 || Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
             {
