@@ -127,13 +127,19 @@ public class ServerTests
     public void DrainStopsWhenTheBudgetIsUsedButAlwaysRunsOne()
     {
         var q = new RequestQueue();
-        var tasks = Enumerable.Range(0, 6).Select(_ => Task.Run(() => q.Submit(Request.Parse("{\"cmd\":\"w\"}"), 10000))).ToArray();
-        while (Enumerable.Range(0, 100).All(_ => q.Idle) && !tasks.Any(t => t.IsCompleted)) Thread.Sleep(5);
+        // each submitter blocks until answered: give each its own thread, since on a runner with few cores the pool would
+        // start only some of them and inject the rest after the drain below had already found the queue idle
+        using var started = new CountdownEvent(6);
+        var tasks = Enumerable.Range(0, 6).Select(_ => Task.Factory.StartNew(() => { started.Signal(); return q.Submit(Request.Parse("{\"cmd\":\"w\"}"), 10000); },
+            CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+        Assert.That(started.Wait(5000), Is.True);
         Thread.Sleep(100);
         int n = q.Drain(_ => { Thread.Sleep(20); return null; }, 0.0001);
         Assert.That(n, Is.EqualTo(1), "a spent budget still answers one request");
-        while (!q.Idle) q.Drain(_ => null, 50);
-        Assert.That(Task.WaitAll(tasks, 5000), Is.True);
+        // drain until every submitter has its answer (not until the queue looks idle: a submitter may still be enqueueing)
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (!tasks.All(t => t.IsCompleted) && clock.ElapsedMilliseconds < 5000) { q.Drain(_ => null, 50); Thread.Sleep(1); }
+        Assert.That(tasks.All(t => t.IsCompleted), Is.True);
     }
 
     [Test]
