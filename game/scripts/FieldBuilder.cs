@@ -34,6 +34,8 @@ public sealed class FieldBuilder
     /// <summary>The field's objects cast the sun's shadow (FieldShadows.MapObjects): below the level the client clears every
     /// caster (SetShadowCaster(node, false), worldservice_1.cpp:3428-3430), so no shadow cells are made.</summary>
     public bool CastsShadows { get; set; } = true;
+    /// <summary>The field's shadow level (FieldShadows.Level), for which entities receive the sun's shadow (ShadowReceivers).</summary>
+    public int ShadowLevel { get; set; } = 2;
 
     /// <summary>
     /// How far behind its colour an own-group shell twin sorts (game units): Godot sorts the alpha list by priority, then by
@@ -228,6 +230,10 @@ public sealed class FieldBuilder
             return body;
         }
 
+        // the copies that receive no sun shadow (ShadowReceivers): their opaque meshes draw in groups of their own whose
+        // ms2_receive instance uniform (field_lit.gdshader) is 0
+        var notReceiving = ShadowReceivers.NotReceiving(map.Entities, ShadowLevel);
+
         int entityIndex = -1;
         foreach (var e in map.Entities)
         {
@@ -278,7 +284,7 @@ public sealed class FieldBuilder
                 else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
                 else if (e.Bool("IsVisible", true))
                 {
-                    var key = BatchKey(llid, e);
+                    var key = BatchKey(llid, e) + (notReceiving.Contains(e) ? NotReceivingKey : "");
                     if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
                     list.Add(e);
                     grouped = true;            // counted when its group is placed
@@ -418,6 +424,7 @@ public sealed class FieldBuilder
                 // is transparent, and Godot leaves transparent materials out of the shadow pass (observed: Henesys, Ellinia and Tria
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                if (!mesh.AlphaBlendOn && key.EndsWith(NotReceivingKey)) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; }
                 visuals.AddChild(node);
                 if (!mesh.AlphaBlendOn && !mesh.NoShadow && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
@@ -542,6 +549,12 @@ public sealed class FieldBuilder
     }
 
     enum Shell { None, Shared, Own }
+
+    /// <summary>The group key suffix of copies that receive no sun shadow (after BatchKey; '\n' never ends one).</summary>
+    const string NotReceivingKey = "\nnorecv";
+    static readonly StringName ReceiveParam = "ms2_receive";
+    /// <summary>Opaque MultiMeshes drawn with the sun's shadow off (ShadowReceivers).</summary>
+    public int NotReceivingDraws;
 
     /// <summary>
     /// The alpha shell group of a placed entity. Only hardware-instanced entities get one: HardwareInstancingService

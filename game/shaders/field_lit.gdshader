@@ -123,6 +123,9 @@ varying vec2 env_uv;
 #endif
 #ifdef POINT_LIT
 varying vec3 sun_share;  // the sun's part of the output colour (gamma), which the shadow scales in light()
+// 0 for copies the client takes out of the shadow's receiver list (ShadowReceivers: IsReceivingShadow off, or a
+// UseShellRender instancing batch below shadow level 4): the sun's share is then not scaled by the shadow
+instance uniform float ms2_receive = 1.0;
 #endif
 
 // The SPHERICAL texture effect uv (NiStandardMaterial::HandleTextureEffectUVSetGen): the world reflection
@@ -317,7 +320,7 @@ void fragment() {
 // Godot light that reaches field meshes (FieldLights draws the point and spot lights in ms2_lights.gdshaderinc).
 void light() {
 	if (LIGHT_IS_DIRECTIONAL) {
-		DIFFUSE_LIGHT += sun_share * ATTENUATION;
+		DIFFUSE_LIGHT += sun_share * mix(1.0, ATTENUATION, ms2_receive);
 	}
 }
 #endif

@@ -102,7 +102,7 @@ public partial class Field : Node3D
         try { fd = FieldData.FindByXBlock(packs, fieldName); }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         FieldShadows.Begin(packs, fd?.ShadowOptionHighLevel ?? 0);
-        var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0, CastsShadows = FieldShadows.MapObjects };
+        var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0, CastsShadows = FieldShadows.MapObjects, ShadowLevel = FieldShadows.Level };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
