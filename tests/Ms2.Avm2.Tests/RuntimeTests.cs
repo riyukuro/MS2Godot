@@ -174,6 +174,38 @@ public class RuntimeTests
     }
 
     [Test]
+    public void PerspectiveProjectionSetterPathWritesBack()
+    {
+        // assigning a projection binds it to the object, so the object's FOV follows later writes to the assigned one
+        // (no InitFov: the object has no projection data until the assignment makes it)
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        var src = (AsPerspectiveProjection)rt.GetClass("flash.geom.PerspectiveProjection").Construct();
+        sp.transform.perspectiveProjection = src;
+        var pp = sp.transform.perspectiveProjection;
+        pp.fieldOfView = 90;
+        Assert.That(sp.transform.perspectiveProjection.fieldOfView, Is.EqualTo(90));
+    }
+
+    [Test]
+    public void Matrix3DGetterKeepsRotationsAndNullClears()
+    {
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        sp.rotationX = 30; sp.scaleZ = 2;
+        var m = sp.transform.matrix3D;
+        double c = Math.Cos(30 * Math.PI / 180), s = Math.Sin(30 * Math.PI / 180);
+        Assert.That(Convert.ToDouble(m.rawData.Items[5]), Is.EqualTo(c).Within(1e-9));
+        Assert.That(Convert.ToDouble(m.rawData.Items[6]), Is.EqualTo(s).Within(1e-9));
+        Assert.That(Convert.ToDouble(m.rawData.Items[10]), Is.EqualTo(2 * c).Within(1e-9));
+        sp.transform.matrix3D = null;                   // Clear3D: the 3D state and the 2D matrix reset
+        Assert.That((sp.rotationX, sp.scaleZ, sp.z), Is.EqualTo((0.0, 1.0, 0.0)));
+        Assert.That(sp.scaleX, Is.EqualTo(1));
+    }
+
+    [Test]
     public void Matrix3DFollowsScaleform()
     {
         // flash.geom.Matrix3D (sfr_as3_11.cpp): undefined before, which stopped the Flash timeline helpers that build one

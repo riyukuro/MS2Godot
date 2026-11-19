@@ -367,6 +367,7 @@ switch (pos[0])
         }
         var rep = new StringBuilder();
         rep.AppendLine($"movies {total}, document class constructed {constructed}, clean (no error, no missing API in {frames} frames) {clean}, movies without code {noCode}, {sw.Elapsed.TotalSeconds:0}s");
+        rep.AppendLine("(Missing entries from initData stay in the counts below.)");
         rep.AppendLine($"errors {totalErrors} in {perMovie.Count(x => x.Errors > 0)} movies; missing APIs {missingHits.Count} distinct, {totalMissingHits} hits, in {perMovie.Count(x => x.Missing > 0)} movies");
         if (hostMode) rep.AppendLine($"host entry (initData with an empty object): {hostEntryErrors} errors in {hostEntryMovies} movies, not counted above (the movie reads data the server fills)");
         if (hostLines.Length > 0) { rep.AppendLine("## Host-entry errors"); rep.Append(hostLines); }

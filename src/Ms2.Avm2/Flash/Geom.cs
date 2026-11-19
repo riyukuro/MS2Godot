@@ -261,8 +261,8 @@ public class AsTransform : AsObject
     const double TwipsPerPixel = 20;
 
     /// <summary>The object's 3D matrix (Transform::matrix3DGet, @0x14248ac20), built from the object each read: the 2D
-    /// matrix's a, b, c, d and the position and z in twips (the getter hands the display object's twips over unconverted,
-    /// where the setter takes pixels). Only the 2D matrix, z and the 3D rotations are kept; the runtime has no 3D scene.</summary>
+    /// matrix's a, b, c, d (or, with rotationX/Y or scaleZ set, the full rotation and scales) and the position and z in twips (the getter hands the display object's twips over unconverted,
+    /// where the setter takes pixels). The runtime has no 3D scene: nothing projects it. The matrix is not bound to the object (Scaleform binds pDispObj, sfr_as3_11.cpp:1939, so its append*/prepend* move the object; logged as a gap).</summary>
     [As] public AsMatrix3D matrix3D
     {
         get
@@ -271,6 +271,21 @@ public class AsTransform : AsObject
             var o = Owner.Matrix;
             var m = Mat4.Identity();
             m[0, 0] = o.A; m[1, 0] = o.B; m[0, 1] = o.C; m[1, 1] = o.D;
+            if (Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
+            {
+                // the 3D part of the node's M34 (SetMatrix3D, sfr_gfx_06.cpp:1514): Ry * Rz * Rx with the column scales, the
+                // order GetEulerAngles decodes (render_matrix4x4.h:228-252)
+                double rx = Owner.rotationX * Math.PI / 180, ry = Owner.rotationY * Math.PI / 180, rz = Owner.rotation * Math.PI / 180;
+                double cx = Math.Cos(rx), sx = Math.Sin(rx), cy = Math.Cos(ry), sy = Math.Sin(ry), cz = Math.Cos(rz), sz = Math.Sin(rz);
+                double[,] r =
+                {
+                    { cy * cz, -cy * sz * cx + sy * sx, cy * sz * sx + sy * cx },
+                    { sz, cz * cx, -cz * sx },
+                    { -sy * cz, sy * sz * cx + cy * sx, -sy * sz * sx + cy * cx },
+                };
+                double[] sc = { Owner.scaleX, Owner.scaleY, Owner.scaleZ };
+                for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) m[i, j] = r[i, j] * sc[j];
+            }
             m[0, 3] = o.Tx * TwipsPerPixel; m[1, 3] = o.Ty * TwipsPerPixel; m[2, 3] = Owner.z * TwipsPerPixel;
             return AsMatrix3D.New(Class.Runtime, m);
         }
@@ -292,6 +307,13 @@ public class AsTransform : AsObject
                 Owner.rotation = rz * 180 / Math.PI;
                 Owner.rotationX = rx * 180 / Math.PI; Owner.rotationY = ry * 180 / Math.PI;
                 Owner.scaleX = xs; Owner.scaleY = ys; Owner.scaleZ = zs;
+            }
+            else if (Owner.z != 0 || Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
+            {
+                // Clear3D (sfr_gfx_06.cpp:191-201, sfr_render_03c.cpp:395-399): the geom goes back to its defaults and the
+                // M34 to the identity, so the 2D values go too (Flash keeps them)
+                Owner.Matrix = Mat.Identity;
+                Owner.z = 0; Owner.rotationX = 0; Owner.rotationY = 0; Owner.scaleZ = 1;
             }
             Owner.ScriptMoved();
         }

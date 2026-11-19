@@ -192,7 +192,7 @@ namespace Ms2.Avm2.Flash
         }
 
         /// <summary>Allocates a display object, puts it into the parent (timeline order), builds its frame 1, then runs its constructor.</summary>
-        AsObject ConstructInto(AsClass cls, AsContainer parent, SymbolScope scope, JsonObject sym, JsonObject pl, int depth)
+        AsObject ConstructInto(AsClass cls, AsContainer parent, SymbolScope scope, JsonObject sym, JsonObject pl, int depth, bool setFov = false)
         {
             var o = (cls.Allocator ?? (_ => new AsObject()))(cls);
             o.Init(cls);
@@ -207,6 +207,8 @@ namespace Ms2.Avm2.Flash
             pending = null;
             // like the Flash/Scaleform players: an uncaught error in a display object's constructor is reported and the
             // instance stays where it was placed (the rest of its constructor does not run)
+            // a movie a Loader loads gets SetFOV(55) before its constructor runs (sfr_as3_18.cpp:8135, 8494)
+            if (setFov) AsTransform.InitFov(o as AsDisplayObject);
             if (cls.Ctor != null) RT.Guard("construct " + cls.Name, () => cls.Ctor.Invoke(o, Array.Empty<object>()));
             RT.AfterConstruct(o);
             return o;
@@ -733,8 +735,7 @@ namespace Ms2.Avm2.Flash
             if (name != null && cls == null) RT.NoteMissing("document class " + name);
             cls ??= RT.GetClass("flash.display.MovieClip");
             AsDisplayObject root = null;
-            RT.Guard("construct loaded movie " + key, () => root = (AsDisplayObject)ConstructInto(cls, l, sc, rootSym, null, 0));
-            AsTransform.InitFov(root);      // SetFOV(55) on a movie a Loader loads (sfr_as3_18.cpp:8135, 8494)
+            RT.Guard("construct loaded movie " + key, () => root = (AsDisplayObject)ConstructInto(cls, l, sc, rootSym, null, 0, setFov: true));
             if (root != null && OnStage(l)) EnterStage(root);
             RunFrameScripts();
             return root;
