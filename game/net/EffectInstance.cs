@@ -177,12 +177,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     /// camera (NiDX9RenderState.cpp:380-388): CCW_OR_BOTH and CCW cull the back faces as the field meshes do (field_lit's
     /// cull_back), CW the front, BOTH none (the portals' NiStencilProperty 19840 is DRAW_BOTH with the stencil test off).
     /// The stencil test itself is not drawn: no effect NIF sets the stencil enable bit (RenderStateTests.NoEffectEnablesStencil).
-    /// STILL-OPEN: the field meshes ignore DRAW_BOTH; field_lit.gdshader sets no cull mode, so it culls their back faces.
+    /// The field meshes cull the same way (ModelBuilder.CullDefine).
     /// STILL-OPEN: Godot flips the culled side for a node whose transform has a negative determinant (a mirrored effect);
     /// D3D9 keeps the render state's cull mode whatever the world matrix.</summary>
     internal static string RenderModes(ModelMesh m)
     {
-        string cull = m.DrawMode switch { 3 => "cull_disabled", 2 => "cull_front", _ => "cull_back" };
+        string cull = m.Cull switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
         string depth = m.ZWrite ? "depth_draw_always" : "depth_draw_never";
         return m.ZTest ? $"{cull}, {depth}" : $"{cull}, {depth}, depth_test_disabled";
     }

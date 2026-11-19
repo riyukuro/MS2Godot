@@ -26,25 +26,36 @@
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
 #include "res://shaders/ms2_fog.gdshaderinc"
+// Culling from the mesh's NiStencilProperty draw mode (ModelMesh.DrawMode, ModelBuilder.FieldShader), as NiDX9RenderState
+// maps it (NiDX9RenderState.cpp:380-389, left-handed off): DRAW_BOTH = no culling, DRAW_CW = the front faces, DRAW_CCW and
+// DRAW_CCW_OR_BOTH (the default) = the back faces. The client's standard pixel shaders read no VFACE, so a back face lights
+// with the front face's normal, as world_normal does here.
+#if defined(CULL_NONE)
+#define MS2_CULL cull_disabled
+#elif defined(CULL_FRONT)
+#define MS2_CULL cull_front
+#else
+#define MS2_CULL cull_back
+#endif
 #ifdef SHELL
-render_mode unshaded, blend_mix, depth_draw_always;
+render_mode unshaded, blend_mix, depth_draw_always, MS2_CULL;
 #else
 #ifdef FADE
 // a prop faded out by BGTransparencyMgr (world/FieldFade): TransparencyMaterial::FUN_141860140 turns blending on (the
 // mesh's own NiAlphaProperty cloned, or a default one) and the z-buffer write on
 #ifdef ADD
-render_mode unshaded, blend_add, depth_draw_always;
+render_mode unshaded, blend_add, depth_draw_always, MS2_CULL;
 #else
-render_mode unshaded, blend_mix, depth_draw_always;
+render_mode unshaded, blend_mix, depth_draw_always, MS2_CULL;
 #endif
 #else
 #ifdef ADD
-render_mode unshaded, blend_add, depth_draw_never;
+render_mode unshaded, blend_add, depth_draw_never, MS2_CULL;
 #else
 #ifdef BLEND
-render_mode unshaded, blend_mix, depth_draw_never;
+render_mode unshaded, blend_mix, depth_draw_never, MS2_CULL;
 #else
-render_mode ambient_light_disabled, specular_disabled;
+render_mode ambient_light_disabled, specular_disabled, MS2_CULL;
 #define POINT_LIT
 #endif
 #endif

@@ -11,6 +11,9 @@ public sealed class ModelBone
     public Xform World;                   // rest transform relative to the scene root
 }
 
+/// <summary>Which faces a mesh's draw culls (<see cref="ModelMesh.Cull"/>).</summary>
+public enum FaceCull { Back, Front, None }
+
 public sealed class ModelMesh
 {
     public int Block = -1;                // the NiMesh block this came from
@@ -52,6 +55,10 @@ public sealed class ModelMesh
     /// <summary>NiStencilProperty draw mode of the nearest one (bits 10-11, NiStencilProperty.h:121-122): 0 DRAW_CCW_OR_BOTH
     /// (the default property's, NiStencilProperty.inl:27), 1 DRAW_CCW, 2 DRAW_CW, 3 DRAW_BOTH (no culling).</summary>
     public int DrawMode;
+    /// <summary>The faces the renderer culls for <see cref="DrawMode"/>, as NiDX9RenderState maps the draw mode with left-handed
+    /// culling off (NiDX9RenderState.cpp:380-389): DRAW_BOTH none, DRAW_CW the front faces, DRAW_CCW and DRAW_CCW_OR_BOTH the
+    /// back faces (front = the winding the model builders emit).</summary>
+    public FaceCull Cull => DrawMode switch { 3 => FaceCull.None, 2 => FaceCull.Front, _ => FaceCull.Back };
     /// <summary>Under an NiSortAdjustNode whose mode is SORTING_OFF: the renderer draws the mesh unsorted, in scene order, after
     /// the opaque buckets and before the depth-sorted alpha list. The outermost sort-adjust ancestor decides, as its OnVisible
     /// marks its whole subtree's visible objects after the inner ones did (NiSortAdjustNode.cpp:36-57).</summary>

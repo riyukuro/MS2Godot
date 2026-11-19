@@ -339,24 +339,34 @@ public sealed class ModelBuilder
         return sm;
     }
 
-    static Shader fieldShader, fieldBlendShader, fieldAddShader, fieldShellShader, fieldFadeShader, fieldFadeAddShader;
+    static string fieldCode;
+    static readonly Dictionary<string, Shader> fieldShaders = new();
+    static readonly Dictionary<Shader, string> fieldCull = new();
 
-    /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE).</summary>
+    /// <summary>The field shader compiled with <paramref name="forms"/> (BLEND, ADD, SHELL, FADE defines) and a cull define.</summary>
+    static Shader FieldVariant(string forms, string cull)
+    {
+        var key = forms + "|" + cull;
+        if (fieldShaders.TryGetValue(key, out var sh)) return sh;
+        fieldCode ??= GD.Load<Shader>("res://shaders/field_lit.gdshader").Code;
+        int nl = fieldCode.IndexOf('\n', fieldCode.IndexOf("shader_type")) + 1;
+        var defines = forms + (cull != null ? $"#define {cull}\n" : "");
+        fieldShaders[key] = sh = new Shader { Code = defines.Length == 0 ? fieldCode : fieldCode.Insert(nl, defines) };
+        fieldCull[sh] = cull;
+        return sh;
+    }
+
+    /// <summary>The cull define for a mesh's NiStencilProperty draw mode (ModelMesh.DrawMode), as NiDX9RenderState maps it
+    /// (NiDX9RenderState.cpp:380-389, left-handed off): DRAW_BOTH (3) none, DRAW_CW (2) the front faces, DRAW_CCW and
+    /// DRAW_CCW_OR_BOTH the back faces (field_lit's default). The same mapping as the effect meshes (EffectInstance.RenderModes).</summary>
+    internal static string CullDefine(ModelMesh m) => m.Cull switch { FaceCull.None => "CULL_NONE", FaceCull.Front => "CULL_FRONT", _ => null };
+
+    /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE), with the mesh's culling.</summary>
     static Shader FieldShader(ModelMesh m)
     {
-        if (fieldShader == null)
-        {
-            var code = GD.Load<Shader>("res://shaders/field_lit.gdshader").Code;
-            fieldShader = new Shader { Code = code };
-            int nl = code.IndexOf('\n', code.IndexOf("shader_type")) + 1;
-            fieldBlendShader = new Shader { Code = code.Insert(nl, "#define BLEND\n") };
-            fieldAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n") };
-            fieldShellShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define SHELL\n") };
-            fieldFadeShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define FADE\n") };
-            fieldFadeAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n#define FADE\n") };
-        }
-        if (!m.AlphaBlendOn) return fieldShader;
-        return ((m.AlphaFlags >> 5) & 15) == 0 ? fieldAddShader : fieldBlendShader;
+        var cull = CullDefine(m);
+        if (!m.AlphaBlendOn) return FieldVariant("", cull);
+        return FieldVariant(((m.AlphaFlags >> 5) & 15) == 0 ? "#define BLEND\n#define ADD\n" : "#define BLEND\n", cull);
     }
 
     /// <summary>
@@ -389,9 +399,8 @@ public sealed class ModelBuilder
     /// </summary>
     public static ShaderMaterial FadeMaterial(ShaderMaterial colour, ModelMesh m)
     {
-        FieldShader(m);
         var fade = (ShaderMaterial)colour.Duplicate();
-        fade.Shader = m.AlphaBlendOn && ((m.AlphaFlags >> 5) & 15) == 0 ? fieldFadeAddShader : fieldFadeShader;
+        fade.Shader = FieldVariant(m.AlphaBlendOn && ((m.AlphaFlags >> 5) & 15) == 0 ? "#define BLEND\n#define ADD\n#define FADE\n" : "#define BLEND\n#define FADE\n", CullDefine(m));
         // only the property's own test flag tests: the 0.5 cut-out BuildMaterial gives an untested property would cut the
         // faded alpha (texture alpha times the fade) away
         fade.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn);
@@ -422,7 +431,8 @@ public sealed class ModelBuilder
     {
         if (mesh.GetSurfaceCount() == 0 || mesh.SurfaceGetMaterial(0) is not ShaderMaterial colour) return null;
         var shell = (ShaderMaterial)colour.Duplicate();
-        shell.Shader = fieldShellShader;
+        // the depth pass culls as its colour pass does
+        shell.Shader = FieldVariant("#define BLEND\n#define SHELL\n", colour.Shader != null && fieldCull.TryGetValue(colour.Shader, out var cull) ? cull : null);
         return shell;
     }
 

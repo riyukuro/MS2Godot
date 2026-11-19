@@ -84,4 +84,30 @@ public class RenderStateTests
         Assert.That(props, Is.GreaterThan(0));
         Assert.That(on.Distinct(), Is.Empty);
     }
+
+    /// <summary>The faces culled per draw mode, as NiDX9RenderState maps it with left-handed culling off
+    /// (NiDX9RenderState.cpp:380-389): DRAW_CCW_OR_BOTH and DRAW_CCW the back faces, DRAW_CW the front faces, DRAW_BOTH none.</summary>
+    [Test]
+    public void CullFollowsDrawMode()
+    {
+        Assert.That(new[] { 0, 1, 2, 3 }.Select(d => new ModelMesh { DrawMode = d }.Cull),
+            Is.EqualTo(new[] { FaceCull.Back, FaceCull.Back, FaceCull.Front, FaceCull.None }));
+    }
+
+    /// <summary>Field meshes carry the stencil draw mode too: the cubric fence (alpha-tested bars) and the town square's floor
+    /// pattern draw both faces; the floor lamp keeps its post one-sided and only its light cones two-sided.</summary>
+    [Test]
+    public void FieldMeshesDrawBothFaces()
+    {
+        var (packs, spec) = NifEnv.Open();
+        ModelData Map(string file) => ModelData.Load(NifFile.Load(spec, packs.Read("Resource/Model/Map",
+            packs.List("Resource/Model/Map").Single(n => n.EndsWith("/" + file, StringComparison.OrdinalIgnoreCase)))));
+        var fence = Map("ke_fi_cubric_fence_a02.nif").Meshes.Single();
+        Assert.That(fence.Cull, Is.EqualTo(FaceCull.None));
+        Assert.That(fence.AlphaTestOn, Is.True);
+        Assert.That(Map("tr_floor_pattern_b01.nif").Meshes.Single().Cull, Is.EqualTo(FaceCull.None));
+        var lamp = Map("co_fi_prop_light_b01.nif").Meshes;
+        Assert.That(lamp.Where(m => m.Cull == FaceCull.None).Select(m => m.FileName).OrderBy(n => n), Is.EqualTo(new[] { "Cone01", "Cone02" }));
+        Assert.That(lamp.Count(m => m.Cull == FaceCull.Back), Is.EqualTo(1));
+    }
 }
