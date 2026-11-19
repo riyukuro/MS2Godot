@@ -123,6 +123,16 @@ public partial class LiveSession : Node
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
+    bool? fishingFeature;
+    /// <summary>Feature 0xb (the fishing book's packets), read like <see cref="MissionFeature"/>.</summary>
+    bool FishingFeature()
+    {
+        if (fishingFeature is { } on) return on;
+        try { on = Ms2.Ui.LobbyFeatures.IsEnabled(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), Ms2.Ui.FeatureTable.Names[Ms2.Ui.Feature.Fishing - 1]); }
+        catch (Exception e) { GD.Print($"live: feature table unavailable ({e.Message})"); on = false; }
+        fishingFeature = on;
+        return on;
+    }
     bool? missionFeature;
     /// <summary>Feature 0xfb (the adventure missions), as UiModel.IsFeatureEnabled reads it.</summary>
     bool MissionFeature()
@@ -142,6 +152,11 @@ public partial class LiveSession : Node
     /// <summary>A CharacterAbility packet that changed <see cref="CharacterAbility"/> (mode 0, or mode 2 of a known id),
     /// for the dialog and the game menu (OnCharacterAbility tells them only then).</summary>
     public event Action<CharacterAbilityMessage> CharacterAbilityReceived;
+    /// <summary>The fishing book's catch records (the Fishing packets, 0x73, modes 7 and 8; scenestategame.cpp, FUN_140cd9840);
+    /// session-lived, so a field change keeps them.</summary>
+    public readonly Ms2.Ui.FishingBookData FishingBook = new();
+    /// <summary>A Fishing packet that changed <see cref="FishingBook"/>, for the open fishing book (it fills its tab again).</summary>
+    public event Action<FishingMessage> FishingReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
     /// <summary>The own mastery exp, grade rewards received and gathering counts (OnMastery, UserEnv modes 8/9);
     /// session-lived, the exp read from the user block on the first use.</summary>
@@ -805,6 +820,13 @@ public partial class LiveSession : Node
                     MasteryReceived?.Invoke(m, gain, oldGrade, up);
                 }
                 GD.Print($"live: mastery {m?.GetType().Name ?? "other mode"}");
+            }
+            else if (game.Is(p, Inbound.Fishing))
+            {
+                var m = FishingMessage.Read(p.Reader());           // modes 7 (the list) and 8 (a catch); the others are not the book's
+                if (m != null && FishingBook.Apply(m, FishingFeature()))
+                    FishingReceived?.Invoke(m);
+                GD.Print($"live: fishing {m?.GetType().Name ?? "other mode"} ({FishingBook.Count} fish)");
             }
             else if (game.Is(p, Inbound.UserEnv))
             {

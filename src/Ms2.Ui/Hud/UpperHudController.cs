@@ -32,6 +32,8 @@ public sealed class UpperHudController : UiController
                 Host.Invoke(search, "changeTooltipText", Model.Tables.Common("s_gamedictionary_tooltip_search") ?? "");
             Listen(search, "buttonClick", OnSearchClick);                          // AddClickHandler(OnSearchClick)
         }
+        if (Host.Child("m_fishingBookButton") is { } fishingBook)
+            Listen(fishingBook, "buttonClick", () => ToggleFishingBook?.Invoke());   // AddClickHandler(OnFishingBookClick)
         if (Host.Child("m_searchInput") is { } searchInput)
         {
             Listen(searchInput, "focusOut", OnSearchInputFocusOut);                 // AddFocusOutListener(FUN_141357050)
@@ -68,6 +70,9 @@ public sealed class UpperHudController : UiController
 
     /// <summary>CUIService::ToggleDialog(0x4f0b), the dictionary, from the search button.</summary>
     public event Action ToggleDictionary;
+
+    /// <summary>OnFishingBookClick (@uiupperhuddialog.cpp:507): CUIService::ToggleDialog(0x4ee6), the fishing book.</summary>
+    public event Action ToggleFishingBook;
 
     void Listen(object target, string type, Action a)
     {

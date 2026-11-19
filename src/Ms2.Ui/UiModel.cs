@@ -178,4 +178,6 @@ public static class Feature
     public const int AdventureLevel = 0xbd;
     /// <summary>0x2d: the character abilities (FUN_1401e0800, characterability.cpp).</summary>
     public const int CharacterAbility = 0x2d;
+    /// <summary>0xb: the fishing book's data, the Fishing packets (CSceneStateGame handler of opcode 0x73).</summary>
+    public const int Fishing = 0xb;
 }

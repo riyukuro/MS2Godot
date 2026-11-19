@@ -158,6 +158,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPrestige = null;
         unwatchCharacterAbility?.Invoke();
         unwatchCharacterAbility = null;
+        unwatchFishingBook?.Invoke();
+        unwatchFishingBook = null;
         unwatchMeso?.Invoke();
         unwatchMeso = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
@@ -524,6 +526,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         upperHudSide = new Ms2.Ui.Hud.UpperHudController();
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
+        upperHudSide.ToggleFishingBook += ToggleFishingBook;
         upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
         ui.AddChild(upperHud);
         WatchLivePlayer(model);     // live, the mesos of ServerEnter and the Meso packets (status event 8)
@@ -2562,6 +2565,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "adventurelevel" && frames == 200) ToggleAdventureLevel();
         if (openShot == "characterability" && frames == 200) ToggleCharacterAbility();
         if (openShot == "mastery" && frames == 200) ToggleMastery();
+        if (openShot == "fishingbook" && frames == 200) ToggleFishingBook();
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)
