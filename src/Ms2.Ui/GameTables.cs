@@ -103,6 +103,14 @@ public sealed class GameTables
         GuildNameLengthMax = (int)k.Float("GuildNameLengthMax", GuildNameLengthMax);
         UGCImgUploadSizeLimit = (int)k.Float("UGCImgUploadSizeLimit", UGCImgUploadSizeLimit);
         UGCImgFileCountCheck = (int)k.Float("UGCImgFileCountCheck", UGCImgFileCountCheck);
+        // Common::Constants Value<__int64> TradeMinMeso / TradeMaxMeso (read whole: an integer text) and Value<int>
+        // TradeRequestDuration / TradeFeePercent (unit_1402ab440_constantsblocks.cpp:891, :1007-1009)
+        long whole(string key, long def) => long.TryParse(k.String(key), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out long v) ? v : (long)k.Float(key, def);
+        TradeRequestDuration = (int)whole("TradeRequestDuration", TradeRequestDuration);
+        TradeMinMeso = whole("TradeMinMeso", TradeMinMeso);
+        TradeMaxMeso = whole("TradeMaxMeso", TradeMaxMeso);
+        TradeFeePercent = (int)whole("TradeFeePercent", TradeFeePercent);
         // SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every ./Data/Xml/SkillData/*.xml (FindSkillFiles
         // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
@@ -368,6 +376,32 @@ public sealed class GameTables
     /// unit_1402ab440_constantsblocks.cpp:772, :773): the largest width and height a UGC image may have, and the file count
     /// at which CUgcManager::RefreshLocalFiles warns (ugcmanager_4.cpp:2794).</summary>
     public int UGCImgUploadSizeLimit = 1024, UGCImgFileCountCheck = 300;
+    /// <summary>Client::Constants TradeRequestDuration in seconds (Define default 20: unit_1402ab440_constantsblocks.cpp:891):
+    /// the timer of the trade request box (CTradeManagerEx::OnTradeRequest, trademanagerex_1.cpp:385).</summary>
+    public int TradeRequestDuration = 20;
+    /// <summary>Client::Constants TradeMinMeso / TradeMaxMeso (Define defaults 100 and 300000000:
+    /// unit_1402ab440_constantsblocks.cpp:1007, :1008): GetMinMesoOffer / GetMaxMesoOffer
+    /// (unit_14087d0c0_trademesolimits.cpp, +0x5f00 / +0x5f60).</summary>
+    public long TradeMinMeso = 100, TradeMaxMeso = 300000000;
+    /// <summary>Client::Constants TradeFeePercent (Define default 10: unit_1402ab440_constantsblocks.cpp:1009):
+    /// GetTradeFeePercent (+0x5fc0).</summary>
+    public int TradeFeePercent = 10;
+
+    /// <summary>
+    /// FUN_14087d150 (unit_14087d0c0_trademesolimits.cpp): the trade fee of <paramref name="meso"/>: 0 for 0; else
+    /// meso * TradeFeePercent / 100 (integer), then multiplied by (1 - rate) in float (__int64 *= float) and truncated,
+    /// never below 0. The rate is the fee reduction (UITradeDialogEx::UpdateFee: the equipment's ability rate 0x40).
+    /// </summary>
+    public long TradeFee(long meso, float rate)
+    {
+        if (meso == 0) return 0;
+        long fee = meso * TradeFeePercent / 100;
+        fee = (long)(fee * (1.0f - rate));
+        return fee < 0 ? 0 : fee;
+    }
+
+    /// <summary>FUN_14087d200 (unit_14087d0c0_trademesolimits.cpp): 0 is valid; else TradeMinMeso &lt;= meso &lt;= TradeMaxMeso.</summary>
+    public bool TradeMesoValid(long meso) => meso == 0 || (meso >= TradeMinMeso && meso <= TradeMaxMeso);
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>

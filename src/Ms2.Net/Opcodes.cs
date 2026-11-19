@@ -79,6 +79,7 @@ public enum Inbound : ushort {
     HomeCommand = 0xB7,
     Ugc = 0x6B,
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
+    Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
 }
 
 public enum Outbound : ushort {
@@ -122,4 +123,5 @@ public enum Outbound : ushort {
     Prestige = 0xAC,
     CharacterInfo = 0x1E,       // SendOp::CharacterInfo (commonfiles/opcodes.h)
     CharacterAbility = 0x89,    // SendOp CharacterAbility (commonfiles/opcodes.h): the character ability dialog's sends
+    Trade = 0x49,           // SendOp Trade (commonfiles/opcodes.h): CTradeManagerEx's SendTradeMode*
 }

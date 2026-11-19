@@ -143,8 +143,24 @@ public sealed class MessageBoxData
     /// text; <paramref name="def"/> past the last argument.</summary>
     public uint ArgUInt(int index, uint def) => (uint)index < (uint)Args.Count ? (uint)WToI(Args[index]) : def;
 
+    /// <summary>Append&lt;__int64&gt; (0x1405340b0, uimessageboxdata.h:214): an argument, as its decimal text.</summary>
+    public void Append(long n) => Args.Add(n.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>FUN_141a02f10 (unit_141a00db0.cpp:581): FUN_140b19130 (clubcli.cpp:1533), ParseUInt64W of the argument's
+    /// text; <paramref name="def"/> past the last argument.</summary>
+    public long ArgLong(int index, long def)
+    {
+        if ((uint)index >= (uint)Args.Count) return def;
+        string s = Args[index];
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        ulong v = 0;
+        for (; i < s.Length && s[i] >= '0' && s[i] <= '9'; i++) v = unchecked(v * 10 + (ulong)(s[i] - '0'));
+        return unchecked((long)v);
+    }
+
     /// <summary>_wtoi: leading blanks, a sign, then the digits up to the first other character; 0 without digits.</summary>
-    static int WToI(string s)
+    internal static int WToI(string s)
     {
         int i = 0, sign = 1;
         long v = 0;

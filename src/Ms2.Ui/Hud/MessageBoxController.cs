@@ -213,6 +213,14 @@ public sealed class MessageBoxController : UiController
     /// <summary>CPartyManager::SendPartyMode2(answer): HandlePartyinviteButton's answer to the last invite.</summary>
     public Action<int> AnswerPartyInvite;
 
+    /// <summary>HandleRequestTradeExButton @0x1419fbc40 (uimessagebox.cpp:1503): the trade request box's answer, its argument 0
+    /// (the requester's id, FUN_141a02f10(0, 0)) and yes (button 0) to FUN_14185b8e0.</summary>
+    public Action<long, bool> RequestTradeAnswer;
+
+    /// <summary>HandleTradeInButton @0x1419fe940 (uimessagebox.cpp:2042), the trade count box's yes: the box's item uid and
+    /// the count typed (_wtoi of the tag's second token). The handler does the count check (FUN_141a002b0) and the add.</summary>
+    public Action<long, int> TradeIn;
+
     /// <summary>A tag this port has no handler for (HandlePlainTag / FUN_1419fa910's other tags).</summary>
     public event Action<int, string> UnportedTag;
 
@@ -397,6 +405,7 @@ public sealed class MessageBoxController : UiController
         if (tag.Length == 0) return !IsIdle;
         var box = data;
         if (HandlePlainTag(button, tag)) return true;
+        if (HandleArgTag(button, tag)) return true;
         return box.Type == 0;
     }
 
@@ -416,6 +425,19 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindGemEquipItemButton(button);
         if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
             return HandlePartyinviteButton(button);
+        if (tag == "requestTradeEx")
+            return HandleRequestTradeExButton(button);
+        if (tag.IndexOf(',') < 0 && data?.Listener == null) UnportedTag?.Invoke(button, tag);
+        return false;
+    }
+
+    /// <summary>FUN_1419fa910 (uimessagebox.cpp:1092): a tag of exactly two tokens split by "," (FUN_14028cb70(tag, tokens,
+    /// L",", 2)); 0 otherwise. Of its tags "tradein" is ported; the others are reported as unported.</summary>
+    bool HandleArgTag(int button, string tag)
+    {
+        var tokens = tag.Split(',');
+        if (tokens.Length != 2) return false;
+        if (tokens[0] == "tradein") return HandleTradeInButton(button, MessageBoxData.WToI(tokens[1]));
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -431,6 +453,22 @@ public sealed class MessageBoxController : UiController
             else if (data != null && data.Timer.Button != 0) result = Ms2.Net.Packets.PartyInviteAnswer.TimedOut;
         }
         AnswerPartyInvite?.Invoke(result);
+        return true;
+    }
+
+    /// <summary>HandleRequestTradeExButton @0x1419fbc40: the answer (yes on button 0) with argument 0; 1.</summary>
+    bool HandleRequestTradeExButton(int button)
+    {
+        long id = data?.ArgLong(0, 0) ?? 0;
+        RequestTradeAnswer?.Invoke(id, button == 0);
+        return true;
+    }
+
+    /// <summary>HandleTradeInButton @0x1419fe940: no record, 1; the yes passes the item uid and count on; 1.</summary>
+    bool HandleTradeInButton(int button, int count)
+    {
+        if (data == null) return true;
+        if (button == 0) TradeIn?.Invoke(data.ItemUid, count);
         return true;
     }
 
