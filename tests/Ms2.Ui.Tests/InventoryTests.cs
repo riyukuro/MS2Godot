@@ -316,6 +316,31 @@ public class InventoryTests
     }
 
     [Test]
+    public void AShiftClickLinksTheSlotItem()
+    {
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[] { new EquipItem { Id = 11400001, Uid = 11, InventorySlot = 0, Amount = 1, Rarity = 3 } }));
+        var (h, c, _) = Load(model, book);
+        int gear = c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Tab == 1).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", gear);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var linked = new List<Item>(); c.LinkItem = linked.Add;
+        var raised = new List<string>(); c.Button += raised.Add;
+        // InvenSlot::vfunc_15: the slot's item (FindItemByUid) is linked; an empty cell links nothing
+        Assert.That(c.OnCallback("notifySlotShiftClick", new object[] { "InventoryDialog.0" }), Is.True);
+        Assert.That(linked.Select(i => (i.Uid, i.Data.Id)), Is.EqualTo(new[] { (11L, 11400001) }));
+        c.OnCallback("notifySlotShiftClick", new object[] { "InventoryDialog.1" });
+        Assert.That(linked.Count, Is.EqualTo(1));
+        // no name: nothing; another slot's name is raised
+        c.OnCallback("notifySlotShiftClick", new object[] { Undefined.Value });
+        c.OnCallback("notifySlotShiftClick", new object[] { "EquipSlot.3" });
+        Assert.That((linked.Count, raised), Is.EqualTo((1, new List<string> { "notifySlotShiftClick" })));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ARightClickSendsTheEquipOnly()
     {
         Packs();

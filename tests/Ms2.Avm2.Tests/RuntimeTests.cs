@@ -376,4 +376,26 @@ public class RuntimeTests
         tf.text = "plain";
         Assert.That(tf.htmlText, Is.EqualTo("plain"));
     }
+
+    [Test]
+    public void HtmlTextKeepsALinkThroughTheGetter()
+    {
+        // ParseHtml's HTML_A keeps HREF as the run's URL; GetHtml writes it inside the FONT, outside B, and the text after
+        // the end A has none (a chat input with an item link appended to its html)
+        var (rt, _) = Empty();
+        var tf = (AsTextField)rt.GetClass("flash.text.TextField").Construct();
+        tf.FromSymbol(new JsonObject
+        {
+            ["bounds"] = new JsonObject { ["x"] = 0, ["y"] = 0, ["w"] = 200, ["h"] = 20 },
+            ["text"] = new JsonObject { ["font"] = "F", ["size"] = 12, ["color"] = "#EEEEEE", ["html"] = true, ["initial"] = "" },
+        });
+        tf.htmlText = "hi";
+        tf.htmlText = tf.htmlText + "<a href='event:itemTooltip,7,3,7,15000001,3'><FONT color='#5ad35f'>[<b>Sword</b>]</FONT></a> ";
+        Assert.That(tf.text, Is.EqualTo("hi[Sword] "));
+        const string F = "<FONT FACE=\"F\" SIZE=\"12\" COLOR=\"#{0}\" KERNING=\"0\">";
+        string Font(string c) => F.Replace("{0}", c);
+        Assert.That(tf.htmlText, Is.EqualTo("<TEXTFORMAT><P ALIGN=\"LEFT\">" + Font("EEEEEE") + "hi</FONT>" + Font("5AD35F")
+            + "<A HREF=\"event:itemTooltip,7,3,7,15000001,3\">[</A><A HREF=\"event:itemTooltip,7,3,7,15000001,3\"><B>Sword</B></A>"
+            + "<A HREF=\"event:itemTooltip,7,3,7,15000001,3\">]</A></FONT>" + Font("EEEEEE") + " </FONT></P></TEXTFORMAT>"));
+    }
 }

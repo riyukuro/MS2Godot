@@ -16,13 +16,15 @@ public enum HtmlImageAlign { BaseLine, Left, Right }
 
 /// <summary>
 /// One code point's text format from htmlText: its FONT COLOR (0xRRGGBB; null: the field's own), bold, italic and
-/// underline, its FONT SIZE (null: the field's own) and the IMG tag it stands for (null for text).
+/// underline, its FONT SIZE (null: the field's own), the IMG tag it stands for (null for text) and the A HREF it is
+/// inside (TextFormat's Url; null: none).
 /// </summary>
 public readonly record struct HtmlFormat(uint? Color, bool Bold, bool Italic, bool Underline, int? Size)
 {
     public HtmlImage Image { get; init; }
+    public string Url { get; init; }
 
-    public bool IsPlain => Color == null && !Bold && !Italic && !Underline && Size == null && Image == null;
+    public bool IsPlain => Color == null && !Bold && !Italic && !Underline && Size == null && Image == null && Url == null;
 }
 
 /// <summary>
@@ -40,7 +42,9 @@ public static class HtmlText
     /// everything up to its own element.</item>
     /// <item>BR is a line break in a multiline field only; TAB is a tab.</item>
     /// <item>IMG is a space in the field's default text format (not the one of the elements around it) carrying the tag's
-    /// image.</item>
+    /// image, and the URL of an A around it (sfr_render_05i.cpp:1060).</item>
+    /// <item>A sets the URL from HREF (HTML_A, :1107); the text after the end A has none (the default format's URL is
+    /// cleared, :912). No style sheet is modelled, so no a / a:link CSS style.</item>
     /// <item>In a multiline field a P opened while another P is open starts a new line, an LI starts one unless its
     /// paragraph is still empty, and the end of a P (not an empty P element) or of an LI ends the line.</item>
     /// <item>Entities are decoded.</item>
@@ -104,7 +108,7 @@ public static class HtmlText
                 case "IMG":
                 {
                     // HTML_IMG: the image char's format is the default text format with the image desc
-                    Add(' ', new HtmlFormat { Image = Image(rest[n..]) });
+                    Add(' ', new HtmlFormat { Image = Image(rest[n..]), Url = current.Url });
                     last = current;
                     return;
                 }
@@ -115,6 +119,9 @@ public static class HtmlText
                 case "B": current = current with { Bold = true }; break;
                 case "I": current = current with { Italic = true }; break;
                 case "U": current = current with { Underline = true }; break;
+                case "A":
+                    if (Attribute(rest[n..], "href") is { } href) current = current with { Url = href.Length > 0 ? href : null };
+                    break;
                 case "FONT":
                     if (Attribute(rest[n..], "color") is { } hex && ParseHex(hex) is uint col) current = current with { Color = col };
                     if (Attribute(rest[n..], "size") is { } sz && int.TryParse(sz.Trim(), out int size) && size >= 0) current = current with { Size = size };
@@ -157,8 +164,8 @@ public static class HtmlText
     /// StyledText::GetHtml (sfr_render_01c.cpp:1308): one TEXTFORMAT + P block per paragraph of <paramref name="text"/>
     /// (each ending at a CR or LF, as StyledText::AppendString splits them; a last paragraph that is empty is left out), a FONT tag opened at the first run
     /// and again whenever the font attributes change (IsHTMLFontTagSame), B / I / U around each run, an IMG tag per image
-    /// char, and the text escaped. <paramref name="formats"/> (per code point, null: all the defaults) is merged over
-    /// <paramref name="d"/>. Not modelled: FACE per run, LETTERSPACING, ALPHA, A HREF, LI paragraphs, BLOCKINDENT and
+    /// char, an A HREF around each run or image with a URL (inside the FONT, outside B / I / U), and the text escaped. <paramref name="formats"/> (per code point, null: all the defaults) is merged over
+    /// <paramref name="d"/>. Not modelled: FACE per run, LETTERSPACING, ALPHA, LI paragraphs, BLOCKINDENT and
     /// TABSTOPS.
     /// </summary>
     public static string Build(string text, HtmlFormat[] formats, Defaults d)
@@ -196,7 +203,12 @@ public static class HtmlText
                 while (j < len && At(start + j) == f) j++;
                 if (f.Image is HtmlImage im)
                 {
-                    for (int k = i; k < j; k++) Img(im);
+                    for (int k = i; k < j; k++)
+                    {
+                        if (f.Url != null) html.Append("<A HREF=\"").Append(f.Url).Append("\">");
+                        Img(im);
+                        if (f.Url != null) html.Append("</A>");
+                    }
                 }
                 else
                 {
@@ -211,6 +223,7 @@ public static class HtmlText
                         html.Append(" KERNING=\"0\">");
                         fontOpen = true;
                     }
+                    if (f.Url != null) html.Append("<A HREF=\"").Append(f.Url).Append("\">");
                     if (f.Bold) html.Append("<B>");
                     if (f.Italic) html.Append("<I>");
                     if (f.Underline) html.Append("<U>");
@@ -228,6 +241,7 @@ public static class HtmlText
                     if (f.Underline) html.Append("</U>");
                     if (f.Italic) html.Append("</I>");
                     if (f.Bold) html.Append("</B>");
+                    if (f.Url != null) html.Append("</A>");
                 }
                 i = j;
             }

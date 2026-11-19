@@ -276,6 +276,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             case "onclickitemenchant": ToggleDialog?.Invoke(0x4e91); return true;           // OnClickItemEnchant @0x14199aaa0
             case "onclicksort": OnClickSort(); return true;
             case "notifyslotuse": return SlotUse(args);
+            case "notifyslotshiftclick": return SlotShiftClick(args);
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
             case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand":
                 Button?.Invoke(name); return true;
@@ -371,6 +372,26 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         var mine = View.ItemAt(View.Tab, target) is { } e ? ToItem(e, Model.Tables.Items) : null;
         if (mine != null && models.Get(mine.Data.ItemPreset)?.HasSlotType(group) == true) RequestEquip(mine, group, kind);
         else if (View.Tab == View.TabOfItem(worn.Data.Id)) equips.RequestUnequip(worn);
+    }
+
+    /// <summary>FUN_140d2cfc0 (chatlinkhelpers.cpp:578): the item linked into the chat input (the chat log's
+    /// <see cref="MessengerBrowser.LinkItem(Item)"/>); null leaves it out.</summary>
+    public Action<Item> LinkItem;
+
+    /// <summary>
+    /// NotifyDragSlot::SlotShiftClick (notifydragslot.cpp:63) for a slot of this bag: InvenSlot::vfunc_15 (invenslot.cpp:1099)
+    /// links the slot's item (FindItemByUid of m_nItemUid, then FUN_140d2cfc0: <see cref="LinkItem"/>), then
+    /// DragSlot::vfunc_15 (dragslot.cpp:80) is vfunc_10, the slot pushed again. No name does nothing; another name is
+    /// raised (notifySlotShiftClick).
+    /// </summary>
+    bool SlotShiftClick(object[] args)
+    {
+        if (args.Length < 1 || args[0] == null || args[0] is Ms2.Avm2.Undefined) return true;
+        int i = SlotIndexOf(args[0]);
+        if (i < 0) { Button?.Invoke("notifySlotShiftClick"); return true; }
+        if (View?.ItemAt(View.Tab, i) is { } e && e.Uid != 0 && FindItem(e.Uid) is { } item) LinkItem?.Invoke(item);
+        RefreshSlot(SlotName(i));
+        return true;
     }
 
     /// <summary>

@@ -755,6 +755,60 @@ public class HudTests
     }
 
     [Test]
+    public void MessengerItemLinkIntoTheInputIsSentAsHtml()
+    {
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        var held = Item.Create(m.Tables.Items, 15000001, 3);
+        held.Uid = 7;
+        int r = held.Rarity;
+        c.Browser.FindHeldItem = uid => uid == 7 ? held : null;
+        string name = m.Tables.ItemName(15000001), color = $"#{m.Tables.Items.TextColor(r):x}";
+        string href = $"'event:itemTooltip,7,3,7,15000001,{r}'";
+        // FUN_140d2e2b0 / FUN_140d2ef00: the link markup, "&" escaped in the name
+        string link = c.Browser.ItemLink(15000001, r, 7);
+        Assert.That(link, Is.EqualTo($"<a href={href}><FONT color='{color}'>[{name}]</FONT></a>"));
+        Assert.That(MessengerBrowser.LinkMarkup("'h'", "#1", "a&b"), Is.EqualTo("<a href='h'><FONT color='#1'>[a&amp;b]</FONT></a>"));
+        // FUN_141a24fb0 -> AppendToInput: the link and a space after the input's html, the caret after it, the link kept
+        h.Set(h.Get(input, "textField"), "text", "look");
+        c.Browser.LinkItem(held);
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo($"look[{name}] "));
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.Not.EqualTo(0));
+        Assert.That(c.InputLinks, Is.EqualTo(new[] { link }));
+        // Return: SubmitLine sends the html (it has a link) without its P, BR, TEXTFORMAT and FONT tags
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(sent.Count, Is.EqualTo(1));
+        string a = $"<A HREF=\"event:itemTooltip,7,3,7,15000001,{r}\">[{name}]</A>";
+        Assert.That(sent[0].Message, Is.EqualTo($"look{a} "));
+        Assert.That(MessengerController.HasChatLink(sent[0].Message), Is.True);
+        Assert.That(c.InputLinks, Is.Empty, "released with the input");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerDropsHandTypedLinks()
+    {
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        c.Browser.LinkItem(15000001, 3, 7);
+        string html = Rt.ToString(h.Get(input, "htmlText"));
+        // a typed link of another uid (FUN_140d2c2a0): removed on eventTextInput; the kept one stays
+        string typed = "<A HREF=\"event:itemTooltip,8,3,8,15000001,3\">[x]</A>";
+        h.Set(input, "htmlText", html + typed);
+        Assert.That(c.OnCallback("eventTextInput", new object[0]), Is.True);
+        string after = Rt.ToString(h.Get(input, "htmlText"));
+        Assert.That(after, Does.Not.Contain("itemTooltip,8,"));
+        Assert.That(after, Does.Contain("itemTooltip,7,"));
+        Assert.That(MessengerBrowser.IsListedLink("<A HREF=\"event:itemTooltip,7,3\">[n]</A>", new[] { "<a href='event:itemTooltip,7,3'><FONT color='#1'>[n]</FONT></a>" }), Is.True);
+        Assert.That(MessengerBrowser.IsListedLink("<A HREF=\"event:itemTooltip,7,3\">[m]</A>", new[] { "<a href='event:itemTooltip,7,3'><FONT color='#1'>[n]</FONT></a>" }), Is.False);
+        // FUN_141a14ce0: the length without tags
+        Assert.That(MessengerController.FitsWithoutTags("<a>abc</a>", 3), Is.True);
+        Assert.That(MessengerController.FitsWithoutTags("<a>abcd", 3), Is.False);
+        Assert.That(MessengerController.FitsWithoutTags("ab<c", 3), Is.False, "an unclosed '<' stays");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MessengerWhisperCommand()
     {
         var (c, h, m, sent, notices) = ChatWindow();

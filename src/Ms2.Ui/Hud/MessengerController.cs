@@ -409,10 +409,11 @@ public sealed class MessengerController : UiController
     }
 
     /// <summary>
-    /// FUN_141a11e30 (:1532), Return. Focused: the text with "&lt;" / "&gt;" escaped (FUN_141842320) and the html text
+    /// FUN_141a11e30 (:1532), Return. Focused: the links not put there by <see cref="AppendToInput"/> removed
+    /// (<see cref="RemoveUnlistedLinks"/>), the text with "&lt;" / "&gt;" escaped (FUN_141842320) and the html text
     /// without its P, BR, TEXTFORMAT and FONT tags (FUN_140d2c650); the trimmed text, unless empty, goes to
-    /// <see cref="SubmitLine"/>; then the input is released (FUN_141a12260). The input history (FUN_140d2c2a0) and the IME
-    /// composition string the client appends (GetImeCompositionString(2)) are not kept here. Not focused (after vfunc_78,
+    /// <see cref="SubmitLine"/>; then the input is released (FUN_141a12260). The IME composition string the client
+    /// appends (GetImeCompositionString(2)) is not kept here. Not focused (after vfunc_78,
     /// the extra components, not ported): after a whisper (the browser's last channel 4) the input starts a whisper to
     /// its target, after a club line (0x1a) a talk to its club, else it takes the focus with the caret after its text.
     /// </summary>
@@ -420,6 +421,7 @@ public sealed class MessengerController : UiController
     {
         if (InputFocused)
         {
+            RemoveUnlistedLinks();
             string text = Escape(Rt.ToString(Host.Get(textInput, "text")));
             string html = MessengerBrowser.RemoveChatTags(Rt.ToString(Host.Get(textInput, "htmlText")));
             text = UserCommands.Trim(text);
@@ -433,6 +435,74 @@ public sealed class MessengerController : UiController
         SetFocused(textInput, 1);
         FocusAndSetSelection(length, length);
         Validate(textInput);
+    }
+
+    /// <summary>m_inputHistory (+0x1f8): the links <see cref="AppendToInput"/> put in the input; cleared when the input is
+    /// released (FUN_141a12260); the client also clears them in vfunc_67 (:622), where the port drops the controller.</summary>
+    readonly List<string> inputLinks = new();
+    public IReadOnlyList<string> InputLinks => inputLinks;
+
+    /// <summary>
+    /// UIMessenger::AppendToInput (@0x141a0ec30, :1164): nothing when the input's text is already maxChars long (GetMaxChars)
+    /// or the html with the link and a space would be longer without its tags (FUN_141a14ce0, :2046); else that html is
+    /// set and validated, the caret goes after the text (FocusAndSetSelection) when there is text, and the link is kept.
+    /// STILL-OPEN: the vfunc_78 call before the caret (the extra components) is not ported.
+    /// </summary>
+    public void AppendToInput(string link)
+    {
+        if (textInput == null) return;
+        int max = (int)Rt.ToNumber(Host.Get(textInput, "maxChars"));
+        if (Rt.ToString(Host.Get(textInput, "text")).Length >= max) return;
+        string html = Rt.ToString(Host.Get(textInput, "htmlText")) + link + " ";
+        if (!FitsWithoutTags(html, max)) return;
+        Host.Set(textInput, "htmlText", html);
+        Validate(textInput);
+        int length = Rt.ToString(Host.Get(textInput, "text")).Length;
+        if (length > 0) FocusAndSetSelection(length, length);
+        Validate(textInput);
+        inputLinks.Add(link);
+    }
+
+    /// <summary>FUN_141a14ce0 (:2046): each "&lt;" .. next "&gt;" removed, from the first "&lt;" again each time (an
+    /// unclosed one stays); true when what is left is at most <paramref name="max"/> long.</summary>
+    public static bool FitsWithoutTags(string text, int max)
+    {
+        int open;
+        while ((open = text.IndexOf('<')) != -1)
+        {
+            int close = text.IndexOf('>', open + 1);
+            if (close == -1) break;
+            text = text.Remove(open, close - open + 1);
+        }
+        return text.Length <= max;
+    }
+
+    /// <summary>
+    /// FUN_140d2c2a0 (unit_140d2a7e0_chatlinkhelpers.cpp:423), on Return and eventTextInput: with the input focused, links
+    /// kept and html in it, each "&lt;A HREF=" .. "/A&gt;" (FindLinks) that is not one of the kept links
+    /// (<see cref="MessengerBrowser.IsListedLink"/>) is removed (every copy); if any was, the html is set and validated,
+    /// and an input left without text gets "&lt;Font&gt;&lt;/Font&gt;". A hand-typed link does not survive.
+    /// </summary>
+    void RemoveUnlistedLinks()
+    {
+        if (textInput == null || !InputFocused || inputLinks.Count == 0) return;
+        string html = Rt.ToString(Host.Get(textInput, "htmlText"));
+        if (string.IsNullOrEmpty(html)) return;
+        bool changed = false;
+        foreach (var link in MessengerBrowser.FindLinks(html, "<A HREF=", "/A>"))
+        {
+            if (MessengerBrowser.IsListedLink(link, inputLinks)) continue;
+            html = html.Replace(link, "", StringComparison.Ordinal);
+            changed = true;
+        }
+        if (!changed) return;
+        Host.Set(textInput, "htmlText", html);
+        Validate(textInput);
+        if (Rt.ToString(Host.Get(textInput, "text")).Length == 0)
+        {
+            Host.Set(textInput, "htmlText", "<Font></Font>");
+            Validate(textInput);
+        }
     }
 
     /// <summary>ASTextInput::FocusAndSetSelection (astextinput.cpp:264): the focus if it has none, then the text field's
@@ -702,10 +772,11 @@ public sealed class MessengerController : UiController
         BeginWhisper(target);
     }
 
-    /// <summary>FUN_141a12260 (:1578): a focused input loses the focus and its text; true = it was focused.</summary>
+    /// <summary>FUN_141a12260 (:1578): a focused input loses the focus, its kept links and its text; true = it was focused.</summary>
     bool Release()
     {
         if (!InputFocused) return false;
+        inputLinks.Clear();
         SetFocused(textInput, 0);
         Host.Set(textInput, "htmlText", "<FONT></FONT>");
         Validate(textInput);
@@ -752,6 +823,7 @@ public sealed class MessengerController : UiController
             case "eventfocusout": return true;                 // vfunc_91: the history iterator back to the end
             case "eventchangetab": SelectTab(args.Length > 0 ? Rt.ToString(args[0]) : ""); return true;
             case "eventchangetalktarget": SubjectChanged(); return true;     // vfunc_93
+            case "eventtextinput": RemoveUnlistedLinks(); return true;       // vfunc_28 :4042
             case "eventpresssubjecttab":
                 UpdateSuperWorldChatEffect();
                 if (!IsTypeHidden(Super) && SelectedType() == Super) Browser.OpenSuperChatDialog?.Invoke();

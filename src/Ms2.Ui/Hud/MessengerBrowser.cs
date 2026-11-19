@@ -274,6 +274,78 @@ public sealed class MessengerBrowser
     /// <summary>FUN_141a263d0 (:3596): the linked item of the uid; null when there is none.</summary>
     public Item LinkedItem(long uid) => linkedItems.TryGetValue(uid, out var item) ? item : null;
 
+    // ---- item links into the input (unit_140d2a7e0_chatlinkhelpers.cpp) ----------------------------------------------
+
+    /// <summary>
+    /// The held containers FUN_140d2e2b0 searches by uid: g_143ab2a90.FindItemByUid (the bag), then the local PC's
+    /// FUN_141655b80, the pet inventory and MS2_STORE_TABLE; null when none holds it. Only the bag is wired here.
+    /// </summary>
+    public Func<long, Item> FindHeldItem = _ => null;
+
+    /// <summary>FUN_140d2cfc0 (:578): an item's link (its id, rarity and uid) put in the input; nothing for null.</summary>
+    public void LinkItem(Item item)
+    {
+        if (item == null) return;
+        LinkItem(item.Data.Id, item.Rarity, item.Uid);
+    }
+
+    /// <summary>
+    /// FUN_140d2d060 (:586): <see cref="ItemLink"/> put in the chat log's input (m_pLog, FUN_141a24fb0). STILL-OPEN: the
+    /// group messenger's copy (m_pMessenger, UIGroupMessengerBrowser::FUN_141953660) is not ported yet.
+    /// </summary>
+    public void LinkItem(int id, int grade, long uid) => AppendToInput(ItemLink(id, grade, uid));
+
+    /// <summary>
+    /// FUN_140d2e2b0 (:716): the href 'event:itemTooltip,{uid},3,{uid},{id},{grade}' (CHATLINK_ITEM_UID; the uid and
+    /// the id formatted unsigned), the grade's colour (CItemDataTable::GetTextColorString, itemdatatable.cpp:408:
+    /// "#{0:x}" of GetTextColor) and the held item's name (CItem::FUN_140527b10, <see cref="ItemTooltip.Name"/>), else
+    /// GetItemDisplayName(id). STILL-OPEN: GetItemDisplayName's pet-item form (itemugcmesh.cpp:1014, type 0xb: common
+    /// 0xcd5 / 0xcd6 of the pet's name) and the names ItemTooltip.Name does not make (UGC, score, pet, gem) fall back to
+    /// the item's string table name.
+    /// </summary>
+    public string ItemLink(int id, int grade, long uid)
+    {
+        string href = "'event:itemTooltip," + ((ulong)uid).ToString(CultureInfo.InvariantCulture) + ",3,"
+            + ((ulong)uid).ToString(CultureInfo.InvariantCulture) + "," + ((uint)id).ToString(CultureInfo.InvariantCulture) + ","
+            + grade.ToString(CultureInfo.InvariantCulture) + "'";
+        string color = "#" + Tables.Items.TextColor(grade).ToString("x", CultureInfo.InvariantCulture);
+        var held = FindHeldItem?.Invoke(uid);
+        string name = (held != null && Model != null ? new ItemTooltip(Model, 0).Name(held) : null) ?? Tables.ItemName(id);
+        return LinkMarkup(href, color, name);
+    }
+
+    /// <summary>FUN_140d2ef00 (:802): "&amp;" in the text escaped (EscapeAmpersand, :460), then
+    /// &lt;a href={href}&gt;&lt;FONT color='{color}'&gt;[{text}]&lt;/FONT&gt;&lt;/a&gt;.</summary>
+    public static string LinkMarkup(string href, string color, string text) =>
+        "<a href=" + href + "><FONT color='" + color + "'>[" + (text ?? "").Replace("&", "&amp;") + "]</FONT></a>";
+
+    /// <summary>
+    /// FUN_141a24fb0 (uimessenger.cpp:3332): AppendToInput on each window whose name is GetState()->GetCurrentName();
+    /// the port's chat log has the one window, which is always the current one.
+    /// </summary>
+    public void AppendToInput(string link)
+    {
+        foreach (var w in Windows) w?.AppendToInput(link);
+    }
+
+    /// <summary>
+    /// FUN_140d2a7e0 (chatlinkhelpers.cpp:180): the link is one of the list's: both without their A and FONT tags
+    /// (RemoveHtmlTag; the link's &amp;apos;, &amp;lt;, &amp;gt; and &amp;nbsp; then read back) are the same text, and
+    /// both link the same id (<see cref="LinkUid"/>), not 0.
+    /// </summary>
+    public static bool IsListedLink(string link, IReadOnlyList<string> links)
+    {
+        string plain = RemoveHtmlTag(RemoveHtmlTag(link, "A"), "FONT")
+            .Replace("&apos;", "'").Replace("&lt;", "<").Replace("&gt;", ">").Replace("&nbsp;", " ");
+        foreach (var other in links)
+        {
+            if (plain != RemoveHtmlTag(RemoveHtmlTag(other, "a"), "FONT")) continue;
+            long id = LinkUid(link), otherId = LinkUid(other);
+            if (id != 0 && id == otherId) return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// ColorItemLinks (@0x141a25ad0, :3486): every "&lt;A HREF=" .. "/A&gt;" of the html (FindLinks) wrapped in
     /// FUN_14183e930's "&lt;FONT color='#%x'&gt;" of its linked item's grade colour (CItemDataTable::GetTextColor), white

@@ -536,6 +536,8 @@ public partial class HudScene : Node, IUiStageHost
             live.SendChat(chat);
         };
         ChatLog.IsInParty = () => live.Party.IsInParty;
+        // FUN_140d2e2b0's held containers: the bag (g_143ab2a90.FindItemByUid)
+        ChatLog.FindHeldItem = uid => live.Inventory?.FindByUid(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
         ChatLog.CommandHooks.ChatLine = ChatLog.AddSystemLine;
         ChatLog.CommandHooks.GmLevel = ChatLog.GmLevel;
         ChatLog.CommandHooks.Unported = (name, args) =>
@@ -1658,6 +1660,7 @@ public partial class HudScene : Node, IUiStageHost
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             ActionKeyDown = ActionKeyDown,
             SlotWorld = QuickSlotWorld,
+            LinkItem = ChatLog.LinkItem,                  // InvenSlot::vfunc_15: Shift+click links the item into the chat input
         };
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
