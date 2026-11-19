@@ -113,6 +113,28 @@ public static class ItemLevels
     public static double HighGearEnchantRate(int level) => (uint)(level - 1) < 15u ? HighRates[level - 1] : 0.0;
 
     /// <summary>
+    /// CLua::CalcOHItemAdditionalLevel (@0x140678570, commonfiles/luautil.cpp:1160, called from pc.cpp:4254 for two
+    /// one-handed weapons): the client chunk's calcOHItemAdditionalLevel(low, high, low additional, high additional)
+    /// (Data/lua/Precompiled.m2d luapack64.o, the pack CLua loads, luautil.cpp:351). With no low level and a high one, half of
+    /// each high value; with low &lt; high and a gap (high - low) / high over 0.3, low + low * gap * 0.5 and low * gap * 0.5
+    /// (the second from the totals too, as the script has it); with a smaller gap, the two means; else the high values.
+    /// The results are read by lua_tointeger (CLuaContext::Integer, luautil.cpp:169), truncated toward zero.
+    /// </summary>
+    public static (int Min, int Max) OneHandedAdditionalLevel(uint low, uint high, uint lowMax, uint highMax)
+    {
+        double a = low, b = high, c = lowMax, d = highMax;
+        static int Int(double v) => (int)(long)v;
+        if (a == 0 && 0 < b) return (Int(b / 2), Int(d / 2));
+        if (a < b)
+        {
+            double gap = (b - a) / b;
+            if (0.3 < gap) return (Int(a + a * gap * 0.5), Int(a * gap * 0.5));
+            return (Int((a + b) / 2), Int((c + d) / 2));
+        }
+        return (Int(b), Int(d));
+    }
+
+    /// <summary>
     /// PC::vfunc_126's sum for layer 0, the worn items by their slot (m_68): items <paramref name="canUse"/> passes
     /// (PC::CanUseItem, which tests CItem::FUN_140528980 first, so its second test here is the same: <see cref="Usable"/>)
     /// give (m_b0, m_b4);
@@ -120,7 +142,8 @@ public static class ItemLevels
     /// others add up. Then by that count: none, the slot 5 levels are added; one (or more than two), they are added divided
     /// by <paramref name="divisor"/> (BothHandGearScorePenaltyDiv), in float as the exe adds them to the unsigned sums; two,
     /// Lua CalcOHItemAdditionalLevel(low, high, low max, high max) of the two hands' levels is added, here
-    /// <paramref name="oneHanded"/>. Null when an item level or the two-hand Lua part is not known.
+    /// <paramref name="oneHanded"/>, by default <see cref="OneHandedAdditionalLevel"/>. Null when an item level is not known
+    /// or a given <paramref name="oneHanded"/> returns null.
     /// </summary>
     public static (uint Total, uint Additional)? Worn(IReadOnlyDictionary<int, Item> layer0, float divisor, Func<Item, bool> canUse,
         Func<int, int, int, int> unlimitedEnchant = null, Func<uint, uint, uint, uint, (int Min, int Max)?> oneHanded = null)
@@ -155,7 +178,7 @@ public static class ItemLevels
                 max += slot5Max;
                 break;
             case 2:
-                if (oneHanded?.Invoke(Math.Min(slot4Min, slot5Min), Math.Max(slot4Min, slot5Min), Math.Min(slot4Max, slot5Max),
+                if ((oneHanded ?? ((lo, hi, loMax, hiMax) => OneHandedAdditionalLevel(lo, hi, loMax, hiMax)))(Math.Min(slot4Min, slot5Min), Math.Max(slot4Min, slot5Min), Math.Min(slot4Max, slot5Max),
                         Math.Max(slot4Max, slot5Max)) is not var (addMin, addMax))
                     return null;
                 min += (uint)addMin;

@@ -64,12 +64,24 @@ public class ItemLevelTests
             "slot 4 alone is not added");
         Assert.That(ItemLevels.Worn(new Dictionary<int, Item> { [8] = armor, [5] = oneHanded }, 4f, All), Is.EqualTo(((uint, uint)?)(252u, 0u)),
             "200 + 210 / 4 in float, truncated");
-        Assert.That(ItemLevels.Worn(new Dictionary<int, Item> { [4] = offHand, [5] = oneHanded }, 4f, All), Is.Null, "two: Lua");
+        Assert.That(ItemLevels.Worn(new Dictionary<int, Item> { [4] = offHand, [5] = oneHanded }, 4f, All), Is.EqualTo(((uint, uint)?)(205u, 0u)),
+            "two: the Lua part, a gap of 10 / 210: the means");
         Assert.That(ItemLevels.Worn(new Dictionary<int, Item> { [4] = offHand, [5] = oneHanded }, 4f, All,
             oneHanded: (lo, hi, loMax, hiMax) => ((int)(lo + hi), (int)(loMax + hiMax))), Is.EqualTo(((uint, uint)?)(410u, 0u)));
         Assert.That(ItemLevels.Worn(new Dictionary<int, Item> { [8] = armor, [5] = twoHanded }, 4f, it => it != armor),
             Is.EqualTo(((uint, uint)?)(205u, 0u)), "an item the player cannot use adds nothing");
         Assert.That(ItemLevels.Worn(new Dictionary<int, Item>(), 4f, All), Is.EqualTo(((uint, uint)?)(0u, 0u)));
+    }
+
+    [Test]
+    public void OneHandedPairFollowsTheScriptBranches()
+    {
+        Assert.That(ItemLevels.OneHandedAdditionalLevel(0, 300, 0, 41), Is.EqualTo((150, 20)), "no low level: half the high");
+        Assert.That(ItemLevels.OneHandedAdditionalLevel(0, 0, 5, 7), Is.EqualTo((0, 7)), "nothing: the high values");
+        Assert.That(ItemLevels.OneHandedAdditionalLevel(100, 120, 10, 30), Is.EqualTo((110, 20)), "gap 1/6: the means");
+        // gap 0.5: 100 + 100 * 0.5 * 0.5 and 100 * 0.5 * 0.5, the additional from the totals
+        Assert.That(ItemLevels.OneHandedAdditionalLevel(100, 200, 10, 30), Is.EqualTo((125, 25)));
+        Assert.That(ItemLevels.OneHandedAdditionalLevel(200, 200, 9, 4), Is.EqualTo((200, 4)), "equal: the high values");
     }
 
     [Test]
