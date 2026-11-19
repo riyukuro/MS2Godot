@@ -188,7 +188,11 @@ void main() {
 
     void Run(int mode, Vector2I size, Vector2 step, params RDUniform[] uniforms)
     {
-        var set = UniformSetCacheRD.GetCache(shaders[mode], 0, new Array<RDUniform>(uniforms));
+        // the cache copies the uniforms into its own set, so the wrappers are disposed here (they ran at ~9 a frame
+        // and sat in the SDK's disposables tracker until a GC finalized them)
+        var array = new Array<RDUniform>(uniforms);
+        var set = UniformSetCacheRD.GetCache(shaders[mode], 0, array);
+        foreach (var u in uniforms) u.Dispose();
         var pc = new float[] { step.X, step.Y, Threshold, Offset, BloomScale, GlowScale, 0, 0 };
         var bytes = new byte[pc.Length * 4];
         Buffer.BlockCopy(pc, 0, bytes, 0, bytes.Length);
@@ -205,6 +209,7 @@ void main() {
         if (rd == null || effectCallbackType != (int)EffectCallbackTypeEnum.PostTransparent) return;
         // disposed here, on the render thread: a wrapper left to the GC finalizer can hold the last reference to a freed
         // viewport's buffers (the character list's capture), and their textures then fail to free off the render thread
+        using var data = renderData;   // the callback's wrapper is new each frame; left alone it stays tracked until a GC
         using var sceneBuffers = renderData.GetRenderSceneBuffers();
         if (sceneBuffers is not RenderSceneBuffersRD buffers) return;
         var size = buffers.GetInternalSize();
