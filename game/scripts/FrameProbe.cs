@@ -53,7 +53,7 @@ public sealed partial class FrameProbe : Node
                 byType.TryGetValue(n, out var c); byType[n] = c + 1;
             }
             GD.Print($"census {label} {prop}: entries {total} live {live}");
-            foreach (var kv in System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(byType, k => k.Value), 10)) GD.Print($"  census {kv.Key} {kv.Value}");
+            foreach (var kv in System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(byType, k => k.Value), 10)) GD.Print($"  census {kv.Key} {kv.Value}");   // perf-ok: env-gated probe, one census per 120 frames
         }
     }
 }
