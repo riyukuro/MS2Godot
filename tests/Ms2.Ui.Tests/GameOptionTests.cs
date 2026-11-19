@@ -93,7 +93,7 @@ public class GameOptionTests
         public void SendRideMode(bool d) => Log.Add("ride " + d);
     }
 
-    static (UiHost, Host) Load(int tab)
+    static (UiHost, Host) Load(int tab, int stageW = 1282, int stageH = 722)
     {
         if (packs == null)
         {
@@ -108,7 +108,7 @@ public class GameOptionTests
         host.Movie = new GameOptionController { Dialog = host.Dialog };
         if (tab != 0) host.Dialog.SetTab(tab);
         var (rt, p) = src.Open(host.Movie.Movie, r => r.Budget = 20_000_000);
-        p.StageW = 1282; p.StageH = 722;
+        p.StageW = stageW; p.StageH = stageH;
         var h = new UiHost(p, host.Movie, new UiModel(tables));
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 30; i++) p.Tick();
@@ -325,5 +325,35 @@ public class GameOptionTests
             Assert.That(shown, Has.None.StartsWith("$s_"), "the movie localizes the ids");
         }
         Assert.That(h.Controller.GetUserData("getTooltip", new object[] { "m_other" }), Is.Null);
+    }
+
+    /// <summary>The Graphics page's rows below the scroll pane take no mouse hits: the pane (m_container) is clipped by a
+    /// timeline clip-depth mask, which decides the hits for the children up to its clip depth (CalcDisplayListHitTestMaskArray
+    /// 0x1425fbff0). Before, the hidden rows under m_apply / m_ok took the mouse (the weapon effect row's tooltip showed over
+    /// the buttons). At two stage sizes: the window's 1280x720 and 1680x1050 client areas.</summary>
+    [TestCase(1282, 722)]
+    [TestCase(1682, 1052)]
+    public void PaneRowsOutsideTheMaskTakeNoHits(int w, int hh)
+    {
+        var (h, _) = Load(6, w, hh);
+        var p = h.Player;
+        object Get(object o, string n) => p.RT.GetProperty(o, Name.Public(n));
+        foreach (var name in new[] { "m_apply", "m_ok", "m_init" })
+        {
+            var b = h.Invoke(h.Entity, "getChildByName", name) as AsDisplayObject ?? FindNamed(p, p.Stage, name);
+            Assert.That(b, Is.Not.Null, name);
+            var r = p.Call(b, "getBounds", p.Stage);
+            double x = Rt.ToNumber(Get(r, "x")) + Rt.ToNumber(Get(r, "width")) / 2, y = Rt.ToNumber(Get(r, "y")) + Rt.ToNumber(Get(r, "height")) / 2;
+            bool onButton = false;
+            for (AsDisplayObject t = p.MouseTarget(x, y); t != null; t = t.Parent) onButton |= t == b;
+            Assert.That(onButton, Is.True, $"{name}: the mouse at its centre ({x:F0},{y:F0}) reaches it");
+        }
+    }
+
+    static AsDisplayObject FindNamed(Player p, AsDisplayObject o, string name)
+    {
+        if (p.RT.GetProperty(o, Name.Public("name")) as string == name) return o;
+        if (o is AsContainer c) foreach (var k in c.Children) if (FindNamed(p, k, name) is { } f) return f;
+        return null;
     }
 }

@@ -889,10 +889,22 @@ namespace Ms2.Avm2.Flash
                 if (o is AsContainer c)
                 {
                     var kids = c.Children;
+                    // CalcDisplayListHitTestMaskArray (0x1425fbff0), as in ContainerTopMost: a clip-depth mask decides for the
+                    // children up to its clip depth, so a scroll pane's rows outside its mask take no hit
+                    bool[] masked = null;
+                    for (int i = 0; i < kids.Count; i++)
+                    {
+                        if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
+                        masked ??= new bool[kids.Count];
+                        bool inside = PointTest(kids[i], x, y, true, false);
+                        int j = i + 1;
+                        for (; j < kids.Count && kids[j].Depth <= clip; j++) masked[j] = !inside;
+                        i = j - 1;
+                    }
                     for (int i = kids.Count - 1; i >= 0; i--)
                     {
                         var k = kids[i];
-                        if (k.ClipDepth != null) continue;
+                        if (k.ClipDepth != null || masked != null && masked[i]) continue;
                         var h = Hit(k);
                         if (h != null) return h;
                     }
