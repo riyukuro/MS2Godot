@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
@@ -132,6 +134,12 @@ public partial class HudScene
     /// <summary>Scripted runs: the trade dialog is open.</summary>
     public bool TradeDialogShown => TradeOpen;
 
+    /// <summary>Scripted runs: both sides latched in the open dialog.</summary>
+    public bool TradeBothLatched => TradeOpen && trade.MineLatched && trade.PartnerLatched;
+
+    /// <summary>Scripted runs: my side latched in the open dialog.</summary>
+    public bool TradeMineLatched => TradeOpen && trade.MineLatched;
+
     /// <summary>Scripted runs: the latch sounds heard since the dialog opened (mine and the partner's lock).</summary>
     public int TradeLocksHeard { get; private set; }
 
@@ -139,29 +147,52 @@ public partial class HudScene
     public void TradeAsk(long characterId) => Trades?.RequestTrade(characterId);
 
     /// <summary>
-    /// Scripted runs: the inventory opened on its first tab holding an item, and that item right-clicked (InvenSlot's use: with
-    /// the trade dialog at the head, TryAddToTrade); a count box that follows is answered with its OK. False when the bag is empty.
+    /// Scripted runs: the inventory opened on the tab of the <paramref name="n"/>th held item (counting the tabs in order),
+    /// and that item right-clicked (InvenSlot's use: with the trade dialog at the head, TryAddToTrade); a count box that
+    /// follows is answered by the caller. 0 when there is no such item, else its uid.
     /// </summary>
-    public bool TradeRightClickFirstItem()
+    public long TradeRightClickItem(int n)
     {
         var view = Ms2Godot.Net.LiveSession.Instance?.Inventory;
-        if (view == null) return false;
+        if (view == null) return 0;
         if (inventory == null || inventory.IsClosed) OpenInventory();
-        if (inventory?.Host == null) return false;
+        if (inventory?.Host == null) { GD.Print("live: trade: no inventory movie"); return 0; }
         for (int t = 0; t < inventory.Tabs.Count; t++)
         {
-            if (view.Used(inventory.Tabs[t].Tab) == 0) continue;
-            inventory.Host.Set(inventory.Host.Child("m_tab"), "selectedIndex", t);
-            var cells = view.Cells(view.Tab);
+            var cells = view.Cells(inventory.Tabs[t].Tab);
             for (int i = 0; i < cells.Count; i++)
             {
-                if (cells[i].Empty) continue;
-                GD.Print($"live: trade: right-click item {cells[i].Uid} (tab {inventory.Tabs[t].Tab} slot {i})");
+                if (cells[i].Empty || n-- > 0) continue;
+                inventory.Host.Set(inventory.Host.Child("m_tab"), "selectedIndex", t);
+                GD.Print($"live: trade: right-click item {cells[i].ItemId} x{cells[i].Amount} (tab {inventory.Tabs[t].Tab} slot {i})");
                 inventory.OnCallback("notifySlotUse", new object[] { Ms2.Ui.Hud.InventoryController.SlotName(i), 1 });
-                return true;
+                return cells[i].Uid;
             }
         }
-        return false;
+        GD.Print($"live: trade: no held item {n} in tabs {string.Join(",", inventory.Tabs.Select(x => $"{x.Tab}:{view.Used(x.Tab)}"))}");
+        return 0;
+    }
+
+    /// <summary>Scripted runs: my side's trade slot <paramref name="slot"/> right-clicked (TradeSlot's use: SendTradeMode9).</summary>
+    public void TradeRemoveMine(int slot) => TradeCallback("notifySlotUse", TradeDialogController.SlotName(true, slot), 1);
+
+    /// <summary>Scripted runs: the item ids and counts on both sides of the trade table.</summary>
+    public string TradeTableText()
+    {
+        var items = Trades?.Items.AllItems;
+        return items == null ? "" : string.Join(", ", items.Select(i => $"{i.ItemId} x{i.Count}"));
+    }
+
+    /// <summary>Scripted runs: every held item as "id xcount", over the tabs in order, and the mesos the HUD shows.</summary>
+    public string BagText()
+    {
+        var view = Ms2Godot.Net.LiveSession.Instance?.Inventory;
+        if (view == null) return "";
+        var held = new List<string>();
+        for (int t = 0; t < Ms2.Net.Packets.ItemBook.Tabs; t++)
+            foreach (var c in view.Cells(t))
+                if (!c.Empty) held.Add($"{c.ItemId} x{c.Amount} (tab {t})");
+        return $"mesos {(hudModel.HasLocalPlayer ? hudModel.Player.Mesos : -1)}; items {string.Join(", ", held)}";
     }
 
     /// <summary>Scripted runs: a callback of the trade movie (OnLock with the mesos text, OnConfirm, OnClose).</summary>

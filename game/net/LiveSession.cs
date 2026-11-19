@@ -1097,9 +1097,10 @@ public partial class LiveSession : Node
                 n++;
             }
         }
-        // MS2_LIVE_TRADE: "ask:<name>[:<mesos>]" waits for that player in the field, asks through the popup menu's Trade,
-        // adds the first bag item, locks with the mesos and confirms after both locks; "answer[:<mesos>]" accepts the request
-        // box, then locks and confirms the same way. Each waits for the dialog to close after the confirm.
+        // MS2_LIVE_TRADE: "ask:<name>[:<mesos>]" waits for that player in the field and asks through the popup menu's Trade;
+        // "answer[:<mesos>]" accepts the request box. Round one: the asker adds its first two bag items and takes the first
+        // back off, the answerer adds its first; both lock with the mesos and confirm after both locks. Round two: the asker
+        // asks again, adds its first item and cancels. The bags and mesos are logged before and after each round.
         string tradeRun = System.Environment.GetEnvironmentVariable("MS2_LIVE_TRADE");
         if (!string.IsNullOrEmpty(tradeRun) && tree.CurrentScene is Ui.HudScene th)
         {
@@ -1107,42 +1108,80 @@ public partial class LiveSession : Node
             bool ask = parts[0] == "ask";
             string mesos = parts.Length > (ask ? 2 : 1) ? parts[ask ? 2 : 1] : "0";
             await Frames(240);
-            if (ask)
+            GD.Print($"live: trade: bag before: {th.BagText()}");
+            async Task<bool> Open(string who)
             {
-                string who = parts.Length > 1 ? parts[1] : "";
-                Ms2.Net.Packets.UserBlock partner = null;
-                await Until(() => (partner = Instance?.FieldUsers().FirstOrDefault(u => u.Name == who)) != null, 60 * 90);
-                GD.Print(partner != null ? $"live: trade: {who} is in the field ({partner.CharacterId})" : $"live: trade: {who} never came");
-                if (partner != null) th.TradeAsk(partner.CharacterId);
-            }
-            else
-            {
-                await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * 120);
-                GD.Print($"live: trade: request box {(MessageBoxLayer.Instance?.Shown == true ? "shown, accepting" : "never shown")}");
-                await Frames(60);
-                MessageBoxLayer.Instance?.Click(0);
-            }
-            await Until(() => th.TradeDialogShown, 60 * 30);
-            GD.Print($"live: trade: dialog {(th.TradeDialogShown ? "open with " + Instance?.Trades.PartnerName : "did not open")}");
-            if (th.TradeDialogShown)
-            {
-                await Frames(120);
                 if (ask)
                 {
-                    bool clicked = th.TradeRightClickFirstItem();
-                    await Frames(60);
-                    if (clicked && MessageBoxLayer.Instance?.Shown == true) { GD.Print("live: trade: count box, OK"); MessageBoxLayer.Instance.Click(0); }
-                    await Frames(120);
-                    GD.Print($"live: trade: first free table slot {Instance?.Trades.Items.FindFreeSlot()}");
+                    Ms2.Net.Packets.UserBlock partner = null;
+                    await Until(() => (partner = Instance?.FieldUsers().FirstOrDefault(u => u.Name == who)) != null, 60 * 90);
+                    GD.Print(partner != null ? $"live: trade: {who} is in the field" : $"live: trade: {who} never came");
+                    if (partner != null) th.TradeAsk(partner.CharacterId);
                 }
-                else await Frames(240);   // the asker locks first
+                else
+                {
+                    await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * 120);
+                    GD.Print($"live: trade: request box {(MessageBoxLayer.Instance?.Shown == true ? "shown, accepting" : "never shown")}");
+                    await Frames(60);
+                    MessageBoxLayer.Instance?.Click(0);
+                }
+                await Until(() => th.TradeDialogShown, 60 * 30);
+                GD.Print($"live: trade: dialog {(th.TradeDialogShown ? "open" : "did not open")}");
+                await Frames(120);
+                return th.TradeDialogShown;
+            }
+            async Task Add(int n)
+            {
+                long uid = th.TradeRightClickItem(n);
+                await Frames(60);
+                if (uid != 0 && MessageBoxLayer.Instance?.Shown == true) { GD.Print("live: trade: count box, OK"); MessageBoxLayer.Instance.Click(0); }
+                await Frames(120);
+                GD.Print($"live: trade: table {th.TradeTableText()}");
+            }
+            string who = ask && parts.Length > 1 ? parts[1] : "";
+            if (await Open(who))
+            {
+                if (ask)
+                {
+                    await Add(0);
+                    await Add(0);   // an added item leaves the bag: the next one is the first held again
+                    th.TradeRemoveMine(0);
+                    await Frames(120);
+                    GD.Print($"live: trade: took slot 0 back, table {th.TradeTableText()}");
+                }
+                else { await Frames(240); await Add(0); await Frames(240); }   // the asker locks first
+                // a change on either side (the other's mesos among them) unlatches both: lock again while mine is off; the
+                // mesos sent last are not sent again (SendTradeMode10), so the relock is the latch alone
                 th.TradeCallback("OnLock", mesos);
-                await Until(() => th.TradeLocksHeard >= 2, 60 * 30);
-                GD.Print($"live: trade: locks heard {th.TradeLocksHeard}, mine {Instance?.Trades.Confirmed}");
+                await Frames(90);
+                for (int tries = 0; tries < 10 && !th.TradeBothLatched; tries++)
+                {
+                    await Until(() => th.TradeBothLatched || !th.TradeMineLatched, 60 * 6);
+                    if (!th.TradeMineLatched && th.TradeDialogShown) { GD.Print("live: trade: unlatched, locking again"); th.TradeCallback("OnLock", mesos); await Frames(60); }
+                }
+                GD.Print($"live: trade: both latched {th.TradeBothLatched}, mine {Instance?.Trades.Confirmed}, table {th.TradeTableText()}");
                 await Frames(60);
                 th.TradeCallback("OnConfirm");
                 await Until(() => !th.TradeDialogShown, 60 * 30);
                 GD.Print($"live: trade: dialog {(th.TradeDialogShown ? "still open" : "closed")}");
+                await Frames(180);
+                GD.Print($"live: trade: bag after the trade: {th.BagText()}");
+                // round two: the cancel
+                if (ask) await Frames(60 * 8);
+                if (await Open(who))
+                {
+                    if (ask)
+                    {
+                        await Add(0);
+                        await Frames(120);
+                        GD.Print("live: trade: cancel");
+                        th.TradeCallback("OnCancel");
+                    }
+                    await Until(() => !th.TradeDialogShown, 60 * 30);
+                    GD.Print($"live: trade: dialog {(th.TradeDialogShown ? "still open" : "closed")}");
+                    await Frames(180);
+                    GD.Print($"live: trade: bag after the cancel: {th.BagText()}");
+                }
             }
         }
         await Frames(60 * hold);

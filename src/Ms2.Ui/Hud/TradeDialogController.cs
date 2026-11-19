@@ -123,11 +123,16 @@ public sealed class TradeDialogController : UiController, ITradeDialog, IDragSlo
         UpdateFee(meso, side == 1);
     }
 
+    /// <summary>The latches the movie shows (its latch / unlatch calls): my side's and the partner's.</summary>
+    public bool MineLatched { get; private set; }
+    public bool PartnerLatched { get; private set; }
+
     /// <summary>FUN_141b28290 @0x141b28290: the movie as an ASDialog; "trade_lock" and latch(side), or "trade_unlock" and
     /// unlatch(side).</summary>
     public void SetLatch(bool isMine, bool on)
     {
         if (Host?.Entity == null) return;
+        if (isMine) MineLatched = on; else PartnerLatched = on;
         SystemSound?.Invoke(on ? "trade_lock" : "trade_unlock");
         Host.Invoke(on ? "latch" : "unlatch", isMine ? 1 : 0);
     }
