@@ -168,7 +168,7 @@ public sealed partial class NpcPresence : CanvasLayer
     {
         float radius = Math.Max(1, n.Row.CapsuleRadius), height = Math.Max(2 * radius, n.Row.CapsuleHeight);
         var body = new StaticBody3D { Name = "Capsule", CollisionLayer = Movement.MoveConfig.NpcLayer };   // group 4
-        body.SetMeta("ms2_group", NpcGroup);
+        body.SetMeta(FieldBuilder.GroupMeta, NpcGroup);
         body.SetMeta(Movement.MoveConfig.ControllerMeta, true);   // the npc body is a GameObjectController (CNpc m_unk_150)
         body.AddChild(new CollisionShape3D { Shape = new CapsuleShape3D { Radius = radius, Height = height }, Position = new Vector3(0, height / 2, 0) });
         n.Root.AddChild(body);

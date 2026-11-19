@@ -87,8 +87,8 @@ public partial class BlobShadow : MeshInstance3D
         var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
         if (hit.Count == 0) { Visible = false; return; }
         Visible = true;
-        var p = (Vector3)hit["position"];
-        var n = ((Vector3)hit["normal"]).Normalized();
+        var p = (Vector3)hit[PhysicsKeys.Position];
+        var n = ((Vector3)hit[PhysicsKeys.Normal]).Normalized();
         float dist = Mathf.Max(pos.Y - p.Y, 0);
         float fade = 1f - Mathf.Clamp(dist / FadeHeight, 0f, 1f) * (1f - FadeScale);
         // orient: local up along the ground normal, keep a fixed heading

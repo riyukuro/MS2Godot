@@ -103,8 +103,8 @@ public partial class Player
         {
             var hit = space.IntersectRay(q);
             if (hit.Count == 0) return null;
-            var col = hit["collider"].AsGodotObject() as Node;
-            int group = col != null && col.HasMeta("ms2_group") ? (int)col.GetMeta("ms2_group") : 0;
+            var col = hit[PhysicsKeys.Collider].AsGodotObject() as Node;
+            int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
             if ((groups & (1u << group)) != 0) return ((Vector3)hit["position"], (Vector3)hit["normal"]);
             exclude.Add((Rid)hit["rid"]);
             q.Exclude = exclude;

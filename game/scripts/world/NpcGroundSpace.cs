@@ -14,7 +14,7 @@ namespace Ms2Godot;
 /// </summary>
 public sealed partial class NpcGroundSpace : Node3D
 {
-    const string Meta = "ms2_npc_ground_space";
+    static readonly StringName Meta = "ms2_npc_ground_space";
 
     readonly List<(Shape3D shape, Transform3D xform)> shapes = new();
     readonly RayQuery ray = RayQuery.CastRay();

@@ -82,7 +82,7 @@ public partial class LobbyFieldScene : Field
             var hit = space.IntersectRay(q);
             if (hit.Count == 0) return;
             var col = hit["collider"].AsGodotObject();
-            int group = col is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
+            int group = col is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
             if ((GroundGroups & (1u << group)) != 0)
             {
                 preview.GlobalPosition = (Vector3)hit["position"] + Vector3.Up;

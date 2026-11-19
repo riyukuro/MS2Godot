@@ -14,7 +14,7 @@ namespace Ms2Godot;
 /// </summary>
 public sealed partial class TwoSidedSpace : Node3D
 {
-    const string Meta = "ms2_two_sided_space";
+    static readonly StringName Meta = "ms2_two_sided_space";
 
     readonly List<(Shape3D shape, Transform3D xform, int group)> shapes = new();
     readonly Dictionary<int, Rid> bodies = new();

@@ -16,10 +16,12 @@ public sealed class FieldBuilder
     public const string MapArchive = "Resource/Model/Map";
     const float ChunkSize = 1500f;                     // collider bodies per 10 x 10 cubes
     /// <summary>Meta on a collision shape of a fall-return cube: the entity's index in the field (see the collision pass).</summary>
-    public const string FallReturnMeta = "ms2_fall_return";
+    public static readonly StringName FallReturnMeta = "ms2_fall_return";
     /// <summary>Meta on a collision shape whose entity's PropCollisionGroup is not the group of its body (a GeneratePhysX
     /// cube box); a shape without it has its body's group.</summary>
-    public const string KindMeta = "ms2_kind";
+    public static readonly StringName KindMeta = "ms2_kind";
+    /// <summary>Meta on a collider body or node: its PropCollisionGroup.</summary>
+    public static readonly StringName GroupMeta = "ms2_group";
     const int GeneratedBoxGroup = 9;
 
     readonly PackSet packs;
@@ -224,7 +226,7 @@ public sealed class FieldBuilder
                 if (!groupChunks.TryGetValue((key.Item1, key.Item2, group), out var gb))
                 {
                     gb = new StaticBody3D { Name = $"Chunk_{key.Item1}_{key.Item2}_g{group}", CollisionLayer = 1u << group, CollisionMask = 0 };
-                    gb.SetMeta("ms2_group", group);
+                    gb.SetMeta(GroupMeta, group);
                     colliders.AddChild(gb);
                     groupChunks[(key.Item1, key.Item2, group)] = gb;
                 }

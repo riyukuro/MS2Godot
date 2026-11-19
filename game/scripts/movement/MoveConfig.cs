@@ -112,7 +112,7 @@ public static class MoveConfig
     public const int WaterGroup = 8;
     /// <summary>Meta on a body that stands in for another character controller (an npc capsule): NxCharacter reports a
     /// touch on it to onControllerHit, which leaves GameObjectControllerHitReport's entity alone.</summary>
-    public const string ControllerMeta = "ms2_controller";
+    public static readonly Godot.StringName ControllerMeta = "ms2_controller";
     /// <summary>
     /// PhysX collision groups as Godot collision layer bits (bit n = group n). Each field body is on the layer of its
     /// shapes' group; an npc capsule is group 4 (CNpc::vfunc_126 @0x1410916a0); the PC's own controller is group 2

@@ -282,8 +282,8 @@ public sealed class NxController
             if (ri.Count == 0) break;
             info = ri;
             if (shapeNode.Shape is not CapsuleShape3D cap) break;
-            var n0 = (Vector3)ri["normal"];
-            var p0 = (Vector3)ri["point"];
+            var n0 = (Vector3)ri[PhysicsKeys.Normal];
+            var p0 = (Vector3)ri[PhysicsKeys.Point];
             var centre = from + dir * t + local.Origin;
             var half = local.Basis.Y.Normalized() * (cap.Height / 2 - cap.Radius);
             float gap = Mathf.Min((centre + half - p0).Dot(n0), (centre - half - p0).Dot(n0)) - cap.Radius;
@@ -296,11 +296,11 @@ public sealed class NxController
         }
         if (info == null) return new Contact(safe, -dir, null, false, Vector3.Zero);
         safe = t;
-        var normal = (Vector3)info["normal"];
-        var point = (Vector3)info["point"];
-        var rid = (Rid)info["rid"];
-        int shapeIdx = (int)info["shape"];
-        var collider = GodotObject.InstanceFromId((ulong)info["collider_id"]);
+        var normal = (Vector3)info[PhysicsKeys.Normal];
+        var point = (Vector3)info[PhysicsKeys.Point];
+        var rid = (Rid)info[PhysicsKeys.Rid];
+        int shapeIdx = (int)info[PhysicsKeys.Shape];
+        var collider = GodotObject.InstanceFromId((ulong)info[PhysicsKeys.ColliderId]);
         bool mesh = PhysicsServer3D.ShapeGetType(PhysicsServer3D.BodyGetShape(rid, shapeIdx)) == PhysicsServer3D.ShapeType.ConcavePolygon;
         var face = mesh ? FaceNormal(rid, shapeIdx, point, dir) ?? normal : normal;
         return new Contact(safe, normal, collider, mesh, face, shapeIdx);

@@ -378,7 +378,7 @@ public partial class Player : CharacterBody3D
         // the entity's PropCollisionGroup: the shape's own when it differs from its body's (a GeneratePhysX cube box)
         var owner = collider is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
         hitGroup = owner != null && owner.HasMeta(FieldBuilder.KindMeta) ? (int)owner.GetMeta(FieldBuilder.KindMeta)
-                 : collider is Node n && n.HasMeta("ms2_group") ? (int)n.GetMeta("ms2_group") : 0;
+                 : collider is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
         hitFallReturn = FallReturnEntity(collider, shape);
     }
 
@@ -713,7 +713,7 @@ public partial class Player : CharacterBody3D
     {
         var from = GlobalPosition + Forward * MoveConfig.LadderTopProbe + new Vector3(0, 500, 0);
         var hit = GetWorld3D().DirectSpaceState.IntersectRay(topRay.Set(from, from + new Vector3(0, -1000, 0), GetRid()));
-        return hit.Count == 0 ? null : (Vector3)hit["position"];
+        return hit.Count == 0 ? null : (Vector3)hit[PhysicsKeys.Position];
     }
 
     bool Overlaps(Vector3 feet)
