@@ -1,22 +1,45 @@
-// The client's glow pass (MS2GlowMaterial): glow-mapped objects are drawn into their own target with
-// rgb = the glow map's alpha (a grey intensity) and alpha = base alpha * vertex alpha. The bloom's bright pass adds that target.
-// Here: unshaded, drawn by the glow camera only (layer 20), the height fog colour is not applied.
+// The client's glow pass (MS2GlowMaterial, ms2glowmaterial.cpp): glow-mapped objects are drawn into their own target with
+// rgb = the glow map's alpha (a grey intensity), times the detail map's alpha when the object has a detail map
+// (HandleGlowColor @0x1427761b0), and alpha = base alpha * vertex alpha. Each map reads its own uv set
+// (FindUVSetIndexForTextureEnum). The bloom's bright pass adds that target.
+// MS2GlowMaterial_ps_3_0_DX9.cache: @0x8c (glow only) rgb = lerp(gkHeightFogColor, Glow.a, height fog factor);
+// @0x327 (detail) rgb = lerp(gkHeightFogColor, Detail.a * Glow.a, height fog factor). The depth fog is off (GenerateShaderDescArray
+// @0x142776070 clears FOGENABLED); the height fog stays.
+// Here: unshaded, drawn by the glow camera only (layer 20) into GlowPass's linear HDR target, which keeps the value as written.
 shader_type spatial;
 render_mode unshaded, cull_disabled;
 
+global uniform vec3 ms2_hfog_color; // height fog colour (gamma space), as field_lit
+global uniform vec3 ms2_hfog;       // upper height, lower height, density at and below the lower height (0 = none)
+
 uniform sampler2D base_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D detail_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_tex = false;
+uniform bool has_detail = false;
+// the map reads the mesh's second uv set (TexMap.UvSet 1)
+uniform bool base_uv2 = false;
+uniform bool glow_uv2 = false;
+uniform bool detail_uv2 = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
 
+varying vec3 world_pos;
+
+void vertex() {
+	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
 void fragment() {
-	float a = has_tex ? texture(base_tex, UV).a : 1.0;
+	float a = has_tex ? texture(base_tex, base_uv2 ? UV2 : UV).a : 1.0;
 	if (alpha_test && a < alpha_ref) {
 		discard;
 	}
-	// MS2GlowMaterial ps (Shaders/Current/MS2GlowMaterial_ps_3_0_DX9.cache): rgb = lerp(gkHeightFogColor, Glow.a, fog factor)
-	float g = texture(glow_tex, UV).a;
-	// gamma-space value written as it is (the glow target is read raw by the bloom)
-	ALBEDO = vec3(pow(g, 2.2));
+	float g = texture(glow_tex, glow_uv2 ? UV2 : UV).a;
+	if (has_detail) {
+		g *= texture(detail_tex, detail_uv2 ? UV2 : UV).a;
+	}
+	// the height fog share as in field_lit (CalculateHeightFog), lerped towards the fog colour
+	float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
+	ALBEDO = mix(vec3(g), ms2_hfog_color, hf);
 }

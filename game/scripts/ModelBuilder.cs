@@ -302,7 +302,8 @@ public sealed class ModelBuilder
     /// <summary>A mesh with a glow map also joins the glow pass: a twin on the glow layer sharing its mesh, parent and skin.</summary>
     public void AddGlowTwin(MeshInstance3D mi, ModelMesh m, Skin skin)
     {
-        if (!GlowPass.Wanted || GlowMaterial(m) is not { } gm) return;
+        bool uv2 = mi.Mesh is ArrayMesh am && (am.SurfaceGetFormat(0) & Mesh.ArrayFormat.FormatTexUV2) != 0;
+        if (!GlowPass.Wanted || GlowMaterial(m, uv2) is not { } gm) return;
         var g = new MeshInstance3D { Name = mi.Name + "_glow", Mesh = mi.Mesh, Layers = GlowPass.Bit, MaterialOverride = gm, Transform = mi.Transform, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
         mi.GetParent().AddChild(g);
         if (skin != null) { g.Skin = skin; g.Skeleton = ".."; }
@@ -310,16 +311,30 @@ public sealed class ModelBuilder
 
     static Shader glowShader;
 
-    /// <summary>The glow pass material of a mesh with a glow map (shaders/field_glow), or null.</summary>
-    public Material GlowMaterial(ModelMesh m)
+    /// <summary>The glow pass material of a mesh with a glow map (shaders/field_glow), or null.
+    /// Null as well for a mesh the client's glow click leaves out (FUN_1414cffc0, ms2materialswapprocessor.cpp:158-170): one
+    /// that blends other than SRCALPHA / INVSRCALPHA (FUN_141567260, unit_141567000.cpp:158-168). Particle systems, the
+    /// predicate's other case, are not NiMesh and never reach here.
+    /// STILL-OPEN: a map on uv set 2 or above reads UV (the meshes carry two uv sets).</summary>
+    /// <param name="uv2">the mesh carries its second uv set as UV2</param>
+    public Material GlowMaterial(ModelMesh m, bool uv2)
     {
         if (!m.Textures.TryGetValue("glow", out var glowName) || Texture(glowName) is not { } glow) return null;
+        if (m.AlphaBlendOn && (((m.AlphaFlags >> 1) & 15) != 6 || ((m.AlphaFlags >> 5) & 15) != 7)) return null;   // NiAlphaProperty SRCALPHA 6, INVSRCALPHA 7
         glowShader ??= GD.Load<Shader>("res://shaders/field_glow.gdshader");
         var sm = new ShaderMaterial { Shader = glowShader };
+        bool OnUv2(string key) => uv2 && m.Maps.TryGetValue(key, out var map) && map.UvSet == 1;
         var tex = m.Textures.TryGetValue("base", out var baseName) ? Texture(baseName) : null;
         sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
         if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
+        sm.SetShaderParameter(ShaderParam.BaseUv2, OnUv2("base"));
         sm.SetShaderParameter(ShaderParam.GlowTex, glow);
+        sm.SetShaderParameter(ShaderParam.GlowUv2, OnUv2("glow"));
+        // with a detail map the glow is Detail.a * Glow.a (MS2GlowMaterial::HandleGlowColor @0x1427761b0)
+        var detail = m.Textures.TryGetValue("detail", out var detailName) ? Texture(detailName) : null;
+        sm.SetShaderParameter(ShaderParam.HasDetail, detail != null);
+        if (detail != null) sm.SetShaderParameter(ShaderParam.DetailTex, detail);
+        sm.SetShaderParameter(ShaderParam.DetailUv2, OnUv2("detail"));
         sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
         return sm;
     }

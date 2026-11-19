@@ -6,6 +6,9 @@ namespace Ms2Godot;
 /// The glow target of the client's post processing (GlowRenderClick): the objects that carry a glow map are drawn alone
 /// (visual layer <see cref="Layer"/>, material field_glow) into a viewport that follows the main camera; Ms2Bloom adds that target
 /// to its bright pass. The main camera must not draw the layer (<see cref="MainMask"/>).
+/// The client's target is SINGLE_COLOR_16 (R16F) at the full screen size (postprocessingservice.cpp:2533-2534); here a
+/// full-size viewport with an HDR (RGBA16F, linear) target, the nearest Godot gives. It has its own depth buffer and a black
+/// clear, as the client's GlowRenderClick (CreateGlowClick @0x1416a92e0).
 /// </summary>
 public partial class GlowPass : SubViewport
 {
@@ -20,7 +23,7 @@ public partial class GlowPass : SubViewport
     public static GlowPass Attach(Node parent, Camera3D main)
     {
         main.CullMask &= ~Bit;   // the other bits stay (Field.FogLayer)
-        var vp = new GlowPass { Name = "GlowPass", src = main, TransparentBg = false, RenderTargetUpdateMode = UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
+        var vp = new GlowPass { Name = "GlowPass", src = main, TransparentBg = false, UseHdr2D = true, RenderTargetUpdateMode = UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
         vp.cam = new Camera3D { CullMask = Bit, Current = true, Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black, AmbientLightSource = Godot.Environment.AmbientSource.Disabled } };
         vp.cam.AddToGroup(GammaGuard.Exempt);   // the glow target keeps its own values (field_glow), read by Ms2Bloom's bright pass
         vp.AddChild(vp.cam);
@@ -30,7 +33,8 @@ public partial class GlowPass : SubViewport
 
     public override void _Process(double delta)
     {
-        var size = (Vector2I)(GetParent().GetViewport().GetVisibleRect().Size / 2);
+        // full size, as the client's glow texture ([8], postprocessingservice.cpp:2533-2534)
+        var size = (Vector2I)GetParent().GetViewport().GetVisibleRect().Size;
         if (size.X > 8 && size != Size) Size = size;
         cam.GlobalTransform = src.GlobalTransform;
         cam.Fov = src.Fov; cam.Near = src.Near; cam.Far = src.Far;

@@ -357,7 +357,7 @@ public sealed class FieldBuilder
                 if (objects != null && mesh.AlphaBlendOn)
                 {
                     var shared = builder.BuildMesh(mesh, skin: false, instanceColor: true);
-                    var glow = builder.GlowMaterial(mesh);
+                    var glow = builder.GlowMaterial(mesh, mesh.Uvs1 != null);
                     for (int k = 0; k < objects.Count; k++)
                     {
                         var obj = objects[k];
@@ -421,7 +421,7 @@ public sealed class FieldBuilder
                 visuals.AddChild(node);
                 if (!mesh.AlphaBlendOn && !mesh.NoShadow && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
-                if (builder.GlowMaterial(mesh) is { } gm)
+                if (builder.GlowMaterial(mesh, mesh.Uvs1 != null) is { } gm)
                 {
                     var gn = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_glow", Multimesh = mm, Layers = GlowPass.Bit, MaterialOverride = gm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                     visuals.AddChild(gn);

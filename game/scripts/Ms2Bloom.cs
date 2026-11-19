@@ -11,7 +11,7 @@ namespace Ms2Godot;
 ///  2. bright pass: x = max(c - threshold, 0), keep x / (x + offset) + glow.r * c * glowscale in an 8-bit target (glow: the
 ///     GlowPass target; postprocessing.fxo HDRRenderStep_BrightPassFilter: mul r0.xyz, glow.x, scene; mul r0.xyz, r0, gfGlowScale;
 ///     mad x, 1 / (x + gfBrightPassOffset), r0), so a glow-mapped object blooms in its own colour;
-///  3. two 15-tap Gaussian blurs (deviation 3, every weight doubled), horizontal then vertical, 8-bit targets; both
+///  3. two 15-tap Gaussian blurs (deviation 3, every weight doubled), horizontal then vertical, point sampled, 8-bit targets; both
 ///     step by 1 / quarter width, so the vertical step is a fraction of a texel on a wide screen;
 ///  4. final: scene + bloomscale * bloom.
 /// The doubled weights make each blur pass gain about 2, so a lit floor gains ~15-20% overall.
@@ -38,7 +38,7 @@ public partial class Ms2Bloom : CompositorEffect
 
     RenderingDevice rd;
     readonly Rid[] shaders = new Rid[4], pipes = new Rid[4];
-    Rid sampler, bright, blurH, blurV, black;
+    Rid sampler, point, bright, blurH, blurV, black;
     Vector2I quarter;
 
     const string Code = @"
@@ -61,7 +61,9 @@ void main() {
 			s += imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb;
 	s /= 16.0;
 	vec3 b = max(s - pc.threshold, vec3(0.0));
-	float g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).r;   // the glow target (GlowPass): its red channel scales the scene colour
+	// the glow target (GlowPass, full size): its red channel scales the scene colour. Read with Shader0LinearClampSampler at
+	// the quarter texel's centre, so the middle 2x2 of each 4x4 block (HDRRenderStep_BrightPassFilter ps)
+	float g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).r;
 	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g * s * pc.glow_scale, vec3(1.0)), 1.0));
 }
 #elif MODE == 1
@@ -142,6 +144,15 @@ void main() {
             RepeatU = RenderingDevice.SamplerRepeatMode.ClampToEdge,
             RepeatV = RenderingDevice.SamplerRepeatMode.ClampToEdge,
         });
+        // the blur samples with BasePointClampSampler (postprocessing.fxo, HDRRenderStep_Bloom ps): its vertical step of
+        // 1 / width is a fraction of a texel, so the client's taps snap to rows
+        point = rd.SamplerCreate(new RDSamplerState
+        {
+            MinFilter = RenderingDevice.SamplerFilter.Nearest,
+            MagFilter = RenderingDevice.SamplerFilter.Nearest,
+            RepeatU = RenderingDevice.SamplerRepeatMode.ClampToEdge,
+            RepeatV = RenderingDevice.SamplerRepeatMode.ClampToEdge,
+        });
         setup = 1;
     }
 
@@ -167,10 +178,10 @@ void main() {
         return u;
     }
 
-    RDUniform Sampled(int binding, Rid tex)
+    RDUniform Sampled(int binding, Rid tex, bool nearest = false)
     {
         var u = new RDUniform { UniformType = RenderingDevice.UniformType.SamplerWithTexture, Binding = binding };
-        u.AddId(sampler);
+        u.AddId(nearest ? point : sampler);
         u.AddId(tex);
         return u;
     }
@@ -219,8 +230,8 @@ void main() {
             var color = buffers.GetColorLayer(view);
             var glowTex = Glow != null && IsInstanceValid(Glow) ? Glow.Texture() : default;
             Run(0, q, Vector2.Zero, Image(0, color), Image(1, bright), Sampled(2, glowTex.IsValid ? glowTex : black));
-            Run(1, q, new Vector2(texel, 0), Sampled(0, bright), Image(1, blurH));
-            Run(1, q, new Vector2(0, texel), Sampled(0, blurH), Image(1, blurV));
+            Run(1, q, new Vector2(texel, 0), Sampled(0, bright, true), Image(1, blurH));
+            Run(1, q, new Vector2(0, texel), Sampled(0, blurH, true), Image(1, blurV));
             Run(2, size, Vector2.Zero, Image(0, color), Sampled(1, blurV));
         }
     }
@@ -233,6 +244,7 @@ void main() {
             for (int m = 0; m < 4; m++)
                 if (shaders[m].IsValid) rd.FreeRid(shaders[m]);   // frees the pipeline too
             if (sampler.IsValid) rd.FreeRid(sampler);
+            if (point.IsValid) rd.FreeRid(point);
             if (black.IsValid) rd.FreeRid(black);
         }
     }
