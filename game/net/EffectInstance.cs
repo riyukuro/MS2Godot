@@ -10,7 +10,7 @@ static class FxParam
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
         BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
         HasDetail = "has_detail", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
-        Ambient = "mat_ambient";
+        Ambient = "mat_ambient", VcEmi = "vc_emi", VcDif = "vc_dif", VcAmb = "vc_amb", VcOpacity = "vc_opacity";
 }
 
 /// <summary>
@@ -88,6 +88,11 @@ uniform int base_clamp = 0;
 uniform int glow_clamp = 0;
 uniform float alpha = 1.0;
 uniform vec4 tint = vec4(1.0);
+// the terms the vertex colour (COLOR) stands in for: EffectMesh.VertexColors
+uniform bool vc_emi = false;
+uniform bool vc_dif = false;
+uniform bool vc_amb = false;
+uniform bool vc_opacity = false;
 FOGDECL
 void vertex() { FOGVERT }
 // a map's uv: its texture transform's rows, then the clamp mode (bit 0 S, bit 1 T) as CLAMP addressing: the samplers
@@ -111,13 +116,19 @@ void fragment() {
     // The coefficient is not saturated (EffectMesh.Shade). The client renders into an FP16 target and tonemaps and blooms it
     // (postprocessingservice.cpp:1401-1411, 1751); the clamp stands in for that.
     // STILL-OPEN: the FP16 target, tonemap and bloom (postprocessingservice.cpp); the bloom port is a separate lane.
-    vec3 col = t.rgb * (tint.rgb + mat_ambient * ms2_ambient);
+    // The vertex colour takes the place of the terms EffectMesh.VertexColors names (Shade leaves those out of tint and
+    // mat_ambient), and its alpha that of the material alpha (NiStandardMaterial::HandleColors, NiStandardMaterial.cpp:4377-4450).
+    vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
+    if (vc_emi) coef += COLOR.rgb;
+    if (vc_dif) coef += COLOR.rgb;
+    if (vc_amb) coef += COLOR.rgb * ms2_ambient;
+    vec3 col = t.rgb * coef;
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
     col = clamp(col, 0.0, 1.0);
     FOG = vec4(ms2_fog_color, fog_share);
     ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
-    ALPHA = clamp(t.a * tint.a * alpha, 0.0, 1.0);
+    ALPHA = clamp(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0, 1.0);
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
@@ -254,6 +265,11 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             SetRows(ms, ms.DetailMap?.Transform, 2, true);
             ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform(); ms.DetailT = new TexTransform();
             ms.Add = add;
+            var vcu = em.VertexColors;
+            if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
+            if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
+            if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
+            if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
             Shade(ms, 0, true);
             mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
             ms.LastTex = ms.Base;
@@ -271,7 +287,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
             // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
             // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
-            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false, uv2: true), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false, uv2: true, vertexColor: vcu.Any), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
                 Visible = !scene.Nodes[em.Node].Culled };
             z.AddChild(ms.Node);
             meshes.Add(ms);

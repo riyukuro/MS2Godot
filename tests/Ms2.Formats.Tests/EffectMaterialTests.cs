@@ -93,6 +93,49 @@ public class EffectMaterialTests
         Assert.That(amb, Is.EqualTo(new[] { 0.25, 0.5, 0.75 }));
     }
 
+    /// <summary>The Fairy Tree Lake milkyway ribbons (NiVertexColorProperty 40: AMB_DIFF, E_A_D): the vertex colours are the
+    /// diffuse and ambient terms, so the material's grey diffuse and ambient (0.71) drop out of the shading and the vertex alpha,
+    /// which fades to 0 at the ribbon ends, is the opacity (NiStandardMaterial::HandleColors, NiStandardMaterial.cpp:4377-4450).</summary>
+    [Test]
+    public void MilkywayRibbonTakesItsVertexColours()
+    {
+        double[] lit = new double[3], amb = new double[3];
+        foreach (var entry in new[] { "bg/eliinia/el_eff_milkywaya_02.nif", "bg/eliinia/el_eff_milkywaya_03.nif" })
+        {
+            var m = Load(entry).Meshes.Single();
+            Assert.That(m.Mesh.Colors, Is.Not.Null, entry);
+            Assert.That(Enumerable.Range(0, m.Mesh.Colors.Length / 4).Select(i => m.Mesh.Colors[i * 4 + 3]).Min(), Is.EqualTo(0f), entry + ": the ribbon ends fade out");
+            m.Shade(0, lit, amb);
+            Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), entry + ": emissive black, diffuse from the vertices");
+            Assert.That(amb, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), entry + ": ambient from the vertices");
+            Assert.That(m.VertexColors, Is.EqualTo(new VertexColorUse(false, true, true, true)), entry);
+        }
+    }
+
+    /// <summary>The vertex colour's terms by source (flags bits 4-5) and lighting mode (bit 3), HandleColors' switch
+    /// (NiStandardMaterial.cpp:4377-4450): EMISSIVE in both modes (opacity under E), AMB_DIFF and the MS2 source 3 only with
+    /// E_A_D, IGNORE never; a mesh without vertex colours or without the property takes none.</summary>
+    [Test]
+    public void VertexColourTermsBySourceAndLighting()
+    {
+        var mesh = new ModelMesh { Colors = new float[] { 1, 1, 1, 1 } };
+        var e = new EffectMesh { Mesh = mesh };
+        foreach (var (flags, want) in new[]
+        {
+            (0x08, default(VertexColorUse)), (0x00, default),
+            (0x18, new VertexColorUse(true, false, false, false)), (0x10, new VertexColorUse(true, false, false, true)),
+            (0x28, new VertexColorUse(false, true, true, true)), (0x20, default),
+            (0x38, new VertexColorUse(false, false, true, false)), (0x30, default),
+            (-1, default),
+        })
+        {
+            mesh.VertexColorFlags = flags;
+            Assert.That(e.VertexColors, Is.EqualTo(want), $"flags {flags}");
+        }
+        mesh.Colors = null; mesh.VertexColorFlags = 0x28;
+        Assert.That(e.VertexColors, Is.EqualTo(default(VertexColorUse)), "no vertex colour stream");
+    }
+
     /// <summary>NiVertexColorProperty LIGHTING_E (flags bit 3 clear) keeps the emissive term alone: no diffuse, no ambient,
     /// animated or static. Flags with bit 3 set, or no property (-1), keep all three.</summary>
     [Test]

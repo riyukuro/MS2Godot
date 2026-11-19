@@ -49,6 +49,12 @@ public sealed class FlipAnim { public string[] Sources; public Func<double, doub
 /// <summary>An animated NiMaterialProperty colour (NiMaterialColorController): Target 0 ambient, 1 diffuse, 2 specular, 3 emissive (self illumination).</summary>
 public sealed class ColorAnim { public int Target; public Func<double, double[]> Curve; public TimeCtl Ctl; }
 
+/// <summary>The colour terms a mesh's vertex colours stand in for (EffectMesh.VertexColors); Opacity: the vertex alpha replaces the material alpha.</summary>
+public readonly record struct VertexColorUse(bool Emissive, bool Diffuse, bool Ambient, bool Opacity)
+{
+    public bool Any => Emissive || Diffuse || Ambient || Opacity;
+}
+
 public sealed class EffectMesh
 {
     public List<ColorAnim> Colors = new();
@@ -66,6 +72,31 @@ public sealed class EffectMesh
     /// <summary>The NiVertexColorProperty lighting mode is LIGHTING_E (flags bit 3 clear); without the property it is LIGHTING_E_A_D.</summary>
     public bool LightingE => Mesh.VertexColorFlags >= 0 && (Mesh.VertexColorFlags & 8) == 0;
 
+    /// <summary>Which colour terms the mesh's vertex colours replace (NiStandardMaterial::HandleColors,
+    /// NiStandardMaterial.cpp:4377-4450). The source is the NiVertexColorProperty flags bits 4-5. EMISSIVE (1): the vertex colour is
+    /// the emissive, in either lighting mode. AMB_DIFF (2): the vertex colour is the ambient and the diffuse, only with lighting
+    /// E_A_D. The MS2 source 3 ("MS2: v2525"): the vertex colour is the ambient alone, also only with E_A_D. The opacity is split
+    /// from the diffuse colour, or from the emissive under LIGHTING_E (:4436-4450), so it is the vertex alpha when the vertex
+    /// colour is that term: AMB_DIFF with E_A_D, EMISSIVE with E. A mesh without a vertex colour stream keeps the material's
+    /// terms, as ModelMesh.VertexColorsAmbDiff does for the field meshes.</summary>
+    public VertexColorUse VertexColors
+    {
+        get
+        {
+            var m = Mesh;
+            if (m.Colors == null || m.VertexColorFlags < 0) return default;
+            int src = (m.VertexColorFlags >> 4) & 3;
+            bool ead = !LightingE;
+            return src switch
+            {
+                1 => new VertexColorUse(true, false, false, !ead),
+                2 when ead => new VertexColorUse(false, true, true, true),
+                3 when ead => new VertexColorUse(false, false, true, false),
+                _ => default,
+            };
+        }
+    }
+
     /// <summary>The material's colour terms at effect time t, NiMaterialColorController keys applied (Target 0 ambient, 1
     /// diffuse, 3 emissive): lit = emissive + diffuse, amb = the ambient colour, which the scene's ambient light multiplies.
     /// The client's diffuse coefficient is emissive + matAmbient * lightAmbient + matDiffuse * lightDiffuse
@@ -79,9 +110,8 @@ public sealed class EffectMesh
     /// is the material alpha like the diffuse constant's (D3D11ShaderConstantMap.cpp:3216-3229, 3264-3276), so Opacity holds.
     /// The coefficient is not saturated: ComputeShadingCoefficients clamps only with m_bSaturateShading, which is false by
     /// default and never set (SetSaturateShading has no callers), so lit may exceed 1.
-    /// STILL-OPEN (not applied here, nor in the field shaders): vertex colours as the emissive (SOURCE_EMISSIVE) or
-    /// ambient/diffuse (SOURCE_AMB_DIFF) source (flags bits 4-5, HandleInitialSpecAmbDiffEmissiveColor, :4351-4424);
-    /// 437 effect meshes are AMB_DIFF and 145 EMI.
+    /// The terms the vertex colours replace (VertexColors) are left out of lit and amb here; the shader adds the vertex colour in
+    /// their place (EffectInstance's mesh shader).
     /// STILL-OPEN: the light diffuse is taken as white; the client adds the directional light's colour * N.L per vertex
     /// (ms2standardmaterial.cpp:1640-1700), not ported.</summary>
     public void Shade(double t, double[] lit, double[] amb)
@@ -93,12 +123,15 @@ public sealed class EffectMesh
             if (a.Target == 0) am = v; else if (a.Target == 1) dif = v; else if (a.Target == 3) emi = v;
         }
         var m = Mesh;
+        var vc = VertexColors;
         for (int i = 0; i < 3; i++)
         {
             double d = dif != null ? dif[i] : m.Diffuse != null ? m.Diffuse[i] : 1, e = emi != null ? emi[i] : m.Emissive != null ? m.Emissive[i] : 0;
+            if (vc.Emissive) e = 0;
+            if (vc.Diffuse) d = 0;
             if (LightingE) { lit[i] = e; amb[i] = 0; continue; }
             lit[i] = d + e;
-            amb[i] = am != null ? am[i] : m.Ambient != null ? m.Ambient[i] : 0;
+            amb[i] = vc.Ambient ? 0 : am != null ? am[i] : m.Ambient != null ? m.Ambient[i] : 0;
         }
     }
 }

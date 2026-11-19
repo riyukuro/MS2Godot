@@ -217,7 +217,8 @@ public sealed class ModelBuilder
     /// <param name="skin">false: drop bone data (static placement of a skinned prop, drawn in its bind pose)</param>
     /// <param name="instanceColor">field mesh: the MultiMesh instance colour is the material colour (field_lit shader)</param>
     /// <param name="uv2">the second uv set as UV2 without instanceColor (effect meshes: a map may read uv set 1)</param>
-    public ArrayMesh BuildMesh(ModelMesh m, bool skin = true, bool instanceColor = false, bool uv2 = false)
+    /// <param name="vertexColor">the vertex colours as COLOR without instanceColor (effect meshes whose material takes them)</param>
+    public ArrayMesh BuildMesh(ModelMesh m, bool skin = true, bool instanceColor = false, bool uv2 = false, bool vertexColor = false)
     {
         int nv = m.Positions.Length / 3;
         var arrays = new Godot.Collections.Array();
@@ -278,6 +279,12 @@ public sealed class ModelBuilder
             var u2 = new Vector2[nv];
             for (int i = 0; i < nv; i++) u2[i] = new Vector2(m.Uvs1[i * 2], m.Uvs1[i * 2 + 1]);
             arrays[(int)Mesh.ArrayType.TexUV2] = u2;
+        }
+        if (vertexColor && !instanceColor && m.Colors != null)
+        {
+            var c = new Color[nv];
+            for (int i = 0; i < nv; i++) c[i] = new Color(m.Colors[i * 4], m.Colors[i * 4 + 1], m.Colors[i * 4 + 2], m.Colors[i * 4 + 3]);
+            arrays[(int)Mesh.ArrayType.Color] = c;
         }
         if (instanceColor)
         {
