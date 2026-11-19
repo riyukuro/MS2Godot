@@ -43,6 +43,12 @@ public class QuestPacketTests {
         Assert.That(Read(w => w.WriteByte(0x26)), Is.EqualTo(new QuestMessage.Other(0x26)));
     }
 
+    [Test] public void SummonPortalReadsItsThreeInts() {
+        // mode 0x12 (questmanager_2.cpp:1125-1128): i32 npc id, i32 the target object, i32 the request tick
+        Assert.That(Read(w => { w.WriteByte(0x12); w.WriteInt(91000010); w.WriteInt(50001); w.WriteInt(60000); }),
+            Is.EqualTo(new QuestMessage.SummonPortal(91000010, 50001, 60000)));
+    }
+
     [Test]
     public void DailyDropRemovesOnlyTypeNineDailyUngrouped() {
         var book = new QuestBook();

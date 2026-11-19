@@ -159,7 +159,9 @@ public static class DataCache
         if (Ms2.Ui.GameTables.BuildCache(packs, quests.Language, s)) built.Add("gametables");
         progress?.Invoke(phase, 0.95);
         if (Ms2.Ui.Guide.GuideTable.BuildCache(packs, s)) built.Add("guide events");
+        progress?.Invoke(phase, 0.97);
         if (Ms2.Ui.Guide.GuideStrings.BuildCache(packs, quests.Language, s)) built.Add("guide strings");
+        progress?.Invoke(phase, 0.99);
         // a table built: the archive was read, so its bytes are hashed again; a folder named for other bytes than the ones
         // its files were built from (a file changed under its stamp) is removed and the tables are built in the folder of
         // the file as it is, so no session reads tables of other bytes
@@ -176,7 +178,7 @@ public static class DataCache
         for (var i = 0; i < archives.Count; i++)
         {
             if (PackIndex.BuildCache(archives[i], System.IO.Path.Combine(packs.DataDir, archives[i] + ".m2d"), s)) built.Add("index " + archives[i]);
-            progress?.Invoke(phase, 0.95 + 0.05 * (i + 1) / archives.Count);
+            progress?.Invoke(phase, 0.99 + 0.01 * (i + 1) / archives.Count);
         }
         // the movies' layouts (keyed by the Gfx archive, in the UI code's folder): a dialog's first open reads its file
         const string layoutPhase = "Reading the client's UI layouts";

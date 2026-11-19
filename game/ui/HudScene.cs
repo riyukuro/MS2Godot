@@ -383,8 +383,9 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>
-    /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), in its order as far as this HUD has its parts: the
-    /// shown tooltips close first (GFxManager::CloseTooltips), the cut-scene movie and fishing are not in it, then the
+    /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), in its order as far as this HUD has its parts
+    /// (<see cref="Ms2.Ui.Hud.FieldEsc.Run"/> holds the UI's own three): the game option dialog takes it first, the
+    /// shown tooltips close (GFxManager::CloseTooltips), the cut-scene movie and fishing are not in it, then the
     /// guide's text tip takes Esc (SkipTextTip); a focused text field keeps Esc (the chat input takes it in _Input), and
     /// an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
@@ -395,9 +396,11 @@ public partial class HudScene : Node, IUiStageHost
     public void Escape()
     {
         if (assets == null) return;
-        if (optionDialog != null && optionDialog.OnKey(true)) return;      // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
-        if (TooltipLayer.Instance?.Controller?.DestroyTooltips() == true) return;      // CloseTooltips, the first step
-        if (GuideEvent?.SkipTextTip() == true) return;    // the guide's text tip (FUN_1418fcb70, uichatballoon.cpp:531)
+        if (Ms2.Ui.Hud.FieldEsc.Run(
+                () => optionDialog != null && optionDialog.OnKey(true),            // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
+                () => TooltipLayer.Instance?.Controller?.DestroyTooltips() == true,  // CloseTooltips, the first step
+                () => GuideEvent?.SkipTextTip() == true))                            // the guide's text tip (FUN_1418fcb70, uichatballoon.cpp:531)
+            return;
         if (AnyClosableDialogOpen())
         {
             if (GameOptions.Current.InterfaceOption.EnableCloseAllDlg) CloseAllDialogs();

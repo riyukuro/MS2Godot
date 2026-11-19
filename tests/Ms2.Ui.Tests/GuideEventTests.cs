@@ -85,45 +85,31 @@ public class GuideEventTests
     public void TheStringsCacheGivesTheLoadedTable()
     {
         Model();
-        var dir = Path.Combine(Path.GetTempPath(), "ms2-guide-strings-" + Guid.NewGuid().ToString("N"));
-        var path = Path.Combine(dir, GuideCache.StringsFileName("test", "en"));
-        try
+        using (var shared = new PackSet(packs.DataDir))
         {
-            using (var shared = new PackSet(packs.DataDir))
-            {
-                var sw = Stopwatch.StartNew();
-                GuideCache.BuildStrings(shared, "en", path);
-                TestContext.Progress.WriteLine($"guide strings: built in {sw.Elapsed.TotalMilliseconds:F0} ms, {new FileInfo(path).Length / 1024} KB");
+            var sw = Stopwatch.StartNew();
+            var body = GuideCache.WriteStringsBody(GuideStrings.Parse(shared, "en"));
+            TestContext.Progress.WriteLine($"guide strings: built in {sw.Elapsed.TotalMilliseconds:F0} ms, {body.Length / 1024} KB");
 
-                sw.Restart();
-                var parsed = GuideStrings.Parse(shared, "en");
-                double parseMs = sw.Elapsed.TotalMilliseconds;
-                sw.Restart();
-                var cached = GuideCache.ReadStrings(path);
-                TestContext.Progress.WriteLine($"guide strings: parse {parseMs:F1} ms, cache read {sw.Elapsed.TotalMilliseconds:F1} ms");
+            sw.Restart();
+            var parsed = GuideStrings.Parse(shared, "en");
+            double parseMs = sw.Elapsed.TotalMilliseconds;
+            sw.Restart();
+            var cached = GuideCache.ReadStringsBody(body);
+            TestContext.Progress.WriteLine($"guide strings: parse {parseMs:F1} ms, cache read {sw.Elapsed.TotalMilliseconds:F1} ms");
 
-                Assert.That(cached, Is.Not.Null);
-                Assert.That(GuideCache.FirstStringsDifference(parsed, cached), Is.Null);
-            }
-
-            // a changed text is a difference
-            var changed = GuideCache.ReadStrings(path);
-            Assert.That(GuideCache.FirstStringsDifference(changed, GuideStrings.Parse(packs, "en")), Is.Null);
-
-            // a corrupted body reads as null: cut short, a trailing byte, another version, a bad end mark
-            var bytes = File.ReadAllBytes(path);
-            File.WriteAllBytes(path, bytes[..^6]);
-            Assert.That(GuideCache.ReadStrings(path), Is.Null);
-            File.WriteAllBytes(path, bytes.Concat(new byte[] { 0 }).ToArray());
-            Assert.That(GuideCache.ReadStrings(path), Is.Null);
-            var v = (byte[])bytes.Clone(); v[4]++;
-            File.WriteAllBytes(path, v);
-            Assert.That(GuideCache.ReadStrings(path), Is.Null);
-            var m = (byte[])bytes.Clone(); m[^1] ^= 0xFF;
-            File.WriteAllBytes(path, m);
-            Assert.That(GuideCache.ReadStrings(path), Is.Null);
+            Assert.That(cached, Is.Not.Null);
+            Assert.That(GuideCache.FirstStringsDifference(parsed, cached), Is.Null);
         }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+
+        // a corrupted body reads as null: cut short, a trailing byte, another version, a bad end mark
+        var bytes = GuideCache.WriteStringsBody(GuideStrings.Parse(packs, "en"));
+        Assert.That(GuideCache.ReadStringsBody(bytes[..^6]), Is.Null);
+        Assert.That(GuideCache.ReadStringsBody(bytes.Concat(new byte[] { 0 }).ToArray()), Is.Null);
+        var v = (byte[])bytes.Clone(); v[4]++;
+        Assert.That(GuideCache.ReadStringsBody(v), Is.Null);
+        var m = (byte[])bytes.Clone(); m[^1] ^= 0xFF;
+        Assert.That(GuideCache.ReadStringsBody(m), Is.Null);
     }
 
     [Test]
@@ -270,6 +256,35 @@ public class GuideEventTests
         Assert.That(c.LastClosedTip, Is.EqualTo(0));
         c.QueueOrShowTextTip(4, 5);
         Assert.That(sounds.Count, Is.EqualTo(6), "the tip after the scene shows at once");
+    }
+
+    [Test]
+    public void EscClosesTheTooltipsBeforeTheGuidesTextTip()
+    {
+        // FUN_1418fcb70's order (uichatballoon.cpp:524-532): with a tooltip open and a guide text tip showing, the
+        // first Esc closes only the tooltips (GFxManager::CloseTooltips) and the second skips the tip
+        // (UIGuideEvent::SkipTextTip); the option dialog is not there, so the tooltips take it first.
+        Model();
+        var c = new GuideEventController { Strings = GuideStrings.Parse(packs, "en") };
+        var h = Load(c);
+        c.QueueOrShowTextTip(1, 5);
+        Assert.That(c.IsTextTipShowing, Is.True);
+
+        var tc = new TooltipController();
+        var (rt, p) = src.Open(tc.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1920; p.StageH = 1080;
+        var th = new UiHost(p, tc, Model());
+        Assert.That(th.Load(), Is.True, "the tooltip movie: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) p.Tick();
+        tc.Call("createTooltip", new object[] { 1, new Dictionary<string, object> { ["text"] = "a tooltip" },
+            new Dictionary<string, object> { ["x"] = 600, ["y"] = 300, ["width"] = 40, ["height"] = 20 } });
+        Assert.That(tc.Open, Has.Count.EqualTo(1), "a tooltip is shown");
+
+        Assert.That(FieldEsc.Run(() => false, tc.DestroyTooltips, c.SkipTextTip), Is.True, "the first Esc is consumed");
+        Assert.That(tc.Open, Is.Empty, "CloseTooltips destroyed it");
+        Assert.That(c.IsTextTipShowing, Is.True, "the guide's tip stays for the next Esc");
+        Assert.That(FieldEsc.Run(() => false, tc.DestroyTooltips, c.SkipTextTip), Is.True, "the second Esc is consumed");
+        Assert.That(c.IsTextTipShowing, Is.False, "SkipTextTip closed the tip");
     }
 
     [Test]

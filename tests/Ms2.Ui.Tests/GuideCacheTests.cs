@@ -10,8 +10,6 @@ namespace Ms2.Ui.Tests;
 [NonParallelizable]
 public class GuideCacheTests
 {
-    static string TempDir() => Path.Combine(Path.GetTempPath(), "ms2-guide-cache-" + Guid.NewGuid().ToString("N"));
-
     static GuideTable Sample()
     {
         var t = new GuideTable();
@@ -27,50 +25,50 @@ public class GuideCacheTests
     [Test]
     public void WriteThenReadGivesTheSameTable()
     {
-        var dir = TempDir();
-        var path = Path.Combine(dir, GuideCache.FileName("test"));
-        try
-        {
-            var t = Sample();
-            GuideCache.Write(t, path);
-            Assert.That(File.Exists(path + ".tmp"), Is.False);
-            var back = GuideCache.Read(path);
-            Assert.That(back, Is.Not.Null);
-            Assert.That(GuideCache.FirstDifference(t, back), Is.Null);
-            Assert.That(back.Files[0].Events[0].Element("action").Nodes().Select(n => n.NodeType),
-                        Is.EqualTo(new[] { System.Xml.XmlNodeType.Text, System.Xml.XmlNodeType.CDATA, System.Xml.XmlNodeType.Comment, System.Xml.XmlNodeType.Element }));
+        var t = Sample();
+        var back = GuideCache.ReadBody(GuideCache.WriteBody(t));
+        Assert.That(back, Is.Not.Null);
+        Assert.That(GuideCache.FirstDifference(t, back), Is.Null);
+        Assert.That(back.Files[0].Events[0].Element("action").Nodes().Select(n => n.NodeType),
+                    Is.EqualTo(new[] { System.Xml.XmlNodeType.Text, System.Xml.XmlNodeType.CDATA, System.Xml.XmlNodeType.Comment, System.Xml.XmlNodeType.Element }));
 
-            // a changed attribute is a difference
-            back.Files[0].Events[0].SetAttributeValue("a", "z");
-            Assert.That(GuideCache.FirstDifference(t, back), Does.Contain("id 7"));
-        }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+        // a changed attribute is a difference
+        back.Files[0].Events[0].SetAttributeValue("a", "z");
+        Assert.That(GuideCache.FirstDifference(t, back), Does.Contain("id 7"));
     }
 
     [Test]
-    public void BadFilesReadAsNull()
+    public void BadBodiesReadAsNull()
     {
-        var dir = TempDir();
-        var path = Path.Combine(dir, GuideCache.FileName("test"));
-        try
-        {
-            Assert.That(GuideCache.Read(path), Is.Null);
-            Assert.That(GuideCache.Read(null), Is.Null);
-            GuideCache.Write(Sample(), path);
-            var bytes = File.ReadAllBytes(path);
+        var bytes = GuideCache.WriteBody(Sample());
 
-            File.WriteAllBytes(path, bytes[..^6]);                 // cut short
-            Assert.That(GuideCache.Read(path), Is.Null);
-            File.WriteAllBytes(path, bytes.Concat(new byte[] { 0 }).ToArray()); // trailing byte
-            Assert.That(GuideCache.Read(path), Is.Null);
-            var v = (byte[])bytes.Clone(); v[4]++;                 // other version
-            File.WriteAllBytes(path, v);
-            Assert.That(GuideCache.Read(path), Is.Null);
-            var m = (byte[])bytes.Clone(); m[^1] ^= 0xFF;          // end mark
-            File.WriteAllBytes(path, m);
-            Assert.That(GuideCache.Read(path), Is.Null);
-        }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+        Assert.That(GuideCache.ReadBody(bytes[..^6]), Is.Null);                       // cut short
+        Assert.That(GuideCache.ReadBody(bytes.Concat(new byte[] { 0 }).ToArray()), Is.Null);   // trailing byte
+        var v = (byte[])bytes.Clone(); v[4]++;                 // other version
+        Assert.That(GuideCache.ReadBody(v), Is.Null);
+        var m = (byte[])bytes.Clone(); m[^1] ^= 0xFF;          // end mark
+        Assert.That(GuideCache.ReadBody(m), Is.Null);
+    }
+
+    [Test]
+    public void AVoiceWithoutItsTextRoundTrips()
+    {
+        // a key with a voiceID and an empty name loads only its voice (GuideStrings.Parse keeps the maps apart): the
+        // cache write keeps the id over the union of the texts and voices, so the voice survives the round trip and
+        // the comparison sees the same table
+        var s = new GuideStrings();
+        s.TextMap[5] = "a text";
+        s.VoiceMap[5] = "its voice";
+        s.VoiceMap[9] = "a voice without a text";
+        var back = GuideCache.ReadStringsBody(GuideCache.WriteStringsBody(s));
+        Assert.That(back, Is.Not.Null);
+        Assert.That(back.Text(9), Is.Empty);
+        Assert.That(back.Voice(9), Is.EqualTo("a voice without a text"));
+        Assert.That(GuideCache.FirstStringsDifference(s, back), Is.Null);
+
+        // a changed voice is a difference
+        back.VoiceMap[9] = "another voice";
+        Assert.That(GuideCache.FirstStringsDifference(s, back), Does.Contain("voice"));
     }
 
     [Test]
@@ -78,40 +76,33 @@ public class GuideCacheTests
     {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        var dir = TempDir();
-        var path = Path.Combine(dir, GuideCache.FileName("test"));
-        try
-        {
-            using var packs = new PackSet(d);
-            var sw = Stopwatch.StartNew();
-            GuideCache.Build(packs, path);
-            TestContext.Progress.WriteLine($"guide cache: built in {sw.Elapsed.TotalSeconds:F2} s, {new FileInfo(path).Length / 1024} KB");
+        using var packs = new PackSet(d);
+        var sw = Stopwatch.StartNew();
+        var body = GuideCache.WriteBody(GuideTable.Parse(packs));
+        TestContext.Progress.WriteLine($"guide cache: built in {sw.Elapsed.TotalSeconds:F2} s, {body.Length / 1024} KB");
 
-            sw.Restart();
-            var parsed = GuideTable.Parse(packs);
-            double parseMs = sw.Elapsed.TotalMilliseconds;
-            sw.Restart();
-            var cached = GuideCache.Read(path);
-            TestContext.Progress.WriteLine($"guide cache: parse {parseMs:F1} ms, cache read {sw.Elapsed.TotalMilliseconds:F1} ms");
+        sw.Restart();
+        var parsed = GuideTable.Parse(packs);
+        double parseMs = sw.Elapsed.TotalMilliseconds;
+        sw.Restart();
+        var cached = GuideCache.ReadBody(body);
+        TestContext.Progress.WriteLine($"guide cache: parse {parseMs:F1} ms, cache read {sw.Elapsed.TotalMilliseconds:F1} ms");
 
-            Assert.That(cached, Is.Not.Null);
-            Assert.That(GuideCache.FirstDifference(parsed, cached), Is.Null);
-            Assert.That(cached.Events.Count(), Is.EqualTo(parsed.Events.Count()), "the cache holds every parsed event");
+        Assert.That(cached, Is.Not.Null);
+        Assert.That(GuideCache.FirstDifference(parsed, cached), Is.Null);
+        Assert.That(cached.Events.Count(), Is.EqualTo(parsed.Events.Count()), "the cache holds every parsed event");
 
-            // the manager loads the cached table as the parsed one
-            var a = new GuideManager(new GuideTests.World());
-            var b = new GuideManager(new GuideTests.World());
-            a.Load(parsed);
-            b.Load(cached);
-            Assert.That(b.Entities.Select(e => e.Id), Is.EqualTo(a.Entities.Select(e => e.Id)));
-            Assert.That(b.EntityCount, Is.EqualTo(a.EntityCount));
-            Assert.That(b.LoadErrors, Is.EqualTo(a.LoadErrors));
+        // the manager loads the cached table as the parsed one
+        var a = new GuideManager(new GuideTests.World());
+        var b = new GuideManager(new GuideTests.World());
+        a.Load(parsed);
+        b.Load(cached);
+        Assert.That(b.Entities.Select(e => e.Id), Is.EqualTo(a.Entities.Select(e => e.Id)));
+        Assert.That(b.EntityCount, Is.EqualTo(a.EntityCount));
+        Assert.That(b.LoadErrors, Is.EqualTo(a.LoadErrors));
 
-            // a bad body reads as null and the load falls back to the parse
-            File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
-            Assert.That(GuideCache.Read(path), Is.Null);
-        }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+        // a bad body reads as null and the load falls back to the parse
+        Assert.That(GuideCache.ReadBody(new byte[] { 1, 2, 3 }), Is.Null);
     }
 
     /// <summary>The store's flow over the guide pieces: built at setup (once), read from the cache, another language

@@ -652,7 +652,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Quest))
             {
                 var q = ReadQuest(p);
-                bool known = QuestKnownBefore(q);
+                bool known = GuideQuests.KnownBefore(Quests, q);   // RemoveQuest's early return on an unknown quest
                 Quests.Apply(q);
                 GuideOnQuest(q, known);
                 GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");

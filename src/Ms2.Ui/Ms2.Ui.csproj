@@ -11,4 +11,7 @@
     <ProjectReference Include="../Ms2.Net/Ms2.Net.csproj" />
     <ProjectReference Include="../Ms2.Quest/Ms2.Quest.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ms2.Ui.Tests" />
+  </ItemGroup>
 </Project>

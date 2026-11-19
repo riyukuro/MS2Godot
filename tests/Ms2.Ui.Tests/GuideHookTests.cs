@@ -1,3 +1,4 @@
+using Ms2.Net.Packets;
 using Ms2.Ui.Guide;
 using NUnit.Framework;
 
@@ -90,5 +91,49 @@ public class GuideHookTests
         Assert.That(GuideManager.RefusesDialogOpen("WorldMapDialog"), Is.False);
         g.RemoveDialogLimit("InventoryDialog");
         Assert.That(GuideManager.RefusesDialogOpen("InventoryDialog"), Is.False);
+    }
+
+    [Test]
+    public void ASummonPortalRaisesOnlyWhenTheFieldHoldsIt()
+    {
+        // OnQuest mode 0x12 (questmanager_2.cpp:1125-1141): the trigger is raised only after the target portal is
+        // found in the field (WorldService::FUN_141bc2800, :1129-1130) — a packet whose target the field does not
+        // hold raises nothing.
+        var w = new GuideTests.World();
+        var g = new GuideManager(w);
+        g.Load(new GuideTable());
+        var book = new QuestBook();
+        GuideQuests.OnQuest(g, new QuestMessage.SummonPortal(91000010, 50001, 60000), book, knownBefore: false, targetPortal: id => id == 50001);
+        Assert.That(g.CheckTrigger(GuideTrigger.QuestSummonPortal, 0, null), Is.True, "the field holds the target");
+        w.Time += 300; g.Tick();      // the triggers last one update
+        GuideQuests.OnQuest(g, new QuestMessage.SummonPortal(91000010, 50002, 60000), book, knownBefore: false, targetPortal: id => id == 50001);
+        Assert.That(g.CheckTrigger(GuideTrigger.QuestSummonPortal, null, null), Is.False, "a target the field does not hold raises nothing");
+    }
+
+    [Test]
+    public void AnExpiredPacketQueuesOnceHoweverManyIdsItNames()
+    {
+        // OnQuest modes 6 and 7 (questmanager_2.cpp:1058-1074): RemoveQuest runs per known id and each call queues
+        // occurrences 7 and 8 (:865-866), which QueueOccurrence collapses into its sets when the sub value is 0
+        // (std::set m_setPlain, cguidemanager.h:112, guideentity_1b.cpp:793-798) — so one raise per kind is every
+        // call's, however many ids the packet holds.
+        var w = new GuideTests.World();
+        var g = new GuideManager(w);
+        g.Load(new GuideTable());
+        var book = new QuestBook();
+        book.Apply(new QuestMessage.Start(11, 0, false, Array.Empty<long>()));
+        book.Apply(new QuestMessage.Start(12, 0, false, Array.Empty<long>()));
+        Assert.That(GuideQuests.KnownBefore(book, new QuestMessage.Expired(new[] { 11, 12, 13 })), Is.True, "a known id among them");
+        Assert.That(GuideQuests.KnownBefore(book, new QuestMessage.Abandon(99)), Is.False, "an unknown id alone is no quest of the book");
+        GuideQuests.OnQuest(g, new QuestMessage.Expired(new[] { 11, 12 }), book, knownBefore: true, targetPortal: _ => false);
+        GuideQuests.OnQuest(g, new QuestMessage.Abandon(11), book, knownBefore: true, targetPortal: _ => false);
+        Assert.That(g.PendingOccurrences,
+            Is.EqualTo(new[] { (int)GuideOccurrence.QuestProgress, (int)GuideOccurrence.QuestComplete }), "the calls collapse into one per kind");
+        // the collapse itself: the same sub-0 kind raised twice is one pending kind
+        g.QueueOccurrence(GuideOccurrence.QuestProgress, 0);
+        Assert.That(g.PendingOccurrences.Count(id => id == (int)GuideOccurrence.QuestProgress), Is.EqualTo(1));
+        // a packet no quest of the book backs raises nothing (RemoveQuest's early return, :863-864)
+        GuideQuests.OnQuest(g, new QuestMessage.Abandon(99), book, knownBefore: false, targetPortal: _ => false);
+        Assert.That(g.PendingOccurrences, Has.Count.EqualTo(2));
     }
 }

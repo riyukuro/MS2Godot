@@ -59,51 +59,24 @@ public partial class LiveSession
         Send(guide.SendStates());
     }
 
-    /// <summary>The guide's occurrences and triggers of one packet the session read (the client's handlers raise them).</summary>
+    /// <summary>
+    /// The guide's occurrences and triggers of one packet the session read (the client's handlers raise them,
+    /// <see cref="GuideQuests"/>), with the field's portal registry for the summon portal.
+    /// </summary>
     void GuideOnQuest(QuestMessage q, bool existedBefore)
     {
-        var g = guide;
-        if (g == null) return;
-        switch (q)
-        {
-            case QuestMessage.Load:                              // OnQuest 0x16 (questmanager_2.cpp:984)
-                g.QueueOccurrence(GuideOccurrence.QuestProgress, 0);
-                g.QueueOccurrence(GuideOccurrence.QuestComplete, 0);
-                break;
-            case QuestMessage.Start s:                           // mode 2 (:1021)
-                g.QueueOccurrence(GuideOccurrence.QuestProgress, s.Id);
-                g.AddTrigger(GuideTrigger.QuestAccept, s.Id);
-                break;
-            case QuestMessage.Update u when Quests.Get(u.Id) is { } r:   // mode 3 (:1032): GetProgress(0) after DecodeProgress
-                g.AddTrigger(GuideTrigger.QuestProgress, u.Id, r.Progress.Length > 0 ? (int)r.Progress[0] : 0);
-                g.QueueOccurrence(GuideOccurrence.QuestProgress, u.Id);
-                break;
-            case QuestMessage.Complete c when Quests.Get(c.Id) != null:  // mode 4 (:1048)
-                g.AddTrigger(GuideTrigger.QuestComplete, c.Id);
-                g.QueueOccurrence(GuideOccurrence.QuestComplete, c.Id);
-                break;
-            case QuestMessage.Result:                            // mode 5 (:1055); RemoveQuest (:865) queues the same
-                g.QueueOccurrence(GuideOccurrence.QuestProgress, 0);
-                g.QueueOccurrence(GuideOccurrence.QuestComplete, 0);
-                break;
-            case QuestMessage.Abandon or QuestMessage.Expired when existedBefore:   // modes 6 and 7: RemoveQuest of a known quest
-                g.QueueOccurrence(GuideOccurrence.QuestProgress, 0);
-                g.QueueOccurrence(GuideOccurrence.QuestComplete, 0);
-                break;
-            case QuestMessage.Other { Mode: 0x12 }:              // mode 0x12 (:1140): the quest summon portal
-                g.AddTrigger(GuideTrigger.QuestSummonPortal, 0);
-                break;
-        }
+        if (guide == null) return;
+        GuideQuests.OnQuest(guide, q, Quests, existedBefore, TargetPortalExists);
     }
 
-    /// <summary>Whether a quest packet names a quest the book has before it is applied (RemoveQuest returns early on an
-    /// unknown quest).</summary>
-    bool QuestKnownBefore(QuestMessage q) => q switch
-    {
-        QuestMessage.Abandon a => Quests.Get(a.Id) != null,
-        QuestMessage.Expired e => e.Ids.Any(id => Quests.Get(id) != null),
-        _ => false,
-    };
+    /// <summary>WorldService::FUN_141bc2800 (worldservice_1.cpp:4003): whether the current field holds the portal of
+    /// an id, the registry the summon portal's trigger asks (questmanager_2.cpp:1129). The field's portals are the
+    /// xblock's here (FieldPortals.ById); a portal the server alone knows (an object it adds at runtime, not in the
+    /// xblock) is not found, and the client's registry of server-added field objects is STILL-OPEN with the live
+    /// world's own object list.</summary>
+    bool TargetPortalExists(int id) =>
+        GetTree().GetFirstNodeInGroup(Ms2Godot.World.FieldContents.Group) is Ms2Godot.World.FieldContents { Portals: { } fc }
+        && fc.ById(id) != null;
 
     /// <summary>
     /// What the guide reads from the live session. The scene is the game scene (0x620000c) once the field is entered;

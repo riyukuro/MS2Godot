@@ -5,13 +5,12 @@ using Ms2.Formats.Pack;
 namespace Ms2.Ui.Guide;
 
 /// <summary>
-/// The per-install cache of the guide tables (<see cref="GuideTable"/>): every file's &lt;event&gt; elements after the
-/// feature filter, parsed once from the player's Xml.m2d and written next to the UI code (the game's
-/// user://uigen/KEY/guide-XMLKEY-vN.bin). The file name carries the Xml.m2d key (Skills.AdditionalCache.XmlKey) and
-/// <see cref="Version"/>, so other client data or another parse gets another file. The events are stored as node trees
-/// (elements, attributes, text) over one string table, so a cached table loads through the same GuideManager.Load as a
-/// parsed one; a file that fails its checks is not used (the table is then parsed) and the next setup step writes it
-/// again. Nothing of it is in the repo.
+/// The bodies of the per-install guide cache, the pieces <see cref="GuideTable"/> and <see cref="GuideStrings"/> keep
+/// in the table cache store (user://uigen/data-KEY, keyed by the archives' hashes, the load's configuration and the
+/// code's build): every file's &lt;event&gt; elements after the feature filter, and the texts and voices as loaded.
+/// The events are stored as node trees (elements, attributes, text) over one string table, so a cached table loads
+/// through the same GuideManager.Load as a parsed one; a body that fails its checks is not used (the table is then
+/// parsed) and the next setup step writes it again. Nothing of it is in the repo.
 /// </summary>
 public static class GuideCache
 {
@@ -23,15 +22,6 @@ public static class GuideCache
     const uint StringsEndMagic = 0x534E4547;  // "GENS"
 
     const byte NodeElement = 0, NodeText = 1, NodeCData = 2, NodeComment = 3;
-
-    /// <summary>The cache file name for an Xml.m2d key.</summary>
-    public static string FileName(string xmlKey) => $"guide-{xmlKey}-v{Version}.bin";
-    /// <summary>The guide strings (<see cref="GuideStrings"/>) cache file name for an Xml.m2d key and language.</summary>
-    public static string StringsFileName(string xmlKey, string language) =>
-        $"stringguide-{language?.ToLowerInvariant()}-{xmlKey}-v{Version}.bin";
-
-    /// <summary>Parses the guide tables of <paramref name="packs"/> and writes <paramref name="path"/>.</summary>
-    public static void Build(PackSet packs, string path) => Write(GuideTable.Parse(packs), path);
 
     /// <summary>The cache body of <paramref name="table"/> (the store's file wraps it).</summary>
     public static byte[] WriteBody(GuideTable table)
@@ -70,19 +60,6 @@ public static class GuideCache
         return w.ToArray();
     }
 
-    /// <summary>Writes <paramref name="table"/> to <paramref name="path"/> (through a temporary file, so a stopped build
-    /// leaves no partial cache).</summary>
-    public static void Write(GuideTable table, string path) => Atomic(path, WriteBody(table));
-
-    /// <summary>A file written whole or not at all (a temporary file renamed into place).</summary>
-    static void Atomic(string path, byte[] bytes)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
-        string tmp = path + ".tmp";
-        File.WriteAllBytes(tmp, bytes);
-        File.Move(tmp, path, true);
-    }
-
     static void WriteNode(BinaryWriter w, XNode node, Func<string, int> id)
     {
         switch (node)
@@ -110,10 +87,6 @@ public static class GuideCache
                 throw new InvalidDataException($"guide cache: no form for a {node.NodeType} node");
         }
     }
-
-    /// <summary>The table in <paramref name="path"/>; null when the file is missing or fails its checks.</summary>
-    public static GuideTable Read(string path) =>
-        path == null || !File.Exists(path) ? null : ReadBody(File.ReadAllBytes(path));
 
     /// <summary>The table of a cache body; null when it fails its checks. The store's file holds the body, so a body
     /// that fails is its reader's bug or a damaged write.</summary>
@@ -201,15 +174,8 @@ public static class GuideCache
 
     // ---- the guide strings (GuideStrings) --------------------------------------------------------------------------
 
-    /// <summary>Parses the guide strings of <paramref name="packs"/> in <paramref name="language"/> and writes
-    /// <paramref name="path"/>.</summary>
-    public static void BuildStrings(PackSet packs, string language, string path) => WriteStrings(GuideStrings.Parse(packs, language), path);
-
-    /// <summary>Writes <paramref name="strings"/> to <paramref name="path"/> (through a temporary file, so a stopped
-    /// build leaves no partial cache): the texts and voices as loaded, over the union of their ids, in id order.</summary>
-    public static void WriteStrings(GuideStrings strings, string path) => Atomic(path, WriteStringsBody(strings));
-
-    /// <summary>The strings cache body of <paramref name="strings"/> (the store's file wraps it).</summary>
+    /// <summary>The strings cache body of <paramref name="strings"/> (the store's file wraps it): the texts and
+    /// voices as loaded, over the union of their ids, in id order.</summary>
     public static byte[] WriteStringsBody(GuideStrings strings)
     {
         var texts = strings.TextMap;
@@ -231,10 +197,6 @@ public static class GuideCache
         b.Flush();
         return w.ToArray();
     }
-
-    /// <summary>The strings in <paramref name="path"/>; null when the file is missing or fails its checks.</summary>
-    public static GuideStrings ReadStrings(string path) =>
-        path == null || !File.Exists(path) ? null : ReadStringsBody(File.ReadAllBytes(path));
 
     /// <summary>The strings of a cache body; null when it fails its checks. The store's file holds the body.</summary>
     public static GuideStrings ReadStringsBody(byte[] bytes)

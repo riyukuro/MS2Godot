@@ -47,7 +47,11 @@ public abstract record QuestMessage {
     public sealed record Talk(int NpcId, IReadOnlyList<int> Ids) : QuestMessage;
     /// <summary>Modes 0x1f / 0x20: u8 drop flag, i32 count + ids (daily / weekly reputation counts; drop removes the type-9 quests of state 2 / 3).</summary>
     public sealed record Counts(bool Weekly, bool Drop, IReadOnlyList<int> Ids) : QuestMessage;
-    /// <summary>Modes the quest book does not use (map-only or UI-only: 0x12, 0x19, 0x1a, 0x1e, 0x22, 0x23, 0x26).</summary>
+    /// <summary>Mode 0x12: i32 npc id, i32 target object, i32 request tick — the quest summon portal (questmanager_2.cpp:1125-1128:
+    /// the client looks the target object up among the field's portals and highlights it with the common resource's portal effect,
+    /// which the quest manager's members keep until the summon time is past). The effect is not ported (no effect service for it).</summary>
+    public sealed record SummonPortal(int NpcId, int TargetObject, int RequestTick) : QuestMessage;
+    /// <summary>Modes the quest book does not use (map-only or UI-only: 0x19, 0x1a, 0x1e, 0x22, 0x23, 0x26).</summary>
     public sealed record Other(int Mode) : QuestMessage;
 
     static IReadOnlyList<int> IdList(ByteReader r) { int n = r.ReadInt(); var l = new List<int>(n); for (int i = 0; i < n; i++) l.Add(r.ReadInt()); return l; }
@@ -81,6 +85,7 @@ public abstract record QuestMessage {
             case 7: return new Expired(IdList(r));
             case 9: return new Tracking(r.ReadInt(), r.ReadByte() != 0);
             case 0x15: return new Reset(r.ReadInt(), r.ReadInt());
+            case 0x12: return new SummonPortal(r.ReadInt(), r.ReadInt(), r.ReadInt());
             case 0x16: {
                 int n = r.ReadInt(); var l = new List<QuestRecord>(); var skipped = new List<int>(); bool overrun = false;
                 try {
