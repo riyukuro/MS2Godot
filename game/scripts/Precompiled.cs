@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Reflection.Metadata;
-using System.Reflection.PortableExecutable;
 using System.Runtime.Loader;
 using Godot;
+
+[assembly: Ms2Godot.PrecompiledFirst]
 
 namespace Ms2Godot;
 
@@ -24,8 +24,16 @@ public static class Precompiled
     /// <summary>What <see cref="Preload"/> did, for the log (it runs before the log is up).</summary>
     public static string Summary { get; private set; } = "not run";
 
+    /// <summary>
+    /// The libraries with an image that were bound before <see cref="Preload"/> ran (from memory: their code is the JIT's).
+    /// Empty when the images went in first; the perf runs fail on any (MS2_PERF_QUIT exits 3).
+    /// </summary>
+    public static IReadOnlyList<string> Early { get; private set; } = Array.Empty<string>();
+
     // The one module initializer: the images first, then the cache hooks (whose code binds Ms2.Formats and Ms2.Ui).
-    // Nothing here names a type of a library, so the JIT binds none of them before the images are in.
+    // Nothing here names a type of a library, so the JIT binds none of them before the images are in. It runs before the
+    // first code of this assembly: Godot's first is the constructor of PrecompiledFirstAttribute (below), ahead of
+    // AssemblyHasScripts, whose script types' fields bind Ms2.Formats and Ms2.Quest as the attribute is made.
     // (CA2255 is for libraries; this assembly is the game Godot loads.)
 #pragma warning disable CA2255
     [System.Runtime.CompilerServices.ModuleInitializer]
@@ -83,28 +91,22 @@ public static class Precompiled
             try { ctx.LoadFromAssemblyPath(image); n++; }
             catch (Exception e) when (e is IOException or BadImageFormatException) { GD.PushWarning($"precompiled code: {image}: {e.Message}"); }
         }
-        Summary = $"{n} precompiled from {AssemblyDir} in {sw.Elapsed.TotalMilliseconds:F0} ms" + (early.Count > 0 ? $"; already loaded from memory: {string.Join(", ", early)}" : "");
+        Early = early;
+        var runtime = PrecompiledImage.RuntimeMismatch(Path.Combine(AssemblyDir, "r2r"), PrecompiledImage.Runtime);
+        Summary = $"{n} precompiled from {AssemblyDir} in {sw.Elapsed.TotalMilliseconds:F0} ms" + (runtime != null ? "; " + runtime : "")
+            + (early.Count > 0 ? $"; already loaded from memory: {string.Join(", ", early)}" : "");
     }
 
-    /// <summary>A managed file's module version id and whether it carries precompiled code; null for no such file.</summary>
-    static (Guid id, bool r2r)? Mvid(string path)
-    {
-        try
-        {
-            using var pe = new PEReader(File.OpenRead(path));
-            if (!pe.HasMetadata) return null;
-            var md = pe.GetMetadataReader();
-            return (md.GetGuid(md.GetModuleDefinition().Mvid), pe.PEHeaders.CorHeader?.ManagedNativeHeaderDirectory.Size > 0);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or BadImageFormatException or InvalidOperationException) { return null; }
-    }
+    static (Guid id, bool r2r)? Mvid(string path) => PrecompiledImage.Mvid(path);
 
-    /// <summary>The precompiled image of a per-install assembly, next to it: valid when it is of the same module.</summary>
+    /// <summary>The precompiled image of a per-install assembly, next to it (<see cref="PrecompiledImage.ImageOf"/>): of the
+    /// same module and this runtime. A file of it for another runtime or build is logged.</summary>
     public static string ImageOf(string dll)
     {
         if (Off) return null;
-        var image = Path.ChangeExtension(dll, ".r2r.dll");
-        return Mvid(dll) is { } il && Mvid(image) is { } m && m.r2r && m.id == il.id ? image : null;
+        var image = PrecompiledImage.ImageOf(dll, PrecompiledImage.Runtime, out var note);
+        if (note != null) GD.Print("precompiled code: " + note);
+        return image;
     }
 
     /// <summary>The compiler of the images, next to the assemblies (crossgen2/, copied there by the build).</summary>
@@ -115,47 +117,29 @@ public static class Precompiled
         return null;
     }
 
+    /// <summary>How long the compile of the UI code may take (about 10 s on 8 cores) before it is stopped.</summary>
+    static readonly TimeSpan CompileTimeout = TimeSpan.FromMinutes(5);
+
     /// <summary>
     /// The setup step (a worker thread): compiles <paramref name="dll"/> (the per-install UI code) into its image next to it,
-    /// when it has none; written under a temporary name and renamed, so a killed setup leaves no image. Returns the seconds
-    /// taken, -1 when the image was there, or null when it could not be made (the game then runs the assembly's IL); it
-    /// never throws.
+    /// when it has none (<see cref="PrecompiledImage.Compile"/>). Returns the seconds taken, -1 when the image was there, or
+    /// null when it could not be made (the game then runs the assembly's IL); it never throws.
     /// </summary>
     public static double? Compile(string dll)
     {
         if (Off) return null;
-        if (ImageOf(dll) != null) return -1;
-        var compiler = Compiler();
-        if (compiler == null || AssemblyDir == null) { GD.PushWarning("precompiled code: no compiler next to the assemblies"); return null; }
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var image = Path.ChangeExtension(dll, ".r2r.dll");
-        var tmp = image + ".tmp" + System.Environment.ProcessId;
-        var psi = new System.Diagnostics.ProcessStartInfo(compiler) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
-        foreach (var a in new[] { dll, "-o", tmp, "-O", "--targetos", OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "osx" : "linux",
-                     "--targetarch", System.Runtime.InteropServices.RuntimeInformation.OSArchitecture.ToString().ToLowerInvariant(),
-                     "-r", Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "*.dll"), "-r", Path.Combine(AssemblyDir, "*.dll") })
-            psi.ArgumentList.Add(a);
-        try
-        {
-            using var p = System.Diagnostics.Process.Start(psi);
-            var err = p.StandardError.ReadToEndAsync();
-            var output = p.StandardOutput.ReadToEnd();
-            p.WaitForExit();
-            if (p.ExitCode != 0 || Mvid(tmp) is not { r2r: true })
-            {
-                GD.PushWarning($"precompiled code: {Path.GetFileName(dll)}: exit {p.ExitCode}: {(err.Result + output).Trim()}");
-                File.Delete(tmp);
-                return null;
-            }
-            File.Move(tmp, image, true);
-            return sw.Elapsed.TotalSeconds;
-        }
-        catch (Exception e)
-        {
-            // whatever fails here, the setup step goes on (its tables are built after this) and the game runs the IL
-            GD.PushWarning($"precompiled code: {Path.GetFileName(dll)}: {e.GetType().Name}: {e.Message}");
-            try { File.Delete(tmp); } catch (Exception d) when (d is IOException or UnauthorizedAccessException) { }
-            return null;
-        }
+        if (AssemblyDir == null) { GD.PushWarning("precompiled code: no build folder"); return null; }
+        return PrecompiledImage.Compile(Compiler(), dll, PrecompiledImage.Runtime,
+            new[] { Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "*.dll"), Path.Combine(AssemblyDir, "*.dll") },
+            CompileTimeout, w => GD.PushWarning("precompiled code: " + w));
     }
 }
+
+/// <summary>
+/// Makes the module initializer (the images' preload, <see cref="Precompiled"/>) run before Godot binds a library: Godot's first look at
+/// this assembly makes all its assembly attributes, in their order in the metadata, and this one is ahead of the generated
+/// AssemblyHasScripts (generated sources come after the project's), whose script types' field types (Ms2.Formats,
+/// Ms2.Quest) are loaded as it is made; this one's constructor is code of this assembly, so the initializer runs first.
+/// </summary>
+[AttributeUsage(AttributeTargets.Assembly)]
+public sealed class PrecompiledFirstAttribute : Attribute { }

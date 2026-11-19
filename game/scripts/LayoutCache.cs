@@ -121,7 +121,7 @@ public static class LayoutCache
                 if (Movie(names[i]) is { } m)
                     foreach (var g in m.Imports)
                         if (System.IO.Path.GetFileNameWithoutExtension(g.Url) is var ik && Movie(ik) != null) Add(ik);
-        var missing = names.Where(k => !s.Store.IsWhole(Piece(k), CacheStore.Key(Piece(k), s.Config + "," + k, Build))).ToList();
+        var missing = names.Where(k => !s.Store.Current(Piece(k), CacheStore.Key(Piece(k), s.Config + "," + k, Build))).ToList();
         int built = 0;
         for (int i = 0; i < missing.Count; i++)
         {

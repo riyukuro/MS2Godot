@@ -21,17 +21,29 @@ public static class ImageBlob
 
     const int Head = 1 + 4 + 4 + 4;
 
+    /// <summary>The largest width or height read (the client's largest UI atlas is 4096).</summary>
+    public const int MaxSide = 16384;
+
+    /// <summary>The most an LZ4 block decodes to per byte of it.</summary>
+    const int MaxRatio = 255;
+
     public static byte[] Write(Kind kind, int w, int h, ReadOnlySpan<byte> bytes)
     {
-        var body = new byte[Head + LZ4Codec.MaximumOutputSize(bytes.Length)];
-        body[0] = (byte)kind;
-        BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(1), w);
-        BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(5), h);
-        BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(9), bytes.Length);
-        int n = bytes.Length == 0 ? 0 : LZ4Codec.Encode(bytes, body.AsSpan(Head), LZ4Level.L06_HC);
-        if (n < 0) throw new InvalidOperationException("LZ4 encode failed");
-        Array.Resize(ref body, Head + n);
-        return body;
+        // the encoder's worst-case buffer is pooled (a worker reuses it atlas after atlas); the body is the size it encodes to
+        var buf = System.Buffers.ArrayPool<byte>.Shared.Rent(LZ4Codec.MaximumOutputSize(bytes.Length));
+        try
+        {
+            int n = bytes.Length == 0 ? 0 : LZ4Codec.Encode(bytes, buf, LZ4Level.L06_HC);
+            if (n < 0) throw new InvalidOperationException("LZ4 encode failed");
+            var body = new byte[Head + n];
+            body[0] = (byte)kind;
+            BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(1), w);
+            BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(5), h);
+            BinaryPrimitives.WriteInt32LittleEndian(body.AsSpan(9), bytes.Length);
+            buf.AsSpan(0, n).CopyTo(body.AsSpan(Head));
+            return body;
+        }
+        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buf); }
     }
 
     /// <summary>The image of a body; throws InvalidDataException on a body that does not decode to its stated length.</summary>
@@ -42,7 +54,9 @@ public static class ImageBlob
         if (kind != Kind.Rgba && kind != Kind.File) throw new InvalidDataException($"image kind {body[0]}");
         int w = BinaryPrimitives.ReadInt32LittleEndian(body.Slice(1)), h = BinaryPrimitives.ReadInt32LittleEndian(body.Slice(5));
         int len = BinaryPrimitives.ReadInt32LittleEndian(body.Slice(9));
-        if (len < 0 || w < 0 || h < 0 || kind == Kind.Rgba && (long)w * h * 4 != len) throw new InvalidDataException($"image {w}x{h} of {len} bytes");
+        // a damaged header can't ask for more than the block can hold, or a side no image has
+        if (len < 0 || w < 0 || h < 0 || w > MaxSide || h > MaxSide || (long)len > (long)(body.Length - Head) * MaxRatio
+            || kind == Kind.Rgba && (long)w * h * 4 != len) throw new InvalidDataException($"image {w}x{h} of {len} bytes");
         var bytes = new byte[len];
         if (len > 0 && LZ4Codec.Decode(body.Slice(Head), bytes) != len) throw new InvalidDataException("the LZ4 block does not decode to its length");
         return (kind, w, h, bytes);

@@ -44,24 +44,41 @@
     <Crossgen2Exe>$(Crossgen2Dir)crossgen2</Crossgen2Exe>
     <Crossgen2Exe Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(Crossgen2Dir)crossgen2.exe</Crossgen2Exe>
   </PropertyGroup>
-  <ItemGroup>
+  <!--
+    Ms2Precompile=false builds without the images (and without the compiler's package, which a restore downloads: an
+    offline build). A build that can't make them (no compiler, no shared runtime under the SDK, a compiler error) warns
+    and goes on: the game then runs the JIT for those assemblies.
+  -->
+  <PropertyGroup>
+    <Ms2Precompile Condition="'$(Ms2Precompile)' == ''">true</Ms2Precompile>
+    <Ms2SharedRuntime>$(NetCoreTargetingPackRoot)/../shared/Microsoft.NETCore.App/$(BundledNETCoreAppPackageVersion)</Ms2SharedRuntime>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Ms2Precompile)' == 'true'">
     <PackageDownload Include="Microsoft.NETCore.App.Crossgen2.$(Crossgen2Rid)" Version="[$(BundledNETCoreAppPackageVersion)]" />
   </ItemGroup>
-  <Target Name="PrecompileLibraries" AfterTargets="Build" DependsOnTargets="_PrecompileInputs" 
+  <Target Name="PrecompileLibraries" AfterTargets="Build" DependsOnTargets="_PrecompileInputs" Condition="'$(Ms2Precompile)' == 'true'"
           Inputs="@(_Precompile)" Outputs="@(_Precompile->'$(OutDir)r2r/%(Filename).dll')">
-    <MakeDir Directories="$(OutDir)r2r" />
-    <Exec Command="&quot;$(Crossgen2Exe)&quot; &quot;%(_Precompile.Identity)&quot; -o &quot;$(OutDir)r2r/%(_Precompile.Filename).dll.tmp&quot; -O --targetos:$(Crossgen2Os) --targetarch:$(Crossgen2Arch) -r &quot;$(NetCoreTargetingPackRoot)/../shared/Microsoft.NETCore.App/$(BundledNETCoreAppPackageVersion)/*.dll&quot; -r &quot;$(OutDir)*.dll&quot;"
+    <Warning Condition="!Exists('$(Crossgen2Exe)')" Text="No ReadyToRun compiler at $(Crossgen2Exe) (restore with the network, or build with Ms2Precompile=false): the libraries run under the JIT." />
+    <Warning Condition="Exists('$(Crossgen2Exe)') And !Exists('$(Ms2SharedRuntime)')" Text="No shared runtime at $(Ms2SharedRuntime): the libraries are not precompiled and run under the JIT." />
+    <MakeDir Directories="$(OutDir)r2r" Condition="Exists('$(Crossgen2Exe)') And Exists('$(Ms2SharedRuntime)')" />
+    <Exec Condition="Exists('$(Crossgen2Exe)') And Exists('$(Ms2SharedRuntime)')" ContinueOnError="WarnAndContinue"
+          Command="&quot;$(Crossgen2Exe)&quot; &quot;%(_Precompile.Identity)&quot; -o &quot;$(OutDir)r2r/%(_Precompile.Filename).dll.tmp&quot; -O --targetos:$(Crossgen2Os) --targetarch:$(Crossgen2Arch) -r &quot;$(Ms2SharedRuntime)/*.dll&quot; -r &quot;$(OutDir)*.dll&quot;"
           StandardOutputImportance="low" />
-    <Move SourceFiles="$(OutDir)r2r/%(_Precompile.Filename).dll.tmp" DestinationFiles="$(OutDir)r2r/%(_Precompile.Filename).dll" />
+    <!-- a running game keeps the file it mapped where the system allows the rename; where it does not, the old image stays and the build warns -->
+    <Move Condition="Exists('$(OutDir)r2r/%(_Precompile.Filename).dll.tmp')" ContinueOnError="WarnAndContinue"
+          SourceFiles="$(OutDir)r2r/%(_Precompile.Filename).dll.tmp" DestinationFiles="$(OutDir)r2r/%(_Precompile.Filename).dll" />
+    <Delete Files="$(OutDir)r2r/%(_Precompile.Filename).dll.tmp" ContinueOnError="true" />
+    <!-- the runtime they were compiled against (Precompiled logs a mismatch with the one the game runs on) -->
+    <WriteLinesToFile Condition="Exists('$(OutDir)r2r')" File="$(OutDir)r2r/runtime.txt" Lines="$(BundledNETCoreAppPackageVersion)" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
   <Target Name="_PrecompileInputs">
     <ItemGroup>
       <_Precompile Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll;$(OutDir)Godot*.dll" />
-      <_Crossgen2Files Include="$(Crossgen2Dir)*" />
+      <_Crossgen2Files Include="$(Crossgen2Dir)*" Condition="'$(Ms2Precompile)' == 'true' And Exists('$(Crossgen2Exe)')" />
     </ItemGroup>
-    <Copy SourceFiles="@(_Crossgen2Files)" DestinationFolder="$(OutDir)crossgen2" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_Crossgen2Files)" DestinationFolder="$(OutDir)crossgen2" SkipUnchangedFiles="true" Condition="'@(_Crossgen2Files)' != ''" />
   </Target>
   <Target Name="PublishCrossgen2" AfterTargets="Publish" DependsOnTargets="_PrecompileInputs">
-    <Copy SourceFiles="@(_Crossgen2Files)" DestinationFolder="$(PublishDir)crossgen2" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_Crossgen2Files)" DestinationFolder="$(PublishDir)crossgen2" SkipUnchangedFiles="true" Condition="'@(_Crossgen2Files)' != ''" />
   </Target>
 </Project>

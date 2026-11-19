@@ -33,7 +33,7 @@ public partial class SetupScreen : Control
 
     public override void _Ready()
     {
-        if (Settings.Ready) { CallDeferred(nameof(PrepareUiCode)); return; }
+        if (Settings.Ready) { CallDeferred(nameof(PrepareUiCode), false); return; }
         dataDir = Settings.DataDir;
         nifPath = Settings.NifXml;
         SetAnchorsPreset(LayoutPreset.FullRect);
@@ -133,15 +133,16 @@ public partial class SetupScreen : Control
         if (err != Error.Ok) { status.Text = "Could not save the settings: " + err; return; }
         // the environment overrides the file; nothing to do for it here
         foreach (var c in GetChildren()) c.QueueFree();
-        PrepareUiCode();
+        PrepareUiCode(true);
     }
 
     /// <summary>
     /// The UI code of this client: loaded when built, else built now on a worker thread (translating every UI movie's
     /// ActionScript and compiling it takes about 20 seconds). A failed build is logged and the game goes on: the movies
-    /// then run in the interpreter.
+    /// then run in the interpreter. <paramref name="setup"/> (the player's start here, or a client whose UI code is not
+    /// built: the first launch after an install) checks every cache file's body; a launch reads only their headers.
     /// </summary>
-    void PrepareUiCode()
+    void PrepareUiCode(bool setup)
     {
         var data = Settings.DataDir;
         var center = new CenterContainer();
@@ -164,6 +165,9 @@ public partial class SetupScreen : Control
         uiBuild = System.Threading.Tasks.Task.Run(() =>
         {
             void progress(string phase, double f) { uiPhase = phase; uiFrac = f; }
+            Ms2.Formats.Cache.CacheStore.CheckBodies = setup || !UiCode.Built(data);
+            try
+            {
             var r = UiCode.Built(data) ? null : UiCode.Build(data, progress);
             // its machine code, compiled ahead of time for this machine, so no dialog's first open waits for the JIT
             if (UiCode.Built(data))
@@ -191,6 +195,8 @@ public partial class SetupScreen : Control
                 }
                 catch (System.Exception e) { GD.PushWarning("table cache build failed: " + e.GetBaseException().Message); }
             return r;
+            }
+            finally { Ms2.Formats.Cache.CacheStore.CheckBodies = false; }
         });
         SetProcess(true);
     }

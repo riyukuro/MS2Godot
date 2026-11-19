@@ -2899,6 +2899,22 @@ public partial class HudScene : Node, IUiStageHost
     static readonly int PerfMemHold = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_PERF_MEM_HOLD"), out var h) ? h : 0;
 
     /// <summary>
+    /// The end of a perf run (MS2_PERF_QUIT): exit 0, or 3 when a library with a precompiled image was bound from memory
+    /// before the images went in (<see cref="Precompiled.Early"/>: its code ran under the JIT, so the run's numbers are not
+    /// the game's).
+    /// </summary>
+    void PerfQuit()
+    {
+        if (Precompiled.Early.Count > 0)
+        {
+            PerfLog.Print($"FAIL precompiled code: bound from memory before the images: {string.Join(", ", Precompiled.Early)}");
+            GetTree().Quit(3);
+            return;
+        }
+        GetTree().Quit(0);
+    }
+
+    /// <summary>
     /// MS2_PERF_MEM: memory lines (<see cref="PerfLog.Memory"/>) after 600 idle frames (field with the HUD), then for each
     /// window in MS2_PERF_OPEN: 100 frames after opening it, 100 frames after closing it, and 100 frames after 20 more
     /// open/close cycles (10 frames apart). Then MS2_PERF_MEM_HOLD idle frames ("mem hold" printed first, for a heap dump
@@ -2925,7 +2941,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             int e = at - PerfDialogs.Length * Per;
             if (e == 0) { PerfMemory("end"); PerfLog.Print($"mem hold {PerfMemHold} frames, pid {System.Environment.ProcessId}"); }
-            if (e == PerfMemHold + 1 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) GetTree().Quit(0);
+            if (e == PerfMemHold + 1 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) PerfQuit();
             return;
         }
         string d = PerfDialogs[i];
@@ -2994,7 +3010,7 @@ public partial class HudScene : Node, IUiStageHost
             PerfLog.Print($"managed heap after GC {GC.GetTotalMemory(false) / 1048576.0:0} MB");
             if (As3View.CheckRuns > 0) PerfLog.Print($"MS2_PERF_SYNCCHECK: {As3View.CheckRuns} full syncs, {As3View.CheckDiffs} differences");
         }
-        if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) GetTree().Quit(0);
+        if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) PerfQuit();
     }
 
     public override void _Process(double delta)

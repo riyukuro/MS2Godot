@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using Godot;
 using Ms2.Formats.Cache;
 using Ms2.Formats.Pack;
@@ -57,13 +55,6 @@ public static class AtlasCache
         }
     }
 
-    /// <summary>The body of an archive entry's file: its pixels, or the file itself when the pixel code does not take it.</summary>
-    static byte[] Encode(byte[] dds)
-    {
-        var rgba = DdsPixels.ToRgba(dds, out int w, out int h);
-        return rgba != null ? ImageBlob.Write(ImageBlob.Kind.Rgba, w, h, rgba) : ImageBlob.Write(ImageBlob.Kind.File, 0, 0, dds);
-    }
-
     /// <summary>The image of a decoded body (null when the file is one Godot can't read either).</summary>
     static Image ToImage((ImageBlob.Kind kind, int w, int h, byte[] bytes) b) =>
         b.kind == ImageBlob.Kind.Rgba ? Image.CreateFromData(b.w, b.h, false, Image.Format.Rgba8, b.bytes) : DdsLoader.Load(b.bytes);
@@ -80,23 +71,7 @@ public static class AtlasCache
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var piece = Piece(entry);
         var key = CacheStore.Key(piece, s.Config, Build);
-        byte[] body = null;
-        (ImageBlob.Kind kind, int w, int h, byte[] bytes)? cached = null;
-        string diff = null;
-        double readMs = 0;
-        try
-        {
-            body = s.Store.Read(piece, key);
-            readMs = sw.Elapsed.TotalMilliseconds;
-            if (body != null) cached = ImageBlob.Read(body);
-        }
-        catch (Exception e) { cached = null; diff = "unreadable: " + e.GetType().Name + ": " + e.Message; }
-        if (cached == null && System.IO.File.Exists(s.Store.PathOf(piece, key)))
-        {
-            // the file of this key is there but does not read (a damaged body): removed, so the setup step builds it again
-            diff ??= "damaged";
-            try { System.IO.File.Delete(s.Store.PathOf(piece, key)); } catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { }
-        }
+        var cached = ImageCache.Read(s.Store, piece, key, out int size, out double readMs, out string diff);
         double decodeMs = sw.Elapsed.TotalMilliseconds - readMs;
         if (cached is { } c && mode != "check")
         {
@@ -105,7 +80,7 @@ public static class AtlasCache
             catch (Exception e) { diff = "unreadable: " + e.GetType().Name + ": " + e.Message; }
             if (img != null)
             {
-                if (PerfLog.On) PerfLog.Print($"atlas {entry}: cache {body.Length / 1048576.0:F1} MB read {readMs:F1} decode {decodeMs:F1} image {sw.Elapsed.TotalMilliseconds - readMs - decodeMs:F1} ms");
+                if (PerfLog.On) PerfLog.Print($"atlas {entry}: cache {size / 1048576.0:F1} MB read {readMs:F1} decode {decodeMs:F1} image {sw.Elapsed.TotalMilliseconds - readMs - decodeMs:F1} ms");
                 return img;
             }
             cached = null;
@@ -114,13 +89,8 @@ public static class AtlasCache
         var dds = packs.Read("Resource/Gfx", entry);
         if (cached is { } k)
         {
-            try
-            {
-                var fresh = ImageBlob.Read(Encode(dds));
-                diff = fresh.kind != k.kind || fresh.w != k.w || fresh.h != k.h ? $"{k.kind} {k.w}x{k.h} cached, {fresh.kind} {fresh.w}x{fresh.h} read"
-                    : !fresh.bytes.AsSpan().SequenceEqual(k.bytes) ? "bytes differ" : null;
-            }
-            catch (Exception e) { diff = "the archive's file does not encode: " + e.GetType().Name + ": " + e.Message; }
+            try { diff = ImageCache.Compare(k, dds); }
+            catch (Exception e) { diff = "the archive's file does not convert: " + e.GetType().Name + ": " + e.Message; }
             GD.Print($"atlas cache: {entry}: check" + (diff != null ? " DIFF " + diff : ""));
             return ToImage(k);
         }
@@ -131,11 +101,11 @@ public static class AtlasCache
     }
 
     /// <summary>
-    /// The setup step (a worker thread): writes the file of every DDS file of Resource/Gfx that has none whole (each file's
-    /// checksum is checked, so a damaged body is built again here and never read at a dialog's open), on all cores (archive
-    /// read, pixel conversion, LZ4 encode, write); the count built. An atlas that fails is logged and left to the archive
-    /// read; the others are built. The atlases a name finds are the archive's first of that name
-    /// (<see cref="PackSet.FindByFileName"/>), as a session asks.
+    /// The setup step and each launch (a worker thread): writes the file of every DDS file of Resource/Gfx that needs one
+    /// (<see cref="ImageCache.BuildAll"/>: at the setup step each body's checksum is checked, so a damaged body is built
+    /// again there and never read at a dialog's open; at a launch only the headers are read); the count built. An atlas
+    /// that fails is logged and left to the archive read; the others are built. The atlases a name finds are the archive's
+    /// first of that name (<see cref="PackSet.FindByFileName"/>), as a session asks.
     /// </summary>
     public static int BuildAll(PackSet packs, Action<double> progress)
     {
@@ -145,38 +115,11 @@ public static class AtlasCache
         var build = Build;
         var names = packs.List("Resource/Gfx").Where(n => n.EndsWith(".dds", StringComparison.OrdinalIgnoreCase))
             .Select(n => packs.FindByFileName("Resource/Gfx", n)).Where(n => n != null).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var cores = new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, System.Environment.ProcessorCount - 1) };
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        var whole = new bool[names.Count];
-        Parallel.For(0, names.Count, cores, i =>
-        {
-            try { whole[i] = s.Store.IsWhole(Piece(names[i]), CacheStore.Key(Piece(names[i]), s.Config, build)); }
-            catch (Exception e) when (e is System.IO.IOException or UnauthorizedAccessException) { }
-        });
-        var missing = names.Where((n, i) => !whole[i]).ToList();
-        if (PerfLog.On) GD.Print($"atlas cache: {names.Count - missing.Count} of {names.Count} files whole, checked in {sw.Elapsed.TotalMilliseconds:F0} ms");
-        if (missing.Count == 0) return 0;
-        System.IO.Directory.CreateDirectory(s.Store.Dir);
-        sw.Restart();
-        int done = 0, failed = 0;
-        long bytes = 0;
-        Parallel.ForEach(missing, cores, n =>
-        {
-            try
-            {
-                var body = Encode(packs.Read("Resource/Gfx", n));
-                s.Store.Write(Piece(n), CacheStore.Key(Piece(n), s.Config, build), body, onlyConfig: true);
-                Interlocked.Add(ref bytes, body.Length);
-                Interlocked.Increment(ref done);
-            }
-            catch (Exception e)
-            {
-                Interlocked.Increment(ref failed);
-                GD.PushWarning($"atlas cache: {n}: not built ({e.GetType().Name}: {e.Message}); read from the archive");
-            }
-            progress?.Invoke((double)(Volatile.Read(ref done) + Volatile.Read(ref failed)) / missing.Count);
-        });
-        GD.Print($"atlas cache: {done} of {names.Count} atlases built" + (failed > 0 ? $", {failed} failed" : "") + $", {bytes / 1048576.0:F0} MB, in {sw.Elapsed.TotalSeconds:F1} s");
-        return done;
+        var r = ImageCache.BuildAll(s.Store, names, Piece, n => CacheStore.Key(Piece(n), s.Config, build), n => packs.Read("Resource/Gfx", n), progress,
+            (n, e) => GD.PushWarning($"atlas cache: {n}: not built ({e.GetType().Name}: {e.Message}); read from the archive"));
+        if (PerfLog.On || r.Done + r.Failed > 0)
+            GD.Print($"atlas cache: {r.Current} of {r.Listed} files current ({(CacheStore.CheckBodies ? "bodies" : "headers")} checked in {r.CheckMs:F0} ms)"
+                + (r.Done + r.Failed > 0 ? $"; {r.Done} built" + (r.Failed > 0 ? $", {r.Failed} failed" : "") + $", {r.Bytes / 1048576.0:F0} MB, in {r.BuildMs / 1000:F1} s" : ""));
+        return r.Done;
     }
 }

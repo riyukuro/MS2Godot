@@ -49,34 +49,55 @@ public static class CacheFile
     /// <summary>What a file being written has after its name, before the writing process's id.</summary>
     public const string TmpMark = ".tmp";
 
-    /// <summary>The body of the file at <paramref name="path"/> when it is whole and built for <paramref name="key"/>; else null.</summary>
-    public static byte[] Read(string path, string key) =>
-        ReadAll(path) is { } all && BodyAt(all, key) is var o and >= 0 ? all.AsSpan(o).ToArray() : null;
-
-    /// <summary>The file at <paramref name="path"/> is whole (its body matches its checksum) and built for <paramref name="key"/>.</summary>
-    public static bool IsWhole(string path, string key) => ReadAll(path) is { } all && BodyAt(all, key) >= 0;
-
-    static byte[] ReadAll(string path)
+    /// <summary>The body of the file at <paramref name="path"/> when it is whole and built for <paramref name="key"/>; else null.
+    /// The body is read once, into the array returned.</summary>
+    public static byte[] Read(string path, string key)
     {
-        try { return File.ReadAllBytes(path); }
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1, FileOptions.SequentialScan);
+            if (Head(fs, key) is not { } h) return null;
+            var body = new byte[h.len];
+            fs.ReadExactly(body);
+            return Crc32C(body) == h.crc ? body : null;
+        }
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
     }
 
-    /// <summary>Where the body of a whole file of <paramref name="key"/> starts in <paramref name="all"/>; -1 when it is not one.</summary>
-    static int BodyAt(byte[] all, string key)
+    /// <summary>The file at <paramref name="path"/> is whole (its body matches its checksum) and built for <paramref name="key"/>.</summary>
+    public static bool IsWhole(string path, string key) => Read(path, key) != null;
+
+    /// <summary>
+    /// The file at <paramref name="path"/> is a cache file of <paramref name="key"/> whose length is the one its header
+    /// states (its header alone is read: a launch's check; the body's checksum is checked when the body is read).
+    /// </summary>
+    public static bool IsCurrent(string path, string key)
+    {
+        try
+        {
+            using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1);
+            return Head(fs, key) is not null;
+        }
+        catch (IOException) { return false; }
+        catch (UnauthorizedAccessException) { return false; }
+    }
+
+    /// <summary>
+    /// Reads the header of a cache file of <paramref name="key"/> (the stream is left at the body): the body's length and
+    /// checksum, or null when it is not one, or its length is not what is left of the file.
+    /// </summary>
+    static (int len, uint crc)? Head(FileStream fs, string key)
     {
         var k = Encoding.UTF8.GetBytes(key);
-        int o = 0;
-        if (all.Length < 12) return -1;
-        if (BinaryPrimitives.ReadUInt32LittleEndian(all.AsSpan(o)) != Magic) return -1; o += 4;
-        if (BinaryPrimitives.ReadInt32LittleEndian(all.AsSpan(o)) != Format) return -1; o += 4;
-        int kl = BinaryPrimitives.ReadInt32LittleEndian(all.AsSpan(o)); o += 4;
-        if (kl != k.Length || all.Length < o + kl + 12 || !all.AsSpan(o, kl).SequenceEqual(k)) return -1; o += kl;
-        long len = BinaryPrimitives.ReadInt64LittleEndian(all.AsSpan(o)); o += 8;
-        uint crc = BinaryPrimitives.ReadUInt32LittleEndian(all.AsSpan(o)); o += 4;
-        if (len != all.Length - o) return -1;
-        return Crc32C(all.AsSpan(o)) == crc ? o : -1;
+        var h = new byte[12 + k.Length + 12];
+        if (fs.Length < h.Length || fs.ReadAtLeast(h, h.Length, throwOnEndOfStream: false) != h.Length) return null;
+        if (BinaryPrimitives.ReadUInt32LittleEndian(h) != Magic || BinaryPrimitives.ReadInt32LittleEndian(h.AsSpan(4)) != Format) return null;
+        if (BinaryPrimitives.ReadInt32LittleEndian(h.AsSpan(8)) != k.Length || !h.AsSpan(12, k.Length).SequenceEqual(k)) return null;
+        long len = BinaryPrimitives.ReadInt64LittleEndian(h.AsSpan(12 + k.Length));
+        uint crc = BinaryPrimitives.ReadUInt32LittleEndian(h.AsSpan(12 + k.Length + 8));
+        if (len != fs.Length - h.Length || len > Array.MaxLength) return null;
+        return ((int)len, crc);
     }
 
     /// <summary>The key a cache file was built for, or null when it is not a cache file.</summary>

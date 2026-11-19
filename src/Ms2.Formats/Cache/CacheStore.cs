@@ -69,8 +69,19 @@ public sealed class CacheStore
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return true; }
     }
 
-    /// <summary>The file of the key is there with the key in its header (its body is checked when read).</summary>
-    public bool Has(string piece, string key) => CacheFile.KeyOf(PathOf(piece, key)) == key;
+    /// <summary>The file of the key is there with the key in its header and the length its header states (the header alone
+    /// is read: a launch's check; the body's checksum is checked when it is read).</summary>
+    public bool Has(string piece, string key) => CacheFile.IsCurrent(PathOf(piece, key), key);
+
+    /// <summary>
+    /// Set while the setup step runs (the player's start on the setup screen): <see cref="Current"/> then reads every body
+    /// and checks its checksum. Off (a launch), a file is current by its header, so a launch reads no body it does not use;
+    /// a damaged body is found when it is read, removed and parsed again.
+    /// </summary>
+    public static volatile bool CheckBodies;
+
+    /// <summary>The file of the key needs no build: <see cref="IsWhole"/> while <see cref="CheckBodies"/>, else <see cref="Has"/>.</summary>
+    public bool Current(string piece, string key) => CheckBodies ? IsWhole(piece, key) : Has(piece, key);
 
     public byte[] Read(string piece, string key) => CacheFile.Read(PathOf(piece, key), key);
 
@@ -108,9 +119,22 @@ public sealed class CacheStore
             var name = Path.GetFileName(f);
             int at = piece.Length + 1 + 16 + 4;
             if (name.Length <= at + CacheFile.TmpMark.Length || !name.StartsWith(piece, StringComparison.Ordinal)
-                || !int.TryParse(name.AsSpan(at + CacheFile.TmpMark.Length), out int pid) || Running(pid)) continue;
+                || !int.TryParse(name.AsSpan(at + CacheFile.TmpMark.Length), out int pid) || !Leftover(f, pid)) continue;
             try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
+    }
+
+    /// <summary>How old a temporary file is removed at though its process id names a running process (the id may be another
+    /// process's by now: no write takes this long).</summary>
+    public static readonly TimeSpan TmpMaxAge = TimeSpan.FromDays(1);
+
+    /// <summary>A temporary file of process <paramref name="pid"/> is a write that will not finish: the process is gone, or the
+    /// file is older than <see cref="TmpMaxAge"/>.</summary>
+    static bool Leftover(string f, int pid)
+    {
+        if (!Running(pid)) return true;
+        try { return File.GetLastWriteTimeUtc(f) < DateTime.UtcNow - TmpMaxAge; }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
     }
 
     public static bool Running(int pid)
@@ -123,7 +147,8 @@ public sealed class CacheStore
 
     /// <summary>
     /// Removes the temporary files of writes that did not finish (a process stopped between the write and the rename: its
-    /// files are never read, the name read is the renamed one); the count removed. Files of a process still running stay.
+    /// files are never read, the name read is the renamed one); the count removed. Files of a process still running stay,
+    /// unless older than <see cref="TmpMaxAge"/>.
     /// </summary>
     public int RemoveLeftovers()
     {
@@ -132,7 +157,7 @@ public sealed class CacheStore
         foreach (var f in Directory.GetFiles(Dir, "*.bin.tmp*"))
         {
             var tail = f[(f.LastIndexOf(".tmp", StringComparison.Ordinal) + 4)..];
-            if (!int.TryParse(tail, out int pid) || Running(pid)) continue;
+            if (!int.TryParse(tail, out int pid) || !Leftover(f, pid)) continue;
             try { File.Delete(f); n++; } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         return n;
@@ -202,8 +227,8 @@ public sealed class CacheStore
         return fresh;
     }
 
-    /// <summary>Builds the piece's file when it is not there whole (the setup step: a damaged body is built again here,
-    /// never at a first open); true when it was built.</summary>
+    /// <summary>Builds the piece's file when it is not <see cref="Current"/> (at the setup step, whole: a damaged body is built
+    /// again there, never at a first open); true when it was built.</summary>
     public bool Ensure<T>(string piece, string config, string build, Func<T> parse) where T : class =>
         Ensure(piece, config, build, parse, t => Snapshot.Write(t));
 
@@ -211,7 +236,7 @@ public sealed class CacheStore
     public bool Ensure<T>(string piece, string config, string build, Func<T> parse, Func<T, byte[]> write, bool onlyConfig = false) where T : class
     {
         var key = Key(piece, config, build);
-        if (IsWhole(piece, key)) return false;
+        if (Current(piece, key)) return false;
         var bytes = write(parse());
         Directory.CreateDirectory(Dir);
         Write(piece, key, bytes, onlyConfig);

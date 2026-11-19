@@ -14,5 +14,7 @@
   <ItemGroup>
     
     <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
+    <!-- the game's precompiled-image code, which names no Godot type -->
+    <Compile Include="../../game/scripts/PrecompiledImage.cs" Link="game/PrecompiledImage.cs" />
   </ItemGroup>
 </Project>

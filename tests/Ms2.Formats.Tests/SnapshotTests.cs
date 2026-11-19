@@ -154,8 +154,14 @@ public class SnapshotTests
             var y = File.ReadAllBytes(path); y[^1] ^= 1; File.WriteAllBytes(path, y);
             Assert.That(store.Has("root", CacheStore.Key("root", "cfg2", "b2")), Is.True, "the header still names the key");
             Assert.That(store.IsWhole("root", CacheStore.Key("root", "cfg2", "b2")), Is.False);
-            Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.True);
-            Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.False);
+            Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.False, "a launch reads the header alone");
+            CacheStore.CheckBodies = true;
+            try
+            {
+                Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.True);
+                Assert.That(store.Ensure("root", "cfg2", "b2", parse), Is.False);
+            }
+            finally { CacheStore.CheckBodies = false; }
             store.Get("root", "cfg2", "b2", parse, _ => { }, out var o6);
             Assert.That(o6.Source, Is.EqualTo("cache"));
         }
