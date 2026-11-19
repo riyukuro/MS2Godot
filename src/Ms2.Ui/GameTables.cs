@@ -96,6 +96,11 @@ public sealed class GameTables
         var k = FeatureElements.Constants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
+        CharacterAbilityDefaultPoint = (uint)k.Float("CharacterAbilityDefaultPoint", CharacterAbilityDefaultPoint);
+        CharacterAbilityResetCoolTimeMinute = (uint)k.Float("CharacterAbilityResetCoolTimeMinute", CharacterAbilityResetCoolTimeMinute);
+        CharacterAbilityResetMeso = (long)k.Float("CharacterAbilityResetMeso", CharacterAbilityResetMeso);
+        CharacterAbilityResetMerat = (int)k.Float("CharacterAbilityResetMerat", CharacterAbilityResetMerat);
+        CharacterAbilityOpenQuestID = (uint)k.Float("CharacterAbilityOpenQuestID", CharacterAbilityOpenQuestID);
         MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
         PCBangItemDefaultPeriod = (uint)k.Float("PCBangItemDefaultPeriod", PCBangItemDefaultPeriod);
         MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
@@ -226,6 +231,12 @@ public sealed class GameTables
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;
     public int AdventureLevelStartLevel = 50;
+    /// <summary>Client::Constants CharacterAbilityDefaultPoint, CharacterAbilityResetCoolTimeMinute, CharacterAbilityResetMeso,
+    /// CharacterAbilityResetMerat, CharacterAbilityOpenQuestID (table/constants.xml; the Define defaults 10, 120, 2500, 100 and
+    /// 90000060, unit_1402ab440_constantsblocks.cpp:1045-1049).</summary>
+    public uint CharacterAbilityDefaultPoint = 10, CharacterAbilityResetCoolTimeMinute = 120, CharacterAbilityOpenQuestID = 90000060;
+    public long CharacterAbilityResetMeso = 2500;
+    public int CharacterAbilityResetMerat = 100;
     /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
     public int MaxChatLength = 50;
@@ -453,15 +464,16 @@ public sealed class GameTables
 
     /// <summary>
     /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 1 itemName,
-    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 59 petName, 74 achieveCategoryName; "" for an unknown
-    /// id or another table.
+    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 59 petName, 74 achieveCategoryName, and 80
+    /// specialQuestType (string/&lt;lang&gt;/specialquesttype.xml, the character ability dialog's); "" for an unknown id or
+    /// another table.
     /// </summary>
     public string StringTableText(int table, long id)
     {
         string file = table switch
         {
             1 => "itemname", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname",
-            0x3b => "petname", 0x4a => "achievecategoryname", _ => null,
+            0x3b => "petname", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
         };
         if (file == null) return "";
         if (!numberedTables.TryGetValue(file, out var d)) numberedTables[file] = d = strings?.Table(file, "name") ?? new Dictionary<string, string>();

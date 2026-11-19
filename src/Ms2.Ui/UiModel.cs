@@ -176,4 +176,6 @@ public static class Feature
     /// <summary>0xbd: the adventure level bar's layer is hidden and shown with the field's (CUIService FUN_141adb4c0,
     /// uiservice.cpp:1818).</summary>
     public const int AdventureLevel = 0xbd;
+    /// <summary>0x2d: the character abilities (FUN_1401e0800, characterability.cpp).</summary>
+    public const int CharacterAbility = 0x2d;
 }

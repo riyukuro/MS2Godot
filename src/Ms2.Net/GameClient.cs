@@ -70,12 +70,6 @@ public sealed record ItemUseRequest(long Uid, string Argument) : IOutPacket {
 
 /// <summary>What the game server sent from the key check up to the field enter request.</summary>
 public sealed record GameEntry(ServerEnter Enter, SyncNumber Sync, RequestFieldEnter Field) {
-    /// <summary>Quest packets (0x52) that arrive before RequestFieldEnter: the server loads the quest states there (QuestManager.Load, after SyncNumber), in order.</summary>
-    public IReadOnlyList<Ms2.Net.Wire.RawPacket> EarlyQuests { get; init; } = Array.Empty<Ms2.Net.Wire.RawPacket>();
-    /// <summary>The ItemInventory packets that arrived before the field enter, in order.</summary>
-    public IReadOnlyList<Ms2.Net.Wire.RawPacket> EarlyItems { get; init; } = Array.Empty<Ms2.Net.Wire.RawPacket>();
-    /// <summary>The GlobalFactor (0xD6) answer when it arrived before RequestFieldEnter, else null.</summary>
-    public Ms2.Net.Wire.RawPacket? EarlyFactor { get; init; }
     /// <summary>
     /// Every packet after the key's MoveResult up to RequestFieldEnter, in arrival order, but RequestKey, MoveResult, ServerEnter
     /// and RequestFieldEnter themselves. The client is in its game state from that MoveResult on (CNetworkService::OnMoveResult,
@@ -134,7 +128,7 @@ public sealed class GameClient {
         var game = new TcpTransport();
         try {
             await game.ConnectAsync(host ?? go.Address.ToString(), go.Port, ct);
-            ServerEnter enter = null; SyncNumber sync = null; var early = new List<Ms2.Net.Wire.RawPacket>(); int beforeEnter = -1; bool keyed = false; var earlyQuests = new List<Ms2.Net.Wire.RawPacket>(); var earlyItems = new List<Ms2.Net.Wire.RawPacket>(); Ms2.Net.Wire.RawPacket? earlyFactor = null;
+            ServerEnter enter = null; SyncNumber sync = null; var early = new List<Ms2.Net.Wire.RawPacket>(); int beforeEnter = -1; bool keyed = false;
             while (true) {
                 var p = await NextAsync(game, timeoutMs, ct);
                 if (game.OpOf(p) is Inbound gop) switch (gop) {
@@ -151,13 +145,9 @@ public sealed class GameClient {
                         if (beforeEnter < 0) beforeEnter = early.Count;
                         if (requestGlobalFactor) await game.SendAsync(new GlobalFactorRequest(), ct);   // OnServerEnter sends it before SendServerEnter
                         break;
-                    case Inbound.GlobalFactor: earlyFactor = p; early.Add(p); break;
                     case Inbound.SyncNumber: sync = SyncNumber.Read(p.Reader()); early.Add(p); break;
-                    case Inbound.Quest: earlyQuests.Add(p); early.Add(p); break;
-                    case Inbound.ItemInventory: earlyItems.Add(p); early.Add(p); break;
                     case Inbound.RequestFieldEnter:
                         return (new GameEntry(enter, sync, RequestFieldEnter.Read(p.Reader())) {
-                            EarlyQuests = earlyQuests, EarlyItems = earlyItems, EarlyFactor = earlyFactor,
                             Early = early, EarlyBeforeEnter = beforeEnter < 0 ? early.Count : beforeEnter,
                         }, game);
                     default: if (keyed) early.Add(p); break;

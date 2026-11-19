@@ -148,6 +148,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchLearningQuest = null;
         unwatchPrestige?.Invoke();
         unwatchPrestige = null;
+        unwatchCharacterAbility?.Invoke();
+        unwatchCharacterAbility = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         unwatchLivePlayer?.Invoke();
         unwatchLivePlayer = null;
@@ -251,6 +253,7 @@ public partial class HudScene : Node, IUiStageHost
         EventWidgets(uiRoot);
         LearningQuest();
         if (unwatchPrestige == null) WatchPrestige();       // a window relayout keeps it
+        CharacterAbility();
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
@@ -1648,6 +1651,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
         else if (id == 0x4f67) ToggleAdventureLevel();
+        else if (id == GameMenuController.CharacterAbilityUiId) ToggleCharacterAbility();
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
@@ -2439,6 +2443,7 @@ public partial class HudScene : Node, IUiStageHost
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
         learningQuest?.Update();             // UILearningQuestDialog::vfunc_72: the new learning quest after MarkDirty
         CommunityTick();                     // UICommunityDialog::vfunc_72
+        characterAbility?.Process(Time.GetTicksMsec());     // UICharacterAbilityDialog::vfunc_72: the reset button's time
         if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
@@ -2450,6 +2455,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
         if (openShot == "learningquest" && frames == 200) OpenLearningQuest();
         if (openShot == "adventurelevel" && frames == 200) ToggleAdventureLevel();
+        if (openShot == "characterability" && frames == 200) ToggleCharacterAbility();
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)

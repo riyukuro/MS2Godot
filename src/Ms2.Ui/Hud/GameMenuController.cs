@@ -28,6 +28,12 @@ public sealed class GameMenuController : UiController
     public Func<GameMenuDef, bool> NewBy = _ => false;
     /// <summary>FUN_141938ae0's count for a dialog id (unread mail, claimable rewards, ...); 0 without the systems.</summary>
     public Func<int, int> NotifyCount = _ => 0;
+    /// <summary>CCharacterAbilityTable and CCharacterAbilityManager, for the character ability notify mark
+    /// (<see cref="UpdateCharacterAbilityNotify"/>) and its tooltip.</summary>
+    public CharacterAbilityTable AbilityTable = new();
+    public CharacterAbilityData Abilities = new();
+    /// <summary>CQuestManagerCommon::IsQuestRewarded.</summary>
+    public Func<int, bool> IsQuestRewarded = _ => false;
 
     /// <summary>DAT_1439f8ccc / DAT_1439f8cd0: the two bottom bars' heights (as <see cref="MainPlayerInfoController"/>).</summary>
     public int BottomBarHeight = 21, AdventureBarHeight = 21;
@@ -64,9 +70,10 @@ public sealed class GameMenuController : UiController
     }
 
     /// <summary>
-    /// RefreshMenu @0x141939910: clearMenu, the entries (FUN_14193a140), then each notify mark. The marks whose state is not
-    /// here (skill upgrades, character ability, event popups, the quest button, the pet buttons, the riding state) keep the
-    /// movie's defaults, which is what the client sends without that state.
+    /// RefreshMenu @0x141939910: clearMenu, the entries (FUN_14193a140), then each notify mark (the character ability's
+    /// count with 0), the character ability's mark (<see cref="UpdateCharacterAbilityNotify"/>). The marks whose state is
+    /// not here (skill upgrades, event popups, the quest button, the pet buttons, the riding state) keep the movie's
+    /// defaults, which is what the client sends without that state.
     /// </summary>
     public void RefreshMenu()
     {
@@ -78,6 +85,7 @@ public sealed class GameMenuController : UiController
             UpdateNotifyCount(ui);
         SetNotifyRedCircle(0x16, redCircleHome);
         SetNotifyRedCircle(7, redCircleOption);
+        UpdateCharacterAbilityNotify();
     }
 
     /// <summary>FUN_14193a140: per visible top item {row, col} and its fields (FUN_14193a7b0); the visible children go into
@@ -154,17 +162,54 @@ public sealed class GameMenuController : UiController
         return Rt.IsNullish(entry) ? null : Host.Invoke(entry, "getChildByName", "m_button") is { } b && !Rt.IsNullish(b) ? b : null;
     }
 
-    /// <summary>FUN_141938ae0's tail: setNotifyCount(the entry's name, count) on its top entry's button.</summary>
-    public void UpdateNotifyCount(int uiId)
+    /// <summary>FUN_141938ae0 (@0x141938ae0)'s tail: setNotifyCount(the entry's name, count) on its top entry's button. The
+    /// character ability's (0x4f0c) count is <paramref name="value"/> itself (it is not kept: RefreshMenu sends 0).</summary>
+    public void UpdateNotifyCount(int uiId, int value = 0)
     {
+        if (Host?.Entity == null || Table == null) return;
+        int count = uiId == CharacterAbilityUiId ? value : NotifyCount(uiId);
         int id = Table.FindIdByUiId(uiId);
-        if (MenuItem(MenuName(Table.FindTopId(id))) is { } b) Host.Invoke(b, "setNotifyCount", MenuName(id), NotifyCount(uiId));
+        if (MenuItem(MenuName(Table.FindTopId(id))) is { } b) Host.Invoke(b, "setNotifyCount", MenuName(id), count);
+    }
+
+    /// <summary>The character ability dialog's UI id.</summary>
+    public const int CharacterAbilityUiId = 0x4f0c;
+
+    /// <summary>SetMenuNotifyUp @0x141938350: setNotifyUp(the entry's name, up) on its top entry's button.</summary>
+    void SetMenuNotifyUp(int id, bool up)
+    {
+        if (MenuItem(MenuName(Table.FindTopId(id))) is { } b) Host.Invoke(b, "setNotifyUp", MenuName(id), up ? 1 : 0);
+    }
+
+    /// <summary>
+    /// FUN_141938850 (@0x141938850): with a local player and the constant's quest (CharacterAbilityOpenQuestID) rewarded,
+    /// entry 0x14's up mark: points left (FUN_140f29e00 above 0, as an unsigned) and an ability of the table (GetAbilities'
+    /// order) at or under the level that is not learned. Run by RefreshMenu and after the CharacterAbility load and learn.
+    /// </summary>
+    public void UpdateCharacterAbilityNotify()
+    {
+        if (Host?.Entity == null || Table == null || !Model.HasLocalPlayer) return;
+        if (!IsQuestRewarded((int)Model.Tables.CharacterAbilityOpenQuestID)) return;
+        bool found = false;
+        ushort level = (ushort)Host.Model.Player.Level;
+        if ((uint)Abilities.Remain(level, Model.Tables.CharacterAbilityDefaultPoint) > 0u)
+            foreach (var a in AbilityTable.Abilities)
+                if (a.RequireLevel <= level && !Abilities.IsLearned(a.Id)) { found = true; break; }
+        SetMenuNotifyUp(0x14, found);
     }
 
     /// <summary>SetNotifyRedCircle16 @0x141939360 / SetNotifyRedCircle7 @0x1419394e0.</summary>
     void SetNotifyRedCircle(int id, bool on)
     {
         if (MenuItem(MenuName(Table.FindTopId(id))) is { } b) Host.Invoke(b, "setNotifyRedCircle", MenuName(id), on);
+    }
+
+    /// <summary>vfunc_oa0_9 @0x141937d70 (the level change): the character ability mark, the learning quest count.
+    /// STILL-OPEN: its UpdateQuestMenu (the quest button) is not ported.</summary>
+    public void OnChangeMyLevel()
+    {
+        UpdateCharacterAbilityNotify();
+        UpdateNotifyCount(0x4f18);
     }
 
     /// <summary>SetMenuEnable @0x141939770.</summary>
@@ -208,10 +253,16 @@ public sealed class GameMenuController : UiController
     /// <summary>FUN_14028dfa0: the common string by key formatted with the arguments ("" when there is none).</summary>
     string Common(string key, params object[] args) => string.IsNullOrEmpty(key) ? "" : Ms2.Quest.ClientFormat.Format(Model.Tables.Common(key), args);
 
-    /// <summary>GetCharacterAbilityTooltip @0x14193df10: s_tooltip_gamemenu_enable_characterability when the level opens
-    /// the abilities (FUN_1401e0800) and the constant's quest (m_6dd0) is rewarded, else the disable text. Neither the
-    /// level rule nor the quest state is here, so the disable text.</summary>
-    AsTooltip CharacterAbilityTooltip() => AsTooltip.Text(Common("s_tooltip_gamemenu_disable_characterability"));
+    /// <summary>GetCharacterAbilityTooltip @0x14193df10: none without a local player; s_tooltip_gamemenu_enable_characterability
+    /// when the level opens the abilities (FUN_1401e0800) and the constant's quest (m_6dd0) is rewarded, else the disable
+    /// text.</summary>
+    AsTooltip CharacterAbilityTooltip()
+    {
+        if (!Model.HasLocalPlayer) return null;
+        bool done = IsQuestRewarded((int)Model.Tables.CharacterAbilityOpenQuestID);
+        bool open = CharacterAbilityData.IsOpen(Feature(Ms2.Ui.Feature.CharacterAbility), (ushort)Host.Model.Player.Level);
+        return AsTooltip.Text(Common(open && done ? "s_tooltip_gamemenu_enable_characterability" : "s_tooltip_gamemenu_disable_characterability"));
+    }
 
     /// <summary>FUN_14193e0e0 @0x14193e0e0: s_tooltip_gamemenu_mushking_royal, plus a kill and a time exp line while the
     /// game rule's event buffs are not 0 (none here).</summary>

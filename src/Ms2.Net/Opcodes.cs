@@ -72,6 +72,7 @@ public enum Inbound : ushort {
     Mail = 0x54,            // RecvOp Mail (commonfiles/opcodes.h): CSceneStateGame::OnMail
     Prestige = 0x11C,
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
+    CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
     UserEnv = 0xA8,
     HomeCommand = 0xB7,
     Ugc = 0x6B,
@@ -117,4 +118,5 @@ public enum Outbound : ushort {
     RequestUserEnv = 0x69,
     Prestige = 0xAC,
     CharacterInfo = 0x1E,       // SendOp::CharacterInfo (commonfiles/opcodes.h)
+    CharacterAbility = 0x89,    // SendOp CharacterAbility (commonfiles/opcodes.h): the character ability dialog's sends
 }

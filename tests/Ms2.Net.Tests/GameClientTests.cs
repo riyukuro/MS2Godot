@@ -176,8 +176,10 @@ public class GameClientTests {
         }));
         var (e, game) = await enter.WaitAsync(TimeSpan.FromSeconds(10));
         using (game) {
-            Assert.That(e.EarlyFactor, Is.Not.Null);
-            var g = new GlobalFactor(); var r = e.EarlyFactor.Value.Reader();
+            int at = e.Early.ToList().FindIndex(p => p.Opcode == (ushort) Inbound.GlobalFactor);   // in the replay, after ServerEnter
+            Assert.That(at, Is.GreaterThanOrEqualTo(e.EarlyBeforeEnter));
+            var f = e.Early[at];
+            var g = new GlobalFactor(); var r = f.Reader();
             Assert.That(g.Apply(r), Is.True); Assert.That(r.Available, Is.EqualTo(0)); Assert.That(g.ExpRate(5, 2), Is.EqualTo(1.5f));
         }
         l.Stop();

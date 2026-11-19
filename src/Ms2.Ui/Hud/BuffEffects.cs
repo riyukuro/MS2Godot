@@ -369,14 +369,17 @@ public static class BuffTooltip
 
     /// <summary>FormatTimeSpan (timeutil.cpp:371) with every part: the non-zero days, hours, minutes and seconds of the span
     /// (FormatStringId 2426 s_common_day, 2429 s_common_hour, 2428 s_common_min, 2427 s_common_sec), joined by spaces.</summary>
-    public static string FormatTimeSpan(GameTables t, long seconds)
+    public static string FormatTimeSpan(GameTables t, long seconds) => FormatTimeSpan(t, seconds, true, true, true, true);
+
+    /// <summary>FormatTimeSpan (timeutil.cpp:371, @0x14086aec0): each part whose flag is set and which is not zero.</summary>
+    public static string FormatTimeSpan(GameTables t, long seconds, bool showDays, bool showHours, bool showMinutes, bool showSeconds)
     {
         var parts = new List<string>();
         long days = seconds / 86400, hours = seconds / 3600 % 24, minutes = seconds / 60 % 60, secs = seconds % 60;
-        if (days > 0) parts.Add(CommonFormat(t, "s_common_day", days));
-        if (hours > 0) parts.Add(CommonFormat(t, "s_common_hour", hours));
-        if (minutes > 0) parts.Add(CommonFormat(t, "s_common_min", minutes));
-        if (secs > 0) parts.Add(CommonFormat(t, "s_common_sec", secs));
+        if (showDays && days > 0) parts.Add(CommonFormat(t, "s_common_day", days));
+        if (showHours && hours > 0) parts.Add(CommonFormat(t, "s_common_hour", hours));
+        if (showMinutes && minutes > 0) parts.Add(CommonFormat(t, "s_common_min", minutes));
+        if (showSeconds && secs > 0) parts.Add(CommonFormat(t, "s_common_sec", secs));
         return string.Join(" ", parts);
     }
 

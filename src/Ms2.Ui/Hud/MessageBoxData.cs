@@ -66,6 +66,8 @@ public sealed class MessageBoxData
         [0x2ec] = "s_msg_ugc_item_edit_thumbnail_tooltip", [0x461] = "s_ugc_err_code", [0x467] = "s_ugc_upload_ok_profile",
         [0x469] = "s_ugc_upload_ok_banner", [0x9cf] = "s_ugc_edit_terms_text_content", [0x9d0] = "s_ugc_edit_terms_agree",
         [0x9d5] = "s_ugc_profile_terms", [0x9d6] = "s_ugc_guildmark_terms", [0x9d7] = "s_ugc_guildposter_terms",
+        // the character ability dialog's reset box (UICharacterAbilityDialog::vfunc_28)
+        [0xc5c] = "s_character_ability_meso_reset_button",
     };
 
     /// <summary>The common string table by key (set by the host; empty text until it is).</summary>

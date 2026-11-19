@@ -125,6 +125,15 @@ public partial class LiveSession : Node
         missionFeature = on;
         return on;
     }
+    /// <summary>CCharacterAbilityManager (a singleton): the learned abilities, the last reset and the extra points, from the
+    /// CharacterAbility packets (0xDF); session-lived, so the login load and a field change keep them.</summary>
+    public readonly Ms2.Ui.CharacterAbilityData CharacterAbility = new();
+    /// <summary>CCharacterAbilityTable, which mode 2 checks the id against (FUN_140f29cc0); set by the HUD that reads it.
+    /// Before a HUD set it (only the login load comes then) an id is taken as it comes.</summary>
+    public Ms2.Ui.Hud.CharacterAbilityTable CharacterAbilityTable;
+    /// <summary>A CharacterAbility packet that changed <see cref="CharacterAbility"/> (mode 0, or mode 2 of a known id),
+    /// for the dialog and the game menu (OnCharacterAbility tells them only then).</summary>
+    public event Action<CharacterAbilityMessage> CharacterAbilityReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
@@ -392,7 +401,7 @@ public partial class LiveSession : Node
                 StubHudData.Instance.Wallet = entry.Enter?.Wallet;
                 Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
             });
-            GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items ({entry.EarlyItems.Count} packets), adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
+            GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
             login.Dispose(); login = null;
             answered = false;
             syncNumber = entry.Sync?.Number ?? 0;
@@ -670,6 +679,14 @@ public partial class LiveSession : Node
                 if (ownLevel) Me.User.PrestigeLevel = ((PrestigeMessage.LevelUp)m).Value;
                 if (m != null) PrestigeReceived?.Invoke(m);
                 GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
+            }
+            else if (game.Is(p, Inbound.CharacterAbility))
+            {
+                var m = CharacterAbilityMessage.Read(p.Reader());  // CCharacterAbilityManager::OnCharacterAbility via DispatchPacket
+                var table = CharacterAbilityTable;
+                if (m != null && CharacterAbility.Apply(m, id => table == null || table.GetAbility(id) != null))
+                    CharacterAbilityReceived?.Invoke(m);
+                GD.Print($"live: character ability {m?.GetType().Name ?? "other mode"} ({CharacterAbility.Ids.Count} learned)");
             }
             else if (game.Is(p, Inbound.UserEnv))
             {
