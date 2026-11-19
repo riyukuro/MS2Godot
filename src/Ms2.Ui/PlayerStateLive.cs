@@ -13,7 +13,9 @@ namespace Ms2.Ui;
 /// <item>HP, SP, stamina: the Stat attributes 4, 7 and 10, current = stat row 2 and total = row 0 (OnStat, :9424, with
 /// PCBase::FUN_141670a00 / FUN_141670a30, pcbase.cpp:1967-1976); before the first Stat, the user block's HP;</item>
 /// <item>exp and rest exp: DAT_143ab28a0 / DAT_143ab28a8 from ServerEnter (:2085-2086) and ExpUp (:4140-4141);</item>
-/// <item>channel: the user block's channel.</item>
+/// <item>channel: the user block's channel;</item>
+/// <item>adventure level: the user block's m_530 (PC vfunc_141), then Prestige kind 2 (OnPrestige, :8836 vfunc_140, which
+/// the session writes back to the user block).</item>
 /// </list>
 /// </summary>
 public static class PlayerStateLive
@@ -38,6 +40,7 @@ public static class PlayerStateLive
         Set(ref p.Level, (int)(ushort)u.Level, StatusEvent.Level);
         Set(ref p.SubJob, u.Job, StatusEvent.Job);
         Set(ref p.JobGroup, u.JobCode, StatusEvent.Job);
+        Set(ref p.AdventureLevel, u.PrestigeLevel, StatusEvent.AdventureLevel);
         me ??= new MyCharacter();
         bool stats = me.Stats0[Health] > 0;
         if (stats || u.HpMax > 0)

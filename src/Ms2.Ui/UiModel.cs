@@ -52,16 +52,21 @@ public sealed class PlayerState
     public readonly Dictionary<int, long> Tokens = new();
     /// <summary>IsStarPointEventActive (meratmarketbasketinfo.cpp:2574): the star shop game event names a known npc.</summary>
     public bool StarPointEvent;
-    /// <summary>The prestige counters (CSceneStateGame::OnPrestige, scenestategame.cpp:8815): the exp in this level
-    /// (DAT_143ab2958), the player's adventure level (PC vfunc_141), the level at or below which a level shows full
-    /// (DAT_143ab2960) and the exp shown for the level above it (DAT_143ab2968).</summary>
-    public long AdventureExp, AdventureNextExp;
-    public int AdventureLevel, AdventureFilledLevel;
-    /// <summary>The claimed adventure level rewards (DAT_143ab3308, a std::set: Prestige kind 0 replaces it, kind 4 adds to it).</summary>
-    public readonly SortedSet<uint> AdventureClaimed = new();
-    /// <summary>The adventure missions by id (DAT_143ab3318, a std::map: Prestige kinds 6 and 7 replace it): the progress
-    /// count and the claimed flag.</summary>
-    public readonly SortedDictionary<uint, (uint Progress, bool Complete)> AdventureMissions = new();
+    /// <summary>The player's adventure level (PC vfunc_141: the user block's m_530, then Prestige kind 2).</summary>
+    public int AdventureLevel;
+    /// <summary>The adventure data that outlives a field change (the client's globals DAT_143ab2958..3318): a live HUD
+    /// binds the session's (LiveSession.Adventure), so a new HUD after a field move sees what the earlier one saw.</summary>
+    public AdventureData Adventure = new();
+    /// <summary>The exp in this level (DAT_143ab2958).</summary>
+    public long AdventureExp { get => Adventure.Exp; set => Adventure.Exp = value; }
+    /// <summary>The exp shown for the level above the filled level (DAT_143ab2968).</summary>
+    public long AdventureNextExp { get => Adventure.NextExp; set => Adventure.NextExp = value; }
+    /// <summary>The level at or below which a level shows full (DAT_143ab2960).</summary>
+    public int AdventureFilledLevel { get => Adventure.FilledLevel; set => Adventure.FilledLevel = value; }
+    /// <summary>The claimed adventure level rewards (DAT_143ab3308).</summary>
+    public SortedSet<uint> AdventureClaimed => Adventure.Claimed;
+    /// <summary>The adventure missions by id (DAT_143ab3318): the progress count and the claimed flag.</summary>
+    public SortedDictionary<uint, (uint Progress, bool Complete)> AdventureMissions => Adventure.Missions;
     public int Channel;
     public bool Battle, Riding;
     public string NameWithTitle => string.IsNullOrEmpty(Title) ? Name : Title + " " + Name;

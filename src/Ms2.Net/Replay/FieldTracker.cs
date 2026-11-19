@@ -115,6 +115,13 @@ public sealed class FieldTracker {
                 if (st.IsHealth) Events.Enqueue(new NpcHpEvent(Time, id, st.Current, st.Max));
                 break;
             }
+            case Ms2.Net.Inbound.Prestige: {
+                // OnPrestige kind 2 (scenestategame.cpp:8829-8836): FindPCById, then the PC's adventure level (vfunc_140,
+                // the user block's m_530) for any PC in the field; a PC not here drops it
+                if (PrestigeMessage.Read(p.Reader()) is not PrestigeMessage.LevelUp up) break;
+                lock (gate) if (actors.TryGetValue(up.ObjectId, out var a) && a.Add?.User != null) a.Add.User.PrestigeLevel = up.Value;
+                break;
+            }
             case Ms2.Net.Inbound.UserSync:
             case Ms2.Net.Inbound.RideSync: {
                 var s = UserSyncIn.Read(p.Reader());

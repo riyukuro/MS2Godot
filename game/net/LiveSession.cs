@@ -107,20 +107,23 @@ public partial class LiveSession : Node
         else pendingBuffs.Enqueue(b);
     }
     /// <summary>
-    /// The local player's Prestige packets (0x11C, CSceneStateGame::OnPrestige, scenestategame.cpp:8815): every kind but a
-    /// level up of another player (kind 2 runs its HUD part only for the local player). Kept until the HUD takes them
-    /// (<see cref="TakePrestige"/>), then raised.
+    /// The Prestige packets (0x11C, CSceneStateGame::OnPrestige, scenestategame.cpp:8815), raised after the session's
+    /// <see cref="Adventure"/> and the PC's level took them, for the HUD's part (status events, the dialog, the bar). A
+    /// packet with no HUD to see it changes only the data, as the client's handler finds no dialog or bar then.
     /// </summary>
     public event Action<PrestigeMessage> PrestigeReceived;
-    readonly Queue<PrestigeMessage> pendingPrestige = new();
-    bool prestigeTaken;
-    /// <summary>The Prestige packets kept so far, and raise <see cref="PrestigeReceived"/> from now on.</summary>
-    public PrestigeMessage[] TakePrestige()
+    /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
+    /// the exp, the filled level, the claimed levels and the missions.</summary>
+    public readonly Ms2.Ui.AdventureData Adventure = new();
+    bool? missionFeature;
+    /// <summary>Feature 0xfb (the adventure missions), as UiModel.IsFeatureEnabled reads it.</summary>
+    bool MissionFeature()
     {
-        prestigeTaken = true;
-        var all = pendingPrestige.ToArray();
-        pendingPrestige.Clear();
-        return all;
+        if (missionFeature is { } on) return on;
+        try { on = Ms2.Ui.LobbyFeatures.IsEnabled(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), Ms2.Ui.FeatureTable.Names[Ms2.Ui.Hud.AdventureLevelTable.MissionFeature - 1]); }
+        catch (Exception e) { GD.Print($"live: feature table unavailable ({e.Message})"); on = false; }
+        missionFeature = on;
+        return on;
     }
     public CharacterCreateRefused LastRefusal { get; private set; }
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
@@ -624,9 +627,13 @@ public partial class LiveSession : Node
                 else if (game.Is(p, Inbound.Prestige))
                 {
                     var m = PrestigeMessage.Read(p.Reader());         // OnPrestige (scenestategame.cpp:8815); other kinds are dropped
-                    bool keep = m != null && !(m is PrestigeMessage.LevelUp up && up.ObjectId != selfObject);
-                    if (keep) { if (prestigeTaken) PrestigeReceived?.Invoke(m); else pendingPrestige.Enqueue(m); }
-                    GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}{(keep ? "" : " (not kept)")}");
+                    // kind 2: FindPCById; the own PC's old level fills level 1 (:8856), then vfunc_140 (:8836). Other PCs'
+                    // user blocks take it in the field tracker
+                    bool ownLevel = m is PrestigeMessage.LevelUp up && up.ObjectId == selfObject && Me.User != null;
+                    if (m != null) Adventure.Apply(m, ownLevel ? Me.User.PrestigeLevel : null, MissionFeature());
+                    if (ownLevel) Me.User.PrestigeLevel = ((PrestigeMessage.LevelUp)m).Value;
+                    if (m != null) PrestigeReceived?.Invoke(m);
+                    GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
                 }
                 else if (game.Is(p, Inbound.UserEnv))
                 {

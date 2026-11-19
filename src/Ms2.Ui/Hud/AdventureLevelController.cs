@@ -141,7 +141,7 @@ public sealed class AdventureLevelController : UiController
         {
             if (data.Complete) continue;
             var m = table.GetMission(id);
-            if (m == AdventureLevelTable.EmptyMission) continue;
+            if (ReferenceEquals(m, AdventureLevelTable.EmptyMission)) continue;
             if (data.Progress < m.Count) continue;
             n++;
         }
@@ -224,7 +224,7 @@ public sealed class AdventureLevelController : UiController
         foreach (var (id, data) in Pc.AdventureMissions)
         {
             var m = Table.GetMission(id);
-            if (m == AdventureLevelTable.EmptyMission) continue;
+            if (ReferenceEquals(m, AdventureLevelTable.EmptyMission)) continue;
             var obj = new List<(string, object)> { ("id", id) };
             BindMissionReward(obj, id);
             obj.Add(("missionName", ClientFormat.Format(Model.Tables.Common("s_adventure_level_mission_NameKey") ?? "", m.Count)));
@@ -235,6 +235,16 @@ public sealed class AdventureLevelController : UiController
         Validate(list);
     }
 
+    /// <summary>A level row's state (FUN_140ba3d60): "active", "inactive" when its reward is claimed, "lock" above the
+    /// player's adventure level.</summary>
+    public static string GuideState(PlayerState pc, uint level)
+    {
+        string state = "active";
+        if (pc.AdventureClaimed.Contains(level)) state = "inactive";
+        if (level > (uint)pc.AdventureLevel) state = "lock";
+        return state;
+    }
+
     /// <summary>
     /// FUN_140ba3d60 (@0x140ba3d60): a level row: id, state ("active"; "inactive" when claimed; "lock" above the
     /// adventure level), level (at least 1) and levelStr (s_adventure_level_level).
@@ -242,11 +252,8 @@ public sealed class AdventureLevelController : UiController
     bool GuideRow(List<(string, object)> obj, uint level)
     {
         if (Host?.Entity == null || !Model.HasLocalPlayer) return false;
-        string state = "active";
-        if (Pc.AdventureClaimed.Contains(level)) state = "inactive";
-        if (level > Level) state = "lock";
         obj.Add(("id", level));
-        obj.Add(("state", state));
+        obj.Add(("state", GuideState(Pc, level)));
         obj.Add(("level", Math.Max(level, 1u)));
         obj.Add(("levelStr", ClientFormat.Format(Model.Tables.Common("s_adventure_level_level") ?? "", level)));
         return true;
@@ -259,7 +266,7 @@ public sealed class AdventureLevelController : UiController
     bool BindItemReward(List<(string, object)> obj, uint level)
     {
         var r = Table.GetReward(level);
-        if (r == AdventureLevelTable.EmptyReward || r.Type != 1) return false;
+        if (ReferenceEquals(r, AdventureLevelTable.EmptyReward) || r.Type != 1) return false;
         if (!Model.HasLocalPlayer) return false;
         var item = Item.Create(Model.Tables.Items, (int)r.Id, r.Rank);     // FUN_14052b130(id, rank, 0)
         if (item == null) return false;
@@ -280,7 +287,7 @@ public sealed class AdventureLevelController : UiController
     bool BindStatReward(List<(string, object)> obj, uint level)
     {
         var r = Table.GetReward(level);
-        if (r == AdventureLevelTable.EmptyReward || r.Type != 2) return false;
+        if (ReferenceEquals(r, AdventureLevelTable.EmptyReward) || r.Type != 2) return false;
         if (!Model.HasLocalPlayer) return false;
         if (level <= Level) SetMember(obj, "state", "inactive");
         if ((ushort)Pc.Level < (ushort)Model.Tables.AdventureLevelStartLevel) SetMember(obj, "state", "lock");
@@ -303,7 +310,7 @@ public sealed class AdventureLevelController : UiController
     void BindMissionReward(List<(string, object)> obj, uint missionId)
     {
         var m = Table.GetMission(missionId);
-        if (m == AdventureLevelTable.EmptyMission || m.One != 1) return;
+        if (ReferenceEquals(m, AdventureLevelTable.EmptyMission) || m.One != 1) return;
         if (!Model.HasLocalPlayer) return;
         var item = Item.Create(Model.Tables.Items, (int)m.ItemId, m.ItemRank);
         if (item == null) return;
@@ -324,7 +331,7 @@ public sealed class AdventureLevelController : UiController
     void ClaimLevelReward(uint level)
     {
         var r = Table.GetReward(level);
-        if (r == AdventureLevelTable.EmptyReward || r.Type == 2) return;
+        if (ReferenceEquals(r, AdventureLevelTable.EmptyReward) || r.Type == 2) return;
         SendClaimLevel?.Invoke((int)level);
     }
 
@@ -333,7 +340,7 @@ public sealed class AdventureLevelController : UiController
     void ClaimMissionReward(uint id)
     {
         var m = Table.GetMission(id);
-        if (m == AdventureLevelTable.EmptyMission) return;
+        if (ReferenceEquals(m, AdventureLevelTable.EmptyMission)) return;
         if (!Pc.AdventureMissions.TryGetValue(id, out var data)) return;
         if (data.Complete || data.Progress < m.Count) return;
         SendClaimMission?.Invoke((int)id);
