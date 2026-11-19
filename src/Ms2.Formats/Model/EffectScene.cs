@@ -269,7 +269,9 @@ public sealed class EffectScene
             if (B[i].TryGetValue("Children", out var c) && c is long[] kids)
                 foreach (var k in kids) if (k >= 0) parent[(int)k] = i;
 
-        bool IsNode(string t) => t is "NiNode" or "NiBillboardNode" or "NiMesh" or "NiPSParticleSystem" or "NiPSMeshParticleSystem";
+        // NiSortAdjustNode is an NiNode (NiSortAdjustNode.h:20): its own transform and transform controller move its children,
+        // as any node's do; it only changes how the renderer sorts them (NifModel's NoSort).
+        bool IsNode(string t) => t is "NiNode" or "NiSortAdjustNode" or "NiBillboardNode" or "NiMesh" or "NiPSParticleSystem" or "NiPSMeshParticleSystem";
         for (int i = 0; i < B.Count; i++)
         {
             if (!IsNode(B[i].Type)) continue;
