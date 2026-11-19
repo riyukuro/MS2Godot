@@ -434,15 +434,23 @@ public partial class FieldContents : Node3D
         Travel.LoadingImage = new LoadingImageTable(packs).PickForMove(target, fieldId, new Random());
         Travel.LoadingTip = PickTip();
         GD.Print($"field move -> {target}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
-        // the loading screen comes up at once at 0%; the load starts once it has been drawn
+        // the loading screen comes up at once at 0%; the load starts once a frame with it has been drawn. The client has no
+        // wait of its own here: the move's teardown (WorldService FUN_141bbc580, worldservice_1.cpp:9962) starts the
+        // progress screen (CUIService FUN_141adb900) and the load (FUN_141bbc1d0, worldservice_1.cpp:3350) follows
+        // without a delay; the one frame is what puts the screen up before the old field goes.
         if (Travel.LoadingImage != null) { ShowLoading(Travel.LoadingImage, Travel.LoadingTip); Go(); }
         else ShowLoadingOverField(Travel.LoadingTip, () => Go());
 
-        void Go(double wait = 0.15) => GetTree().CreateTimer(wait).Timeout += () =>
+        void Go()
+        {
+            void Drawn() { RenderingServer.FramePostDraw -= Drawn; Fire(); }
+            RenderingServer.FramePostDraw += Drawn;
+        }
+        void Fire()
         {
             if (!IsInstanceValid(this) || !IsInsideTree()) return;
             // a move to another server: the loading screen stays up until the new server's field entry came
-            if (moveReady != null && !moveReady()) { Go(0.05); return; }
+            if (moveReady != null && !moveReady()) { GetTree().CreateTimer(0.05).Timeout += Fire; return; }
             moveReady = null;
             if (shotDir != null) Shot("loading.png");
             Travel.Pending = nextMove?.Invoke();
@@ -458,7 +466,7 @@ public partial class FieldContents : Node3D
                 carried = (overlay, loading);
             }
             GetTree().ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
-        };
+        }
     }
     Func<Travel.Move> nextMove;
     Func<bool> moveReady;
