@@ -8,7 +8,7 @@ namespace Ms2Godot;
 /// ground point below the owner, textured with Shadow.dds, laid along the ground normal and lifted by a small offset (3 for
 /// players, 1 for npcs), alpha-blended black with alpha = the field's simpleshadow (default 0.5) times a height fade: the
 /// square and its alpha shrink to half at 400 units above the ground. The ground is found with a ray straight down from the
-/// owner; with no hit the shadow is hidden. (Quality levels at which the shadow-map shadow replaces it are not modelled.)
+/// owner; with no hit the shadow is hidden. FieldShadows.Character adds it where the client shows it.
 /// </summary>
 public partial class BlobShadow : MeshInstance3D
 {

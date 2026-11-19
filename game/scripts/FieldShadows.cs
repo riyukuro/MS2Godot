@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using Godot;
 using Ms2.Formats.Options;
 using Ms2.Formats.Pack;
 
@@ -36,4 +37,30 @@ public static class FieldShadows
     /// replaces it).</summary>
     public static bool SimpleShadow(string kind) =>
         table != null && Level >= table.ShadowOptionOffset(kind) && Level < table.ShadowOption(kind);
+
+    /// <summary>The kind's model casts the sun's shadow: level &gt;= GetShadowOption. CObjectShadow's update pushes its "shown"
+    /// state (true only from that level, UpdateVisibility unit_14160fb10.cpp:310-333) to the owner's scene node as the caster
+    /// flag (UpdateShadow unit_14160fb10.cpp:238-243, FUN_141567540 unit_141567000.cpp:229-262), and a new shadow starts dirty
+    /// (unit_14160fb10.cpp:411), so below that level the character casts nothing even with the sun's shadow on.</summary>
+    public static bool RealShadow(string kind) => Level >= (table?.ShadowOption(kind) ?? 5);
+
+    /// <summary>The client's CObjectShadow for a character of the kind (MyPC::vfunc_49 kind 0, PC::vfunc_49 kind 1,
+    /// CNpc::vfunc_49 kind 2/3): the simple shadow under <paramref name="owner"/> where <see cref="SimpleShadow"/> holds, and the
+    /// model's meshes kept out of the sun's shadow below <see cref="RealShadow"/>. Call after the model is complete (equips
+    /// included). STILL-OPEN: FUN_141567540 skips nodes tagged "NoShadow", which keep their own flag; here every mesh is cleared.</summary>
+    public static void Character(Node3D owner, Node3D model, string kind, float radius, float lift)
+    {
+        if (SimpleShadow(kind)) BlobShadow.Add(owner, radius, lift);
+        if (!RealShadow(kind)) NoCasters(model);
+    }
+
+    /// <summary>An npc's row: CNpc::vfunc_49 (unit_14108e1e0_npcactorandvibrate.cpp:2240-2249) takes bossMonster when IsBoss
+    /// (CNpc::IsBoss = CNpcData::IsBoss), else monster; its shadow is sized by the model's shadowScale and lifted 1.</summary>
+    public static string NpcKind(Ms2.Formats.World.NpcRow row) => row.IsBoss ? GraphicOptionTable.BossMonster : GraphicOptionTable.Monster;
+
+    static void NoCasters(Node n)
+    {
+        if (n is GeometryInstance3D g) g.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+        foreach (var c in n.GetChildren()) NoCasters(c);
+    }
 }

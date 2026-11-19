@@ -205,6 +205,8 @@ public partial class ReplayField : Field
         var root = new Node3D { Name = $"Pc{e.User.ObjectId}" };
         root.AddChild(visual);
         AddChild(root);
+        // MyPC::vfunc_49 for the recorded player, PC::vfunc_49 for the others (mypc.cpp:2879-2887, pc.cpp:3028-3035)
+        FieldShadows.Character(root, visual, e.IsSelf ? Ms2.Formats.Options.GraphicOptionTable.MyPC : Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         combat.NameTag(root, e.User.User.Name, 135, e.IsSelf ? new Color(0.6f, 0.85f, 1f) : Colors.White);
         var a = new Actor { Gender = e.User.User.Gender, Root = root, Visual = visual, Anim = anim, Name = e.User.User.Name, IsSelf = e.IsSelf, Target = G(e.User.Position), TargetYaw = e.User.Rotation.Z };
         root.Position = a.Target; a.LastPos = a.Target;

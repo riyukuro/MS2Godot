@@ -428,9 +428,8 @@ public partial class Field : Node3D
         player.Gender = bodyDir == "male" ? 0 : 1;
         player.RootName = md.RootName;
         BlobShadow.Load(packs);
-        // the player's simple shadow shows between the myPC row's levels (CObjectShadow, unit_14160fb10.cpp:310-333;
-        // MyPC kind 0, mypc.cpp:2879-2887)
-        if (FieldShadows.SimpleShadow(Ms2.Formats.Options.GraphicOptionTable.MyPC)) BlobShadow.Add(player, 100f);
+        // the player's CObjectShadow, of the myPC row (MyPC::vfunc_49, mypc.cpp:2879-2887)
+        FieldShadows.Character(player, visual, Ms2.Formats.Options.GraphicOptionTable.MyPC, 100f, 3f);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
         player.Climbs = Movement.Climbables.From(map);
         player.Cubes = Movement.CubeGrid.From(map);

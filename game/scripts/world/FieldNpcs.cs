@@ -96,7 +96,7 @@ public sealed class FieldNpcs
         return anims[slot] = a;
     }
 
-    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0, float lift = 0)
+    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0, float lift = 0, string shadowKind = null)
     {
         var body = builder.Build(m.md, name.ValidateNodeName());
         var root = new Node3D { Name = body.Name };
@@ -106,7 +106,8 @@ public sealed class FieldNpcs
         // the model faces MS2 -Y; the entity's Z rotation turns it (as the player spawn: yaw about Godot +Y)
         body.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg ?? (float)e.RotationDeg.Z), 0);
         body.Scale = new Vector3(scale, scale, scale);
-        BlobShadow.Add(root, shadowRadius, 1f);
+        // the npc's CObjectShadow (FieldShadows.NpcKind), sized by the model's shadowScale and lifted 1
+        if (shadowKind != null) FieldShadows.Character(root, body, shadowKind, shadowRadius, 1f);
         parent.AddChild(root);
         // the npc keeps animating while off screen (observed, not cited): no per-npc off-screen pause was found in the client.
         // The update gate found is COptimizer::IsUpdateEnabled (optimizer.cpp:639), a global switch (both m_nUpdateOn flags)
@@ -174,7 +175,7 @@ public sealed class FieldNpcs
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
-                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, GroundOffset(world, e) + PacketLift);
+                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, GroundOffset(world, e) + PacketLift, FieldShadows.NpcKind(row));
                 var body = root.GetNode<Node3D>("Body");
                 Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body) });
                 Npcs++;
@@ -222,7 +223,7 @@ public sealed class FieldNpcs
             if (m == null) { Missing++; GD.Print($"mob {id} ({row.Kfm}): no model"); continue; }
             var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
             float yaw = e.Bool("UseRotAsSpawnDir") ? (float)e.RotationDeg.Z : 0;
-            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw, row.ShadowScale, PacketLift);
+            var root = Place(parent, m.Value, $"Mob_{id}_{spawnId}", e, row.Scale, idles, yaw, row.ShadowScale, PacketLift, FieldShadows.NpcKind(row));
             var body = root.GetNode<Node3D>("Body");
             Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body), Mob = true });
             Mobs++;

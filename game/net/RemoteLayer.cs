@@ -75,6 +75,8 @@ public sealed partial class RemoteLayer : Node3D
         var root = new Node3D { Name = $"Pc{u.ObjectId}" };
         root.AddChild(visual);
         AddChild(root);
+        // the other player's CObjectShadow, of the PC row (PC::vfunc_49, pc.cpp:3028-3035; the same size as the player's)
+        FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         combat.NameTag(root, u.User.Name, 135, Colors.White);
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
         root.Position = r.Target; r.LastPos = r.Target;

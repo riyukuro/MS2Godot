@@ -124,6 +124,7 @@ public sealed class NpcLayer
             i.Visual.Scale = new Godot.Vector3(row.Scale, row.Scale, row.Scale);
             i.Player = i.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
             root.AddChild(i.Visual);
+            FieldShadows.Character(root, i.Visual, FieldShadows.NpcKind(row), row.ShadowScale, 1f);
             var idle = model.Kfm.ByName("Idle_A");
             if (idle != null) Play(i, idle.Id);
         }
