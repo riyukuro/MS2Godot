@@ -146,7 +146,14 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             mat.SetShaderParameter(FxParam.Alpha, (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
             if (em.Flip != null) ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
             ms.Mat = mat;
-            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false), MaterialOverride = mat, Name = m.Name ?? "mesh" };
+            // No shadow. A skill effect (CNifEffect) roots in EffectNode(useLighting, useShadow) (nifeffectparam.cpp:680), and
+            // useShadow defaults to false (:353; an xml attribute, :395). EffectNode passes it on as LightUnaffectedNode's second
+            // argument (effectservice.cpp:916); when that is false the node joins every shadow generator's unaffected caster and
+            // receiver lists (lightunaffectednode.cpp:43-49), and SetShadowCaster(root, useShadow) clears the caster flag (:804).
+            // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
+            // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
+            // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
+            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             z.AddChild(ms.Node);
             meshes.Add(ms);
         }
@@ -174,7 +181,11 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     }
 
     /// <summary>The unlit colour of a mesh at effect time t: the material's emissive plus diffuse (clamped), with NiMaterialColorController keys applied.
-    /// Without any colour an additive mesh stays white (as before).</summary>
+    /// Without any colour an additive mesh stays white (as before).
+    /// STILL-OPEN, the lights: the client lights effect meshes. A skill effect's EffectNode passes its parent's dynamic effects
+    /// (the lights) down only when useLighting, which defaults to true (LightUnaffectedNode::UpdateEffectsDownward,
+    /// lightunaffectednode.cpp:75; nifeffectparam.cpp:353). Which of the field's lights reach it there, and which reach a field
+    /// entity's EffectMesh graph, is not traced, so the mesh is drawn unshaded: diffuse at full light plus emissive.</summary>
     static Color Tint(EffectMesh em, double t, bool add)
     {
         var m = em.Mesh;
