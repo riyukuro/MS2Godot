@@ -18,9 +18,9 @@ public sealed class MinimapIcons
 {
     public sealed record Entity(string Icon, string Frame, string Layer, string Label, bool Visible, bool InFieldNpc);
 
-    readonly Dictionary<int, List<int>> fieldNpcs = new();
+    readonly IReadOnlyDictionary<int, List<int>> fieldNpcs;
     readonly HashSet<int> indoor = new();
-    readonly HashSet<int> taxiFields = new();
+    readonly ICollection<int> taxiFields;
     readonly Dictionary<string, string> mapNames, functionNames;
     readonly NpcTable npcs;
 
@@ -33,34 +33,21 @@ public sealed class MinimapIcons
         [82] = "emoticon_movie_npc_trans", [83] = "emoticon_movie_npc_container", [84] = "emoticon_movie_npc_landagent",
     };
 
-    public MinimapIcons(PackSet packs, NpcTable npcs, GameStrings text)
+    /// <summary>
+    /// <paramref name="fieldNpcs"/> and <paramref name="taxiFields"/> are CFieldMetaTable's m_fieldNpcs (field -> its npcs, in
+    /// file order) and m_taxi fields: the caller passes the field meta table it already holds, so the 1.8 MB
+    /// fieldmetadata.xml is not read a second time here. The indoor fields come from the shared FieldData document.
+    /// </summary>
+    public MinimapIcons(PackSet packs, NpcTable npcs, GameStrings text, IReadOnlyDictionary<int, List<int>> fieldNpcs, ICollection<int> taxiFields)
     {
         this.npcs = npcs;
+        this.fieldNpcs = fieldNpcs;
+        this.taxiFields = taxiFields;
         mapNames = text.Table("mapname", "name");
         functionNames = text.Table("npcfunctionname", "name");
-        // CFieldMetaTable: <npc id><field id/></npc>, npcs listed per field in file order
-        foreach (var entry in new[] { "table/fieldmetadata.xml", "table/kr/fieldmetadata.xml" })
-        {
-            if (!packs.Exists("Xml", entry)) continue;
-            var root = GameStrings.Parse(packs.Read("Xml", entry)).Root!;
-            // <taxiStation field= IsHomePrivilege=/>: the fields with a taxi station (CFieldMetaTable m_taxi)
-            foreach (var t in root.Elements("taxiStation"))
-                if (int.TryParse((string)t.Attribute("field"), out int tf)) taxiFields.Add(tf);
-            foreach (var n in root.Elements("npc"))
-            {
-                if (!int.TryParse((string)n.Attribute("id"), out int id) || npcs.Find(id) == null) continue;
-                foreach (var f in n.Elements("field"))
-                    if (int.TryParse((string)f.Attribute("id"), out int fid))
-                    {
-                        if (!fieldNpcs.TryGetValue(fid, out var list)) fieldNpcs[fid] = list = new List<int>();
-                        list.Add(id);
-                    }
-            }
-            break;
-        }
         // CFieldData: <indoor type="1|2"/> makes a field indoor (mask 2 or 4)
         if (packs.Exists(FieldData.Archive, FieldData.Entry))
-            foreach (var fd in GameStrings.Parse(packs.Read(FieldData.Archive, FieldData.Entry)).Root!.Elements("fieldData"))
+            foreach (var fd in FieldData.Document(packs).Root!.Elements("fieldData"))
             {
                 if (!int.TryParse((string)fd.Attribute("id"), out int fid)) continue;
                 var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null) ?? fd.Element("environment");
@@ -127,24 +114,42 @@ public sealed class MinimapIcons
     /// </summary>
     public static Entity Taxi(bool found, bool best) => new(best ? "taxibest" : "taxi", found ? "enabled" : "disabled", "taxi", null, true, false);
 
-    Dictionary<int, (string icon, int type)> interactRows;
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<int, (string icon, int type)>> interactRows = new();
 
     /// <summary>The interact object row (table/interactobject.xml): its display minimapIcon ("" when none) and type.</summary>
-    public (string icon, int type) InteractRow(PackSet packs, int interactId)
+    public (string icon, int type) InteractRow(PackSet packs, int interactId) =>
+        interactRows.GetValue(packs, InteractRows).GetValueOrDefault(interactId, ("", 0));
+
+    /// <summary>
+    /// Each &lt;interact&gt; row's id, type and first &lt;display&gt; child's minimapIcon (the first row of an id wins), read
+    /// once per pack set. The table is 5-6 MB of about 3600 rows with 25 children each and only these three values are
+    /// read, so it is streamed (<see cref="Text.XmlRows"/>, the text and settings XDocument.Parse uses) instead of parsed
+    /// into a tree.
+    /// </summary>
+    public static Dictionary<int, (string icon, int type)> InteractRows(PackSet packs)
     {
-        if (interactRows == null)
+        var rows = new Dictionary<int, (string, int)>();
+        const string entry = "table/interactobject.xml";
+        if (!packs.Exists("Xml", entry)) return rows;
+        foreach (var r in Text.XmlRows.Elements(packs.Read("Xml", entry), "interact", rootChildren: true))
         {
-            interactRows = new Dictionary<int, (string, int)>();
-            const string entry = "table/interactobject.xml";
-            if (packs.Exists("Xml", entry))
-                foreach (var row in GameStrings.Parse(packs.Read("Xml", entry)).Root!.Elements("interact"))
-                    if (int.TryParse((string)row.Attribute("id"), out int id))
+            bool ok = int.TryParse(r.GetAttribute("id"), out int id);
+            int.TryParse(r.GetAttribute("type"), out int type);
+            string icon = null;
+            if (!r.IsEmptyElement)
+            {
+                using var sub = r.ReadSubtree();
+                sub.Read();
+                while (sub.Read())
+                    if (sub.NodeType == System.Xml.XmlNodeType.Element && sub.Depth == 1 && sub.LocalName == "display" && sub.NamespaceURI.Length == 0)
                     {
-                        int.TryParse((string)row.Attribute("type"), out int type);
-                        interactRows.TryAdd(id, ((string)row.Element("display")?.Attribute("minimapIcon") ?? "", type));
+                        icon = sub.GetAttribute("minimapIcon") ?? "";
+                        break;
                     }
+            }
+            if (ok) rows.TryAdd(id, (icon ?? "", type));
         }
-        return interactRows.GetValueOrDefault(interactId, ("", 0));
+        return rows;
     }
 
     /// <summary>

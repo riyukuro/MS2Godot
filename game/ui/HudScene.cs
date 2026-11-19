@@ -706,7 +706,11 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void MinimapMarks(World.FieldContents fc, List<Ms2.Ui.Hud.MinimapController.Mark> marks)
     {
-        var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, assets.Language));
+        // the field meta table the quest table already read (QuestTable.Load), not a second parse of fieldmetadata.xml
+        // (none without the table: no portal npcs and no taxi, the other marks still placed)
+        var meta = assets.Packs.Exists(FieldMeta.Archive, FieldMeta.Entry) ? QuestMapGraph.SharedMeta(assets.Packs) : null;
+        var icons = new MinimapIcons(assets.Packs, World.FieldContents.Npcs(assets.Packs), new GameStrings(assets.Packs, assets.Language),
+            meta?.FieldNpcs ?? new Dictionary<int, List<int>>(), meta == null ? Array.Empty<int>() : meta.TaxiStations.Keys);
         foreach (var n in fc.SpawnedNpcs)
         {
             var e = MinimapIcons.Npc(n.Row);
