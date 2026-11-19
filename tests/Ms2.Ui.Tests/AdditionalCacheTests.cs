@@ -36,7 +36,8 @@ public class AdditionalCacheTests
             var firstName = cached.AdditionalDescription(10500111, 1, "name");
             TestContext.Progress.WriteLine($"additional cache: cold first buff {sw.Elapsed.TotalMilliseconds:F2} ms");
             Assert.That(first?.Icon, Does.EndWith("10500111_buff.png"));
-            Assert.That(firstName, Is.EqualTo("Snipe"));
+            // the name is the data's language (an English or a Korean client), so it is compared with the XML read
+            Assert.That(firstName, Is.Not.Empty.And.EqualTo(xml.AdditionalDescription(10500111, 1, "name")));
 
             var ids = new SortedSet<uint>();
             foreach (var n in packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase) && n.IndexOf('/', 11) < 0))
@@ -85,10 +86,11 @@ public class AdditionalCacheTests
         {
             File.WriteAllBytes(path, new byte[] { 0x4d, 0x32, 0x41, 0x44, 1, 0, 0, 0, 5 });     // the header, then cut short
             using var packs = new PackSet(d);
+            var xml = new GameTables(packs, "en");
             GameTables.AdditionalCacheOf = _ => path;
             var t = new GameTables(packs, "en");
             Assert.That(t.Additional.GetLevel(10500111, 1)?.Icon, Does.EndWith("10500111_buff.png"));
-            Assert.That(t.AdditionalDescription(10500111, 1, "name"), Is.EqualTo("Snipe"));
+            Assert.That(t.AdditionalDescription(10500111, 1, "name"), Is.Not.Empty.And.EqualTo(xml.AdditionalDescription(10500111, 1, "name")));
         }
         finally
         {
