@@ -75,6 +75,13 @@ public sealed class MessageBoxData
         [0x9d5] = "s_ugc_profile_terms", [0x9d6] = "s_ugc_guildmark_terms", [0x9d7] = "s_ugc_guildposter_terms",
         // the character ability dialog's reset box (UICharacterAbilityDialog::vfunc_28)
         [0xc5c] = "s_character_ability_meso_reset_button",
+        // the portal boxes (PortalAction FUN_140956370 / vfunc_2, MyPC FUN_141529ae0, CSceneStateGame::OnEnterUgcMap)
+        [0x656] = "s_action_privilege_portal", [0x971] = "s_shadowworld_pkzone_allert", [0x99d] = "s_field_limit_admin",
+        [0xb07] = "s_home_password_input", [0xb0b] = "s_home_password_mismatch", [0xb0c] = "s_home_password_block_time",
+        [0x9cb] = "s_enter_ugcmap_result_no_room", [0x9cd] = "s_enter_ugcmap_result_expired",
+        [0x9ce] = "s_enter_ugcmap_result_not_exist_building", [0x87a] = "s_home_visit_failed_dead",
+        [0x87b] = "s_home_visit_failed_common", [0x87c] = "s_home_visit_failed_homeless",
+        [0x87d] = "s_home_visit_failed_disablemap", [0x87e] = "s_home_visit_failed_myhome",
     };
 
     /// <summary>The common string table by key (set by the host; empty text until it is).</summary>

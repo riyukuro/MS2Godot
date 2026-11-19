@@ -108,6 +108,8 @@ public partial class HudScene : Node, IUiStageHost
         BuildHud();
         WatchParty();
         WatchPcInfo();
+        // the portal action's notices (the required quest, a home that refused the visit): ShowSystemNotice(text, 1, 1)
+        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals) livePortals.SystemNoticeSink = SystemNoticeText;
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
     }
@@ -131,6 +133,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     public override void _ExitTree()
     {
+        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals && livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
         unwatchQuickSlotState = null;
@@ -775,6 +778,8 @@ public partial class HudScene : Node, IUiStageHost
             var npc = n;
             marks.Add(new() { Entity = e, Position = () => World.FieldPortals.ToMs2(npc.Position), Moves = true });
         }
+        // STILL-OPEN: in a live field the minimap still marks the xblock's portals (their own flags), not the server-listed
+        // ones (LivePortals: shown, minimap flag from FieldPortal 0x48)
         foreach (var p in fc.Portals.All)
         {
             var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));

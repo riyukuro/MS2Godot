@@ -274,13 +274,6 @@ public partial class LiveSession : Node
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
-    /// <summary>The portal action's move (PortalAction FUN_140956370, actionkeyobject.cpp:1136): RequestMoveField mode 0 from the
-    /// current map (DAT_143ab2870, the last RequestFieldEnter's map) through the portal; the server answers with RequestFieldEnter.</summary>
-    public void SendPortalMove(int portalId) {
-        if (fieldEntry.Current is not { } f) return;
-        Send(new RequestMoveFieldPortal(f.MapId, portalId));
-        GD.Print($"live: portal {portalId} move requested from map {f.MapId}");
-    }
 
     /// <summary>CPartyManager::SendPartyMode2 (partymanager.cpp:743): the answer to the last invite, with its name and kind.</summary>
     public void AnswerPartyInvite(int answer)
@@ -494,6 +487,7 @@ public partial class LiveSession : Node
             GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
             login.Dispose(); login = null;
             fieldEntry.Enter(entry.Field);
+            NewFieldPortals(entry.Field.MapId);
             syncNumber = entry.Sync?.Number ?? 0;
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
@@ -539,12 +533,18 @@ public partial class LiveSession : Node
     /// FUN_141b21390 ends the talk (m_nTalking, m_nSpecialNpc = 0). The own object comes again with the new field's
     /// FieldAddUser (OnAddUser builds a new MyPC); the sync number stays until the server sends one (OnSyncNumber,
     /// networkservice.cpp:799, is not reset by the move).
+    /// LoadMap returns at once when the field is still loading the same map (worldservice_1.cpp:3295, m_state 2 and the
+    /// same map id): a repeat entry for the map in load changes the entry's values only; the load goes on.
     /// STILL-OPEN: CGuideManager QueueOccurrence(1, map), DAT_143ab2890 = 0 (the free-roam test field flag),
-    /// FUN_140930ba0 (the dungeon room id and its group type), GFxSceneService FUN_1422ba0d0 and, for field type 0xd,
-    /// SetSubScene(0x6200086) have no port here.
+    /// FUN_140930ba0 (the dungeon room id and its group type), CUIService FUN_141adc400 (uiservice.cpp:1574: each
+    /// registered dialog with m_158 set and m_15c clear is opened again, vfunc_61(0) then vfunc_65; this HUD is rebuilt with
+    /// the field scene, so its dialogs come back with it, but no dialog registry with those flags exists), and, after either
+    /// outcome, GFxSceneService FUN_1422ba0d0 and SetSubScene(0x6200086) when the instance type (DAT_143ab287c, the entry's
+    /// second byte; the last good entry's after an error) is 0xd have no port here.
     /// </summary>
     void OnRequestFieldEnter(RequestFieldEnter f)
     {
+        int loading = moveClock.IsRunning ? fieldEntry.Current?.MapId ?? 0 : 0;   // the map whose ResponseFieldEnter is still to go
         if (!fieldEntry.Enter(f))
         {
             string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
@@ -554,11 +554,18 @@ public partial class LiveSession : Node
         }
         entry = entry with { Field = f };
         if (chosen != null) chosen.User.MapA = f.MapId;
+        if (loading != 0 && loading == f.MapId)
+        {
+            GD.Print($"live: RequestFieldEnter in game: map {f.MapId} is loading already, the load goes on (pos {f.Position} portal {f.Portal})");
+            return;
+        }
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
         if (player != null && IsInstanceValid(player)) player.Live = false;
         player = null;
         selfObject = -1;
+        bindPending = false;
         moveClock.Restart();
+        NewFieldPortals(f.MapId);
         GD.Print($"live: RequestFieldEnter in game: map {f.MapId} type {f.FieldType} instance {f.InstanceType}/{f.InstanceId} dungeon {f.DungeonId} pos {f.Position} portal {f.Portal}");
         FieldMoveStarted?.Invoke(f);
         Ms2Godot.World.FieldContents.ServerMove(GetTree(), f.MapId);
@@ -591,7 +598,6 @@ public partial class LiveSession : Node
         var answer = fieldEntry.Answer();
         if (answer == null) return;
         Send(answer);
-        BindPlayer();
         long ms = moveClock.IsRunning ? moveClock.ElapsedMilliseconds : 0;
         moveClock.Reset();
         GD.Print($"live: ResponseFieldEnter sent, portal {answer.Portal}, map {fieldEntry.Current.MapId}{(ms > 0 ? $", {ms} ms after the move's RequestFieldEnter" : "")}");
@@ -609,10 +615,21 @@ public partial class LiveSession : Node
             System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
     }
 
-    void BindPlayer()
+    /// <summary>The own FieldAddUser makes the MyPC (OnAddUser, at the login's field and after each move); it sends movement
+    /// from then on. The field's player node may come a frame later than the packet: the bind waits for it.</summary>
+    bool bindPending;
+    void TryBindPlayer()
     {
-        player = GetTree().Root.FindChild("Player", true, false) as Player;
-        if (player == null) { GD.PushWarning("live: no player to send movement for"); return; }
+        if (!bindPending) return;
+        var found = GetTree().Root.FindChild("Player", true, false) as Player;
+        if (found == null || found.IsQueuedForDeletion()) return;
+        bindPending = false;
+        if (found == player && player.Live) return;   // a repeat of the own FieldAddUser on the same field
+        BindPlayer(found);
+    }
+    void BindPlayer(Player found)
+    {
+        player = found;
         player.Live = true;
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         player.StateSyncOut += records =>
@@ -641,6 +658,8 @@ public partial class LiveSession : Node
         if (game == null) { PumpLogin(); return; }
         while (game.Incoming.TryDequeue(out var p)) Handle(p);
         guide?.Tick();
+        if (bindPending) TryBindPlayer();
+        Portals?.Tick((uint)game.Session.ServerTick);
         if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
 
@@ -658,7 +677,7 @@ public partial class LiveSession : Node
             {
                 var u = FieldAddUser.Read(p.Reader());
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
-                if (self) { selfObject = u.ObjectId; Me.Apply(u); }
+                if (self) { selfObject = u.ObjectId; Me.Apply(u); bindPending = true; TryBindPlayer(); }   // OnAddUser builds the MyPC
                 if (self)
                 {
                     OwnBuff(null);
@@ -951,6 +970,13 @@ public partial class LiveSession : Node
                 var t = SkillBookTreePacket.Read(p.Reader());   // UISkillBookTreeDialog::vfunc_79 (uiskillbookautodistributedialog.cpp:1962)
                 GD.Print($"live: skill book tree mode {t.Mode} ({t.Tabs.Count} tabs)");
                 SkillBookTree?.Invoke(t);
+            }
+            else if (game.Is(p, Inbound.FieldPortal)) OnFieldPortal(FieldPortalMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.EnterUgcMap))
+            {
+                var m = EnterUgcMapMessage.Read(p.Reader());
+                GD.Print($"live: EnterUgcMap mode {m.Mode}");
+                PortalAction.OnEnterUgcMap(m);
             }
             else if (game.Is(p, Inbound.GlobalFactor))
             {
@@ -1389,17 +1415,31 @@ public partial class LiveSession : Node
                     sent = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(cmd);
                     GD.Print($"live: move {n}: {cmd} {(sent ? "sent" : "no chat window")}");
                 }
-                else if (step.StartsWith("portal:") && tree.GetFirstNodeInGroup(FieldContents.Group) is FieldContents fc)
+                else if ((step.StartsWith("portal:") || step.StartsWith("gated:")) && tree.GetFirstNodeInGroup(FieldContents.Group) is FieldContents fc)
                 {
-                    string id = step[7..];
-                    var p = id == "any" ? fc.OpenPortals.FirstOrDefault(x => x.TargetField != 0) : fc.OpenPortals.FirstOrDefault(x => x.Id.ToString() == id);
+                    // portal:<id|any> walks into a server-listed portal the action key goes to; gated:<id|any> into one it
+                    // must not (hidden, without glow, or of a type whose path is not ported): the key there sends nothing
+                    bool gated = step.StartsWith("gated:");
+                    string id = step[(step.IndexOf(':') + 1)..];
+                    var list = live.Portals?.All ?? (IReadOnlyList<Ms2.Ui.LivePortal>)Array.Empty<Ms2.Ui.LivePortal>();
+                    bool Open(Ms2.Ui.LivePortal x) => x.Glow && x.TargetMap != 0 && x.Type is not (8 or 9 or 0xc or 0xe or 0x10 or 0x11);
+                    var p = id == "any" ? list.FirstOrDefault(x => x.HasBox && (gated ? !Open(x) : Open(x))) : list.FirstOrDefault(x => x.Id.ToString() == id);
+                    int sends = live.PortalSends;
                     if (p != null && fc.StandInPortal(p.Id))
                     {
-                        await Frames(60);   // the position goes out with the next sync, as a walk into the box would
+                        await Frames(60);   // the position goes out with the next sync, as a walk into the box would; the poll runs each frame
                         MoveShot($"move_{n}_in_portal.png");
-                        sent = fc.LivePortalAction();
+                        if (fc.LivePortalPoll()) fc.LivePortalUse();
+                        await Frames(10);
+                        sent = live.PortalSends > sends;
                     }
-                    GD.Print($"live: move {n}: portal {id} {(p == null ? "not open here" : $"{p.Id} -> field {p.TargetField}")}, {(sent ? "sent" : "not sent")}");
+                    string what = p == null ? "not listed here" : $"{p.Id} type {p.Type} shown {p.Shown} glow {p.Glow} -> field {p.TargetMap}";
+                    if (gated)
+                    {
+                        GD.Print($"live: move {n}: gated portal {id} ({what}): {(p == null ? "SKIP" : sent ? "FAIL, a move was sent" : "OK, nothing sent")}");
+                        sent = false;
+                    }
+                    else GD.Print($"live: move {n}: portal {id} ({what}), {(sent ? "sent" : "not sent")}");
                 }
                 if (sent)
                 {

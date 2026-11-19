@@ -25,6 +25,8 @@ public enum Inbound : ushort {
     RequestFieldEnter = 0x16,
     FieldAddUser = 0x17,
     FieldRemoveUser = 0x18,
+    FieldPortal = 0x48,     // RecvOp (scenestategame.h:98): CSceneStateGame::OnFieldPortal
+    EnterUgcMap = 0xAA,     // RecvOp (scenestategame.h:182): CSceneStateGame::OnEnterUgcMap
     NpcTalk = 0x4B,
     Quest = 0x52,
     Party = 0x53,

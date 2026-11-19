@@ -70,6 +70,13 @@ public sealed class FieldData
     public bool PopupMenu = true;
     /// <summary>m_bGemSystem: &lt;property gemSystem&gt; (fielddata.cpp:706), true when absent (the ctor, :557).</summary>
     public bool GemSystem = true;
+    /// <summary>m_nPkMode: &lt;property pkMode&gt; (fielddata.cpp:688), CFieldData::GetPkMode.</summary>
+    public int PkMode;
+    /// <summary>m_nContinentCode: &lt;property continentCode&gt; (fielddata.cpp:678), the MapContinentTable row of GetShadowContinent.</summary>
+    public int ContinentCode;
+    /// <summary>m_nRequireQuest: &lt;property requireQuest&gt; (fielddata.cpp:703), the quest a portal into the field needs rewarded
+    /// (PortalAction FUN_140956370, actionkeyobject.cpp:1117).</summary>
+    public int RequireQuest;
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
@@ -100,6 +107,9 @@ public sealed class FieldData
         return fd == null ? null : FromEntry(fd);
     }
 
+    static int Int(XElement e, string a) =>
+        (string)e?.Attribute(a) is { } v && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0;
+
     static FieldData FromEntry(XElement fd)
     {
         var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
@@ -124,6 +134,7 @@ public sealed class FieldData
         if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
         if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
         if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
+        o.PkMode = Int(prop, "pkMode"); o.ContinentCode = Int(prop, "continentCode"); o.RequireQuest = Int(prop, "requireQuest");
         if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
         o.RecallOtherUserProhibit = Flag(env.Element("cashCall"), "RecallOtherUserProhibit");
         o.GlobalSplit = Flag(env.Element("split"), "globalSplit");

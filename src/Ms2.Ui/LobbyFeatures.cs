@@ -32,6 +32,10 @@ public static class LobbyFeatures
     /// <summary>IsFeatureEnabledByName: an empty name is on, an unknown name is off.</summary>
     public static bool IsEnabledByName(PackSet packs, string feature) => string.IsNullOrEmpty(feature) || IsEnabled(packs, feature);
 
+    /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
+    public static bool IsLocaleInList(string list) => string.IsNullOrEmpty(list)
+        || list.Split(',').Any(l => string.Equals(l.Trim(), Locale, StringComparison.OrdinalIgnoreCase));
+
     public static bool IsEnabled(PackSet packs, string feature)
     {
         var l = Load(packs);

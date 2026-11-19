@@ -114,6 +114,9 @@ public partial class FieldContents : Node3D
         }
         long tNpcs = sw.ElapsedMilliseconds;
         portals = new FieldPortals(map, fieldId, offline ? Masks(packs) : null);
+        // live: the server's portal list (FieldPortal 0x48) binds this field's portal entities; the ones it sent while the
+        // field loaded apply now
+        if (!offline && Ms2Godot.Net.LiveSession.Instance is { } lsPortals) lsPortals.AttachPortals(fieldName, map.Entities);
         string presence = "";
         if (!offline && player != null && Ms2Godot.Net.LiveSession.Instance is { } liveSession)
         {
@@ -181,7 +184,7 @@ public partial class FieldContents : Node3D
     /// <summary>The field's world objects (the minimap's taxi station and tagged objects).</summary>
     public FieldMap Map => map;
     static QuestMaskTable maskTable;
-    static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
+    internal static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
     static ClientConstants constantTable;
     internal static ClientConstants Constants(PackSet packs) => constantTable ??= Ms2.Ui.FeatureElements.Constants(packs);
     static UiAssets uiAssets;
@@ -498,12 +501,11 @@ public partial class FieldContents : Node3D
         actionHeld = action;
         if (!offline)
         {
-            // live: the action key in an open portal asks the server for the move (PortalAction FUN_140956370 ->
-            // MyPC::SendRequestMoveFieldMode0); its RequestFieldEnter moves us (LiveSession.OnRequestFieldEnter). Elsewhere the talk.
-            // STILL-OPEN: the portal action's checks before the send (the shadow-continent pk box 0x971, the missing-target box
-            // 0x99d, the required-quest notice, the password box for m_b18c portals, MyPC FUN_141529ae0) and the portal types
-            // that are not walked into (FieldPortals keeps no type yet).
-            if (pressed && !(talk != null && talk.Open) && LivePortalAction()) return;
+            // live: each frame the action key's poll finds the server-listed portal the player stands in (PortalAction
+            // vfunc_1, a kind 1 portal enters at once); the key on it runs the portal action (vfunc_2: its checks, then
+            // RequestMoveField); the server's RequestFieldEnter moves us (LiveSession.OnRequestFieldEnter). Elsewhere the talk.
+            bool onPortal = LivePortalPoll();
+            if (pressed && !(talk != null && talk.Open) && onPortal) { LivePortalUse(); return; }
             if (pressed) talk?.ActionKey();
             return;
         }
@@ -512,27 +514,29 @@ public partial class FieldContents : Node3D
         if (pressed) talk?.ActionKey();
     }
 
-    /// <summary>Live: the action key with the player in an open portal's box asks the server for that portal's move.</summary>
-    public bool LivePortalAction()
+    /// <summary>Live: the action key's poll at the player's point; true when the player stands in a portal the key goes to.</summary>
+    public bool LivePortalPoll()
     {
-        if (offline || player == null || portals == null || moving) return false;
-        if (portals.At(FieldPortals.ToMs2(player.GlobalPosition)) is not { Enabled: true } p || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
-        ls.SendPortalMove(p.Id);
-        return true;
+        if (offline || player == null || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
+        return ls.PollPortal(FieldPortals.ToMs2(player.GlobalPosition));
     }
 
-    /// <summary>A scripted live run: puts the player in portal <paramref name="id"/>'s box (as a walk into it ends); false
-    /// when the field has no such open portal.</summary>
+    /// <summary>Live: the action key on the polled portal (its checks, then the move request or nothing).</summary>
+    public void LivePortalUse()
+    {
+        if (offline || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return;
+        ls.UsePortal();
+    }
+
+    /// <summary>A scripted live run: puts the player in the registered portal <paramref name="id"/>'s box (as a walk into it
+    /// ends); false when the server listed no such portal with a box here.</summary>
     public bool StandInPortal(int id)
     {
-        if (player == null || portals?.ById(id) is not { Enabled: true } p) return false;
-        var pos = FieldBuilder.ToGodotPoint(p.Position) + new Vector3(0, 5, 0);
-        player.GlobalPosition = pos; player.Velocity = Vector3.Zero;
+        if (player == null || Ms2Godot.Net.LiveSession.Instance?.Portals?.ById(id) is not { HasBox: true } p) return false;
+        player.GlobalPosition = FieldBuilder.ToGodotPoint(p.Center) + new Vector3(0, 5, 0);
+        player.Velocity = Vector3.Zero;
         return true;
     }
-
-    /// <summary>The open portals of the field (ids), for a scripted live run.</summary>
-    public IEnumerable<FieldPortals.Portal> OpenPortals => portals?.All.Where(x => x.Enabled) ?? Enumerable.Empty<FieldPortals.Portal>();
 
     bool TryEnter()
     {

@@ -170,8 +170,7 @@ public sealed class FieldNpcs
             {
                 var row = table.Find(id);
                 // CQuestMaskTable::CheckNpc: a masked npc shows only within its quest stretch; a new character has no quests
-                var mask = masks?.Npc(fieldId, id);
-                if (mask != null && !QuestMaskTable.Check(mask, _ => 0)) { Masked++; break; }
+                if (masks != null && !masks.CheckNpc(fieldId, id, QuestMaskTable.NoQuests)) { Masked++; break; }
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");

@@ -68,8 +68,9 @@ public sealed class FieldPortals
         foreach (var p in All)
         {
             if (fieldId == 2000499 && p.Id == 2) continue;
-            var m = masks.Portal(fieldId, p.Id) ?? QuestMaskTable.FromEntity(p.Entity.Get("MaskQuestID"), p.Entity.Get("MaskQuestState"));
-            if (m != null && !QuestMaskTable.Check(m, _ => 0)) { p.Visible = false; p.Enabled = false; Masked++; }
+            var own = QuestMaskTable.FromEntity(p.Entity.Get("MaskQuestID"), p.Entity.Get("MaskQuestState"));
+            if (masks.HasPortalMask(fieldId, p.Id, own) && !masks.CheckPortal(fieldId, p.Id, own, QuestMaskTable.NoQuests))
+            { p.Visible = false; p.Enabled = false; Masked++; }
             else if (!p.Visible && p.Enabled) { p.Enabled = false; Hidden++; }
         }
     }
