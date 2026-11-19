@@ -128,6 +128,10 @@ uniform vec2 base_scroll_range;      // controller start, stop
 uniform int dark_scroll_axis = -1;
 uniform vec4 dark_scroll_key;
 uniform vec2 dark_scroll_range;
+// The controllers' time. A static entity (Bakeable IsStatic) is updated once, at the game time it is added
+// (SceneGraphService.cpp:2380 SetIsDynamic(!IsStatic), :1255-1262 AddToUpdateOnce), so its controllers hold that value:
+// frozen_time is that time. -1: the entity is dynamic and its controllers run on the scene time.
+uniform float frozen_time = -1.0;
 
 varying vec3 world_normal;
 varying vec3 world_pos;
@@ -167,11 +171,15 @@ void vertex() {
 #endif
 }
 
+float anim_time() {
+	return frozen_time >= 0.0 ? frozen_time : TIME;
+}
+
 vec2 scroll(int axis, vec4 key, vec2 range) {
 	if (axis < 0) {
 		return vec2(0.0);
 	}
-	float t = range.x + mod(TIME, max(range.y - range.x, 1e-3));
+	float t = range.x + mod(anim_time(), max(range.y - range.x, 1e-3));
 	float v = mix(key.z, key.w, clamp((t - key.x) / max(key.y - key.x, 1e-6), 0.0, 1.0));
 	return axis == 0 ? vec2(v, 0.0) : vec2(0.0, v);
 }
@@ -182,7 +190,7 @@ vec2 scroll(int axis, vec4 key, vec2 range) {
 // (NiInterpScalar::Bezier, NiInterpScalar.cpp:26-36, with key 0's OutTan and key 1's InTan).
 float alpha_anim() {
 	float span = max(alpha_anim_time.y - alpha_anim_time.x, 1e-3);
-	float t = alpha_anim_time.x + mod(alpha_anim_time.z * TIME + alpha_anim_time.w, span);
+	float t = alpha_anim_time.x + mod(alpha_anim_time.z * anim_time() + alpha_anim_time.w, span);
 	int n = alpha_anim_count;
 	if (t <= alpha_anim_t[0]) {
 		return alpha_anim_v[0];
@@ -212,7 +220,7 @@ float alpha_anim() {
 
 vec4 sample_slot(sampler2D tex, int slot, vec2 uv) {
 	if (flip_slot == slot) {
-		float frame = floor(mod(TIME, flip_period) / flip_period * float(flip_count));
+		float frame = floor(mod(anim_time(), flip_period) / flip_period * float(flip_count));
 		return texture(flip_tex, vec3(uv, min(frame, float(flip_count - 1))));
 	}
 	return texture(tex, uv);

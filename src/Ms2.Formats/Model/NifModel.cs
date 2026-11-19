@@ -63,6 +63,9 @@ public sealed class ModelMesh
     /// the opaque buckets and before the depth-sorted alpha list. The outermost sort-adjust ancestor decides, as its OnVisible
     /// marks its whole subtree's visible objects after the inner ones did (NiSortAdjustNode.cpp:36-57).</summary>
     public bool NoSort;
+    /// <summary>A material controller the field shader runs from the scene time: the alpha, or a flipbook or uv scroll on the
+    /// base or dark map (the shader runs no other slot's).</summary>
+    public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || Scrolls.Any(s => s.Slot is "base" or "dark");
     public bool AlphaBlendOn => AlphaFlags >= 0 && (AlphaFlags & 1) != 0;
     public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>

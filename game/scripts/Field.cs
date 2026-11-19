@@ -140,7 +140,7 @@ public partial class Field : Node3D
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
-        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}, {fb.NotReceivingDraws} draws without the sun shadow, {fb.NotReceivingBlended} of them blended), " +
+        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, {fb.FrozenGroups} static meshes held at the add time, grid {fb.InstancingGrid}, {fb.NotReceivingDraws} draws without the sun shadow, {fb.NotReceivingBlended} of them blended), " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
@@ -853,6 +853,7 @@ public partial class Field : Node3D
 
     public override void _Process(double delta)
     {
+        Ui.PerfLog.Frame("field");                 // MS2_PERF: frame time and draw calls also without the HUD
         if (player == null) return;
         if (Ms2.Ui.FieldMoveCover.TakesInput && Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
         {

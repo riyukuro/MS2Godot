@@ -18,6 +18,7 @@ static class ShaderParam
         AlphaAnimIn = "alpha_anim_in",
         AlphaAnimOut = "alpha_anim_out",
         FadeVcSwap = "fade_vc_swap",
+        FrozenTime = "frozen_time",
         BaseTex = "base_tex", BaseUv2 = "base_uv2",
         Color0 = "color0",
         Color1 = "color1",

@@ -381,6 +381,25 @@ public sealed class ModelBuilder
     }
 
     /// <summary>
+    /// The time a field's static entities are added at, in seconds wrapped at the shader TIME's default one-hour rollover.
+    /// <see cref="Freeze"/> holds their material controllers there. It is wall time since start, not the shader's TIME
+    /// (the sum of the frame steps, which differs under --fixed-fps or after a stall). Only the held value matters, as
+    /// the client's controllers hold the game time at the add.
+    /// </summary>
+    public static float FreezeTimeNow() => (float)(Time.GetTicksMsec() / 1000.0 % 3600.0);
+
+    /// <summary>
+    /// A static entity's field mesh: every field material on it (and its next passes) holds its controllers at
+    /// <paramref name="t"/> (field_lit frozen_time). The mesh's materials must be its own, not shared with a dynamic entity.
+    /// </summary>
+    public static void Freeze(Mesh mesh, float t)
+    {
+        for (int s = 0; s < mesh.GetSurfaceCount(); s++)
+            for (var m = mesh.SurfaceGetMaterial(s) as ShaderMaterial; m != null; m = m.NextPass as ShaderMaterial)
+                m.SetShaderParameter(ShaderParam.FrozenTime, t);
+    }
+
+    /// <summary>
     /// A blended fluid cube mesh as the client's alpha shell. FUN_1413fa4c0 turns on the z-buffer write of a fluid cube and
     /// marks it into shell group 1 (AlphaShellComposite::MarkScene); Ms2RenderListProcessor hands those meshes to the
     /// group's AlphaShellComposite, whose vfunc_0 draws every shell first with the blend set to ZERO / ONE (depth only,

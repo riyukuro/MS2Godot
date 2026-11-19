@@ -142,7 +142,7 @@ public partial class FieldContents : Node3D
             }
             catch (Exception ex) { GD.PushWarning("npc presence: " + ex.Message); }
         }
-        GD.Print($"field contents {fieldName} ({fieldId}): {Props.Built} animated props ({Props.Animated} playing) in {tProps} ms; " +
+        GD.Print($"field contents {fieldName} ({fieldId}): {Props.Built} animated props ({Props.Animated} playing, {Props.Frozen} static held at their add pose) in {tProps} ms; " +
                  $"{fnpcs.Actors} actors, {fnpcs.Npcs} npcs ({fnpcs.Masked} quest-masked), {fnpcs.Mobs} mobs, {fnpcs.Missing} without a model in {tNpcs - tProps} ms; " +
                  $"{portals.All.Count} portals ({portals.Masked} quest-masked, {portals.Hidden} hidden){presence}");
         var closed = portals.All.Where(x => !x.Enabled).Select(x => x.Id).OrderBy(x => x).ToList();

@@ -88,6 +88,7 @@ public sealed class FieldBuilder
         public List<Shape3D> Collision;  // cooked PhysX meshes of the NIF, model space
         public List<Shape3D> Overlap;    // the same meshes for the overlap tests (TwoSidedSpace), by index
         public bool Elsewhere;           // DrawsInstance took it (per field)
+        public bool AnimatesMaterial;    // a mesh has a material controller (alpha, flipbook, uv scroll): IsStatic splits the batch
     }
 
     readonly Dictionary<string, ModelEntry> models = new(StringComparer.OrdinalIgnoreCase);
@@ -118,7 +119,8 @@ public sealed class FieldBuilder
             {
                 if (asset.ControllersError != null) GD.PushWarning($"controllers {llid}: {asset.ControllersError}");
                 me = new ModelEntry { Data = asset.Data, Meshes = asset.Meshes, Bounds = asset.Bounds, Collision = asset.Collision,
-                                      Overlap = asset.Overlap, Elsewhere = DrawsInstance?.Invoke(llid, asset.Data, asset.Controllers) == true };
+                                      Overlap = asset.Overlap, Elsewhere = DrawsInstance?.Invoke(llid, asset.Data, asset.Controllers) == true,
+                                      AnimatesMaterial = asset.Data.Meshes.Any(m => m.AnimatesMaterial) };
             }
         }
         if (me == null) Missing++;
@@ -237,6 +239,7 @@ public sealed class FieldBuilder
     {
         World = null;
         Load?.Begin(map.Entities.Count);
+        float freezeAt = ModelBuilder.FreezeTimeNow();
         var world = new Node3D { Name = "World", Transform = ZupToYup };
         building = world;
         var visuals = new Node3D { Name = "Visuals" };
@@ -336,7 +339,8 @@ public sealed class FieldBuilder
                 }
                 else if (e.Bool("IsVisible", true))
                 {
-                    var key = BatchKey(llid, e) + (notReceiving.Contains(e) ? NotReceivingKey : "");
+                    var key = BatchKey(llid, e) + (notReceiving.Contains(e) ? NotReceivingKey : "")
+                              + (me.AnimatesMaterial && IsStatic(e) ? FrozenKey : "");
                     if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
                     list.Add(e);
                     grouped = true;            // counted when its group is placed
@@ -402,7 +406,8 @@ public sealed class FieldBuilder
         foreach (var (key, ents) in groups)
         {
             var me = models[key.Split('\n')[0]];
-            bool noRecv = key.EndsWith(NotReceivingKey);
+            bool noRecv = key.Contains(NotReceivingKey, StringComparison.Ordinal);
+            bool frozen = key.EndsWith(FrozenKey, StringComparison.Ordinal);
             int mi = 0;
             // shells (FUN_1413fa4c0): the shared group draws through ModelBuilder.MakeFluidShell; an own group draws each
             // blended mesh's depth-only shell as a twin instance sorted just behind its colour, so it comes right before it
@@ -416,6 +421,7 @@ public sealed class FieldBuilder
                 if (objects != null && mesh.AlphaBlendOn)
                 {
                     var shared = builder.BuildMesh(mesh, skin: false, instanceColor: true);
+                    if (frozen) { ModelBuilder.Freeze(shared, freezeAt); FrozenGroups++; }
                     var glow = builder.GlowMaterial(mesh, mesh.Uvs1 != null);
                     for (int k = 0; k < objects.Count; k++)
                     {
@@ -457,6 +463,7 @@ public sealed class FieldBuilder
                     Mesh = builder.BuildMesh(mesh, skin: false, instanceColor: true),
                     InstanceCount = ents.Count,
                 };
+                if (frozen) { ModelBuilder.Freeze(mm.Mesh, freezeAt); FrozenGroups++; }
                 if (shell == Shell.Shared && mesh.AlphaBlendOn) ModelBuilder.MakeFluidShell((ArrayMesh)mm.Mesh);
                 if (shell == Shell.Own && mesh.AlphaBlendOn && ModelBuilder.ShellMaterial((ArrayMesh)mm.Mesh) is { } depthOnly)
                 {
@@ -626,6 +633,18 @@ public sealed class FieldBuilder
         bool fluid = flat != null && flat.TryGetValue("CubeType", out var c) && c == "Fluid";
         return highPrio || fluid ? Shell.Shared : Shell.Own;
     }
+
+    /// <summary>
+    /// SceneGraphService::OnEntityAdded (SceneGraphService.cpp:2377-2380): an entity is static when its model contains Bakeable
+    /// and its IsStatic is true (false when unset), and SetIsDynamic(!isStatic). A static entity goes to AddToUpdateOnce
+    /// (:1255-1262) and is updated once, at the game time it is added; a dynamic one is updated every tick on the game clock
+    /// (MS2SceneGraphService UpdateDynamicEntities @0x1414f12f0, every bucket through UpdateBucket @0x1414f1f50, with no culling).
+    /// </summary>
+    public static bool IsStatic(FieldEntity e) => e.HasMixin("Bakeable") && e.Bool("IsStatic");
+
+    /// <summary>The batch-key suffix of static entities whose model animates a material: their meshes hold the add time.</summary>
+    const string FrozenKey = "\nstatic";
+    public int FrozenGroups;
 
     /// <summary>
     /// The draw group of a placed entity: its llid, split by shell group; an own-group shell further by the instancing batch.

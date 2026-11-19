@@ -20,7 +20,7 @@ public static class PerfLog
     // As3View.Sync time and movie ticks at the last frame; the window's frames with a movie tick and without, and their sync time
     static double syncLast; static long tickLast;
     static int tickFrames; static double syncTick, syncIdle;
-    static ulong lastTicks;
+    static ulong lastTicks, lastFrame;
     static int gc0, gc1, gc2;
     static long allocated;
 
@@ -60,6 +60,9 @@ public static class PerfLog
     public static void Frame(string state)
     {
         if (!On) return;
+        ulong frame = Engine.GetProcessFrames();   // the field and the HUD both call this: count each drawn frame once
+        if (frame == lastFrame) return;
+        lastFrame = frame;
         ulong now = Time.GetTicksUsec();
         if (lastTicks == 0) { lastTicks = now; syncLast = As3View.SyncMs; tickLast = As3View.Ticks; Reset(); return; }
         double ms = (now - lastTicks) / 1000.0;

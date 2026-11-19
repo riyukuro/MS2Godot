@@ -15,13 +15,14 @@ public sealed class FieldProps
 {
     readonly ModelBuilder builder;
     readonly Dictionary<string, (ModelData md, KfAnimation anim)> byLlid = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<(ModelData, int, Color), ArrayMesh> meshes = new();
+    readonly Dictionary<(ModelData, int, Color, bool), ArrayMesh> meshes = new();
     readonly Dictionary<ModelData, Godot.Animation> anims = new();
     public readonly List<FieldEntity> Entities = new();
     /// <summary>The entities that receive no sun shadow (FieldBuilder.NotReceivingElsewhere).</summary>
     public readonly HashSet<FieldEntity> NotReceiving = new();
     static readonly StringName ReceiveParam = "ms2_receive";
-    public int Built, Animated;
+    public int Built, Animated, Frozen;
+    float freezeAt;
 
     const float DefaultMaterialColor = 0.7058824f;
 
@@ -42,6 +43,7 @@ public sealed class FieldProps
     {
         var root = new Node3D { Name = "AnimatedProps", Transform = FieldBuilder.ZupToYup };
         var rng = new Random(1);
+        freezeAt = ModelBuilder.FreezeTimeNow();
         foreach (var e in Entities)
         {
             var llid = e.Get("NifAsset");
@@ -49,7 +51,8 @@ public sealed class FieldProps
             var c = e.Numbers("MaterialColor");
             var col = c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2])
                                                  : new Color(DefaultMaterialColor, DefaultMaterialColor, DefaultMaterialColor);
-            var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e));
+            bool frozen = FieldBuilder.IsStatic(e);
+            var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e), frozen);
             node.Transform = ModelBuilder.ToGodot(e.Transform);
             root.AddChild(node);
             Built++;
@@ -60,7 +63,9 @@ public sealed class FieldProps
                 // RandomStartDelay: the entity starts its controllers up to that many seconds late
                 double delay = e.Number("RandomStartDelay");
                 if (delay > 0) player.Seek(rng.NextDouble() * Math.Min(delay, player.CurrentAnimationLength), true);
-                Animated++;
+                // a static entity is updated once when it is added (FieldBuilder.IsStatic): its nodes hold that pose
+                if (frozen) { player.Seek(player.CurrentAnimationPosition, true); player.Pause(); Frozen++; }
+                else Animated++;
             }
         }
         return root;
@@ -71,7 +76,7 @@ public sealed class FieldProps
     /// worldservice_1.cpp:3637-3638), whose SetShadowCaster also skips "NoShadow"-tagged subtrees (ModelMesh.NoShadow).</param>
     /// <param name="receives">The entity takes the sun's shadow (ShadowReceivers); else every mesh's ms2_receive is 0, as in
     /// FieldBuilder.</param>
-    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives)
+    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives, bool frozen)
     {
         var root = new Node3D { Name = name.ValidateNodeName() };
         var model = new Node3D { Name = "Model", Transform = ModelBuilder.ToGodot(md.RootLocal) };
@@ -84,7 +89,7 @@ public sealed class FieldProps
         for (int mi = 0; mi < md.Meshes.Count; mi++)
         {
             var m = md.Meshes[mi];
-            var inst = new MeshInstance3D { Name = $"m{mi}", Mesh = Mesh(md, mi, col) };
+            var inst = new MeshInstance3D { Name = $"m{mi}", Mesh = Mesh(md, mi, col, frozen) };
             if (!casts || m.NoShadow) inst.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             if (!receives) inst.SetInstanceShaderParameter(ReceiveParam, 0f);
             var skin = m.Skinned ? ModelBuilder.SkinOf(md, m) : null;
@@ -152,9 +157,10 @@ public sealed class FieldProps
     }
 
     /// <summary>The field mesh with the entity's material colour as the vertex COLOR (field_lit reads the material from COLOR).</summary>
-    ArrayMesh Mesh(ModelData md, int mi, Color col)
+    ArrayMesh Mesh(ModelData md, int mi, Color col, bool frozen)
     {
-        if (meshes.TryGetValue((md, mi, col), out var mesh)) return mesh;
+        frozen &= md.Meshes[mi].AnimatesMaterial;
+        if (meshes.TryGetValue((md, mi, col, frozen), out var mesh)) return mesh;
         var m = md.Meshes[mi];
         var src = builder.BuildMesh(m, skin: m.Skinned, instanceColor: true);
         var arrays = src.SurfaceGetArrays(0);
@@ -167,6 +173,7 @@ public sealed class FieldProps
         mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Godot.Mesh.PrimitiveType.Triangles, arrays, null, null, (Godot.Mesh.ArrayFormat)format);
         mesh.SurfaceSetMaterial(0, src.SurfaceGetMaterial(0));
-        return meshes[(md, mi, col)] = mesh;
+        if (frozen) ModelBuilder.Freeze(mesh, freezeAt);
+        return meshes[(md, mi, col, frozen)] = mesh;
     }
 }
