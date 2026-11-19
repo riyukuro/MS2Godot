@@ -769,6 +769,8 @@ public partial class MaskShape : Node2D
 {
     List<Vector2[]> polys = new();
 
+    Rect2? box;
+
     public MaskShape() { ClipChildren = ClipChildrenMode.Only; }
 
     /// <summary>The mask's polygons this frame; redrawn only when they changed (then true).</summary>
@@ -778,12 +780,39 @@ public partial class MaskShape : Node2D
         for (int i = 0; same && i < p.Count; i++) same = p[i].AsSpan().SequenceEqual(polys[i]);
         if (same) return false;
         polys = p;
+        // A mask that is one axis-aligned rectangle clips with the canvas item's clip rectangle instead of clip_children:
+        // Godot does not nest clip_children (an inner one draws its polygons as plain white shapes over the content), and
+        // a list's row masks sit inside the list's own mask. The clip rectangle nests and covers the same pixels.
+        box = p.Count == 1 ? AxisRect(p[0]) : null;
+        ClipChildren = box == null ? ClipChildrenMode.Only : ClipChildrenMode.Disabled;
+        var item = GetCanvasItem();
+        RenderingServer.CanvasItemSetCustomRect(item, box != null, box ?? default);
+        RenderingServer.CanvasItemSetClip(item, box != null);
         QueueRedraw();
         return true;
     }
 
+    /// <summary>The rectangle a polygon outlines when it is one axis-aligned rectangle (a closing point allowed), else null.</summary>
+    static Rect2? AxisRect(Vector2[] poly)
+    {
+        int n = poly.Length;
+        if (n == 5 && poly[4] == poly[0]) n = 4;
+        if (n != 4) return null;
+        float x0 = Math.Min(Math.Min(poly[0].X, poly[1].X), Math.Min(poly[2].X, poly[3].X)), x1 = Math.Max(Math.Max(poly[0].X, poly[1].X), Math.Max(poly[2].X, poly[3].X));
+        float y0 = Math.Min(Math.Min(poly[0].Y, poly[1].Y), Math.Min(poly[2].Y, poly[3].Y)), y1 = Math.Max(Math.Max(poly[0].Y, poly[1].Y), Math.Max(poly[2].Y, poly[3].Y));
+        for (int i = 0; i < 4; i++)
+        {
+            var a = poly[i]; var b = poly[(i + 1) % 4];
+            if (a.X != x0 && a.X != x1 || a.Y != y0 && a.Y != y1) return null;   // every corner on the box's corners
+            if (a.X != b.X && a.Y != b.Y) return null;                          // every edge horizontal or vertical
+        }
+        if (x1 <= x0 || y1 <= y0) return null;
+        return new Rect2(x0, y0, x1 - x0, y1 - y0);
+    }
+
     public override void _Draw()
     {
+        if (box != null) return;
         foreach (var poly in polys)
             if (poly.Length >= 3 && Geometry2D.TriangulatePolygon(poly).Length > 0) DrawColoredPolygon(poly, Colors.White);
     }
