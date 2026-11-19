@@ -102,6 +102,8 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots") quickSlotShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--quickslots-player") quickSlotPlayer = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--shop") shopShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--ui-folder" && args[i + 1].Split(',') is [var acct, var chr])
+            CharacterFolder.Shot = new CharacterFolder(long.Parse(acct), long.Parse(chr));   // the dialogs' saved positions
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }

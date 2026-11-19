@@ -16,9 +16,12 @@ public sealed class CharacterFolder : ICharacterFolder
     public CharacterFolder(long accountId, long characterId) =>
         dir = $"user://Config/{(ulong)accountId}/{(ulong)characterId}";
 
-    /// <summary>The chosen character's folder; null when a scene runs without a chosen character.</summary>
+    /// <summary>A hud shot's folder (--ui-folder account,character), for a scene without a chosen character.</summary>
+    public static CharacterFolder Shot;
+
+    /// <summary>The chosen character's folder; else the shot's; null when a scene runs without either.</summary>
     public static CharacterFolder ForChosen() =>
-        Session.Chosen?.User is { } u ? new CharacterFolder(u.AccountId, u.CharacterId) : null;
+        Session.Chosen?.User is { } u ? new CharacterFolder(u.AccountId, u.CharacterId) : Shot;
 
     public string Read(string file)
     {
