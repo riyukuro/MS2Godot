@@ -734,6 +734,7 @@ namespace Ms2.Avm2.Flash
             cls ??= RT.GetClass("flash.display.MovieClip");
             AsDisplayObject root = null;
             RT.Guard("construct loaded movie " + key, () => root = (AsDisplayObject)ConstructInto(cls, l, sc, rootSym, null, 0));
+            AsTransform.InitFov(root);      // SetFOV(55) on a movie a Loader loads (sfr_as3_18.cpp:8135, 8494)
             if (root != null && OnStage(l)) EnterStage(root);
             RunFrameScripts();
             return root;

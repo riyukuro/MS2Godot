@@ -24,12 +24,18 @@ public class AsPerspectiveProjection : AsObject
         if (x != 0 && y != 0) { cx = (float)x; cy = (float)y; }
     }
 
-    [As] public double fieldOfView { get => fov; set => fov = (float)value; }
-    [As] public double focalLength { get => focal; set => focal = (float)value; }
+    // The setters write through to the bound display object's perspective data (PerspectiveProjection::fieldOfViewSet,
+    // focalLengthSet, projectionCenterSet, sfr_as3_11.cpp:1519-1545: SetFOV, SetFocalLength, SetProjectionCenter).
+    [As] public double fieldOfView { get => fov; set { fov = (float)value; if (Bound != null) AsTransform.PerspectiveOf(Bound).Fov = fov; } }
+    [As] public double focalLength { get => focal; set { focal = (float)value; if (Bound != null) AsTransform.PerspectiveOf(Bound).Focal = focal; } }
     [As] public AsPoint projectionCenter
     {
         get => AsPoint.New(Class.Runtime, cx, cy);
-        set { cx = (float)value.x; cy = (float)value.y; }
+        set
+        {
+            cx = (float)value.x; cy = (float)value.y;
+            if (Bound != null) { var d = AsTransform.PerspectiveOf(Bound); d.Cx = cx; d.Cy = cy; }
+        }
     }
 
     internal double Fov { get => fov; set => fov = value; }

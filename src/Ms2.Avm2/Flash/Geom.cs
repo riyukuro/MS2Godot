@@ -203,6 +203,7 @@ public class AsTransform : AsObject
 {
     internal AsDisplayObject Owner;
     [AsCtor] void Ctor(object[] a) { Owner = a.Length > 0 ? a[0] as AsDisplayObject : null; }
+    // Not nulled in 3D: Transform::matrixGet/Set keep working on the 2D matrix of a 3D object (the 3D state sits in matrix3D).
     [As] public AsMatrix matrix { get => AsMatrix.New(Class.Runtime, Owner?.Matrix ?? Mat.Identity); set { if (Owner != null && value != null) { Owner.Matrix = value.M; Owner.ScriptMoved(); } } }
     [As] public AsColorTransform colorTransform
     {
@@ -211,8 +212,15 @@ public class AsTransform : AsObject
     }
     [As] public AsMatrix concatenatedMatrix => AsMatrix.New(Class.Runtime, Owner?.ToGlobalMatrix() ?? Mat.Identity);
     [As] public AsColorTransform concatenatedColorTransform => colorTransform;
-    // The per-object perspective data a Transform.perspectiveProjection assignment leaves on the display object.
-    static readonly ConditionalWeakTable<AsDisplayObject, AsPerspectiveProjection> perspective = new();
+    // The display object's perspective data (PerspectiveDataType): field of view, focal length and projection centre, 0 until set.
+    internal sealed class PerspData { public double Fov, Focal, Cx, Cy; }
+    static readonly ConditionalWeakTable<AsDisplayObject, PerspData> perspective = new();
+
+    /// <summary>The object's perspective data, made when missing (DisplayObjectBase::SetFOV, SetFocalLength, SetProjectionCenter, sfr_gfx_06.cpp:1045-1645).</summary>
+    internal static PerspData PerspectiveOf(AsDisplayObject o) => perspective.GetValue(o, _ => new PerspData());
+
+    /// <summary>SetFOV(55) on the root movie and on a movie loaded by a Loader (sfr_as3_17d.cpp:741, sfr_as3_18.cpp:8135, 8494).</summary>
+    public static void InitFov(AsDisplayObject o) { if (o != null) PerspectiveOf(o).Fov = 55; }
 
     /// <summary>The object's perspective data as a new PerspectiveProjection bound to it, or null when none was set
     /// (Transform::perspectiveProjectionGet, @0x14248bcc0). On the root with no centre the centre is the middle of the
@@ -222,19 +230,18 @@ public class AsTransform : AsObject
         get
         {
             if (Owner == null) return null;
-            double fov0, focal0; (double X, double Y) ctr0;
-            if (perspective.TryGetValue(Owner, out var d0)) { fov0 = d0.Fov; focal0 = d0.Focal; ctr0 = d0.Center; }
-            // The root movie (and every loaded sprite) starts with a 55 degree field of view, so it always has perspective data
-            // (sfr_as3_17d.cpp, sfr_as3_18.cpp).
-            else if (Owner == Owner.P?.Root) { fov0 = 55; focal0 = 0; ctr0 = (0, 0); }
-            else return null;
-            var d = (Fov: fov0, Focal: focal0, Center: ctr0);
+            // The root movie starts with a 55 degree field of view, so it always has perspective data.
+            if (!perspective.TryGetValue(Owner, out var d))
+            {
+                if (Owner != Owner.P?.Root) return null;
+                d = PerspectiveOf(Owner); d.Fov = 55;
+            }
             var rt = Class.Runtime;
-            var pp = (AsPerspectiveProjection)rt.GetClass("flash.geom.PerspectiveProjection").Construct(d.Fov, d.Focal, d.Center.X, d.Center.Y);
+            var pp = (AsPerspectiveProjection)rt.GetClass("flash.geom.PerspectiveProjection").Construct(d.Fov, d.Focal, d.Cx, d.Cy);
             pp.Bound = Owner;
             if (Owner == Owner.P?.Root)
             {
-                if (d.Center.X == 0 && d.Center.Y == 0) pp.Center = (Owner.P.StageW / 2, Owner.P.StageH / 2);
+                if (d.Cx == 0 && d.Cy == 0) pp.Center = (Owner.P.StageW / 2, Owner.P.StageH / 2);
                 pp.Focal = pp.CalculateFocalLength(Owner.P.StageW);
             }
             return pp;
@@ -246,36 +253,58 @@ public class AsTransform : AsObject
             if (value == null || Owner == null) return;
             if (Owner.P != null) value.Focal = value.CalculateFocalLength(Owner.P.StageW);
             value.Bound = Owner;
-            perspective.AddOrUpdate(Owner, value);
+            var d = PerspectiveOf(Owner);
+            d.Fov = value.Fov; d.Focal = value.Focal; d.Cx = value.Center.X; d.Cy = value.Center.Y;
         }
     }
-    static readonly ConditionalWeakTable<AsDisplayObject, AsMatrix3D> matrix3Ds = new();
 
-    /// <summary>The object's 3D matrix (Transform::matrix3DGet, @0x14248ac20): the one last assigned, else the identity
-    /// moved to the object's position. Only the position, scale and z rotation reach the 2D display list; the runtime has no 3D scene.</summary>
+    const double TwipsPerPixel = 20;
+
+    /// <summary>The object's 3D matrix (Transform::matrix3DGet, @0x14248ac20), built from the object each read: the 2D
+    /// matrix's a, b, c, d and the position and z in twips (the getter hands the display object's twips over unconverted,
+    /// where the setter takes pixels). Only the 2D matrix, z and the 3D rotations are kept; the runtime has no 3D scene.</summary>
     [As] public AsMatrix3D matrix3D
     {
         get
         {
             if (Owner == null) return null;
-            var rt = Class.Runtime;
-            if (matrix3Ds.TryGetValue(Owner, out var stored)) return AsMatrix3D.New(rt, stored.Mat.Clone());
-            var m = Mat4.Identity(); m[0, 3] = Owner.x; m[1, 3] = Owner.y;
-            return AsMatrix3D.New(rt, m);
+            var o = Owner.Matrix;
+            var m = Mat4.Identity();
+            m[0, 0] = o.A; m[1, 0] = o.B; m[0, 1] = o.C; m[1, 1] = o.D;
+            m[0, 3] = o.Tx * TwipsPerPixel; m[1, 3] = o.Ty * TwipsPerPixel; m[2, 3] = Owner.z * TwipsPerPixel;
+            return AsMatrix3D.New(Class.Runtime, m);
         }
-        // Transform::matrix3DSet (@0x14248af20): translation, z rotation and x/y scale go to the object; null drops the 3D state.
+        // Transform::matrix3DSet (@0x14248af20): the translation (pixels, taken as twips), the rotations and the scales go to
+        // the object; null drops the 3D state. Either way the object stops following the timeline's moves.
         set
         {
             if (Owner == null) return;
-            if (value == null) { matrix3Ds.Remove(Owner); return; }
-            var m = value.Mat;
-            matrix3Ds.AddOrUpdate(Owner, AsMatrix3D.New(Class.Runtime, m.Clone()));
-            Owner.x = m[0, 3]; Owner.y = m[1, 3];
-            Owner.z = m[2, 3];
-            Owner.rotation = Math.Atan2(m[1, 0], m[0, 0]) * 180 / Math.PI;
-            Owner.scaleX = Math.Sqrt(m[0, 0] * m[0, 0] + m[1, 0] * m[1, 0] + m[2, 0] * m[2, 0]);
-            Owner.scaleY = Math.Sqrt(m[0, 1] * m[0, 1] + m[1, 1] * m[1, 1] + m[2, 1] * m[2, 1]);
+            if (value != null)
+            {
+                var m = value.Mat;
+                // Matrix3F m(m4); m.Tx() = PixelsToTwips(...): float twips, stored as int twips
+                double tx = (int)(float)(m[0, 3] * TwipsPerPixel), ty = (int)(float)(m[1, 3] * TwipsPerPixel), tz = (int)(float)(m[2, 3] * TwipsPerPixel);
+                double xs = Math.Sqrt(m[0, 0] * m[0, 0] + m[1, 0] * m[1, 0] + m[2, 0] * m[2, 0]);
+                double ys = Math.Sqrt(m[0, 1] * m[0, 1] + m[1, 1] * m[1, 1] + m[2, 1] * m[2, 1]);
+                double zs = Math.Sqrt(m[0, 2] * m[0, 2] + m[1, 2] * m[1, 2] + m[2, 2] * m[2, 2]);
+                Euler(m, xs, ys, zs, out var rx, out var ry, out var rz);
+                Owner.x = tx / TwipsPerPixel; Owner.y = ty / TwipsPerPixel; Owner.z = tz / TwipsPerPixel;
+                Owner.rotation = rz * 180 / Math.PI;
+                Owner.rotationX = rx * 180 / Math.PI; Owner.rotationY = ry * 180 / Math.PI;
+                Owner.scaleX = xs; Owner.scaleY = ys; Owner.scaleZ = zs;
+            }
+            Owner.ScriptMoved();
         }
+    }
+
+    /// <summary>Matrix3x4::GetEulerAngles (render_matrix4x4.h): rotations about x, y and z of the unit-scaled matrix; near
+    /// M[1][0] = +-1 the z angle is a quarter turn and x is folded into y.</summary>
+    static void Euler(Mat4 m, double xs, double ys, double zs, out double ex, out double ey, out double ez)
+    {
+        double m00 = m[0, 0] / xs, m10 = m[1, 0] / xs, m20 = m[2, 0] / xs;
+        double m11 = m[1, 1] / ys, m02 = m[0, 2] / zs, m12 = m[1, 2] / zs, m22 = m[2, 2] / zs;
+        if (m10 > 0.998 || m10 < -0.998) { ey = Math.Atan2(m02, m22); ez = m10 > 0 ? Math.PI / 2 : -Math.PI / 2; ex = 0; return; }
+        ey = Math.Atan2(-m20, m00); ex = Math.Atan2(-m12, m11); ez = Math.Asin(m10);
     }
 
     [As] public AsRectangle pixelBounds => AsRectangle.New(Class.Runtime, Owner?.GetBounds(null) ?? RectD.None);

@@ -97,6 +97,83 @@ public class RuntimeTests
     }
 
     [Test]
+    public void NamespaceConstantIsTheNamespaceItself()
+    {
+        // A hand-built constant pool (no movie data): kind 0x16 (package namespace) as a trait constant is the namespace, so a
+        // later RTQName access qualifies by it; it used to read back as null (the public namespace).
+        var abc = new Ms2.Swf.Abc.AbcFile
+        {
+            Ints = new int[1], Uints = new uint[1], Doubles = new double[1], Strings = new[] { "", "motion_internal" },
+            Namespaces = new[] { new Ms2.Swf.Abc.Namespace { Name = "*" }, new Ms2.Swf.Abc.Namespace { Kind = 0x16, Name = "motion_internal" } },
+            NsSets = new[] { System.Array.Empty<int>() }, Multinames = new[] { new Ms2.Swf.Abc.Multiname { Kind = 0, Name = "*" } },
+            Methods = new Ms2.Swf.Abc.MethodInfo[0], Instances = new Ms2.Swf.Abc.InstanceInfo[0],
+            Classes = new Ms2.Swf.Abc.ClassInfo[0], Scripts = new Ms2.Swf.Abc.ScriptInfo[0], Hash = "namespace-constant-test",
+        };
+        var rt = new Runtime();
+        var ctx = new AbcContext(rt, abc, "test");
+        var v = ctx.Constant(0x16, 1);
+        Assert.That(v, Is.InstanceOf<AsNamespace>());
+        Assert.That(((AsNamespace)v).Ns.Uri, Is.EqualTo("motion_internal"));
+    }
+
+    [Test]
+    public void Matrix3DGetterIsLiveInTwips()
+    {
+        // Transform::matrix3DGet (sfr_as3_11.cpp:1927) builds the matrix from the object's current state on every read: a,b,c,d,
+        // then tx, ty and z in twips; it is not a stored copy. rawData reads the translation back divided by 20, so it shows pixels.
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        sp.x = 3; sp.y = 4; sp.z = 5;
+        var m = sp.transform.matrix3D;
+        Assert.That(m.rawData.Items[12], Is.EqualTo(3.0));
+        Assert.That(m.rawData.Items[13], Is.EqualTo(4.0));
+        Assert.That(m.rawData.Items[14], Is.EqualTo(5.0));
+        sp.x = 10; sp.scaleX = 2;
+        var m2 = sp.transform.matrix3D;
+        Assert.That(m2.rawData.Items[12], Is.EqualTo(10.0));
+        Assert.That(m2.rawData.Items[0], Is.EqualTo(2.0).Within(1e-9));
+    }
+
+    [Test]
+    public void Matrix3DSetKeepsRotationsAndStopsAnimMoves()
+    {
+        // Transform::matrix3DSet (sfr_as3_11.cpp:2029): rotationX/Y/Z and the three scales come from the matrix, and the script
+        // now owns the placement (also for a null set).
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        var m3 = (AsMatrix3D)rt.GetClass("flash.geom.Matrix3D").Construct();
+        m3.appendScale(1, 1, 3);
+        m3.appendRotation(30, AsVector3D.X_AXIS);
+        sp.transform.matrix3D = m3;
+        Assert.That(sp.rotationX, Is.EqualTo(30).Within(1e-4));
+        Assert.That(sp.scaleZ, Is.EqualTo(3).Within(1e-6));
+        Assert.That(sp.MatrixLocked, Is.True);
+        var other = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        other.transform.matrix3D = null;
+        Assert.That(other.MatrixLocked, Is.True);
+    }
+
+    [Test]
+    public void PerspectiveProjectionWritesBackToItsObject()
+    {
+        // The projection a Transform hands out is bound to the object: its setters change the object's own FOV, focal length
+        // and centre (PerspectiveProjection::fieldOfViewSet etc., sfr_as3_11.cpp:1519-1545).
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        AsTransform.InitFov(sp);                       // a loaded movie starts at 55 (sfr_as3_18.cpp:8135)
+        var pp = sp.transform.perspectiveProjection;
+        Assert.That(pp.fieldOfView, Is.EqualTo(55));
+        pp.fieldOfView = 90;
+        pp.projectionCenter = AsPoint.New(rt, 10, 20);
+        var again = sp.transform.perspectiveProjection;
+        Assert.That(again.fieldOfView, Is.EqualTo(90));
+        Assert.That((again.projectionCenter.x, again.projectionCenter.y), Is.EqualTo((10.0, 20.0)));
+    }
+
+    [Test]
     public void Matrix3DFollowsScaleform()
     {
         // flash.geom.Matrix3D (sfr_as3_11.cpp): undefined before, which stopped the Flash timeline helpers that build one
