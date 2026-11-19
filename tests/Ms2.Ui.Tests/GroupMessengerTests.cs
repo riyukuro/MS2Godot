@@ -201,6 +201,13 @@ public class GroupMessengerTests
         // the leave answer: the chat's removal closes its window
         b.Book.Apply(new GroupChatRemove(2));
         Assert.That(b.FindWindowByGroupId(2), Is.Null);
+        Assert.That(b.ListedWindowCount, Is.EqualTo(1));
+
+        // a chat made after the browser loaded (OnChatCreated): its window's load lists it in the browser
+        b.Book.AddChat(Chat(6));
+        b.OnChatCreated(6);
+        Assert.That(b.FindWindowByGroupId(6), Is.Not.Null);
+        Assert.That(b.ListedWindowCount, Is.EqualTo(2));
         Assert.That(bh.RT.Errors, Is.Empty);
         Assert.That(loadErrors, Is.Empty);
     }

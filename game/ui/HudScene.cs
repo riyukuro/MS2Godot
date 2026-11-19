@@ -2174,6 +2174,25 @@ public partial class HudScene : Node, IUiStageHost
         return false;
     }
 
+    /// <summary>The scripted live run's group chat: the browser movie's OnCreateDefaultGroupMessenger call (its insert button).</summary>
+    public void CreateGroupChat() => groupBrowser?.OnCallback("OnCreateDefaultGroupMessenger", System.Array.Empty<object>());
+
+    /// <summary>
+    /// The scripted live run's group chat line: in the current group window (else the last one), Return to focus the input
+    /// when it is not, the text typed, Return to send. False with no loaded group window.
+    /// </summary>
+    public bool SubmitGroupLine(string text)
+    {
+        var windows = groupBrowser?.Windows.ToList();
+        var w = windows?.FirstOrDefault(x => x.Name == ChatLog.GetCurrentName()) ?? windows?.LastOrDefault();
+        if (w?.Host == null) return false;
+        ChatLog.MakeCurrent(w.Name);
+        if (!w.InputActive) w.OnKey(Ms2.Ui.Hud.MessengerController.DikReturn, false);
+        var h = w.Host;
+        h.Set(h.Get(h.Child("m_textInput"), "textField"), "text", text);
+        return w.OnKey(Ms2.Ui.Hud.MessengerController.DikReturn, false);
+    }
+
     /// <summary>Return in the first chat window, unfocused: after a whisper the input starts the next one to its target.</summary>
     public void PressChatReturn()
     {

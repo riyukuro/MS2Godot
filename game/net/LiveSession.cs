@@ -284,6 +284,7 @@ public partial class LiveSession : Node
 
     /// <summary>CGroupChatManager's sends (GroupChat 0x4C).</summary>
     public void SendGroupChat(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    int groupChatPackets;   // the scripted run's count of GroupChat packets read
 
     /// <summary>CPartyManager::SendPartyMode2 (partymanager.cpp:743): the answer to the last invite, with its name and kind.</summary>
     public void AnswerPartyInvite(int answer)
@@ -785,6 +786,7 @@ public partial class LiveSession : Node
             {
                 var m = GroupChatMessage.Read(p.Reader());   // CGroupChatManager::OnGroupChat (@0x14137f2f0, groupchatmanager.cpp:577)
                 GroupChats.Apply(m);
+            groupChatPackets++;
                 GD.Print($"live: group chat {m.GetType().Name} ({GroupChats.ChatCount} chats)");
             }
             else if (game.Is(p, Inbound.ItemInventory))
@@ -1424,6 +1426,24 @@ public partial class LiveSession : Node
             {
                 if (line.StartsWith('~') && int.TryParse(line.AsSpan(1), out int wait)) await Frames(60 * wait);   // "~N": wait N s, then shoot
                 else if (line == "@return") { chatHud.PressChatReturn(); await Frames(30); }   // "@return": Return in the chat window
+                else if (line == "@groupcreate" && Instance != null)
+                {
+                    // "@groupcreate": the group chat browser's insert button; waits for the new chat (at most 5 s)
+                    int before = Instance.GroupChats.ChatCount;
+                    chatHud.CreateGroupChat();
+                    await Until(() => Instance == null || Instance.GroupChats.ChatCount > before, 60 * 5);
+                    GD.Print($"live: group chat create {n}: {Instance?.GroupChats.ChatCount ?? 0} chats (was {before})");
+                    await Frames(120);
+                }
+                else if (line.StartsWith("@group:") && Instance != null)
+                {
+                    // "@group:<text>": the text sent from the current group window; waits for a group chat packet (at most 5 s)
+                    int before = Instance.groupChatPackets;
+                    GD.Print($"live: group chat line {n}: {(chatHud.SubmitGroupLine(line.Substring(7)) ? "sent" : "no group window")}");
+                    await Until(() => Instance == null || Instance.groupChatPackets > before, 60 * 5);
+                    GD.Print($"live: group chat line {n}: {(Instance != null && Instance.groupChatPackets > before ? "a packet came" : "nothing came")}");
+                    await Frames(120);
+                }
                 else if (line == "@link")
                 {
                     // "@link": the first held item shift-clicked into the chat input from the inventory and sent

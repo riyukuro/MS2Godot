@@ -237,7 +237,11 @@ public sealed class GroupMessengerBrowserController : UiController, IGroupMessen
         var list = windows.Values.Select(w => (object)Host.Obj(("number", (uint)GetReadLineCount(w.GroupId)),
             ("name", w.Name), ("minimize", w.Minimized ? 1 : 0))).ToArray();
         Host.Invoke("setData", (object)list);
+        ListedWindowCount = list.Length;
     }
+
+    /// <summary>The windows in the last list sent to the movie.</summary>
+    public int ListedWindowCount { get; private set; }
 
     /// <summary>FindFreeWindowSlot (@0x141952900, :1898): the first of slots 0 to 2 no window holds, else 3.</summary>
     public int FindFreeWindowSlot()
@@ -282,6 +286,9 @@ public sealed class GroupMessengerBrowserController : UiController, IGroupMessen
     /// OpenChatWindow (@0x141952d80, :1975): none past 3 windows or without the chat; the chat's old window closed, then a new one in the
     /// free slot (with <paramref name="deleteSave"/> its file dropped) opened, and with <paramref name="deleteSave"/>
     /// minimized or not; kept in the slot when it opened.
+    /// The client's open (vfunc_65) only asks for the movie, whose load (OnLoadComplete, then RefreshWindow and the browser's
+    /// <see cref="RefreshWindowList"/>, :1129) ends after the window is in its slot. Here <see cref="OpenWindow"/> loads it
+    /// at once, so the window is put in the slot first and taken out again when it did not open.
     /// </summary>
     public bool OpenChatWindow(int gid, bool deleteSave, bool minimized)
     {
@@ -290,9 +297,9 @@ public sealed class GroupMessengerBrowserController : UiController, IGroupMessen
         CloseGroupWindow(gid);
         int slot = FindFreeWindowSlot();
         var w = new GroupMessengerController(this, gid, slot, deleteSave);
-        if (!OpenWindow(w)) return false;
-        if (deleteSave) w.SetMinimized(minimized);
         windows[slot] = w;
+        if (!OpenWindow(w)) { windows.Remove(slot); return false; }
+        if (deleteSave) w.SetMinimized(minimized);
         return true;
     }
 
