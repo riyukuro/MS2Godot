@@ -23,10 +23,19 @@ public static class DataCache
     static string storeData;
     static CacheStore store;
 
+    // The caches are in place before the first archive opens (the Xml index is read before any UI asset exists), whichever
+    // scene the game starts in. Only the hooks are set here; nothing is read or hashed until a pack set asks.
+    // (CA2255 is for libraries; this assembly is the game Godot loads.)
+#pragma warning disable CA2255
+    [System.Runtime.CompilerServices.ModuleInitializer]
+    internal static void Init() => UiCode.UseCaches();
+#pragma warning restore CA2255
+
     /// <summary>Points the tables the libraries read once per pack set (<see cref="CacheStore.Of"/>) at this install's store.</summary>
     public static void Use()
     {
         CacheStore.Of = p => Store(p.DataDir);
+        CacheStore.HashOf = f => UiCode.Stamps.Hash(f);
         CacheStore.Logged = Log;
     }
 
@@ -115,7 +124,14 @@ public static class DataCache
         if (FieldMissions.BuildCache(packs, quests.Languages, quests.Locale, quests.FeaturesOff, s)) built.Add("missions");
         progress?.Invoke(phase, 0.9);
         if (Ms2.Ui.GameTables.BuildCache(packs, quests.Language, s)) built.Add("gametables");
-        progress?.Invoke(phase, 1);
+        progress?.Invoke(phase, 0.95);
+        // the archives' file lists (each keyed by its own index file): a session opens them from these, not the .m2h
+        var archives = PackIndex.Archives(packs.DataDir).ToList();
+        for (var i = 0; i < archives.Count; i++)
+        {
+            if (PackIndex.BuildCache(archives[i], System.IO.Path.Combine(packs.DataDir, archives[i] + ".m2d"), s)) built.Add("index " + archives[i]);
+            progress?.Invoke(phase, 0.95 + 0.05 * (i + 1) / archives.Count);
+        }
         return built;
     }
 }

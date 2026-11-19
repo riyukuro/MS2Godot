@@ -23,9 +23,9 @@ public sealed class PackSet : IDisposable
 
     sealed class Archive
     {
-        public M2dReader Reader;
+        public M2dReader Reader;                          // the package's reader, opened only for a read that falls back to it
         public string Path;
-        public Dictionary<string, PackFileEntry> ByName;
+        public Dictionary<string, PackIndex.Entry> ByName;
         public Dictionary<string, string> ByBaseName;     // lower-case file name -> entry name (first wins)
         public SafeFileHandle Handle;                     // the archive file, opened on the first read of its own
     }
@@ -67,19 +67,17 @@ public sealed class PackSet : IDisposable
             lock (gate) if (open.TryGetValue(archive, out var done)) return done;
             var path = Path.Combine(DataDir, archive.Replace('\\', '/') + ".m2d");
             if (!File.Exists(path)) throw new FileNotFoundException("archive not found", path);
-            var r = new M2dReader(path);
+            var entries = PackIndex.Load(this, archive, path);
             var a = new Archive
             {
-                Reader = r,
                 Path = path,
-                ByName = new Dictionary<string, PackFileEntry>(StringComparer.OrdinalIgnoreCase),
+                ByName = new Dictionary<string, PackIndex.Entry>(entries.Length, StringComparer.OrdinalIgnoreCase),
                 ByBaseName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             };
-            foreach (var e in r.Files)
+            foreach (var e in entries)
             {
-                var name = e.Name.Replace('\\', '/');
-                a.ByName[name] = e;
-                a.ByBaseName.TryAdd(Path.GetFileName(name), name);
+                a.ByName[e.Name] = e;
+                a.ByBaseName.TryAdd(Path.GetFileName(e.Name), e.Name);
             }
             lock (gate) open[archive] = a;
             return a;
@@ -105,7 +103,7 @@ public sealed class PackSet : IDisposable
         var a = Get(archive);
         if (!a.ByName.TryGetValue(entry.Replace('\\', '/'), out var e))
             throw new FileNotFoundException($"{entry} not in {archive}");
-        if (((uint)e.FileHeader.BufferFlag & XorFlag) == XorFlag) return ReadXor(a, e);
+        if (((uint)e.BufferFlag & XorFlag) == XorFlag) return ReadXor(a, e);
         return ReadPlain(a, e);
     }
 
@@ -159,9 +157,9 @@ public sealed class PackSet : IDisposable
         catch (Exception) { return Miss(); }
     }
 
-    byte[] ReadPlain(Archive a, PackFileEntry e)
+    byte[] ReadPlain(Archive a, PackIndex.Entry e)
     {
-        var h = e.FileHeader;
+        var h = e;
         try
         {
             if (!noDecrypt)
@@ -199,10 +197,14 @@ public sealed class PackSet : IDisposable
         return Fallback(a, e);
     }
 
-    byte[] Fallback(Archive a, PackFileEntry e)
+    byte[] Fallback(Archive a, PackIndex.Entry e)
     {
         Interlocked.Increment(ref Fallbacks);
-        lock (gate) return a.Reader.GetBytes(e);
+        lock (gate)
+        {
+            a.Reader ??= new M2dReader(a.Path);
+            return a.Reader.GetBytes(PackIndex.PackageEntry(a.Reader, e));
+        }
     }
 
     // Encryption.Xor (0xff000000) contains the Aes bits (0xee000000), so the reader's decrypt takes such entries for
@@ -211,9 +213,9 @@ public sealed class PackSet : IDisposable
     const uint XorFlag = 0xff000000, ZlibFlag = 9;
     static MethodInfo encryptXor;
 
-    static byte[] ReadXor(Archive a, PackFileEntry e)
+    static byte[] ReadXor(Archive a, PackIndex.Entry e)
     {
-        var h = e.FileHeader;
+        var h = e;
         var buf = new byte[h.EncodedFileSize];
         using (var fs = new FileStream(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
@@ -245,7 +247,7 @@ public sealed class PackSet : IDisposable
     {
         lock (gate)
         {
-            foreach (var a in open.Values) { a.Reader.Dispose(); a.Handle?.Dispose(); }
+            foreach (var a in open.Values) { a.Reader?.Dispose(); a.Handle?.Dispose(); }
             open.Clear();
         }
     }

@@ -26,6 +26,9 @@ public sealed class CacheStore
     /// <summary>Told each <see cref="Load{T}"/> outcome (the game's perf log).</summary>
     public static Action<Outcome> Logged;
 
+    /// <summary>The SHA-1 (lower-case hex) of a client file (set by the game, which remembers it per file; null keys nothing by file).</summary>
+    public static Func<string, string> HashOf;
+
     /// <summary>
     /// <see cref="Get{T}"/> on the store of <paramref name="packs"/> (<see cref="Of"/>), or <paramref name="parse"/> when it
     /// has none: for the tables read once per pack set inside the libraries.
@@ -54,8 +57,9 @@ public sealed class CacheStore
 
     public byte[] Read(string piece, string key) => CacheFile.Read(PathOf(piece, key), key);
 
-    /// <summary>Writes the piece's file, then removes the piece's files of other builds (those of other configurations stay).</summary>
-    public void Write(string piece, string key, ReadOnlySpan<byte> body)
+    /// <summary>Writes the piece's file, then removes the piece's files of other builds (and of other configurations when
+    /// <paramref name="onlyConfig"/>: a piece whose configuration is the hash of its input has one current file).</summary>
+    public void Write(string piece, string key, ReadOnlySpan<byte> body, bool onlyConfig = false)
     {
         var path = PathOf(piece, key);
         CacheFile.Write(path, key, body);
@@ -64,7 +68,7 @@ public sealed class CacheStore
         {
             if (f == path) continue;
             var k = CacheFile.KeyOf(f);
-            if (k == null || k.Split('|') is not { Length: >= 3 } p || p[0] != piece || p[1] != build)
+            if (k == null || k.Split('|') is not { Length: >= 3 } p || p[0] != piece || p[1] != build || onlyConfig)
                 try { File.Delete(f); } catch (IOException) { }
         }
     }
@@ -84,7 +88,15 @@ public sealed class CacheStore
     /// The piece from its cache file, else from <paramref name="parse"/> (and the file is written for the next session).
     /// <paramref name="wire"/> sets what a snapshot does not hold (the functions over the table's data) on a read table.
     /// </summary>
-    public T Get<T>(string piece, string config, string build, Func<T> parse, Action<T> wire, out Outcome outcome) where T : class
+    public T Get<T>(string piece, string config, string build, Func<T> parse, Action<T> wire, out Outcome outcome) where T : class =>
+        Get(piece, config, build, parse, t => Snapshot.Write(t), b => { var t = Snapshot.Read<T>(b); wire(t); return t; },
+            (a, b) => Snapshot.Diff(a, b), out outcome);
+
+    /// <summary><see cref="Get{T}(string,string,string,Func{T},Action{T},out Outcome)"/> with the piece's own file format:
+    /// <paramref name="write"/> makes the body, <paramref name="read"/> reads it back (throwing InvalidDataException on a
+    /// body it can't read), <paramref name="diff"/> gives the first difference of two tables or null.</summary>
+    public T Get<T>(string piece, string config, string build, Func<T> parse, Func<T, byte[]> write, Func<byte[], T> read,
+        Func<T, T, string> diff, out Outcome outcome, bool onlyConfig = false) where T : class
     {
         outcome = new Outcome { Piece = piece };
         var mode = Mode;
@@ -95,7 +107,7 @@ public sealed class CacheStore
         var body = Read(piece, key);
         if (body != null)
         {
-            try { cached = Snapshot.Read<T>(body); wire(cached); outcome.Bytes = body.Length; }
+            try { cached = read(body); outcome.Bytes = body.Length; }
             catch (Exception e) when (e is InvalidDataException or InvalidCastException or ArgumentException or TypeLoadException)
             { cached = null; outcome.Diff = "unreadable: " + e.Message; }
         }
@@ -107,16 +119,16 @@ public sealed class CacheStore
         if (cached != null)
         {
             outcome.Source = "check";
-            outcome.Diff = Snapshot.Diff(cached, fresh);
+            outcome.Diff = diff(cached, fresh);
             return cached;
         }
         outcome.Source = "parse";
         sw.Restart();
         try
         {
-            var bytes = Snapshot.Write(fresh);
+            var bytes = write(fresh);
             Directory.CreateDirectory(Dir);
-            Write(piece, key, bytes);
+            Write(piece, key, bytes, onlyConfig);
             outcome.Bytes = bytes.Length;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { outcome.Diff = "not written: " + e.Message; }
@@ -125,13 +137,17 @@ public sealed class CacheStore
     }
 
     /// <summary>Builds the piece's file when it is not there (the setup step); true when it was built.</summary>
-    public bool Ensure<T>(string piece, string config, string build, Func<T> parse) where T : class
+    public bool Ensure<T>(string piece, string config, string build, Func<T> parse) where T : class =>
+        Ensure(piece, config, build, parse, t => Snapshot.Write(t));
+
+    /// <summary><see cref="Ensure{T}(string,string,string,Func{T})"/> with the piece's own file format.</summary>
+    public bool Ensure<T>(string piece, string config, string build, Func<T> parse, Func<T, byte[]> write, bool onlyConfig = false) where T : class
     {
         var key = Key(piece, config, build);
         if (Has(piece, key)) return false;
-        var bytes = Snapshot.Write(parse());
+        var bytes = write(parse());
         Directory.CreateDirectory(Dir);
-        Write(piece, key, bytes);
+        Write(piece, key, bytes, onlyConfig);
         return true;
     }
 }
