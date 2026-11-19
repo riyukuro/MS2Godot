@@ -198,6 +198,9 @@ public sealed class MyCharacter {
     public IReadOnlyList<EquipItem> Equips, Outfit2, Gems;
     public readonly StatPointBook StatPoints = new();
     public event Action Changed;
+    /// <summary>A put-on / put-off changed the equip lists (before <see cref="Changed"/>): the item event dispatcher's
+    /// put-on / put-off (Unk_SSGItemHub vfunc_20 / vfunc_21, scenestategame.cpp:3117 / 3162).</summary>
+    public event Action EquipChanged;
 
     /// <summary>The own FieldAddUser: object id, user block, the title (PC::FUN_141661c00 = m_n10f4) and the architect score
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
@@ -294,7 +297,10 @@ public sealed class MyCharacter {
     /// only an item with a model preset: <paramref name="wornLayer"/> gives the item's layer (CItem::FUN_14052a170 without
     /// a variant) or null when the item is unknown or has no preset. CEquipment::FUN_1411ec190 puts the item into the
     /// slots of its model groups at its layer; here the item replaces the one in the same slot and layer (the multi-slot
-    /// groups of a model are not modelled). Returns whether the lists changed.
+    /// groups of a model are not modelled). The item goes after the last one of its layer or a lower one, so the list keeps
+    /// FieldAddUser's order (gear, then outfits) and a look built from it in order shows each slot's top layer
+    /// (CEquipment::GetTopLayerItem @0x1411e1a50, equipment.cpp:835: layer 2, then 1, then 0). Returns whether the lists
+    /// changed.
     /// </summary>
     public bool Apply(ItemPutOn p, Func<int, int?> wornLayer) {
         if (User == null || p.ObjectId != ObjectId || p.Kind > 2) return false;
@@ -304,8 +310,10 @@ public sealed class MyCharacter {
         bool Keep(EquipItem e, bool outfit2) => !(e.Slot == p.Item.Slot && LayerOf(e, outfit2) == layer);
         var equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => Keep(e, false)).ToList();
         var outfit = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => Keep(e, true)).ToList();
-        (layer == 2 ? outfit : equips).Add(p.Item);
+        if (layer == 2) outfit.Add(p.Item);
+        else equips.Insert(equips.FindLastIndex(e => (wornLayer(e.Id) ?? 0) <= layer) + 1, p.Item);
         Equips = equips; Outfit2 = outfit;
+        EquipChanged?.Invoke();
         Changed?.Invoke();
         return true;
     }
@@ -321,6 +329,7 @@ public sealed class MyCharacter {
         if (item == null || wornLayer(item.Id) == null) return false;
         Equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
         Outfit2 = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
+        EquipChanged?.Invoke();
         Changed?.Invoke();
         return true;
     }

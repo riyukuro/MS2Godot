@@ -98,6 +98,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     PcInfo info;           // m_spInfo
     int tab;               // m_nTab
     bool dirty;            // m_208 (profile at the next vfunc_15)
+    bool bagDirty;         // m_20c (and the bag with it)
     long statsDueMs = -1;  // m_218 (the stat lists 100 ms later)
 
     public PcInfo Info => info;
@@ -188,7 +189,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         info = null;
         if (Requests != null) Requests.Info = null;           // UIPCInfoDialog::vfunc_67: m_spInfo = 0
         tab = 0;
-        dirty = false; statsDueMs = -1;
+        dirty = false; bagDirty = false; statsDueMs = -1;
         base.Close();
     }
 
@@ -201,16 +202,27 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         statsDueMs = nowMs + 100;
     }
 
-    /// <summary>vfunc_15 (@0x141a593e0): RebuildPCInfo(1, 0, 0) when marked, RebuildPCInfo(0, 1, 0) when the timer ran out.</summary>
+    /// <summary>MarkDirty (@0x141a5a5c0), and the item event dispatcher's put-on / put-off (vfunc_21 @0x141a59bd0,
+    /// vfunc_22 @0x141a59cf0): <see cref="MarkChanged"/> and m_20c, so the next vfunc_15 builds the equip / gem bag again.</summary>
+    public void MarkDirty(long nowMs)
+    {
+        if (IsClosed) return;
+        MarkChanged(nowMs);
+        bagDirty = true;
+    }
+
+    /// <summary>vfunc_15 (@0x141a593e0): RebuildPCInfo(1, 0, m_20c) when marked, RebuildPCInfo(0, 1, 0) when the timer ran
+    /// out.</summary>
     public void Process(long nowMs)
     {
         if (IsClosed || Host.Entity == null || PcInfoDialog) return;
-        if (dirty) { Rebuild(true, false); dirty = false; }
+        if (dirty) { Rebuild(true, false, bagDirty); dirty = false; bagDirty = false; }
         if (statsDueMs >= 0 && nowMs >= statsDueMs) { Rebuild(false, true); statsDueMs = -1; }
     }
 
-    /// <summary>RebuildPCInfo (@0x141a5ab10): a new record from MyPC::vfunc_125, then vfunc_84 and / or vfunc_86.</summary>
-    void Rebuild(bool profile, bool stats)
+    /// <summary>RebuildPCInfo (@0x141a5ab10): a new record from MyPC::vfunc_125, then vfunc_84, vfunc_86 and / or vfunc_88
+    /// (the bag of the shown tab).</summary>
+    void Rebuild(bool profile, bool stats, bool bag = false)
     {
         if (info == null) return;
         var r = Record?.Invoke();
@@ -218,6 +230,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         info = r;
         if (profile) Profile();
         if (stats) Stats();
+        if (bag) Bag(tab);
     }
 
     // ---- vfunc_84: the profile -------------------------------------------------------------------------------------
@@ -690,6 +703,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         }
         ShownBag = t == 2 ? GemBagName : EquipBagName;
         Host.Set(Host.Entity, "equipBagID", ShownBag);       // a setter only: it reads GameDataModel.getBagSlotBindings
+        // the new bag's slots notify their bindings (NotifyBinding): the slots already bound show the new record
+        foreach (var name in GetBagSlotBindings(ShownBag)) Host.Push(name);
     }
 
     PcInfo equipBagRecord, gemBagRecord;

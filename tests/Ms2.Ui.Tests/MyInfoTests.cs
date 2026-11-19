@@ -143,6 +143,30 @@ public class MyInfoTests
     }
 
     [Test]
+    public void PutOffBuildsTheEquipBagAgain()
+    {
+        var t = new GameTables(Packs(), "en");
+        var (h, c, me, errors) = Load();
+        Assert.That(errors, Is.Empty);
+        string rh = MyInfoController.EquipBag + ".5";
+        Assert.That(c.GetBinding(rh), Is.Not.Null);
+        int equipChanges = 0;
+        me.EquipChanged += () => equipChanges++;
+        long uid = me.Equips.First(e => e.Slot == EquipSlot.RH).Uid;
+        Assert.That(me.Apply(new ItemPutOff(me.ObjectId, uid), t.Items.WornLayer), Is.True);
+        Assert.That(equipChanges, Is.EqualTo(1));
+        // FUN_141a5a560 alone (a stat or trophy change) keeps the bag's record: RebuildPCInfo(1, 0, 0)
+        c.MarkChanged(0);
+        c.Process(0);
+        Assert.That(c.GetBinding(rh), Is.Not.Null);
+        // the put-off (vfunc_22) also sets m_20c: RebuildPCInfo(1, 0, 1) builds the bag over the new record
+        c.MarkDirty(16);
+        c.Process(16);
+        Assert.That(c.GetBinding(rh), Is.Null);
+        Assert.That(c.ShownBag, Is.EqualTo(MyInfoController.EquipBag));
+    }
+
+    [Test]
     public void SymbolButtonIsTheOwnSymbol()
     {
         Packs();
@@ -1008,6 +1032,9 @@ public class MyInfoTests
         Assert.That(changes, Is.EqualTo(4));
         // the character window's record has the new list
         Assert.That(Uids(me.ToPcInfo(0).Equips), Is.EqualTo(new long[] { 3001 }));
+        // a gear item (layer 0) goes before the outfits, so the look built in list order shows the outfit on top
+        Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 15000001, Uid = 2001, Slot = EquipSlot.RH, Rarity = 1, Amount = 1 }), layer), Is.True);
+        Assert.That(me.Equips.Select(e => e.Uid), Is.EqualTo(new long[] { 2001, 3001 }));
     }
 
     [Test]

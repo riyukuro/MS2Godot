@@ -1675,12 +1675,13 @@ public partial class HudScene : Node, IUiStageHost
         c.ProfileImagePath = pc => Ms2Godot.Net.ProfileImageService.Images.Path(pc.CharacterId, pc.Picture, true);
         BindBoxAnswers();
         void Changed() => c.MarkChanged((long)Time.GetTicksMsec());
-        me.Changed += Changed; me.StatPoints.Changed += Changed;
+        void EquipChanged() => c.MarkDirty((long)Time.GetTicksMsec());
+        me.Changed += Changed; me.StatPoints.Changed += Changed; me.EquipChanged += EquipChanged;
         if (live != null) live.AchievesChanged += Changed;
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.Unloaded += () =>
         {
-            me.Changed -= Changed; me.StatPoints.Changed -= Changed;
+            me.Changed -= Changed; me.StatPoints.Changed -= Changed; me.EquipChanged -= EquipChanged;
             if (live != null) live.AchievesChanged -= Changed;
             m.Host.Unload();
             m.QueueFree();
