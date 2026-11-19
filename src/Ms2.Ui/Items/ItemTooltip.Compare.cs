@@ -126,6 +126,29 @@ public sealed partial class ItemTooltip
     static long ScaleValue(long value, float rate) => (long)((double)value * (double)rate + 0.000001);
 
     /// <summary>
+    /// CItemStatus::GetStatValue(stat, 3, sub) (itemsocketsystemutil.cpp:1900): the option group sub's value (sub 5: the
+    /// five groups, SumStatValue), plus the enchant option and the limit break option (UnlimitedEnchantInfo::FindOption),
+    /// each for a ratio stat as ScaleValue of the group 0 value (GetStatValue(stat, 0, 0)) by its rate, value / 1000. 0
+    /// without a record (no status).
+    /// </summary>
+    static int StatusValue(Item item, int s, int sub)
+    {
+        var rec = item.Record;
+        if (rec == null) return 0;
+        int v = 0;
+        if (sub == 5) { foreach (var g in rec.Options.Stat) if (g.TryGetValue(s, out var x)) v += x; }
+        else if (rec.Options.Stat[sub].TryGetValue(s, out var x)) v += x;
+        int b = rec.Options.Stat[0].TryGetValue(s, out var b0) ? b0 : 0;
+        if (rec.Enchant.Options.TryGetValue(s, out var e))
+            v += IsRatioStat(s) ? (int)ScaleValue(b, e / 1000.0f) : e;
+        if (rec.LimitBreak.Stat.TryGetValue(s, out var u))
+            v += IsRatioStat(s) ? (int)ScaleValue(b, u / 1000.0f) : u;
+        return v;
+    }
+
+    static int StatusValue(Item item, int s) => StatusValue(item, s, 0);
+
+    /// <summary>
     /// MyPC::FUN_141531470 (mypc.cpp:1545): nothing for no items. Per item its level (CItem m_b0, FUN_140529070) into the
     /// score; stats 0..0x22 CItemStatus::GetStatValue(stat, 3, 5) (itemsocketsystemutil.cpp:1900: the five option groups,
     /// the enchant option and the limit break option, the last two for a ratio stat as ScaleValue of the group 0 value by
@@ -144,17 +167,7 @@ public sealed partial class ItemTooltip
             score += ItemLevels.Of(it)?.Total ?? 0;
             var rec = it.Record;
             if (rec == null) continue;                                      // GetStatus() == 0
-            for (int s = 0; s < 0x23; s++)
-            {
-                int v = 0;
-                foreach (var g in rec.Options.Stat) if (g.TryGetValue(s, out var x)) v += x;   // SumStatValue
-                int b = rec.Options.Stat[0].TryGetValue(s, out var b0) ? b0 : 0;               // GetStatValue(s, 0, 0)
-                if (rec.Enchant.Options.TryGetValue(s, out var e))
-                    v += IsRatioStat(s) ? (int)ScaleValue(b, e / 1000.0f) : e;
-                if (rec.LimitBreak.Stat.TryGetValue(s, out var u))                             // UnlimitedEnchantInfo::FindOption
-                    v += IsRatioStat(s) ? (int)ScaleValue(b, u / 1000.0f) : u;
-                stat[s] += v;
-            }
+            for (int s = 0; s < 0x23; s++) stat[s] += StatusValue(it, s, 5);
             for (int s = 1; s < 0xcf; s++)
             {
                 int v = 0;

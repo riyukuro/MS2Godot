@@ -150,18 +150,93 @@ public sealed partial class ItemTooltip
     }
 
     /// <summary>
-    /// FUN_1409d1d30 (astooltip.cpp:2367), "statDescription": flag 0x800 picks the compact FUN_1409d26d0, else the full
-    /// FUN_1409d1d80; both start with the string table's mainDescription as a { type 0, text } row and stop there (every
-    /// item has an enchant info: CItemStatus::CItemStatus, itemsocketsystemutil.cpp:1600). Not ported, so nothing is set
-    /// when the item has no mainDescription: the pet size-up level (s_word_petlevel_sizeup), the full layout's
-    /// ChatEmoticonAdd text (FUN_1409daff0) and quest-book name, the constant-stat rows (FUN_1409d4760, type 2) and the
-    /// score text (FUN_1409da1c0).
+    /// FUN_1409d1d30 (astooltip.cpp:2367), "statDescription": flag 0x800 picks the compact FUN_1409d26d0 (:2450), else the
+    /// full FUN_1409d1d80 (:2379). Both start with the string table's mainDescription as a { type 0, text } row and stop
+    /// there (every item has an enchant info: CItemStatus::CItemStatus, itemsocketsystemutil.cpp:1600); then a pet item
+    /// (the full layout stops for any pet, the compact one after the size-up row of a type 1 pet); the full layout then
+    /// stops for a ChatEmoticonAdd item (FUN_1409daff0) and a QuestStart item (CItemData::HasQuestStartFunction,
+    /// itemdata.cpp:1093); both then take the constant-stat rows (<see cref="SetConstantStat"/>) and last a score item's
+    /// text (FUN_1409da1c0).
+    /// STILL-OPEN, so nothing is set for them: the pet size-up row (s_word_petlevel_sizeup with the pet level, CPetData
+    /// m_nType is not in the port), the emoticon and quest-book text, the score text. A QuestStart item whose first
+    /// argument is 0 (FUN_1408d1fd0) goes on in the client; it is not an equip item, so only the score text would differ.
     /// </summary>
     public void SetStatDescription(Item item)
     {
-        string main = Tables.ItemDescription(item.Data.Id, "mainDescription");
-        if (main.Length > 0) Data["statDescription"] = new Dictionary<string, object> { ["type"] = 0, ["text"] = main };
+        var d = item.Data;
+        string main = Tables.ItemDescription(d.Id, "mainDescription");
+        if (main.Length > 0) { Data["statDescription"] = new Dictionary<string, object> { ["type"] = 0, ["text"] = main }; return; }
+        if (d.IsPetItem) return;                                           // STILL-OPEN, see above
+        if ((Flags & 0x800) == 0 && (d.FunctionName == "ChatEmoticonAdd" || d.FunctionName == "QuestStart")) return;
+        if (SetConstantStat(item)) return;
+        // d.IsScoreItem: FUN_1409da1c0, STILL-OPEN
     }
+
+    /// <summary>
+    /// ASTooltip::FUN_1409d4760 (astooltip.cpp:2759): the { type 2, title, extraup 0, min, max } row of the item's constant
+    /// stat. A weapon (CItemData::FUN_14053d760, itemdata.cpp:999: equip subtype 0x1e..0x22 or 0x32..0x38) shows Min
+    /// Attack's common text with min GetStatValue(0x1b, 3, 0) and max GetStatValue(0x1c, 3, 0). A gemstone (type 0xd) sets
+    /// the option group 0's first special (GetSATypeName) and then its first stat (GetStatCommonText), the later one
+    /// replacing the member (FUN_1409adbe0 is a plain set), and goes on. Then the stat of CItemData::FUN_14053f7c0
+    /// (itemdata.cpp:1857, by equip subtype) shows GetStatValue(stat, 3, 0) when not 0. Each step answers true without a
+    /// constantID (GetConstantId, itemdata.cpp:1627); a rate stat (IsStatKindTwo / FUN_14081dcd0) shows
+    /// FormatRatePercent(value / 1000), else FormatInt.
+    /// </summary>
+    bool SetConstantStat(Item item)
+    {
+        var d = item.Data;
+        var o = Tables.ItemOptions;
+        void Row(string title, string min, string max) => Data["statDescription"] = new Dictionary<string, object>
+            { ["type"] = 2, ["title"] = title, ["extraup"] = 0, ["min"] = min, ["max"] = max };
+        string Value(bool rate, long v) => rate ? RatePercent(v / 1000.0f) : IntText((int)v);
+        if (d.Type == 1 && d.EquipSubtype is >= 0x1e and <= 0x22 or >= 0x32 and <= 0x38)
+        {
+            if (d.ConstantId == 0) return true;
+            Row(Tables.StatName(0x1b), IntText(StatusValue(item, 0x1b)), IntText(StatusValue(item, 0x1c)));
+            return true;
+        }
+        if (d.IsGemstone)
+        {
+            if (d.ConstantId == 0) return true;
+            var group = item.Record?.Options;
+            if (group != null && FirstOption(group.Special[0]) is (int sp, int spv) && sp != 0)
+            {
+                string v = Value(o.IsSpecialRate(sp), spv);
+                Row(Tables.SpecialAbilityName(sp), v, v);
+            }
+            if (group != null && FirstOption(group.Stat[0]) is (int st, int stv) && st != -1)
+            {
+                string v = Value(o.IsStatRate(st), stv);
+                Row(Tables.StatName(st), v, v);
+            }
+        }
+        int stat = d.EquipSubtype switch
+        {
+            0xc or 0x14 => 0x1a,
+            0x12 or 0x13 => 0x19,
+            0xd or 0xe or 0xf or 0x10 or 0x11 or 0x15 or 0x16 or 0x29 => 0x14,
+            0x28 => 0x18,
+            _ => -1,
+        };
+        if (stat == -1) return false;
+        if (d.ConstantId == 0) return true;
+        int value = StatusValue(item, stat);
+        if (value != 0)
+        {
+            string v = Value(o.IsStatRate(stat), value);
+            Row(Tables.StatName(stat), v, v);
+        }
+        return true;
+    }
+
+    /// <summary>FormatRatePercent (astooltip.cpp:4642): FormatStringId(0x98e, "{0:0.1f}" of rate * 100), the number with a
+    /// % sign.</summary>
+    static string RatePercent(float rate) => Ms2.Quest.ClientFormat.Format("{0:0.1f}", rate * 100.0f) + "%";
+
+    /// <summary>CItemOption::GetFirstStat / GetFirstSpecialStat (itemoptiondata_1.cpp:114, :123): the entry at the
+    /// CAtlMap's start position (<see cref="AtlMapOrder"/>), null for an empty group ((-1, 0) / (0, 0) in the client).</summary>
+    static (int Key, int Value)? FirstOption(Dictionary<int, int> group) =>
+        group.Count == 0 ? null : AtlMapOrder(group.Keys)[0] is var k ? (k, group[k]) : null;
 
     /// <summary>
     /// ASTooltip::FUN_1409d64a0 (astooltip.cpp:3014), "extraDescription": with the local player, { text, color } rows in

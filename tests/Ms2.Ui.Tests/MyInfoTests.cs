@@ -436,6 +436,47 @@ public class MyInfoTests
     }
 
     [Test]
+    public void StatDescriptionIsTheConstantStat()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        var t = m.Tables;
+        string Desc(EquipItem r, int flags = 0x80)
+        {
+            var tip = new ItemTooltip(m, flags);
+            tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, t.Items));
+            return tip.Data.TryGetValue("statDescription", out var v)
+                ? string.Join(",", ((Dictionary<string, object>)v).Select(p => p.Key + ":" + p.Value)) : null;
+        }
+        EquipItem Rec(int id) => new() { Id = id, Uid = 1, Rarity = 1, Amount = 1 };
+
+        // a weapon (dagger, equip subtype 0x1f): Min Attack's text, min 3 and max 5 plus the ratio enchant ScaleValue(5, 0.5)
+        var dagger = Rec(13100001);
+        dagger.Options.Stat[0][0x1b] = 3; dagger.Options.Stat[0][0x1c] = 5; dagger.Enchant.Options[0x1c] = 500;
+        dagger.Options.Stat[1][0x1b] = 40;                  // group 1 is not in GetStatValue(stat, 3, 0)
+        string want = "type:2,title:" + t.StatName(0x1b) + ",extraup:0,min:3,max:7";
+        Assert.That(Desc(dagger), Is.EqualTo(want));
+        Assert.That(Desc(dagger, 0x800), Is.EqualTo(want));
+
+        // a suit (equip subtype 0x16): defense, min and max the same; no value, no member
+        var robe = Rec(12200036);
+        Assert.That(Desc(robe), Is.Null);
+        robe.Options.Stat[0][0x14] = 5;
+        Assert.That(Desc(robe), Is.EqualTo("type:2,title:" + t.StatName(0x14) + ",extraup:0,min:5,max:5"));
+        // a top without a constantID: nothing
+        var top = Rec(11400021);
+        top.Options.Stat[0][0x14] = 5;
+        Assert.That(Desc(top), Is.Null);
+
+        // a gemstone: the first special (a rate), then the first stat replaces it; stat 0x11 and 0 share bin 0, the newest first
+        var gem = Rec(40200001);
+        gem.Options.Special[0][7] = 26;
+        Assert.That(Desc(gem), Is.EqualTo("type:2,title:" + t.SpecialAbilityName(7) + ",extraup:0,min:2.6%,max:2.6%"));
+        gem.Options.Stat[0][0x11] = 8; gem.Options.Stat[0][0] = 18;
+        Assert.That(Desc(gem), Is.EqualTo("type:2,title:" + t.StatName(0) + ",extraup:0,min:18,max:18"));
+    }
+
+    [Test]
     public void ItemCompareIsTheStatChange()
     {
         var m = NewModel();
