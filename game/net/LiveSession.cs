@@ -794,6 +794,27 @@ public partial class LiveSession : Node
             foreach (var line in chat.Split('|'))
             {
                 if (line.StartsWith('~') && int.TryParse(line.AsSpan(1), out int wait)) await Frames(60 * wait);   // "~N": wait N s, then shoot
+                else if (line == "@return") { chatHud.PressChatReturn(); await Frames(30); }   // "@return": Return in the chat window
+                else if (line == "@link")
+                {
+                    // "@link": the first held item shift-clicked into the chat input from the inventory and sent
+                    bool back = false, linked = false;
+                    void Seen(Ms2.Net.Packets.ChatMessage m, Func<Ms2.Net.Packets.WeddingChatHall> _) => back = true;
+                    void Links(Ms2.Net.Packets.ChatItemLinks l) => linked = true;
+                    bool onItem = chatHud.OpenInventoryOnAnItem();
+                    if (!onItem) { await Frames(180); onItem = chatHud.OpenInventoryOnAnItem(); }
+                    GD.Print($"live: chat link {n}: inventory {(onItem ? "on an item" : "has no item")}");
+                    await Frames(120);
+                    if (!string.IsNullOrEmpty(chatShots))
+                        flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(chatShots, $"chat_{n}_inventory.png"));
+                    if (Instance != null) { Instance.UserChat += Seen; Instance.UserChatItemLink += Links; }
+                    long uid = chatHud.ShiftClickFirstItemAndSend();
+                    GD.Print($"live: chat link {n}: {(uid != 0 ? $"item {uid} linked and sent" : "nothing linked")}");
+                    await Until(() => back, 60 * 5);
+                    if (Instance != null) { Instance.UserChat -= Seen; Instance.UserChatItemLink -= Links; }
+                    GD.Print($"live: chat link {n}: line {(back ? "came back" : "did not come back")}, item links {(linked ? "came" : "did not come")}");
+                    await Frames(120);
+                }
                 else
                 {
                     bool back = false;

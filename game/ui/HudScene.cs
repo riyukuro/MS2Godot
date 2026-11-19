@@ -1567,6 +1567,61 @@ public partial class HudScene : Node, IUiStageHost
         return true;
     }
 
+    /// <summary>
+    /// The scripted live run's item link, step 1: the inventory opened (as I does) and the first tab holding an item
+    /// selected. False without a live bag holding one; with an empty bag the last worn piece is first taken off (the
+    /// unequip request), so a later call finds it there.
+    /// </summary>
+    public bool OpenInventoryOnAnItem()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var view = live?.Inventory;
+        if (view == null) return false;
+        if (Enumerable.Range(0, Ms2.Net.Packets.ItemBook.Tabs).All(t => view.Used(t) == 0))
+        {
+            var worn = live.Me.Equips?.Where(e => !e.IsBadge).OrderByDescending(e => (int)e.Slot).FirstOrDefault();
+            if (worn != null) { GD.Print($"live: bag empty, taking off {worn.Id} ({worn.Uid})"); view.RequestUnequip?.Invoke(worn.Uid); }
+            return false;
+        }
+        if (inventory == null || inventory.IsClosed) OpenInventory();
+        if (inventory?.Host == null) return false;
+        for (int i = 0; i < inventory.Tabs.Count; i++)
+            if (view.Used(inventory.Tabs[i].Tab) > 0)
+            {
+                inventory.Host.Set(inventory.Host.Child("m_tab"), "selectedIndex", i);
+                return true;
+            }
+        return false;
+    }
+
+    /// <summary>Return in the first chat window, unfocused: after a whisper the input starts the next one to its target.</summary>
+    public void PressChatReturn()
+    {
+        if (messengers.Count > 0) messengers[0].Side.OnKey(Ms2.Ui.Hud.MessengerController.DikReturn, false);
+    }
+
+    /// <summary>
+    /// Step 2: the movie's notifySlotShiftClick on the first slot of the shown tab holding an item (InvenSlot::vfunc_15 links
+    /// it into the chat input), then Return in the first chat window; the linked item's uid, 0 when nothing was linked.
+    /// </summary>
+    public long ShiftClickFirstItemAndSend()
+    {
+        var view = Ms2Godot.Net.LiveSession.Instance?.Inventory;
+        if (view == null || inventory == null || inventory.IsClosed || messengers.Count == 0) return 0;
+        var cells = view.Cells(view.Tab);
+        for (int i = 0; i < cells.Count; i++)
+        {
+            if (cells[i].Empty) continue;
+            inventory.OnCallback("notifySlotShiftClick", new object[] { Ms2.Ui.Hud.InventoryController.SlotName(i) });
+            var side = messengers[0].Side;
+            if (side.InputLinks.Count == 0) return 0;
+            GD.Print($"live: chat input links {side.InputLinks[0]}");
+            side.OnKey(Ms2.Ui.Hud.MessengerController.DikReturn, false);
+            return cells[i].Uid;
+        }
+        return 0;
+    }
+
     static Ms2.Ui.Hud.AvatarRotateLimit avatarLimit;   // UIAvatarPC::vfunc_1's constants, read once
 
     /// <summary>
