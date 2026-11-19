@@ -1109,12 +1109,13 @@ public partial class HudScene : Node, IUiStageHost
         uiRoot.AddChild(groupInviteMovie);
     }
 
-    /// <summary>The invite dialog's vfunc_13: UIDialog's first (Escape closes), then its Enter. It is modal, so it is asked first.</summary>
+    /// <summary>The invite dialog's vfunc_13: UIDialog's first (Escape closes), then its Enter. It is modal, so it is asked first.
+    /// Only the main Return key (WasKeyPressed(0x1c), DIK_RETURN), not the keypad's (DIK 0x9c), as the chat windows.</summary>
     bool GroupInviteKeys(InputEventKey k)
     {
         if (!GroupInviteOpen) return false;
         if (k.Keycode == Key.Escape) { groupInvite.Close(); return true; }
-        return groupInvite.OnKey(k.Keycode is Key.Enter or Key.KpEnter);
+        return groupInvite.OnKey(k.Keycode == Key.Enter);
     }
     Action<string> groupLink;
     readonly List<(MovieDialog Movie, GroupMessengerController Side)> groupWindows = new();

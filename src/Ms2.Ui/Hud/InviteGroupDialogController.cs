@@ -138,8 +138,10 @@ public sealed class InviteGroupDialogController : UiController
     /// The rows of RefreshUserList (@0x1419a0240): CollectPartyMembers (@0x1419a06d0), CollectGuildMembers (@0x1419a07d0,
     /// STILL-OPEN: none) and AddBuddyEntries (@0x1419a08f0), each skipping IsAlreadyListedOrInGroup (@0x1419a0a10): a member
     /// of the chat (the window's IsGroupMember) or an id already listed. A party member (Unk_MdEntry SrcB @0x141483580): kind
-    /// not offline, its level and job; a friend (SrcA @0x141483300): kind online, its level and GetSubJob1 of its job group
-    /// (GetJobId, m_a0). The info is common 0x20 of the level and string table 6 of the job.
+    /// not offline, its level (+0x5c) and job (+0x68): the member's user record sits at +0x28, so these are its m_34 and m_40
+    /// (<see cref="PartyUser.Level"/>, <see cref="PartyUser.Job"/>), the job taken as is. A friend (SrcA @0x141483300): kind
+    /// online, its level and GetSubJob1 of CBuddy::GetJobId (buddy.cpp:92, m_a0, <see cref="BuddyInfo.JobGroup"/>). The info
+    /// is common 0x20 of the level and string table 6 of the job.
     /// </summary>
     public List<Entry> CollectEntries()
     {
