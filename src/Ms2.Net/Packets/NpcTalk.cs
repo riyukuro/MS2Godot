@@ -89,10 +89,16 @@ public abstract record NpcTalkMessage {
                 if (c.Kind == 0)
                 {
                     c.ButtonSet = r.ReadInt();
-                    int choices = r.ReadByte();        // CCinematicDistractor::ReadFrom (scriptcontent.cpp:143)
-                    for (int j = 0; j < choices; j++)
-                        c.Choices.Add((r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString()));
+                    // CCinematicContent::vfunc_6 (scriptcontent.cpp:385): a u8 flag, then the choices only when it is 1
+                    if (r.ReadByte() == 1)
+                    {
+                        int choices = r.ReadByte();        // CCinematicDistractor::ReadFrom (scriptcontent.cpp:143)
+                        for (int j = 0; j < choices; j++)
+                            c.Choices.Add((r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString()));
+                    }
                 }
+                // a kind other than 0 or 1 is read as a balloon line here; the client's Deserialize leaves its content
+                // null there and dereferences it (talkscript.cpp:236-240), but a server writes vfunc_1(), which is 0 or 1
                 s.Contents.Add(c);
             }
             return s;

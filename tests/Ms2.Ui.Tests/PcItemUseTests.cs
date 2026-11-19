@@ -98,9 +98,10 @@ public class PcItemUseTests
         var gem = new ItemSocket();    // every gem of the socket must pass, as the client's loop does
         gem.Gems.Add(new SocketGem { GemId = 1, HasBind = true, BindCharacterId = 7 });
         gem.Gems.Add(new SocketGem { GemId = 0, HasBind = true, BindCharacterId = 99 });   // an empty slot
+        gem.Gems.Add(new SocketGem { GemId = 2, HasBind = true, BindCharacterId = 0 });    // a bind with id 0 is not bound
         gem.Gems.Add(null);
         Assert.That(PcItemUse.CanUseItem(new EquipItem { Socket = gem }, Data(), Pc(charId: 7)), Is.True,
-            "an empty slot and the owner's bound gem pass");
+            "an empty slot, an id-0 bind and the owner's bound gem pass");
     }
 
     [Test]

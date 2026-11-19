@@ -47,27 +47,36 @@ public class NpcTalkPacketTests {
     }
 
     [Test] public void ModeTenCarriesATalkScript() {
-        // OnTalkPacket mode 10 (uitalkcinematic.cpp:1050): i32 npc id, i16 sub, then CTalkScript::Deserialize
-        // (talkscript.cpp:216): i32 the script's npc id, u8 popup state, i32 popup prop, u8 random pick, then the contents.
+        // OnTalkPacket mode 10 (uitalkcinematic.cpp:1050): i32 the npc's FIELD OBJECT id, i16 sub, then
+        // CTalkScript::Deserialize (talkscript.cpp:216): i32 the script's npc id (a data id), u8 popup state, i32 popup
+        // prop, u8 random pick, then the contents.
         var m = (NpcTalkMessage.SpecialNpc) Read(w => {
-            w.WriteByte(10); w.WriteInt(11000004); w.WriteShort(1);
+            w.WriteByte(10); w.WriteInt(2001); w.WriteShort(1);
             w.WriteInt(11000004); w.WriteByte(9); w.WriteInt(100); w.WriteByte(0);
-            w.WriteInt(2);
+            w.WriteInt(3);
             // a balloon content (kind 1): the line, its voice, its illust (ReadUnicodeStringA is u16 + UTF-16 on the wire)
             w.WriteByte(1); w.WriteUnicodeString("hello there"); w.WriteUnicodeString("voice_a"); w.WriteUnicodeString("");
-            // a cinematic content (kind 0): the base, its button set and its choices (scriptcontent.cpp:143)
+            // a cinematic content (kind 0): the base, its button set, a u8 flag, then the choices when the flag is 1
+            // (CCinematicContent::vfunc_6, scriptcontent.cpp:385)
             w.WriteByte(0); w.WriteUnicodeString("page"); w.WriteUnicodeString("voice_b"); w.WriteUnicodeString("illust_b");
             w.WriteInt(9); w.WriteByte(1);
+            w.WriteByte(1);
             w.WriteUnicodeString("a choice"); w.WriteUnicodeString("goto"); w.WriteUnicodeString("gotoFail");
+            // a second page whose flag is 0: no choices follow
+            w.WriteByte(0); w.WriteUnicodeString("page two"); w.WriteUnicodeString("voice_c"); w.WriteUnicodeString("");
+            w.WriteInt(3); w.WriteByte(0);
         });
-        Assert.That((m.NpcId, m.Sub), Is.EqualTo((11000004, (short) 1)));
-        Assert.That((m.Script.NpcId, m.Script.PopupState, m.Script.PopupProp, m.Script.RandomPick), Is.EqualTo((11000004, (byte) 9, 100, false)));
-        Assert.That(m.Script.Contents.Count, Is.EqualTo(2));
+        Assert.That((m.NpcId, m.Sub), Is.EqualTo((2001, (short) 1)), "the packet's id is the field object id, not the data id");
+        Assert.That(m.Script.NpcId, Is.EqualTo(11000004), "the script's own npc id is a data id");
+        Assert.That((m.Script.PopupState, m.Script.PopupProp, m.Script.RandomPick), Is.EqualTo(((byte) 9, 100, false)));
+        Assert.That(m.Script.Contents.Count, Is.EqualTo(3));
         var line = m.Script.Contents[0];
         Assert.That((line.Kind, line.Text, line.Voice, line.Illust, line.ButtonSet, line.Choices.Count), Is.EqualTo(((byte) 1, "hello there", "voice_a", "", 0, 0)));
         var page = m.Script.Contents[1];
         Assert.That((page.Kind, page.Text, page.Voice, page.Illust, page.ButtonSet), Is.EqualTo(((byte) 0, "page", "voice_b", "illust_b", 9)));
         Assert.That(page.Choices, Is.EqualTo(new[] { ("a choice", "goto", "gotoFail") }));
+        var plain = m.Script.Contents[2];
+        Assert.That((plain.Kind, plain.Text, plain.ButtonSet, plain.Choices.Count), Is.EqualTo(((byte) 0, "page two", 3, 0)), "a flag-0 page reads no choices");
         Assert.That(NpcTalkMessage.SubMode(m), Is.Null);
     }
 

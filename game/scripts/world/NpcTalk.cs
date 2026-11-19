@@ -93,7 +93,7 @@ public sealed partial class NpcTalk : Node
     /// <summary>NpcTalk mode 3 sub 1 (UITalkManager::SetNpcNameTag): the talk npc's name tag text, for its emoticon.</summary>
     public event Action<FieldNpcs.Placed, string> NpcNameTag;
     /// <summary>NpcTalk mode 10 sub 1 (OnTalkPacket, uitalkcinematic.cpp:1054-1062): the npc's balloon line, for its chat
-    /// balloon (the npc by the packet's id, WorldService::FindNpcById).</summary>
+    /// balloon (the npc by the packet's field object id, WorldService::FindNpcById's m_148 key).</summary>
     public event Action<FieldNpcs.Placed, string> SpecialNpcBalloon;
     /// <summary>The talk page was shown (FUN_141b204d0, uitalkcinematic.cpp:1562-1565): the talk npc and m_nSubMode.</summary>
     public event Action<FieldNpcs.Placed, int> TalkPageShown;
@@ -533,16 +533,17 @@ public sealed partial class NpcTalk : Node
                 if ((liveTalking ?? talking) is { } tagged) NpcNameTag?.Invoke(tagged, t.Text);
                 return;
             case NpcTalkMessage.SpecialNpc s:
-                // sub 1 (uitalkcinematic.cpp:1054-1062): the npc by the packet's id, its balloon kept, then the first
-                // content's line in it (PCBase::ShowChatBalloon); the other subs open the special npc's own talk page
-                // (m_nSpecialNpc), which is not ported
+                // sub 1 (uitalkcinematic.cpp:1054-1062): FindNpcById is by the FIELD OBJECT id (worldservice_1.cpp:6176,
+                // keyed by GetObjectId at :3159), as mode 1's object id; its balloon kept, then the first content's line
+                // in it (PCBase::ShowChatBalloon); the other subs open the special npc's own talk page (m_nSpecialNpc),
+                // which is not ported
                 if (s.Sub != 1 || s.Script.Contents.Count == 0)
                 {
                     GD.Print($"talk: mode 10 sub {s.Sub}: the special npc's talk page is not ported");
                     return;
                 }
-                var special = live.TalkNpcs.FirstOrDefault(x => x.Row.Id == s.NpcId);
-                if (special == null) { GD.Print($"talk: mode 10 for npc {s.NpcId}: no such npc"); return; }
+                var special = LiveNpc(s.NpcId);
+                if (special == null) { GD.Print($"talk: mode 10 for object {s.NpcId}: no such npc"); return; }
                 SpecialNpcBalloon?.Invoke(special, s.Script.Contents[0].Text);
                 return;
             case NpcTalkMessage.RewardMeso x: side?.OnRewardMeso(x.Amount); return;

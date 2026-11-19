@@ -44,7 +44,8 @@ namespace Ms2Godot.World;
 ///   run it too (345 mob rows have monologues); the offline field's region spawn previews (Mob) are not client objects and
 ///   get none.
 /// - The special npc lines (NpcTalk mode 10 sub 1, OnTalkPacket uitalkcinematic.cpp:1054): the npc's balloon is kept and the
-///   packet script's first line shown in it; the mode's other subs (the special npc's own talk page) are not ported.
+///   packet script's first line shown in it (the npc by the packet's field object id); the mode's other subs (the special
+///   npc's own talk page) are not ported.
 /// - A PC's worn chat balloon gem (PCGemEquip) is gated by PC::CanUseItem (<see cref="PcItemUse"/>) as the client gates
 ///   FUN_1412712e0 / FUN_141270740: the packet record's expiry and binds, the data's PC bang / vip / wedding flags against
 ///   the owner's state from its add packet.
@@ -248,9 +249,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
     }
 
     /// <summary>
-    /// NpcTalk mode 10 sub 1 (OnTalkPacket, uitalkcinematic.cpp:1054-1062): the npc's balloon is kept (FUN_1418fb6d0,
-    /// so the monologue leaves it alone) and the script's first line shown in it (PCBase::ShowChatBalloon,
-    /// pcbase.cpp:1664: the value words, SetText, vfunc_2).
+    /// NpcTalk mode 10 sub 1 (OnTalkPacket, uitalkcinematic.cpp:1054-1062): the npc (by the packet's field object id,
+    /// WorldService::FindNpcById) has its balloon kept (FUN_1418fb6d0, so the monologue leaves it alone) and the
+    /// script's first line shown in it (PCBase::ShowChatBalloon, pcbase.cpp:1664: the value words, SetText, vfunc_2).
     /// </summary>
     void OnSpecialNpcBalloon(FieldNpcs.Placed n, string text)
     {
