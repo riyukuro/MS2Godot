@@ -43,12 +43,12 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public Func<PcInfo> Record;
     /// <summary>MyPC::GetStatPointManager (vfunc_87 reads it for the local record).</summary>
     public StatPointBook StatPoints;
-    /// <summary>GetOffenseScore (@0x141334890): Lua either way (CalePcOffenseScore with feature 0xdf, else CalcPcDamage).</summary>
+    /// <summary>GetOffenseScore (@0x141334890) without feature 0xdf: Lua CalcPcDamage (not ported). With the feature the port's
+    /// <see cref="CombatScore"/> is used.</summary>
     public Func<PcInfo, long> OffenseScore;
-    /// <summary>GetDefenseScore with feature 0xdf: Lua CalePcDefenseScore (without it, Stats2[0x14], ported).</summary>
-    public Func<PcInfo, long> DefenseScoreLua;
-    /// <summary>CLua::FUN_140674a70(value, 0, critical): the crit rate GetBasicStat(0x12) shows.</summary>
-    public Func<long, float, long, float> CritRate;
+    /// <summary>CLua::FUN_140674a70(value, 0, critical): the critical damage rate GetBasicStat(0x12) shows, by default
+    /// <see cref="CombatScore.CriticalDamageRate"/>.</summary>
+    public Func<long, float, long, float> CritRate = CombatScore.CriticalDamageRate;
     /// <summary>The record's m_3cc / m_3d0 (vfunc_126: the worn items' levels) where the port's own sum does not know them
     /// (Lua); null leaves the port's sum.</summary>
     public Func<PcInfo, (uint Total, uint Additional)?> ItemLevel;
@@ -395,8 +395,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             Host.SetChildText("value", total.ToString(CultureInfo.InvariantCulture), il);
             Host.Invoke(il, "changeTooltipText", Localize("$s_tooltip_myinfo_stat_itemLevel_ohAdditional"));
         }
-        ScoreLabel("m_attackInfo", OffenseScore?.Invoke(info), score, "attackScore");
-        long? defense = score ? DefenseScoreLua?.Invoke(info) : info.Stats2[0x14];
+        ScoreLabel("m_attackInfo", score ? OffenseScoreLua() : OffenseScore?.Invoke(info), score, "attackScore");
+        long? defense = score ? DefenseScoreLua() : info.Stats2[0x14];
         ScoreLabel("m_defenseInfo", defense, score, "defenseScore");
         if (Child("m_statLabelManager") is { } labels)
         {
@@ -492,13 +492,34 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         return TextTooltip(text);
     }
 
+    /// <summary>GetOffenseScore's feature 0xdf branch (<see cref="CombatScore"/>); null while a stat it reads is not known (the
+    /// equipment abilities, m_3b0).</summary>
+    long? OffenseScoreLua()
+    {
+        var a = CombatScore.OffenseArgs(info.JobGroup, info.Stats0, AverageStat(), s => Basic(s)?.Total, (s, t) => Special(s, t)?.Total,
+            MainHandRarity());
+        return a == null ? null : CombatScore.Result(CombatScore.Offense(a, LobbyFeatures.LocaleName));
+    }
+
+    /// <summary>GetDefenseScore's feature 0xdf branch (<see cref="CombatScore"/>); null while a stat it reads is not known.</summary>
+    long? DefenseScoreLua()
+    {
+        var a = CombatScore.DefenseArgs(info.JobGroup, info.Stats0, s => Basic(s)?.Total, (s, t) => Special(s, t)?.Total);
+        return a == null ? null : CombatScore.Result(CombatScore.Defense(a));
+    }
+
+    /// <summary>PCInfo::FUN_140dbaa10 (pcinfo.cpp:174): the rarity of the layer-0 item in slot 5, 0 without one.</summary>
+    int MainHandRarity() => EquipMaps(info) is { } m && m[0].TryGetValue(5, out var it) && it != null ? it.Rarity : 0;
+
     /// <summary>GetAverageStat (@0x141335780): (Stats2[0x1b] + Stats2[0x1c]) * 0.5f.</summary>
     long AverageStat() => (long)((float)(info.Stats2[0x1b] + info.Stats2[0x1c]) * 0.5f);
 
     /// <summary>GetSpecialStat (@0x141335d20): base 0, bonus = total = m_3b0[stat] (/ 10 when bTenth); null without the
-    /// equipment abilities.</summary>
+    /// equipment abilities. A record without them gets the worn items' part (<see cref="WornEquipment.Abilities"/>).</summary>
     (float Base, float Bonus, float Total)? Special(int stat, bool tenth)
     {
+        long now = ServerTime?.Invoke() ?? 0;
+        info.Special ??= WornEquipment.Abilities(info, Model.Tables.Items, Model.Tables.ItemModels, it => ItemLevels.Usable(it, now));
         if (info.Special == null) return null;
         int v = info.Special.TryGetValue(stat, out var x) ? x : 0;
         float f = tenth ? v / 10.0f : v;

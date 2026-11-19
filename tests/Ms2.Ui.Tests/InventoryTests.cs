@@ -195,6 +195,30 @@ public class InventoryTests
     }
 
     [Test]
+    public void TheWornAbilitiesSumTheOptionsAndTheLimitBreak()
+    {
+        var model = NewModel(); var t = model.Tables;
+        EquipItem E(int id, EquipSlot slot, int key, int value)
+        {
+            var e = new EquipItem { Id = id, Uid = id, Slot = slot, Rarity = 1 };
+            e.Options.Special[0][key] = value;
+            return e;
+        }
+        var robe = E(11400001, EquipSlot.CL, 0x5b, 3);
+        robe.Options.Special[2][0x5b] = 2;
+        robe.Options.Special[1][0xcf] = 50;                                  // not below 0xcf
+        robe.LimitBreak.Special[0xca] = 7;
+        var record = new PcInfo { Level = 100, Equips = new[] { robe, E(14000001, EquipSlot.LH, 0x10, 1), E(15300001, EquipSlot.LH, 0x20, 9) } };
+        Assert.That(WornEquipment.Abilities(record, t.Items, t.ItemModels, _ => true),
+            Is.EqualTo(new Dictionary<int, int> { [0x5b] = 5, [0xca] = 7, [0x10] = 1 }), "five groups plus the limit break; a two-handed LH item adds nothing");
+        Assert.That(WornEquipment.Abilities(record, t.Items, t.ItemModels, it => it.Uid != 11400001),
+            Is.EqualTo(new Dictionary<int, int> { [0x10] = 1 }), "an item the wearer cannot use adds nothing");
+        record.Level = 0;
+        Assert.That(WornEquipment.Abilities(record, t.Items, t.ItemModels, _ => true), Is.Empty, "under the level limit");
+        Assert.That(WornEquipment.Abilities(new PcInfo(), t.Items, t.ItemModels, _ => true), Is.Null);
+    }
+
+    [Test]
     public void TheRightClickEquipSlotIsTheClients()
     {
         var model = NewModel(); var t = model.Tables;

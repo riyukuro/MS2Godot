@@ -145,4 +145,34 @@ public sealed class WornEquipment
         if (d.EquipSubtype == 0x16) return At(8, layer) ?? At(9, layer);
         return At(models.Get(d.ItemPreset)?.FirstSlotType ?? 0, layer);             // GetModelOrEmpty: no model, no groups
     }
+    /// <summary>
+    /// The worn items' part of CEquipment::GetAbilityTotal (equipment.cpp:740), the record's m_3b0: the m_abilities sum of
+    /// CEquipment::FUN_1411e76c0 (equipment.cpp:2921). Per item of layers 0 and 1 (layer 2 only counts set items there) the
+    /// wearer can use (PC::CanUseItem, <paramref name="canUse"/>) at its level (CItem::CanUseAtLevel, item.cpp:653,
+    /// <see cref="ItemData.IsLevelAllowed"/>), except a suit (subtype 0x16) in PA and a two-handed weapon in LH: per special
+    /// ability below 0xcf, CItemStatus::GetSpecialValue(k, 3, 5) (itemsocketsystemutil.cpp:1955), the five option groups
+    /// (CItemOption::SumSpecialValue, itemoptiondata_1.cpp:104) plus the limit break's special option. STILL-OPEN: the PvP
+    /// field values (FUN_14062ff70), slots a buff disables (IsItemSlotDisabled), the pet item, and GetAbilityTotal's buff,
+    /// game rule (hot time) and set item terms. Null when the record has no equipment lists.
+    /// </summary>
+    public static Dictionary<int, int> Abilities(PcInfo record, ItemDataTable items, ItemModelTable models, Func<Item, bool> canUse)
+    {
+        if (record?.Equips == null) return null;
+        var sum = new Dictionary<int, int>();
+        void Add(int k, int v)
+        {
+            if (k is < 0 or >= 0xcf || v == 0) return;
+            sum[k] = (sum.TryGetValue(k, out var x) ? x : 0) + v;
+        }
+        foreach (var e in record.Equips)
+        {
+            var it = Hud.InventoryController.ToItem(e, items);
+            if (it == null || (int)e.Slot == 0 || !canUse(it) || !it.Data.IsLevelAllowed(record.Level)) continue;
+            if ((e.Slot == EquipSlot.PA && it.Data.EquipSubtype == 0x16) || (e.Slot == EquipSlot.LH && IsTwoHanded(it.Data, models)))
+                continue;
+            foreach (var g in e.Options.Special) foreach (var (k, v) in g) Add(k, v);
+            foreach (var (k, v) in e.LimitBreak.Special) Add(k, v);
+        }
+        return sum;
+    }
 }
