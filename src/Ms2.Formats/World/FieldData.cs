@@ -68,6 +68,8 @@ public sealed class FieldData
     public bool CheckPartyObserve;
     /// <summary>m_bPopupMenu: &lt;property popupMenu&gt; (fielddata.cpp:705), true when absent (the ctor, :557).</summary>
     public bool PopupMenu = true;
+    /// <summary>m_bGemSystem: &lt;property gemSystem&gt; (fielddata.cpp:706), true when absent (the ctor, :557).</summary>
+    public bool GemSystem = true;
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
@@ -127,6 +129,7 @@ public sealed class FieldData
         o.GlobalSplit = Flag(env.Element("split"), "globalSplit");
         o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
+        o.GemSystem = BoolAttr(prop, "gemSystem", true);
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
         if ((string)env.Element("ui")?.Attribute("bgMask") is { } bm) o.BgMask = bm;
         if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;

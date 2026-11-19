@@ -25,4 +25,27 @@ public class FieldDataTests
         Assert.That(b.Id, Is.EqualTo(c.Id));
         Assert.That(FieldData.XBlockOf(packs, b.Id), Is.EqualTo(b.XBlock));
     }
+    /// <summary>gemSystem (fielddata.cpp:706) follows the property's attribute and is true when absent (:557).</summary>
+    [Test]
+    public void GemSystemFollowsTheProperty()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        int checkedOff = 0, checkedOn = 0;
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+        {
+            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+            if (env?.Element("xblock")?.Attribute("name") == null) continue;
+            var prop = env.Element("property") ?? fd.Element("property");
+            var a = (string)prop?.Attribute("gemSystem");
+            bool want = a == null || a is not ("0" or "false" or "FALSE" or "False" or "no");
+            var f = FieldData.FindById(packs, (int)fd.Attribute("id"));
+            if (f == null || f.Id != (int)fd.Attribute("id")) continue;
+            Assert.That(f.GemSystem, Is.EqualTo(want), "field " + f.Id);
+            if (want) checkedOn++; else checkedOff++;
+        }
+        Assert.That(checkedOn, Is.GreaterThan(0));
+        TestContext.WriteLine($"gemSystem on {checkedOn}, off {checkedOff}");
+    }
 }

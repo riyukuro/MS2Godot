@@ -87,8 +87,8 @@ public class ItemBodyTests {
         var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
         var on = BadgeEquipMessage.Read(r);
         Assert.That(r.ReadInt(), Is.EqualTo(-12345), "the whole gem is read");
-        Assert.That((on.Mode, on.ObjectId, on.Item.Id, on.Item.Uid, on.Item.Rarity, on.Item.BadgeSlot, on.Item.GemType, on.Item.IsBadge),
-            Is.EqualTo(((byte) 0, 1, 70200001, 961L, 2, (byte) 5, (byte) 5, true)));
+        Assert.That((on.Mode, on.ObjectId, on.Item.Id, on.Item.Uid, on.Item.Rarity, on.Item.BadgeSlot, on.Item.GemType, on.Item.IsBadge, on.Item.GemId),
+            Is.EqualTo(((byte) 0, 1, 70200001, 961L, 2, (byte) 5, (byte) 5, true, 70200002)));
 
         w = new ByteWriter(); w.WriteByte(1); w.WriteInt(1); w.WriteByte(3);
         var off = BadgeEquipMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));

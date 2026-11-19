@@ -59,6 +59,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
         public string Name = "";
         public Node3D Root;
         public Func<Vector3> Anchor;
+        /// <summary>The PC's worn gems (the chat balloon gem's skin).</summary>
+        public GemEquip Gems;
     }
 
     readonly UiAssets assets;
@@ -82,6 +84,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     Field field;
     Viewport sizeSource;
     int nextId = 1;
+    (int Id, FieldData Data) fieldData;
     double syncIn;
     float u = 1;
 
@@ -261,15 +264,16 @@ public sealed partial class NpcEmoticons : CanvasLayer
     void SyncPcs()
     {
         if (!live || balloons == null || Ms2Godot.Net.LiveSession.Instance is not { } s) return;
-        var now = new Dictionary<int, (long Char, string Name, string Picture, Node3D Root, Func<Vector3> Anchor, bool Me)>();
+        var now = new Dictionary<int, (long Char, string Name, string Picture, Node3D Root, Func<Vector3> Anchor, bool Me,
+            IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems)>();
         if (s.SelfObjectId >= 0 && s.Me.User is { } me && Viewer is Player p && IsInstanceValid(p))
         {
             var dummies = EffectDummyTable.Load(assets.Packs).Pc(p.Gender);
             now[s.SelfObjectId] = (me.CharacterId, me.Name ?? "", me.Picture ?? "", p,
-                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>("Model"), p.RootName) ?? p.GlobalPosition, true);
+                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>("Model"), p.RootName) ?? p.GlobalPosition, true, s.Me.Gems);
         }
         foreach (var r in s.FieldPcs)
-            if (IsInstanceValid(r.Root)) now[r.ObjectId] = (r.CharacterId, r.Name, r.Picture, r.Root, r.Anchor, false);
+            if (IsInstanceValid(r.Root)) now[r.ObjectId] = (r.CharacterId, r.Name, r.Picture, r.Root, r.Anchor, false, r.Gems);
         foreach (var gone in pcs.Keys.Where(k => !now.ContainsKey(k)).ToList())
         {
             balloons.RemovePc(pcs[gone].Balloon);
@@ -289,17 +293,46 @@ public sealed partial class NpcEmoticons : CanvasLayer
                     ActorAdded = true,
                     Offset = constants.Float("OffsetPcChatballoon", 210),
                 };
-                pcs[id] = x = new Pc { Balloon = b };
+                pcs[id] = x = new Pc { Balloon = b, Gems = new GemEquip(balloons, b) { GemSystem = GemSystem } };
                 byPcBalloon[b] = x;
+                // PCGemEquip::ReadFromStream of the PC's packet, then FUN_141270610 at its model's load (PC::vfunc_12)
+                x.Gems.Set((v.Gems ?? Array.Empty<Ms2.Net.Packets.EquipItem>()).Select(g => ((int)g.GemType, new GemEquip.Gem(g.Id, g.GemId))));
+                x.Gems.ApplyAll();
             }
             x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor;
             x.Balloon.ProfileImage = Ms2Godot.Net.ProfileImageService.Images.Path(v.Char, v.Picture, true);
         }
     }
 
+    /// <summary>The current field's gemSystem (CFieldDataCli m_bGemSystem); true without field data.</summary>
+    bool GemSystem()
+    {
+        int id = Ms2Godot.Net.LiveSession.Instance?.FieldId ?? 0;
+        if (fieldData.Data == null || fieldData.Id != id)
+        {
+            FieldData d = null;
+            try { d = id != 0 ? FieldData.FindById(assets.Packs, id) : null; } catch { }
+            fieldData = (id, d);
+        }
+        return fieldData.Data?.GemSystem ?? true;
+    }
+
+    /// <summary>
+    /// OnBadgeEquip (scenestategame.cpp:11006) for a PC of the field: mode 0 EquipItem (EquipByGemType: stored, then applied),
+    /// mode 1 RemoveByGemType.
+    /// </summary>
+    void OnBadgeEquip(Ms2.Net.Packets.BadgeEquipMessage b)
+    {
+        SyncPcs();
+        if (!pcs.TryGetValue(b.ObjectId, out var x)) return;
+        if (b.Mode == 0 && b.Item is { GemType: not 0 } it) x.Gems.Equip(it.GemType, new GemEquip.Gem(it.Id, it.GemId));
+        else if (b.Mode == 1) x.Gems.Remove(b.GemType);
+    }
+
     public override void _EnterTree()
     {
         if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; }
+        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) ls.BadgeEquipped += OnBadgeEquip;
         if (live) Live = this;
         sizeSource = GetViewport();
         sizeSource.SizeChanged += Relayout;
@@ -309,6 +342,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     public override void _ExitTree()
     {
         if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; }
+        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) ls.BadgeEquipped -= OnBadgeEquip;
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
         if (Live == this) Live = null;
     }

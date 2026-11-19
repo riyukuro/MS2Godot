@@ -61,6 +61,8 @@ public partial class LiveSession : Node
     public event Action<int> KeyTableChanged;
     /// <summary>OnBadgeEquip mode 4: the error code (shown as a system notice, <see cref="Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey"/>).</summary>
     public event Action<short> GemEquipError;
+    /// <summary>OnBadgeEquip modes 0 and 1, for any PC of the field (the own one included): a gem put on or taken off.</summary>
+    public event Action<BadgeEquipMessage> BadgeEquipped;
     /// <summary>OnNotice (0x71, scenestategame.cpp:9216): a system notice, routed by <see cref="Ms2.Ui.Hud.NoticeController"/>.</summary>
     public event Action<NoticeMessage> Notice;
     /// <summary>UIMessengerBrowser::vfunc_84 (0x1d, uimessenger.cpp:2829): a user's chat line, and the packet's reader for the
@@ -645,6 +647,7 @@ public partial class LiveSession : Node
                 var b = BadgeEquipMessage.Read(p.Reader());     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes
                 bool ownGems = Me.Apply(b);
                 if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
+                else if (b.Mode is 0 or 1) BadgeEquipped?.Invoke(b);
                 GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
             }
             else if (game.Is(p, Inbound.UserState))

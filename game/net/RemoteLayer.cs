@@ -22,6 +22,8 @@ public sealed partial class RemoteLayer : Node3D
         public Vector3 LastPos; public float Speed;
         public int ObjectId; public long CharacterId; public string Picture = "";
         public Func<Vector3> Anchor;
+        /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
+        public IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems = Array.Empty<Ms2.Net.Packets.EquipItem>();
     }
 
     readonly ModelBuilder builder;
@@ -40,10 +42,11 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>The field's live npcs for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> TalkNpcs => npcs.Talkable;
 
-    /// <summary>One other player in the field: its object, name, picture key, root and Eff_UI anchor.</summary>
-    public readonly record struct Pc(int ObjectId, long CharacterId, string Name, string Picture, Node3D Root, Func<Vector3> Anchor);
+    /// <summary>One other player in the field: its object, name, picture key, root, Eff_UI anchor and worn gems.</summary>
+    public readonly record struct Pc(int ObjectId, long CharacterId, string Name, string Picture, Node3D Root, Func<Vector3> Anchor,
+        IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems);
     /// <summary>The other players shown now (the own PC is not among them).</summary>
-    public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor));
+    public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems));
 
     public RemoteLayer(Field field, ModelBuilder mb, long selfCharacterId)
     {
@@ -93,7 +96,7 @@ public sealed partial class RemoteLayer : Node3D
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
-        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? "";
+        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;

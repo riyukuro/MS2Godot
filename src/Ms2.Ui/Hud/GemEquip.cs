@@ -1,0 +1,105 @@
+using System.Globalization;
+
+namespace Ms2.Ui.Hud;
+
+/// <summary>
+/// A PC's worn gems (the PC's gem equipment at +0x1078, gemslot_2.cpp), as far as the chat balloon reads them: one item
+/// per gem type, applied (CItemGem::vfunc_6) and removed (vfunc_7) through its gem. The chat balloon gem (type 3,
+/// CGemChatBalloon, itemgem.cpp:668) sets the PC balloon's skin to its gem id; removing it sets "".
+/// <para>
+/// FUN_141270610 (:203, from PC::vfunc_12 at the model's load, pc.cpp:856) applies every slot; EquipByGemType (:280, from
+/// OnBadgeEquip mode 0) stores the item and applies it; RemoveByGemType (:257, mode 1) removes it and clears the slot.
+/// Applying (FUN_1412712e0, :370) needs the owner's CanUseItem and the field's gemSystem (CFieldDataCli m_bGemSystem);
+/// removing (FUN_141271500, :385) needs neither. FUN_141270740 (:228), the gem worn for a type, needs CanUseItem only.
+/// </para>
+/// <para>
+/// STILL-OPEN: PC::CanUseItem (pc.cpp:4683: the PC bang, VIP and vfunc_146 requirements, the owner bind and the codi layer)
+/// is not ported; <see cref="CanUse"/> is true unless set. The other gem types' apply and remove (transparency, name tag,
+/// effects, pet skin, ...) are not ported here.
+/// </para>
+/// </summary>
+public sealed class GemEquip
+{
+    /// <summary>GEM_CHATBALLOON (itemgem.h:127).</summary>
+    public const int ChatBalloonType = 3;
+
+    /// <summary>A worn gem item: its item id and its gem's id (CGemBase m_nGemId).</summary>
+    public readonly record struct Gem(int ItemId, int GemId);
+
+    readonly Dictionary<int, Gem> items = new();
+    readonly ChatBalloonController balloons;
+    readonly ChatBalloonController.Actor owner;
+
+    /// <summary>The field's gemSystem (WorldService::GetFieldData()->m_bGemSystem).</summary>
+    public Func<bool> GemSystem = () => true;
+    /// <summary>PC::CanUseItem of the owner (see the STILL-OPEN above).</summary>
+    public Func<Gem, bool> CanUse = _ => true;
+
+    public GemEquip(ChatBalloonController balloons, ChatBalloonController.Actor owner)
+    {
+        this.balloons = balloons;
+        this.owner = owner;
+    }
+
+    /// <summary>The item worn for a gem type, when any (GetItemAt of FUN_141271290's index).</summary>
+    public Gem? Item(int type) => items.TryGetValue(type, out var g) ? g : null;
+
+    /// <summary>ReadFromStream / SetItemByGemType: the worn items of a packet, stored without applying them.</summary>
+    public void Set(IEnumerable<(int Type, Gem Gem)> worn)
+    {
+        items.Clear();
+        foreach (var (type, gem) in worn)
+            if (type != 0) items[type] = gem;
+        Refresh();
+    }
+
+    /// <summary>FUN_141270610: every slot applied (FUN_1412712e0).</summary>
+    public void ApplyAll()
+    {
+        foreach (var type in items.Keys.OrderBy(t => t).ToList()) ApplySlot(type);
+    }
+
+    /// <summary>EquipByGemType: the item stored at its type, then applied.</summary>
+    public void Equip(int type, Gem gem)
+    {
+        if (type == 0) return;
+        items[type] = gem;
+        ApplySlot(type);
+        Refresh();
+    }
+
+    /// <summary>RemoveByGemType: the type's item removed (FUN_141271500) and its slot cleared.</summary>
+    public void Remove(int type)
+    {
+        if (!items.TryGetValue(type, out var gem)) return;
+        Unapply(type, gem);
+        items.Remove(type);
+        Refresh();
+    }
+
+    /// <summary>FUN_141270740(type) != 0: a gem of the type is worn and usable.</summary>
+    public bool Worn(int type) => items.TryGetValue(type, out var g) && CanUse(g);
+
+    /// <summary>FUN_1412712e0: applied when usable and the field has the gem system.</summary>
+    void ApplySlot(int type)
+    {
+        if (!items.TryGetValue(type, out var gem)) return;
+        if (!CanUse(gem)) return;
+        if (!GemSystem()) return;
+        if (type == ChatBalloonType && balloons.PcBalloon(owner) is { } e)
+            ChatBalloonController.SetSkin(e, ChatBalloonSkin(gem.GemId));
+    }
+
+    /// <summary>CItemGem::vfunc_7 of the type's gem.</summary>
+    void Unapply(int type, Gem gem)
+    {
+        if (type == ChatBalloonType && balloons.PcBalloon(owner) is { } e)
+            ChatBalloonController.SetSkin(e, "");
+    }
+
+    /// <summary>FUN_1405a7e80: the gem id as a decimal string, the skin CGemChatBalloon::vfunc_6 gives the balloon.</summary>
+    public static string ChatBalloonSkin(int gemId) => gemId.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The open's gem test (<see cref="ChatBalloonController.Actor.BalloonGem"/>) follows the worn items.</summary>
+    void Refresh() => owner.BalloonGem = Worn(ChatBalloonType);
+}

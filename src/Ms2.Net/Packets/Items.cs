@@ -24,6 +24,8 @@ public sealed class EquipItem {
     /// <summary>The gem block's type (CItemGem::vfunc_4: the gem's CGemBase m_nType, what GetGem()->vfunc_1() returns); 0 without
     /// a gem.</summary>
     public byte GemType;
+    /// <summary>The gem block's gem id (CGemBase m_nGemId, GetGemId); 0 without a gem.</summary>
+    public int GemId;
     /// <summary>A pet skin gem's pet id (CGemPetSkin m_nPetId, the type 11 gem's i32); 0 for another gem or none.</summary>
     public int GemPetId;
     /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
@@ -341,7 +343,7 @@ public static class ItemReader {
             if (r.ReadBool()) {
                 byte type = r.ReadByte();
                 it.GemType = type;
-                r.ReadInt();
+                it.GemId = r.ReadInt();
                 if (type == 1) { for (int i = 0; i < 10; i++) r.ReadByte(); }
                 else if (type == 11) it.GemPetId = r.ReadInt();
             }
