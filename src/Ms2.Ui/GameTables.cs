@@ -53,6 +53,7 @@ public sealed class GameTables
         ItemModels = new Items.ItemModelTable(packs);
         GemstoneUpgrades = new Items.GemstoneUpgradeTable(packs);
         Lapenshards = new Items.LapenshardTable(packs);
+        MasteryRecipes = new Items.MasteryRecipeTable(packs);
         // CGloabalFactor::LoadMultiControl (gloabalfactor.cpp:128): Table/multicontrol.xml, the locale folder first; the
         // tooltip reads only type equipmentSellPrice (3), keyed by rank
         foreach (var path in new[] { "table/kr/multicontrol.xml", "table/multicontrol.xml" })
@@ -209,6 +210,8 @@ public sealed class GameTables
     public float EquipmentSellRate(int rank) => equipmentSellRates.TryGetValue(rank, out var v) ? v : 1f;
     /// <summary>Table/itemGemstoneUpgrade.xml (CItemGemStoneUpgradeTable); empty without data.</summary>
     public readonly Items.GemstoneUpgradeTable GemstoneUpgrades = Ms2.Ui.Items.GemstoneUpgradeTable.Empty;
+    /// <summary>Table/masteryReceipe.xml (CMasteryTable's recipes); empty without data.</summary>
+    public readonly Items.MasteryRecipeTable MasteryRecipes = Ms2.Ui.Items.MasteryRecipeTable.Empty;
     /// <summary>Table/itemLapenshardUpgrade.xml (CItemLapenshardTable); empty without data.</summary>
     public readonly Items.LapenshardTable Lapenshards = Ms2.Ui.Items.LapenshardTable.Empty;
     /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
@@ -342,6 +345,9 @@ public sealed class GameTables
     /// <summary>CStringTable::FUN_141811980(4, id): the skill's name (string table 4 "skillName"); "" when unknown.</summary>
     public string SkillName(uint id) => Lazy(ref skillNames, "skillname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>CStringTable::FUN_141811980(7, id): string table 7 "popupMenu" (a popup menu item's label); "" when unknown.</summary>
+    /// <summary>CStringTable::FUN_141811980(0x2f, id): stringMasteryReceipeName, empty when none.</summary>
+    public string MasteryRecipeName(int id) => Lazy(ref masteryRecipeNames, "stringmasteryreceipename", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> masteryRecipeNames;
     public string PopupMenuName(int id) => Lazy(ref popupMenuNames, "popupmenu", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>CStringTable::FUN_141811980(8, id): string table 8 "slotName" (a weapon kind's name); "" when unknown.</summary>
     public string SlotName(int id) => Lazy(ref slotNames, "slotname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";

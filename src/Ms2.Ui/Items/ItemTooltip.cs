@@ -516,30 +516,73 @@ public sealed partial class ItemTooltip
     }
 
     /// <summary>
-    /// ASTooltip::FUN_1409d3470 (astooltip.cpp), "extraComment": for a gemstone with feature 0x2e that has a next tier in
-    /// the upgrade table, s_msg_tooltip_gemstone_enable_upgrade and, with ingredients, a line of
-    /// s_msg_tooltip_gemstone_enable_upgrade_ingredients listing their names. Not ported: a score item's comment
-    /// (FUN_1409d9c50), a type 0x10 item's mastery recipes (FUN_1409da690) and ChatEmoticonAdd's emoticons
-    /// (FUN_1409daa30); the member is left out there.
+    /// ASTooltip::FUN_1409d3470 (astooltip.cpp:2574), "extraComment", set only when the text is not empty. A score item
+    /// (IsScoreItem) gets FUN_1409d9c50's text; else a gemstone (FUN_14053d840) with feature 0x2e that has a next tier in
+    /// the upgrade table s_msg_tooltip_gemstone_enable_upgrade (0x9c3) and, with ingredients, a line of
+    /// s_msg_tooltip_gemstone_enable_upgrade_ingredients listing their names; else a type 0x10 item its mastery recipes
+    /// (<see cref="MasteryRecipeText"/>); else a ChatEmoticonAdd item FUN_1409daa30's emoticons.
+    /// STILL-OPEN: FUN_1409d9c50 (the score item text) and FUN_1409daa30 (the emoticon images) are not ported; the member is
+    /// left out for those items.
     /// </summary>
     public void SetExtraComment(Item item)
     {
         var d = item.Data;
-        if (!d.IsGemstone || !model.IsFeatureEnabled(0x2e)) return;
-        var row = Tables.GemstoneUpgrades.Find(d.Id);
-        if (row == null || Tables.GemstoneUpgrades.IsLastTier(row)) return;
-        string text = Common("s_msg_tooltip_gemstone_enable_upgrade");                      // 0x9c3
-        if (row.Ingredients.Count != 0)
+        string text = "";
+        if (d.IsScoreItem) { }                                                              // FUN_1409d9c50: STILL-OPEN
+        else if (d.IsGemstone)
         {
-            string names = "";
-            foreach (int id in row.Ingredients)
+            if (!model.IsFeatureEnabled(0x2e)) return;
+            var row = Tables.GemstoneUpgrades.Find(d.Id);
+            if (row != null && !Tables.GemstoneUpgrades.IsLastTier(row))
             {
-                if (names.Length != 0) names += ", ";
-                names += Tables.ItemName(id);
+                text = Common("s_msg_tooltip_gemstone_enable_upgrade");                     // 0x9c3
+                if (row.Ingredients.Count != 0)
+                {
+                    string names = "";
+                    foreach (int id in row.Ingredients)
+                    {
+                        if (names.Length != 0) names += ", ";
+                        names += Tables.ItemName(id);
+                    }
+                    text += "\n" + CommonF("s_msg_tooltip_gemstone_enable_upgrade_ingredients", names);
+                }
             }
-            text += "\n" + CommonF("s_msg_tooltip_gemstone_enable_upgrade_ingredients", names);
         }
-        Data["extraComment"] = text;
+        else if (d.Type == 0x10) text = MasteryRecipeText(item);
+        if (text.Length != 0) Data["extraComment"] = text;
+    }
+
+    /// <summary>Unk_Inventory::FUN_140a5f180(id, 0) (inventory.cpp:782) on g_143ab2a90: the amounts of the local player's bag
+    /// items of the id (in the id's bag tab) the player can use (PC::CanUseItem); 0 with no player.</summary>
+    public Func<int, int> OwnedCount = _ => 0;
+
+    /// <summary>
+    /// ASTooltip::FUN_1409da690 (astooltip.cpp:3699): empty when no recipe uses the item (CMasteryTable::IngredientReceipes).
+    /// Else per (recipe id, count) pair with a recipe (Find; none is skipped), joined by line breaks:
+    /// s_msg_tooltip_mastery_recipe_info of the type name (TypeName), the recipe name (string table 0x2f,
+    /// stringMasteryReceipeName) and s_msg_tooltip_mastery_recipe_count (_lack when the owned count is below the count) of
+    /// the owned count (<see cref="OwnedCount"/>) and the count.
+    /// </summary>
+    string MasteryRecipeText(Item item)
+    {
+        var table = Tables.MasteryRecipes;
+        var list = table.IngredientRecipes(item.Data.Id);
+        if (list == null) return "";
+        string text = "";
+        foreach (var (recipeId, need) in list)
+        {
+            var recipe = table.Find(recipeId);
+            if (recipe == null) continue;
+            int have = OwnedCount(item.Data.Id);
+            string key = "s_msg_tooltip_mastery_recipe_count";
+            if (have < need) key += "_lack";
+            string type = MasteryRecipeTable.TypeKey(recipe.Type) is { } k ? Common(k) : "";
+            string name = Tables.MasteryRecipeName(recipe.Id);
+            string count = CommonF(key, have, need);
+            if (text.Length != 0) text += "\n";
+            text += CommonF("s_msg_tooltip_mastery_recipe_info", type, name, count);
+        }
+        return text;
     }
 
     /// <summary>

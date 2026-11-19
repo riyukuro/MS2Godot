@@ -49,6 +49,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     public Func<bool> LocalPlayerDead = () => false;
     /// <summary>CUIService m_n128 (FUN_141adcb40): a Shift key is held (DIK 0x2a / 0x36, uiscenegame.cpp:1128).</summary>
     public Func<bool> ShiftHeld = () => false;
+    /// <summary>The local player state the tooltip's owned counts read (g_143ab2a90 and PC::CanUseItem); null counts none.</summary>
+    public Func<Skills.SlotWorld> SlotWorld;
     /// <summary>CInputKeyHandler::IsActionKeyDown(action, 0, 0) (FUN_14025e7c0): the keys of the action are held. Actions read
     /// here: 0x49406 (MS2DragSlot::vfunc_19, the right-click preview) and 0x4940d (FUN_1414056b0, the skin tab put-on).</summary>
     public Func<int, bool> ActionKeyDown = _ => false;
@@ -770,6 +772,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         var equipment = WornEquipment.Of(record, Model.Tables.Items);
         var worn = equipment?.ForCompare(item, Model.Tables.ItemModels, ShiftHeld());
         if (worn != null && worn.Uid == item.Uid) return null;
+        Skills.SlotWorld world = null;                                    // built once per hover, on the first count
         var tip = new ItemTooltip(Model, 0x80)
         {
             Owner = record != null ? (record.CharacterId, record.Name) : null,
@@ -777,6 +780,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             OwnerWearsUid = uid => equipment?.Wears(uid) == true,
             OwnerEquipment = equipment,
             ShiftHeld = ShiftHeld,
+            OwnedCount = id => (world ??= SlotWorld?.Invoke())?.CountById(id) ?? 0,
         };
         if (!tip.FillCompare(worn, item)) return null;
         tip.SetEnablePutonBoth("", UseHint(item));

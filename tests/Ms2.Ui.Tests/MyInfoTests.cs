@@ -756,6 +756,76 @@ public class MyInfoTests
     }
 
     [Test]
+    public void MasteryRecipeCommentIsTheClients()
+    {
+        var m = NewModel();
+        string Comment(int id, int have)
+        {
+            var tip = new ItemTooltip(m, 0x80) { OwnedCount = i => i == id ? have : 0 };
+            tip.Fill(Item.Create(m.Tables.Items, id, 1));
+            return tip.Data.TryGetValue("extraComment", out var v) ? (string)v : null;
+        }
+        // 33000014 (type 0x10) is an ingredient of eight recipes, in file order; the count turns red below each need
+        Assert.That(m.Tables.Items.Get(33000014).Type, Is.EqualTo(0x10));
+        var lines = Comment(33000014, 30).Split('\n');
+        Assert.That(lines, Has.Length.EqualTo(8));
+        Assert.That(lines[0], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Opal Smithing Slate (30/2)"));
+        Assert.That(lines[1], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tin Whetstone (30/30)"));
+        Assert.That(lines[3], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tier 1 Gemstone Box (<FONT color='#FF5F5F' >30</FONT>/160)"));
+        Assert.That(lines[4], Does.StartWith("<FONT color='#FFD200'>[Handicrafts]</FONT> Used to craft Snail Shell Handicraft Slate ("));
+        Assert.That(Comment(33000014, 0).Split('\n')[0], Does.EndWith("(<FONT color='#FF5F5F' >0</FONT>/2)"));
+        // a type 0x10 item no recipe uses, and a non-ingredient, have none
+        Assert.That(Comment(12200398, 0), Is.Null);
+        var drawnTip = new ItemTooltip(m, 0x80);
+        drawnTip.Fill(Item.Create(m.Tables.Items, 33000014, 1));
+        var shown = TooltipTests.Draw(drawnTip.Data);
+        TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
+        Assert.That(shown, Has.Some.Contains("Used to craft Opal Smithing Slate"));
+    }
+
+    [Test]
+    public void MasteryRecipeTableIsTheClients()
+    {
+        // FUN_14026b9d0: three ',' parts, the id before ':', the third part the count; id 0 or another part count adds none
+        Assert.That(MasteryRecipeTable.ParseIngredient("40201610:GemstoneA10,4,1"), Is.EqualTo(new MasteryRecipeTable.Ingredient(40201610, 1)));
+        Assert.That(MasteryRecipeTable.ParseIngredient("33000014,,2,5"), Is.EqualTo(new MasteryRecipeTable.Ingredient(33000014, 5)), "Tokenize skips empty tokens");
+        Assert.That(MasteryRecipeTable.ParseIngredient("33000014,0"), Is.Null);
+        Assert.That(MasteryRecipeTable.ParseIngredient("0,0,3"), Is.Null);
+        Assert.That(MasteryRecipeTable.ParseIngredient(""), Is.Null);
+        // a later row of an id replaces the recipe; the ingredient lists keep every loaded row
+        var t = new MasteryRecipeTable(System.Xml.Linq.XDocument.Parse(
+            "<ms2><receipe id='1' masteryType='3' requireItem1='5,0,2' requireItem2='6,0,1' />" +
+            "<receipe id='2' masteryType='7' requireItem3='5,0,4' />" +
+            "<receipe id='1' masteryType='9' requireItem1='5,0,8' /></ms2>"));
+        Assert.That(t.Find(1).Type, Is.EqualTo(9));
+        Assert.That(t.IngredientRecipes(5), Is.EqualTo(new[] { (1, 2), (2, 4), (1, 8) }));
+        Assert.That(t.IngredientRecipes(6), Is.EqualTo(new[] { (1, 1) }));
+        Assert.That(t.IngredientRecipes(7), Is.Null);
+        Assert.That((MasteryRecipeTable.TypeKey(3), MasteryRecipeTable.TypeKey(11), MasteryRecipeTable.TypeKey(2)),
+            Is.EqualTo(("s_mastery_mining", "s_mastery_pettaming", (string)null)));
+    }
+
+    [Test]
+    public void OwnedCountIsTheClients()
+    {
+        var m = NewModel();
+        EquipItem E(int id, int amount, long expiry = 0) => new() { Id = id, Uid = id + amount, Amount = amount, ExpiryTime = expiry };
+        var w = new Ms2.Ui.Skills.SlotWorld
+        {
+            ItemData = m.Tables.Items.Get, TabOf = id => id == 33000014 ? 3 : 4,
+            Inventory = new[] { E(33000014, 7), E(33000014, 5), E(33000014, 9, 1), E(33000117, 4) },
+        };
+        // FUN_140a5f180(id, 0): the usable items of the id in its tab (an expired one is not usable)
+        Assert.That(w.CountById(33000014), Is.EqualTo(12));
+        Assert.That(w.CountById(0), Is.EqualTo(0));
+        w.TabOf = _ => 15;
+        Assert.That(w.CountById(33000014), Is.EqualTo(0), "no tab");
+        w.TabOf = _ => 3;
+        w.HasPc = false;
+        Assert.That(w.CountById(33000014), Is.EqualTo(0), "no local player");
+    }
+
+    [Test]
     public void ModelSlotTypesAreTheClients()
     {
         var models = new ItemModelTable(Packs());

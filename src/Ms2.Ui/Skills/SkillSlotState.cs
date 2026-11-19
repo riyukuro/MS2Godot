@@ -100,6 +100,16 @@ public sealed class SlotWorld
     }
 
     public bool CanUse(EquipItem item) => CanUseItem?.Invoke(item) ?? CanUseItemDefault(item, DateTimeOffset.UtcNow);
+
+    /// <summary>Unk_Inventory::FUN_140a5f180 (inventory.cpp:782) with rarity 0: the amounts of the usable items of the id in
+    /// its tab; 0 for id 0, no player, no item data or a tab outside 0-14.</summary>
+    public int CountById(int itemId)
+    {
+        if (itemId == 0 || !HasPc || ItemData(itemId) == null) return 0;
+        int tab = TabOf(itemId);
+        if (tab is < 0 or >= ItemBook.Tabs) return 0;
+        return Inventory.Where(i => TabOf(i.Id) == tab && i.Id == itemId && CanUse(i)).Sum(i => i.Amount);
+    }
 }
 
 /// <summary>The CFieldData / CFieldDataCli values the cast check reads, with the ctor defaults (fielddata.cpp:548).</summary>
@@ -307,14 +317,7 @@ public sealed record SkillSlotState(SlotWorld W, uint SkillId, int ItemId, long 
         return n;
     }
 
-    /// <summary>FUN_140a5f180 (inventory.cpp:782) with rarity 0: the counts of the usable items of the id in its tab.</summary>
-    int CountById(int itemId)
-    {
-        if (itemId == 0 || !W.HasPc || W.ItemData(itemId) == null) return 0;
-        int tab = W.TabOf(itemId);
-        if (tab is < 0 or >= ItemBook.Tabs) return 0;
-        return Tab(tab).Where(i => i.Id == itemId && W.CanUse(i)).Sum(i => i.Amount);
-    }
+    int CountById(int itemId) => W.CountById(itemId);
 
     /// <summary>GetItemCount @0x141760220: a skill slot (not an item count kind) counts the skill's items; an item slot counts
     /// a stackable item, a consumable one by its skill unless the skill is an item count kind.</summary>
