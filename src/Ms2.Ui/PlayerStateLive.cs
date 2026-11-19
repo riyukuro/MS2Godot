@@ -13,6 +13,7 @@ namespace Ms2.Ui;
 /// <item>HP, SP, stamina: the Stat attributes 4, 7 and 10, current = stat row 2 and total = row 0 (OnStat, :9424, with
 /// PCBase::FUN_141670a00 / FUN_141670a30, pcbase.cpp:1967-1976); before the first Stat, the user block's HP;</item>
 /// <item>exp and rest exp: DAT_143ab28a0 / DAT_143ab28a8 from ServerEnter (:2085-2086) and ExpUp (:4140-4141);</item>
+/// <item>mesos: DAT_143ab2898 from ServerEnter (:2087) and Meso (OnMeso, :7009, status event 8 at :7020);</item>
 /// <item>channel: the user block's channel;</item>
 /// <item>adventure level: the user block's m_530 (PC vfunc_141), then Prestige kind 2 (OnPrestige, :8836 vfunc_140, which
 /// the session writes back to the user block).</item>
@@ -60,6 +61,7 @@ public static class PlayerStateLive
         }
         Set(ref p.Exp, me.Exp, StatusEvent.Exp);
         Set(ref p.RestExp, me.RestExp, StatusEvent.Exp);
+        Set(ref p.Mesos, me.Meso, StatusEvent.Meso);
         p.Channel = u.Channel;
         return changed;
     }

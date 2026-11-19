@@ -34,4 +34,15 @@ public class PlayerStateLiveTests
         me.User.Level = 4;
         Assert.That(p.Apply(me), Is.EqualTo(new[] { StatusEvent.Level }));
     }
+    [Test]
+    public void TheMesoBalanceIsStatusEventEight()
+    {
+        var me = new MyCharacter { Meso = 12345, User = new UserBlock { Name = "Gdcap" } };   // ServerEnter's balance
+        var p = new PlayerState();
+        Assert.That(p.Apply(me), Does.Contain(StatusEvent.Meso));
+        Assert.That(p.Mesos, Is.EqualTo(12345L));
+        Assert.That(p.Apply(me), Is.Empty);
+        me.Meso = 46912;
+        Assert.That(p.Apply(me), Is.EqualTo(new[] { StatusEvent.Meso }));
+    }
 }

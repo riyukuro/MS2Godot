@@ -361,10 +361,21 @@ public sealed class MyCharacter {
     /// (scenestategame.cpp:2085-2086), then ExpUp (scenestategame.cpp:4140-4141, mode 1 :4184).</summary>
     public long Exp, RestExp;
 
+    /// <summary>The meso balance (DAT_143ab2898): ServerEnter (scenestategame.cpp:2087), then Meso (OnMeso, :7006-7009).</summary>
+    public long Meso;
+
     public void Apply(ServerEnter e) {
         if (e == null) return;
-        Exp = e.Exp; RestExp = e.RestExp;
+        Exp = e.Exp; RestExp = e.RestExp; Meso = e.Meso;
         Changed?.Invoke();
+    }
+
+    /// <summary>OnMeso (scenestategame.cpp:7006): the new balance; returns the change (new - old, :7008).</summary>
+    public long Apply(MesoUpdate m) {
+        long delta = m.Balance - Meso;
+        Meso = m.Balance;
+        Changed?.Invoke();
+        return delta;
     }
 
     public void Apply(ExpUp e) {

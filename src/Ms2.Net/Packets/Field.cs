@@ -77,6 +77,12 @@ public sealed record LevelUp(int ObjectId, int Level) {
     public static LevelUp Read(ByteReader r) => new(r.ReadInt(), (ushort) r.ReadShort());
 }
 
+/// <summary>Inbound 0x39 (CSceneStateGame::OnMeso, scenestategame.cpp:7006): i64 the meso balance (DAT_143ab2898), i32 the
+/// kind of the change (FUN_1413612c0's nType).</summary>
+public sealed record MesoUpdate(long Balance, int Kind) {
+    public static MesoUpdate Read(ByteReader r) => new(r.ReadLong(), r.ReadInt());
+}
+
 /// <summary>Inbound 0x7E sub command 3 (AddPlayer proxy). Other sub commands are returned with only the command set.</summary>
 public sealed class ProxyGameObj {
     public byte Command;

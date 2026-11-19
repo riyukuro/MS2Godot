@@ -112,6 +112,12 @@ public partial class LiveSession : Node
     /// packet with no HUD to see it changes only the data, as the client's handler finds no dialog or bar then.
     /// </summary>
     public event Action<PrestigeMessage> PrestigeReceived;
+    /// <summary>
+    /// The Meso packet (0x39, CSceneStateGame::OnMeso, scenestategame.cpp:7006), raised after <see cref="Me"/> took the new
+    /// balance: the change (new - old) and the packet's kind, for FUN_1413612c0's chat line (:7019). The balance itself
+    /// reaches the HUD through <see cref="MyCharacter.Changed"/> (status event 8, :7020).
+    /// </summary>
+    public event Action<long, int> MesoChanged;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
@@ -531,6 +537,13 @@ public partial class LiveSession : Node
                 var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
                 Me.Apply(e);
                 GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
+            }
+            else if (game.Is(p, Inbound.Meso))
+            {
+                var m = MesoUpdate.Read(p.Reader());
+                long delta = Me.Apply(m);
+                GD.Print($"live: meso {m.Balance} ({delta:+#;-#;0}, kind {m.Kind})");
+                MesoChanged?.Invoke(delta, m.Kind);
             }
             else if (game.Is(p, Inbound.LevelUp))
             {

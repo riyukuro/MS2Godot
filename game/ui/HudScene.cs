@@ -154,6 +154,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPrestige = null;
         unwatchCharacterAbility?.Invoke();
         unwatchCharacterAbility = null;
+        unwatchMeso?.Invoke();
+        unwatchMeso = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         unwatchLivePlayer?.Invoke();
         unwatchLivePlayer = null;
@@ -261,6 +263,7 @@ public partial class HudScene : Node, IUiStageHost
         LearningQuest();
         if (unwatchPrestige == null) WatchPrestige();       // a window relayout keeps it
         CharacterAbility();
+        if (unwatchMeso == null) WatchMeso();               // a window relayout keeps it
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
@@ -518,6 +521,7 @@ public partial class HudScene : Node, IUiStageHost
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
         ui.AddChild(upperHud);
+        WatchLivePlayer(model);     // live, the mesos of ServerEnter and the Meso packets (status event 8)
     }
 
     /// <summary>The target HP bar (UIUpperHpBar, uiupperhpbar.cpp), run by its movie; kept across relayouts.</summary>
@@ -1474,6 +1478,33 @@ public partial class HudScene : Node, IUiStageHost
         Action<Ms2.Net.Packets.PrestigeMessage> onPrestige = m => ApplyPrestige(m, live.Me.ObjectId);
         live.PrestigeReceived += onPrestige;
         unwatchPrestige = () => live.PrestigeReceived -= onPrestige;
+    }
+
+    Action unwatchMeso;
+
+    /// <summary>The Meso packets' chat line (OnMeso, scenestategame.cpp:7019); the balance reaches the HUD through the live
+    /// player (status event 8).</summary>
+    void WatchMeso()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live == null) return;
+        Action<long, int> onMeso = (delta, kind) => MesoLine(delta, kind);
+        live.MesoChanged += onMeso;
+        unwatchMeso = () => live.MesoChanged -= onMeso;
+    }
+
+    /// <summary>
+    /// FUN_1413612c0 (uiworldshareinfoeventlistener.cpp:225): a gain is s_msg_take_meso (FormatStringId 0x2c3), a loss
+    /// s_msg_consume_meso (0x2c4), each with the grouped amount (FUN_1409404f0), as a chat line of kind 5 (FUN_1412751b0,
+    /// the Require "meso" switch); nothing for 0. STILL-OPEN: the PC cafe suffix s_msg_take_pcbang (0x2c5), added to a gain of
+    /// kind 0x15 or 0xea61 when the PC's FUN_141658fa0 flags meet the client constant at +0x5968, is not ported.
+    /// </summary>
+    void MesoLine(long delta, int kind)
+    {
+        if (delta == 0) return;
+        int id = delta > 0 ? 0x2c3 : 0x2c4;
+        string text = Ms2.Quest.ClientFormat.Format(hudModel.Tables.Common(id), Ms2.Ui.AchieveTexts.Group(Math.Abs(delta)));
+        ChatLog.AddSystemLine(text, Ms2.Ui.Hud.TalkKind.Meso);
     }
 
     void ApplyPrestige(Ms2.Net.Packets.PrestigeMessage m, int selfObject)

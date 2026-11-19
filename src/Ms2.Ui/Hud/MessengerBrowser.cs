@@ -13,6 +13,8 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public static class TalkKind
 {
+    /// <summary>RequireSetting "meso" (FUN_1414818b0): the meso gain and spend lines (FUN_1413612c0).</summary>
+    public const int Meso = 5;
     /// <summary>RequireSetting "item" (FUN_1414818b0): the item gain lines (FUN_141a24890).</summary>
     public const int Item = 9;
     /// <summary>NoticeSetting "friend" (FUN_141481040, messengerdata.cpp:299): the buddy lines (CBuddyManager::OnBuddy's
