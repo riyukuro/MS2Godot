@@ -13,9 +13,10 @@ namespace Ms2.Ui.Hud;
 /// and RefreshQuestState, unit_14108e1e0_npcactorandvibrate.cpp) is here too: <see cref="SpawnNpc"/>, <see cref="NpcTick"/>.
 /// </para>
 /// <para>
+/// The status kind 2 is the talk's: <see cref="SetNpcNameTag"/> sets it and <see cref="TalkPageShown"/> drops it; it is
+/// the only kind the talk scene shows.
 /// STILL-OPEN: the PC emoticons (pc.cpp / mypc.cpp make them on demand; kind 3 is the microgame's, statemicrogame.cpp, with
-/// the PC's FUN_141670500 offset) and the status kind 2 (set through UIStatusEvent; FUN_14192f9f0 drops it) have no caller
-/// here.
+/// the PC's FUN_141670500 offset) have no caller here.
 /// </para>
 /// <para>
 /// The load gate (CNpc::vfunc_83 @0x1410903b0): with <see cref="ProgressiveLoading"/> an npc has no emoticon until its actor
@@ -36,8 +37,8 @@ namespace Ms2.Ui.Hud;
 ///   CNpc::vfunc_10 (10331), the spawn.
 /// So an npc with a kind or an iconName shows its emoticon at spawn. The test fails the spawn only when the model never
 /// loaded (AnimationService answers the preload with no actor manager, so no actor add); <see cref="RefreshQuestState"/>
-/// asks again on a quest mark change, and vfunc_83 gives none while the actor is not added. (UITalkManager's SetNpcNameTag and talk
-/// page, uitalkcinematic.cpp:1102 and 1563-1565, also ask; STILL-OPEN: not ported, with the talk scene's status kind.)
+/// asks again on a quest mark change, and vfunc_83 gives none while the actor is not added. The talk's
+/// <see cref="SetNpcNameTag"/> and <see cref="TalkPageShown"/> ask too.
 /// </para>
 /// </summary>
 public sealed class EmoticonController : UiController
@@ -94,8 +95,12 @@ public sealed class EmoticonController : UiController
     }
 
     /// <summary>
-    /// GFxSceneService FUN_1422b9ea0 or the sub scene 0x6200031 (the NPC talk scene, <see cref="MovieLayers.InTalk"/> for the
-    /// host): only the status kind is shown. STILL-OPEN: the scene FUN_1422b9ea0 tests is not known.
+    /// The sub scene (GFxSceneService GetSubSceneId, [this+0x2c]) is a cinematic one: GFxSceneService FUN_1422b9ea0 is 1 for
+    /// 0x6200041 (UISceneGameCinematicCutScene) and 0x620007f (UISceneGameCinematicPlay), and Entity::vfunc_8 adds 0x6200031
+    /// (the NPC talk scene, <see cref="MovieLayers.InTalk"/> for the host): only the status kind is shown.
+    /// STILL-OPEN: no cut scene or cinematic play sub scene is ported (SetSubScene 0x6200041 at interactobject.cpp:975,
+    /// guideaction.cpp:1162 and uicutscenecinematic.cpp:279; 0x620007f is the scene id of uiscenegamecinematicplay.cpp:32),
+    /// so the host gives the talk scene only.
     /// </summary>
     public Func<bool> SceneHidesEmoticons = () => false;
     /// <summary>
@@ -337,6 +342,36 @@ public sealed class EmoticonController : UiController
         a.Quest = questState();
         if (was.Icon != a.Quest.Icon || was.State != a.Quest.State)
             if (NpcEntity(a) is { } e) Refresh(e);
+    }
+
+    // ---- the talk (UITalkManager, uitalkcinematic.cpp) ---------------------------------------------------------------
+
+    /// <summary>
+    /// UITalkManager::SetNpcNameTag (@0x141b1e990, NpcTalk mode 3 sub 1): the talk npc's vfunc_83 emoticon, when there is
+    /// one, becomes the status kind (FUN_14192f8b0(2)) with the packet's text as its movie name (FUN_14192f8d0, m_b8),
+    /// started (vfunc_2).
+    /// </summary>
+    public Entity SetNpcNameTag(Actor a, string text)
+    {
+        if (a == null || NpcEntity(a) is not { } e) return null;
+        e.Kind = 2;
+        e.Icon = text ?? "";
+        Start(e);
+        return e;
+    }
+
+    /// <summary>
+    /// The talk page shown (UITalkManager FUN_141b204d0, uitalkcinematic.cpp:1562-1565): the talk npc's vfunc_83 emoticon
+    /// gets FUN_14192f9f0(m_nSubMode): the status kind, unless the last mode 3 packet was the name tag (sub 1), goes back
+    /// to none with no name and refreshes (FUN_14192f910).
+    /// </summary>
+    public void TalkPageShown(Actor a, int subMode)
+    {
+        if (a == null || NpcEntity(a) is not { } e) return;
+        if (e.Kind != 2 || subMode == 1) return;
+        e.Kind = 4;
+        e.Icon = "";
+        Refresh(e);
     }
 
     // ---- the frame (UIHudEntity::vfunc_15, uihudentity.cpp @0x140f49950) ----------------------------------------------

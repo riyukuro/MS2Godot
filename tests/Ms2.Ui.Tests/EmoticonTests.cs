@@ -199,6 +199,50 @@ public class EmoticonTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// The talk's name tag (SetNpcNameTag): the status kind with the packet's movie name, the only kind the talk scene shows;
+    /// a page shown keeps it after that name tag (m_nSubMode 1) and drops it otherwise (FUN_14192f9f0), and leaving the
+    /// scene drops the kind too but keeps a name not yet opened (Entity::vfunc_8).
+    /// </summary>
+    [Test]
+    public void TheTalksNameTagIsTheStatusKindUntilAnotherPageIsShown()
+    {
+        bool inTalk = true;
+        var c = new EmoticonController { SceneHidesEmoticons = () => inTalk };
+        var h = Load(c);
+        var npc = new EmoticonController.Actor { ObjectId = 1, IsNpc = true, ActorAdded = true, NpcKind = 0xb, Friendly = 1, Distance = 10 };
+        var e = c.SpawnNpc(npc, () => NpcQuestMarks.Mark.None);
+        c.Process(At);
+        Assert.That(Rt.ToBoolean(h.Get(e.Clip, "visible")), Is.False, "the talk scene hides the npc kind");
+        Assert.That(c.SetNpcNameTag(npc, "emoticon_movie_quest_progress"), Is.SameAs(e));
+        Assert.That(e.Kind, Is.EqualTo(2));
+        c.Process(At);
+        Assert.That(e.Opened, Is.EqualTo("emoticon_movie_quest_progress"));
+        Assert.That(Shown(h, e), Is.Not.Null);
+        Assert.That(Rt.ToNumber(h.Get(e.Clip, "y")), Is.EqualTo(400 + c.NpcOffset + 30), "vfunc_6: the status kind is 30 lower");
+        Assert.That(e.Icon, Is.Empty, "the status kind's name is used once");
+        c.TalkPageShown(npc, 1);
+        Assert.That(e.Kind, Is.EqualTo(2));
+        c.TalkPageShown(npc, 0);
+        Assert.That(e.Kind, Is.EqualTo(0), "dropped, then the npc's refresh");
+        Assert.That(e.Active, Is.True);
+        // set again, then the scene is left before it opens: the frame drops the kind (vfunc_8: FUN_14192f8b0(4) and the
+        // refresh) but not the name, so the npc kind opens with the name tag's movie name
+        c.SetNpcNameTag(npc, "emoticon_movie_npc_mail");
+        inTalk = false;
+        c.Process(At);
+        Assert.That(e.Kind, Is.EqualTo(0));
+        c.Process(At);
+        Assert.That(e.Opened, Is.EqualTo("emoticon_movie_npc_mail"));
+        Assert.That(e.Icon, Is.EqualTo("emoticon_movie_npc_mail"), "only the status kind's open uses the name once");
+        // before the actor is added (ProgressiveLoading) vfunc_83 gives none: nothing is set
+        var late = new EmoticonController.Actor { ObjectId = 2, IsNpc = true, NpcKind = 0xb, Friendly = 1 };
+        Assert.That(c.SetNpcNameTag(late, "emoticon_movie_npc_mail"), Is.Null);
+        c.TalkPageShown(late, 0);
+        Assert.That(c.Entities.ContainsKey(2), Is.False);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void AReleasedEntityIsPooledForTheNextActor()
     {

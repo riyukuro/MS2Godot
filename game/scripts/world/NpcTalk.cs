@@ -63,6 +63,7 @@ public sealed partial class NpcTalk : Node
     int flags;                         // the talk type of the server's last mode 1 / 2 (NpcTalkType)
     readonly List<int> talkQuests = new();   // the quests of the talk (QuestPacket.Talk)
     int questId;                       // the quest whose script runs, 0 for an npc script
+    int subMode;                       // m_nSubMode: the last mode 3 packet's sub, 0 again once a mode 2 is sent
     UiAssets ui;
     CanvasLayer layer;
     MovieDialog window;
@@ -81,6 +82,10 @@ public sealed partial class NpcTalk : Node
     /// <summary>The page shown (0 based) and its script id, for the shots.</summary>
     public int Page => page;
     public int ScriptId => script?.Id ?? 0;
+    /// <summary>NpcTalk mode 3 sub 1 (UITalkManager::SetNpcNameTag): the talk npc's name tag text, for its emoticon.</summary>
+    public event Action<FieldNpcs.Placed, string> NpcNameTag;
+    /// <summary>The talk page was shown (FUN_141b204d0, uitalkcinematic.cpp:1562-1565): the talk npc and m_nSubMode.</summary>
+    public event Action<FieldNpcs.Placed, int> TalkPageShown;
 
     public NpcTalk(PackSet packs, List<FieldNpcs.Placed> npcs, Player player, ClientConstants constants, LiveSession live = null)
     {
@@ -402,6 +407,8 @@ public sealed partial class NpcTalk : Node
             side.SendQuestProgress += q => GD.Print($"talk: quest {q} progress (Quest mode 0x12; the Maple2 server does not handle it)");
             side.SendEnd += () => { };                      // NpcTalk mode 0: nothing to tell offline
         }
+        side.SendNext += _ => subMode = 0;              // SendNpcTalkMode2 (uitalkcinematic.cpp:1675)
+        side.PageShown += () => { if (talking != null) TalkPageShown?.Invoke(talking, subMode); };
         side.TalkReset += () => Sound(talking?.Row.SoundEnd, talking?.Position ?? Vector3.Zero);
         side.PlayVoice += v => Sound(v, talking?.Position ?? Vector3.Zero);
         side.CloseComplete += () => CallDeferred(nameof(Teardown));
@@ -471,6 +478,7 @@ public sealed partial class NpcTalk : Node
     /// <summary>UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971) for the window.</summary>
     void OnLiveTalk(NpcTalkMessage m)
     {
+        if (NpcTalkMessage.SubMode(m) is { } sub) subMode = sub;
         switch (m)
         {
             case NpcTalkMessage.Open o:
@@ -509,6 +517,10 @@ public sealed partial class NpcTalk : Node
             case NpcTalkMessage.Close:
                 liveRequested = null; liveTalking = null;
                 side?.OnServerEnd();
+                return;
+            case NpcTalkMessage.NameTag t:
+                // GetTalkNpc: the npc of the talk's object id (m_nNpcId, set by mode 1)
+                if ((liveTalking ?? talking) is { } tagged) NpcNameTag?.Invoke(tagged, t.Text);
                 return;
             case NpcTalkMessage.RewardMeso x: side?.OnRewardMeso(x.Amount); return;
             case NpcTalkMessage.RewardMerat x: side?.OnRewardMerat(x.Amount); return;

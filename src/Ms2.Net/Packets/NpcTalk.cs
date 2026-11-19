@@ -48,6 +48,16 @@ public abstract record NpcTalkMessage {
     /// <summary>Modes and mode 3 subs not decoded here (mode 10 carries a whole CTalkScript).</summary>
     public sealed record Other(int Mode, int Sub) : NpcTalkMessage;
 
+    /// <summary>
+    /// Mode 3's sub (the u8 OnTalkPacket keeps in m_nSubMode before it dispatches, uitalkcinematic.cpp:1016, for every sub);
+    /// null for the other modes.
+    /// </summary>
+    public static int? SubMode(NpcTalkMessage m) => m switch {
+        NameTag => 1, MovePlayer => 3, OpenDialog => 4, RewardItems => 5, RewardMerat => 6, RewardMeso => 7,
+        RewardExp => 8, RewardAffinity => 9, Cutscene => 10, Other { Mode: 3 } o => o.Sub,
+        _ => null,
+    };
+
     public static NpcTalkMessage Read(ByteReader r) {
         int mode = r.ReadByte();
         switch (mode) {

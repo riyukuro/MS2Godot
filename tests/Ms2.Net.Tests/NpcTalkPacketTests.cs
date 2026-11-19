@@ -46,6 +46,14 @@ public class NpcTalkPacketTests {
         Assert.That(Read(w => { w.WriteByte(10); w.WriteInt(1); }), Is.EqualTo(new NpcTalkMessage.Other(10, 0)));
     }
 
+    [Test] public void EveryModeThreeSubIsKeptAsTheSubMode() {
+        Assert.That(NpcTalkMessage.SubMode(Read(w => { w.WriteByte(3); w.WriteByte(1); w.WriteUnicodeString("tag"); })), Is.EqualTo(1));
+        Assert.That(NpcTalkMessage.SubMode(Read(w => { w.WriteByte(3); w.WriteByte(7); w.WriteLong(1); })), Is.EqualTo(7));
+        Assert.That(NpcTalkMessage.SubMode(Read(w => { w.WriteByte(3); w.WriteByte(2); })), Is.EqualTo(2), "a sub with no reader is kept too");
+        Assert.That(NpcTalkMessage.SubMode(Read(w => w.WriteByte(0))), Is.Null);
+        Assert.That(NpcTalkMessage.SubMode(new NpcTalkMessage.Other(10, 0)), Is.Null);
+    }
+
     [Test] public void TheClientsSendsAreLaidOutAsItsWriters() {
         Assert.That(Bytes(new NpcTalkBeginRequest(0x01020304)), Is.EqualTo(new byte[] { 1, 4, 3, 2, 1 }));
         Assert.That(Bytes(new NpcTalkEndRequest()), Is.EqualTo(new byte[] { 0 }));

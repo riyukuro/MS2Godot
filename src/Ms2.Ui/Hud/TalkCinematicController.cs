@@ -152,6 +152,11 @@ public sealed class TalkCinematicController : UiController
     public event Action<string> PlayVoice;
     /// <summary>OnCloseComplete (vfunc_28 :285): FUN_1422dc080 unloads the movie.</summary>
     public event Action CloseComplete;
+    /// <summary>
+    /// FUN_141b204d0's end (:1562-1565): the page was shown; the talk npc's vfunc_83 emoticon gets FUN_14192f9f0(m_nSubMode)
+    /// (<c>EmoticonController.TalkPageShown</c>).
+    /// </summary>
+    public event Action PageShown;
 
     /// <summary>DAT_143af62d4 / DAT_143af62d8, the client size, and GFxManager::GetMovieScale(m_28) (vfunc_43 :231).</summary>
     public int ClientWidth = 1280, ClientHeight = 720;
@@ -333,7 +338,8 @@ public sealed class TalkCinematicController : UiController
     /// <summary>
     /// FUN_141b204d0 (:1542) after the load and on the server's mode 2 (:1010): ShowCurrentPage (:1636) shows the page
     /// (a page past the script's end shows nothing and counts as shown), and when ShowPage fails (not loaded, the last
-    /// page still typing, no component) the talk ends (SendNpcTalkMode0); then nothing is pending.
+    /// page still typing, no component) the talk ends (SendNpcTalkMode0); then nothing is pending and the talk npc's
+    /// emoticon is told (<see cref="PageShown"/>, :1562-1565).
     /// </summary>
     public bool ShowCurrent()
     {
@@ -343,6 +349,7 @@ public sealed class TalkCinematicController : UiController
             return false;
         }
         pending = false;
+        PageShown?.Invoke();
         return true;
     }
 

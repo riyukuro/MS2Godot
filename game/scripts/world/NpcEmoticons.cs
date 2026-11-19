@@ -24,7 +24,9 @@ namespace Ms2Godot.World;
 /// - Distance: from the local player, as the name tags measure it (<see cref="NpcPresence"/>), against
 ///   EmoticonVisibleDistance.
 /// - The talk scene (<see cref="MovieLayers.InTalk"/>) shows the status kind only, and the Emoticon layer
-///   (CommonDepth 4) hides them all with the field's layers.
+///   (CommonDepth 4) hides them all with the field's layers. The talk's name tag (NpcTalk mode 3 sub 1) makes the talk
+///   npc's emoticon that kind with its text; a page shown drops it unless the last mode 3 packet was that name tag
+///   (<see cref="NpcTalk"/>).
 /// - The quest kind comes from the character's quest records through <see cref="NpcTalk.QuestMark"/> (offline the
 ///   sandbox's, live the session's QuestBook).
 /// STILL-OPEN: the officer npcs' alliance symbol (CFameTable GetSymbolByOfficerNpc) is not loaded, so those npcs show
@@ -93,7 +95,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
             NpcOffset = constants.Float("OffsetNpcEmoticon", -30),
             QuestOf = quests.Quest,
             ProgressiveLoading = ProgressiveLoading.Value,
-            SceneHidesEmoticons = () => MovieLayerHost.Layers.InTalk,
+            SceneHidesEmoticons = () => MovieLayerHost.Layers.InTalk,     // the cut scene sub scenes are not ported
         };
         try
         {
@@ -119,6 +121,16 @@ public sealed partial class NpcEmoticons : CanvasLayer
         npcs[n] = byActor[a] = new Npc { Placed = n, Actor = a };
     }
 
+    void OnNameTag(FieldNpcs.Placed n, string text)
+    {
+        if (npcs.TryGetValue(n, out var x)) controller?.SetNpcNameTag(x.Actor, text);
+    }
+
+    void OnTalkPage(FieldNpcs.Placed n, int subMode)
+    {
+        if (npcs.TryGetValue(n, out var x)) controller?.TalkPageShown(x.Actor, subMode);
+    }
+
     NpcQuestMarks.Mark QuestMark(EmoticonController.Actor a) => talk?.QuestMark(a.NpcId) ?? NpcQuestMarks.Mark.None;
 
     /// <summary>A live field: the session's npcs now, the new ones spawned and the gone ones released.</summary>
@@ -137,6 +149,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
 
     public override void _EnterTree()
     {
+        if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += Relayout;
         Relayout();
@@ -144,6 +157,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
 
     public override void _ExitTree()
     {
+        if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; }
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
     }
 
