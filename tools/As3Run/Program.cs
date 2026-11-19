@@ -6,9 +6,10 @@ using Ms2.Formats.Pack;
 
 // As3Run: runs UI movies' own ActionScript 3 headless (Ms2.Avm2 interpreter + flash.* runtime).
 //   As3Run run <movie> [--frames N] [--trace] [--tree]   one movie: errors, missing APIs, display tree
+//   As3Run drive [--frames N] [--after N] [--max-objects N] [--out FILE] [--only SUBSTR]  every movie driven by input: pointer, text, keys
 //   As3Run scan [--frames N] [--out FILE] [--only SUBSTR] every movie: construct the document class, run N frames, coverage report
 string data = Environment.GetEnvironmentVariable("MS2_DATA");
-bool hostMode = true; int frames = 60; bool trace = false, tree = false; string outFile = null, only = null;
+bool hostMode = true; int frames = 60, after = 30, maxObjects = 200; bool trace = false, tree = false; string outFile = null, only = null;
 var pos = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -22,6 +23,8 @@ for (int i = 0; i < args.Length; i++)
         case "--only": only = args[++i]; break;
         case "--gen": Console.Error.WriteLine($"compiled bodies: {GeneratedCode.LoadAssembly(args[++i])} blocks"); break;
         case "--nohost": hostMode = false; break;
+        case "--after": after = int.Parse(args[++i]); break;
+        case "--max-objects": maxObjects = int.Parse(args[++i]); break;
         case "--oracle": Interp.UseOracle = true; break;
         default: pos.Add(args[i]); break;
     }
@@ -330,6 +333,112 @@ switch (pos[0])
                 Console.WriteLine($"{n}\tlinked by {k}");
         }
         foreach (var n in want) foreach (var (k, l) in imports) foreach (var i in l) { if (src.Movie(i)?.SymbolClasses.Values.Concat(src.Movie(i).Exports.Values).Contains(n) == true) Console.WriteLine($"{n}\t{k} imports {i}"); }
+        return 0;
+    }
+    case "drive":
+    {
+        // The walk of `scan` only runs timelines; this one acts on the movie as the player does: the pointer over, down, up and out
+        // of every enabled interactive object (real pointer when the object is the hit target, the events dispatched on it when
+        // something covers it), then focus and keys in every input field. `after` frames run after each action.
+        var keys = byKey.Keys.Where(k => only == null || k.Contains(only)).OrderBy(k => k).ToList();
+        var actionCount = new Dictionary<string, long>();
+        var errByKind = new Dictionary<string, (HashSet<string> Movies, long Hits, HashSet<string> Actions)>();
+        var missByKey = new Dictionary<string, (HashSet<string> Movies, long Hits, HashSet<string> Actions)>();
+        var rows = new StringBuilder(); int ran = 0, driven = 0, failed = 0, objectsTotal = 0, capped = 0;
+        var sw = Stopwatch.StartNew();
+        void Note(Dictionary<string, (HashSet<string> Movies, long Hits, HashSet<string> Actions)> d, string kind, string movie, string action, long n)
+        {
+            if (!d.TryGetValue(kind, out var v)) d[kind] = v = (new HashSet<string>(), 0, new HashSet<string>());
+            v.Movies.Add(movie); v.Actions.Add(action); d[kind] = (v.Movies, v.Hits + n, v.Actions);
+        }
+        foreach (var k in keys)
+        {
+            ran++;
+            Runtime rt; Player p; bool ok;
+            try { (rt, p, ok) = RunMovie(k, null); }
+            catch (Exception e) { rows.AppendLine($"{k}\tLOADFAIL\t{e.GetType().Name}"); failed++; continue; }
+            if (!ok) { failed++; continue; }
+            driven++;
+            p.StageW = 1280; p.StageH = 720;
+            int e0 = rt.Errors.Count; var m0 = new Dictionary<string, int>(rt.Missing);
+            long acts = 0;
+            void Action(string kind, Action act)
+            {
+                int eb = rt.Errors.Count; var mb = new Dictionary<string, int>(rt.Missing);
+                actionCount[kind] = actionCount.GetValueOrDefault(kind) + 1; acts++;
+                rt.Guard("drive " + kind, act);
+                for (int f = 0; f < after; f++) p.Tick();
+                for (int i = eb; i < rt.Errors.Count; i++) Note(errByKind, Shorten(rt.Errors[i]), k, kind, 1);
+                foreach (var (mk, n) in rt.Missing) { int d = n - mb.GetValueOrDefault(mk); if (d > 0) Note(missByKey, mk, k, kind, d); }
+            }
+            var objs = new List<AsInteractiveObject>();
+            void Collect(AsDisplayObject o)
+            {
+                if (o is AsInteractiveObject io && io is not AsStage && io.mouseEnabled && o.IsVisible && o.OnStage) objs.Add(io);
+                if (o is AsContainer c) foreach (var ch in c.Children) Collect(ch);
+            }
+            Collect(p.Stage);
+            objectsTotal += objs.Count;
+            if (objs.Count > maxObjects) { capped++; objs = objs.Take(maxObjects).ToList(); }
+            var mouseCls = rt.GetClass("scaleform.gfx.MouseEventEx") ?? rt.GetClass("flash.events.MouseEvent");
+            void Send(AsInteractiveObject o, string type)
+            {
+                // the event the player builds for a real pointer (Player.MouseEv): the movie's MouseEventEx, left button
+                var e = (AsMouseEvent)mouseCls.Construct(type);
+                e.bubbles = type is not ("rollOver" or "rollOut"); e.cancelable = false; e.buttonDown = type == "mouseDown";
+                rt.SetProperty(e, Name.Public("mouseIdx"), Rt.Box(0));
+                rt.SetProperty(e, Name.Public("buttonIdx"), Rt.Box(0));
+                o.Dispatch(e);
+            }
+            foreach (var o in objs)
+            {
+                if (!o.OnStage) continue;
+                var b = o.GetBounds(null);
+                if (b.IsEmpty) continue;
+                double cx = b.X + b.W / 2, cy = b.Y + b.H / 2;
+                if (p.MouseTarget(cx, cy) == o)
+                {
+                    Action("pointer-over", () => p.MouseMove(cx, cy));
+                    Action("pointer-down", () => p.MouseButton(true));
+                    Action("pointer-up", () => p.MouseButton(false));
+                    Action("pointer-out", () => p.MouseMove(-100, -100));
+                }
+                else
+                    foreach (var t in new[] { "mouseOver", "rollOver", "mouseDown", "mouseUp", "click", "mouseOut", "rollOut" })
+                        Action("dispatch-" + t, () => Send(o, t));
+            }
+            // text: focus every input field, type, edit, enter
+            var fields = new List<AsTextField>();
+            void CollectText(AsDisplayObject o) { if (o is AsTextField tf && tf.type == "input" && o.OnStage) fields.Add(tf); if (o is AsContainer c) foreach (var ch in c.Children) CollectText(ch); }
+            CollectText(p.Stage);
+            foreach (var tf in fields)
+            {
+                if (!tf.OnStage) continue;
+                Action("text-focus", () => p.SetFocus(tf, "mouse"));
+                Action("text-type", () => { foreach (var ch in "Ab1 ") p.Key(char.ToUpperInvariant(ch), ch, true); });
+                Action("text-key-backspace", () => { p.Key(8, 8, true); p.Key(8, 8, false); });
+                Action("text-key-enter", () => { p.Key(13, 13, true); p.Key(13, 13, false); });
+                Action("text-key-tab", () => { p.Key(9, 9, true); p.Key(9, 9, false); });
+            }
+            rows.AppendLine($"{k}\tobjects={objs.Count}\tfields={fields.Count}\tactions={acts}\terrors={rt.Errors.Count - e0}\tmissing={rt.Missing.Count - m0.Count}");
+            Console.Error.Write($"\r{ran}/{keys.Count} {sw.Elapsed.TotalSeconds:0}s   ");
+        }
+        var rep = new StringBuilder();
+        rep.AppendLine($"movies {ran}, driven {driven}, not constructed {failed}, interactive objects {objectsTotal} ({capped} movies over the {maxObjects}-object cap), {after} frames after each action, {sw.Elapsed.TotalSeconds:0}s");
+        rep.AppendLine($"actions {actionCount.Values.Sum()}: " + string.Join(", ", actionCount.OrderByDescending(x => x.Value).Select(x => $"{x.Key} {x.Value}")));
+        rep.AppendLine($"new runtime errors {errByKind.Values.Sum(v => v.Hits)} hits, {errByKind.Count} kinds; new missing APIs {missByKey.Count} distinct, {missByKey.Values.Sum(v => v.Hits)} hits");
+        rep.AppendLine();
+        rep.AppendLine("## Runtime errors (movies, hits, actions)");
+        foreach (var (m, v) in errByKind.OrderByDescending(x => x.Value.Movies.Count).ThenByDescending(x => x.Value.Hits)) rep.AppendLine($"{v.Movies.Count,4} {v.Hits,7}  {m}   [{string.Join(",", v.Actions.Take(4))}] e.g. {string.Join(", ", v.Movies.Take(3))}");
+        rep.AppendLine();
+        rep.AppendLine("## Missing APIs (movies, hits, actions)");
+        foreach (var (m, v) in missByKey.OrderByDescending(x => x.Value.Movies.Count).ThenByDescending(x => x.Value.Hits)) rep.AppendLine($"{v.Movies.Count,4} {v.Hits,7}  {m}   [{string.Join(",", v.Actions.Take(4))}] e.g. {string.Join(", ", v.Movies.Take(3))}");
+        rep.AppendLine();
+        rep.AppendLine("## Per movie");
+        rep.Append(rows);
+        if (outFile != null) File.WriteAllText(outFile, rep.ToString());
+        Console.Error.WriteLine();
+        Console.WriteLine(rep.ToString().Split('\n').Take(70).Aggregate(new StringBuilder(), (b, l) => b.AppendLine(l)));
         return 0;
     }
     case "scan":
