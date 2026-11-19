@@ -96,6 +96,13 @@ public partial class HudScene
                 NameLengthMax = t.GuildNameLengthMax,
                 PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null,
                 FeatureEnabled = hudModel.IsFeatureEnabled,
+                JobName = t.JobName,
+                MapName = id => t.MapName(id) ?? id.ToString(),
+                ServerTime = () => Ms2Godot.Net.LiveSession.Instance?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                PlayerCharId = () => hudModel.HasLocalPlayer ? Ms2Godot.Net.LiveSession.Instance?.CharacterId : null,
+                ImagePath = (id, code) => Ms2Godot.Net.ProfileImageService.Images.Path(id, code, true),
+                AccumExp = level => t.GuildAccumExp.TryGetValue(level, out var v) ? v : 0,
+                MaxLevel = () => t.GuildAccumExp.Count == 0 ? 0 : t.GuildAccumExp.Keys.Last(),
             };
             c.PopupRequested += (x, y, name) => GD.Print($"guild: master popup for {name} (0x4e39 is not in this HUD)");
             c.Unloaded += () => { guildMovie?.Host.Unload(); guildMovie?.QueueFree(); guildMovie = null; };

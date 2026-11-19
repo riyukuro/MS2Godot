@@ -48,6 +48,41 @@ public sealed class GuildBook
     /// <summary>GetGuildId: CGuildInfo's first field, 0 outside a guild.</summary>
     public long GuildId { get; private set; }
 
+    /// <summary>CGuildManager's CGuildInfo (the header, members, grades and skills), or null outside a guild.</summary>
+    public GuildInfo Info { get; private set; }
+
+    /// <summary>GetGuildName.</summary>
+    public string GuildName => Info?.Name ?? "";
+    /// <summary>GetCapacity / GetMemberCount.</summary>
+    public int Capacity => Info?.MaxMembers ?? 0;
+    public int MemberCount => Info?.Members.Count ?? 0;
+
+    /// <summary>GetMembers (@0x1404d02b0): the members in the order of CGuildInfo's name tree (f320, case-insensitive).</summary>
+    public IReadOnlyList<GuildMember> Members =>
+        Info == null ? Array.Empty<GuildMember>() : Info.Members.OrderBy(m => m.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>FindMemberByName.</summary>
+    public GuildMember FindMemberByName(string name) =>
+        Info?.Members.FirstOrDefault(m => string.Equals(m.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>GetMasterMember: the member whose id is the master's.</summary>
+    public GuildMember MasterMember => Info?.Members.FirstOrDefault(m => m.CharId == Info.MasterCharId);
+
+    /// <summary>GetGrade (@0x1404d0310): the grade of the index, or null.</summary>
+    public GuildGrade GetGrade(int index) => Info?.Grades.FirstOrDefault(g => g.Grade == index);
+
+    /// <summary>IsMaster (@0x1404d0510): the member of the name has the master's id.</summary>
+    public bool IsMaster(string name) => FindMemberByName(name) is { } m && Info != null && m.CharId == Info.MasterCharId;
+
+    /// <summary>GetMemberPermissions / HasMemberPermission (@0x1404d06a0): the member's grade's permission bits against a mask.</summary>
+    public int MemberPermissions(string name) => FindMemberByName(name) is { } m ? GetGrade(m.Grade)?.Permissions ?? 0 : 0;
+    public bool HasMemberPermission(string name, int mask) => (MemberPermissions(name) & mask) != 0;
+
+    /// <summary>GetTotalTrophy, GetTotalItemLevel and the character level total (FUN_1404d0d00) over the members.</summary>
+    public int TotalTrophy => Info?.Members.Sum(m => m.TrophyTotal) ?? 0;
+    public int TotalItemLevel => Info?.Members.Sum(m => m.ItemLevel) ?? 0;
+    public int TotalCharLevel => Info?.Members.Sum(m => (int)(ushort)m.Level) ?? 0;
+
     /// <summary>IsInGuild (@0x1413b6160): the guild id above 0 (unsigned).</summary>
     public bool InGuild => GuildId != 0;
 
@@ -76,8 +111,10 @@ public sealed class GuildBook
         switch (m.Type)
         {
             case 0:
-                // OnPacketGuildInfo (:1525): Read, then both request lists are cleared. Only the guild id is read here.
+                // OnPacketGuildInfo (:1525): Read, then both request lists are cleared. Read keeps the header, the members,
+                // the grades and the skills; a packet only the id of it reads leaves no Info.
                 GuildId = m.GuildId;
+                Info = m.Info;
                 myRequests.Clear();
                 break;
             case 1:

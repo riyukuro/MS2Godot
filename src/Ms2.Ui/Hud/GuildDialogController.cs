@@ -1,5 +1,6 @@
 using Ms2.Avm2;
 using Ms2.Quest;
+using Ms2.Net.Packets;
 using ReservedWords = Ms2.Formats.World.ReservedWords;
 
 namespace Ms2.Ui.Hud;
@@ -37,6 +38,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     int searchPage = 1;         // m_nSearchPage (1 in the ctor)
     object createPage;          // m_createPage
     object joinPage;            // m_joinPage
+    object infoPage;            // m_infoPage
+    object memberPage;          // m_memberPage
+    int memberSort;             // m_nMemberSort (0 in the ctor)
 
     /// <summary>GetStringCommon.</summary>
     public Func<int, string> Common = _ => "";
@@ -50,6 +54,19 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public Func<string> PlayerName = () => null;
     /// <summary>CFeatureManager::IsFeatureEnabled.</summary>
     public Func<int, bool> FeatureEnabled = _ => false;
+    /// <summary>CStringTable::FUN_141811980(6, job): the job name; (3, map): the map name.</summary>
+    public Func<int, string> JobName = id => id.ToString(), MapName = id => id.ToString();
+    /// <summary>GetServerTime (seconds).</summary>
+    public Func<long> ServerTime = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    /// <summary>The local player's character id (PCBase FUN_141656a80), or null without one.</summary>
+    public Func<long?> PlayerCharId = () => null;
+    /// <summary>FUN_141028be0(charId, code, 1, ""): the profile image path.</summary>
+    public Func<long, string, string> ImagePath = (_, _) => "";
+    /// <summary>CGuildXmlData::GetAccumExp and GetMaxLevel.</summary>
+    public Func<int, int> AccumExp = _ => 0;
+    public Func<int> MaxLevel = () => 0;
+    /// <summary>FUN_140763e10: a number with the thousands separators.</summary>
+    public Func<long, string> GroupText = n => Ms2.Ui.NumberText.Group(n.ToString());
     /// <summary>FUN_140d73c60: show a message box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
@@ -111,6 +128,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.ClearSearchResults();
         createPage = null;
         joinPage = null;
+        infoPage = null;
+        memberPage = null;
     }
 
     /// <summary>InitializeGuildDialog (:2945).</summary>
@@ -119,10 +138,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         // FUN_1419260d0("m_webGuideButton", 0) = UIDialog::BindWebGuideButton: STILL-OPEN (WebGuideTable)
         Host.Invoke(Host.Entity, "setupCategory", false);                  // SetupCategory: IsGuildChampionshipOpen && IsInGuild
         Host.Invoke(Host.Entity, "showGuildDialog", Book.InGuild ? 1 : 0); // ShowGuildDialog
-        // SetMasterInfo: only with a master member (STILL-OPEN, the members are not read)
-        Host.Invoke(Host.Entity, "setGradeInfo", new List<object>());       // SetGradeInfo: the grades 0..5 (none read)
-        Host.Invoke(Host.Entity, "buildGuildMembers", new List<object>());  // FUN_141975620: the members (none read)
-        if (PlayerName() is { } name) Host.Invoke(Host.Entity, "setPlayer", name);   // FUN_14196b3a0
+        SetMasterInfo();
+        SetGradeInfo();
+        BuildMembers();                                                     // FUN_141975620
+        SetPlayer();                                                        // FUN_14196b3a0
         if (Host.Child("m_attendBG") is { } attend) Host.SetVisible(attend, false);  // UpdateAttendBackground: CanAttend
     }
 
@@ -132,11 +151,162 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (NoMovie) return;
         SetPageVisible(joinPage, false);                    // HideAllPages
         SetPageVisible(createPage, false);
+        SetPageVisible(infoPage, false);
+        SetPageVisible(memberPage, false);
         if (category == "Join") CreateJoinPage();
         else if (category == "Create") EnsurePageCreated("guild_create_page", ref createPage);   // CreateCreatePage
-        // the in-guild pages: STILL-OPEN
+        else if (category == "Info") CreateInfoPage();
+        else if (category == "Member") CreateMemberPage();
+        // the other in-guild pages: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
+        else if (category == "Info") SetPageVisible(infoPage, true);
+        else if (category == "Member") SetPageVisible(memberPage, true);
+    }
+
+    /// <summary>CreateInfoPage (@0x14196a000): made now, UpdateGuildInfo, SetMasterInfo, UpdateGuildExp, the fund and the
+    /// player's rights. STILL-OPEN: SetGuildMark of the guild's own mark.</summary>
+    void CreateInfoPage()
+    {
+        if (!EnsurePageCreated("guild_info_page", ref infoPage)) return;
+        UpdateGuildInfo();
+        SetMasterInfo();
+        UpdateGuildExp();
+        SetGuildFund();
+        SetPlayer();
+    }
+
+    /// <summary>CreateMemberPage (@0x14196a090): made now, the members, then the sort dropdown's index.</summary>
+    void CreateMemberPage()
+    {
+        if (!EnsurePageCreated("guild_member_page", ref memberPage)) return;
+        BuildMembers();
+        if (Host.Child("m_sortDropdown", memberPage) is { } sort) Host.Set(sort, "selectedIndex", memberSort);
+    }
+
+    void SetChildText(object page, string name, string text)
+    {
+        if (Host.Child(name, page) is { } t) Host.Set(t, "text", text);
+    }
+
+    /// <summary>UpdateGuildInfo (@0x14196b620).</summary>
+    void UpdateGuildInfo()
+    {
+        string count = ClientFormat.Format(Common(1000), Book.MemberCount, Book.Capacity);
+        if (infoPage == null) return;
+        SetChildText(infoPage, "m_guildNameText", Book.GuildName);
+        SetChildText(infoPage, "m_createdDayText", AchieveTexts.FormatDate(Book.Info?.CreateTime ?? 0));
+        SetChildText(infoPage, "m_guildMemberCountText", count);
+        SetChildText(infoPage, "m_guildNotifyText", Book.Info?.Notice ?? "");
+        void Total(string clip, string icon, long value)
+        {
+            if (Host.Child(clip, infoPage) is not { } c) return;
+            if (Host.Child("m_totalIcon", c) is { } i) Host.Invoke(i, "gotoAndStop", icon);   // vfunc_15
+            SetChildText(c, "m_totalText", ClientFormat.Format("{0}", GroupText(value)));
+        }
+        Total("m_totalTrophy", "trophy", Book.TotalTrophy);
+        Total("m_totalItemLevel", "itemLevel", Book.TotalItemLevel);
+        Total("m_totalCharLevel", "charLevel", Book.TotalCharLevel);
+        // SetGuildExpEvent(IsGuildExpEventRunning()): STILL-OPEN, never running
+        Host.Invoke(infoPage, "setGuildExpEvent", false);
+    }
+
+    /// <summary>UpdateGuildExp (@0x14196dc00).</summary>
+    void UpdateGuildExp()
+    {
+        if (infoPage == null) return;
+        int exp = Book.Info?.Exp ?? 0;
+        int level = LevelByExp(exp);
+        if (level <= 0) return;
+        int prev = AccumExp(level - 1), next = AccumExp(level);
+        float rate = (float)(exp - prev) / (float)(next - prev);
+        if (rate < 0f) rate = 0f;
+        if (rate > 1f) rate = 1f;
+        bool max = false;
+        if (MaxLevel() == level) { max = true; rate = 1f; }
+        Host.Invoke(infoPage, "setGuildExp", level, max, rate);
+    }
+
+    /// <summary>FUN_14196e2c0: the fund text on the Info page.</summary>
+    void SetGuildFund()
+    {
+        if (NoMovie) return;
+        if (infoPage != null) Host.Invoke(infoPage, "setGuildFund", GroupText(Book.Info?.Fund ?? 0));
+    }
+
+    /// <summary>FUN_14196b3a0: the player's name on the root and the player's rights on the Info page.</summary>
+    void SetPlayer()
+    {
+        if (NoMovie || PlayerName() is not { } name) return;
+        Host.Invoke(Host.Entity, "setPlayer", name);
+        if (infoPage != null)
+            Host.Invoke(infoPage, "setPlayer", Book.IsMaster(name), Book.HasMemberPermission(name, 8), Book.HasMemberPermission(name, 0x40));
+    }
+
+    /// <summary>SetMasterInfo (@0x14196c860): the master's name on the root, and on the Info page the name, the rank text and the mark.</summary>
+    void SetMasterInfo()
+    {
+        if (NoMovie || Book.MasterMember is not { } master) return;
+        string grade = "";
+        if (Book.GetGrade(master.Grade) is { } g)
+            grade = ClientFormat.Format(Common(0x3d9), (ushort)master.Level, JobName(master.JobCode), g.Name);
+        string mark = ImagePath(master.CharId, master.Code);
+        Host.Invoke(Host.Entity, "setMasterInfo", master.Name);
+        if (infoPage != null) Host.Invoke(infoPage, "setMasterInfo", master.Name, grade, mark);
+    }
+
+    /// <summary>SetGradeInfo (@0x14196cd30): the grades 0..5 to the root and the Manager page.</summary>
+    void SetGradeInfo()
+    {
+        if (NoMovie) return;
+        var rows = new List<object>();
+        for (int i = 0; i < 6; i++)
+        {
+            if (Book.GetGrade(i) is not { } g) continue;
+            rows.Add(Host.Obj(("gradeRank", i), ("gradeName", g.Name), ("gradeAuth", g.Permissions)));
+        }
+        Host.Invoke(Host.Entity, "setGradeInfo", rows);
+    }
+
+    /// <summary>FUN_141975620: the member rows to the root and the Member page.</summary>
+    void BuildMembers()
+    {
+        if (NoMovie) return;
+        var rows = new List<object>();
+        foreach (var m in Book.Members) rows.Add(MemberRow(m));
+        Host.Invoke(Host.Entity, "buildGuildMembers", rows);
+        if (memberPage != null) Host.Invoke(memberPage, "buildGuildMembers", rows);
+    }
+
+    /// <summary>FUN_1419771b0 (:3462): one member's row.</summary>
+    object MemberRow(GuildMember m)
+    {
+        string location;
+        if (m.Offline != 0)
+        {
+            string time;
+            if (m.LastSeen == 0) time = Common(0x3d6);
+            else
+            {
+                var span = TimeSpan.FromSeconds(ServerTime() - m.LastSeen);
+                if (span.Days > 0) time = ClientFormat.Format(Common(0x3d2), (long)span.Days);
+                else if (span.Hours > 0) time = ClientFormat.Format(Common(0x3d3), span.Hours);
+                else if (span.Minutes > 0) time = ClientFormat.Format(Common(0x3d4), span.Minutes);
+                else time = Common(0x3d5);
+            }
+            location = ClientFormat.Format(Common(0x3d7), time);
+        }
+        else if (m.Channel == 0) location = MapName(m.MapId);
+        else location = ClientFormat.Format(Common(0x3d8), m.Channel, MapName(m.MapId));
+        string grade = Book.GetGrade(m.Grade)?.Name ?? "";
+        string info = ClientFormat.Format(Common(0x3d9), (ushort)m.Level, JobName(m.JobCode), grade);
+        bool master = Book.IsMaster(m.Name);
+        bool me = PlayerCharId() is { } id && id == m.CharId;
+        return Host.Obj(
+            ("charname", m.Name), ("location", location), ("memberInfo", info), ("trophy", m.TrophyTotal), ("level", (int)(ushort)m.Level),
+            ("jobCode", m.JobCode), ("contribution", m.Contribution), ("totalContribution", (uint)m.TotalContribution),
+            ("itemLevel", (uint)m.ItemLevel), ("memo", m.Memo), ("imgpath", ImagePath(m.CharId, m.Code)),
+            ("master", master), ("isMe", me), ("grade", m.Grade), ("raid", m.RaidTotal), ("offline", m.Offline));
     }
 
     /// <summary>SetPageVisible (@0x141969870): vfunc_4.</summary>

@@ -81,6 +81,8 @@ public sealed class GuildJoinRequest {
 public sealed record GuildMessage(byte Type) {
     /// <summary>Type 0: the guild id; type 0x52/0x53: the guild id.</summary>
     public long GuildId { get; init; }
+    /// <summary>Type 0: the guild as far as it could be read (null when the packet holds only the id).</summary>
+    public GuildInfo Info { get; init; }
     /// <summary>Type 1: the result (0 = created).</summary>
     public int Result { get; init; }
     /// <summary>Types 1, 0x52, 0x53, 0x30: the guild name.</summary>
@@ -98,7 +100,13 @@ public sealed record GuildMessage(byte Type) {
     public static GuildMessage Read(ByteReader r) {
         byte t = r.ReadByte();
         switch (t) {
-            case 0: return new(t) { GuildId = r.ReadLong() };
+            case 0: {
+                var copy = new ByteReader(r.Buffer.AsSpan(r.Position, r.Available).ToArray());
+                try { var info = GuildInfo.Read(copy); return new(t) { GuildId = info.Id, Info = info }; }
+                catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) {
+                    return new(t) { GuildId = r.ReadLong() };
+                }
+            }
             case 1: {
                 int result = r.ReadByte();
                 return result != 0 ? new(t) { Result = result } : new(t) { Name = r.ReadUnicodeString() };

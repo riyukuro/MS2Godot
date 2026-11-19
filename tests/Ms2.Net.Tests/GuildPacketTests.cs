@@ -60,4 +60,40 @@ public class GuildPacketTests {
         Assert.That((r.Id, r.GuildId, r.GuildName, r.Exp, r.TrophyTotal, r.MemberCount, r.Capacity, r.MasterName),
             Is.EqualTo((4L, 9L, "Gd", 600, 3, 3, 50, "Ma")));
     }
+
+    /// <summary>A guild info packet (type 0) of one full member, one short member, two grades and a skill.</summary>
+    internal static ByteReader InfoPacket() => R(w => {
+        w.WriteByte(0); w.WriteLong(7); w.WriteUnicodeString("Gd"); w.WriteUnicodeString("mark"); w.WriteByte(50);
+        w.WriteUnicodeString("tag"); w.WriteUnicodeString("hello"); w.WriteLong(11); w.WriteLong(12); w.WriteUnicodeString("Ma"); w.WriteLong(1000);
+        w.WriteByte(1); for (int i = 0; i < 8; i++) w.WriteInt(i); w.WriteByte(3); w.WriteInt(4); w.WriteInt(600); w.WriteInt(70); w.WriteInt(8);
+        w.WriteBool(true); w.WriteInt(9);
+        w.WriteByte(2);
+        w.WriteByte(3); w.WriteByte(0); w.WriteLong(1);                       // the full member: mode 3, grade 0, id
+        w.WriteLong(10); w.WriteLong(12); w.WriteUnicodeString("Ma"); w.WriteByte(0); w.WriteInt(1); w.WriteInt(300); w.WriteShort(40);
+        w.WriteInt(100); w.WriteInt(2000); w.WriteShort(2); w.WriteUnicodeString("img"); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0);
+        w.WriteInt(1); w.WriteInt(2); w.WriteInt(3);
+        w.WriteUnicodeString("memo"); w.WriteLong(0); w.WriteLong(55); w.WriteLong(0);
+        w.WriteInt(0); w.WriteInt(0); w.WriteInt(5); w.WriteInt(6); w.WriteInt(0); w.WriteLong(0);
+        w.WriteInt(1); w.WriteInt(9); w.WriteInt(4); w.WriteByte(0);
+        w.WriteByte(1); w.WriteByte(1); w.WriteLong(2);                       // the short member: mode 1, grade 1
+        w.WriteUnicodeString("Bo"); w.WriteInt(0); w.WriteInt(200); w.WriteShort(20); w.WriteUnicodeString("img2");
+        w.WriteByte(2); w.WriteByte(0); w.WriteUnicodeString("Master"); w.WriteInt(4095); w.WriteByte(1); w.WriteUnicodeString("Member"); w.WriteInt(8);
+        w.WriteByte(1); w.WriteInt(3); w.WriteInt(2); w.WriteLong(0);
+    });
+
+    [Test]
+    public void TheInfoPacketReadsTheHeaderMembersGradesAndSkills() {
+        var m = GuildMessage.Read(InfoPacket());
+        var g = m.Info;
+        Assert.That((m.GuildId, g.Name, g.Code, g.MaxMembers, g.Notice, g.MasterCharId, g.MasterName, g.CreateTime, g.Exp, g.Fund, g.EventFund),
+            Is.EqualTo((7L, "Gd", "mark", 50, "hello", 12L, "Ma", 1000L, 600, 70, 8)));
+        Assert.That(g.Members, Has.Count.EqualTo(2));
+        var a = g.Members[0];
+        Assert.That((a.Mode, a.Name, a.CharId, a.JobCode, a.Level, a.ItemLevel, a.MapId, a.Channel, a.TrophyTotal, a.Memo, a.LastSeen, a.Contribution,
+            a.TotalContribution, a.RaidTotal, a.Offline), Is.EqualTo((3, "Ma", 12L, 300, 40, 100, 2000, 2, 6, "memo", 55L, 5, 6, 4, 0)));
+        var b = g.Members[1];
+        Assert.That((b.Mode, b.Grade, b.Name, b.JobCode, b.Level, b.Code, b.Offline), Is.EqualTo((1, 1, "Bo", 200, 20, "img2", 1)));
+        Assert.That(g.Grades.Select(x => (x.Grade, x.Name, x.Permissions)), Is.EqualTo(new[] { (0, "Master", 4095), (1, "Member", 8) }));
+        Assert.That(g.Skills.Single(), Is.EqualTo(new GuildSkillState(3, 2, 0)));
+    }
 }

@@ -59,7 +59,7 @@ public class GuildBookTests {
         Assert.That((b.MyRequests.Count, mine), Is.EqualTo((0, 2)));
         b.Apply(new GuildMessage(0x52) { GuildId = 9, Name = "Gd" });
         Assert.That(sent.Last(), Is.EqualTo(new GuildMyRequestsRequest()));
-        b.Apply(new GuildMessage(0) { GuildId = 9 });
+        b.Apply(new GuildMessage((byte)0) { GuildId = 9 });
         Assert.That(b.InGuild, Is.True);
         b.Search(true);
         Assert.That(sent.Last(), Is.EqualTo(new GuildMyRequestsRequest()));   // no search in a guild
@@ -84,5 +84,30 @@ public class GuildBookTests {
         Assert.That(b.ErrorText(0x29, 0), Is.EqualTo("c424"));
         Assert.That(b.ErrorText(0x2d, 0), Is.EqualTo("s_guild_err_too_fast_to_search_by_name"));
         Assert.That(b.ErrorText(0x99, 0), Is.EqualTo("c420"));
+    }
+
+    static GuildMember Member(string name, long charId, int grade, int level, int item, params int[] trophy) => new() {
+        Mode = 3, Grade = grade, Name = name, CharId = charId, Level = level, ItemLevel = item,
+        Triple = (trophy.ElementAtOrDefault(0), trophy.ElementAtOrDefault(1), trophy.ElementAtOrDefault(2)) };
+
+    [Test]
+    public void TheGuildInfoGivesTheMembersGradesAndRights() {
+        var b = Book(new List<IOutPacket>(), new List<string>());
+        var info = new GuildInfo { Id = 7, Name = "Gd", MaxMembers = 50, MasterCharId = 12 };
+        info.Members.Add(Member("bo", 13, 1, 20, 200, 1, 2, 3));
+        info.Members.Add(Member("Ma", 12, 0, 40, 100, 4));
+        info.Grades.Add(new GuildGrade(0, "Master", 4095));
+        info.Grades.Add(new GuildGrade(1, "Member", 8));
+        b.Apply(new GuildMessage((byte)0) { GuildId = 7, Info = info });
+        Assert.That(b.InGuild, Is.True);
+        Assert.That(b.Members.Select(m => m.Name), Is.Not.Empty);
+        Assert.That(b.Members.Select(m => m.Name), Is.EqualTo(new[] { "bo", "Ma" }));      // case-insensitive name order: b before m
+        Assert.That((b.GuildName, b.MemberCount, b.Capacity, b.TotalTrophy, b.TotalItemLevel, b.TotalCharLevel), Is.EqualTo(("Gd", 2, 50, 10, 300, 60)));
+        Assert.That(b.MasterMember.Name, Is.EqualTo("Ma"));
+        Assert.That((b.IsMaster("MA"), b.IsMaster("bo"), b.IsMaster("zz")), Is.EqualTo((true, false, false)));
+        Assert.That((b.HasMemberPermission("bo", 8), b.HasMemberPermission("bo", 0x40), b.HasMemberPermission("Ma", 0x40), b.HasMemberPermission("zz", 8)),
+            Is.EqualTo((true, false, true, false)));
+        Assert.That(b.GetGrade(1).Name, Is.EqualTo("Member"));
+        Assert.That(b.GetGrade(2), Is.Null);
     }
 }
