@@ -102,6 +102,7 @@ public partial class HudScene
     }
 
     static readonly System.Collections.ICollection[] gateTrackers = new System.Collections.ICollection[2];
+    internal static long GateWrapTotal() => GateWrap(0) + GateWrap(1);
     static long GateWrap(int slot) => gateTrackers[slot]?.Count ?? 0;
 
     void GateStep()
@@ -243,6 +244,7 @@ public partial class HudScene
     /// </summary>
     void GateLiveStart(string name, bool move)
     {
+        GateCollect();   // what the closed dialogs and the quiet frames left (their nodes free a frame late) is not the window's
         gatePlayer ??= FindPlayer(this);
         gatePresence ??= GetTree().Root.FindChild("NpcPresence", true, false) as World.NpcPresence;
         if (gatePresence != null && gatePlayer != null)
@@ -256,6 +258,7 @@ public partial class HudScene
         if (move && gatePlayer != null) gatePlayer.ScriptDriven = true;
         GateIdleStart(name);
         gateChurn = true;
+        if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1") WrapperAttrib.Install(GetTree().Root);
     }
 
     void GateLiveEnd()
@@ -294,6 +297,7 @@ public partial class HudScene
     {
         var m = GateMark.Now();
         var o = GateDelta(gateIdle, m);
+        if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1") o["attrib"] = WrapperAttrib.Result();
         o["wrapper_types"] = GateGrowth(gateCensus, GateCensus());   // after the mark; the collection below follows
         GateCollect();
         GateFinalized(o, m);
