@@ -2894,6 +2894,7 @@ public partial class HudScene : Node, IUiStageHost
         }
     }
 
+    static readonly int PerfRepeat = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_PERF_REPEAT"), out var r) && r >= 2 ? r : 2;
     static readonly bool PerfMem = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_MEM"));
     static readonly int PerfMemHold = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_PERF_MEM_HOLD"), out var h) ? h : 0;
 
@@ -2938,22 +2939,26 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// After the field is loaded: 600 idle frames, then for each window in MS2_PERF_OPEN (inventory, myinfo, skill, quest,
     /// worldmap, shop, options) an open (cold), a close, a second open (warm) and a close, 100 frames apart, each open's
-    /// whole call timed; then MS2_PERF_QUIT quits.
+    /// whole call timed; MS2_PERF_REPEAT=N opens each N times ("open 3" ... after the warm one), for the JIT's tier-up curve.
+    /// Then MS2_PERF_QUIT quits.
     /// </summary>
     void PerfScript()
     {
         perfFrame++;
         if (perfFrame == 0) { perfState = "idle"; PerfLog.Restart(); }
         if (PerfMem) { PerfMemScript(); return; }
-        int at = perfFrame - 600;
-        if (at >= PerfDialogs.Length * 400) { PerfTail(at - PerfDialogs.Length * 400); return; }
+        int at = perfFrame - 600, per = 200 * PerfRepeat;
+        if (at >= PerfDialogs.Length * per) { PerfTail(at - PerfDialogs.Length * per); return; }
         if (at < 0 || at % 100 != 0) return;
-        int i = at / 400, step = at / 100 % 4;
+        int i = at / per, step = at / 100 % (2 * PerfRepeat);
         string d = PerfDialogs[i];
+        long jit0 = System.Runtime.JitInfo.GetCompiledMethodCount();
+        var jitTime0 = System.Runtime.JitInfo.GetCompilationTime();
         var sw = System.Diagnostics.Stopwatch.StartNew();
         bool open = step % 2 == 0;
         PerfToggle(d, open);
-        PerfLog.Print($"{(open ? (step == 0 ? "cold open" : "warm open") : "close")} {d}: call {sw.Elapsed.TotalMilliseconds:0.0} ms");
+        PerfLog.Print($"{(open ? (step == 0 ? "cold open" : step == 2 ? "warm open" : $"open {step / 2 + 1}") : "close")} {d}: call {sw.Elapsed.TotalMilliseconds:0.0} ms, " +
+                      $"jit {System.Runtime.JitInfo.GetCompiledMethodCount() - jit0} methods {(System.Runtime.JitInfo.GetCompilationTime() - jitTime0).TotalMilliseconds:0.0} ms");
         perfState = open ? d + " open" : "idle";
         PerfLog.Restart();
     }

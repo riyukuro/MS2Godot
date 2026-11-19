@@ -126,11 +126,15 @@ public static class PerfLog
         readonly System.Text.StringBuilder line = new();
         readonly int g0 = GC.CollectionCount(0), g1 = GC.CollectionCount(1), g2 = GC.CollectionCount(2);
         readonly long bytes = GC.GetTotalAllocatedBytes();
+        // the methods compiled meanwhile (all threads) and the compiler's time: the part of a first open a later open skips
+        readonly long jitted = System.Runtime.JitInfo.GetCompiledMethodCount();
+        readonly TimeSpan jitTime = System.Runtime.JitInfo.GetCompilationTime();
         public Steps(string what) { this.what = what; }
         public void Step(string name) { line.Append($" {name} {step.Elapsed.TotalMilliseconds:0.0}"); step.Restart(); }
         public void Extra(string name, double ms) => line.Append($" {name} {ms:0.0}");
         public double TotalMs => all.Elapsed.TotalMilliseconds;
         public void Done() => Print($"{what}: total {all.Elapsed.TotalMilliseconds:0.0} ms:{line}, gc {GC.CollectionCount(0) - g0}/{GC.CollectionCount(1) - g1}/{GC.CollectionCount(2) - g2}, " +
-                                    $"alloc {(GC.GetTotalAllocatedBytes() - bytes) / 1048576.0:0.0} MB");
+                                    $"alloc {(GC.GetTotalAllocatedBytes() - bytes) / 1048576.0:0.0} MB, " +
+                                    $"jit {System.Runtime.JitInfo.GetCompiledMethodCount() - jitted} methods {(System.Runtime.JitInfo.GetCompilationTime() - jitTime).TotalMilliseconds:0.0} ms");
     }
 }
