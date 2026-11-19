@@ -431,7 +431,13 @@ public partial class Field : Node3D
         // casts from the back faces, DRAW_CW from the front, DRAW_BOTH from both. ShadowReverseCullFace flips the caster's
         // own cull mode the same way. STILL-OPEN: no client call to SetRenderBackfaces was found by name; an inlined
         // flag write on the generator would not show in that search.
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMaxDistance = 4000, ShadowReverseCullFace = true };
+        // The follow camera's sun shadow is one map, not camera-fitted splits: HandleCameraFollowDirectionalLight
+        // (@0x141509e60, ms2shadowclickgenerator.cpp:597-674) builds a fixed orthographic box (half size 2000, near 1,
+        // far 25000) around the camera target, pushed 1500 along the view. It does not change with zoom. Godot's default
+        // PSSM split fit follows the camera and dropped the player's and npcs' shadows near the feet when zoomed in, so the
+        // sun uses one orthogonal map over the same 4000 range. STILL-OPEN: the box is camera-fitted, not target-centred
+        // as in the client; Godot exposes no custom directional shadow projection.
+        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal, DirectionalShadowMaxDistance = 4000, ShadowReverseCullFace = true };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
