@@ -679,6 +679,35 @@ namespace Ms2.Avm2.Flash
             }
         }
 
+        /// <summary>
+        /// Puts the root of another movie into a Loader, as Loader.load of a .swf / .gfx url does (the content is the loaded
+        /// movie's root sprite: its document class, or a MovieClip, over its root timeline, its symbols in a scope of their own).
+        /// The movie's code must be loaded into this runtime first; classes it links that this player already knows keep theirs.
+        /// </summary>
+        public AsDisplayObject LoadMovie(AsLoader l, string key, JsonObject layout)
+        {
+            var sc = new SymbolScope { Key = key, Symbols = layout["symbols"] as JsonObject, Layout = layout };
+            if (sc.Symbols != null)
+                foreach (var (id, s) in sc.Symbols)
+                    if ((string)s["class"] is string cn) { sc.Classes[cn] = int.Parse(id); classSymbols.TryAdd(cn, (sc, int.Parse(id))); }
+            var rootSym = new JsonObject { ["kind"] = "sprite", ["timeline"] = layout["root"]?.DeepClone() };
+            var name = (string)layout["documentClass"];
+            var cls = name == null ? null : RT.GetClass(name);
+            if (name != null && cls == null) RT.NoteMissing("document class " + name);
+            cls ??= RT.GetClass("flash.display.MovieClip");
+            AsDisplayObject root = null;
+            RT.Guard("construct loaded movie " + key, () => root = (AsDisplayObject)ConstructInto(cls, l, sc, rootSym, null, 0));
+            if (root != null && OnStage(l)) EnterStage(root);
+            RunFrameScripts();
+            return root;
+        }
+
+        bool OnStage(AsDisplayObject o)
+        {
+            for (; o != null; o = o.Parent) if (o == Stage) return true;
+            return false;
+        }
+
         // ---- input -------------------------------------------------------------------------------------------
 
         /// <summary>The topmost display object under a stage point (hit areas, mouseEnabled and hit-test-disabled honoured).</summary>

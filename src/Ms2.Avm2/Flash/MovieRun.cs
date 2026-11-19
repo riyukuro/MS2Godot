@@ -106,6 +106,17 @@ public sealed class MovieSource
         }
         Imports(libs.Concat(Direct(m)));
         foreach (var (n, abc) in Abc(key)) rt.Load(abc, key + ":" + n);
+        // Loader.load of another movie ("BG_mask_shadow.swf"): the client opens it through the GFx file opener like the
+        // dialog movies themselves, which it names "<name>.swf" too (GetSwfFileName, ms2memfile.cpp:362-376;
+        // OpenGfxFile, ms2memfile.cpp:519-530), so it resolves by the same key as Open. Its code and imports load first.
+        player.LoadUrl = (l, url) =>
+        {
+            if (url == null || !(url.EndsWith(".swf", StringComparison.OrdinalIgnoreCase) || url.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase))) return;
+            var ck = Path.GetFileNameWithoutExtension(url.Replace('\\', '/'));
+            if (Movie(ck) is not { } cm) { rt.NoteMissing("movie " + ck); return; }
+            if (seen.Add(ck)) { Imports(Direct(cm)); foreach (var (n, abc) in Abc(ck)) rt.Load(abc, ck + ":" + n); }
+            player.LoadMovie(l, ck, MainLayout(ck, cm));
+        };
         return (rt, player);
     }
 }

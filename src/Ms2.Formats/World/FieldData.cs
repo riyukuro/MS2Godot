@@ -50,6 +50,9 @@ public sealed class FieldData
     /// <summary>&lt;ui instancingGrid&gt;: the hardware-instancing cell edge (CFieldDataCli m_nInstancingGrid, default 0 = one cell);
     /// WorldService::FUN_141bc72f0 hands it to HardwareInstancingService::SetCellSize before BuildInstancings.</summary>
     public int InstancingGrid;
+    /// <summary>&lt;ui bgMask&gt;: the screen mask movie the field's UIScreenMask loads ("BG_mask_shadow.swf"; CFieldDataCli
+    /// m_strBgMask, fielddatacli.cpp:220, the raw string); "" when absent.</summary>
+    public string BgMask = "";
     /// <summary>&lt;property mapType&gt;: CFieldDataCli::m_nMapType (3 home, 5 dungeon, ... ; uisystemmenudialog.cpp:173).</summary>
     public int MapType;
     /// <summary>&lt;property channelGroupID&gt;: the channel group whose name (string table 23, channelGroupName) prefixes the
@@ -125,6 +128,7 @@ public sealed class FieldData
         o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
+        if ((string)env.Element("ui")?.Attribute("bgMask") is { } bm) o.BgMask = bm;
         if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
         var fov = env.Element("fov");
         if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);

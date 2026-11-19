@@ -74,6 +74,24 @@ public class HudTests
     }
 
     [Test]
+    public void ScreenMaskLoadsTheFieldMaskOverTheStage()
+    {
+        // UIScreenMask::OnLoadInit invokes load(bgMask); the movie adds the loaded movie on complete, stretched to the stage
+        // (loadComplete, setSize: the loader one unit past the stage); vfunc_43 sizes it to the stage
+        var h = Load(new ScreenMaskController("BG_mask_shadow.swf"), Model());
+        var loader = ((AsContainer)h.Entity).Children.OfType<AsLoader>().SingleOrDefault();
+        Assert.That(loader, Is.Not.Null, "m_loader, added on complete");
+        Assert.That(loader.Children, Is.Not.Empty, "the bgMask movie's root");
+        Assert.That(Rt.ToNumber(h.Get(loader, "width")), Is.EqualTo(1921).Within(0.5));
+        Assert.That(Rt.ToNumber(h.Get(loader, "height")), Is.EqualTo(1081).Within(0.5));
+        Assert.That(h.Player.RT.Errors, Is.Empty);
+
+        // a field without a bgMask: the movie loads and shows nothing
+        var none = Load(new ScreenMaskController(""), Model());
+        Assert.That(((AsContainer)none.Entity).Children, Is.Empty);
+    }
+
+    [Test]
     public void ExpBarShowsPercentAndAnswersGetExp()
     {
         var m = Model();

@@ -240,6 +240,7 @@ public partial class HudScene : Node, IUiStageHost
         worldUi = new Node[] { damageEffect, nameTag, playerBar, damageText };
 
         HudModel();
+        ScreenMask();
         NoticeTab(uiRoot, constants);
         Minimap(uiRoot);
         UpperHud(uiRoot);
@@ -261,6 +262,28 @@ public partial class HudScene : Node, IUiStageHost
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
         if (worldMap != null) uiRoot.AddChild(worldMap);
         if (achieveMovie != null) uiRoot.AddChild(achieveMovie);
+    }
+
+    CanvasLayer screenMaskLayer;        // CommonDepth.ScreenMask (10): over the damage text and action guide, under the HUD
+    MovieDialog screenMask;             // UIScreenMask (0x4e55), kept across relayouts
+
+    /// <summary>
+    /// UIScreenMask (uiscreenmask.cpp), shown at field entry: UISceneGame::vfunc_55 (WorldLoadComplete, @0x141ac78a0) runs
+    /// FindObject(0x4e55)->vfunc_2 = LoadSwf(10). The scene is built once per field, so the movie is made here and goes with
+    /// the scene (vfunc_56 / vfunc_49 hide it on field unload and scene exit). Every field loads it; one without a bgMask
+    /// makes no load call, so it shows nothing. A resize lays it out again (vfunc_43).
+    /// </summary>
+    void ScreenMask()
+    {
+        if (screenMask != null) { screenMaskLayer.Offset = UiScale.MovieOrigin; screenMask.Relayout(GetWindow().Size); return; }
+        string bgMask = "";
+        try { bgMask = FieldData.FindByXBlock(assets.Packs, xblock)?.BgMask ?? ""; } catch (Exception ex) { GD.PushWarning("screen mask field data: " + ex.Message); }
+        // between the world UI layers (5) and the HUD (10); the movie draws only while its CommonDepth layer is shown
+        screenMaskLayer = new CanvasLayer { Layer = 9, Offset = UiScale.MovieOrigin };
+        MovieLayerHost.Bind(screenMaskLayer, Ms2.Ui.CommonDepth.ScreenMask);
+        AddChild(screenMaskLayer);
+        screenMask = new MovieDialog(assets, new Ms2.Ui.Hud.ScreenMaskController(bgMask), hudModel, GetWindow().Size);
+        screenMaskLayer.AddChild(screenMask);
     }
 
     SystemMenuController systemMenu;    // UISystemMenuDialog (0x4e21), its C++ side while the menu is loaded
