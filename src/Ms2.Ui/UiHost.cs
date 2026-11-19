@@ -69,7 +69,7 @@ public sealed class UiHost
     public Action<string> Mark;
 
     /// <summary>Constructs the movie and runs the client's load sequence. Returns false when the document class failed.</summary>
-    public bool Load(int frames = 5)
+    public bool Load(int frames = 1)
     {
         if (Controller.IsDialogEntity)
         {
@@ -78,7 +78,11 @@ public sealed class UiHost
         }
         if (!Player.Start()) return false;
         Mark?.Invoke("as-construct");
-        for (int i = 0; i < frames; i++) Player.Tick();        // configUI runs in the first frames, before the client's OnLoadComplete
+        // The client's Loader runs frame 1 of the loaded movie (GFxMovie::vfunc_6 never advances it) and the host's end of Advance
+        // sends the render event that runs configUI (stage.invalidate -> validateNow); then msLoader.contentloadComplete calls
+        // "loadComplete" -> UISwfEntityManager::vfunc_9 -> OnLoadComplete. So one tick, with the timelines still on frame 1
+        // (a lobby dialog's popup() returns false from its "popup" label on frame 2); more frames only where a caller asks.
+        for (int i = 0; i < frames; i++) Player.Tick(advanceTimelines: i > 0);
         Mark?.Invoke("as-frames");
         Entity = Controller.FindEntity();
         if (Entity == null) { RT.NoteMissing("ui entity of " + Id); return false; }

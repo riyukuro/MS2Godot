@@ -37,6 +37,16 @@ public class CharacterListTests
         new(name, 1, 10, "Lv. 1", img, "2026/11/18", "Tria", sn);
 
     [Test]
+    public void LobbyButtonsFadeInWithThePopup()
+    {
+        // LobbyDialog.popup() returns false once the root sits on the "popup" label (frame 2): the buttons' tween only
+        // starts when OnLoadComplete runs with the timeline still on frame 1
+        var (h, c) = Load(Row("A", "11", "d.png"));
+        Assert.That(h.Get(h.Child("m_btns"), "alpha"), Is.EqualTo(1.0).Within(0.01), "Quit / Options buttons shown");
+        Assert.That(h.Get(h.Entity, "m_btnShowTween"), Is.Not.Null);
+    }
+
+    [Test]
     public void ANewPictureReachesItsRow()
     {
         // vfunc_ugc_1 (@0x1418ed310): updateProfile(index, GetProfileImagePath(key, 1)) on the dialog, which hands it to the

@@ -596,7 +596,7 @@ namespace Ms2.Avm2.Flash
         public void Later(Action a) => later.Add(a);
 
         /// <summary>One frame: deferred loads, enterFrame, timeline advance, frame scripts, exitFrame, timers and timeouts, render.</summary>
-        public void Tick()
+        public void Tick(bool advanceTimelines = true)
         {
             FrameCount++;
             if (later.Count > 0)
@@ -609,7 +609,7 @@ namespace Ms2.Avm2.Flash
             // SortByPlayList for the STILL-OPEN off-stage order).
             SendBroadcast("enterFrame");
             UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
-            RT.Guard("advance", null, this, static p => p.Advance(p.Stage));
+            if (advanceTimelines) RT.Guard("advance", null, this, static p => p.Advance(p.Stage));
             RunFrameActions();
             double dt = 1000.0 / FrameRate;
             RT.Guard("clock", null, (rt: RT, dt), static x => x.rt.AdvanceClock(x.dt));
