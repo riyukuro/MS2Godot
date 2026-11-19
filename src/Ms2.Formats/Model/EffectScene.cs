@@ -171,7 +171,8 @@ public sealed class EffectScene
         };
     }
 
-    /// <summary>An rgb curve from an NiPoint3Interpolator (NiPosData) or NiColorInterpolator (NiColorData); null without keys or a pose.</summary>
+    /// <summary>An rgb curve from an NiPoint3Interpolator (NiPosData) or NiColorInterpolator (NiColorData); null without keys or a pose.
+    /// The returned array belongs to the curve and is overwritten by its next call: read it before calling again.</summary>
     static Func<double, double[]> ColorCurve(NifFile n, long interp)
     {
         if (interp < 0) return null;
@@ -186,6 +187,7 @@ public sealed class EffectScene
         var keys = new List<(double t, double[] v, double[] f, double[] b)>();
         foreach (var k in grp.Structs("Keys"))
             keys.Add((k.Float("Time"), Rgb(k["Value"]), it == 2 ? Rgb(k["Forward"]) : null, it == 2 ? Rgb(k["Backward"]) : null));
+        var r = new double[3];          // the interpolated value, reused by the next call (the caller reads it at once)
         return t =>
         {
             if (t <= keys[0].t) return keys[0].v;
@@ -196,7 +198,6 @@ public sealed class EffectScene
                 if (t < a.t || t > b.t) continue;
                 if (it == 5) return a.v;
                 double span = b.t - a.t, u = (t - a.t) / (span == 0 ? 1 : span);
-                var r = new double[3];
                 for (int c = 0; c < 3; c++)
                     r[c] = it == 2 ? (2 * u * u * u - 3 * u * u + 1) * a.v[c] + (u * u * u - 2 * u * u + u) * a.b[c] + (-2 * u * u * u + 3 * u * u) * b.v[c] + (u * u * u - u * u) * b.f[c]
                                    : a.v[c] * (1 - u) + b.v[c] * u;        // TBC keys fall back to linear

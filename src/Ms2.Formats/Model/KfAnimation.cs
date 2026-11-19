@@ -26,10 +26,11 @@ public sealed class KfAnimation
         public double Time; public double[] V, Fwd, Bwd;
     }
 
-    static double[] Lerp(List<Key> keys, double t)
+    /// <summary>The keyed value at t, written to o (key width; no allocation, the per-frame path).</summary>
+    static void Lerp(List<Key> keys, double t, Span<double> o)
     {
-        if (t <= keys[0].Time) return keys[0].V;
-        if (t >= keys[^1].Time) return keys[^1].V;
+        if (t <= keys[0].Time) { keys[0].V.CopyTo(o); return; }
+        if (t >= keys[^1].Time) { keys[^1].V.CopyTo(o); return; }
         for (int i = 0; i + 1 < keys.Count; i++)
         {
             var a = keys[i]; var b = keys[i + 1];
@@ -37,21 +38,26 @@ public sealed class KfAnimation
             {
                 double span = b.Time - a.Time;
                 double u = (t - a.Time) / (span == 0 ? 1.0 : span);
-                var o = new double[a.V.Length];
+                int n = a.V.Length;
                 if (a.Fwd != null)
                 {
                     // quadratic keys: a span uses key0's Backward and key1's Forward (stream order is in, out)
                     double h00 = 2 * u * u * u - 3 * u * u + 1, h10 = u * u * u - 2 * u * u + u;
                     double h01 = -2 * u * u * u + 3 * u * u, h11 = u * u * u - u * u;
-                    for (int k = 0; k < o.Length; k++) o[k] = h00 * a.V[k] + h10 * a.Bwd[k] + h01 * b.V[k] + h11 * b.Fwd[k];
+                    for (int k = 0; k < n; k++) o[k] = h00 * a.V[k] + h10 * a.Bwd[k] + h01 * b.V[k] + h11 * b.Fwd[k];
                 }
                 else
-                    for (int k = 0; k < o.Length; k++) o[k] = a.V[k] * (1 - u) + b.V[k] * u;
-                return o;
+                    for (int k = 0; k < n; k++) o[k] = a.V[k] * (1 - u) + b.V[k] * u;
+                return;
             }
         }
-        return keys[^1].V;
+        keys[^1].V.CopyTo(o);
     }
+
+    static double Lerp1(List<Key> keys, double t) { Span<double> o = stackalloc double[4]; Lerp(keys, t, o); return o[0]; }
+
+    // one Euler axis' angle at t (0 without keys); a static helper, as a local function in the curve lambda would allocate a closure per call
+    static double Ang(List<Key>[] euler, int i, double t) => euler[i] != null ? Lerp1(euler[i], t) : 0.0;
 
     static Quat SlerpKeys(List<(double t, Quat q)> keys, double t)
     {
@@ -159,7 +165,7 @@ public sealed class KfAnimation
     static double[] VecConv(object o) => V3((NifStruct)o);
 
     /// <summary>Open uniform cubic B-spline with nq control points (rows of cps, dim wide), t in [0,1].</summary>
-    static double[] BSpline(double[] cps, int nq, double t01, int dim)
+    static void BSpline(double[] cps, int nq, double t01, int dim, Span<double> o)
     {
         const int deg = 3;
         int qmd = nq - deg;
@@ -168,10 +174,10 @@ public sealed class KfAnimation
         if (t01 >= 1.0) { T = qmd; imin = nq - 1 - deg; }
         else { T = qmd * t01; imin = (int)T; }
         int imax = imin + deg;
-        var knot = new List<double>();
-        for (int i1 = imax + 1 - deg; i1 < imax + 1 + deg; i1++)
-            knot.Add(i1 <= deg ? 0.0 : (i1 >= nq ? qmd : i1 - deg));
-        var val = new double[deg + 1];
+        Span<double> knot = stackalloc double[2 * deg];
+        for (int i1 = imax + 1 - deg, j = 0; i1 < imax + 1 + deg; i1++, j++)
+            knot[j] = i1 <= deg ? 0.0 : (i1 >= nq ? qmd : i1 - deg);
+        Span<double> val = stackalloc double[deg + 1];
         val[deg] = 1.0;
         for (int row = deg - 1; row >= 0; row--)
         {
@@ -191,10 +197,9 @@ public sealed class KfAnimation
             double c0b = (T - knot[k1]) * inv;
             val[deg] *= c0b;
         }
-        var o = new double[dim];
+        o[..dim].Clear();
         for (int k = 0; k <= deg; k++)
             for (int d = 0; d < dim; d++) o[d] += val[k] * cps[(imin + k) * dim + d];
-        return o;
     }
 
     static Quat QuatOf(NifStruct q) => new(q.Float("w"), q.Float("x"), q.Float("y"), q.Float("z"));
@@ -227,7 +232,7 @@ public sealed class KfAnimation
         }
         if (tOn)
         {
-            if (keysT != null) ch.T = t => { var a = Lerp(keysT, t); return new Vec3(a[0], a[1], a[2]); };
+            if (keysT != null) ch.T = t => { Span<double> a = stackalloc double[4]; Lerp(keysT, t, a); return new Vec3(a[0], a[1], a[2]); };
             else
             {
                 var c = V3(v.Struct("Translation"));
@@ -239,9 +244,8 @@ public sealed class KfAnimation
             if (euler != null)
                 ch.R = t =>
                 {
-                    double Ang(int i) => euler[i] != null ? Lerp(euler[i], t)[0] : 0.0;
                     // Gamebryo XYZ Euler keys: q = qZ * qY * qX
-                    return Quat.FromAxis(2, Ang(2)) * Quat.FromAxis(1, Ang(1)) * Quat.FromAxis(0, Ang(0));
+                    return Quat.FromAxis(2, Ang(euler, 2, t)) * Quat.FromAxis(1, Ang(euler, 1, t)) * Quat.FromAxis(0, Ang(euler, 0, t));
                 };
             else if (keysR != null && tbcR != null) ch.R = t => SquadKeys(keysR, tbcR, t);
             else if (keysR != null) ch.R = t => SlerpKeys(keysR, t);
@@ -254,7 +258,7 @@ public sealed class KfAnimation
         }
         if (sOn)
         {
-            if (keysS != null) ch.S = t => Lerp(keysS, t)[0];
+            if (keysS != null) ch.S = t => Lerp1(keysS, t);
             else
             {
                 double s = v.Float("Scale");
@@ -284,7 +288,7 @@ public sealed class KfAnimation
             double span = t1 - t0 == 0 ? 1.0 : t1 - t0;
             var x = e.Struct("Transform");
 
-            Func<double, double[]> Mk(long handle, int dim, string offKey, string halfKey)
+            double[] Mk(long handle, int dim, string offKey, string halfKey)
             {
                 var cps = new double[nq * dim];
                 if (comp)
@@ -298,13 +302,13 @@ public sealed class KfAnimation
                     var raw = data.Floats("Float Control Points");
                     for (int i = 0; i < cps.Length; i++) cps[i] = raw[handle + i];
                 }
-                return t => BSpline(cps, nq, (t - t0) / span, dim);
+                return cps;
             }
 
             if (ct[0] != 0)
             {
                 long h = e.Int("Translation Handle");
-                if (h != Invalid) { var f = Mk(h, 3, "Translation Offset", "Translation Half Range"); ch.T = t => { var a = f(t); return new Vec3(a[0], a[1], a[2]); }; }
+                if (h != Invalid) { var cp = Mk(h, 3, "Translation Offset", "Translation Half Range"); ch.T = t => { Span<double> a = stackalloc double[3]; BSpline(cp, nq, (t - t0) / span, 3, a); return new Vec3(a[0], a[1], a[2]); }; }
                 else
                 {
                     var c = V3(x.Struct("Translation"));
@@ -314,7 +318,7 @@ public sealed class KfAnimation
             if (ct[1] != 0)
             {
                 long h = e.Int("Rotation Handle");
-                if (h != Invalid) { var f = Mk(h, 4, "Rotation Offset", "Rotation Half Range"); ch.R = t => { var a = f(t); return new Quat(a[0], a[1], a[2], a[3]).Normalized(); }; }
+                if (h != Invalid) { var cp = Mk(h, 4, "Rotation Offset", "Rotation Half Range"); ch.R = t => { Span<double> a = stackalloc double[4]; BSpline(cp, nq, (t - t0) / span, 4, a); return new Quat(a[0], a[1], a[2], a[3]).Normalized(); }; }
                 else
                 {
                     var r = x.Struct("Rotation");
@@ -324,7 +328,7 @@ public sealed class KfAnimation
             if (ct[2] != 0)
             {
                 long h = e.Int("Scale Handle");
-                if (h != Invalid) { var f = Mk(h, 1, "Scale Offset", "Scale Half Range"); ch.S = t => f(t)[0]; }
+                if (h != Invalid) { var cp = Mk(h, 1, "Scale Offset", "Scale Half Range"); ch.S = t => { Span<double> a = stackalloc double[1]; BSpline(cp, nq, (t - t0) / span, 1, a); return a[0]; }; }
                 else
                 {
                     double s = x.Float("Scale");

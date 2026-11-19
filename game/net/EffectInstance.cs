@@ -21,10 +21,15 @@ public sealed partial class EffectInstance : Node3D
 {
     sealed class MeshState
     {
-        public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Texture2D Base; public bool Add;
+        public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
         public string BaseKey; public TexMap BaseMap, GlowMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the two drawn maps
         public TexTransform BaseT, GlowT;                         // working transforms the uv controllers write each frame
         public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
+        public double[] Dif, Emi;                                 // the material's static diffuse and emissive (white / black without one)
+        public bool Static, Placed;                               // no node from it to the root animates or faces the camera: placed once
+        // the last value set on each per-frame shader parameter: a parameter is set again only when its value changes
+        public Color LastTint = Colors.White; public float LastAlpha; public Texture2D LastTex;
+        public readonly Vector3[] LastRows = { new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0) };   // base r0 r1, glow r0 r1 (the shader defaults)
     }
 
     sealed class PSys
@@ -32,12 +37,18 @@ public sealed partial class EffectInstance : Node3D
         public ParticleSystemDef Def; public MultiMeshInstance3D Node; public MultiMesh MM; public ShaderMaterial Mat;
         public Vector3[] Pos, Vel; public float[] Age, Life, Size, Rot, RotSpeed, Frame0; public int Count;
         public double[] Accum; public float[] Buf;
+        public int Cap, LastCount;                                // the MultiMesh's instance count (live particles fit) and last frame's live count
     }
 
     readonly EffectScene scene; readonly ModelBuilder mb;
     readonly Node3D z = new() { Name = "Z", Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero) };
     readonly List<MeshState> meshes = new(); readonly List<PSys> systems = new();
     readonly Transform3D[] world; readonly bool[] done;
+    // each node's file transform in Godot form, with its orthonormal basis and X scale (the animated pose's rest parts)
+    readonly Transform3D[] rest; readonly Basis[] restBasis; readonly float[] restScale;
+    readonly int[] dynNodes;             // the nodes whose world transform changes over time (an animated or billboard node on the way to the root)
+    readonly bool needCam;               // a billboard node or a particle system reads the camera
+    bool inTree, shown = true;           // shown: z's Visible as last set (a new node is visible)
     readonly Random rng;
     readonly float emitUntil, life;
     float t;
@@ -147,6 +158,16 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         emitUntil = duration > 0 ? duration : (float)scene.Duration;
         life = emitUntil;
         world = new Transform3D[scene.Nodes.Count]; done = new bool[scene.Nodes.Count];
+        rest = new Transform3D[scene.Nodes.Count]; restBasis = new Basis[scene.Nodes.Count]; restScale = new float[scene.Nodes.Count];
+        for (int i = 0; i < scene.Nodes.Count; i++)
+        {
+            rest[i] = ModelBuilder.ToGodot(scene.Nodes[i].Local);
+            restBasis[i] = rest[i].Basis.Orthonormalized(); restScale[i] = rest[i].Basis.Scale.X;
+        }
+        var dyn = new bool?[scene.Nodes.Count];
+        bool Dyn(int i) => i >= 0 && (dyn[i] ??= scene.Nodes[i].Anim != null || scene.Nodes[i].Billboard || Dyn(scene.Nodes[i].Parent));
+        dynNodes = Enumerable.Range(0, scene.Nodes.Count).Where(Dyn).ToArray();
+        needCam = scene.Nodes.Any(n => n.Billboard) || scene.Systems.Any(d => d.Emitters.Count > 0);
         AddChild(z);
         foreach (var em in scene.Meshes)
         {
@@ -168,14 +189,23 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             }
             MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
             MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
-            SetRows(mat, ms.BaseMap?.Transform, FxParam.BaseR0, FxParam.BaseR1, ms.Rows);
-            SetRows(mat, ms.GlowMap?.Transform, FxParam.GlowR0, FxParam.GlowR1, ms.Rows);
+            ms.Mat = mat;
+            SetRows(ms, ms.BaseMap?.Transform, 0, true);
+            SetRows(ms, ms.GlowMap?.Transform, 1, true);
             ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform();
             ms.Add = add;
-            if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter(FxParam.Tint, Tint(em, 0, add));
-            mat.SetShaderParameter(FxParam.Alpha, (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
-            if (em.Flip != null) ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
-            ms.Mat = mat;
+            ms.Dif = m.Diffuse?.Select(v => (double)v).ToArray() ?? new double[] { 1, 1, 1 };
+            ms.Emi = m.Emissive?.Select(v => (double)v).ToArray() ?? new double[3];
+            if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter(FxParam.Tint, ms.LastTint = Tint(ms, 0));
+            mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
+            ms.LastTex = ms.Base;
+            if (em.Flip != null)
+            {
+                ms.Flip = em.Flip.Sources.Select(f => f == null ? null : mb.Texture(f)).ToArray();
+                // the frames as Variants made once: converting a Texture2D at each SetShaderParameter allocates (112 B)
+                ms.FlipV = ms.Flip.Select(x => x == null ? default : Variant.From(x)).ToArray();
+            }
+            ms.Static = !Dyn(em.Node);
             // No shadow. A skill effect (CNifEffect) roots in EffectNode(useLighting, useShadow) (nifeffectparam.cpp:680), and
             // useShadow defaults to false (:353; an xml attribute, :395). EffectNode passes it on as LightUnaffectedNode's second
             // argument (effectservice.cpp:916); when that is false the node joins every shadow generator's unaffected caster and
@@ -183,7 +213,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
             // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
             // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
-            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false, uv2: true), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false, uv2: true), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+                Visible = !scene.Nodes[em.Node].Culled };
             z.AddChild(ms.Node);
             meshes.Add(ms);
         }
@@ -201,7 +232,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
             mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
-            ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = n, VisibleInstanceCount = 0,
+            ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = 0, VisibleInstanceCount = 0,
                 Mesh = new QuadMesh { Size = Vector2.One, Material = mat }, CustomAabb = new Aabb(new Vector3(-5000, -5000, -5000), new Vector3(10000, 10000, 10000)) };
             ps.Node = new MultiMeshInstance3D { Multimesh = ps.MM, Name = d.Name ?? "particles", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             z.AddChild(ps.Node);
@@ -216,12 +247,11 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     /// (the lights) down only when useLighting, which defaults to true (LightUnaffectedNode::UpdateEffectsDownward,
     /// lightunaffectednode.cpp:75; nifeffectparam.cpp:353). Which of the field's lights reach it there, and which reach a field
     /// entity's EffectMesh graph, is not traced, so the mesh is drawn unshaded: diffuse at full light plus emissive.</summary>
-    static Color Tint(EffectMesh em, double t, bool add)
+    static Color Tint(MeshState ms, double t)
     {
-        var m = em.Mesh;
-        double[] dif = m.Diffuse?.Select(v => (double)v).ToArray() ?? new double[] { 1, 1, 1 };
-        double[] emi = m.Emissive?.Select(v => (double)v).ToArray() ?? new double[3];
-        foreach (var a in em.Colors)
+        double[] dif = ms.Dif, emi = ms.Emi;
+        bool add = ms.Add;
+        foreach (var a in ms.Def.Colors)
         {
             var v = a.Curve(a.Ctl.Local(t));
             if (a.Target == 1) dif = v; else if (a.Target == 3) emi = v;
@@ -231,25 +261,72 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         return new Color((float)r, (float)g, (float)b);
     }
 
+    // MS2_PERF_FX=1: every effect's _Process timed (wall time and managed bytes allocated); from 600 frames after the first
+    // effect ticks, 1200 frames are summed and printed once: instances per frame, us per instance, us and bytes per frame.
+    static readonly bool ProbeOn = System.Environment.GetEnvironmentVariable("MS2_PERF_FX") == "1";
+    static ulong probeStart = ulong.MaxValue, probeLast; static int probeFrames, probeInst; static long probeTicks, probeBytes, probeFrameTicks;
+    static readonly List<double> probeFrameUs = new(1300);
+    static void Probe(long ticks, long bytes)
+    {
+        ulong f = Engine.GetProcessFrames();
+        if (probeStart == ulong.MaxValue) probeStart = f + 600;
+        if (f < probeStart || probeFrames > 1200) return;
+        if (f != probeLast)
+        {
+            if (probeLast >= probeStart) probeFrameUs.Add(probeFrameTicks * 1e6 / System.Diagnostics.Stopwatch.Frequency);
+            probeLast = f; probeFrameTicks = 0;
+            if (++probeFrames > 1200)
+            {
+                probeFrameUs.Sort();
+                double us = probeTicks * 1e6 / System.Diagnostics.Stopwatch.Frequency;
+                GD.Print($"fx probe: {probeFrameUs.Count} frames, {(double)probeInst / probeFrameUs.Count:0.0} effects per frame, {us / probeInst:0.0} us per effect, "
+                    + $"{probeFrameUs[probeFrameUs.Count / 2]:0} us per frame (median; mean {us / probeFrameUs.Count:0}), {(double)probeBytes / probeFrameUs.Count:0} B allocated per frame; segments us per frame (whole run): camera {seg[0] * 1e6 / System.Diagnostics.Stopwatch.Frequency / probeLast:0.0}, meshes {seg[1] * 1e6 / System.Diagnostics.Stopwatch.Frequency / probeLast:0.0}, systems {seg[2] * 1e6 / System.Diagnostics.Stopwatch.Frequency / probeLast:0.0} (draw loop {seg[4] * 1e6 / System.Diagnostics.Stopwatch.Frequency / probeLast:0.0}, buffer set {seg[3] * 1e6 / System.Diagnostics.Stopwatch.Frequency / probeLast:0.0}, {(double)seg[5] / probeLast:0} particles)");
+                return;
+            }
+        }
+        probeInst++; probeTicks += ticks; probeBytes += bytes; probeFrameTicks += ticks;
+    }
+
     public override void _Process(double delta)
     {
+        if (!ProbeOn) { Tick(delta); return; }
+        long b0 = GC.GetAllocatedBytesForCurrentThread(), s0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        Tick(delta);
+        Probe(System.Diagnostics.Stopwatch.GetTimestamp() - s0, GC.GetAllocatedBytesForCurrentThread() - b0);
+    }
+
+    void Tick(double delta)
+    {
         if (Finished) return;
-        if (Delay > 0) { Delay -= (float)delta; z.Visible = false; return; }
-        z.Visible = true;
+        if (Delay > 0) { Delay -= (float)delta; if (shown) { z.Visible = false; shown = false; } return; }
+        if (!shown) { z.Visible = true; shown = true; }
         Advance((float)delta);
     }
 
-    static Transform3D Local(EffectNode n, float t)
+    public override void _EnterTree() => inTree = true;
+    public override void _ExitTree() => inTree = false;
+
+    // the frame's camera, fetched once per frame for all effects (one viewport holds them); its position is still read
+    // per effect, as the camera may move between two effects' _Process
+    static ulong camFrame = ulong.MaxValue; static Camera3D camThisFrame;
+    Camera3D FrameCamera()
     {
-        var tr = ModelBuilder.ToGodot(n.Local);
-        if (n.Anim == null) return tr;
+        if (!inTree) return null;
+        ulong f = Engine.GetProcessFrames();
+        if (f != camFrame || camThisFrame == null || !IsInstanceValid(camThisFrame)) { camFrame = f; camThisFrame = GetViewport()?.GetCamera3D(); }
+        return camThisFrame;
+    }
+
+    Transform3D Local(int i, float t)
+    {
+        var n = scene.Nodes[i];
+        if (n.Anim == null) return rest[i];
         double lt = n.AnimCtl != null ? n.AnimCtl.Local(t) : t;
-        var basis = tr.Basis; var origin = tr.Origin;
-        float scale = tr.Basis.Scale.X;
+        var basis = restBasis[i]; var origin = rest[i].Origin;
+        float scale = restScale[i];
         if (n.Anim.T != null) { var v = n.Anim.T(lt); origin = new Vector3((float)v.X, (float)v.Y, (float)v.Z); }
         if (n.Anim.S != null) scale = (float)n.Anim.S(lt);
         if (n.Anim.R != null) { var q = n.Anim.R(lt); basis = new Basis(new Quaternion((float)q.X, (float)q.Y, (float)q.Z, (float)q.W).Normalized()); }
-        else basis = basis.Orthonormalized();
         return new Transform3D(basis.Scaled(new Vector3(scale, scale, scale)), origin);
     }
 
@@ -258,7 +335,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (i < 0) return Transform3D.Identity;
         if (done[i]) return world[i];
         var n = scene.Nodes[i];
-        var l = Local(n, t);
+        var l = Local(i, t);
         var p = n.Parent >= 0 ? World(n.Parent, t, camLocal) : Transform3D.Identity;
         var w = p * l;
         if (n.Billboard)
@@ -288,18 +365,19 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     {
         t += dt;
         if (t > life) { Finished = true; QueueFree(); return; }
-        var cam = GetViewport()?.GetCamera3D();
+        long q0 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
+        var cam = needCam ? FrameCamera() : null;
         var camLocal = cam != null ? z.GlobalTransform.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
-        Array.Clear(done);
+        // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
+        foreach (int i in dynNodes) done[i] = false;
+        long q1 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
 
         foreach (var ms in meshes)
         {
             var d = ms.Def;
-            var nd = scene.Nodes[d.Node];
-            ms.Node.Transform = World(d.Node, t, camLocal);
-            ms.Node.Visible = !nd.Culled;
-            if (d.Colors.Count > 0) ms.Mat.SetShaderParameter(FxParam.Tint, Tint(d, t, ms.Add));
-            if (d.Alpha != null) ms.Mat.SetShaderParameter(FxParam.Alpha, (float)d.Opacity(t));
+            if (!ms.Static || !ms.Placed) { ms.Node.Transform = World(d.Node, t, camLocal); ms.Placed = true; }
+            if (d.Colors.Count > 0) { var c = Tint(ms, t); if (c != ms.LastTint) ms.Mat.SetShaderParameter(FxParam.Tint, ms.LastTint = c); }
+            if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
             if (d.Uv.Count > 0) AnimateUv(ms, t);
             if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
             {
@@ -308,12 +386,15 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                                                : (int)Math.Floor((lt - d.Flip.Ctl.Start) / Math.Max(d.Flip.Ctl.Stop - d.Flip.Ctl.Start, 1e-6) * ms.Flip.Length);
                 idx = Math.Clamp(idx, 0, ms.Flip.Length - 1);
                 var tex = ms.Flip[idx];
-                if (tex != null) ms.Mat.SetShaderParameter(FxParam.Tex, tex);
+                if (tex != null && tex != ms.LastTex) { ms.LastTex = tex; ms.Mat.SetShaderParameter(FxParam.Tex, ms.FlipV[idx]); }
             }
         }
 
+        long q2 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         foreach (var ps in systems) Step(ps, dt, camLocal);
+        if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
+    static readonly long[] seg = new long[6];
 
     // The uv controllers of one mesh at effect time t: each active controller replaces one component of its map's transform
     // (UvOp); a map without a static transform gets the controller's default one (TexTransform.ControllerDefault). Only the
@@ -339,16 +420,19 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             else continue;
             w.Set(op.Operation, (float)op.Curve(op.Ctl.Local(t)));
         }
-        if (baseOn) SetRows(ms.Mat, ms.BaseT, FxParam.BaseR0, FxParam.BaseR1, ms.Rows);
-        if (glowOn) SetRows(ms.Mat, ms.GlowT, FxParam.GlowR0, FxParam.GlowR1, ms.Rows);
+        if (baseOn) SetRows(ms, ms.BaseT, 0, false);
+        if (glowOn) SetRows(ms, ms.GlowT, 1, false);
     }
 
-    // a map's texture transform as the shader's two rows (identity without one); r is scratch for the rows
-    static void SetRows(ShaderMaterial mat, TexTransform tt, StringName r0, StringName r1, float[] r)
+    // a map's texture transform as the shader's two rows (identity without one), map 0 base or 1 glow; a row is set only
+    // when it differs from the last one set (always when force)
+    static void SetRows(MeshState ms, TexTransform tt, int map, bool force)
     {
-        if (tt == null) { mat.SetShaderParameter(r0, new Vector3(1, 0, 0)); mat.SetShaderParameter(r1, new Vector3(0, 1, 0)); return; }
-        tt.Rows(r);
-        mat.SetShaderParameter(r0, new Vector3(r[0], r[1], r[2])); mat.SetShaderParameter(r1, new Vector3(r[3], r[4], r[5]));
+        Vector3 a = new(1, 0, 0), b = new(0, 1, 0);
+        if (tt != null) { var r = ms.Rows; tt.Rows(r); a = new(r[0], r[1], r[2]); b = new(r[3], r[4], r[5]); }
+        int k = map * 2;
+        if (force || a != ms.LastRows[k]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR0 : FxParam.GlowR0, ms.LastRows[k] = a);
+        if (force || b != ms.LastRows[k + 1]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR1 : FxParam.GlowR1, ms.LastRows[k + 1] = b);
     }
 
     // a map's uv set and clamp mode. The map reads its own uv set (TEXCOORD_MASK; NiStandardMaterialDescriptor.cpp:1006,
@@ -377,16 +461,18 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             else if (f.Kind == ForceKind.Drag) drags.Add((new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z), (float)f.Percentage));
         }
         // simulate
+        bool anyDrag = drags.Count > 0;
         for (int i = ps.Count - 1; i >= 0; i--)
         {
             ps.Age[i] += dt;
             if (ps.Age[i] >= ps.Life[i]) { Swap(ps, i, ps.Count - 1); ps.Count--; continue; }
             var v = ps.Vel[i] + accel * dt;
-            foreach (var (axis, pct) in drags)
-            {
-                float comp = v.Dot(axis);
-                v -= axis * comp * (1f - Mathf.Pow(Mathf.Max(0f, 1f - pct), dt * 30f));
-            }
+            if (anyDrag)
+                foreach (var (axis, pct) in drags)
+                {
+                    float comp = v.Dot(axis);
+                    v -= axis * comp * (1f - Mathf.Pow(Mathf.Max(0f, 1f - pct), dt * 30f));
+                }
             ps.Vel[i] = v;
             ps.Pos[i] += v * dt;
             ps.Rot[i] += ps.RotSpeed[i] * dt;
@@ -403,52 +489,92 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 while (ps.Accum[ei] >= 1 && ps.Count < ps.Pos.Length) { ps.Accum[ei] -= 1; Emit(ps, e, camLocal); }
                 if (ps.Count >= ps.Pos.Length) ps.Accum[ei] = 0;
             }
+        long qd = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         // draw
-        var up = Vector3.Back;
-        var buf = ps.Buf ??= new float[ps.Pos.Length * 20];
+        // The MultiMesh holds Cap instances, not the system's full capacity: multimesh_set_buffer takes exactly Cap * 20 floats
+        // and copies them all (twice: the managed array to a packed array, then into the storage) and uploads them, so a
+        // sparse system would copy its whole capacity every frame. Cap grows by doubling when the live count passes it and
+        // shrinks when the count falls under a quarter, so the buffer is reallocated rarely, never per frame.
+        int cap = ps.Cap;
+        if (ps.Count > cap) cap = Math.Min(ps.Pos.Length, Math.Max(16, Math.Max(ps.Count, cap * 2)));
+        else if (cap > 16 && ps.Count * 4 < cap) cap = Math.Max(16, cap / 2);
+        bool resized = cap != ps.Cap;
+        if (resized) { ps.Cap = cap; ps.MM.InstanceCount = cap; ps.Buf = new float[cap * 20]; }
+        var buf = ps.Buf;
+        // The system's constants are read once and the per-particle math is written out in floats: the game assembly is built
+        // without the optimizer, so each Vector3/Basis operator would be a call. The operations and their order are Godot's
+        // (Cross, Normalized, Length, vector * scalar), so the buffer holds the same floats as with the Godot types.
+        bool sizeKeys = d.SizeKeys.Length > 0, colorKeys = d.ColorKeys.Length > 0, aligned = d.Aligned, flips = d.NumFrames > 1;
+        bool grow = d.GrowTime > 0, shrink = d.ShrinkTime > 0;
+        float growTime = (float)d.GrowTime, shrinkTime = (float)d.ShrinkTime;
+        float stretchLo = (float)Math.Min(d.ScaleRestV, d.ScaleLimitV), stretchHi = (float)Math.Max(d.ScaleRestV, d.ScaleLimitV);
+        float initialTime = (float)d.InitialTime, flipSpan = Mathf.Max((float)(d.FinalTime - d.InitialTime), 1e-4f);
+        float flipFactor = d.PingPong ? 1 : 0.999f, numFrames = d.NumFrames, frameMod = Mathf.Max(d.FramesAcross * d.FramesDown, 1);
+        float cx = camLocal.X, cy = camLocal.Y, cz = camLocal.Z;
+        float[] age = ps.Age, life = ps.Life, psize = ps.Size, rot = ps.Rot, frame0 = ps.Frame0;
+        Vector3[] ppos = ps.Pos, pvel = ps.Vel;
         for (int i = 0; i < ps.Count; i++)
         {
-            float n = ps.Age[i] / ps.Life[i];
-            float size = ps.Size[i];
-            if (d.SizeKeys.Length > 0) size *= (float)Lerp(d.SizeKeys, n);
-            if (d.GrowTime > 0) size *= Mathf.Clamp(ps.Age[i] / (float)d.GrowTime, 0f, 1f);
-            if (d.ShrinkTime > 0) size *= Mathf.Clamp((ps.Life[i] - ps.Age[i]) / (float)d.ShrinkTime, 0f, 1f);
-            var color = Colors.White;
-            if (d.ColorKeys.Length > 0) color = ColorAt(d.ColorKeys, n);
-            var pos = ps.Pos[i];
-            var toCam = (camLocal - pos); toCam = toCam.LengthSquared() > 1e-6f ? toCam.Normalized() : Vector3.Back;
-            Basis b;
-            if (d.Aligned)
+            float n = age[i] / life[i];
+            float size = psize[i];
+            if (sizeKeys) size *= (float)Lerp(d.SizeKeys, n);
+            if (grow) size *= Mathf.Clamp(age[i] / growTime, 0f, 1f);
+            if (shrink) size *= Mathf.Clamp((life[i] - age[i]) / shrinkTime, 0f, 1f);
+            float cr = 1f, cg = 1f, cb = 1f, ca = 1f;
+            if (colorKeys) ColorAt(d.ColorKeys, n, out cr, out cg, out cb, out ca);
+            var pos = ppos[i];
+            // toCam: camera direction from the particle (Vector3.Back when on it)
+            float tx = cx - pos.X, ty = cy - pos.Y, tz = cz - pos.Z, l2 = tx * tx + ty * ty + tz * tz;
+            if (l2 > 1e-6f) { float l = MathF.Sqrt(l2); tx /= l; ty /= l; tz /= l; } else { tx = 0f; ty = 0f; tz = 1f; }
+            float xx, xy, xz, yx, yy, yz;                         // the basis X and Y columns (Z is toCam)
+            if (aligned)
             {
-                var vel = ps.Vel[i]; float sp = vel.Length();
-                var along = sp > 1e-3f ? vel / sp : Vector3.Right;
-                float stretch = Mathf.Clamp((float)(d.ScaleRestV + d.ScaleAmountV * sp * 0.01), (float)Math.Min(d.ScaleRestV, d.ScaleLimitV), (float)Math.Max(d.ScaleRestV, d.ScaleLimitV));
-                var side = along.Cross(toCam); side = side.LengthSquared() > 1e-6f ? side.Normalized() : up.Cross(along).Normalized();
-                b = new Basis(along * size * stretch, side * size, toCam);
+                var vel = pvel[i];
+                float sp = MathF.Sqrt(vel.X * vel.X + vel.Y * vel.Y + vel.Z * vel.Z);
+                float ax = 1f, ay = 0f, az = 0f;                  // along: the velocity direction (Vector3.Right when still)
+                if (sp > 1e-3f) { ax = vel.X / sp; ay = vel.Y / sp; az = vel.Z / sp; }
+                float stretch = Mathf.Clamp((float)(d.ScaleRestV + d.ScaleAmountV * sp * 0.01), stretchLo, stretchHi);
+                float sx = ay * tz - az * ty, sy = az * tx - ax * tz, sz = ax * ty - ay * tx, s2 = sx * sx + sy * sy + sz * sz;
+                if (s2 > 1e-6f) { float l = MathF.Sqrt(s2); sx /= l; sy /= l; sz /= l; }
+                else
+                {
+                    // up (Vector3.Back) cross along, normalized
+                    sx = 0f * az - 1f * ay; sy = 1f * ax - 0f * az; sz = 0f * ay - 0f * ax; s2 = sx * sx + sy * sy + sz * sz;
+                    if (s2 == 0f) { sx = 0f; sy = 0f; sz = 0f; } else { float l = MathF.Sqrt(s2); sx /= l; sy /= l; sz /= l; }
+                }
+                xx = ax * size * stretch; xy = ay * size * stretch; xz = az * size * stretch;
+                yx = sx * size; yy = sy * size; yz = sz * size;
             }
             else
             {
-                var right = up.Cross(toCam); right = right.LengthSquared() > 1e-6f ? right.Normalized() : Vector3.Right;
-                var upv = toCam.Cross(right).Normalized();
-                float c = Mathf.Cos(ps.Rot[i]), s = Mathf.Sin(ps.Rot[i]);
-                b = new Basis((right * c + upv * s) * size, (upv * c - right * s) * size, toCam);
+                // right: up (Vector3.Back) cross toCam, normalized (Vector3.Right when parallel); upv: toCam cross right, normalized
+                float rx = 0f * tz - 1f * ty, ry = 1f * tx - 0f * tz, rz = 0f * ty - 0f * tx, r2 = rx * rx + ry * ry + rz * rz;
+                if (r2 > 1e-6f) { float l = MathF.Sqrt(r2); rx /= l; ry /= l; rz /= l; } else { rx = 1f; ry = 0f; rz = 0f; }
+                float ux = ty * rz - tz * ry, uy = tz * rx - tx * rz, uz = tx * ry - ty * rx, u2 = ux * ux + uy * uy + uz * uz;
+                if (u2 == 0f) { ux = 0f; uy = 0f; uz = 0f; } else { float l = MathF.Sqrt(u2); ux /= l; uy /= l; uz /= l; }
+                float c = MathF.Cos(rot[i]), s = MathF.Sin(rot[i]);
+                xx = (rx * c + ux * s) * size; xy = (ry * c + uy * s) * size; xz = (rz * c + uz * s) * size;
+                yx = (ux * c - rx * s) * size; yy = (uy * c - ry * s) * size; yz = (uz * c - rz * s) * size;
             }
             // one buffer write per system instead of three engine calls per particle: 12 transform floats (rows), colour, custom data
             int o = i * 20;
-            buf[o] = b.X.X; buf[o + 1] = b.Y.X; buf[o + 2] = b.Z.X; buf[o + 3] = pos.X;
-            buf[o + 4] = b.X.Y; buf[o + 5] = b.Y.Y; buf[o + 6] = b.Z.Y; buf[o + 7] = pos.Y;
-            buf[o + 8] = b.X.Z; buf[o + 9] = b.Y.Z; buf[o + 10] = b.Z.Z; buf[o + 11] = pos.Z;
-            buf[o + 12] = color.R; buf[o + 13] = color.G; buf[o + 14] = color.B; buf[o + 15] = color.A;
-            float frame = ps.Frame0[i];
-            if (d.NumFrames > 1)
+            buf[o] = xx; buf[o + 1] = yx; buf[o + 2] = tx; buf[o + 3] = pos.X;
+            buf[o + 4] = xy; buf[o + 5] = yy; buf[o + 6] = ty; buf[o + 7] = pos.Y;
+            buf[o + 8] = xz; buf[o + 9] = yz; buf[o + 10] = tz; buf[o + 11] = pos.Z;
+            buf[o + 12] = cr; buf[o + 13] = cg; buf[o + 14] = cb; buf[o + 15] = ca;
+            float frame = frame0[i];
+            if (flips)
             {
-                float u = Mathf.Clamp((n - (float)d.InitialTime) / Mathf.Max((float)(d.FinalTime - d.InitialTime), 1e-4f), 0f, 1f);
-                frame = (ps.Frame0[i] + Mathf.Floor(u * d.NumFrames * (d.PingPong ? 1 : 0.999f))) % Mathf.Max(d.FramesAcross * d.FramesDown, 1);
+                float u = Mathf.Clamp((n - initialTime) / flipSpan, 0f, 1f);
+                frame = (frame0[i] + Mathf.Floor(u * numFrames * flipFactor)) % frameMod;
             }
             buf[o + 16] = frame; buf[o + 17] = 0; buf[o + 18] = 0; buf[o + 19] = 0;
         }
+        if (ProbeOn) seg[4] += System.Diagnostics.Stopwatch.GetTimestamp() - qd;
+        long qb = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         if (ps.Count > 0) ps.MM.Buffer = buf;
-        ps.MM.VisibleInstanceCount = ps.Count;
+        if (ProbeOn) { seg[3] += System.Diagnostics.Stopwatch.GetTimestamp() - qb; seg[5] += ps.Count; }
+        if (ps.Count != ps.LastCount || resized) { ps.MM.VisibleInstanceCount = ps.Count; ps.LastCount = ps.Count; }
     }
 
     static void Swap(PSys p, int a, int b)
@@ -468,14 +594,17 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         return k[^1].v;
     }
 
-    static Color ColorAt((double t, byte r, byte g, byte b, byte a)[] k, float n)
+    static void ColorAt((double t, byte r, byte g, byte b, byte a)[] k, float n, out float cr, out float cg, out float cb, out float ca)
     {
-        Color C(int i) => new(k[i].r / 255f, k[i].g / 255f, k[i].b / 255f, k[i].a / 255f);
-        if (n <= k[0].t) return C(0);
-        if (n >= k[^1].t) return C(k.Length - 1);
-        for (int i = 0; i + 1 < k.Length; i++)
-            if (n >= k[i].t && n <= k[i + 1].t) { float u = (float)((n - k[i].t) / Math.Max(k[i + 1].t - k[i].t, 1e-9)); return C(i).Lerp(C(i + 1), u); }
-        return C(k.Length - 1);
+        int i0 = k.Length - 1, i1 = i0; float u = 0;                // the keys around n and the weight (one key at the ends)
+        if (n <= k[0].t) i0 = i1 = 0;
+        else if (n < k[^1].t)
+            for (int i = 0; i + 1 < k.Length; i++)
+                if (n >= k[i].t && n <= k[i + 1].t) { i0 = i; i1 = i + 1; u = (float)((n - k[i].t) / Math.Max(k[i + 1].t - k[i].t, 1e-9)); break; }
+        cr = k[i0].r / 255f; cg = k[i0].g / 255f; cb = k[i0].b / 255f; ca = k[i0].a / 255f;
+        if (i0 == i1) return;
+        // Color.Lerp: from + (to - from) * weight per channel
+        cr += (k[i1].r / 255f - cr) * u; cg += (k[i1].g / 255f - cg) * u; cb += (k[i1].b / 255f - cb) * u; ca += (k[i1].a / 255f - ca) * u;
     }
 
     void Emit(PSys ps, EmitterDef e, Vector3 camLocal)
