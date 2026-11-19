@@ -61,10 +61,11 @@ public sealed partial class EffectInstance : Node3D
     /// <summary>Placement in file space (Z up): translate, rotate, scale from the effect xml.</summary>
     public Transform3D FileSpace { set => z.Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero) * value; }
 
-    static Shader meshAdd, meshMix, partAdd, partMix;
+    static Shader partAdd, partMix;
+    static readonly Dictionary<string, Shader> meshShaders = new();
     // Textures and colours are taken raw (no source_color): the colour buffer holds gamma values (field_lit.gdshader).
     static readonly string MeshCode = @"shader_type spatial;
-render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
+render_mode unshaded, MESHSTATE, BLEND;
 uniform sampler2D tex : repeat_enable, filter_linear;
 uniform bool has_tex = true;
 uniform sampler2D glow_tex : repeat_enable, filter_linear;
@@ -169,6 +170,28 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
 
     static Shader Sh(ref Shader cache, string code, string blend) => cache ??= new Shader { Code = WithFog(code).Replace("BLEND", blend) };
 
+    /// <summary>A mesh's render modes from its NiZBufferProperty and NiStencilProperty (the nearest up the graph, ModelMesh.ZFlags
+    /// / DrawMode). Z write on = depth_draw_always (the portals' outer shells are 15, their glow shells 13: test, no write); z test
+    /// off = depth_test_disabled. The test function is TEST_LESSEQUAL in every one checked (the default, NiZBufferProperty.inl:22),
+    /// which is Godot's own test. The draw mode maps to D3D culling as NiDX9RenderState does for the right-handed
+    /// camera (NiDX9RenderState.cpp:380-388): CCW_OR_BOTH and CCW cull the back faces as the field meshes do (field_lit's
+    /// cull_back), CW the front, BOTH none (the portals' NiStencilProperty 19840 is DRAW_BOTH with the stencil test off).
+    /// STILL-OPEN: the field meshes ignore DRAW_BOTH; field_lit.gdshader sets no cull mode, so it culls their back faces.</summary>
+    internal static string RenderModes(ModelMesh m)
+    {
+        string cull = m.DrawMode switch { 3 => "cull_disabled", 2 => "cull_front", _ => "cull_back" };
+        string depth = m.ZWrite ? "depth_draw_always" : "depth_draw_never";
+        return m.ZTest ? $"{cull}, {depth}" : $"{cull}, {depth}, depth_test_disabled";
+    }
+
+    static Shader MeshShader(ModelMesh m, bool add)
+    {
+        string state = RenderModes(m), key = state + (add ? " add" : " mix");
+        if (!meshShaders.TryGetValue(key, out var sh))
+            meshShaders[key] = sh = new Shader { Code = WithFog(MeshCode).Replace("MESHSTATE", state).Replace("BLEND", add ? "blend_add" : "blend_mix") };
+        return sh;
+    }
+
     static float Rad(float x) => x;
 
     public EffectInstance(EffectScene scene, ModelBuilder mb, float duration, int seed)
@@ -197,7 +220,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             var ms = new MeshState { Def = em };
             var m = em.Mesh;
             bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
-            var mat = new ShaderMaterial { Shader = add ? Sh(ref meshAdd, MeshCode, "blend_add") : Sh(ref meshMix, MeshCode, "blend_mix") };
+            var mat = new ShaderMaterial { Shader = MeshShader(m, add) };
+            // SORTING_OFF meshes are drawn unsorted after the opaque buckets and before the depth-sorted alpha list
+            // (MS2RenderListProcessor: RenderNoSortList then RenderAlphaList, ms2renderlistprocessor.cpp:264-266, :368-370): a
+            // lower priority puts them ahead of the field's other transparent objects. STILL-OPEN: their order among
+            // themselves is the culling (scene) order in the client; Godot sorts them by depth within the priority.
+            if (m.NoSort) mat.RenderPriority = -1;
             ms.BaseKey = m.Textures.ContainsKey("base") ? "base" : "shader0";
             ms.Base = m.Textures.TryGetValue(ms.BaseKey, out var bn) ? mb.Texture(bn) : null;
             ms.BaseMap = m.Maps.GetValueOrDefault(ms.BaseKey);

@@ -43,6 +43,19 @@ public sealed class ModelMesh
     public int AlphaFlags = -1;           // NiAlphaProperty flags, -1 without one
     public int AlphaThreshold;            // NiAlphaProperty test threshold (0..255)
     public int VertexColorFlags = -1;     // NiVertexColorProperty flags, -1 without one (inherited from the scene root)
+    /// <summary>NiZBufferProperty flags of the nearest one on the mesh or its ancestors (Gamebryo's property inheritance:
+    /// a child's property replaces its parent's), else the default property's 15: test on, write on, TEST_LESSEQUAL
+    /// (NiZBufferProperty.inl:17-23). Bit 0 = test, bit 1 = write, bits 2-5 = test function (NiZBufferProperty.h:79-82).</summary>
+    public int ZFlags = 15;
+    public bool ZTest => (ZFlags & 1) != 0;
+    public bool ZWrite => (ZFlags & 2) != 0;
+    /// <summary>NiStencilProperty draw mode of the nearest one (bits 10-11, NiStencilProperty.h:121-122): 0 DRAW_CCW_OR_BOTH
+    /// (the default property's, NiStencilProperty.inl:27), 1 DRAW_CCW, 2 DRAW_CW, 3 DRAW_BOTH (no culling).</summary>
+    public int DrawMode;
+    /// <summary>Under an NiSortAdjustNode whose mode is SORTING_OFF: the renderer draws the mesh unsorted, in scene order, after
+    /// the opaque buckets and before the depth-sorted alpha list. The outermost sort-adjust ancestor decides, as its OnVisible
+    /// marks its whole subtree's visible objects after the inner ones did (NiSortAdjustNode.cpp:36-57).</summary>
+    public bool NoSort;
     public bool AlphaBlendOn => AlphaFlags >= 0 && (AlphaFlags & 1) != 0;
     public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
@@ -683,6 +696,7 @@ public sealed class ModelData
             ReadMaterial(nif, b, mesh);
             ReadTextureControllers(nif, b, mesh);
             mesh.Indices = s["INDEX"].v.Select(x => (int)x).ToArray();
+            bool zSet = false, stSet = false;
             foreach (var p in b.Ints("Properties"))
             {
                 if (p < 0) continue;
@@ -706,6 +720,23 @@ public sealed class ModelData
                     mesh.AlphaAnim = ReadAlphaController(nif, prop);
                 }
                 if (prop.Type == "NiSpecularProperty") mesh.SpecularOn = (prop.IntOr("Flags", 0) & 1) != 0;
+            }
+
+            // the z-buffer and stencil state: the nearest property up the scene graph (NiNode::UpdateProperties pushes
+            // each node's properties over its parent's)
+            for (int n = i, guard = 0; n >= 0 && guard < 256; n = parent.TryGetValue(n, out int up) ? up : -1, guard++)
+            {
+                int z = -1, st = -1;
+                if (B[n].Type == "NiSortAdjustNode") mesh.NoSort = B[n].IntOr("Sorting Mode", 0) == 1;   // SORTING_OFF
+                if (!B[n].TryGetValue("Properties", out var pv) || pv is not long[] props) continue;
+                foreach (var p in props)
+                {
+                    if (p < 0) continue;
+                    if (B[(int)p].Type == "NiZBufferProperty") z = (int)p;
+                    else if (B[(int)p].Type == "NiStencilProperty") st = (int)p;
+                }
+                if (z >= 0 && !zSet) { mesh.ZFlags = (int)B[z].Int("Flags"); zSet = true; }
+                if (st >= 0 && !stSet) { mesh.DrawMode = ((int)B[st].Int("Flags") >> 10) & 3; stSet = true; }
             }
 
             if (skinned)
