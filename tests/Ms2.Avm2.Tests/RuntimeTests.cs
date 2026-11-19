@@ -68,6 +68,34 @@ public class RuntimeTests
     }
 
     [Test]
+    public void RenderRunsOnlyAfterStageInvalidateAndAnInvalidateInsideItIsDropped()
+    {
+        // MovieRoot::AdvanceFrame (sfr_as3_16z.cpp:607-611): StageInvalidated queues the render chain, cleared after it.
+        // The chain holds every display object with a render listener, on the stage or not (sfr_as3_09.cpp:1089).
+        var (rt, p) = Empty();
+        var sprite = rt.GetClass("flash.display.Sprite");
+        var on = (AsDisplayObject)sprite.Construct();
+        var off = (AsDisplayObject)sprite.Construct();
+        p.Stage.addChild(on);
+        int onRenders = 0, offRenders = 0;
+        on.addEventListener("render", new AsPlainFunction(rt, new NativeMethod("r", (_, a) =>
+        {
+            onRenders++;
+            p.Call(p.Stage, "invalidate", System.Array.Empty<object>());
+            return Rt.Undef;
+        })));
+        off.addEventListener("render", new AsPlainFunction(rt, new NativeMethod("r", (_, a) => { offRenders++; return Rt.Undef; })));
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That((onRenders, offRenders), Is.EqualTo((0, 0)), "no stage.invalidate: no render");
+        p.Call(p.Stage, "invalidate", System.Array.Empty<object>());
+        p.Tick();
+        Assert.That((onRenders, offRenders), Is.EqualTo((1, 1)));
+        Assert.That(p.RenderInvalidated, Is.False, "the handler's invalidate is cleared with the flag");
+        p.Tick();
+        Assert.That((onRenders, offRenders), Is.EqualTo((1, 1)));
+    }
+
+    [Test]
     public void ADraggedSpriteFollowsTheMouseAndAReleaseOverNothingReachesTheStage()
     {
         var (rt, p) = Empty();

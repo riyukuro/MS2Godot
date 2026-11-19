@@ -848,4 +848,39 @@ public class HudTests
         Walk(o);
         return l;
     }
+
+    static IEnumerable<AsDisplayObject> Tree(AsDisplayObject o)
+    {
+        yield return o;
+        if (o is AsContainer c) foreach (var ch in c.Children) foreach (var x in Tree(ch)) yield return x;
+    }
+
+    [Test]
+    public void APlayerCirclePictureChangeWaitsForTheNextStageInvalidate()
+    {
+        // vfunc_ugc_1 (@0x141a383b0): changePlayer; ProfileRenderer.profile keeps the path and draws it on Event.RENDER,
+        // which the runtime sends only after a stage.invalidate() (MovieRoot::AdvanceFrame, sfr_as3_16z.cpp:607-611).
+        var m = Model();
+        m.Field.Name = "Tria";
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false), CharacterId = 77 };
+        var h = Load(c, m);
+        var p = h.Player;
+        for (int i = 0; i < 5; i++) p.Tick();
+        var r = Tree(p.Root).Single(o => o.Class?.Name == "minimap_renderer_players");
+        c.OnProfileImage(77, "profile/test.png");
+        Assert.That(r.GetPublic("m_dirtyProfile"), Is.EqualTo("profile/test.png"));
+        for (int i = 0; i < 10; i++) p.Tick();
+        Assert.That(r.GetPublic("m_dirtyProfile"), Is.EqualTo("profile/test.png"), "nothing invalidated the stage");
+        // A hover is not one: the renderer has no "over" frame, and Button.setState invalidates only for a labelled frame.
+        var at = r.LocalToGlobal(4, 4);
+        p.MouseMove(at.X, at.Y);
+        p.Tick();
+        Assert.That(r.GetPublic("m_dirtyProfile"), Is.EqualTo("profile/test.png"));
+        // Any other component's invalidate in the movie is (a list rebuild when a player comes or goes: TileCacheList).
+        p.Call(p.Stage, "invalidate", System.Array.Empty<object>());
+        p.Tick();
+        Assert.That(r.GetPublic("m_dirtyProfile"), Is.EqualTo(""), "draw ran");
+        Assert.That(p.RenderInvalidated, Is.False);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
 }

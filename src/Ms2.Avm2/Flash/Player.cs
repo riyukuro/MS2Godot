@@ -468,7 +468,11 @@ namespace Ms2.Avm2.Flash
             double dt = 1000.0 / FrameRate;
             RT.Guard("clock", () => RT.AdvanceClock(dt));
             foreach (var t in timers.ToArray()) RT.Guard("timer", t.Pump);
-            if (RenderInvalidated) { RenderInvalidated = false; SendBroadcast("render"); }
+            // MovieRoot::AdvanceFrame (@0x1424eb2f0, sfr_as3_16z.cpp:607-611), at the end of every MovieImpl::Advance
+            // (sfr_gfx_01i.cpp:3869): with StageInvalidated (+0x6e0, set only by Stage::invalidate) the render event chain
+            // is queued and run, and the flag is cleared after it, so a stage.invalidate() inside a render handler is
+            // dropped. Nothing set: one bool test, no dispatch.
+            if (RenderInvalidated) { SendBroadcast("render"); RenderInvalidated = false; }
         }
 
         void Advance(AsDisplayObject o)
