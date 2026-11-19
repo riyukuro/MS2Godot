@@ -78,10 +78,15 @@ public sealed class UiHost
         }
         if (!Player.Start()) return false;
         Mark?.Invoke("as-construct");
-        // The client's Loader runs frame 1 of the loaded movie (GFxMovie::vfunc_6 never advances it) and the host's end of Advance
-        // sends the render event that runs configUI (stage.invalidate -> validateNow); then msLoader.contentloadComplete calls
-        // "loadComplete" -> UISwfEntityManager::vfunc_9 -> OnLoadComplete. So one tick, with the timelines still on frame 1
-        // (a lobby dialog's popup() returns false from its "popup" label on frame 2); more frames only where a caller asks.
+        // The client's Loader path: MovieRoot::ProcessLoadQueueEntry (sfr_as3_18.cpp:8483-8508) queues the INIT / COMPLETE events
+        // on AL_Manual; FrameCounter::AdvanceFrame (sfr_as3_16z.cpp:240) requeues them behind the loaded movie's frame-1 script, and
+        // the new sprite is skipped for frame advance by Flag_NeedExecuteFrame (:633). So the timelines stay on frame 1 until
+        // msLoader.contentloadComplete calls "loadComplete" -> UISwfEntityManager::vfunc_9 -> OnLoadComplete (a lobby dialog's
+        // popup() returns false from its "popup" label on frame 2), hence one tick that does not advance them; more frames only
+        // where a caller asks.
+        // Known order difference: the client sends configUI (the render event, stage.invalidate -> validateNow) one frame before
+        // loadComplete, not in the same tick, and runs it before enterFrame/timers; our Player.Tick runs enterFrame and timers
+        // first and the render event last.
         for (int i = 0; i < frames; i++) Player.Tick(advanceTimelines: i > 0);
         Mark?.Invoke("as-frames");
         Entity = Controller.FindEntity();
