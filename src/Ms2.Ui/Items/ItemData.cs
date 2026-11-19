@@ -22,6 +22,9 @@ public sealed class ItemData
     /// <summary>ItemProperty moveDisable (itemdatastruct.cpp:1158) and socketDataId.</summary>
     public bool MoveDisable;
     public int SocketDataId;
+    /// <summary>ItemProperty gearScore and unlimitedEnchantMaxGrade (itemdatastruct.cpp:1137-1139): the item level inputs
+    /// (<see cref="ItemLevels"/>).</summary>
+    public int GearScore, UnlimitedEnchantMaxGrade;
     /// <summary>ItemUccMesh::LoadXml (itemdatastruct.cpp:1583): &lt;ucc mesh&gt;.</summary>
     public string UccMesh = "";
     // <PCBang PCBang> (:371)
@@ -92,6 +95,8 @@ public sealed class ItemData
             d.SlotIcon = (string)p.Attribute("slotIcon") ?? d.SlotIcon;
             Bool(p, "moveDisable", ref d.MoveDisable);
             Int(p, "socketDataId", ref d.SocketDataId);
+            Int(p, "gearScore", ref d.GearScore);
+            Int(p, "unlimitedEnchantMaxGrade", ref d.UnlimitedEnchantMaxGrade);
         }
         if (env.Element("limit") is { } l)
         {

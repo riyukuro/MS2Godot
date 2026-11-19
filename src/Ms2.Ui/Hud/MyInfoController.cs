@@ -49,7 +49,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public Func<PcInfo, long> DefenseScoreLua;
     /// <summary>CLua::FUN_140674a70(value, 0, critical): the crit rate GetBasicStat(0x12) shows.</summary>
     public Func<long, float, long, float> CritRate;
-    /// <summary>The record's m_3cc / m_3d0 (vfunc_126: the worn weapons' attack); null leaves m_itemLevelInfo.</summary>
+    /// <summary>The record's m_3cc / m_3d0 (vfunc_126: the worn items' levels) where the port's own sum does not know them
+    /// (Lua); null leaves the port's sum.</summary>
     public Func<PcInfo, (uint Total, uint Additional)?> ItemLevel;
     /// <summary>AdditionalCliList::GetTotalShieldValue of the local player.</summary>
     public Func<long> Shield;
@@ -410,14 +411,18 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     }
 
     /// <summary>
-    /// The record's m_3cc / m_3d0 where they are known without the item attack getters: PC::vfunc_125 (pc.cpp:4154) zeroes
-    /// them and vfunc_126 adds only layer-0 items (pc.cpp:4205-4265), so with no layer-0 item they stay 0. With any worn
-    /// layer-0 item the sums need CItem::FUN_140529070 / FUN_140529090 (not in the decomp): null, the label is left.
+    /// The record's m_3cc / m_3d0: PC::vfunc_125 (pc.cpp:4154) zeroes them and vfunc_126 adds the layer-0 items' levels
+    /// (<see cref="ItemLevels.Worn"/>; layers 1 and 2 add nothing). PC::CanUseItem here is its first test,
+    /// <see cref="ItemLevels.Usable"/>; its PC bang, VIP, wedding and owner tests are not (the shown player's worn items
+    /// passed them when worn). Null, the label left, when a level needs Lua (a plus level, two one-handed
+    /// weapons).
     /// </summary>
     (uint, uint)? KnownItemLevel()
     {
         var maps = EquipMaps(info);
-        return maps != null && maps[0].Count == 0 ? (0u, 0u) : null;
+        if (maps == null) return null;
+        long now = ServerTime?.Invoke() ?? 0;
+        return ItemLevels.Worn(maps[0], Model.Tables.BothHandGearScorePenaltyDiv, it => ItemLevels.Usable(it, now));
     }
 
     /// <summary>The attack / defense label: detail "", value "{0}" of the score; with feature 0xdf the html label text and

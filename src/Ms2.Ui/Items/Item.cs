@@ -32,8 +32,11 @@ public sealed class Item
     {
         var data = table.Get(itemId);
         if (data == null) return null;
-        return new Item(data) { Rarity = data.Rank == 0 ? rarity : data.Rank };
+        return Create(data, rarity);
     }
+
+    /// <summary>The item of loaded data, as <see cref="Create(ItemDataTable, int, int)"/> makes it.</summary>
+    public static Item Create(ItemData data, int rarity) => new(data) { Rarity = data.Rank == 0 ? rarity : data.Rank };
 
     public int ItemId => Data.Id;
 

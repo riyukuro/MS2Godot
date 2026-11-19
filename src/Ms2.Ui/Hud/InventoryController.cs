@@ -619,10 +619,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(LowLevelKey); return; }
         var models = Model.Tables.ItemModels;
         var worn = WornEquipment.Of(record, Model.Tables.Items) ?? WornEquipment.Of(new PcInfo { Equips = new List<EquipItem>() }, Model.Tables.Items);
-        bool CanUse(Item w) => !(w.ExpiryTime > 0 && w.ExpiryTime <= now && !w.Data.IsPetItem && !w.Data.HasMaidId)
-            && (record?.CodiActive == true || !IsLayer2(w));
+        bool CanUse(Item w) => ItemLevels.Usable(w, now) && (record?.CodiActive == true || !IsLayer2(w));
         bool IsLayer2(Item w) => record?.Outfit2?.Any(o => o.Uid == w.Uid) == true;
-        int selected = slot == 0 ? worn.EquipSlotFor(item, models, Feature, CanUse) : slot;
+        int selected = slot == 0 ? worn.EquipSlotFor(item, models, Feature, CanUse, w => ItemLevels.Of(w)?.Total) : slot;
         if (!CanEquipItem(item, selected, layer)) return;      // inventory.cpp:1244: the slot picked, not the one asked for
         if (!skipBinding && NeedsBindConfirm(item))
         {

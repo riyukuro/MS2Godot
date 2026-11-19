@@ -221,14 +221,15 @@ public class MyInfoTests
     }
 
     [Test]
-    public void GearScoreIsZeroOnlyWithoutLayerZeroItems()
+    public void GearScoreIsTheWornLayerZeroItemsLevel()
     {
         Packs();
         var (h, _, _, _) = Load();
         var il = (AsDisplayObject)h.Child("m_itemLevelInfo");
-        string worn = Rt.ToString(h.Get(h.FindNamed("detail", il), "text"));
-        TestContext.WriteLine("movie default detail: " + worn);
-        Assert.That(worn, Is.Not.EqualTo("0 + (0)"), "a worn weapon: the attack getters are not here, the label is left");
+        // RH 15000001: gearScore 10, subtype 0x32 (factor 1), rarity 2: 10 * 10 + 1 * 5 = 105, no enchant level under gear 70
+        // without rank 4; the CL item 11400021 has a skin type (layer 1), which adds nothing
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("value", il), "text")), Is.EqualTo("105"));
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("detail", il), "text")), Is.EqualTo("105 + (0)"));
         var (h2, _, _, _) = Load(c =>
         {
             var me = UiFixture.Character();

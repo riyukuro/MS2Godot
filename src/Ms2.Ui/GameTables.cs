@@ -88,6 +88,7 @@ public sealed class GameTables
         // ConstantsBlocks (unit_1402ab440_constantsblocks.cpp:1169): read by JobSystem::GetLevelSkillPoint (jobsystem.cpp:301)
         SkillPointLimitLevel1 = (int)k.Float("SkillPointLimitLevel1", SkillPointLimitLevel1);
         SkillPointLimitLevel2 = (int)k.Float("SkillPointLimitLevel2", SkillPointLimitLevel2);
+        BothHandGearScorePenaltyDiv = k.Float("BothHandGearScorePenaltyDiv", BothHandGearScorePenaltyDiv);
         ClubNameLengthMin = (int)k.Float("ClubNameLengthMin", ClubNameLengthMin);
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
         // JobTable::Load (jobtable.cpp:309): table/job.xml; SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every
@@ -190,6 +191,9 @@ public sealed class GameTables
     public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
     /// <summary>Client::Constants SkillPointLimitLevel1 / SkillPointLimitLevel2 (defaults 80, 100).</summary>
     public int SkillPointLimitLevel1 = 80, SkillPointLimitLevel2 = 100;
+    /// <summary>Client::Constants BothHandGearScorePenaltyDiv (default 4.0, unit_1402ab440_constantsblocks.cpp:1248): the
+    /// divisor of the main-hand item level with one one-handed weapon (PC::vfunc_126, pc.cpp:4235).</summary>
+    public float BothHandGearScorePenaltyDiv = 4.0f;
     /// <summary>Client::Constants ClubNameLengthMin / ClubNameLengthMax (Define defaults 2, 12:
     /// unit_1402ab440_constantsblocks.cpp:1195, :1196), read by UIPartyDialog::OnCreateClubClick and the club name check.</summary>
     public int ClubNameLengthMin = 2, ClubNameLengthMax = 12;
