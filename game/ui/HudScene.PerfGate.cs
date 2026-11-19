@@ -256,6 +256,7 @@ public partial class HudScene
         gateMove = move;
         gateChurnFrame = 0;
         if (move && gatePlayer != null) gatePlayer.ScriptDriven = true;
+        GateCollect();   // the setup's own wrappers (FindPlayer, FindChild, the sort, Stance) are not the window's
         GateIdleStart(name);
         gateChurn = true;
         if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1") WrapperAttrib.Install(GetTree().Root);

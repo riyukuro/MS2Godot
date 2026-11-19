@@ -72,6 +72,10 @@ The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A coun
 | kept objects: the later repeats (`open.<dialog>.repeat.kept_objects`) | 3% or 16 |
 | JIT methods (main thread) | 2% or 8 |
 | collections | 2 |
+| wrappers and finalized per frame (300-frame windows) | 5% or 0.1 a frame |
+| wrappers and finalized per window (opens) | 5% or 16 |
+
+The idle windows' wrapper counts have one more rule. In an install session the idle window counts only a fraction of what a later session's does (0.2 to 4.4 wrappers a frame in the 10 baseline runs, all types in the same proportion, so the activity covers part of the window), and `PerfGate baseline` sets an install idle window's wrapper limits from the session case's worst plus the floor, not from the spread of that fraction. A leak of one wrapper a frame is over the limit in either case: the floor is 0.1 a frame, not a frame.
 
 The noise behind the floors comes from the baseline's 10 runs (26 sessions) of the same tree on a loaded machine:
 

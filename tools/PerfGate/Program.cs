@@ -130,9 +130,11 @@ static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(
 
 // The slack a count gets over the worst value the baseline runs saw: the spread they showed plus a floor per kind, so
 // a limit is never closer to the max than its floor. tools/perfgate/README.md has the run-to-run noise the floors come from.
+static bool IsWrapperCount(string name) => name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") || name.EndsWith(".wrappers") || name.EndsWith(".finalized_godot") || name.EndsWith(".finalized_other");
+
 static (double Rel, double Abs) CountTolerance(string name) =>
     name.EndsWith("bytes_per_frame") ? (0.05, 8192)   // the idle windows: ±10 KB a frame run to run
-    : name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") ? (0.10, 1)   // wrappers a frame
+    : name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") ? (0.05, 0.1)   // wrappers a frame: one more a frame on top of the rest must fail (a leak per call is that size)
     : name.EndsWith("wrappers") || name.EndsWith("finalized_godot") || name.EndsWith("finalized_other") ? (0.05, 16)   // an open's
     : name.EndsWith("bytes") ? (0.02, 16384)
     : name.EndsWith("bytes_per_effect_frame") ? (0.05, 8)
@@ -165,6 +167,15 @@ static JsonObject Baseline(List<JsonObject> runFiles)
             double lo = all.Min(), hi = all.Max();
             var (rel, abs) = CountTolerance(name);
             double slack = hi - lo + Math.Max(Math.Abs(hi) * rel, abs);   // the floor on top of the spread, never inside it
+            // An install session's idle window counts a fraction of what a later session's does (0.2 to 4.4 wrappers a frame
+            // from run to run, every wrapper type in the same proportion: the activity covers part of the 300 frames). Its limit
+            // is the later session's worst, not the spread of that fraction.
+            string twin = name.Replace(".install.", ".session.");
+            if (twin != name && name.StartsWith("idle") && IsWrapperCount(name) && runs.Where(r => r.ContainsKey(twin)).SelectMany(r => r[twin]).ToArray() is { Length: > 0 } ses)
+            {
+                hi = Math.Max(hi, ses.Max());
+                slack = Math.Max(Math.Abs(hi) * rel, abs);
+            }
             outM[name] = new JsonObject { ["min"] = lo, ["max"] = hi, ["limit"] = Math.Ceiling(hi + slack) };
         }
     }
