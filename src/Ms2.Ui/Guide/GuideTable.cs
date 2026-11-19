@@ -1,0 +1,58 @@
+using System.Xml;
+using System.Xml.Linq;
+using Ms2.Formats.Pack;
+using Ms2.Formats.World;
+
+namespace Ms2.Ui.Guide;
+
+/// <summary>One guide xml file: its pack path and its &lt;event&gt; elements in the order the manager loads them.</summary>
+public sealed record GuideTableFile(string Path, IReadOnlyList<XElement> Events);
+
+/// <summary>
+/// The guide tables (CGuideManager::LoadFile, client/ms2/guideentity_1b.cpp @0x14138b4d0): table/guide.xml and, depth
+/// first, every &lt;import&gt; the client's locale and features make available (IsElementAvailable), each file's events
+/// as FUN_14028faa0 collects them (one per id, the feature filter's pick). A file that is missing or does not parse is
+/// skipped, as LoadXmlFile failing; one without an &lt;ms2&gt; root is logged (<see cref="BadFiles"/>) and skipped.
+/// </summary>
+public sealed class GuideTable
+{
+    public const string RootFile = "guide.xml";
+
+    public List<GuideTableFile> Files { get; } = new();
+    /// <summary>The files read without an &lt;ms2&gt; root.</summary>
+    public List<string> BadFiles { get; } = new();
+
+    /// <summary>Every event in load order.</summary>
+    public IEnumerable<XElement> Events => Files.SelectMany(f => f.Events);
+
+    /// <summary>GetXmlPath("Table", name).</summary>
+    public static string PathOf(string name) => "table/" + name;
+
+    public static GuideTable Load(PackSet packs)
+    {
+        var table = new GuideTable();
+        if (packs != null) table.LoadFile(packs, PathOf(RootFile));
+        return table;
+    }
+
+    void LoadFile(PackSet packs, string path)
+    {
+        if (!packs.Exists("Xml", path)) return;
+        XDocument doc;
+        try { doc = GameStrings.Parse(packs.Read("Xml", path)); } catch (XmlException) { return; }
+        var root = doc.Root;
+        if (root == null || root.Name != "ms2")
+        {
+            BadFiles.Add(path);
+            return;
+        }
+        Files.Add(new GuideTableFile(path, FeatureElements.Collect(packs, root, "event", "id")));
+        foreach (var import in root.Elements("import"))
+        {
+            if (!FeatureElements.IsAvailable(packs, import)) continue;
+            string name = "";
+            GuideXml.String(import, "name", ref name);
+            LoadFile(packs, PathOf(name));
+        }
+    }
+}

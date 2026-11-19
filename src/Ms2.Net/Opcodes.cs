@@ -83,6 +83,7 @@ public enum Inbound : ushort {
     Ugc = 0x6B,
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
+    GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates
 }
 
 public enum Outbound : ushort {
@@ -129,4 +130,9 @@ public enum Outbound : ushort {
     CharacterAbility = 0x89,    // SendOp CharacterAbility (commonfiles/opcodes.h): the character ability dialog's sends
     Trade = 0x49,           // SendOp Trade (commonfiles/opcodes.h): CTradeManagerEx's SendTradeMode*
     Mastery = 0x92,             // SendOp Mastery (commonfiles/opcodes.h): the mastery dialog's sends
+    // SendOp (commonfiles/opcodes.h): the guide system's sends
+    Trigger = 0x2F,
+    GuideRecord = 0x57,
+    Tutorial = 0x8A,
+    RequestTutorialItem = 0x9C,
 }
