@@ -62,6 +62,7 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog questLog;                   // UIQuestDialog, the quest log, run from its own movie while it is loaded
     Ms2.Ui.Hud.QuestDialogController questLogSide;   // its C++ side, kept while it is closed (m_180 / m_184 and the filters)
     Ms2.Ui.UiModel questLogModel;
+    int[][] windowShot;                     // --uigen-window FULL,W,H,FRAME[;...]: the options dialog's window requests (screen mode / resolution changes) at those frames
     int optionShot = -1;                    // --uigen-options PAGE: the shot opens the options dialog on that page, as the system menu does
     long partyMenuShot;                     // --uigen-party-menu ID: the party slot menu of that member
     string hoverShot;                       // --uigen-hover MOVIE:a.b.c (or MOVIE:@x,y): the pointer on that child of a hosted movie, or at that point (its tooltip shows)
@@ -95,6 +96,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-arrow") arrowShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-drag") dragShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--worldmap") worldMapShot = int.Parse(args[i + 1]);
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-window") windowShot = Array.ConvertAll(args[i + 1].Split(';'), r => Array.ConvertAll(r.Split(','), int.Parse));
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-msgbox") msgboxShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-hover") hoverShot = args[i + 1];
@@ -3155,6 +3157,9 @@ public partial class HudScene : Node, IUiStageHost
         if (worldMapShot is 1 or 2 && frames == 240) worldMapSide?.SetPendingSearch("Henesys");
         if (worldMapShot == 2 && frames == 260) worldMapSide?.OnCallback("onClickSearchInfo", new object[] { 2000076u });
         if (worldMapShot is 3 or 4 && frames >= 200) MapTipCycles(frames - 200, worldMapShot == 4);
+        if (windowShot != null)
+            foreach (var w in windowShot)
+                if (frames == w[3]) global::Ms2Godot.ScreenMode.ApplyRequest(new Ms2.Formats.Options.WindowRequest(w[0] == 1, false, w[1], w[2]));
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
         if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");

@@ -813,6 +813,10 @@ public partial class MaskShape : Node2D
         }
         spare.AddRange(scratch);
         scratch.Clear();
+        // Unchanged polygons: the box clip is set again anyway. After a switch to full screen the item ends up unclipped with
+        // no redraw and no Apply (the options dialog's scroll pane spilled over the HUD); two RenderingServer calls, no
+        // allocation. STILL-OPEN: which Godot step drops it is not identified.
+        if (box is { } b) { RenderingServer.CanvasItemSetCustomRect(GetCanvasItem(), true, b); RenderingServer.CanvasItemSetClip(GetCanvasItem(), true); }
         return false;
     }
 
@@ -873,7 +877,14 @@ public partial class MaskShape : Node2D
 
     public override void _Draw()
     {
-        if (box != null) return;
+        if (box is { } b)
+        {
+            // Set again on every redraw: once the mask is hidden and shown (a relayout re-shows the options dialog), the
+            // item's redraw leaves it unclipped and Apply does not run again for unchanged polygons (tests/mask_box_clip.tscn).
+            RenderingServer.CanvasItemSetCustomRect(GetCanvasItem(), true, b);
+            RenderingServer.CanvasItemSetClip(GetCanvasItem(), true);
+            return;
+        }
         foreach (var poly in polys)
             if (poly.Length >= 3 && Geometry2D.TriangulatePolygon(poly).Length > 0) DrawColoredPolygon(poly, Colors.White);
     }
