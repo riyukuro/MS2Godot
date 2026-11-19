@@ -16,10 +16,21 @@ public static class BagSlotTable {
     /// <summary>The expand maximum per tab (FUN_140a66750), from the same entries.</summary>
     public static Func<int, int> LoadMax(PackSet packs) => Read(packs, BagSlots.Max);
 
+    /// <summary>The bagSlotTab* entries whose feature is on and BagRenewal01, read once per pack set (the feature levels
+    /// they depend on are kept per pack set too, LobbyFeatures).</summary>
+    sealed record Entries(Dictionary<string, int[]> Values, bool Renewal);
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Entries> sets = new();
+
     static Func<int, int> Read(PackSet packs, Func<int, bool, Func<string, int[]>, int> pick) {
+        var e = sets.GetValue(packs, Parse);
+        return tab => pick(tab, e.Renewal, k => e.Values.GetValueOrDefault(k));
+    }
+
+    static Entries Parse(PackSet packs) {
         var values = new Dictionary<string, int[]>();
         if (packs.Exists("Xml", "table/constants.xml")) {
-            var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")).TrimStart('﻿'));
+            var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")).TrimStart('\ufeff'));
             foreach (var v in doc.Descendants("v")) {
                 var key = (string) v.Attribute("key");
                 if (key == null || !key.StartsWith("bagSlotTab") || !LobbyFeatures.IsEnabledByName(packs, (string) v.Attribute("feature"))) continue;
@@ -27,7 +38,6 @@ public static class BagSlotTable {
                     .Select(x => int.TryParse(x, out var n) ? n : 0).ToArray();
             }
         }
-        bool renewal = LobbyFeatures.IsEnabled(packs, "BagRenewal01");
-        return tab => pick(tab, renewal, k => values.GetValueOrDefault(k));
+        return new Entries(values, LobbyFeatures.IsEnabled(packs, "BagRenewal01"));
     }
 }
