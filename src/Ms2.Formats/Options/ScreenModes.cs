@@ -75,8 +75,8 @@ public sealed class ScreenModes
     /// MS2RenderService::OnInit (ms2renderservice.cpp:699-743). A fresh or outdated option file (<paramref name="fresh"/>,
     /// IsOptionFileMissingOrOutdated) starts as a full window at the desktop size; otherwise the stored screen mode and size
     /// (the accessors named GetHeight / GetWidth there return the width and the height, ms2renderservice.cpp:140-141).
-    /// A size the adapter does not have falls back to 1024 x 768 (:727-737). A fresh start then stores full window and the
-    /// row of the size and saves (:738-742). The fresh start also sets the quality from the benchmark (:708-711), which is
+    /// A size the adapter does not have falls back to 1024 x 768 (:720-745). A fresh start then stores full window and the
+    /// row of the size and saves (:746-750). The fresh start also sets the quality from the benchmark (:708-711), which is
     /// not ported here.
     /// </summary>
     public WindowRequest Startup(GameOption.Graphic g, bool fresh, int desktopWidth, int desktopHeight, out bool save)

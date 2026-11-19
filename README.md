@@ -317,9 +317,8 @@ the resolution, applied as `MS2RenderService::OnInit` and `CWindowService::Apply
 - **Full window** (screen mode 2): on Windows, the display is switched to the chosen resolution, as the client does
   (`ChangeDisplaySettings`), and a borderless window covers it at 0,0. Leaving it, or quitting, restores the desktop's
   mode.
-- The client starts a fresh or outdated option file as a full window at the desktop size and saves it. Until the
-  options dialog can change the mode, this project skips that: with no stored `GameOption.xml` the window opens as it
-  always has and nothing is written. A stored file's screen mode and resolution are applied.
+- A fresh or outdated option file starts as a full window at the desktop size and is saved with that mode and the
+  desktop's resolution row, as the client does. A stored file's screen mode and resolution are applied.
 
 The resolution list is the display's 32-bit modes of at least 1024x720, the client's filter. On Windows the modes come
 from `EnumDisplaySettings`. On Linux they come from XRandR (the primary output's modes, read only). When the list

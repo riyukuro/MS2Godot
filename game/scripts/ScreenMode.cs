@@ -43,18 +43,14 @@ public static class ScreenMode
     }
 
     /// <summary>
-    /// OnInit's window: the stored mode and size. The client starts a fresh option file as a full window at the desktop size
-    /// and saves it (ms2renderservice.cpp:738-742); that start is held back until the options dialog can change the mode
-    /// again, so with no stored GameOption.xml the window stays as the project opens it and nothing is written.
+    /// OnInit's window: the stored mode and size. A missing or outdated option file (IsOptionFileMissingOrOutdated,
+    /// ms2renderservice.cpp:699-703) starts as a full window at the desktop size (GetSystemMetrics SM_CXSCREEN/SM_CYSCREEN),
+    /// stores full window and the desktop's row, and saves (:746-750), so a first run fills the screen at its own
+    /// resolution and the options dialog's resolution row shows it (<see cref="ScreenModes.Startup"/>).
     /// </summary>
     public static void ApplyAtStartup()
     {
         if (Headless || Root == null) return;
-        if (GameOptions.FromDefault)
-        {
-            GD.Print("display: no stored GameOption.xml, the window stays as it opens");
-            return;
-        }
         var g = GameOptions.Current.GraphicOption;
         var desk = Desktop();
         var req = Modes.Startup(g, GameOptions.FromDefault, desk.Width, desk.Height, out bool save);
