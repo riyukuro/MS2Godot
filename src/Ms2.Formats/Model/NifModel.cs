@@ -34,6 +34,9 @@ public sealed class ModelMesh
     public float Glossiness;              // NiMaterialProperty glossiness (the specular power)
     public float MaterialAlpha = 1f;      // NiMaterialProperty alpha (1 without a material)
     public AlphaAnim AlphaAnim;           // an NiAlphaController on that material, which animates its alpha, or null
+    /// <summary>The mesh or a node above it carries a "NoShadow" UserPropBuffer tag (NifModel.TaggedNoShadow): the client's
+    /// caster walks skip that subtree, so the mesh never casts.</summary>
+    public bool NoShadow;
     public bool SpecularOn;               // an NiSpecularProperty with its enable flag set
     public float[] Colors;                // rgba 0..1 per vertex, or null
     public float[] Uvs1;                  // second uv set (TEXCOORD1), or null
@@ -492,6 +495,28 @@ public sealed class ModelData
         }
     }
 
+    /// <summary>
+    /// The block's UserPropBuffer string (NiStringExtraData named "UserPropBuffer", DAT_143ae51b8, named
+    /// in worldfadeoutrenderstep.cpp:274) contains "NoShadow", case ignored. SetShadowCaster and
+    /// FUN_141567540 (unit_141567000.cpp:186-262) walk the model breadth first and skip such a node without entering it, so
+    /// no render object under it gets the caster mark (the flag 0x20 or the caster extra data). Casting is opt-in: the
+    /// shadow visitor only draws marked objects (MS2_IS_SHADOW_CASTER, ms2shadowclickgenerator.cpp:103-108), and a loaded
+    /// NIF has none, so the subtree casts nothing.
+    /// </summary>
+    public static bool TaggedNoShadow(NifFile nif, int block)
+    {
+        foreach (var e in nif.Blocks[block].Ints("Extra Data List"))
+        {
+            if (e < 0) continue;
+            var x = nif.Blocks[(int)e];
+            if (x.Type != "NiStringExtraData" || nif.Name((int)e) != "UserPropBuffer") continue;
+            // NiObjectNET::GetExtraData returns the first entry of the name
+            var v = nif.StrField(x, "String Data");
+            return v != null && v.Contains("NoShadow", StringComparison.OrdinalIgnoreCase);
+        }
+        return false;
+    }
+
     static bool IsIdentity(Xform x)
     {
         if (Math.Abs(x.T.X) + Math.Abs(x.T.Y) + Math.Abs(x.T.Z) > 1e-3 || Math.Abs(x.S - 1) > 1e-4) return false;
@@ -635,6 +660,11 @@ public sealed class ModelData
                 Maps = MapsOf(nif, i),
                 Bound = BoundOf(B[i]),
             };
+            for (int at = i; ; )
+            {
+                if (TaggedNoShadow(nif, at)) { mesh.NoShadow = true; break; }
+                if (at == root || !parent.TryGetValue(at, out at)) break;
+            }
             mesh.Normals = Unit(nrm.v, nv);
             mesh.Tangents = Unit((skinned ? Pick("TANGENT_BP", "TANGENT") : Pick("TANGENT", "TANGENT_BP")).v, nv);
             mesh.Binormals = Unit((skinned ? Pick("BINORMAL_BP", "BINORMAL") : Pick("BINORMAL", "BINORMAL_BP")).v, nv);

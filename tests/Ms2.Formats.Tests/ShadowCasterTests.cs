@@ -1,3 +1,5 @@
+using Ms2.Formats.Model;
+using Ms2.Formats.Nif;
 using Ms2.Formats.World;
 using NUnit.Framework;
 
@@ -45,5 +47,31 @@ public class ShadowCasterTests
         foreach (var name in new[] { "co_fluid_water_B02_", "he_fi_nature_grass_A01_", "he_fi_prop_fence_C02_" })
             Assert.That(map.Entities.Where(e => e.ModelName == name).All(e => !e.CastsShadow), Is.True, name);
         Assert.That(map.Entities.Count(e => e.CastsShadow && e.HasMixin("Mesh")), Is.GreaterThan(5000));
+    }
+
+    static ModelData Map(string path)
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
+        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
+        return ModelData.Load(NifFile.Load(new NifSpec(nx), new Ms2.Formats.Pack.PackSet(data).Read("Resource/Model/Map", path)));
+    }
+
+    /// <summary>ModelMesh.NoShadow: the generator's opaque core sits under a "NoShadow" UserPropBuffer, its body does not.
+    /// Kritias 02020035 places 74 of them with IsCastingShadow on.</summary>
+    [Test]
+    public void GeneratorCoreTagged()
+    {
+        var md = Map("kritias/field/ks_fi_cubric_generator_a01.nif");
+        Assert.That(md.Meshes.Single(m => m.FileName == "Editable Mesh").NoShadow, Is.True);
+        Assert.That(md.Meshes.Single(m => m.FileName == "ks_fi_cubric_generator_A01").NoShadow, Is.False);
+    }
+
+    /// <summary>The lamp's two glow planes are tagged, its base is not.</summary>
+    [Test]
+    public void LampPlanesTagged()
+    {
+        var md = Map("common/field/co_fi_prop_light_a01.nif");
+        Assert.That(md.Meshes.Where(m => m.NoShadow).Select(m => m.FileName), Is.EquivalentTo(new[] { "Plane", "Plane02" }));
+        Assert.That(md.Meshes.Single(m => m.FileName == "decal_test_way_01").NoShadow, Is.False);
     }
 }

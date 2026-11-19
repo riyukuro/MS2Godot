@@ -183,6 +183,8 @@ public sealed class ModelBuilder
         foreach (var m in md.Meshes)
         {
             var mi = new MeshInstance3D { Name = m.Name, Mesh = SharedMesh(m) };
+            // a "NoShadow"-tagged subtree never gets the caster mark (ModelMesh.NoShadow)
+            if (m.NoShadow) mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             var skin = m.Skinned ? SkinOf(md, m) : null;
             if (m.Skinned)
             {

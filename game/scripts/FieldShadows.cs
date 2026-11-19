@@ -47,7 +47,8 @@ public static class FieldShadows
     /// <summary>The client's CObjectShadow for a character of the kind (MyPC::vfunc_49 kind 0, PC::vfunc_49 kind 1,
     /// CNpc::vfunc_49 kind 2/3): the simple shadow under <paramref name="owner"/> where <see cref="SimpleShadow"/> holds, and the
     /// model's meshes kept out of the sun's shadow below <see cref="RealShadow"/>. Call after the model is complete (equips
-    /// included). STILL-OPEN: FUN_141567540 skips nodes tagged "NoShadow", which keep their own flag; here every mesh is cleared.</summary>
+    /// included). FUN_141567540 skips nodes tagged "NoShadow", which keep their own flag; a loaded NIF has no caster mark, so
+    /// that flag is off (ModelMesh.NoShadow) and clearing every mesh here gives the same result.</summary>
     public static void Character(Node3D owner, Node3D model, string kind, float radius, float lift)
     {
         if (SimpleShadow(kind)) BlobShadow.Add(owner, radius, lift);

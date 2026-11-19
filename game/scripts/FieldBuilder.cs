@@ -419,7 +419,7 @@ public sealed class FieldBuilder
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 visuals.AddChild(node);
-                if (!mesh.AlphaBlendOn && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
+                if (!mesh.AlphaBlendOn && !mesh.NoShadow && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
                 if (builder.GlowMaterial(mesh) is { } gm)
                 {
