@@ -11,8 +11,14 @@ namespace Ms2.Ui;
 public static class LobbyFeatures
 {
     const string ServerType = "Live", Locale = "KR";
-    static int? serverLevel;
-    static Dictionary<string, int> levels;
+    /// <summary>The levels a pack set's client reads (each client folder its own: a loose feature.xml in one is not the other's).</summary>
+    sealed class Levels
+    {
+        public int Server;
+        public readonly Dictionary<string, int> Names = new();
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Levels> sets = new();
 
     /// <summary>The locale the client runs as (CFeatureManager::GetLocaleName).</summary>
     public const string LocaleName = Locale;
@@ -20,8 +26,7 @@ public static class LobbyFeatures
     /// <summary>The level of a feature name (m_nameLevels); 0 for an unknown name, as the client's failed Lookup leaves it.</summary>
     public static int LevelOf(PackSet packs, string feature)
     {
-        Load(packs);
-        return feature != null && levels.TryGetValue(feature, out int level) ? level : 0;
+        return feature != null && Load(packs).Names.TryGetValue(feature, out int level) ? level : 0;
     }
 
     /// <summary>IsFeatureEnabledByName: an empty name is on, an unknown name is off.</summary>
@@ -29,29 +34,30 @@ public static class LobbyFeatures
 
     public static bool IsEnabled(PackSet packs, string feature)
     {
-        Load(packs);
-        return levels.TryGetValue(feature, out int level) && level <= serverLevel;
+        var l = Load(packs);
+        return l.Names.TryGetValue(feature, out int level) && level <= l.Server;
     }
 
     /// <summary>The levels as read (the server type's, then each feature's), hashed: part of a cache key of the tables whose
     /// rows are picked by feature (a loose feature.xml changes it).</summary>
     public static string Stamp(PackSet packs)
     {
-        Load(packs);
-        var text = serverLevel + ";" + string.Join(";", levels.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
+        var l = Load(packs);
+        var text = l.Server + ";" + string.Join(";", l.Names.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
         return Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..16].ToLowerInvariant();
     }
 
-    static void Load(PackSet packs)
+    static Levels Load(PackSet packs) => sets.GetValue(packs, Read);
+
+    static Levels Read(PackSet packs)
     {
-        if (levels != null) return;
-        levels = new Dictionary<string, int>();
-        serverLevel = 0;
+        var levels = new Levels();
         foreach (var s in Xml(packs, "table/feature_setting.xml")?.Root.Elements("setting") ?? Enumerable.Empty<XElement>())
-            if ((string)s.Attribute("type") == ServerType && int.TryParse((string)s.Attribute(Locale), out int l)) serverLevel = l;
+            if ((string)s.Attribute("type") == ServerType && int.TryParse((string)s.Attribute(Locale), out int l)) levels.Server = l;
         foreach (var f in Xml(packs, "table/feature.xml")?.Root.Elements("feature") ?? Enumerable.Empty<XElement>())
             // a level of 0 (or no KR attribute) is skipped, so the feature stays off (CFeatureManager::LoadFeature, featuremanager.cpp:804-806)
-            if ((string)f.Attribute("name") is { } name && int.TryParse((string)f.Attribute(Locale), out int l) && l != 0) levels[name] = l;
+            if ((string)f.Attribute("name") is { } name && int.TryParse((string)f.Attribute(Locale), out int l) && l != 0) levels.Names[name] = l;
+        return levels;
     }
 
     /// <summary>
