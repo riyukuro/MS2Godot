@@ -306,34 +306,87 @@ public class RuntimeTests
         Assert.That(b.LocalToGlobal(0, 0).X, Is.EqualTo(15));
     }
 
+    /// <summary>A flash.utils.Timer subclass defined by movie <paramref name="movie"/> (its traits from that movie's ABC).</summary>
+    static AsClass MovieTimerClass(Runtime rt, string movie)
+    {
+        var t = rt.GetClass("flash.utils.Timer");
+        return new AsClass
+        {
+            Runtime = rt, Name = movie + ".MovieTimer", LocalName = "MovieTimer", Ns = Ns.Public, Super = t, InstanceTraits = t.InstanceTraits,
+            Prototype = t.Prototype, Allocator = t.Allocator, Ctor = t.Ctor, NativeType = t.NativeType, IsNative = false, Class = rt.ClassClass,
+            MovieKey = movie,
+        };
+    }
+
+    /// <summary>Counts the TIMER events of a running timer.</summary>
+    static AsTimer Counting(Runtime rt, AsClass cls, Action tick)
+    {
+        var timer = (AsTimer)cls.Construct(10.0, 0);
+        timer.addEventListener("timer", new AsPlainFunction(rt, new NativeMethod("t", (s, args) => { tick(); return Rt.Undef; })));
+        timer.start();
+        return timer;
+    }
+
     /// <summary>
-    /// Loader.unloadAndStop (sfr_as3_07.cpp:5160 -> MovieRoot::UnloadMovie, sfr_as3_19.cpp:8453): the unloaded content does
-    /// not run again — its enterFrame listeners are gone (and with them its tweens) and the movie's timers are stopped —
-    /// though the player stays and keeps ticking.
+    /// Loader.unloadAndStop of an image (Icon.loadImage, imgLoader.load, Common.loadImageIOError and the other icon loaders):
+    /// MovieRoot::UnloadMovie (sfr_as3_19.cpp:8453) drops timers only for the unloaded content's movie definition when its
+    /// last user leaves (ShutdownTimersForMovieDef, 8544), and a Bitmap has none, so the dialog's timers and intervals keep
+    /// running; the icon's loaderInfo hears "unload" first (8457-8460).
     /// </summary>
     [Test]
-    public void UnloadAndStopStopsTheContent()
+    public void AnImageUnloadKeepsTheMovieTimers()
     {
         var (rt, p) = Empty();
         Runtime.Current = rt;
+        Assert.That(p.Start(), Is.True);
+        int ticks = 0, plain = 0, interval = 0, unloads = 0;
+        Counting(rt, MovieTimerClass(rt, "t"), () => ticks++);
+        Counting(rt, rt.GetClass("flash.utils.Timer"), () => plain++);
+        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("i", (s, a) => { interval++; return Rt.Undef; }) { MovieKey = "t" }), 10, Array.Empty<object>(), true);
         var loader = (AsLoader)rt.GetClass("flash.display.Loader").Construct();
-        p.Stage.addChild(loader);
-        var content = (AsContainer)rt.GetClass("flash.display.Sprite").Construct();
-        loader.addChild(content);
-        int frames = 0, ticks = 0;
-        content.addEventListener("enterFrame", new AsPlainFunction(rt, new NativeMethod("f", (s, args) => { frames++; return Rt.Undef; })));
-        var timer = (AsTimer)rt.GetClass("flash.utils.Timer").Construct(10.0, 0);
-        timer.addEventListener("timer", new AsPlainFunction(rt, new NativeMethod("t", (s, args) => { ticks++; return Rt.Undef; })));
-        timer.start();
+        ((AsContainer)p.Root).addChild(loader);
+        loader.addChild(p.NewBitmap("icon.png", 32, 32));
+        loader.contentLoaderInfo.addEventListener("unload", new AsPlainFunction(rt, new NativeMethod("u", (s, a) => { unloads++; return Rt.Undef; })));
         for (int i = 0; i < 4; i++) p.Tick();
-        Assert.That(frames, Is.GreaterThan(0), "the content is on the stage and hears enterFrame");
-        Assert.That(ticks, Is.GreaterThan(0), "its timer runs");
         loader.unloadAndStop();
-        Assert.That(loader.numChildren, Is.Zero, "the content is gone");
-        int f = frames, t = ticks;
-        for (int i = 0; i < 10; i++) p.Tick();
-        Assert.That(frames, Is.EqualTo(f), "no enterFrame of the unloaded content");
-        Assert.That(ticks, Is.EqualTo(t), "no timer of the unloaded movie");
+        Assert.That(loader.numChildren, Is.Zero, "the icon is gone");
+        int t = ticks, pl = plain, iv = interval;
+        for (int i = 0; i < 4; i++) p.Tick();
+        Assert.That(ticks, Is.GreaterThan(t), "the movie's Timer keeps running");
+        Assert.That(plain, Is.GreaterThan(pl), "a plain Timer keeps running");
+        Assert.That(interval, Is.GreaterThan(iv), "the movie's setInterval keeps running");
+        Assert.That(unloads, Is.EqualTo(1), "its loaderInfo heard unload");
+    }
+
+    /// <summary>
+    /// The dialog's own unload (UiHost.Unload: the host loader's unloadAndStop) is the movie definition's last user leaving:
+    /// its content is stopped (no enterFrame), and ShutdownTimersForMovieDef drops every timer ClearFor (sfr_as3_17.cpp:6320)
+    /// ties to it — a Timer of a class the movie defines and its setInterval — while a plain flash.utils.Timer, whose builtin
+    /// traits come from no ABC file, keeps running as in the client.
+    /// </summary>
+    [Test]
+    public void AHostUnloadStopsTheMovieTimers()
+    {
+        var (rt, p) = Empty();
+        Runtime.Current = rt;
+        Assert.That(p.Start(), Is.True);
+        int frames = 0, ticks = 0, plain = 0, interval = 0, other = 0;
+        p.Root.addEventListener("enterFrame", new AsPlainFunction(rt, new NativeMethod("f", (s, a) => { frames++; return Rt.Undef; })));
+        Counting(rt, MovieTimerClass(rt, "t"), () => ticks++);
+        Counting(rt, MovieTimerClass(rt, "lib"), () => other++);
+        Counting(rt, rt.GetClass("flash.utils.Timer"), () => plain++);
+        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("i", (s, a) => { interval++; return Rt.Undef; }) { MovieKey = "t" }), 10, Array.Empty<object>(), true);
+        for (int i = 0; i < 4; i++) p.Tick();
+        Assert.That(frames * ticks * interval, Is.GreaterThan(0));
+        p.HostLoader.unloadAndStop();
+        Assert.That(p.HostLoader.numChildren, Is.Zero, "the movie is gone");
+        int f = frames, t = ticks, pl = plain, iv = interval, o = other;
+        for (int i = 0; i < 4; i++) p.Tick();
+        Assert.That(frames, Is.EqualTo(f), "no enterFrame of the unloaded movie");
+        Assert.That(ticks, Is.EqualTo(t), "the movie's Timer stopped");
+        Assert.That(interval, Is.EqualTo(iv), "the movie's setInterval stopped");
+        Assert.That(other, Is.GreaterThan(o), "another movie's Timer keeps running");
+        Assert.That(plain, Is.GreaterThan(pl), "a plain Timer keeps running");
     }
 
     [Test]

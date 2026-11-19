@@ -4,6 +4,8 @@ namespace Ms2.Avm2;
 public abstract class MethodImpl
 {
     public string Name;
+    /// <summary>The movie whose ABC defines this body (<see cref="AbcContext.MovieKey"/>); null for a native one.</summary>
+    public string MovieKey;
     public abstract object Invoke(object self, object[] args);
     public override string ToString() => Name;
 }
@@ -138,6 +140,9 @@ public sealed class AsClass : AsObject
     public bool IsErrorClass;
     /// <summary>Vector.&lt;T&gt; element class for applied types.</summary>
     public AsClass TypeArg;
+    /// <summary>The movie whose ABC defines this class (its traits' VMAbcFile, Traits::GetFilePtr); null for a builtin,
+    /// whose traits come from no file (<see cref="AbcContext.MovieKey"/>).</summary>
+    public string MovieKey;
 
     public override bool IsDynamic => true;
 

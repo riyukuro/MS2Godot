@@ -8,6 +8,10 @@ public sealed class AbcContext
     public readonly Runtime Rt;
     public readonly AbcFile Abc;
     public readonly string Label;
+    /// <summary>The movie this ABC came with: the label's part before ':' (MovieRun loads each as "movie:abc name"); null
+    /// without a label. It stands for the client's movie definition of the ABC file (VMAbcFile +0x188, the key
+    /// IntervalTimer::ClearFor compares, sfr_as3_17.cpp:6320).</summary>
+    public readonly string MovieKey;
     readonly Ns[] ns;
     readonly Ns[][] sets;
     readonly Name?[] names;
@@ -20,6 +24,7 @@ public sealed class AbcContext
     public AbcContext(Runtime rt, AbcFile abc, string label)
     {
         Rt = rt; Abc = abc; Label = label;
+        MovieKey = label == null ? null : label.IndexOf(':') is int colon and >= 0 ? label[..colon] : label;
         ns = new Ns[abc.Namespaces.Length];
         for (int i = 1; i < ns.Length; i++) ns[i] = Ns.FromAbc(abc.Namespaces[i].Kind, abc.Namespaces[i].Name);
         ns[0] = Ns.Public;
@@ -156,6 +161,7 @@ public sealed class AbcContext
         {
             Runtime = Rt, LocalName = qn.Name, Ns = cns, Name = cns.Uri.Length > 0 && cns.Kind != NsKind.Private ? cns.Uri + "." + qn.Name : qn.Name,
             Super = super, InstancesDynamic = !ii.IsSealed, IsInterface = ii.IsInterface, IsFinal = (ii.Flags & 2) != 0,
+            MovieKey = MovieKey,
         };
         c.Class = Rt.ClassClass;
         c.Allocator = super?.Allocator;
@@ -261,7 +267,7 @@ public sealed class AbcMethod : MethodImpl
     public readonly AsClass Declaring;
     public AbcMethod(AbcContext ctx, MethodInfo info, Scope scope, AsClass declaring)
     {
-        Ctx = ctx; Info = info; Scope = scope; Declaring = declaring; Name = declaring?.Name + "/m" + info.Index;
+        Ctx = ctx; Info = info; Scope = scope; Declaring = declaring; Name = declaring?.Name + "/m" + info.Index; MovieKey = ctx.MovieKey;
         Compiled = ctx.CompiledBodies is { } cb && info.Index < cb.Length ? cb[info.Index] : null;
     }
     /// <summary>The translated body of this method (<see cref="GeneratedCode"/>), null to interpret it.</summary>

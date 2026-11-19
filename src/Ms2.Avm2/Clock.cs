@@ -22,6 +22,22 @@ public sealed partial class Runtime
 
     public void ClearTimeout(int id) => timeouts.RemoveAll(t => t.Id == id);
 
+    /// <summary>
+    /// The setTimeout / setInterval timers of movie <paramref name="movieKey"/> go (MovieImpl::ShutdownTimersForMovieDef,
+    /// @0x142576cc0, sfr_gfx_01i.cpp:2403 → IntervalTimer::ClearFor, @0x1424efc30, sfr_as3_17.cpp:6320): those whose
+    /// function's code comes from that movie's ABC. A native function belongs to no movie and stays.
+    /// </summary>
+    internal void ClearTimeoutsFor(string movieKey)
+    {
+        timeouts.RemoveAll(t => string.Equals(MovieOf(t.F), movieKey, StringComparison.OrdinalIgnoreCase));
+        static string MovieOf(AsFunction f) => f switch
+        {
+            AsPlainFunction p => p.Method.MovieKey,
+            AsMethodClosure m => m.Method.MovieKey,
+            _ => null,
+        };
+    }
+
     /// <summary>Advances the clock and runs the setTimeout / setInterval callbacks that are due.</summary>
     public void AdvanceClock(double ms)
     {

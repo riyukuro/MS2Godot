@@ -186,6 +186,7 @@ namespace Ms2.Avm2.Flash
                 HostLoader.InstanceName = HostId ?? (string)Layout["movie"];
                 Stage.Children.Add(HostLoader); HostLoader.Parent = Stage;
                 Root = (AsDisplayObject)ConstructInto(cls, HostLoader, Main, rootSym, null, 0);
+                AddMovieRoot(Root, Main.Key);
                 EnterStage(HostLoader);
                 RunFrameScripts();
             });
@@ -596,18 +597,42 @@ namespace Ms2.Avm2.Flash
         public void Later(Action a) => later.Add(a);
 
         /// <summary>
-        /// A loader's content goes away (Loader::unloadAndStop, <see cref="AsLoader"/>): the content is off the stage, its
-        /// listeners are dropped (ForceShutdown: no enterFrame/exitFrame, so its tweens stop too), the player's timers stop
-        /// (ShutdownTimersForMovieDef) and its clips' queued frame actions are dropped.
+        /// MovieRoot::UnloadMovie (@0x1425305f0, sfr_as3_19.cpp:8453), for Loader::unload (dropAll false) and unloadAndStop
+        /// (dropAll true, sfr_as3_07.cpp:5160): the content's loaderInfo hears "unload" first (8457-8460), the content leaves
+        /// the loader, and its movie definition loses a user. With dropAll the content is also stopped (its listeners and
+        /// queued frame actions go: ForceShutdown) and, when that was the definition's last user, the definition's timers
+        /// shut down (ShutdownTimersForMovieDef, 8544). Content that is not a movie (an icon's Bitmap, Icon.loadImage and
+        /// the other image loaders) has no definition here, so its unload stops no timer.
+        /// STILL-OPEN: the client runs ForceShutdown for dropAll false too (outside the dropAll test); plain unload keeps the
+        /// content's listeners here as before. The per-definition drops of listeners (RemoveListenersForMovieDef on the
+        /// stage), fonts and registered display objects are not ported.
         /// </summary>
-        internal void UnloadAndStop(AsLoader loader)
+        internal void UnloadMovie(AsLoader loader, bool dropAll)
         {
+            var li = loader == HostLoader ? rootInfo : loader.InfoIfAny;
+            var content = loader.Children.FirstOrDefault();
+            if (li != null && content != null) RT.Guard("unload event", () => li.Send("flash.events.Event", "unload"));
             foreach (var c in loader.Children.ToList())
             {
                 loader.RemoveChildInternal(c, true);
-                StopContent(c);
+                if (dropAll) StopContent(c);
+                if (movieRoots.Remove(c, out var key) && --movieUsers[key] == 0)
+                {
+                    movieUsers.Remove(key);
+                    if (dropAll) ShutdownTimersForMovieDef(key);
+                }
             }
-            StopTimers();
+        }
+
+        // the root display object of each movie this player holds → its movie definition (SymbolScope key), and the
+        // number of roots of each definition (MovieRoot +0x6e8, the LoadedMovieDefs count UnloadMovie counts down)
+        readonly Dictionary<AsDisplayObject, string> movieRoots = new();
+        readonly Dictionary<string, int> movieUsers = new(StringComparer.OrdinalIgnoreCase);
+
+        void AddMovieRoot(AsDisplayObject root, string key)
+        {
+            if (root == null || key == null || !movieRoots.TryAdd(root, key)) return;
+            movieUsers[key] = movieUsers.TryGetValue(key, out var n) ? n + 1 : 1;
         }
 
         void StopContent(AsDisplayObject o)
@@ -617,11 +642,18 @@ namespace Ms2.Avm2.Flash
             if (o is AsContainer cont) foreach (var k in cont.Children) StopContent(k);
         }
 
-        /// <summary>The timers a movie started stop with it (ShutdownTimersForMovieDef).</summary>
-        void StopTimers()
+        /// <summary>
+        /// MovieImpl::ShutdownTimersForMovieDef (@0x142576cc0, sfr_gfx_01i.cpp:2403): each interval timer whose ClearFor
+        /// (@0x1424efc30, sfr_as3_17.cpp:6320) matches the definition goes. ClearFor compares the ABC file of the timer's
+        /// function (setTimeout / setInterval) or of its Timer object's traits: a Timer of a class the movie defines
+        /// (a subclass of flash.utils.Timer) stops, a plain flash.utils.Timer, whose builtin traits come from no file
+        /// (Traits::GetFilePtr), keeps running, as in the client.
+        /// </summary>
+        void ShutdownTimersForMovieDef(string key)
         {
-            foreach (var t in timers) t.Halt();
-            timers.Clear();
+            for (int i = timers.Count - 1; i >= 0; i--)
+                if (string.Equals(timers[i].Class?.MovieKey, key, StringComparison.OrdinalIgnoreCase)) { timers[i].Halt(); timers.RemoveAt(i); }
+            RT.ClearTimeoutsFor(key);
         }
 
         /// <summary>One frame: deferred loads, enterFrame, timeline advance, frame scripts, exitFrame, timers and timeouts, render.</summary>
@@ -826,6 +858,7 @@ namespace Ms2.Avm2.Flash
             cls ??= RT.GetClass("flash.display.MovieClip");
             AsDisplayObject root = null;
             RT.Guard("construct loaded movie " + key, () => root = (AsDisplayObject)ConstructInto(cls, l, sc, rootSym, null, 0, setFov: true));
+            AddMovieRoot(root, key);
             if (root != null && OnStage(l)) EnterStage(root);
             RunFrameScripts();
             return root;

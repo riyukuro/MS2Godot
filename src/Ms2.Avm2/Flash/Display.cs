@@ -850,16 +850,16 @@ public class AsLoader : AsContainer
     [As] public AsDisplayObject content => Children.FirstOrDefault();
     [As] public void load(AsObject request, AsObject context = null) => P?.LoadInto(this, request?.GetPublic("url") is string u ? u : null);
     [As] public void loadBytes(params object[] a) { }
-    [As] public void unload() { foreach (var c in Children.ToList()) RemoveChildInternal(c, true); }
+    internal AsLoaderInfo InfoIfAny => info;
+    /// <summary>Loader::unload: MovieRoot::UnloadMovie with dropAll false (see <see cref="Player.UnloadMovie"/>).</summary>
+    [As] public void unload() { if (P is { } p) p.UnloadMovie(this, false); else foreach (var c in Children.ToList()) RemoveChildInternal(c, true); }
     /// <summary>
     /// Loader::unloadAndStop (sfr_as3_07.cpp:5160 -> MovieRoot::UnloadMovie(dropAll: true), sfr_as3_19.cpp:8453): the content
-    /// leaves the stage and is stopped — its listeners, timers and tweens (ForceShutdown and ShutdownTimersForMovieDef on the
-    /// movie's definition) — so nothing of the unloaded movie runs afterwards. Our loader holds the document of a movie whose
-    /// timers are the player's (one Player per movie), hence every timer of the player stops. Sounds are the host's (the UI
-    /// movies' playSound is not played here), and the stage listeners the movie added itself stay: the client drops them by
-    /// movie definition, which this runtime does not track (STILL-OPEN).
+    /// hears "unload", leaves the stage and is stopped (its listeners and queued frame actions: ForceShutdown). Only when the
+    /// content is a movie whose definition loses its last user do that definition's timers go (ShutdownTimersForMovieDef):
+    /// an image loader's unload stops no timer. See <see cref="Player.UnloadMovie"/> for what stays STILL-OPEN.
     /// </summary>
-    [As] public void unloadAndStop(bool gc = true) => P?.UnloadAndStop(this);
+    [As] public void unloadAndStop(bool gc = true) { if (P is { } p) p.UnloadMovie(this, true); else unload(); }
     [As] public void close() { }
 }
 

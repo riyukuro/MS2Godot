@@ -115,7 +115,7 @@ public sealed class UiHost
     /// with the movie's TooltipManager destroy its tooltip (TooltipManager.appendMouseEvent's REMOVED_FROM_STAGE listener →
     /// handleRemovedFromStage → destroyTooltipByOwner → "Tooltip" "destroyTooltip", and UIComponent.handleRemoveFromStage →
     /// unregisterMouseEvent likewise), so a dialog closed while one of its tooltips shows leaves none behind in the run's
-    /// tooltip movie; the unload also stops the content (listeners, timers: <see cref="AsLoader.unloadAndStop"/>). vfunc_27
+    /// tooltip movie; the unload also stops the content (its listeners, and the timers of the movie's own code: <see cref="AsLoader.unloadAndStop"/>). vfunc_27
     /// follows.
     /// </summary>
     public void Unload()
