@@ -77,6 +77,8 @@ public static class DataCache
     public sealed class QuestConfig
     {
         public string[] Languages;
+        /// <summary>The string language the UI's game tables load with (<see cref="Ms2.Ui.GameTables.Shared"/>).</summary>
+        public string Language;
         public string Locale;
         public IReadOnlyCollection<string> FeaturesOff;
 
@@ -84,6 +86,7 @@ public static class DataCache
         public static QuestConfig Current(PackSet packs) => new()
         {
             Languages = new GameStrings(packs, GameOptions.StringLanguage).Languages,
+            Language = GameOptions.StringLanguage,
             Locale = StubHudData.Instance.Locale,
             FeaturesOff = StubHudData.Instance.FeaturesOff,
         };
@@ -110,6 +113,8 @@ public static class DataCache
         if (QuestTable.BuildCache(packs, quests.Languages, quests.Locale, quests.FeaturesOff, s)) built.Add("quests");
         progress?.Invoke(phase, 0.7);
         if (FieldMissions.BuildCache(packs, quests.Languages, quests.Locale, quests.FeaturesOff, s)) built.Add("missions");
+        progress?.Invoke(phase, 0.9);
+        if (Ms2.Ui.GameTables.BuildCache(packs, quests.Language, s)) built.Add("gametables");
         progress?.Invoke(phase, 1);
         return built;
     }

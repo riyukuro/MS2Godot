@@ -51,14 +51,20 @@ public sealed class GameStrings
     /// <summary>Common UI strings (stringcommon.xml: key id -> value) with the client's $key:N$ action key names replaced.</summary>
     public Func<string, string> Common()
     {
-        var common = Table("stringcommon", "value");
-        var keys = Table("keyname", "name");
-        return id =>
-        {
-            if (!common.TryGetValue(id, out var s) || s == null) return null;
-            return ReplaceKeys(s, keys).Replace("\\n", "\n");
-        };
+        var (common, keys) = CommonTables();
+        return Common(common, keys);
     }
+
+    /// <summary>The tables <see cref="Common()"/> reads: stringcommon.xml (value) and keyname.xml (name).</summary>
+    public (Dictionary<string, string> Common, Dictionary<string, string> Keys) CommonTables() =>
+        (Table("stringcommon", "value"), Table("keyname", "name"));
+
+    /// <summary><see cref="Common()"/> over its tables.</summary>
+    public static Func<string, string> Common(Dictionary<string, string> common, Dictionary<string, string> keys) => id =>
+    {
+        if (!common.TryGetValue(id, out var s) || s == null) return null;
+        return ReplaceKeys(s, keys).Replace("\\n", "\n");
+    };
 
     /// <summary>"$key:57$" -> the key's name (keyname.xml, e.g. Space).</summary>
     public static string ReplaceKeys(string s, IReadOnlyDictionary<string, string> keys)

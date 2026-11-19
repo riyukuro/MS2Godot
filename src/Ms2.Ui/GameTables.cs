@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Xml.Linq;
+using Ms2.Formats.Cache;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 
@@ -55,47 +56,27 @@ public sealed class GameTables
         GemstoneUpgrades = new Items.GemstoneUpgradeTable(packs);
         Lapenshards = new Items.LapenshardTable(packs);
         MasteryRecipes = new Items.MasteryRecipeTable(packs);
-        // CGloabalFactor::LoadMultiControl (gloabalfactor.cpp:128): Table/multicontrol.xml, the locale folder first; the
-        // tooltip reads only type equipmentSellPrice (3), keyed by rank
-        foreach (var path in new[] { "table/kr/multicontrol.xml", "table/multicontrol.xml" })
-        {
-            if (!packs.Exists("Xml", path)) continue;
-            foreach (var e in GameStrings.Parse(packs.Read("Xml", path)).Root?.Elements("multi") ?? Enumerable.Empty<XElement>())
-            {
-                if (!string.Equals((string)e.Attribute("type"), "equipmentSellPrice", StringComparison.OrdinalIgnoreCase)) continue;
-                int key = Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("key") ?? "0");
-                float value = float.TryParse(((string)e.Attribute("value"))?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 1f;
-                equipmentSellRates.TryAdd(key, value);                                // std::map::insert keeps the first
-            }
-            break;
-        }
-        if (packs.Exists("Xml", "table/nextexp.xml"))
-            foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/nextexp.xml")).Descendants("exp"))
-                if (int.TryParse((string)e.Attribute("level"), out var lv) && long.TryParse((string)e.Attribute("value"), out var v))
-                    nextExp.TryAdd(lv, v);
         var s = strings = new GameStrings(packs, languages);
-        jobNames = s.Table("jobname", "name");
-        mapNames = s.Table("mapname", "name");
-        mapTileDescs = s.Table("maptiledesc", "name");
-        // CommonResource::LoadMembers (commonresource.cpp:91): Table/commonResource.xml, each member <KEY value="..."/>
-        if (packs.Exists("Xml", "table/commonresource.xml"))
-            foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/commonresource.xml")).Root.Elements())
-                commonResource.TryAdd(e.Name.LocalName, (string)e.Attribute("value") ?? "");
-        npcFunctionNames = s.Table("npcfunctionname", "name");
-        fieldEnterances = s.Table("stringfieldenterance", "name");
-        raceNames = s.Table("racename", "name");
-        common = s.Common();
-        titleNames = s.Table("titlename", "name");
-        itemNames = s.Table("itemname", "name");
-        statNames = CommonTexts(packs, "table/statstringtable.xml", s.Table("stringstatname", "name"));
-        statOptions = Options(packs, "table/statstringtable.xml");
-        specialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", s.Table("stringspecialabilityname", "name"));
-        ItemOptions = new Items.ItemOptionTables(packs, s.Table("stringstatname", "name"), s.Table("stringspecialabilityname", "name"));
-        // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
+        var r = read = CacheStore.Load(packs, CachePiece, CacheConfig(packs, s.Languages), CacheBuild, () => Parse(packs, s), _ => { });
+        equipmentSellRates = r.EquipmentSellRates;
+        nextExp = r.NextExp;
+        jobNames = r.JobNames;
+        mapNames = r.MapNames;
+        mapTileDescs = r.MapTileDescs;
+        commonResource = r.CommonResource;
+        npcFunctionNames = r.NpcFunctionNames;
+        fieldEnterances = r.FieldEnterances;
+        raceNames = r.RaceNames;
+        common = GameStrings.Common(r.CommonStrings, r.KeyNames);
+        titleNames = r.TitleNames;
+        itemNames = r.ItemNames;
+        statNames = r.StatNames;
+        statOptions = r.StatOptions;
+        specialNames = r.SpecialNames;
+        ItemOptions = new Items.ItemOptionTables(packs, r.StatValueNames, r.SpecialValueNames);
+        Fishing = r.Fishing;
         XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
-        Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
-        // CFameTable::LoadFameDef (famegradedata.cpp:606): GetXmlPath("Table", "fameDef.xml")
-        Fame = new FameTable(Xml("table/famedef.xml"), e => FeatureElements.IsAvailable(packs, e));
+        Fame = r.Fame;
         var k = FeatureElements.Constants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
@@ -121,19 +102,113 @@ public sealed class GameTables
         GuildNameLengthMax = (int)k.Float("GuildNameLengthMax", GuildNameLengthMax);
         UGCImgUploadSizeLimit = (int)k.Float("UGCImgUploadSizeLimit", UGCImgUploadSizeLimit);
         UGCImgFileCountCheck = (int)k.Float("UGCImgFileCountCheck", UGCImgFileCountCheck);
-        // JobTable::Load (jobtable.cpp:309): table/job.xml; SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every
-        // ./Data/Xml/SkillData/*.xml (FindSkillFiles :1352, not recursive), read on first use
+        // SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every ./Data/Xml/SkillData/*.xml (FindSkillFiles
+        // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
         var skillFiles = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
             && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
-        Skills = new Skills.SkillTables(new Skills.JobTable(Xml("table/job.xml"), collect),
-            new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
+        Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
+        MentoringShowIcon = r.MentoringShowIcon;
+        foreach (var (level, accumExp) in r.GuildAccumExp) GuildAccumExp[level] = accumExp;
+        // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
+        for (int i = 0; i < 100; i++)
+        {
+            var path = $"table/default/defaultmessenger{i}.xml";
+            if (packs.Exists("Xml", path)) DefaultMessengers.Add(GameStrings.Parse(packs.Read("Xml", path)));
+        }
+    }
+
+    /// <summary>The tables the constructor reads (all but the constants and the documents it keeps), as one file of the
+    /// per-install cache (<see cref="CacheStore"/>).</summary>
+    sealed class ReadTables
+    {
+        public Dictionary<int, float> EquipmentSellRates = new();
+        public Dictionary<int, long> NextExp = new();
+        public Dictionary<string, string> CommonResource = new();
+        public Dictionary<string, string> JobNames, MapNames, MapTileDescs, NpcFunctionNames, FieldEnterances, RaceNames,
+            CommonStrings, KeyNames, TitleNames, ItemNames;
+        public Dictionary<int, string> StatNames, StatOptions, SpecialNames;
+        /// <summary>String tables stringstatname and stringspecialabilityname by id (the item option tables' value names).</summary>
+        public Dictionary<string, string> StatValueNames, SpecialValueNames;
+        public FishingSpots Fishing;
+        /// <summary>CFameTable's fameDef.xml part.</summary>
+        public FameTable Fame;
+        /// <summary>MentoringConfig isShowIcon (default true) and the guild property map (accumExp by level).</summary>
+        public bool MentoringShowIcon = true;
+        public Dictionary<int, int> GuildAccumExp = new();
+        public Skills.JobTable Jobs;
+    }
+
+    readonly ReadTables read;
+
+    /// <summary>The first difference of two loads' read tables, null when they are the same (a cached load against a parse).</summary>
+    public static string ReadDiff(GameTables a, GameTables b) => Snapshot.Diff(a.read, b.read);
+
+    const string CachePiece = "gametables";
+
+    /// <summary>The cache configuration: the string languages in order and the feature levels the rows are picked by.</summary>
+    static string CacheConfig(PackSet packs, string[] languages) => $"{string.Join(",", languages)}|{LobbyFeatures.Stamp(packs)}";
+
+    static string CacheBuild => CacheStore.Build(typeof(GameTables).Assembly, typeof(GameStrings).Assembly);
+
+    /// <summary>Writes the cache file of <paramref name="language"/>'s tables when it is missing (the setup step); true when written.</summary>
+    public static bool BuildCache(PackSet packs, string language, CacheStore cache)
+    {
+        var s = new GameStrings(packs, language);
+        return cache.Ensure(CachePiece, CacheConfig(packs, s.Languages), CacheBuild, () => Parse(packs, s));
+    }
+
+    static ReadTables Parse(PackSet packs, GameStrings s)
+    {
+        var r = new ReadTables();
+        // CGloabalFactor::LoadMultiControl (gloabalfactor.cpp:128): Table/multicontrol.xml, the locale folder first; the
+        // tooltip reads only type equipmentSellPrice (3), keyed by rank
+        foreach (var path in new[] { "table/kr/multicontrol.xml", "table/multicontrol.xml" })
+        {
+            if (!packs.Exists("Xml", path)) continue;
+            foreach (var e in GameStrings.Parse(packs.Read("Xml", path)).Root?.Elements("multi") ?? Enumerable.Empty<XElement>())
+            {
+                if (!string.Equals((string)e.Attribute("type"), "equipmentSellPrice", StringComparison.OrdinalIgnoreCase)) continue;
+                int key = Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("key") ?? "0");
+                float value = float.TryParse(((string)e.Attribute("value"))?.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 1f;
+                r.EquipmentSellRates.TryAdd(key, value);                              // std::map::insert keeps the first
+            }
+            break;
+        }
+        if (packs.Exists("Xml", "table/nextexp.xml"))
+            foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/nextexp.xml")).Descendants("exp"))
+                if (int.TryParse((string)e.Attribute("level"), out var lv) && long.TryParse((string)e.Attribute("value"), out var v))
+                    r.NextExp.TryAdd(lv, v);
+        r.JobNames = s.Table("jobname", "name");
+        r.MapNames = s.Table("mapname", "name");
+        r.MapTileDescs = s.Table("maptiledesc", "name");
+        // CommonResource::LoadMembers (commonresource.cpp:91): Table/commonResource.xml, each member <KEY value="..."/>
+        if (packs.Exists("Xml", "table/commonresource.xml"))
+            foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/commonresource.xml")).Root.Elements())
+                r.CommonResource.TryAdd(e.Name.LocalName, (string)e.Attribute("value") ?? "");
+        r.NpcFunctionNames = s.Table("npcfunctionname", "name");
+        r.FieldEnterances = s.Table("stringfieldenterance", "name");
+        r.RaceNames = s.Table("racename", "name");
+        (r.CommonStrings, r.KeyNames) = s.CommonTables();
+        r.TitleNames = s.Table("titlename", "name");
+        r.ItemNames = s.Table("itemname", "name");
+        // the item option tables read the same two string tables (only looked up, as CommonTexts does)
+        r.StatValueNames = s.Table("stringstatname", "name");
+        r.SpecialValueNames = s.Table("stringspecialabilityname", "name");
+        r.StatNames = CommonTexts(packs, "table/statstringtable.xml", r.StatValueNames);
+        r.StatOptions = Options(packs, "table/statstringtable.xml");
+        r.SpecialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", r.SpecialValueNames);
+        // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
+        XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
+        r.Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
+        // CFameTable::LoadFameDef (famegradedata.cpp:606): GetXmlPath("Table", "fameDef.xml")
+        r.Fame = new FameTable(Xml("table/famedef.xml"), e => FeatureElements.IsAvailable(packs, e));
         // MentoringDataTable::Load (mentoringdatatable.cpp:55): GetXmlPath("Table", "MentoringConfig.xml"), <ms2>, <MentoringConfig>
         if (Xml("table/mentoringconfig.xml")?.Root is { Name.LocalName: "ms2" } mentoring && mentoring.Element("MentoringConfig") is { } mentoringConfig)
-            Ms2.Ui.Items.ItemData.Bool(mentoringConfig, "isShowIcon", ref MentoringShowIcon);
+            Ms2.Ui.Items.ItemData.Bool(mentoringConfig, "isShowIcon", ref r.MentoringShowIcon);
         // CGuildXmlData::LoadGuildProperty (@0x1404d5a50, guilddef_2.cpp:489): Table/GuildProperty.xml, <ms2>, the
         // <property> elements collected by level (FUN_14028faa0), each read by GuildProperty::FUN_1404d4990 ("level" f18,
         // "accumExp" f1c) into a map by level
@@ -142,14 +217,11 @@ public sealed class GameTables
             {
                 int.TryParse((string)e.Attribute("level"), out int level);
                 int.TryParse((string)e.Attribute("accumExp"), out int accumExp);
-                GuildAccumExp[level] = accumExp;
+                r.GuildAccumExp[level] = accumExp;
             }
-        // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
-        for (int i = 0; i < 100; i++)
-        {
-            var path = $"table/default/defaultmessenger{i}.xml";
-            if (packs.Exists("Xml", path)) DefaultMessengers.Add(GameStrings.Parse(packs.Read("Xml", path)));
-        }
+        // JobTable::Load (jobtable.cpp:309): table/job.xml
+        r.Jobs = new Skills.JobTable(Xml("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key));
+        return r;
     }
 
     /// <summary>LoadStatDefinitions (stat.cpp:172) / LoadSpecialAbilityStringTable (specialability.cpp:170): per &lt;key id&gt; of

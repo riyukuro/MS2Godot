@@ -33,6 +33,15 @@ public static class LobbyFeatures
         return levels.TryGetValue(feature, out int level) && level <= serverLevel;
     }
 
+    /// <summary>The levels as read (the server type's, then each feature's), hashed: part of a cache key of the tables whose
+    /// rows are picked by feature (a loose feature.xml changes it).</summary>
+    public static string Stamp(PackSet packs)
+    {
+        Load(packs);
+        var text = serverLevel + ";" + string.Join(";", levels.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "=" + p.Value));
+        return Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(text)))[..16].ToLowerInvariant();
+    }
+
     static void Load(PackSet packs)
     {
         if (levels != null) return;
