@@ -61,6 +61,9 @@ public class NpcMonologueTests
         Assert.That(scripts.Monologues(11003520).All(s => s.Kind == "monologue" && s.Contents.Count > 0), Is.True);
         // the npc keeps them among its scripts too
         Assert.That(scripts.Find(11003520).Scripts.Count(s => s.Kind == "monologue"), Is.EqualTo(2));
+        // a mob (friendly 0) has monologues too: UpdateMonologue has no mob test
+        Assert.That(scripts.Monologues(21000003), Is.Not.Null.And.Not.Empty);
+        Assert.That(new NpcTable(packs).Find(21000003)?.Friendly, Is.EqualTo(0));
     }
 
     [Test]

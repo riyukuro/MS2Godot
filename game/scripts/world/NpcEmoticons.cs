@@ -40,7 +40,9 @@ namespace Ms2Godot.World;
 ///   PC::vfunc_85 (<see cref="ChatBalloonController.PcBalloon"/>), its offset OffsetPcChatballoon (the PC constructor's
 ///   m_f168, pc.cpp:661), its picture the PC's profile image (FUN_141028be0(id, picture, 1)).
 /// - The idle monologues (<see cref="NpcMonologue"/>): each npc's frame runs CNpc::UpdateMonologue, which shows a
-///   &lt;monologue&gt; of the npc's scripts in its balloon. STILL-OPEN: the mobs (not in this layer) run it in the client too.
+///   &lt;monologue&gt; of the npc's scripts in its balloon. A mob is a CNpc as well (FieldAddNpc), so the live field's mobs
+///   run it too (345 mob rows have monologues); the offline field's region spawn previews (Mob) are not client objects and
+///   get none.
 /// </summary>
 public sealed partial class NpcEmoticons : CanvasLayer
 {
