@@ -133,9 +133,14 @@ public sealed class FieldEntity
     /// runs FUN_141567000 (unit_141567000.cpp:112-124): for a Mesh (0xbd4f8e8e) or Actor (0x48ccc02d) entity it reads
     /// IsCastingShadow (0xd89e9b12, false when unset) and PrepareLoadedNif runs SetShadowCaster(root, it), which sets or
     /// clears the caster flag of every render object. ecr LightService::OnRenderedEntityAdded (LightService.cpp:1936-1950)
-    /// also attaches such an entity to every shadow generator as an unaffected caster. Other entities keep the NIF's flag.
+    /// also attaches such an entity to every shadow generator as an unaffected caster. Right after, WorldService::FUN_141bbd490
+    /// (worldservice_1.cpp:3412-3432) keeps every entity with IsCastingShadow, whatever its model, in its caster list
+    /// (spawned game objects excepted), and SetShadowEnabled (worldservice_1.cpp:6992-7004) runs SetShadowCaster(root, on) on
+    /// that list. An entity of another model without IsCastingShadow gets no caster mark, and a loaded NIF carries none
+    /// (MS2_IS_SHADOW_CASTER, ms2shadowclickgenerator.cpp:103-108), so it never casts. Either way the entity casts when
+    /// IsCastingShadow is set; the shadow level is applied by the caller (FieldShadows.MapObjects).
     /// </summary>
-    public bool CastsShadow => !HasMixin("Mesh") && !HasMixin("Actor") || Bool("IsCastingShadow");
+    public bool CastsShadow => Bool("IsCastingShadow");
 
     public bool Bool(string key, bool def = false)
     {

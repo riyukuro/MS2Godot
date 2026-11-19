@@ -5,7 +5,8 @@ using NUnit.Framework;
 
 namespace Ms2.Formats.Tests;
 
-/// <summary>FieldEntity.CastsShadow: FUN_141567000's SetShadowCaster(root, IsCastingShadow) for Mesh and Actor entities.</summary>
+/// <summary>FieldEntity.CastsShadow: FUN_141567000's SetShadowCaster(root, IsCastingShadow) for Mesh and Actor entities and
+/// FUN_141bbd490's caster list for every entity with IsCastingShadow.</summary>
 public class ShadowCasterTests
 {
     static FieldEntity Entity(string mixin, string own, string flat)
@@ -32,9 +33,18 @@ public class ShadowCasterTests
     }
 
     [Test]
-    public void OtherEntitiesKeepTheirFlag() => Assert.That(Entity("Placeable", "False", "False").CastsShadow, Is.True);
+    public void OtherEntitiesFollowTheProperty()
+    {
+        // FUN_141bbd490 lists any entity with IsCastingShadow; one without it never gets the caster mark
+        Assert.That(Entity("Placeable", "False", "False").CastsShadow, Is.False);
+        Assert.That(Entity("Placeable", null, null).CastsShadow, Is.False);
+        Assert.That(Entity("Placeable", "True", "False").CastsShadow, Is.True);
+        Assert.That(Entity(null, null, "True").CastsShadow, Is.True);
+    }
 
-    /// <summary>Tria's water, grass, flowers and fences are Mesh entities placed with IsCastingShadow off (981 of 15186 entities; 19 PhysXWhitebox are not Mesh).</summary>
+    /// <summary>Tria's water, grass, flowers and fences are Mesh entities placed with IsCastingShadow off (981 of 15186 entities).
+    /// The other 254 without IsCastingShadow are not Mesh or Actor and have no model: way points, spawn points, whiteboxes,
+    /// sounds and lights.</summary>
     [Test]
     public void TriaNatureCastsNone()
     {
@@ -43,7 +53,9 @@ public class ShadowCasterTests
         var packs = new Ms2.Formats.Pack.PackSet(data);
         var map = FieldMap.Load(packs, new FlatLibrary(packs), "02000001_tw_tria");
         var off = map.Entities.Where(e => !e.CastsShadow).ToList();
-        Assert.That(off.Count, Is.EqualTo(981));
+        Assert.That(off.Count, Is.EqualTo(1235));
+        Assert.That(off.Count(e => e.HasMixin("Mesh")), Is.EqualTo(981));
+        Assert.That(off.Where(e => !e.HasMixin("Mesh") && !e.HasMixin("Actor")).All(e => e.Get("NifAsset") == null), Is.True);
         foreach (var name in new[] { "co_fluid_water_B02_", "he_fi_nature_grass_A01_", "he_fi_prop_fence_C02_" })
             Assert.That(map.Entities.Where(e => e.ModelName == name).All(e => !e.CastsShadow), Is.True, name);
         Assert.That(map.Entities.Count(e => e.CastsShadow && e.HasMixin("Mesh")), Is.GreaterThan(5000));

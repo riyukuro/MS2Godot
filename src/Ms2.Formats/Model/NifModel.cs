@@ -501,7 +501,8 @@ public sealed class ModelData
     /// FUN_141567540 (unit_141567000.cpp:186-262) walk the model breadth first and skip such a node without entering it, so
     /// no render object under it gets the caster mark (the flag 0x20 or the caster extra data). Casting is opt-in: the
     /// shadow visitor only draws marked objects (MS2_IS_SHADOW_CASTER, ms2shadowclickgenerator.cpp:103-108), and a loaded
-    /// NIF has none, so the subtree casts nothing.
+    /// NIF has none, so the subtree casts nothing. The walk also skips nodes with NiAVObject flag 0x400 (IS_PARTICLE_SYSTEM,
+    /// NiAVObject.h:267, set by the NiPSParticleSystem constructors); ModelData loads only NiMesh, so none of those is drawn.
     /// </summary>
     public static bool TaggedNoShadow(NifFile nif, int block)
     {
