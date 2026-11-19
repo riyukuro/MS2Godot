@@ -9,7 +9,7 @@ namespace Ms2Godot.Net;
 
 /// <summary>
 /// What combat shows in the replay: skill effects (effect xml -> nif models from the Effect pack, played where the caster or the target stands),
-/// floating damage numbers, hp bars over npcs and name tags. Effects are drawn from the NiMesh geometry the NIF reader supports, as static
+/// floating damage numbers, hp bars over npcs. Effects are drawn from the NiMesh geometry the NIF reader supports, as static
 /// meshes for the effect's duration; particle systems (NiPS*), texture/alpha controllers and flip animations are not played, they are counted.
 /// </summary>
 public sealed class CombatLayer
@@ -53,16 +53,6 @@ void fragment() {
     }
 
     static Godot.Vector3 G(float x, float y, float z) => new(x, z, -y);
-
-    // ---- tags ----
-
-    public Label3D NameTag(Node3D owner, string text, float height, Color color)
-    {
-        var l = new Label3D { Text = text, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FontSize = 44, PixelSize = 0.55f, Modulate = color.LinearToSrgb(),
-            OutlineSize = 10, OutlineModulate = new Color(0, 0, 0, 0.9f), Position = new Godot.Vector3(0, height + 15, 0), Name = "NameTag" };
-        owner.AddChild(l);
-        return l;
-    }
 
     /// <summary>A bar over the owner; returns the material to update.</summary>
     public ShaderMaterial HpBar(Node3D owner, float height)

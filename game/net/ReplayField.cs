@@ -38,6 +38,7 @@ public partial class ReplayField : Field
     EquipApplier equip;
     NpcLayer npcs;
     CombatLayer combat;
+    LiveNameTags tags;
     SkillTable skills;
     readonly Dictionary<(byte, string), Godot.Animation> skillAnims = new();
     public int SkillUses, SkillNoRow, SkillNoKf, DamageNumbers, SkillAnimsPlayed;
@@ -120,6 +121,8 @@ public partial class ReplayField : Field
         combat = new CombatLayer(packs, builder, new EffectTable(packs), this);
         if (System.Environment.GetEnvironmentVariable("MS2_NOPARTICLES") != null) combat.Particles = false;
         npcs.Combat = combat;
+        AddChild(tags = new LiveNameTags(packs));
+        npcs.Tags = tags;
         truth = BuildTruth(file);
         npcTruth = BuildNpcTruth(file, NpcLayoutOf);
         replay = new ReplaySession(file, speed, startOffset, NpcLayoutOf);
@@ -207,7 +210,8 @@ public partial class ReplayField : Field
         AddChild(root);
         // MyPC::vfunc_49 for the recorded player, PC::vfunc_49 for the others (mypc.cpp:2879-2887, pc.cpp:3028-3035)
         FieldShadows.Character(root, visual, e.IsSelf ? Ms2.Formats.Options.GraphicOptionTable.MyPC : Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
-        combat.NameTag(root, e.User.User.Name, 135, e.IsSelf ? new Color(0.6f, 0.85f, 1f) : Colors.White);
+        tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, e.User, e.IsSelf);
+        if (e.IsSelf) tags.Viewer = root;               // the fade is measured from the recorded player
         var a = new Actor { Gender = e.User.User.Gender, Root = root, Visual = visual, Anim = anim, Name = e.User.User.Name, IsSelf = e.IsSelf, Target = G(e.User.Position), TargetYaw = e.User.Rotation.Z };
         root.Position = a.Target; a.LastPos = a.Target;
         visual.Rotation = new Vector3(0, Mathf.DegToRad(a.TargetYaw), 0);
@@ -295,11 +299,11 @@ public partial class ReplayField : Field
             switch (ev)
             {
                 case UserAddedEvent add:
-                    if (actors.TryGetValue(add.User.ObjectId, out var old)) old.Root.QueueFree();
+                    if (actors.TryGetValue(add.User.ObjectId, out var old)) { tags.Remove(old.Root); old.Root.QueueFree(); }
                     { var sp = Spawn(add); sp.Life = lives[add.User.ObjectId] = lives.GetValueOrDefault(add.User.ObjectId, -1) + 1; actors[add.User.ObjectId] = sp; }
                     break;
                 case UserRemovedEvent rem:
-                    if (actors.Remove(rem.ObjectId, out var gone)) gone.Root.QueueFree();
+                    if (actors.Remove(rem.ObjectId, out var gone)) { tags.Remove(gone.Root); gone.Root.QueueFree(); }
                     break;
                 case SkillUsedEvent su: OnSkillUse(su.Use); break;
                 case SkillCancelledEvent sc:

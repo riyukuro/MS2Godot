@@ -183,9 +183,9 @@ public partial class FieldContents : Node3D
     static QuestMaskTable maskTable;
     static QuestMaskTable Masks(PackSet packs) => maskTable ??= new QuestMaskTable(packs);
     static ClientConstants constantTable;
-    static ClientConstants Constants(PackSet packs) => constantTable ??= Ms2.Ui.FeatureElements.Constants(packs);
+    internal static ClientConstants Constants(PackSet packs) => constantTable ??= Ms2.Ui.FeatureElements.Constants(packs);
     static UiAssets uiAssets;
-    static UiAssets Ui(PackSet packs) => uiAssets != null && uiAssets.Packs == packs ? uiAssets : uiAssets = new UiAssets(packs);
+    internal static UiAssets Ui(PackSet packs) => uiAssets != null && uiAssets.Packs == packs ? uiAssets : uiAssets = new UiAssets(packs);
     static LoadingTipTable tipTable;
 
     /// <summary>The server's field entry after a portal move: the player stands at the target portal, facing its way.</summary>

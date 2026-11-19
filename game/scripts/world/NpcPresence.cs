@@ -8,7 +8,8 @@ namespace Ms2Godot.World;
 /// What the client adds to every npc it spawns, here for the sandbox's stand-in npcs:
 /// - The body capsule (CNpc::vfunc_124 -> NxCapsuleController): &lt;capsule radius height&gt; from the npc table, standing on the
 ///   npc's position, in collision group 4; it blocks the local player unless the row sets capsule ignore.
-/// - The name tag (UINameTag, the uinametag movie's NameTag): only for rows with nametag="1"; the name and, on the line above,
+/// - The name tag (UINameTag, the uinametag movie's NameTag): only for rows with nametag="1", and shown while the game
+///   options let it (DisplayMonsterName for hostile rows, off by default; DisplayNpcName for the others); the name and, on the line above,
 ///   the npc title (npctitle.xml), font size 18, in the colour NpcRow.TagColorKey picks (friendly, or by class for hostile
 ///   npcs; NameTagColorDead once a hostile npc dies). It is drawn in screen space, fully opaque up to 700 away, fading to
 ///   40% at 1500 and hidden beyond. Like every movie the tag is drawn at the UI scale (UiScale), and NameTag.setData
@@ -72,12 +73,9 @@ public sealed partial class NpcPresence : CanvasLayer
     public void Died(FieldNpcs.Placed n)
     {
         if (bars.TryGetValue(n, out var b)) b.Dead = true;
-        var color = TagColor(n.Row, true);
+        var color = TagColor(constants, n.Row, true);
         foreach (var t in tags)
-            if (t.Npc == n)
-                foreach (var clip in new[] { t.Node.FindClip("m_name"), t.Node.FindClip("m_guild") })
-                    foreach (var c in clip?.AllClips() ?? [])
-                        foreach (var f in c.TextFields) f.Label.LabelSettings.FontColor = color;
+            if (t.Npc == n) Recolor(t.Node, color);
     }
 
     /// <summary>
@@ -85,7 +83,7 @@ public sealed partial class NpcPresence : CanvasLayer
     /// CNpc::vfunc_122 (hostile to the local player) stands in as friendly 0: every row with friendly set gets
     /// NameTagColorFriendly either way.
     /// </summary>
-    Color TagColor(NpcRow row, bool dead)
+    internal static Color TagColor(ClientConstants constants, NpcRow row, bool dead)
     {
         var key = row.TagColorKey(hostile: row.Friendly == 0, dead);
         if (key == null) return Colors.Black;
@@ -97,6 +95,49 @@ public sealed partial class NpcPresence : CanvasLayer
             _ => (0.635f, 1f, 0.549f),
         });
         return new Color(r, g, b);
+    }
+
+    /// <summary>
+    /// UINameTag::Entity::FUN_141a60920 for an npc: CNpc::vfunc_116 (the row's friendly value) 0 shows the tag by the
+    /// DisplayMonsterName option (off by default, FUN_14125bdd0 gameoptionstruct.cpp:1347), any other by DisplayNpcName.
+    /// </summary>
+    internal static bool NameShown(NpcRow row)
+    {
+        var status = GameOptions.Current?.StatusOption;
+        if (status == null) return true;
+        return row.Friendly == 0 ? status.DisplayMonsterName : status.DisplayNpcName;
+    }
+
+    /// <summary>UIHudEntity's alpha (vfunc_6) at distance <paramref name="d"/>: 100 up to 700, then (1500 - d) x 0.05 + 40, as 0..1.</summary>
+    internal static float TagAlpha(float d) => d <= OpaqueDistance ? 1f : Mathf.Clamp(((HideDistance - d) * 0.05f + 40f) / 100f, 0, 1);
+
+    /// <summary>UIHudEntity::vfunc_8's range test: the tag hides past m_54 = 1500.</summary>
+    internal static bool InRange(float d) => d <= HideDistance;
+
+    /// <summary>
+    /// A uinametag NameTag with setData's lines: <paramref name="name"/> (centred vertically, VALIGN_CENTER) and
+    /// <paramref name="guild"/> on the line above, both in <paramref name="color"/>, the field's own size (0x12); no symbol
+    /// and no skin (m_bg hidden). Null when the movie has no such class.
+    /// </summary>
+    internal static MovieClipNode BuildTag(UiMovie movie, float u, string name, string guild, Color color)
+    {
+        var node = movie.BuildClass("NameTag", u) ?? movie.BuildClass("UINameTag", u);
+        if (node == null) return null;
+        foreach (var hide in new[] { "m_symbol", "m_bgSkin" }) node.SetNamedVisible(hide, false);
+        var nameClip = node.FindClip("m_name");
+        SetLabel(nameClip, name, null, color);
+        foreach (var c in nameClip?.AllClips() ?? []) foreach (var t in c.TextFields) t.AlignCenter();
+        SetLabel(node.FindClip("m_guild"), guild ?? "", null, color);
+        node.Scale = new Vector2(u, u);
+        return node;
+    }
+
+    /// <summary>setData's fontColor again (UINameTag::Entity::FUN_141a5e500): both lines.</summary>
+    internal static void Recolor(MovieClipNode node, Color color)
+    {
+        foreach (var clip in new[] { node.FindClip("m_name"), node.FindClip("m_guild") })
+            foreach (var c in clip?.AllClips() ?? [])
+                foreach (var f in c.TextFields) f.Label.LabelSettings.FontColor = color;
     }
 
     public NpcPresence(ClientConstants constants) { this.constants = constants; Name = "NpcPresence"; Layer = 5; Offset = UiScale.MovieOrigin; }
@@ -113,7 +154,7 @@ public sealed partial class NpcPresence : CanvasLayer
         foreach (var n in npcs)
         {
             if (!n.Row.CapsuleIgnore) AddBody(n);
-            if (n.Row.Nametag && movie != null && !string.IsNullOrEmpty(n.Row.Name)) AddTag(n, movie, TagColor(n.Row, false));
+            if (n.Row.Nametag && movie != null && !string.IsNullOrEmpty(n.Row.Name)) AddTag(n, movie, TagColor(constants, n.Row, false));
         }
         // the bars after the tags: which of the two the client draws on top is not known (both are separate movies)
         foreach (var n in npcs)
@@ -134,16 +175,9 @@ public sealed partial class NpcPresence : CanvasLayer
 
     void AddTag(FieldNpcs.Placed n, UiMovie movie, Color color)
     {
-        var node = movie.BuildClass("NameTag", u) ?? movie.BuildClass("UINameTag", u);
+        // setData {name, guild = title, visibleSymbol false, fontSize 18, fontColor}: no symbol or skin for npcs
+        var node = BuildTag(movie, u, n.Row.Name, n.Row.Title, color);
         if (node == null) return;
-        // setData {name, guild = title, visibleSymbol false, fontSize 18, fontColor}: no symbol or skin for npcs; m_name is
-        // already size 18 and is centred vertically (VALIGN_CENTER)
-        foreach (var hide in new[] { "m_symbol", "m_bgSkin" }) node.SetNamedVisible(hide, false);
-        var nameClip = node.FindClip("m_name");
-        SetLabel(nameClip, n.Row.Name, null, color);
-        foreach (var c in nameClip?.AllClips() ?? []) foreach (var t in c.TextFields) t.AlignCenter();
-        SetLabel(node.FindClip("m_guild"), n.Row.Title ?? "", null, color);
-        node.Scale = new Vector2(u, u);
         AddChild(node);
         tags.Add(new Tag { Npc = n, Node = node });
         NameTags++;
@@ -180,11 +214,10 @@ public sealed partial class NpcPresence : CanvasLayer
         {
             var head = Anchor(t.Npc);
             float d = eye.DistanceTo(t.Npc.Root.GlobalPosition);
-            bool on = tagLayer && d <= HideDistance && !camera.IsPositionBehind(head);
+            bool on = tagLayer && NameShown(t.Npc.Row) && InRange(d) && !camera.IsPositionBehind(head);
             t.Node.Visible = on;
             if (!on) continue;
-            float alpha = d <= OpaqueDistance ? 1f : ((HideDistance - d) * 0.05f + 40f) / 100f;
-            t.Node.Modulate = new Color(1, 1, 1, Mathf.Clamp(alpha, 0, 1));
+            t.Node.Modulate = new Color(1, 1, 1, TagAlpha(d));
             var p = camera.UnprojectPosition(head);
             p.Y += (tagOffset + Shift(head)) * u;
             t.Node.Position = UiScale.StagePoint(p, u);

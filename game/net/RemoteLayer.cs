@@ -26,6 +26,7 @@ public sealed partial class RemoteLayer : Node3D
     readonly EquipApplier equip;
     readonly NpcLayer npcs;
     readonly CombatLayer combat;
+    readonly LiveNameTags tags;
     readonly Dictionary<int, Remote> users = new();
     readonly Dictionary<byte, (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run)> bodies = new();
     readonly long selfCharacter;
@@ -51,6 +52,11 @@ public sealed partial class RemoteLayer : Node3D
         npcs = new NpcLayer(packs, mb, table, this);
         combat = new CombatLayer(packs, mb, new EffectTable(packs), this);
         npcs.Combat = combat;
+        field.AddChild(tags = new LiveNameTags(packs)
+        {
+            InParty = id => LiveSession.Instance?.Party is { } p && p.PartyId != 0 && p.Find(id) != null,
+        });
+        npcs.Tags = tags;
     }
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
@@ -77,7 +83,7 @@ public sealed partial class RemoteLayer : Node3D
         AddChild(root);
         // the other player's CObjectShadow, of the PC row (PC::vfunc_49, pc.cpp:3028-3035; the same size as the player's)
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
-        combat.NameTag(root, u.User.Name, 135, Colors.White);
+        tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
         root.Position = r.Target; r.LastPos = r.Target;
         visual.Rotation = new Vector3(0, Mathf.DegToRad(r.TargetYaw), 0);
@@ -94,12 +100,12 @@ public sealed partial class RemoteLayer : Node3D
             {
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
-                    if (users.Remove(add.User.ObjectId, out var old)) old.Root.QueueFree();
+                    if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); old.Root.QueueFree(); }
                     users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++;
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
-                    if (users.Remove(rem.ObjectId, out var gone)) { gone.Root.QueueFree(); GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left"); }
+                    if (users.Remove(rem.ObjectId, out var gone)) { tags.Remove(gone.Root); gone.Root.QueueFree(); GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left"); }
                     break;
                 case UserMovedEvent mv:
                     if (!users.TryGetValue(mv.ObjectId, out var r)) break;

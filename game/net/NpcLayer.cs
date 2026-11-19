@@ -41,6 +41,8 @@ public sealed class NpcLayer
     public readonly HashSet<string> MissingModels = new();
     public int Count => inst.Count;
     public CombatLayer Combat;
+    /// <summary>The npcs' name tags (the movie tag); none when null.</summary>
+    public LiveNameTags Tags;
     public int Deaths, NoDeathSequence;
 
     // kfm name (lower case) -> its entry in the Npc pack; the folder layout differs by id range (NN/NN/NNNNNNNN or NN/NNNNNNNN)
@@ -112,7 +114,7 @@ public sealed class NpcLayer
     public void Add(Ms2.Net.Replay.NpcAddedEvent e)
     {
         var n = e.Npc;
-        if (inst.TryGetValue(n.ObjectId, out var old)) { old.Root.QueueFree(); inst.Remove(n.ObjectId); }
+        if (inst.TryGetValue(n.ObjectId, out var old)) { Tags?.Remove(old.Root); old.Root.QueueFree(); inst.Remove(n.ObjectId); }
         var row = table.Find(n.NpcId);
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
@@ -138,11 +140,11 @@ public sealed class NpcLayer
         i.Height = row.CapsuleHeight * row.Scale;
         parent.AddChild(root);
         root.Position = i.Target;
-        if (Combat != null)
+        Tags?.AddNpc(root, i.Placeholder ? null : i.Visual, row);
+        if (Combat != null && n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health)
         {
-            bool friendly = row.Friendly != 0;
-            Combat.NameTag(root, row.Name ?? row.Kfm, i.Height, friendly ? new Color(0.6f, 1f, 0.6f) : new Color(1f, 0.85f, 0.6f));
-            if (n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health) { i.HpMat = Combat.HpBar(root, i.Height); i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health); }
+            i.HpMat = Combat.HpBar(root, i.Height);
+            i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health);
         }
         if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
         i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
@@ -154,6 +156,7 @@ public sealed class NpcLayer
     public void Remove(int id, bool dead)
     {
         if (dead || !inst.Remove(id, out var i)) return;      // a dead npc stays until it is removed
+        Tags?.Remove(i.Root);
         i.Root.QueueFree();
     }
 
@@ -200,6 +203,7 @@ public sealed class NpcLayer
         if (cur <= 0 && !i.Dead)
         {
             i.Dead = true; Deaths++;
+            Tags?.Died(i.Root);
             var dead = table.Find(i.NpcId)?.SoundDead;
             if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
             if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
