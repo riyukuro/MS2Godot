@@ -258,23 +258,26 @@ public partial class TextNode
     (float Width, float Ratio) PlaceGlyphs(LayoutLine line, TextServer ts, Rid rid, int ramp, int first)
     {
         float pen = 0, shaped = 0;
-        foreach (Dictionary g in ts.ShapedTextGetGlyphs(rid))
+        var glyphs = ts.ShapedTextGetGlyphs(rid);
+        using var glyphsOwner = (Godot.Collections.Array)glyphs;
+        foreach (Dictionary g in glyphs)
         {
-            int index = first + (int)g["start"], at = Math.Min(index, codePoints.Length - 1), repeat = (int)g["repeat"];
+            using var _ = g;
+            int index = first + (int)g[GlyphKeys.Start], at = Math.Min(index, codePoints.Length - 1), repeat = (int)g[GlyphKeys.Repeat];
             float size = SizeAt(at), labelSize = LabelSize(size);
             bool image = ImageAt(at) != null;                       // an IMG object: its advance is in label pixels already
             float k = image ? 1 : labelSize / ShapeSize(size);       // label pixels per shaped pixel
             // a run of another size in readable text keeps the field font's oversampling: its raster is the whole size nearest
             // its quarter-pixel size, times that
             int raster = size == FieldSize ? ramp : (int)MathF.Max(1, MathF.Round(CachedSize(size * ScreenScale, Readable)));
-            float advance = (float)g["advance"];
-            int count = (int)g["count"];
-            long id = image ? 0 : (long)g["index"];
-            var gflags = (TextServer.GraphemeFlag)(long)g["flags"];
-            line.Shaped.Add(new PlacedGlyph(index, count, (Rid)g["font_rid"], id, raster, labelSize / raster,
-                pen, (Vector2)g["offset"] * k, advance * k, repeat, labelSize)
+            float advance = (float)g[GlyphKeys.Advance];
+            int count = (int)g[GlyphKeys.Count];
+            long id = image ? 0 : (long)g[GlyphKeys.Index];
+            var gflags = (TextServer.GraphemeFlag)(long)g[GlyphKeys.Flags];
+            line.Shaped.Add(new PlacedGlyph(index, count, (Rid)g[GlyphKeys.FontRid], id, raster, labelSize / raster,
+                pen, (Vector2)g[GlyphKeys.Offset] * k, advance * k, repeat, labelSize)
             {
-                End = first + (int)g["end"],
+                End = first + (int)g[GlyphKeys.End],
                 Bounded = count > 0 && (image || id != 0 || (gflags & TextServer.GraphemeFlag.Space) != 0),
             });
             pen += advance * k * repeat;

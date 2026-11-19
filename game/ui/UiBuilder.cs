@@ -446,8 +446,13 @@ public partial class TextNode : Node2D
             var tl = new TextLine();
             tl.AddString(Substring(a, b), Label.LabelSettings.Font, ShapeSize(size));
             double run = 0;
-            foreach (Godot.Collections.Dictionary g in TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid()))
-                run += (float)g["advance"] * (int)g["repeat"];
+            var glyphs = TextServerManager.GetPrimaryInterface().ShapedTextGetGlyphs(tl.GetRid());
+            using (var glyphsOwner = (Godot.Collections.Array)glyphs)
+                foreach (Godot.Collections.Dictionary g in glyphs)
+                {
+                    using var _ = g;
+                    run += (float)g[GlyphKeys.Advance] * (int)g[GlyphKeys.Repeat];
+                }
             tl.Dispose();
             sum += run * (LabelSize(size) / ShapeSize(size));
         }

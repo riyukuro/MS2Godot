@@ -35,6 +35,7 @@ rules apply tree-wide.
   (also `GetNode<T>("..")`)/FindChild/AddToGroup/..., or to a bare `Get(`/`Set(`/`Call(` (game/ only): use a static readonly
   StringName/NodePath. `x.Get("..")` on a C# type is not matched, and a bare `Get("..")` is skipped in a file that declares its own
   `Get` method (Settings.cs)
+- a string literal key on a Godot Dictionary (`g["advance"]`, a variable declared `Godot.Collections.Dictionary`, or `Dictionary` in a file that uses Godot.Collections): each read builds a Variant with a finalizer-owned disposer; use a static readonly Variant key (PhysicsKeys, GlyphKeys)
 - `StringName x = "lit"` (also NodePath/Variant) that is not static/const; `new StringName("lit")`/`new NodePath("lit")` outside a
   static field (a computed name cannot be hoisted and is not flagged)
 - `GetChildren(...)`: use `node.Kids()` (game/scripts/NodeKids.cs) or GetChildCount()/GetChild(i)

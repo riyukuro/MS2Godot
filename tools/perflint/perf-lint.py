@@ -155,6 +155,11 @@ def lint(f, ns, lines):
     seen_render = set()
     pf = perframe_methods(lines)
     defined = {header_name(x)[0] for x in lines if header_name(x)}
+    gtext = "\n".join(lines)
+    # names of Godot dictionaries: declared with the qualified type, or unqualified in a file that uses Godot.Collections and not System's
+    gdicts = set(re.findall(r"\bGodot\.Collections\.Dictionary(?:<[^;=()]*>)?\s+(\w+)", gtext))
+    if re.search(r"^using Godot\.Collections;", gtext, re.M) and not re.search(r"^using System\.Collections\.Generic;", gtext, re.M):
+        gdicts |= set(re.findall(r"\bDictionary(?:<[^;=()]*>)?\s+(\w+)\s*(?:=|in\b|[;,)])", gtext))
     for n in ns:
         if n - 1 >= len(lines): continue
         raw = lines[n - 1]; s = code(raw)
@@ -173,6 +178,12 @@ def lint(f, ns, lines):
                     "a static readonly StringName/NodePath (see the Meta/PhysicsKeys tables)", cold_ok=True)
             if re.search(r"\b(?:StringName|NodePath|Variant)\s+\w+\s*=\s*\"", s) and not re.search(r"\b(static|const)\b", s):
                 hit(f, n, "StringName/NodePath/Variant built from a literal outside a static field", "static readonly StringName/NodePath/Variant")
+        if isgame:
+            for m in re.finditer(r"\b(\w+)\s*\[\s*\"[^\"]*\"\s*\]", s):
+                if m.group(1) in gdicts:
+                    hit(f, n, "string literal key on a Godot Dictionary (a new Variant with a finalizer-owned disposer per read)",
+                        "a static readonly Variant key (see PhysicsKeys, GlyphKeys)", cold_ok=True)
+                    break
         if (re.search(r"new\s+(StringName|NodePath)\s*\(\s*\"[^\"]*\"\s*\)", s) or re.search(r"\b(StringName|NodePath)\s+\w+\s*=\s*new\s*\(\s*\"[^\"]*\"\s*\)", s)) \
                 and not re.search(r"\b(static|const)\b", s):
             hit(f, n, "new StringName/NodePath outside a static field", "static readonly StringName/NodePath")
