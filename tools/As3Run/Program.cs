@@ -62,8 +62,34 @@ void InstallHostStatics(Runtime rt)
 // Host.Invoke calls reach the entries with real argument shapes. Movies without one go through the generic path below.
 Ms2.Ui.UiModel hostModel = null;
 var controllerLog = new Dictionary<string, string>();
+// Controllers whose constructors take a book: built with the shapes the tests use, a few real rows where the movie shows a list.
+Ms2.Ui.UiController[] ArgControllers()
+{
+    var buddies = new Ms2.Ui.BuddyBook { Common = _ => "" };
+    buddies.Apply(new Ms2.Net.Packets.BuddyMessage(1) { Entries = new[] {
+        new Ms2.Net.Packets.BuddyInfo { Id = 1, CharacterId = 101, Name = "Ann", Online = true, Level = 40, JobGroup = 2, Memo = "memo1" },
+        new Ms2.Net.Packets.BuddyInfo { Id = 2, CharacterId = 102, Name = "Bob", Received = true, Level = 40, JobGroup = 2 } } });
+    var mails = new Ms2.Ui.MailBook(Ms2.Ui.MailTexts.Empty());
+    mails.Apply(new Ms2.Net.Packets.MailMessage.Listed(new[] {
+        new Ms2.Net.Packets.MailInfo { Kind = 1, Id = 10, Sender = "s10", Title = "t10", SentTime = 5, ExpireTime = 100000, Meso = new Ms2.Net.Packets.MailRange { Begin = 100 } },
+        new Ms2.Net.Packets.MailInfo { Kind = 1, Id = 11, Sender = "s11", Title = "t11", SentTime = 6, ExpireTime = 100000, ReadTime = 7 } }), false, 0);
+    var guild = new Ms2.Ui.GuildBook { Common = id => "", CommonByKey = k => k, Send = _ => { }, Level = () => 10, CreateMinLevel = 5 };
+    var book = new Ms2.Ui.AchieveBook(new Dictionary<int, Ms2.Ui.AchieveData>());
+    book.Apply(new Ms2.Net.Packets.AchieveMessage.Reload());
+    var texts = new Ms2.Ui.AchieveTexts(new(), new()) { Data = book.DataOf, Find = book.Find };
+    var list = new List<Ms2.Ui.UiController>
+    {
+        new Ms2.Ui.Hud.CommunityController(buddies) { Common = _ => "", MapName = id => "map", JobName = j => "job", SelfCharacterId = () => 101 },
+        new Ms2.Ui.Hud.CommunityQueryController(buddies),
+        new Ms2.Ui.Hud.MailListController(mails) { ServerTime = () => 1000 },
+        new Ms2.Ui.Hud.GuildDialogController(guild),
+        new Ms2.Ui.Hud.AchieveController(book, texts, new Ms2.Ui.AchieveCategoryTable(new List<Ms2.Ui.AchieveCategory>())),
+    };
+    return list.ToArray();
+}
 Ms2.Ui.UiController MakeController(string key)
 {
+    foreach (var a in ArgControllers()) if (string.Equals(a.Movie, key, StringComparison.OrdinalIgnoreCase)) return a;
     foreach (var t in typeof(Ms2.Ui.UiController).Assembly.GetTypes().Where(t => !t.IsAbstract && typeof(Ms2.Ui.UiController).IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null))
     {
         try { var c = (Ms2.Ui.UiController)Activator.CreateInstance(t); if (string.Equals(c.Movie, key, StringComparison.OrdinalIgnoreCase)) return c; }
