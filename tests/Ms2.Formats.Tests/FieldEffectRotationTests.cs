@@ -38,6 +38,17 @@ public class FieldEffectRotationTests
         for (int i = 0; i < 9; i++) Assert.That(got[i], Is.EqualTo(want[i]).Within(1e-9), $"{e.Raw.ModelName} {r} [{i}]");
     }
 
+    /// <summary>The space world/FieldEffects plays the entity's effect in: Rx * Ry * Rz times the scale, no translation.</summary>
+    static void AssertEffectSpace(FieldEntity e)
+    {
+        var r = e.RotationDeg;
+        var want = Mul(Mul(Axis(0, r.X), Axis(1, r.Y)), Axis(2, r.Z));
+        var fs = e.EffectSpace;
+        Assert.That(new[] { fs.T.X, fs.T.Y, fs.T.Z }, Is.EqualTo(new double[] { 0, 0, 0 }), $"{e.Raw.ModelName} translation");
+        for (int i = 0; i < 9; i++)
+            Assert.That(fs.R[i] * fs.S, Is.EqualTo(want[i] * e.Scale).Within(1e-9), $"{e.Raw.ModelName} {r} scale {e.Scale} [{i}]");
+    }
+
     [Test]
     public void SyntheticAnglesComposeXThenYThenZ()
     {
@@ -45,7 +56,10 @@ public class FieldEffectRotationTests
         {
             var raw = new XEntity { ModelName = "m" };
             raw.Props["Rotation"] = rot;
-            AssertRotation(new FieldEntity { Raw = raw, Flat = new FlatModel { Name = "m" } });
+            raw.Props["Scale"] = "1.5";
+            var fe = new FieldEntity { Raw = raw, Flat = new FlatModel { Name = "m" } };
+            AssertRotation(fe);
+            AssertEffectSpace(fe);
         }
         // 90 about X turns the file's up (+Z) to -Y: a steam vent stood on its side
         var x90 = new XEntity { ModelName = "m" };
@@ -63,6 +77,6 @@ public class FieldEffectRotationTests
         var map = FieldMap.Load(packs, new FlatLibrary(packs), "02000141_in");
         var tilted = map.Entities.Where(e => e.HasMixin("EffectMesh") && (e.RotationDeg.X != 0 || e.RotationDeg.Y != 0)).ToList();
         Assert.That(tilted, Is.Not.Empty);
-        foreach (var e in tilted) AssertRotation(e);
+        foreach (var e in tilted) { AssertRotation(e); AssertEffectSpace(e); }
     }
 }

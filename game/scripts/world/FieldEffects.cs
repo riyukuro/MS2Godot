@@ -25,10 +25,9 @@ public static class FieldEffects
             {
                 if (!scenes.TryGetValue(entry, out var scene))
                     scenes[entry] = scene = EffectScene.Load(NifFile.Load(builder.Spec, packs.Read(archive, entry)));
-                // the entity's full rotation R = Rx * Ry * Rz and scale (FieldEntity.Transform, XBlock.cs), as the field props
+                // the entity's full rotation R = Rx * Ry * Rz and scale (FieldEntity.EffectSpace, XBlock.cs), as the field props
                 // take it; the position goes on the node
-                var basis = ModelBuilder.ToGodot(e.Transform).Basis;
-                var fx = new EffectInstance(scene, builder, 1e7f, n) { Name = "Effect_" + n, Position = FieldBuilder.ToGodotPoint(e.Position), FileSpace = new Transform3D(basis, Vector3.Zero) };
+                var fx = new EffectInstance(scene, builder, 1e7f, n) { Name = "Effect_" + n, Position = FieldBuilder.ToGodotPoint(e.Position), FileSpace = ModelBuilder.ToGodot(e.EffectSpace) };
                 root.AddChild(fx);
                 n++;
             }

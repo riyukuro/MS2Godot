@@ -201,6 +201,9 @@ public sealed class FieldEntity
     }
 
     public Vec3 Position => Vector("Position");
+    /// <summary>The file space a field effect entity's effect plays in (world/FieldEffects): the full placement rotation
+    /// R = Rx * Ry * Rz and the scale of <see cref="Transform"/>, with no translation (the position goes on the node).</summary>
+    public Xform EffectSpace { get { var t = Transform; return new Xform(new Vec3(0, 0, 0), t.R, t.S); } }
     /// <summary>Euler degrees (x, y, z), Z-up.</summary>
     public Vec3 RotationDeg => Vector("Rotation");
     public double Scale => Number("Scale", 1);
