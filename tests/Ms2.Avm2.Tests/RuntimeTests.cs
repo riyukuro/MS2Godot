@@ -534,6 +534,34 @@ public class RuntimeTests
     }
 
     [Test]
+    public void ZSetterMakesTheNode3DEvenAtTheDefault()
+    {
+        // SetZ calls UpdateTransform3D unconditionally (sfr_gfx_06.cpp:1220-1233), so Clear3D has a 3D state to reset
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        sp.z = 0; sp.x = 5;
+        sp.transform.matrix3D = null;
+        Assert.That(sp.x, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Scale9GridIsCopiedOnSetAndOnGet()
+    {
+        // scale9GridSet copies (sfr_as3_07.cpp:1833-1848); scale9GridGet builds a new Rectangle, null when empty (:1617-1630)
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var bg = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        var r = AsRectangle.New(rt, 1, 2, 3, 4);
+        bg.scale9Grid = r; r.x = 9;
+        Assert.That(bg.scale9Grid.x, Is.EqualTo(1));
+        Assert.That(bg.scale9Grid, Is.Not.SameAs(r));
+        Assert.That(bg.scale9Grid, Is.Not.SameAs(bg.scale9Grid));
+        bg.scale9Grid = AsRectangle.New(rt, 1, 2, 0, 4);
+        Assert.That(bg.scale9Grid, Is.Null, "an empty grid reads as null");
+    }
+
+    [Test]
     public void Scale9GridIsTheSymbolsGridUntilASetterReplacesIt()
     {
         // DisplayObject::scale9GridGet (sfr_as3_07.cpp:1617) reads the node's grid, which a symbol's DefineScale9Grid sets; it is

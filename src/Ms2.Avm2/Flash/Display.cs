@@ -123,7 +123,8 @@ public class AsDisplayObject : AsEventDispatcher
     internal double[,] Held3x3;
     internal bool Is3D;
     double zv, scaleZv = 1, rotXv, rotYv;
-    [As] public double z { get => zv; set { zv = value; Held3x3 = null; } }
+    // The four setters below make the node 3D even at the default value: UpdateTransform3D runs unconditionally (sfr_gfx_06.cpp:1220-1233).
+    [As] public double z { get => zv; set { zv = value; Held3x3 = null; Is3D = true; } }
     [As] public double scaleX
     {
         get { var s = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); return Matrix.A * Matrix.D - Matrix.B * Matrix.C < 0 && Matrix.A < 0 ? -s : s; }
@@ -134,7 +135,7 @@ public class AsDisplayObject : AsEventDispatcher
         get => Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D);
         set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D); double rot = cur == 0 ? 0 : Math.Atan2(-Matrix.C, Matrix.D); var m = Matrix; m.C = -value * Math.Sin(rot); m.D = value * Math.Cos(rot); Matrix = m; Held3x3 = null; ScriptMoved(); }
     }
-    [As] public double scaleZ { get => scaleZv; set { scaleZv = value; Held3x3 = null; } }
+    [As] public double scaleZ { get => scaleZv; set { scaleZv = value; Held3x3 = null; Is3D = true; } }
     [As] public double rotation
     {
         get => Math.Atan2(Matrix.B, Matrix.A) * 180 / Math.PI;
@@ -145,8 +146,8 @@ public class AsDisplayObject : AsEventDispatcher
             var m = Matrix; m.A = sx * Math.Cos(r); m.B = sx * Math.Sin(r); m.C = -sy * Math.Sin(r); m.D = sy * Math.Cos(r); Matrix = m; Held3x3 = null; ScriptMoved();
         }
     }
-    [As] public double rotationX { get => rotXv; set { rotXv = value; Held3x3 = null; } }
-    [As] public double rotationY { get => rotYv; set { rotYv = value; Held3x3 = null; } }
+    [As] public double rotationX { get => rotXv; set { rotXv = value; Held3x3 = null; Is3D = true; } }
+    [As] public double rotationY { get => rotYv; set { rotYv = value; Held3x3 = null; Is3D = true; } }
     [As] public double rotationZ { get; set; }
     [As] public double alpha { get => Color.Am; set { Color = Color with { Am = double.IsNaN(value) ? 0 : value }; ScriptColored(); } }
     /// <summary>
@@ -177,13 +178,19 @@ public class AsDisplayObject : AsEventDispatcher
         get => ScrollRect is { } r ? AsRectangle.New(RT, r) : null;
         set => ScrollRect = value == null ? null : value.R;
     }
-    AsRectangle scale9Own; bool scale9Set;
+    RectD scale9Own; bool scale9Set;
     /// <summary>DisplayObject::scale9GridGet (sfr_as3_07.cpp:1617): a new Rectangle of the node's grid, null without one. A
     /// symbol's DefineScale9Grid is that grid from the start, until a setter replaces it (scale9GridSet, sfr_as3_07.cpp:1833).</summary>
     [As] public AsRectangle scale9Grid
     {
-        get => scale9Set ? scale9Own : Symbol?["scale9"] is JsonObject g ? AsRectangle.New(RT, SymbolScope.Rect(g)) : null;
-        set { scale9Own = value; scale9Set = true; }
+        get
+        {
+            // a new Rectangle per get, null for an empty grid (sfr_as3_07.cpp:1617-1630)
+            var g = scale9Set ? scale9Own : Symbol?["scale9"] is JsonObject o ? SymbolScope.Rect(o) : default;
+            return g.W <= 0 || g.H <= 0 ? null : AsRectangle.New(RT, g);
+        }
+        // scale9GridSet copies the rectangle (sfr_as3_07.cpp:1833-1848); null clears
+        set { scale9Own = value == null ? default : value.R; scale9Set = true; }
     }
     [As] public AsTransform transform
     {
