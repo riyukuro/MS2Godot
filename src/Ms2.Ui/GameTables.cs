@@ -415,6 +415,22 @@ public sealed class GameTables
     /// when unknown.</summary>
     public string NametagSymbolTitle(int id) => Lazy(ref nametagSymbolTitles, "nametagsymboltitle", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     Dictionary<string, string> nametagSymbolTitles;
+    /// <summary>CStringTable::FUN_141811980(0x23 / 0x24 / 0x25, id): string tables 35 "recommendContentsName", 36
+    /// "recommendContentsSearch" and 37 "recommendContentsTooltip", a level-up guide row's label, world map search text and
+    /// tooltip; "" when unknown.</summary>
+    public string RecommendContentsName(int id) => Recommend(ref recommendNames, "recommendcontentsname", id);
+    public string RecommendContentsSearch(int id) => Recommend(ref recommendSearches, "recommendcontentssearch", id);
+    public string RecommendContentsTooltip(int id) => Recommend(ref recommendTooltips, "recommendcontentstooltip", id);
+    /// <summary>A recommend-contents string; texts holding "$" get the object words, as CStringTable::Load @0x141810f70
+    /// does for every table at load.</summary>
+    string Recommend(ref Dictionary<string, string> d, string table, int id)
+    {
+        var t = Lazy(ref d, table, "name");
+        if (!t.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) || n == null) return "";
+        if (n.Contains('$')) t[id.ToString(CultureInfo.InvariantCulture)] = n = ReservedWords.ReplaceObjectWords(n);
+        return n;
+    }
+    Dictionary<string, string> recommendNames, recommendSearches, recommendTooltips;
     NametagSymbols nametagSymbols;
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);

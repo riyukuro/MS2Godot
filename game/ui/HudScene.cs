@@ -61,7 +61,7 @@ public partial class HudScene : Node, IUiStageHost
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
-    string openShot;                        // --uigen-open inventory|myinfo: the shot opens that window, as I or P does
+    string openShot;                        // --uigen-open inventory|myinfo|levelupguide: the shot opens that window, as I or P does
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
@@ -1096,6 +1096,71 @@ public partial class HudScene : Node, IUiStageHost
     }
 
 
+    // ---- level-up guide: uilevelupguidedialog run by its own ActionScript, UILevelUpGuideDialog's C++ side as LevelUpGuideController
+
+    MovieDialog levelUpGuideMovie;
+    Ms2.Ui.Hud.LevelUpGuideController levelUpGuide;     // kept between opens, as the client keeps the dialog (check boxes, slot names)
+    static SortedDictionary<int, Ms2.Ui.Hud.LevelUpGuideController.Contents> recommendContents;   // LoadRecommendContents, read once
+
+    /// <summary>CUIService::ToggleDialog(0x4efa): the game menu's level-up guide.</summary>
+    void ToggleLevelUpGuide()
+    {
+        if (levelUpGuideMovie != null && levelUpGuide?.IsClosed == false) levelUpGuide.Close();
+        else OpenLevelUpGuide();
+    }
+
+    /// <summary>
+    /// Opens the level-up guide over the quest log's tables and quest state (offline: no records, so every guide is locked
+    /// and no event guide shows) and table/recommendContents.xml. A reward claim sends Quest 0x18 on a live session; the
+    /// world map link opens the world map at the row's field or search text; the dungeon room dialog and the other
+    /// linked dialogs but the inventory are not in this HUD yet and are only logged.
+    /// </summary>
+    void OpenLevelUpGuide()
+    {
+        if (levelUpGuideMovie != null) { levelUpGuideMovie.Host.Unload(); levelUpGuideMovie.QueueFree(); levelUpGuideMovie = null; }
+        var log = QuestLogSource();
+        if (log == null) return;
+        if (levelUpGuide == null)
+        {
+            recommendContents ??= Ms2.Ui.Hud.LevelUpGuideController.LoadContents(assets.Table("table/recommendcontents.xml"),
+                e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));
+            levelUpGuide = new Ms2.Ui.Hud.LevelUpGuideController
+            {
+                Rows = recommendContents,
+                Npcs = World.FieldContents.Npcs(assets.Packs),
+                Meta = fieldMeta,
+            };
+            levelUpGuide.SendGuideReward += quest =>
+            {
+                if (Ms2Godot.Net.LiveSession.Instance is { } live) live.SendTalk(new Ms2.Net.Packets.QuestGuideRewardRequest(quest));
+                else GD.Print($"level-up guide: reward of quest {quest} not sent (offline)");
+            };
+            levelUpGuide.OpenWorldMap += (field, search) =>
+            {
+                if (!WorldMapOpen) OpenWorldMap();
+                if (field != 0) worldMapSide?.SetPendingField(field);
+                if (search.Length != 0) worldMapSide?.SetPendingSearch(search);
+            };
+            levelUpGuide.OpenDungeonRoom += code => GD.Print($"level-up guide: the dungeon room dialog (room {code}) is not in this HUD yet");
+            levelUpGuide.OpenDialog += name =>
+            {
+                if (name == "InventoryDialog") { if (inventory == null || inventory.IsClosed) ToggleInventory(); }
+                else GD.Print($"level-up guide: {name} is not in this HUD yet");
+            };
+            levelUpGuide.Unloaded += () =>
+            {
+                levelUpGuideMovie?.Host.Unload();
+                levelUpGuideMovie?.QueueFree();
+                levelUpGuideMovie = null;
+            };
+        }
+        levelUpGuide.Table = questTable;
+        levelUpGuide.State = log.State;
+        levelUpGuideMovie = new MovieDialog(assets, levelUpGuide, hudModel, GetWindow().Size);
+        uiRoot.AddChild(levelUpGuideMovie);
+    }
+
+
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
     UiModel hudModel;
@@ -1206,6 +1271,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4e42) ToggleWorldMap();
         else if (id == 0x4e2d) ToggleInventory();
         else if (id == 0x2711) ToggleMyInfo();      // "characterinfo" (gameeventmanagercli.cpp:486-494)
+        else if (id == 0x4efa) ToggleLevelUpGuide();
         else if (id == 0x4f2d) ToggleSkillBook();
     }
 
@@ -1944,6 +2010,7 @@ public partial class HudScene : Node, IUiStageHost
         if (worldMapShot >= 0 && frames == 200) ToggleWorldMap();
         if (openShot == "inventory" && frames == 200) ToggleInventory();
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
+        if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)

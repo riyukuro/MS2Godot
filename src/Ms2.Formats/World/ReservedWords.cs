@@ -18,7 +18,7 @@ namespace Ms2.Formats.World;
 /// $female, $pp, $ppr and $pp2.</item>
 /// </list>
 /// Arguments are read as the client does: _wtoi (the leading digits, so "11000001[gender:1]" is 11000001) and, for $script,
-/// _wcstoui64. A missing string is empty. Words whose formatter is not ported here ($dungeonTitle, $quest, $maview, $externalWeb, $petCollectGroup, $masteryRecipe, $job; the value words
+/// _wcstoui64. A missing string is empty. Words whose formatter is not ported here ($quest, $maview, $externalWeb, $petCollectGroup, $masteryRecipe, $job; the value words
 /// $MyPCHp, $MyPCLevel, $paneltyPrice, the roulette words and $key) stay as they are.
 /// </summary>
 public sealed class ReservedWords
@@ -52,6 +52,8 @@ public sealed class ReservedWords
             ["$pp"] = Ppr,
             ["$pp2"] = Pp2,
             ["$achieve"] = (_, a, _) => Atoi(a) == 0 ? "" : Lookup("achievename", Atoi(a)),
+            // Rw_DungeonTitle @0x1416fdc80: FUN_1416ff950 = string table 20 (stringFieldEnterance)
+            ["$dungeonTitle"] = (_, a, _) => Atoi(a) == 0 ? "" : Lookup("stringfieldenterance", Atoi(a)),
             ["$script"] = (_, a, _) => ParseUInt64(a) == 0 ? "" : script?.Invoke(ParseUInt64(a)) ?? "",
             ["$itemPlural"] = (_, a, _) => Lookup(singular ? "itemname" : "itemnameplural", Atoi(a)),
             ["$npcPlural"] = (_, a, _) => singular ? NpcDisplayName(Atoi(a)) : NpcDisplayName(Atoi(a), "npcnameplural"),
