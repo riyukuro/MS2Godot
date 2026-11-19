@@ -38,6 +38,9 @@ namespace Ms2Godot.World;
 /// STILL-OPEN: a station opened by OnTaxi while in its field keeps its DisabledAsset model until the next field load (the
 /// batched field model is not rebuilt); the reveal and default effects do play. OnTaxi's system sound "system_Taxi_Find",
 /// the minimap's EnableTaxiFrame and the guide trigger 0x10 are not played either.
+/// STILL-OPEN: OnTaxi ends with CAutoFindTaxiStation::FUN_1409f1970 (@0x1409f1970, autofindtaxistation.cpp:307), which arms a
+/// 1500 ms timer for the auto-find camera fly-by (FUN_1409f1af0) when an auto-find is active and not done. The auto-find
+/// (StartAutoFind, the camera fly-by and its Esc request) has no port, so the call is left out.
 /// </summary>
 public partial class TaxiStations : Node3D
 {

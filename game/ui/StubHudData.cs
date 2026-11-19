@@ -16,7 +16,8 @@ public sealed class StubHudData
     public long[] Wallet;
     public string Locale = "KR";
     /// <summary>The fields whose taxi station the player has found (the login packet's list, OnTaxi adds to it). The
-    /// reference run had found Tria's: its minimap shows the station enabled.</summary>
+    /// reference run had found Tria's: its minimap shows the station enabled. Offline only: a live entry replaces the list
+    /// with the ServerEnter one, or an empty one when the packet is missing (LiveSession).</summary>
     public HashSet<int> FoundTaxis = new() { 2000001 };
     /// <summary>The field's interact objects' state from the server (1 = reactable). The reference run's extract station
     /// shows on its minimap, which only state 1 allows.</summary>

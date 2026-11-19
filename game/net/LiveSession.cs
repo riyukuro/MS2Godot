@@ -506,8 +506,9 @@ public partial class LiveSession : Node
         {
             Adventure.ServerEnter();
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
-            // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122)
-            if (entry.Enter?.UnlockedTaxis is { } taxis) StubHudData.Instance.FoundTaxis = new HashSet<int>(taxis);
+            // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122);
+            // without the enter packet it starts empty, so the stub's offline value never reaches a live session
+            StubHudData.Instance.FoundTaxis = entry.Enter?.UnlockedTaxis is { } taxis ? new HashSet<int>(taxis) : new HashSet<int>();
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
