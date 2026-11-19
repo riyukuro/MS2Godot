@@ -194,10 +194,13 @@ public static class GuideCache
     public static void BuildStrings(PackSet packs, string language, string path) => WriteStrings(GuideStrings.Parse(packs, language), path);
 
     /// <summary>Writes <paramref name="strings"/> to <paramref name="path"/> (through a temporary file, so a stopped
-    /// build leaves no partial cache): the texts and voices as loaded, in id order.</summary>
+    /// build leaves no partial cache): the texts and voices as loaded, over the union of their ids, in id order.</summary>
     public static void WriteStrings(GuideStrings strings, string path)
     {
         var texts = strings.TextMap;
+        var voices = strings.VoiceMap;
+        var ids = new SortedSet<uint>(texts.Keys);
+        ids.UnionWith(voices.Keys);
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
         string tmp = path + ".tmp";
         using (var fs = File.Create(tmp))
@@ -205,12 +208,12 @@ public static class GuideCache
         {
             w.Write(StringsMagic);
             w.Write(Version);
-            w.Write(texts.Count);
-            foreach (var (id, text) in texts.OrderBy(kv => kv.Key))
+            w.Write(ids.Count);
+            foreach (var id in ids)
             {
                 w.Write(id);
-                w.Write(text);
-                w.Write(strings.VoiceMap.TryGetValue(id, out var v) ? v : "");
+                w.Write(texts.TryGetValue(id, out var t) ? t : "");
+                w.Write(voices.TryGetValue(id, out var v) ? v : "");
             }
             w.Write(StringsEndMagic);
         }
@@ -250,18 +253,19 @@ public static class GuideCache
     }
 
     /// <summary>The first difference between two tables (MS2_UICACHE=check and the tests), null when they are the same:
-    /// the same text ids in order with the same text, and the same voices.</summary>
+    /// the same ids (the union of texts and voices) in order with the same text and the same voice.</summary>
     public static string FirstStringsDifference(GuideStrings parsed, GuideStrings cached)
     {
         if (cached == null) return "no cache";
-        var a = parsed.Ids.ToArray();
-        var b = cached.Ids.ToArray();
-        if (a.Length != b.Length) return $"{a.Length} texts parsed, {b.Length} cached";
-        for (int i = 0; i < a.Length; i++)
+        var a = new SortedSet<uint>(parsed.TextMap.Keys);
+        a.UnionWith(parsed.VoiceMap.Keys);
+        var b = new SortedSet<uint>(cached.TextMap.Keys);
+        b.UnionWith(cached.VoiceMap.Keys);
+        if (!a.SetEquals(b)) return $"{a.Count} ids parsed, {b.Count} cached";
+        foreach (var id in a)
         {
-            if (a[i] != b[i]) return $"text {i}: id {a[i]} parsed, id {b[i]} cached";
-            if (parsed.Text(a[i]) != cached.Text(a[i])) return $"text {a[i]} differs";
-            if (parsed.Voice(a[i]) != cached.Voice(a[i])) return $"the voice of text {a[i]} differs";
+            if (parsed.Text(id) != cached.Text(id)) return $"text {id} differs";
+            if (parsed.Voice(id) != cached.Voice(id)) return $"the voice of text {id} differs";
         }
         return null;
     }

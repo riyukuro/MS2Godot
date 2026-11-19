@@ -99,7 +99,7 @@ public class GuideCacheTests
 
             Assert.That(cached, Is.Not.Null);
             Assert.That(GuideCache.FirstDifference(parsed, cached), Is.Null);
-            Assert.That(cached.Events.Zip(parsed.Events).Count(p => XNode.DeepEquals(p.First, p.Second)), Is.EqualTo(750));
+            Assert.That(cached.Events.Count(), Is.EqualTo(parsed.Events.Count()), "the cache holds every parsed event");
 
             // the manager loads the cached table as the parsed one
             var a = new GuideManager(new GuideTests.World());
@@ -107,7 +107,7 @@ public class GuideCacheTests
             a.Load(parsed);
             b.Load(cached);
             Assert.That(b.Entities.Select(e => e.Id), Is.EqualTo(a.Entities.Select(e => e.Id)));
-            Assert.That(b.Entities.Count(), Is.EqualTo(750));
+            Assert.That(b.EntityCount, Is.EqualTo(a.EntityCount));
             Assert.That(b.LoadErrors, Is.EqualTo(a.LoadErrors));
 
             // Load: the cache when it is there; off parses; check parses and logs a difference

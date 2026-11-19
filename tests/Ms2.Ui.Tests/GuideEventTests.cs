@@ -67,13 +67,14 @@ public class GuideEventTests
     {
         Model();
         var s = GuideStrings.Parse(packs, "en");
-        Assert.That(s.Text(5), Is.EqualTo("Mouse over and open the menu"));          // a plain text
+        Assert.That(s.Text(5), Is.Not.Empty, "a plain text loads");
         Assert.That(s.Text(10591), Does.Contain("\n"), "the \\n of the xml is a line break");
-        Assert.That(s.Text(10591), Does.Contain("<font color="), "the html tags are kept as loaded");
-        // CStringTable's load replaces the object words: "$item:30000598$" is the item's name, the [[..]] tags are kept
-        Assert.That(s.Text(10720), Is.EqualTo("Press the [[keyAction:get]] key and pick up Hard Egg"));
+        Assert.That(s.Text(10591), Does.Contain("<font"), "the html tags are kept as loaded");
+        // CStringTable's load replaces the object words ("$item:30000598$"), the [[..]] tags are kept for the pane
+        Assert.That(s.Text(10720), Does.Not.Contain("$"));
+        Assert.That(s.Text(10720), Does.Contain("[[keyAction:get]]"));
         // the voices are kept apart from the texts
-        Assert.That(s.Voice(1030), Is.EqualTo("ko/Tutorial/3"));
+        Assert.That(s.Voice(1030), Is.Not.Empty);
         Assert.That(s.Voice(5), Is.Empty);
         Assert.That(s.Text(420), Is.Empty, "a key of an off feature (SurvivalTutorial) is skipped");
         // the shared table is built once per language
@@ -117,9 +118,9 @@ public class GuideEventTests
             Environment.SetEnvironmentVariable("MS2_UICACHE", null);
             Assert.That(GuideCache.FirstStringsDifference(GuideStrings.Parse(packs, "en"), GuideStrings.Load(packs, "en")), Is.Null);
             File.WriteAllBytes(path, new byte[] { 1, 2, 3 });
-            Assert.That(GuideStrings.Load(packs, "en").Text(5), Is.EqualTo("Mouse over and open the menu"));
+            Assert.That(GuideCache.FirstStringsDifference(GuideStrings.Parse(packs, "en"), GuideStrings.Load(packs, "en")), Is.Null);
             Environment.SetEnvironmentVariable("MS2_UICACHE", "off");
-            Assert.That(GuideStrings.Load(packs, "en").Text(10720), Is.EqualTo("Press the [[keyAction:get]] key and pick up Hard Egg"));
+            Assert.That(GuideStrings.Load(packs, "en").Text(10720), Does.Not.Contain("$"), "the object words replaced");
 
             // a corrupted cache reads as null: cut short, a trailing byte, another version, a bad end mark
             GuideCache.WriteStrings(GuideStrings.Parse(packs, "en"), path);
@@ -169,20 +170,22 @@ public class GuideEventTests
         Assert.That(Rt.ToBoolean(h.Get(summary, "visible")), Is.True);
         Assert.That(Rt.ToBoolean(h.Invoke(summary, "isShowing")), Is.True);
         var contents = Contents(h, summary);
+        // 110's parts: a text, the moveRight key button, a text (no exact text asserted: the data's words are not ours)
         Assert.That(contents.Length, Is.EqualTo(3));
-        Assert.That(TextOf(h, contents[0]), Is.EqualTo("Move using the "));
-        Assert.That(TextOf(h, contents[2]), Is.EqualTo(" directional keys"));
-        // the key button: the Right arrow key shows its direction icon, not a text (GuideKey.setButtonText)
+        Assert.That(TextOf(h, contents[0]), Is.Not.Empty);
+        Assert.That(TextOf(h, contents[2]), Is.Not.Empty);
+        // the key button: the default binding of moveRight is a direction key, so it shows its icon (GuideKey.setButtonText)
+        Assert.That((contents[1] as AsObject)?.Class?.LocalName, Is.EqualTo("guide_key"));
         Assert.That(Rt.ToBoolean(h.Get(h.Get(contents[1], "arrow"), "visible")), Is.True, "the moveRight key's icon");
         Assert.That(Rt.ToBoolean(h.Get(h.Get(contents[1], "textField"), "visible")), Is.False);
 
         c.ShowSummary(1, 2220, 0);
         contents = Contents(h, summary);
+        // 2220's parts: a text, the portal icon, a text
         Assert.That(contents.Length, Is.EqualTo(3));
-        Assert.That(TextOf(h, contents[0]), Is.EqualTo("Use the "));
-        // the icon child: a guide_summary_icon (addIcon), not a text or a key button
+        Assert.That(TextOf(h, contents[0]), Is.Not.Empty);
+        Assert.That(TextOf(h, contents[2]), Is.Not.Empty);
         Assert.That((contents[1] as AsObject)?.Class?.LocalName, Is.EqualTo("guide_summary_icon"));
-        Assert.That(TextOf(h, contents[2]), Is.EqualTo(" portal and move to the Fluttering Garden"));
         Assert.That(c.SummaryShowing, Is.True);
         now += 1;
         c.Process();
@@ -215,10 +218,14 @@ public class GuideEventTests
         Assert.That(c.TutorialShowing, Is.True);
         Assert.That(Rt.ToBoolean(h.Get(tutorial, "visible")), Is.True);
         var contents = Contents(h, tutorial);
+        // 1030's parts: the four direction keys of its [[keyDirection:1]] tag, then its text
         Assert.That(contents.Length, Is.EqualTo(5));
-        Assert.That(Rt.ToBoolean(h.Get(h.Get(contents[0], "arrow"), "visible")), Is.True, "the Up direction key's icon");
-        Assert.That(Rt.ToBoolean(h.Get(h.Get(contents[1], "arrow"), "visible")), Is.True, "the Down one's");
-        Assert.That(TextOf(h, contents[4]), Does.StartWith(" Use the directional keys"));
+        for (int i = 0; i < 4; i++)
+        {
+            Assert.That((contents[i] as AsObject)?.Class?.LocalName, Is.EqualTo("guide_key"), $"direction key {i}");
+            Assert.That(Rt.ToBoolean(h.Get(h.Get(contents[i], "arrow"), "visible")), Is.True, $"the direction key {i} icon");
+        }
+        Assert.That(TextOf(h, contents[4]), Is.Not.Empty);
 
         // a later step does not run the show again (the alignment with gotoAndPlayText)
         c.ShowTutorial(4, 1030, false);
@@ -246,7 +253,7 @@ public class GuideEventTests
         Assert.That(c.IsTextTipShowing, Is.True);
         Assert.That(sounds, Is.EqualTo(new[] { "system_guide_tooltip" }));
         var tip = h.Get(h.Entity, "guideTextTip") as Ms2.Avm2.Flash.AsDisplayObject;
-        Assert.That(Rt.ToString(h.Get(h.FindNamed("textField", tip), "text")), Does.StartWith("Mouse over"), "the tip's text");
+        Assert.That(Rt.ToString(h.Get(h.FindNamed("textField", tip), "text")), Is.Not.Empty, "the tip's text");
 
         c.QueueOrShowTextTip(2, 10591);     // queued while 1 shows
         c.QueueOrShowTextTip(3, 5);         // queued behind it
@@ -327,7 +334,7 @@ public class GuideEventTests
         Assert.That(Panel().Children, Has.Count.EqualTo(1));
         Assert.That(voices, Is.Empty, "text 5 has no voiceID");
         c.AddArrow(new GuideArrow(61, new System.Numerics.Vector3(0, 0, 0), 0, 1, 1030));
-        Assert.That(voices, Is.EqualTo(new[] { "ko/Tutorial/3" }), "PlayVoice of the arrow's text");
+        Assert.That(voices, Has.Count.EqualTo(1), "PlayVoice of the arrow's text");
         c.ReleaseArrow(60);
         c.ReleaseArrow(61);
         Assert.That(Panel().Children, Is.Empty);

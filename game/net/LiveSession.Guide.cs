@@ -9,11 +9,12 @@ namespace Ms2Godot.Net;
 /// <summary>
 /// The live session's guide (CGuideManager, FUN_1409331e0): made with the field entry, its occurrences and triggers raised
 /// from the packets as the client's packet handlers raise them, its update run each frame (the client's game loop runs
-/// Tick from CSceneStateGame's update), and its saved steps sent when the session ends.
+/// Tick from CSceneStateGame's update), and its saved steps sent when they changed (MyPC::SendFunctionCube, the quit and
+/// portal-move sends; a fire-and-forget, like the client's).
 /// <para>
-/// STILL-OPEN: the client also sends the steps (MyPC::SendFunctionCube, mypc.cpp:2835) before a portal move request
-/// (MyPC FUN_141529ae0) and in SendRequestQuit; neither request is sent live yet, so the steps go out only at the session's
-/// end, the analogue of the exit box's SendRequestQuitAndDisconnect.
+/// STILL-OPEN: the client also sends the steps before a portal move request (MyPC FUN_141529ae0, mypc.cpp:3075); that
+/// request is not sent live yet, so the steps go out only at the session's end, the analogue of the exit box's
+/// SendRequestQuitAndDisconnect.
 /// </para>
 /// </summary>
 public partial class LiveSession
@@ -43,18 +44,19 @@ public partial class LiveSession
     void StopGuide()
     {
         if (guide == null) return;
-        SendGuideStates(wait: true);
+        SendGuideStates();
         if (GuideManager.Current == guide) GuideManager.Current = null;
         guide = null;
     }
 
-    /// <summary>MyPC::SendFunctionCube's guide part: the saved steps when they changed since the last send.</summary>
-    void SendGuideStates(bool wait = false)
+    /// <summary>MyPC::SendFunctionCube's guide part (mypc.cpp:2835): the saved steps when they changed since the last
+    /// send. The client sends them before a portal move request (MyPC FUN_141529ae0, mypc.cpp:3075) and in
+    /// SendRequestQuit / SendRequestQuitAndDisconnect (networkservice.cpp:503 / :509), always as a fire-and-forget send
+    /// (FUN_140710590), never a wait; the teardown's is the quit analogue.</summary>
+    void SendGuideStates()
     {
         if (guide == null || !guide.StateChanged || game == null) return;
-        var pk = guide.SendStates();
-        if (wait) { try { game.SendAsync(pk).Wait(1000); } catch (Exception e) { GD.PushWarning($"live: guide steps not sent ({e.Message})"); } }
-        else Send(pk);
+        Send(guide.SendStates());
     }
 
     /// <summary>The guide's occurrences and triggers of one packet the session read (the client's handlers raise them).</summary>

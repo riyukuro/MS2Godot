@@ -383,18 +383,21 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>
-    /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), as far as this HUD has its parts: tooltips, the cutscene
-    /// movie and fishing are not in it (the guide's text tip is), a focused text field keeps Esc (the chat input takes it
-    /// in _Input), and an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
+    /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), in its order as far as this HUD has its parts: the
+    /// shown tooltips close first (GFxManager::CloseTooltips), the cut-scene movie and fishing are not in it, then the
+    /// guide's text tip takes Esc (SkipTextTip); a focused text field keeps Esc (the chat input takes it in _Input), and
+    /// an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
     /// on and is otherwise left; with none it toggles the system menu: ToggleDialog(0x4e21) = FUN_1419246f0, open when
-    /// vfunc_55 (closed and unloaded), else vfunc_67 (close).
+    /// vfunc_55 (closed and unloaded), else vfunc_67 (close). STILL-OPEN: the cut-scene movie (0x4e7e,
+    /// UICutSceneMovie::FUN_1419102c0) between the tooltips and the guide's tip.
     /// </summary>
     public void Escape()
     {
         if (assets == null) return;
         if (optionDialog != null && optionDialog.OnKey(true)) return;      // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
-        if (GuideEvent?.SkipTextTip() == true) return;    // the guide's text tip takes Esc (FUN_1418fcb70, uichatballoon.cpp:531)
+        if (TooltipLayer.Instance?.Controller?.DestroyTooltips() == true) return;      // CloseTooltips, the first step
+        if (GuideEvent?.SkipTextTip() == true) return;    // the guide's text tip (FUN_1418fcb70, uichatballoon.cpp:531)
         if (AnyClosableDialogOpen())
         {
             if (GameOptions.Current.InterfaceOption.EnableCloseAllDlg) CloseAllDialogs();
