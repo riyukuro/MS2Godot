@@ -63,9 +63,8 @@ public class ShadowCasterTests
 
     static ModelData Map(string path)
     {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
-        return ModelData.Load(NifFile.Load(new NifSpec(nx), new Ms2.Formats.Pack.PackSet(data).Read("Resource/Model/Map", path)));
+        var (packs, spec) = NifEnv.Open();
+        return ModelData.Load(NifFile.Load(spec, packs.Read("Resource/Model/Map", path)));
     }
 
     /// <summary>ModelMesh.NoShadow: the generator's opaque core sits under a "NoShadow" UserPropBuffer, its body does not.

@@ -10,11 +10,17 @@ static class NifEnv
     public static (PackSet, NifSpec) Open()
     {
         var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA is not set");
+        return (new PackSet(data), new NifSpec(NifXml()));
+    }
+
+    /// <summary>The path of nif.xml: MS2_NIFXML, or else external/nifxml/nif.xml.</summary>
+    public static string NifXml()
+    {
         var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
         if (string.IsNullOrEmpty(nx)) nx = SubmoduleNifXml();
-        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA is not set");
         if (string.IsNullOrEmpty(nx) || !File.Exists(nx)) Assert.Ignore("MS2_NIFXML is not set and external/nifxml is not checked out");
-        return (new PackSet(data), new NifSpec(nx));
+        return nx;
     }
 
     /// <summary>external/nifxml/nif.xml of the repo holding the test assembly, or null.</summary>

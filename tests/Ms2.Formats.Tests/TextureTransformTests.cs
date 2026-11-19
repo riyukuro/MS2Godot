@@ -13,9 +13,8 @@ public class TextureTransformTests
 
     static EffectScene Load(string entry)
     {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
-        return EffectScene.Load(NifFile.Load(new NifSpec(nx), new PackSet(data).Read(Archive, entry)));
+        var (packs, spec) = NifEnv.Open();
+        return EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, entry)));
     }
 
     static void Rows(TexTransform t, params float[] want) => Assert.That(t.Rows(), Is.EqualTo(want).Within(1e-5f));

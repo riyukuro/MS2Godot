@@ -13,9 +13,8 @@ public class RenderStateTests
 
     static EffectScene Load(string entry)
     {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
-        return EffectScene.Load(NifFile.Load(new NifSpec(nx), new PackSet(data).Read(Archive, entry)));
+        var (packs, spec) = NifEnv.Open();
+        return EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, entry)));
     }
 
     /// <summary>A mesh without properties of its own takes the defaults: z test and write with TEST_LESSEQUAL (15), DRAW_CCW_OR_BOTH.</summary>

@@ -12,8 +12,7 @@ public class NifSpecConcurrencyTests
     [Test]
     public void FieldListsFilledConcurrentlyMatchASerialFill()
     {
-        var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_NIFXML not set");
+        var nx = NifEnv.NifXml();
         var root = System.Xml.Linq.XDocument.Load(nx).Root!;
         var names = root.Elements().Where(e => e.Name.LocalName is "struct" or "niobject")
             .Select(e => (string)e.Attribute("name")).Where(n => n != null).Distinct().ToArray();
