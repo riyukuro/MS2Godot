@@ -1,5 +1,7 @@
 using Godot;
 using Ms2.Formats.Model;
+using Ms2.Formats.Nif;
+using Ms2.Formats.Pack;
 
 namespace Ms2Godot.Movement;
 
@@ -13,6 +15,9 @@ namespace Ms2Godot.Movement;
 ///   click X Y Z               click to move to a point (needs --mouse-move)
 ///   ropes N                   print the N rope segments nearest the player
 ///   walls R                   print cube walls within R whose face the snap ray (+X / +Y) reaches from the floor in front
+///   fx NIF DX DY DZ [YAW]     play an effect nif from Resource/Model/Effect (e.g. ch/common/eff_levelup.nif) at the player + (DX, DY, DZ) MS2 units,
+///                             yaw degrees, seed 1, for its own duration (regression shots of the effect runtime)
+///   fxclear                   remove the effects the fx steps started
 /// Each state change is printed with the position. Lines starting with # are comments.
 /// </summary>
 public partial class MoveProof : Node
@@ -24,6 +29,10 @@ public partial class MoveProof : Node
     int settle = -1;
     Player.MoveState lastState;
     int frame;
+    readonly List<Node3D> effects = new();
+
+    /// <summary>The field's packs and model builder, for the fx step.</summary>
+    public static (PackSet packs, ModelBuilder builder) Effects;
 
     public MoveProof(Player player, string dir, IEnumerable<string> lines)
     {
@@ -196,6 +205,26 @@ hold 0.8
                 break;
             case "walls":
                 PrintWalls(F(s[1]));
+                Next();
+                break;
+            case "fx":
+            {
+                var (packs, mb) = Effects;
+                Next();
+                EffectScene scene;
+                try { scene = EffectScene.Load(NifFile.Load(mb.Spec, packs.Read("Resource/Model/Effect", s[1].ToLowerInvariant()))); }
+                catch (Exception ex) { GD.PushWarning($"move script fx {s[1]}: {ex.Message}"); break; }
+                var at = player.GlobalPosition + FieldBuilder.ToGodotPoint(new Vec3(F(s[2]), F(s[3]), F(s[4])));
+                float yaw = s.Length > 5 ? Mathf.DegToRad(F(s[5])) : 0;
+                var fx = new Ms2Godot.Net.EffectInstance(scene, mb, 0, 1) { Name = "MoveProofFx", Position = at, Rotation = new Vector3(0, yaw, 0) };
+                player.GetParent().AddChild(fx);
+                effects.Add(fx);
+                GD.Print($"[move] fx {s[1]}: {scene.Meshes.Count} meshes, {scene.Systems.Count} particle systems, {scene.Duration:0.00} s");
+                break;
+            }
+            case "fxclear":
+                foreach (var e in effects) if (IsInstanceValid(e)) e.QueueFree();
+                effects.Clear();
                 Next();
                 break;
             default:
