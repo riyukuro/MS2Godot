@@ -25,4 +25,43 @@
     <ProjectReference Include="../src/Ms2.Ui/Ms2.Ui.csproj" />
     <ProjectReference Include="../src/Ms2.UiGen/Ms2.UiGen.csproj" />
   </ItemGroup>
+  <!--
+    The libraries' machine code ahead of time (ReadyToRun), so a first call does not wait for the JIT: Godot loads the
+    assemblies from memory, where the runtime ignores precompiled code, so scripts/Precompiled.cs loads these images from
+    their files first. A build writes them to r2r/ next to the assemblies (each under a temporary name, then renamed: a
+    running game keeps the file it mapped); an exported build precompiles its assemblies in place (PublishReadyToRun).
+    The compiler is copied to crossgen2/ too, for the setup step to compile the per-install UI code.
+  -->
+  <PropertyGroup>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <Crossgen2Os Condition="$([MSBuild]::IsOSPlatform('Windows'))">windows</Crossgen2Os>
+    <Crossgen2Os Condition="$([MSBuild]::IsOSPlatform('OSX'))">osx</Crossgen2Os>
+    <Crossgen2Os Condition="'$(Crossgen2Os)' == ''">linux</Crossgen2Os>
+    <Crossgen2Arch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant())</Crossgen2Arch>
+    <!-- the package's portable id (a distribution's SDK can name its own, such as arch-x64) -->
+    <Crossgen2Rid>$(Crossgen2Os.Replace('windows', 'win'))-$(Crossgen2Arch)</Crossgen2Rid>
+    <Crossgen2Dir>$(NuGetPackageRoot)microsoft.netcore.app.crossgen2.$(Crossgen2Rid)/$(BundledNETCoreAppPackageVersion)/tools/</Crossgen2Dir>
+    <Crossgen2Exe>$(Crossgen2Dir)crossgen2</Crossgen2Exe>
+    <Crossgen2Exe Condition="$([MSBuild]::IsOSPlatform('Windows'))">$(Crossgen2Dir)crossgen2.exe</Crossgen2Exe>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageDownload Include="Microsoft.NETCore.App.Crossgen2.$(Crossgen2Rid)" Version="[$(BundledNETCoreAppPackageVersion)]" />
+  </ItemGroup>
+  <Target Name="PrecompileLibraries" AfterTargets="Build" DependsOnTargets="_PrecompileInputs" 
+          Inputs="@(_Precompile)" Outputs="@(_Precompile->'$(OutDir)r2r/%(Filename).dll')">
+    <MakeDir Directories="$(OutDir)r2r" />
+    <Exec Command="&quot;$(Crossgen2Exe)&quot; &quot;%(_Precompile.Identity)&quot; -o &quot;$(OutDir)r2r/%(_Precompile.Filename).dll.tmp&quot; -O --targetos:$(Crossgen2Os) --targetarch:$(Crossgen2Arch) -r &quot;$(NetCoreTargetingPackRoot)/../shared/Microsoft.NETCore.App/$(BundledNETCoreAppPackageVersion)/*.dll&quot; -r &quot;$(OutDir)*.dll&quot;"
+          StandardOutputImportance="low" />
+    <Move SourceFiles="$(OutDir)r2r/%(_Precompile.Filename).dll.tmp" DestinationFiles="$(OutDir)r2r/%(_Precompile.Filename).dll" />
+  </Target>
+  <Target Name="_PrecompileInputs">
+    <ItemGroup>
+      <_Precompile Include="$(OutDir)*.dll" Exclude="$(OutDir)$(AssemblyName).dll;$(OutDir)Godot*.dll" />
+      <_Crossgen2Files Include="$(Crossgen2Dir)*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_Crossgen2Files)" DestinationFolder="$(OutDir)crossgen2" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishCrossgen2" AfterTargets="Publish" DependsOnTargets="_PrecompileInputs">
+    <Copy SourceFiles="@(_Crossgen2Files)" DestinationFolder="$(PublishDir)crossgen2" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

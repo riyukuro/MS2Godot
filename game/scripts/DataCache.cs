@@ -24,12 +24,9 @@ public static class DataCache
     static CacheStore store;
 
     // The caches are in place before the first archive opens (the Xml index is read before any UI asset exists), whichever
-    // scene the game starts in. Only the hooks are set here; nothing is read or hashed until a pack set asks.
-    // (CA2255 is for libraries; this assembly is the game Godot loads.)
-#pragma warning disable CA2255
-    [System.Runtime.CompilerServices.ModuleInitializer]
+    // scene the game starts in (called by the module initializer, <see cref="Precompiled"/>, after the libraries' precompiled
+    // images are loaded). Only the hooks are set here; nothing is read or hashed until a pack set asks.
     internal static void Init() => UiCode.UseCaches();
-#pragma warning restore CA2255
 
     /// <summary>Points the tables the libraries read once per pack set (<see cref="CacheStore.Of"/>) at this install's store.</summary>
     public static void Use()

@@ -71,23 +71,11 @@ public static class UiCode
         if (Ms2Godot.Ui.PerfLog.On && !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_INTERP"))) return false;
         var dll = DllPath(dataDir);
         if (!System.IO.File.Exists(dll)) return false;
-        int n = GeneratedCode.LoadAssembly(dll);
-        GD.Print($"UI code: {n} blocks from {dll}");
+        // its precompiled image when the setup step made it (Precompiled.Compile): the same assembly, without the JIT
+        var image = Precompiled.ImageOf(dll);
+        int n = GeneratedCode.LoadAssembly(image ?? dll);
+        GD.Print($"UI code: {n} blocks from {image ?? dll}; libraries: {Precompiled.Summary}");
         return loaded = true;
-    }
-
-    /// <summary>
-    /// Where the game's own assemblies are on disk (Godot loads them from memory, so they report no location): the editor
-    /// build output, then the folders next to the executable (an exported build's data_* folder).
-    /// </summary>
-    static System.Collections.Generic.IEnumerable<string> AssemblyDirs()
-    {
-        foreach (var c in new[] { "Debug", "ExportDebug", "ExportRelease", "Release" })
-            yield return ProjectSettings.GlobalizePath("res://.godot/mono/temp/bin/" + c);
-        yield return System.AppContext.BaseDirectory;
-        var exe = System.IO.Path.GetDirectoryName(OS.GetExecutablePath());
-        if (System.IO.Directory.Exists(exe))
-            foreach (var d in System.IO.Directory.GetDirectories(exe, "data_*")) yield return d;
     }
 
     /// <summary>Builds the assembly (a worker thread), then removes the per-install files no client on file is for.</summary>
@@ -96,7 +84,7 @@ public static class UiCode
         // the build reads every movie of Gfx.m2d: its bytes are hashed again first, so the folder is the one of the file as it is
         Stamps.Hash(System.IO.Path.Combine(dataDir, "Resource", "Gfx.m2d"), reread: true);
         var dll = DllPath(dataDir);
-        var r = UiGenerator.Build(dataDir, dll, null, progress, AssemblyDirs());
+        var r = UiGenerator.Build(dataDir, dll, null, progress, Precompiled.AssemblyDirs());
         if (r.Ok) Prune();
         return r;
     }

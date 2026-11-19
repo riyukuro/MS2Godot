@@ -165,6 +165,13 @@ public partial class SetupScreen : Control
         {
             void progress(string phase, double f) { uiPhase = phase; uiFrac = f; }
             var r = UiCode.Built(data) ? null : UiCode.Build(data, progress);
+            // its machine code, compiled ahead of time for this machine, so no dialog's first open waits for the JIT
+            if (UiCode.Built(data))
+            {
+                uiPhase = "Compiling the UI code for this machine";
+                double? s = Precompiled.Compile(UiCode.DllPath(data));
+                if (s >= 0) GD.Print($"UI code precompiled in {s:F1} s");
+            }
             // the client tables the UI reads, parsed once per install (after the code: a new code key starts a new folder)
             uiPhase = "Building the UI tables";
             try
