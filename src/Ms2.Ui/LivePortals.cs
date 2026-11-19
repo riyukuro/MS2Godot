@@ -75,6 +75,9 @@ public sealed class LivePortal
     /// <summary>The portal has an entity to show through (a spawned one, or a bound xblock entity); without one the flag
     /// setters do nothing and PortalAction skips it.</summary>
     public bool HasEntity;
+    /// <summary>The entity's IsHomePrivilege prop (0xe725ea17, default False in the Portal flat models): a house portal that
+    /// needs the house privilege.</summary>
+    public bool HomePrivilege;
     /// <summary>The entity's own quest mask (FUN_14169b650, MaskQuestID / MaskQuestState), empty for a spawned portal.</summary>
     public QuestMaskTable.Mask OwnMask = new();
     public bool Shown, Glow, Minimap;
@@ -204,6 +207,7 @@ public sealed class LivePortals
                 p.Dimension = e.Vector("PortalDimension", new Vec3(200, 200, 250));
                 p.Offset = e.Vector("PortalOffset");
                 p.Glow = e.Bool("PortalEnable", true); p.Shown = e.Bool("IsVisible", true);
+                p.HomePrivilege = e.Bool("IsHomePrivilege", false);
                 p.OwnMask = QuestMaskTable.FromEntity(e.Get("MaskQuestID"), e.Get("MaskQuestState"));
             }
         }
@@ -366,10 +370,13 @@ public sealed class PortalAction
     }
 
     /// <summary>
-    /// PortalAction::vfunc_2 (the action key): the portal becomes the last used, then by its owner and type.
-    /// STILL-OPEN: the house privilege prop 0xe725ea17 (box 0x656) is not mapped to an xblock name, so no portal is a house
-    /// portal; an owned portal other than type 0xb needs the cube map (RequestMoveFromCube, or UsePortal when no cube is in
-    /// front) and sends nothing.
+    /// PortalAction::vfunc_2 (the action key, actionkeyobject.cpp:905): the portal becomes the last used; a house portal
+    /// (entity prop 0xe725ea17, IsHomePrivilege) without the house privilege shows box 0x656 and stops, before the owner and
+    /// type branches (actionkeyobject.cpp:918-925); then by its owner and type.
+    /// STILL-OPEN: the privilege itself (CHomePrivilege::FUN_14050d6f0, homeprivilege.cpp:63: the own house's map is this
+    /// field and its UGC group's privilegePortal list holds the portal) needs the house info and the UGC group table, neither
+    /// ported, so a house portal sends nothing; an owned portal other than type 0xb needs the cube map (RequestMoveFromCube,
+    /// or UsePortal when no cube is in front) and sends nothing.
     /// </summary>
     public void Use()
     {
@@ -377,6 +384,11 @@ public sealed class PortalAction
         var p = Current;
         if (p == null || !p.HasEntity) return;
         LastUsed = p.Id;
+        if (p.HomePrivilege)
+        {
+            host.StillOpen($"portal {p.Id}: house privilege (the own house's map and its UGC group's privilegePortal list); box 0x656 when denied");
+            return;
+        }
         if (p.Owner != 0)
         {
             if (p.Type == 0xb) { SendMode2(0, 0, 0, p.Owner, ""); return; }

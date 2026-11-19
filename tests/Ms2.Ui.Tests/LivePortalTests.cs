@@ -290,6 +290,24 @@ public class LivePortalTests
     }
 
     [Test]
+    public void HousePrivilegePortalSendsNothing()
+    {
+        var e = Xblock(7);
+        e.Raw.Props["IsHomePrivilege"] = "True";
+        var (host, action, portals) = Field(e, Xblock(8));
+        portals.Apply(Add(7));
+        Enter(action);
+        Assert.That(host.Sent, Is.Empty);
+        Assert.That(host.Open, Has.Count.EqualTo(1));
+        Assert.That(action.LastUsed, Is.EqualTo(7));
+        // without the prop the same portal moves
+        var (host2, action2, portals2) = Field(Xblock(7));
+        portals2.Apply(Add(7));
+        Enter(action2);
+        Assert.That(host2.Sent, Is.EqualTo(new IOutPacket[] { new RequestMoveFieldPortal(1000, 7) }));
+    }
+
+    [Test]
     public void OwnedPortalOfAnotherTypeSendsNothing()
     {
         var (host, action, portals) = Field(Xblock(7));
