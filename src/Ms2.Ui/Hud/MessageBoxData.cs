@@ -51,6 +51,9 @@ public sealed class MessageBoxData
     public readonly List<string> Args = new();
     /// <summary>m_30 (SetItemUid @0x141a01600): the item a tag handler finds again (FindItemByUid).</summary>
     public long ItemUid;
+    /// <summary>m_values: the extra members FillObj sets last (std::map&lt;CString, GFx::Value&gt;, ordinal key order);
+    /// FUN_140613810(name, text) adds a string (unit_1406125d0_itemlockmanager.cpp:311).</summary>
+    public readonly SortedDictionary<string, object> Values = new(StringComparer.Ordinal);
     /// <summary>m_spItem (SetItemEntry @0x141a01ee0, flag 1): the item FillObj binds as "MsgBoxData_&lt;id&gt;".</summary>
     public MessageBoxItem ItemEntry;
 
@@ -374,6 +377,8 @@ public sealed class MessageBoxData
         }
         if (Type is 0x1b or 0x1c or 0x1f) o["agreement"] = Agreement;
         if (rbMerat) o["rbmerat"] = true;
+        // uimessageboxdata.cpp:226-230: each extra value is set on the object (FUN_1409adbe0), in the map's key order
+        foreach (var kv in Values) o[kv.Key] = kv.Value;
         return o;
     }
 

@@ -193,6 +193,7 @@ public partial class HudScene
             popupLayer.AddChild(m);
         }
         popupMenu.Field = SlotFieldData();
+        popupMenu.TradeBook = Trades;                               // Trade (500): UIPopUpMenu::SendTradeRequest; live only
         popupMenu.Buddies = CommunityBook();                        // CBuddyManager: live, or the offline book
         popupMenu.OpenForPartySlot(x, y, characterId, hudModel.Player);
     }

@@ -29,7 +29,8 @@ public sealed class PopupMenuTarget
 /// Own Character, View Character (the other player's window, UIPCInfoDialog 0x4ec8), the furnishing rights grant
 /// (listed only in the own home, see InOwnHome) and the buddy and block items (FUN_141a83ed0 to the community query dialog
 /// 0x4e4e, <see cref="BuddyQuery"/>); the others raise <see cref="ItemClicked"/>.
-/// STILL-OPEN, by handler: 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); EditBuddyMemo's
+/// 500 Trade is SendTradeRequest (<see cref="TradeBook.RequestTrade"/>; its block list check is STILL-OPEN there).
+/// STILL-OPEN, by handler: EditBuddyMemo's
 /// community dialog branch (0x4e4d open on its memo tab; the party slots' m_d0 is 0, so it is not taken); 0x1f5 Report (CUserReportData to the client platform's
 /// vfunc_48); 0x1f6 group chat (FUN_141a86920 :3371 -> UIGroupMessengerBrowser FUN_141951f70, uigroupmessenger.cpp:1784: with no
 /// group chat CGroupChatManager::Create sends GroupChat u8 1 + name, with any a choice box (type 0x16, common 0x81a) of
@@ -101,6 +102,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public MessengerBrowser Messenger;
     /// <summary>FUN_140710590: a packet to the game server.</summary>
     public Action<IOutPacket> Send = _ => { };
+    /// <summary>The trade manager (CTradeManagerEx) the Trade item (500) asks through.</summary>
+    public TradeBook TradeBook;
     /// <summary>PlaySystemSound by its table/systemsound.xml key. STILL-OPEN: PC_InviteSuccess is byGender/byJob (a voice);
     /// the host's table resolves a key to its first soundID, not the own gender's and job's.</summary>
     public Action<string> PlaySound = _ => { };
@@ -391,6 +394,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
                 break;
             case ViewCharacter:                                         // SendCharacterInfo (:3135)
                 ViewOtherCharacter(charId);
+                break;
+            case Trade:                                                 // SendTradeRequest (:3261)
+                TradeBook?.RequestTrade(charId);
                 break;
             case Whisper:                                               // FUN_141a84da0 (:3127): the state's browser (+0x48)
                 Messenger?.Whisper(name);

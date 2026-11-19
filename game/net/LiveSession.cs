@@ -190,6 +190,18 @@ public partial class LiveSession : Node
     {
         if (game != null) Send(packet);
     }
+    /// <summary>CTradeManagerEx (trademanagerex_1.cpp): the trade with another player from the Trade packets (0x82,
+    /// OnTrade @0x14185bd20); live only. Its sends (Trade 0x49) go out while the game connection is up. The partner is
+    /// looked up in the field's users (WorldService::FUN_141bd1530): the name and the picture key.</summary>
+    public Ms2.Ui.TradeBook Trades => trades ??= new Ms2.Ui.TradeBook { Send = SendTrade, FindPlayer = TradePartner };
+    Ms2.Ui.TradeBook trades;
+    /// <summary>The trade sends (Trade 0x49).</summary>
+    public void SendTrade(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
+    Ms2.Ui.TradePartner TradePartner(long characterId) =>
+        FieldUsers().FirstOrDefault(u => u.CharacterId == characterId) is { } u ? new Ms2.Ui.TradePartner(u.Name ?? "", u.Picture ?? "") : null;
     /// <summary>The field's users for the friend dialog's nearby tab: the own one and the others the tracker holds
     /// (FieldAddUser); empty before the field is built.</summary>
     public IEnumerable<UserBlock> FieldUsers()
@@ -702,6 +714,12 @@ public partial class LiveSession : Node
                 if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
             }
+            else if (game.Is(p, Inbound.Trade))
+            {
+                var m = TradeMessage.Read(p.Reader());            // CTradeManagerEx::OnTrade (trademanagerex_1.cpp, @0x14185bd20)
+                if (m != null) Trades.OnTrade(m);
+                GD.Print($"live: trade code {m?.Code.ToString() ?? "?"}");
+            }
             else if (game.Is(p, Inbound.Buddy))
             {
                 var m = BuddyMessage.Read(p.Reader());            // CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy (buddymanager.cpp:95)
@@ -1077,6 +1095,54 @@ public partial class LiveSession : Node
                 if (!string.IsNullOrEmpty(chatShots))
                     flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(chatShots, $"chat_{n}.png"));
                 n++;
+            }
+        }
+        // MS2_LIVE_TRADE: "ask:<name>[:<mesos>]" waits for that player in the field, asks through the popup menu's Trade,
+        // adds the first bag item, locks with the mesos and confirms after both locks; "answer[:<mesos>]" accepts the request
+        // box, then locks and confirms the same way. Each waits for the dialog to close after the confirm.
+        string tradeRun = System.Environment.GetEnvironmentVariable("MS2_LIVE_TRADE");
+        if (!string.IsNullOrEmpty(tradeRun) && tree.CurrentScene is Ui.HudScene th)
+        {
+            var parts = tradeRun.Split(':');
+            bool ask = parts[0] == "ask";
+            string mesos = parts.Length > (ask ? 2 : 1) ? parts[ask ? 2 : 1] : "0";
+            await Frames(240);
+            if (ask)
+            {
+                string who = parts.Length > 1 ? parts[1] : "";
+                Ms2.Net.Packets.UserBlock partner = null;
+                await Until(() => (partner = Instance?.FieldUsers().FirstOrDefault(u => u.Name == who)) != null, 60 * 90);
+                GD.Print(partner != null ? $"live: trade: {who} is in the field ({partner.CharacterId})" : $"live: trade: {who} never came");
+                if (partner != null) th.TradeAsk(partner.CharacterId);
+            }
+            else
+            {
+                await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * 120);
+                GD.Print($"live: trade: request box {(MessageBoxLayer.Instance?.Shown == true ? "shown, accepting" : "never shown")}");
+                await Frames(60);
+                MessageBoxLayer.Instance?.Click(0);
+            }
+            await Until(() => th.TradeDialogShown, 60 * 30);
+            GD.Print($"live: trade: dialog {(th.TradeDialogShown ? "open with " + Instance?.Trades.PartnerName : "did not open")}");
+            if (th.TradeDialogShown)
+            {
+                await Frames(120);
+                if (ask)
+                {
+                    bool clicked = th.TradeRightClickFirstItem();
+                    await Frames(60);
+                    if (clicked && MessageBoxLayer.Instance?.Shown == true) { GD.Print("live: trade: count box, OK"); MessageBoxLayer.Instance.Click(0); }
+                    await Frames(120);
+                    GD.Print($"live: trade: first free table slot {Instance?.Trades.Items.FindFreeSlot()}");
+                }
+                else await Frames(240);   // the asker locks first
+                th.TradeCallback("OnLock", mesos);
+                await Until(() => th.TradeLocksHeard >= 2, 60 * 30);
+                GD.Print($"live: trade: locks heard {th.TradeLocksHeard}, mine {Instance?.Trades.Confirmed}");
+                await Frames(60);
+                th.TradeCallback("OnConfirm");
+                await Until(() => !th.TradeDialogShown, 60 * 30);
+                GD.Print($"live: trade: dialog {(th.TradeDialogShown ? "still open" : "closed")}");
             }
         }
         await Frames(60 * hold);

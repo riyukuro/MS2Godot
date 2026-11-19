@@ -417,7 +417,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
 
     /// <summary>
     /// InvenSlot::vfunc_14 (invenslot.cpp:904): none for an empty cell; the item's new flag cleared (SetNew(0), FUN_14199bc00);
-    /// then by FUN_14140d3e0 (<see cref="UseMode"/>): mode 6 puts it on, FUN_140a621c0(uid, 0, FUN_1414056b0) =
+    /// then by FUN_14140d3e0 (<see cref="UseMode"/>): mode 1 is <see cref="TryAddToTrade"/>, mode 6 puts it on, FUN_140a621c0(uid, 0, FUN_1414056b0) =
     /// RequestEquipItem(item, 0, layer, 0) (<see cref="RequestEquip"/>). FUN_1414056b0 (:601): 0 for a non-skin item; a skin
     /// item 1, or with feature 0x8e 2 unless action 0x4940d is held. The other modes (7 the quick slot, 12 the gem, 15 the
     /// UGC rename) are not ported and are raised.
@@ -428,7 +428,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         var item = ToItem(e, Model.Tables.Items);
         if (item == null) return;
         View.ClearNew(e.Uid);
-        if (UseMode(item) != 6) { Button?.Invoke("notifySlotUse"); return; }
+        int mode = UseMode(item, false);
+        if (mode == 1) { TryAddToTrade(item); return; }
+        if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
     }
@@ -601,6 +603,111 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// <summary>FUN_141275260(id, 1, 1) (unit_141274d10_uihelpers.cpp:267) and ShowSystemNotice of a common string: the
     /// notice, by its key.</summary>
     public event Action<string> SystemNotice;
+
+    // ---- trade (InvenSlot::TryAddToTrade, invenslot.cpp:1678) -------------------------------------------------------------
+
+    /// <summary>The trade dialog (0x4e83, Unk_InvGetDialogById&lt;UITradeDialogEx&gt;): its book while it is open, else null.</summary>
+    public Func<TradeBook> Trade = () => null;
+    /// <summary>The id of the dialog at the head of DAT_143af2258 (the open dialogs that take a right-clicked item), 0
+    /// with none. The host gives <see cref="TradeBook.DialogId"/> while the trade dialog is open.</summary>
+    public Func<int> DialogHead = () => 0;
+    /// <summary>FUN_140c8dab0(GetInstrumentManager()): the uid of the score being played, 0 with none.</summary>
+    public Func<long> PlayingScoreUid = () => 0;
+    /// <summary>PlayItemSoundByUid: the item's sound.</summary>
+    public event Action<Item> ItemSound;
+    /// <summary>ShowSystemNotice(text, 1, 1) of a resolved text (FUN_141275460 with its arguments).</summary>
+    public event Action<string> NoticeText;
+
+    long Now => View?.ServerTime() ?? 0;
+    ItemData GemData(int id) => Model.Tables.Items.Get(id);
+
+    /// <summary>FUN_140633e40 (CanTradeItem) over this inventory's server time and item table.</summary>
+    bool CanTradeItem(Item item, out int reason) => ItemTradeRules.CanTrade(item, GemData, Now, out reason);
+
+    /// <summary>The trade box's tag (ShowTradeCountInput @0x14140d200), answered by UIMessageBox::HandleArgTag.</summary>
+    public const string TradeInBox = "tradein";
+
+    /// <summary>
+    /// InvenSlot::TryAddToTrade (@0x14140b6d0), in the client's order: no item or no transfer, 0. CItemLockManager::CanUseItem
+    /// (unit_1406125d0_itemlockmanager.cpp:230): a locked item or gem shows the box 0x22 (for a gem with the member
+    /// confirmMsg = "$s_itemlock_msgbox_lock_gemstone_notice"), 0. CanTradeItem fails: the notice
+    /// s_trade_tradelimit_by_gemstone (reason 2) or GetStringCommon(0x83f), 0. A score being played: the notice
+    /// s_trade_tradelimit_playing_score, 0. With the trade dialog: no free slot shows a box of GetStringCommon(0x82f), 0;
+    /// else with Shift held (DIK 0x2a / 0x36) or an item that does not ask a count (CItem::FUN_140526850) the whole stack
+    /// is added (SendTradeMode8(uid, count, slot)) with the item's sound, else the count box. Then 1.
+    /// </summary>
+    public int TryAddToTrade(Item item)
+    {
+        if (item?.Record?.Transfer == null || Model == null) return 0;
+        long now = Now;
+        if (!ItemTradeRules.NotLocked(item, now, out int lockReason))
+        {
+            var box = MessageBoxQueue.Create(0x22, "", null, "");
+            if (lockReason == 2) box.Values["confirmMsg"] = "$s_itemlock_msgbox_lock_gemstone_notice";
+            ShowBox(box);
+            return 0;
+        }
+        if (!CanTradeItem(item, out int reason))
+        {
+            NoticeText?.Invoke(reason == 2 ? Model.Tables.Common("s_trade_tradelimit_by_gemstone") ?? "" : Model.Tables.Common(0x83f));
+            return 0;
+        }
+        if (item.Data.IsScoreItem && PlayingScoreUid() == item.Uid)
+        {
+            NoticeText?.Invoke(Model.Tables.Common("s_trade_tradelimit_playing_score") ?? "");
+            return 0;
+        }
+        if (Trade() is { } book)
+        {
+            int slot = book.Items.FindFreeSlot();
+            if (slot < 0)
+            {
+                ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0x82f), null, ""));
+                return 0;
+            }
+            if (!ItemTradeRules.AsksCount(item, now) || ShiftHeld())
+            {
+                book.SendAddItem(item.Uid, (int)item.Count, slot);
+                ItemSound?.Invoke(item);
+            }
+            else ShowTradeCountInput(item.Uid, (int)item.Count, (int)item.Data.SlotMax);
+        }
+        return 1;
+    }
+
+    /// <summary>ShowTradeCountInput (@0x14140d200): FUN_140d73e40(5, 0x842, 0, "tradein"), a count box of
+    /// GetStringCommon(0x842) with the item uid; the input (mode 1) starts at the count and takes as many digits as the
+    /// slot max has (FUN_1412773a0, unit_141274d10_uihelpers.cpp:967).</summary>
+    void ShowTradeCountInput(long uid, int count, int max)
+    {
+        var box = MessageBoxQueue.Create(5, Model.Tables.Common(0x842), null, TradeInBox);
+        box.ItemUid = uid;
+        box.SetInput(1, count.ToString(System.Globalization.CultureInfo.InvariantCulture), DigitCount(max), 0, 0);
+        ShowBox(box);
+    }
+
+    /// <summary>FUN_1412773a0: the length of _itoa(value, 10) (a minus sign counts).</summary>
+    public static int DigitCount(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture).Length;
+
+    /// <summary>
+    /// UIMessageBox::HandleTradeInButton (uimessagebox.cpp:2042)'s yes: FUN_141a002b0 (uid 0 passes; IsItemCountValid
+    /// :2390, a count of 0 or less or above the stack shows Unk_BreakMessage(0xee, 1, 1, 1, have)); then, with the trade
+    /// dialog open and a free slot (FUN_141b283f0), SendTradeMode8(uid, count, slot) and the item's sound.
+    /// </summary>
+    public void TradeIn(long uid, int count)
+    {
+        if (Model == null) return;
+        if (uid != 0 && FindItem(uid) is { } item && (count <= 0 || count > (int)item.Count))
+        {
+            NoticeText?.Invoke(Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0xee), 1, item.Count));
+            return;
+        }
+        if (Trade() is not { } book) return;
+        int slot = book.Items.FindFreeSlot();
+        if (slot < 0) return;
+        book.SendAddItem(uid, count, slot);
+        if (FindItem(uid) is { } sounded) ItemSound?.Invoke(sounded);
+    }
 
     /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
     public const string InvalidCodiSlotKey = "s_item_err_Invalid_slot_codi", InvalidSlotKey = "s_item_err_Invalid_slot";
@@ -811,13 +918,17 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
 
     /// <summary>
     /// FUN_14140d3e0 (invenslot.cpp:1957) with the hint flag. Its first branches follow the head of DAT_143af2258, the open
-    /// dialogs that register there (UIDialog m_164: the shop, trade, item break, item lock and the like); none of them is in
-    /// this port, so the list is empty and only the last part runs: 15 for a UGC item whose look state is 2
-    /// (CItem::FUN_140525fc0, CUgcItemLook::FUN_140893520), 6 an equipment item (CItemData::FUN_14053cbc0), 7 a quick slot
-    /// item (FUN_14053e460), 12 a gem, else 0.
+    /// dialogs that register there (UIDialog m_164: the shop, trade, item break, item lock and the like). Of them only the
+    /// trade dialog (0x4e83) is ported: mode 1 when the item can be traded (FUN_140633e40), else 0 for the hint and 1 for
+    /// the click (TryAddToTrade then says why). With no ported dialog at the head only the last part runs: 15 for a UGC
+    /// item whose look state is 2 (CItem::FUN_140525fc0, CUgcItemLook::FUN_140893520), 6 an equipment item
+    /// (CItemData::FUN_14053cbc0), 7 a quick slot item (FUN_14053e460), 12 a gem, else 0.
+    /// STILL-OPEN: the other dialogs of the list.
     /// </summary>
-    static int UseMode(Item item)
+    int UseMode(Item item, bool hint)
     {
+        if (DialogHead() == TradeBook.DialogId)
+            return CanTradeItem(item, out _) ? 1 : hint ? 0 : 1;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;
@@ -830,13 +941,15 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// InvenSlot::vfunc_22 (@0x14140b030): the use mode's right-click hint. Mode 6: with feature 0x8e and a skin item
     /// s_msg_rclick_puton_equip_to_coditab, then, when action 0x4940d has a key (CKeyTable::GetActionKeyName(0x4940d, 0)),
     /// a line s_msg_rclick_puton_equip_to_skintab_with_key with it; else s_msg_rclick_puton_equip (0x751). Mode 7:
-    /// s_msg_rclick_puton_qslot (0x75a). The other modes with a hint come only from the dialogs of DAT_143af2258; the rest "".
+    /// s_msg_rclick_puton_qslot (0x75a). Mode 1 (the trade dialog): GetStringCommon(0x74f). The other modes with a hint come only from the dialogs of DAT_143af2258; the rest "".
     /// </summary>
     string UseHint(Item item)
     {
         string Common(string key) => Model.Tables.Common(key) ?? "";
-        switch (UseMode(item))
+        switch (UseMode(item, true))
         {
+            case 1:
+                return Model.Tables.Common(0x74f);
             case 6:
                 if (Feature(0x8e) && item.Data.HasSkinType)
                 {

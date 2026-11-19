@@ -435,6 +435,9 @@ public class HudTests
         // an unported item still raises
         int raised = 0;
         c.ItemClicked += (_, _) => raised++;
+        c.ItemClick(PopupMenuController.Report);
+        Assert.That(raised, Is.EqualTo(1));
+        // Trade asks through the trade book (SendTradeRequest); with none set it sends nothing and does not raise
         c.ItemClick(PopupMenuController.Trade);
         Assert.That(raised, Is.EqualTo(1));
         // Whisper with no messenger browser: nothing, and it does not raise

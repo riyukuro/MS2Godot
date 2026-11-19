@@ -891,6 +891,9 @@ public sealed partial class ItemTooltip
         if (item != null) (rhs ?? this).SetEnablePreview(item);
     }
 
+    /// <summary>SetEnableUseDbClick (@0x1409c65f0, astooltip.cpp:116): "enableUseDbClick".</summary>
+    public void SetEnableUseDbClick(string text) => Data["enableUseDbClick"] = text;
+
     /// <summary>SetEnablePuton (@0x1409c69b0): nothing with flag 0x100; else "enablePuton".</summary>
     public void SetEnablePuton(string text)
     {

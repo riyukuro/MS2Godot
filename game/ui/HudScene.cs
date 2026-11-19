@@ -135,6 +135,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchAchieves = null;
         unwatchMails?.Invoke();
         unwatchMails = null;
+        unwatchTrades?.Invoke();
+        unwatchTrades = null;
         unwatchPcInfo?.Invoke();
         unwatchPcInfo = null;
         unwatchBuddies?.Invoke();
@@ -938,6 +940,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
         if (MailKeys(k)) return true;
+        if (TradeKeys(k)) return true;
         if (CommunityKeys(k)) return true;
         if (GuildKeys(k)) return true;
         return false;
@@ -1707,6 +1710,7 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += GameMenuToggle;
         WatchAchieves();
         WatchMails();
+        WatchTrades();
         c.MenuAction += def => { if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest(); };
         WatchBuddies();
         WatchGuild();
@@ -2023,12 +2027,18 @@ public partial class HudScene : Node, IUiStageHost
         Func<long, uint, uint, bool> equip = (uid, slot, mode) => inventory?.ConfirmBindEquip(uid, slot, mode) ?? false;
         Func<long, int, bool> gem = (uid, slot) => myInfo?.ConfirmBindGemEquip(uid, slot) ?? false;
         boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem;
+        // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
+        Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
+        Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
+        boxes.RequestTradeAnswer = tradeAnswer; boxes.TradeIn = tradeIn;
         boundBoxes = boxes;
         unbindBoxAnswers = () =>
         {
             if (boxes.UseBindFuncItem == use) boxes.UseBindFuncItem = null;
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
+            if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
+            if (boxes.TradeIn == tradeIn) boxes.TradeIn = null;
             boundBoxes = null;
         };
     }
@@ -2073,6 +2083,11 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
         c.SystemNotice += SystemNotice;
+        // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
+        c.Trade = () => TradeOpen ? trade.Book : null;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : 0;
+        c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
+        c.NoticeText += SystemNoticeText;
         BindBoxAnswers();
         var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
         c.Unloaded += () =>

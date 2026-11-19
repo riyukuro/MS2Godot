@@ -84,6 +84,45 @@ public static class NumberText
         return ClientFormat.Format("{0}", ParseDoubleW(digits.ToString()));                           // :288-289
     }
 
+    /// <summary>GetDigitGroupSize (commonfiles/localepath.cpp:406): 4 digits a group for languages 0, 1 and 3, else 3.</summary>
+    public static int DigitGroupSize(int lang) => lang is 0 or 1 or 3 ? 4 : 3;
+
+    /// <summary>
+    /// FUN_140b8f7a0 (unnamed/unit_140b8e760_clientdatetimehelpers.cpp:226): the digit text split from the right into the
+    /// language's digit groups (at least 4 groups; the last takes the rest), each grouped (FUN_1409404f0), the common string
+    /// "s_number_string_" + the mask of the non-zero groups as 4 binary digits formatted with the first three groups
+    /// (FUN_14028dfa0, <paramref name="common"/> by key). A text no longer than a group is <see cref="Group"/>.
+    /// </summary>
+    public static string NumberString(string number, Func<string, string> common, int lang = DefaultLanguage)
+    {
+        number ??= "";
+        int group = DigitGroupSize(lang);
+        if (number.Length - group <= 0) return Group(number, lang);
+        int count = Math.Max(4, number.Length / group);
+        var groups = new string[count];
+        string rest = number;
+        int mask = 0;
+        for (int i = 0; i < count; i++)
+        {
+            // CStringW::Right / Left clamp: Right(n) of a shorter text is the text, Left(n <= 0) is empty.
+            long value = ParseInt64W(i == count - 1 ? rest : rest.Length <= group ? rest : rest[^group..]);
+            if (value != 0) mask |= 1 << i;
+            groups[i] = Group(value.ToString(CultureInfo.InvariantCulture), lang);
+            rest = rest.Length - group <= 0 ? "" : rest[..(rest.Length - group)];
+        }
+        string key = "s_number_string_" + Convert.ToString(mask, 2).PadLeft(4, '0');   // StringFormat("{0:04b}")
+        return ClientFormat.Format(common(key) ?? "", groups[0], groups[1], groups[2]);
+    }
+
+    /// <summary>GetNumberText (unnamed/unit_141274d10_uihelpers.cpp:447): below 10000 grouped (FUN_1409404f0), else
+    /// <see cref="NumberString"/> of the "%I64d" text (FUN_141275790).</summary>
+    public static string GetNumberText(long n, Func<string, string> common, int lang = DefaultLanguage) =>
+        n < 10000 ? Group(n.ToString(CultureInfo.InvariantCulture), lang) : NumberString(n.ToString(CultureInfo.InvariantCulture), common, lang);
+
+    /// <summary>FUN_141275860 (uihelpers.cpp:456): "s_number_string_meso" formatted with <see cref="GetNumberText"/>.</summary>
+    public static string MesoNumberText(long n, Func<string, string> common, int lang = DefaultLanguage) =>
+        ClientFormat.Format(common("s_number_string_meso") ?? "", GetNumberText(n, common, lang));
+
     /// <summary>
     /// ParseInt64W (commonfiles/packetlogger.cpp:171) = _wtoi64: optional blanks, sign, digits up to the first other
     /// character; 64-bit wrap on overflow; 0 when no digits.
