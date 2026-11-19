@@ -56,7 +56,7 @@ public static class DataCache
             CacheStore s = null;
             try
             {
-                var hashes = Inputs(dataDir).Select(UiCode.Stamps.Hash).ToArray();
+                var hashes = Inputs(dataDir).Select(f => UiCode.Stamps.Hash(f)).ToArray();
                 var key = System.Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(string.Join("\n", hashes))));
                 var dir = System.IO.Path.Combine(UiCode.RootPath, "data-" + key[..16].ToLowerInvariant());
                 System.IO.Directory.CreateDirectory(dir);
@@ -71,6 +71,13 @@ public static class DataCache
             storeData = dataDir;
             return store = s;
         }
+    }
+
+    /// <summary>The archives' bytes hashed again (not by stamp) are the ones the folder <paramref name="dir"/> is named for.</summary>
+    static bool InputsMatch(string dataDir, string dir)
+    {
+        try { return InputsOf(dir) is { } had && Inputs(dataDir).Select(f => UiCode.Stamps.Hash(f, reread: true)).SequenceEqual(had); }
+        catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { return true; }
     }
 
     /// <summary>The archive hashes a data-KEY folder was made for, or null when it is not one.</summary>
@@ -110,7 +117,10 @@ public static class DataCache
     }
 
     /// <summary>The setup step (a worker thread): writes the files of the tables that are missing; the names of those built.</summary>
-    public static List<string> Build(PackSet packs, QuestConfig quests, System.Action<string, double> progress)
+    public static List<string> Build(PackSet packs, QuestConfig quests, System.Action<string, double> progress) =>
+        Build(packs, quests, progress, again: true);
+
+    static List<string> Build(PackSet packs, QuestConfig quests, System.Action<string, double> progress, bool again)
     {
         var built = new List<string>();
         var s = Store(packs.DataDir);
@@ -125,6 +135,17 @@ public static class DataCache
         progress?.Invoke(phase, 0.9);
         if (Ms2.Ui.GameTables.BuildCache(packs, quests.Language, s)) built.Add("gametables");
         progress?.Invoke(phase, 0.95);
+        // a table built: the archive was read, so its bytes are hashed again; a folder named for other bytes than the ones
+        // its files were built from (a file changed under its stamp) is removed and the tables are built in the folder of
+        // the file as it is, so no session reads tables of other bytes
+        if (built.Count > 0 && !InputsMatch(packs.DataDir, s.Dir))
+        {
+            GD.PushWarning("table cache: the client's tables changed under their stamp; building them again");
+            try { System.IO.Directory.Delete(s.Dir, true); } catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { }
+            lock (gate) { storeData = null; store = null; }
+            if (again) return Build(packs, quests, progress, again: false);
+            return built;
+        }
         // the archives' file lists (each keyed by its own index file): a session opens them from these, not the .m2h
         var archives = PackIndex.Archives(packs.DataDir).ToList();
         for (var i = 0; i < archives.Count; i++)

@@ -93,6 +93,8 @@ public static class UiCode
     /// <summary>Builds the assembly (a worker thread), then removes the per-install files no client on file is for.</summary>
     public static UiGenerator.Result Build(string dataDir, System.Action<string, double> progress)
     {
+        // the build reads every movie of Gfx.m2d: its bytes are hashed again first, so the folder is the one of the file as it is
+        Stamps.Hash(System.IO.Path.Combine(dataDir, "Resource", "Gfx.m2d"), reread: true);
         var dll = DllPath(dataDir);
         var r = UiGenerator.Build(dataDir, dll, null, progress, AssemblyDirs());
         if (r.Ok) Prune();

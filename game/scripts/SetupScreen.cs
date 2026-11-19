@@ -155,6 +155,10 @@ public partial class SetupScreen : Control
         box.AddChild(uiBar);
         Ms2.Formats.Pack.PackSet packs = null;
         DataCache.QuestConfig quests = null;
+        // the archives' index files (2 MB) decide the entry lists a session reads: hashed again at every setup, so a changed
+        // index never opens with an old list (the archives themselves are hashed again before a build reads them)
+        try { foreach (var a in Ms2.Formats.Pack.PackIndex.Archives(data)) UiCode.Stamps.Hash(System.IO.Path.Combine(data, a + ".m2h"), reread: true); }
+        catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { GD.PushWarning("table cache: " + e.Message); }
         try { packs = Ms2.Formats.Pack.PackSet.Shared(data); quests = DataCache.QuestConfig.Current(packs); }
         catch (System.Exception e) { GD.PushWarning("table cache: " + e.Message); }
         uiBuild = System.Threading.Tasks.Task.Run(() =>

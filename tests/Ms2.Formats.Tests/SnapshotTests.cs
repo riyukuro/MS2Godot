@@ -178,4 +178,60 @@ public class SnapshotTests
         }
         finally { Directory.Delete(dir, true); }
     }
+    static string Sha1(string s) => Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(System.Text.Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
+
+    [Test]
+    public void StampsSeeAFileWrittenWithItsSizeAndWriteTimeKept()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-stamps-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "a.m2d");
+            File.WriteAllText(f, "one");
+            var stamps = new Stamps(Path.Combine(dir, "stamps.tsv"));
+            Assert.That(stamps.Hash(f), Is.EqualTo(Sha1("one")));
+            var when = File.GetLastWriteTimeUtc(f);
+            System.Threading.Thread.Sleep(20);
+            // written in place, the write time put back: the change time moved
+            File.WriteAllText(f, "two");
+            File.SetLastWriteTimeUtc(f, when);
+            Assert.That(new FileInfo(f).Length, Is.EqualTo(3));
+            Assert.That(stamps.Hash(f), Is.EqualTo(Sha1("two")));
+            // replaced by another file of the same size and write time: a new inode
+            var other = Path.Combine(dir, "b.tmp");
+            File.WriteAllText(other, "six");
+            File.SetLastWriteTimeUtc(other, when);
+            File.Move(other, f, true);
+            Assert.That(stamps.Hash(f), Is.EqualTo(Sha1("six")));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public void StampsRereadHashesTheBytesWhateverTheLineSays()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-stamps-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "a.m2d");
+            File.WriteAllText(f, "one");
+            var tsv = Path.Combine(dir, "stamps.tsv");
+            var stamps = new Stamps(tsv);
+            stamps.Hash(f);
+            // a line whose stamp matches but whose hash is not the file's (a change no stamp sees)
+            var wrong = Sha1("other");
+            File.WriteAllLines(tsv, File.ReadAllLines(tsv).Select(l => l[..l.LastIndexOf('\t')] + "\t" + wrong));
+            Assert.That(stamps.Hash(f), Is.EqualTo(wrong), "a matching stamp is trusted");
+            Assert.That(stamps.Hash(f, reread: true), Is.EqualTo(Sha1("one")));
+            Assert.That(stamps.Hash(f), Is.EqualTo(Sha1("one")), "the reread hash is the line's from then on");
+            // an unchanged file reread leaves the file alone
+            var before = File.GetLastWriteTimeUtc(tsv);
+            System.Threading.Thread.Sleep(20);
+            stamps.Hash(f, reread: true);
+            Assert.That(File.GetLastWriteTimeUtc(tsv), Is.EqualTo(before));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
