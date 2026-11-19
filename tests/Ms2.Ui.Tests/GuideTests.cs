@@ -27,7 +27,7 @@ public class GuideTests
         public int LastClosedTip => 0;
     }
 
-    sealed class World : GuideWorld
+    internal sealed class World : GuideWorld
     {
         readonly Pane pane = new();
         public uint Time = 1000;

@@ -28,7 +28,32 @@ public sealed class GuideTable
     /// <summary>GetXmlPath("Table", name).</summary>
     public static string PathOf(string name) => "table/" + name;
 
+    /// <summary>The per-install <see cref="GuideCache"/> file of a data folder (the game sets it: user://uigen/KEY/...);
+    /// null = none, the tables are parsed.</summary>
+    public static Func<string, string> CacheOf = _ => null;
+    /// <summary>Where MS2_UICACHE=check reports a difference between the cache and the parse.</summary>
+    public static Action<string> Log = _ => { };
+
+    /// <summary>
+    /// The tables of <paramref name="packs"/>: from this install's cache when it is there and passes its checks, else parsed.
+    /// MS2_UICACHE=off always parses; MS2_UICACHE=check parses, reads the cache too and logs the first difference.
+    /// </summary>
     public static GuideTable Load(PackSet packs)
+    {
+        string mode = Environment.GetEnvironmentVariable("MS2_UICACHE");
+        string path = packs?.DataDir is { } dir ? CacheOf(dir) : null;
+        if (path == null || mode == "off") return Parse(packs);
+        if (mode == "check")
+        {
+            var parsed = Parse(packs);
+            if (GuideCache.FirstDifference(parsed, GuideCache.Read(path)) is { } diff) Log("guide cache: " + diff);
+            return parsed;
+        }
+        return GuideCache.Read(path) ?? Parse(packs);
+    }
+
+    /// <summary>The tables parsed from the XML (the cache's reference).</summary>
+    public static GuideTable Parse(PackSet packs)
     {
         var table = new GuideTable();
         if (packs != null) table.LoadFile(packs, PathOf(RootFile));
