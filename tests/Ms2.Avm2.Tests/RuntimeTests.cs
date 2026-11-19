@@ -534,6 +534,21 @@ public class RuntimeTests
     }
 
     [Test]
+    public void Scale9GridIsTheSymbolsGridUntilASetterReplacesIt()
+    {
+        // DisplayObject::scale9GridGet (sfr_as3_07.cpp:1617) reads the node's grid, which a symbol's DefineScale9Grid sets; it is
+        // null only without one (SliderEx.updateTooltip calls m_bg.scale9Grid.isEmpty() on a bg that has the grid)
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var s = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        Assert.That(s.scale9Grid, Is.Null);
+        s.Symbol = new JsonObject { ["scale9"] = new JsonObject { ["x"] = 4, ["y"] = 5, ["w"] = 30, ["h"] = 20 } };
+        Assert.That((s.scale9Grid.x, s.scale9Grid.y, s.scale9Grid.width, s.scale9Grid.height), Is.EqualTo((4.0, 5.0, 30.0, 20.0)));
+        s.scale9Grid = null;
+        Assert.That(s.scale9Grid, Is.Null, "a setter replaces the symbol's grid, null clears it");
+    }
+
+    [Test]
     public void DropTargetIsTheTopmostEntityUnderTheMouseOtherThanTheDraggedSprite()
     {
         // Sprite::dropTargetGet -> MovieImpl::GetTopMostEntity(mouse, 0, testAll true, ignore the dragged sprite)

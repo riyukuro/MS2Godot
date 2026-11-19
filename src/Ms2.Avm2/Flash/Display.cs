@@ -177,7 +177,14 @@ public class AsDisplayObject : AsEventDispatcher
         get => ScrollRect is { } r ? AsRectangle.New(RT, r) : null;
         set => ScrollRect = value == null ? null : value.R;
     }
-    [As] public AsRectangle scale9Grid { get; set; }
+    AsRectangle scale9Own; bool scale9Set;
+    /// <summary>DisplayObject::scale9GridGet (sfr_as3_07.cpp:1617): a new Rectangle of the node's grid, null without one. A
+    /// symbol's DefineScale9Grid is that grid from the start, until a setter replaces it (scale9GridSet, sfr_as3_07.cpp:1833).</summary>
+    [As] public AsRectangle scale9Grid
+    {
+        get => scale9Set ? scale9Own : Symbol?["scale9"] is JsonObject g ? AsRectangle.New(RT, SymbolScope.Rect(g)) : null;
+        set { scale9Own = value; scale9Set = true; }
+    }
     [As] public AsTransform transform
     {
         get { var t = (AsTransform)RT.GetClass("flash.geom.Transform").Construct(this); return t; }
