@@ -5,6 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>Ms2Godot</RootNamespace>
   </PropertyGroup>
+  <!-- The in-game debug endpoint (game/devtools, src/Ms2.Devtools) exists only where MS2_DEVTOOLS is defined: every
+       configuration except the release export. Its files are wrapped in #if MS2_DEVTOOLS, so a release assembly has none of it. -->
+  <PropertyGroup Condition="'$(Configuration)' != 'ExportRelease' And '$(Configuration)' != 'Release'">
+    <DefineConstants>$(DefineConstants);MS2_DEVTOOLS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(Configuration)' != 'ExportRelease' And '$(Configuration)' != 'Release'">
+    <Compile Include="../src/Ms2.Devtools/*.cs" LinkBase="devtools-lib" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../src/Ms2.Formats/Ms2.Formats.csproj" />
     <ProjectReference Include="../src/Ms2.Swf/Ms2.Swf.csproj" />

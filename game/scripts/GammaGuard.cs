@@ -20,6 +20,9 @@ public partial class GammaGuard : Node
 
     public override void _EnterTree()
     {
+#if MS2_DEVTOOLS
+        DevEndpoint.Bootstrap(this);   // starts only with env MS2_DEBUG=1
+#endif
         if (DisplayServer.GetName() == "headless") { SetProcess(false); return; }   // nothing drawn, no RenderingDevice
         GetTree().NodeAdded += OnNodeAdded;
     }
