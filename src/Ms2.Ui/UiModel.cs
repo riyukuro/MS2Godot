@@ -32,6 +32,8 @@ public sealed class PlayerState
     /// <summary>The job group (PC::GetJobGroupId, pc.cpp:1269: the job's jobGroupID in table/job.xml, 1 Beginner, 10 Knight
     /// ... 110).</summary>
     public int JobGroup;
+    /// <summary>PC::GetGender: 0 male, 1 female (the user block's gender).</summary>
+    public int Gender;
     public long HpCur, HpMax, SpCur, SpMax, EpCur, EpMax;
     /// <summary>The exp counter in this level (DAT_143ab28a0) and the rest exp bonus pool (DAT_143ab28a8).</summary>
     public long Exp, RestExp;

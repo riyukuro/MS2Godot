@@ -3,6 +3,7 @@ using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Ui.Shop;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -104,6 +105,46 @@ public class ShopTests
         Assert.That(Rt.ToString(h.Get(weapon, "salePriceText")), Does.Contain("export_common_icon_meso_h21"));
         Assert.That(Rt.ToString(h.Get(weapon, "label")), Does.StartWith("<FONT color='#"));
         Assert.That(Rt.ToString(h.Get(weapon, "bgFrame")), Is.EqualTo("normal"));
+    }
+
+    /// <summary>The product row's slot member for the serial (the list's data provider rows).</summary>
+    static object RowMember(UiHost h, ShopController c, int serial, string name)
+    {
+        var dp = h.Get(h.Get(c.ShopView, "m_list"), "dataProvider");
+        for (int i = 0; i < (int)Rt.ToNumber(h.Get(dp, "length")); i++)
+        {
+            var r = h.Get(dp, i.ToString());
+            if (Rt.ToNumber(h.Get(r, "serialID")) == serial) return h.Get(r, name);
+        }
+        Assert.Fail($"no row for serial {serial}");
+        return null;
+    }
+
+    [Test]
+    public void ProductsTheLocalPlayerCannotUseAreMarked()
+    {
+        Packs();
+        // GetItemUsableState: 11300001 has levelLimit 7, so a level 5 player sees it locked (error 1 -> itemLock)
+        var low = NewModel();
+        low.Player.Level = 5; low.Player.JobGroup = 10;
+        (low.ItemSlotSources ??= new()).UsableState = new ItemUse { Player = low.Player }.UsableState;
+        var (h, c) = Load(low);
+        Assert.That(Rt.ToNumber(RowMember(h, c, 1, "itemLock")), Is.EqualTo(1));
+        Assert.That(Rt.ToNumber(RowMember(h, c, 1, "disable")), Is.NaN);
+        // job 0 is never allowed (ItemLimit::IsJobAllowed): error 3 -> disable, the red X
+        var nojob = NewModel();
+        nojob.Player.Level = 21; nojob.Player.JobGroup = 0;
+        (nojob.ItemSlotSources ??= new()).UsableState = new ItemUse { Player = nojob.Player }.UsableState;
+        (h, c) = Load(nojob);
+        Assert.That(Rt.ToNumber(RowMember(h, c, 1, "disable")), Is.EqualTo(1));
+        Assert.That(Rt.ToNumber(RowMember(h, c, 1, "itemLock")), Is.NaN);
+        // a level 21 Knight can use it: neither member
+        var ok = NewModel();
+        ok.Player.Level = 21; ok.Player.JobGroup = 10;
+        (ok.ItemSlotSources ??= new()).UsableState = new ItemUse { Player = ok.Player }.UsableState;
+        (h, c) = Load(ok);
+        Assert.That(Rt.ToNumber(RowMember(h, c, 1, "disable")), Is.NaN);
+        Assert.That(Rt.ToNumber(RowMember(h, c, 1, "itemLock")), Is.NaN);
     }
 
     [Test]

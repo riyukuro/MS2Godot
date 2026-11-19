@@ -1093,6 +1093,7 @@ public partial class HudScene : Node, IUiStageHost
         // numbers its jobs 1, 10, 20 ... 100
         p.SubJob = data.Player.Job <= 1 ? 100 : (data.Player.Job / 10 + 1) * 100;
         p.JobGroup = data.Player.Job;       // the job group ids of table/job.xml (1, 10 ... 110)
+        p.Gender = data.Player.Gender;
         p.HpCur = data.Player.HpCurrent; p.HpMax = data.Player.HpMax;
         p.Channel = (int)data.Player.Channel;    // the user block's channel (a party slot's "Ch. N" line reads its member's)
         p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
@@ -1104,7 +1105,18 @@ public partial class HudScene : Node, IUiStageHost
             p.JobGroup = quickSlotPlayer[0] == 100 ? 1 : (quickSlotPlayer[0] / 100 - 1) * 10;
             if (quickSlotPlayer.Length > 1) p.Level = quickSlotPlayer[1];
         }
+        // GetItemUsableState for the slots' lock / disable marks (FUN_1409c3860 flag 4) and the shop's usable filter
+        var session = Ms2Godot.Net.LiveSession.Instance;
+        itemUse = new Ms2.Ui.Items.ItemUse
+        {
+            Player = p,
+            ServerTime = () => session?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+        };
+        (hudModel.ItemSlotSources ??= new()).UsableState = itemUse.UsableState;
     }
+
+    /// <summary>Unk_Inventory::GetItemUseError for the HUD's player (<see cref="HudModel"/>).</summary>
+    Ms2.Ui.Items.ItemUse itemUse;
 
     /// <summary>
     /// UIMainPlayerInfo (uimainplayerinfo), UIExpBar (uiexpbar) and UIAdventureLevelExpBar (uiadventurelevelexpbar), each run from its own movie with its C++ side as the
@@ -1598,6 +1610,7 @@ public partial class HudScene : Node, IUiStageHost
             Npcs = World.FieldContents.Npcs(assets.Packs),
             ServerTime = Now,
             ShopSeedResetTime = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("ShopSeedResetTime", 0),
+            ItemUseError = itemUse.Error,
         };
         c.Request += (name, _) => GD.Print($"shop: {name} is not sent (display only)");
         c.OpenDialog += id => GD.Print($"shop: dialog 0x{id:x} is not in this HUD");

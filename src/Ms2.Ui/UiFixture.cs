@@ -59,7 +59,9 @@ public static class UiFixture
         var info = new Ms2.Net.Packets.ShopInfo
         {
             NpcId = 11000004, ShopId = 106, ResetTime = now + 30, ProductCount = rows.Length, TabShopId = 5,
-            ResetEnable = true, ResetPrice = 1000, HideReset = false, Icon = "",
+            // the header's icon is the server's shop_game_info row's iconName (shop 106: "equip"), which the Maple2 server
+            // writes in that slot; the npc's own icon (emoticon_movie_npc_equip) has no emblem class
+            ResetEnable = true, ResetPrice = 1000, HideReset = false, Icon = "equip",
         };
         var products = rows.Select(r => new Ms2.Net.Packets.ShopProduct
         {

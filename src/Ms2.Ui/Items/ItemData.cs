@@ -54,6 +54,8 @@ public sealed class ItemData
     public readonly List<int> JobLimit = new(), DisableJobLimit = new();
     // ItemSkill::LoadXml (itemdatastruct.cpp:871)
     public int SkillId;
+    /// <summary>ItemSkill skillLevel (:877), GetSkillLevel (itemdata.cpp:1128).</summary>
+    public int SkillLevel;
     /// <summary>&lt;basic stringTag&gt;: the tag name, which CItemData::Load maps through CItemDataTable::GetTagByName (itemdatatable.cpp:578,
     /// a case-insensitive name match of the AddItemTag list) to stringTag.</summary>
     public string StringTag = "";
@@ -115,7 +117,7 @@ public sealed class ItemData
             if ((string)l.Attribute("recommendJobs") is { } jobs)
                 foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.RecommendJobs.Add(Atoi(t));
         }
-        if (env.Element("skill") is { } sk) Int(sk, "skillID", ref d.SkillId);
+        if (env.Element("skill") is { } sk) { Int(sk, "skillID", ref d.SkillId); Int(sk, "skillLevel", ref d.SkillLevel); }
         if (env.Element("function") is { } f)
         {
             d.FunctionName = (string)f.Attribute("name") ?? "";
