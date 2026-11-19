@@ -41,14 +41,14 @@ public partial class HudScene
 
     /// <summary>The counters a measured window starts from.</summary>
     readonly record struct GateMark(long Main, long Total, int Gc0, int Gc1, int Gc2, double Objects, double Nodes, long Ticks,
-        long FxBytes, long FxInstances, long FxTicks, long Jit, long JitTicks, long JitAll)
+        long FxBytes, long FxInstances, long FxTicks, long Jit, long JitTicks, long JitAll, long WrapGodot, long WrapOther)
     {
         public static GateMark Now() => new(GC.GetAllocatedBytesForCurrentThread(), GC.GetTotalAllocatedBytes(true),
             GC.CollectionCount(0), GC.CollectionCount(1), GC.CollectionCount(2),
             Performance.GetMonitor(Performance.Monitor.ObjectCount), Performance.GetMonitor(Performance.Monitor.ObjectNodeCount),
             System.Diagnostics.Stopwatch.GetTimestamp(), EffectInstance.CountBytes, EffectInstance.CountInstances, EffectInstance.CountTicks,
             System.Runtime.JitInfo.GetCompiledMethodCount(true), System.Runtime.JitInfo.GetCompilationTime(true).Ticks,
-            System.Runtime.JitInfo.GetCompiledMethodCount(false));
+            System.Runtime.JitInfo.GetCompiledMethodCount(false), GateWrap(0), GateWrap(1));
 
         public static double Ms(long from, long to) => (to - from) * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
     }
@@ -65,7 +65,44 @@ public partial class HudScene
         ["jit_all_methods"] = b.JitAll - a.JitAll,
         ["jit_ms"] = Math.Round(TimeSpan.FromTicks(b.JitTicks - a.JitTicks).TotalMilliseconds, 3),
         ["ms"] = Math.Round(GateMark.Ms(a.Ticks, b.Ticks), 3),
+        // wrappers the window left registered in the DisposablesTracker (Variant disposers, Godot.Collections, GodotObjects):
+        // created and not yet finalized or disposed by its end; GateFinalized adds what the closing collection frees
+        ["wrappers"] = b.WrapGodot + b.WrapOther - a.WrapGodot - a.WrapOther,
     };
+
+    /// <summary>
+    /// After a window's closing GateCollect: the wrappers it finalized (the tracker's entries lost since the window's end
+    /// mark), by kind: GodotObjects, and the rest (Variant disposers, StringName, NodePath, Godot.Collections).
+    /// Undisposed wrappers are exactly these: each one costs a finalizer run.
+    /// </summary>
+    static void GateFinalized(JsonObject o, GateMark end)
+    {
+        var after = GateMark.Now();
+        o["finalized_godot"] = end.WrapGodot - after.WrapGodot;
+        o["finalized_other"] = end.WrapOther - after.WrapOther;
+    }
+
+    /// <summary>The tracker's registered wrappers by type, for the window's per-type growth (a diagnostic, not checked).</summary>
+    static Dictionary<Type, int> GateCensus()
+    {
+        var r = new Dictionary<Type, int>();
+        if (gateTrackers[0] is System.Collections.Concurrent.ConcurrentDictionary<WeakReference<GodotObject>, byte> g)
+            foreach (var kv in g) if (kv.Key.TryGetTarget(out var t)) r[t.GetType()] = r.GetValueOrDefault(t.GetType()) + 1;
+        if (gateTrackers[1] is System.Collections.Concurrent.ConcurrentDictionary<WeakReference<IDisposable>, byte> d)
+            foreach (var kv in d) if (kv.Key.TryGetTarget(out var t)) r[t.GetType()] = r.GetValueOrDefault(t.GetType()) + 1;
+        return r;
+    }
+
+    static JsonObject GateGrowth(Dictionary<Type, int> a, Dictionary<Type, int> b)
+    {
+        var o = new JsonObject();
+        foreach (var (ty, n) in b.Select(kv => (kv.Key, kv.Value - a.GetValueOrDefault(kv.Key))).Where(x => x.Item2 > 0).OrderByDescending(x => x.Item2).Take(12))
+            o[ty.FullName] = n;
+        return o;
+    }
+
+    static readonly System.Collections.ICollection[] gateTrackers = new System.Collections.ICollection[2];
+    static long GateWrap(int slot) => gateTrackers[slot]?.Count ?? 0;
 
     void GateStep()
     {
@@ -73,6 +110,7 @@ public partial class HudScene
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (gateIdleName != null && gateLastTick != 0) gateFrameMs.Add(GateMark.Ms(gateLastTick, now));
         gateLastTick = now;
+        if (gateChurn) GateChurn();
         if (gateFrame == 0)
         {
             EffectInstance.Count = true;
@@ -114,10 +152,12 @@ public partial class HudScene
             if (r == 0) { gateOpen = GateMark.Now(); PerfToggle(d, true); }
             else if (r == GateOpenFrames)
             {
-                var o = GateDelta(gateOpen, GateMark.Now());
+                var end = GateMark.Now();
+                var o = GateDelta(gateOpen, end);
                 // the engine objects the open left alive: counted after a collection, so the wrappers a collection in
                 // the window happened to finalize (or not) do not move the count
                 GateCollect();
+                GateFinalized(o, end);
                 o["objects"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectCount) - gateOpen.Objects);
                 o["nodes"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectNodeCount) - gateOpen.Nodes);
                 o["dialog"] = d;
@@ -137,7 +177,14 @@ public partial class HudScene
         else if (t == 100 - GateQuiet) GateCollect();
         else if (t == 100) GateIdleStart("idle_3_open");
         else if (t == 100 + GateIdle) { GateIdleEnd(); CloseAllDialogs(); skillBook?.Close(); }
-        else if (t == 100 + GateIdle + 30)
+        // the live field: the per-frame HUD parts a connected field runs (damage numbers, npc HP bars, chat lines), standing
+        // (idle_live) and then walking a fixed loop (move). Each window starts GateQuiet frames after a collection.
+        else if (t == 100 + GateIdle + 30) GateCollect();
+        else if (t == 100 + GateIdle + 30 + GateQuiet) GateLiveStart("idle_live", false);
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle) { GateLiveEnd(); GateIdleEnd(); }
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet) GateLiveStart("move", true);
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle) { GateLiveEnd(); GateIdleEnd(); }
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30)
         {
             gateOut["opens"] = gateOpens;
             System.IO.File.WriteAllText(GatePath, gateOut.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -156,7 +203,7 @@ public partial class HudScene
     {
         var t = typeof(GodotObject).Assembly.GetType("Godot.DisposablesTracker");
         const System.Reflection.BindingFlags F = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
-        bool Grow<T>(string name) where T : class
+        bool Grow<T>(string name, int slot) where T : class
         {
             if (t?.GetProperty(name, F)?.GetValue(null) is not System.Collections.Concurrent.ConcurrentDictionary<WeakReference<T>, byte> d)
             {
@@ -166,12 +213,72 @@ public partial class HudScene
             var keys = new WeakReference<T>[d.Count + 1024];
             for (int i = 0; i < keys.Length; i++) d.TryAdd(keys[i] = new WeakReference<T>(null), 0);
             foreach (var k in keys) d.TryRemove(k, out _);
+            gateTrackers[slot] = d;
             return true;
         }
-        return Grow<GodotObject>("GodotObjectInstances") & Grow<IDisposable>("OtherInstances");
+        return Grow<GodotObject>("GodotObjectInstances", 0) & Grow<IDisposable>("OtherInstances", 1);
     }
 
-    void GateIdleStart(string name) { gateIdleName = name; gateIdle = GateMark.Now(); gateFrameMs.Clear(); }
+    void GateIdleStart(string name)
+    {
+        gateIdleName = name;
+        gateCensus = GateCensus();   // before the mark: its allocation is not the window's
+        gateIdle = GateMark.Now();
+        gateFrameMs.Clear();
+    }
+
+    Dictionary<Type, int> gateCensus;
+    bool gateChurn, gateMove;
+    int gateChurnFrame;
+    Player gatePlayer;
+    World.NpcPresence gatePresence;
+    List<World.FieldNpcs.Placed> gateNear;
+    static readonly string[] GateChat = { "Welcome to the field.", "Anyone up for a dungeon run?", "Selling gemstones, whisper me.", "Party at the plaza in five minutes!" };
+
+    /// <summary>
+    /// A window with the live field's per-frame parts on: a chat line every 30 frames from a fixed list, a damage number and an
+    /// HP bar change on one of the 4 nearest npcs every 20, a hit on the own PC every 45 (the name tags are always on). With
+    /// <paramref name="move"/> the player also walks a fixed loop (a second a side, scripted input: with --fixed-fps the
+    /// path is the same every run).
+    /// </summary>
+    void GateLiveStart(string name, bool move)
+    {
+        gatePlayer ??= FindPlayer(this);
+        gatePresence ??= GetTree().Root.FindChild("NpcPresence", true, false) as World.NpcPresence;
+        if (gatePresence != null && gatePlayer != null)
+        {
+            gateNear = gatePresence.Npcs.OrderBy(n => n.Root.GlobalPosition.DistanceTo(gatePlayer.GlobalPosition)).Take(4).ToList();
+            foreach (var n in gateNear) gatePresence.Stance(n, true, 1000, 1000);
+        }
+        gateNear ??= new();
+        gateMove = move;
+        gateChurnFrame = 0;
+        if (move && gatePlayer != null) gatePlayer.ScriptDriven = true;
+        GateIdleStart(name);
+        gateChurn = true;
+    }
+
+    void GateLiveEnd()
+    {
+        gateChurn = false;
+        if (gatePlayer != null) { gatePlayer.Input2 = Vector2.Zero; gatePlayer.ScriptDriven = false; }
+    }
+
+    void GateChurn()
+    {
+        int f = gateChurnFrame++;
+        if (gateMove && gatePlayer != null)
+            gatePlayer.Input2 = (f / 60 % 4) switch { 0 => new Vector2(0, 1), 1 => new Vector2(1, 0), 2 => new Vector2(0, -1), _ => new Vector2(-1, 0) };
+        if (f % 30 == 0) ChatLog.AddSystemLine(GateChat[f / 30 % GateChat.Length], Ms2.Ui.Hud.TalkKind.SystemNotice);
+        if (f % 20 == 5 && gateNear.Count > 0 && gatePresence != null)
+        {
+            var n = gateNear[f / 20 % gateNear.Count];
+            gatePresence.Damaged(n, true);
+            gatePresence.Stat(n, 1000 - f % 900, 1000);
+            damageText.OnNpc(n, 100 + f, 0);
+        }
+        if (f % 45 == 10) damageText.OnPlayer(50 + f, 0);
+    }
 
     /// <summary>
     /// A full collection with the finalizers run: every measured window starts from no garbage (so its collections are
@@ -187,7 +294,9 @@ public partial class HudScene
     {
         var m = GateMark.Now();
         var o = GateDelta(gateIdle, m);
+        o["wrapper_types"] = GateGrowth(gateCensus, GateCensus());   // after the mark; the collection below follows
         GateCollect();
+        GateFinalized(o, m);
         o["objects"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectCount) - gateIdle.Objects);
         o["nodes"] = (long)(Performance.GetMonitor(Performance.Monitor.ObjectNodeCount) - gateIdle.Nodes);
         o["frames"] = GateIdle;

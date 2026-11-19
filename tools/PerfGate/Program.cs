@@ -81,7 +81,7 @@ static JsonObject Summarize(List<JsonObject> sessions)
         n++;
         string c = (string)s["case"];
         AddAll("field." + c, s["field"].AsObject());
-        foreach (var idleKey in new[] { "idle", "idle_3_open" })
+        foreach (var idleKey in new[] { "idle", "idle_3_open", "idle_live", "move" })
         {
             // per case: the install session's background work (the per-install cache) still runs in its idle
             var o = s[idleKey].AsObject();
@@ -89,6 +89,10 @@ static JsonObject Summarize(List<JsonObject> sessions)
             double frames = o["frames"].GetValue<double>(), fx = o["fx_effect_frames"].GetValue<double>();
             Add(idle + ".main_bytes_per_frame", Math.Round(o["main_bytes"].GetValue<double>() / frames, 1));
             Add(idle + ".total_bytes_per_frame", Math.Round(o["total_bytes"].GetValue<double>() / frames, 1));
+            // the DisposablesTracker's wrappers: left registered at the window's end, and finalized by its closing collection
+            Add(idle + ".wrappers_per_frame", Math.Round(o["wrappers"].GetValue<double>() / frames, 2));
+            Add(idle + ".finalized_godot_per_frame", Math.Round(o["finalized_godot"].GetValue<double>() / frames, 2));
+            Add(idle + ".finalized_other_per_frame", Math.Round(o["finalized_other"].GetValue<double>() / frames, 2));
             Add(idle + ".fx_bytes_per_effect_frame", fx == 0 ? 0 : Math.Round(o["fx_bytes"].GetValue<double>() / fx, 2));
             foreach (var k in new[] { "gc0", "gc1", "gc2", "objects", "nodes", "jit_methods", "jit_all_methods", "jit_ms" }) Add(idle + "." + k, o[k]);
             Add(idle + ".frame_median_ms", o["frame_ms_median"]);   // times: their names end in ms
@@ -128,6 +132,8 @@ static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(
 // a limit is never closer to the max than its floor. tools/perfgate/README.md has the run-to-run noise the floors come from.
 static (double Rel, double Abs) CountTolerance(string name) =>
     name.EndsWith("bytes_per_frame") ? (0.05, 8192)   // the idle windows: ±10 KB a frame run to run
+    : name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") ? (0.10, 1)   // wrappers a frame
+    : name.EndsWith("wrappers") || name.EndsWith("finalized_godot") || name.EndsWith("finalized_other") ? (0.05, 16)   // an open's
     : name.EndsWith("bytes") ? (0.02, 16384)
     : name.EndsWith("bytes_per_effect_frame") ? (0.05, 8)
     // a repeat's kept objects (after the first repeat, its own metric): a leak of a few dozen per open fails
