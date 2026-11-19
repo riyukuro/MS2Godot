@@ -72,6 +72,15 @@ uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
 // NiMaterialProperty alpha (1 without a material): the opacity unless AMB_DIFF vertex colours give it (see fragment())
 uniform float mat_alpha = 1.0;
+// An NiAlphaController on the NiMaterialProperty (NifModel.ReadAlphaController): up to 8 keys, linear (type 1) or
+// Bezier (type 2); alpha_anim_time = start, stop, frequency, phase. alpha_anim_count 0 keeps mat_alpha.
+uniform int alpha_anim_count = 0;
+uniform int alpha_anim_type = 1;
+uniform vec4 alpha_anim_time = vec4(0.0, 1.0, 1.0, 0.0);
+uniform float alpha_anim_t[8];
+uniform float alpha_anim_v[8];
+uniform float alpha_anim_in[8];
+uniform float alpha_anim_out[8];
 uniform float fade_alpha = 1.0;     // FADE: the NiMaterialProperty alpha TransparencyStandardMaterial sets (vfunc_4)
 // FADE: the mesh has its own NiVertexColorProperty, which TransparencyMaterial::FUN_141860140 swaps for a new one that
 // TransparencyStandardMaterial::vfunc_2 sets to source mode 3, lighting E_A_D. The engine's descriptor takes mode 3 as
@@ -148,6 +157,40 @@ vec2 scroll(int axis, vec4 key, vec2 range) {
 	return axis == 0 ? vec2(v, 0.0) : vec2(0.0, v);
 }
 
+// NiTimeController::ComputeScaledTime (NiTimeController.cpp:97-160) for a LOOP cycle: freq * t + phase, wrapped into
+// start..stop; then NiFloatKey::GenInterpDefault / GenInterp (NiFloatKey.cpp:196-211, :60-90): the end values outside
+// the keys, else the segment's normalized time into NiLinFloatKey (lerp) or NiBezFloatKey::Interpolate
+// (NiInterpScalar::Bezier, NiInterpScalar.cpp:26-36, with key 0's OutTan and key 1's InTan).
+float alpha_anim() {
+	float span = max(alpha_anim_time.y - alpha_anim_time.x, 1e-3);
+	float t = alpha_anim_time.x + mod(alpha_anim_time.z * TIME + alpha_anim_time.w, span);
+	int n = alpha_anim_count;
+	if (t <= alpha_anim_t[0]) {
+		return alpha_anim_v[0];
+	}
+	float r = alpha_anim_v[n - 1];
+	for (int i = 0; i < 7; i++) {
+		if (i + 1 >= n) {
+			break;
+		}
+		float t0 = alpha_anim_t[i], t1 = alpha_anim_t[i + 1];
+		if (t <= t1) {
+			float u = (t - t0) / max(t1 - t0, 1e-6);
+			float p = alpha_anim_v[i], q = alpha_anim_v[i + 1];
+			if (alpha_anim_type == 2) {
+				float dp = alpha_anim_out[i], dq = alpha_anim_in[i + 1];
+				float A = 3.0 * (q - p) - (dq + 2.0 * dp);
+				float B = dp + dq - 2.0 * (q - p);
+				r = p + (dp + (A + B * u) * u) * u;
+			} else {
+				r = mix(p, q, u);
+			}
+			break;
+		}
+	}
+	return r;
+}
+
 vec4 sample_slot(sampler2D tex, int slot, vec2 uv) {
 	if (flip_slot == slot) {
 		float frame = floor(mod(TIME, flip_period) / flip_period * float(flip_count));
@@ -174,7 +217,7 @@ void fragment() {
 	// material's alpha replaces the material alpha, and its swapped property (source mode 3) takes the diffuse from the
 	// material too (:4398, "MS2: v2525").
 	bool vc_opacity = vcolor_amb_diff;
-	float m_alpha = mat_alpha;
+	float m_alpha = alpha_anim_count > 0 ? alpha_anim() : mat_alpha;
 #ifdef FADE
 	if (fade_vc_swap) {
 		vc_opacity = false;

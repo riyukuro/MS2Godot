@@ -33,6 +33,7 @@ public sealed class ModelMesh
     public float[] Specular;              // NiMaterialProperty specular colour (rgb), or null
     public float Glossiness;              // NiMaterialProperty glossiness (the specular power)
     public float MaterialAlpha = 1f;      // NiMaterialProperty alpha (1 without a material)
+    public AlphaAnim AlphaAnim;           // an NiAlphaController on that material, which animates its alpha, or null
     public bool SpecularOn;               // an NiSpecularProperty with its enable flag set
     public float[] Colors;                // rgba 0..1 per vertex, or null
     public float[] Uvs1;                  // second uv set (TEXCOORD1), or null
@@ -136,6 +137,18 @@ public sealed class TexMap
     public int ShaderIndex = -1;
     public bool ClampS => Clamp is 0 or 1;
     public bool ClampT => Clamp is 0 or 2;
+}
+
+/// <summary>
+/// A looping NiAlphaController on the NiMaterialProperty: its NiFloatInterpolator keys, linear (KeyType 1) or Bezier
+/// (KeyType 2, NiBezFloatKey with InTan / OutTan in file order). NiTimeController::ComputeScaledTime maps the time as
+/// freq * t + phase, looped over Start..Stop; NiFloatKey::GenInterp holds the end values outside the keys.
+/// </summary>
+public sealed class AlphaAnim
+{
+    public float Start, Stop, Frequency = 1f, Phase;
+    public int KeyType;
+    public float[] Times, Values, InTans, OutTans;
 }
 
 /// <summary>
@@ -408,6 +421,41 @@ public sealed class ModelData
         }
     }
 
+    /// <summary>
+    /// The NiAlphaController on an NiMaterialProperty: only an active, looping one (flags bit 3, cycle LOOP) with an
+    /// NiFloatInterpolator over linear or Bezier keys; anything else leaves the static alpha.
+    /// </summary>
+    static AlphaAnim ReadAlphaController(NifFile nif, NifStruct prop)
+    {
+        var B = nif.Blocks;
+        for (long c = prop.IntOr("Controller", -1), guard = 0; c >= 0 && guard < 16; guard++)
+        {
+            var cb = B[(int)c];
+            c = cb.IntOr("Next Controller", -1);
+            if (cb.Type != "NiAlphaController") continue;
+            long flags = cb.IntOr("Flags", 0);
+            if ((flags & 8) == 0 || ((flags >> 1) & 3) != 0) continue;   // inactive, or not a loop
+            float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
+            long ip = cb.IntOr("Interpolator", -1);
+            if (stop <= start || ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") continue;
+            long di = B[(int)ip].IntOr("Data", -1);
+            if (di < 0) continue;
+            var data = B[(int)di].Struct("Data");
+            var keys = data.Structs("Keys");
+            int type = (int)data.IntOr("Interpolation", 0);
+            if (keys.Length == 0 || type is not (1 or 2)) continue;
+            return new AlphaAnim
+            {
+                Start = start, Stop = stop, Frequency = cb.Float("Frequency"), Phase = cb.Float("Phase"), KeyType = type,
+                Times = keys.Select(k => k.Float("Time")).ToArray(),
+                Values = keys.Select(k => k.Float("Value")).ToArray(),
+                InTans = type == 2 ? keys.Select(k => k.Float("Forward")).ToArray() : null,
+                OutTans = type == 2 ? keys.Select(k => k.Float("Backward")).ToArray() : null,
+            };
+        }
+        return null;
+    }
+
     /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>
     static void ReadMaterial(NifFile nif, NifStruct b, ModelMesh mesh)
     {
@@ -624,6 +672,7 @@ public sealed class ModelData
                     mesh.Specular = Rgb("Specular Color");
                     mesh.Glossiness = prop.Float("Glossiness");
                     mesh.MaterialAlpha = prop.Float("Alpha");
+                    mesh.AlphaAnim = ReadAlphaController(nif, prop);
                 }
                 if (prop.Type == "NiSpecularProperty") mesh.SpecularOn = (prop.IntOr("Flags", 0) & 1) != 0;
             }

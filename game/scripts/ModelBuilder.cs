@@ -334,6 +334,17 @@ public sealed class ModelBuilder
             sm.SetShaderParameter(ShaderParam.HasVcolor, m.Colors != null);
             sm.SetShaderParameter(ShaderParam.VcolorAmbDiff, m.VertexColorsAmbDiff);
             sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
+            if (m.AlphaAnim is { } aa && aa.Times.Length <= 8)
+            {
+                float[] Pad(float[] v) { var r = new float[8]; if (v != null) System.Array.Copy(v, r, v.Length); return r; }
+                sm.SetShaderParameter(ShaderParam.AlphaAnimCount, aa.Times.Length);
+                sm.SetShaderParameter(ShaderParam.AlphaAnimType, aa.KeyType);
+                sm.SetShaderParameter(ShaderParam.AlphaAnimTime, new Vector4(aa.Start, aa.Stop, aa.Frequency, aa.Phase));
+                sm.SetShaderParameter(ShaderParam.AlphaAnimT, Pad(aa.Times));
+                sm.SetShaderParameter(ShaderParam.AlphaAnimV, Pad(aa.Values));
+                sm.SetShaderParameter(ShaderParam.AlphaAnimIn, Pad(aa.InTans));
+                sm.SetShaderParameter(ShaderParam.AlphaAnimOut, Pad(aa.OutTans));
+            }
             // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
             bool test = m.AlphaTestOn || (m.AlphaTest && !m.AlphaBlendOn);
             sm.SetShaderParameter(ShaderParam.AlphaTest, test);
