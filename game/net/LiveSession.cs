@@ -1338,7 +1338,9 @@ public partial class LiveSession : Node
                     await BoxUp();
                     Shot("guild_leave_box.png");
                     MessageBoxLayer.Instance?.Click(0);
-                    await Until(() => !(Instance?.Guilds.InGuild ?? true), 60 * 10); await Frames(120);
+                    await Until(() => !(Instance?.Guilds.InGuild ?? true), 60 * 10);
+                    GD.Print($"live: guild leave {((Instance?.Guilds.InGuild ?? true) ? "STILL IN" : "done")}");
+                    await Frames(120);
                     Shot("guild_left.png");
                     break;
                 }
@@ -1351,7 +1353,9 @@ public partial class LiveSession : Node
                     await BoxUp();
                     Shot("guild_break_box.png");
                     MessageBoxLayer.Instance?.Click(0);
-                    await Until(() => !(Instance?.Guilds.InGuild ?? true), 60 * 10); await Frames(120);
+                    await Until(() => !(Instance?.Guilds.InGuild ?? true), 60 * 10);
+                    GD.Print($"live: guild break {((Instance?.Guilds.InGuild ?? true) ? "STILL IN" : "done")}");
+                    await Frames(120);
                     Shot("guild_broken.png");
                     break;
                 }
