@@ -107,7 +107,9 @@ void fragment() {
         t = vec4(t.rgb * d.rgb * 2.0, t.a * d.a);
     }
     // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
-    // The coefficient is not saturated (EffectMesh.Shade); the colour written is, as on the client's 8-bit colour target.
+    // The coefficient is not saturated (EffectMesh.Shade). The client renders into an FP16 target and tonemaps and blooms it
+    // (postprocessingservice.cpp:1401-1411, 1751); the clamp stands in for that.
+    // STILL-OPEN: the FP16 target, tonemap and bloom (postprocessingservice.cpp); the bloom port is a separate lane.
     vec3 col = t.rgb * (tint.rgb + mat_ambient * ms2_ambient);
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
@@ -657,12 +659,16 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         }
         ps.Pos[i] = ew * local;
         haveMeshPos:
-        float dec = (float)e.Declination + Spread((float)e.DeclinationVar), pl = (float)e.PlanarAngle + Spread((float)e.PlanarAngleVar);
-        var dirLocal = new Vector3(Mathf.Cos(dec), Mathf.Sin(dec) * Mathf.Cos(pl), Mathf.Sin(dec) * Mathf.Sin(pl));
-        var dir = (ew.Basis.Orthonormalized() * dirLocal).Normalized();
-        float speed = (float)e.Speed + Spread((float)e.SpeedVar);
+        // NiPSEmitter::ComputeDirection; speed and life spread over +-var/2 (ComputeSpeed, NiPSEmitter.cpp:139), the other
+        // variances over +-var; then the speed flip (NiPSEmitter.cpp:186-193). STILL-OPEN: a mesh emitter's
+        // VELOCITY_USE_NORMALS / VELOCITY_USE_RANDOM types (NiPSMeshEmitter.cpp:789-818); every emitter uses the direction here.
+        double dec = e.Declination + Spread((float)e.DeclinationVar), pl = e.PlanarAngle + Spread((float)e.PlanarAngleVar);
+        var dl = EmitterDef.Direction(dec, pl, ps.Def.PreRpi);
+        var dir = (ew.Basis.Orthonormalized() * new Vector3((float)dl.X, (float)dl.Y, (float)dl.Z)).Normalized();
+        float speed = (float)e.Speed + Spread((float)e.SpeedVar / 2);
+        if (e.SpeedFlipRatio > 0 && R() < e.SpeedFlipRatio) speed = -speed;
         ps.Vel[i] = dir * speed;
-        ps.Life[i] = Mathf.Max(0.02f, (float)e.Lifespan + Spread((float)e.LifespanVar));
+        ps.Life[i] = Mathf.Max(0.02f, (float)e.Lifespan + Spread((float)e.LifespanVar / 2));
         ps.Size[i] = Mathf.Max(0f, (float)e.Size + Spread((float)e.SizeVar));
         ps.Age[i] = 0;
         ps.Rot[i] = (float)e.RotAngle + Spread((float)e.RotAngleVar);

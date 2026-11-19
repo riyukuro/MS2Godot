@@ -116,6 +116,16 @@ public sealed class EmitterDef
     public Func<double, double> Rate; public TimeCtl RateCtl;           // births per second (NiPSEmitParticlesCtlr)
     public Func<double, double> On; public TimeCtl OnCtl;               // emitter active
 
+    /// <summary>The emitter-space direction for a declination and planar angle (variances already applied):
+    /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
+    /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
+    /// cos dec cos plan).</summary>
+    public static Vec3 Direction(double dec, double plan, bool preRpi)
+    {
+        if (dec == 0) return new Vec3(0, 0, 1);
+        double sd = Math.Sin(dec), cd = Math.Cos(dec), sp = Math.Sin(plan), cp = Math.Cos(plan);
+        return preRpi ? new Vec3(sd * cp, sd * sp, cd) : new Vec3(cd * sp, -sd, cd * cp);
+    }
 }
 
 public enum ForceKind { Bomb, Gravity, Drag, Other }
@@ -142,6 +152,7 @@ public sealed class ParticleSystemDef
     public int AlphaFlags = -1;                  // NiAlphaProperty flags of the system
     public bool Additive => AlphaFlags >= 0 && ((AlphaFlags >> 5) & 15) == 0 && (AlphaFlags & 1) != 0;
     public int MaxParticles = 100; public bool WorldSpace;
+    public bool PreRpi = true;                   // "Pre RPI": the emitters' direction method (EmitterDef.Direction)
     public int Colliders, Spawners;
 }
 
@@ -386,7 +397,7 @@ public sealed class EffectScene
     ParticleSystemDef ReadSystem(NifFile n, int blk, int node)
     {
         var B = n.Blocks; var b = B[blk];
-        var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
+        var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
 
         foreach (var pi in b.Ints("Properties"))
         {
