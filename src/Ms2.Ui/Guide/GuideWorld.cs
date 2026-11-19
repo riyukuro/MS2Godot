@@ -254,7 +254,9 @@ public interface IGuideEventPane
     void ShowTutorial(int entityId, int textId, bool first);
     void HideTutorial(int entityId);
     bool TutorialShowing { get; }
-    void ShowSummary(int entityId, int textId);
+    /// <summary>ShowSummary (guideId, stringId, durationMs): the action passes 0; the server's trigger packets pass
+    /// theirs (triggerservice.cpp:994).</summary>
+    void ShowSummary(int entityId, int textId, int durationMs = 0);
     void HideSummary(int entityId);
     bool SummaryShowing { get; }
     void AddArrow(GuideArrow arrow);

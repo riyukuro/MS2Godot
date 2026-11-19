@@ -19,11 +19,16 @@ public static class GuideCache
     public const int Version = 1;
     const uint Magic = 0x4447324D;     // "M2GD"
     const uint EndMagic = 0x444E4547;  // "GEND"
+    const uint StringsMagic = 0x5347324D;     // "M2GS"
+    const uint StringsEndMagic = 0x534E4547;  // "GENS"
 
     const byte NodeElement = 0, NodeText = 1, NodeCData = 2, NodeComment = 3;
 
     /// <summary>The cache file name for an Xml.m2d key.</summary>
     public static string FileName(string xmlKey) => $"guide-{xmlKey}-v{Version}.bin";
+    /// <summary>The guide strings (<see cref="GuideStrings"/>) cache file name for an Xml.m2d key and language.</summary>
+    public static string StringsFileName(string xmlKey, string language) =>
+        $"stringguide-{language?.ToLowerInvariant()}-{xmlKey}-v{Version}.bin";
 
     /// <summary>Parses the guide tables of <paramref name="packs"/> and writes <paramref name="path"/>.</summary>
     public static void Build(PackSet packs, string path) => Write(GuideTable.Parse(packs), path);
@@ -178,6 +183,85 @@ public static class GuideCache
             for (int k = 0; k < a.Events.Count; k++)
                 if (!XNode.DeepEquals(a.Events[k], b.Events[k]))
                     return $"{a.Path}: event {k} (id {(string)a.Events[k].Attribute("id")}) differs";
+        }
+        return null;
+    }
+
+    // ---- the guide strings (GuideStrings) --------------------------------------------------------------------------
+
+    /// <summary>Parses the guide strings of <paramref name="packs"/> in <paramref name="language"/> and writes
+    /// <paramref name="path"/>.</summary>
+    public static void BuildStrings(PackSet packs, string language, string path) => WriteStrings(GuideStrings.Parse(packs, language), path);
+
+    /// <summary>Writes <paramref name="strings"/> to <paramref name="path"/> (through a temporary file, so a stopped
+    /// build leaves no partial cache): the texts and voices as loaded, in id order.</summary>
+    public static void WriteStrings(GuideStrings strings, string path)
+    {
+        var texts = strings.TextMap;
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
+        string tmp = path + ".tmp";
+        using (var fs = File.Create(tmp))
+        using (var w = new BinaryWriter(fs, Encoding.UTF8))
+        {
+            w.Write(StringsMagic);
+            w.Write(Version);
+            w.Write(texts.Count);
+            foreach (var (id, text) in texts.OrderBy(kv => kv.Key))
+            {
+                w.Write(id);
+                w.Write(text);
+                w.Write(strings.VoiceMap.TryGetValue(id, out var v) ? v : "");
+            }
+            w.Write(StringsEndMagic);
+        }
+        File.Move(tmp, path, true);
+    }
+
+    /// <summary>The strings in <paramref name="path"/>; null when the file is missing or fails its checks.</summary>
+    public static GuideStrings ReadStrings(string path)
+    {
+        if (path == null || !File.Exists(path)) return null;
+        try
+        {
+            var bytes = File.ReadAllBytes(path);
+            var r = new BinaryReader(new MemoryStream(bytes, false), Encoding.UTF8);
+            if (r.ReadUInt32() != StringsMagic || r.ReadInt32() != Version) return null;
+            int count = r.ReadInt32();
+            if (count < 0 || (long)count * 4 > bytes.Length) return null;
+            var s = new GuideStrings();
+            var texts = s.TextMap;
+            var voices = s.VoiceMap;
+            for (int i = 0; i < count; i++)
+            {
+                uint id = r.ReadUInt32();
+                string text = r.ReadString();
+                string voice = r.ReadString();
+                if (text.Length != 0) texts[id] = text;
+                if (voice.Length != 0) voices[id] = voice;
+            }
+            if (r.ReadUInt32() != StringsEndMagic || r.BaseStream.Position != bytes.Length) return null;
+            return s;
+        }
+        catch (Exception e) when (e is IOException or InvalidDataException or IndexOutOfRangeException or ArgumentException or FormatException
+                                      or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The first difference between two tables (MS2_UICACHE=check and the tests), null when they are the same:
+    /// the same text ids in order with the same text, and the same voices.</summary>
+    public static string FirstStringsDifference(GuideStrings parsed, GuideStrings cached)
+    {
+        if (cached == null) return "no cache";
+        var a = parsed.Ids.ToArray();
+        var b = cached.Ids.ToArray();
+        if (a.Length != b.Length) return $"{a.Length} texts parsed, {b.Length} cached";
+        for (int i = 0; i < a.Length; i++)
+        {
+            if (a[i] != b[i]) return $"text {i}: id {a[i]} parsed, id {b[i]} cached";
+            if (parsed.Text(a[i]) != cached.Text(a[i])) return $"text {a[i]} differs";
+            if (parsed.Voice(a[i]) != cached.Voice(a[i])) return $"the voice of text {a[i]} differs";
         }
         return null;
     }

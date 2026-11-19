@@ -17,7 +17,7 @@ public class GuideTests
         public void ShowTutorial(int entityId, int textId, bool first) { }
         public void HideTutorial(int entityId) { }
         public bool TutorialShowing => false;
-        public void ShowSummary(int entityId, int textId) { }
+        public void ShowSummary(int entityId, int textId, int durationMs = 0) { }
         public void HideSummary(int entityId) { }
         public bool SummaryShowing => false;
         public void AddArrow(GuideArrow arrow) { }

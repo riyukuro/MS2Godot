@@ -23,6 +23,10 @@ public partial class LiveSession
     /// <summary>The live guide; null before the field entry.</summary>
     public GuideManager Guide => guide;
 
+    /// <summary>The guide event pane (UIGuideEvent 0x4e53) while the HUD runs it, null without it; the guide's world reads
+    /// it (UpdateEntities does nothing until the pane is there and loaded, guideentity_1b.cpp).</summary>
+    public IGuideEventPane GuidePane { get; set; }
+
     void StartGuide()
     {
         if (guide != null) return;
@@ -101,8 +105,8 @@ public partial class LiveSession
 
     /// <summary>
     /// What the guide reads from the live session. The scene is the game scene (0x620000c) once the field is entered;
-    /// the guide event pane (UIGuideEvent 0x4e53) is not ported yet, so no event takes a step (UpdateEntities waits on it).
-    /// STILL-OPEN: the battle state, the dialogs and every member the base class answers with its default.
+    /// the guide event pane (UIGuideEvent 0x4e53) is the HUD's, so an event takes a step only while the field's HUD runs.
+    /// STILL-OPEN: the battle state and every member the base class answers with its default.
     /// </summary>
     sealed class LiveGuideWorld : GuideWorld
     {
@@ -113,6 +117,7 @@ public partial class LiveSession
 
         public override long ServerTime => s.GameSession?.ServerTime ?? base.ServerTime;
         public override int SceneId => s.answered ? 0x620000c : 0;
+        public override IGuideEventPane Pane => s.GuidePane;
         public override void GuideLog(string text) => GD.Print(text);
         public override void Send(Ms2.Net.Wire.IOutPacket packet) => s.Send(packet);
 

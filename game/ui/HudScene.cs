@@ -50,6 +50,9 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog castingBar;                 // uicastingbar
     /// <summary>UICastingBar's C++ side: the cast gauge a caster starts (StartCasting) and is called back from.</summary>
     public Ms2.Ui.Hud.CastingBarController CastingBar { get; private set; }
+    MovieDialog guideEvent;                 // uiguideevent
+    /// <summary>UIGuideEvent's C++ side (0x4e53): the guide's tutorial balloon, summary panel, text tips and arrows.</summary>
+    public Ms2.Ui.Hud.GuideEventController GuideEvent { get; private set; }
     DamageText damageText;
     PlayerHpBar playerBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
@@ -65,6 +68,7 @@ public partial class HudScene : Node, IUiStageHost
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve: the shot opens that window, as I, P or Y does
+    string guideShot;                       // --uigen-guide summary:TEXTID|tip:TEXTID|tutorial:TEXTID: the guide pane shows that text
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
@@ -84,6 +88,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-open") openShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-guide") guideShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-drag") dragShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--worldmap") worldMapShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
@@ -146,6 +151,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
         CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
+        GuideEvent?.Hide();                 // UIGuideEvent::vfunc_3 (:877): the tips are dropped with the scene
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) liveSession.GuidePane = null;
         unwatchNotices?.Invoke();
         unwatchNotices = null;
         unwatchChat?.Invoke();
@@ -211,6 +218,7 @@ public partial class HudScene : Node, IUiStageHost
         targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
         systemText?.GetParent()?.RemoveChild(systemText);     // and the system lines
         castingBar?.GetParent()?.RemoveChild(castingBar);     // and the cast gauge
+        guideEvent?.GetParent()?.RemoveChild(guideEvent);     // and the guide pane
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         BuildHud();
@@ -260,6 +268,7 @@ public partial class HudScene : Node, IUiStageHost
         TargetHpBar(uiRoot);
         SystemTextLines(uiRoot);
         CastingGauge(uiRoot);
+        GuideEventPane(uiRoot);
         HudModel();
         Chat(uiRoot);
         Quests(uiRoot);
@@ -375,8 +384,8 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), as far as this HUD has its parts: tooltips, the cutscene
-    /// movie, the guide's text tip and fishing are not in it, a focused text field keeps Esc (the chat input takes it in
-    /// _Input), and an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
+    /// movie and fishing are not in it (the guide's text tip is), a focused text field keeps Esc (the chat input takes it
+    /// in _Input), and an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
     /// on and is otherwise left; with none it toggles the system menu: ToggleDialog(0x4e21) = FUN_1419246f0, open when
     /// vfunc_55 (closed and unloaded), else vfunc_67 (close).
@@ -385,6 +394,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (assets == null) return;
         if (optionDialog != null && optionDialog.OnKey(true)) return;      // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
+        if (GuideEvent?.SkipTextTip() == true) return;    // the guide's text tip takes Esc (FUN_1418fcb70, uichatballoon.cpp:531)
         if (AnyClosableDialogOpen())
         {
             if (GameOptions.Current.InterfaceOption.EnableCloseAllDlg) CloseAllDialogs();
@@ -552,6 +562,26 @@ public partial class HudScene : Node, IUiStageHost
         CastingBar = new Ms2.Ui.Hud.CastingBarController();
         castingBar = new MovieDialog(assets, CastingBar, NewModel(), GetWindow().Size);
         ui.AddChild(castingBar);
+    }
+
+    /// <summary>
+    /// The guide event pane (UIGuideEvent, 0x4e53, uiguideeventarrow.cpp), run by its movie; loaded with the game scene
+    /// (FUN_141ada6f0, uiservice.cpp:811) and kept across relayouts. The live session's guide reads it as its pane, so
+    /// with it loaded an event can take a step (CGuideManager::UpdateEntities waits on the pane).
+    /// </summary>
+    void GuideEventPane(Control ui)
+    {
+        if (guideEvent != null) { ui.AddChild(guideEvent); guideEvent.Relayout(GetWindow().Size); return; }
+        GuideEvent = new Ms2.Ui.Hud.GuideEventController
+        {
+            NowMs = () => (uint)Time.GetTicksMsec(),
+            Strings = Ms2.Ui.Guide.GuideStrings.Shared(assets.Packs, assets.Language),
+            // PlaySystemSound (table/systemsound.xml through the audio bank); the print is the no-bank fallback
+            SystemSound = key => { if (FieldAudio.Instance?.PlayUi(key) != true) GD.Print($"guide: system sound {key} is not played"); },
+        };
+        guideEvent = new MovieDialog(assets, GuideEvent, NewModel(), GetWindow().Size);
+        ui.AddChild(guideEvent);
+        if (Ms2Godot.Net.LiveSession.Instance is { } live) live.GuidePane = GuideEvent;
     }
 
     /// <summary>
@@ -2570,6 +2600,7 @@ public partial class HudScene : Node, IUiStageHost
         SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
         mastery?.Process(Godot.Time.GetTicksMsec());
         CastingBar?.Process();               // UICastingBar::vfunc_15: an expired cast finishes
+        GuideEvent?.Process();                // UIGuideEvent::vfunc_15: the arrows, the summary's expiry
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
@@ -2605,6 +2636,18 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "mail" && frames == 200) ToggleMail();
         if (openShot == "community" && frames == 200) ToggleCommunity();
         if (openShot == "guild" && frames == 200) ToggleGuild();
+        if (guideShot != null && frames == 200)
+        {
+            // --uigen-guide kind:textId: the pane shows the guide text as its summary, text tip or tutorial balloon
+            var parts = guideShot.Split(':');
+            int textId = parts.Length > 1 ? int.Parse(parts[1]) : 0;
+            switch (parts[0])
+            {
+                case "summary": GuideEvent?.ShowSummary(1, textId, 20000); break;
+                case "tip": GuideEvent?.QueueOrShowTextTip(1, textId); break;
+                case "tutorial": GuideEvent?.ShowTutorial(1, textId, true); break;
+            }
+        }
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)
