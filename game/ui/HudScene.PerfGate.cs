@@ -139,7 +139,7 @@ public partial class HudScene
         int t = gateFrame - GateSettle;
         if (t == -GateQuiet) GateCollect();
         if (t < 0) return;
-        if (t == 0) GateIdleStart("idle");
+        if (t == 0) { GateIdleStart("idle"); if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1") WrapperAttrib.Install(GetTree().Root); }
         if (t == GateIdle) GateIdleEnd();   // its collection is also the first open's (GateQuiet frames before it)
         t -= GateIdle + GateQuiet;
         if (t < 0) return;

@@ -119,6 +119,7 @@ public partial class FieldFade : Node
         if (cam == null || !cam.IsInsideTree() || feet() is not { } pos) return;
         var eye = cam.GlobalPosition;
         var planes = cam.GetFrustum();
+        using var planesOwner = (Godot.Collections.Array)planes;   // a tracked Array per call until disposed
         var hit = new HashSet<Target>();
         Vector3 a = pos + Vector3.Up * RayLow, b = pos + Vector3.Up * RayHigh;
         Vector3 da = (eye - a).Normalized(), db = (eye - b).Normalized();

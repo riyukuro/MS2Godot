@@ -32,8 +32,11 @@ public partial class WrapperAttrib : Node
     }
 
     /// <summary>Marks after every processing C# node under <paramref name="root"/>.</summary>
+    static bool installed;
     public static void Install(Node root)
     {
+        if (installed) { Totals.Clear(); last = HudScene.GateWrapTotal(); return; }   // the markers stay for the later windows
+        installed = true;
         var nodes = new List<Node>();
         void Walk(Node n)
         {

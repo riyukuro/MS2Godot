@@ -65,7 +65,9 @@ public partial class FootstepSounds : Node
 
     public override void _Process(double delta)
     {
-        string name = anim.CurrentAnimation.ToString();
+        // CurrentAnimation makes a tracked StringName wrapper per read: dispose it
+        string name;
+        using (var current = anim.CurrentAnimation) name = current.ToString();
         var speed = new Vector2(body.Velocity.X, body.Velocity.Z).Length();
         bool moving = speed > 10 && !name.StartsWith("swim") && (name.Contains("run") || name.Contains("walk")) && (OnFloor?.Invoke() ?? body.IsOnFloor());
         if (!moving) { lastPos = -1; lastAnim = name; return; }

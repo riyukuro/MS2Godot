@@ -309,8 +309,11 @@ public partial class As3View : Node2D
         bool changed = false;
         foreach (var n in want)
             if (n.GetParent() != into) { n.GetParent()?.RemoveChild(n); into.AddChild(n); changed = true; }
-        foreach (var n in into.GetChildren())
+        for (int i = into.GetChildCount() - 1; i >= 0; i--)     // backwards by index: GetChildren() is a tracked array per call
+        {
+            var n = into.GetChild(i);
             if (!keep.Contains(n)) { into.RemoveChild(n); detached.Add(n); changed = true; }
+        }
         for (int i = 0; i < want.Count; i++)
         {
             if (checking && !changed && into.GetChild(i) != want[i]) changed = true;
@@ -378,7 +381,7 @@ public partial class As3View : Node2D
             {
                 Checked(true, "material", e);
                 e.Content.Material = e.ContentMaterial = blend;
-                foreach (var ch in e.Content.GetChildren()) if (ch is CanvasItem ci) ci.UseParentMaterial = true;   // ShapeNode's bitmap sprites
+                foreach (var ch in e.Content.Kids()) if (ch is CanvasItem ci) ci.UseParentMaterial = true;   // ShapeNode's bitmap sprites
             }
             if (o.MaskObject != null) scriptMasked.Add(e);
             else scriptMasked.Remove(e);
@@ -396,8 +399,11 @@ public partial class As3View : Node2D
                     if (se.Holder.GetParent() != e.Holder) Checked(true, "button state", e);
                     Reparent(se.Holder, e.Holder, wanted);
                 }
-                foreach (var n in e.Holder.GetChildren())
+                for (int i = e.Holder.GetChildCount() - 1; i >= 0; i--)
+                {
+                    var n = e.Holder.GetChild(i);
                     if (!wanted.Contains(n)) { Checked(true, "button state", e); e.Holder.RemoveChild(n); detached.Add(n); }
+                }
                 break;
             }
         }
