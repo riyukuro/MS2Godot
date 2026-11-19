@@ -223,6 +223,11 @@ public partial class Field : Node3D
     // camera, HUD and audio setup, and raises Loaded (LoadComplete), so everything after the world build runs in one frame
     // as before. The loading screen is not in the field while it loads (FieldContents.CoverLoad), so hiding the field
     // never hides it.
+    // The pause is the scene graph's only: StartProgress (CUIService FUN_141adb900) pauses no dialog (its
+    // FUN_141adbcd0(0) is UISwfEntityManager::SetEnabled(false), uiswfentitymanager.cpp:794, which only resets the
+    // hide-UI toggle on every movie), and CUIService::OnTick (uiservice.cpp:1894) keeps ticking every open, visible
+    // dialog under the loading screen. So the HUD keeps running here too. The field's own entities are paused with the
+    // field (UpdateDynamicEntities, ms2scenegraphservice.cpp:239); the old field's are freed with its scene.
 
     /// <summary>Main-thread time a field load takes per frame before it gives the frame back.</summary>
     const long BudgetMs = 10;
