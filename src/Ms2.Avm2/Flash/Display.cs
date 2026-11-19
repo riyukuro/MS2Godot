@@ -117,18 +117,24 @@ public class AsDisplayObject : AsEventDispatcher
 
     [As] public double x { get => Matrix.Tx; set { if (double.IsNaN(value)) return; var m = Matrix; m.Tx = value; Matrix = m; ScriptMoved(); } }
     [As] public double y { get => Matrix.Ty; set { if (double.IsNaN(value)) return; var m = Matrix; m.Ty = value; Matrix = m; ScriptMoved(); } }
-    [As] public double z { get; set; }
+    // The 3x3 of the last matrix3D set, kept until a rotation, scale or z setter runs: those call UpdateTransform3D
+    // (sfr_gfx_06.cpp:1903-1920), which rebuilds M34 from the properties and so replaces it. Is3D is the node flag
+    // SetMatrix3D sets and Clear3D clears.
+    internal double[,] Held3x3;
+    internal bool Is3D;
+    double zv, scaleZv = 1, rotXv, rotYv;
+    [As] public double z { get => zv; set { zv = value; Held3x3 = null; } }
     [As] public double scaleX
     {
         get { var s = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); return Matrix.A * Matrix.D - Matrix.B * Matrix.C < 0 && Matrix.A < 0 ? -s : s; }
-        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); double rot = cur == 0 ? 0 : Math.Atan2(Matrix.B, Matrix.A); var m = Matrix; m.A = value * Math.Cos(rot); m.B = value * Math.Sin(rot); Matrix = m; ScriptMoved(); }
+        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.A * Matrix.A + Matrix.B * Matrix.B); double rot = cur == 0 ? 0 : Math.Atan2(Matrix.B, Matrix.A); var m = Matrix; m.A = value * Math.Cos(rot); m.B = value * Math.Sin(rot); Matrix = m; Held3x3 = null; ScriptMoved(); }
     }
     [As] public double scaleY
     {
         get => Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D);
-        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D); double rot = cur == 0 ? 0 : Math.Atan2(-Matrix.C, Matrix.D); var m = Matrix; m.C = -value * Math.Sin(rot); m.D = value * Math.Cos(rot); Matrix = m; ScriptMoved(); }
+        set { if (double.IsNaN(value)) return; double cur = Math.Sqrt(Matrix.C * Matrix.C + Matrix.D * Matrix.D); double rot = cur == 0 ? 0 : Math.Atan2(-Matrix.C, Matrix.D); var m = Matrix; m.C = -value * Math.Sin(rot); m.D = value * Math.Cos(rot); Matrix = m; Held3x3 = null; ScriptMoved(); }
     }
-    [As] public double scaleZ { get; set; } = 1;
+    [As] public double scaleZ { get => scaleZv; set { scaleZv = value; Held3x3 = null; } }
     [As] public double rotation
     {
         get => Math.Atan2(Matrix.B, Matrix.A) * 180 / Math.PI;
@@ -136,11 +142,11 @@ public class AsDisplayObject : AsEventDispatcher
         {
             if (double.IsNaN(value)) return;
             double sx = scaleX, sy = scaleY, r = value * Math.PI / 180;
-            var m = Matrix; m.A = sx * Math.Cos(r); m.B = sx * Math.Sin(r); m.C = -sy * Math.Sin(r); m.D = sy * Math.Cos(r); Matrix = m; ScriptMoved();
+            var m = Matrix; m.A = sx * Math.Cos(r); m.B = sx * Math.Sin(r); m.C = -sy * Math.Sin(r); m.D = sy * Math.Cos(r); Matrix = m; Held3x3 = null; ScriptMoved();
         }
     }
-    [As] public double rotationX { get; set; }
-    [As] public double rotationY { get; set; }
+    [As] public double rotationX { get => rotXv; set { rotXv = value; Held3x3 = null; } }
+    [As] public double rotationY { get => rotYv; set { rotYv = value; Held3x3 = null; } }
     [As] public double rotationZ { get; set; }
     [As] public double alpha { get => Color.Am; set { Color = Color with { Am = double.IsNaN(value) ? 0 : value }; ScriptColored(); } }
     /// <summary>

@@ -206,6 +206,55 @@ public class RuntimeTests
     }
 
     [Test]
+    public void Matrix3DFromPropertiesIsRzRyRxS()
+    {
+        // UpdateTransform3D (sfr_gfx_06.cpp:1903-1920): T * (Rz * Ry) * (Rx * S), Matrix3F(a, b) = a * b (sfr_render_03.cpp:80-95)
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        sp.rotation = 20; sp.rotationY = 10;
+        var m = sp.transform.matrix3D;
+        double r20 = 20 * Math.PI / 180, r10 = 10 * Math.PI / 180;
+        Assert.That(Convert.ToDouble(m.rawData.Items[1]), Is.EqualTo(Math.Sin(r20) * Math.Cos(r10)).Within(1e-9));   // [1][0] = sz*cy
+        Assert.That(Convert.ToDouble(m.rawData.Items[2]), Is.EqualTo(-Math.Sin(r10)).Within(1e-9));                 // [2][0] = -sy
+    }
+
+    [Test]
+    public void Matrix3DSetIsHeldUntilASetterRuns()
+    {
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        var m3 = (AsMatrix3D)rt.GetClass("flash.geom.Matrix3D").Construct();
+        m3.appendRotation(30, AsVector3D.Y_AXIS);
+        m3.appendRotation(20, AsVector3D.Z_AXIS);
+        var want = Enumerable.Range(0, 16).Select(i => Convert.ToDouble(m3.rawData.Items[i])).ToArray();
+        sp.transform.matrix3D = m3;
+        var got = sp.transform.matrix3D;
+        for (int i = 0; i < 12; i++) Assert.That(Convert.ToDouble(got.rawData.Items[i]), Is.EqualTo(want[i]).Within(1e-6), "element " + i);
+        sp.x = 7;                                           // x is not a rotation/scale/z setter: the 3x3 stays
+        Assert.That(Convert.ToDouble(sp.transform.matrix3D.rawData.Items[1]), Is.EqualTo(want[1]).Within(1e-6));
+        sp.rotationX = 15;                                  // a setter rebuilds M34 from the properties
+        Assert.That(sp.transform.matrix3D.rawData.Items[6], Is.Not.EqualTo(want[6]));
+    }
+
+    [Test]
+    public void NullMatrix3DAfterAPure2DMatrixResetsTo2DIdentity()
+    {
+        // any SetMatrix3D sets the node's Is3D flag and Clear3D resets the geom, the 2D values too (sfr_gfx_06.cpp:191-201)
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var sp = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        var m3 = (AsMatrix3D)rt.GetClass("flash.geom.Matrix3D").Construct();
+        m3.appendScale(2, 3, 1);
+        sp.transform.matrix3D = m3;
+        Assert.That(sp.scaleX, Is.EqualTo(2).Within(1e-9));
+        sp.transform.matrix3D = null;
+        Assert.That(sp.scaleX, Is.EqualTo(1).Within(1e-9));
+        Assert.That(sp.scaleY, Is.EqualTo(1).Within(1e-9));
+    }
+
+    [Test]
     public void Matrix3DFollowsScaleform()
     {
         // flash.geom.Matrix3D (sfr_as3_11.cpp): undefined before, which stopped the Flash timeline helpers that build one

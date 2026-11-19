@@ -271,17 +271,22 @@ public class AsTransform : AsObject
             var o = Owner.Matrix;
             var m = Mat4.Identity();
             m[0, 0] = o.A; m[1, 0] = o.B; m[0, 1] = o.C; m[1, 1] = o.D;
-            if (Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
+            if (Owner.Held3x3 is { } held)
             {
-                // the 3D part of the node's M34 (SetMatrix3D, sfr_gfx_06.cpp:1514): Ry * Rz * Rx with the column scales, the
-                // order GetEulerAngles decodes (render_matrix4x4.h:228-252)
+                for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) m[i, j] = held[i, j];     // the last matrix3D set, until a setter replaces it
+            }
+            else if (Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
+            {
+                // M34 as UpdateTransform3D builds it from the properties (sfr_gfx_06.cpp:1903-1920): T * (Rz * Ry) * (Rx * S),
+                // Matrix3F(a, b) = a * b (MultiplyMatrix, sfr_render_03.cpp:80-95). (Ry * Rz * Rx is only the order
+                // GetEulerAngles decodes, render_matrix4x4.h:228-252.)
                 double rx = Owner.rotationX * Math.PI / 180, ry = Owner.rotationY * Math.PI / 180, rz = Owner.rotation * Math.PI / 180;
                 double cx = Math.Cos(rx), sx = Math.Sin(rx), cy = Math.Cos(ry), sy = Math.Sin(ry), cz = Math.Cos(rz), sz = Math.Sin(rz);
                 double[,] r =
                 {
-                    { cy * cz, -cy * sz * cx + sy * sx, cy * sz * sx + sy * cx },
-                    { sz, cz * cx, -cz * sx },
-                    { -sy * cz, sy * sz * cx + cy * sx, -sy * sz * sx + cy * cx },
+                    { cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx },
+                    { sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx },
+                    { -sy, cy * sx, cy * cx },
                 };
                 double[] sc = { Owner.scaleX, Owner.scaleY, Owner.scaleZ };
                 for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) m[i, j] = r[i, j] * sc[j];
@@ -307,13 +312,16 @@ public class AsTransform : AsObject
                 Owner.rotation = rz * 180 / Math.PI;
                 Owner.rotationX = rx * 180 / Math.PI; Owner.rotationY = ry * 180 / Math.PI;
                 Owner.scaleX = xs; Owner.scaleY = ys; Owner.scaleZ = zs;
+                var keep = new double[3, 3];
+                for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) keep[i, j] = m[i, j];
+                Owner.Held3x3 = keep; Owner.Is3D = true;      // after the property writes, which clear it
             }
-            else if (Owner.z != 0 || Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
+            else if (Owner.Is3D || Owner.z != 0 || Owner.rotationX != 0 || Owner.rotationY != 0 || Owner.scaleZ != 1)
             {
                 // Clear3D (sfr_gfx_06.cpp:191-201, sfr_render_03c.cpp:395-399): the geom goes back to its defaults and the
                 // M34 to the identity, so the 2D values go too (Flash keeps them)
                 Owner.Matrix = Mat.Identity;
-                Owner.z = 0; Owner.rotationX = 0; Owner.rotationY = 0; Owner.scaleZ = 1;
+                Owner.z = 0; Owner.rotationX = 0; Owner.rotationY = 0; Owner.scaleZ = 1; Owner.Held3x3 = null; Owner.Is3D = false;
             }
             Owner.ScriptMoved();
         }
