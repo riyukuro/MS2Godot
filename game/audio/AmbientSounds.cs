@@ -46,7 +46,7 @@ public partial class AmbientSounds : Node3D
 
     static void Start(AudioStreamPlayer3D p, Pcm16 pcm)
     {
-        if (!GodotObject.IsInstanceValid(p)) return;
+        if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
         p.Stream = new AudioStreamWav
         {
             Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes(),

@@ -15,7 +15,15 @@ public partial class FieldAudio : Node
 {
     public const string UiClickWave = "System_Button_click_01";   // MS2Sound_System.fsb, the client's button click
 
+    /// <summary>The audio of the field in the tree; null from the moment that field leaves it (a field change, the exit)
+    /// until the next field's audio opens, so a sound asked for during the load (a party sound, an effect, an option save)
+    /// plays nowhere instead of reaching the freed players.</summary>
     public static FieldAudio Instance { get; private set; }
+
+    public override void _ExitTree()
+    {
+        if (Instance == this) Instance = null;
+    }
 
     SoundLibrary library;
     SystemSoundTable systemSounds;
@@ -117,6 +125,8 @@ public partial class FieldAudio : Node
 
     void StartMusic(MusicPlan p, Pcm16 intro, Pcm16 loop)
     {
+        // the decode outlives a field that changed or quit meanwhile: its players are freed with it
+        if (!IsInstanceValid(this) || !IsInsideTree()) return;
         if (p != plan) return;   // another cue was requested meanwhile
         loopPcm = loop;
         if (intro != null) { music.Stream = Stream(intro, false); music.Finished += OnMusicFinished; chained = true; }
@@ -218,7 +228,8 @@ public partial class FieldAudio : Node
         v.VolumeDb = Mathf.LinearToDb(clip.Volume);
         v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
         v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;
-        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => v.Play(); else v.Play();
+        // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing
+        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v)) v.Play(); }; else v.Play();
         PositionalPlayed++;
         return true;
     }
