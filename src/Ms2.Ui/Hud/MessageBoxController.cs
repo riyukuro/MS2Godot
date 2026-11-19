@@ -151,6 +151,30 @@ public static class MessageBoxQueue
     }
 
     /// <summary>
+    /// ShowTermsMessageBoxWithCallback @0x140d748b0: the same terms box with the given title and text, answered by
+    /// <paramref name="callback"/> instead of a listener; shown now (FUN_140d73c60).
+    /// </summary>
+    public static MessageBoxData ShowTermsWithCallback(int bit, string title, string text,
+        Func<int, MessageBoxData, bool> callback)
+    {
+        termsBit = bit;
+        var box = new MessageBoxData(0x1b) { Msg = text ?? "", Extra = "terms" };
+        box.SetButtonPreset(1);
+        box.Title = title ?? "";
+        box.SetCheckbox0(MessageBoxData.Common(0x9d0), true);
+        box.SetAgreement(agreedTerms.Contains(bit));
+        box.Callback = callback;
+        Show(box);
+        return box;
+    }
+
+    /// <summary>FUN_140d74e50: mark terms bit <paramref name="bit"/> agreed.</summary>
+    public static void Agree(int bit) => agreedTerms.Add(bit);
+
+    /// <summary>Whether terms bit <paramref name="bit"/> is agreed (the bit set's FUN_140d750f0).</summary>
+    public static bool IsAgreed(int bit) => agreedTerms.Contains(bit);
+
+    /// <summary>
     /// FUN_140d74e80: the answer of a terms box from its click tag (MessageBoxTerms.getExtraData: the tag, then
     /// ",checkbox0:" and the check box's state). A tag that starts with "terms" and has a second part marks the last
     /// box's bit agreed (FUN_140d74e50; not bit 8) whatever was checked; the answer is whether that part says "true".

@@ -102,10 +102,7 @@ public sealed class GameTables
         PropertyProtectionTime = (int)k.Float("PropertyProtectionTime", PropertyProtectionTime);
         // Value<__int64> BlackMarketSellMinPrice / BlackMarketSellMaxPrice (read whole: an integer text), min clamped to 0 and
         // max raised to min (unit_1402ab440_constantsblocks.cpp:942-945); Value<int> BlackMarketSellEndDay (:1002)
-        long int64(string key, long def) => long.TryParse(k.String(key), System.Globalization.NumberStyles.Integer,
-            System.Globalization.CultureInfo.InvariantCulture, out long v) ? v : (long)k.Float(key, def);
-        BlackMarketSellMinPrice = Math.Max(0, int64("BlackMarketSellMinPrice", BlackMarketSellMinPrice));
-        BlackMarketSellMaxPrice = Math.Max(BlackMarketSellMinPrice, int64("BlackMarketSellMaxPrice", BlackMarketSellMaxPrice));
+        (BlackMarketSellMinPrice, BlackMarketSellMaxPrice) = BlackMarketPrices(k.String, BlackMarketSellMinPrice, BlackMarketSellMaxPrice);
         BlackMarketSellEndDay = (int)k.Float("BlackMarketSellEndDay", BlackMarketSellEndDay);
         GuildNameLengthMin = (int)k.Float("GuildNameLengthMin", GuildNameLengthMin);
         GuildNameLengthMax = (int)k.Float("GuildNameLengthMax", GuildNameLengthMax);
@@ -375,6 +372,25 @@ public sealed class GameTables
     /// min at least 0 and the max at least the min: unit_1402ab440_constantsblocks.cpp:942-945), the register price limits
     /// (BlackMarketPageItemRegister::OnClickRegister), and BlackMarketSellEndDay (7: :1002), the sale days its texts show.</summary>
     public long BlackMarketSellMinPrice = 10, BlackMarketSellMaxPrice = 9900000000;
+
+    /// <summary>
+    /// The Value&lt;__int64&gt; reads of BlackMarketSellMinPrice / BlackMarketSellMaxPrice: the integer text read whole (a
+    /// float would round 9900000000 to 9900000256), the default when the tables do not set it; then min clamped to 0 and
+    /// max raised to min (unit_1402ab440_constantsblocks.cpp:942-945).
+    /// </summary>
+    /// <param name="text">The constant's text, or null when it is not in the tables.</param>
+    public static (long min, long max) BlackMarketPrices(Func<string, string> text, long defMin, long defMax)
+    {
+        long read(string key, long def)
+        {
+            string s = text(key);
+            if (s == null) return def;
+            if (long.TryParse(s.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long v)) return v;
+            return double.TryParse(s, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) ? (long)d : def;
+        }
+        long min = Math.Max(0, read("BlackMarketSellMinPrice", defMin));
+        return (min, Math.Max(min, read("BlackMarketSellMaxPrice", defMax)));
+    }
     public int BlackMarketSellEndDay = 7;
     /// <summary>CGuildXmlData's property map: the accumulated exp (accumExp) by guild level, in level order.</summary>
     public readonly SortedDictionary<int, int> GuildAccumExp = new();
@@ -617,6 +633,13 @@ public sealed class GameTables
     XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);
+    BlackMarketTable blackMarket;
+    /// <summary>CBlackMarketTable (Table/blackMarketTable.xml), read on first use.</summary>
+    public BlackMarketTable BlackMarket => blackMarket ??= packs == null || !packs.Exists("Xml", "table/blackmarkettable.xml")
+        ? BlackMarketTable.Empty
+        : new BlackMarketTable(GameStrings.Parse(packs.Read("Xml", "table/blackmarkettable.xml")),
+            f => LobbyFeatures.IsEnabledByName(packs, f), CategoryName, ItemOptions.FindStatByName, ItemOptions.FindSpecialByName,
+            StatName, SpecialAbilityName);
 
     /// <summary>
     /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 1 itemName,

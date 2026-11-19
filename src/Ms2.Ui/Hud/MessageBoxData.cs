@@ -170,7 +170,7 @@ public sealed class MessageBoxData
     }
 
     /// <summary>_wtoi: leading blanks, a sign, then the digits up to the first other character; 0 without digits.</summary>
-    internal static int WToI(string s)
+    public static int WToI(string s)
     {
         int i = 0, sign = 1;
         long v = 0;

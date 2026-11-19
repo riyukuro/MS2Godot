@@ -57,6 +57,10 @@ public interface IBlackMarketDialog
     void ReferencePrice(int itemId, int rarity, long price);
     /// <summary>OnItemSearchNotice @0x1418d0b60: the search page's FUN_140f0de60(type, result, value).</summary>
     void SearchNotice(int type, int result, long value);
+    /// <summary>vfunc_79 @0x1418cf920 on packet 0x98: the register page's and the search page's OnReplyReceived of the
+    /// packet's first byte, or of its second (the error's type) when the first is 0. A page whose pending request has that
+    /// action resets it and unlocks its movie (FUN_1412761e0(root, 1)).</summary>
+    void ReplyReceived(int action);
 }
 
 /// <summary>
@@ -318,6 +322,8 @@ public sealed class BlackMarketBook
                 break;
             case BlackMarketMessage.Error e: OnError(e); break;
         }
+        // The dialog's own packet hook (vfunc_79 @0x1418cf920) on the same packet.
+        Dialog()?.ReplyReceived(m is BlackMarketMessage.Error err ? err.Type : m.Mode);
     }
 
     /// <summary>OnOwnProductList @0x140a211a0: the own map emptied, each product's item count clamped to what remains

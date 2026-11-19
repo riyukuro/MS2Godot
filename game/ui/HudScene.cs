@@ -149,6 +149,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMails = null;
         unwatchTrades?.Invoke();
         unwatchTrades = null;
+        unwatchBlackMarket?.Invoke();
+        unwatchBlackMarket = null;
         unwatchPcInfo?.Invoke();
         unwatchPcInfo = null;
         unwatchBuddies?.Invoke();
@@ -1227,6 +1229,7 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveKeys(k)) return true;
         if (MailKeys(k)) return true;
         if (TradeKeys(k)) return true;
+        if (BlackMarketKeys(k)) return true;
         if (CommunityKeys(k)) return true;
         if (GuildKeys(k)) return true;
         return false;
@@ -2002,6 +2005,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchAchieves();
         WatchMails();
         WatchTrades();
+        WatchBlackMarket();
         c.MenuAction += def => { if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest(); };
         WatchBuddies();
         WatchGuild();
@@ -2860,6 +2864,7 @@ public partial class HudScene : Node, IUiStageHost
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
+        BlackMarketTick();                   // UIBlackMarketDialog::vfunc_15
         learningQuest?.Update();             // UILearningQuestDialog::vfunc_72: the new learning quest after MarkDirty
         CommunityTick();                     // UICommunityDialog::vfunc_72
         characterAbility?.Process(Time.GetTicksMsec());     // UICharacterAbilityDialog::vfunc_72: the reset button's time

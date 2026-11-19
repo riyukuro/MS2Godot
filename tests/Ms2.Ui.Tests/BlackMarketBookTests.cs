@@ -24,6 +24,8 @@ public class BlackMarketBookTests
         public void Bought(BlackMarketEntry e, int count) { Last = e; Calls.Add($"bought {e.Id} {count}"); }
         public void ReferencePrice(int itemId, int rarity, long price) => Calls.Add($"price {itemId} {rarity} {price}");
         public void SearchNotice(int type, int result, long value) => Calls.Add($"notice {type} {result} {value}");
+        public readonly List<int> Replies = new();
+        public void ReplyReceived(int action) => Replies.Add(action);
     }
 
     sealed class Rig
@@ -372,5 +374,29 @@ public class BlackMarketBookTests
         Assert.That(r.Book.ConfirmRegister(0, 7, 10, 1), Is.True);
         Assert.That(r.Sent, Has.Count.EqualTo(1));
         Assert.That(r.Sent[0], Is.TypeOf<BlackMarketRegisterRequest>());
+    }
+
+    [Test]
+    public void SellPriceConstantsReadAsInt64AndClamp()
+    {
+        Func<string, string> set(string min, string max) => k => k == "BlackMarketSellMinPrice" ? min : k == "BlackMarketSellMaxPrice" ? max : null;
+        // read exactly, not through a float (9900000000 as a float is 9900000256)
+        Assert.That(GameTables.BlackMarketPrices(set("10", "10000000000"), 10, 9900000000), Is.EqualTo((10L, 10000000000L)));
+        Assert.That(GameTables.BlackMarketPrices(set(null, null), 10, 9900000000), Is.EqualTo((10L, 9900000000L)));
+        // min below 0 is clamped to 0; max below min is raised to min
+        Assert.That(GameTables.BlackMarketPrices(set("-5", "100"), 10, 9900000000), Is.EqualTo((0L, 100L)));
+        Assert.That(GameTables.BlackMarketPrices(set("500", "100"), 10, 9900000000), Is.EqualTo((500L, 500L)));
+        Assert.That(GameTables.BlackMarketPrices(set("-5", "-9"), 10, 9900000000), Is.EqualTo((0L, 0L)));
+    }
+
+    [Test]
+    public void EveryReplyReachesTheDialogWithItsAction()
+    {
+        // vfunc_79 @0x1418cf920: the packet's first byte, or the error's type when the first byte is 0
+        var r = new Rig();
+        r.Book.OnBlackMarket(new BlackMarketMessage.Bought(9, 1) with { Mode = 5 });
+        r.Book.OnBlackMarket(new BlackMarketMessage.Error(3, 7, 0, 0, 0) with { Mode = 0 });
+        r.Book.OnBlackMarket(new BlackMarketMessage.OwnList(new[] { Product(1) }) with { Mode = 1 });
+        Assert.That(r.Dlg.Replies, Is.EqualTo(new[] { 5, 3, 1 }));
     }
 }
