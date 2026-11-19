@@ -1408,14 +1408,14 @@ public partial class HudScene : Node, IUiStageHost
         if (live == null)
         {
             ownBuffs.ServerTick = () => (uint)System.Environment.TickCount64;
-            ownBuffs.SelfObjectId = data.ObjectId;
+            ownBuffs.UpperTargetId = data.ObjectId;
             foreach (var b in data.Buffs) ownBuffs.Apply(b);
             return;
         }
         ownBuffs.ServerTick = () => live.GameSession is { } gs ? unchecked((uint)gs.ServerTick) : 0;
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
-            ownBuffs.SelfObjectId = live.SelfObjectId;
+            ownBuffs.UpperTargetId = live.UpperTargetId;
             if (b == null) ownBuffs.ClearAll();
             else ownBuffs.Apply(b);
         };

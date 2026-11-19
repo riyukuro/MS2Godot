@@ -97,8 +97,8 @@ public sealed class AdditionalBuffList
 
     /// <summary>GetServerTick.</summary>
     public Func<uint> ServerTick = () => 0;
-    /// <summary>The local player's object id.</summary>
-    public int SelfObjectId = -1;
+    /// <summary>g_upperTargetId: the first i32 of ServerEnter (CSceneStateGame::OnServerEnter, scenestategame.cpp:2071).</summary>
+    public int UpperTargetId;
     /// <summary>FindMainPlayerInfo(20063); null = no panel.</summary>
     public IBuffStrip Strip;
 
@@ -107,9 +107,8 @@ public sealed class AdditionalBuffList
 
     public IReadOnlyCollection<AdditionalBuff> Buffs => map.Values;
 
-    /// <summary>IsUpperTargetId @0x140930110, taken as "the object is the local player". STILL-OPEN: the decomp only declares
-    /// it.</summary>
-    public bool IsUpperTargetId(int objectId) => objectId == SelfObjectId;
+    /// <summary>IsUpperTargetId @0x140930110 (unit_14092f420_accountsessionstate.cpp:523): <c>g_upperTargetId == nValue</c>.</summary>
+    public bool IsUpperTargetId(int objectId) => UpperTargetId == objectId;
 
     /// <summary>OnBuff's three modes for the local player.</summary>
     public void Apply(BuffPacket p)

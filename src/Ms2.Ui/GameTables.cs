@@ -98,12 +98,8 @@ public sealed class GameTables
             && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
         Skills = new Skills.SkillTables(new Skills.JobTable(Xml("table/job.xml"), collect),
             new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
-        // SkillDataTableCli's additional effects: ./Data/Xml/Additional/*.xml (not recursive)
-        List<string> additionalFiles = null;
-        Additional = new Skills.AdditionalTable(
-            () => additionalFiles ??= packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase)
-                && n.IndexOf('/', 11) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList(),
-            Xml, e => LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")));
+        additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
+        Additional = NewAdditionalTable(packs, additionalCache);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
@@ -207,6 +203,44 @@ public sealed class GameTables
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>
     public readonly Skills.AdditionalTable Additional = Ms2.Ui.Skills.AdditionalTable.Empty;
+    readonly Ms2.Ui.Skills.AdditionalCache additionalCache;
+
+    /// <summary>The per-install <see cref="Ms2.Ui.Skills.AdditionalCache"/> file of a data folder (the game sets it: user://uigen/KEY/...);
+    /// null = none, the additional tables parse their XML on first use.</summary>
+    public static Func<string, string> AdditionalCacheOf = _ => null;
+
+    /// <summary>SkillDataTableCli's additional effects: ./Data/Xml/Additional/*.xml (not recursive), feature selected.</summary>
+    internal static Ms2.Ui.Skills.AdditionalTable NewAdditionalTable(PackSet packs, Ms2.Ui.Skills.AdditionalCache cache = null)
+    {
+        List<string> files = null;
+        return new Ms2.Ui.Skills.AdditionalTable(
+            () => files ??= packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase)
+                && n.IndexOf('/', 11) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList(),
+            path => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null,
+            e => LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")), cache);
+    }
+
+    /// <summary>One language's stringAdditionalDescription.xml as LoadLevelDescFiles reads it (see
+    /// <see cref="AdditionalDescription"/>): per id, per level, the ParseSkillDesc tags; null without the file.</summary>
+    internal static Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>> LevelDescFile(PackSet packs, string lang)
+    {
+        string entry = $"string/{lang}/stringadditionaldescription.xml";
+        if (!packs.Exists("Xml", entry)) return null;
+        var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+        if (root?.Name != "ms2") return null;
+        var file = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
+        foreach (var e in FeatureElements.Collect(packs, root, "key", "id", "level"))
+        {
+            uint key = (uint)ReservedWords.Atoi((string)e.Attribute("id") ?? "");
+            ushort lv = e.Attribute("level") is { } la ? (ushort)ReservedWords.Atoi((string)la) : (ushort)1;
+            var desc = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var t in SkillDescTags)
+                if ((string)e.Attribute(t) is { Length: > 0 } v) desc[t] = v.Replace("\\n", "\n");
+            if (!file.TryGetValue(key, out var levels)) file[key] = levels = new SortedDictionary<ushort, Dictionary<string, string>>();
+            levels[lv] = desc;
+        }
+        return file;
+    }
 
     /// <summary>
     /// CStringTable::FUN_141812290 (stringtable.cpp:774): the <paramref name="tag"/> text of an additional effect's level in
@@ -220,31 +254,32 @@ public sealed class GameTables
     /// </summary>
     public string AdditionalDescription(uint id, ushort level, string tag)
     {
-        if (levelDescs == null)
+        var langs = strings?.Languages ?? Array.Empty<string>();
+        SortedDictionary<ushort, Dictionary<string, string>> byLevel = null;
+        if (additionalCache?.Valid == true)
         {
-            levelDescs = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
-            foreach (var lang in strings?.Languages ?? Array.Empty<string>())
+            // the cache: the first language whose file has the id, decoded once
+            levelDescs ??= new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
+            if (!levelDescs.TryGetValue(id, out byLevel))
             {
-                string entry = $"string/{lang}/stringadditionaldescription.xml";
-                if (!packs.Exists("Xml", entry)) continue;
-                var file = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
-                var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
-                if (root?.Name != "ms2") continue;
-                foreach (var e in FeatureElements.Collect(packs, root, "key", "id", "level"))
-                {
-                    uint key = (uint)ReservedWords.Atoi((string)e.Attribute("id") ?? "");
-                    ushort lv = e.Attribute("level") is { } la ? (ushort)ReservedWords.Atoi((string)la) : (ushort)1;
-                    var desc = new Dictionary<string, string>(StringComparer.Ordinal);
-                    foreach (var t in SkillDescTags)
-                        if ((string)e.Attribute(t) is { Length: > 0 } v) desc[t] = v.Replace("\\n", "\n");
-                    if (!file.TryGetValue(key, out var levels)) file[key] = levels = new SortedDictionary<ushort, Dictionary<string, string>>();
-                    levels[lv] = desc;
-                }
-                foreach (var (k, v) in file) levelDescs.TryAdd(k, v);
+                foreach (var lang in langs)
+                    if ((byLevel = additionalCache.ReadDesc(lang.ToLowerInvariant(), id)) != null) break;
+                levelDescs[id] = byLevel;
             }
         }
+        else
+        {
+            if (levelDescs == null)
+            {
+                levelDescs = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
+                foreach (var lang in langs)
+                    if (LevelDescFile(packs, lang) is { } file)
+                        foreach (var (k, v) in file) levelDescs.TryAdd(k, v);
+            }
+            levelDescs.TryGetValue(id, out byLevel);
+        }
         string text = "";
-        if (levelDescs.TryGetValue(id, out var byLevel))
+        if (byLevel != null)
         {
             Dictionary<string, string> d = null;
             if (!byLevel.TryGetValue(level, out d))

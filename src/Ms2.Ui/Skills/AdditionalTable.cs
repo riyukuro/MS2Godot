@@ -63,7 +63,8 @@ public sealed class AdditionalData
     public uint Id;
     public int MainType;
     public bool IsDebuff;
-    readonly List<AdditionalLevelData> levels = new();
+    /// <summary>The levels in file order.</summary>
+    internal readonly List<AdditionalLevelData> Levels = new();
 
     /// <summary>Load: the &lt;level&gt; rows whose feature is enabled (IsElementFeatureEnabled, no locale test), in file order;
     /// null when none is left (Load returns false).</summary>
@@ -76,30 +77,31 @@ public sealed class AdditionalData
             IsDebuff = Xml.Bool(e, "isDebuff"),
         };
         foreach (var l in e.Elements("level"))
-            if (featureEnabled(l)) d.levels.Add(AdditionalLevelData.Load(l, d));          // ReadLevel (:825)
-        return d.levels.Count > 0 ? d : null;
+            if (featureEnabled(l)) d.Levels.Add(AdditionalLevelData.Load(l, d));          // ReadLevel (:825)
+        return d.Levels.Count > 0 ? d : null;
     }
 
     /// <summary>GetLevel @0x140170fe0 (:819): a binary search over the levels (FindSorted, a lower bound): the first level not
     /// below <paramref name="level"/>, null past the last.</summary>
     public AdditionalLevelData GetLevel(ushort level)
     {
-        int first = 0, count = levels.Count;
+        int first = 0, count = Levels.Count;
         while (count > 0)
         {
             int step = count / 2, it = first + step;
-            if (levels[it].Level < level) { first = it + 1; count -= step + 1; }
+            if (Levels[it].Level < level) { first = it + 1; count -= step + 1; }
             else count = step;
         }
-        return first < levels.Count ? levels[first] : null;
+        return first < Levels.Count ? Levels[first] : null;
     }
 }
 
 /// <summary>
 /// SkillDataTableCli's additional effects (GetAdditional @0x140aafd60, FUN_140aafef0 @0x140aafef0, skilldatatablecli.cpp:300-330)
-/// over ./Data/Xml/Additional/*.xml, by id. The client reads every file at startup; the files are named by id prefix
-/// (additional/105.xml holds the 105xxxxx ids), so here an id's own files are read on its first lookup and the rest only
-/// when it is not in them. A later row with the same id replaces the earlier one.
+/// over ./Data/Xml/Additional/*.xml, by id. The client reads every file at startup (a later row with the same id replaces the
+/// earlier one). Here the effects come from the per-install <see cref="AdditionalCache"/>, each id decoded on its first lookup.
+/// Without a valid cache the XML is parsed on first use: the files are named by id prefix (additional/105.xml holds the
+/// 105xxxxx ids), so an id's own files are read on its first lookup and the rest only when it is not in them.
 /// </summary>
 public sealed class AdditionalTable
 {
@@ -108,6 +110,7 @@ public sealed class AdditionalTable
     readonly Func<XElement, bool> featureEnabled;
     readonly Dictionary<uint, AdditionalData> data = new();
     readonly HashSet<string> loaded = new(StringComparer.Ordinal);
+    readonly AdditionalCache cache;
     bool all;
 
     public static readonly AdditionalTable Empty = new(() => Array.Empty<string>(), _ => null, _ => true);
@@ -115,11 +118,22 @@ public sealed class AdditionalTable
     /// <param name="names">The additional/*.xml entry names.</param>
     /// <param name="read">Reads one entry.</param>
     /// <param name="featureEnabled">IsElementFeatureEnabled.</param>
-    public AdditionalTable(Func<IReadOnlyList<string>> names, Func<string, XDocument> read, Func<XElement, bool> featureEnabled)
+    /// <param name="cache">The per-install cache; null or invalid = parse the XML.</param>
+    public AdditionalTable(Func<IReadOnlyList<string>> names, Func<string, XDocument> read, Func<XElement, bool> featureEnabled,
+                           AdditionalCache cache = null)
     {
         this.names = names;
         this.read = read;
         this.featureEnabled = featureEnabled;
+        this.cache = cache;
+    }
+
+    /// <summary>Every effect from the XML (the cache build).</summary>
+    internal IEnumerable<AdditionalData> LoadAll()
+    {
+        foreach (var n in names()) LoadFile(n);
+        all = true;
+        return data.Values;
     }
 
     void LoadFile(string name)
@@ -135,6 +149,7 @@ public sealed class AdditionalTable
     {
         if (id == 0) return null;
         if (data.TryGetValue(id, out var d)) return d;
+        if (cache?.Valid == true) return data[id] = cache.ReadEffect(id);
         if (all) return null;
         string key = id.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var files = names();

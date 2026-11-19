@@ -155,8 +155,16 @@ public partial class SetupScreen : Control
         box.AddChild(uiBar);
         uiBuild = System.Threading.Tasks.Task.Run(() =>
         {
-            if (UiCode.Built(data)) return null;
-            return UiCode.Build(data, (phase, f) => { uiPhase = phase; uiFrac = f; });
+            var r = UiCode.Built(data) ? null : UiCode.Build(data, (phase, f) => { uiPhase = phase; uiFrac = f; });
+            // the client tables the UI reads, parsed once per install (after the code: a new code key starts a new folder)
+            uiPhase = "Building the UI tables";
+            try
+            {
+                double s = UiCode.BuildTables(data);
+                if (s >= 0) GD.Print($"UI tables built: additional effects in {s:F1} s");
+            }
+            catch (System.Exception e) { GD.PushWarning("UI tables build failed: " + e.Message); }
+            return r;
         });
         SetProcess(true);
     }

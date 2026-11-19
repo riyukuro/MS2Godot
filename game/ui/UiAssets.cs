@@ -108,7 +108,7 @@ public sealed class UiAssets
         return ((Fallback.GetAscent(100) + Fallback.GetDescent(100)) / 100f, 0);
     }
 
-    public UiAssets(PackSet packs) { Packs = packs; }
+    public UiAssets(PackSet packs) { Packs = packs; Ms2Godot.UiCode.UseCaches(); }
 
     readonly Dictionary<string, UiMovie> movies = new(StringComparer.OrdinalIgnoreCase);
 

@@ -20,6 +20,37 @@ public static class UiCode
     /// <summary>The assembly path for a data folder (hashes Gfx.m2d the first time; then its stamp).</summary>
     public static string DllPath(string dataDir) => System.IO.Path.Combine(RootPath, UiGenerator.Key(dataDir, StampFile), UiGenerator.DllName);
 
+    static string XmlStampFile => System.IO.Path.Combine(RootPath, "xml-stamp.txt");
+
+    /// <summary>
+    /// The additional effect table cache (<see cref="Ms2.Ui.Skills.AdditionalCache"/>) next to the assembly:
+    /// user://uigen/KEY/additional-XMLKEY-vN.bin. With <paramref name="hash"/> (the setup step) a stale Xml.m2d stamp is
+    /// hashed again; without it (the game) a stale stamp gives null, so the tables parse the XML until the next setup.
+    /// </summary>
+    public static string AdditionalCachePath(string dataDir, bool hash = false)
+    {
+        if (string.IsNullOrEmpty(dataDir)) return null;
+        var key = Ms2.Ui.Skills.AdditionalCache.XmlKey(dataDir, XmlStampFile, hash);
+        return key == null ? null : System.IO.Path.Combine(System.IO.Path.GetDirectoryName(DllPath(dataDir)), Ms2.Ui.Skills.AdditionalCache.FileName(key));
+    }
+
+    /// <summary>Points the game tables at this install's caches (before the first table is built).</summary>
+    public static void UseCaches() => Ms2.Ui.GameTables.AdditionalCacheOf = d => AdditionalCachePath(d);
+
+    /// <summary>Builds the additional effect table cache when it is missing (a worker thread), then removes the ones built for
+    /// other Xml.m2d keys or versions. Returns the build time in seconds, or -1 when it was there.</summary>
+    public static double BuildTables(string dataDir)
+    {
+        var path = AdditionalCachePath(dataDir, true);
+        if (path == null || System.IO.File.Exists(path)) return -1;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using (var packs = new Ms2.Formats.Pack.PackSet(dataDir)) Ms2.Ui.Skills.AdditionalCache.Build(packs, path);
+        var dir = System.IO.Path.GetDirectoryName(path);
+        foreach (var f in System.IO.Directory.GetFiles(dir, "additional-*"))
+            if (f != path) try { System.IO.File.Delete(f); } catch (System.Exception e) { GD.PushWarning($"UI tables: {f}: {e.Message}"); }
+        return sw.Elapsed.TotalSeconds;
+    }
+
     /// <summary>The assembly for this data folder is built.</summary>
     public static bool Built(string dataDir) => System.IO.File.Exists(DllPath(dataDir));
 

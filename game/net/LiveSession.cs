@@ -83,8 +83,9 @@ public partial class LiveSession : Node
     /// takes them (<see cref="TakeBuffs"/>), then raised.
     /// </summary>
     public event Action<BuffPacket> BuffReceived;
-    /// <summary>The own FieldAddUser object id, -1 before it.</summary>
-    public int SelfObjectId => selfObject;
+    /// <summary>g_upperTargetId: the ServerEnter object id (CSceneStateGame::OnServerEnter, scenestategame.cpp:2071), 0 before
+    /// the entry.</summary>
+    public int UpperTargetId => entry?.Enter?.ObjectId ?? 0;
     readonly Queue<BuffPacket> pendingBuffs = new();
     bool buffsTaken;
     /// <summary>The buff packets kept so far, and raise <see cref="BuffReceived"/> from now on.</summary>

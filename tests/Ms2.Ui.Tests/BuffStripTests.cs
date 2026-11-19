@@ -29,7 +29,7 @@ public class BuffStripTests
     public void AddRemoveAndModifyGoToTheStrip()
     {
         var s = new Strip();
-        var list = new AdditionalBuffList(Level) { SelfObjectId = 5, Strip = s };
+        var list = new AdditionalBuffList(Level) { UpperTargetId = 5, Strip = s };
         list.Apply(Add(10, 1));
         list.Apply(Add(10, 1));      // a key already held: nothing
         list.Apply(Add(11, 2));      // no level: nothing
@@ -45,7 +45,7 @@ public class BuffStripTests
     public void SortOrderAndRemainTicks()
     {
         uint now = 400;
-        var list = new AdditionalBuffList(Level) { SelfObjectId = 5, ServerTick = () => now };
+        var list = new AdditionalBuffList(Level) { UpperTargetId = 5, ServerTick = () => now };
         list.Apply(Add(10, 1));
         var b = list.Buffs.Single();
         Assert.That(b.SortOrder, Is.EqualTo(2));         // cast by its owner
@@ -65,7 +65,7 @@ public class BuffStripTests
         var m = new UiModel(tables) { Keys = new KeyTable(packs, "en"), HasLocalPlayer = true };
         UiFixture.Apply(m);
         var c = new MainPlayerInfoController();
-        var list = new AdditionalBuffList(tables.Additional.GetLevel) { SelfObjectId = 1, Strip = c };
+        var list = new AdditionalBuffList(tables.Additional.GetLevel) { UpperTargetId = 1, Strip = c };
         c.IsUpperTargetId = list.IsUpperTargetId;
         list.Apply(new BuffPacket(BuffPacket.Add, 1, 1, 1, 0, new BuffState(0, 0, 10500111, 1, 1, 1), 0));     // before the load: pending
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
