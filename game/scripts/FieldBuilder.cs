@@ -170,14 +170,23 @@ public sealed class FieldBuilder
 
     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset) standing on the
     // entity position, turned by the Z rotation only; scale is ignored
-    static BoxShape3D GeneratePhysXBox(FieldEntity e, out Transform3D at)
+    BoxShape3D GeneratePhysXBox(FieldEntity e, out Transform3D at)
     {
         var d = e.Vector("GeneratePhysXDimension");
         var size = d.X == 0 && d.Y == 0 && d.Z == 0 ? new Vector3(150, 150, 150) : new Vector3((float)d.X, (float)d.Y, (float)d.Z);
         var p = e.Position;
         at = new Transform3D(new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)),
                              new Vector3((float)p.X, (float)p.Y, (float)p.Z + size.Z / 2));
-        return new BoxShape3D { Size = size };
+        return BoxOf(size);
+    }
+
+    // boxes of one size share one shape resource: a field has thousands of boxes of a few sizes, and every shape is a
+    // wrapper the SDK tracks for the whole session; nothing changes a shape after it is built
+    readonly System.Collections.Generic.Dictionary<Vector3, BoxShape3D> boxes = new();
+    BoxShape3D BoxOf(Vector3 size)
+    {
+        if (!boxes.TryGetValue(size, out var b)) boxes[size] = b = new BoxShape3D { Size = size };
+        return b;
     }
 
     /// <summary>
@@ -251,7 +260,7 @@ public sealed class FieldBuilder
                     {
                         // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2, in the
                         // entity's PropCollisionGroup (PhysXWhiteboxService.cpp:392-395, :440)
-                        var whitebox = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) };
+                        var whitebox = BoxOf(new Vector3((float)d.X, (float)d.Y, (float)d.Z));
                         Chunk(e.Position, (int)e.Number("PropCollisionGroup")).AddChild(new CollisionShape3D { Shape = whitebox, Transform = xf });
                         npcGround.Add(whitebox, xf);
                         Whiteboxes++;
