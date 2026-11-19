@@ -146,6 +146,16 @@ public partial class LiveSession
             GD.Print($"live: portal notice '{text}'");
             s.SystemNoticeSink?.Invoke(text);
         }
+        public void UpdateBoxError(int id)
+        {
+            GD.Print($"live: portal box error 0x{id:x}");
+            MessageBoxQueue.Layer?.UpdateErrorMessage(MessageBoxData.Common(id));
+        }
+        public void ShowTextBox(string text)
+        {
+            GD.Print($"live: portal text box '{text}'");
+            MessageBoxQueue.ShowMessageBox(text, 0, null, "");
+        }
         public void StillOpen(string what) => GD.Print($"live: STILL-OPEN {what}; nothing sent");
     }
 

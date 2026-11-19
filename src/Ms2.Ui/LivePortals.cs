@@ -39,6 +39,10 @@ public interface IPortalHost
     void ShowInputBox(int commonId, Action<int, string> answer);
     /// <summary>ShowSystemNotice(text, 1, 1).</summary>
     void SystemNotice(string text);
+    /// <summary>GetMessageBoxLayer()->UpdateErrorMessage(GetStringCommon(id)): the error line of the box already open.</summary>
+    void UpdateBoxError(int commonId);
+    /// <summary>ShowMessageBox(text, 0, 0, ""): a plain box without a listener.</summary>
+    void ShowTextBox(string text);
     /// <summary>A client path that is not ported: the portal sends nothing.</summary>
     void StillOpen(string what);
 }
@@ -532,8 +536,10 @@ public sealed class PortalAction
     }
 
     /// <summary>
-    /// CSceneStateGame::OnEnterUgcMap (0xAA) by mode: the result boxes, mode 3's password box and mode 4's wrong password
-    /// (the lock counts tries; the fifth locks the portal for 10 s). Mode 1 is STILL-OPEN.
+    /// CSceneStateGame::OnEnterUgcMap (0xAA, scenestategame.cpp:4581) by mode: the result boxes; mode 3 keeps the move and
+    /// opens the password box only with a MyPC; mode 4 (wrong password) puts 0xb0b as the error line of the box already open
+    /// and counts the lock's tries (the fifth locks the portal for 10 s); mode 11 is a plain box of
+    /// s_home_visit_failed_private. Mode 1 is STILL-OPEN.
     /// </summary>
     public void OnEnterUgcMap(EnterUgcMapMessage m)
     {
@@ -543,12 +549,13 @@ public sealed class PortalAction
             case 1: host.StillOpen("EnterUgcMap mode 1"); break;
             case 2: host.ShowCommonBox(0x9cd, 0, ""); break;
             case 3:
+                if (!host.HasPlayer) break;
                 PendingMove = m;
                 host.ShowInputBox(0xb07, OnHomePasswordAnswer);
                 break;
             case 4:
             {
-                host.ShowCommonBox(0xb0b, 0, "");
+                host.UpdateBoxError(0xb0b);
                 var l = Locks.GetOrAdd(host.FieldId, m.A, m.B, m.C);
                 if (l.Until > host.ServerTime) break;
                 l.Tries++;
@@ -561,7 +568,7 @@ public sealed class PortalAction
             case 8: host.ShowCommonBox(0x87d, 0, ""); break;
             case 9: host.ShowCommonBox(0x87a, 0, ""); break;
             case 10: host.ShowCommonBox(0x87e, 0, ""); break;
-            case 11: host.SystemNotice(MessageBoxData.CommonByKey("s_home_visit_failed_private") ?? ""); break;
+            case 11: host.ShowTextBox(MessageBoxData.CommonByKey("s_home_visit_failed_private") ?? ""); break;
         }
     }
 

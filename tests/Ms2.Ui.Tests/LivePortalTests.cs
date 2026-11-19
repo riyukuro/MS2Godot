@@ -34,6 +34,10 @@ public class LivePortalTests
         public void ShowInputBox(int id, Action<int, string> answer) => Inputs.Add((id, answer));
         public readonly List<string> Notices = new();
         public void SystemNotice(string text) => Notices.Add(text);
+        public readonly List<int> BoxErrors = new();
+        public void UpdateBoxError(int id) => BoxErrors.Add(id);
+        public readonly List<string> TextBoxes = new();
+        public void ShowTextBox(string text) => TextBoxes.Add(text);
         public readonly List<string> Open = new();
         public void StillOpen(string what) => Open.Add(what);
     }
@@ -342,6 +346,34 @@ public class LivePortalTests
         Assert.That((m.Id, m.Visible, m.Enabled, m.Dimension, m.TargetMap, m.ObjectId, m.ActionKind, m.Owner, m.Type, m.EndTick,
             m.Extra, m.StartTick, m.Password, m.Locale),
             Is.EqualTo((7, true, false, new Vector3(6, 7, 8), 2000, 3, 1, 77L, (byte)0xb, 10, (ushort)4, 20, true, "KR")));
+    }
+
+    [Test]
+    public void WrongHomePasswordUpdatesTheOpenBox()
+    {
+        var (host, action, _) = Field();
+        action.OnEnterUgcMap(new EnterUgcMapMessage { Mode = 4 });
+        Assert.That(host.BoxErrors, Is.EqualTo(new[] { 0xb0b }));
+        Assert.That(host.Boxes, Is.Empty);
+    }
+
+    [Test]
+    public void PrivateHomeIsAPlainBox()
+    {
+        var (host, action, _) = Field();
+        action.OnEnterUgcMap(new EnterUgcMapMessage { Mode = 11 });
+        Assert.That(host.TextBoxes, Has.Count.EqualTo(1));
+        Assert.That(host.Notices, Is.Empty);
+    }
+
+    [Test]
+    public void HomePasswordBoxNeedsThePlayer()
+    {
+        var (host, action, _) = Field();
+        host.HasPlayer = false;
+        action.OnEnterUgcMap(new EnterUgcMapMessage { Mode = 3, PortalId = 5 });
+        Assert.That(host.Inputs, Is.Empty);
+        Assert.That(action.PendingMove, Is.Null);
     }
 
     [Test]
