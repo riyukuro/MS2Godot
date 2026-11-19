@@ -41,17 +41,18 @@ public sealed partial class EffectInstance : Node3D
     public Transform3D FileSpace { set => z.Transform = new Transform3D(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero) * value; }
 
     static Shader meshAdd, meshMix, partAdd, partMix;
+    // Textures and colours are taken raw (no source_color): the colour buffer holds gamma values (field_lit.gdshader).
     static readonly string MeshCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
-uniform sampler2D tex : source_color, repeat_enable, filter_linear;
+uniform sampler2D tex : repeat_enable, filter_linear;
 uniform bool has_tex = true;
-uniform sampler2D glow_tex : source_color, repeat_enable, filter_linear;
+uniform sampler2D glow_tex : repeat_enable, filter_linear;
 uniform bool has_glow = false;
 uniform vec2 uv_off = vec2(0.0);
 uniform vec2 uv_scale = vec2(1.0);
 uniform float uv_rot = 0.0;
 uniform float alpha = 1.0;
-uniform vec4 tint : source_color = vec4(1.0);
+uniform vec4 tint = vec4(1.0);
 void fragment() {
     vec2 uv = UV - 0.5;
     float c = cos(uv_rot), s = sin(uv_rot);
@@ -64,7 +65,7 @@ void fragment() {
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
-uniform sampler2D tex : source_color, filter_linear;
+uniform sampler2D tex : filter_linear;
 uniform bool has_tex = true;
 uniform vec2 frames = vec2(1.0, 1.0);
 varying float frame;

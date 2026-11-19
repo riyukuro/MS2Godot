@@ -58,7 +58,7 @@ public partial class Main : Node3D
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = new Color(0.55f, 0.7f, 0.85f),
+            BackgroundColor = new Color(0.55f, 0.7f, 0.85f).LinearToSrgb(),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = new Color(0.6f, 0.6f, 0.65f),
             AmbientLightEnergy = 0.8f,
@@ -72,11 +72,11 @@ public partial class Main : Node3D
         {
             Name = "Ground",
             Mesh = new PlaneMesh { Size = new Vector2(600, 600) },
-            MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.45f, 0.55f, 0.4f), Roughness = 1f },
+            MaterialOverride = new StandardMaterial3D { AlbedoColor = new Color(0.45f, 0.55f, 0.4f).LinearToSrgb(), Roughness = 1f },
         };
         AddChild(ground);
 
-        camera = new Camera3D { Fov = 40, Near = 1, Far = 5000 };
+        camera = new Camera3D { Fov = 40, Near = 1, Far = 5000, Compositor = Ms2Bloom.GammaOut() };   // gamma-valued shaders
         AddChild(camera);
         camera.LookAtFromPosition(new Vector3(120, 95, 230), new Vector3(0, 55, 0), Vector3.Up);
     }

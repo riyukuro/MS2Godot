@@ -13,16 +13,23 @@ namespace Ms2Godot;
 ///     step by 1 / quarter width, so the vertical step is a fraction of a texel on a wide screen;
 ///  4. final: scene + bloomscale * bloom.
 /// The doubled weights make each blur pass gain about 2, so a lit floor gains ~15-20% overall.
-/// Godot's buffer is linear, so the passes convert to gamma and back. Threshold, offset and bloomscale come from the
-/// field's &lt;hdr&gt; entry (client defaults 0.27, 30, 2).
+/// The field's colour buffer holds gamma values as the client's target does (field_lit.gdshader), so the passes read it
+/// as it is, and the final pass converts the sum to linear once, for Godot's linear -> sRGB output. Threshold, offset and
+/// bloomscale come from the field's &lt;hdr&gt; entry (client defaults 0.27, 30, 2).
+/// A 3D view without the bloom (UI character views) still needs that conversion: <see cref="GammaOut"/> runs only it.
 /// </summary>
 public partial class Ms2Bloom : CompositorEffect
 {
     public GlowPass Glow;
     public float Threshold = 0.27f, Offset = 30f, BloomScale = 2f, GlowScale = 0.1f;
+    /// <summary>Only the gamma -> linear conversion, no bloom.</summary>
+    public bool ConvertOnly;
+
+    /// <summary>A compositor for a 3D view that draws the gamma-valued shaders without the bloom.</summary>
+    public static Compositor GammaOut() => new() { CompositorEffects = new Array<CompositorEffect> { new Ms2Bloom { ConvertOnly = true } } };
 
     RenderingDevice rd;
-    readonly Rid[] shaders = new Rid[3], pipes = new Rid[3];
+    readonly Rid[] shaders = new Rid[4], pipes = new Rid[4];
     Rid sampler, bright, blurH, blurV, black;
     Vector2I quarter;
 
@@ -30,7 +37,6 @@ public partial class Ms2Bloom : CompositorEffect
 layout(local_size_x = 8, local_size_y = 8) in;
 layout(push_constant, std430) uniform Params { vec2 step_uv; float threshold; float offset; float scale; float glow_scale; float pad1; float pad2; } pc;
 
-vec3 to_gamma(vec3 c) { return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c)); }
 vec3 to_linear(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c)); }
 
 #if MODE == 0
@@ -44,7 +50,7 @@ void main() {
 	vec3 s = vec3(0.0);
 	for (int y = 0; y < 4; y++)
 		for (int x = 0; x < 4; x++)
-			s += to_gamma(imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb);
+			s += imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb;
 	vec3 b = max(s / 16.0 - pc.threshold, vec3(0.0));
 	vec3 g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).rgb;   // the glow target (GlowPass), added after the compression
 	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g * pc.glow_scale, vec3(1.0)), 1.0));
@@ -65,7 +71,7 @@ void main() {
 	}
 	imageStore(dst, q, vec4(s, 1.0));
 }
-#else
+#elif MODE == 2
 layout(rgba16f, set = 0, binding = 0) uniform restrict image2D scene;
 layout(set = 0, binding = 1) uniform sampler2D bloom;
 void main() {
@@ -73,8 +79,16 @@ void main() {
 	ivec2 size = imageSize(scene);
 	if (any(greaterThanEqual(p, size))) return;
 	vec4 c = imageLoad(scene, p);
-	vec3 g = to_gamma(c.rgb) + pc.scale * texture(bloom, (vec2(p) + 0.5) / vec2(size)).rgb;
+	vec3 g = c.rgb + pc.scale * texture(bloom, (vec2(p) + 0.5) / vec2(size)).rgb;
 	imageStore(scene, p, vec4(to_linear(g), c.a));
+}
+#else
+layout(rgba16f, set = 0, binding = 0) uniform restrict image2D scene;
+void main() {
+	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+	if (any(greaterThanEqual(p, imageSize(scene)))) return;
+	vec4 c = imageLoad(scene, p);
+	imageStore(scene, p, vec4(to_linear(c.rgb), c.a));
 }
 #endif
 ";
@@ -89,7 +103,7 @@ void main() {
     {
         rd = RenderingServer.GetRenderingDevice();
         if (rd == null) return;
-        for (int m = 0; m < 3; m++)
+        for (int m = 0; m < 4; m++)
         {
             var spirv = rd.ShaderCompileSpirVFromSource(new RDShaderSource
             {
@@ -164,6 +178,12 @@ void main() {
         if (rd == null || effectCallbackType != (int)EffectCallbackTypeEnum.PostTransparent) return;
         if (renderData.GetRenderSceneBuffers() is not RenderSceneBuffersRD buffers) return;
         var size = buffers.GetInternalSize();
+        if (ConvertOnly)
+        {
+            for (uint view = 0; view < buffers.GetViewCount(); view++)
+                Run(3, size, Vector2.Zero, Image(0, buffers.GetColorLayer(view)));
+            return;
+        }
         if (size.X < 4 || size.Y < 4) return;
         var q = size / 4;
         if (q != quarter || !bright.IsValid)
@@ -191,7 +211,7 @@ void main() {
         if (what == NotificationPredelete && rd != null)
         {
             FreeTargets();
-            for (int m = 0; m < 3; m++)
+            for (int m = 0; m < 4; m++)
                 if (shaders[m].IsValid) rd.FreeRid(shaders[m]);   // frees the pipeline too
             if (sampler.IsValid) rd.FreeRid(sampler);
             if (black.IsValid) rd.FreeRid(black);

@@ -39,14 +39,14 @@ public sealed class CombatLayer
             Code = @"shader_type spatial;
 render_mode unshaded, depth_test_disabled, cull_disabled;
 uniform float fill = 1.0;
-uniform vec4 full_color : source_color = vec4(0.85, 0.15, 0.15, 1.0);
+uniform vec4 full_color = vec4(0.85, 0.15, 0.15, 1.0);   // gamma values: the colour buffer holds gamma values (field_lit.gdshader)
 void vertex() {
     MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
     MODELVIEW_NORMAL_MATRIX = mat3(MODELVIEW_MATRIX);
 }
 void fragment() {
     bool edge = UV.x < 0.02 || UV.x > 0.98 || UV.y < 0.08 || UV.y > 0.92;
-    vec3 c = edge ? vec3(0.0) : (UV.x < fill ? full_color.rgb : vec3(0.25));
+    vec3 c = edge ? vec3(0.0) : (UV.x < fill ? full_color.rgb : vec3(0.537));
     ALBEDO = c;
 }",
         };
@@ -58,7 +58,7 @@ void fragment() {
 
     public Label3D NameTag(Node3D owner, string text, float height, Color color)
     {
-        var l = new Label3D { Text = text, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FontSize = 44, PixelSize = 0.55f, Modulate = color,
+        var l = new Label3D { Text = text, Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FontSize = 44, PixelSize = 0.55f, Modulate = color.LinearToSrgb(),
             OutlineSize = 10, OutlineModulate = new Color(0, 0, 0, 0.9f), Position = new Godot.Vector3(0, height + 15, 0), Name = "NameTag" };
         owner.AddChild(l);
         return l;
@@ -81,7 +81,7 @@ void fragment() {
         // flags: 0 normal; others are drawn in other colors (the kinds are not decoded: crit, miss, ... )
         var color = flag == 0 ? Colors.White : flag == 1 ? new Color(1f, 0.55f, 0.1f) : new Color(1f, 0.9f, 0.2f);
         var l = new Label3D { Text = damage.ToString("N0"), Billboard = BaseMaterial3D.BillboardModeEnum.Enabled, NoDepthTest = true, FontSize = 64, PixelSize = 0.7f,
-            Modulate = color, OutlineSize = 14, OutlineModulate = new Color(0, 0, 0, 0.95f), Position = at + new Godot.Vector3((float)GD.RandRange(-25, 25), 0, (float)GD.RandRange(-25, 25)) };
+            Modulate = color.LinearToSrgb(), OutlineSize = 14, OutlineModulate = new Color(0, 0, 0, 0.95f), Position = at + new Godot.Vector3((float)GD.RandRange(-25, 25), 0, (float)GD.RandRange(-25, 25)) };
         parent.AddChild(l);
         numbers.Add((l, 0));
         NumbersShown++;

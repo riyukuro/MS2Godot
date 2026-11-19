@@ -85,6 +85,7 @@ public sealed partial class AvatarView : Node
             camera = new Camera3D
             {
                 Fov = Mathf.RadToDeg(fov), Near = Near, Far = Far, KeepAspect = Camera3D.KeepAspectEnum.Height, Current = true,
+                Compositor = Ms2Bloom.GammaOut(),   // character_lit writes gamma values
             };
             view.AddChild(camera);
             return true;

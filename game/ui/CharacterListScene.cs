@@ -300,6 +300,7 @@ public partial class CharacterListScene : LobbyFieldScene
         {
             Projection = cam.Projection, Fov = cam.Fov, Size = cam.Size, Near = cam.Near, Far = cam.Far, KeepAspect = cam.KeepAspect,
             HOffset = cam.HOffset, VOffset = cam.VOffset, CullMask = cam.CullMask, Environment = cam.Environment, Attributes = cam.Attributes,
+            Compositor = cam.Compositor,   // the bloom and its gamma -> linear conversion (the buffer holds gamma values)
         };
         sub.AddChild(copy);
         AddChild(sub);

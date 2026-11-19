@@ -93,7 +93,7 @@ public partial class NavDebug : Node3D
             mesh.AddSurfaceFromArrays(type, arr);
             mesh.SurfaceSetMaterial(mesh.GetSurfaceCount() - 1, new StandardMaterial3D
             {
-                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = c, CullMode = BaseMaterial3D.CullModeEnum.Disabled,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded, AlbedoColor = c.LinearToSrgb(), CullMode = BaseMaterial3D.CullModeEnum.Disabled,
                 Transparency = c.A < 1 ? BaseMaterial3D.TransparencyEnum.Alpha : BaseMaterial3D.TransparencyEnum.Disabled,
                 NoDepthTest = false,
             });

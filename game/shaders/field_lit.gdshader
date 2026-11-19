@@ -2,6 +2,11 @@
 // emissive + material ambient * ambient + material diffuse * (sun * N.L + sun ambient * (1 - N.L)), times the base
 // texture (with the decal and dark maps), all in gamma space: textures are sampled raw, not as sRGB. Not clamped:
 // the client renders to an HDR target, and values over 1 feed the bloom pass (Ms2Bloom).
+// The output is the gamma value itself. The client blends in gamma space: D3D9 keeps D3DRS_SRGBWRITEENABLE and
+// D3DSAMP_SRGBTEXTURE at their initial 0 (NiDX9RenderState.cpp:132, :209), nothing in the client or engine sets them,
+// so its target holds the values the shaders write and every blend mixes those. The field's colour buffer holds gamma
+// values the same way; Ms2Bloom's final pass converts it to linear once, for Godot's linear -> sRGB output (GammaOut
+// does that for views without the bloom).
 // The material colour (ambient = diffuse) is the entity's MaterialColor, passed as the MultiMesh
 // instance colour (COLOR); an instance colour with alpha 0 (no MaterialColor) keeps the NIF's own
 // ambient and diffuse. Vertex colours come in CUSTOM0 and replace both when the NIF's
@@ -9,8 +14,7 @@
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
 // (src alpha / one); both blended forms skip the depth write. A fourth form, SHELL (with BLEND), is the depth-only
 // first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell).
-// A fifth form, FLUID (with BLEND), is the colour pass of a shared fluid shell: it blends in gamma space against the
-// screen copy (see FLUID below). The field's point and spot lights are added to the
+// The field's point and spot lights are added to the
 // diffuse term (ms2_lights.gdshaderinc). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
 // and nothing else: light() scales the sun's share of the colour above by the shadow, so the sun is counted once. The
 // blended forms are not shadowed.
@@ -85,36 +89,17 @@ uniform int dark_scroll_axis = -1;
 uniform vec4 dark_scroll_key;
 uniform vec2 dark_scroll_range;
 
-#ifdef FLUID
-// The client blends in gamma space: D3D9 keeps D3DRS_SRGBWRITEENABLE and D3DSAMP_SRGBTEXTURE at their initial 0
-// (NiDX9RenderState.cpp:132, :209), and nothing in the client or engine sets them. So its target holds the gamma values
-// the shaders write, and source alpha / inverse source alpha mixes those values. Godot mixes the linear values, which lets
-// more of the colour behind show through (water at alpha 0.75 over a grey floor: R 50 in gamma, 101 in linear).
-// The fluid colour pass draws before every other transparent (ModelBuilder.MakeFluidShell), so the screen copy Godot takes
-// after the opaque pass is exactly the colour behind it. This form mixes with it in gamma space and writes the result
-// with alpha 1.
-uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
-#endif
-
 varying vec3 world_normal;
 varying vec3 world_pos;
 varying vec4 vcolor;
 #ifdef POINT_LIT
-varying vec3 sun_share;  // the sun's part of the output colour (linear), which the shadow scales in light()
+varying vec3 sun_share;  // the sun's part of the output colour (gamma), which the shadow scales in light()
 #endif
 
 void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vcolor = has_vcolor ? CUSTOM0 : vec4(1.0);
-}
-
-vec3 to_linear(vec3 c) {
-	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
-}
-
-vec3 to_gamma(vec3 c) {
-	return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
 }
 
 vec2 scroll(int axis, vec4 key, vec2 range) {
@@ -188,25 +173,19 @@ void fragment() {
 	c = mix(c, ms2_hfog_color, hf);
 	c0 = mix(c0, ms2_hfog_color, hf);
 #endif
-	// the output is written in gamma space by Godot's linear -> sRGB conversion
 #ifdef POINT_LIT
 	// opaque: everything but the sun is emission; the sun's share comes back in light(), times its shadow. Out of the
-	// shadow the sum is to_linear(c), the formula above; in full shadow it is to_linear(c0), the sun ambient alone (MS2Light
-	// above). In between Godot's shadow factor interpolates the two (exact in linear space, close in gamma space).
-	EMISSION = to_linear(c0);
-	sun_share = to_linear(c) - to_linear(c0);
+	// shadow the sum is c, the formula above; in full shadow it is c0, the sun ambient alone (MS2Light above). In between
+	// Godot's shadow factor interpolates the two, as the client's Shadow term does.
+	EMISSION = c0;
+	sun_share = c - c0;
 	ALBEDO = vec3(1.0);
 	ROUGHNESS = 1.0;
 #else
-	ALBEDO = to_linear(c);
+	ALBEDO = c;
 #endif
 #ifdef BLEND
 	ALPHA = a;
-#endif
-#ifdef FLUID
-	vec3 behind = to_gamma(textureLod(screen_tex, SCREEN_UV, 0.0).rgb);
-	ALBEDO = to_linear(mix(behind, c, clamp(a, 0.0, 1.0)));
-	ALPHA = 1.0;
 #endif
 #ifdef SHELL
 	ALPHA = 0.0;

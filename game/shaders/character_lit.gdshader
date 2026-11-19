@@ -18,7 +18,7 @@
 //   tangent map gives a direction T in the surface plane and the highlight follows 1 - (T.H)^2.
 // - Final: emissive + scene ambient * material ambient + diffuse * colour boost * material diffuse, clamped, times
 //   the dyed texture, plus the glow map (MS2StandardMaterial meshes, times GlowModifier), plus the specular; gamma
-//   space, as field_lit.gdshader.
+//   space, written as the gamma value, as field_lit.gdshader.
 //
 // Not done: face decals.
 shader_type spatial;
@@ -80,10 +80,6 @@ void vertex() {
 	world_tangent = (MODEL_MATRIX * vec4(TANGENT, 0.0)).xyz;
 	world_binormal = (MODEL_MATRIX * vec4(BINORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-}
-
-vec3 to_linear(vec3 c) {
-	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
 }
 
 void fragment() {
@@ -154,5 +150,5 @@ void fragment() {
 	if (has_glow) {
 		c += texture(glow_tex, UV).rgb * glow_scale;
 	}
-	ALBEDO = to_linear(c + spec);
+	ALBEDO = c + spec;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
 }

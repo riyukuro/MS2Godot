@@ -32,6 +32,7 @@ public static class FieldBackdrop
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCovered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
+            Material = new ShaderMaterial { Shader = GD.Load<Shader>("res://shaders/backdrop.gdshader") },
         };
         rect.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         layer.AddChild(rect);

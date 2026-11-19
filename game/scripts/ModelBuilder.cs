@@ -227,7 +227,7 @@ public sealed class ModelBuilder
         return sm;
     }
 
-    static Shader fieldShader, fieldBlendShader, fieldAddShader, fieldShellShader, fieldFluidShader, fieldFadeShader, fieldFadeAddShader;
+    static Shader fieldShader, fieldBlendShader, fieldAddShader, fieldShellShader, fieldFadeShader, fieldFadeAddShader;
 
     /// <summary>The field shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE).</summary>
     static Shader FieldShader(ModelMesh m)
@@ -240,7 +240,6 @@ public sealed class ModelBuilder
             fieldBlendShader = new Shader { Code = code.Insert(nl, "#define BLEND\n") };
             fieldAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n") };
             fieldShellShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define SHELL\n") };
-            fieldFluidShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define FLUID\n") };
             fieldFadeShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define FADE\n") };
             fieldFadeAddShader = new Shader { Code = code.Insert(nl, "#define BLEND\n#define ADD\n#define FADE\n") };
         }
@@ -265,9 +264,6 @@ public sealed class ModelBuilder
     {
         if (ShellMaterial(mesh) is not { } shell) return;
         var colour = (ShaderMaterial)mesh.SurfaceGetMaterial(0);
-        // source alpha / inverse source alpha mixes in gamma space as the client does (the FLUID form of field_lit); an
-        // additive fluid keeps its blend_add form
-        if (colour.Shader == fieldBlendShader) colour.Shader = fieldFluidShader;
         shell.RenderPriority = -2;
         colour.RenderPriority = -1;
         shell.NextPass = colour;

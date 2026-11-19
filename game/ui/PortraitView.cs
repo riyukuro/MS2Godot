@@ -77,7 +77,7 @@ public sealed partial class PortraitView : Node
             AddChild(view);
             copy = visual;
             view.AddChild(copy);
-            camera = new Camera3D { Fov = Fov, Near = Near, Far = Far, KeepAspect = Camera3D.KeepAspectEnum.Height, Current = true };
+            camera = new Camera3D { Fov = Fov, Near = Near, Far = Far, KeepAspect = Camera3D.KeepAspectEnum.Height, Current = true, Compositor = Ms2Bloom.GammaOut() };   // character_lit writes gamma values
             view.AddChild(camera);
             skeleton = copy.GetNode<Skeleton3D>($"Model/{ModelBuilder.SkeletonName}");
             head = skeleton.FindBone("Bip01 Head");

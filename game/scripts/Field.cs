@@ -379,16 +379,19 @@ public partial class Field : Node3D
             }
         }
 
+        // The colour buffer holds gamma values (field_lit.gdshader) and Godot turns an environment colour from sRGB to
+        // linear, so the background and fog colours are passed through LinearToSrgb: Godot's value is the client's
+        // gamma value, and the depth fog mixes in gamma space as the client's does.
         var env = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = fog,
+            BackgroundColor = fog.LinearToSrgb(),
             AmbientLightSource = Godot.Environment.AmbientSource.Color,
             AmbientLightColor = ambientColor,
             AmbientLightEnergy = ambient,
             FogEnabled = true,
             FogMode = Godot.Environment.FogModeEnum.Depth,
-            FogLightColor = fog,
+            FogLightColor = fog.LinearToSrgb(),
             FogDepthBegin = fogNear,
             FogDepthEnd = fogFar,
             FogDensity = 1f,
