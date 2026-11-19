@@ -78,6 +78,7 @@ public enum Inbound : ushort {
     Mail = 0x54,            // RecvOp Mail (commonfiles/opcodes.h): CSceneStateGame::OnMail
     BlackMarket = 0x98,     // RecvOp BlackMarket (commonfiles/opcodes.h): CBlackMarketMan::OnBlackMarket (networkservice.cpp:690)
     Guild = 0x8A,           // RecvOp Guild (commonfiles/opcodes.h): CGuildManager::FUN_1413b6370
+    GroupChat = 0x8B,       // RecvOp GroupChat (commonfiles/opcodes.h): CGroupChatManager::OnGroupChat (networkservice.cpp:687)
     Prestige = 0x11C,
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
     Fishing = 0x73,         // RecvOp Fishing (commonfiles/opcodes.h): CFishingManager::FUN_140cd9840
@@ -128,6 +129,7 @@ public enum Outbound : ushort {
     Mail = 0x2D,            // SendOp Mail (commonfiles/opcodes.h): the mail dialogs' sends
     BlackMarket = 0x5F,     // SendOp BlackMarket (commonfiles/opcodes.h): CBlackMarketMan::SendBlackMarketMode*
     Guild = 0x4B,           // SendOp Guild (commonfiles/opcodes.h): the guild dialog's sends
+    GroupChat = 0x4C,       // SendOp GroupChat (commonfiles/opcodes.h): CGroupChatManager's sends
     Buddy = 0x30,           // SendOp Buddy (commonfiles/opcodes.h): CBuddyManager::SendBuddyRequest, SendBuddyMode20
     EventReward = 0x97,     // SendOp EventReward (commonfiles/opcodes.h): the friend dialog's VIP row (mode 5)
     RequestUserEnv = 0x69,
