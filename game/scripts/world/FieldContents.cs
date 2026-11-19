@@ -418,9 +418,10 @@ public partial class FieldContents : Node3D
     /// screenshot of this field), and once it has been drawn the field scene changes with the move <paramref name="move"/>
     /// builds then (a newer move asked meanwhile replaces it: the last one the server sent is the one loaded).
     /// </summary>
-    void BeginMove(int target, Func<Travel.Move> move)
+    void BeginMove(int target, Func<Travel.Move> move, Func<bool> ready = null)
     {
         nextMove = move;
+        moveReady = ready;
         if (moving) return;
         moving = true;
         talk?.End();
@@ -430,11 +431,14 @@ public partial class FieldContents : Node3D
         GD.Print($"field move -> {target}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
         // the loading screen comes up at once at 0%; the load starts once it has been drawn
         if (Travel.LoadingImage != null) { ShowLoading(Travel.LoadingImage, Travel.LoadingTip); Go(); }
-        else ShowLoadingOverField(Travel.LoadingTip, Go);
+        else ShowLoadingOverField(Travel.LoadingTip, () => Go());
 
-        void Go() => GetTree().CreateTimer(0.15).Timeout += () =>
+        void Go(double wait = 0.15) => GetTree().CreateTimer(wait).Timeout += () =>
         {
             if (!IsInstanceValid(this) || !IsInsideTree()) return;
+            // a move to another server: the loading screen stays up until the new server's field entry came
+            if (moveReady != null && !moveReady()) { Go(0.05); return; }
+            moveReady = null;
             if (shotDir != null) Shot("loading.png");
             Travel.Pending = nextMove?.Invoke();
             nextMove = null;
@@ -452,6 +456,7 @@ public partial class FieldContents : Node3D
         };
     }
     Func<Travel.Move> nextMove;
+    Func<bool> moveReady;
 
     /// <summary>
     /// The server's field entry in game (LiveSession, RequestFieldEnter error 0): the same move a portal walk takes, to the
@@ -459,8 +464,10 @@ public partial class FieldContents : Node3D
     /// field through the same scene and Travel.Pending (GameFlow.BeginLoading). A map the data does not have loads the
     /// default field, as the login entry's does. No field up (a move while the previous one still loads): the field scene
     /// changes at once and the new field's load puts up its own loading screen (Field.BeginLoad -> CoverLoad).
+    /// With <paramref name="ready"/> (a GameToGame: the old field goes at once, the entry comes from the next server) the
+    /// field is built only once it returns true; the loading screen stays up until then.
     /// </summary>
-    public static void ServerMove(SceneTree tree, int map)
+    public static void ServerMove(SceneTree tree, int map, Func<bool> ready = null)
     {
         var packs = PackSet.Shared(Settings.DataDir);
         Travel.Move Build()
@@ -471,7 +478,12 @@ public partial class FieldContents : Node3D
         }
         if (tree.GetFirstNodeInGroup(Group) is FieldContents here && here.IsInsideTree() && here.player != null)
         {
-            here.BeginMove(map, Build);
+            here.BeginMove(map, Build, ready);
+            return;
+        }
+        if (ready != null && !ready())
+        {
+            tree.CreateTimer(0.05).Timeout += () => ServerMove(tree, map, ready);
             return;
         }
         Travel.LoadingImage = null;

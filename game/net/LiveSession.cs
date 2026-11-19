@@ -478,22 +478,9 @@ public partial class LiveSession : Node
             StartGuide();   // before the early packets: the guide record (0x89) is among them
             // what the server sent before the field enter, in arrival order, through the read loop's handler (no HUD exists yet):
             // the adventure level, quest, item, trophy, title and key table loads among them
-            entry.Replay(Handle, () =>
-            {
-                Adventure.ServerEnter();
-                StubHudData.Instance.Wallet = entry.Enter?.Wallet;
-                Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
-            });
-            GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
             login.Dispose(); login = null;
-            fieldEntry.Enter(entry.Field);
-            NewFieldPortals(entry.Field.MapId);
-            syncNumber = entry.Sync?.Number ?? 0;
-            var f = entry.Field;
-            chosen.User.MapA = f.MapId;
             this.chosen = chosen;
-            guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
-            GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} portal {f.Portal}");
+            TakeEntry();
             return true;
         }
         catch (Exception ex) { GD.PushWarning("live: enter failed: " + ex.Message); return false; }
@@ -501,6 +488,27 @@ public partial class LiveSession : Node
     }
 
     CharacterEntry chosen;
+
+    /// <summary>A game server's entry (the login's, or the next server's after a GameToGame): what it sent before the field
+    /// enter, in arrival order, through the read loop's handler, then its RequestFieldEnter becomes the current entry.</summary>
+    void TakeEntry()
+    {
+        // the adventure level, quest, item, trophy, title and key table loads among them
+        entry.Replay(Handle, () =>
+        {
+            Adventure.ServerEnter();
+            StubHudData.Instance.Wallet = entry.Enter?.Wallet;
+            Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
+        });
+        GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
+        fieldEntry.Enter(entry.Field);
+        NewFieldPortals(entry.Field.MapId);
+        syncNumber = entry.Sync?.Number ?? 0;
+        var f = entry.Field;
+        if (chosen != null) chosen.User.MapA = f.MapId;
+        guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
+        GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} portal {f.Portal}");
+    }
 
     /// <summary>The server's arrival (position, rotation, portal) on the move built for the entry's map.</summary>
     public static Travel.Move Decorate(Travel.Move m)
@@ -656,7 +664,8 @@ public partial class LiveSession : Node
     public override void _Process(double delta)
     {
         if (game == null) { PumpLogin(); return; }
-        while (game.Incoming.TryDequeue(out var p)) Handle(p);
+        while (game != null && game.Incoming.TryDequeue(out var p)) Handle(p);
+        if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
         guide?.Tick();
         if (bindPending) TryBindPlayer();
         Portals?.Tick((uint)game.Session.ServerTick);
@@ -972,6 +981,7 @@ public partial class LiveSession : Node
                 SkillBookTree?.Invoke(t);
             }
             else if (game.Is(p, Inbound.FieldPortal)) OnFieldPortal(FieldPortalMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
             else if (game.Is(p, Inbound.EnterUgcMap))
             {
                 var m = EnterUgcMapMessage.Read(p.Reader());
@@ -1374,7 +1384,8 @@ public partial class LiveSession : Node
             }
         }
         // MS2_LIVE_MOVES="step|step|...": field moves in game, each waiting for the new field's entry (FieldEntered, at most
-        // 90 s) and 3 s more: "warp:<map>" (the GM chat command, the server's RequestFieldEnter), "portal:<id>" or
+        // 90 s) and 3 s more: "warp:<map>" (the GM chat command, the server's RequestFieldEnter), "dungeon:<room>" (the GM
+        // /dungeon command: the server moves the player to the room's server with GameToGame 0x10), "portal:<id>" or
         // "portal:any" (the player put in that open portal's box, then the action key), "~N" (wait N s), "mark:<name>"
         // (the node count and the managed heap after a full collect). With MS2_LIVE_MOVE_SHOTS=<dir> the screen is shot
         // before and after each move as move_<n>_before.png / move_<n>_after.png.
@@ -1414,6 +1425,12 @@ public partial class LiveSession : Node
                     string cmd = "/warp " + parts[0] + (parts.Length > 1 ? " --portal " + parts[1] : "");
                     sent = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(cmd);
                     GD.Print($"live: move {n}: {cmd} {(sent ? "sent" : "no chat window")}");
+                }
+                else if (step.StartsWith("dungeon:"))
+                {
+                    string cmd = "/dungeon " + step[8..];
+                    sent = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(cmd);
+                    GD.Print($"live: move {n}: {cmd} {(sent ? "sent" : "no chat window")}, {live.Migrations} GameToGame move(s) so far");
                 }
                 else if ((step.StartsWith("portal:") || step.StartsWith("gated:")) && tree.GetFirstNodeInGroup(FieldContents.Group) is FieldContents fc)
                 {
