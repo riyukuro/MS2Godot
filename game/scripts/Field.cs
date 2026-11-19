@@ -20,6 +20,7 @@ public partial class Field : Node3D
     /// <summary>The scene-tree group every field joins, so the HUD finds it without walking the tree.</summary>
     public const string Group = "field";
     public Field() { AddToGroup(Group); }
+    public override void _EnterTree() { if (FrameProbe.Enabled) AddChild(new FrameProbe()); }
 
     // CTargetCameraMode / CHomeCameraMode's near-plane test casts with RayCastFromPoint (targetcameramode.cpp:763-771,
     // homecameramode.cpp:617-625), which is CPhysXHelper::CastRay (physxhelper.cpp:433-449): one-sided on mesh triangles.
