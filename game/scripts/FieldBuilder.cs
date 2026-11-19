@@ -51,6 +51,8 @@ public sealed class FieldBuilder
     /// <summary>The field's hold on the models it uses (NifCache); the field disposes it when it is freed.</summary>
     public NifCache.Lease Lease;
     public readonly List<FieldEntity> DrawnElsewhere = new();
+    /// <summary>The <see cref="DrawnElsewhere"/> entities that receive no sun shadow (ShadowReceivers), for world/FieldProps.</summary>
+    public readonly HashSet<FieldEntity> NotReceivingElsewhere = new();
     /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
     /// <summary>Optional: the field load's entity count, bumped as each entity of the set is placed (see <see cref="World.LoadCount"/>).</summary>
@@ -276,8 +278,8 @@ public sealed class FieldBuilder
             return body;
         }
 
-        // the copies that receive no sun shadow (ShadowReceivers): their opaque meshes draw in groups of their own whose
-        // ms2_receive instance uniform (field_lit.gdshader) is 0
+        // the copies that receive no sun shadow (ShadowReceivers): their meshes (opaque and blended) draw in groups of their
+        // own whose ms2_receive instance uniform (field_lit.gdshader) is 0; world/FieldProps does the same for its entities
         var notReceiving = ShadowReceivers.NotReceiving(map.Entities, ShadowLevel);
 
         int entityIndex = -1;
@@ -327,7 +329,11 @@ public sealed class FieldBuilder
                     foreach (var shape in me.Collision) npcGround.Add(shape, xf);
 
                 if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
-                else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
+                else if (e.Bool("IsVisible", true) && me.Elsewhere)
+                {
+                    DrawnElsewhere.Add(e);
+                    if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(e);
+                }
                 else if (e.Bool("IsVisible", true))
                 {
                     var key = BatchKey(llid, e) + (notReceiving.Contains(e) ? NotReceivingKey : "");
@@ -428,7 +434,7 @@ public sealed class FieldBuilder
                             AddFadeDraw(obj[i], om, i, mesh, visuals, noRecv);
                         }
                         var on = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-                        if (noRecv) { on.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; }
+                        if (noRecv) { on.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; NotReceivingBlended++; }
                         visuals.AddChild(on);
                         SortAsObject(on, mesh, obj, local);
                         if (glow != null)
@@ -472,7 +478,7 @@ public sealed class FieldBuilder
                 // is transparent, and Godot leaves transparent materials out of the shadow pass (observed: Henesys, Ellinia and Tria
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-                if (noRecv) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; }
+                if (noRecv) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; if (mesh.AlphaBlendOn) NotReceivingBlended++; }
                 visuals.AddChild(node);
                 if (!mesh.AlphaBlendOn && !mesh.NoShadow && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
@@ -602,7 +608,7 @@ public sealed class FieldBuilder
     const string NotReceivingKey = "\nnorecv";
     static readonly StringName ReceiveParam = "ms2_receive";
     /// <summary>MultiMeshes (opaque and blended) drawn with the sun's shadow off (ShadowReceivers).</summary>
-    public int NotReceivingDraws;
+    public int NotReceivingDraws, NotReceivingBlended;
 
     /// <summary>
     /// The alpha shell group of a placed entity. Only hardware-instanced entities get one: HardwareInstancingService

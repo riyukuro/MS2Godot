@@ -18,6 +18,9 @@ public sealed class FieldProps
     readonly Dictionary<(ModelData, int, Color), ArrayMesh> meshes = new();
     readonly Dictionary<ModelData, Godot.Animation> anims = new();
     public readonly List<FieldEntity> Entities = new();
+    /// <summary>The entities that receive no sun shadow (FieldBuilder.NotReceivingElsewhere).</summary>
+    public readonly HashSet<FieldEntity> NotReceiving = new();
+    static readonly StringName ReceiveParam = "ms2_receive";
     public int Built, Animated;
 
     const float DefaultMaterialColor = 0.7058824f;
@@ -46,7 +49,7 @@ public sealed class FieldProps
             var c = e.Numbers("MaterialColor");
             var col = c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2])
                                                  : new Color(DefaultMaterialColor, DefaultMaterialColor, DefaultMaterialColor);
-            var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects);
+            var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e));
             node.Transform = ModelBuilder.ToGodot(e.Transform);
             root.AddChild(node);
             Built++;
@@ -66,7 +69,9 @@ public sealed class FieldProps
     /// <param name="casts">The entity casts the sun's shadow: FieldEntity.CastsShadow at the map-object shadow level. The client
     /// sends these entities through the same SceneGraphAdded path as every placed entity (FUN_141567000 then FUN_141bbd490,
     /// worldservice_1.cpp:3637-3638), whose SetShadowCaster also skips "NoShadow"-tagged subtrees (ModelMesh.NoShadow).</param>
-    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts)
+    /// <param name="receives">The entity takes the sun's shadow (ShadowReceivers); else every mesh's ms2_receive is 0, as in
+    /// FieldBuilder.</param>
+    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives)
     {
         var root = new Node3D { Name = name.ValidateNodeName() };
         var model = new Node3D { Name = "Model", Transform = ModelBuilder.ToGodot(md.RootLocal) };
@@ -81,6 +86,7 @@ public sealed class FieldProps
             var m = md.Meshes[mi];
             var inst = new MeshInstance3D { Name = $"m{mi}", Mesh = Mesh(md, mi, col) };
             if (!casts || m.NoShadow) inst.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+            if (!receives) inst.SetInstanceShaderParameter(ReceiveParam, 0f);
             var skin = m.Skinned ? ModelBuilder.SkinOf(md, m) : null;
             if (m.Skinned)
             {

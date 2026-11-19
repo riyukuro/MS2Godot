@@ -31,35 +31,54 @@ public class FieldShaderFormsTests
         return null!;
     }
 
-    /// <summary>The lines left after the conditionals, with the given names defined (#define inside a live block adds one).</summary>
+    /// <summary>The lines left after the conditionals (#ifdef, #ifndef, #if defined(X), #elif defined(X), #else, #endif), with
+    /// the given names defined (#define inside a live block adds one).</summary>
     static List<string> Resolve(string src, IEnumerable<string> defines)
     {
         var defined = new HashSet<string>(defines);
-        var stack = new Stack<(bool parentLive, bool cond)>();
+        // per open block: whether its parent is live, and whether a branch of it has been taken
+        var stack = new Stack<(bool parentLive, bool taken)>();
         bool live = true;
         var output = new List<string>();
+        bool Test(string line)
+        {
+            if (line.StartsWith("#ifdef ")) return defined.Contains(line.Split(' ', StringSplitOptions.RemoveEmptyEntries)[1]);
+            if (line.StartsWith("#ifndef ")) return !defined.Contains(line.Split(' ', StringSplitOptions.RemoveEmptyEntries)[1]);
+            var m = System.Text.RegularExpressions.Regex.Match(line, @"^#(?:el)?if\s+defined\s*\(\s*(\w+)\s*\)\s*$");
+            Assert.That(m.Success, $"unsupported conditional: {line}");
+            return defined.Contains(m.Groups[1].Value);
+        }
         foreach (var raw in src.Split('\n'))
         {
             var line = raw.Trim();
-            string[] w = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (line.StartsWith("#ifdef ") || line.StartsWith("#ifndef "))
+            if (line.StartsWith("#ifdef ") || line.StartsWith("#ifndef ") || line.StartsWith("#if "))
             {
-                bool cond = defined.Contains(w[1]) == line.StartsWith("#ifdef ");
+                bool cond = Test(line);
                 stack.Push((live, cond));
                 live = live && cond;
             }
+            else if (line.StartsWith("#elif "))
+            {
+                Assert.That(stack, Is.Not.Empty, $"#elif without #if: {line}");
+                var (parentLive, taken) = stack.Pop();
+                bool cond = !taken && Test(line);
+                stack.Push((parentLive, taken || cond));
+                live = parentLive && cond;
+            }
             else if (line.StartsWith("#else"))
             {
-                var (parentLive, cond) = stack.Peek();
-                live = parentLive && !cond;
+                Assert.That(stack, Is.Not.Empty, "#else without #if");
+                var (parentLive, taken) = stack.Peek();
+                live = parentLive && !taken;
             }
             else if (line.StartsWith("#endif"))
             {
+                Assert.That(stack, Is.Not.Empty, "#endif without #if");
                 live = stack.Pop().parentLive;
             }
             else if (live)
             {
-                if (line.StartsWith("#define ")) defined.Add(w[1]);
+                if (line.StartsWith("#define ")) defined.Add(line.Split(' ', StringSplitOptions.RemoveEmptyEntries)[1]);
                 else output.Add(line);
             }
         }

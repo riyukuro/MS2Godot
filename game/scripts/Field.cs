@@ -131,12 +131,13 @@ public partial class Field : Node3D
         Fade = new World.FieldFade(fb.FadeDraws, () => player?.GlobalPosition, () => camera);   // BGTransparencyMgr
         AddChild(Fade);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
+        contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         if (taxis.Count > 0) AddChild(World.TaxiStations.Start(packs, builder, taxis, taxiField));
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
-        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}), " +
+        GD.Print($"MS2Godot field {fieldName}: {map.Entities.Count} entities, {fb.Instances} instances in {fb.MultiMeshes} multimeshes ({fb.OwnShells} own-group shells, {fb.SplitObjects} split blended objects, grid {fb.InstancingGrid}, {fb.NotReceivingDraws} draws without the sun shadow, {fb.NotReceivingBlended} of them blended), " +
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
