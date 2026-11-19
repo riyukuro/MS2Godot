@@ -42,6 +42,9 @@ public partial class LookCacheCheck : Node
         var a = Look.PlayerLook.Build(ui, packs);
         var b = Look.PlayerLook.Build(ModelBuilder.Ui(packs, nifXml), packs);
         if (ModelBuilder.Ui(packs, nifXml) != ui) fails.Add("Ui gave another builder without a drop");
+        var newOrder = string.Join(",", new ModelBuilder(ModelBuilder.SharedSpec(nifXml), packs).TextureArchives);
+        if (string.Join(",", ModelBuilder.Ui(packs, nifXml).TextureArchives) != newOrder)
+            fails.Add("a kept builder starts a look with another texture archive order than a new builder");
 
         string want = Describe(fresh.visual), gotA = Describe(a.visual), gotB = Describe(b.visual);
         if (gotA != want) fails.Add("kept first build differs from a new builder's:\n" + FirstDiff(want, gotA));

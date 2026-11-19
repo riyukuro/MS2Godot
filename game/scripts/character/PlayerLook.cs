@@ -28,23 +28,27 @@ public static class PlayerLook
         }
         Flow.Session.ApplyLook(ref gender, ref job);        // the game flow's chosen character
         string dir = gender == 0 ? "male" : "female";
-        var md = builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
-        var visual = builder.Build(md, gender == 0 ? "Male" : "Female");
-        var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
-        var lib = anim.GetAnimationLibrary("");
-        foreach (var (name, kf) in new[] { ("idle", "idle_a"), ("walk", "walk_a"), ("run", "run_a") })
-            lib.AddAnimation(name, builder.KfAnimationFor($"{dir}/{kf}.kf", md));
-
+        ModelData md; Node3D visual; AnimationPlayer anim;
         try
         {
-            var palettes = new ColorPalettes(packs);
-            var (items, skin) = Live() ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
-            var equip = new EquipApplier(packs, builder) { Palettes = palettes };
-            equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
-            GD.Print($"player look: {dir}, job {job}{(LiveSession.Active ? " (live)" : "")}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
+            md = builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
+            visual = builder.Build(md, gender == 0 ? "Male" : "Female");
+            anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
+            var lib = anim.GetAnimationLibrary("");
+            foreach (var (name, kf) in new[] { ("idle", "idle_a"), ("walk", "walk_a"), ("run", "run_a") })
+                lib.AddAnimation(name, builder.KfAnimationFor($"{dir}/{kf}.kf", md));
+
+            try
+            {
+                var palettes = new ColorPalettes(packs);
+                var (items, skin) = Live() ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
+                var equip = new EquipApplier(packs, builder) { Palettes = palettes };
+                equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
+                GD.Print($"player look: {dir}, job {job}{(LiveSession.Active ? " (live)" : "")}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
+            }
+            catch (Exception ex) { GD.PushWarning("player look: " + ex.Message); }
         }
-        catch (Exception ex) { GD.PushWarning("player look: " + ex.Message); }
-        builder.Trim();
+        finally { builder.Trim(); }   // a failed load still leaves the builder holding one look
         return (visual, anim, md, dir);
     }
 

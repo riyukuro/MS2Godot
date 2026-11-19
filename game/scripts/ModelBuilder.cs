@@ -106,15 +106,21 @@ public sealed class ModelBuilder
     /// The builder of the UI's character views (the HUD portrait, a dialog's avatar), kept while they show the same look:
     /// each of them built the player again from the pack, parsing the body, its animations and every item model and
     /// loading every texture once per open. It holds the last look only (<see cref="Trim"/>) and is dropped on logout
-    /// and character choice (<see cref="DropUi"/>). Main thread.
+    /// and character choice (<see cref="DropUi"/>). Main thread. Each look build starts with a new builder's texture
+    /// archive order (the EquipApplier of the last look put the Item archive first), so the body's textures are looked up
+    /// as a new builder looks them up.
     /// </summary>
     public static ModelBuilder Ui(PackSet packs, string nifXml)
     {
         var spec = SharedSpec(nifXml);
         if (ui == null || ui.packs != packs || ui.spec != spec) ui = new ModelBuilder(spec, packs) { keep = new Kept() };
+        ui.TextureArchives = new[] { TextureArchive };
         return ui;
     }
 
+    /// <summary>Drops the UI builder's kept look: on leaving the game (logout, character select), on choosing a character
+    /// and on a session reset. A dropped game connection does not drop it: the look stays kept (one look, see
+    /// <see cref="Trim"/>) until one of those, and the next look build trims it to the new look anyway.</summary>
     public static void DropUi() => ui = null;
 
     /// <summary>The keys of what a kept builder holds (models by archive/entry, animations by entry), for checks.</summary>
