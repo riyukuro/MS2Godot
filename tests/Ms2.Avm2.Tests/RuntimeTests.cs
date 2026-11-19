@@ -342,7 +342,7 @@ public class RuntimeTests
         int ticks = 0, plain = 0, interval = 0, unloads = 0;
         Counting(rt, MovieTimerClass(rt, "t"), () => ticks++);
         Counting(rt, rt.GetClass("flash.utils.Timer"), () => plain++);
-        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("i", (s, a) => { interval++; return Rt.Undef; }) { MovieKey = "t" }), 10, Array.Empty<object>(), true);
+        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("i", (s, a) => { interval++; return Rt.Undef; })), 10, Array.Empty<object>(), true);
         var loader = (AsLoader)rt.GetClass("flash.display.Loader").Construct();
         ((AsContainer)p.Root).addChild(loader);
         loader.addChild(p.NewBitmap("icon.png", 32, 32));
@@ -361,8 +361,8 @@ public class RuntimeTests
     /// <summary>
     /// The dialog's own unload (UiHost.Unload: the host loader's unloadAndStop) is the movie definition's last user leaving:
     /// its content is stopped (no enterFrame), and ShutdownTimersForMovieDef drops every timer ClearFor (sfr_as3_17.cpp:6320)
-    /// ties to it — a Timer of a class the movie defines and its setInterval — while a plain flash.utils.Timer, whose builtin
-    /// traits come from no ABC file, keeps running as in the client.
+    /// ties to it — a Timer of a class the movie defines — while a plain flash.utils.Timer, whose builtin traits come from no
+    /// ABC file, and the movie's setInterval, whose function traits have no file either, keep running as in the client.
     /// </summary>
     [Test]
     public void AHostUnloadStopsTheMovieTimers()
@@ -375,7 +375,7 @@ public class RuntimeTests
         Counting(rt, MovieTimerClass(rt, "t"), () => ticks++);
         Counting(rt, MovieTimerClass(rt, "lib"), () => other++);
         Counting(rt, rt.GetClass("flash.utils.Timer"), () => plain++);
-        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("i", (s, a) => { interval++; return Rt.Undef; }) { MovieKey = "t" }), 10, Array.Empty<object>(), true);
+        rt.AddTimeout(new AsPlainFunction(rt, new NativeMethod("i", (s, a) => { interval++; return Rt.Undef; })), 10, Array.Empty<object>(), true);
         for (int i = 0; i < 4; i++) p.Tick();
         Assert.That(frames * ticks * interval, Is.GreaterThan(0));
         p.HostLoader.unloadAndStop();
@@ -384,7 +384,7 @@ public class RuntimeTests
         for (int i = 0; i < 4; i++) p.Tick();
         Assert.That(frames, Is.EqualTo(f), "no enterFrame of the unloaded movie");
         Assert.That(ticks, Is.EqualTo(t), "the movie's Timer stopped");
-        Assert.That(interval, Is.EqualTo(iv), "the movie's setInterval stopped");
+        Assert.That(interval, Is.GreaterThan(iv), "the movie's setInterval keeps running");
         Assert.That(other, Is.GreaterThan(o), "another movie's Timer keeps running");
         Assert.That(plain, Is.GreaterThan(pl), "a plain Timer keeps running");
     }

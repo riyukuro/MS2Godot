@@ -4,8 +4,6 @@ namespace Ms2.Avm2;
 public abstract class MethodImpl
 {
     public string Name;
-    /// <summary>The movie whose ABC defines this body (<see cref="AbcContext.MovieKey"/>); null for a native one.</summary>
-    public string MovieKey;
     public abstract object Invoke(object self, object[] args);
     public override string ToString() => Name;
 }

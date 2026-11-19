@@ -267,7 +267,7 @@ public sealed class AbcMethod : MethodImpl
     public readonly AsClass Declaring;
     public AbcMethod(AbcContext ctx, MethodInfo info, Scope scope, AsClass declaring)
     {
-        Ctx = ctx; Info = info; Scope = scope; Declaring = declaring; Name = declaring?.Name + "/m" + info.Index; MovieKey = ctx.MovieKey;
+        Ctx = ctx; Info = info; Scope = scope; Declaring = declaring; Name = declaring?.Name + "/m" + info.Index;
         Compiled = ctx.CompiledBodies is { } cb && info.Index < cb.Length ? cb[info.Index] : null;
     }
     /// <summary>The translated body of this method (<see cref="GeneratedCode"/>), null to interpret it.</summary>

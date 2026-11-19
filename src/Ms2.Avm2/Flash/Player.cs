@@ -644,16 +644,18 @@ namespace Ms2.Avm2.Flash
 
         /// <summary>
         /// MovieImpl::ShutdownTimersForMovieDef (@0x142576cc0, sfr_gfx_01i.cpp:2403): each interval timer whose ClearFor
-        /// (@0x1424efc30, sfr_as3_17.cpp:6320) matches the definition goes. ClearFor compares the ABC file of the timer's
-        /// function (setTimeout / setInterval) or of its Timer object's traits: a Timer of a class the movie defines
-        /// (a subclass of flash.utils.Timer) stops, a plain flash.utils.Timer, whose builtin traits come from no file
-        /// (Traits::GetFilePtr), keeps running, as in the client.
+        /// (@0x1424efc30, sfr_as3_17.cpp:6320) matches the definition goes. ClearFor compares the definition's ABC file with
+        /// GetFilePtr of the traits of the timer's function value, or of its Timer object (+0x30). Only user-defined traits
+        /// have a file, so a Timer of a class the movie defines (a subclass of flash.utils.Timer) stops, and a plain
+        /// flash.utils.Timer, whose builtin traits have none (base Traits::GetFilePtr, 0x142509ca0), keeps running.
+        /// setTimeout / setInterval never match: their TimerObj is null, and the traits of a function, closure or method
+        /// value are InstanceTraits::Function (vftable 0x14313fe18, slot 10 = the base GetFilePtr, NULL), so the movie's
+        /// intervals keep running after the unload, as in the client.
         /// </summary>
         void ShutdownTimersForMovieDef(string key)
         {
             for (int i = timers.Count - 1; i >= 0; i--)
                 if (string.Equals(timers[i].Class?.MovieKey, key, StringComparison.OrdinalIgnoreCase)) { timers[i].Halt(); timers.RemoveAt(i); }
-            RT.ClearTimeoutsFor(key);
         }
 
         /// <summary>One frame: deferred loads, enterFrame, timeline advance, frame scripts, exitFrame, timers and timeouts, render.</summary>
