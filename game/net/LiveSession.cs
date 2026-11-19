@@ -415,6 +415,10 @@ public partial class LiveSession : Node
         };
     }
 
+    /// <summary>MS2_LIVE_PACKETS=1: print each packet this session does not read itself, a debug switch; off by default (most
+    /// of them go to the field tracker; in a town, NpcControl alone arrives about a thousand times a second).</summary>
+    static readonly bool LogPackets = System.Environment.GetEnvironmentVariable("MS2_LIVE_PACKETS") == "1";
+
     public override void _Process(double delta)
     {
         if (game == null) return;
@@ -611,7 +615,7 @@ public partial class LiveSession : Node
                     bool first = Factors.Apply(p.Reader());   // CSceneStateGame::OnGlobalFactor (scenestategame.cpp:4851): taken once; the quest reward rescale (QuestRates) reads it
                     GD.Print($"live: global factor {(first ? "applied" : "ignored (already taken)")}");
                 }
-                else GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
+                else if (LogPackets) GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
             }
             catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
         }
