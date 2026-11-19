@@ -33,6 +33,18 @@ public class PartyRequestsTests
     }
 
     [Test]
+    public void ThePopupHomeSendsFollowTheClient()
+    {
+        // UIPopUpMenu::SendRequestHome: RequestHome 0x51, u8 1, the name; SendRequestCube: RequestCube 0x37, u8 0x39, the name
+        Assert.That((ushort)Outbound.RequestHome, Is.EqualTo(0x51));
+        Assert.That((ushort)Outbound.RequestCube, Is.EqualTo(0x37));
+        Assert.That(new HomeInviteRequest("x").Op, Is.EqualTo(Outbound.RequestHome));
+        Assert.That(new FurnishingRightsRequest("x").Op, Is.EqualTo(Outbound.RequestCube));
+        Assert.That(Bytes(new HomeInviteRequest("Ab")), Is.EqualTo(Concat(new byte[] { 1 }, Str("Ab"))));
+        Assert.That(Bytes(new FurnishingRightsRequest("Ab")), Is.EqualTo(Concat(new byte[] { 0x39 }, Str("Ab"))));
+    }
+
+    [Test]
     public void PayloadsFollowTheClient()
     {
         Assert.That(Bytes(new PartyInviteRequest("Ab")), Is.EqualTo(Concat(new byte[] { 1 }, Str("Ab"))));

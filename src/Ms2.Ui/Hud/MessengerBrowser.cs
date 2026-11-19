@@ -548,6 +548,45 @@ public sealed class MessengerBrowser
         return true;
     }
 
+    // Unk_MdNames (messengerdata.cpp:746), the messenger state's window names: the focused ones, the last at the tail
+    readonly LinkedList<string> names = new();               // m_names
+    string currentName = "";                                  // m_strCurrent
+
+    /// <summary>Unk_MdNames::FUN_141482c80 (messengerdata.cpp:802), a window's focus-in (UIMessenger::vfunc_90,
+    /// uimessenger.cpp:2141): the name moves to the tail and is the current one; an empty name is ignored.</summary>
+    public void MakeCurrent(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return;
+        RemoveName(name);
+        names.AddLast(name);
+        currentName = name;
+    }
+
+    /// <summary>Unk_MdNames::RemoveName (messengerdata.cpp:813).</summary>
+    public void RemoveName(string name)
+    {
+        while (names.Remove(name)) { }
+        if (currentName == name) currentName = "";
+    }
+
+    /// <summary>Unk_MdNames::GetValidName (messengerdata.cpp:764) with the browser there: the first name from the head
+    /// that is a window's (FUN_141a23d70, uimessenger.cpp:3137), else the first window's (GetFirstWindowName, :3454).</summary>
+    public string ValidName()
+    {
+        foreach (var n in names)
+            if (Windows.Any(w => w.Name == n)) return n;
+        return Windows.Count > 0 ? Windows[0].Name : "";
+    }
+
+    /// <summary>FUN_141a252a0 (uimessenger.cpp:3378), a whisper in the valid window: each window of that name begins a
+    /// whisper to <paramref name="target"/> (UIMessenger::FUN_141a14bb0).</summary>
+    public void Whisper(string target)
+    {
+        string valid = ValidName();
+        foreach (var w in Windows.ToArray())
+            if (w.Name == valid) w.WhisperTo(target);
+    }
+
     static readonly Regex FontSizes = new("size='(1[2-8])'", RegexOptions.CultureInvariant);
 
     /// <summary>UIMessenger::ReplaceFontSize (:1143): each size='12' .. size='18' becomes the given size.</summary>

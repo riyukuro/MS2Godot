@@ -331,11 +331,51 @@ public class HudTests
         Assert.That(sent, Has.Count.EqualTo(2));
         Assert.That(boxes[2].Callback(0, boxes[2]), Is.True);
         Assert.That(sent[^1], Is.EqualTo(new PartyVoteKickRequest(3)));
+        // Invite to My Home: RequestHome u8 1 + the name (SendRequestHome), a local player and not the own character
+        c.ItemClick(PopupMenuController.InviteToMyHome);                // no local player (FUN_1418fd580): nothing
+        Assert.That(sent, Has.Count.EqualTo(3));
+        m.HasLocalPlayer = true;
+        c.ItemClick(PopupMenuController.InviteToMyHome);
+        Assert.That(sent[^1], Is.EqualTo(new HomeInviteRequest("FixtureArcher")));
+        // furnishing rights: RequestCube u8 0x39 + the name with feature 0x100 only (SendRequestCube)
+        int before = sent.Count;
+        c.ItemClick(PopupMenuController.GrantFurnishingRights);
+        if (m.IsFeatureEnabled(0x100)) Assert.That(sent[^1], Is.EqualTo(new FurnishingRightsRequest("FixtureArcher")));
+        else Assert.That(sent, Has.Count.EqualTo(before));
         // an unported item still raises
         int raised = 0;
         c.ItemClicked += (_, _) => raised++;
+        c.ItemClick(PopupMenuController.Trade);
+        Assert.That(raised, Is.EqualTo(1));
+        // Whisper with no messenger browser: nothing, and it does not raise
         c.ItemClick(PopupMenuController.Whisper);
         Assert.That(raised, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void PartySlotWhisperStartsTheChatWindowsWhisper()
+    {
+        // FUN_141a84da0 -> UIMessengerBrowser FUN_141a252a0 (the valid window) -> UIMessenger FUN_141a14bb0 -> BeginWhisper:
+        // the input gets the whisper command (common 0xaa5), the name and a space, focused with the caret at the end
+        var m = Model();
+        m.HasLocalPlayer = true;
+        var chat = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var mh = Load(chat, m);
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PopupMenuController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, ProfileImagePath = (_, _) => "", Messenger = chat.Browser };
+        var h = Load(c, m);
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        c.ItemClick(PopupMenuController.Whisper);
+        var input = (AsObject)mh.Child("m_textInput");
+        string command = m.Tables.Common(0xaa5);
+        Assert.That(command, Is.Not.Empty);
+        Assert.That(Rt.ToString(mh.Get(input, "text")), Is.EqualTo(command + " FixtureArcher "));
+        Assert.That(Rt.ToNumber(mh.Get(input, "focused")), Is.EqualTo(1));
+        // the own name is not whispered (FUN_141a14bb0)
+        chat.Browser.Whisper(m.Player.Name);
+        Assert.That(Rt.ToString(mh.Get(input, "text")), Is.EqualTo(command + " FixtureArcher "));
+        Assert.That(mh.RT.Errors, Is.Empty);
         Assert.That(h.RT.Errors, Is.Empty);
     }
 

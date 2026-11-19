@@ -159,6 +159,7 @@ public partial class HudScene
                 LocalPlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.Me.Dead,
             };
             c.Send = PartySend;
+            c.Messenger = ChatLog;                                  // Unk_MdState m_48: the chat windows' browser
             c.PlaySound = key => FieldAudio.Instance?.PlayUi(key);
             c.OpenMyInfo += () => { if (myInfo == null || myInfo.IsClosed) OpenMyInfo(); };     // OpenDialog(0x2711)
             c.ItemClicked += (id, t) => GD.Print($"popup menu: item {id} ({menuModel.Tables.PopupMenuName(id)}) for {t?.Name}: its handler is not ported");

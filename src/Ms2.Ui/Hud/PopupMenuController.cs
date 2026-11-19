@@ -25,12 +25,17 @@ public sealed class PopupMenuTarget
 /// movie uipopupmenu, AS PopUpMenuFactory). Ported for the party window's member slots (UIPartyDialog::FUN_141a77760, :794):
 /// the item list by the target and the own party state (FUN_141a83810, :2723) and the movie's "open" object (Open, :2454).
 /// Of the items' handlers (RegisterMenuHandlers, :2417) the party ones are ported (leave, invite, kick and leader change
-/// with their confirm boxes, vote kick, ready check) and View Own Character; the others raise <see cref="ItemClicked"/>.
-/// STILL-OPEN, by handler: 0x65 Whisper (FUN_141a84da0 -> UIMessengerBrowser FUN_141a252a0 -> UIMessenger FUN_141a14bb0:
-/// the messenger's whisper start is not ported); 0x66 View Character (SendCharacterInfo, :3135, needs UIPCInfoDialog 0x4ec8:
+/// with their confirm boxes, vote kick, ready check), Whisper (the chat window's whisper start), Invite to My Home and View
+/// Own Character, and the furnishing rights grant (listed only in the own home, see InOwnHome); the others raise
+/// <see cref="ItemClicked"/>.
+/// STILL-OPEN, by handler: 0x66 View Character (SendCharacterInfo, :3135, needs UIPCInfoDialog 0x4ec8:
 /// none); 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); the buddy and block items
-/// (FUN_141a83ed0 -> the community dialog 0x4e4e, EditBuddyMemo); 0x1f5 Report; 0x1f6 group chat; 0x1f7 / 0x1f8 / 0x1fb house
-/// visit, home invite, furnishing rights; 0x2bd guild invite.
+/// (FUN_141a83ed0 -> the community dialog 0x4e4e, EditBuddyMemo); 0x1f5 Report (CUserReportData to the client platform's
+/// vfunc_48); 0x1f6 group chat (FUN_141a86920 :3371 -> UIGroupMessengerBrowser FUN_141951f70, uigroupmessenger.cpp:1784: with no
+/// group chat CGroupChatManager::Create sends GroupChat u8 1 + name, with any a choice box (type 0x16, common 0x81a) of
+/// the chats; the chat count comes from the GroupChat packets, not decoded); 0x1f7 Visit House (FUN_141a86970 :3378: the checks
+/// of FUN_1418fd330, uicommon.cpp:384, read the cube map service and PC states not ported, then the 0x879 box whose yes,
+/// FUN_1418fd740, uicommon.cpp:539, moves by the party member's account, RequestMoveField mode 2); 0x2bd guild invite.
 /// </summary>
 public sealed class PopupMenuController : UiController, IMessageBoxListener
 {
@@ -77,6 +82,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public event Action<int, PopupMenuTarget> ItemClicked;
     /// <summary>FUN_141a84d40 (:3116), View Own Character on the own PC: OpenDialog(0x2711), UIMyInfoDialog.</summary>
     public event Action OpenMyInfo;
+    /// <summary>The messenger state's browser (Unk_MdState m_48, UIMessengerBrowser); null = none, Whisper does nothing.</summary>
+    public MessengerBrowser Messenger;
     /// <summary>FUN_140710590: a packet to the game server.</summary>
     public Action<IOutPacket> Send = _ => { };
     /// <summary>PlaySystemSound by its table/systemsound.xml key. STILL-OPEN: PC_InviteSuccess is byGender/byJob (a voice);
@@ -341,6 +348,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
             case ViewOwnCharacter:                                      // FUN_141a84d40 (:3116)
                 if (SelfCharacterId != 0 && SelfCharacterId == charId) OpenMyInfo?.Invoke();
                 break;
+            case Whisper:                                               // FUN_141a84da0 (:3127): the state's browser (+0x48)
+                Messenger?.Whisper(name);
+                break;
             case LeaveParty:                                            // SendPartyMode3 (:3160) -> CPartyManager (partymanager.cpp:819)
                 Send(new PartyLeaveRequest());
                 break;
@@ -368,6 +378,12 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
                 break;
             case ReadyCheck:                                            // FUN_141a853a0 -> SendPartyMode46 (partymanager.cpp:810)
                 Send(new PartyReadyCheckRequest());
+                break;
+            case InviteToMyHome:                                        // SendRequestHome (:3385): FUN_1418fd580, uicommon.cpp:439
+                if (Model != null && Model.HasLocalPlayer && OtherCharacter(charId)) Send(new HomeInviteRequest(name));
+                break;
+            case GrantFurnishingRights:                                 // SendRequestCube (:3424): feature 0x100
+                if (Model != null && Model.IsFeatureEnabled(0x100)) Send(new FurnishingRightsRequest(name));
                 break;
             default:
                 ItemClicked?.Invoke(id, target);

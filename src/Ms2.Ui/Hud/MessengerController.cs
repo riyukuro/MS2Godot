@@ -692,6 +692,15 @@ public sealed class MessengerController : UiController
         SetInputText(string.IsNullOrEmpty(target) ? command + " " : command + " " + target + " ", true);
     }
 
+    /// <summary>FUN_141a14bb0 (:2025): a whisper to anyone but the local player (MyPC vfunc_77, its name); none without
+    /// a local player.</summary>
+    public void WhisperTo(string target)
+    {
+        if (Model == null || !Model.HasLocalPlayer) return;
+        if (Model.Player.Name == target) return;
+        BeginWhisper(target);
+    }
+
     /// <summary>FUN_141a12260 (:1578): a focused input loses the focus and its text; true = it was focused.</summary>
     bool Release()
     {
@@ -707,7 +716,7 @@ public sealed class MessengerController : UiController
     {
         switch (name.ToLowerInvariant())
         {
-            case "eventfocusin": return true;                  // vfunc_90: Unk_MdNames::FUN_141482c80(name), one window
+            case "eventfocusin": Browser.MakeCurrent(Name); return true;     // vfunc_90 (:2141)
             case "eventfocusout": return true;                 // vfunc_91: the history iterator back to the end
             case "eventchangetab": SelectTab(args.Length > 0 ? Rt.ToString(args[0]) : ""); return true;
             case "eventchangetalktarget": SubjectChanged(); return true;     // vfunc_93

@@ -100,4 +100,6 @@ public enum Outbound : ushort {
     DungeonReward = 0x9D,
     Club = 0x95,
     Ugc = 0x38,
+    RequestCube = 0x37,         // SendOp::RequestCube (commonfiles/opcodes.h)
+    RequestHome = 0x51,         // SendOp::RequestHome (commonfiles/opcodes.h)
 }
