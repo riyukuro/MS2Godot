@@ -21,13 +21,20 @@ mkdir -p "$scratch/tmp"
 # DOTNET_GCgen0size: the gen0 budget, which the runtime otherwise derives from the CPU's cache size, so the collection
 # counts would differ between machines. 48 MB is the runtime's default cap (GCGen0MaxBudget), the value a large-cache CPU gets.
 export XDG_DATA_HOME=$scratch/xdg TMPDIR=$scratch/tmp DOTNET_ROLL_FORWARD=Major DOTNET_GCgen0size=0x3000000
-# The inputs' fingerprint, written into every session's result: nif.xml, Xml.m2d, and the pack indexes (every .m2h of
-# the data and its Resource folder, by name and content). compare exits 2 when it is not the baseline's.
+# The inputs' fingerprint, written into every session's result: nif.xml, Xml.m2d, and the pack indexes (every .m2h
+# under the data folder, by path and content, in C-locale order). compare exits 2 when it is not the baseline's.
 fp() { sha256sum < "$1" | cut -c1-16; }
 [ -f "$MS2_NIFXML" ] && [ -f "$MS2_DATA/Xml.m2d" ] || { echo "perfgate: no $MS2_NIFXML or $MS2_DATA/Xml.m2d" >&2; exit 2; }
-idx=$(cd "$MS2_DATA" && for f in *.m2h Resource/*.m2h; do [ -f "$f" ] && printf '%s %s\n' "$f" "$(sha256sum < "$f" | cut -c1-64)"; done | sha256sum | cut -c1-16)
+idx=$(cd "$MS2_DATA" && find . -name '*.m2h' -type f | LC_ALL=C sort | while IFS= read -r f; do printf '%s %s\n' "$f" "$(sha256sum < "$f" | cut -c1-64)"; done | sha256sum | cut -c1-16)
 export MS2_PERF_GATE_INPUTS="{\"nif.xml\":\"$(fp "$MS2_NIFXML")\",\"Xml.m2d\":\"$(fp "$MS2_DATA/Xml.m2d")\",\"pack_index\":\"$idx\"}"
 echo "perfgate: inputs $MS2_PERF_GATE_INPUTS"
+# PERFGATE_BASELINE (default the committed baseline; empty: no check, for the runs a new baseline is built from): a run
+# on other inputs than the baseline's could only end in compare's exit 2, so it stops here, before the build
+baseline=${PERFGATE_BASELINE-$root/tools/perfgate/baseline.json}
+if [ -n "$baseline" ]; then
+  python3 -c 'import json,sys; b=json.load(open(sys.argv[1])).get("inputs"); r=json.loads(sys.argv[2]); print("perfgate: baseline inputs", json.dumps(b, separators=(",", ":"))); sys.exit(0 if b == r else 1)' "$baseline" "$MS2_PERF_GATE_INPUTS" \
+    || { echo "perfgate: inputs differ from $baseline's, rebuild the baseline (or set MS2_DATA and MS2_NIFXML to the merge gate's)" >&2; exit 2; }
+fi
 t0=$SECONDS
 (cd "$root/game" && dotnet build -nologo -v q > "$scratch/build.log" 2>&1) || { echo "perfgate: game build failed ($scratch/build.log)" >&2; exit 2; }
 dotnet build -nologo -v q "$root/tools/PerfGate" > "$scratch/build-tool.log" 2>&1 || { echo "perfgate: tool build failed" >&2; exit 2; }
