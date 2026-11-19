@@ -9,7 +9,7 @@ tools/perfgate/run.sh --full SCRATCH     # setup + 3 sessions, as the baseline r
 dotnet run --project tools/PerfGate -- compare tools/perfgate/baseline.json SCRATCH/run.json
 ```
 
-The inputs are the merge gate's, the same as every suite's: `MS2_DATA` is the raw KR client's `Data` folder (not a restored one), and `MS2_NIFXML` is the `external/nifxml` submodule's `nif.xml`. Other inputs give other counts: a restored Data folder and another nif.xml moved 13 metrics, for example worldmap's kept objects from 966 to 1978. So each session records the inputs' fingerprint, and so does the baseline. The fingerprint covers the `nif.xml` and `Xml.m2d` hashes, plus one hash over the pack indexes (every `.m2h` in `Data` and `Data/Resource`, by name and content). `compare` exits 2 when the fingerprints are not the same ("inputs differ, rebuild the baseline").
+The inputs are the merge gate's, the same as every suite's: `MS2_DATA` is the raw KR client's `Data` folder (not a restored one), and `MS2_NIFXML` is the `external/nifxml` submodule's `nif.xml`. Other inputs give other counts: a restored Data folder and another nif.xml moved 13 metrics, for example worldmap's kept objects from 1,978 to 966. So each session records the inputs' fingerprint, and so does the baseline. The fingerprint covers the `nif.xml` and `Xml.m2d` hashes, plus one hash over the pack indexes (every `.m2h` in `Data` and `Data/Resource`, by name and content). `compare` exits 2 when the fingerprints are not the same ("inputs differ, rebuild the baseline").
 
 `SCRATCH` must be empty or must not exist. The run's temporary files go there too (`SCRATCH/tmp`, as `TMPDIR`). Run the gate in a heavy slot: it builds the game, then runs Godot three times (four with `--full`). It only records times (`PERFGATE_TIMES=1` lists them against the baseline).
 
@@ -71,21 +71,21 @@ The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A coun
 | JIT methods (main thread) | 2% or 8 |
 | collections | 1 |
 
-The noise behind the floors comes from 5 runs (13 sessions) of the same tree on a loaded machine:
+The noise behind the floors comes from the baseline's 10 runs (26 sessions) of the same tree on a loaded machine:
 
-- **Main-thread bytes:** every dialog's first open stays within 0.3% of its median, and its repeats within 1%. No open was more than 1 MB above its dialog's median. The 3.3 MB tracker rebuild is the size of a regression the limits catch: the earlier runs, made before the pre-grow, fail on exactly that open.
-- **JIT methods (main thread):** repeats compile 4 to 13 methods per open. First opens move by up to 9 (myinfo 356 to 365), and the field load by up to 31 of 10,050.
-- **Objects and nodes:** first opens are the same in every run. Repeats stay within ±4, except where noted below.
-- **Kept objects:** most dialogs are exact. Options (−43 to 54), shop repeats (−22 to 79) and skill's first repeat (−4 to 506) move. Skill's first repeat is a field NPC's emoticon balloon that falls in its window. So each dialog's first repeat is its own metric, and the later repeats get a floor of 16: a leak of a few dozen objects per open fails there. Leaks the size of worldmap's first open (966 kept) fail either way.
-- **Collections:** most are exact. The others move by 1, and the field load by up to 7.
+- **Main-thread bytes:** every dialog's first open stays within 0.4% of its median, and its repeats within 1.4%. No open was more than 300 KB above its dialog's median. The 3.3 MB tracker rebuild is the size of a regression the limits catch: the earlier runs, made before the pre-grow, fail on exactly that open. The idle windows' bytes per frame move the most, by up to 7% (idle: 115 to 126 KB a frame).
+- **JIT methods (main thread):** repeats compile 4 to 16 methods per open. First opens move by up to 14 (inventory 169 to 183), and the field load by up to 44 of 10,070.
+- **Objects and nodes:** first opens are the same in every run. Repeats stay within ±6.
+- **Kept objects:** first opens and first repeats are exact in every run. The later repeats move by up to 8, except shop's (−14 to 45). Skill's first repeat keeps 830 objects: that is a field NPC's emoticon balloon, which a gate session times from a fixed seed (`NpcEmoticons`), so it falls in that window every run. With the tick-count seed it fell in a random window (options' repeats moved by up to 129). Leaks the size of worldmap's first open (1,978 kept) fail either way.
+- **Collections:** most are exact. The checked ones move by up to 3, and the field load by up to 8.
 
-Leave-one-out over those 5 runs (a baseline from 4, compare the 5th) passes 5 of 5.
+Leave-one-out over those 10 runs (a baseline from 9, compare the 10th) passes 10 of 10. With 5 runs it passed 4 of 5: one session's idle bytes per frame was past the other four's spread.
 
-**Runtime:** about 130 s for `run.sh` (setup 30 s, then about 50 s per session) and about 180 s for `--full`. That excludes the build and any wait for a heavy slot.
+**Runtime:** about 120 s for `run.sh` and about 170 to 190 s for `--full` (setup about 30 s, then about 45 s per session). That excludes the build and any wait for a heavy slot.
 
 ## Changing the baseline
 
-`tools/perfgate/baseline.json` changes only in a commit that carries a `Perf-baseline: <reason>` trailer, and the reviewer has to accept the reason. `tools/perfgate/check-trailer.sh RANGE` lists every commit in RANGE that touches the baseline, with its reason, and exits 1 if one has no reason. To make a new baseline, run the gate at least three times on the new tip and build the baseline from those runs:
+`tools/perfgate/baseline.json` changes only in a commit that carries a `Perf-baseline: <reason>` trailer, and the reviewer has to accept the reason. `tools/perfgate/check-trailer.sh RANGE` lists every commit in RANGE that touches the baseline, with its reason, and exits 1 if one has no reason. To make a new baseline, run the gate on the new tip several times (the current one has 10 runs; with fewer, the idle windows' spread is short) and build the baseline from those runs:
 
 ```sh
 dotnet run --project tools/PerfGate -- baseline tools/perfgate/baseline.json R1/run.json R2/run.json R3/run.json

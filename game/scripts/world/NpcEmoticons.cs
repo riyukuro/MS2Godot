@@ -194,6 +194,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 if (byMonologue.TryGetValue(m, out var x) && IsInstanceValid(x.Placed.Root)) NpcTalk.PlayVoiceAt(v, x.Placed.Root.GlobalPosition);
             },
         };
+        // the perf gate (MS2_PERF_GATE, run with --fixed-fps): a fixed seed, so the balloons fall in the same frames every
+        // run instead of in whichever measured window the tick-count seed puts them
+        if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE") is { Length: > 0 }) monologue.Rand = new QuestRandom(1).Next;
     }
 
     void Add(FieldNpcs.Placed n)
