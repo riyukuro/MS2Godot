@@ -74,6 +74,13 @@ public sealed class CacheStore
 
     public byte[] Read(string piece, string key) => CacheFile.Read(PathOf(piece, key), key);
 
+    /// <summary>Removes the piece's file of the key (a file whose body can't be read though its checksum held), so the
+    /// next build or load makes it again.</summary>
+    public void Remove(string piece, string key)
+    {
+        try { File.Delete(PathOf(piece, key)); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+    }
+
     /// <summary>The file of the key is there and its body matches its checksum (read whole: the setup step's check).</summary>
     public bool IsWhole(string piece, string key) => CacheFile.IsWhole(PathOf(piece, key), key);
 
@@ -106,12 +113,12 @@ public sealed class CacheStore
         }
     }
 
-    static bool Running(int pid)
+    public static bool Running(int pid)
     {
         if (pid == Environment.ProcessId) return true;
         try { using var p = System.Diagnostics.Process.GetProcessById(pid); return !p.HasExited; }
         catch (ArgumentException) { return false; }
-        catch (InvalidOperationException) { return false; }
+        catch (Exception) { return true; }   // access denied and the like: the process is there, its file stays
     }
 
     /// <summary>What a piece's load did, for the perf log.</summary>

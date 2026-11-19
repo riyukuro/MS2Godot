@@ -81,6 +81,11 @@ public static class DataCache
         var tmp = path + ".tmp" + System.Environment.ProcessId;
         try
         {
+            // the temporary files of earlier writes that did not finish (their process gone)
+            var name = System.IO.Path.GetFileName(path) + ".tmp";
+            foreach (var f in System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(path), name + "*"))
+                if (int.TryParse(System.IO.Path.GetFileName(f).AsSpan(name.Length), out int pid) && !Ms2.Formats.Cache.CacheStore.Running(pid))
+                    try { System.IO.File.Delete(f); } catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { }
             System.IO.File.WriteAllLines(tmp, hashes);
             System.IO.File.Move(tmp, path, true);
         }

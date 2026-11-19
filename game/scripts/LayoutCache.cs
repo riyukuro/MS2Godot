@@ -75,10 +75,11 @@ public static class LayoutCache
                 out var outcome, onlyConfig: true);
             if (outcome != null && (PerfLog.On || outcome.Diff != null)) GD.Print("layout cache: " + outcome);
             // a whole file the codec can't read (its checksum matched: a codec fault) builds the layout from the movie, as
-            // without the cache; the file is left for the setup step's next build of a new layout code
+            // without the cache; the file is removed, so the setup step (or the next load) writes it again
             try { return LayoutCodec.Read(bytes, withLibrary); }
             catch (Exception e)
             {
+                s.Store.Remove(Piece(key), s.Config + "," + key);
                 GD.PushWarning($"layout cache: {key}: unreadable ({e.GetType().Name}: {e.Message}); built from the movie");
                 return withLibrary ? full() : plain();
             }

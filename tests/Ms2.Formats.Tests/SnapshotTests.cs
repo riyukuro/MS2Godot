@@ -272,6 +272,69 @@ public class SnapshotTests
     }
 
     [Test]
+    public void StampsGiveUpOnAHeldLockWithoutThrowing()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-stamps-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var wait = Stamps.LockWait;
+        try
+        {
+            var a = Path.Combine(dir, "a.m2d");
+            File.WriteAllText(a, "one");
+            var tsv = Path.Combine(dir, "stamps.tsv");
+            File.WriteAllLines(tsv, new[] { $"{Stamps.Resolve(a)}\t{Stamps.StampOf(Stamps.Resolve(a))}\t{Sha1("one")}", $"{Path.Combine(dir, "gone")}\t1\t2\t3\t{Sha1("x")}" });
+            Stamps.LockWait = TimeSpan.FromMilliseconds(100);
+            using var held = new FileStream(tsv + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var b = Path.Combine(dir, "b.m2d");
+            File.WriteAllText(b, "two");
+            Assert.That(new Stamps(tsv).Hash(b), Is.EqualTo(Sha1("two")), "the hash is given, its line is not saved");
+            Assert.That(File.ReadAllLines(tsv), Has.Length.EqualTo(2));
+            Assert.That(new Stamps(tsv).Known(), Is.EquivalentTo(new[] { Sha1("one") }), "the gone file is not counted, its line is not dropped");
+            Assert.That(File.ReadAllLines(tsv), Has.Length.EqualTo(2));
+        }
+        finally { Stamps.LockWait = wait; Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public void StampsSweepTheTemporaryFileOfAStoppedSave()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-stamps-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var a = Path.Combine(dir, "a.m2d");
+            File.WriteAllText(a, "one");
+            var tsv = Path.Combine(dir, "stamps.tsv");
+            var live = tsv + ".tmp" + Environment.ProcessId;   // this process: stays until its own save replaces it
+            var dead = tsv + ".tmp2000000000";
+            File.WriteAllText(dead, "x");
+            new Stamps(tsv).Hash(a);
+            Assert.That(File.Exists(dead), Is.False);
+            Assert.That(File.Exists(tsv), Is.True);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public void CacheStoreRemoveDropsTheFileAndRunningToleratesAnyPid()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-store-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new CacheStore(dir);
+            var key = CacheStore.Key("piece", "cfg", "b1");
+            store.Write("piece", key, new byte[] { 1, 2, 3 });
+            Assert.That(store.Has("piece", key), Is.True);
+            store.Remove("piece", key);
+            Assert.That(store.Has("piece", key), Is.False);
+            store.Remove("piece", key);   // already gone: nothing happens
+            Assert.That(CacheStore.Running(Environment.ProcessId), Is.True);
+            Assert.That(CacheStore.Running(2000000000), Is.False);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public void RecentlyTouchedSeesAFolderOrItsFilesWritten()
     {
         var dir = Path.Combine(Path.GetTempPath(), "ms2-touched-" + Guid.NewGuid().ToString("N"));

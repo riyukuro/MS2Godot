@@ -63,12 +63,14 @@ public sealed class Stamps
         using (var s = File.OpenRead(real)) hash = Convert.ToHexString(SHA1.HashData(s)).ToLowerInvariant();
         if (hash == known && StampOf(real) == stamp) return hash;
         lock (gate)
-            using (Lock())
-            {
-                var lines = Load();
-                lines[real] = (stamp, hash);
-                Save(lines);
-            }
+        {
+            // a lock held past LockWait (a stuck process): the hash is right, the line is made again on the next run
+            using var held = TryLock();
+            if (held == null) return hash;
+            var lines = Load();
+            lines[real] = (stamp, hash);
+            Save(lines);
+        }
         return hash;
     }
 
@@ -76,22 +78,34 @@ public sealed class Stamps
     public IReadOnlyCollection<string> Known()
     {
         lock (gate)
-            using (Lock())
-            {
-                var lines = Load();
-                var gone = lines.Keys.Where(p => !File.Exists(p)).ToList();
-                foreach (var p in gone) lines.Remove(p);
-                if (gone.Count > 0) Save(lines);
-                return lines.Values.Select(v => v.Hash).ToHashSet();
-            }
+        {
+            // without the lock (held past LockWait) the lines are read as they are and none is dropped
+            using var held = TryLock();
+            var lines = Load();
+            var gone = lines.Keys.Where(p => !File.Exists(p)).ToList();
+            foreach (var p in gone) lines.Remove(p);
+            if (held != null && gone.Count > 0) Save(lines);
+            return lines.Values.Select(v => v.Hash).ToHashSet();
+        }
     }
 
     Dictionary<string, (string Stamp, string Hash)> Load()
     {
         var d = new Dictionary<string, (string, string)>(StringComparer.Ordinal);
         if (!File.Exists(file)) return d;
-        foreach (var line in File.ReadAllLines(file))
+        // opened for sharing: a save in another process renames its file over this one (Windows refuses while it is open
+        // without it)
+        string[] all;
+        try
         {
+            using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var r = new StreamReader(fs);
+            all = r.ReadToEnd().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        }
+        catch (FileNotFoundException) { return d; }
+        foreach (var raw in all)
+        {
+            var line = raw.TrimEnd('\r');
             // path, the stamp's fields, the hash; a line of an older stamp (fewer fields) does not match and is replaced
             var f = line.Split('\t');
             if (f.Length >= 4 && f[^1].Length == 40) d[f[0]] = (string.Join("\t", f[1..^1]), f[^1]);
@@ -101,6 +115,7 @@ public sealed class Stamps
 
     void Save(Dictionary<string, (string Stamp, string Hash)> lines)
     {
+        SweepTmp();
         var tmp = file + ".tmp" + Environment.ProcessId;
         try
         {
@@ -114,9 +129,24 @@ public sealed class Stamps
         }
     }
 
+    /// <summary>Removes the temporary files of saves that did not finish (a process stopped between the write and the
+    /// rename); those of a process still running stay.</summary>
+    void SweepTmp()
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(file));
+        var name = Path.GetFileName(file) + ".tmp";
+        try
+        {
+            foreach (var f in Directory.GetFiles(dir, name + "*"))
+                if (int.TryParse(Path.GetFileName(f).AsSpan(name.Length), out int pid) && !CacheStore.Running(pid))
+                    try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        catch (IOException) { }
+    }
+
     /// <summary>The lock file next to the stamp file, held open without sharing (a system lock on the file, released when the
-    /// process ends); waits for the process that holds it.</summary>
-    IDisposable Lock()
+    /// process ends); waits for the process that holds it, and gives up (null) after <see cref="LockWait"/>.</summary>
+    IDisposable TryLock()
     {
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file)));
         var path = file + ".lock";
@@ -124,7 +154,11 @@ public sealed class Stamps
         while (true)
         {
             try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-            catch (IOException) when (sw.Elapsed < LockWait) { Thread.Sleep(10); }
+            catch (IOException)
+            {
+                if (sw.Elapsed >= LockWait) return null;
+                Thread.Sleep(10);
+            }
         }
     }
 
