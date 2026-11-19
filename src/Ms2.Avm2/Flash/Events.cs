@@ -61,17 +61,24 @@ public class AsEventDispatcher : AsObject
         var tgt = target ?? this;
         e.Dispatched = true;
         e.Target = tgt;
-        var path = new List<AsEventDispatcher>();
-        if (this is AsDisplayObject d) for (var p = d.Parent; p != null; p = p.Parent) path.Add(p);
-        // capture: from the top down
-        e.Phase = 1;
-        for (int i = path.Count - 1; i >= 0 && !e.Stopped; i--) path[i].Fire(e, true);
-        if (!e.Stopped) { e.Phase = 2; Fire(e, false); }
-        if (e.bubbles)
+        // the ancestors as they are at the start (pooled; none for an object off the display list)
+        int n = 0;
+        if (this is AsDisplayObject d) for (var p = d.Parent; p != null; p = p.Parent) n++;
+        var path = n > 0 ? System.Buffers.ArrayPool<AsEventDispatcher>.Shared.Rent(n) : Array.Empty<AsEventDispatcher>();
+        if (n > 0) { int k = 0; for (var p = ((AsDisplayObject)this).Parent; p != null; p = p.Parent) path[k++] = p; }
+        try
         {
-            e.Phase = 3;
-            foreach (var p in path) { if (e.Stopped) break; p.Fire(e, false); }
+            // capture: from the top down
+            e.Phase = 1;
+            for (int i = n - 1; i >= 0 && !e.Stopped; i--) path[i].Fire(e, true);
+            if (!e.Stopped) { e.Phase = 2; Fire(e, false); }
+            if (e.bubbles)
+            {
+                e.Phase = 3;
+                for (int i = 0; i < n; i++) { if (e.Stopped) break; path[i].Fire(e, false); }
+            }
         }
+        finally { if (n > 0) { Array.Clear(path, 0, n); System.Buffers.ArrayPool<AsEventDispatcher>.Shared.Return(path); } }
         e.CurrentTarget = null;
         e.Phase = 0;
         return !e.Prevented;
@@ -82,11 +89,19 @@ public class AsEventDispatcher : AsObject
         var map = useCapture ? capture : bubble;
         if (map == null || !map.TryGetValue(e.type, out var l) || l.Count == 0) return;
         e.CurrentTarget = target ?? this;
-        foreach (var x in l.ToArray())
+        // the listeners as they are now, in a pooled copy (one added or removed by a listener does not change this dispatch)
+        int n = l.Count;
+        var ls = System.Buffers.ArrayPool<Listener>.Shared.Rent(n);
+        for (int i = 0; i < n; i++) ls[i] = l[i];   // per element: a bulk copy card-marks the whole range of the pooled (old) array
+        try
         {
-            if (e.StoppedNow) break;
-            x.F.Call(null, new object[] { e });
+            for (int i = 0; i < n; i++)
+            {
+                if (e.StoppedNow) break;
+                ls[i].F.Call(null, new object[] { e });
+            }
         }
+        finally { Array.Clear(ls, 0, n); System.Buffers.ArrayPool<Listener>.Shared.Return(ls); }
     }
 
     /// <summary>Makes and dispatches a plain event of a native class (Event, MouseEvent ...).</summary>

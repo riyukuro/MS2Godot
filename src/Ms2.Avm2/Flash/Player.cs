@@ -416,7 +416,7 @@ namespace Ms2.Avm2.Flash
             {
                 if (mc.LastScriptFrame == mc.Frame) continue;
                 mc.LastScriptFrame = mc.Frame;
-                if (mc.FrameScripts.ContainsKey(mc.Frame)) frameActions.Add(new FrameAction { Target = mc, Frame = mc.Frame });
+                if (mc.FrameScripts.ContainsKey(mc.Frame)) frameActions.Add(NewAction(mc, null, mc.Frame));
             }
             scriptQueue.Clear();
             if (events) QueueBroadcast("exitFrame");
@@ -426,7 +426,7 @@ namespace Ms2.Avm2.Flash
         {
             // EventChains::QueueEvents (@0x14251fd40) walks the chain as it is now: a listener added later is not queued
             if (broadcast.TryGetValue(type, out var l))
-                foreach (var d in l) frameActions.Add(new FrameAction { Target = d, Type = type });
+                foreach (var d in l) frameActions.Add(NewAction(d, type, 0));
         }
 
         /// <summary>
@@ -440,12 +440,23 @@ namespace Ms2.Avm2.Flash
             {
                 var a = frameActions[frameHead++];
                 if (a.Target == null) continue;
-                if (a.Type != null) { RT.Guard(a.Type + " " + a.Target.Class?.Name, () => Dispatch(a.Type, a.Target)); continue; }
+                if (a.Type != null) { RT.Guard(a.Type, a.Target.Class?.Name ?? "", (p: this, t: a.Type, d: a.Target), static x => x.p.Dispatch(x.t, x.d)); continue; }
                 var mc = (AsMovieClip)a.Target;
                 if (mc.FrameScripts.TryGetValue(a.Frame, out var fn))
                     RT.Guard($"frame script {mc.Class.Name}@{a.Frame + 1}", () => fn.Call(mc, Array.Empty<object>()));
             }
+            foreach (var x in frameActions) { x.Target = null; x.Type = null; spareActions.Push(x); }
             frameActions.Clear(); frameHead = 0;
+        }
+
+        // the queue's entries are reused frame to frame (an entry is read before the call it makes, so a drain inside
+        // that call may take it back)
+        readonly Stack<FrameAction> spareActions = new();
+        FrameAction NewAction(AsEventDispatcher target, string type, int frame)
+        {
+            var a = spareActions.Count > 0 ? spareActions.Pop() : new FrameAction();
+            a.Target = target; a.Type = type; a.Frame = frame;
+            return a;
         }
 
         /// <summary>
@@ -491,8 +502,12 @@ namespace Ms2.Avm2.Flash
 
         void SendBroadcast(string type)
         {
-            if (!broadcast.TryGetValue(type, out var l)) return;
-            foreach (var d in l.ToArray()) RT.Guard(type + " " + d.Class?.Name, () => Dispatch(type, d));
+            if (!broadcast.TryGetValue(type, out var l) || l.Count == 0) return;
+            int n = l.Count;
+            var ds = System.Buffers.ArrayPool<AsEventDispatcher>.Shared.Rent(n);
+            for (int i = 0; i < n; i++) ds[i] = l[i];   // per element, as in AsEventDispatcher.Fire
+            try { for (int i = 0; i < n; i++) RT.Guard(type, ds[i].Class?.Name ?? "", (p: this, t: type, d: ds[i]), static x => x.p.Dispatch(x.t, x.d)); }
+            finally { Array.Clear(ds, 0, n); System.Buffers.ArrayPool<AsEventDispatcher>.Shared.Return(ds); }
         }
 
         void Dispatch(string type, AsEventDispatcher d)
@@ -517,18 +532,27 @@ namespace Ms2.Avm2.Flash
         public void Tick()
         {
             FrameCount++;
-            var todo = later.ToArray(); later.Clear();
-            foreach (var a in todo) RT.Guard("deferred", a);
+            if (later.Count > 0)
+            {
+                var todo = later.ToArray(); later.Clear();
+                foreach (var a in todo) RT.Guard("deferred", a);
+            }
             // STILL-OPEN: the client queues enterFrame at AL_EnterFrame while the frame advances and runs it after the
             // advance; here it is sent before. Marked clips off the stage (not on the play list) also run their scripts
             // here, where QueueFrameActions only walks the play list.
             SendBroadcast("enterFrame");
             UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
-            RT.Guard("advance", () => Advance(Stage));
+            RT.Guard("advance", null, this, static p => p.Advance(p.Stage));
             RunFrameActions();
             double dt = 1000.0 / FrameRate;
-            RT.Guard("clock", () => RT.AdvanceClock(dt));
-            foreach (var t in timers.ToArray()) RT.Guard("timer", t.Pump);
+            RT.Guard("clock", null, (rt: RT, dt), static x => x.rt.AdvanceClock(x.dt));
+            if (timers.Count is int nt and > 0)
+            {
+                var ts = System.Buffers.ArrayPool<AsTimer>.Shared.Rent(nt);
+                for (int i = 0; i < nt; i++) ts[i] = timers[i];
+                try { for (int i = 0; i < nt; i++) RT.Guard("timer", null, ts[i], static t => t.Pump()); }
+                finally { Array.Clear(ts, 0, nt); System.Buffers.ArrayPool<AsTimer>.Shared.Return(ts); }
+            }
             // MovieRoot::AdvanceFrame (@0x1424eb2f0, sfr_as3_16z.cpp:607-611), at the end of every MovieImpl::Advance
             // (sfr_gfx_01i.cpp:3869): with StageInvalidated (+0x6e0, set only by Stage::invalidate) the render event chain
             // is queued and run, and the flag is cleared after it, so a stage.invalidate() inside a render handler is
@@ -549,7 +573,16 @@ namespace Ms2.Avm2.Flash
                 BuildFrame(mc, next);
                 if (!scriptQueue.Contains(mc)) scriptQueue.Add(mc);
             }
-            if (o is AsContainer c) foreach (var ch in c.Children.ToArray()) Advance(ch);
+            // the children as they are now (a child added by a frame is advanced next frame), in a pooled copy
+            if (o is AsContainer c && c.Children.Count is int n and > 0)
+            {
+                var kids = System.Buffers.ArrayPool<AsDisplayObject>.Shared.Rent(n);
+                // per element: List.CopyTo is a bulk copy, which marks the cards of the whole destination range of the
+                // (old) pooled array; an element store marks a card only for a young child
+                for (int i = 0; i < n; i++) kids[i] = c.Children[i];
+                try { for (int i = 0; i < n; i++) Advance(kids[i]); }
+                finally { Array.Clear(kids, 0, n); System.Buffers.ArrayPool<AsDisplayObject>.Shared.Return(kids); }
+            }
         }
 
         // ---- host bridge -------------------------------------------------------------------------------------

@@ -360,18 +360,26 @@ public sealed partial class Runtime
     // ---- top-level calls with error capture ---------------------------------------------------------------
 
     /// <summary>Runs a call from the host; an AS exception or an internal failure is recorded (and returned as false).</summary>
-    public bool Guard(string what, Action a)
+    public bool Guard(string what, Action a) => Guard(what, null, a, static f => f());
+
+    /// <summary>
+    /// <see cref="Guard(string, Action)"/> for the calls made every frame: the state goes in as an argument (no closure
+    /// per call) and the label is <paramref name="what"/>, a space and <paramref name="detail"/> (when not null), made only
+    /// when an error is recorded.
+    /// </summary>
+    public bool Guard<T>(string what, string detail, T state, Action<T> a)
     {
         var prev = Current;
         Current = this;
         if (guardDepth == 0) budgetLeft = Budget;
         guardDepth++;
-        try { a(); return true; }
-        catch (AsThrow t) { Errors.Add(what + ": " + Rt.Describe(t.Value) + (t.AsStack.Length > 0 ? "   [in " + t.AsStack + "]" : "")); return false; }
-        catch (BudgetExceeded) when (guardDepth == 1) { Errors.Add(what + ": instruction budget exceeded"); return false; }
-        catch (Exception e) when (e is not OutOfMemoryException) { Errors.Add(what + ": internal " + e.GetType().Name + ": " + e.Message + " @ " + e.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains("Ms2.Avm2"))?.Trim()); return false; }
+        try { a(state); return true; }
+        catch (AsThrow t) { Errors.Add(Label(what, detail) + ": " + Rt.Describe(t.Value) + (t.AsStack.Length > 0 ? "   [in " + t.AsStack + "]" : "")); return false; }
+        catch (BudgetExceeded) when (guardDepth == 1) { Errors.Add(Label(what, detail) + ": instruction budget exceeded"); return false; }
+        catch (Exception e) when (e is not OutOfMemoryException) { Errors.Add(Label(what, detail) + ": internal " + e.GetType().Name + ": " + e.Message + " @ " + e.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains("Ms2.Avm2"))?.Trim()); return false; }
         finally { guardDepth--; Current = prev ?? this; }
     }
+    static string Label(string what, string detail) => detail == null ? what : what + " " + detail;
     int guardDepth;
 }
 

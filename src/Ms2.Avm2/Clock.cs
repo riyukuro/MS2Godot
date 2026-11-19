@@ -26,6 +26,9 @@ public sealed partial class Runtime
     public void AdvanceClock(double ms)
     {
         TimerMs += ms;
+        bool due = false;
+        foreach (var t in timeouts) if (t.Due <= TimerMs) { due = true; break; }
+        if (!due) return;
         foreach (var t in timeouts.Where(t => t.Due <= TimerMs).OrderBy(t => t.Due).ToList())
         {
             if (!timeouts.Contains(t)) continue;

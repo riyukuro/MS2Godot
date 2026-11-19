@@ -241,6 +241,39 @@ public class As3EquivalenceTests
     [TestCaseSource(nameof(DialogNames))]
     public void DialogSweepIsTheSame(string name) => Same(name + " sweep", sb => OpenDialog(Dialogs[name], sb, true));
 
+    /// <summary>
+    /// The HUD's idle frame allocates (almost) nothing in the player runtime: the upper HUD and the main player info open in
+    /// the translated code, warmed up, then the bytes this thread allocates over 300 ticks. Untraced (the observers
+    /// allocate). The bound is per tick.
+    /// </summary>
+    [Test]
+    public void HudTickAllocatesLittle()
+    {
+        var open = new List<Player>();
+        foreach (var name in new[] { "upperhud", "mainplayerinfo" })
+        {
+            var d = Dialogs[name];
+            var c = d.Make();
+            var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); }, c.Libraries);
+            p.StageW = 1280; p.StageH = 720;
+            p.Translate = k => k.TrimStart('$');
+            var h = new UiHost(p, c, Model());
+            d.Pre?.Invoke(c);
+            h.Load();
+            d.Post?.Invoke(c);
+            open.Add(p);
+        }
+        for (int i = 0; i < 60; i++) foreach (var p in open) p.Tick();
+        const int ticks = 300;
+        long c0 = Interp.CompiledCalls, b0 = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < ticks; i++) foreach (var p in open) p.Tick();
+        long perTick = (GC.GetAllocatedBytesForCurrentThread() - b0) / ticks;
+        TestContext.WriteLine($"HUD idle: {perTick} bytes per tick, {(Interp.CompiledCalls - c0) / (double)ticks:F1} translated calls per tick");
+        Assert.That(perTick, Is.LessThan(MaxHudTickBytes), "bytes allocated per HUD tick");
+    }
+
+    const long MaxHudTickBytes = 8 * 1024;   // 3 KB at this commit, for the two movies together
+
     /// <summary>Every movie with code: its document class and 5 frames (no C++ side), then a mouse sweep.</summary>
     [Test]
     public void EveryMovieStartsTheSame()
