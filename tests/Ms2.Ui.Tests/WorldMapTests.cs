@@ -193,4 +193,69 @@ public class WorldMapTests
         TestContext.WriteLine(spot);
         Assert.That(spot, Is.Not.Empty, "CFishingManager::GetSpotDescription of Tria's spot");
     }
+
+    // ---- the tooltip movie over the map (GFxManager::FindMovie(5), run once for the tests) -----------------------------
+
+    static (TooltipController, UiHost) TipLayer()
+    {
+        Packs();
+        var tc = new TooltipController();
+        var (rt, p) = src.Open(tc.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var th = new UiHost(p, tc, NewModel());
+        Assert.That(th.Load(), Is.True, "tooltip movie: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) p.Tick();
+        UiHost.Tooltips = tc;
+        return (tc, th);
+    }
+
+    /// <summary>
+    /// The dialog closed while one of its tooltips shows: the movie leaves the stage (UISwfEntity::Unload, uiswfentity.cpp:241,
+    /// unloads the Loader that holds it) and the removedFromStage that runs down the tree makes every element registered
+    /// with the movie's TooltipManager destroy its tooltip (TooltipManager.appendMouseEvent's REMOVED_FROM_STAGE listener
+    /// and UIComponent.handleRemoveFromStage → unregisterMouseEvent → destroyTooltipByOwner), so the run's tooltip movie
+    /// holds none of the map's tooltips once the dialog is closed (as the game's OnEndClose: Host.Unload + QueueFree).
+    /// </summary>
+    [Test]
+    public void ClosingTheMapDestroysItsTooltips()
+    {
+        var (tc, th) = TipLayer();
+        try
+        {
+            var (h, c, rt) = Load();
+            Assert.That(rt.Errors, Is.Empty);
+            // hover a tile as the HUD's shot does (HudScene.Hover): its hitarea, the first hit point of its art +4
+            AsDisplayObject Breadth(string name)
+            {
+                var queue = new Queue<AsDisplayObject>();
+                foreach (var k in (h.Player.Stage as AsContainer).Children) queue.Enqueue(k);
+                while (queue.Count > 0)
+                {
+                    var d = queue.Dequeue();
+                    if (d.InstanceName == name) return d;
+                    if (d is AsContainer cc) foreach (var k in cc.Children) queue.Enqueue(k);
+                }
+                return null;
+            }
+            var hit = Breadth("m_hitarea");
+            Assert.That(hit, Is.Not.Null, "a tile's m_hitarea to hover");
+            var b = hit.GetBounds(null);
+            (double, double)? pt = null;
+            for (double y = b.Y; y < b.Y + b.H && pt == null; y += 2)
+                for (double x = b.X; x < b.X + b.W && pt == null; x += 2)
+                    for (var t = (AsDisplayObject)h.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                        if (t == hit) { pt = (x + 4, y + 4); break; }
+            Assert.That(pt, Is.Not.Null, "a point on the hitarea's art");
+            h.Player.MouseMove(pt.Value.Item1, pt.Value.Item2);
+            for (int i = 0; i < 3; i++) { h.Player.Tick(); th.Player.Tick(); }
+            Assert.That(tc.Open, Is.Not.Empty, "the hovered tile's tooltip is shown");
+            // the HUD's OnEndClose wiring (HudScene.OpenWorldMap): the dialog unloaded once the close tween ended
+            c.Unloaded += () => h.Unload();
+            c.Close();
+            for (int i = 0; i < 60 && !c.IsClosed; i++) { h.Player.Tick(); th.Player.Tick(); }
+            Assert.That(c.IsClosed, Is.True, "the close tween ended");
+            Assert.That(tc.Open, Is.Empty, "the movie leaving the stage destroyed its tooltips");
+        }
+        finally { UiHost.Tooltips = null; }
+    }
 }

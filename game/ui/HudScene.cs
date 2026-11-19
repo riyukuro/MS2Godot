@@ -65,7 +65,7 @@ public partial class HudScene : Node, IUiStageHost
     long partyMenuShot;                     // --uigen-party-menu ID: the party slot menu of that member
     string hoverShot;                       // --uigen-hover MOVIE:a.b.c (or MOVIE:@x,y): the pointer on that child of a hosted movie, or at that point (its tooltip shows)
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
-    int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
+    int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result; 3 and 4 close it (3 by the key, 4 by its close button) after hovering a tile and the air taxi icon, three open/hover/close cycles
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve: the shot opens that window, as I, P or Y does
     string guideShot;                       // --uigen-guide summary:TEXTID|tip:TEXTID|tutorial:TEXTID: the guide pane shows that text
@@ -2674,8 +2674,9 @@ public partial class HudScene : Node, IUiStageHost
         }
         if (shopShot != null && frames == 210) shop?.PlaceBesideInventory(inventory, inventory != null && !inventory.IsClosed);
         if (shopShot != null && frames == 230) PickShopView(shopShot);
-        if (worldMapShot >= 1 && frames == 240) worldMapSide?.SetPendingSearch("Henesys");
-        if (worldMapShot >= 2 && frames == 260) worldMapSide?.OnCallback("onClickSearchInfo", new object[] { 2000076u });
+        if (worldMapShot is 1 or 2 && frames == 240) worldMapSide?.SetPendingSearch("Henesys");
+        if (worldMapShot == 2 && frames == 260) worldMapSide?.OnCallback("onClickSearchInfo", new object[] { 2000076u });
+        if (worldMapShot is 3 or 4 && frames >= 200) MapTipCycles(frames - 200, worldMapShot == 4);
         if (optionShot >= 0 && frames == 200) OpenGameOption(optionShot);
         if (sysmenuShot >= 1 && frames == 230) ClickSystemMenu("m_selectChannel");
         if (sysmenuShot >= 2 && frames == 240) ClickSystemMenu("m_channel");
@@ -2690,7 +2691,7 @@ public partial class HudScene : Node, IUiStageHost
         if (dragShot != null && frames >= 240 && frames <= 270) DragStep(frames - 240);
         if (partyMenuShot != 0 && frames >= 240 && frames <= 244) ShotPartyMenu(partyMenuShot, frames - 240);
         if (frameCase != null) { MeasureFrame(delta); return; }
-        if (++frames == 300)
+        if (++frames == (worldMapShot is 3 or 4 ? 660 : 300))
         {
             DirAccess.MakeDirRecursiveAbsolute(shotDir);
             GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "hud.png"));
@@ -2720,27 +2721,72 @@ public partial class HudScene : Node, IUiStageHost
     void Hover(string spec)
     {
         var parts = spec.Split(':', 2);
-        var movie = FindMovies(GetTree().Root).FirstOrDefault(m => m.Host.Id == parts[0]);
-        if (movie == null) { GD.PushWarning("hover: no movie " + parts[0]); return; }
-        var h = movie.Host;
         if (parts[1].StartsWith('@'))       // "@x,y": the pointer at that window point (in the movie's stage units)
         {
+            var movie = FindMovies(GetTree().Root).FirstOrDefault(m => m.Host.Id == parts[0]);
+            if (movie == null) { GD.PushWarning("hover: no movie " + parts[0]); return; }
             var xy = parts[1][1..].Split(',').Select(float.Parse).ToArray();
             var view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
             var p = view != null ? view.GetGlobalTransformWithCanvas().AffineInverse() * new Vector2(xy[0], xy[1]) : new Vector2(xy[0], xy[1]);
             movie.Player.MouseMove(p.X, p.Y);
             return;
         }
+        if (!TryHover(parts[0], parts[1])) GD.PushWarning("hover: no hit on " + spec);
+    }
+
+    /// <summary>The named descendant of the hosted movie with that id, the pointer at the first point of its art the movie's
+    /// hit test reaches; false when there is none (a shot can try several).</summary>
+    bool TryHover(string movieId, string path)
+    {
+        var movie = FindMovies(GetTree().Root).FirstOrDefault(m => m.Host.Id == movieId);
+        if (movie == null) return false;
+        var h = movie.Host;
         object o = h.Entity;
-        foreach (var n in parts[1].Split('.'))
+        foreach (var n in path.Split('.'))
             o = o is Ms2.Avm2.Flash.AsDisplayObject p ? Descendant(h, p, n) : null;
-        if (o is not Ms2.Avm2.Flash.AsDisplayObject target) { GD.PushWarning("hover: no " + spec); return; }
+        if (o is not Ms2.Avm2.Flash.AsDisplayObject target) return false;
         var b = target.GetBounds(null);
         for (double y = b.Y; y < b.Y + b.H; y += 2)
             for (double x = b.X; x < b.X + b.W; x += 2)
                 for (var t = (Ms2.Avm2.Flash.AsDisplayObject)movie.Player.MouseTarget(x, y); t != null; t = t.Parent)
-                    if (t == target) { movie.Player.MouseMove(x + 4, y + 4); return; }
-        GD.PushWarning("hover: no hit on " + spec);
+                    if (t == target) { movie.Player.MouseMove(x + 4, y + 4); return true; }
+        return false;
+    }
+
+    /// <summary>
+    /// The --worldmap 3/4 shot: three open/hover/close cycles of the map — a tile's hitarea, then its air taxi icon, so
+    /// their tooltips show — closed by the world map key (3: ToggleWorldMap, as M) or the dialog's close button (4: the
+    /// movie's m_close, its OnClose), the map opening again between the cycles; the shot (at 660, over the field) is after
+    /// the last close, where the closed map's tooltips must not stay on screen.
+    /// </summary>
+    void MapTipCycles(int at, bool byButton)
+    {
+        int cycle = at / 140, step = at % 140;
+        if (cycle >= 3) return;
+        if (step == 0 && at > 0 && !WorldMapOpen) ToggleWorldMap();     // the next cycle's open
+        else if (step == 40) { if (!TryHover("uiworldmapdialog", "m_hitarea")) GD.PushWarning($"worldmap: no tile to hover in cycle {cycle}"); }
+        else if (step == 55)
+        {
+            // the air taxi icon: the tile's found taxi, the good taxi, else the cash one
+            bool taxi = TryHover("uiworldmapdialog", "m_taxiIcon");
+            if (!taxi) taxi = TryHover("uiworldmapdialog", "m_goodtaxiIcon");
+            if (!taxi) taxi = TryHover("uiworldmapdialog", "m_cashtaxiIcon");
+            if (!taxi) GD.PushWarning($"worldmap: no air taxi icon to hover in cycle {cycle}");
+        }
+        else if (step == 85)
+        {
+            if (byButton)
+            {
+                var movie = FindMovies(GetTree().Root).FirstOrDefault(m => m.Host.Id == "uiworldmapdialog");
+                if (movie?.Host.Entity is Ms2.Avm2.Flash.AsDisplayObject root && Descendant(movie.Host, root, "m_close") is { } btn)
+                {
+                    var b = btn.GetBounds(null);
+                    movie.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
+                }
+                else GD.PushWarning($"worldmap: no close button to click in cycle {cycle}");
+            }
+            else if (WorldMapOpen) ToggleWorldMap();        // the M key's ToggleDialog(0x4e42)
+        }
     }
 
     /// <summary>

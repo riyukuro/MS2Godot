@@ -97,9 +97,20 @@ public sealed class UiHost
 
     void OnStatus(StatusEvent e) => RT.Guard("status " + e, () => Controller.OnStatus(e));
 
-    /// <summary>Stops listening to the model (UIStatusEventDispatcher unregister).</summary>
+    /// <summary>
+    /// The dialog's movie is taken down: UISwfEntity::Unload (uiswfentity.cpp:241) has the loader manager unload the swf
+    /// (UnloadSwf, uiswfentitymanager.cpp:215 → ASMovieClipLoader's "unloadSwf", asmoviecliploader.cpp:47), whose AS side
+    /// (scaleform.ms2.loader.msLoader.unloadSwf) removes the dialog's clip from its layer and unloads its Loader, so the
+    /// dialog's content leaves the stage. The removedFromStage that runs down its display tree makes every element
+    /// registered with the movie's TooltipManager destroy its tooltip (TooltipManager.appendMouseEvent's
+    /// REMOVED_FROM_STAGE listener → handleRemovedFromStage → destroyTooltipByOwner → "Tooltip" "destroyTooltip", and
+    /// UIComponent.handleRemoveFromStage → unregisterMouseEvent likewise), so a dialog closed while one of its tooltips
+    /// shows leaves none behind in the run's tooltip movie. Then the model listeners go (UIStatusEventDispatcher
+    /// unregister, the rest of UISwfEntity::Unload).
+    /// </summary>
     public void Unload()
     {
+        if (Player?.HostLoader is { } loader) RT.Guard("unload " + Id, () => loader.unloadAndStop());
         Model.Changed -= OnStatus;
         Model.AlignWidgets?.Remove(Controller);
     }

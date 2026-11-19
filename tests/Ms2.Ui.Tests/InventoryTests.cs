@@ -547,6 +547,65 @@ public class InventoryTests
         Assert.That(keys.KeysOfAction(0), Is.Empty);
     }
 
+    /// <summary>
+    /// The inventory closed while an item tooltip shows: the dialog's movie leaves the stage on unload (UISwfEntity::Unload,
+    /// uiswfentity.cpp:241, unloads the Loader that holds it), and the removedFromStage down its display tree makes the
+    /// movie's TooltipManager destroy every tooltip of the removed elements (appendMouseEvent's REMOVED_FROM_STAGE
+    /// listener → handleRemovedFromStage → destroyTooltipByOwner), so the run's tooltip movie holds none of them.
+    /// </summary>
+    [Test]
+    public void ClosingTheWindowDestroysTheItemTooltip()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[] { new EquipItem { Id = 15300001, Uid = 11, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+        // the run's tooltip movie (GFxManager::FindMovie(5))
+        var tc = new TooltipController();
+        var (trt, tp) = src.Open(tc.Movie, r => r.Budget = 20_000_000);
+        tp.StageW = 1280; tp.StageH = 720;
+        var th = new UiHost(tp, tc, NewModel());
+        Assert.That(th.Load(), Is.True, "tooltip movie: " + string.Join("; ", trt.Errors));
+        for (int i = 0; i < 5; i++) tp.Tick();
+        UiHost.Tooltips = tc;
+        try
+        {
+            var (h, c, _) = Load(model, book);
+            h.Set(h.Child("m_tab"), "selectedIndex", c.Tabs.Select((t, i) => (t, i)).First(x => x.t.Tab == 1).i);
+            for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+            Assert.That(c.GetSlotTooltip("InventoryDialog.0")["tooltip"], Is.EqualTo("export_common_tooltip_kindsItem"), "the slot has an item tooltip");
+            // hover the slot as the HUD's shot does (HudScene.DragStep: SlotPoint finds the display object by its binding)
+            AsDisplayObject Slot()
+            {
+                var queue = new Queue<AsDisplayObject>();
+                foreach (var k in (h.Player.Stage as AsContainer).Children) queue.Enqueue(k);
+                while (queue.Count > 0)
+                {
+                    var d = queue.Dequeue();
+                    if (d != h.Player.Stage && Rt.ToString(h.Get(d, "binding")) == "InventoryDialog.0") return d;
+                    if (d is AsContainer cc) foreach (var k in cc.Children) queue.Enqueue(k);
+                }
+                return null;
+            }
+            var slot = Slot();
+            Assert.That(slot, Is.Not.Null, "the slot bound InventoryDialog.0");
+            var b = slot.GetBounds(null);
+            (double, double)? pt = null;
+            for (double y = b.Y; y < b.Y + b.H && pt == null; y += 2)
+                for (double x = b.X; x < b.X + b.W && pt == null; x += 2)
+                    for (var t = (AsDisplayObject)h.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                        if (t == slot) { pt = (x, y); break; }
+            Assert.That(pt, Is.Not.Null, "a point on the slot");
+            h.Player.MouseMove(pt.Value.Item1, pt.Value.Item2);
+            for (int i = 0; i < 3; i++) { h.Player.Tick(); tp.Tick(); }
+            Assert.That(tc.Open, Is.Not.Empty, "the hovered item's tooltip is shown");
+            h.Unload();      // the HUD's close: Host.Unload once the dialog is unloaded
+            Assert.That(tc.Open, Is.Empty, "the movie leaving the stage destroyed its tooltips");
+        }
+        finally { UiHost.Tooltips = null; }
+    }
+
     [Test]
     public void AWornItemDroppedOnTheBagSwapsOrTakesItOff()
     {
