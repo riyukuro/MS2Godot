@@ -578,10 +578,12 @@ public partial class Field : Node3D
                 camVelActive = false;
                 placedEye = eye;                               // vfunc_37
             }
-            // the zoom action (one frame per wheel step): m_84 += x * min(dt, 1/15) * 2000, within +-150
+            // the zoom action (one frame per wheel step): m_84 += x * min(dt, 1/15) * 2000, within +-150. The impulse is
+            // the client's at a 1/60 s frame, per notch, so a notch zooms as far at any frame rate (the coast above
+            // counts 60 fps frames)
             if (i == 0 && zoomInput != 0)
             {
-                camVel = Mathf.Clamp(camVel + zoomInput * (float)Math.Min(dt, 1.0 / 15) * 2000f, -150f, 150f);
+                camVel = Mathf.Clamp(camVel + zoomInput * (1f / FrameRate.Reference) * 2000f, -150f, 150f);
                 zoomInput = 0;
             }
             player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
@@ -609,6 +611,10 @@ public partial class Field : Node3D
     float camVel;
     bool camVelActive, camBlocked;
     int zoomInput;
+    /// <summary>A wheel notch, as the mouse handler sets it (+1 in, -1 out), for scripted runs (MoveProof wheel).</summary>
+    public void Wheel(int notch) => zoomInput = notch;
+    /// <summary>The zoom distance (m_50), for scripted runs (MoveProof cam).</summary>
+    public float CameraDistance => camDist;
     Vector3? placedEye, camLook;
 
     static float Planar(Vector3 a, Vector3 b) => new Vector2(a.X - b.X, a.Z - b.Z).Length();

@@ -12,6 +12,8 @@ namespace Ms2Godot.Movement;
 ///   until STATE SECS [DX DY] [jump] [up|down]   hold until the player is in STATE (Idle, Walk, Jump, Fall, Land, Swim, Ladder)
 ///   shot NAME                 save DIR/NAME.png
 ///   dash                      start StateDash (the server / a skill does in the client)
+///   wheel N                   one mouse wheel notch (1 in, -1 out), as the wheel handler sets it
+///   cam                       print the camera zoom distance
 ///   click X Y Z               click to move to a point (needs --mouse-move)
 ///   ropes N                   print the N rope segments nearest the player
 ///   walls R                   print cube walls within R whose face the snap ray (+X / +Y) reaches from the floor in front
@@ -135,7 +137,7 @@ public partial class MoveProof : Node
             EndStep();
             System.IO.File.WriteAllText(path, sb.ToString());
             foreach (var l in steps) GD.Print(l);
-            var rates = walk.Where(w => w.dt > 0).Select(w => w.d / w.dt).OrderBy(r => r).ToList();
+            var rates = walk.Where(w => w.dt > 0).Select(w => w.d / w.dt).OrderBy(r => r).ToList();   // perf-ok: test only, once
             float med = rates.Count > 0 ? rates[rates.Count / 2] : 0;
             int still = 0, pairs = 0;
             for (int i = 0; i < walk.Count; i++)
@@ -145,7 +147,7 @@ public partial class MoveProof : Node
                 still++;
                 if (i + 1 < walk.Count && walk[i + 1].d > 1.5f * med * walk[i + 1].dt) pairs++;
             }
-            GD.Print($"[move] trace walk frames {walk.Count}, median speed {med:0.0}/s, still frames {still}, still-then-double {pairs}, frame time min/max {(walk.Count > 0 ? walk.Min(w => w.dt) * 1000 : 0):0.0}/{(walk.Count > 0 ? walk.Max(w => w.dt) * 1000 : 0):0.0} ms");
+            GD.Print($"[move] trace walk frames {walk.Count}, median speed {med:0.0}/s, still frames {still}, still-then-double {pairs}, frame time min/max {(walk.Count > 0 ? walk.Min(w => w.dt) * 1000 : 0):0.0}/{(walk.Count > 0 ? walk.Max(w => w.dt) * 1000 : 0):0.0} ms");   // perf-ok: test only, once
         }
     }
 
@@ -295,6 +297,14 @@ hold 0.8
                 break;
             case "uneven":                     // every other frame takes MS more (0: off)
                 uneven = int.Parse(s[1]);
+                Next();
+                break;
+            case "wheel":                      // one mouse wheel notch this frame: 1 in, -1 out
+                (player.GetParent() as Field)?.Wheel(int.Parse(s[1]));
+                Next();
+                break;
+            case "cam":                        // print the zoom distance
+                GD.Print($"[move] cam f{frame} dist {(player.GetParent() as Field)?.CameraDistance:0.00}");
                 Next();
                 break;
             case "dash":

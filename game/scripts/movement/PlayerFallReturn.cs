@@ -49,6 +49,18 @@ public partial class Player
         public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw; public Vector3 CamEuler;
         public byte Sub; public int Tick;
         public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
+        public bool InQueue;              // in the queued list until the next Flush
+    }
+
+    // a walking frame makes a record every drawn frame (StateVfunc22): records are reused, so the sync allocates nothing per frame
+    readonly System.Collections.Generic.Stack<SyncRecord> freeRecords = new();
+    readonly System.Collections.Generic.List<(Ms2.Net.Packets.StateSync, int)> liveOut = new();
+
+    SyncRecord RentRecord()
+    {
+        var r = freeRecords.Count > 0 ? freeRecords.Pop() : new SyncRecord();
+        r.Time = 0; r.Sent = false; r.InQueue = false;
+        return r;
     }
 
     int hitFallReturn = -1;               // the hit report's entity when it is a fall-return cube (FieldBuilder.FallReturnMeta), else -1
@@ -164,14 +176,16 @@ public partial class Player
         // with IsFallReturn and PropCollisionGroup 9 or 8, the PC is not falling (vfunc_99(0) == 0), and a ray straight
         // down from the feet (CPhysXHelper::FUN_14168a9b0, groups 0x389) hits that entity first; else 0x7fffffff
         bool marked = hitFallReturn >= 0 && !InAirFor(MoveConfig.IdleFallDelay) && GroundFallReturnEntity() == hitFallReturn;
-        var rec = new SyncRecord
+        var rec = RentRecord();
         {
             // StateSyncObject::FUN_1408356c0 writes the position as three int16 (CByteBuffer::WriteVector3Short, stream.cpp:127)
-            Pos = new Vector3((short)feet.X, (short)feet.Y, (short)(feet.Z + 0.0001f)), Marked = marked,
-            Cell = marked ? CellKey(feet) : int.MaxValue,
-            State = State, Dir = moveDir, Yaw = targetYawDeg, BodyYaw = yawDeg, CamEuler = CameraEuler, Sub = SubOf(State), Tick = ServerTick?.Invoke() ?? 0, Made = syncClock,
-        };
+            rec.Pos = new Vector3((short)feet.X, (short)feet.Y, (short)(feet.Z + 0.0001f)); rec.Marked = marked;
+            rec.Cell = marked ? CellKey(feet) : int.MaxValue;
+            rec.State = State; rec.Dir = moveDir; rec.Yaw = targetYawDeg; rec.BodyYaw = yawDeg; rec.CamEuler = CameraEuler; rec.Sub = SubOf(State);
+            rec.Tick = ServerTick?.Invoke() ?? 0; rec.Made = syncClock;
+        }
         QueueCurrent();                                                              // FUN_1417b7670
+        if (current != null && !current.InQueue) freeRecords.Push(current);         // sent in an earlier packet: no longer held
         current = rec;
         if (flushAfter) Flush();
     }
@@ -209,6 +223,7 @@ public partial class Player
         if (current == null || current.Sent) return;
         queued.Add(current);
         current.Sent = true;
+        current.InQueue = true;
     }
 
     /// <summary>
@@ -221,15 +236,27 @@ public partial class Player
         if (queued.Count == 0) return;
         if (Live)
         {
-            var list = new System.Collections.Generic.List<(Ms2.Net.Packets.StateSync, int)>(queued.Count);
-            foreach (var q in queued) list.Add((LiveRecord(q), q.Tick));
-            queued.Clear();
-            StateSyncOut?.Invoke(list);
+            liveOut.Clear();   // the handler copies the records into its packet before it returns
+            foreach (var q in queued) liveOut.Add((LiveRecord(q), q.Tick));
+            ReleaseQueued();
+            StateSyncOut?.Invoke(liveOut);
             return;
         }
         var last = queued[^1];
+        var (pos, marked) = (last.Pos, last.Marked);
+        ReleaseQueued();
+        ServerStateSync(pos, marked);
+    }
+
+    /// <summary>The flushed records go back to the pool, except the current one (it stays until the next record replaces it).</summary>
+    void ReleaseQueued()
+    {
+        foreach (var q in queued)
+        {
+            q.InQueue = false;
+            if (q != current) freeRecords.Push(q);
+        }
         queued.Clear();
-        ServerStateSync(last.Pos, last.Marked);
     }
 
     /// <summary>

@@ -15,8 +15,9 @@ public partial class Player
     enum DashSub { Rush = 0x1d, Far = 0x1e, Skid = 0x1f }
     DashSub dsub;
     Vector3 dashFrom;
-    float dashStopT, dashStopDur;
+    float dashStopT, dashStopDur, skidFullT;
     bool dashSkidding;
+    const float GroundRushTime = 2f / FrameRate.Reference - 1e-5f;
 
     /// <summary>StateDash::vfunc_4: the dash speed along the facing; any jump stops.</summary>
     public void StartDash()
@@ -31,11 +32,15 @@ public partial class Player
         kVel = Forward * baseSpeed;
     }
 
-    void DashUpdate(Vector2 input, bool upPressed)
+    void DashUpdate(Vector2 input, bool upPressed, float dt)
     {
         // StateDash::vfunc_8: in the rush a held up key takes a ladder, a pressed one a rope (kind 0)
         if (dsub == DashSub.Rush && input.Y > 0 && (TryLadder(3) || (upPressed && TryRope(1)))) return;
-        if (dsub == DashSub.Skid) kVel = Forward * baseSpeed;
+        // no stop key: the skid moves at the dash speed for what is left of its first 60 fps frame (skidFullT), the
+        // last frame cut to the time left, so the distance does not grow with the frame count
+        if (dsub == DashSub.Skid && dashStopDur <= 0)
+            kVel = Forward * (MoveConfig.DashSpeed * Mathf.Clamp((skidFullT - dashStopT) / Mathf.Max(dt, 1e-6f), 0f, 1f));
+        else if (dsub == DashSub.Skid) kVel = Forward * baseSpeed;
         else kVel = Forward * MoveConfig.DashSpeed;
     }
 
@@ -47,8 +52,12 @@ public partial class Player
         switch (dsub)
         {
             case DashSub.Rush:
-                if (moved.Length() < MoveConfig.DashMinStep) { Enter(MoveState.Idle); return; }
-                if (Grounded && stateTime > dt) { DashSkid(); return; }
+                // the client's stop test is 2 units per frame at its 60 fps (a blocked rush): kept per 60 fps frame of dt
+                if (moved.Length() < MoveConfig.DashMinStep * FrameRate.Frames(dt)) { Enter(MoveState.Idle); return; }
+                // StateDash::vfunc_3 skids once FUN_141671a30 (IsOnGround) holds after a rush step, so a dash started on the
+                // ground rushes one frame; this port's test came one frame later (stateTime > dt), two 60 fps frames. Kept
+                // as that time, so the ground rush covers the same distance at any frame rate.
+                if (Grounded && stateTime >= GroundRushTime) { DashSkid(stateTime - 2f / FrameRate.Reference); return; }
                 var d = GlobalPosition - dashFrom;
                 d.Y = 0;
                 if (d.Length() >= MoveConfig.DashDistance) dsub = DashSub.Far;
@@ -65,17 +74,24 @@ public partial class Player
                     float r = Mathf.Min(dashStopT / dashStopDur, 1f);
                     baseSpeed = MoveConfig.DashSpeed * (1f - r);
                 }
-                else baseSpeed = 0;
+                else
+                {
+                    // no stop key: the skid's first frame still moves at the dash speed (the speed drops after the move),
+                    // kept as 1/60 s of skid time less the rush's overshoot past its two 60 fps frames
+                    dashStopT += dt;
+                    if (dashStopT >= skidFullT) baseSpeed = 0;
+                }
                 if (!Anim.IsPlaying() || CurrentAnim != Anims?.Name(Act.JumpDashLand)) Enter(MoveState.Idle);
                 break;
             }
         }
     }
 
-    void DashSkid()
+    void DashSkid(float rushOver = 0)
     {
         dsub = DashSub.Skid;
         dashStopT = 0;
+        skidFullT = Mathf.Max(1f / FrameRate.Reference - rushOver, 0f);
         PlayAct(Act.JumpDashLand, restart: true);
         float stop = Anims?.TextKey(CurrentAnim, "stop") ?? -1;
         dashStopDur = stop > 0 ? stop : 0;

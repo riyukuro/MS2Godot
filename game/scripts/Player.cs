@@ -290,7 +290,7 @@ public partial class Player : CharacterBody3D
                 break;
 
             case MoveState.Dash:
-                DashUpdate(input, upPressed);
+                DashUpdate(input, upPressed, dt);
                 break;
         }
         prevRawInput = rawInput;
