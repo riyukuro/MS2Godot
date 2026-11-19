@@ -606,12 +606,21 @@ public sealed class GameTables
     }
     Dictionary<string, string> recommendNames, recommendSearches, recommendTooltips;
     NametagSymbols nametagSymbols;
+    FishTable fish;
+    TitleTags titleTags;
+    /// <summary>CFishingTable's fish and habitat maps (Table/fish.xml, fishHabitat.xml), read on first use.</summary>
+    public FishTable Fish => fish ??= packs == null ? FishTable.Empty
+        : new FishTable(Xml("table/fish.xml"), Xml("table/fishhabitat.xml"), e => FeatureElements.IsAvailable(packs, e));
+    /// <summary>CTitleTable's tags (Table/titleTag.xml), read on first use.</summary>
+    public TitleTags TitleTags => titleTags ??= packs == null ? TitleTags.Empty
+        : new TitleTags(Xml("table/titletag.xml"), e => FeatureElements.IsAvailable(packs, e));
+    XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);
 
     /// <summary>
     /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 1 itemName,
-    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 59 petName, 74 achieveCategoryName, and 80
+    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 59 petName, 74 achieveCategoryName, and 80
     /// specialQuestType (string/&lt;lang&gt;/specialquesttype.xml, the character ability dialog's); "" for an unknown id or
     /// another table.
     /// </summary>
@@ -619,7 +628,7 @@ public sealed class GameTables
     {
         string file = table switch
         {
-            1 => "itemname", 0x2f => "stringmasteryreceipename", 0x30 => "stringmasteryreceipedesc", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname",
+            1 => "itemname", 0x2f => "stringmasteryreceipename", 0x30 => "stringmasteryreceipedesc", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname", 0x1e => "stringfishdesc", 0x1f => "stringfishdetaildesc",
             0x3b => "petname", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
         };
         if (file == null) return "";

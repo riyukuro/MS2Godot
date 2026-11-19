@@ -51,6 +51,13 @@ public sealed class FishingSpots
         6 => "s_fishing_habitat_emeraldwater", _ => null,
     };
 
+    /// <summary>CMasteryTable::MaxGrade(1) @0x14066b080 (masterytable.cpp:380): the last grade, 0 without one.</summary>
+    public int MaxGrade => grades.Count == 0 ? 0 : grades.Keys.Last();
+
+    /// <summary>CMasteryTable::Value(1, grade) @0x14066b0d0 (:427): the value the grade starts at; uint.MaxValue (the client's
+    /// (unsigned)-1) below grade 1, above the last grade or for a missing grade.</summary>
+    public uint Value(int grade) => grade >= 1 && grade <= MaxGrade && grades.TryGetValue(grade, out var v) ? v : uint.MaxValue;
+
     /// <summary>CMasteryTable::Grade(1, value) @0x14066af60 (masterytable.cpp:364): one below the first grade whose value
     /// is above <paramref name="value"/>, else the last grade.</summary>
     public int Grade(uint value)
@@ -78,5 +85,5 @@ public sealed class FishingSpots
     }
 
     /// <summary>Common string 0xbba + n: s_fishing_grade_Lv{n} for n &gt; 0 (commonstringtable.cpp, ids 0xbbb on).</summary>
-    static string LevelKey(int n) => n > 0 ? "s_fishing_grade_Lv" + n : "s_err_ugcmap_nothing_to_export";
+    public static string LevelKey(int n) => n > 0 ? "s_fishing_grade_Lv" + n : "s_err_ugcmap_nothing_to_export";
 }

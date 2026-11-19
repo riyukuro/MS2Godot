@@ -75,6 +75,7 @@ public enum Inbound : ushort {
     Guild = 0x8A,           // RecvOp Guild (commonfiles/opcodes.h): CGuildManager::FUN_1413b6370
     Prestige = 0x11C,
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
+    Fishing = 0x73,         // RecvOp Fishing (commonfiles/opcodes.h): CFishingManager::FUN_140cd9840
     CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
     UserEnv = 0xA8,
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery
