@@ -56,4 +56,32 @@ public class RenderStateTests
         Assert.That(sc.Meshes.Any(m => m.Mesh.DrawMode == 0), "a one-sided mesh");
         Assert.That(sc.Meshes.All(m => m.Mesh.DrawMode == 0 || m.Mesh.DrawMode == 3));
     }
+
+    /// <summary>The effect runtime draws the stencil property's draw mode (culling) only, not its stencil test: no effect NIF
+    /// sets the stencil enable bit (bit 0 of the flags, NiStencilProperty.h ENABLE_MASK), so there is no test to draw.</summary>
+    [Test]
+    public void NoEffectEnablesStencil()
+    {
+        var (packs, spec) = NifEnv.Open();
+        int files = 0, props = 0;
+        var on = new List<string>();
+        foreach (var entry in packs.List(Archive).Where(e => e.EndsWith(".nif")).OrderBy(e => e, StringComparer.Ordinal))
+        {
+            NifFile nif;
+            try { nif = NifFile.Load(spec, packs.Read(Archive, entry)); } catch { continue; }
+            files++;
+            foreach (var b in nif.Blocks)
+            {
+                if (b.Type != "NiStencilProperty") continue;
+                props++;
+                long flags = b.IntOr("Flags", -1);
+                Assert.That(flags, Is.GreaterThanOrEqualTo(0), entry + ": the 20.1+ flags word");
+                if ((flags & 1) != 0) on.Add(entry);
+            }
+        }
+        TestContext.Progress.WriteLine($"effect NIFs {files}, stencil properties {props}");
+        Assert.That(files, Is.GreaterThan(1000));
+        Assert.That(props, Is.GreaterThan(0));
+        Assert.That(on.Distinct(), Is.Empty);
+    }
 }

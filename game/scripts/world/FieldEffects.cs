@@ -10,7 +10,7 @@ namespace Ms2Godot.World;
 /// <summary>
 /// Entities with the EffectMesh mixin (the spawn and exit portals, effect models of props) are effect NIFs: translucent, additive,
 /// alpha-animated, spinning meshes. Drawn as static meshes they show as an opaque white box, so each plays through the effect scene
-/// runtime (EffectInstance) at the entity's position, Z rotation and scale, looping.
+/// runtime (EffectInstance) at the entity's position, rotation and scale, looping.
 /// </summary>
 public static class FieldEffects
 {
@@ -25,8 +25,9 @@ public static class FieldEffects
             {
                 if (!scenes.TryGetValue(entry, out var scene))
                     scenes[entry] = scene = EffectScene.Load(NifFile.Load(builder.Spec, packs.Read(archive, entry)));
-                float s = (float)e.Scale;
-                var basis = new Basis(Vector3.Back, Mathf.DegToRad((float)e.RotationDeg.Z)).Scaled(new Vector3(s, s, s));
+                // the entity's full rotation R = Rx * Ry * Rz and scale (FieldEntity.Transform, XBlock.cs), as the field props
+                // take it; the position goes on the node
+                var basis = ModelBuilder.ToGodot(e.Transform).Basis;
                 var fx = new EffectInstance(scene, builder, 1e7f, n) { Name = "Effect_" + n, Position = FieldBuilder.ToGodotPoint(e.Position), FileSpace = new Transform3D(basis, Vector3.Zero) };
                 root.AddChild(fx);
                 n++;
