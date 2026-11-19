@@ -95,6 +95,51 @@ public class GameClientTests {
         l.Stop();
     }
 
+    /// <summary>The login's adventure level loads (Prestige kinds 0 and 7, GameSession.EnterServer) come between ServerEnter
+    /// and RequestFieldEnter: the entry keeps them, and anything else of that window, in arrival order, with ServerEnter's
+    /// place, so the replay runs the ServerEnter step (the missions' clear) before them.</summary>
+    [Test] public async Task EntryKeepsThePacketsBeforeTheFieldInOrder() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        var go = new LoginToGame(0, new byte[] { 127, 0, 0, 1 }, (ushort) port, 1, 2000001, "");
+        var enter = GameClient.EnterAsync(go, 10000000000, new byte[16]);
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.RequestKey));
+        await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0)));
+        await s.WriteAsync(srv.Frame(Inbound.Achieve, w => w.WriteByte(9)));          // before ServerEnter
+        await s.WriteAsync(srv.Frame(Inbound.ServerEnter, w => {
+            w.WriteInt(7); w.WriteLong(20000000000); w.WriteShort(1); w.WriteLong(100); w.WriteLong(50); w.WriteLong(9);
+            for (int i = 0; i < 14; i++) w.WriteLong(i);
+            w.WriteUnicodeString("pic"); w.WriteByte(0);
+            w.WriteShort(1); w.WriteInt(2000001); w.WriteShort(0);
+            w.WriteLong(0); w.WriteUnicodeString(""); w.WriteUnicodeString("u1"); w.WriteUnicodeString("u2"); w.WriteUnicodeString("u3");
+        }));
+        await s.WriteAsync(srv.Frame(Inbound.SyncNumber, w => w.WriteByte(0)));
+        await s.WriteAsync(srv.Frame(Inbound.Prestige, w => { w.WriteByte(0); w.WriteLong(300); w.WriteInt(4); w.WriteLong(900); w.WriteInt(2); w.WriteInt(1); w.WriteInt(3); }));
+        await s.WriteAsync(srv.Frame(Inbound.Prestige, w => { w.WriteByte(7); w.WriteInt(1); w.WriteLong(11); w.WriteLong(2); w.WriteByte(0); }));
+        await s.WriteAsync(srv.Frame(Inbound.KeyTable, w => w.WriteByte(0)));
+        await s.WriteAsync(srv.Frame(Inbound.RequestFieldEnter, w => {
+            w.WriteByte(0); w.WriteInt(2000001); w.WriteByte(0); w.WriteByte(0); w.WriteInt(0); w.WriteInt(0);
+            w.WriteFloat(1); w.WriteFloat(2); w.WriteFloat(3); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(90); w.WriteInt(55);
+        }));
+        var (e, game) = await enter.WaitAsync(TimeSpan.FromSeconds(10));
+        using (game) {
+            var seen = new List<string>();
+            e.Replay(p => {
+                var op = game.OpOf(p);
+                seen.Add(op == Inbound.Prestige ? "Prestige " + PrestigeMessage.Read(p.Reader()).GetType().Name : op.ToString());
+            }, () => seen.Add("ServerEnter"));
+            Assert.That(seen, Is.EqualTo(new[] { "Achieve", "ServerEnter", "SyncNumber", "Prestige Loaded", "Prestige MissionList", "KeyTable" }));
+            Assert.That(e.EarlyBeforeEnter, Is.EqualTo(1));
+        }
+        l.Stop();
+    }
+
     [Test] public async Task GlobalFactorIsRequestedAtServerEnterAndTheAnswerKept() {
         var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
         int port = ((IPEndPoint) l.LocalEndpoint).Port;

@@ -19,6 +19,11 @@ public sealed class AdventureData
     /// <summary>A std::map by mission id: the progress count and the claimed flag; kinds 6 and 7 replace it.</summary>
     public readonly SortedDictionary<uint, (uint Progress, bool Complete)> Missions = new();
 
+    /// <summary>ServerEnter (login, character switch, channel change): CSceneStateGame::OnServerEnter (scenestategame.cpp:2070)
+    /// first runs FUN_14092f420 (unit_14092f420_accountsessionstate.cpp:292-311), which clears the missions alone; the other
+    /// values stay until a kind 0 replaces them.</summary>
+    public void ServerEnter() => Missions.Clear();
+
     /// <summary>
     /// The globals OnPrestige writes for <paramref name="m"/>:
     /// <list type="bullet">

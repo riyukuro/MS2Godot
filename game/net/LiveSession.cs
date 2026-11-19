@@ -362,16 +362,18 @@ public partial class LiveSession : Node
             Items.BaseSlots ??= BaseSlotTable();
             if (Inventory == null) { Inventory = new InventoryView(Items); Inventory.RequestSort = (tab, stack) => Send(new ItemInventorySortRequest((byte) tab, stack)); Inventory.RequestMove = (uid, slot) => Send(new ItemInventoryMoveRequest(uid, slot)); Inventory.RequestEquip = (uid, slot, mode) => Send(new ItemEquipRequest(uid, slot, mode)); Inventory.RequestUnequip = uid => Send(new ItemUnequipRequest(uid)); Inventory.RequestSwapEquip = (uid, slot) => Send(new ItemSwapEquipRequest(uid, slot)); Inventory.RequestEquipGem = (uid, slot) => Send(new GemEquipRequest(uid, slot)); Inventory.RequestUse = (uid, arg) => Send(new ItemUseRequest(uid, arg)); Inventory.ServerTime = () => GameSession?.ServerTime ?? 0; }
             Items.MaxStackOf = id => { try { return Kinds().SlotMax(id); } catch { return uint.MaxValue; } };
-            if (entry.EarlyFactor is { } fp) GD.Print($"live: global factor {(Factors.Apply(fp.Reader()) ? "applied" : "ignored")} (before the field)");
-            foreach (var qp in entry.EarlyQuests) Quests.Apply(ReadQuest(qp));   // the quest states the server sent before the field enter
-            GD.Print($"live: {Quests.All.Count} quests loaded before the field");
-            foreach (var ip in entry.EarlyItems) ApplyItems(ip);
-            GD.Print($"live: {Items.All.Count} items loaded before the field ({entry.EarlyItems.Count} packets)");
+            // what the server sent before the field enter, in arrival order, through the read loop's handler (no HUD exists yet):
+            // the adventure level, quest, item, trophy, title and key table loads among them
+            entry.Replay(Handle, () =>
+            {
+                Adventure.ServerEnter();
+                StubHudData.Instance.Wallet = entry.Enter?.Wallet;
+                Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
+            });
+            GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items ({entry.EarlyItems.Count} packets), adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
             login.Dispose(); login = null;
             answered = false;
             syncNumber = entry.Sync?.Number ?? 0;
-            StubHudData.Instance.Wallet = entry.Enter?.Wallet;
-            Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
             GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");
@@ -461,228 +463,232 @@ public partial class LiveSession : Node
     public override void _Process(double delta)
     {
         if (game == null) return;
-        while (game.Incoming.TryDequeue(out var p))
-        {
-            try
-            {
-                bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
-                if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
-                else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
-                if (own) { }
-                else if (game.Is(p, Inbound.FieldAddUser))
-                {
-                    var u = FieldAddUser.Read(p.Reader());
-                    bool self = u.User.CharacterId == entry.Enter.CharacterId;
-                    if (self) { selfObject = u.ObjectId; Me.Apply(u); }
-                    if (self)
-                    {
-                        OwnBuff(null);
-                        foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b));
-                    }
-                    if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
-                    GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
-                }
-                else if (game.Is(p, Inbound.Buff))
-                {
-                    var b = BuffPacket.Read(p.Reader());
-                    if (b.OwnerObjectId == selfObject) OwnBuff(b);
-                }
-                else if (game.Is(p, Inbound.ExpUp))
-                {
-                    var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
-                    Me.Apply(e);
-                    GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
-                }
-                else if (game.Is(p, Inbound.LevelUp))
-                {
-                    var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
-                    bool selfLevel = Me.Apply(l);
-                    GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
-                }
-                else if (game.Is(p, Inbound.SyncNumber))
-                {
-                    syncNumber = SyncNumber.Read(p.Reader()).Number;
-                    player?.OnSyncNumber();
-                    GD.Print($"live: SyncNumber {syncNumber}");
-                }
-                else if (game.Is(p, Inbound.UserMoveByPortal))
-                {
-                    var m = UserMoveByPortal.Read(p.Reader());
-                    GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
-                    if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z, m.IsPortal);
-                }
-                else if (game.Is(p, Inbound.NpcTalk))
-                {
-                    var t = NpcTalkMessage.Read(p.Reader());   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
-                    GD.Print($"live: npc talk {t}");
-                    NpcTalkReceived?.Invoke(t);
-                }
-                else if (game.Is(p, Inbound.Quest))
-                {
-                    var q = ReadQuest(p);
-                    Quests.Apply(q);
-                    GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
-                }
-                else if (game.Is(p, Inbound.Party))
-                {
-                    var m = PartyMessage.Read(p.Reader());   // CPartyManager::OnParty (partymanager.cpp:447); no ExpectEnd: the client ignores trailing bytes
-                    Party.Apply(m, CharacterId, PartyWindowOpen());
-                    GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
-                }
-                else if (game.Is(p, Inbound.ItemInventory))
-                {
-                    ApplyItems(p);
-                    GD.Print($"live: item packet ({Items.All.Count} items)");
-                }
-                else if (game.Is(p, Inbound.ItemPutOn))
-                {
-                    var o = ItemPutOn.Read(p.Reader());        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
-                    bool ownEquipment = Me.Apply(o, WornLayer);
-                    GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
-                }
-                else if (game.Is(p, Inbound.ItemPutOff))
-                {
-                    var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
-                    bool ownEquipment = Me.Apply(o, WornLayer);
-                    GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
-                }
-                else if (game.Is(p, Inbound.Notice))
-                {
-                    var n = NoticeMessage.Read(p.Reader());     // CSceneStateGame::OnNotice (scenestategame.cpp:9216); no ExpectEnd: the client ignores trailing bytes
-                    Notice?.Invoke(n);
-                    GD.Print($"live: notice kind {n.Kind} flags 0x{n.Flags:x} text kind {n.Text.Kind}{(n.Text.Formatted ? $" id {n.Text.Id} args {n.Text.Args.Length}" : $" \"{n.Text.Text}\"")}");
-                }
-                else if (game.Is(p, Inbound.UserChat))
-                {
-                    var r = p.Reader();
-                    var c = ChatMessage.Read(r);                // UIMessengerBrowser::vfunc_84 (uimessenger.cpp:2829); no ExpectEnd: the client ignores trailing bytes
-                    UserChat?.Invoke(c, () => WeddingChatHall.Read(r));
-                    GD.Print($"live: chat type 0x{c.Type:x} from {c.Name}{(c.Common ? $" common {c.CommonId}" : "")}");
-                }
-                else if (game.Is(p, Inbound.UserChatItemLink))
-                {
-                    var links = ChatItemLinks.Read(p.Reader());  // UIMessengerBrowser::vfunc_85 (uimessenger.cpp:2963); no ExpectEnd: the client ignores trailing bytes
-                    UserChatItemLink?.Invoke(links);
-                    GD.Print($"live: chat item links {links.Items.Count}");
-                }
-                else if (game.Is(p, Inbound.BadgeEquip))
-                {
-                    var b = BadgeEquipMessage.Read(p.Reader());     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes
-                    bool ownGems = Me.Apply(b);
-                    if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
-                    GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
-                }
-                else if (game.Is(p, Inbound.UserState))
-                {
-                    var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
-                    if (Me.ApplyUserState(u.ObjectId, u.State)) GD.Print($"live: own player dead (state {u.State})");
-                }
-                else if (game.Is(p, Inbound.DeadUser))
-                {
-                    var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
-                    if (Me.Die(d.ObjectId)) GD.Print("live: own player dead");
-                }
-                else if (game.Is(p, Inbound.Revival))
-                {
-                    var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
-                    if (Me.Revive(v.ObjectId)) GD.Print("live: own player revived");
-                }
-                else if (game.Is(p, Inbound.ItemPutOnOrOff))
-                {
-                    var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
-                    GD.Print($"live: item put on/off {o}");
-                }
-                else if (game.Is(p, Inbound.KeyTable))
-                {
-                    int mode = KeyTable.Apply(p.Reader());   // CKeyTable::OnKeyTable (keytable.cpp:285); no ExpectEnd: the client ignores trailing bytes
-                    GD.Print($"live: key table mode {mode} ({KeyTable.PageCount} pages, page {KeyTable.CurrentPage})");
-                    KeyTableChanged?.Invoke(mode);
-                }
-                else if (game.Is(p, Inbound.Job))
-                {
-                    var j = JobPacket.Read(p.Reader());   // CSceneStateGame::OnJob (scenestategame.cpp:7449); no ExpectEnd: the client ignores trailing bytes
-                    bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
-                    if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
-                    GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
-                }
-                else if (game.Is(p, Inbound.AttributePoint))
-                {
-                    var m = AttributePointMessage.Read(p.Reader());   // OnAttributePoint (scenestategame.cpp:4270): the local player's CStatPointManager
-                    if (m != null) Me.StatPoints.Apply(m);
-                    GD.Print($"live: attribute points {m?.GetType().Name ?? "other mode"} (total {Me.StatPoints.Total}, used {Me.StatPoints.Used})");
-                }
-                else if (game.Is(p, Inbound.Achieve))
-                {
-                    var m = AchieveMessage.Read(p.Reader());          // CAchieveManager::OnPacket (achievemanager.cpp:499, via networkservice.cpp:679)
-                    bool refresh = m != null && Achieves.Apply(m);
-                    if (refresh) AchievesChanged?.Invoke();
-                    GD.Print($"live: achieve {m?.GetType().Name ?? "other mode"} (tally {Achieves.Sum})");
-                }
-                else if (game.Is(p, Inbound.Mail))
-                {
-                    var m = MailMessage.Read(p.Reader());             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
-                    if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-                    GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
-                }
-                else if (game.Is(p, Inbound.Prestige))
-                {
-                    var m = PrestigeMessage.Read(p.Reader());         // OnPrestige (scenestategame.cpp:8815); other kinds are dropped
-                    // kind 2: FindPCById; the own PC's old level fills level 1 (:8856), then vfunc_140 (:8836). Other PCs'
-                    // user blocks take it in the field tracker
-                    bool ownLevel = m is PrestigeMessage.LevelUp up && up.ObjectId == selfObject && Me.User != null;
-                    if (m != null) Adventure.Apply(m, ownLevel ? Me.User.PrestigeLevel : null, MissionFeature());
-                    if (ownLevel) Me.User.PrestigeLevel = ((PrestigeMessage.LevelUp)m).Value;
-                    if (m != null) PrestigeReceived?.Invoke(m);
-                    GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
-                }
-                else if (game.Is(p, Inbound.UserEnv))
-                {
-                    var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept
-                    if (m is UserEnvMessage.Collection c) { CollectionGrades = c.Grades; CollectionChanged?.Invoke(); }
-                    else if (m != null) Me.Apply(m);
-                    GD.Print($"live: user env {m?.GetType().Name ?? "other mode"} ({Me.Titles.Count} titles)");
-                }
-                else if (game.Is(p, Inbound.HomeCommand))
-                {
-                    var m = HomeCommend.Read(p.Reader());             // OnHomeCommand (scenestategame.cpp:7975) mode 1
-                    if (m != null) Me.Apply(m);
-                    GD.Print($"live: home command {(m != null ? $"score {m.Point} object {m.ObjectId}" : "other mode")}");
-                }
-                else if (game.Is(p, Inbound.Ugc))
-                {
-                    switch (UgcMessage.Read(p.Reader()))
-                    {
-                        case UgcProfileImage pi: OnProfileImage(pi); break;
-                        case UgcSetMode sm: ProfileImageService.Images.Mode = sm.Value; GD.Print($"live: ugc mode {sm.Value}"); break;
-                        case var other: GD.Print($"live: ugc mode 0x{other.Mode:x2} (not read)"); break;
-                    }
-                }
-                else if (game.Is(p, Inbound.ProxyGameObj))
-                {
-                    Me.Apply(ProxyGameObj.Read(p.Reader()));          // the own AddPlayer proxy's trophy counts
-                }
-                else if (game.Is(p, Inbound.SkillPoint))
-                {
-                    SkillPoints.Apply(SkillPointPacket.Read(p.Reader()));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
-                    SkillPointsChanged?.Invoke();
-                    GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
-                }
-                else if (game.Is(p, Inbound.SkillBookTree))
-                {
-                    var t = SkillBookTreePacket.Read(p.Reader());   // UISkillBookTreeDialog::vfunc_79 (uiskillbookautodistributedialog.cpp:1962)
-                    GD.Print($"live: skill book tree mode {t.Mode} ({t.Tabs.Count} tabs)");
-                    SkillBookTree?.Invoke(t);
-                }
-                else if (game.Is(p, Inbound.GlobalFactor))
-                {
-                    bool first = Factors.Apply(p.Reader());   // CSceneStateGame::OnGlobalFactor (scenestategame.cpp:4851): taken once; the quest reward rescale (QuestRates) reads it
-                    GD.Print($"live: global factor {(first ? "applied" : "ignored (already taken)")}");
-                }
-                else if (LogPackets) GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
-            }
-            catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
-        }
+        while (game.Incoming.TryDequeue(out var p)) Handle(p);
         if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
+    }
+
+    /// <summary>One game server packet: the read loop's, and at the entry the ones that came before the field enter
+    /// (<see cref="GameEntry.Replay"/>).</summary>
+    void Handle(Ms2.Net.Wire.RawPacket p)
+    {
+        try
+        {
+            bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
+            if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
+            else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
+            if (own) { }
+            else if (game.Is(p, Inbound.FieldAddUser))
+            {
+                var u = FieldAddUser.Read(p.Reader());
+                bool self = u.User.CharacterId == entry.Enter.CharacterId;
+                if (self) { selfObject = u.ObjectId; Me.Apply(u); }
+                if (self)
+                {
+                    OwnBuff(null);
+                    foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b));
+                }
+                if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
+                GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
+            }
+            else if (game.Is(p, Inbound.Buff))
+            {
+                var b = BuffPacket.Read(p.Reader());
+                if (b.OwnerObjectId == selfObject) OwnBuff(b);
+            }
+            else if (game.Is(p, Inbound.ExpUp))
+            {
+                var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
+                Me.Apply(e);
+                GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
+            }
+            else if (game.Is(p, Inbound.LevelUp))
+            {
+                var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
+                bool selfLevel = Me.Apply(l);
+                GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
+            }
+            else if (game.Is(p, Inbound.SyncNumber))
+            {
+                syncNumber = SyncNumber.Read(p.Reader()).Number;
+                player?.OnSyncNumber();
+                GD.Print($"live: SyncNumber {syncNumber}");
+            }
+            else if (game.Is(p, Inbound.UserMoveByPortal))
+            {
+                var m = UserMoveByPortal.Read(p.Reader());
+                GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
+                if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z, m.IsPortal);
+            }
+            else if (game.Is(p, Inbound.NpcTalk))
+            {
+                var t = NpcTalkMessage.Read(p.Reader());   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
+                GD.Print($"live: npc talk {t}");
+                NpcTalkReceived?.Invoke(t);
+            }
+            else if (game.Is(p, Inbound.Quest))
+            {
+                var q = ReadQuest(p);
+                Quests.Apply(q);
+                GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
+            }
+            else if (game.Is(p, Inbound.Party))
+            {
+                var m = PartyMessage.Read(p.Reader());   // CPartyManager::OnParty (partymanager.cpp:447); no ExpectEnd: the client ignores trailing bytes
+                Party.Apply(m, CharacterId, PartyWindowOpen());
+                GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
+            }
+            else if (game.Is(p, Inbound.ItemInventory))
+            {
+                ApplyItems(p);
+                GD.Print($"live: item packet ({Items.All.Count} items)");
+            }
+            else if (game.Is(p, Inbound.ItemPutOn))
+            {
+                var o = ItemPutOn.Read(p.Reader());        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
+                bool ownEquipment = Me.Apply(o, WornLayer);
+                GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+            }
+            else if (game.Is(p, Inbound.ItemPutOff))
+            {
+                var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
+                bool ownEquipment = Me.Apply(o, WornLayer);
+                GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+            }
+            else if (game.Is(p, Inbound.Notice))
+            {
+                var n = NoticeMessage.Read(p.Reader());     // CSceneStateGame::OnNotice (scenestategame.cpp:9216); no ExpectEnd: the client ignores trailing bytes
+                Notice?.Invoke(n);
+                GD.Print($"live: notice kind {n.Kind} flags 0x{n.Flags:x} text kind {n.Text.Kind}{(n.Text.Formatted ? $" id {n.Text.Id} args {n.Text.Args.Length}" : $" \"{n.Text.Text}\"")}");
+            }
+            else if (game.Is(p, Inbound.UserChat))
+            {
+                var r = p.Reader();
+                var c = ChatMessage.Read(r);                // UIMessengerBrowser::vfunc_84 (uimessenger.cpp:2829); no ExpectEnd: the client ignores trailing bytes
+                UserChat?.Invoke(c, () => WeddingChatHall.Read(r));
+                GD.Print($"live: chat type 0x{c.Type:x} from {c.Name}{(c.Common ? $" common {c.CommonId}" : "")}");
+            }
+            else if (game.Is(p, Inbound.UserChatItemLink))
+            {
+                var links = ChatItemLinks.Read(p.Reader());  // UIMessengerBrowser::vfunc_85 (uimessenger.cpp:2963); no ExpectEnd: the client ignores trailing bytes
+                UserChatItemLink?.Invoke(links);
+                GD.Print($"live: chat item links {links.Items.Count}");
+            }
+            else if (game.Is(p, Inbound.BadgeEquip))
+            {
+                var b = BadgeEquipMessage.Read(p.Reader());     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes
+                bool ownGems = Me.Apply(b);
+                if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
+                GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
+            }
+            else if (game.Is(p, Inbound.UserState))
+            {
+                var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
+                if (Me.ApplyUserState(u.ObjectId, u.State)) GD.Print($"live: own player dead (state {u.State})");
+            }
+            else if (game.Is(p, Inbound.DeadUser))
+            {
+                var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
+                if (Me.Die(d.ObjectId)) GD.Print("live: own player dead");
+            }
+            else if (game.Is(p, Inbound.Revival))
+            {
+                var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
+                if (Me.Revive(v.ObjectId)) GD.Print("live: own player revived");
+            }
+            else if (game.Is(p, Inbound.ItemPutOnOrOff))
+            {
+                var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
+                GD.Print($"live: item put on/off {o}");
+            }
+            else if (game.Is(p, Inbound.KeyTable))
+            {
+                int mode = KeyTable.Apply(p.Reader());   // CKeyTable::OnKeyTable (keytable.cpp:285); no ExpectEnd: the client ignores trailing bytes
+                GD.Print($"live: key table mode {mode} ({KeyTable.PageCount} pages, page {KeyTable.CurrentPage})");
+                KeyTableChanged?.Invoke(mode);
+            }
+            else if (game.Is(p, Inbound.Job))
+            {
+                var j = JobPacket.Read(p.Reader());   // CSceneStateGame::OnJob (scenestategame.cpp:7449); no ExpectEnd: the client ignores trailing bytes
+                bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
+                if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
+                GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
+            }
+            else if (game.Is(p, Inbound.AttributePoint))
+            {
+                var m = AttributePointMessage.Read(p.Reader());   // OnAttributePoint (scenestategame.cpp:4270): the local player's CStatPointManager
+                if (m != null) Me.StatPoints.Apply(m);
+                GD.Print($"live: attribute points {m?.GetType().Name ?? "other mode"} (total {Me.StatPoints.Total}, used {Me.StatPoints.Used})");
+            }
+            else if (game.Is(p, Inbound.Achieve))
+            {
+                var m = AchieveMessage.Read(p.Reader());          // CAchieveManager::OnPacket (achievemanager.cpp:499, via networkservice.cpp:679)
+                bool refresh = m != null && Achieves.Apply(m);
+                if (refresh) AchievesChanged?.Invoke();
+                GD.Print($"live: achieve {m?.GetType().Name ?? "other mode"} (tally {Achieves.Sum})");
+            }
+            else if (game.Is(p, Inbound.Mail))
+            {
+                var m = MailMessage.Read(p.Reader());             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
+                if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
+            }
+            else if (game.Is(p, Inbound.Prestige))
+            {
+                var m = PrestigeMessage.Read(p.Reader());         // OnPrestige (scenestategame.cpp:8815); other kinds are dropped
+                // kind 2: FindPCById; the own PC's old level fills level 1 (:8856), then vfunc_140 (:8836). Other PCs'
+                // user blocks take it in the field tracker
+                bool ownLevel = m is PrestigeMessage.LevelUp up && up.ObjectId == selfObject && Me.User != null;
+                if (m != null) Adventure.Apply(m, ownLevel ? Me.User.PrestigeLevel : null, MissionFeature());
+                if (ownLevel) Me.User.PrestigeLevel = ((PrestigeMessage.LevelUp)m).Value;
+                if (m != null) PrestigeReceived?.Invoke(m);
+                GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
+            }
+            else if (game.Is(p, Inbound.UserEnv))
+            {
+                var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept
+                if (m is UserEnvMessage.Collection c) { CollectionGrades = c.Grades; CollectionChanged?.Invoke(); }
+                else if (m != null) Me.Apply(m);
+                GD.Print($"live: user env {m?.GetType().Name ?? "other mode"} ({Me.Titles.Count} titles)");
+            }
+            else if (game.Is(p, Inbound.HomeCommand))
+            {
+                var m = HomeCommend.Read(p.Reader());             // OnHomeCommand (scenestategame.cpp:7975) mode 1
+                if (m != null) Me.Apply(m);
+                GD.Print($"live: home command {(m != null ? $"score {m.Point} object {m.ObjectId}" : "other mode")}");
+            }
+            else if (game.Is(p, Inbound.Ugc))
+            {
+                switch (UgcMessage.Read(p.Reader()))
+                {
+                    case UgcProfileImage pi: OnProfileImage(pi); break;
+                    case UgcSetMode sm: ProfileImageService.Images.Mode = sm.Value; GD.Print($"live: ugc mode {sm.Value}"); break;
+                    case var other: GD.Print($"live: ugc mode 0x{other.Mode:x2} (not read)"); break;
+                }
+            }
+            else if (game.Is(p, Inbound.ProxyGameObj))
+            {
+                Me.Apply(ProxyGameObj.Read(p.Reader()));          // the own AddPlayer proxy's trophy counts
+            }
+            else if (game.Is(p, Inbound.SkillPoint))
+            {
+                SkillPoints.Apply(SkillPointPacket.Read(p.Reader()));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
+                SkillPointsChanged?.Invoke();
+                GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
+            }
+            else if (game.Is(p, Inbound.SkillBookTree))
+            {
+                var t = SkillBookTreePacket.Read(p.Reader());   // UISkillBookTreeDialog::vfunc_79 (uiskillbookautodistributedialog.cpp:1962)
+                GD.Print($"live: skill book tree mode {t.Mode} ({t.Tabs.Count} tabs)");
+                SkillBookTree?.Invoke(t);
+            }
+            else if (game.Is(p, Inbound.GlobalFactor))
+            {
+                bool first = Factors.Apply(p.Reader());   // CSceneStateGame::OnGlobalFactor (scenestategame.cpp:4851): taken once; the quest reward rescale (QuestRates) reads it
+                GD.Print($"live: global factor {(first ? "applied" : "ignored (already taken)")}");
+            }
+            else if (LogPackets) GD.Print($"live: packet 0x{p.Opcode:X4} ({p.Body.Length} bytes)");
+        }
+        catch (Exception ex) { GD.PushWarning($"live: packet 0x{p.Opcode:X4}: {ex.Message}"); }
     }
 
     /// <summary>

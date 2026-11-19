@@ -1,4 +1,7 @@
+using Maple2.PacketLib.Tools;
+using Ms2.Net;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
 
@@ -29,6 +32,44 @@ public class AdventureDataTests
         Assert.That((after.AdventureExp, after.AdventureFilledLevel, after.AdventureNextExp), Is.EqualTo((300L, 4, 900L)));
         Assert.That(after.AdventureClaimed, Is.EqualTo(new uint[] { 1, 2, 5 }));
         Assert.That(after.AdventureMissions[11], Is.EqualTo((3u, false)));
+    }
+
+    /// <summary>A relog: the entry's packets replay in arrival order (ServerEnter, then the Prestige kinds 0 and 7 the server
+    /// sends before the field enter). ServerEnter clears the old character's missions alone; kind 0 then replaces the claims.</summary>
+    [Test]
+    public void TheEntrysPrestigeLoadsReachTheData()
+    {
+        var d = new AdventureData();
+        d.Apply(new PrestigeMessage.MissionList(7, 1, new Dictionary<uint, (uint, bool)> { [99] = (1, true) }), null, true);
+        d.Apply(new PrestigeMessage.ClaimResult(1, new SortedSet<uint> { 8 }), null, true);
+        static RawPacket Frame(Action<ByteWriter> body) { var w = new ByteWriter(); body(w); return new RawPacket((ushort) Inbound.Prestige, w.Buffer.AsSpan(0, w.Length).ToArray()); }
+        var entry = new GameEntry(null, null, null)
+        {
+            Early = new[]
+            {
+                Frame(w => { w.WriteByte(0); w.WriteLong(300); w.WriteInt(4); w.WriteLong(900); w.WriteInt(2); w.WriteInt(1); w.WriteInt(3); }),
+                Frame(w => { w.WriteByte(7); w.WriteInt(1); w.WriteLong(11); w.WriteLong(2); w.WriteByte(0); }),
+            },
+            EarlyBeforeEnter = 0,
+        };
+        var order = new List<string>();
+        entry.Replay(p => { order.Add("prestige"); d.Apply(PrestigeMessage.Read(p.Reader()), null, true); },
+            () => { order.Add("enter"); Assert.That(d.Missions.Count, Is.EqualTo(1)); d.ServerEnter(); Assert.That(d.Claimed, Is.EqualTo(new uint[] { 8 }), "the claims stay"); });
+        Assert.That(order, Is.EqualTo(new[] { "enter", "prestige", "prestige" }));
+        Assert.That((d.Exp, d.FilledLevel, d.NextExp), Is.EqualTo((300L, 4, 900L)));
+        Assert.That(d.Claimed, Is.EqualTo(new uint[] { 1, 3 }));
+        Assert.That(d.Missions.Keys, Is.EqualTo(new uint[] { 11 }), "the old missions are gone");
+        var pc = new PlayerState { AdventureLevel = 5, Adventure = d };
+        Assert.That(AdventureLevelController.GuideState(pc, 3), Is.EqualTo("inactive"), "a claimed level is not offered again");
+    }
+
+    [Test]
+    public void ServerEnterWithoutAMissionListLeavesNone()
+    {
+        var d = new AdventureData();
+        d.Apply(new PrestigeMessage.MissionList(7, 1, new Dictionary<uint, (uint, bool)> { [99] = (1, true) }), null, true);
+        new GameEntry(null, null, null).Replay(_ => { }, d.ServerEnter);
+        Assert.That(d.Missions, Is.Empty);
     }
 
     [Test]
