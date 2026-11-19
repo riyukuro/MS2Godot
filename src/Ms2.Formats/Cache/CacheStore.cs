@@ -66,9 +66,12 @@ public sealed class CacheStore
         var build = key.Split('|')[1];
         foreach (var f in Directory.GetFiles(Dir, piece + "-*.bin"))
         {
-            if (f == path) continue;
+            // the pattern also matches other pieces' files (a name that starts with this one and a dash, or one that differs
+            // in case where names match without case): those stay
+            if (f == path || Path.GetFileName(f).Length != piece.Length + 1 + 16 + 4) continue;
             var k = CacheFile.KeyOf(f);
-            if (k == null || k.Split('|') is not { Length: >= 3 } p || p[0] != piece || p[1] != build || onlyConfig)
+            if (k != null && k.Split('|') is { Length: >= 3 } p && p[0] != piece) continue;
+            if (k == null || k.Split('|') is not { Length: >= 3 } q || q[1] != build || onlyConfig)
                 try { File.Delete(f); } catch (IOException) { }
         }
     }

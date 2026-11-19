@@ -176,6 +176,7 @@ public partial class SetupScreen : Control
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     var built = DataCache.Build(packs, quests, progress);
                     if (built.Count > 0) { GD.Print($"table cache built: {string.Join(", ", built)} in {sw.Elapsed.TotalSeconds:F1} s"); if (r == null) UiCode.Prune(); }
+                    else if (Ui.PerfLog.On) GD.Print($"table cache: all current, checked in {sw.Elapsed.TotalMilliseconds:F0} ms");
                 }
                 catch (System.Exception e) { GD.PushWarning("table cache build failed: " + e.GetBaseException().Message); }
             return r;

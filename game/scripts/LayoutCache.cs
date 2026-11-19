@@ -33,7 +33,9 @@ public static class LayoutCache
 
     static string Build => CacheStore.Build(typeof(LayoutJson).Assembly);
 
-    static string Piece(string key) => "layout-" + key.ToLowerInvariant();
+    // the name as asked, case kept: a movie asked as an import's name and as its archive entry's ("CommonResource",
+    // "commonResource") builds a layout of each name (its "movie" is the name), and each keeps its own file
+    static string Piece(string key) => "layout-" + key;
 
     static Set Of(PackSet packs)
     {
@@ -76,13 +78,18 @@ public static class LayoutCache
         })).Value;
     }
 
-    /// <summary>The setup step (a worker thread): writes the layout file of every movie that has none; the count built.</summary>
+    // the names the layouts are asked by: the archive's movie names and their imports' names (an import names a movie
+    // in its own case), one per line, written by the setup step once every file is built
+    const string NamesPiece = "layoutnames";
+
+    /// <summary>
+    /// The setup step (a worker thread): writes the layout file of every movie, and of every import name, that has none;
+    /// the count built. With the names file of this build in place no movie is parsed: one header read per name.
+    /// </summary>
     public static int BuildAll(PackSet packs, Action<double> progress)
     {
         var s = Of(packs);
         if (s.Store == null || CacheStore.Mode == "off") return 0;
-        var movies = packs.List("Resource/Gfx").Where(n => n.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase)).ToList();
-        // the movies are parsed here for this step alone (a layout reads its imports' symbols), and dropped after it
         var parsed = new Dictionary<string, SwfMovie>(StringComparer.OrdinalIgnoreCase);
         SwfMovie Movie(string k)
         {
@@ -90,14 +97,32 @@ public static class LayoutCache
             var e = packs.FindByFileName("Resource/Gfx", k + ".gfx");
             return parsed[k] = e == null ? null : SwfMovie.Parse(packs.Read("Resource/Gfx", e));
         }
+        var names = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Add(string k) { if (seen.Add(k)) names.Add(k); }
+        foreach (var n in packs.List("Resource/Gfx").Where(n => n.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase)))
+            Add(System.IO.Path.GetFileNameWithoutExtension(n));
+        var namesKey = CacheStore.Key(NamesPiece, s.Config, Build);
+        var listed = s.Store.Read(NamesPiece, namesKey);
+        if (listed != null)
+            foreach (var k in System.Text.Encoding.UTF8.GetString(listed).Split('\n', StringSplitOptions.RemoveEmptyEntries)) Add(k);
+        else
+            // no names file: every movie is parsed for its imports (the movies are parsed here for this step alone, and
+            // dropped after it)
+            for (int i = 0; i < names.Count; i++)
+                if (Movie(names[i]) is { } m)
+                    foreach (var g in m.Imports)
+                        if (System.IO.Path.GetFileNameWithoutExtension(g.Url) is var ik && Movie(ik) != null) Add(ik);
+        var missing = names.Where(k => !s.Store.Has(Piece(k), CacheStore.Key(Piece(k), s.Config + "," + k, Build))).ToList();
         int built = 0;
-        for (int i = 0; i < movies.Count; i++)
+        for (int i = 0; i < missing.Count; i++)
         {
-            var k = System.IO.Path.GetFileNameWithoutExtension(movies[i]);
+            var k = missing[i];
             if (Movie(k) is { } m && s.Store.Ensure(Piece(k), s.Config + "," + k, Build, () => LayoutCodec.Write(LayoutJson.Build(m, k, Movie)), b => b, onlyConfig: true))
                 built++;
-            progress?.Invoke((i + 1.0) / movies.Count);
+            progress?.Invoke((i + 1.0) / missing.Count);
         }
+        if (listed == null) s.Store.Write(NamesPiece, namesKey, System.Text.Encoding.UTF8.GetBytes(string.Join("\n", names)), onlyConfig: true);
         return built;
     }
 }
