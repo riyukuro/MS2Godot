@@ -60,8 +60,44 @@ public static class PackIndex
         return r.Files.Last(f => f.Name.Replace('\\', '/') == e.Name);
     }
 
+    // The header sizes after the magic (CPackStreamVer1Data 0x3c, Ver2Data 0x34, Ver3Data 0x38; ms2filestring.h:60-93)
+    // and the place of m_listSize in each (Ver1 and Ver2 after a 4-byte field and two 8-byte sizes, Ver3 after two 4-byte fields).
+    const uint MagicV1 = 0x4632534d, MagicV2 = 0x4632534e, MagicV3 = 0x4632534f, MagicV4 = 0x46325350;
+
+    /// <summary>
+    /// The archive's index opens as the client opens it (CPackFile::Open @0x1406af680, ms2filestring.cpp:187): an index
+    /// that is missing, shorter than its magic, of another magic, shorter than its version's header, or whose file list is
+    /// empty opens no archive (the client returns 0 and the archive lists nothing). A client install can hold such a pair
+    /// of empty files (XmlDebug.m2h/.m2d), which the package's reader cannot open: it maps the .m2d, and an empty file
+    /// cannot be mapped.
+    /// </summary>
+    public static bool Opens(string m2h)
+    {
+        Span<byte> head = stackalloc byte[4 + 0x3c];
+        int n;
+        try
+        {
+            using var fs = new FileStream(m2h, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1);
+            n = fs.ReadAtLeast(head, head.Length, throwOnEndOfStream: false);
+        }
+        catch (FileNotFoundException) { return false; }
+        catch (DirectoryNotFoundException) { return false; }
+        if (n < 4) return false;
+        int size, list;
+        switch (BinaryPrimitives.ReadUInt32LittleEndian(head))
+        {
+            case MagicV1: size = 0x3c; list = 4 + 8 + 8; break;
+            case MagicV2: size = 0x34; list = 4 + 8 + 8; break;
+            case MagicV3: case MagicV4: size = 0x38; list = 4 + 4 + 8 + 8; break;
+            default: return false;
+        }
+        if (n < 4 + size) return false;
+        return BinaryPrimitives.ReadUInt64LittleEndian(head[(4 + list)..]) != 0;
+    }
+
     static Entry[] Parse(string m2d)
     {
+        if (!Opens(Path.ChangeExtension(m2d, ".m2h"))) return Array.Empty<Entry>();
         using var r = new M2dReader(m2d);
         return FromReader(r);
     }
