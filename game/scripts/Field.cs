@@ -393,6 +393,8 @@ public partial class Field : Node3D
         };
         AddChild(new WorldEnvironment { Environment = env });
         FieldBackdrop.Add(this, env, packs, x);
+        // The field shader draws the sun itself (ms2_sun_*); from this light it reads only the shadow, which scales the
+        // shader's own sun term (field_lit.gdshader light()), so the sun is counted once
         var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000 };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();

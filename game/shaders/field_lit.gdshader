@@ -9,8 +9,9 @@
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
 // (src alpha / one); both blended forms skip the depth write. A fourth form, SHELL (with BLEND), is the depth-only
 // first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell). The field's point and spot lights are added to the
-// diffuse term (ms2_lights.gdshaderinc). The opaque form is also lit by the field's point and spot
-// lights (FieldLights) through Godot's own lighting; the blended forms are not. No cast shadows yet.
+// diffuse term (ms2_lights.gdshaderinc). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
+// and nothing else: light() scales the sun's share of the colour above by the shadow, so the sun is counted once. The
+// blended forms are not shadowed.
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
 // evenly over flip_period, looping; a uv translation (NiTextureTransformController, translate U or V) moves linearly
 // between its first and last key over the controller's start..stop range, looping.
@@ -85,6 +86,9 @@ uniform vec2 dark_scroll_range;
 varying vec3 world_normal;
 varying vec3 world_pos;
 varying vec4 vcolor;
+#ifdef POINT_LIT
+varying vec3 sun_share;  // the sun's part of the output colour (linear), which the shadow scales in light()
+#endif
 
 void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
@@ -143,22 +147,31 @@ void fragment() {
 	}
 #endif
 	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
-	vec3 lit = emissive + ms2_ambient * amb + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl) + ms2_point_lights(world_pos, normalize(world_normal)));
+	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(world_pos, normalize(world_normal));
+	vec3 lit = unsun + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl));
 	vec3 c = lit * t.rgb;
+	vec3 c0 = unsun * t.rgb;   // the same colour with no sun: fully in its shadow
 	if (has_glow) {
-		c += texture(glow_tex, UV).rgb;
+		vec3 g = texture(glow_tex, UV).rgb;
+		c += g;
+		c0 += g;
 	}
 	// Height fog (mapxblock heightfog): a standard height blend, none above `upper`, full density at and below `lower`.
 	// The exact client curve is not recoverable from the on-disk shaders; the numbers are the map's own.
 	float hf = ms2_hfog.z * (1.0 - smoothstep(ms2_hfog.y, ms2_hfog.x, world_pos.y));
 #ifndef ADD
 	c = mix(c, ms2_hfog_color, hf);
+	c0 = mix(c0, ms2_hfog_color, hf);
 #endif
 	// the output is written in gamma space by Godot's linear -> sRGB conversion
 #ifdef POINT_LIT
-	// opaque: the sun and ambient stay in the term above (emission); Godot's point and spot lights add on the diffuse
-	EMISSION = to_linear(c);
-	ALBEDO = to_linear(t.rgb * dif) * (1.0 - hf);
+	// opaque: everything but the sun is emission; the sun's share comes back in light(), times its shadow. Out of the
+	// shadow the sum is to_linear(c), the formula above. Gamebryo's Light fragment (NiStandardMaterialNodeLibrary.cpp,
+	// "Light": DiffuseAccumOut += LightDiffuse * LightIntensity * Attenuate, AmbientAccumOut += LightAmbient * Attenuate,
+	// Attenuate = Shadow for a directional light) takes both of the sun's terms off in its shadow.
+	EMISSION = to_linear(c0);
+	sun_share = to_linear(c) - to_linear(c0);
+	ALBEDO = vec3(1.0);
 	ROUGHNESS = 1.0;
 #else
 	ALBEDO = to_linear(c);
@@ -170,3 +183,13 @@ void fragment() {
 	ALPHA = 0.0;
 #endif
 }
+
+#ifdef POINT_LIT
+// Only the sun's shadow is read here: the shader's own sun term (sun_share) is scaled by it. Field.cs makes no other
+// Godot light that reaches field meshes (FieldLights draws the point and spot lights in ms2_lights.gdshaderinc).
+void light() {
+	if (LIGHT_IS_DIRECTIONAL) {
+		DIFFUSE_LIGHT += sun_share * ATTENUATION;
+	}
+}
+#endif
