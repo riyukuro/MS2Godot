@@ -270,7 +270,6 @@ public partial class TextNode : Node2D
             Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy) / RasterScale;
         }
         else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
-        ViewHeight = Bounds.Size.Y * asy / RasterScale;
         Label.PivotOffset = Vector2.Zero;
         ApplyLineAdvance();
         AddChild(snap);
@@ -326,9 +325,6 @@ public partial class TextNode : Node2D
         if (snap.Position != to) snap.Position = to;
     }
     LineFace face;
-
-    /// <summary>The field's height in label units (the label's height as built; Godot raises the label to fit its lines).</summary>
-    float ViewHeight;
 
     /// <summary>The lines <see cref="AlignBottom"/> shows, -1 when it was not called.</summary>
     int bottomCap = -1;

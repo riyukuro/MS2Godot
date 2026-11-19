@@ -192,22 +192,23 @@ public partial class TextNode
 
     /// <summary>
     /// How many lines from the first unskipped one LineBuffer::IsLineVisible (sfr_render_04d.cpp:365 @0x1426696b0) shows:
-    /// the first always (its top is in the view), each other one when its bottom (its top plus its height, the line's
-    /// advance less the leading) is at most the text rect's height (the field less its 2 px gutters) plus half a gutter.
-    /// Measured against the field, not the label: Godot raises a label to its minimum size, all its lines.
+    /// the first always (its top is in the view), each other one when its bottom (its offset from the first one plus its
+    /// height) is at most the text rect's height (the field less its 2 px gutters) plus half a gutter. The offsets and
+    /// heights are the client's (<see cref="ClientLine"/>, whole twips), not the label's pitch: Godot's whole-pixel line
+    /// box can put a line a pixel lower than the client does, which must not hide it. Measured against the field, not the
+    /// label: Godot raises a label to its minimum size, all its lines.
     /// </summary>
     int FitLines(List<LayoutLine> all)
     {
         if (!(Bounds.Size.Y > 0)) return all.Count - Label.LinesSkipped;
-        var (height, advance) = LineMetrics();
-        double k = ViewHeight / Bounds.Size.Y;                                  // label units per field unit
-        double room = (Bounds.Size.Y - 4 + 1) * k, leading = (advance - height) * k, top = 0;
+        double room = Bounds.Size.Y - 4 + 1, top = 0;
         int n = 0;
         for (int i = Label.LinesSkipped; i < all.Count; i++)
         {
-            if (i > Label.LinesSkipped && top + all[i].Pitch - leading > room) break;
+            var (_, height, advance) = ClientLine(all[i].Start, all[i].End, codePoints.Length, j => SizeAt(j));
+            if (i > Label.LinesSkipped && top + height > room) break;
             n++;
-            top += all[i].Pitch;
+            top += advance;
         }
         return n;
     }
