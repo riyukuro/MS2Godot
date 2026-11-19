@@ -1,5 +1,3 @@
-using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using Godot;
 using Ms2.Formats.Nif;
@@ -36,18 +34,17 @@ public partial class NavDebug : Node3D
 
     /// <summary>
     /// Builds the start field's navmesh (<see cref="Field.StartField"/>) into <paramref name="dir"/> (user://navmesh,
-    /// globalized) when no file of this <see cref="NavConfig.Version"/> is there: the setup step's, so the first session
-    /// after an install loads it like a later one rather than building it (seconds of CPU and some 700 MB of allocations
-    /// on worker threads during the session's first minute). The file is the one the field's load looks for (the same
-    /// <see cref="FieldNavigation.Load"/>, the same name and key). The seconds it took, or -1 when there was a file.
-    /// Other fields are built on their first visit.
+    /// globalized) unless the file its load looks for is there (<see cref="FieldNavigation.Prepare"/>: the same name and
+    /// key, so a data patch builds it again; the field's files of another key are deleted). The setup step's, so the first
+    /// session after an install loads it like a later one rather than building it (seconds of CPU and some 700 MB of
+    /// allocations on worker threads during the session's first minute). The seconds it took, or -1 when there was a file
+    /// (or no geometry). Other fields are built on their first visit.
     /// </summary>
     public static double BuildStart(PackSet packs, string nifXml, string dir)
     {
-        if (Directory.Exists(dir) && Directory.EnumerateFiles(dir, $"{Field.StartField}.v{NavConfig.Version}.*.navmesh").Any()) return -1;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        FieldNavigation.Load(packs, AssetIndex.For(packs), Ms2Godot.ModelBuilder.SharedSpec(nifXml), new FlatLibrary(packs), Field.StartField, dir);
-        return sw.Elapsed.TotalSeconds;
+        var built = FieldNavigation.Prepare(packs, AssetIndex.For(packs), Ms2Godot.ModelBuilder.SharedSpec(nifXml), new FlatLibrary(packs), Field.StartField, dir);
+        return built == true ? sw.Elapsed.TotalSeconds : -1;
     }
 
     public override void _UnhandledInput(InputEvent e)

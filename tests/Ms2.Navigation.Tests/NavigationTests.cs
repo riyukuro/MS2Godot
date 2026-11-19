@@ -101,4 +101,35 @@ public class NavigationTests
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
+
+    [Test]
+    public void PrepareBuildsUnlessTheLoadsOwnFileIsThere()
+    {
+        var (packs, spec) = Data();
+        var assets = AssetIndex.For(packs);
+        var flats = new FlatLibrary(packs);
+        var dir = Path.Combine(Path.GetTempPath(), "ms2nav-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Assert.That(FieldNavigation.Prepare(packs, assets, spec, flats, Tria, dir), Is.True, "empty cache: built");
+            var exact = Directory.GetFiles(dir, "*.navmesh").Single();
+            var staleKey = Path.Combine(dir, $"{Tria}.v{NavConfig.Version}.0000000000000000.navmesh");
+            var oldVersion = Path.Combine(dir, $"{Tria}.v0.0000000000000000.navmesh");
+            var other = Path.Combine(dir, "02000002_other.v1.0000000000000000.navmesh");
+            File.Copy(exact, staleKey);
+            File.Copy(exact, oldVersion);
+            File.Copy(exact, other);
+
+            Assert.That(FieldNavigation.Prepare(packs, assets, spec, flats, Tria, dir), Is.False, "the load's own file: not built");
+            Assert.That(Directory.GetFiles(dir, "*.navmesh").OrderBy(f => f), Is.EqualTo(new[] { other, exact }.OrderBy(f => f)),
+                "the field's files of another key or version are deleted, another field's are kept");
+
+            File.Move(exact, staleKey);   // the file of the data before a patch: a load would not read it
+            Assert.That(FieldNavigation.Prepare(packs, assets, spec, flats, Tria, dir), Is.True, "only a stale-key file: built");
+            Assert.That(File.Exists(exact), Is.True);
+            Assert.That(File.Exists(staleKey), Is.False);
+            Assert.That(FieldNavigation.Load(packs, assets, spec, flats, Tria, dir), Is.Not.Null);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }

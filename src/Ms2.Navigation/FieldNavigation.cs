@@ -38,12 +38,43 @@ public sealed class FieldNavigation
     public static FieldNavigation Load(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir,
         CancellationToken cancel = default)
     {
+        var (geometry, path) = Locate(packs, assets, spec, flats, xblock, cacheDir);
+        if (geometry == null) return null;
+        cancel.ThrowIfCancellationRequested();
+        if (Cached(xblock, path) is { } hit) return hit;
+        return Build(xblock, geometry, path, cancel);
+    }
+
+    /// <summary>
+    /// Makes sure the field's navmesh is in <paramref name="cacheDir"/> under the name <see cref="Load"/> looks for, and
+    /// deletes the field's other navmesh files there (another key or version: a load never reads them, such as the file
+    /// of the data before a patch). True when it was built, false when the file was there, null when the field has no
+    /// navigation geometry.
+    /// </summary>
+    public static bool? Prepare(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir)
+    {
+        var (geometry, path) = Locate(packs, assets, spec, flats, xblock, cacheDir);
+        if (geometry == null) return null;
+        if (Directory.Exists(cacheDir))
+            foreach (var f in Directory.EnumerateFiles(cacheDir, $"{xblock}.v*.navmesh"))
+                if (!string.Equals(Path.GetFullPath(f), Path.GetFullPath(path), StringComparison.Ordinal))
+                    try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        if (Cached(xblock, path) != null) return false;
+        Build(xblock, geometry, path, default);
+        return true;
+    }
+
+    /// <summary>The field's navigation geometry (null when it has none) and the cache file its navmesh goes in.</summary>
+    static (NavGeometry geometry, string path) Locate(PackSet packs, AssetIndex assets, NifSpec spec, FlatLibrary flats, string xblock, string cacheDir)
+    {
         var map = FieldMap.Load(packs, flats, xblock);
         var geometry = NavGeometry.Build(packs, assets, spec, map);
-        if (geometry.Empty) return null;
-        cancel.ThrowIfCancellationRequested();
-        var path = Path.Combine(cacheDir, $"{xblock}.v{NavConfig.Version}.{Key(geometry)}.navmesh");
-        if (Cached(xblock, path) is { } hit) return hit;
+        if (geometry.Empty) return (null, null);
+        return (geometry, Path.Combine(cacheDir, $"{xblock}.v{NavConfig.Version}.{Key(geometry)}.navmesh"));
+    }
+
+    static FieldNavigation Build(string xblock, NavGeometry geometry, string path, CancellationToken cancel)
+    {
         building.Wait(cancel);
         try
         {
