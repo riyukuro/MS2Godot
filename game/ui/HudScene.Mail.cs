@@ -161,6 +161,43 @@ public partial class HudScene
         uiRoot.AddChild(mailMovie);
     }
 
+    /// <summary>The scripted live run's mail list: opened as the O key does (CUIService::ToggleDialog(0x4e49)); false when
+    /// it was already up.</summary>
+    public bool OpenMailScripted()
+    {
+        if (MailOpen) return false;
+        OpenMail();
+        return true;
+    }
+
+    /// <summary>The scripted live run's mail list, while it is up.</summary>
+    public MailListController MailList => MailOpen ? mail : null;
+
+    /// <summary>
+    /// A scripted click in the mail list on the member reached by <paramref name="path"/>, from the dialog: a name is a
+    /// member, "#n" the display list's child n (getChildAt), "tab:n" the tab bar's button n (getButtonAt) and "row:n" the
+    /// list's row n (getRendererAt). The click lands at the middle of the member's bounds; false while the dialog or a step
+    /// is not there. The mail page (MailPage and its kinds) is m_contents' child 0, with its buttons "ok" (take or reply) and
+    /// "remove".
+    /// </summary>
+    public bool ClickMail(params string[] path)
+    {
+        if (!MailOpen || mailMovie is not { } m) return false;
+        object at = m.Host.Entity;
+        foreach (var step in path)
+        {
+            if (step.StartsWith('#') && int.TryParse(step.AsSpan(1), out int ci)) at = m.Host.Invoke(at, "getChildAt", ci);
+            else if (step.StartsWith("tab:") && int.TryParse(step.AsSpan(4), out int ti)) at = m.Host.Invoke(at, "getButtonAt", ti);
+            else if (step.StartsWith("row:") && int.TryParse(step.AsSpan(4), out int ri)) at = m.Host.Invoke(at, "getRendererAt", ri);
+            else at = m.Host.Child(step, at);
+            if (at == null) return false;
+        }
+        if (at is not Ms2.Avm2.Flash.AsDisplayObject o) return false;
+        var b = o.GetBounds(null);
+        m.Player.Click(b.X + b.W * 0.5, b.Y + b.H * 0.5);
+        return true;
+    }
+
     /// <summary>FUN_141275260's tail for a resolved text: ShowSystemNotice(text, 1, true).</summary>
     void SystemNoticeText(string text)
     {

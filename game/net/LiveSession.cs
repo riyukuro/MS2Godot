@@ -931,6 +931,58 @@ public partial class LiveSession : Node
             await Frames(60);
             Shot("profile_after.png");
         }
+        // MS2_LIVE_MAIL_SHOTS=<dir>: the mail list opened as O does; on each tab (MS2_LIVE_MAIL_TABS, default "0,1": 0 the
+        // system mails, 1 the player mails) the list is shot, its first row clicked (the read), the take (the page's button;
+        // on tab 1 the row's check mark, Collect and the box's OK), then the page's remove button and the box's OK, with a
+        // shot after each as mail_<tab>_<step>.png
+        string mailShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_MAIL_SHOTS");
+        if (!string.IsNullOrEmpty(mailShots) && tree.CurrentScene is Ui.HudScene mailHud)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(mailShots);
+            void Shot(string name) { flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(mailShots, name)); GD.Print("live: shot " + name); }
+            await Frames(240);
+            mailHud.OpenMailScripted();
+            await Until(() => mailHud.MailList != null, 600); await Frames(180);
+            Shot("mail_open.png");
+            string tabs = System.Environment.GetEnvironmentVariable("MS2_LIVE_MAIL_TABS");
+            foreach (var tab in (string.IsNullOrEmpty(tabs) ? "0,1" : tabs).Split(','))
+            {
+                bool Step(string what, params string[] path)
+                {
+                    bool hit = mailHud.ClickMail(path);
+                    GD.Print($"live: mail tab {tab} {what}: {(hit ? "clicked" : "not there")}");
+                    return hit;
+                }
+                int before = Instance?.Mails.Mails.Count ?? 0;
+                Step("tab", "m_tab", "tab:" + tab);
+                await Frames(120);
+                Shot($"mail_{tab}_list.png");
+                if (!Step("row", "m_list", "row:0")) continue;
+                await Frames(120);
+                Shot($"mail_{tab}_read.png");
+                if (tab == "1")
+                {
+                    // the player mails' page button is the reply: the take is the row's check mark, the list's Collect
+                    // (onReceiveList) and its box's OK
+                    Step("check", "m_list", "row:0", "m_checkbox");
+                    await Frames(30);
+                    Step("collect", "m_receiveAll");
+                    await Frames(60);
+                    Shot($"mail_{tab}_take_box.png");
+                    MessageBoxLayer.Instance?.Click(0);
+                }
+                else Step("take", "m_contents", "#0", "ok");
+                await Frames(180);
+                Shot($"mail_{tab}_take.png");
+                if (!Step("remove", "m_contents", "#0", "remove")) continue;
+                await Frames(60);
+                Shot($"mail_{tab}_remove_box.png");
+                MessageBoxLayer.Instance?.Click(0);
+                await Until(() => (Instance?.Mails.Mails.Count ?? 0) < before, 60 * 5); await Frames(120);
+                GD.Print($"live: mail tab {tab}: {before} -> {Instance?.Mails.Mails.Count} mails");
+                Shot($"mail_{tab}_removed.png");
+            }
+        }
         // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at
         // most 5 s) and 2 s more; "~N" waits N s instead. With MS2_LIVE_CHAT_SHOTS=<dir> the screen is shot after each as
         // chat_<n>.png
