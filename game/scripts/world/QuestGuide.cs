@@ -26,6 +26,7 @@ public partial class QuestGuide : Node3D
     (FieldMeta meta, QuestMapGraph graph)? ready;
     EffectInstance beam; Label label;
     readonly List<(Vec3 pos, int id)> spawns = new();
+    readonly List<TracePortal> tracePortals = new();
     double dbg;
     public TraceResult Last { get; private set; }
 
@@ -86,8 +87,10 @@ public partial class QuestGuide : Node3D
                 if (d < best) { best = d; inField = new TraceTarget(TraceKind.Npc, pos.X, pos.Y, pos.Z); }
             }
         }
-        var list = portals.All.Where(p => p.TargetField != 0)
-            .Select(p => new TracePortal(p.TargetField, p.Position.X, p.Position.Y, p.Position.Z, p.Visible)).ToList();
+        var list = tracePortals;     // refilled each frame, read only inside Trace below
+        list.Clear();
+        foreach (var p in portals.All)
+            if (p.TargetField != 0) list.Add(new TracePortal(p.TargetField, p.Position.X, p.Position.Y, p.Position.Z, p.Visible));
         Last = targetMap == 0 ? null : QuestTrace.Trace(graph, fieldId, targetMap, inField, list, me, strings);
         if (Last == null) { if (beam != null) beam.Visible = false; label.Text = ""; return; }
 
