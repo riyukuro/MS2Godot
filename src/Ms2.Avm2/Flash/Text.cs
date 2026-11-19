@@ -93,7 +93,16 @@ public class AsTextField : AsInteractiveObject
     /// <summary>The last htmlText assigned (kept for the renderer).</summary>
     public string Html { get => html; set { if (html != value) { html = value; MarkChanged(); } } }
     public bool IsHtml { get => isHtml; set { if (isHtml != value) { isHtml = value; MarkChanged(); } } }
-    public RectD Box { get => box; set { if (!box.Equals(value)) { box = value; MarkChanged(); } } }
+    /// <summary>The view rectangle. A pending autoSize / wordWrap change resizes it at the first read, as Scaleform's
+    /// setters only set the document's AutoSizeX / AutoSizeY flags and ask for a reformat (autoSizeSet, wordWrapSet:
+    /// UpdateAutosizeSettings, sfr_as3_13.cpp:2640 / :2249; AutoSizeX only without wordWrap): "autoSize = LEFT" then
+    /// "wordWrap = true" on an empty field keeps its width.</summary>
+    public RectD Box
+    {
+        get { if (autoSizePending) { autoSizePending = false; if (autoSizeMode != "none") AutoSize(); } return box; }
+        set { autoSizePending = false; if (!box.Equals(value)) { box = value; MarkChanged(); } }
+    }
+    bool autoSizePending;
     public AsTextFormat Format { get => format; set { if (format != value) { format = value; MarkChanged(); } } }
     public string Variable;
     public int SelBegin, SelEnd;
@@ -481,12 +490,12 @@ public class AsTextField : AsInteractiveObject
     [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value); Version++; } }
 
     public string autoSizeMode = "none";
-    [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Changed(); } }
+    [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Version++; autoSizePending = true; } }
     [As] public string type { get; set; } = "dynamic";
     bool multilineFlag;
     [As] public bool multiline { get => multilineFlag; set { if (multilineFlag != value) { multilineFlag = value; MarkChanged(); } } }
     bool wordWrapFlag;
-    [As] public bool wordWrap { get => wordWrapFlag; set { if (wordWrapFlag != value) { wordWrapFlag = value; MarkChanged(); } } }
+    [As] public bool wordWrap { get => wordWrapFlag; set { if (wordWrapFlag != value) { wordWrapFlag = value; autoSizePending = true; MarkChanged(); } } }
     [As] public bool selectable { get; set; } = true;
     [As] public bool displayAsPassword { get; set; }
     [As] public int maxChars { get; set; }
