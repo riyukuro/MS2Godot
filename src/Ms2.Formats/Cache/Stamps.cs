@@ -11,7 +11,8 @@ namespace Ms2.Formats.Cache;
 /// and change time): a file replaced by another (a new inode) or written with its old write time put back (a new change
 /// time, which no tool can set) reads as changed. The setup step hashes the files again before it builds from them
 /// (<see cref="Hash(string, bool)"/>). Each data folder's files keep their own lines, so two client folders (or a folder
-/// that links some packs from another) each keep their cache.
+/// that links some packs from another) each keep their cache. Processes sharing the file take turns on it (a lock file
+/// next to it), so one's new line is never lost to another's save.
 /// </summary>
 public sealed class Stamps
 {
@@ -19,6 +20,10 @@ public sealed class Stamps
     static readonly object gate = new();
 
     public Stamps(string stampFile) => file = stampFile;
+
+    /// <summary>How long a save waits for another process to finish its own before giving up (the line is then made again
+    /// on the next run).</summary>
+    public static TimeSpan LockWait = TimeSpan.FromSeconds(10);
 
     /// <summary>The path with every link resolved: the file whose bytes are read.</summary>
     public static string Resolve(string path)
@@ -58,11 +63,12 @@ public sealed class Stamps
         using (var s = File.OpenRead(real)) hash = Convert.ToHexString(SHA1.HashData(s)).ToLowerInvariant();
         if (hash == known && StampOf(real) == stamp) return hash;
         lock (gate)
-        {
-            var lines = Load();
-            lines[real] = (stamp, hash);
-            Save(lines);
-        }
+            using (Lock())
+            {
+                var lines = Load();
+                lines[real] = (stamp, hash);
+                Save(lines);
+            }
         return hash;
     }
 
@@ -70,13 +76,14 @@ public sealed class Stamps
     public IReadOnlyCollection<string> Known()
     {
         lock (gate)
-        {
-            var lines = Load();
-            var gone = lines.Keys.Where(p => !File.Exists(p)).ToList();
-            foreach (var p in gone) lines.Remove(p);
-            if (gone.Count > 0) Save(lines);
-            return lines.Values.Select(v => v.Hash).ToHashSet();
-        }
+            using (Lock())
+            {
+                var lines = Load();
+                var gone = lines.Keys.Where(p => !File.Exists(p)).ToList();
+                foreach (var p in gone) lines.Remove(p);
+                if (gone.Count > 0) Save(lines);
+                return lines.Values.Select(v => v.Hash).ToHashSet();
+            }
     }
 
     Dictionary<string, (string Stamp, string Hash)> Load()
@@ -94,7 +101,6 @@ public sealed class Stamps
 
     void Save(Dictionary<string, (string Stamp, string Hash)> lines)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file)));
         var tmp = file + ".tmp" + Environment.ProcessId;
         try
         {
@@ -105,6 +111,20 @@ public sealed class Stamps
         {
             try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             throw;
+        }
+    }
+
+    /// <summary>The lock file next to the stamp file, held open without sharing (a system lock on the file, released when the
+    /// process ends); waits for the process that holds it.</summary>
+    IDisposable Lock()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(file)));
+        var path = file + ".lock";
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException) when (sw.Elapsed < LockWait) { Thread.Sleep(10); }
         }
     }
 

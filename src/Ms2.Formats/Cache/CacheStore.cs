@@ -52,6 +52,23 @@ public sealed class CacheStore
 
     public string PathOf(string piece, string key) => Path.Combine(Dir, $"{piece}-{Short(key)}.bin");
 
+    /// <summary>
+    /// The folder or a file directly in it was written in the last <paramref name="within"/>: a folder another process may
+    /// be building (a cleanup leaves it for a later run).
+    /// </summary>
+    public static bool RecentlyTouched(string dir, TimeSpan within)
+    {
+        var since = DateTime.UtcNow - within;
+        try
+        {
+            if (Directory.GetLastWriteTimeUtc(dir) > since) return true;
+            foreach (var f in new DirectoryInfo(dir).EnumerateFileSystemInfos())
+                if (f.LastWriteTimeUtc > since) return true;
+            return false;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return true; }
+    }
+
     /// <summary>The file of the key is there with the key in its header (its body is checked when read).</summary>
     public bool Has(string piece, string key) => CacheFile.KeyOf(PathOf(piece, key)) == key;
 

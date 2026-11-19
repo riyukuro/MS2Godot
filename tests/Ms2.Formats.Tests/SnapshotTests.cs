@@ -234,4 +234,53 @@ public class SnapshotTests
         }
         finally { Directory.Delete(dir, true); }
     }
+    [Test]
+    public void StampsWaitForAnotherProcessesSaveAndKeepItsLine()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-stamps-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var a = Path.Combine(dir, "a.m2d");
+            var b = Path.Combine(dir, "b.m2d");
+            File.WriteAllText(a, "one");
+            File.WriteAllText(b, "two");
+            var tsv = Path.Combine(dir, "stamps.tsv");
+            // the other process: holds the lock, saves its line for a, lets go
+            var held = new FileStream(tsv + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var mine = System.Threading.Tasks.Task.Run(() => new Stamps(tsv).Hash(b));
+            System.Threading.Thread.Sleep(300);
+            Assert.That(mine.IsCompleted, Is.False, "the save waits for the lock");
+            File.WriteAllLines(tsv, new[] { $"{Stamps.Resolve(a)}\t{Stamps.StampOf(Stamps.Resolve(a))}\t{Sha1("one")}" });
+            held.Dispose();
+            Assert.That(mine.Wait(TimeSpan.FromSeconds(10)), Is.True);
+            Assert.That(mine.Result, Is.EqualTo(Sha1("two")));
+            var lines = File.ReadAllLines(tsv);
+            Assert.That(lines, Has.Length.EqualTo(2), "the other process's line is kept");
+            Assert.That(new Stamps(tsv).Known(), Is.EquivalentTo(new[] { Sha1("one"), Sha1("two") }));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public void RecentlyTouchedSeesAFolderOrItsFilesWritten()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-touched-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var f = Path.Combine(dir, "x.bin");
+            File.WriteAllText(f, "x");
+            var old = DateTime.UtcNow - TimeSpan.FromHours(1);
+            File.SetLastWriteTimeUtc(f, old);
+            Directory.SetLastWriteTimeUtc(dir, old);
+            Assert.That(CacheStore.RecentlyTouched(dir, TimeSpan.FromMinutes(10)), Is.False);
+            File.SetLastWriteTimeUtc(f, DateTime.UtcNow);
+            Assert.That(CacheStore.RecentlyTouched(dir, TimeSpan.FromMinutes(10)), Is.True, "a file written in place");
+            File.SetLastWriteTimeUtc(f, old);
+            File.WriteAllText(Path.Combine(dir, "y.bin"), "y");
+            Assert.That(CacheStore.RecentlyTouched(dir, TimeSpan.FromMinutes(10)), Is.True, "a file added");
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }

@@ -101,9 +101,14 @@ public static class UiCode
         return r;
     }
 
+    /// <summary>How recently written a folder <see cref="Prune"/> leaves alone.</summary>
+    public static System.TimeSpan PruneGrace = System.TimeSpan.FromMinutes(10);
+
     /// <summary>
     /// Removes the folders under user://uigen built for client files that are no longer there or have changed (no stamp
-    /// line's hash names them) or by another translator version; those of every client folder still on disk stay.
+    /// line's hash names them) or by another translator version; those of every client folder still on disk stay, and so
+    /// does a folder written in the last <see cref="PruneGrace"/> (another game process may be building it, its stamp line
+    /// not saved yet).
     /// </summary>
     public static void Prune()
     {
@@ -114,7 +119,7 @@ public static class UiCode
         {
             var name = System.IO.Path.GetFileName(d);
             bool keep = UiGenerator.HashOfKey(name) is { } gfx ? Known(gfx) : DataCache.InputsOf(d) is { } inputs && inputs.All(Known);
-            if (!keep)
+            if (!keep && !Ms2.Formats.Cache.CacheStore.RecentlyTouched(d, PruneGrace))
                 try { System.IO.Directory.Delete(d, true); } catch (System.Exception e) { GD.PushWarning($"per-install files: {d}: {e.Message}"); }
         }
         try { System.IO.File.Delete(System.IO.Path.Combine(RootPath, "gfx-stamp.txt")); } catch (System.IO.IOException) { }   // the stamp file of the first layout
