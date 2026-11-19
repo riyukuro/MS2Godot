@@ -419,7 +419,7 @@ public sealed class FieldBuilder
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 visuals.AddChild(node);
-                if (!mesh.AlphaBlendOn && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents, local);
+                if (!mesh.AlphaBlendOn && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
                 if (builder.GlowMaterial(mesh) is { } gm)
                 {
@@ -462,7 +462,8 @@ public sealed class FieldBuilder
         ((int)Math.Floor(e.Position.X / ShadowCell), (int)Math.Floor(e.Position.Y / ShadowCell), (int)Math.Floor(e.Position.Z / ShadowCell));
 
     /// <summary>The sun shadow casters of one mesh: per cell, the drawn mesh and material with the drawn transforms and
-    /// instance colours, shadow only. The same triangles reach the shadow map as from the drawn MultiMesh, culled per cell.</summary>
+    /// instance colours, shadow only. The same triangles reach the shadow map as from the drawn MultiMesh, culled per cell.
+    /// Only the copies whose FieldEntity.CastsShadow holds are passed (IsCastingShadow: grass, flowers, fences, water).</summary>
     void AddShadowCells(Node parent, string name, Mesh mesh, List<FieldEntity> ents, Transform3D local)
     {
         foreach (var cell in ents.GroupBy(CellKey))

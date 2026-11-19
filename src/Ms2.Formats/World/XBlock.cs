@@ -128,6 +128,15 @@ public sealed class FieldEntity
     /// looked up by name ignoring case, and so is the own-model compare.</summary>
     public bool HasMixin(string m) => Flat != null && (string.Equals(Flat.Name, m, StringComparison.OrdinalIgnoreCase) || Flat.Mixins.Contains(m));
 
+    /// <summary>
+    /// The entity's meshes cast shadows. On SceneGraphAdded (WorldService::FUN_141bbfe30, worldservice_1.cpp:3637) the client
+    /// runs FUN_141567000 (unit_141567000.cpp:112-124): for a Mesh (0xbd4f8e8e) or Actor (0x48ccc02d) entity it reads
+    /// IsCastingShadow (0xd89e9b12, false when unset) and PrepareLoadedNif runs SetShadowCaster(root, it), which sets or
+    /// clears the caster flag of every render object. ecr LightService::OnRenderedEntityAdded (LightService.cpp:1936-1950)
+    /// also attaches such an entity to every shadow generator as an unaffected caster. Other entities keep the NIF's flag.
+    /// </summary>
+    public bool CastsShadow => !HasMixin("Mesh") && !HasMixin("Actor") || Bool("IsCastingShadow");
+
     public bool Bool(string key, bool def = false)
     {
         var v = Get(key);
