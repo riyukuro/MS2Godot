@@ -633,9 +633,30 @@ public partial class HudScene : Node, IUiStageHost
         return found;
     }
 
-    /// <summary>FUN_141274f80 (unit_141274d10_uihelpers.cpp:181): a popup menu or the message box layer is open.</summary>
+    /// <summary>
+    /// FUN_141274f80 (unit_141274d10_uihelpers.cpp:181-191): CUIService::FUN_141adcbb0's any-shown-window gate first —
+    /// an open dialog that is not an always-on one (the game menu, the main player info, the minimap never block;
+    /// the group messenger browser and the ad push the client adds are not in this HUD) — then a popup menu or a
+    /// shown message box.
+    /// </summary>
     bool GuidePopupOrBoxOpen() =>
-        (popupMenu != null && !popupMenu.IsClosed) || MessageBoxLayer.Instance?.Shown == true;
+        Ms2.Ui.Hud.DialogGates.AnyDialogShown(OpenMovieControllers())
+        || (popupMenu != null && !popupMenu.IsClosed) || MessageBoxLayer.Instance?.Shown == true;
+
+    /// <summary>The live movies' controllers (CUIService's m_mapDlg walk, uiservice.cpp:1252): every movie this HUD
+    /// holds; the ones not loaded answer closed, so they fail <see cref="DialogGates.AnyDialogShown"/>'s own test
+    /// like the client's unloaded dialogs fail vfunc_55's.</summary>
+    IEnumerable<Ms2.Ui.UiController> OpenMovieControllers()
+    {
+        var found = new List<Ms2.Ui.UiController>();
+        void Walk(Node n)
+        {
+            if (n is MovieDialog { Loaded: true } m) found.Add(m.Host.Controller);
+            foreach (var c in n.GetChildren()) Walk(c);
+        }
+        Walk(this);
+        return found;
+    }
 
     /// <summary>UIGuideEventArrowDialog::vfunc_2's gates (uiguideeventarrow.cpp:569-575): the cinematic sub scene or a
     /// shown message box.</summary>
@@ -658,23 +679,11 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>
-    /// GetGameMenuPathPosition's remap (uiguideeventarrow.cpp:911-929): a path element the menu table moved — the
-    /// movie's getChildObjectPos(shown, original) on the clip the walk is at gives the shown entry's place and half
-    /// width; null when the element is no moved entry (the plain child walk applies). The menu's set is the game one
-    /// (EGameMenuSet 0; the game pad menu set is not switched here).
+    /// GetGameMenuPathPosition's remap (uiguideeventarrow.cpp:911-929): the game menu's own moved-entry step — the
+    /// menu's set is the game one (EGameMenuSet 0; the game pad menu set is not switched here).
     /// </summary>
-    (double X, double Y, double HalfWidth)? GameMenuChildPos(string element, Ms2.Ui.Guide.GuideNode clip)
-    {
-        var t = gameMenu?.Table;
-        if (t == null || clip is not Ms2.Ui.Guide.GuideObjectNode node) return null;
-        var def = t.FindByName(element);
-        if (def == null || !t.IsChild(def.Id)) return null;
-        string shown = t.Find(t.FindTopId(def.Id))?.Name ?? element;
-        var v = node.Host.Invoke(node.Target, "getChildObjectPos", shown, element);
-        if (v is not AsObject o) return null;
-        return (Rt.ToNumber(node.Host.Get(o, "x")), Rt.ToNumber(node.Host.Get(o, "y")),
-            Rt.ToNumber(node.Host.Get(o, "width")) / 2);
-    }
+    Ms2.Ui.Guide.GuideMenuMoved? GameMenuChildPos(string element, Ms2.Ui.Guide.GuideNode clip) =>
+        Ms2.Ui.Hud.GameMenuController.MenuChildPos(gameMenu?.Table, element, clip);
 
     /// <summary>
     /// The system lines (UISystemText, uisystemtext.cpp), run by their movie; kept across relayouts, placed under the target

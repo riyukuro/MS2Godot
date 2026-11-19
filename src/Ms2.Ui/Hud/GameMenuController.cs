@@ -16,12 +16,36 @@ public sealed class GameMenuController : UiController
     public override string Movie => "uigamemenudialog";
     protected override string EntityMethod => "addMenuEntity";
 
+    /// <summary>UIGameMenuDialog is a UIBuiltInDialog (uigamemenudialog.h:39): the ctor's flag 0 (vfunc_56).</summary>
+    public override bool AlwaysOn => true;
+
     /// <summary>GetTypeName (@0x141936630, uigamemenudialog.cpp:809): the settings file's name and what the guide's
     /// dialog lookups match (CUIService::FindObjectByName compares it).</summary>
     public override string TypeName => "GameMenuDialog";
 
     /// <summary>CGameMenuTable (GetGameMenuTable).</summary>
     public GameMenuTable Table;
+
+    /// <summary>
+    /// GetGameMenuPathPosition's moved-entry step (uiguideeventarrow.cpp:912-929): whether a path element is an entry
+    /// the menu table moved into a group (FindByName + IsChild), and the movie's getChildObjectPos(shown, original)
+    /// answer for it — the shown entry's place and half width. Null when the element is no moved entry (the plain
+    /// child walk applies); <see cref="GuideMenuMoved.Fail"/> when the movie gave no object (the client's whole
+    /// lookup fails then, :920-921). The guide pane's walk asks it through its
+    /// <see cref="GuideEventController.GameMenuChildPos"/>; the HUD passes its menu's table.
+    /// </summary>
+    public static Ms2.Ui.Guide.GuideMenuMoved? MenuChildPos(GameMenuTable table, string element, Ms2.Ui.Guide.GuideNode clip)
+    {
+        if (table == null || clip is not Ms2.Ui.Guide.GuideObjectNode node) return null;
+        var def = table.FindByName(element);
+        if (def == null || !table.IsChild(def.Id)) return null;
+        string shown = table.Find(table.FindTopId(def.Id))?.Name ?? element;
+        var v = node.Host.Invoke(node.Target, "getChildObjectPos", shown, element);
+        if (v is not AsObject o) return new Ms2.Ui.Guide.GuideMenuMoved(Fail: true, 0, 0, 0);
+        return new Ms2.Ui.Guide.GuideMenuMoved(Fail: false,
+            Rt.ToNumber(node.Host.Get(o, "x")), Rt.ToNumber(node.Host.Get(o, "y")),
+            Rt.ToNumber(node.Host.Get(o, "width")) / 2);
+    }
     /// <summary>CGameMenuItem::IsVisible for an item with a filter (@0x140cf0bf0): a running game event by id or type, the
     /// attendance dialogs' active events, the current season. None of these exist here, so a filtered item is hidden.</summary>
     public Func<GameMenuItem, bool> FilterPasses = _ => false;

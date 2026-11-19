@@ -56,6 +56,11 @@ public abstract class UiController
     /// <summary>GetTypeName (UIDialog: "Dialog"): the settings file's name and root element.</summary>
     public virtual string TypeName => "Dialog";
 
+    /// <summary>UIDialog::vfunc_56 @0x141924810 (uidialog.cpp:494): IsFlagSet(0) — the dialog is an always-on one
+    /// (UIBuiltInDialog's and UIMinimapDialog's ctors set the flag: the game menu, the main player info, the
+    /// minimap). The always-on ones never block the Esc and guide gates (FUN_141adcbb0's walk skips them).</summary>
+    public virtual bool AlwaysOn => false;
+
     /// <summary>m_74 (editAlign): set when the player moved the dialog (vfunc_77).</summary>
     public int EditAlign;
     bool placedFromFile;       // m_78

@@ -19,6 +19,9 @@ public sealed class MinimapController : UiController
     public override string Movie => "uiminimapdialog";
     protected override string EntityMethod => "createEntity";
 
+    /// <summary>UIMinimapDialog's ctor sets the flag 0 (uiminimapentity.cpp:1082): vfunc_56, an always-on one.</summary>
+    public override bool AlwaysOn => true;
+
     /// <summary>OnWorldMap: CUIService::ToggleDialog(0x4e42), the world map.</summary>
     public event Action WorldMap;
 

@@ -10,6 +10,9 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip
     public override string Movie => "uimainplayerinfo";
     protected override string EntityMethod => "enabledExpansionSlotToggle";
 
+    /// <summary>UIMainPlayerInfo is a UIBuiltInDialog (uimainplayerinfo.h:59): the ctor's flag 0 (vfunc_56).</summary>
+    public override bool AlwaysOn => true;
+
     /// <summary>CGameOption game pad state m_bExpand, and the pad kind (2 = no key captions).</summary>
     public bool SlotExpand;
     public bool PadShowsKeys = true;

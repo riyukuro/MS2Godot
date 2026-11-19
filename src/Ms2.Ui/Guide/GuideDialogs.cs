@@ -18,7 +18,7 @@ public sealed class GuideControllerDialog : GuideDialog
     }
 
     /// <summary>GetTypeName: what the guide's name lookups match (the client's FindObjectByName compares it).</summary>
-    public string TypeName => controller?.TypeName;
+    public override string TypeName => controller?.TypeName;
 
     /// <summary>vfunc_55 (uidialog.cpp:487): closed, the close finished (a HUD movie that is not loaded reads closed
     /// too, as the client's unloaded dialog does).</summary>

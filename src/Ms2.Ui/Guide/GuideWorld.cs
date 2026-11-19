@@ -222,6 +222,9 @@ public readonly record struct GuideEquipSlot(int ItemId, bool HasValidItem);
 /// <summary>A dialog as the guide reads it (UIDialog).</summary>
 public abstract class GuideDialog
 {
+    /// <summary>GetTypeName (UIObject's vfunc, the client's by-name registry compares it): the default is UIDialog's
+    /// "Dialog". The game's wrapper gives its controller's own name.</summary>
+    public virtual string TypeName => "Dialog";
     /// <summary>vfunc_55: hidden (not shown).</summary>
     public abstract bool Hidden { get; }
     /// <summary>FUN_141924630: open.</summary>
@@ -279,6 +282,11 @@ public record GuideArrow(int EntityId, Vector3 Offset, int Direction, int Align,
 public record GuideDialogArrow(int EntityId, Vector3 Offset, int Direction, int Align, int TextId, int DialogId, string DialogName,
     int ChildIndex, IReadOnlyList<string> ChildPath, IReadOnlyList<string> FocusDialogs, string PosKind, int PosValue)
     : GuideArrow(EntityId, Offset, Direction, Align, TextId);
+
+/// <summary>GetGameMenuPathPosition's moved-entry answer (uiguideeventarrow.cpp:919-928): the shown entry's place
+/// and half width, or <see cref="Fail"/> when the movie's getChildObjectPos gave no object — the client's whole
+/// lookup fails then (:920-921).</summary>
+public readonly record struct GuideMenuMoved(bool Fail, double X, double Y, double HalfWidth);
 
 /// <summary>The side NPC talk popup's content (SideNpcTalk): kind 0 talk, 1 movie, 2 cutin, 3 talkbottom.</summary>
 public record GuideSideTalk(int Kind, string Usm, IReadOnlyList<int> ScriptIds, string Illust, long Duration, string Voice, string Sound);

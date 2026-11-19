@@ -265,14 +265,16 @@ public sealed class GuideEventController : UiController, IGuideEventPane
     public Func<int, GuideDialog> DialogOfId;
     public Func<string, GuideDialog> DialogOfName;
     /// <summary>
-    /// GetGameMenuPathPosition's remap (uiguideeventarrow.cpp:902): the path element is a game menu entry the table
-    /// moved, so the movie's getChildObjectPos(shown, original) on the clip the walk is at gives its place — the game
-    /// menu's table and movie wire it. (name, the clip) -> (x, y, width/2 to add) at the shown entry, or null when the
-    /// element is no moved entry (the plain child walk applies).
+    /// GetGameMenuPathPosition's moved-entry step (uiguideeventarrow.cpp:912-929): whether a path element is an entry
+    /// the menu table moved into a group, and the movie's getChildObjectPos(shown, original) answer for it. Null when
+    /// the element is no moved entry (the plain child walk applies); the fail value when the movie gave no object (the
+    /// client's whole lookup fails then, :920-921). The HUD wires the game menu's own
+    /// <see cref="GameMenuController.MenuChildPos"/>.
     /// </summary>
-    public Func<string, GuideNode, (double X, double Y, double HalfWidth)?> GameMenuChildPos;
+    public Func<string, GuideNode, GuideMenuMoved?> GameMenuChildPos;
     /// <summary>The loop effect while an arrow shows (UpdateArrowSound): the effect's name plays and a handle comes
-    /// back (CEffectService FUN_1411a49c0); the host wires the effect service, null plays nothing.</summary>
+    /// back (CEffectService FUN_1411a49c0). STILL-OPEN: no effect service is wired anywhere yet (the Effect action's
+    /// own hook is the same gap), so the host leaves these null and the arrows are silent.</summary>
     public Func<string, int> PlayLoopEffect;
     public Action<int> StopLoopEffect;
 
@@ -322,6 +324,10 @@ public sealed class GuideEventController : UiController, IGuideEventPane
         if (Loaded) Host.Invoke("removeArrow", (uint)id);
         arrows.Remove(id);
     }
+
+    /// <summary>The place a live arrow resolves to (vfunc_2's answer before the movie draws its own offsets); null
+    /// while it does not resolve. The tests read it; the movie's drawing stays the movie's.</summary>
+    internal (double X, double Y)? ArrowPosition(int id) => arrows.TryGetValue(id, out var a) ? a.Position() : null;
 
     /// <summary>
     /// GuideKindOf (@0x141960620): the kind of a customPosType's name. The arrows the tables hold: inventoryItemID (5)
@@ -507,7 +513,8 @@ public sealed class GuideEventController : UiController, IGuideEventPane
             var root = d.Root;
             if (root == null) return null;
             // dynamic_cast&lt;UIGameMenuDialog*&gt;: the type name the port's registry matches
-            if (d is GuideControllerDialog { TypeName: "GameMenuDialog" }) return GameMenuPathPosition(root);
+            if (string.Equals(d.TypeName, "GameMenuDialog", StringComparison.OrdinalIgnoreCase))
+                return GameMenuPathPosition(root);
             return ElementPathPosition(root);
         }
 
@@ -534,8 +541,8 @@ public sealed class GuideEventController : UiController, IGuideEventPane
 
         /// <summary>
         /// GetGameMenuPathPosition (@0x14195fc40): the walk of <see cref="ElementPathPosition"/> whose element the
-        /// menu table moved resolves through the movie's getChildObjectPos instead (the shown entry's place plus the
-        /// half width), and the walk ends there.
+        /// menu table moved resolves through the movie's getChildObjectPos instead — the shown entry's place and half
+        /// width — and the walk ends there; the last plain element's half width is still added after it (:929-942).
         /// </summary>
         (double X, double Y)? GameMenuPathPosition(GuideNode root)
         {
@@ -546,9 +553,10 @@ public sealed class GuideEventController : UiController, IGuideEventPane
             {
                 if (Pane.GameMenuChildPos?.Invoke(name, cur) is { } moved)
                 {
+                    if (moved.Fail) return null;        // the movie's answer was no object (:920-921)
                     x += moved.X + moved.HalfWidth;
                     y += moved.Y;
-                    return (x, y);
+                    break;                              // the walk ends at the moved entry (:929)
                 }
                 cur = cur.Child(name);
                 if (cur == null || !cur.Visible) return null;

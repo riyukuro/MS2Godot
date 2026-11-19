@@ -357,25 +357,13 @@ public class GuideEventTests
         for (int i = 0; i < 10; i++) menuPlayer.Tick();
         foreach (var e in rt.Errors) TestContext.WriteLine("menu error: " + e);
 
-        // the menu table's remap of a moved entry, as the HUD's GameMenuChildPos wires it
-        (double X, double Y, double HalfWidth)? ChildPos(string element, GuideNode clip)
-        {
-            var t = menu.Table;
-            var def = t.FindByName(element);
-            if (def == null || !t.IsChild(def.Id)) return null;
-            string shown = t.Find(t.FindTopId(def.Id))?.Name ?? element;
-            if (clip is not GuideObjectNode node) return null;
-            var v = node.Host.Invoke(node.Target, "getChildObjectPos", shown, element);
-            return v is AsObject o ? (Rt.ToNumber(node.Host.Get(o, "x")), Rt.ToNumber(node.Host.Get(o, "y")),
-                Rt.ToNumber(node.Host.Get(o, "width")) / 2) : null;
-        }
-
+        // the menu table's remap of a moved entry — the game menu's own step, as the HUD wires it
         var c = new GuideEventController
         {
             Strings = GuideStrings.Parse(packs, "en"),
             DialogOfName = n => string.Equals(n, "GameMenuDialog", StringComparison.OrdinalIgnoreCase)
                 ? new GuideControllerDialog(menu) : null,
-            GameMenuChildPos = ChildPos,
+            GameMenuChildPos = (element, clip) => GameMenuController.MenuChildPos(menu.Table, element, clip),
         };
         var h = Load(c);
 
@@ -412,11 +400,36 @@ public class GuideEventTests
         var arrow = panel.Children.Single();
         c.Process();
         Assert.That(Rt.ToBoolean(h.Get(arrow, "visible")), Is.True, "the arrow points at the moved button");
-        Assert.That(Rt.ToNumber(h.Get(arrow, "x")), Is.GreaterThan(0));
-        Assert.That(Rt.ToNumber(h.Get(arrow, "y")), Is.GreaterThan(0));
         Assert.That(Rt.ToBoolean(h.Invoke(h.Entity, "hasGuideArrow")), Is.True);
 
+        // the exact place, GetGameMenuPathPosition's own sum (:905-943): the root's and m_menus' places, the moved
+        // entry's place and half width (:926-928), and after the break still the last plain element's half width
+        // (:941-942) — the walk ends at the moved entry, it does not return early
+        var (rx, ry, _) = c.DialogOfName("GameMenuDialog").Root.Position;
+        var menus = c.DialogOfName("GameMenuDialog").Root.Child("m_menus");
+        var (mx, my, _) = menus.Position;
+        var moved = GameMenuController.MenuChildPos(menu.Table, "inven", menus).Value;
+        Assert.That(moved.Fail, Is.False, "the open dropdown answers the moved entry");
+        var p170 = c.ArrowPosition(170).Value;
+        Assert.That(p170.X, Is.EqualTo(rx + mx + moved.X + moved.HalfWidth + menus.WidthCeil / 2 - 80).Within(0.5),
+            "the last plain element's half width is part of the place");
+        Assert.That(p170.Y, Is.EqualTo(ry + my + moved.Y + 23).Within(0.5));
+
+        // a moved entry whose movie answer is no object fails the whole lookup — no plain-walk fallback
+        c.ReleaseArrow(170);
+        c.GameMenuChildPos = (element, clip) => element == "inven" ? new GuideMenuMoved(Fail: true, 0, 0, 0) : null;
+        c.AddArrow(new GuideDialogArrow(170, new(-80, 23, 0), 2, 1, 2, 0, "GameMenuDialog", -1,
+            new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0));
+        c.Process();
+        Assert.That(c.ArrowPosition(170), Is.Null, "getChildObjectPos not an object: hidden (:920-921)");
+        c.GameMenuChildPos = (element, clip) => GameMenuController.MenuChildPos(menu.Table, element, clip);
+        c.ReleaseArrow(170);
+
         // the gates hide it: a popup or the message box (FUN_141274f80), the cinematic sub scene for the dialog kinds
+        c.AddArrow(new GuideDialogArrow(170, new(-80, 23, 0), 2, 1, 2, 0, "GameMenuDialog", -1,
+            new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0));
+        c.Process();
+        arrow = panel.Children.Single();
         bool blocked = true;
         c.DialogArrowBlocked = () => blocked;
         c.Process();
@@ -433,5 +446,113 @@ public class GuideEventTests
         var group = panel.Children.Single();
         Assert.That(Rt.ToBoolean(h.Get(group, "visible")), Is.True, "the arrow at the menu group");
         Assert.That(Rt.ToNumber(h.Get(group, "x")), Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void TheGameMenuWalkAddsTheLastPlainElementsHalfWidth()
+    {
+        // GetGameMenuPathPosition's end (uiguideeventarrow.cpp:929-942): the walk breaks at the moved entry and still
+        // adds the last plain element's half width — the movie's m_menus answers width zero here, so the place is
+        // pinned over a fake root that has one.
+        Model();
+        var button = new FakeNode(0, 0, 40);
+        var inven = new FakeNode(30, 40, 60);
+        inven.With("m_button", button);
+        var menus = new FakeNode(10, 20, 100);
+        menus.With("inven", inven);
+        var root = new FakeNode(100, 200);
+        root.With("m_menus", menus);
+        var c = new GuideEventController
+        {
+            Strings = GuideStrings.Parse(packs, "en"),
+            DialogOfName = n => string.Equals(n, "GameMenuDialog", StringComparison.OrdinalIgnoreCase) ? new FakeMenuDialog(root) : null,
+            GameMenuChildPos = (element, clip) => element == "inven" ? new GuideMenuMoved(Fail: false, 5, 6, 30) : null,
+        };
+        var h = Load(c);
+        c.AddArrow(new GuideDialogArrow(170, new(0, 0, 0), 2, 1, 2, 0, "GameMenuDialog", -1,
+            new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0));
+        c.Process();
+        var p = c.ArrowPosition(170).Value;
+        Assert.That(p.X, Is.EqualTo(100 + 10 + 5 + 30 + 100 / 2.0).Within(0.5), "root + m_menus + the moved entry + m_menus' half width");
+        Assert.That(p.Y, Is.EqualTo(200 + 20 + 6).Within(0.5));
+
+        // the moved entry's fail value ends the lookup — the plain walk does not take over even where it would
+        // resolve (the movie's answer was no object, :920-921)
+        c.ReleaseArrow(170);
+        c.GameMenuChildPos = (element, clip) => element == "inven" ? new GuideMenuMoved(Fail: true, 0, 0, 0) : null;
+        c.AddArrow(new GuideDialogArrow(171, new(0, 0, 0), 2, 1, 2, 0, "GameMenuDialog", -1,
+            new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0));
+        c.Process();
+        Assert.That(c.ArrowPosition(171), Is.Null, "the fail hides the arrow, no fallback walk");
+    }
+
+    [Test]
+    public void TheWorldArrowHidesWhileAWindowDialogIsOpen()
+    {
+        // FUN_141274f80's first gate (unit_141274d10_uihelpers.cpp:183): CUIService::FUN_141adcbb0's walk — an open
+        // dialog that is not an always-on one (vfunc_56's flag, UIBuiltInDialog: the game menu never blocks) hides
+        // the world arrow; closing the window shows it again.
+        Model();
+        var menu = new GameMenuController { Table = GameMenuTable.Load(packs, Model().IsFeatureEnabled) };
+        var (mrt, mp) = src.Open(menu.Movie, r => r.Budget = 20_000_000);
+        mp.StageW = 1280; mp.StageH = 720;
+        var mh = new UiHost(mp, menu, Model());
+        Assert.That(mh.Load(), Is.True, "game menu load: " + string.Join("; ", mrt.Errors));
+        for (int i = 0; i < 10; i++) mp.Tick();
+        Assert.That(menu.AlwaysOn, Is.True, "UIBuiltInDialog's flag 0");
+        Assert.That(menu.IsClosed, Is.False, "the menu movie is open");
+
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
+        var inv = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        var (irt, ip) = src.Open(inv.Movie, r => r.Budget = 20_000_000);
+        ip.StageW = 1280; ip.StageH = 720;
+        var ih = new UiHost(ip, inv, Model());
+        Assert.That(ih.Load(), Is.True, "inventory load: " + string.Join("; ", irt.Errors));
+        for (int i = 0; i < 10; i++) { ip.Tick(); inv.Process(); }
+        Assert.That(inv.AlwaysOn, Is.False, "a window dialog");
+        Assert.That(inv.IsClosed, Is.False, "the inventory is open");
+
+        // the HUD's gate over its dialogs (DialogGates.AnyDialogShown), and the world arrow behind it
+        var c = new GuideEventController
+        {
+            Strings = GuideStrings.Parse(packs, "en"),
+            ProjectWorld = _ => (400, 300),
+            ArrowBlocked = () => Ms2.Ui.Hud.DialogGates.AnyDialogShown(new Ms2.Ui.UiController[] { menu, inv }),
+        };
+        var h = Load(c);
+        c.AddArrow(new GuideArrow(50, new(0, 0, 0), 2, 1, 0));
+        c.Process();
+        Assert.That(c.ArrowPosition(50), Is.Null, "the open window blocks the world arrow");
+
+        inv.Close();
+        for (int i = 0; i < 30 && !inv.IsClosed; i++) { ip.Tick(); inv.Process(); }
+        Assert.That(inv.IsClosed, Is.True, "the close finished");
+        Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(new Ms2.Ui.UiController[] { menu, inv }), Is.False,
+            "the always-on game menu alone never blocks");
+        c.Process();
+        var p = c.ArrowPosition(50).Value;
+        Assert.That(p.X, Is.EqualTo(400).Within(0.5), "the arrow shows over the always-on menu");
+        Assert.That(p.Y, Is.EqualTo(300).Within(0.5));
+    }
+
+    sealed class FakeNode : GuideNode
+    {
+        readonly double x, y, width;
+        readonly Dictionary<string, GuideNode> children = new();
+        public FakeNode(double x, double y, double width = 0) { this.x = x; this.y = y; this.width = width; }
+        public void With(string name, GuideNode child) => children[name] = child;
+        public override bool Visible => true;
+        public override (double X, double Y, double Z) Position => (x, y, 0);
+        public override double WidthCeil => width;
+        public override GuideNode Child(string name) => children.TryGetValue(name, out var c) ? c : null;
+    }
+
+    sealed class FakeMenuDialog : GuideDialog
+    {
+        readonly GuideNode root;
+        public FakeMenuDialog(GuideNode root) => this.root = root;
+        public override string TypeName => "GameMenuDialog";
+        public override bool Hidden => false;
+        public override GuideNode Root => root;
     }
 }
