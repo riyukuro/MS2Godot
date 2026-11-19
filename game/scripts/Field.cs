@@ -101,7 +101,8 @@ public partial class Field : Node3D
         FieldData fd = null;
         try { fd = FieldData.FindByXBlock(packs, fieldName); }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
-        var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0 };
+        FieldShadows.Begin(packs, fd?.ShadowOptionHighLevel ?? 0);
+        var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0, CastsShadows = FieldShadows.MapObjects };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
@@ -355,6 +356,7 @@ public partial class Field : Node3D
         float ambient = 0.8f, sunDim = 0.8f;
         Color ambientColor = Colors.White, sunColor = Colors.White, sunAmbient = Colors.Black, sunSpecular = Colors.White;
         var sunDir = new Vec3(0, 0, -1);
+        bool sunCasts = false;
         foreach (var e in map.Entities)
         {
             if (e.ModelName.StartsWith("MS2AmbientLight"))
@@ -372,6 +374,7 @@ public partial class Field : Node3D
                 var sp = e.Numbers("SpecularColor");
                 if (sp != null) sunSpecular = new Color((float)sp[0], (float)sp[1], (float)sp[2]);
                 sunDim = (float)e.Number("Dimmer", 1);
+                sunCasts = e.Bool("CastShadows", true);
                 sunDir = e.Transform.Apply(new Vec3(1, 0, 0)) - e.Transform.Apply(new Vec3(0, 0, 0));   // Gamebryo lights shine along +X
             }
         }
@@ -394,8 +397,9 @@ public partial class Field : Node3D
         AddChild(new WorldEnvironment { Environment = env });
         FieldBackdrop.Add(this, env, packs, x);
         // The field shader draws the sun itself (ms2_sun_*); from this light it reads only the shadow, which scales the
-        // shader's own sun term (field_lit.gdshader light()), so the sun is counted once
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = true, DirectionalShadowMaxDistance = 4000 };
+        // shader's own sun term (field_lit.gdshader light()), so the sun is counted once. Its shadow is the light's
+        // CastShadows, forced off below the mapObject shadow level (MS2LightService::UpdateLightShadow, ms2lightservice.cpp:356-385)
+        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMaxDistance = 4000 };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
@@ -415,7 +419,9 @@ public partial class Field : Node3D
         player.Gender = bodyDir == "male" ? 0 : 1;
         player.RootName = md.RootName;
         BlobShadow.Load(packs);
-        BlobShadow.Add(player, 100f);
+        // the player's simple shadow shows between the myPC row's levels (CObjectShadow, unit_14160fb10.cpp:310-333;
+        // MyPC kind 0, mypc.cpp:2879-2887)
+        if (FieldShadows.SimpleShadow(Ms2.Formats.Options.GraphicOptionTable.MyPC)) BlobShadow.Add(player, 100f);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
         player.Climbs = Movement.Climbables.From(map);
         player.Cubes = Movement.CubeGrid.From(map);

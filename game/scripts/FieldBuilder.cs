@@ -31,6 +31,9 @@ public sealed class FieldBuilder
     public int SkippedNifMeshes;
     /// <summary>The field's &lt;ui instancingGrid&gt; (FieldData.InstancingGrid): the instancing cell edge, 0 = one cell.</summary>
     public int InstancingGrid { get; set; }
+    /// <summary>The field's objects cast the sun's shadow (FieldShadows.MapObjects): below the level the client clears every
+    /// caster (SetShadowCaster(node, false), worldservice_1.cpp:3428-3430), so no shadow cells are made.</summary>
+    public bool CastsShadows { get; set; } = true;
 
     /// <summary>
     /// How far behind its colour an own-group shell twin sorts (game units): Godot sorts the alpha list by priority, then by
@@ -416,7 +419,7 @@ public sealed class FieldBuilder
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 visuals.AddChild(node);
-                if (!mesh.AlphaBlendOn) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents, local);
+                if (!mesh.AlphaBlendOn && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents, local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
                 if (builder.GlowMaterial(mesh) is { } gm)
                 {

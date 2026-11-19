@@ -38,6 +38,9 @@ public sealed class FieldData
     public FieldHdr Hdr = new();
     /// <summary>&lt;shadow simpleshadow&gt;: the alpha of the simple ground shadows (CFieldDataCli default 0.5).</summary>
     public float SimpleShadow = 0.5f;
+    /// <summary>&lt;shadow optionHighLevel&gt;: the shadow level the field forces at least (CFieldDataCli m_nShadowOptionHighLevel
+    /// +0x258, default 0, fielddatacli.cpp:280); WorldService::FUN_141bbc4e0 hands it to FUN_141610450 (worldservice_1.cpp:626-633).</summary>
+    public int ShadowOptionHighLevel;
     /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
     public bool CheckClimb = true;
     /// <summary>&lt;property checkFly&gt; (CFieldData default 0), &lt;ui useEPSkill usePet&gt; (CFieldDataCli, default 1; fielddatacli.cpp:228).</summary>
@@ -126,7 +129,11 @@ public sealed class FieldData
         var fov = env.Element("fov");
         if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
         var sh = env.Element("shadow");
-        if (sh != null) Read(sh, "simpleshadow", ref o.SimpleShadow);
+        if (sh != null)
+        {
+            Read(sh, "simpleshadow", ref o.SimpleShadow);
+            if ((string)sh.Attribute("optionHighLevel") is { } hl && int.TryParse(hl, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hli)) o.ShadowOptionHighLevel = hli;
+        }
         var hdr = env.Element("hdr");
         if (hdr != null)
         {
