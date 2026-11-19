@@ -335,4 +335,26 @@ public class EmoticonTests
         Assert.That(fame.Defs.Single(d => d.Alliance == 5), Is.EqualTo(new FameTable.Def(5, 0, "", 0, 2)));
         Assert.That(FameTable.Empty.Defs, Is.Empty);
     }
+
+    /// <summary>vfunc_6: a PC's emoticon moves by its FUN_141670500 (OffsetPcChatballoon), another actor's by nothing.</summary>
+    [Test]
+    public void APcsEmoticonMovesByItsChatBalloonOffset()
+    {
+        var c = new EmoticonController { NpcOffset = -30, PcOffset = -45 };
+        var h = Load(c);
+        EmoticonController.Entity Shows(EmoticonController.Actor a)
+        {
+            // what the PC's on-demand emoticon does (FUN_14192f8b0, FUN_14192f8d0, vfunc_2), here by hand
+            var e = c.GetOrCreate(a);
+            e.Kind = 0; e.Icon = "emoticon_movie_npc_mail"; e.Held = true; e.Active = e.Reopen = true;
+            return e;
+        }
+        var pc = Shows(new EmoticonController.Actor { ObjectId = 1, IsPc = true, ActorAdded = true, Distance = 100 });
+        var other = Shows(new EmoticonController.Actor { ObjectId = 2, ActorAdded = true, Distance = 100 });
+        c.Process(At);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(pc.Opened, Is.EqualTo("emoticon_movie_npc_mail"));
+        Assert.That(Rt.ToNumber(h.Get(pc.Clip, "y")), Is.EqualTo(400 + c.PcOffset));
+        Assert.That(Rt.ToNumber(h.Get(other.Clip, "y")), Is.EqualTo(400));
+    }
 }

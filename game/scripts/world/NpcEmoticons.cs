@@ -92,6 +92,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         {
             VisibleDistance = constants.Float("EmoticonVisibleDistance", 2500),
             NpcOffset = constants.Float("OffsetNpcEmoticon", -30),
+            PcOffset = constants.Float("OffsetPcChatballoon", -30),
             QuestOf = quests.Quest,
             // GetNpcMovieName (uiemoticon.cpp:125-126): IsOfficerNpc, then GetSymbolByOfficerNpc
             OfficerSymbol = k => tables.Fame.IsOfficerNpc(k) ? tables.Fame.GetSymbolByOfficerNpc(k) : null,

@@ -15,8 +15,8 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// The status kind 2 is the talk's: <see cref="SetNpcNameTag"/> sets it and <see cref="TalkPageShown"/> drops it; it is
 /// the only kind the talk scene shows.
-/// STILL-OPEN: the PC emoticons (pc.cpp / mypc.cpp make them on demand; kind 3 is the microgame's, statemicrogame.cpp, with
-/// the PC's FUN_141670500 offset) have no caller here.
+/// STILL-OPEN: the PC emoticons (pc.cpp / mypc.cpp make them on demand; kind 3 is the microgame's, statemicrogame.cpp) have
+/// no caller here; their placement (<see cref="PcOffset"/>) is ported.
 /// </para>
 /// <para>
 /// The load gate (CNpc::vfunc_83 @0x1410903b0): with <see cref="ProgressiveLoading"/> an npc has no emoticon until its actor
@@ -63,6 +63,8 @@ public sealed class EmoticonController : UiController
         public int ObjectId;
         /// <summary>DynamicCast&lt;CNpc&gt;: only npcs refresh and get the npc offset.</summary>
         public bool IsNpc;
+        /// <summary>DynamicCast&lt;PC&gt; (a player, not an npc): gets <see cref="PcOffset"/>.</summary>
+        public bool IsPc;
         /// <summary>CNpcData GetKind (GetNpcId, @0x14192fe00): the npc kind GetNpcMovieName looks up.</summary>
         public int NpcKind;
         /// <summary>The npc id (GetNpcId of RefreshQuestState): the quest marks' key.</summary>
@@ -121,6 +123,11 @@ public sealed class EmoticonController : UiController
     public float VisibleDistance = 2500;
     /// <summary>OffsetNpcEmoticon (constants m_638; -30 in the client's constants): the npc's stage-unit y offset.</summary>
     public float NpcOffset = -30;
+    /// <summary>
+    /// A PC's FUN_141670500 (PCBase m_f168): the PC constructor sets it to OffsetPcChatballoon (pc.cpp:661; -30 in the
+    /// client's constants) and nothing changes it, so it is one value for every PC.
+    /// </summary>
+    public float PcOffset = -30;
 
     /// <summary>UIEmoticon::Entity (uiemoticon.cpp @0x14192ef40) over UIHudEntity::TimerEntity and Entity (uihudentity.cpp).</summary>
     public sealed class Entity
@@ -428,13 +435,14 @@ public sealed class EmoticonController : UiController
     }
 
     /// <summary>
-    /// vfunc_6 (@0x14192f3a0): an npc's point moves by OffsetNpcEmoticon; kind 3 by -90, kind 2 by 30; then the camera-pitch
-    /// shift; SetPositionFloat. STILL-OPEN: a PC's offset (FUN_141670500) is not ported.
+    /// vfunc_6 (@0x14192f3a0): an npc's point moves by OffsetNpcEmoticon, a PC's by its FUN_141670500 (<see cref="PcOffset"/>);
+    /// kind 3 by -90, kind 2 by 30; then the camera-pitch shift; SetPositionFloat.
     /// </summary>
     void Place(Entity e, (float X, float Y, float Shift) pt)
     {
         float x = pt.X, y = pt.Y;
         if (e.Actor.IsNpc) y += NpcOffset;
+        else if (e.Actor.IsPc) y += PcOffset;
         if (e.Kind == 3) y += -90f;
         else if (e.Kind == 2) y += 30f;
         y += pt.Shift;
