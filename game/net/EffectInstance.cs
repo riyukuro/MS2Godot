@@ -7,7 +7,8 @@ namespace Ms2Godot.Net;
 static class FxParam
 {
     public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
-        Frames = "frames", Alpha = "alpha", UvOff = "uv_off", UvScale = "uv_scale", UvRot = "uv_rot";
+        Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
+        BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp";
 }
 
 /// <summary>
@@ -18,7 +19,13 @@ static class FxParam
 /// </summary>
 public sealed partial class EffectInstance : Node3D
 {
-    sealed class MeshState { public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Texture2D Base; public bool Add; }
+    sealed class MeshState
+    {
+        public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Texture2D Base; public bool Add;
+        public string BaseKey; public TexMap BaseMap, GlowMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the two drawn maps
+        public TexTransform BaseT, GlowT;                         // working transforms the uv controllers write each frame
+        public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
+    }
 
     sealed class PSys
     {
@@ -48,20 +55,32 @@ uniform sampler2D tex : repeat_enable, filter_linear;
 uniform bool has_tex = true;
 uniform sampler2D glow_tex : repeat_enable, filter_linear;
 uniform bool has_glow = false;
-uniform vec2 uv_off = vec2(0.0);
-uniform vec2 uv_scale = vec2(1.0);
-uniform float uv_rot = 0.0;
+uniform vec3 base_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
+uniform vec3 glow_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 glow_r1 = vec3(0.0, 1.0, 0.0);
+uniform bool base_uv2 = false;
+uniform bool glow_uv2 = false;
+uniform int base_clamp = 0;
+uniform int glow_clamp = 0;
 uniform float alpha = 1.0;
 uniform vec4 tint = vec4(1.0);
 FOGDECL
 void vertex() { FOGVERT }
+// a map's uv: its texture transform's rows, then the clamp mode (bit 0 S, bit 1 T) as CLAMP addressing: the samplers
+// have no mipmaps, so holding the coordinate half a texel inside the edge is what clamped addressing reads
+vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
+    vec2 o = vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0)));
+    vec2 h = 0.5 / vec2(max(size, ivec2(1)));
+    if ((cl & 1) != 0) o.x = clamp(o.x, h.x, 1.0 - h.x);
+    if ((cl & 2) != 0) o.y = clamp(o.y, h.y, 1.0 - h.y);
+    return o;
+}
 void fragment() {
-    vec2 uv = UV - 0.5;
-    float c = cos(uv_rot), s = sin(uv_rot);
-    uv = vec2(c * uv.x - s * uv.y, s * uv.x + c * uv.y) * uv_scale + 0.5 + uv_off;
-    vec4 t = has_tex ? texture(tex, uv) : vec4(1.0);
+    vec4 t = has_tex ? texture(tex, map_uv(base_uv2 ? UV2 : UV, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
     vec3 col = t.rgb * tint.rgb;
-    if (has_glow) col += texture(glow_tex, uv).rgb;   // a glow map adds its colour whatever the material colour is
+    // a glow map adds its colour whatever the material colour is
+    if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
     FOG = vec4(ms2_fog_color, fog_share);
     ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
     ALPHA = clamp(t.a * tint.a * alpha, 0.0, 1.0);
@@ -136,11 +155,22 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             var m = em.Mesh;
             bool add = m.AlphaFlags >= 0 && (m.AlphaFlags & 1) != 0 && ((m.AlphaFlags >> 5) & 15) == 0;
             var mat = new ShaderMaterial { Shader = add ? Sh(ref meshAdd, MeshCode, "blend_add") : Sh(ref meshMix, MeshCode, "blend_mix") };
-            ms.Base = m.Textures.TryGetValue("base", out var bn) ? mb.Texture(bn) : (m.Textures.TryGetValue("shader0", out var s0) ? mb.Texture(s0) : null);
+            ms.BaseKey = m.Textures.ContainsKey("base") ? "base" : "shader0";
+            ms.Base = m.Textures.TryGetValue(ms.BaseKey, out var bn) ? mb.Texture(bn) : null;
+            ms.BaseMap = m.Maps.GetValueOrDefault(ms.BaseKey);
             mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
             if (DestOne(m.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
             if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
-            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt) { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt); }
+            if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt)
+            {
+                mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt);
+                ms.GlowMap = m.Maps.GetValueOrDefault("glow");
+            }
+            MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
+            MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
+            SetRows(mat, ms.BaseMap?.Transform, FxParam.BaseR0, FxParam.BaseR1, ms.Rows);
+            SetRows(mat, ms.GlowMap?.Transform, FxParam.GlowR0, FxParam.GlowR1, ms.Rows);
+            ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform();
             ms.Add = add;
             if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter(FxParam.Tint, Tint(em, 0, add));
             mat.SetShaderParameter(FxParam.Alpha, (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
@@ -153,7 +183,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
             // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
             // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
-            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false, uv2: true), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             z.AddChild(ms.Node);
             meshes.Add(ms);
         }
@@ -270,16 +300,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             ms.Node.Visible = !nd.Culled;
             if (d.Colors.Count > 0) ms.Mat.SetShaderParameter(FxParam.Tint, Tint(d, t, ms.Add));
             if (d.Alpha != null) ms.Mat.SetShaderParameter(FxParam.Alpha, (float)d.Opacity(t));
-            if (d.Uv.Count > 0)
-            {
-                Vector2 off = Vector2.Zero, sc = Vector2.One; float rot = 0;
-                foreach (var op in d.Uv)
-                {
-                    float v = (float)op.Curve(op.Ctl.Local(t));
-                    switch (op.Operation) { case 0: off.X += v; break; case 1: off.Y += v; break; case 2: rot += v; break; case 3: sc.X = v; break; case 4: sc.Y = v; break; }
-                }
-                ms.Mat.SetShaderParameter(FxParam.UvOff, off); ms.Mat.SetShaderParameter(FxParam.UvScale, sc); ms.Mat.SetShaderParameter(FxParam.UvRot, rot);
-            }
+            if (d.Uv.Count > 0) AnimateUv(ms, t);
             if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
             {
                 double lt = d.Flip.Ctl.Local(t);
@@ -292,6 +313,52 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         }
 
         foreach (var ps in systems) Step(ps, dt, camLocal);
+    }
+
+    // The uv controllers of one mesh at effect time t: each active controller replaces one component of its map's transform
+    // (UvOp); a map without a static transform gets the controller's default one (TexTransform.ControllerDefault). Only the
+    // base and glow maps are drawn here, so controllers on the dark, detail, normal and decal maps have nothing to move.
+    // The working transform is rebuilt from the static one each frame and the running controllers replayed over it. The
+    // client instead keeps whatever UpdateValue last wrote into the map's transform, so the two differ only when one of two
+    // controllers on a map stops (its range is over, or it is inactive) while the other runs: here the stopped component
+    // snaps back to the static value, in the client it keeps its last value (not surveyed; expected rare).
+    // Only Active controllers run (NiTimeController::Update skips inactive ones, and CNifEffect never calls
+    // StartAnimations). STILL-OPEN: FUN_141545250 (nifanimationcontroller.cpp:175-190) calls NiTimeController::
+    // StartAnimations on an entity's scene graph, which activates controllers the file leaves inactive; a field-entity
+    // effect started that way would run them. The alpha, colour and flip controllers here do not check Active yet.
+    static readonly TexTransform NoTransform = TexTransform.ControllerDefault();
+    static void AnimateUv(MeshState ms, float t)
+    {
+        bool baseOn = false, glowOn = false;
+        foreach (var op in ms.Def.Uv)
+        {
+            if (!op.Ctl.Active) continue;
+            TexTransform w;
+            if (op.Slot == ms.BaseKey && ms.BaseMap != null) { if (!baseOn) { ms.BaseT.CopyFrom(ms.BaseMap.Transform ?? NoTransform); baseOn = true; } w = ms.BaseT; }
+            else if (op.Slot == "glow" && ms.GlowMap != null) { if (!glowOn) { ms.GlowT.CopyFrom(ms.GlowMap.Transform ?? NoTransform); glowOn = true; } w = ms.GlowT; }
+            else continue;
+            w.Set(op.Operation, (float)op.Curve(op.Ctl.Local(t)));
+        }
+        if (baseOn) SetRows(ms.Mat, ms.BaseT, FxParam.BaseR0, FxParam.BaseR1, ms.Rows);
+        if (glowOn) SetRows(ms.Mat, ms.GlowT, FxParam.GlowR0, FxParam.GlowR1, ms.Rows);
+    }
+
+    // a map's texture transform as the shader's two rows (identity without one); r is scratch for the rows
+    static void SetRows(ShaderMaterial mat, TexTransform tt, StringName r0, StringName r1, float[] r)
+    {
+        if (tt == null) { mat.SetShaderParameter(r0, new Vector3(1, 0, 0)); mat.SetShaderParameter(r1, new Vector3(0, 1, 0)); return; }
+        tt.Rows(r);
+        mat.SetShaderParameter(r0, new Vector3(r[0], r[1], r[2])); mat.SetShaderParameter(r1, new Vector3(r[3], r[4], r[5]));
+    }
+
+    // a map's uv set and clamp mode. The map reads its own uv set (TEXCOORD_MASK; NiStandardMaterialDescriptor.cpp:1006,
+    // the glow map's index from FindUVSetIndexForTextureEnum, ms2standardmaterial.cpp:1544): set 1 is the mesh's
+    // TEXCOORD1 as UV2; a mesh without one reads set 0. STILL-OPEN: what D3D reads for a set the mesh does not have.
+    static void MapSetup(ShaderMaterial mat, TexMap map, ModelMesh m, StringName uv2, StringName clamp)
+    {
+        if (map == null) return;
+        mat.SetShaderParameter(uv2, map.UvSet == 1 && m.Uvs1 != null);
+        mat.SetShaderParameter(clamp, (map.ClampS ? 1 : 0) | (map.ClampT ? 2 : 0));
     }
 
     readonly List<(Vector3 axis, float pct)> drags = new();

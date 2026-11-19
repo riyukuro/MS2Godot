@@ -44,6 +44,7 @@ public sealed class ModelMesh
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, decal0, shaderN
+    public Dictionary<string, TexMap> Maps = new();       // the same keys: each map's uv set, clamp mode and static transform
     public string FlipSlot;               // texture slot an NiFlipController cycles (base, dark, ...), or null
     public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
     public float FlipPeriod;
@@ -65,6 +66,76 @@ public sealed class TexScroll
     public int Axis;
     public float Start, Stop;             // controller time range; the keys loop over it
     public float[] Times, Values;
+}
+
+/// <summary>
+/// An NiTextureTransform: the uv transform of one texture map, uv' = M (u, v, 1). The three methods build M as
+/// NiTextureTransform::UpdateMatrix does (NiTextureTransform.cpp:110-250); the shader constant takes M as it is
+/// (NiD3DShaderConstantMap::SetupTextureTransformMatrix). An NiTextureTransformController replaces one of the components
+/// (NiTextureTransformController::UpdateValue, NiTextureTransformController.cpp:132-184).
+/// </summary>
+public sealed class TexTransform
+{
+    public const int MayaDeprecated = 0, Max = 1, Maya = 2;   // NiTextureTransform::TransformMethod (NiTextureTransform.h:24)
+    public float TU, TV, SU = 1, SV = 1, Rotate, CU = 0.5f, CV = 0.5f;
+    public int Method = Maya;
+
+    public TexTransform Clone() => (TexTransform)MemberwiseClone();
+
+    public void CopyFrom(TexTransform o)
+    {
+        TU = o.TU; TV = o.TV; SU = o.SU; SV = o.SV; Rotate = o.Rotate; CU = o.CU; CV = o.CV; Method = o.Method;
+    }
+
+    /// <summary>The transform a controller makes on a map that has none: translate 0, rotate 0, scale 1, centre 0.5,
+    /// MAYA_TRANSFORM (NiTextureTransformController.cpp:146-151).</summary>
+    public static TexTransform ControllerDefault() => new();
+
+    /// <summary>Operation 0 translate U, 1 translate V, 2 rotate, 3 scale U, 4 scale V (TransformMember,
+    /// NiTextureTransformController.h:34-38): the value replaces that component.</summary>
+    public void Set(int operation, float v)
+    {
+        switch (operation) { case 0: TU = v; break; case 1: TV = v; break; case 2: Rotate = v; break; case 3: SU = v; break; case 4: SV = v; break; }
+    }
+
+    /// <summary>The two rows of M: u' = r[0] u + r[1] v + r[2], v' = r[3] u + r[4] v + r[5].</summary>
+    public float[] Rows() { var r = new float[6]; Rows(r); return r; }
+
+    /// <summary>The two rows of M into caller-owned storage of at least 6 floats (no allocation: the per-frame uv path).</summary>
+    public void Rows(Span<float> r)
+    {
+        double c = Math.Cos(Rotate), s = Math.Sin(Rotate);
+        double sx = SU, sy = SV, tx = TU, ty = TV, cx = CU, cy = CV;
+        switch (Method)
+        {
+            case Max:
+                r[0] = (float)(sx * c); r[1] = (float)(sx * s); r[2] = (float)(cx + sx * (c * (-cx - tx) + s * (-cy + ty)));
+                r[3] = (float)(-sy * s); r[4] = (float)(sy * c); r[5] = (float)(cy + sy * (-s * (-cx - tx) + c * (-cy + ty)));
+                break;
+            case Maya:
+                r[0] = (float)(c * sx); r[1] = (float)(-s * sy); r[2] = (float)((tx - cx) * c + (-ty - cy + 1) * s + cx);
+                r[3] = (float)(-s * sx); r[4] = (float)(-c * sy); r[5] = (float)((-tx + cx) * s + (-ty - cy + 1) * c + cy);
+                break;
+            default:
+                r[0] = (float)(c * sx); r[1] = (float)(-s * sy); r[2] = (float)((tx - cx) * c + (ty - cy) * -s + cx);
+                r[3] = (float)(s * sx); r[4] = (float)(c * sy); r[5] = (float)((tx - cx) * s + (ty - cy) * c + cy);
+                break;
+        }
+    }
+}
+
+/// <summary>One NiTexturingProperty map: the texture file, the uv set it reads (TEXCOORD_MASK), its clamp mode
+/// (CLAMPMODE: 0 clamp S clamp T, 1 clamp S wrap T, 2 wrap S clamp T, 3 wrap both; NiTexturingProperty.h:140-147) and
+/// its texture transform, or null. ShaderIndex is a shader map's place in the shader map array (-1 for the fixed maps).</summary>
+public sealed class TexMap
+{
+    public string File;
+    public int UvSet;
+    public int Clamp = 3;
+    public TexTransform Transform;
+    public int ShaderIndex = -1;
+    public bool ClampS => Clamp is 0 or 1;
+    public bool ClampT => Clamp is 0 or 2;
 }
 
 /// <summary>
@@ -233,6 +304,56 @@ public sealed class ModelData
         }
         return o;
     }
+
+    /// <summary>The maps of the mesh's NiTexturingProperty, keyed as TexturesOf: file, uv set, clamp mode, static transform.</summary>
+    static Dictionary<string, TexMap> MapsOf(NifFile nif, int mi)
+    {
+        var B = nif.Blocks;
+        var o = new Dictionary<string, TexMap>();
+        TexMap Map(NifStruct d)
+        {
+            long src = d.Int("Source"), flags = d.IntOr("Flags", 0x3000);
+            var m = new TexMap { File = src >= 0 ? nif.StrField(B[(int)src], "File Name") : null, UvSet = (int)(flags & 0xFF), Clamp = (int)((flags >> 12) & 3) };
+            if (d.IntOr("Has Texture Transform", 0) != 0)
+            {
+                var tr = d.Struct("Translation"); var sc = d.Struct("Scale"); var ce = d.Struct("Center");
+                m.Transform = new TexTransform
+                {
+                    TU = tr.Float("u"), TV = tr.Float("v"), SU = sc.Float("u"), SV = sc.Float("v"), Rotate = d.Float("Rotation"),
+                    Method = (int)d.IntOr("Transform Method", TexTransform.Maya), CU = ce.Float("u"), CV = ce.Float("v"),
+                };
+            }
+            return m;
+        }
+        foreach (var p in B[mi].Ints("Properties"))
+        {
+            if (p < 0 || B[(int)p].Type != "NiTexturingProperty") continue;
+            var b = B[(int)p];
+            for (int k = 0; k < MapSlots.Length; k++)
+            {
+                var (key, field) = MapSlots[k];
+                if (key == null || b.IntOr("Has " + field, 0) == 0 || !b.Has(field)) continue;
+                o[key] = Map(b.Struct(field));
+            }
+            if (b.TryGetValue("Shader Textures", out var stv) && stv is object[] sts)
+                for (int k = 0; k < sts.Length; k++)
+                {
+                    var st = (NifStruct)sts[k];
+                    if (st.IntOr("Has Map", 0) == 0) continue;
+                    var m = Map(st.Struct("Map")); m.ShaderIndex = k;
+                    o["shader" + st.Int("Map ID")] = m;
+                }
+        }
+        return o;
+    }
+
+    /// <summary>The fixed maps in NiTexturingProperty::MapEnum order (NiTexturingProperty.h:332): key and nif.xml field.</summary>
+    static readonly (string key, string field)[] MapSlots =
+    {
+        ("base", "Base Texture"), ("dark", "Dark Texture"), ("detail", "Detail Texture"), ("gloss", "Gloss Texture"),
+        ("glow", "Glow Texture"), ("bump", "Bump Map Texture"), ("normal", "Normal Texture"), ("parallax", "Parallax Texture"),
+        ("decal0", "Decal 0 Texture"),
+    };
 
     /// <summary>NiNode and the node subclasses that only change how children are drawn (sorting, billboarding, switching).</summary>
     static bool IsNode(string type) => type is "NiNode" or "NiSortAdjustNode" or "NiBillboardNode" or "NiSwitchNode" or "NiLODNode";
@@ -463,6 +584,7 @@ public sealed class ModelData
                 Name = nif.NodeName(i), FileName = nif.Name(i), Block = i, Skinned = skinned,
                 Positions = pos.v.Select(x => (float)x).ToArray(),
                 Textures = TexturesOf(nif, i),
+                Maps = MapsOf(nif, i),
                 Bound = BoundOf(B[i]),
             };
             mesh.Normals = Unit(nrm.v, nv);

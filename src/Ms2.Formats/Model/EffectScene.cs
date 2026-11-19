@@ -39,8 +39,11 @@ public sealed class EffectNode
     public KfChannel Anim; public TimeCtl AnimCtl;
 }
 
-/// <summary>An animated texture binding of a mesh: uv transform (operation 0 u offset, 1 v offset, 2 rotation, 3 u scale, 4 v scale) or a flipbook.</summary>
-public sealed class UvOp { public int Operation; public Func<double, double> Curve; public TimeCtl Ctl; }
+/// <summary>An NiTextureTransformController on a mesh's texturing property: the value replaces one component (operation 0
+/// translate U, 1 translate V, 2 rotate, 3 scale U, 4 scale V) of the transform of one map, Slot (a ModelMesh.Maps key):
+/// the fixed map at "Texture Slot", or with "Shader Map" set the shader map at that index of the shader map array
+/// (NiTextureTransformController::SetInternalMap, NiTextureTransformController.inl:37-62).</summary>
+public sealed class UvOp { public int Operation; public string Slot; public Func<double, double> Curve; public TimeCtl Ctl; }
 public sealed class FlipAnim { public string[] Sources; public Func<double, double> Curve; public TimeCtl Ctl; }
 
 /// <summary>An animated NiMaterialProperty colour (NiMaterialColorController): Target 0 ambient, 1 diffuse, 2 specular, 3 emissive (self illumination).</summary>
@@ -267,6 +270,9 @@ public sealed class EffectScene
         "NiPSFacingQuadGenerator", "NiPSBoundUpdater", "NiPSBombForce", "NiPSGravityForce", "NiPSDragForce", "NiPSEmitParticlesCtlr", "NiPSForceActiveCtlr",
     };
 
+    // NiTexturingProperty::MapEnum (NiTexturingProperty.h:332) as ModelMesh.Maps keys
+    static readonly string[] MapKeys = { "base", "dark", "detail", "gloss", "glow", "bump", "normal", "parallax", "decal0" };
+
     void ReadController(NifFile n, NifStruct c, int ownerBlock, Dictionary<int, EffectMesh> meshOf, Dictionary<int, ParticleSystemDef> systems, Func<int, IEnumerable<EffectMesh>> meshesWithProperty)
     {
         var B = n.Blocks;
@@ -296,8 +302,16 @@ public sealed class EffectScene
                     foreach (var m in meshesWithProperty((int)target)) m.Colors.Add(new ColorAnim { Target = (int)c.IntOr("Target Color", 1), Curve = cc, Ctl = ctl });
                 break;
             case "NiTextureTransformController":
-                foreach (var m in meshesWithProperty((int)target)) if (Curve(n, interp) is { } f) m.Uv.Add(new UvOp { Operation = (int)c.IntOr("Operation", 0), Curve = f, Ctl = ctl });
+            {
+                int slot = (int)c.IntOr("Texture Slot", 0);
+                bool shaderMap = c.IntOr("Shader Map", 0) != 0;
+                foreach (var m in meshesWithProperty((int)target))
+                {
+                    string key = shaderMap ? m.Mesh.Maps.FirstOrDefault(kv => kv.Value.ShaderIndex == slot).Key : (slot < MapKeys.Length ? MapKeys[slot] : null);
+                    if (key != null && Curve(n, interp) is { } f) m.Uv.Add(new UvOp { Operation = (int)c.IntOr("Operation", 0), Slot = key, Curve = f, Ctl = ctl });
+                }
                 break;
+            }
             case "NiFlipController":
             {
                 var src = c.Ints("Sources").Select(s => s >= 0 ? n.StrField(B[(int)s], "File Name") : null).ToArray();
