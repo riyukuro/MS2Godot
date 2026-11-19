@@ -36,13 +36,14 @@ public static class MasteryEvents
 
     /// <summary>
     /// The damage records of a SkillDamage (0x3D) that hit the own player, one total per target record (MyPC::vfunc_113
-    /// posts NotifyDamagedMyPC for each). The client's path drops a mode 3 record whose owner is not a PC in the field
-    /// (OnDotDamage: FUN_141bd1200(nOwnerId) == 0) and the whole mode 5 packet when the region skill object is gone
-    /// (OnRegionSkillDamage: GetRegionSkillObject(nRegionId) == 0); mode 6 drops its record when the owner object is not in
-    /// the field (OnSplashDamage: FindObjectById(nOwnerId) == 0); mode 1 has no such test. Mode 0 is a cast, not damage, and
-    /// the undecoded modes are dropped.
+    /// posts NotifyDamagedMyPC for each). The client's path drops a mode 3 record whose caster is not a PCBase in the field
+    /// (OnDotDamage: FUN_141bd1200(nOwnerId) == 0, FindObjectById then DynamicCast&lt;PCBase&gt; — players, npcs and pets),
+    /// a mode 5 packet when the region skill object is gone (OnRegionSkillDamage: GetRegionSkillObject(nRegionId) == 0),
+    /// and a mode 6 record whose own object (the record's id, the port's HitTarget) is not in the field (OnSplashDamage:
+    /// FindObjectById(nOwnerId) == 0, a test per record); mode 1 has no such test. Mode 0 is a cast, not damage, and the
+    /// undecoded modes are dropped.
     /// </summary>
-    public static List<long> SelfRecords(SkillDamage d, int selfObject, Func<int, bool> isPcObject, Func<int, bool> objectExists,
+    public static List<long> SelfRecords(SkillDamage d, int selfObject, Func<int, bool> isPcBaseObject, Func<int, bool> objectExists,
         Func<int, bool> isRegionSkill)
     {
         var totals = new List<long>();
@@ -51,15 +52,18 @@ public static class MasteryEvents
         {
             case 1:
                 break;
-            case 6:
-                if (objectExists == null || !objectExists(d.OwnerId)) return totals;
-                break;
             case 3:
-                if (isPcObject == null || !isPcObject(d.OwnerId)) return totals;
+                if (isPcBaseObject == null || !isPcBaseObject(d.OwnerId)) return totals;
                 break;
             case 5:
                 if (isRegionSkill == null || !isRegionSkill(d.RegionId)) return totals;
                 break;
+            case 6:
+                // one record per target: its own object is the record's id (the reader sets no owner for the mode)
+                foreach (var t in d.Targets)
+                    if (t.TargetId == selfObject && (objectExists == null || objectExists(t.TargetId)))
+                        totals.Add(t.Hits.Sum(h => h.Damage));
+                return totals;
             default:
                 return totals;
         }

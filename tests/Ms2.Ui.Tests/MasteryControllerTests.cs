@@ -83,7 +83,7 @@ public class MasteryControllerTests
     }
 
     /// <summary>The HUD's ItemCount (InventoryCount) makes the precheck refuse an ingredient bound to another character,
-    /// as FN_140a5f180's CanUseItem test does.</summary>
+    /// as FUN_140a5f180's CanUseItem test does.</summary>
     [Test]
     public void AnUnusableIngredientBlocksTheCraft()
     {

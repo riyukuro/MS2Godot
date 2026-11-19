@@ -22,9 +22,12 @@ public class MasteryEventsTests
     [Test]
     public void ModeThreeNeedsItsPcAndModeFiveItsRegion()
     {
-        var splash = Damage(6, 77, 0, 5, -2);
-        Assert.That(MasteryEvents.SelfRecords(splash, 5, _ => true, _ => false, _ => true), Is.Empty, "mode 6: the owner object is not in the field");
+        // mode 6 as the reader builds it: no owner, one record per target (the record's id is the target)
+        var splash = Damage(6, 0, 0, 5, -2);
+        Assert.That(MasteryEvents.SelfRecords(splash, 5, _ => true, _ => false, _ => true), Is.Empty,
+            "mode 6: the record's object is not in the field");
         Assert.That(MasteryEvents.SelfRecords(splash, 5, _ => true, _ => true, _ => true), Is.EqualTo(new long[] { -2 }));
+        Assert.That(MasteryEvents.SelfRecords(splash, 6, _ => true, _ => true, _ => true), Is.Empty, "not the own object");
 
         var d3 = Damage(3, 77, 0, 5, -10);
         Assert.That(MasteryEvents.SelfRecords(d3, 5, _ => false, _ => true, _ => true), Is.Empty, "mode 3: the owner PC is not in the field");

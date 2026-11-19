@@ -691,6 +691,7 @@ public partial class LiveSession : Node
     {
         try
         {
+            if (game.Is(p, Inbound.RequestFieldEnter)) regionSkills.Clear();   // a new field: no region skill object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
@@ -936,8 +937,9 @@ public partial class LiveSession : Node
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
                 // region skill object). One event per target record (MyPC::vfunc_113 posts each).
                 var d = SkillDamage.Read(p.Reader());
+                // mode 3's caster test is PCBase (players, npcs and pets; the tracker keeps the first two)
                 foreach (var total in Ms2.Ui.Hud.MasteryEvents.SelfRecords(d, selfObject,
-                             id => remote?.Tracker.HasActor(id) ?? (id == selfObject),
+                             id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))
                     SelfDamaged?.Invoke(total);
             }
