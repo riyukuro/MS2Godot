@@ -81,7 +81,7 @@ public class EffectMaterialTests
         Assert.That(amb, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }));
     }
 
-    /// <summary>An NiMaterialColorController on the ambient colour (Target 0) replaces it; diffuse + emissive is clamped to 1.</summary>
+    /// <summary>An NiMaterialColorController on the ambient colour (Target 0) replaces it; diffuse + emissive is not clamped (a sum above 1 stays).</summary>
     [Test]
     public void ColourControllersReplaceTheirTerm()
     {
@@ -89,7 +89,36 @@ public class EffectMaterialTests
         m.Colors.Add(new ColorAnim { Target = 0, Curve = _ => new[] { 0.25, 0.5, 0.75 } });
         double[] lit = new double[3], amb = new double[3];
         m.Shade(0, lit, amb);
-        Assert.That(lit, Is.EqualTo(new[] { 1.0, 0.2, 0.0 }).Within(1e-6));
+        Assert.That(lit, Is.EqualTo(new[] { 1.3, 0.2, 0.0 }).Within(1e-6));
         Assert.That(amb, Is.EqualTo(new[] { 0.25, 0.5, 0.75 }));
+    }
+
+    /// <summary>NiVertexColorProperty LIGHTING_E (flags bit 3 clear) keeps the emissive term alone: no diffuse, no ambient,
+    /// animated or static. Flags with bit 3 set, or no property (-1), keep all three.</summary>
+    [Test]
+    public void LightingEKeepsOnlyEmissive()
+    {
+        double[] lit = new double[3], amb = new double[3];
+        var mat = new ModelMesh { Ambient = new[] { 0.3f, 0.3f, 0.3f }, Diffuse = new[] { 0.5f, 0.5f, 0.5f }, Emissive = new[] { 0.2f, 0.1f, 0f } };
+        var e = new EffectMesh { Mesh = mat };
+        e.Colors.Add(new ColorAnim { Target = 1, Curve = _ => new[] { 0.9, 0.9, 0.9 } });
+        foreach (var (flags, l, a) in new[] { (0, new[] { 0.2, 0.1, 0.0 }, 0.0), (8, new[] { 1.1, 1.0, 0.9 }, 0.3), (-1, new[] { 1.1, 1.0, 0.9 }, 0.3) })
+        {
+            mat.VertexColorFlags = flags;
+            e.Shade(0, lit, amb);
+            Assert.That(lit, Is.EqualTo(l).Within(1e-6), $"flags {flags}");
+            Assert.That(amb, Is.EqualTo(new[] { a, a, a }).Within(1e-6), $"flags {flags}");
+        }
+        // the shadow spin cast: its LIGHTING_E meshes (grey ambient and diffuse, black emissive) shade black, its others keep their terms
+        var sc = Load("ch/skill/thief/eff_thief_skill_shadow_spin_cast.nif");
+        var modeE = sc.Meshes.Where(m => m.LightingE).ToList();
+        Assert.That(modeE, Has.Count.GreaterThanOrEqualTo(10));
+        foreach (var m in modeE)
+        {
+            Assert.That(m.Mesh.Diffuse[0], Is.GreaterThan(0.5f), m.Mesh.Name);
+            m.Shade(0.2, lit, amb);
+            Assert.That(lit.Concat(amb), Is.All.EqualTo(0.0), m.Mesh.Name);
+        }
+        Assert.That(sc.Meshes.Any(m => !m.LightingE), "meshes with LIGHTING_E_A_D");
     }
 }

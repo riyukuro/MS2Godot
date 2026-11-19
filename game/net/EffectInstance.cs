@@ -107,9 +107,11 @@ void fragment() {
         t = vec4(t.rgb * d.rgb * 2.0, t.a * d.a);
     }
     // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
-    vec3 col = t.rgb * clamp(tint.rgb + mat_ambient * ms2_ambient, 0.0, 1.0);
+    // The coefficient is not saturated (EffectMesh.Shade); the colour written is, as on the client's 8-bit colour target.
+    vec3 col = t.rgb * (tint.rgb + mat_ambient * ms2_ambient);
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
+    col = clamp(col, 0.0, 1.0);
     FOG = vec4(ms2_fog_color, fog_share);
     ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
     ALPHA = clamp(t.a * tint.a * alpha, 0.0, 1.0);

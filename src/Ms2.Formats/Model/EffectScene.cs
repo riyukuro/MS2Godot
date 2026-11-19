@@ -63,6 +63,9 @@ public sealed class EffectMesh
     /// CompositeFinalRGBAColor; ms2standardmaterial.cpp:758-791).</summary>
     public double Opacity(double t) => Alpha != null ? Alpha(AlphaCtl.Local(t)) : Mesh.MaterialAlpha;
 
+    /// <summary>The NiVertexColorProperty lighting mode is LIGHTING_E (flags bit 3 clear); without the property it is LIGHTING_E_A_D.</summary>
+    public bool LightingE => Mesh.VertexColorFlags >= 0 && (Mesh.VertexColorFlags & 8) == 0;
+
     /// <summary>The material's colour terms at effect time t, NiMaterialColorController keys applied (Target 0 ambient, 1
     /// diffuse, 3 emissive): lit = emissive + diffuse, amb = the ambient colour, which the scene's ambient light multiplies.
     /// The client's diffuse coefficient is emissive + matAmbient * lightAmbient + matDiffuse * lightDiffuse
@@ -71,8 +74,16 @@ public sealed class EffectMesh
     /// A mesh without any colour gets nothing from emissive and diffuse: an additive mesh lit only by its ambient colour
     /// (portal_b's Box01: ambient blue, diffuse and emissive black) draws that colour, not white.
     /// Without an NiMaterialProperty: diffuse white, emissive and ambient black.
-    /// STILL-OPEN: NiVertexColorProperty LIGHTING_E (flags bit 3 clear) drops the ambient and diffuse terms (:3719-3723) and
-    /// takes the opacity from the emissive alpha (:4437-4444); it is not applied here (nor in the field shaders).</summary>
+    /// LightingE drops the light's ambient and diffuse terms (NiStandardMaterial.cpp:3719-3723), so the coefficient is the emissive
+    /// colour alone: lit = emissive, amb = 0. The opacity then comes from the emissive constant's alpha (:4437-4444), which
+    /// is the material alpha like the diffuse constant's (D3D11ShaderConstantMap.cpp:3216-3229, 3264-3276), so Opacity holds.
+    /// The coefficient is not saturated: ComputeShadingCoefficients clamps only with m_bSaturateShading, which is false by
+    /// default and never set (SetSaturateShading has no callers), so lit may exceed 1.
+    /// STILL-OPEN (not applied here, nor in the field shaders): vertex colours as the emissive (SOURCE_EMISSIVE) or
+    /// ambient/diffuse (SOURCE_AMB_DIFF) source (flags bits 4-5, HandleInitialSpecAmbDiffEmissiveColor, :4351-4424);
+    /// 437 effect meshes are AMB_DIFF and 145 EMI.
+    /// STILL-OPEN: the light diffuse is taken as white; the client adds the directional light's colour * N.L per vertex
+    /// (ms2standardmaterial.cpp:1640-1700), not ported.</summary>
     public void Shade(double t, double[] lit, double[] amb)
     {
         double[] dif = null, emi = null, am = null;
@@ -85,7 +96,8 @@ public sealed class EffectMesh
         for (int i = 0; i < 3; i++)
         {
             double d = dif != null ? dif[i] : m.Diffuse != null ? m.Diffuse[i] : 1, e = emi != null ? emi[i] : m.Emissive != null ? m.Emissive[i] : 0;
-            lit[i] = Math.Min(1, d + e);
+            if (LightingE) { lit[i] = e; amb[i] = 0; continue; }
+            lit[i] = d + e;
             amb[i] = am != null ? am[i] : m.Ambient != null ? m.Ambient[i] : 0;
         }
     }
@@ -103,6 +115,7 @@ public sealed class EmitterDef
     public int MeshNode = -1;                    // node the mesh hangs from
     public Func<double, double> Rate; public TimeCtl RateCtl;           // births per second (NiPSEmitParticlesCtlr)
     public Func<double, double> On; public TimeCtl OnCtl;               // emitter active
+
 }
 
 public enum ForceKind { Bomb, Gravity, Drag, Other }
