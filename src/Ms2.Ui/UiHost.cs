@@ -162,8 +162,9 @@ public sealed class UiHost
                 if (a.Length < 2) return null;
                 var name = Rt.ToString(a[1]);
                 Calls.Add("getUserData:" + name);
-                var r = Controller.GetUserData(name, a.Skip(2).ToArray());
-                return r == null ? null : ToAs(r);
+                var args = a.Skip(2).ToArray();
+                var r = Controller.GetUserData(name, args);
+                return r != null ? ToAs(r) : ToAs(Controller.GetUserValue(name, args));
             });
             Static(dm, "playSound", a => null);
         }

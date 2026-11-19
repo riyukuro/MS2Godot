@@ -77,12 +77,14 @@ public sealed class StatPointBook {
 /// <summary>
 /// UserEnv (0xA8; CSceneStateGame::OnUserEnv, scenestategame.cpp:4414), the modes the character window reads: 0 a title
 /// gained (added to the title list DAT_143ab3268), 1 a player's shown title changed (PC::FUN_141661c70, m_n10f4), 2 the
-/// title list. The other modes (achievement grades, templates, masteries, fame) are read as null.
+/// title list, 3 the collection grades (DAT_143ab30e0: i32 count, then i32 id, u8 grade each; the trophy dialog redraws
+/// after it). The other modes (templates, masteries, fame) are read as null.
 /// </summary>
 public abstract record UserEnvMessage {
     public sealed record TitleAdded(int Id) : UserEnvMessage;
     public sealed record TitleChanged(int ObjectId, int Title) : UserEnvMessage;
     public sealed record Titles(IReadOnlyList<uint> Ids) : UserEnvMessage;
+    public sealed record Collection(IReadOnlyDictionary<uint, byte> Grades) : UserEnvMessage;
 
     public static UserEnvMessage Read(ByteReader r) {
         switch (r.ReadByte()) {
@@ -93,6 +95,12 @@ public abstract record UserEnvMessage {
                 var a = new List<uint>();
                 for (int i = 0; i < n; i++) a.Add((uint) r.ReadInt());
                 return new Titles(a);
+            }
+            case 3: {
+                uint n = (uint) r.ReadInt();
+                var g = new Dictionary<uint, byte>();
+                for (uint i = 0; i < n; i++) { uint id = (uint) r.ReadInt(); g[id] = r.ReadByte(); }   // DAT_143ab30e0.SetAt
+                return new Collection(g);
             }
         }
         return null;

@@ -303,6 +303,10 @@ public abstract class UiController
     public virtual IDictionary<string, object> GetUserData(string name, object[] args)
         => name == "getTooltip" ? GetTooltip(args) : null;
 
+    /// <summary>vfunc_45's answers that are a plain value rather than an object (a GFx::Value bool, number or string
+    /// set on the result), asked when <see cref="GetUserData"/> gives null; null = no answer.</summary>
+    public virtual object GetUserValue(string name, object[] args) => null;
+
     /// <summary>vfunc_49 (UIObject's @0x14131edf0 is empty): the tooltip of a movie item whose tooltip text is
     /// "#callback" (TooltipManager.showTooltipMouseEvent passes the item's name), an <see cref="AsTooltip"/>; null = none.</summary>
     public virtual IDictionary<string, object> GetTooltip(object[] args) => null;

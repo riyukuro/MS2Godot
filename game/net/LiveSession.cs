@@ -110,23 +110,32 @@ public partial class LiveSession : Node
     public readonly MyCharacter Me = new();
     /// <summary>CAchieveManager: the local player's trophies and their tally from the Achieve packets (0x5E); live only.
     /// The trophy data (Xml achieve/*.xml) is read at the first packet.</summary>
-    public Ms2.Ui.AchieveBook Achieves => achieves ??= new Ms2.Ui.AchieveBook(AchieveTable());
+    public Ms2.Ui.AchieveBook Achieves => achieves ??= AchieveBook();
     Ms2.Ui.AchieveBook achieves;
+    /// <summary>DAT_143ab30e0: the UserEnv mode 3 collection grades by id (the trophy rows' reqCondition marks).</summary>
+    public IReadOnlyDictionary<uint, byte> CollectionGrades { get; private set; } = new Dictionary<uint, byte>();
+    /// <summary>UserEnv mode 3 (OnUserEnv, scenestategame.cpp:4441-4458): the grades were replaced; the trophy dialog redraws
+    /// (FUN_1418a8f80).</summary>
+    public event Action CollectionChanged;
+    /// <summary>The trophy dialog's sends (Achieve 0x46, RequestUserEnv 0x69).</summary>
+    public void SendAchieve(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>GetTally()->Sum(); 0 before an Achieve packet (the data is not read for it).</summary>
     public uint AchieveSum => achieves?.Sum ?? 0;
     /// <summary>Raised when OnPacket refreshes the character window (UIMyInfoDialog::FUN_141a5a560).</summary>
     public event Action AchievesChanged;
 
-    static Dictionary<int, Ms2.Ui.AchieveData> AchieveTable()
+    /// <summary>The trophy data with its load order (GetListFromTable walks it).</summary>
+    static Ms2.Ui.AchieveBook AchieveBook()
     {
         var t0 = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var t = Ms2.Ui.AchieveData.LoadAll(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
+            var order = new List<Ms2.Ui.AchieveData>();
+            var t = Ms2.Ui.AchieveData.LoadAll(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), order);
             GD.Print($"live: trophy data {t.Count} trophies in {t0.ElapsedMilliseconds} ms");
-            return t;
+            return new Ms2.Ui.AchieveBook(t, order);
         }
-        catch (Exception e) { GD.Print($"live: trophy data unavailable ({e.Message})"); return new(); }
+        catch (Exception e) { GD.Print($"live: trophy data unavailable ({e.Message})"); return new Ms2.Ui.AchieveBook(new Dictionary<int, Ms2.Ui.AchieveData>()); }
     }
 
     /// <summary>The NpcTalk packets (0x4B, UITalkManager::OnTalkPacket) for the talk window; live only.</summary>
@@ -576,7 +585,8 @@ public partial class LiveSession : Node
                 else if (game.Is(p, Inbound.UserEnv))
                 {
                     var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept
-                    if (m != null) Me.Apply(m);
+                    if (m is UserEnvMessage.Collection c) { CollectionGrades = c.Grades; CollectionChanged?.Invoke(); }
+                    else if (m != null) Me.Apply(m);
                     GD.Print($"live: user env {m?.GetType().Name ?? "other mode"} ({Me.Titles.Count} titles)");
                 }
                 else if (game.Is(p, Inbound.HomeCommand))

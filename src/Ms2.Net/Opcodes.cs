@@ -104,4 +104,7 @@ public enum Outbound : ushort {
     Ugc = 0x38,
     RequestCube = 0x37,         // SendOp::RequestCube (commonfiles/opcodes.h)
     RequestHome = 0x51,         // SendOp::RequestHome (commonfiles/opcodes.h)
+    // SendOp: the trophy dialog's sends
+    Achieve = 0x46,
+    RequestUserEnv = 0x69,
 }

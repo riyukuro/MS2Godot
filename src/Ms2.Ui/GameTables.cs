@@ -451,6 +451,24 @@ public sealed class GameTables
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);
 
+    /// <summary>
+    /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 1 itemName,
+    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 59 petName, 74 achieveCategoryName; "" for an unknown
+    /// id or another table.
+    /// </summary>
+    public string StringTableText(int table, long id)
+    {
+        string file = table switch
+        {
+            1 => "itemname", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname",
+            0x3b => "petname", 0x4a => "achievecategoryname", _ => null,
+        };
+        if (file == null) return "";
+        if (!numberedTables.TryGetValue(file, out var d)) numberedTables[file] = d = strings?.Table(file, "name") ?? new Dictionary<string, string>();
+        return d.TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    }
+    readonly Dictionary<string, Dictionary<string, string>> numberedTables = new();
+
     Dictionary<string, string> Lazy(ref Dictionary<string, string> d, string table, string attr)
         => d ??= strings?.Table(table, attr) ?? new Dictionary<string, string>();
     /// <summary>The token caps by currency (GetCurrencyAmountAndCap, uicommon.cpp): Client::Constants HonorTokenMax,

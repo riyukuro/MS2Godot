@@ -61,7 +61,7 @@ public partial class HudScene : Node, IUiStageHost
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
-    string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]: the shot opens that window, as I or P does
+    string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve: the shot opens that window, as I, P or Y does
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
@@ -127,6 +127,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchQuickSlotState = null;
         unwatchParty?.Invoke();
         unwatchParty = null;
+        unwatchAchieves?.Invoke();
+        unwatchAchieves = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
         unwatchNotices?.Invoke();
@@ -174,6 +176,7 @@ public partial class HudScene : Node, IUiStageHost
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
         worldMap?.GetParent()?.RemoveChild(worldMap);
+        achieveMovie?.GetParent()?.RemoveChild(achieveMovie);
         minimap?.GetParent()?.RemoveChild(minimap);           // so is the minimap
         questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
         foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
@@ -191,6 +194,7 @@ public partial class HudScene : Node, IUiStageHost
         notice?.Relayout(GetWindow().Size);
         questLog?.Relayout(GetWindow().Size);
         worldMap?.Relayout(GetWindow().Size);
+        achieveMovie?.Relayout(GetWindow().Size);
         systemMenuMovie?.Relayout(GetWindow().Size);
         optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
         partyMovie?.Relayout(GetWindow().Size);
@@ -240,6 +244,7 @@ public partial class HudScene : Node, IUiStageHost
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
         if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
         if (worldMap != null) uiRoot.AddChild(worldMap);
+        if (achieveMovie != null) uiRoot.AddChild(achieveMovie);
     }
 
     SystemMenuController systemMenu;    // UISystemMenuDialog (0x4e21), its C++ side while the menu is loaded
@@ -337,7 +342,8 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>FUN_141274ff0: a closable dialog (one without flag 1, so not the system menu) is open: of this HUD's
     /// dialogs, the quest log.</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
-                                    || inventory?.IsClosed == false || myInfo?.IsClosed == false;
+                                    || inventory?.IsClosed == false || myInfo?.IsClosed == false
+                                    || AchieveOpen;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -347,6 +353,7 @@ public partial class HudScene : Node, IUiStageHost
         if (optionHost?.IsClosed == false) optionHost.Movie.Close();
         if (inventory?.IsClosed == false) inventory.Close();
         if (myInfo?.IsClosed == false) myInfo.Close();
+        if (AchieveOpen) achieve.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -850,6 +857,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
         if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
+        if (AchieveKeys(k)) return true;
         return false;
     }
 
@@ -1343,8 +1351,9 @@ public partial class HudScene : Node, IUiStageHost
     void GameMenu(Control ui)
     {
         gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
-        var c = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable };
+        var c = gameMenu = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable, NotifyCount = CommunityNotifyCount };
         c.ToggleDialog += GameMenuToggle;
+        WatchAchieves();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
@@ -1363,6 +1372,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x2711) ToggleMyInfo();      // "characterinfo" (gameeventmanagercli.cpp:486-494)
         else if (id == 0x4efa) ToggleLevelUpGuide();
         else if (id == 0x4f0b) ToggleGameDictionary();
+        else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
     }
 
@@ -2093,6 +2103,7 @@ public partial class HudScene : Node, IUiStageHost
         TargetBar?.Process();
         SystemText?.Process();               // UISystemText::vfunc_15: the timed lines' expiry
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
+        if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
@@ -2113,6 +2124,7 @@ public partial class HudScene : Node, IUiStageHost
             }
             else ToggleGameDictionary();
         }
+        if (openShot == "achieve" && frames == 200) ToggleAchieve();
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)
