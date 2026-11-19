@@ -17,6 +17,11 @@ public sealed class ItemInfoSlot
     /// <summary>m_strCount: a count text set over the slot's own (vfunc_8 writes it as itemCount when not empty).</summary>
     public string CountText = "";
 
+    /// <summary>m_strSlotText and m_strTip (the CreateParam form): an icon path and a text tooltip for a slot without an item.</summary>
+    public readonly string SlotText = "", Tip = "";
+    /// <summary>m_nTipArg: the text tooltip's align, -1 for none.</summary>
+    public readonly int TipAlign = -1;
+
     public ItemInfoSlot(string name, Item item, int index, int iconType, int flags)
     {
         Name = name;
@@ -27,12 +32,45 @@ public sealed class ItemInfoSlot
     }
 
     /// <summary>
+    /// The CreateParam form (@0x1414157d0, which FUN_141415560 registers; CreateParam's ctor @0x141415390 leaves the tip
+    /// arg -1): no item, the slot text (an icon path), the tip, its align and the count text.
+    /// </summary>
+    public ItemInfoSlot(string name, string slotText, string tip, int flags, int tipAlign, string count)
+        : this(name, null, 0, 0, flags)
+    {
+        SlotText = slotText ?? "";
+        Tip = tip ?? "";
+        TipAlign = tipAlign;
+        CountText = count ?? "";
+    }
+
+    /// <summary>
+    /// vfunc_0 (:314), the text tooltip of a slot without an item: ASTooltip(player, m_nFlags, 2).ApplyTextTooltip(m_strTip),
+    /// then SetTooltipAlign(m_nTipArg) unless -1; null for an item slot or an empty tip (the item tooltip is the caller's).
+    /// </summary>
+    public AsTooltip TextTooltip()
+    {
+        if (Item != null || Tip.Length == 0) return null;
+        var tip = new AsTooltip();
+        if (!tip.ApplyTextTooltip(Tip)) return null;
+        if (TipAlign != -1) tip.SetTooltipAlign(TipAlign);
+        return tip;
+    }
+
+    /// <summary>
     /// vfunc_8 (:388): an ASSlot(2) object built by ASSlot::FUN_1409c3860 with the local player and the icon type, then the
-    /// count text; null when the build fails. The slot-text path (no item: FUN_1409c48b0) is not ported.
+    /// count text; null when the build fails. Without an item, a slot text gives FUN_1409c48b0 (:1472: the text as the
+    /// icon path, SetIconPathString, and DisableDrag) and the count text.
     /// </summary>
     public object Value(UiHost host, UiModel model, ItemSlot.Sources sources = null)
     {
-        if (Item == null) return null;
+        if (Item == null)
+        {
+            if (SlotText.Length == 0) return null;
+            var t = new List<(string, object)> { ("iconPath", SlotText), ("disableDrag", 1) };
+            if (CountText.Length > 0) t.Add(("itemCount", CountText));
+            return host.Obj(t.ToArray());
+        }
         var d = new List<(string, object)>();
         if (!ItemSlot.Build(d, Item, model.HasLocalPlayer, IconType, model, sources)) return null;
         if (CountText.Length > 0) d.Add(("itemCount", CountText));

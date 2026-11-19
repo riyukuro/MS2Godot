@@ -70,6 +70,7 @@ public enum Inbound : ushort {
     AttributePoint = 0x45,
     Achieve = 0x5E,
     Mail = 0x54,            // RecvOp Mail (commonfiles/opcodes.h): CSceneStateGame::OnMail
+    Prestige = 0x11C,
     UserEnv = 0xA8,
     HomeCommand = 0xB7,
     Ugc = 0x6B,
@@ -110,4 +111,5 @@ public enum Outbound : ushort {
     Achieve = 0x46,
     Mail = 0x2D,            // SendOp Mail (commonfiles/opcodes.h): the mail dialogs' sends
     RequestUserEnv = 0x69,
+    Prestige = 0xAC,
 }

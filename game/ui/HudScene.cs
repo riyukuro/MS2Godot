@@ -141,6 +141,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchNewItems = null;
         unwatchLearningQuest?.Invoke();
         unwatchLearningQuest = null;
+        unwatchPrestige?.Invoke();
+        unwatchPrestige = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         unwatchLivePlayer?.Invoke();
         unwatchLivePlayer = null;
@@ -243,6 +245,7 @@ public partial class HudScene : Node, IUiStageHost
         GameMenu(uiRoot);
         EventWidgets(uiRoot);
         LearningQuest();
+        if (unwatchPrestige == null) WatchPrestige();       // a window relayout keeps it
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
@@ -1334,6 +1337,127 @@ public partial class HudScene : Node, IUiStageHost
     }
 
 
+    // ---- adventure level: uiadventureleveldialog run by its own ActionScript, UIAdventureLevelDialog's C++ side as AdventureLevelController
+
+    MovieDialog adventureLevelMovie;
+    Ms2.Ui.Hud.AdventureLevelController adventureLevel;
+    Ms2.Ui.Hud.AdventureLevelExpBarController adventureBar;
+    Action unwatchPrestige;
+    static Ms2.Ui.Hud.AdventureLevelTable adventureLevelTable;     // CAdventureLevelTable, read once
+
+    /// <summary>CUIService::ToggleDialog(0x4f67): the game menu's adventure level dialog and the adventure bar's click.</summary>
+    void ToggleAdventureLevel()
+    {
+        if (adventureLevelMovie != null && adventureLevel?.IsClosed == false) adventureLevel.Close();
+        else OpenAdventureLevel();
+    }
+
+    /// <summary>
+    /// Opens the adventure level dialog over table/adventurelevelreward.xml, adventurelevelability.xml and, with feature
+    /// 0xfb, adventurelevelmission.xml, the player's adventure data (the Prestige packets, <see cref="WatchPrestige"/>) and
+    /// the own buff list. A reward claim sends Prestige mode 3 or 5 on a live session.
+    /// </summary>
+    void OpenAdventureLevel()
+    {
+        if (adventureLevelMovie != null) { adventureLevelMovie.Host.Unload(); adventureLevelMovie.QueueFree(); adventureLevelMovie = null; }
+        if (adventureLevel == null)
+        {
+            adventureLevel = new Ms2.Ui.Hud.AdventureLevelController
+            {
+                Table = AdventureLevelTable(),
+                HasEnabledBuff = (id, level) => ownBuffs?.Buffs.Any(b => b.Enabled != 0 && b.Id == id && (level == 0 || b.Level == level)) == true,
+            };
+            adventureLevel.SendClaimLevel += level =>
+            {
+                if (Ms2Godot.Net.LiveSession.Instance is { } live) live.SendTalk(new Ms2.Net.Packets.PrestigeLevelRewardRequest(level));
+                else GD.Print($"adventure level: reward of level {level} not sent (offline)");
+            };
+            adventureLevel.SendClaimMission += mission =>
+            {
+                if (Ms2Godot.Net.LiveSession.Instance is { } live) live.SendTalk(new Ms2.Net.Packets.PrestigeMissionRewardRequest(mission));
+                else GD.Print($"adventure level: reward of mission {mission} not sent (offline)");
+            };
+            adventureLevel.Unloaded += () =>
+            {
+                adventureLevelMovie?.Host.Unload();
+                adventureLevelMovie?.QueueFree();
+                adventureLevelMovie = null;
+            };
+        }
+        adventureLevelMovie = new MovieDialog(assets, adventureLevel, hudModel, GetWindow().Size);
+        uiRoot.AddChild(adventureLevelMovie);
+    }
+
+    Ms2.Ui.Hud.AdventureLevelTable AdventureLevelTable() =>
+        adventureLevelTable ??= Ms2.Ui.Hud.AdventureLevelTable.Load(assets.Table("table/adventurelevelreward.xml"),
+            assets.Table("table/adventurelevelability.xml"),
+            hudModel.IsFeatureEnabled(Ms2.Ui.Hud.AdventureLevelTable.MissionFeature) ? assets.Table("table/adventurelevelmission.xml") : null,
+            e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e),
+            hudModel.IsFeatureEnabled(Ms2.Ui.Hud.AdventureLevelTable.MissionFeature), hudModel.Tables.Additional);
+
+    /// <summary>
+    /// The live session's Prestige packets onto the player's adventure data, as CSceneStateGame::OnPrestige
+    /// (scenestategame.cpp:8815): 1 the exp, the status event 0x12 and the bar; 2 the local player's level (a first level
+    /// fills level 1), the event 0x11 and the bar; 0 the exp, the filled level, the next exp and the claimed levels, and
+    /// the bar; 4 a claim that succeeded adds its levels and, with feature 0xfb, refreshes the dialog's level guide; 7, and
+    /// 6 when it succeeded, replace the missions (feature 0xfb), refresh the mission list and the bar.
+    /// STILL-OPEN: the exp gain notice (FUN_1413610f0), kind 2's level-up effect, reward notice 0x4e5d and FUN_141b16580,
+    /// kind 4's game menu notice (FUN_141938ae0) and, without feature 0xfb, its older dialog 0x4f87 are not ported.
+    /// </summary>
+    void WatchPrestige()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live == null) return;
+        Action<Ms2.Net.Packets.PrestigeMessage> onPrestige = ApplyPrestige;
+        foreach (var m in live.TakePrestige()) onPrestige(m);
+        live.PrestigeReceived += onPrestige;
+        unwatchPrestige = () => live.PrestigeReceived -= onPrestige;
+    }
+
+    void ApplyPrestige(Ms2.Net.Packets.PrestigeMessage m)
+    {
+        var p = hudModel.Player;
+        bool missions = hudModel.IsFeatureEnabled(Ms2.Ui.Hud.AdventureLevelTable.MissionFeature);
+        bool open = adventureLevelMovie != null && adventureLevel?.IsClosed == false;
+        switch (m)
+        {
+            case Ms2.Net.Packets.PrestigeMessage.ExpGain g:
+                p.AdventureExp = g.Value;
+                hudModel.Notify(Ms2.Ui.StatusEvent.AdventureExp);
+                adventureBar?.SetPoint(g.Gain);
+                break;
+            case Ms2.Net.Packets.PrestigeMessage.LevelUp u:
+                int old = p.AdventureLevel;
+                p.AdventureLevel = u.Value;
+                if (old == 0) p.AdventureFilledLevel = 1;
+                hudModel.Notify(Ms2.Ui.StatusEvent.AdventureLevel);
+                adventureBar?.SetPoint(0);
+                break;
+            case Ms2.Net.Packets.PrestigeMessage.Loaded l:
+                p.AdventureExp = l.Exp;
+                p.AdventureFilledLevel = l.FilledLevel;
+                p.AdventureNextExp = l.NextExp;
+                p.AdventureClaimed.Clear();
+                p.AdventureClaimed.UnionWith(l.Claimed);
+                adventureBar?.SetPoint(0);
+                break;
+            case Ms2.Net.Packets.PrestigeMessage.ClaimResult c:
+                if (c.Result != 1) break;
+                p.AdventureClaimed.UnionWith(c.Levels);
+                if (missions) { if (open) adventureLevel.RefreshLevelGuide(); }
+                else GD.Print("adventure level: the older adventure dialog 0x4f87 is not in this HUD");
+                break;
+            case Ms2.Net.Packets.PrestigeMessage.MissionList ml:
+                if (!missions || ml.Result != 1) break;
+                p.AdventureMissions.Clear();
+                foreach (var (id, v) in ml.List) p.AdventureMissions[id] = v;
+                if (open) adventureLevel.RefreshMissionList();
+                adventureBar?.SetPoint(0);
+                break;
+        }
+    }
+
+
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
     UiModel hudModel;
@@ -1350,6 +1474,7 @@ public partial class HudScene : Node, IUiStageHost
     void HudModel()
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the HUD movies run interpreted");
+        var prev = hudModel?.Player;        // a relayout's new model keeps the Prestige packets' adventure data
         hudModel = NewModel();
         MovieLayerHost.Layers.FeatureEnabled = hudModel.IsFeatureEnabled;   // the adventure level bar's layer (feature 0xbd)
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
@@ -1372,6 +1497,14 @@ public partial class HudScene : Node, IUiStageHost
         p.SpCur = data.SpCurrent; p.SpMax = data.SpMax;
         p.EpCur = data.EpCurrent; p.EpMax = data.EpMax;
         p.Exp = (long)Math.Round(hudModel.NextLevelExp * data.ExpPercent / 100);
+        p.AdventureLevel = data.Player.PrestigeLevel;      // the user block's m_530 (vfunc_141)
+        if (prev != null)
+        {
+            p.AdventureLevel = prev.AdventureLevel; p.AdventureExp = prev.AdventureExp;
+            p.AdventureFilledLevel = prev.AdventureFilledLevel; p.AdventureNextExp = prev.AdventureNextExp;
+            p.AdventureClaimed.UnionWith(prev.AdventureClaimed);
+            foreach (var (id, v) in prev.AdventureMissions) p.AdventureMissions[id] = v;
+        }
         if (quickSlotPlayer != null)
         {
             p.SubJob = quickSlotPlayer[0];
@@ -1442,8 +1575,16 @@ public partial class HudScene : Node, IUiStageHost
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));
         WatchQuickSlotState();
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
-        p.AdventureExp = (long)Math.Round(hudModel.Tables.AdventureLevelLvUpExp * data.AdventureExpPercent / 100);
-        ui.AddChild(adventureBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.AdventureLevelExpBarController(), hudModel, window));
+        if (Ms2Godot.Net.LiveSession.Instance == null)      // live, the Prestige packets fill it (WatchPrestige)
+            p.AdventureExp = (long)Math.Round(hudModel.Tables.AdventureLevelLvUpExp * data.AdventureExpPercent / 100);
+        adventureBar = new Ms2.Ui.Hud.AdventureLevelExpBarController();
+        // vfunc_28 OnClickBar: ToggleDialog(0x4f67) with feature 0xfb, else the older 0x4f87
+        adventureBar.BarClicked += () =>
+        {
+            if (hudModel.IsFeatureEnabled(Ms2.Ui.Hud.AdventureLevelTable.MissionFeature)) ToggleAdventureLevel();
+            else GD.Print("adventure level: the older adventure dialog 0x4f87 is not in this HUD");
+        };
+        ui.AddChild(adventureBarMovie = new MovieDialog(assets, adventureBar, hudModel, window));
     }
 
     // ---- game menu ---------------------------------------------------------------------------------------------------
@@ -1485,6 +1626,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4e49) ToggleMail();
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
+        else if (id == 0x4f67) ToggleAdventureLevel();
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
@@ -2283,6 +2425,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
         if (openShot == "learningquest" && frames == 200) OpenLearningQuest();
+        if (openShot == "adventurelevel" && frames == 200) ToggleAdventureLevel();
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)

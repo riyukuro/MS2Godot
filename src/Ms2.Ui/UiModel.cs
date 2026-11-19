@@ -18,6 +18,8 @@ public enum StatusEvent
     State = 9,
     Unknown10 = 10,
     Merat = 11,     // the merat balance
+    AdventureLevel = 0x11,  // Prestige kind 2 for the player (listener vfunc_oa0_30)
+    AdventureExp = 0x12,    // Prestige kind 1 (vfunc_oa0_31)
 }
 
 /// <summary>The local player's numbers the HUD movies read (the client keeps these in PC stats and a few globals).</summary>
@@ -55,6 +57,11 @@ public sealed class PlayerState
     /// (DAT_143ab2960) and the exp shown for the level above it (DAT_143ab2968).</summary>
     public long AdventureExp, AdventureNextExp;
     public int AdventureLevel, AdventureFilledLevel;
+    /// <summary>The claimed adventure level rewards (DAT_143ab3308, a std::set: Prestige kind 0 replaces it, kind 4 adds to it).</summary>
+    public readonly SortedSet<uint> AdventureClaimed = new();
+    /// <summary>The adventure missions by id (DAT_143ab3318, a std::map: Prestige kinds 6 and 7 replace it): the progress
+    /// count and the claimed flag.</summary>
+    public readonly SortedDictionary<uint, (uint Progress, bool Complete)> AdventureMissions = new();
     public int Channel;
     public bool Battle, Riding;
     public string NameWithTitle => string.IsNullOrEmpty(Title) ? Name : Title + " " + Name;

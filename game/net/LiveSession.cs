@@ -106,6 +106,22 @@ public partial class LiveSession : Node
         if (buffsTaken) BuffReceived?.Invoke(b);
         else pendingBuffs.Enqueue(b);
     }
+    /// <summary>
+    /// The local player's Prestige packets (0x11C, CSceneStateGame::OnPrestige, scenestategame.cpp:8815): every kind but a
+    /// level up of another player (kind 2 runs its HUD part only for the local player). Kept until the HUD takes them
+    /// (<see cref="TakePrestige"/>), then raised.
+    /// </summary>
+    public event Action<PrestigeMessage> PrestigeReceived;
+    readonly Queue<PrestigeMessage> pendingPrestige = new();
+    bool prestigeTaken;
+    /// <summary>The Prestige packets kept so far, and raise <see cref="PrestigeReceived"/> from now on.</summary>
+    public PrestigeMessage[] TakePrestige()
+    {
+        prestigeTaken = true;
+        var all = pendingPrestige.ToArray();
+        pendingPrestige.Clear();
+        return all;
+    }
     public CharacterCreateRefused LastRefusal { get; private set; }
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
@@ -604,6 +620,13 @@ public partial class LiveSession : Node
                     var m = MailMessage.Read(p.Reader());             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
                     if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                     GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
+                }
+                else if (game.Is(p, Inbound.Prestige))
+                {
+                    var m = PrestigeMessage.Read(p.Reader());         // OnPrestige (scenestategame.cpp:8815); other kinds are dropped
+                    bool keep = m != null && !(m is PrestigeMessage.LevelUp up && up.ObjectId != selfObject);
+                    if (keep) { if (prestigeTaken) PrestigeReceived?.Invoke(m); else pendingPrestige.Enqueue(m); }
+                    GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}{(keep ? "" : " (not kept)")}");
                 }
                 else if (game.Is(p, Inbound.UserEnv))
                 {

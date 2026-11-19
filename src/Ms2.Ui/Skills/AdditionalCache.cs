@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 1;
+    public const int Version = 2;     // 2: the levels' EventBuffType
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -125,6 +125,7 @@ public sealed class AdditionalCache
             w.Write(l.Icon);
             w.Write(l.Priority);
             w.Write(l.IsHideCooltime);
+            w.Write(l.EventBuffType);
         }
     }
 
@@ -202,7 +203,8 @@ public sealed class AdditionalCache
             d.Levels.Add(new AdditionalLevelData
             {
                 Level = r.ReadUInt16(), StringParam = r.ReadString(), DurationTick = r.ReadUInt32(), KeepCondition = r.ReadInt32(),
-                IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(), Parent = d,
+                IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
+                EventBuffType = r.ReadUInt32(), Parent = d,
             });
         return d;
     }

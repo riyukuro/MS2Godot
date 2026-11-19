@@ -13,6 +13,9 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Basic durationTick keepCondition&gt;.</summary>
     public uint DurationTick;
     public int KeepCondition;
+    /// <summary>&lt;Basic eventBuffType&gt; (m_nEventBuffType, :1053): 3 marks the adventure level's current ability
+    /// (CAdventureLevelTableHelper::FindCurrent).</summary>
+    public uint EventBuffType;
     /// <summary>&lt;UI iconOnOff&gt; (m_eIconOnOff: 0 off, 1 on (the default), 2 only for one's own buffs), icon, priority,
     /// isHideCooltime.</summary>
     public int IconOnOff = 1;
@@ -45,6 +48,7 @@ public sealed class AdditionalLevelData
         {
             lv.DurationTick = Xml.UInt(basic, "durationTick");
             lv.KeepCondition = Xml.Int(basic, "keepCondition");
+            lv.EventBuffType = Xml.UInt(basic, "eventBuffType");
         }
         if (e.Element("UI") is { } ui)
         {
