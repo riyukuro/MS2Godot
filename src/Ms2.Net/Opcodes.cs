@@ -74,6 +74,7 @@ public enum Inbound : ushort {
     UserEnv = 0xA8,
     HomeCommand = 0xB7,
     Ugc = 0x6B,
+    CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
 }
 
 public enum Outbound : ushort {
@@ -112,4 +113,5 @@ public enum Outbound : ushort {
     Mail = 0x2D,            // SendOp Mail (commonfiles/opcodes.h): the mail dialogs' sends
     RequestUserEnv = 0x69,
     Prestige = 0xAC,
+    CharacterInfo = 0x1E,       // SendOp::CharacterInfo (commonfiles/opcodes.h)
 }

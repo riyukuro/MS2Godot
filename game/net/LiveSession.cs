@@ -168,6 +168,8 @@ public partial class LiveSession : Node
         catch (Exception e) { GD.Print($"live: trophy data unavailable ({e.Message})"); return new Ms2.Ui.AchieveBook(new Dictionary<int, Ms2.Ui.AchieveData>()); }
     }
 
+    /// <summary>The CharacterInfo answers (0x78, UIPCInfoDialog::vfunc_79) for the other player's character window; live only.</summary>
+    public event Action<CharacterInfoAnswer> CharacterInfoReceived;
     /// <summary>The NpcTalk packets (0x4B, UITalkManager::OnTalkPacket) for the talk window; live only.</summary>
     public event Action<NpcTalkMessage> NpcTalkReceived;
     /// <summary>The talk window's NpcTalk (0x22) and Quest (0x29) sends.</summary>

@@ -29,12 +29,13 @@ public class MyInfoTests
 
     static UiModel NewModel() => new(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f) };
 
-    static (UiHost, MyInfoController, MyCharacter, List<string>) Load(Action<MyInfoController> setup = null)
+    static (UiHost, MyInfoController, MyCharacter, List<string>) Load(Action<MyInfoController> setup = null,
+                                                                       Func<MyCharacter, MyInfoController> make = null)
     {
         var model = NewModel();
         model.HasLocalPlayer = true;
         var me = UiFixture.Character();
-        var c = new MyInfoController { Record = () => me.ToPcInfo(0), StatPoints = me.StatPoints };
+        var c = make?.Invoke(me) ?? new MyInfoController { Record = () => me.ToPcInfo(0), StatPoints = me.StatPoints };
         setup?.Invoke(c);
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;
@@ -105,6 +106,40 @@ public class MyInfoTests
         c.MarkChanged(0);
         c.Process(0);
         Assert.That(Rt.ToString(h.Get(point, "text")), Is.EqualTo("1234"));
+    }
+
+    [Test]
+    public void OtherCharactersWindowShowsTheAnswersRecord()
+    {
+        // UIPCInfoDialog (0x4ec8): the same movie over the answer's record; its own bag names, the record's trophy count
+        // (vfunc_84: setTrophy of m_3d4), stat buttons that do nothing, and the record cleared at the close (vfunc_67)
+        Packs();
+        PcInfo remote = null;
+        var req = new PcInfoRequests();
+        int buttons = 0;
+        var (h, c, _, errors) = Load(x => x.Button += _ => buttons++, me =>
+        {
+            remote = me.ToPcInfo(0);
+            remote.IsLocal = false;
+            remote.Trophy = 77;
+            remote.Level = 33;
+            req.Info = remote;
+            return new MyInfoController { PcInfoDialog = true, Requests = req, Record = () => req.Info };
+        });
+        Assert.That(errors, Is.Empty);
+        Assert.That(Rt.ToString(h.Get(h.Child("m_trophyPoint"), "text")), Is.EqualTo("77"));
+        Assert.That(Rt.ToString(h.Get(h.Child("m_level"), "text")), Is.EqualTo("33"));
+        Assert.That(c.ShownBag, Is.EqualTo(MyInfoController.PcEquipBag));
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        Assert.That(c.ShownBag, Is.EqualTo(MyInfoController.PcGemBag));
+        Assert.That(c.OnCallback("onAddStatPoint", new object[] { 0 }), Is.True);
+        Assert.That(c.OnCallback("onResetStatPoint", new object[0]), Is.True);
+        Assert.That(buttons, Is.Zero);
+        remote.Level = 34;                                              // vfunc_79's loaded branch
+        c.ShowRecord();
+        Assert.That(Rt.ToString(h.Get(h.Child("m_level"), "text")), Is.EqualTo("34"));
+        c.Close();
+        Assert.That(req.Info, Is.Null);
     }
 
     [Test]

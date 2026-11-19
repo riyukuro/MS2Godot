@@ -38,6 +38,24 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
 
     /// <summary>UIMyInfoDialog's m_strGemBag / m_strEquipBag (its constructor, uimyinfodialog.cpp:203).</summary>
     public const string GemBag = "MyPcInfoDialog.Gem", EquipBag = "MyPcInfoDialog.Equip";
+    /// <summary>UIPCInfoDialog's own m_strGemBag / m_strEquipBag (its constructor, uipcinfodialog.cpp:235), the bags of the
+    /// other player's window.</summary>
+    public const string PcGemBag = "PcInfoDialog.Gem", PcEquipBag = "PcInfoDialog.Equip";
+
+    /// <summary>
+    /// The controller is UIPCInfoDialog itself (UI id 0x4ec8, the popup menu's View Character, <see cref="PcInfoRequests"/>),
+    /// not UIMyInfoDialog: the same movie and type name over a record set before the open (the base vfunc_65 builds none),
+    /// with the base's bags, trophy (vfunc_104: setTrophy of the record's m_3d4) and callbacks. UIMyInfoDialog's parts are
+    /// left out: the symbol (SetSymbol), m_closet, the change and stat timer (vfunc_15), the codi tab check (vfunc_90) and
+    /// the callbacks only it handles.
+    /// </summary>
+    public bool PcInfoDialog { get; init; }
+    /// <summary>The <see cref="PcInfoDialog"/>'s request state; its record is cleared at the close.</summary>
+    public PcInfoRequests Requests;
+    /// <summary>The dialog's m_strGemBag / m_strEquipBag: <see cref="GemBag"/> / <see cref="EquipBag"/>, or
+    /// <see cref="PcGemBag"/> / <see cref="PcEquipBag"/> for <see cref="PcInfoDialog"/>.</summary>
+    public string GemBagName => PcInfoDialog ? PcGemBag : GemBag;
+    public string EquipBagName => PcInfoDialog ? PcEquipBag : EquipBag;
 
     /// <summary>MyPC::vfunc_125 at open (vfunc_65) and in RebuildPCInfo; null = no local player (the dialog does not open).</summary>
     public Func<PcInfo> Record;
@@ -124,7 +142,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             Host.SetVisible(shot, on);
         }
         // m_webGuideButton (FUN_1419260d0) is the web guide's: not here
-        if (Child("m_closet") is { } closet) Host.SetVisible(closet, Feature(0xe3));
+        if (!PcInfoDialog && Child("m_closet") is { } closet) Host.SetVisible(closet, Feature(0xe3));
         HideFeatureButtons();
         LoadRenderTarget();
     }
@@ -168,6 +186,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         if (Avatar != null && Host.Entity != null) Host.Invoke("unloadRenderTarget");   // vfunc_16 (@0x141a5d3e0)
         Avatar = null;
         info = null;
+        if (Requests != null) Requests.Info = null;           // UIPCInfoDialog::vfunc_67: m_spInfo = 0
         tab = 0;
         dirty = false; statsDueMs = -1;
         base.Close();
@@ -177,7 +196,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// lists 100 ms after (m_218.Start(100)).</summary>
     public void MarkChanged(long nowMs)
     {
-        if (IsClosed) return;
+        if (IsClosed || PcInfoDialog) return;
         dirty = true;
         statsDueMs = nowMs + 100;
     }
@@ -185,7 +204,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// <summary>vfunc_15 (@0x141a593e0): RebuildPCInfo(1, 0, 0) when marked, RebuildPCInfo(0, 1, 0) when the timer ran out.</summary>
     public void Process(long nowMs)
     {
-        if (IsClosed || Host.Entity == null) return;
+        if (IsClosed || Host.Entity == null || PcInfoDialog) return;
         if (dirty) { Rebuild(true, false); dirty = false; }
         if (statsDueMs >= 0 && nowMs >= statsDueMs) { Rebuild(false, true); statsDueMs = -1; }
     }
@@ -223,7 +242,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         Guild();
         Adventure(info.PrestigeLevel);
         Wedding();
-        Symbol();
+        if (!PcInfoDialog) Symbol();
     }
 
     /// <summary>
@@ -254,10 +273,12 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         if (Child("m_job") is { } j) Host.Set(j, "text", Model.Tables.JobName(job));
     }
 
-    /// <summary>UIMyInfoDialog::vfunc_104 (@0x141a5ae90): setTrophy(the achievement tally's sum).</summary>
+    /// <summary>UIMyInfoDialog::vfunc_104 (@0x141a5ae90): setTrophy(the achievement tally's sum); UIPCInfoDialog's
+    /// (@0x141334320): setTrophy of the record's trophy (m_3d4) as unsigned.</summary>
     void Trophy()
     {
-        if (AchieveTally != null) Host.Invoke("setTrophy", AchieveTally());
+        if (PcInfoDialog) Host.Invoke("setTrophy", (uint)info.Trophy);
+        else if (AchieveTally != null) Host.Invoke("setTrophy", AchieveTally());
     }
 
     /// <summary>vfunc_101 (@0x141333dd0): enabled with an address; the local player's empty one is GetStringCommon(0x22).</summary>
@@ -366,6 +387,21 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     {
         if (IsClosed) return;
         SetProfileImage(path ?? "");
+    }
+
+    /// <summary>
+    /// UIPCInfoDialog::vfunc_79's loaded branch (uipcinfodialog.cpp:527): the record (<see cref="Record"/>) taken again and
+    /// shown: vfunc_84, 85, 86, vfunc_88(m_nTab), vfunc_98 of GetProfileImagePath.
+    /// </summary>
+    public void ShowRecord()
+    {
+        if (Host.Entity == null) return;
+        info = Record?.Invoke();
+        Profile();
+        Memo();
+        Stats();
+        Bag(tab);
+        SetProfileImage(ProfilePath());
     }
 
     /// <summary>RefreshProfileImage (@0x14132fa90): vfunc_98 of GetProfileImagePath, the stored picture again.</summary>
@@ -652,7 +688,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             int kind = t switch { 0 => 0, 1 => 1, 3 => 2, _ => 6 };
             if (kind != 6) { equipBagRecord = info; equipBagKind = kind; }
         }
-        ShownBag = t == 2 ? GemBag : EquipBag;
+        ShownBag = t == 2 ? GemBagName : EquipBagName;
         Host.Set(Host.Entity, "equipBagID", ShownBag);       // a setter only: it reads GameDataModel.getBagSlotBindings
     }
 
@@ -672,8 +708,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// <summary>EquipSlotBag::vfunc_15 (equipslot.cpp:478): StringFormat("{0}.{1}", bag, the equip slot); GemSlotBag "%s.%d" of
     /// the index. (The equip slot is written as its number here; the movie only passes the names back.)</summary>
     public override IEnumerable<string> GetBagSlotBindings(string bag) =>
-        bag == EquipBag && equipBagRecord != null ? SlotsOf(equipBagKind).Select(s => EquipBag + "." + s.ToString(CultureInfo.InvariantCulture))
-        : bag == GemBag && gemBagRecord != null ? Enumerable.Range(0, GemTypes.Length).Select(i => GemBag + "." + i.ToString(CultureInfo.InvariantCulture))
+        bag == EquipBagName && equipBagRecord != null ? SlotsOf(equipBagKind).Select(s => EquipBagName + "." + s.ToString(CultureInfo.InvariantCulture))
+        : bag == GemBagName && gemBagRecord != null ? Enumerable.Range(0, GemTypes.Length).Select(i => GemBagName + "." + i.ToString(CultureInfo.InvariantCulture))
         : Array.Empty<string>();
 
     /// <summary>The record's equipment layer maps (<see cref="WornEquipment.Layers"/>), kept for the record.</summary>
@@ -714,9 +750,9 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public override void OnBindData(string name, object data)
     {
         string type = null;
-        if (name.StartsWith(EquipBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBag.Length + 1), out int slot))
+        if (name.StartsWith(EquipBagName + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBagName.Length + 1), out int slot))
             type = ItemModelTable.SlotName(slot);
-        else if (name.StartsWith(GemBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBag.Length + 1), out int index)
+        else if (name.StartsWith(GemBagName + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBagName.Length + 1), out int index)
                  && index >= 0 && index < GemTypes.Length)
             type = GemTypeName(GemTypes[index]);
         if (type != null) Host.Set(data, "m_strSlotType", type);
@@ -727,9 +763,9 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// </summary>
     public override object GetBinding(string name)
     {
-        if (name.StartsWith(EquipBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBag.Length + 1), out int slot))
+        if (name.StartsWith(EquipBagName + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBagName.Length + 1), out int slot))
             return EquipBinding(slot);
-        if (name.StartsWith(GemBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBag.Length + 1), out int index))
+        if (name.StartsWith(GemBagName + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBagName.Length + 1), out int index))
             return GemBinding(index);
         return base.GetBinding(name);
     }
@@ -810,10 +846,10 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// </summary>
     public override IDictionary<string, object> GetSlotTooltip(string name)
     {
-        if (name.StartsWith(EquipBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBag.Length + 1), out int slot)
+        if (name.StartsWith(EquipBagName + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(EquipBagName.Length + 1), out int slot)
             && equipBagRecord != null && SlotsOf(equipBagKind).Contains(slot))
             return EquipTooltip(slot) ?? new AsTooltip();
-        if (name.StartsWith(GemBag + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBag.Length + 1), out int index)
+        if (name.StartsWith(GemBagName + ".", StringComparison.Ordinal) && int.TryParse(name.AsSpan(GemBagName.Length + 1), out int index)
             && gemBagRecord != null && (uint)index < GemTypes.Length)
             return GemTooltip(index) ?? new AsTooltip();
         return null;
@@ -880,6 +916,13 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// (FUN_141a5c410) and shows it (FUN_141a5b6c0); another tab empties m_equip.m_period.</summary>
     void ChangeTab(int t)
     {
+        if (PcInfoDialog)                                                   // UIPCInfoDialog::vfunc_90 (@0x141333000)
+        {
+            if (Host.Entity == null) return;
+            tab = t;
+            Bag(tab);
+            return;
+        }
         int old = tab;
         tab = t;
         Bag(tab);
@@ -958,6 +1001,20 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     public override bool OnCallback(string name, object[] args)
     {
         int Arg(int i) => args.Length > i ? (int)Rt.ToNumber(args[i]) : 0;
+        if (PcInfoDialog)
+        {
+            switch (name.ToLowerInvariant())                                   // UIPCInfoDialog::vfunc_28 alone
+            {
+                case "onremoveslot": return true;
+                case "onchangetab": if (args.Length > 0) ChangeTab(Arg(0)); break;
+                case "ondetailinfo": Stats(); return true;
+                case "onaddstatpoint": return true;                             // vfunc_91 is empty
+                case "onresetstatpoint": return true;                           // vfunc_93 returns 0: no box
+                case "onclickmynews": Button?.Invoke(name); return true;        // m_myNews's click handler (OnClickMyNews)
+                case "notifyslotuse": return SlotUse(args);
+            }
+            return Avatar?.OnCallback(name, args) == true;
+        }
         switch (name.ToLowerInvariant())
         {
             case "onremoveslot": return true;                                       // vfunc_89: the bags dropped
@@ -991,8 +1048,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     bool SlotUse(object[] args)
     {
         int button = args.Length > 1 ? InventoryController.ArgInt(args[1]) : 0;
-        if (args.Length > 0 && args[0] is string n && n.StartsWith(EquipBag + ".", StringComparison.Ordinal)
-            && int.TryParse(n.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot))
+        if (args.Length > 0 && args[0] is string n && n.StartsWith(EquipBagName + ".", StringComparison.Ordinal)
+            && int.TryParse(n.AsSpan(EquipBagName.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot))
         {
             if (button != 1) return true;
             if (ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
@@ -1051,8 +1108,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// (CItem m_68, the record's slot) and the bag's kind (m_nKind); null for another name or an empty slot.</summary>
     public (Item Item, int Slot, int Kind)? WornSlot(string name)
     {
-        if (equipBagRecord == null || Model == null || !name.StartsWith(EquipBag + ".", StringComparison.Ordinal)
-            || !int.TryParse(name.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot)) return null;
+        if (equipBagRecord == null || Model == null || !name.StartsWith(EquipBagName + ".", StringComparison.Ordinal)
+            || !int.TryParse(name.AsSpan(EquipBagName.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int slot)) return null;
         var item = EquipSlotItem(equipBagRecord, equipBagKind, slot);
         return item == null ? null : (item, (int)(item.Record?.Slot ?? 0), equipBagKind);
     }
@@ -1060,10 +1117,10 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     // ---- the drag slots (EquipSlot, GemSlot), through NotifyDragSlot -----------------------------------------------
 
     /// <summary>A slot of the shown equip bag (an EquipSlot).</summary>
-    public bool IsEquipSlot(string name) => GetBagSlotBindings(EquipBag).Contains(name);
+    public bool IsEquipSlot(string name) => GetBagSlotBindings(EquipBagName).Contains(name);
 
     /// <summary>The equip bag's slots (EquipSlot) and the gem bag's (GemSlot).</summary>
-    public bool IsDragSlot(string name) => IsEquipSlot(name) || GetBagSlotBindings(GemBag).Contains(name);
+    public bool IsDragSlot(string name) => IsEquipSlot(name) || GetBagSlotBindings(GemBagName).Contains(name);
 
     /// <summary>DragSlot::vfunc_10: the slot pushed again.</summary>
     public void RefreshSlot(string name) { if (IsDragSlot(name)) Host.Push(name); }
@@ -1075,10 +1132,10 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// </summary>
     public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
     {
-        if (IsEquipSlot(name)) DroppedOnEquipSlot(int.Parse(name.AsSpan(EquipBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture), source, sourceOwner);
-        else if (GetBagSlotBindings(GemBag).Contains(name))
+        if (IsEquipSlot(name)) DroppedOnEquipSlot(int.Parse(name.AsSpan(EquipBagName.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture), source, sourceOwner);
+        else if (GetBagSlotBindings(GemBagName).Contains(name))
         {
-            if (!DroppedOnGemSlot(int.Parse(name.AsSpan(GemBag.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture), source, sourceOwner)) return;
+            if (!DroppedOnGemSlot(int.Parse(name.AsSpan(GemBagName.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture), source, sourceOwner)) return;
         }
         sourceOwner.RefreshSlot(source);
     }

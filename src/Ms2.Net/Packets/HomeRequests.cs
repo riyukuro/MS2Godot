@@ -12,8 +12,9 @@ public sealed record HomeInviteRequest(string Name) : IOutPacket {
 
 /// <summary>UIPopUpMenu::SendRequestCube (uipartydialog.cpp:3424, @0x141a86bd0), the menu's furnishing rights grant: RequestCube
 /// u8 0x39 and the name. The client narrows the name to the ANSI code page (FUN_14016a600) and WriteUnicodeStringA widens it
-/// back (FUN_14016a730, packet.h:66) before the u16 length + UTF-16 write; a game name round-trips unchanged, so it is written
-/// as it is.</summary>
+/// back (FUN_14016a730, packet.h:66) before the u16 length + UTF-16 write. The round trip keeps only the characters of the
+/// client's code page (DAT_1439f4840, CP949 on KMS2: all Hangul and ASCII; any other character comes back as '?'); game
+/// names hold only such characters, so the name is written as it is.</summary>
 public sealed record FurnishingRightsRequest(string Name) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x39); w.WriteUnicodeString(Name ?? ""); }

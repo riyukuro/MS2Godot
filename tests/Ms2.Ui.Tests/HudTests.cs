@@ -266,13 +266,13 @@ public class HudTests
         c.OpenForPartySlot(100, 200, 3, m.Player);
         Assert.That(c.IsClosed, Is.False);
         Assert.That(c.InfoString, Is.EqualTo("partySlot"));
-        Assert.That(m.Tables.PopupMenuName(0x66), Is.Not.Empty);
+        Assert.That(m.Tables.PopupMenuName(0x1f5), Is.Not.Empty);
         var menu = h.Child("m_menu") as AsObject;
         Assert.That(Rt.ToBoolean(h.Get(menu, "visible")), Is.True);
         (int id, string name) clicked = default;
         c.ItemClicked += (id, t) => clicked = (id, t.Name);
-        c.OnCallback("MenuItemClick", new object[] { (uint)0x66 });
-        Assert.That(clicked, Is.EqualTo((0x66, "FixtureArcher")));
+        c.OnCallback("MenuItemClick", new object[] { (uint)PopupMenuController.Report });     // unported: raised
+        Assert.That(clicked, Is.EqualTo((PopupMenuController.Report, "FixtureArcher")));
         // a disband closes it (FUN_141a80a50 mode 7)
         c.OnPartyMessage(new PartyDisband());
         Assert.That(c.IsClosed, Is.True);
@@ -337,11 +337,18 @@ public class HudTests
         m.HasLocalPlayer = true;
         c.ItemClick(PopupMenuController.InviteToMyHome);
         Assert.That(sent[^1], Is.EqualTo(new HomeInviteRequest("FixtureArcher")));
-        // furnishing rights: RequestCube u8 0x39 + the name with feature 0x100 only (SendRequestCube)
+        // furnishing rights: RequestCube u8 0x39 + the name with feature 0x100 only (SendRequestCube); both settings of the
+        // feature, whatever the data's table holds
+        Assert.That(m.FeatureEnabledByName, Is.Null, "the fixture model takes its features from the id set");
+        bool had = m.Features.Contains(0x100);
+        m.Features.Remove(0x100);
         int before = sent.Count;
         c.ItemClick(PopupMenuController.GrantFurnishingRights);
-        if (m.IsFeatureEnabled(0x100)) Assert.That(sent[^1], Is.EqualTo(new FurnishingRightsRequest("FixtureArcher")));
-        else Assert.That(sent, Has.Count.EqualTo(before));
+        Assert.That(sent, Has.Count.EqualTo(before));
+        m.Features.Add(0x100);
+        c.ItemClick(PopupMenuController.GrantFurnishingRights);
+        Assert.That(sent[^1], Is.EqualTo(new FurnishingRightsRequest("FixtureArcher")));
+        if (!had) m.Features.Remove(0x100);
         // an unported item still raises
         int raised = 0;
         c.ItemClicked += (_, _) => raised++;
@@ -350,6 +357,55 @@ public class HudTests
         // Whisper with no messenger browser: nothing, and it does not raise
         c.ItemClick(PopupMenuController.Whisper);
         Assert.That(raised, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void PartySlotViewCharacterSendsTheCharacterInfoRequest()
+    {
+        // SendCharacterInfo (:3135): TryBeginRequest 0 closes the 0x4ec8 window and sends SendOp 0x1E with the id; 1 (the
+        // same character within 5000 ms, unanswered) shows s_char_info_already_request; 2 (open on it) does nothing
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        uint now = 1000;
+        bool open = false;
+        var req = new PcInfoRequests { TickMs = () => now };
+        var c = new PopupMenuController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, ProfileImagePath = (_, _) => "" };
+        var sent = new List<object>();
+        var boxes = new List<MessageBoxData>();
+        int closes = 0;
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.CharacterInfo = req;
+        c.CharacterInfoOpen = () => open;
+        c.CloseCharacterInfo += () => closes++;
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        c.ItemClick(PopupMenuController.ViewCharacter);
+        Assert.That(sent, Is.EqualTo(new object[] { new CharacterInfoRequest(3) }));
+        Assert.That(closes, Is.EqualTo(1));
+        now += 4999;
+        c.ItemClick(PopupMenuController.ViewCharacter);
+        Assert.That(sent, Has.Count.EqualTo(1));
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That(boxes[0].Type, Is.EqualTo(0));
+        Assert.That(boxes[0].Msg, Is.EqualTo(m.Tables.Common("s_char_info_already_request")));
+        now += 1;
+        c.ItemClick(PopupMenuController.ViewCharacter);
+        Assert.That(sent, Is.EqualTo(new object[] { new CharacterInfoRequest(3), new CharacterInfoRequest(3) }));
+        req.OnAnswer(new CharacterInfoAnswer(3, 1, new PcInfo { CharacterId = 3 }), true, false);
+        open = true;
+        now += 10000;
+        c.ItemClick(PopupMenuController.ViewCharacter);                 // open on the same character: nothing
+        Assert.That((sent.Count, boxes.Count, closes), Is.EqualTo((2, 1, 2)));
+        c.ClosePopup();
+        c.ItemClick(PopupMenuController.ViewCharacter);                 // m_100: nothing
+        Assert.That(sent, Has.Count.EqualTo(2));
+        c.CharacterInfo = null;                                         // no 0x4ec8 dialog: nothing
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        c.ItemClick(PopupMenuController.ViewCharacter);
+        Assert.That(sent, Has.Count.EqualTo(2));
         Assert.That(h.RT.Errors, Is.Empty);
     }
 

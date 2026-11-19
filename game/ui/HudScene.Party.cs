@@ -162,6 +162,9 @@ public partial class HudScene
             c.Messenger = ChatLog;                                  // Unk_MdState m_48: the chat windows' browser
             c.PlaySound = key => FieldAudio.Instance?.PlayUi(key);
             c.OpenMyInfo += () => { if (myInfo == null || myInfo.IsClosed) OpenMyInfo(); };     // OpenDialog(0x2711)
+            c.CharacterInfo = pcInfoRequests;                       // UIPCInfoDialog (0x4ec8)'s request state
+            c.CharacterInfoOpen = () => PcInfoOpen;                 // FUN_141924630: vfunc_55 == 0
+            c.CloseCharacterInfo += () => { if (PcInfoOpen) pcInfo.Close(); };   // RequestCloseDialog(0x4ec8)
             c.ItemClicked += (id, t) => GD.Print($"popup menu: item {id} ({menuModel.Tables.PopupMenuName(id)}) for {t?.Name}: its handler is not ported");
             if (popupLayer == null) AddChild(popupLayer = new CanvasLayer { Layer = 11 });
             var m = new MovieDialog(assets, c, menuModel ??= NewModel(), GetWindow().Size);

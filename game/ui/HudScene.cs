@@ -99,6 +99,7 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         BuildHud();
         WatchParty();
+        WatchPcInfo();
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
     }
@@ -131,6 +132,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchAchieves = null;
         unwatchMails?.Invoke();
         unwatchMails = null;
+        unwatchPcInfo?.Invoke();
+        unwatchPcInfo = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
         unwatchNotices?.Invoke();
@@ -351,7 +354,7 @@ public partial class HudScene : Node, IUiStageHost
     /// dialogs, the quest log.</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false
-                                    || AchieveOpen || MailOpen;
+                                    || AchieveOpen || MailOpen || PcInfoOpen;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -363,6 +366,7 @@ public partial class HudScene : Node, IUiStageHost
         if (myInfo?.IsClosed == false) myInfo.Close();
         if (AchieveOpen) achieve.Close();
         if (MailOpen) mail.Close();
+        if (PcInfoOpen) pcInfo.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -868,6 +872,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
+        if (k.Keycode == Key.Escape && PcInfoOpen) { pcInfo.Close(); return true; }
         if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
@@ -1699,7 +1704,7 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// UIUGCEventDispatcher::OnProfileImage(character id, key) to the HUD's listeners: the minimap (changePlayer with
-    /// GetProfileImagePath(key, 1)), the popup menu (GetProfileImagePath(key, 0)) and the character window (the key).
+    /// GetProfileImagePath(key, 1)), the popup menu (GetProfileImagePath(key, 0)) and the two character windows (the key).
     /// </summary>
     void ProfileImageReady(long characterId, string key)
     {
@@ -1707,6 +1712,7 @@ public partial class HudScene : Node, IUiStageHost
         minimapSide?.OnProfileImage(characterId, images.ProfileImagePath(key, true));
         popupMenu?.OnProfileImage(characterId, images.ProfileImagePath(key, false));
         myInfo?.OnProfileImage(characterId, key);
+        pcInfo?.OnProfileImage(characterId, key);
     }
 
     // ---- the UGC uploads: CUgcManager and the image upload dialog (UIUGCImageUploadDialog, 0x4e56) --------------------

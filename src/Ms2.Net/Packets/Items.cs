@@ -242,6 +242,25 @@ public static class ItemReader {
         return it;
     }
 
+    /// <summary><see cref="ReadEquip"/>'s layout as CPCDataPack::ReadItems reads it (commonfiles/pcdata.cpp:259): null, with
+    /// the header read and no body, when <see cref="Known"/> says the id is not in the item data (CItem::FUN_140523c40
+    /// fails and the list ends there).</summary>
+    public static EquipItem ReadKnownEquip(ByteReader r) {
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), Slot = (EquipSlot) r.ReadByte(), Rarity = r.ReadInt() };
+        if (Known != null && !Known(it.Id)) return null;
+        ReadBody(r, it, it.Slot);
+        return it;
+    }
+
+    /// <summary><see cref="ReadBadge"/>'s layout as ReadItems reads the extra buffer (pcdata.cpp:296): null, with the header
+    /// read and no body, for an id <see cref="Known"/> rejects.</summary>
+    public static EquipItem ReadKnownBadge(ByteReader r) {
+        var it = new EquipItem { IsBadge = true, BadgeSlot = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
+        if (Known != null && !Known(it.Id)) return null;
+        ReadBody(r, it, EquipSlot.Unknown, badge: true);
+        return it;
+    }
+
     static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false, ItemExtra? forceExtra = null) {
         it.Amount = r.ReadInt();
         it.HeaderInt60 = r.ReadInt();

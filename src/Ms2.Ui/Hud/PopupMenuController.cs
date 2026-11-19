@@ -25,11 +25,10 @@ public sealed class PopupMenuTarget
 /// movie uipopupmenu, AS PopUpMenuFactory). Ported for the party window's member slots (UIPartyDialog::FUN_141a77760, :794):
 /// the item list by the target and the own party state (FUN_141a83810, :2723) and the movie's "open" object (Open, :2454).
 /// Of the items' handlers (RegisterMenuHandlers, :2417) the party ones are ported (leave, invite, kick and leader change
-/// with their confirm boxes, vote kick, ready check), Whisper (the chat window's whisper start), Invite to My Home and View
-/// Own Character, and the furnishing rights grant (listed only in the own home, see InOwnHome); the others raise
-/// <see cref="ItemClicked"/>.
-/// STILL-OPEN, by handler: 0x66 View Character (SendCharacterInfo, :3135, needs UIPCInfoDialog 0x4ec8:
-/// none); 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); the buddy and block items
+/// with their confirm boxes, vote kick, ready check), Whisper (the chat window's whisper start), Invite to My Home, View
+/// Own Character, View Character (the other player's window, UIPCInfoDialog 0x4ec8) and the furnishing rights grant
+/// (listed only in the own home, see InOwnHome); the others raise <see cref="ItemClicked"/>.
+/// STILL-OPEN, by handler: 500 Trade (SendTradeRequest needs the trade dialog 0x4e83 and the block list); the buddy and block items
 /// (FUN_141a83ed0 -> the community dialog 0x4e4e, EditBuddyMemo); 0x1f5 Report (CUserReportData to the client platform's
 /// vfunc_48); 0x1f6 group chat (FUN_141a86920 :3371 -> UIGroupMessengerBrowser FUN_141951f70, uigroupmessenger.cpp:1784: with no
 /// group chat CGroupChatManager::Create sends GroupChat u8 1 + name, with any a choice box (type 0x16, common 0x81a) of
@@ -82,6 +81,13 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public event Action<int, PopupMenuTarget> ItemClicked;
     /// <summary>FUN_141a84d40 (:3116), View Own Character on the own PC: OpenDialog(0x2711), UIMyInfoDialog.</summary>
     public event Action OpenMyInfo;
+    /// <summary>Unk_PmGetDialog(0x4ec8): the other player's window's request state; null = no such dialog, View Character
+    /// does nothing.</summary>
+    public PcInfoRequests CharacterInfo;
+    /// <summary>The 0x4ec8 window is open (FUN_141924630: vfunc_55 == 0), for TryBeginRequest.</summary>
+    public Func<bool> CharacterInfoOpen = () => false;
+    /// <summary>CUIService::RequestCloseDialog(0x4ec8) before View Character's request.</summary>
+    public event Action CloseCharacterInfo;
     /// <summary>The messenger state's browser (Unk_MdState m_48, UIMessengerBrowser); null = none, Whisper does nothing.</summary>
     public MessengerBrowser Messenger;
     /// <summary>FUN_140710590: a packet to the game server.</summary>
@@ -348,6 +354,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
             case ViewOwnCharacter:                                      // FUN_141a84d40 (:3116)
                 if (SelfCharacterId != 0 && SelfCharacterId == charId) OpenMyInfo?.Invoke();
                 break;
+            case ViewCharacter:                                         // SendCharacterInfo (:3135)
+                ViewOtherCharacter(charId);
+                break;
             case Whisper:                                               // FUN_141a84da0 (:3127): the state's browser (+0x48)
                 Messenger?.Whisper(name);
                 break;
@@ -389,6 +398,26 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
                 ItemClicked?.Invoke(id, target);
                 break;
         }
+    }
+
+    /// <summary>
+    /// SendCharacterInfo (:3135): with the 0x4ec8 dialog, nothing for no character (m_a8 0) or a closed menu (m_100);
+    /// TryBeginRequest 1 shows ShowMessageBox(s_char_info_already_request, 0, none, ""), 2 does nothing, else the window
+    /// is asked to close (RequestCloseDialog(0x4ec8)) and SendOp::CharacterInfo goes out with the id.
+    /// </summary>
+    void ViewOtherCharacter(long charId)
+    {
+        if (CharacterInfo == null) return;
+        if (charId == 0 || closed) return;
+        int state = CharacterInfo.TryBeginRequest(charId, CharacterInfoOpen());
+        if (state == 1)
+        {
+            ShowBox(MessageBoxQueue.Create(0, Model?.Tables.Common("s_char_info_already_request") ?? "", null, ""));
+            return;
+        }
+        if (state == 2) return;
+        CloseCharacterInfo?.Invoke();
+        Send(new CharacterInfoRequest(charId));
     }
 
     /// <summary>ShowMessageBox(FormatStringId(id, name), 1, this, "<paramref name="tag"/>:name"); the ids 0x33f and 0x340
