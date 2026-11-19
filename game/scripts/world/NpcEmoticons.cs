@@ -53,6 +53,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
         public ChatBalloonController.Actor Balloon;
         public NpcMonologue.Npc Monologue;
         public bool Spawned;
+        /// <summary>The quest mark asked for again every second (made once, as the tick runs every frame).</summary>
+        public Func<NpcQuestMarks.Mark> Quest;
     }
 
     sealed class Pc
@@ -213,6 +215,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
             HasQuests = marks.HasQuests(n.Row.Id),
         };
         var x = new Npc { Placed = n, Actor = a };
+        x.Quest = () => QuestMark(a);
         if (balloons != null)
         {
             var b = new ChatBalloonController.Actor
@@ -360,7 +363,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         balloonMovie?.Relayout(size);
     }
 
-    public override void _Process(double delta)
+    public override void _Process(double delta) 
     {
         if (controller == null) return;
         camera ??= GetViewport().GetCamera3D();
@@ -381,10 +384,10 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 if (n.Placed.Body == null || !IsInstanceValid(n.Placed.Body)) continue;
                 EmoticonController.OnActorAdded(a);
                 if (n.Balloon != null) n.Balloon.ActorAdded = true;
-                controller.SpawnNpc(a, () => QuestMark(a));
+                controller.SpawnNpc(a, n.Quest);
                 n.Spawned = true;
             }
-            controller.NpcTick(a, () => QuestMark(a));
+            controller.NpcTick(a, n.Quest);
             if (monologue != null && n.Monologue != null) monologue.Update(n.Monologue, (float)delta);    // CNpc::vfunc_53
         }
         // GameObject m_unk_bc of the PCs: from the focus (the local player)
