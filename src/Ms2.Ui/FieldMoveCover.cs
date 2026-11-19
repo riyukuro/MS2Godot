@@ -2,8 +2,9 @@ namespace Ms2.Ui;
 
 /// <summary>
 /// Whether a field move's loading screen is up, so no input reaches the field, the player or the HUD under it. In the client
-/// the move tears the field and MyPC down before the next field loads: OnMoveResult (networkservice.cpp:913) and OnGameToGame
-/// (networkservice.cpp:953) call WorldService's field teardown (FUN_141bbc580, worldservice_1.cpp:9963), so there is no
+/// the move tears the field and MyPC down before the next field loads: OnLoginToGame (networkservice.cpp:913), OnGameToLogin
+/// (:935), OnGameToGame (:953, :969) and scenestategame.cpp:1319 call WorldService's field teardown (FUN_141bbc580,
+/// worldservice_1.cpp:9963); OnMoveResult (:897-905) tears nothing down. So there is no
 /// player to read the move keys and no field to click until the next field is built and its loading screen has faded
 /// (UILoadingProgress::StopProgress, then NotifyFadeInComplete). Ours keeps the old field and HUD until the scene changes, and
 /// a GameToGame keeps them until the next server's entry came, so they read this.

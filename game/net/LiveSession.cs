@@ -545,7 +545,7 @@ public partial class LiveSession : Node
     /// networkservice.cpp:799, is not reset by the move).
     /// LoadMap returns at once when the field is still loading the same map (worldservice_1.cpp:3295, m_state 2 and the
     /// same map id): a repeat entry for the map in load changes the entry's values only; the load goes on.
-    /// STILL-OPEN: CGuideManager QueueOccurrence(1, map), DAT_143ab2890 = 0 (the free-roam test field flag),
+    /// STILL-OPEN: DAT_143ab2890 = 0 (the free-roam test field flag),
     /// FUN_140930ba0 (the dungeon room id and its group type), CUIService FUN_141adc400 (uiservice.cpp:1574: each
     /// registered dialog with m_158 set and m_15c clear is opened again, vfunc_61(0) then vfunc_65; this HUD is rebuilt with
     /// the field scene, so its dialogs come back with it, but no dialog registry with those flags exists), and, after either
@@ -576,6 +576,7 @@ public partial class LiveSession : Node
         bindPending = false;
         moveClock.Restart();
         NewFieldPortals(f.MapId);
+        guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
         GD.Print($"live: RequestFieldEnter in game: map {f.MapId} type {f.FieldType} instance {f.InstanceType}/{f.InstanceId} dungeon {f.DungeonId} pos {f.Position} portal {f.Portal}");
         FieldMoveStarted?.Invoke(f);
         Ms2Godot.World.FieldContents.ServerMove(GetTree(), f.MapId);
