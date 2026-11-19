@@ -23,12 +23,15 @@
 // Not done: face decals.
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
+#include "res://shaders/ms2_fog.gdshaderinc"
 render_mode unshaded, cull_back;
 
 global uniform vec3 ms2_ambient;       // scene ambient light colour * dimmer
 global uniform vec3 ms2_sun_color;     // directional light diffuse colour * dimmer
 global uniform vec3 ms2_sun_ambient;   // directional light ambient colour * dimmer
 global uniform vec3 ms2_sun_specular;  // directional light specular colour * dimmer
+global uniform vec3 ms2_hfog_color;    // height fog colour (gamma space), as field_lit
+global uniform vec3 ms2_hfog;          // height fog: upper height, lower height, density (0 = none)
 
 // An instance lit by its own light pair instead of the field's lights (the game menu portrait: UIPortrait::vfunc_14
 // attaches a directional and an ambient light to the copy it renders). With own_lights 0, the default, nothing changes.
@@ -80,6 +83,7 @@ void vertex() {
 	world_tangent = (MODEL_MATRIX * vec4(TANGENT, 0.0)).xyz;
 	world_binormal = (MODEL_MATRIX * vec4(BINORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	fog_share = ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
 }
 
 void fragment() {
@@ -150,5 +154,15 @@ void fragment() {
 	if (has_glow) {
 		c += texture(glow_tex, UV).rgb * glow_scale;
 	}
-	ALBEDO = c + spec;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
+	c += spec;
+	// Fog after the composite of diffuse and specular, before the alpha (MS2StandardMaterial::HandleMS2FinalPixelOutputs,
+	// ms2standardmaterial.cpp:774-776): first the height fog, as field_lit's (the character materials take their
+	// descriptor from NiStandardMaterial::GenerateDescriptor too, so HEIGHTFOG is on unless additive), then the depth fog
+	// (ms2_fog.gdshaderinc). Both only through a field camera (FOG_LAYER); the UI views draw neither.
+	if ((CAMERA_VISIBLE_LAYERS & FOG_LAYER) != 0u) {
+		float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
+		c = mix(c, ms2_hfog_color, hf);
+	}
+	ALBEDO = c;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
+	FOG = vec4(ms2_fog_color, fog_share);
 }

@@ -161,7 +161,7 @@ public partial class Field : Node3D
         }
         catch (Exception ex) { GD.PushWarning("constants: " + ex.Message); }
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults
-        camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true };
+        camera = new Camera3D { Fov = cam.FovDeg, Near = 250, Far = 18000, Current = true, CullMask = MainCullMask };
         RasterOrigin();
         rasterSource = GetViewport();
         rasterSource.SizeChanged += RasterOrigin;
@@ -379,6 +379,12 @@ public partial class Field : Node3D
             }
         }
 
+        // The client's depth fog for field_lit and character_lit (ms2_fog.gdshaderinc): the colour as its gamma value, and the
+        // bias the camera distance, set each frame by UpdateCamera; a view without a target camera mode (the lobby) keeps the
+        // CCameraMode default m_50 = 1200 (cameramode.cpp:284, :297). The environment fog below serves the other materials.
+        RenderingServer.GlobalShaderParameterSet("ms2_fog_color", new Vector3(fog.R, fog.G, fog.B));
+        fogParams = new Vector4(fogNear, fogFar, DefaultFogBias, 0);
+        RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
         // The colour buffer holds gamma values (field_lit.gdshader) and Godot turns an environment colour from sRGB to
         // linear, so the background and fog colours are passed through LinearToSrgb: Godot's value is the client's
         // gamma value, and the depth fog mixes in gamma space as the client's does.
@@ -487,6 +493,23 @@ public partial class Field : Node3D
         }
     }
 
+    /// <summary>The cull mask bit of a camera that draws the client's depth and height fog (ms2_fog.gdshaderinc FOG_LAYER):
+    /// a layer no instance uses, so it only marks the camera; the UI character views leave it out.</summary>
+    public const uint FogLayer = 1u << 20;
+    /// <summary>The field camera's cull mask: every render layer but the glow layer, and the fog bit.</summary>
+    public const uint MainCullMask = GlowPass.MainMask | FogLayer;
+    /// <summary>CCameraMode's distance before any mode sets it (cameramode.cpp:284, :297), the fog bias of a view without one.</summary>
+    const float DefaultFogBias = 1200f;
+
+    /// <summary>CameraMgr::Update (camera.cpp:828-829): the fog bias is the camera mode's distance (m_50) every frame.</summary>
+    void SetFogBias(float bias)
+    {
+        if (fogParams.Z == bias) return;
+        fogParams.Z = bias;
+        RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
+    }
+    Vector4 fogParams;   // ms2_fog: near, far, bias, unused
+
     /// <summary>
     /// CTargetCameraMode: with t = (distance - nearest) / (farthest - nearest), the angle from the up axis goes from
     /// 90 (level) at the nearest zoom to vangle at the farthest, and the target height from zoomInHeightOffset to
@@ -545,6 +568,7 @@ public partial class Field : Node3D
             if (camBlocked) { camVel = -10f; passes++; }
             camLook = look;
         }
+        SetFogBias(camDist);
     }
 
     // CTargetCameraMode distance state: camDist is m_50 (the eye's distance from the target in the ground plane), camVel

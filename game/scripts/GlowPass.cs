@@ -19,7 +19,7 @@ public partial class GlowPass : SubViewport
 
     public static GlowPass Attach(Node parent, Camera3D main)
     {
-        main.CullMask = MainMask;
+        main.CullMask &= ~Bit;   // the other bits stay (Field.FogLayer)
         var vp = new GlowPass { Name = "GlowPass", src = main, TransparentBg = false, RenderTargetUpdateMode = UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
         vp.cam = new Camera3D { CullMask = Bit, Current = true, Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black, AmbientLightSource = Godot.Environment.AmbientSource.Disabled } };
         vp.cam.AddToGroup(GammaGuard.Exempt);   // the glow target keeps its own values (field_glow), read by Ms2Bloom's bright pass

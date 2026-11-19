@@ -23,6 +23,7 @@
 // between its first and last key over the controller's start..stop range, looping.
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
+#include "res://shaders/ms2_fog.gdshaderinc"
 #ifdef SHELL
 render_mode unshaded, blend_mix, depth_draw_always;
 #else
@@ -100,6 +101,7 @@ void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vcolor = has_vcolor ? CUSTOM0 : vec4(1.0);
+	fog_share = ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
 }
 
 vec2 scroll(int axis, vec4 key, vec2 range) {
@@ -168,6 +170,8 @@ void fragment() {
 	// HeightFogOut = 1 above UpperZ, Weight * (z - LowerZ) / (UpperZ - LowerZ) + 1 - Weight between, 1 - Weight below LowerZ;
 	// ApplyFog then lerps from the fog colour to the colour by it. Weight = percentage / 100 (ApplyEffect::SetFogEffect,
 	// applyeffect.cpp:625-665). So the fog share is Weight * (1 - (z - LowerZ) / (UpperZ - LowerZ)), linear in height.
+	// Not on additive meshes (dest blend ONE): the engine's descriptor sets HEIGHTFOG only for those that are not
+	// (NiStandardMaterial.cpp:687-697). The depth fog (ms2_fog.gdshaderinc) follows, for every blend mode.
 	float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
 #ifndef ADD
 	c = mix(c, ms2_hfog_color, hf);
@@ -187,6 +191,7 @@ void fragment() {
 #ifdef BLEND
 	ALPHA = a;
 #endif
+	FOG = vec4(ms2_fog_color, fog_share);
 #ifdef SHELL
 	ALPHA = 0.0;
 #endif
