@@ -44,9 +44,11 @@ public sealed partial class NpcPresence : CanvasLayer
     /// <summary>The npc's Eff_UI point, which its name tag and HP bar hang from; its position when the model has no such dummy.</summary>
     public Vector3 Anchor(FieldNpcs.Placed n) => Dummy(n, "Eff_UI") ?? n.Root.GlobalPosition;
 
+    static readonly NodePath ModelPath = "Model";
+
     /// <summary>The world point of one of the npc's effect dummies (on its model root, "Scene Root" in the files), null without it.</summary>
     public static Vector3? Dummy(FieldNpcs.Placed n, string name) =>
-        DummyAnchor.Point(n.Row.EffectDummies, name, n.Body?.GetNodeOrNull<Node3D>("Model"), "Scene Root");
+        DummyAnchor.Point(n.Row.EffectDummies, name, n.Body?.GetNodeOrNull<Node3D>(ModelPath), "Scene Root");
 
     /// <summary>FUN_1412762d0 for a hud entity at <paramref name="anchor"/> (0 before the field is found).</summary>
     public float Shift(Vector3 anchor) => field == null ? 0 : PlayerNameTag.PitchShift(field, anchor);
@@ -199,7 +201,7 @@ public sealed partial class NpcPresence : CanvasLayer
             }
     }
 
-    public override void _Process(double delta)
+    public override void _Process(double delta) 
     {
         camera ??= GetViewport().GetCamera3D();
         if (camera == null) return;

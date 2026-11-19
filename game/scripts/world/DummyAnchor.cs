@@ -37,7 +37,23 @@ public static class DummyAnchor
     public static Vector3? Point(IReadOnlyList<EffectDummy> rows, string name, Node3D model, string rootName)
     {
         if (model == null || rows == null) return null;
-        if (DummyWorld.Find(rows, name, ClientWorld(model), rootName) is not { } w) return null;
-        return FieldBuilder.ToGodotPoint(w.T);
+        // an npc that stands still is asked for the same point by its name tag, HP bar and emoticon every frame
+        var g = model.GlobalTransform;
+        var b = g.Basis;
+        var at = new DummyMemo.Key(b.Column0.X, b.Column0.Y, b.Column0.Z, b.Column1.X, b.Column1.Y, b.Column1.Z, b.Column2.X, b.Column2.Y, b.Column2.Z, g.Origin.X, g.Origin.Y, g.Origin.Z);
+        var memo = memos.GetValue(model, _ => new DummyMemo());
+        if (!memo.TryGet(rows, name, rootName, at, out var r))
+        {
+            if (DummyWorld.Find(rows, name, ClientWorld(model), rootName) is { } w)
+            {
+                var v = FieldBuilder.ToGodotPoint(w.T);
+                r = new DummyMemo.Point(v.X, v.Y, v.Z, true);
+            }
+            else r = default;
+            memo.Set(rows, name, rootName, at, r);
+        }
+        return r.Has ? new Vector3(r.X, r.Y, r.Z) : null;
     }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, DummyMemo> memos = new();
 }
