@@ -67,7 +67,7 @@ public sealed partial class PortraitView : Node
     {
         try
         {
-            var builder = new ModelBuilder(ModelBuilder.SharedSpec(nifXml), packs);
+            var builder = ModelBuilder.Ui(packs, nifXml);
             var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs);
             view = new SubViewport
             {

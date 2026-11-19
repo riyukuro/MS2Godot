@@ -88,6 +88,7 @@ public partial class GameFlow : Node
     public void Go(State next)
     {
         GD.Print($"flow: {Current} -> {next}");
+        if (Current == State.Game && next != State.Game) ModelBuilder.DropUi();   // logout or character select: the kept look is of this character
         Current = next;
         switch (next)
         {
@@ -149,7 +150,7 @@ public partial class GameFlow : Node
             {
                 var chosen = Session.List().FirstOrDefault(c => c.User.CharacterId.ToString() == (string)a[0]);
                 if (chosen == null) return;
-                Session.Chosen = chosen;
+                Session.Choose(chosen);
                 if (Net.LiveSession.Instance is { } live)
                 {
                     if (!live.Busy) EnterLive(live, chosen);

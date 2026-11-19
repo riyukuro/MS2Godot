@@ -33,7 +33,10 @@ public static class Session
     /// <summary>The scene that runs the field in the flow (the HUD over the field); null when a scene runs alone.</summary>
     public static string GameScene;
 
-    public static void Reset() { AccountId = null; Characters = null; Chosen = null; SelectedIndex = 0; }
+    public static void Reset() { AccountId = null; Characters = null; Chosen = null; SelectedIndex = 0; ModelBuilder.DropUi(); }
+
+    /// <summary>The character the game starts with; the UI's kept character models are of the one before (<see cref="ModelBuilder.Ui"/>).</summary>
+    public static void Choose(CharacterEntry c) { Chosen = c; ModelBuilder.DropUi(); }
 
     /// <summary>The look inputs of the chosen character; PlayerLook uses them over its command line defaults.</summary>
     public static void ApplyLook(ref int gender, ref int job)

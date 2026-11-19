@@ -46,11 +46,90 @@ public sealed class ModelBuilder
 
     static Quaternion ToGodot(Quat q) => new Quaternion((float)q.X, (float)q.Y, (float)q.Z, (float)q.W).Normalized();
 
-    public ModelData LoadModel(string entry) => ModelData.Load(NifFile.Load(spec, packs.Read(ModelArchive, entry)));
+    public ModelData LoadModel(string entry) => LoadModel(ModelArchive, entry);
 
-    public ModelData LoadModel(string archive, string entry) => ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry)));
+    public ModelData LoadModel(string archive, string entry) =>
+        keep == null ? ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry)))
+                     : keep.Get(keep.Models, (archive + "/" + entry).ToLowerInvariant(), () => ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry))));
 
     public KfAnimation LoadKf(string entry) => KfAnimation.Load(NifFile.Load(spec, packs.Read(ModelArchive, entry)));
+
+    /// <summary>A KF sequence sampled on a model (<see cref="BuildAnimation"/>); a kept builder hands out the one it built for the same model.</summary>
+    public Animation KfAnimationFor(string entry, ModelData md) =>
+        keep == null ? BuildAnimation(LoadKf(entry), md)
+                     : keep.Get(keep.Animations, (entry, md), () => BuildAnimation(LoadKf(entry), md));
+
+    /// <summary>The mesh of a model mesh (<see cref="BuildMesh"/> with its defaults); a kept builder hands out the one it built before.</summary>
+    public ArrayMesh SharedMesh(ModelMesh m)
+    {
+        if (keep == null) return BuildMesh(m);
+        keep.Used.Add(m);
+        if (keep.Meshes.TryGetValue(m, out var am)) { keep.Used.UnionWith(keep.MeshUses[m]); return am; }
+        keep.Recording = new List<object>();
+        try { am = BuildMesh(m); }
+        finally { keep.MeshUses[m] = keep.Recording; keep.Recording = null; }
+        return keep.Meshes[m] = am;
+    }
+
+    /// <summary>
+    /// What a kept builder holds: the parsed models, their sampled animations and built meshes, and (with
+    /// <see cref="textures"/>) the textures. <see cref="Trim"/> drops what the last look did not use, so it holds one look.
+    /// </summary>
+    sealed class Kept
+    {
+        public readonly Dictionary<string, ModelData> Models = new();     // lower-case archive/entry
+        public readonly Dictionary<(string, ModelData), Animation> Animations = new();
+        public readonly Dictionary<ModelMesh, ArrayMesh> Meshes = new();
+        public readonly Dictionary<ModelMesh, List<object>> MeshUses = new();   // the textures and flipbooks a kept mesh's material holds
+        public readonly HashSet<object> Used = new();
+        public List<object> Recording;
+
+        public void Use(object key) { Used.Add(key); Recording?.Add(key); }
+
+        public V Get<K, V>(Dictionary<K, V> d, K key, Func<V> make)
+        {
+            Used.Add(key);
+            if (!d.TryGetValue(key, out var v)) d[key] = v = make();
+            return v;
+        }
+
+        public void Trim<K, V>(Dictionary<K, V> d)
+        {
+            foreach (var k in d.Keys.Where(k => !Used.Contains(k)).ToList()) d.Remove(k);
+        }
+    }
+    Kept keep;
+
+    static ModelBuilder ui;
+
+    /// <summary>
+    /// The builder of the UI's character views (the HUD portrait, a dialog's avatar), kept while they show the same look:
+    /// each of them built the player again from the pack, parsing the body, its animations and every item model and
+    /// loading every texture once per open. It holds the last look only (<see cref="Trim"/>) and is dropped on logout
+    /// and character choice (<see cref="DropUi"/>). Main thread.
+    /// </summary>
+    public static ModelBuilder Ui(PackSet packs, string nifXml)
+    {
+        var spec = SharedSpec(nifXml);
+        if (ui == null || ui.packs != packs || ui.spec != spec) ui = new ModelBuilder(spec, packs) { keep = new Kept() };
+        return ui;
+    }
+
+    public static void DropUi() => ui = null;
+
+    /// <summary>The keys of what a kept builder holds (models by archive/entry, animations by entry), for checks.</summary>
+    public IEnumerable<string> KeptKeys() => keep == null ? Enumerable.Empty<string>()
+        : keep.Models.Keys.Concat(keep.Animations.Keys.Select(k => k.Item1)).Concat(textures.Keys);
+
+    /// <summary>A kept builder drops the models, animations, meshes and textures the build since the last Trim did not use.</summary>
+    public void Trim()
+    {
+        if (keep == null) return;
+        keep.Trim(keep.Models); keep.Trim(keep.Animations); keep.Trim(keep.Meshes); keep.Trim(keep.MeshUses);
+        foreach (var k in flipArrays.Keys.Where(k => !keep.Used.Contains("flip:" + k)).ToList()) flipArrays.Remove(k);
+        foreach (var k in textures.Keys.Where(k => !keep.Used.Contains("tex:" + k.ToLowerInvariant())).ToList()) textures.Remove(k);
+        keep.Used.Clear();
+    }
 
     /// <summary>Parents and rests of a model's bones on its skeleton, then the poses reset to them.</summary>
     public static void SetRests(Skeleton3D skel, ModelData md)
@@ -97,7 +176,7 @@ public sealed class ModelBuilder
 
         foreach (var m in md.Meshes)
         {
-            var mi = new MeshInstance3D { Name = m.Name, Mesh = BuildMesh(m) };
+            var mi = new MeshInstance3D { Name = m.Name, Mesh = SharedMesh(m) };
             var skin = m.Skinned ? SkinOf(md, m) : null;
             if (m.Skinned)
             {
@@ -467,6 +546,7 @@ public sealed class ModelBuilder
     Texture2DArray FlipArray(string[] frames)
     {
         string key = string.Join("|", frames);
+        keep?.Use("flip:" + key);
         if (flipArrays.TryGetValue(key, out var arr)) return arr;
         var images = new Godot.Collections.Array<Image>();
         foreach (var f in frames)
@@ -492,6 +572,7 @@ public sealed class ModelBuilder
 
     public Texture2D Texture(string fileName)
     {
+        keep?.Use("tex:" + fileName.ToLowerInvariant());
         if (textures.TryGetValue(fileName, out var t)) return t;
         Texture2D tex = null;
         string entry = null, archive = null;

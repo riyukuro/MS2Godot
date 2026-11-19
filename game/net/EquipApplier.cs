@@ -113,7 +113,7 @@ public sealed class EquipApplier
         return nifs[entry] = md;
     }
 
-    ArrayMesh Mesh(ModelMesh m) => meshes.TryGetValue(m, out var am) ? am : meshes[m] = mb.BuildMesh(m);
+    ArrayMesh Mesh(ModelMesh m) => meshes.TryGetValue(m, out var am) ? am : meshes[m] = mb.SharedMesh(m);
 
     /// <summary>The visible item per slot: the last one listed for each slot.</summary>
     public static List<EquipItem> Visible(IEnumerable<EquipItem> items)

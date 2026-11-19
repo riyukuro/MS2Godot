@@ -33,7 +33,7 @@ public static class PlayerLook
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         var lib = anim.GetAnimationLibrary("");
         foreach (var (name, kf) in new[] { ("idle", "idle_a"), ("walk", "walk_a"), ("run", "run_a") })
-            lib.AddAnimation(name, ModelBuilder.BuildAnimation(builder.LoadKf($"{dir}/{kf}.kf"), md));
+            lib.AddAnimation(name, builder.KfAnimationFor($"{dir}/{kf}.kf", md));
 
         try
         {
@@ -44,6 +44,7 @@ public static class PlayerLook
             GD.Print($"player look: {dir}, job {job}{(LiveSession.Active ? " (live)" : "")}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
         }
         catch (Exception ex) { GD.PushWarning("player look: " + ex.Message); }
+        builder.Trim();
         return (visual, anim, md, dir);
     }
 
