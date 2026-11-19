@@ -24,6 +24,9 @@ public sealed partial class RemoteLayer : Node3D
         public Func<Vector3> Anchor;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems = Array.Empty<Ms2.Net.Packets.EquipItem>();
+        /// <summary>FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220) and the user block's PC bang
+        /// grade (m_nFF8, scenestategame.cpp:11151), the PC::CanUseItem inputs of the balloon gem.</summary>
+        public long PremiumTime; public short WeddingState; public byte PcBangGrade;
     }
 
     readonly ModelBuilder builder;
@@ -42,11 +45,13 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>The field's live npcs for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> TalkNpcs => npcs.Talkable;
 
-    /// <summary>One other player in the field: its object, name, picture key, root, Eff_UI anchor and worn gems.</summary>
+    /// <summary>One other player in the field: its object, name, picture key, root, Eff_UI anchor, worn gems and the
+    /// PC::CanUseItem state of its balloon gem (premium time, PC bang grade, wedding state).</summary>
     public readonly record struct Pc(int ObjectId, long CharacterId, string Name, string Picture, Node3D Root, Func<Vector3> Anchor,
-        IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems);
+        IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems, long PremiumTime, byte PcBangGrade, short WeddingState);
     /// <summary>The other players shown now (the own PC is not among them).</summary>
-    public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems));
+    public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
+        r.PremiumTime, r.PcBangGrade, r.WeddingState));
 
     public RemoteLayer(Field field, ModelBuilder mb, long selfCharacterId)
     {
@@ -97,6 +102,7 @@ public sealed partial class RemoteLayer : Node3D
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
+        r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;

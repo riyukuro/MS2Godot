@@ -43,6 +43,11 @@ namespace Ms2Godot.World;
 ///   &lt;monologue&gt; of the npc's scripts in its balloon. A mob is a CNpc as well (FieldAddNpc), so the live field's mobs
 ///   run it too (345 mob rows have monologues); the offline field's region spawn previews (Mob) are not client objects and
 ///   get none.
+/// - The special npc lines (NpcTalk mode 10 sub 1, OnTalkPacket uitalkcinematic.cpp:1054): the npc's balloon is kept and the
+///   packet script's first line shown in it; the mode's other subs (the special npc's own talk page) are not ported.
+/// - A PC's worn chat balloon gem (PCGemEquip) is gated by PC::CanUseItem (<see cref="PcItemUse"/>) as the client gates
+///   FUN_1412712e0 / FUN_141270740: the packet record's expiry and binds, the data's PC bang / vip / wedding flags against
+///   the owner's state from its add packet.
 /// </summary>
 public sealed partial class NpcEmoticons : CanvasLayer
 {
@@ -70,6 +75,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     readonly UiAssets assets;
     readonly ClientConstants constants;
     readonly NpcTalk talk;
+    GameTables tables;
     readonly bool live;
     readonly Dictionary<FieldNpcs.Placed, Npc> npcs = new();
     readonly Dictionary<EmoticonController.Actor, Npc> byActor = new();
@@ -133,6 +139,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     void Build()
     {
         var tables = GameTables.Shared(assets.Packs, GameOptions.StringLanguage);
+        this.tables = tables;
         var quests = NpcTalk.ClientQuests(assets.Packs);
         controller = new EmoticonController
         {
@@ -240,6 +247,22 @@ public sealed partial class NpcEmoticons : CanvasLayer
         if (npcs.TryGetValue(n, out var x)) controller?.SetNpcNameTag(x.Actor, text);
     }
 
+    /// <summary>
+    /// NpcTalk mode 10 sub 1 (OnTalkPacket, uitalkcinematic.cpp:1054-1062): the npc's balloon is kept (FUN_1418fb6d0,
+    /// so the monologue leaves it alone) and the script's first line shown in it (PCBase::ShowChatBalloon,
+    /// pcbase.cpp:1664: the value words, SetText, vfunc_2).
+    /// </summary>
+    void OnSpecialNpcBalloon(FieldNpcs.Placed n, string text)
+    {
+        if (balloons == null || !npcs.TryGetValue(n, out var x)) return;
+        var b = balloons.NpcBalloon(x.Balloon);
+        if (b == null) return;
+        ChatBalloonController.Keep(b);
+        ChatBalloonController.SetText(b, tables?.ReservedWords.ReplaceValueWords(text ?? "",
+            Ms2Godot.Net.LiveSession.Instance?.Me.User?.Name) ?? "");
+        balloons.Start(b);
+    }
+
     void OnTalkPage(FieldNpcs.Placed n, int subMode)
     {
         if (npcs.TryGetValue(n, out var x)) controller?.TalkPageShown(x.Actor, subMode);
@@ -273,15 +296,17 @@ public sealed partial class NpcEmoticons : CanvasLayer
     {
         if (!live || balloons == null || Ms2Godot.Net.LiveSession.Instance is not { } s) return;
         var now = new Dictionary<int, (long Char, string Name, string Picture, Node3D Root, Func<Vector3> Anchor, bool Me,
-            IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems)>();
+            IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems, long PremiumTime, byte PcBangGrade, short WeddingState)>();
         if (s.SelfObjectId >= 0 && s.Me.User is { } me && Viewer is Player p && IsInstanceValid(p))
         {
             var dummies = EffectDummyTable.Load(assets.Packs).Pc(p.Gender);
             now[s.SelfObjectId] = (me.CharacterId, me.Name ?? "", me.Picture ?? "", p,
-                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>("Model"), p.RootName) ?? p.GlobalPosition, true, s.Me.Gems);
+                () => DummyAnchor.Point(dummies, "Eff_UI", p.Visual?.GetNodeOrNull<Node3D>("Model"), p.RootName) ?? p.GlobalPosition, true, s.Me.Gems,
+                s.Me.PremiumTime, me.PcBangGrade, s.Me.WeddingState);
         }
         foreach (var r in s.FieldPcs)
-            if (IsInstanceValid(r.Root)) now[r.ObjectId] = (r.CharacterId, r.Name, r.Picture, r.Root, r.Anchor, false, r.Gems);
+            if (IsInstanceValid(r.Root)) now[r.ObjectId] = (r.CharacterId, r.Name, r.Picture, r.Root, r.Anchor, false, r.Gems,
+                r.PremiumTime, r.PcBangGrade, r.WeddingState);
         foreach (var gone in pcs.Keys.Where(k => !now.ContainsKey(k)).ToList())
         {
             balloons.RemovePc(pcs[gone].Balloon);
@@ -303,8 +328,18 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 };
                 pcs[id] = x = new Pc { Balloon = b, Gems = new GemEquip(balloons, b) { GemSystem = GemSystem } };
                 byPcBalloon[b] = x;
+                // PC::CanUseItem of this player (pc.cpp:4683, PcItemUse) on each gem's packet record
+                var use = new PcItemUse.Pc
+                {
+                    PcBangGrade = v.PcBangGrade,
+                    PremiumTime = v.PremiumTime,
+                    WeddingState = v.WeddingState,
+                    CharacterId = v.Char,
+                    ServerTime = () => s.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                };
+                x.Gems.CanUse = g => g.Record is { } rec && PcItemUse.CanUseItem(rec, tables?.Items.Get(rec.Id), use);
                 // PCGemEquip::ReadFromStream of the PC's packet, then FUN_141270610 at its model's load (PC::vfunc_12)
-                x.Gems.Set((v.Gems ?? Array.Empty<Ms2.Net.Packets.EquipItem>()).Select(g => ((int)g.GemType, new GemEquip.Gem(g.Id, g.GemId))));
+                x.Gems.Set((v.Gems ?? Array.Empty<Ms2.Net.Packets.EquipItem>()).Select(g => ((int)g.GemType, new GemEquip.Gem(g.Id, g.GemId) { Record = g })));
                 x.Gems.ApplyAll();
             }
             x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor;
@@ -333,13 +368,13 @@ public sealed partial class NpcEmoticons : CanvasLayer
     {
         SyncPcs();
         if (!pcs.TryGetValue(b.ObjectId, out var x)) return;
-        if (b.Mode == 0 && b.Item is { GemType: not 0 } it) x.Gems.Equip(it.GemType, new GemEquip.Gem(it.Id, it.GemId));
+        if (b.Mode == 0 && b.Item is { GemType: not 0 } it) x.Gems.Equip(it.GemType, new GemEquip.Gem(it.Id, it.GemId) { Record = it });
         else if (b.Mode == 1) x.Gems.Remove(b.GemType);
     }
 
     public override void _EnterTree()
     {
-        if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; }
+        if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; talk.SpecialNpcBalloon += OnSpecialNpcBalloon; }
         if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) ls.BadgeEquipped += OnBadgeEquip;
         if (live) Live = this;
         sizeSource = GetViewport();
@@ -349,7 +384,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
 
     public override void _ExitTree()
     {
-        if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; }
+        if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; talk.SpecialNpcBalloon -= OnSpecialNpcBalloon; }
         if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) ls.BadgeEquipped -= OnBadgeEquip;
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
         if (Live == this) Live = null;

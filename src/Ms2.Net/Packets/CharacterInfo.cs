@@ -210,6 +210,10 @@ public sealed class MyCharacter {
     /// <summary>The own FieldAddUser's title layer period (SetLayerPeriod, scenestategame.cpp:11248) and its layer-2
     /// outfits (SetVariant(2), :11250-11264).</summary>
     public long CodiStart, CodiEnd; public int CodiItems;
+    /// <summary>The own FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220,
+    /// scenestategame.cpp:11287-11291), the VIP and wedding inputs of PC::CanUseItem (pc.cpp:4683, ported in Ms2.Ui's
+    /// PcItemUse).</summary>
+    public long PremiumTime; public short WeddingState;
     /// <summary>The own FieldAddUser's equips, layer-2 outfits and gems (PCGemEquip::ReadFromStream, gemslot_2.cpp:92).</summary>
     public IReadOnlyList<EquipItem> Equips, Outfit2, Gems;
     public readonly StatPointBook StatPoints = new();
@@ -224,6 +228,7 @@ public sealed class MyCharacter {
         ObjectId = u.ObjectId; User = u.User; Title = u.Title; Insignia = (ushort)u.Insignia;
         HomeCommendMonth = u.HomeCommendMonth; HomeCommendMonthly = u.HomeCommendMonthly; HomeCommendPoint = u.HomeCommendPoint;
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
+        PremiumTime = u.PremiumTime; WeddingState = u.WeddingState;
         Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
         State = 0;

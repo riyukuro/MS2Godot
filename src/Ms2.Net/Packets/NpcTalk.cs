@@ -45,8 +45,59 @@ public abstract record NpcTalkMessage {
     public sealed record Cutscene(int Value, string Movie) : NpcTalkMessage;
     /// <summary>Mode 4 (ModifyScript): the page text, its voice and its illust.</summary>
     public sealed record ModifyScript(string Script, string Voice, string Illust) : NpcTalkMessage;
-    /// <summary>Modes and mode 3 subs not decoded here (mode 10 carries a whole CTalkScript).</summary>
+    /// <summary>
+    /// Mode 10 (OnTalkPacket, uitalkcinematic.cpp:1050): i32 the npc's id, i16 sub, then a whole CTalkScript (Deserialize,
+    /// talkscript.cpp:216). Sub 1 shows the script's first line as the npc's chat balloon; any other sub opens the special
+    /// npc's own talk page (m_nSpecialNpc), which is not ported.
+    /// </summary>
+    public sealed record SpecialNpc(int NpcId, short Sub, NpcTalkScript Script) : NpcTalkMessage;
+    /// <summary>Modes and mode 3 subs not decoded here.</summary>
     public sealed record Other(int Mode, int Sub) : NpcTalkMessage;
+
+    /// <summary>
+    /// A CTalkScript read from a packet (CTalkScript::Deserialize, talkscript.cpp:216): the npc's id, its popup state and
+    /// chance, whether one content is picked at random, and the contents (CScriptContent::vfunc_6, scriptcontent.cpp:81:
+    /// u8 the kind — 1 a balloon line, 0 a cinematic page — then the line, its voice and its illust; a cinematic page adds
+    /// its button set and its choices).
+    /// </summary>
+    public sealed class NpcTalkScript
+    {
+        public int NpcId;
+        public byte PopupState;
+        public int PopupProp;
+        public bool RandomPick;
+        public readonly List<Content> Contents = new();
+
+        /// <summary>One content: a balloon line (kind 1) or a cinematic page (kind 0) with its choices.</summary>
+        public sealed class Content
+        {
+            public byte Kind;
+            public string Text = "", Voice = "", Illust = "";
+            public int ButtonSet;
+            public readonly List<(string Text, string Goto, string GotoFail)> Choices = new();
+        }
+
+        public static NpcTalkScript Read(ByteReader r)
+        {
+            var s = new NpcTalkScript { NpcId = r.ReadInt(), PopupState = r.ReadByte(), PopupProp = r.ReadInt(), RandomPick = r.ReadByte() == 1 };
+            int count = r.ReadInt();
+            for (int i = 0; i < count; i++)
+            {
+                var c = new Content { Kind = r.ReadByte() };
+                // ReadUnicodeStringA is the same u16 + UTF-16 on the wire, so all three read the same way
+                c.Text = r.ReadUnicodeString(); c.Voice = r.ReadUnicodeString(); c.Illust = r.ReadUnicodeString();
+                if (c.Kind == 0)
+                {
+                    c.ButtonSet = r.ReadInt();
+                    int choices = r.ReadByte();        // CCinematicDistractor::ReadFrom (scriptcontent.cpp:143)
+                    for (int j = 0; j < choices; j++)
+                        c.Choices.Add((r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString()));
+                }
+                s.Contents.Add(c);
+            }
+            return s;
+        }
+    }
 
     /// <summary>
     /// Mode 3's sub (the u8 OnTalkPacket keeps in m_nSubMode before it dispatches, uitalkcinematic.cpp:1016, for every sub);
@@ -91,6 +142,7 @@ public abstract record NpcTalkMessage {
                     default: return new Other(3, sub);
                 }
             }
+            case 10: return new SpecialNpc(r.ReadInt(), r.ReadShort(), NpcTalkScript.Read(r));
             default: return new Other(mode, 0);
         }
     }

@@ -13,9 +13,10 @@ namespace Ms2.Ui.Hud;
 /// removing (FUN_141271500, :385) needs neither. FUN_141270740 (:228), the gem worn for a type, needs CanUseItem only.
 /// </para>
 /// <para>
-/// STILL-OPEN: PC::CanUseItem (pc.cpp:4683: the PC bang, VIP and vfunc_146 requirements, the owner bind and the codi layer)
-/// is not ported; <see cref="CanUse"/> is true unless set. The other gem types' apply and remove (transparency, name tag,
-/// effects, pet skin, ...) are not ported here.
+/// The owner's decision is PC::CanUseItem (pc.cpp:4683), ported in <see cref="PcItemUse"/>: the live field sets
+/// <see cref="CanUse"/> to it with the packet record of each gem and its owner's state. A gem distilled without a record
+/// (the tests) has no item state, so the default passes it. The other gem types' apply and remove (transparency, name
+/// tag, effects, pet skin, ...) are not ported here.
 /// </para>
 /// </summary>
 public sealed class GemEquip
@@ -23,8 +24,15 @@ public sealed class GemEquip
     /// <summary>GEM_CHATBALLOON (itemgem.h:127).</summary>
     public const int ChatBalloonType = 3;
 
-    /// <summary>A worn gem item: its item id and its gem's id (CGemBase m_nGemId).</summary>
-    public readonly record struct Gem(int ItemId, int GemId);
+    /// <summary>
+    /// A worn gem item: its item id and its gem's id (CGemBase m_nGemId), with the packet's item record (the CItem the
+    /// client holds) when it came from one — what PC::CanUseItem reads.
+    /// </summary>
+    public readonly record struct Gem(int ItemId, int GemId)
+    {
+        /// <summary>The packet's item record (CItem::ReadFromStream); null when the gem was distilled without one.</summary>
+        public Ms2.Net.Packets.EquipItem Record { get; init; }
+    }
 
     readonly Dictionary<int, Gem> items = new();
     readonly ChatBalloonController balloons;
@@ -32,7 +40,10 @@ public sealed class GemEquip
 
     /// <summary>The field's gemSystem (WorldService::GetFieldData()->m_bGemSystem).</summary>
     public Func<bool> GemSystem = () => true;
-    /// <summary>PC::CanUseItem of the owner (see the STILL-OPEN above).</summary>
+    /// <summary>
+    /// PC::CanUseItem of the owner (pc.cpp:4683, ported in <see cref="PcItemUse"/>); the default passes a gem distilled
+    /// without a record, which has no item state to test.
+    /// </summary>
     public Func<Gem, bool> CanUse = _ => true;
 
     public GemEquip(ChatBalloonController balloons, ChatBalloonController.Actor owner)

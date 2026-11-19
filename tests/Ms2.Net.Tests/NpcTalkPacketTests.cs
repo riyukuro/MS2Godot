@@ -43,7 +43,32 @@ public class NpcTalkPacketTests {
     [Test] public void ModifyScriptAndUnreadModes() {
         var m = (NpcTalkMessage.ModifyScript) Read(w => { w.WriteByte(4); w.WriteUnicodeString("text"); w.WriteUnicodeString("voice"); w.WriteUnicodeString("illust"); });
         Assert.That((m.Script, m.Voice, m.Illust), Is.EqualTo(("text", "voice", "illust")));
-        Assert.That(Read(w => { w.WriteByte(10); w.WriteInt(1); }), Is.EqualTo(new NpcTalkMessage.Other(10, 0)));
+        Assert.That(Read(w => { w.WriteByte(5); w.WriteInt(1); }), Is.EqualTo(new NpcTalkMessage.Other(5, 0)));
+    }
+
+    [Test] public void ModeTenCarriesATalkScript() {
+        // OnTalkPacket mode 10 (uitalkcinematic.cpp:1050): i32 npc id, i16 sub, then CTalkScript::Deserialize
+        // (talkscript.cpp:216): i32 the script's npc id, u8 popup state, i32 popup prop, u8 random pick, then the contents.
+        var m = (NpcTalkMessage.SpecialNpc) Read(w => {
+            w.WriteByte(10); w.WriteInt(11000004); w.WriteShort(1);
+            w.WriteInt(11000004); w.WriteByte(9); w.WriteInt(100); w.WriteByte(0);
+            w.WriteInt(2);
+            // a balloon content (kind 1): the line, its voice, its illust (ReadUnicodeStringA is u16 + UTF-16 on the wire)
+            w.WriteByte(1); w.WriteUnicodeString("hello there"); w.WriteUnicodeString("voice_a"); w.WriteUnicodeString("");
+            // a cinematic content (kind 0): the base, its button set and its choices (scriptcontent.cpp:143)
+            w.WriteByte(0); w.WriteUnicodeString("page"); w.WriteUnicodeString("voice_b"); w.WriteUnicodeString("illust_b");
+            w.WriteInt(9); w.WriteByte(1);
+            w.WriteUnicodeString("a choice"); w.WriteUnicodeString("goto"); w.WriteUnicodeString("gotoFail");
+        });
+        Assert.That((m.NpcId, m.Sub), Is.EqualTo((11000004, (short) 1)));
+        Assert.That((m.Script.NpcId, m.Script.PopupState, m.Script.PopupProp, m.Script.RandomPick), Is.EqualTo((11000004, (byte) 9, 100, false)));
+        Assert.That(m.Script.Contents.Count, Is.EqualTo(2));
+        var line = m.Script.Contents[0];
+        Assert.That((line.Kind, line.Text, line.Voice, line.Illust, line.ButtonSet, line.Choices.Count), Is.EqualTo(((byte) 1, "hello there", "voice_a", "", 0, 0)));
+        var page = m.Script.Contents[1];
+        Assert.That((page.Kind, page.Text, page.Voice, page.Illust, page.ButtonSet), Is.EqualTo(((byte) 0, "page", "voice_b", "illust_b", 9)));
+        Assert.That(page.Choices, Is.EqualTo(new[] { ("a choice", "goto", "gotoFail") }));
+        Assert.That(NpcTalkMessage.SubMode(m), Is.Null);
     }
 
     [Test] public void EveryModeThreeSubIsKeptAsTheSubMode() {

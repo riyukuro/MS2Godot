@@ -186,7 +186,14 @@ public sealed class FieldAddUser {
     public long SkinTabStart, SkinTabEnd;
     public short BuffCount;
     public int Title; public short Insignia; public bool InsigniaShown;
-    public bool HasPet; public long PremiumTime;
+    /// <summary>The pet block was read (PC::ReadPetItem, scenestategame.cpp:11284).</summary>
+    public bool HasPet;
+    /// <summary>The premium club time i64 (PC::FUN_141662d60 = m_n1190, scenestategame.cpp:11287): IsVip (pc.cpp:2209) is true
+    /// while it is in the future. STILL-OPEN: OnPremiumClub (scenestategame.cpp:8427) refreshes it mid-session; not parsed.</summary>
+    public long PremiumTime;
+    /// <summary>The wedding state i16 right after the premium time (PC::FUN_141662e30 = m_n1220, scenestategame.cpp:11291);
+    /// vfunc_146 (pc.cpp:2218) takes 2, 3 and 4 as the married states a wedding-limited item needs.</summary>
+    public short WeddingState;
     /// <summary>The four values after the ride block (CSceneStateGame, scenestategame.cpp:11217-11224): i32 PC::FUN_14165f090
     /// (m_n1038; pc.cpp:853 passes it to FUN_14165f1f0 when nothing is held), then the architect score: i64 the month it counts in (m_n1140),
     /// i32 that month's count (m_n1148), i32 the score (m_n114c).</summary>
@@ -239,7 +246,8 @@ public sealed class FieldAddUser {
         r.ReadInt();
         f.HasPet = r.ReadBool();
         if (f.HasPet) f.Pet = ItemReader.ReadPetItem(r);
-        f.PremiumTime = r.ReadLong(); r.ReadInt(); r.ReadByte(); r.ReadShort();
+        f.PremiumTime = r.ReadLong(); r.ReadInt(); r.ReadByte();
+        f.WeddingState = r.ReadShort();
         r.ExpectEnd("FieldAddUser");
         return f;
     }

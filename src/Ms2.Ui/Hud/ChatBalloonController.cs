@@ -14,11 +14,14 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// The npc side is CNpc::vfunc_85 (@0x1410904c0, <see cref="NpcBalloon"/>): the npc's balloon, made on first use.
 /// The npc monologue (UITalkManager::ShowNpcMonologue, called by CNpc::UpdateMonologue) shows through
-/// <see cref="NpcMonologue"/>. A PC's is PC::vfunc_85 (@0x1416573b0, <see cref="PcBalloon"/>); a chat line shows over its
+/// <see cref="NpcMonologue"/>, and the special npc's line (NpcTalk mode 10 sub 1, OnTalkPacket) through the field's
+/// balloon glue. A PC's is PC::vfunc_85 (@0x1416573b0, <see cref="PcBalloon"/>); a chat line shows over its
 /// speaker through <see cref="ChatSpeakerBalloon"/> (UIMessengerBrowser::ShowChatBalloon); a worn chat balloon gem sets its
-/// skin through <see cref="GemEquip"/> (CGemChatBalloon, itemgem.cpp:668/680). STILL-OPEN: PCBase::ShowChatBalloon's
-/// (pcbase.cpp:1664) talk and cut scene callers are not ported; the pets' balloons (cubespawnobject.cpp:242) have no caller
-/// here.
+/// skin through <see cref="GemEquip"/> (CGemChatBalloon, itemgem.cpp:668/680) when PC::CanUseItem
+/// (<see cref="PcItemUse"/>) lets the owner use it. STILL-OPEN: PCBase::ShowChatBalloon's (pcbase.cpp:1664) other callers
+/// are not ported — the npc preview dialog (uinpcpreviewdialog.cpp:537), the fishing lines (fishingmanager.cpp:961/1369)
+/// and the kill count's message (uikillcount.cpp:186); the pets' balloons (cubespawnobject.cpp:298, petactor.cpp:736)
+/// have no caller here.
 /// </para>
 /// </summary>
 public sealed class ChatBalloonController : UiController
