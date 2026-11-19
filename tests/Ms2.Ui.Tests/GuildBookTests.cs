@@ -165,6 +165,10 @@ public class GuildBookTests {
         b.MemberRemoved += n => removed = n;
         b.Apply(new GuildMessage(0x13) { Name = "bo" });
         Assert.That((lines.Last(), removed, b.MemberCount), Is.EqualTo(("c3a6", "bo", 1)));
+        int gone = 0;
+        b.MemberRemoved += _ => gone++;
+        b.Apply(new GuildMessage(0x13) { Name = "zz" });      // no such member: no line, the refresh still runs
+        Assert.That((lines.Count, gone, b.MemberCount), Is.EqualTo((5, 1, 1)));   // OnPacketMemberLeft :1962-1972
     }
 
     [Test]
@@ -193,16 +197,17 @@ public class GuildBookTests {
         int closed = 0;
         b.DialogClose += () => closed++;
         Assert.That(b.Break(), Is.False);                     // the member count comes first, master or not
-        Assert.That((sent.Count, notices.Single()), Is.EqualTo((0, "c40e")));
+        // a guild with members: the box of common 0x40e (FUN_140d73bc0 is ShowMessageBox(GetStringCommon(id)))
+        Assert.That((sent.Count, boxes.Single(), notices.Count), Is.EqualTo((0, "c40e", 0)));
         b.Apply(new GuildMessage(0x13) { Name = "bo" });      // bo left: the master is alone
         b.PlayerName = () => "zz";
-        Assert.That(b.Break(), Is.False);                     // not the master: nothing sent, no second notice
-        Assert.That((sent.Count, notices.Count), Is.EqualTo((0, 1)));
+        Assert.That(b.Break(), Is.False);                     // not the master: nothing sent, no second box
+        Assert.That((sent.Count, boxes.Count), Is.EqualTo((0, 1)));
         b.PlayerName = () => "Ma";
         Assert.That(b.Break(), Is.True);
         Assert.That(sent.Last(), Is.EqualTo(new GuildBreakRequest()));
         b.Apply(new GuildMessage(2) { Result = 0 });
-        Assert.That((b.InGuild, boxes.Single(), closed), Is.EqualTo((false, "c38a", 1)));
+        Assert.That((b.InGuild, boxes.Last(), closed), Is.EqualTo((false, "c38a", 1)));
     }
 
     [Test]

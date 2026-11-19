@@ -613,8 +613,12 @@ public partial class LiveSession : Node
         moveClock.Reset();
         GD.Print($"live: ResponseFieldEnter sent, portal {answer.Portal}, map {fieldEntry.Current.MapId}{(ms > 0 ? $", {ms} ms after the move's RequestFieldEnter" : "")}");
         FieldEntered?.Invoke(fieldEntry.Current.MapId, ms);
-        // FUN_1413bd5c0 (NotifyCompleteMyPC): a member with the invite right asks for the guild's join requests
-        if (Guilds.InGuild && Guilds.HasMemberPermissionOf(CharacterId, 2)) Guilds.ListRequests();
+        // FUN_1413bd5c0 (NotifyCompleteMyPC): a member with the invite right asks for the guild's join requests, the
+        // client by its own name (HasMemberPermission(GetMyName(), 2)). The notify comes when the local PC's load
+        // completes (MyPC::vfunc_10, mypc.cpp:1004); this rides the field-loaded response, a moment sooner — the ask
+        // and its answer are the same either way. STILL-OPEN: the notify's own point.
+        string myName = Session.Characters.FirstOrDefault(c => c.User.CharacterId == CharacterId)?.User.Name;
+        if (Guilds.InGuild && myName is not null && Guilds.HasMemberPermission(myName, 2)) Guilds.ListRequests();
     }
 
     /// <summary>Movement out: the player's record packets and state changes become UserSync (0x12) and State (0x80); its offline

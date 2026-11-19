@@ -10,7 +10,10 @@ namespace Ms2.Ui;
 /// client's UI calls come out as events. The not-in-guild side: the guild id, this character's join requests
 /// (m_joinRequestsForChar), the search results and the search propensity (m_468). The in-guild side: the guild info, the
 /// join requests sent to the guild (m_joinRequestsForGuild) and the members. STILL-OPEN: the invite (m_invite) and the
-/// rest of the in-guild updates.
+/// rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
+/// a player), which the server also sends after a leave or disband to clear the own tag — not read, so the own tag keeps
+/// the guild name until a relogin; the game menu's guild badge (UIGameMenuDialog::FUN_1419381c0, the notify count of
+/// GetGuildNotificationCount: the check-in and the requests for the guild).
 /// </summary>
 public sealed class GuildBook
 {
@@ -216,11 +219,10 @@ public sealed class GuildBook
             }
             case 0x13:
             {
-                // OnPacketMemberLeft (@0x1413bfe50): the member of the name is removed, the line 0x3a6, and the dialog's
-                // UpdateGuildInfo and RemoveMember.
+                // OnPacketMemberLeft (@0x1413bfe50): the member of the name is removed with the line 0x3a6, but only
+                // when such a member is; the dialog's UpdateGuildInfo and RemoveMember run whatever was found.
                 if (!InGuild) break;
-                if (FindMemberByName(m.Name) is { } gone) Info.Members.Remove(gone);
-                ChatLine?.Invoke(ClientFormat.Format(Common(0x3a6), m.Name), 0xd);
+                if (FindMemberByName(m.Name) is { } gone) { Info.Members.Remove(gone); ChatLine?.Invoke(ClientFormat.Format(Common(0x3a6), m.Name), 0xd); }
                 GuildInfoRefresh?.Invoke();
                 MemberRemoved?.Invoke(m.Name);
                 break;
@@ -328,13 +330,14 @@ public sealed class GuildBook
     }
 
     /// <summary>SendGuildMode2 (@0x1413b7020): disband the guild. The client sends it only from the master of a
-    /// one-member guild; a guild with members gets the notice of common 0x40e, a member who is not the master nothing.</summary>
+    /// one-member guild; a guild with members gets the box of common 0x40e first (FUN_140d73bc0 is ShowMessageBox
+    /// (GetStringCommon(id)), unit_140d73aa0_messageboxfactory.cpp:84), a member who is not the master nothing.</summary>
     public bool Break()
     {
         if (!InGuild) return false;
         string myName = PlayerName();
         if (string.IsNullOrEmpty(myName)) return false;
-        if (MemberCount > 1) { Notice?.Invoke(Common(0x40e), 1, true); return false; }
+        if (MemberCount > 1) { Box?.Invoke(Common(0x40e)); return false; }
         if (!IsMaster(myName)) return false;
         Send(new GuildBreakRequest());
         return true;
