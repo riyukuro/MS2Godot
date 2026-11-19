@@ -163,6 +163,30 @@ public class SnapshotTests
     }
 
     [Test]
+    public void AnUnfinishedWriteIsNeverReadAndItsFileIsRemoved()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-leftover-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var store = new CacheStore(dir);
+            var key = CacheStore.Key("atlas-a.dds", "cfg", "b1");
+            var path = store.PathOf("atlas-a.dds", key);
+            // a write stopped before its rename (a process killed in the setup step): a whole temporary file, no cache file
+            CacheFile.Write(path + ".tmp", key, new byte[] { 1, 2, 3 });
+            File.Move(path + ".tmp", path + ".tmp999999999");
+            var mine = path + ".tmp" + Environment.ProcessId;
+            File.WriteAllBytes(mine, new byte[] { 4 });
+            Assert.That((store.Has("atlas-a.dds", key), store.Read("atlas-a.dds", key)), Is.EqualTo((false, (byte[])null)));
+            Assert.That(store.RemoveLeftovers(), Is.EqualTo(1));
+            Assert.That(File.Exists(path + ".tmp999999999"), Is.False);
+            Assert.That(File.Exists(mine), Is.True, "a running process's write stays");
+            Assert.That(store.Ensure("atlas-a.dds", "cfg", "b1", () => new byte[] { 5 }, b => b), Is.True, "the setup step builds it");
+            Assert.That(store.Read("atlas-a.dds", key), Is.EqualTo(new byte[] { 5 }));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public void StampsRehashAChangedFileAndForgetAGoneOne()
     {
         var dir = Path.Combine(Path.GetTempPath(), "ms2-stamps-" + Guid.NewGuid().ToString("N"));

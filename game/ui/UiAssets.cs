@@ -214,25 +214,29 @@ public sealed class UiAssets
         return null;
     }
 
-    /// <summary>The DDS atlas next to a movie, e.g. "UILoginDialog_I1.dds". Null when missing.</summary>
+    // the atlases of a pack set, shared by its UiAssets (the HUD's, each NPC dialog's, the message boxes'...): an atlas is
+    // decoded and uploaded once per session, and its texture is kept for every later open
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<string, Texture2D>> atlases = new();
+
+    /// <summary>The DDS atlas next to a movie, e.g. "UILoginDialog_I1.dds" (<see cref="AtlasCache"/>). Null when missing.</summary>
     public Texture2D Atlas(string file)
     {
         if (string.IsNullOrEmpty(file)) return null;
-        if (textures.TryGetValue(file, out var t)) return t;
-        Texture2D tex = null;
-        try
+        var shared = atlases.GetValue(Packs, _ => new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase));
+        lock (shared)
         {
-            var entry = Packs.FindByFileName("Resource/Gfx", file);
-            if (entry != null)
+            if (shared.TryGetValue(file, out var t)) return t;
+            Texture2D tex = null;
+            try
             {
-                var img = DdsLoader.Load(Packs.Read("Resource/Gfx", entry));
-                if (img != null) tex = ImageTexture.CreateFromImage(img);
+                var entry = Packs.FindByFileName("Resource/Gfx", file);
+                if (entry != null && AtlasCache.Load(Packs, entry) is { } img) tex = ImageTexture.CreateFromImage(img);
             }
+            catch (Exception e) { GD.PushWarning($"UI atlas {file}: {e.Message}"); }
+            if (tex == null) GD.PushWarning($"UI atlas {file} not available");
+            shared[file] = tex;
+            return tex;
         }
-        catch (Exception e) { GD.PushWarning($"UI atlas {file}: {e.Message}"); }
-        if (tex == null) GD.PushWarning($"UI atlas {file} not available");
-        textures[file] = tex;
-        return tex;
     }
 
     /// <summary>
@@ -291,61 +295,13 @@ public sealed class UiAssets
     }
 }
 
-/// <summary>DDS reader for the UI atlases: uncompressed channel-mask formats are decoded here, block-compressed ones go through Godot.</summary>
+/// <summary>DDS reader for the UI images: uncompressed formats are converted by <see cref="Ms2.Formats.Pixels.DdsPixels.ToRgba"/>, block-compressed ones go through Godot.</summary>
 public static class DdsLoader
 {
-    /// <summary>One channel mask: its shift and bit width, measured once per file instead of once per pixel.</summary>
-    readonly struct Channel
-    {
-        readonly uint mask; readonly int shift, width;
-        public Channel(uint m)
-        {
-            mask = m; shift = 0; width = 0;
-            if (m == 0) return;
-            while ((m >> shift & 1) == 0) shift++;
-            while ((m >> (shift + width) & 1) != 0) width++;
-        }
-        /// <summary>The channel as 8 bits: the top 8 bits of a wider field, a narrower one scaled to 0..255 (255 without a mask).</summary>
-        public byte Get(uint px)
-        {
-            if (mask == 0) return 255;
-            uint v = (px & mask) >> shift;
-            return (byte)(width >= 8 ? v >> (width - 8) : v * 255 / ((1u << width) - 1));
-        }
-    }
-
     public static Image Load(byte[] d)
     {
-        if (d.Length < 128 || d[0] != 'D' || d[1] != 'D' || d[2] != 'S') return null;
-        int h = BitConverter.ToInt32(d, 12), w = BitConverter.ToInt32(d, 16);
-        uint pfFlags = BitConverter.ToUInt32(d, 80), fourCc = BitConverter.ToUInt32(d, 84);
-        int bits = BitConverter.ToInt32(d, 88);
-        uint rm = BitConverter.ToUInt32(d, 92), gm = BitConverter.ToUInt32(d, 96), bm = BitConverter.ToUInt32(d, 100), am = BitConverter.ToUInt32(d, 104);
-        if ((pfFlags & 4) != 0 && fourCc != 0) { var img = new Image(); return img.LoadDdsFromBuffer(d) == Error.Ok ? img : null; }
-        if (bits != 32 && bits != 24 && bits != 16 && bits != 8) return null;
-        int bpp = bits / 8, stride = w * bpp;
-        var rgba = new byte[w * h * 4];
-        var r = new Channel(rm); var g = new Channel(gm); var b = new Channel(bm); var a = new Channel(am);
-        bool alphaOnly = bits == 8 && (pfFlags & 2) != 0 && rm == 0;
-        bool lum = (pfFlags & 0x20000) != 0, hasAlpha = (pfFlags & 1) != 0;
-        if (!alphaOnly && !lum && bits == 32 && rm == 0x00ff0000 && gm == 0x0000ff00 && bm == 0x000000ff && (am == 0xff000000 || !hasAlpha))
-        {
-            // A8R8G8B8 / X8R8G8B8, the usual atlas: every channel is a whole byte, so this is a byte swizzle
-            Ms2.Formats.Pixels.DdsPixels.SwizzleBgra(d.AsSpan(128, rgba.Length), rgba, hasAlpha);
-            return Image.CreateFromData(w, h, false, Image.Format.Rgba8, rgba);
-        }
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-            {
-                int o = 128 + y * stride + x * bpp;
-                uint px = 0;
-                for (int k = 0; k < bpp; k++) px |= (uint)d[o + k] << (8 * k);
-                int q = (y * w + x) * 4;
-                if (alphaOnly) { rgba[q] = rgba[q + 1] = rgba[q + 2] = 255; rgba[q + 3] = (byte)px; continue; }
-                if (lum) { var l = r.Get(px); rgba[q] = rgba[q + 1] = rgba[q + 2] = l; rgba[q + 3] = am != 0 ? a.Get(px) : (byte)255; continue; }
-                rgba[q] = r.Get(px); rgba[q + 1] = g.Get(px); rgba[q + 2] = b.Get(px);
-                rgba[q + 3] = hasAlpha ? a.Get(px) : (byte)255;
-            }
-        return Image.CreateFromData(w, h, false, Image.Format.Rgba8, rgba);
+        if (Ms2.Formats.Pixels.DdsPixels.IsBlockCompressed(d)) { var img = new Image(); return img.LoadDdsFromBuffer(d) == Error.Ok ? img : null; }
+        var rgba = Ms2.Formats.Pixels.DdsPixels.ToRgba(d, out int w, out int h);
+        return rgba == null ? null : Image.CreateFromData(w, h, false, Image.Format.Rgba8, rgba);
     }
 }

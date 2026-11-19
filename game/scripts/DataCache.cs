@@ -148,6 +148,7 @@ public static class DataCache
         var built = new List<string>();
         var s = Store(packs.DataDir);
         if (s == null || CacheStore.Mode == "off") return built;
+        s.RemoveLeftovers();
         const string phase = "Reading the client's quest data";
         progress?.Invoke(phase, 0);
         built.AddRange(QuestMapGraph.BuildCache(packs, s));
@@ -185,6 +186,11 @@ public static class DataCache
         progress?.Invoke(layoutPhase, 0);
         int layouts = LayoutCache.BuildAll(packs, f => progress?.Invoke(layoutPhase, f));
         if (layouts > 0) built.Add(layouts + " layouts");
+        // the UI's atlases, decoded to their pixels (in the same folder): a dialog's first open reads its atlases' files
+        const string atlasPhase = "Reading the client's UI images";
+        progress?.Invoke(atlasPhase, 0);
+        int atlases = AtlasCache.BuildAll(packs, f => progress?.Invoke(atlasPhase, f));
+        if (atlases > 0) built.Add(atlases + " atlases");
         return built;
     }
 }

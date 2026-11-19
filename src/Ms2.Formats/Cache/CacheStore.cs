@@ -121,6 +121,23 @@ public sealed class CacheStore
         catch (Exception) { return true; }   // access denied and the like: the process is there, its file stays
     }
 
+    /// <summary>
+    /// Removes the temporary files of writes that did not finish (a process stopped between the write and the rename: its
+    /// files are never read, the name read is the renamed one); the count removed. Files of a process still running stay.
+    /// </summary>
+    public int RemoveLeftovers()
+    {
+        int n = 0;
+        if (!Directory.Exists(Dir)) return 0;
+        foreach (var f in Directory.GetFiles(Dir, "*.bin.tmp*"))
+        {
+            var tail = f[(f.LastIndexOf(".tmp", StringComparison.Ordinal) + 4)..];
+            if (!int.TryParse(tail, out int pid) || Running(pid)) continue;
+            try { File.Delete(f); n++; } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+        return n;
+    }
+
     /// <summary>What a piece's load did, for the perf log.</summary>
     public sealed class Outcome
     {

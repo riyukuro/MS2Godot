@@ -11,5 +11,7 @@
   <ItemGroup>
     <!-- m2d/m2h archive reader (GPL-3.0-or-later). Wrapped by Pack/PackSet so it can be replaced. -->
     <PackageReference Include="Maple2.File.Parser.Tadeucci" Version="2.3.7" />
+    <!-- LZ4 block codec (MIT): the per-install cache of the UI's images -->
+    <PackageReference Include="K4os.Compression.LZ4" Version="1.3.8" />
   </ItemGroup>
 </Project>
