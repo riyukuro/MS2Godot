@@ -114,9 +114,12 @@ public static class Snapshot
         if (t.Namespace is "System.Collections.Generic" or "System.Collections")
             throw new NotSupportedException($"snapshot: collection {t} is not supported");
         if (t.IsValueType) return Make(typeof(StructCodec<>), t);
-        if (t.IsInterface || t.IsAbstract || t == typeof(object)) return Make(typeof(PolyCodec<>), t);
+        if (IsPoly(t)) return Make(typeof(PolyCodec<>), t);
         return Make(typeof(ClassCodec<>), t);
     }
+
+    /// <summary>A declared type whose values are written with their own type's name (<see cref="PolyCodec{T}"/>).</summary>
+    static bool IsPoly(Type t) => t.IsInterface || t.IsAbstract || t == typeof(object);
 
     static Codec Make(Type generic, params Type[] args) => (Codec)Activator.CreateInstance(generic.MakeGenericType(args), true);
 
@@ -277,6 +280,8 @@ public static class Snapshot
             if (v == null) { w.Unsigned(0); return; }
             w.Unsigned(1);
             var t = v.GetType();
+            // a value whose own type also writes by name (a bare object) would write itself again without end
+            if (IsPoly(t)) throw new NotSupportedException($"snapshot: a value of type {t} has no fields to store");
             For(typeof(string)).WriteObj(w, t.AssemblyQualifiedName);
             For(t).WriteObj(w, v);
         }
@@ -287,6 +292,7 @@ public static class Snapshot
             var name = (string)For(typeof(string)).ReadObj(r);
             var t = r.TypeOf(name);
             if (!typeof(T).IsAssignableFrom(t)) throw new InvalidDataException($"snapshot: {t} is not a {typeof(T)}");
+            if (IsPoly(t)) throw new InvalidDataException($"snapshot: a value named as {t}, a type no value is written as");
             return (T)For(t).ReadObj(r);
         }
 

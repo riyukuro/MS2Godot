@@ -341,4 +341,19 @@ public class SnapshotTests
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
+    public sealed class Holder { public object Boxed; }
+
+    [Test]
+    public void AValueNamedAsAnObjectIsRefusedNotRecursedInto()
+    {
+        Assert.Throws<NotSupportedException>(() => Snapshot.Write(new Holder { Boxed = new object() }));
+        // a body naming a value's type as object (the same length as string's name): refused, not read as itself again
+        var bytes = Snapshot.Write(new Holder { Boxed = "abc" });
+        var from = System.Text.Encoding.UTF8.GetBytes("System.String, ");
+        var to = System.Text.Encoding.UTF8.GetBytes("System.Object, ");
+        int at = bytes.AsSpan().IndexOf(from);
+        Assert.That(at, Is.GreaterThanOrEqualTo(0));
+        to.CopyTo(bytes, at);
+        Assert.Throws<InvalidDataException>(() => Snapshot.Read<Holder>(bytes));
+    }
 }
