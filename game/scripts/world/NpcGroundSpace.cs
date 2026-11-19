@@ -4,12 +4,13 @@ using Godot;
 namespace Ms2Godot;
 
 /// <summary>
-/// Server stand-in: the colliders of the field's entities with DisableCollision set, in a physics space of their own that
-/// only the npc ground cast queries (<see cref="FieldNpcs"/>). The client builds no collision for such an entity, so they
-/// stay out of the world space the player, the camera and the shadows use; the official server's npc ground counts them
-/// as floors, so a spawn point over a grating or an invisible box stands on it. The shapes are the ones the entity would
-/// make without the flag: its NIF PhysX meshes (one-sided, as in the world) and its GeneratePhysX box. Built off the
-/// tree with the field; the space and its body exist while the node is in the tree.
+/// Server stand-in: the ground the official server places npcs on, in a physics space of its own that only the npc
+/// ground cast queries (<see cref="FieldNpcs"/>). It holds the server's collider of every entity, the same shapes the
+/// world uses: a PhysXWhitebox's box, a GeneratePhysX mesh's box only (not its NIF's PhysX meshes), any other mesh's NIF
+/// PhysX meshes (one-sided, as in the world). Fluids are left out, and entities with DisableCollision set count, which
+/// the world leaves out: a spawn point over a grating or an invisible box stands on it. No layer of the world is read,
+/// so the npc ground does not change with the world's collision layers. Built off the tree with the field; the space
+/// and its body exist while the node is in the tree.
 /// </summary>
 public sealed partial class NpcGroundSpace : Node3D
 {
@@ -22,7 +23,7 @@ public sealed partial class NpcGroundSpace : Node3D
     /// <summary>The number of shapes added.</summary>
     public int Count => shapes.Count;
 
-    /// <summary>A disabled entity's shape placed at <paramref name="xform"/> in this node's space.</summary>
+    /// <summary>A ground shape placed at <paramref name="xform"/> in this node's space.</summary>
     public void Add(Shape3D shape, Transform3D xform) => shapes.Add((shape, xform));
 
     public override void _Notification(int what)
@@ -53,7 +54,7 @@ public sealed partial class NpcGroundSpace : Node3D
         body = space = default;
     }
 
-    /// <summary>The first disabled-collision surface on the segment <paramref name="from"/> to <paramref name="to"/> (global),
+    /// <summary>The first ground surface on the segment <paramref name="from"/> to <paramref name="to"/> (global),
     /// or null when there is none.</summary>
     public static Vector3? Hit(World3D world, Vector3 from, Vector3 to)
     {

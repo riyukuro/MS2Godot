@@ -242,17 +242,34 @@ public sealed class FieldBuilder
                     {
                         // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2, in the
                         // entity's PropCollisionGroup (PhysXWhiteboxService.cpp:392-395, :440)
-                        var cs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) }, Transform = xf };
-                        Chunk(e.Position, (int)e.Number("PropCollisionGroup")).AddChild(cs);
+                        var whitebox = new BoxShape3D { Size = new Vector3((float)d.X, (float)d.Y, (float)d.Z) };
+                        Chunk(e.Position, (int)e.Number("PropCollisionGroup")).AddChild(new CollisionShape3D { Shape = whitebox, Transform = xf });
+                        npcGround.Add(whitebox, xf);
                         Whiteboxes++;
                     }
                     continue;
+                }
+
+                // the npc ground (NpcGroundSpace) takes the server's collider for the entity: a fluid mesh none, a
+                // GeneratePhysX entity its box only (not its NIF's PhysX meshes; a GeneratePhysX entity with no Mesh, such
+                // as an MS2InteractActor, gets the box too), any other mesh its NIF's PhysX meshes; DisableCollision does
+                // not matter there
+                bool isMesh = e.HasMixin("Mesh");
+                bool fluid = isMesh && e.Get("CubeType") == "Fluid";
+                BoxShape3D generated = null;
+                var generatedAt = default(Transform3D);
+                if (e.HasMixin("MS2MapProperties") && e.Bool("GeneratePhysX"))
+                {
+                    generated = GeneratePhysXBox(e, out generatedAt);
+                    if (!fluid) npcGround.Add(generated, generatedAt);
                 }
 
                 var llid = e.Get("NifAsset");
                 if (llid == null || !llid.StartsWith("urn:llid:")) continue;
                 var me = Model(llid);
                 if (me == null) continue;
+                if (isMesh && !fluid && generated == null)
+                    foreach (var shape in me.Collision) npcGround.Add(shape, xf);
 
                 if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
                 else if (e.Bool("IsVisible", true) && me.Elsewhere) DrawnElsewhere.Add(e);
@@ -264,15 +281,13 @@ public sealed class FieldBuilder
                     grouped = true;            // counted when its group is placed
                 }
 
-                if (e.Bool("DisableCollision"))
-                {
-                    // no collision in the world; the server stand-in's npc ground still stands on it (NpcGroundSpace),
-                    // fluids left out as the ground leaves them out
-                    if (e.Get("CubeType") == "Fluid") continue;
-                    foreach (var shape in me.Collision) npcGround.Add(shape, xf);
-                    if (e.HasMixin("MS2CubeProp") && e.Bool("GeneratePhysX")) npcGround.Add(GeneratePhysXBox(e, out var at), at);
-                    continue;
-                }
+                // DisableCollision (0x7e5f4195, DisableCollision by its uses): the client keeps the entity's actors but
+                // clears their groups mask when the entity is added (WorldService::FUN_141bbd640,
+                // worldservice_1.cpp:10478-10488, through CPhysXHelper::SetEntityCollisionGroup @0x141689ec0: the cube
+                // actor of a GeneratePhysX entity, else each actor of its NIF PhysX props), so they are left out of the
+                // world here.
+                // STILL-OPEN: whether any client query that passes no groups mask still meets them
+                if (e.Bool("DisableCollision")) continue;
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -310,10 +325,11 @@ public sealed class FieldBuilder
                     // (cubemapinformationservice_3.cpp:4343). At field load nothing sets the entity's group on it; the other
                     // SetEntityCollisionGroup callers run at run time only (housing's cell window FUN_1410c3670 and
                     // cubemapinformationservice_3.cpp:3155, 3666-3669, 3736, 4761/4776; functioncubeobject.cpp:998/1000;
-                    // liftableobject.cpp:301/305; entityvibrator.cpp:287/345/485/581; worldservice_1.cpp:8727, 10392,
-                    // 10488). The entity keeps its own group for the hit report's tests (FUN_141675ed0 reads the property,
+                    // liftableobject.cpp:301/305; entityvibrator.cpp:287/345/485/581; worldservice_1.cpp:8727, 10392),
+                    // or at field load only for 0x7e5f4195 entities (worldservice_1.cpp:10478-10488), which the stand-in
+                    // skips. The entity keeps its own group for the hit report's tests (FUN_141675ed0 reads the property,
                     // pcbase.cpp:4335-4342): KindMeta
-                    var box = Tag(new CollisionShape3D { Shape = GeneratePhysXBox(e, out var at), Transform = at });
+                    var box = Tag(new CollisionShape3D { Shape = generated ?? GeneratePhysXBox(e, out generatedAt), Transform = generatedAt });
                     box.SetMeta(KindMeta, group);
                     Chunk(e.Position, GeneratedBoxGroup).AddChild(box);
                     Boxes++;

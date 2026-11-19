@@ -31,13 +31,6 @@ public sealed class FieldNpcs
     /// under the ground the official server puts an npc.</summary>
     public const float GroundProbeUp = 75f, GroundProbeDown = 1500f, GroundBelow = 1f;
 
-    /// <summary>The layers the ground cast of <see cref="SpawnNpcs"/> hits. This offline stand-in for the server's spawn
-    /// height sees the ground as the PC stands on it: CPhysXHelper's down-ray groups 0x389
-    /// (<see cref="Movement.MoveConfig.DownRayGroups"/>: 0, 3, 7, 8 and 9), which leave out the PC (group 2,
-    /// <see cref="Movement.MoveConfig.PcLayer"/>), the npc capsules (group 4), vibrators (10) and ladders (11). A water
-    /// cube is hit through its GeneratePhysX box (group 9), and a water prop's own mesh (group 8) is hit too.</summary>
-    public const uint GroundLayers = Movement.MoveConfig.DownRayGroups;
-
     readonly PackSet packs;
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
@@ -154,10 +147,11 @@ public sealed class FieldNpcs
     /// checked against the official server's packets for Tria (02000001). Most spawn points sit on their block top, so
     /// they go 1 down. The stair spear guards 11000451_spear_03_Left/Right have their point 15 below the stair surface
     /// and go to 1 under it, so the ground is used upward too. 11000452_guard_crossbow_05 has its point at 4200, the top of
-    /// the block one cube east, and goes to 1 under its own 4050 floor. The stand-in casts down on the field shapes from
-    /// GroundProbeUp above the point and uses the first hit - 1, which gives all three cases. With no hit within
-    /// GroundProbeDown the point's own z is used. Entities with DisableCollision set count as ground too (NpcGroundSpace):
-    /// the official server stands npcs on such a floor, which the client builds no collision for.
+    /// the block one cube east, and goes to 1 under its own 4050 floor. The stand-in casts down on the server's ground
+    /// (NpcGroundSpace) from GroundProbeUp above the point and uses the first hit - 1, which gives all three cases. With
+    /// no hit within GroundProbeDown the point's own z is used. Entities with DisableCollision set count as ground: the
+    /// official server stands npcs on such a floor, which the client's world leaves out (see FieldBuilder.BuildSteps).
+    /// Fluids do not count.
     /// STILL-OPEN: what ground source the official server uses (only its result is known), why a few points stand on a
     /// surface other than the first one (a box the point starts inside, a vibrate prop passed through), and whether
     /// region spawn monsters get the same.
@@ -168,9 +162,6 @@ public sealed class FieldNpcs
             foreach (var x in packs.List(NpcArchive))
                 if (x.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)) kfmByName.TryAdd(Path.GetFileNameWithoutExtension(x), x);
         var world = parent.GetWorld3D();
-        var space = world?.DirectSpaceState;
-        var ray = RayQuery.CastRay();
-        ray.Query.CollisionMask = GroundLayers;
         foreach (var e in map.Entities)
         {
             if (!e.HasMixin("SpawnPointNPC") || !e.Bool("IsSpawnOnFieldCreate", true) || !e.Bool("IsVisible", true)) continue;
@@ -183,7 +174,7 @@ public sealed class FieldNpcs
                 var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
-                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, GroundOffset(world, space, ray, e) + PacketLift);
+                var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, GroundOffset(world, e) + PacketLift);
                 var body = root.GetNode<Node3D>("Body");
                 Spawned.Add(new Placed { Row = row, Root = root, Body = body, Height = ModelTop(body) });
                 Npcs++;
@@ -192,19 +183,13 @@ public sealed class FieldNpcs
         }
     }
 
-    /// <summary>The server's z change for a spawn point: the first ground under it (the field shapes or a disabled-collision
-    /// floor, whichever is higher) - GroundBelow, or 0 when the cast hits nothing.</summary>
-    static float GroundOffset(World3D world, PhysicsDirectSpaceState3D space, RayQuery ray, FieldEntity e)
+    /// <summary>The server's z change for a spawn point: the first ground under it (NpcGroundSpace) - GroundBelow, or 0
+    /// when the cast hits nothing.</summary>
+    static float GroundOffset(World3D world, FieldEntity e)
     {
-        if (space == null) return 0;
         var at = FieldBuilder.ToGodotPoint(e.Position);
-        ray.Query.From = at + Vector3.Up * GroundProbeUp;
-        ray.Query.To = at + Vector3.Down * GroundProbeDown;
-        var hit = space.IntersectRay(ray.Query);
-        float? ground = hit.Count == 0 ? null : ((Vector3)hit["position"]).Y;
-        if (NpcGroundSpace.Hit(world, ray.Query.From, ray.Query.To) is Vector3 floor && (ground == null || floor.Y > ground))
-            ground = floor.Y;
-        return ground is float y ? y - GroundBelow - at.Y : 0;
+        return NpcGroundSpace.Hit(world, at + Vector3.Up * GroundProbeUp, at + Vector3.Down * GroundProbeDown) is Vector3 ground
+            ? ground.Y - GroundBelow - at.Y : 0;
     }
 
     public int Mobs;
