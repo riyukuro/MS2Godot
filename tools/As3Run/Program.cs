@@ -8,7 +8,7 @@ using Ms2.Formats.Pack;
 //   As3Run run <movie> [--frames N] [--trace] [--tree]   one movie: errors, missing APIs, display tree
 //   As3Run scan [--frames N] [--out FILE] [--only SUBSTR] every movie: construct the document class, run N frames, coverage report
 string data = Environment.GetEnvironmentVariable("MS2_DATA");
-int frames = 60; bool trace = false, tree = false; string outFile = null, only = null;
+bool hostMode = true; int frames = 60; bool trace = false, tree = false; string outFile = null, only = null;
 var pos = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -21,6 +21,7 @@ for (int i = 0; i < args.Length; i++)
         case "--out": outFile = args[++i]; break;
         case "--only": only = args[++i]; break;
         case "--gen": Console.Error.WriteLine($"compiled bodies: {GeneratedCode.LoadAssembly(args[++i])} blocks"); break;
+        case "--nohost": hostMode = false; break;
         case "--oracle": Interp.UseOracle = true; break;
         default: pos.Add(args[i]); break;
     }
@@ -31,13 +32,49 @@ var gfx = packs.List("Resource/Gfx").Where(e => e.EndsWith(".gfx", StringCompari
 var byKey = gfx.GroupBy(e => Path.GetFileNameWithoutExtension(e).ToLowerInvariant()).ToDictionary(g => g.Key, g => g.First());
 var src = new MovieSource(k => byKey.TryGetValue(k.ToLowerInvariant(), out var e) ? packs.Read("Resource/Gfx", e) : null);
 
-(Runtime, Player, bool) RunMovie(string key, Action<string> traceOut)
+// What each controller loads beside its movie (UiController.Libraries), by movie key.
+var libraries = new Dictionary<string, IEnumerable<string>>(StringComparer.OrdinalIgnoreCase);
+foreach (var t in typeof(Ms2.Ui.UiController).Assembly.GetTypes().Where(t => !t.IsAbstract && typeof(Ms2.Ui.UiController).IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null))
 {
-    var (rt, p) = src.Open(key, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
+    try { var c = (Ms2.Ui.UiController)Activator.CreateInstance(t); if (c.Libraries != null) libraries[c.Movie] = c.Libraries.ToList(); }
+    catch (Exception) { }
+}
+
+// The host's statics (UiHost.InstallShared) answering "no data": the movie reaches them through MS2DataModel, DataBinding and
+// GameDataModel, which the client implements natively. They are the host's, not runtime gaps.
+void InstallHostStatics(Runtime rt)
+{
+    void Static(string cls, params string[] names)
+    {
+        if (rt.GetClass(cls) is not { } c) return;
+        foreach (var n in names) rt.SetProperty(c, Name.Public(n), new AsPlainFunction(rt, new NativeMethod(cls + "." + n, (s, a) => null)));
+    }
+    Static("scaleform.ms2.Data.MS2DataModel", "getUserData", "playSound");
+    Static("scaleform.clik.data.DataBinding", "createBindingImpl", "deleteBindingImpl");
+    Static("com.scaleform.mmo.GameDataModel", "notifySlotUse", "notifySlotShiftClick", "notifySlotDragStart", "notifySlotDragEnd", "getSlotTooltip");
+}
+
+(Runtime, Player, bool) RunMovie(string key, Action<string> traceOut, int[] hostErrors = null)
+{
+    var (rt, p) = src.Open(key, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); },
+        hostMode && libraries.TryGetValue(key, out var libs) ? libs : null);
     if (traceOut != null) rt.Trace = traceOut;
     p.External = (n, a) => { traceOut?.Invoke($"[ExternalInterface] {n}({string.Join(", ", a.Select(Rt.Describe))})"); return null; };
     p.ReadText = url => null;
     bool ok = p.Start();
+    if (hostMode && ok)
+    {
+        InstallHostStatics(rt);
+        // the controller's load call with nothing to show: initData({}) (an empty object, as a fresh account would give)
+        if (p.FindOwner("initData") is { } owner)
+        {
+            int before = rt.Errors.Count;
+            rt.Guard("initData", () => p.Call(owner, "initData", p.NewObject()));
+            // errors an empty initData raises are the host's missing data (the movie reads a field the server would fill), kept apart
+            if (hostErrors != null) hostErrors[0] = rt.Errors.Count - before;
+            if (rt.Errors.Count > before) rt.Errors.RemoveRange(before, rt.Errors.Count - before);
+        }
+    }
     for (int f = 0; f < frames; f++) p.Tick();
     return (rt, p, ok);
 }
@@ -300,7 +337,7 @@ switch (pos[0])
         int clean = 0, constructed = 0, total = 0, noCode = 0;
         var missingMovies = new Dictionary<string, HashSet<string>>();
         var missingHits = new Dictionary<string, long>();
-        long totalErrors = 0, totalMissingHits = 0;
+        long totalErrors = 0, totalMissingHits = 0; int hostEntryErrors = 0, hostEntryMovies = 0;
         var perMovie = new List<(string Key, int Errors, int Missing, long Hits)>();
         var errorKinds = new Dictionary<string, HashSet<string>>();
         var rows = new StringBuilder();
@@ -310,13 +347,15 @@ switch (pos[0])
             total++;
             Runtime rt; Player p; bool ok;
             var t0 = sw.ElapsedMilliseconds;
-            try { (rt, p, ok) = RunMovie(k, null); }
+            var he = new int[1];
+            try { (rt, p, ok) = RunMovie(k, null, he); }
             catch (Exception e) { rows.AppendLine($"{k}\tLOADFAIL\t{e.GetType().Name}: {e.Message}"); errorKinds.GetOrAdd("load: " + e.GetType().Name).Add(k); continue; }
             bool hasCode = src.Abc(k).Count > 0 || p.Layout["documentClass"] != null;
             if (!hasCode) noCode++;
             if (ok) constructed++;
             bool isClean = ok && rt.Errors.Count == 0 && rt.Missing.Keys.All(m => m.StartsWith("data: "));
             if (isClean) clean++;
+            if (he[0] > 0) { hostEntryErrors += he[0]; hostEntryMovies++; }
             foreach (var m in rt.Missing.Keys) missingMovies.GetOrAdd(m).Add(k);
             foreach (var (m, n) in rt.Missing) { missingHits[m] = missingHits.GetValueOrDefault(m) + n; totalMissingHits += n; }
             totalErrors += rt.Errors.Count;
@@ -328,6 +367,7 @@ switch (pos[0])
         var rep = new StringBuilder();
         rep.AppendLine($"movies {total}, document class constructed {constructed}, clean (no error, no missing API in {frames} frames) {clean}, movies without code {noCode}, {sw.Elapsed.TotalSeconds:0}s");
         rep.AppendLine($"errors {totalErrors} in {perMovie.Count(x => x.Errors > 0)} movies; missing APIs {missingHits.Count} distinct, {totalMissingHits} hits, in {perMovie.Count(x => x.Missing > 0)} movies");
+        if (hostMode) rep.AppendLine($"host entry (initData with an empty object): {hostEntryErrors} errors in {hostEntryMovies} movies, not counted above (the movie reads data the server fills)");
         rep.AppendLine();
         rep.AppendLine("## Movies with the most errors + missing APIs (errors, distinct missing, missing hits)");
         foreach (var x in perMovie.OrderByDescending(x => x.Errors + x.Missing).ThenByDescending(x => x.Hits).Take(10)) rep.AppendLine($"{x.Key}\t{x.Errors}\t{x.Missing}\t{x.Hits}");
