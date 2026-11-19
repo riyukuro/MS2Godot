@@ -14,6 +14,7 @@ namespace Ms2Godot.Movement;
 ///   dash                      start StateDash (the server / a skill does in the client)
 ///   wheel N                   one mouse wheel notch (1 in, -1 out), as the wheel handler sets it
 ///   cam                       print the camera zoom distance
+///   camtrace S                print the zoom distance and the time since the command every frame for S seconds
 ///   click X Y Z               click to move to a point (needs --mouse-move)
 ///   ropes N                   print the N rope segments nearest the player
 ///   walls R                   print cube walls within R whose face the snap ray (+X / +Y) reaches from the floor in front
@@ -71,6 +72,7 @@ public partial class MoveProof : Node
 
     MoveTrace trace;
     int stepIndex, uneven;
+    double camTraceT, camTraceLeft;
     string stepName = "";
 
     /// <summary>
@@ -235,6 +237,13 @@ hold 0.8
     void Step(double delta, bool sameFrame = false)
     {
         if (!sameFrame) frame++;
+        if (!sameFrame && camTraceLeft > 0)
+        {
+            // the camera steps after this node in the frame, so the distance read here is the one camTraceT after the trace began
+            GD.Print($"[move] camtrace t {camTraceT:0.0000} dist {(player.GetParent() as Field)?.CameraDistance:0.000}");
+            camTraceT += delta;
+            camTraceLeft -= delta;
+        }
         player.ScriptDriven = true;
         if (player.State != lastState)
         {
@@ -305,6 +314,11 @@ hold 0.8
                 break;
             case "cam":                        // print the zoom distance
                 GD.Print($"[move] cam f{frame} dist {(player.GetParent() as Field)?.CameraDistance:0.00}");
+                Next();
+                break;
+            case "camtrace":                   // print the zoom distance and the time since this command every frame for S s
+                camTraceT = 0;
+                camTraceLeft = F(s[1]);
                 Next();
                 break;
             case "dash":

@@ -560,16 +560,42 @@ public partial class Field : Node3D
             if (Mathf.Abs(camVel) >= 5f)
             {
                 camVelActive = true;
-                // the client's pass decays m_84 by 0.9 and moves the eye by m_84 once a frame, at its 60 fps: kept per
-                // 60 fps frame here, so the zoom's coast and speed per second are the same at any frame rate
+                // the client's pass (targetcameramode.cpp:219-228) decays m_84 by 0.9 and then moves the eye by m_84 along
+                // the eye-to-target line, once a frame at its 60 fps, until |m_84| < 5. The pitch follows the distance, so
+                // the path depends on the step size: the coast runs on its own 1/60 s grid with the client's step
+                // (CoastStep), and a drawn frame shows the distance between two grid steps at its phase. The path at the
+                // grid times and the settled distance are the 60 fps ones at any frame rate.
                 float frames = dt > 0 ? FrameRate.Frames((float)dt) : 1f;
-                if (!camBlocked) camVel *= Mathf.Pow(0.9f, frames);
-                var pos = placedEye.Value + (look - placedEye.Value).Normalized() * camVel * frames;
-                if (Planar(prevLook ?? look, look) > Planar(prevEye ?? pos, pos)) passes++;
-                float maxDist = cam.Distance + PlayerHeight;
-                bool outside = camDist < MinCameraDistance || camDist > maxDist;
-                SetCameraDistance(pos, look, !(outside && ((camVel > 0 && camDist > maxDist) || (camVel < 0 && camDist < MinCameraDistance))));
+                if (camBlocked)
+                {
+                    // the blocked view's -10 (no decay) moves by m_84 each 60 fps frame
+                    var pos = placedEye.Value + (look - placedEye.Value).Normalized() * camVel * frames;
+                    if (Planar(prevLook ?? look, look) > Planar(prevEye ?? pos, pos)) passes++;
+                    float maxDist = cam.Distance + PlayerHeight;
+                    bool outside = camDist < MinCameraDistance || camDist > maxDist;
+                    SetCameraDistance(pos, look, !(outside && ((camVel > 0 && camDist > maxDist) || (camVel < 0 && camDist < MinCameraDistance))));
+                    coastDist = camDist;
+                    coastPhase = 0;
+                }
+                else
+                {
+                    coastPhase += frames;
+                    while (coastPhase >= 1f - 1e-4f && camCoastLeft > 0)
+                    {
+                        coastDist = CoastStep(coastDist, ms2yaw, ref camVel);
+                        camPitch = null;
+                        coastPhase -= 1f;
+                        if (--camCoastLeft <= 0 || camVel == 0) { camCoastLeft = 0; break; }
+                    }
+                    if (camCoastLeft <= 0) { camDist = coastDist; camVel = 0; coastPhase = 0; }   // |m_84| is under 5 now
+                    else
+                    {
+                        float v = camVel;
+                        camDist = Mathf.Lerp(coastDist, CoastStep(coastDist, ms2yaw, ref v), Mathf.Clamp(coastPhase, 0f, 1f));
+                    }
+                }
                 Place(camDist, ms2yaw, out eye, out look, out offset);
+                if (!camBlocked && Planar(prevLook ?? look, look) > Planar(prevEye ?? eye, eye)) passes++;
                 placedEye = eye;
             }
             else if (camVelActive)
@@ -584,6 +610,9 @@ public partial class Field : Node3D
             if (i == 0 && zoomInput != 0)
             {
                 camVel = Mathf.Clamp(camVel + zoomInput * (1f / FrameRate.Reference) * 2000f, -150f, 150f);
+                camCoastLeft = CoastFrames(camVel);
+                coastDist = camDist;
+                coastPhase = 0;
                 zoomInput = 0;
             }
             player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
@@ -599,7 +628,7 @@ public partial class Field : Node3D
             camera.GlobalTransform = shown;
             // vfunc_39: the near plane of the SHOWN camera; while blocked the next pass pushes the eye out by 10
             camBlocked = NearPlaneBlocked(shown, look);
-            if (camBlocked) { camVel = -10f; passes++; }
+            if (camBlocked) { camVel = -10f; camCoastLeft = CoastFrames(camVel); coastDist = camDist; coastPhase = 0; passes++; }
             camLook = look;
         }
         SetFogBias(camDist);
@@ -609,6 +638,28 @@ public partial class Field : Node3D
     // m_84 (+ toward the target), camVelActive m_88, camBlocked m_f4; placedEye is m_d8's position, camLook m_78.
     bool eulerLogged;
     float camVel;
+    // 60 fps frames left in the zoom coast: the client moves while |m_84| >= 5 at the frame's start, so from v that is
+    // floor(ln(5 / |v|) / ln 0.9) + 1 frames
+    float camCoastLeft;
+    float coastDist, coastPhase;   // the coast's distance at its last 1/60 s grid step, and the frames since it
+
+    /// <summary>
+    /// One client coast frame from distance d (targetcameramode.cpp:219-247): m_84 *= 0.9, the eye moves by m_84 toward
+    /// the target, and the distance is clamped and snapped as <see cref="SetCameraDistance"/> does.
+    /// </summary>
+    float CoastStep(float d, float yaw, ref float v)
+    {
+        v *= 0.9f;
+        Place(d, yaw, out var eye, out var look, out _);
+        var pos = eye + (look - eye).Normalized() * v;
+        float maxDist = cam.Distance + PlayerHeight, nd = Planar(look, pos);
+        bool outside = d < MinCameraDistance || d > maxDist;
+        if (!(outside && ((v > 0 && d > maxDist) || (v < 0 && d < MinCameraDistance)))) nd = Mathf.Clamp(nd, MinCameraDistance, maxDist);
+        if ((v < 0 && nd > cam.Distance && d < cam.Distance) || (v > 0 && d > cam.Distance && nd < cam.Distance)) { nd = cam.Distance; v = 0; }
+        return nd;
+    }
+
+    static float CoastFrames(float v) => Mathf.Abs(v) < 5f ? 0f : Mathf.Floor(Mathf.Log(5f / Mathf.Abs(v)) / Mathf.Log(0.9f) + 1e-4f) + 1f;
     bool camVelActive, camBlocked;
     int zoomInput;
     /// <summary>A wheel notch, as the mouse handler sets it (+1 in, -1 out), for scripted runs (MoveProof wheel).</summary>
