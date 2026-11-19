@@ -149,6 +149,9 @@ public sealed partial class NpcPresence : CanvasLayer
         NameTags++;
     }
 
+    /// <summary>setData's text and fontColor on a name tag line. The dark edge round the letters is the field's own drop shadow
+    /// (NameTagName / NameTagGuild: black, blur 3, strength 10, no distance), which the movie build already draws (GlyphShadow);
+    /// the line gets no outline of its own.</summary>
     internal static void SetLabel(MovieClipNode label, string text, int? size, Color color)
     {
         if (label == null) return;
@@ -158,8 +161,6 @@ public sealed partial class NpcPresence : CanvasLayer
                 t.Text = text;
                 t.Label.LabelSettings = (LabelSettings)t.Label.LabelSettings.Duplicate();
                 t.Label.LabelSettings.FontColor = color;
-                t.Label.LabelSettings.OutlineSize = 3;
-                t.Label.LabelSettings.OutlineColor = new Color(0, 0, 0, 0.85f);
                 if (size != null) t.Label.LabelSettings.FontSize = size.Value;
             }
     }
