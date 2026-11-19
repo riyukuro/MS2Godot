@@ -179,8 +179,8 @@ public sealed class LivePortals
     /// dimension (and for types 4 / 0xb the action kind) from the packet; another type binds the xblock entity with the Portal
     /// mixin (0x12cd8b5) and the same PortalID, and keeps that entity's pose. With an entity: minimap, then the target map prop
     /// (the packet's, also for a bound entity); the box; SetGlow(enabled), SetShown(visible); then the quest mask
-    /// (FUN_14169d0e0). The client also aborts when the bound entity has no PortalID; a Portal-mixin entity always has one, so
-    /// that cannot happen here.
+    /// (FUN_14169d0e0). A portal no entity binds to is not registered (worldservice_1.cpp:9024). The client also aborts when
+    /// the bound entity has no PortalID; a Portal-mixin entity always has one, so that cannot happen here.
     /// STILL-OPEN: the spawned templates' own PortalOffset default (taken as 0) and the proxy (m_14c).
     /// </summary>
     void Register(FieldPortalMessage m)
@@ -215,11 +215,11 @@ public sealed class LivePortals
                 p.OwnMask = QuestMaskTable.FromEntity(e.Get("MaskQuestID"), e.Get("MaskQuestState"));
             }
         }
-        if (p.HasEntity)
-        {
-            p.Minimap = m.Minimap;
-            p.BuildBox();
-        }
+        // no entity bound: the client returns 0 before m_350.SetAt (worldservice_1.cpp:9098), so the id is not registered
+        // and a later add of it is taken
+        if (!p.HasEntity) return;
+        p.Minimap = m.Minimap;
+        p.BuildBox();
         byId[p.Id] = p; order.Add(p);
         SetGlow(p, m.Enabled);
         SetShown(p, m.Visible);

@@ -322,6 +322,20 @@ public class LivePortalTests
     }
 
     [Test]
+    public void UnboundPortalIsNotRegistered()
+    {
+        var (host, action, portals) = Field(Xblock(8));
+        portals.Apply(Add(7));
+        Assert.That(portals.ById(7), Is.Null);
+        Assert.That(portals.All, Has.Count.EqualTo(0));
+        // the same id added again (here as a spawned type) is taken
+        portals.Apply(Add(7, type: 3));
+        Assert.That(portals.ById(7)?.Type, Is.EqualTo(3));
+        Enter(action);
+        Assert.That(host.Sent, Is.EqualTo(new IOutPacket[] { new RequestMoveFieldPortal(1000, 7) }));
+    }
+
+    [Test]
     public void MessagesBeforeTheFieldAreHeld()
     {
         var host = new Host();
