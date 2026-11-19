@@ -48,4 +48,56 @@ public class FieldDataTests
         Assert.That(checkedOn, Is.GreaterThan(0));
         TestContext.WriteLine($"gemSystem on {checkedOn}, off {checkedOff}");
     }
+
+    /// <summary>The index gives what a scan of the table gives: by id the last entry of an id that has a default xblock
+    /// (CFieldData::LoadFieldData, fielddata.cpp:591 SetAt), by xblock the first entry of a name.</summary>
+    [Test]
+    public void IndexAgreesWithTheTable()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        var byId = new Dictionary<int, string>();
+        var byXb = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+        {
+            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+            var xb = (string)env?.Element("xblock")?.Attribute("name");
+            if (xb == null || (int?)fd.Attribute("id") is not int id) continue;
+            byId[id] = xb;
+            byXb.TryAdd(xb, id);
+        }
+        Assert.That(byId.Count, Is.GreaterThan(100));
+        foreach (var (id, xb) in byId)
+        {
+            Assert.That(FieldData.XBlockOf(packs, id), Is.EqualTo(xb), "id " + id);
+            Assert.That(FieldData.FindById(packs, id)?.Id, Is.EqualTo(id), "id " + id);
+        }
+        foreach (var (xb, id) in byXb)
+            Assert.That(FieldData.FindByXBlock(packs, xb.ToUpperInvariant())?.Id, Is.EqualTo(id), xb);
+        Assert.That(FieldData.FindById(packs, int.MinValue), Is.Null);
+        Assert.That(FieldData.XBlockOf(packs, int.MinValue), Is.Null);
+        Assert.That(FieldData.FindByXBlock(packs, "no such xblock"), Is.Null);
+    }
+
+    /// <summary>A lookup of the table's last entry costs one entry, not a walk of the whole table (the old scan made an
+    /// environment enumerator per entry on the way, ~110 KB per lookup of the last entry).</summary>
+    [Test]
+    public void LookupOfTheLastEntryAllocatesLittle()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        string last = null;
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+            if ((string)fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null)?.Element("xblock")?.Attribute("name") is { } xb)
+                last = xb;
+        Assert.That(FieldData.FindByXBlock(packs, last), Is.Not.Null);      // warm: the index is built once
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        var f = FieldData.FindByXBlock(packs, last);
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        TestContext.WriteLine($"FindByXBlock({last}) allocated {bytes} B");
+        Assert.That(f, Is.Not.Null);
+        Assert.That(bytes, Is.LessThan(16 * 1024));
+    }
 }

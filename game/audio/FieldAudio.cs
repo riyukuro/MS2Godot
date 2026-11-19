@@ -97,15 +97,8 @@ public partial class FieldAudio : Node
     /// <summary>The bgm cue of a field's fielddata entry (default environment), 0 when the field has none.</summary>
     public static int FieldBgmCue(PackSet packs, string xblockName)
     {
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/fielddata.xml")));
-        foreach (var fd in doc.Root.Elements("fieldData"))
-        {
-            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
-            var xb = (string)env?.Element("xblock")?.Attribute("name");
-            if (xb == null || !xb.Equals(xblockName, StringComparison.OrdinalIgnoreCase)) continue;
-            return (int?)env.Element("bgm")?.Attribute("id") ?? 0;
-        }
-        return 0;
+        var fd = FieldData.EntryByXBlock(packs, xblockName);      // the table's index, parsed once per pack set
+        return (int?)FieldData.DefaultEnvironment(fd)?.Element("bgm")?.Attribute("id") ?? 0;
     }
 
     /// <summary>

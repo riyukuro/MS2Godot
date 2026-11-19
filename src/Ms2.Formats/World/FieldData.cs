@@ -86,26 +86,55 @@ public sealed class FieldData
     /// <summary>The parsed table shared per pack set (read once; callers must not change it).</summary>
     public static XDocument Document(PackSet packs) => Doc(packs);
 
-    /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
-    public static FieldData FindByXBlock(PackSet packs, string xblockName)
+    /// <summary>
+    /// The table's entries by id and by default-environment xblock, built once per pack set. The client keeps the loaded
+    /// fields in a map by id (CFieldData::LoadFieldData @0x140373d50, fielddata.cpp:591 s_fields.SetAt(id, field)) and
+    /// looks one up by key (FindField @0x140374140, fielddata.cpp:610 s_fields.Lookup); entries without a selected
+    /// environment are skipped (:583), and a later entry of the same id replaces the earlier one. The client has no
+    /// xblock lookup; ours keeps the first entry of a name (case-insensitive), as the old scan did.
+    /// </summary>
+    sealed class Index
     {
-        var doc = Doc(packs);
-        foreach (var fd in doc.Root.Elements("fieldData"))
+        public readonly Dictionary<int, XElement> ById = new();
+        public readonly Dictionary<string, XElement> ByXBlock = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Index> indexes = new();
+
+    static Index IndexOf(PackSet packs) => indexes.GetValue(packs, p =>
+    {
+        var ix = new Index();
+        foreach (var fd in Doc(p).Root.Elements("fieldData"))
         {
-            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
-            var xb = (string)env?.Element("xblock")?.Attribute("name");
-            if (xb == null || !xb.Equals(xblockName, StringComparison.OrdinalIgnoreCase)) continue;
-            return FromEntry(fd);
+            var xb = (string)DefaultEnvironment(fd)?.Element("xblock")?.Attribute("name");
+            if (xb == null) continue;
+            if ((int?)fd.Attribute("id") is int id) ix.ById[id] = fd;
+            ix.ByXBlock.TryAdd(xb, fd);
         }
+        return ix;
+    });
+
+    /// <summary>The &lt;environment&gt; without a locale of a fieldData element, or null (also for a null element).</summary>
+    public static XElement DefaultEnvironment(XElement fd)
+    {
+        if (fd == null) return null;
+        foreach (var e in fd.Elements("environment"))
+            if (e.Attribute("locale") == null) return e;
         return null;
     }
 
+    /// <summary>The shared fieldData element whose default environment uses the given xblock (case-insensitive), or null.
+    /// Read only, as <see cref="Document"/>.</summary>
+    public static XElement EntryByXBlock(PackSet packs, string xblockName) =>
+        xblockName != null && IndexOf(packs).ByXBlock.TryGetValue(xblockName, out var fd) ? fd : null;
+
+    /// <summary>The entry whose default environment uses the given xblock (case-insensitive), or null.</summary>
+    public static FieldData FindByXBlock(PackSet packs, string xblockName) =>
+        EntryByXBlock(packs, xblockName) is { } fd ? FromEntry(fd) : null;
+
     /// <summary>The entry of a field (map) id, or null when the table lacks it or the entry has no default xblock.</summary>
-    public static FieldData FindById(PackSet packs, int fieldId)
-    {
-        var fd = Doc(packs).Root.Elements("fieldData").FirstOrDefault(f => (int?)f.Attribute("id") == fieldId);
-        return fd == null ? null : FromEntry(fd);
-    }
+    public static FieldData FindById(PackSet packs, int fieldId) =>
+        IndexOf(packs).ById.TryGetValue(fieldId, out var fd) ? FromEntry(fd) : null;
 
     static int Int(XElement e, string a) =>
         (string)e?.Attribute(a) is { } v && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0;
@@ -164,13 +193,8 @@ public sealed class FieldData
     }
 
     /// <summary>The xblock name of a field id (its default environment), or null.</summary>
-    public static string XBlockOf(PackSet packs, int fieldId)
-    {
-        var doc = Doc(packs);
-        var fd = doc.Root.Elements("fieldData").FirstOrDefault(f => (int?)f.Attribute("id") == fieldId);
-        var env = fd?.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
-        return (string)env?.Element("xblock")?.Attribute("name");
-    }
+    public static string XBlockOf(PackSet packs, int fieldId) =>
+        IndexOf(packs).ById.TryGetValue(fieldId, out var fd) ? (string)DefaultEnvironment(fd).Element("xblock").Attribute("name") : null;
 
     /// <summary>XmlGetAttr of an int flag: nonzero when the element has the attribute with a nonzero number.</summary>
     static bool Flag(XElement e, string name) =>
