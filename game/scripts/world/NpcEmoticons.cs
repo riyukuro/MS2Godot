@@ -12,6 +12,10 @@ namespace Ms2Godot.World;
 /// does, and <see cref="EmoticonController"/> keeps one emoticon_entity_body clip per npc in it.
 /// - Spawn: CNpc's spawn makes the entity (UIEmoticon::SpawnNpc, the friendly npcs only); the actor leaving the field
 ///   releases it (UIHudEntityManager::Release), and its clip waits in the pool for the next one.
+/// - The actor: the spawn comes first and the actor's add (GameObject::vfunc_12) on a later frame, as WorldService gets
+///   the entity's add before the egmAnimation ActorAddedMessage; it is marked added once the npc's body is placed (the
+///   live field's stand-in body for an npc with no model counts). With
+///   ProgressiveLoading (Optimization.xml, on without it) the spawn finds no emoticon (CNpc::vfunc_83).
 /// - Every frame (UIHudEntity::vfunc_15): CNpc::vfunc_53's quest tick (once a second for an npc with quests), then each
 ///   clip at the npc's "Eff_UI" dummy (Entity::vfunc_10; the npc's position without one) projected to the stage, with the
 ///   camera-pitch shift (FUN_1412762d0) and the npc offset (OffsetNpcEmoticon).
@@ -69,6 +73,10 @@ public sealed partial class NpcEmoticons : CanvasLayer
     }
     public NpcEmoticons() { }
 
+    /// <summary>COptimizer::LoadOptimization runs once: Optimization.xml next to GameOption.xml (the option folder).</summary>
+    static readonly Lazy<bool> ProgressiveLoading = new(() =>
+        Ms2.Formats.Options.Optimization.ProgressiveLoading(System.IO.Path.GetDirectoryName(GameOptions.FilePath)));
+
     void Build()
     {
         var tables = GameTables.Shared(assets.Packs, GameOptions.StringLanguage);
@@ -78,6 +86,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
             VisibleDistance = constants.Float("EmoticonVisibleDistance", 2500),
             NpcOffset = constants.Float("OffsetNpcEmoticon", -30),
             QuestOf = quests.Quest,
+            ProgressiveLoading = ProgressiveLoading.Value,
             SceneHidesEmoticons = () => MovieLayerHost.Layers.InTalk,
         };
         try
@@ -154,6 +163,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
             if (!IsInstanceValid(n.Placed.Root)) continue;
             n.Actor.Distance = eye.DistanceTo(n.Placed.Root.GlobalPosition);
             var a = n.Actor;
+            if (!a.ActorAdded && n.Placed.Body != null && IsInstanceValid(n.Placed.Body)) EmoticonController.OnActorAdded(a);
             controller.NpcTick(a, () => QuestMark(a));
         }
         bool layer = MovieLayerHost.Layers.IsVisible(CommonDepth.Emoticon);

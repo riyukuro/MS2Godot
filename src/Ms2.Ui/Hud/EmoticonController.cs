@@ -15,7 +15,17 @@ namespace Ms2.Ui.Hud;
 /// <para>
 /// STILL-OPEN: the PC emoticons (pc.cpp / mypc.cpp make them on demand; kind 3 is the microgame's, statemicrogame.cpp, with
 /// the PC's FUN_141670500 offset) and the status kind 2 (set through UIStatusEvent; FUN_14192f9f0 drops it) have no caller
-/// here; the CNpc vfunc_83 optimizer check (COptimizer FUN_1409f7ea0 / FUN_14123dbd0) is not ported.
+/// here.
+/// </para>
+/// <para>
+/// The load gate (CNpc::vfunc_83 @0x1410903b0): with <see cref="ProgressiveLoading"/> an npc has no emoticon until its actor
+/// is added (<see cref="Actor.ActorAdded"/>). The spawn asks once, before that (CNpc::vfunc_10 runs on the entity's add,
+/// worldservice_1.cpp:10331; GameObject::vfunc_12 on the later egmAnimation ActorAddedMessage, worldservice_1.cpp:3606), and
+/// CNpc::vfunc_12 does not ask again: of CNpc's own paths only <see cref="RefreshQuestState"/> does, when the quest mark
+/// changes. (UITalkManager's SetNpcNameTag and talk page, uitalkcinematic.cpp:1102 and 1563-1565, also ask; STILL-OPEN:
+/// not ported, with the talk scene's status kind.) So with
+/// progressive loading the npc's iconName and kind movie are not set up, and an npc with quests gets its entity once its
+/// mark moves off the reset one.
 /// </para>
 /// </summary>
 public sealed class EmoticonController : UiController
@@ -48,6 +58,11 @@ public sealed class EmoticonController : UiController
         public int Friendly;
         /// <summary>CNpcData m_strIcon (iconName): a movie name, "empty" or "".</summary>
         public string Icon = "";
+        /// <summary>
+        /// GameObject m_unk_c8 (FUN_14123dbd0): set by GameObject::vfunc_12 (gameobject.cpp:264), which WorldService::OnActorAdded
+        /// calls when the actor's model has been added, after the spawn.
+        /// </summary>
+        public bool ActorAdded;
         /// <summary>CNpc m_cE40: HasNpcQuests, set at spawn.</summary>
         public bool HasQuests;
         /// <summary>CNpc m_questState: the mark GetNpcQuestState last gave.</summary>
@@ -71,6 +86,11 @@ public sealed class EmoticonController : UiController
     /// host): only the status kind is shown. STILL-OPEN: the scene FUN_1422b9ea0 tests is not known.
     /// </summary>
     public Func<bool> SceneHidesEmoticons = () => false;
+    /// <summary>
+    /// COptimizer FUN_1409f7ea0, ProgressiveLoading (DAT_143ae2b40): see <c>Ms2.Formats.Options.Optimization</c>. On (1)
+    /// unless the option folder's Optimization.xml says otherwise.
+    /// </summary>
+    public bool ProgressiveLoading = true;
     /// <summary>The time in ms (GetTickCountMs2): the timer and the 1000 ms quest tick.</summary>
     public Func<long> TickMs = () => Environment.TickCount64;
     /// <summary>CFameTable IsOfficerNpc / GetSymbolByOfficerNpc: the officer npc's alliance symbol, null for none.</summary>
@@ -251,13 +271,27 @@ public sealed class EmoticonController : UiController
     // ---- the npc side (unit_14108e1e0_npcactorandvibrate.cpp) -------------------------------------------------------
 
     /// <summary>
-    /// The CNpc spawn's emoticon (vfunc_83 makes it for a friendly npc): an iconName other than "empty" holds it (m_60),
-    /// kind 0 with that name, started; no iconName and a kind above 0 holds it as kind 0, started; then RefreshQuestState.
+    /// CNpc::vfunc_83 (@0x1410903b0): none while <see cref="ProgressiveLoading"/> is on and the actor is not added; else the
+    /// npc's entity (m_spA88), made for a friendly npc (vfunc_116 above 0) when it has none.
+    /// </summary>
+    public Entity NpcEntity(Actor a)
+    {
+        if (ProgressiveLoading && !a.ActorAdded) return null;
+        if (entities.TryGetValue(a.ObjectId, out var e)) return e;
+        return a.Friendly > 0 ? GetOrCreate(a) : null;
+    }
+
+    /// <summary>GameObject::vfunc_12 (@0x14123b9d0): the actor was added (m_unk_c8 = 1). CNpc::vfunc_12 asks for no emoticon.</summary>
+    public static void OnActorAdded(Actor a) => a.ActorAdded = true;
+
+    /// <summary>
+    /// The CNpc spawn's emoticon (CNpc::vfunc_10, npcactorandvibrate.cpp:561-577): when vfunc_83 gives one, an iconName other
+    /// than "empty" holds it (m_60), kind 0 with that name, started; no iconName and a kind above 0 holds it as kind 0,
+    /// started; then RefreshQuestState. None (and no RefreshQuestState) when vfunc_83 gives none.
     /// </summary>
     public Entity SpawnNpc(Actor a, Func<NpcQuestMarks.Mark> questState)
     {
-        if (a.Friendly <= 0) return null;
-        var e = GetOrCreate(a);
+        var e = NpcEntity(a);
         if (e == null) return null;
         if (!string.IsNullOrEmpty(a.Icon))
         {
@@ -281,7 +315,7 @@ public sealed class EmoticonController : UiController
 
     /// <summary>
     /// CNpc::RefreshQuestState (@0x141093c80): a friendly npc with quests gets GetNpcQuestState(npc, all = 0) again; when the
-    /// icon or the state changed, the emoticon refreshes (FUN_14192f910).
+    /// icon or the state changed, vfunc_83's emoticon (made now if the npc has none) refreshes (FUN_14192f910).
     /// </summary>
     public void RefreshQuestState(Actor a, Func<NpcQuestMarks.Mark> questState)
     {
@@ -290,7 +324,7 @@ public sealed class EmoticonController : UiController
         var was = a.Quest;
         a.Quest = questState();
         if (was.Icon != a.Quest.Icon || was.State != a.Quest.State)
-            if (entities.TryGetValue(a.ObjectId, out var e)) Refresh(e);
+            if (NpcEntity(a) is { } e) Refresh(e);
     }
 
     // ---- the frame (UIHudEntity::vfunc_15, uihudentity.cpp @0x140f49950) ----------------------------------------------
