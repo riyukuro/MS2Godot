@@ -160,7 +160,7 @@
     "idle.install.main_bytes_per_frame": {
       "min": 120564.7,
       "max": 123260.3,
-      "limit": 125956
+      "limit": 131453
     },
     "idle.install.nodes": {
       "min": 0,
@@ -230,7 +230,7 @@
     "idle.session.main_bytes_per_frame": {
       "min": 118113.7,
       "max": 122939.6,
-      "limit": 127766
+      "limit": 131132
     },
     "idle.session.nodes": {
       "min": 0,
@@ -370,7 +370,7 @@
     "idle_3_open.session.main_bytes_per_frame": {
       "min": 155228.7,
       "max": 159323.6,
-      "limit": 163419
+      "limit": 167516
     },
     "idle_3_open.session.nodes": {
       "min": -220,

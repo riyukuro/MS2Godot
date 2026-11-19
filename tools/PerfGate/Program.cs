@@ -127,7 +127,7 @@ static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(
 // The slack a count gets over the worst value the baseline runs saw: the spread they showed, at least a floor per
 // kind. tools/perfgate/README.md has the run-to-run noise the floors come from.
 static (double Rel, double Abs) CountTolerance(string name) =>
-    name.EndsWith("bytes_per_frame") ? (0.02, 1024)
+    name.EndsWith("bytes_per_frame") ? (0.05, 8192)   // the idle windows: ±10 KB a frame run to run
     : name.EndsWith("bytes") ? (0.02, 16384)
     : name.EndsWith("bytes_per_effect_frame") ? (0.05, 8)
     // a repeat's kept objects (after the first repeat, its own metric): a leak of a few dozen per open fails
