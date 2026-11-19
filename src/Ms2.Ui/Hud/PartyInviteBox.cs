@@ -34,6 +34,7 @@ public static class PartyInviteBox
         }
         string key = $"{Tag}_{unchecked((uint)invite.Kind)}";
         var box = MessageBoxQueue.Create(1, ClientFormat.Format(Common(0x2b7), invite.PartyName ?? ""), null, key);
+        box.SetTimer(0x14, 1, MessageBoxData.Common(0x2b8));    // 20 s, the countdown line s_msg_popup_time
         box.NoInputBlock = true;
         box.Modaless = true;
         box.EnterAllowed = false;

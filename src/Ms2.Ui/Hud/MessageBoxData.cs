@@ -10,7 +10,7 @@ public interface IMessageBoxListener
 /// <summary>
 /// CMsgBoxData (client/ms2/uimessageboxdata.h; ctor and setters unit_141a00db0.cpp, FillObj uimessageboxdata.cpp): the
 /// record of one message box: its type, texts, buttons, tag, listener or callback, arguments, item uid, first item entry,
-/// check boxes, text input and size. The second item, timers, buffs, group lists and terms of the other box types are not
+/// check boxes, text input, size and timer. The second item, buffs, group lists and terms of the other box types are not
 /// ported.
 /// </summary>
 public sealed class MessageBoxData
@@ -61,6 +61,7 @@ public sealed class MessageBoxData
     public static readonly Dictionary<int, string> CommonKeys = new()
     {
         [0x475] = "s_word_ok", [0x476] = "s_word_cancel", [0x477] = "s_word_yes", [0x478] = "s_word_no",
+        [0x2b8] = "s_msg_popup_time",           // the countdown line (PartyVoteReadyCli::vfunc_2)
         [0x5a0] = "s_word_exit_yes", [0x5a1] = "s_word_exit_no", [0x982] = "s_common_max_size", [0x984] = "s_common_text_count",
         // the UGC upload dialog's and the terms box's (UIUGCImageUploadDialog, CUgcManager, ShowTermsMessageBox)
         [0x34] = "s_err_lack_meso", [0x2de] = "s_msg_ugc_cannot_edit", [0x2e0] = "s_msg_ugc_not_select",
@@ -198,8 +199,57 @@ public sealed class MessageBoxData
     /// <summary>HasTimer @0x141a049a0.</summary>
     public bool HasTimer => (Flags & 4) != 0;
 
-    /// <summary>FUN_141a04900: a box without a timer is always live (the timer is not ported, so a timed box is not).</summary>
-    public bool IsLive => !HasTimer;
+    /// <summary>FUN_141a04900 (uimessageboxdata.cpp:236): a timed box re-armed by a close is live while its countdown runs;
+    /// one never shown (no seconds left, <see cref="MessageBoxTimer.Sec"/> below 0) is not; any other box is.</summary>
+    public bool IsLive
+    {
+        get
+        {
+            if (!HasTimer) return true;
+            if (Timer.Armed > 0) return Timer.Countdown.Remaining / 1000 > 0 && !Timer.Countdown.IsExpired;
+            return Timer.Sec >= 0;
+        }
+    }
+
+    /// <summary>m_timer (Unk_MsgBoxTimer): the box's countdown (flag 4).</summary>
+    public readonly MessageBoxTimer Timer = new();
+
+    /// <summary>SetTimer @0x141a01ca0: flag 4, the seconds, the start tick and the countdown line's format (shown under the
+    /// message when <paramref name="showFormat"/> is set).</summary>
+    public void SetTimer(int sec, int showFormat, string format)
+    {
+        Flags |= 4;
+        Timer.Sec = sec;
+        Timer.StartMs = MessageBoxTimer.Clock();
+        Timer.ShowFormat = showFormat;
+        Timer.Format = format ?? "";
+    }
+
+    /// <summary>IsTimerExpired @0x141a049d0: flag 4 and the seconds since the start have passed.</summary>
+    public bool IsTimerExpired => HasTimer && (long)Timer.Sec * 1000 + Timer.StartMs <= MessageBoxTimer.Clock();
+
+    /// <summary>OnChangeTime @0x141a03130 (unit_141a00db0.cpp:651): the movie's countdown tick; on a shown timed box with the
+    /// format, the seconds left are kept (m_nArmed) and the movie's message gets the countdown line
+    /// (onProcessFunction("updateMsg", text)) through <paramref name="updateMsg"/>.</summary>
+    public void OnChangeTime(bool shown, int sec, Action<string> updateMsg)
+    {
+        if (!shown || !HasTimer || Timer.ShowFormat == 0) return;
+        Timer.Armed = sec;
+        updateMsg?.Invoke(Msg + "\n" + MessageBoxTimer.FormatSeconds(Timer.Format, sec));
+    }
+
+    /// <summary>OnPopupTimerComplete @0x141a03390: the countdown pressed the button (m_nButton = 1) of a shown timed box.</summary>
+    public void OnPopupTimerComplete(bool shown)
+    {
+        if (shown && HasTimer) Timer.Button = 1;
+    }
+
+    /// <summary>FUN_141a03470 (unit_141a00db0.cpp:674): a box closed mid-countdown keeps its seconds left running
+    /// (Start(m_nArmed * 1000)), for its return from the queue.</summary>
+    public void ReArm()
+    {
+        if (HasTimer && Timer.Armed > 0) Timer.Countdown.Start(Timer.Armed * 1000L);
+    }
 
     /// <summary>InvokeCallback @0x141a014d0.</summary>
     public bool InvokeCallback(int n, object movieBox)
@@ -232,9 +282,9 @@ public sealed class MessageBoxData
         1 => "number", 2 => "charname", 3 => "housename", 4 => "maidname", 5 => "numberText", _ => "text",
     };
 
-    /// <summary>FillObj @0x141a034d0, for the members this port keeps: the common members, the input (2), the first item
+    /// <summary>FillObj @0x141a034d0, for the members this port keeps: the common members, the timer (4), the input (2), the first item
     /// (1), the check boxes (8), the size (0x10) and the terms boxes' agreement (WriteAgreement @0x141a056f0, types 0x1b,
-    /// 0x1c and 0x1f); the timer, second item, link and the other per-type members are not ported.
+    /// 0x1c and 0x1f); the second item, link and the other per-type members are not ported.
     /// <paramref name="showModaless"/> is FUN_14151f9c0, <paramref name="rbMerat"/> is feature 0x61. <paramref name="model"/>
     /// holds the item slot bindings (CreateItemInfoSlot); without it the item block is left out.</summary>
     public Dictionary<string, object> FillObj(bool showModaless, bool rbMerat = false, UiModel model = null)
@@ -247,6 +297,17 @@ public sealed class MessageBoxData
         };
         if (Align != 4) o["textAlign"] = AlignNames[Align];
         if (Extra.Length > 0) o["extra"] = Extra;
+        if (HasTimer)                                   // :131: a re-armed box shows its seconds left
+        {
+            if (Timer.Armed != -1)
+            {
+                Timer.Sec = (int)(Timer.Countdown.Remaining / 1000);
+                Timer.Armed = -1;
+                Timer.Countdown.SetExpired();
+            }
+            o["time"] = Timer.Sec;
+            if (Timer.ShowFormat != 0) o["msg"] = Msg + "\n" + MessageBoxTimer.FormatSeconds(Timer.Format, Timer.Sec);
+        }
         if ((Flags & 2) != 0)
         {
             o["textType"] = TextTypeName(InputType);
@@ -326,4 +387,39 @@ public sealed class MessageBoxItem
         Name = name ?? "";
         if (color && textColor != null) Name = $"<FONT color='#{textColor(rarity):x}'>{name}</FONT>";
     }
+}
+
+/// <summary>Unk_MsgBoxTimer (uimessageboxdata.h): a box's countdown: the seconds (-1 none), the start tick, the countdown
+/// line's format, the button the countdown pressed (0 none), the seconds left at a close (-1 none) and its timer.</summary>
+public sealed class MessageBoxTimer
+{
+    /// <summary>GetTickCount: the client tick in milliseconds (tests set it).</summary>
+    public static Func<long> Clock = () => Environment.TickCount64;
+
+    public int Sec = -1;
+    public long StartMs;
+    public int ShowFormat;
+    public string Format = "";
+    public int Button;
+    public int Armed = -1;
+    public readonly Countdown Countdown = new();
+
+    /// <summary>StringFormat&lt;int&gt;: "{0}" replaced by the seconds.</summary>
+    public static string FormatSeconds(string format, int sec) =>
+        (format ?? "").Replace("{0}", sec.ToString(System.Globalization.CultureInfo.InvariantCulture));
+}
+
+/// <summary>The countdown timer of <see cref="MessageBoxTimer"/>: a period from a start tick.</summary>
+public sealed class Countdown
+{
+    long period, start, end;
+
+    /// <summary>Start(ms): the period from now.</summary>
+    public void Start(long ms) { period = ms; start = MessageBoxTimer.Clock(); end = start + ms; }
+    /// <summary>SetExpired: the start moved a period back.</summary>
+    public void SetExpired() => start = MessageBoxTimer.Clock() - period;
+    /// <summary>GetRemaining: 0 without a period, else the end less now.</summary>
+    public long Remaining => period == 0 ? 0 : end - MessageBoxTimer.Clock();
+    /// <summary>IsExpired: false without a period, else a period has passed since the start.</summary>
+    public bool IsExpired => period != 0 && MessageBoxTimer.Clock() - start >= period;
 }

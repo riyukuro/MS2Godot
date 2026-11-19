@@ -51,14 +51,33 @@ public partial class HudScene
         Action<PartyMember, int> updated = (m, f) => { if (PartyWindowOpen) party.UpdateMember(m, f); };
         Action refreshed = () => { if (PartyWindowOpen) party.RefreshAllMembers(); };
         Action<PartyMember, PartyMember> chief = (o, n) => { if (PartyWindowOpen) party.ChangeChief(o, n); };
-        Action<PartyMessage> applied = msg => popupMenu?.OnPartyMessage(msg);      // UIPopUpMenu's 0x53 handler
+        Action<PartyMessage> applied = msg =>
+        {
+            popupMenu?.OnPartyMessage(msg);                     // UIPopUpMenu's 0x53 handler
+            if (PartyWindowOpen) party.OnPartyMessage(msg);     // UIPartyDialog::OnPartyPacket
+        };
         var book = partyBook;
+        // PartyVoteCli vfunc_2 / vfunc_3: the votes' chat lines, sound, notice and the ready check's answer box
+        var votes = new PartyVoteUi
+        {
+            Tables = (menuModel ??= NewModel()).Tables,
+            SelfCharacterId = live?.CharacterId ?? PartyFixture.SelfCharacterId,
+            Dialog = () => PartyWindowOpen ? party : null,
+            ChatLine = (text, kind) => ChatLog.AddSystemLine(text, kind),
+            Notice = SystemNoticeText,                          // ShowSystemNotice(text, 1, 1)
+            PlaySound = key => FieldAudio.Instance?.PlayUi(key),
+            Send = PartySend,
+        };
+        Action<PartyVote> voteStarted = v => votes.OnStarted(book, v);
+        Action<PartyVote> voteEnded = v => votes.OnEnded(book, v);
         book.Opened += opened; book.Closed += closed; book.MemberAdded += added; book.MemberRemoved += removed;
         book.MemberUpdated += updated; book.MembersRefreshed += refreshed; book.ChiefChanged += chief; book.Applied += applied;
+        book.VoteStarted += voteStarted; book.VoteEnded += voteEnded;
         unwatchParty = () =>
         {
             book.Opened -= opened; book.Closed -= closed; book.MemberAdded -= added; book.MemberRemoved -= removed;
             book.MemberUpdated -= updated; book.MembersRefreshed -= refreshed; book.ChiefChanged -= chief; book.Applied -= applied;
+            book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded;
             if (live != null) live.PartyWindowOpen = () => false;
         };
         if (book.IsInParty) OpenParty();
@@ -86,11 +105,11 @@ public partial class HudScene
             MapName = id => menuModel.Tables.MapName(id),
             LocalPlayerDead = () => live?.Me.Dead ?? false,   // PCBase::IsDead; offline: never dead
         };
+        if (live?.GameSession is { } gs) c.ServerNow = () => gs.ServerTime;     // GetServerTime
         c.SlotMenuOpen = () => popupMenu != null && !popupMenu.IsClosed && popupMenu.InfoString == PopupMenuController.PartySlotInfo;
         c.MemberMenu += (x, y, id) => OpenPartySlotMenu(x, y, id);
         c.ObserveMember += id => GD.Print($"party: observe {id}: StartObserving is not ported");
         c.Recall += () => GD.Print("party: recall: not ported");
-        c.Vote += yes => GD.Print($"party: vote {(yes ? "yes" : "no")}: not ported");
         c.Send = PartySend;
         c.SystemNotice += text => GD.Print($"party: system notice: {text}");    // ShowSystemNotice: the notices are not ported
         c.ClubNameError = name =>

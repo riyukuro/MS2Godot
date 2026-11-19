@@ -46,6 +46,13 @@ public sealed record PartyVoteKickRequest(long CharacterId) : IOutPacket {
 }
 
 /// <summary>CPartyManager::SendPartyMode46 (partymanager.cpp:810): start a ready check (u8 0x2e).</summary>
+/// <summary>PartyVoteCli::SendParty @0x140a89680: the vote's answer, u8 0x30, i32 vote id, bool yes (the vote page's
+/// buttons, ASPartyVotePage::SendVote @0x141a74ac0; the ready box, PartyVoteReadyCli::OnMessageBoxResult @0x140a8a0b0).</summary>
+public sealed record PartyVoteAnswer(int Id, bool Yes) : IOutPacket {
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w) { w.WriteByte(0x30); w.WriteInt(Id); w.WriteBool(Yes); }
+}
+
 public sealed record PartyReadyCheckRequest : IOutPacket {
     public Outbound Op => Outbound.Party;
     public void Write(ByteWriter w) => w.WriteByte(0x2e);

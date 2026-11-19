@@ -124,6 +124,14 @@ public abstract record PartyMessage(int Mode) {
                 long id = r.ReadLong();
                 return new PartyMemberFlags(id, r.ReadLong(), r.ReadInt(), r.ReadInt(), r.ReadShort());   // Unk_UserProxyFlagsPacket::Decode (userproxy.cpp:838)
             }
+            case 0x2f: {                                                                                   // OnPartyVoteStart
+                int kind = r.ReadByte();
+                var vote = PartyVote.Create(kind);
+                vote?.Read(r);
+                return new PartyVoteStart(kind, vote);
+            }
+            case 0x30: { long id = r.ReadLong(); return new PartyVoteReply(id, r.ReadBool()); }           // OnPartyVoteReply
+            case 0x31: return new PartyVoteEnd();                                                          // OnPartyVoteEnd
             default: return new PartyOtherMode(mode);
         }
     }
@@ -147,6 +155,67 @@ public sealed record PartyMemberFlags(long CharacterId, long AccountId, int MaxH
 /// <summary>OnPartyInvite @0x14162c8b0 (partymanager.cpp:968): an invite, the inviter's name (partyName) and the party's
 /// kind (partyKind; the Maple2 server sends its party id). The answer sends both back (SendPartyMode2).</summary>
 public sealed record PartyInvite(string PartyName, int Kind) : PartyMessage(0xb);
+/// <summary>Mode 0x2f, OnPartyVoteStart (partymanager.cpp:1450): u8 kind, then the vote's body (vfunc_1) for the kinds
+/// CreateVote makes; <see cref="Vote"/> is null for any other kind (its body is not read) and replaces the running vote.</summary>
+public sealed record PartyVoteStart(int VoteKind, PartyVote Vote) : PartyMessage(0x2f) {
+    public byte[] Write() { var w = new ByteWriter(); w.WriteByte(0x2f); w.WriteByte((byte) VoteKind); Vote?.Write(w); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+}
+/// <summary>Mode 0x30, OnPartyVoteReply @0x141630670: i64 member, bool yes (PartyVoteCli::AddVote).</summary>
+public sealed record PartyVoteReply(long CharacterId, bool Yes) : PartyMessage(0x30) {
+    public byte[] Write() { var w = new ByteWriter(); w.WriteByte(0x30); w.WriteLong(CharacterId); w.WriteBool(Yes); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+}
+/// <summary>Mode 0x31, OnPartyVoteEnd @0x141630720: no body.</summary>
+public sealed record PartyVoteEnd() : PartyMessage(0x31);
+
+/// <summary>
+/// PartyVoteCli (partyvotecli.cpp): the party's running vote. CreateVote @0x140a89240 makes kind 1 (PartyVoteKickUserCli)
+/// and 2 (PartyVoteReadyCli). vfunc_1 @0x140a89380 reads i32 id, i64 end time (server seconds), then three sets of i64
+/// members (i32 count each: the participants, the yes and the no votes); the kick vote then reads i64 owner, i64 target,
+/// the target's name and u8 reason (the votes the kick needs).
+/// </summary>
+public sealed class PartyVote {
+    public const int KickUser = 1, Ready = 2;
+    public int Kind { get; private set; }
+    public int Id;
+    public long Expires;
+    /// <summary>std::set&lt;unsigned __int64&gt;: sorted members.</summary>
+    public readonly SortedSet<long> Participants = new(), Yes = new(), No = new();
+    public long Owner, Target;
+    public string Name = "";
+    public byte Reason;
+
+    /// <summary>CreateVote @0x140a89240: null for a kind other than 1 and 2.</summary>
+    public static PartyVote Create(int kind) => kind is KickUser or Ready ? new PartyVote { Kind = kind } : null;
+
+    /// <summary>vfunc_5: the party window's vote page shows the vote (the kick vote's 1; the base and the ready vote 0).</summary>
+    public bool ShowsPage => Kind == KickUser;
+
+    /// <summary>HasVoted @0x140a895c0: the own character (DAT_143ab2828) is in the yes or the no votes.</summary>
+    public bool HasVoted(long self) => Yes.Contains(self) || No.Contains(self);
+
+    public void Read(ByteReader r) {
+        Id = r.ReadInt();
+        Expires = r.ReadLong();
+        ReadSet(r, Participants); ReadSet(r, Yes); ReadSet(r, No);
+        if (Kind == KickUser) {                         // PartyVoteKickUserCli::vfunc_1 @0x140a89820
+            Owner = r.ReadLong(); Target = r.ReadLong(); Name = r.ReadUnicodeString(); Reason = r.ReadByte();
+        }
+    }
+
+    /// <summary>FUN_140a8a230: i32 count, then the members.</summary>
+    static void ReadSet(ByteReader r, SortedSet<long> set) {
+        uint n = (uint) r.ReadInt();
+        for (uint i = 0; i < n; i++) set.Add(r.ReadLong());
+    }
+
+    /// <summary>The body <see cref="Read"/> takes (tests and offline fixtures).</summary>
+    public void Write(ByteWriter w) {
+        w.WriteInt(Id); w.WriteLong(Expires);
+        foreach (var set in new[] { Participants, Yes, No }) { w.WriteInt(set.Count); foreach (long id in set) w.WriteLong(id); }
+        if (Kind == KickUser) { w.WriteLong(Owner); w.WriteLong(Target); w.WriteUnicodeString(Name ?? ""); w.WriteByte(Reason); }
+    }
+}
+
 /// <summary>A mode the party window does not use (search, votes, dungeon matching, notices); its body is not read.</summary>
 public sealed record PartyOtherMode(int OtherMode) : PartyMessage(OtherMode);
 
@@ -199,7 +268,7 @@ public sealed class PartyMember {
     public PartyUser User;
     public bool Offline;        // IsOffline (:108)
     public bool Leader;         // SetLeader
-    public int ReadyState;      // SetReadyState (the ready check; not fed yet)
+    public int ReadyState;      // SetReadyState: the ready check's 1 waiting, 2 ready, 3 not ready (0 none)
     public int Index;           // SetIndex
     public long CharacterId => User.CharacterId;
 
@@ -251,8 +320,41 @@ public sealed class PartyBook {
     /// <summary>IsLocalPlayerLeader (:530).</summary>
     public bool IsLeader(long characterId) => IsInParty && LeaderId == characterId;
 
-    /// <summary>ClearParty (:425).</summary>
-    void Clear() { members.Clear(); PartyId = 0; LeaderId = 0; }
+    /// <summary>ClearParty (:425), with ClearVote.</summary>
+    void Clear() { members.Clear(); PartyId = 0; LeaderId = 0; Vote = null; }
+
+    /// <summary>vote (GetVote @0x14162c350): the running vote, null without one.</summary>
+    public PartyVote Vote { get; private set; }
+    /// <summary>The vote's start (vfunc_2), after the ready vote's member marks: the kick vote's chat notice and window
+    /// refresh, the ready vote's chat line, sound and answer box (the UI's part).</summary>
+    public event Action<PartyVote> VoteStarted;
+    /// <summary>The vote's end (vfunc_3), before the ready vote's unanswered marks and before the vote is cleared: the ready
+    /// vote's notice and the window's deadline.</summary>
+    public event Action<PartyVote> VoteEnded;
+
+    /// <summary>SetMemberReadyState @0x14162c580: the member's ready state, and UpdateMember(member, 1) (gated by the host
+    /// on the window, as FindPartyDialog is).</summary>
+    public void SetMemberReadyState(long characterId, int state) {
+        if (Find(characterId) is not { } m) return;
+        m.ReadyState = state;
+        MemberUpdated?.Invoke(m, 1);
+    }
+
+    /// <summary>SetAllMembersState @0x14162c4a0's member part (the window's SetDeadline(0) is its caller's): every member's
+    /// ready state, with UpdateMember(member, 1). Only with the window open.</summary>
+    public void SetAllMembersState(int state) {
+        foreach (var m in members) { m.ReadyState = state; MemberUpdated?.Invoke(m, 1); }
+    }
+
+    /// <summary>FUN_14162c3a0: with the window open, the members still waiting (GetReadyState 1) are not ready (3).</summary>
+    void MarkUnanswered(bool windowOpen) {
+        if (!windowOpen) return;
+        foreach (var m in members) {
+            if (m.ShownReadyState != 1) continue;
+            m.ReadyState = 3;
+            MemberUpdated?.Invoke(m, 1);
+        }
+    }
 
     /// <summary>OnParty (partymanager.cpp:447) for the modes the window shows; <paramref name="self"/> is DAT_143ab2828, the own
     /// character id. The chat notices (FUN_1412751b0) are not raised.</summary>
@@ -331,6 +433,9 @@ public sealed class PartyBook {
                 var m = Find(off.CharacterId);
                 if (m == null) return;
                 m.Offline = true;
+                if (Vote is { Kind: PartyVote.Ready } v) {      // vote->vfunc_6: PartyVoteReadyCli @0x140a8a040
+                    v.Participants.Remove(m.CharacterId); v.Yes.Remove(m.CharacterId); v.No.Remove(m.CharacterId);
+                }
                 MemberUpdated?.Invoke(m, 1);
                 break;
             }
@@ -348,6 +453,29 @@ public sealed class PartyBook {
                 m.User.AccountId = f.AccountId; m.User.MaxHp = f.MaxHp; m.User.Hp = f.Hp; m.User.TombFlags = f.TombFlags;
                 MemberUpdated?.Invoke(m, 399);
                 if (m.CharacterId == self) MembersRefreshed?.Invoke();
+                break;
+            }
+            case PartyVoteStart start: {                    // :1450
+                Vote = start.Vote;
+                if (Vote == null) return;
+                if (Vote.Kind == PartyVote.Ready)               // PartyVoteReadyCli::vfunc_2 @0x140a89b30
+                    foreach (long id in Vote.Participants)
+                        SetMemberReadyState(id, Vote.Yes.Contains(id) ? 2 : Vote.No.Contains(id) ? 3 : 1);
+                VoteStarted?.Invoke(Vote);
+                break;
+            }
+            case PartyVoteReply reply: {                    // AddVote @0x140a894e0
+                if (Vote == null) return;
+                (reply.Yes ? Vote.Yes : Vote.No).Add(reply.CharacterId);
+                if (Vote.Kind == PartyVote.Ready) SetMemberReadyState(reply.CharacterId, reply.Yes ? 2 : 3);   // vfunc_7 @0x140a8a100
+                break;
+            }
+            case PartyVoteEnd: {                            // :1471
+                if (Vote is { } v) {
+                    VoteEnded?.Invoke(v);
+                    if (v.Kind == PartyVote.Ready) MarkUnanswered(windowOpen);   // PartyVoteReadyCli::vfunc_3 @0x140a89f70
+                }
+                Vote = null;
                 break;
             }
             case PartyGearScore g: {                        // :1245

@@ -68,4 +68,14 @@ public class PartyRequestsTests
         Assert.That(Bytes(new PartyInviteAnswer("A", PartyInviteAnswer.Refused, -1)), Is.EqualTo(Concat(new byte[] { 2 }, Str("A"), new byte[] { 0x14 }, BitConverter.GetBytes(-1))));
         Assert.That((PartyInviteAnswer.Decline, PartyInviteAnswer.TimedOut, PartyInviteAnswer.Busy), Is.EqualTo((9, 12, 0x15)));
     }
+
+    [Test]
+    public void TheVoteAnswerIsSendParty()
+    {
+        // PartyVoteCli::SendParty @0x140a89680: Party, u8 0x30, i32 vote id, bool answer
+        var p = new PartyVoteAnswer(0x01020304, true);
+        Assert.That(p.Op, Is.EqualTo(Outbound.Party));
+        Assert.That(Bytes(p), Is.EqualTo(new byte[] { 0x30, 4, 3, 2, 1, 1 }));
+        Assert.That(Bytes(new PartyVoteAnswer(9, false)), Is.EqualTo(new byte[] { 0x30, 9, 0, 0, 0, 0 }));
+    }
 }

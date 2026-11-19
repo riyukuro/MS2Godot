@@ -308,12 +308,18 @@ public sealed class MessageBoxController : UiController
     /// modaless position save is not ported.</summary>
     void CloseCurrent(int result)
     {
-        if (HasRoot && data != null) Host.Invoke(Host.Entity, "closeCurrent", (long)data.Id, result);
+        if (HasRoot && data != null)
+        {
+            data.ReArm();                                  // FUN_141a03470: the countdown's seconds left keep running
+            Host.Invoke(Host.Entity, "closeCurrent", (long)data.Id, result);
+        }
         ResetAfterClose();
     }
 
     /// <summary>vfunc_28 @0x1419f7980: OnClick(button, sID, tag, box); OnTopMostLayer is the layer order (one layer here).
-    /// OnChangeTime, OnPopupTimerComplete and onHyperLinkClick belong to box types not ported.</summary>
+    /// OnChangeTime and OnPopupTimerComplete are the timed boxes' countdown (CMsgBoxData); onHyperLinkClick belongs to box
+    /// types not ported. STILL-OPEN: OnPopupTimerComplete's UIMsg 2002 (the extra text) to a box's listener: no listener
+    /// here takes UIMsgs.</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (string.Equals(name, "OnClick", StringComparison.OrdinalIgnoreCase))
@@ -329,7 +335,19 @@ public sealed class MessageBoxController : UiController
             }
             return true;
         }
+        if (string.Equals(name, "OnChangeTime", StringComparison.OrdinalIgnoreCase))
+        {
+            if (data != null && args.Length >= 1)
+                data.OnChangeTime(HasRoot, (int)Avm2.Rt.ToNumber(args[0]), text => Host.Invoke(Host.Entity, "onProcessFunction", "updateMsg", text));
+            return true;
+        }
         if (string.Equals(name, "OnTopMostLayer", StringComparison.OrdinalIgnoreCase)) return true;
+        if (string.Equals(name, "OnPopupTimerComplete", StringComparison.OrdinalIgnoreCase))
+        {
+            if (data == null) return false;
+            data.OnPopupTimerComplete(HasRoot);
+            return false;
+        }
         return false;
     }
 
@@ -403,12 +421,15 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>HandlePartyinviteButton @0x1419fb930 (uimessagebox.cpp:1326): button 0 accepts (1); any other declines (9),
-    /// 21 while CloseAll closes the boxes. STILL-OPEN: 12 when the box's timer pressed the button (GetTimer().m_nButton)
-    /// waits for the box timer port.</summary>
+    /// 12 when the box's countdown pressed the button (GetTimer().m_nButton), 21 while CloseAll closes the boxes.</summary>
     bool HandlePartyinviteButton(int button)
     {
         int result = button == 0 ? Ms2.Net.Packets.PartyInviteAnswer.Accept : Ms2.Net.Packets.PartyInviteAnswer.Decline;
-        if (result == Ms2.Net.Packets.PartyInviteAnswer.Decline && closing) result = Ms2.Net.Packets.PartyInviteAnswer.Busy;
+        if (result == Ms2.Net.Packets.PartyInviteAnswer.Decline)
+        {
+            if (closing) result = Ms2.Net.Packets.PartyInviteAnswer.Busy;
+            else if (data != null && data.Timer.Button != 0) result = Ms2.Net.Packets.PartyInviteAnswer.TimedOut;
+        }
         AnswerPartyInvite?.Invoke(result);
         return true;
     }

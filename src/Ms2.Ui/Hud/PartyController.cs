@@ -51,6 +51,16 @@ public sealed class PartyController : UiController
     /// STILL-OPEN: the club packets are not read, so never.</summary>
     public Func<bool> ClubLimitReached = () => false;
 
+    /// <summary>GetServerTime: the server's unix seconds (the kick vote's time left); unset: the local clock.</summary>
+    public Func<long> ServerNow = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    /// <summary>GetTickCountMs2: the client tick in milliseconds (the deadline and the refresh interval).</summary>
+    public Func<long> NowMs = () => Environment.TickCount64;
+
+    /// <summary>m_deadline (SetDeadline @0x141a75a00): the tick after which the ready marks are cleared (0 none).</summary>
+    public long Deadline { get; private set; }
+    public void SetDeadline(long tick) => Deadline = tick;
+    long lastTick;                                      // m_timer: Unk_IntervalTimer's last firing (0 never)
+
     bool open;
     public bool IsOpen => open;
 
@@ -58,8 +68,9 @@ public sealed class PartyController : UiController
     /// DAT_143ab287c == 8). STILL-OPEN: no feed for those globals, so false.</summary>
     static bool SessionHidesDungeon => false;
 
-    /// <summary>OnLoadComplete @0x141a75a80 (:560): the bottom buttons and the dungeon name, the vote page (not ported), the
-    /// click handlers, RefreshAll. The packet handlers 0x53 and 0x100 it registers only touch the dungeon buttons.</summary>
+    /// <summary>OnLoadComplete @0x141a75a80 (:560): the bottom buttons and the dungeon name, the vote page, the click handlers,
+    /// RefreshAll. Its 0x53 handler is <see cref="OnPartyMessage"/> (the host calls it); the 0x100 one touches only the give
+    /// up button (not fed).</summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
@@ -207,7 +218,7 @@ public sealed class PartyController : UiController
         }
     }
 
-    static string Id(long id) => id.ToString(CultureInfo.InvariantCulture);    // FUN_140719530: decimal text
+    static string Id(long id) => id.ToString(CultureInfo.InvariantCulture);    // FUN_140719530 / FUN_140719630: decimal text
 
     /// <summary>
     /// FillMemberObject @0x141a784b0 (:975): the members <paramref name="flags"/> asks for. 8 level, 4 job, 0x20 name, 2 HP
@@ -273,19 +284,94 @@ public sealed class PartyController : UiController
         foreach (var (name, yes) in new[] { ("m_yesButton", true), ("m_noButton", false) })
             if (Host.FindNamed(name, page as Avm2.Flash.AsDisplayObject) is { } b)
             {
-                Func<object[], object> f = _ => { Vote?.Invoke(yes); return null; };
+                Func<object[], object> f = _ => { Vote?.Invoke(yes); SendVote(yes); return null; };
                 Host.Invoke(b, "addEventListener", "buttonClick", f, false, 0, false);
             }
     }
 
-    /// <summary>The vote page's yes / no (OnYesButtonClick / OnNoButtonClick, :374: PartyVoteCli::SendParty). Raised only.</summary>
+    /// <summary>The vote page's yes / no (OnYesButtonClick / OnNoButtonClick @0x141a74a60 / @0x141a74a90): SendVote
+    /// @0x141a74ac0, PartyVoteCli::SendParty of the running vote; nothing without one.</summary>
     public event Action<bool> Vote;
 
-    /// <summary>ASPartyVotePage::FUN_141a74760 (:352), FUN_141a759b0: the page shows the running vote, hidden without one.
-    /// STILL-OPEN: the vote packets (0x2f-0x31, PartyVoteCli) are not read, so there is never a vote.</summary>
+    void SendVote(bool yes)
+    {
+        if (Party.Vote is not { } v) return;
+        Send(new PartyVoteAnswer(v.Id, yes));
+    }
+
+    /// <summary>
+    /// ASPartyVotePage::FUN_141a74760 (:352): without a vote, or one the page does not show (vfunc_5: only the kick vote),
+    /// the page is hidden; else shown with the vote's title (vfunc_4, as HTML), the yes and no counts, the yes / no buttons
+    /// until the own character voted and the voted text after.
+    /// </summary>
     void UpdateVotePage()
     {
-        if (Host.Child("m_partyVote") is { } page) Host.SetVisible(page, false);
+        if (Host.Child("m_partyVote") is not { } page) return;
+        var v = Party.Vote;
+        if (v == null || !v.ShowsPage)
+        {
+            Host.SetVisible(page, false);
+            return;
+        }
+        Host.SetVisible(page, true);
+        var at = page as Avm2.Flash.AsDisplayObject;
+        if (Host.FindNamed("m_title", at) is { } title) Host.Set(title, "htmlText", VoteTitle(Model.Tables, v, ServerNow()));
+        if (Host.FindNamed("m_yesCount", at) is { } yes) Host.Set(yes, "text", Id(v.Yes.Count));
+        if (Host.FindNamed("m_noCount", at) is { } no) Host.Set(no, "text", Id(v.No.Count));
+        bool voted = v.HasVoted(SelfCharacterId);
+        foreach (var (name, shown) in new[] { ("m_yesButton", !voted), ("m_noButton", !voted), ("m_votedText", voted) })
+            if (Host.FindNamed(name, at) is { } o) Host.SetVisible(o, shown);
+    }
+
+    /// <summary>PartyVoteKickUserCli::vfunc_4 @0x140a89a00: s_party_vote_title_kick_user of the target's name, the reason
+    /// (the votes the kick needs) and the time left (GetRemainingTimeText @0x140a89720); "" for the other votes (the base).</summary>
+    public static string VoteTitle(GameTables tables, PartyVote v, long serverNow)
+    {
+        if (v.Kind != PartyVote.KickUser) return "";
+        return Format(tables.Common("s_party_vote_title_kick_user") ?? "", v.Name, (int)v.Reason, RemainingTimeText(tables, v.Expires, serverNow));
+    }
+
+    /// <summary>GetRemainingTimeText @0x140a89720: the end (no earlier than now) less now, as FormatMinutesSeconds
+    /// @0x140b8fbc0, s_common_min_sec_2 of the span's minutes and seconds parts.</summary>
+    public static string RemainingTimeText(GameTables tables, long expires, long serverNow)
+    {
+        long span = Math.Max(expires, serverNow) - serverNow;
+        return Format(tables.Common("s_common_min_sec_2") ?? "", (int)(span / 60 % 60), (int)(span % 60));
+    }
+
+    /// <summary>FUN_141a759b0: the vote page again.</summary>
+    public void RefreshVote() { if (Host?.Entity != null) UpdateVotePage(); }
+
+    /// <summary>
+    /// OnPartyPacket (:822), the window's own 0x53 handler: 0x19 the enter button and the dungeon name, 0x11 the give up
+    /// button, 0x30 and 0x31 (a vote answer, the vote's end) the vote page; each then the bottom row.
+    /// </summary>
+    public void OnPartyMessage(PartyMessage message)
+    {
+        if (Host?.Entity == null) return;
+        switch (message.Mode)
+        {
+            case 0x19: UpdateEnterDungeonButton(); UpdateDungeonName(); ArrangeBottomButton(); break;
+            case 0x11: UpdateGiveUpDungeonButton(); ArrangeBottomButton(); break;
+            case 0x30: case 0x31: RefreshVote(); ArrangeBottomButton(); break;
+        }
+    }
+
+    /// <summary>vfunc_15 @0x141a769d0: once a second (Unk_IntervalTimer, 1000 ms) the vote page again (its time left), and
+    /// past the deadline every member's ready mark cleared (CPartyManager::SetAllMembersState(0), which also clears the
+    /// deadline).</summary>
+    public void Process()
+    {
+        if (Host?.Entity == null) return;
+        long now = NowMs();
+        if (lastTick != 0 && now - lastTick < 1000) return;
+        lastTick = now;
+        if (Party.Vote != null) UpdateVotePage();
+        if (Deadline != 0 && now > Deadline)
+        {
+            Deadline = 0;
+            Party.SetAllMembersState(0);
+        }
     }
 
     /// <summary>UpdateEnterDungeonButton @0x141a794e0 (:1115): shown while matchmaking.</summary>
@@ -310,7 +396,7 @@ public sealed class PartyController : UiController
     void UpdateGiveUpDungeonButton() => Show("m_giveUpDungeon", false);
 
     /// <summary>ArrangeBottomButton @0x141a75a20 (:552).</summary>
-    void ArrangeBottomButton() => Host.Invoke(Host.Entity, "arrangeBottomButton");
+    public void ArrangeBottomButton() { if (Host?.Entity != null) Host.Invoke(Host.Entity, "arrangeBottomButton"); }
 
     /// <summary>ASDisplayObject vfunc_3 / vfunc_4: SetVisible.</summary>
     void Show(string name, bool visible)

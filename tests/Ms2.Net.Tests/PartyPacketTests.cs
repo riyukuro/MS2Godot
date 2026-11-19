@@ -93,4 +93,65 @@ public class PartyPacketTests {
         Assert.That((book.PartyName, book.PartyKind), Is.EqualTo(("Inviter", 77)));
         Assert.That(book.IsInParty, Is.False, "an invite changes no party");
     }
+
+    static PartyVote Vote(int kind, int id, long[] who, long[] yes, long[] no) {
+        var v = PartyVote.Create(kind);
+        v.Id = id; v.Expires = 1000;
+        foreach (long x in who) v.Participants.Add(x);
+        foreach (long x in yes) v.Yes.Add(x);
+        foreach (long x in no) v.No.Add(x);
+        return v;
+    }
+
+    [Test]
+    public void TheVotePacketsRead() {
+        // OnPartyVoteStart: u8 kind, the body for kinds 1 and 2 (i32 id, i64 end, three i64 sets; the kick vote adds owner,
+        // target, name, u8 reason)
+        var kick = Vote(PartyVote.KickUser, 5, new long[] { 11, 12, 13 }, new long[] { 11 }, new long[0]);
+        kick.Owner = 11; kick.Target = 13; kick.Name = "Target"; kick.Reason = 2;
+        var start = (PartyVoteStart) Read(new PartyVoteStart(1, kick).Write());
+        var v = start.Vote;
+        Assert.That((v.Kind, v.Id, v.Expires, v.Owner, v.Target, v.Name, v.Reason), Is.EqualTo((1, 5, 1000L, 11L, 13L, "Target", (byte) 2)));
+        Assert.That((v.Participants, v.Yes, v.No.Count), Is.EqualTo((new[] { 11L, 12L, 13L }, new[] { 11L }, 0)));
+        Assert.That((v.ShowsPage, v.HasVoted(11), v.HasVoted(12)), Is.EqualTo((true, true, false)));
+        var ready = (PartyVoteStart) Read(new PartyVoteStart(2, Vote(PartyVote.Ready, 6, new long[] { 11 }, new long[0], new long[] { 11 })).Write());
+        Assert.That((ready.Vote.Kind, ready.Vote.ShowsPage, ready.Vote.No.Single()), Is.EqualTo((2, false, 11L)));
+        // CreateVote gives null for another kind: its body is not read
+        Assert.That(Read(Body(w => { w.WriteByte(0x2f); w.WriteByte(3); })), Is.EqualTo(new PartyVoteStart(3, null)));
+        Assert.That(Read(new PartyVoteReply(12, true).Write()), Is.EqualTo(new PartyVoteReply(12, true)));
+        Assert.That(Read(Body(w => w.WriteByte(0x31))), Is.EqualTo(new PartyVoteEnd()));
+    }
+
+    [Test]
+    public void TheReadyCheckMarksTheMembers() {
+        var book = new PartyBook();
+        const long self = 11;
+        book.Apply(new PartyInfo(false, 1, 11, new[] { new PartyInfoMember(false, User(11, "Me")), new PartyInfoMember(false, User(12, "B")), new PartyInfoMember(false, User(13, "C")) }, false, 0), self, true);
+        var started = new List<int>(); var ended = new List<int>();
+        book.VoteStarted += v => started.Add(v.Id);
+        book.VoteEnded += v => ended.Add(v.Id);
+        // PartyVoteReadyCli::vfunc_2: 2 yes, 3 no, 1 waiting
+        book.Apply(new PartyVoteStart(2, Vote(PartyVote.Ready, 7, new long[] { 11, 12, 13 }, new long[] { 11 }, new long[0])), self, true);
+        Assert.That(book.Members.Select(m => m.ReadyState), Is.EqualTo(new[] { 2, 1, 1 }));
+        // AddVote, then vfunc_7: 3 for a no
+        book.Apply(new PartyVoteReply(12, false), self, true);
+        Assert.That((book.Vote.No.Single(), book.Members[1].ReadyState), Is.EqualTo((12L, 3)));
+        // OnPartyMemberOffline: vfunc_6 takes the member out of the vote
+        book.Apply(new PartyVoteReply(13, true), self, true);
+        book.Apply(new PartyOffline(13), self, true);
+        Assert.That(book.Vote.Participants.Contains(13) || book.Vote.Yes.Contains(13), Is.False);
+        // OnPartyVoteEnd: vfunc_3 marks the members still waiting as not ready (FUN_14162c3a0), then ClearVote
+        book.Apply(new PartyVoteStart(2, Vote(PartyVote.Ready, 8, new long[] { 11, 12 }, new long[] { 11 }, new long[0])), self, true);
+        book.Apply(new PartyVoteEnd(), self, true);
+        Assert.That(book.Members.Take(2).Select(m => m.ReadyState), Is.EqualTo(new[] { 2, 3 }));
+        Assert.That(book.Vote, Is.Null);
+        Assert.That((started, ended), Is.EqualTo((new[] { 7, 8 }, new[] { 8 })));
+        // SetAllMembersState: the deadline's clear
+        book.SetAllMembersState(0);
+        Assert.That(book.Members.All(m => m.ReadyState == 0), Is.True);
+        // a reply or an end without a vote does nothing
+        book.Apply(new PartyVoteReply(12, true), self, true);
+        book.Apply(new PartyVoteEnd(), self, true);
+        Assert.That(ended, Has.Count.EqualTo(1));
+    }
 }

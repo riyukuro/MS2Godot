@@ -86,6 +86,7 @@ public sealed class GameTables
         CharacterAbilityResetMerat = (int)k.Float("CharacterAbilityResetMerat", CharacterAbilityResetMerat);
         CharacterAbilityOpenQuestID = (uint)k.Float("CharacterAbilityOpenQuestID", CharacterAbilityOpenQuestID);
         MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
+        PartyVoteReadyTagExpireSeconds = (int)k.Float("PartyVoteReadyTagExpireSeconds", PartyVoteReadyTagExpireSeconds);
         PCBangItemDefaultPeriod = (uint)k.Float("PCBangItemDefaultPeriod", PCBangItemDefaultPeriod);
         MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
         MeratConsumeChannelChat = (uint)k.Float("MeratConsumeChannelChat", MeratConsumeChannelChat);
@@ -333,6 +334,8 @@ public sealed class GameTables
     /// <summary>Client::Constants MaxChatLength, MeratConsumeWorldChat, MeratConsumeChannelChat (Define defaults 50, 5, 2:
     /// unit_1402ab440_constantsblocks.cpp:1121, :970, :971).</summary>
     public int MaxChatLength = 50;
+    /// <summary>PartyVoteReadyTagExpireSeconds (+0xe608, default 10): how long the ready marks stay after a ready check ends.</summary>
+    public int PartyVoteReadyTagExpireSeconds = 10;
     /// <summary>Client::Constants PCBangItemDefaultPeriod in minutes (Define default 1440: unit_1402ab440_constantsblocks.cpp:981).</summary>
     public uint PCBangItemDefaultPeriod = 1440;
     public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;

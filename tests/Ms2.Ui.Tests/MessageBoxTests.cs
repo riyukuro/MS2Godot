@@ -245,5 +245,45 @@ public class MessageBoxTests
         Click(h, "m_button0");
         Assert.That(answers, Is.EqualTo(new[] { 9, 1 }), "yes accepts");
         Assert.That(c.IsIdle, Is.True);
+        // the 20 s countdown: a button the timer pressed (OnPopupTimerComplete) answers 12
+        box = PartyInviteBox.OnInvite(invite, false, false, answers.Add);
+        Assert.That((box.HasTimer, box.Timer.Sec, box.Timer.ShowFormat), Is.EqualTo((true, 0x14, 1)));
+        h.Player.Tick();
+        Assert.That(c.OnCallback("OnPopupTimerComplete", System.Array.Empty<object>()), Is.False, "no listener: falls through");
+        Assert.That(box.Timer.Button, Is.EqualTo(1));
+        Click(h, "m_button1");
+        Assert.That(answers, Is.EqualTo(new[] { 9, 1, 12 }), "the timer's decline");
+    }
+
+    [Test]
+    public void TheBoxCountdownKeepsItsSecondsLeft()
+    {
+        long now = 1000;
+        var clock = MessageBoxTimer.Clock;
+        MessageBoxTimer.Clock = () => now;
+        try
+        {
+            var box = new MessageBoxData(1) { Msg = "m" };
+            box.SetTimer(20, 1, "<{0}>");
+            var o = box.FillObj(false);
+            Assert.That((o["time"], o["msg"]), Is.EqualTo((20, "m\n<20>")));
+            Assert.That(box.IsLive, Is.True, "a timed box with seconds left");
+            string line = null;
+            box.OnChangeTime(true, 15, t => line = t);
+            Assert.That((line, box.Timer.Armed), Is.EqualTo(("m\n<15>", 15)));
+            box.OnChangeTime(false, 14, t => line = t);
+            Assert.That(box.Timer.Armed, Is.EqualTo(15), "not shown: ignored");
+            box.ReArm();                    // closed mid-countdown: the 15 s go on running
+            now += 6000;
+            Assert.That(box.IsLive, Is.True);
+            o = box.FillObj(false);
+            Assert.That((o["time"], box.Timer.Armed), Is.EqualTo((9, -1)), "shown again with the seconds left");
+            box.OnChangeTime(true, 9, _ => { });
+            box.ReArm();
+            now += 9000;
+            Assert.That(box.IsLive, Is.False, "the countdown ran out while queued");
+            Assert.That(new MessageBoxData(1).IsLive, Is.True, "no timer");
+        }
+        finally { MessageBoxTimer.Clock = clock; }
     }
 }
