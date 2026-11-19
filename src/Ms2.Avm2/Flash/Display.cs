@@ -495,13 +495,16 @@ public class AsMovieClip : AsSprite
 
     [As] public void play() => Playing = true;
     [As] public void stop() => Playing = false;
-    // MovieClip::gotoAndStop/gotoAndPlay (@0x14244e1d0/@0x14244e0e0, GotoFrameAndRun): the frame changes only when it
-    // differs, then the frame actions are queued (FUN_142520080, FrameCounter::QueueFrameActions) and run at once, even
-    // for the current frame. A label that is not found returns before both.
+    // MovieClip::gotoAndStop/gotoAndPlay (@0x14244e1d0/@0x14244e0e0, GotoFrameAndRun sfr_as3_07.cpp:1789): when the frame
+    // differs, the clip's pending AL_Frame entries are dropped (FUN_142522490) and the frame changes; then the frame
+    // actions are queued (FUN_142520080, FrameCounter::QueueFrameActions) and run at once, even for the current frame,
+    // so the target frame's script runs between frameConstructed and exitFrame. A label that is not found returns first.
     [As] public void gotoAndStop(object frame, string scene = null) { if (Goto(frame)) { Playing = false; P.RunFrameActions(); } }
     [As] public void gotoAndPlay(object frame, string scene = null) { if (Goto(frame)) { Playing = true; P.RunFrameActions(); } }
-    [As] public void nextFrame() { Playing = false; if (Frame + 1 < totalFrames) P.GotoFrame(this, Frame + 1, true); }
-    [As] public void prevFrame() { Playing = false; if (Frame > 0) P.GotoFrame(this, Frame - 1, true); }
+    // MovieClip::nextFrame/prevFrame (sfr_as3_07.cpp:3339/3225): Sprite::GotoFrame and the stopped state only; the new
+    // frame's script runs with the next frame actions. STILL-OPEN: nextFrame tests frame < GetLoadingFrame(), not the count.
+    [As] public void nextFrame() { Playing = false; if (Frame + 1 < totalFrames) P.GotoFrame(this, Frame + 1); }
+    [As] public void prevFrame() { Playing = false; if (Frame > 0) P.GotoFrame(this, Frame - 1); }
     [As] public void nextScene() { }
     [As] public void prevScene() { }
 
@@ -519,9 +522,10 @@ public class AsMovieClip : AsSprite
             }
             f = hit.Value.Frame;
         }
+        // STILL-OPEN: the client returns when the frame does not convert (Convert2UInt32); here it is clamped
         else f = Rt.ToInt32(frame) - 1;
         f = Math.Clamp(f, 0, totalFrames - 1);
-        P.GotoFrame(this, f, true);
+        if (f != Frame) { P.DropFrameActions(this); P.GotoFrame(this, f); }
         return true;
     }
 

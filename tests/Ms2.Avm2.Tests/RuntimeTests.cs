@@ -121,6 +121,75 @@ public class RuntimeTests
         Assert.That(mc.isPlaying, Is.True);
     }
 
+    static (Runtime, Player, AsMovieClip) FourFrames()
+    {
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject(), ["root"] = new JsonObject { ["frames"] = 4 },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        Assert.That(p.Start(), Is.True);
+        return (rt, p, (AsMovieClip)p.Root);
+    }
+
+    [Test]
+    public void GotoRunsTheTargetFrameScriptBetweenFrameConstructedAndExitFrame()
+    {
+        // FrameCounter::QueueFrameActions queues frameConstructed, then the frame scripts (AL_Frame), then exitFrame, and
+        // ExecuteActionQueue runs them in that order inside gotoAndStop
+        var (rt, p, root) = FourFrames();
+        root.stop();
+        var seen = new List<string>();
+        AsPlainFunction On(string tag) => new(rt, new NativeMethod(tag, (_, a) => { seen.Add(tag); return Rt.Undef; }));
+        p.Call(root, "addFrameScript", new object[] { 2, On("script") });
+        root.addEventListener("frameConstructed", On("constructed"));
+        root.addEventListener("exitFrame", On("exit"));
+        p.Call(root, "gotoAndStop", new object[] { 3 });
+        Assert.That(seen, Is.EqualTo(new[] { "constructed", "script", "exit" }));
+        Assert.That(root.Frame, Is.EqualTo(2));
+        seen.Clear();
+        p.Tick();
+        Assert.That(seen, Is.EqualTo(new[] { "constructed", "exit" }), "the script ran once");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void AGotoInsideTheFramePhaseDropsTheClipsPendingEntries()
+    {
+        // GotoFrameAndRun (sfr_as3_07.cpp:1808): RemoveActionQueueEntriesFor(AL_Frame, clip) before the frame changes, so
+        // the clip's exitFrame the Tick queued is skipped; the other entries still pending run inside the call, ahead of
+        // the new frameConstructed/script/exitFrame, and the Tick finds the queue empty after
+        var (rt, p, root) = FourFrames();
+        var other = (AsDisplayObject)rt.GetClass("flash.display.Sprite").Construct();
+        var seen = new List<string>();
+        AsPlainFunction On(string tag, Action then = null) =>
+            new(rt, new NativeMethod(tag, (_, a) => { seen.Add(tag); then?.Invoke(); return Rt.Undef; }));
+        p.Call(root, "addFrameScript", new object[] { 1, On("script2", () => p.Call(root, "gotoAndStop", new object[] { 4 })), 3, On("script4") });
+        root.addEventListener("frameConstructed", On("constructed"));
+        root.addEventListener("exitFrame", On("exit"));
+        other.addEventListener("exitFrame", On("otherExit"));
+        p.Tick();
+        Assert.That(seen, Is.EqualTo(new[] { "constructed", "script2", "otherExit", "constructed", "script4", "exit", "otherExit" }));
+        Assert.That((root.Frame, root.isPlaying), Is.EqualTo((3, false)));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void NextFrameOnlyChangesTheFrameAndItsScriptRunsWithTheNextFrameActions()
+    {
+        // MovieClip::nextFrame (sfr_as3_07.cpp:3339): Sprite::GotoFrame and SetPlayState(stopped), no actions run
+        var (rt, p, root) = FourFrames();
+        var seen = new List<string>();
+        AsPlainFunction On(string tag) => new(rt, new NativeMethod(tag, (_, a) => { seen.Add(tag); return Rt.Undef; }));
+        p.Call(root, "addFrameScript", new object[] { 1, On("script2") });
+        p.Call(root, "nextFrame", Array.Empty<object>());
+        Assert.That((root.Frame, root.isPlaying, seen.Count), Is.EqualTo((1, false, 0)));
+        p.Tick();
+        Assert.That(seen, Is.EqualTo(new[] { "script2" }));
+    }
+
     [Test]
     public void ADraggedSpriteFollowsTheMouseAndAReleaseOverNothingReachesTheStage()
     {

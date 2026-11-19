@@ -63,12 +63,14 @@ public class CommunityTests
         Assert.That((b.Count, counts), Is.EqualTo((0, 0)));
     }
 
+    static readonly Ms2.Formats.Text.BanTextChecker NoBans = new(_ => null);
+
     static (CommunityQueryController, List<IOutPacket>, List<string>, List<MessageBoxData>) Query(BuddyBook book, string self = "Me")
     {
         var sent = new List<IOutPacket>();
         var notices = new List<string>();
         var boxes = new List<MessageBoxData>();
-        var q = new CommunityQueryController(book) { Common = Text, SelfName = () => self, Send = sent.Add, ShowBox = boxes.Add, NextBox = () => { } };
+        var q = new CommunityQueryController(book) { Common = Text, Checker = NoBans, SelfName = () => self, Send = sent.Add, ShowBox = boxes.Add, NextBox = () => { } };
         q.SystemNotice += notices.Add;
         return (q, sent, notices, boxes);
     }
@@ -101,6 +103,19 @@ public class CommunityTests
         Assert.That(sent, Is.Empty, "nothing goes before yes");
         q.OnMessageBox(null, 0, "banBuddy");
         Assert.That(sent, Is.EqualTo(new IOutPacket[] { BuddyRequest.Block(0, "Eve", "rude") }));
+    }
+
+    [Test]
+    public void WithNoCheckerTheInviteAndTheBlockSendNothing()
+    {
+        // uibuddyeventlistener.cpp:1925 and :1756: the check and the send are inside if (pChecker)
+        var (q, sent, _, boxes) = Query(Book());
+        q.Checker = null;
+        q.OnCallback("OnOk", new object[] { 1, "Eve", "hi" });
+        q.OnCallback("OnOk", new object[] { 2, "Fay", "x" });
+        Assert.That(boxes.Single().Extra, Is.EqualTo("banBuddy"), "the block memo check passes without a checker");
+        q.OnMessageBox(null, 0, "banBuddy");
+        Assert.That(sent, Is.Empty);
     }
 
     [Test]
@@ -218,7 +233,7 @@ public class CommunityTests
     [Test]
     public void TheQueryMovieLoadsAndTakesItsKeys()
     {
-        var q = new CommunityQueryController(Book()) { Common = Text, ShowBox = _ => { }, NextBox = () => { } };
+        var q = new CommunityQueryController(Book()) { Common = Text, Checker = NoBans, ShowBox = _ => { }, NextBox = () => { } };
         q.OnQuery(0, 1, "Ann");
         var (h, _) = Load(q);
         foreach (var fn in new[] { "initData", "onEnterKey", "onTabKey", "errorName" })

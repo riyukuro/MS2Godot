@@ -143,6 +143,7 @@ public sealed class CommunityQueryController : UiController, IMessageBoxListener
                 case "delBuddy": Send(BuddyRequest.Remove(id)); break;
                 case "delBanBuddy": Send(BuddyRequest.Unblock(id)); break;
                 case "banBuddy":
+                    if (Checker == null) break;                 // the client checks and sends only inside if (pChecker)
                     if (MemoCheck(out string banMessage))
                     {
                         memo = memo.Trim();                     // CStringW::Trim trims m_1a0 itself
@@ -151,6 +152,7 @@ public sealed class CommunityQueryController : UiController, IMessageBoxListener
                     else ShowText(banMessage);
                     break;
                 case "homeBlock":
+                    if (Checker == null) break;
                     if (MemoCheck(out string homeMessage))
                     {
                         memo = memo.Trim();
@@ -241,8 +243,9 @@ public sealed class CommunityQueryController : UiController, IMessageBoxListener
             {
                 if (RejectRequestName(name)) return;
                 memo = memo.Trim();
-                string message = "";
-                if ((Checker?.CheckInviteMessage(memo, out message) ?? 0) == 0)
+                // uibuddyeventlistener.cpp:1925: the check and the send are inside if (pChecker), so no checker sends nothing
+                if (Checker == null) break;
+                if (Checker.CheckInviteMessage(memo, out string message) == 0)
                 {
                     Send(BuddyRequest.Invite(name, memo));
                     Sound?.Invoke("PC_InviteSuccess");         // s_strPcInviteSuccess
@@ -276,12 +279,8 @@ public sealed class CommunityQueryController : UiController, IMessageBoxListener
         }
     }
 
-    /// <summary>CheckBuddyMemo of m_1a0 as it is (the box tags check before the trim); a null checker passes.</summary>
-    bool MemoCheck(out string message)
-    {
-        message = "";
-        return Checker == null || Checker.CheckBuddyMemo(memo, out message) == 0;
-    }
+    /// <summary>CheckBuddyMemo of m_1a0 as it is (the box tags check before the trim); the callers test the checker first.</summary>
+    bool MemoCheck(out string message) => Checker.CheckBuddyMemo(memo, out message) == 0;
 
     /// <summary>FUN_1418d3050: the block memo's check; a failed one shows its box (tag communityBanMemoFail, no listener).</summary>
     bool MemoPasses(string text)

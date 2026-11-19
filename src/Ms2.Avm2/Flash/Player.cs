@@ -81,7 +81,9 @@ namespace Ms2.Avm2.Flash
         readonly Dictionary<string, List<AsEventDispatcher>> broadcast = new();
         readonly List<AsTimer> timers = new();
         readonly List<Action> later = new();
-        readonly List<AsMovieClip> scriptQueue = new();
+        readonly List<AsMovieClip> scriptQueue = new();     // clips whose frame needs its script (Flag_NeedExecuteFrame)
+        readonly List<FrameAction> frameActions = new();    // the action queue's AL_Frame level, run from frameHead on
+        int frameHead;
         (SymbolScope Scope, JsonObject Sym, JsonObject Placement)? pending;
 
         static readonly Type[] FlashTypes = typeof(Player).Assembly.GetTypes().Where(t => t.GetCustomAttribute<AsClassAttribute>() != null).ToArray();
@@ -378,8 +380,11 @@ namespace Ms2.Avm2.Flash
             if (!o.ColorLocked && last["color"] is JsonObject c) o.Color = SymbolScope.Color(c);
         }
 
-        /// <summary>gotoAndStop/Play, nextFrame: changes the frame now and runs its frame script.</summary>
-        public void GotoFrame(AsMovieClip mc, int f, bool fromScript)
+        /// <summary>
+        /// Sprite::GotoFrame: changes the frame now; its script is only marked (the frame tags set Flag_NeedExecuteFrame,
+        /// AvmSprite::ExecuteFrameTags @0x1424feab0) and runs when the frame actions are next queued and run.
+        /// </summary>
+        public void GotoFrame(AsMovieClip mc, int f)
         {
             if (f == mc.Frame) return;
             if (f < mc.Frame)
@@ -389,25 +394,72 @@ namespace Ms2.Avm2.Flash
                     if (!AliveAt(pl, f) || J.Iv(pl["first"]) > f) { mc.Live.Remove(pl); if (o.Parent == mc) mc.RemoveChildInternal(o, true); }
             }
             BuildFrame(mc, f);
-            if (fromScript) RunFrameScript(mc);
+            if (!scriptQueue.Contains(mc)) scriptQueue.Add(mc);
         }
 
-        void RunFrameScript(AsMovieClip mc)
-        {
-            if (mc.LastScriptFrame == mc.Frame) return;
-            mc.LastScriptFrame = mc.Frame;
-            if (mc.FrameScripts.TryGetValue(mc.Frame, out var fn)) fn.Call(mc, Array.Empty<object>());
-        }
+        /// <summary>
+        /// One entry of the action queue's AL_Frame level (MovieRoot::ActionEntry): a frameConstructed/exitFrame event for
+        /// one listener (AvmDisplayObj::OnEvent queues both at AL_Frame, sfr_as3_18.cpp:2438) or, with Type null, the
+        /// frame script of Target's frame Frame (AvmSprite::QueueFrameScript @0x1425200b0 also inserts at AL_Frame).
+        /// A null Target is an entry RemoveActionQueueEntriesFor took the character from: it is skipped.
+        /// </summary>
+        sealed class FrameAction { public AsEventDispatcher Target; public string Type; public int Frame; }
 
-        void RunFrameScripts()
+        /// <summary>
+        /// FrameCounter::QueueFrameActions (@0x14251ff60): frameConstructed for every listener, then the marked clips'
+        /// frame scripts (the mark is cleared as each is queued), then exitFrame for every listener, all appended to AL_Frame.
+        /// </summary>
+        void QueueFrameActions(bool events)
         {
-            for (int i = 0; i < scriptQueue.Count; i++)
+            if (events) QueueBroadcast("frameConstructed");
+            foreach (var mc in scriptQueue)
             {
-                var mc = scriptQueue[i];
-                RT.Guard($"frame script {mc.Class.Name}@{mc.Frame + 1}", () => RunFrameScript(mc));
+                if (mc.LastScriptFrame == mc.Frame) continue;
+                mc.LastScriptFrame = mc.Frame;
+                if (mc.FrameScripts.ContainsKey(mc.Frame)) frameActions.Add(new FrameAction { Target = mc, Frame = mc.Frame });
             }
             scriptQueue.Clear();
+            if (events) QueueBroadcast("exitFrame");
         }
+
+        void QueueBroadcast(string type)
+        {
+            // EventChains::QueueEvents (@0x14251fd40) walks the chain as it is now: a listener added later is not queued
+            if (broadcast.TryGetValue(type, out var l))
+                foreach (var d in l) frameActions.Add(new FrameAction { Target = d, Type = type });
+        }
+
+        /// <summary>
+        /// MovieRoot::ExecuteActionQueue (@0x1424fa320) on AL_Frame: takes the entries off the front until none is left. The
+        /// queue is shared, so a goto run by one of them drains the rest (and what it queued) inside the call, and the
+        /// outer loop then finds nothing (ActionQueueIterator::getNext restarts from the front when ModId moved).
+        /// </summary>
+        void RunFrameQueue()
+        {
+            while (frameHead < frameActions.Count)
+            {
+                var a = frameActions[frameHead++];
+                if (a.Target == null) continue;
+                if (a.Type != null) { RT.Guard(a.Type + " " + a.Target.Class?.Name, () => Dispatch(a.Type, a.Target)); continue; }
+                var mc = (AsMovieClip)a.Target;
+                if (mc.FrameScripts.TryGetValue(a.Frame, out var fn))
+                    RT.Guard($"frame script {mc.Class.Name}@{a.Frame + 1}", () => fn.Call(mc, Array.Empty<object>()));
+            }
+            frameActions.Clear(); frameHead = 0;
+        }
+
+        /// <summary>
+        /// MovieRoot::RemoveActionQueueEntriesFor(root, AL_Frame, clip) (FUN_142522490, sfr_as3_18.cpp:4037): the clip's
+        /// pending AL_Frame entries (its frame script, its frameConstructed/exitFrame) lose their character.
+        /// </summary>
+        internal void DropFrameActions(AsMovieClip mc)
+        {
+            for (int i = frameHead; i < frameActions.Count; i++)
+                if (ReferenceEquals(frameActions[i].Target, mc)) frameActions[i].Target = null;
+        }
+
+        /// <summary>The frame scripts of the marked clips, with no frame events (the end of a movie's load).</summary>
+        void RunFrameScripts() { QueueFrameActions(false); RunFrameQueue(); }
 
         // ---- stage membership --------------------------------------------------------------------------------
 
@@ -440,25 +492,22 @@ namespace Ms2.Avm2.Flash
         void SendBroadcast(string type)
         {
             if (!broadcast.TryGetValue(type, out var l)) return;
-            foreach (var d in l.ToArray())
-                RT.Guard(type + " " + d.Class?.Name, () =>
-                {
-                    var e = (AsEvent)RT.GetClass("flash.events.Event").Construct(type, Rt.False);
-                    e.Dispatched = true; e.Target = d; e.Phase = 2;
-                    d.Fire(e, false);
-                });
+            foreach (var d in l.ToArray()) RT.Guard(type + " " + d.Class?.Name, () => Dispatch(type, d));
+        }
+
+        void Dispatch(string type, AsEventDispatcher d)
+        {
+            var e = (AsEvent)RT.GetClass("flash.events.Event").Construct(type, Rt.False);
+            e.Dispatched = true; e.Target = d; e.Phase = 2;
+            d.Fire(e, false);
         }
 
         /// <summary>
-        /// FrameCounter::QueueFrameActions (@0x14251ff60) and the action levels 0..3 run right after (ExecuteActionQueue
-        /// @0x1424fa320), as GotoFrameAndRun does: frameConstructed to every listener, the pending frame scripts, exitFrame.
+        /// FrameCounter::QueueFrameActions (@0x14251ff60) and the action levels run right after (ExecuteActionQueue
+        /// @0x1424fa320), as GotoFrameAndRun does and as each frame does: frameConstructed to every listener, the marked
+        /// clips' frame scripts, exitFrame, behind whatever AL_Frame entries were still pending.
         /// </summary>
-        internal void RunFrameActions()
-        {
-            SendBroadcast("frameConstructed");
-            RunFrameScripts();
-            SendBroadcast("exitFrame");
-        }
+        internal void RunFrameActions() { QueueFrameActions(true); RunFrameQueue(); }
 
         internal void AddTimer(AsTimer t) { if (!timers.Contains(t)) timers.Add(t); }
         internal void RemoveTimer(AsTimer t) => timers.Remove(t);
@@ -470,12 +519,13 @@ namespace Ms2.Avm2.Flash
             FrameCount++;
             var todo = later.ToArray(); later.Clear();
             foreach (var a in todo) RT.Guard("deferred", a);
+            // STILL-OPEN: the client queues enterFrame at AL_EnterFrame while the frame advances and runs it after the
+            // advance; here it is sent before. Marked clips off the stage (not on the play list) also run their scripts
+            // here, where QueueFrameActions only walks the play list.
             SendBroadcast("enterFrame");
             UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
             RT.Guard("advance", () => Advance(Stage));
-            SendBroadcast("frameConstructed");
-            RunFrameScripts();
-            SendBroadcast("exitFrame");
+            RunFrameActions();
             double dt = 1000.0 / FrameRate;
             RT.Guard("clock", () => RT.AdvanceClock(dt));
             foreach (var t in timers.ToArray()) RT.Guard("timer", t.Pump);
@@ -497,7 +547,7 @@ namespace Ms2.Avm2.Flash
                         if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
                 }
                 BuildFrame(mc, next);
-                scriptQueue.Add(mc);
+                if (!scriptQueue.Contains(mc)) scriptQueue.Add(mc);
             }
             if (o is AsContainer c) foreach (var ch in c.Children.ToArray()) Advance(ch);
         }
