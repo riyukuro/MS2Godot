@@ -214,29 +214,33 @@ public sealed class MailListController : UiController
         Host.Invoke("setMailInfo", Host.Obj(info.ToArray()));
     }
 
-    /// <summary>GetMesoAmount (@0x1419e9160): the unclaimed meso range plus the meso benefit (type 0, sub 0).</summary>
-    public static long MesoAmount(MailInfo m) => (m.Meso.IsUnclaimed ? m.Meso.Begin : 0) + Benefit(m, 0, 0);
+    /// <summary>GetMesoAmount (@0x1419e9160): the unclaimed meso range (a begin other than 0, no claim: not IsUnclaimed's
+    /// begin above 0) plus the meso benefit (type 0, sub 0).</summary>
+    public static long MesoAmount(MailInfo m) => Unclaimed(m.Meso) + Benefit(m, 0, 0);
 
     /// <summary>GetMeratAmount (@0x1419e9200): the unclaimed merat range plus the merat benefits (type 2, subs 0..3).</summary>
     public static long MeratAmount(MailInfo m) =>
-        (m.Meret.IsUnclaimed ? m.Meret.Begin : 0) + Benefit(m, 2, 0) + Benefit(m, 2, 1) + Benefit(m, 2, 2) + Benefit(m, 2, 3);
+        Unclaimed(m.Meret) + Benefit(m, 2, 0) + Benefit(m, 2, 1) + Benefit(m, 2, 2) + Benefit(m, 2, 3);
 
     /// <summary>GetMeratRedAmount (@0x1419e9360): the unclaimed red merat range plus the benefit type 8, sub 0.</summary>
-    public static long MeratRedAmount(MailInfo m) => (m.RedMeret.IsUnclaimed ? m.RedMeret.Begin : 0) + Benefit(m, 8, 0);
+    public static long MeratRedAmount(MailInfo m) => Unclaimed(m.RedMeret) + Benefit(m, 8, 0);
 
-    /// <summary>FindBenefit(type, sub) then GetAvailableAmount (0 when used or not found).</summary>
+    static long Unclaimed(MailRange r) => r.Begin != 0 && r.Claim == 0 ? r.Begin : 0;
+
+    /// <summary>FindBenefit(type, sub) then GetAvailableAmount (0 when used or not found; a negative amount counts).</summary>
     static long Benefit(MailInfo m, int type, int sub) =>
-        m.Benefits.FirstOrDefault(b => b.Type == type && b.Sub == sub) is { } b && b.IsAvailable ? b.Amount : 0;
+        m.Benefits.FirstOrDefault(b => b.Type == type && b.Sub == sub)?.AvailableAmount ?? 0;
 
-    /// <summary>FUN_1419e9460: the other available benefits (not types 2 or 8, sub 0) as "token1".."tokenN".</summary>
+    /// <summary>FUN_1419e9460: the other benefits (not types 2 or 8, sub 0) with an available amount other than 0 (a
+    /// negative one shows) as "token1".."tokenN".</summary>
     void AddTokens(MailInfo m, List<(string, object)> info)
     {
         if (PriceText == null) return;
         int n = 1;
         foreach (var b in m.Benefits)
         {
-            if (b.Type == 2 || b.Type == 8 || b.Sub != 0 || !b.IsAvailable || b.Amount == 0) continue;
-            info.Add(($"token{n++}", PriceText(b.Type, b.Amount)));
+            if (b.Type == 2 || b.Type == 8 || b.Sub != 0 || b.AvailableAmount == 0) continue;
+            info.Add(($"token{n++}", PriceText(b.Type, b.AvailableAmount)));
         }
     }
 

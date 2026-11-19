@@ -93,6 +93,17 @@ public class MailListTests
         m.RedMeret = new MailRange { Begin = 4, Claim = 1 };
         Assert.That((MailListController.MesoAmount(m), MailListController.MeratAmount(m), MailListController.MeratRedAmount(m)),
             Is.EqualTo((105L, 7L, 0L)));
+        // GetAvailableAmount (@0x14026a1f0) keeps a negative amount; the ranges count any begin other than 0
+        var n = M(1, 1, 0);
+        n.Benefits.Add(new MailBenefit { Type = 8, Sub = 0, Amount = -3 });
+        n.RedMeret = new MailRange { Begin = -2 };
+        Assert.That(MailListController.MeratRedAmount(n), Is.EqualTo(-5L));
+        // FUN_1406909b0 tests IsUsed (@0x14026a170): a used benefit counts only with an amount above 0
+        var u = M(1, 1, 0);
+        u.Benefits.Add(new MailBenefit { Type = 0, Sub = 0, Amount = 0, UsedTime = 1 });
+        Assert.That(u.HasClaimed(), Is.False);
+        u.Benefits[0].Amount = 1;
+        Assert.That(u.HasClaimed(), Is.True);
     }
 
     // ---- the movie ----

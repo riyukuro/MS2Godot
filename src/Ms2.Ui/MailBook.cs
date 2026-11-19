@@ -98,10 +98,11 @@ public sealed class MailBook
         return true;
     }
 
-    /// <summary>SetUnreadCount (@0x1408e3490): a count above 0 with no tutorial makes the receive sound due.</summary>
-    public void SetUnreadCount(int v)
+    /// <summary>SetUnreadCount (@0x1408e3490): an unsigned count, so any count other than 0 with no tutorial makes the receive
+    /// sound due; GetUnreadCount reads it back as int.</summary>
+    public void SetUnreadCount(uint v)
     {
-        Unread = v;
+        Unread = (int)v;
         if (v > 0 && !HasTutorial()) receiveSound = true;
     }
 
@@ -192,7 +193,7 @@ public sealed class MailBook
                 if (listOpen) ListRemoved = true;
                 break;
             case MailMessage.New n:
-                SetUnreadCount(n.Unread);
+                SetUnreadCount((uint)n.Unread);
                 UnreadAlarm = n.UnreadAlarm;
                 if (n.Unread != 0 && !HasTutorial() && n.Alarm) Notice?.Invoke(Texts.Common(0x22b), 8, true);
                 if (listOpen) RefreshRequested?.Invoke();

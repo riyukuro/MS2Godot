@@ -107,7 +107,7 @@ public partial class HudScene
                 QuestName = id => questTable?.QuestName((int)id) ?? "",
                 QuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
                 Room = id => (dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable != null ? questTable.Available : _ => true)).GetRoom((int)id),
-                ItemCollected = id => live != null && live.CollectionGrades.ContainsKey((uint)id),   // DAT_143ab30e0.Lookup
+                ItemCollected = id => live != null && live.CollectionGrades.ContainsKey((uint)id),   // DAT_143ab30e0.Lookup(id) != 0: the one-key CAtlMap::Lookup returns the pair, so a present id, any grade
                 Send = packet =>
                 {
                     if (Ms2Godot.Net.LiveSession.Instance is { } s) s.SendAchieve(packet);

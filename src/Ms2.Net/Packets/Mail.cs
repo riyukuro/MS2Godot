@@ -60,6 +60,10 @@ public sealed class MailRange {
 public sealed class MailBenefit {
     public byte Type, Sub; public long Amount, UsedTime;
     public bool IsAvailable => Amount > 0 && UsedTime == 0;
+    /// <summary>IsUsed (@0x14026a170): an amount above 0 and a use time.</summary>
+    public bool IsUsed => Amount > 0 && UsedTime != 0;
+    /// <summary>GetAvailableAmount (@0x14026a1f0): the amount while unused, any sign.</summary>
+    public long AvailableAmount => UsedTime != 0 ? 0 : Amount;
 
     public static MailBenefit Read(ByteReader r) => new() { Type = r.ReadByte(), Sub = r.ReadByte(), Amount = r.ReadLong(), UsedTime = r.ReadLong() };
 }
@@ -136,7 +140,7 @@ public sealed class MailInfo {
 
     /// <summary>FUN_1406909b0: something was already taken (a claimed range, a used benefit, a received attachment, a sold ad).</summary>
     public bool HasClaimed() =>
-        Meso.IsClaimed || Meret.IsClaimed || RedMeret.IsClaimed || Benefits.Any(b => b.UsedTime != 0)
+        Meso.IsClaimed || Meret.IsClaimed || RedMeret.IsClaimed || Benefits.Any(b => b.IsUsed)
         || Attachments.Any(a => a != null && a.ReceiveTime > 0) || (Kind == 200 && AdSold == 1);
 
     /// <summary>GetUnreceivedAttachmentCount.</summary>
