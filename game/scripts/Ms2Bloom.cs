@@ -8,7 +8,9 @@ namespace Ms2Godot;
 /// The client's HDR bloom, as a compositor effect after transparents. The client's chain (BloomRenderStep and the final
 /// scene pass) works on its gamma-space HDR scene target:
 ///  1. average each 4x4 block into a quarter-size target;
-///  2. bright pass: x = max(c - threshold, 0), keep x / (x + offset) in an 8-bit target (glow target added after the compression: GlowPass);
+///  2. bright pass: x = max(c - threshold, 0), keep x / (x + offset) + glow.r * c * glowscale in an 8-bit target (glow: the
+///     GlowPass target; postprocessing.fxo HDRRenderStep_BrightPassFilter: mul r0.xyz, glow.x, scene; mul r0.xyz, r0, gfGlowScale;
+///     mad x, 1 / (x + gfBrightPassOffset), r0), so a glow-mapped object blooms in its own colour;
 ///  3. two 15-tap Gaussian blurs (deviation 3, every weight doubled), horizontal then vertical, 8-bit targets; both
 ///     step by 1 / quarter width, so the vertical step is a fraction of a texel on a wide screen;
 ///  4. final: scene + bloomscale * bloom.
@@ -57,9 +59,10 @@ void main() {
 	for (int y = 0; y < 4; y++)
 		for (int x = 0; x < 4; x++)
 			s += imageLoad(scene, min(q * 4 + ivec2(x, y), last)).rgb;
-	vec3 b = max(s / 16.0 - pc.threshold, vec3(0.0));
-	vec3 g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).rgb;   // the glow target (GlowPass), added after the compression
-	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g * pc.glow_scale, vec3(1.0)), 1.0));
+	s /= 16.0;
+	vec3 b = max(s - pc.threshold, vec3(0.0));
+	float g = texture(glow, (vec2(q) + 0.5) / vec2(imageSize(dst))).r;   // the glow target (GlowPass): its red channel scales the scene colour
+	imageStore(dst, q, vec4(min(b / (b + pc.offset) + g * s * pc.glow_scale, vec3(1.0)), 1.0));
 }
 #elif MODE == 1
 layout(set = 0, binding = 0) uniform sampler2D src;

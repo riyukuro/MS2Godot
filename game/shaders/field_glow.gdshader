@@ -15,8 +15,8 @@ void fragment() {
 	if (alpha_test && a < alpha_ref) {
 		discard;
 	}
-	vec4 gt = texture(glow_tex, UV);
-	float g = gt.a * max(gt.r, max(gt.g, gt.b));
+	// MS2GlowMaterial ps (Shaders/Current/MS2GlowMaterial_ps_3_0_DX9.cache): rgb = lerp(gkHeightFogColor, Glow.a, fog factor)
+	float g = texture(glow_tex, UV).a;
 	// gamma-space value written as it is (the glow target is read raw by the bloom)
 	ALBEDO = vec3(pow(g, 2.2));
 }
