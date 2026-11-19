@@ -148,11 +148,12 @@ public class EmoticonTests
     }
 
     /// <summary>
-    /// vfunc_83 with ProgressiveLoading: the spawn asks before the actor is added, so it gets none and the npc kind never
-    /// shows; only a later quest mark change (RefreshQuestState) asks again and makes the entity.
+    /// vfunc_83 with ProgressiveLoading: an ask before the actor is added gets none (the client's spawn asks after the add;
+    /// before it only when the model never loaded). Nothing of the npc's asks again but a quest mark change; the spawn after
+    /// the add holds the kind at once.
     /// </summary>
     [Test]
-    public void BeforeTheActorIsAddedOnlyALaterQuestMarkMakesAnEntity()
+    public void BeforeTheActorIsAddedNoAskMakesAnEntity()
     {
         long now = 10_000;
         var quest = new QuestData { Id = 100, Type = 0 };
@@ -185,6 +186,12 @@ public class EmoticonTests
         c.Process(At);
         Assert.That(e.Opened, Is.EqualTo("emoticon_movie_quest_start_epic"));
         Assert.That(Shown(h, e), Is.Not.Null);
+        // the spawn after the actor's add: the kind is held and started
+        var added = new EmoticonController.Actor { ObjectId = 4, IsNpc = true, NpcKind = 0xd, Friendly = 1, Distance = 10 };
+        EmoticonController.OnActorAdded(added);
+        var g = c.SpawnNpc(added, () => NpcQuestMarks.Mark.None);
+        Assert.That(g, Is.Not.Null);
+        Assert.That((g.Held, g.Kind), Is.EqualTo((true, 0)));
         // ProgressiveLoading off (Optimization.xml value 0): the spawn gets its entity at once
         var d = new EmoticonController { ProgressiveLoading = false };
         Load(d);

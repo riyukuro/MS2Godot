@@ -19,13 +19,25 @@ namespace Ms2.Ui.Hud;
 /// </para>
 /// <para>
 /// The load gate (CNpc::vfunc_83 @0x1410903b0): with <see cref="ProgressiveLoading"/> an npc has no emoticon until its actor
-/// is added (<see cref="Actor.ActorAdded"/>). The spawn asks once, before that (CNpc::vfunc_10 runs on the entity's add,
-/// worldservice_1.cpp:10331; GameObject::vfunc_12 on the later egmAnimation ActorAddedMessage, worldservice_1.cpp:3606), and
-/// CNpc::vfunc_12 does not ask again: of CNpc's own paths only <see cref="RefreshQuestState"/> does, when the quest mark
-/// changes. (UITalkManager's SetNpcNameTag and talk page, uitalkcinematic.cpp:1102 and 1563-1565, also ask; STILL-OPEN:
-/// not ported, with the talk scene's status kind.) So with
-/// progressive loading the npc's iconName and kind movie are not set up, and an npc with quests gets its entity once its
-/// mark moves off the reset one.
+/// is added (<see cref="Actor.ActorAdded"/>). The spawn (<see cref="SpawnNpc"/>) asks after the add, so the test passes:
+/// - The npc's entity is a "GameObject" (PCBase ctor, pcbase.cpp:795): gameobject.flat has PreloadAssets and abstract
+///   lifecycle behaviors.
+/// - EntityManager::AddEntity runs Entity::OnAdded (entity.cpp:2365-2400): the builtin ActorModel adds the model
+///   (AnimationService AddEntityWithActorModel, SceneGraphService SetSceneGraph / ProcessFreshSceneGraph, then
+///   AnimationService SetActorSceneGraph), which queues the ActorAddedMessage (SendLocal, AnimationService.cpp:1470);
+///   then the abstract OnCreate ends at once and EntityManager::OnEntityEndLifecycle queues the EntityPreloadRequest
+///   (PreloadEntityAssets, EntityManager.cpp:983-1007) behind it. A model still loading keeps that order:
+///   SceneGraphService::SetAssetDataFromCache sets the waiting entities' scene graphs (3147, 3155) before
+///   MarkPreloadsAsFound queues the preload response (3167, 3276-3290).
+/// - WorldService::OnActorAdded (worldservice_1.cpp:3597-3606) calls GameObject::vfunc_12 (m_unk_c8 = 1) on the object
+///   WorldService::OnObjectCreated registered (3126-3150).
+/// - The preload response's OnAssetsLoaded / FinishEntitySetup / EnterWorld sends the enter-world notification
+///   (SendImmediate, EntityManager.cpp:683-690, 756-762), and WorldService's handler (worldservice_1.cpp:10203) runs
+///   CNpc::vfunc_10 (10331), the spawn.
+/// So an npc with a kind or an iconName shows its emoticon at spawn. The test fails the spawn only when the model never
+/// loaded (AnimationService answers the preload with no actor manager, so no actor add); <see cref="RefreshQuestState"/>
+/// asks again on a quest mark change, and vfunc_83 gives none while the actor is not added. (UITalkManager's SetNpcNameTag and talk
+/// page, uitalkcinematic.cpp:1102 and 1563-1565, also ask; STILL-OPEN: not ported, with the talk scene's status kind.)
 /// </para>
 /// </summary>
 public sealed class EmoticonController : UiController
@@ -60,7 +72,7 @@ public sealed class EmoticonController : UiController
         public string Icon = "";
         /// <summary>
         /// GameObject m_unk_c8 (FUN_14123dbd0): set by GameObject::vfunc_12 (gameobject.cpp:264), which WorldService::OnActorAdded
-        /// calls when the actor's model has been added, after the spawn.
+        /// calls when the actor's model has been added, before the spawn (see the load gate above).
         /// </summary>
         public bool ActorAdded;
         /// <summary>CNpc m_cE40: HasNpcQuests, set at spawn.</summary>

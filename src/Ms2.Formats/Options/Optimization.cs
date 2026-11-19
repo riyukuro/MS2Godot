@@ -4,7 +4,8 @@ namespace Ms2.Formats.Options;
 
 /// <summary>
 /// COptimizer::LoadOptimization (optimizer.cpp:373-427), run once at startup (ms2.cpp:1769): the optimizer's switches come
-/// from "Optimization.xml" in the option folder (GetOptionFolder, the folder of GameOption.xml) when that file loads, else
+/// from "Optimization.xml" in the option folder (JoinPath(GetOptionFolder(), ...), optimizer.cpp:381; GetOptionFolder
+/// "../../Config/" @0x1412755b0, the folder of GameOption.xml, gameoption.cpp:1700) when that file loads, else
 /// every switch is the graphic state's m_b10 (GetGraphicState = CGameOption+0x9c, ms2clientplatformbase.cpp:625, an
 /// Unk_GraphicState2). m_b10 is set to 1 by that block's reset (gameoptionstruct.cpp:2314) and read from no GameOption.xml
 /// attribute (LoadGameOptionOptimizer, gameoptionstruct.cpp:2319-2335), so without the file every switch is on.

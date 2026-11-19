@@ -12,10 +12,12 @@ namespace Ms2Godot.World;
 /// does, and <see cref="EmoticonController"/> keeps one emoticon_entity_body clip per npc in it.
 /// - Spawn: CNpc's spawn makes the entity (UIEmoticon::SpawnNpc, the friendly npcs only); the actor leaving the field
 ///   releases it (UIHudEntityManager::Release), and its clip waits in the pool for the next one.
-/// - The actor: the spawn comes first and the actor's add (GameObject::vfunc_12) on a later frame, as WorldService gets
-///   the entity's add before the egmAnimation ActorAddedMessage; it is marked added once the npc's body is placed (the
-///   live field's stand-in body for an npc with no model counts). With
-///   ProgressiveLoading (Optimization.xml, on without it) the spawn finds no emoticon (CNpc::vfunc_83).
+/// - The actor: its add (GameObject::vfunc_12) comes before the spawn, so the spawn's vfunc_83 passes its ProgressiveLoading
+///   test. The entity's OnAdded adds the model (ActorAddedMessage queued) before its abstract OnCreate ends and the
+///   gameobject.flat's PreloadAssets queues the EntityPreloadRequest (EntityManager PreloadEntityAssets); the spawn
+///   (CNpc::vfunc_10) runs only on the preload response's EnterWorld (OnAssetsLoaded, SendEntityEnterWorldNotification).
+///   Here the npc's body being placed is the add (the live field's stand-in body for an npc with no model counts), and the
+///   spawn follows it on the same frame.
 /// - Every frame (UIHudEntity::vfunc_15): CNpc::vfunc_53's quest tick (once a second for an npc with quests), then each
 ///   clip at the npc's "Eff_UI" dummy (Entity::vfunc_10; the npc's position without one) projected to the stage, with the
 ///   camera-pitch shift (FUN_1412762d0) and the npc offset (OffsetNpcEmoticon).
@@ -31,7 +33,7 @@ namespace Ms2Godot.World;
 /// </summary>
 public sealed partial class NpcEmoticons : CanvasLayer
 {
-    sealed class Npc { public FieldNpcs.Placed Placed; public EmoticonController.Actor Actor; }
+    sealed class Npc { public FieldNpcs.Placed Placed; public EmoticonController.Actor Actor; public bool Spawned; }
 
     readonly UiAssets assets;
     readonly ClientConstants constants;
@@ -73,7 +75,11 @@ public sealed partial class NpcEmoticons : CanvasLayer
     }
     public NpcEmoticons() { }
 
-    /// <summary>COptimizer::LoadOptimization runs once: Optimization.xml next to GameOption.xml (the option folder).</summary>
+    /// <summary>
+    /// COptimizer::LoadOptimization (@0x14161c490) runs once: JoinPath(GetOptionFolder(), "Optimization.xml")
+    /// (optimizer.cpp:381), the folder GameOption.xml is in (GetOptionFolder "../../Config/" @0x1412755b0,
+    /// unit_141274d10_uihelpers.cpp:401-404; GetOptionFilePath gameoption.cpp:1700), not the client's root.
+    /// </summary>
     static readonly Lazy<bool> ProgressiveLoading = new(() =>
         Ms2.Formats.Options.Optimization.ProgressiveLoading(System.IO.Path.GetDirectoryName(GameOptions.FilePath)));
 
@@ -111,7 +117,6 @@ public sealed partial class NpcEmoticons : CanvasLayer
             HasQuests = marks.HasQuests(n.Row.Id),
         };
         npcs[n] = byActor[a] = new Npc { Placed = n, Actor = a };
-        controller.SpawnNpc(a, () => QuestMark(a));
     }
 
     NpcQuestMarks.Mark QuestMark(EmoticonController.Actor a) => talk?.QuestMark(a.NpcId) ?? NpcQuestMarks.Mark.None;
@@ -163,7 +168,14 @@ public sealed partial class NpcEmoticons : CanvasLayer
             if (!IsInstanceValid(n.Placed.Root)) continue;
             n.Actor.Distance = eye.DistanceTo(n.Placed.Root.GlobalPosition);
             var a = n.Actor;
-            if (!a.ActorAdded && n.Placed.Body != null && IsInstanceValid(n.Placed.Body)) EmoticonController.OnActorAdded(a);
+            if (!n.Spawned)
+            {
+                // the actor's add, then the spawn (EnterWorld waits for the preload response queued after ActorAdded)
+                if (n.Placed.Body == null || !IsInstanceValid(n.Placed.Body)) continue;
+                EmoticonController.OnActorAdded(a);
+                controller.SpawnNpc(a, () => QuestMark(a));
+                n.Spawned = true;
+            }
             controller.NpcTick(a, () => QuestMark(a));
         }
         bool layer = MovieLayerHost.Layers.IsVisible(CommonDepth.Emoticon);
