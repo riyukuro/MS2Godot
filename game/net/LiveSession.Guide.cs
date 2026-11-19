@@ -91,7 +91,7 @@ public partial class LiveSession
         public LiveGuideWorld(LiveSession s) => this.s = s;
 
         public override long ServerTime => s.GameSession?.ServerTime ?? base.ServerTime;
-        public override int SceneId => s.answered ? 0x620000c : 0;
+        public override int SceneId => s.fieldEntry.Answered ? 0x620000c : 0;
         public override IGuideEventPane Pane => s.GuidePane;
         public override void GuideLog(string text) => GD.Print(text);
         public override void Send(Ms2.Net.Wire.IOutPacket packet) => s.Send(packet);
