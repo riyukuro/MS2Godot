@@ -67,18 +67,31 @@ public partial class FieldAudio : Node
             return false;
         }
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        library = new SoundLibrary(dir);
-        GD.Print($"audio: MS2Sound.fev read in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks, {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events, {library.Fev.CueIds.Count()} music cues");
+        library = SoundLibrary.Shared(dir);
+        GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks, {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events, {library.Fev.CueIds.Count()} music cues");
         MusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
         GD.Print($"audio: music volume {MusicVolume:F2}");
         if (packs != null)
-            try { systemSounds = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml"))); }
-            catch (Exception ex) { GD.PushWarning("audio: systemsound.xml: " + ex.Message); }
+            systemSounds = SystemSounds(packs);
         music = new AudioStreamPlayer { Name = "Music" };
         ui = new AudioStreamPlayer { Name = "Ui" };
         AddChild(music);
         AddChild(ui);
         return true;
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, SystemSoundTable> systemSoundTables = new();
+
+    /// <summary>table/systemsound.xml, parsed once per pack set: the client reads it once, in SoundPropertyMgr::Load
+    /// (soundproperty.cpp:477, called at startup from ms2.cpp:1872), not per field. Null when the table cannot be read
+    /// (warned once).</summary>
+    static SystemSoundTable SystemSounds(PackSet packs)
+    {
+        if (systemSoundTables.TryGetValue(packs, out var t)) return t;
+        try { t = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml"))); }
+        catch (Exception ex) { GD.PushWarning("audio: systemsound.xml: " + ex.Message); }
+        systemSoundTables.AddOrUpdate(packs, t);
+        return t;
     }
 
     /// <summary>The bgm cue of a field's fielddata entry (default environment), 0 when the field has none.</summary>

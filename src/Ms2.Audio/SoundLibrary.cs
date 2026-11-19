@@ -39,6 +39,17 @@ public sealed class SoundLibrary
         Fev = FevProject.Load(Path.Combine(soundDir, "MS2Sound.fev"));
     }
 
+    static readonly Dictionary<string, SoundLibrary> shared = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The one library of a Data/Sound folder for the process. The client loads MS2Sound.fev once, at CSoundService init
+    /// (FUN_1417aee20, soundservice.cpp:515: m_bLoaded returns at once on a second call; the load at :561), and keeps it for
+    /// every field; the field teardown (WorldService FUN_141bbc580, worldservice_1.cpp:9963) only fades the environment
+    /// sounds out. The banks opened through it stay with it. Main thread only, as every caller of the library is.
+    /// </summary>
+    public static SoundLibrary Shared(string soundDir) =>
+        shared.TryGetValue(soundDir, out var l) ? l : shared[soundDir] = new SoundLibrary(soundDir);
+
     /// <summary>The bank file of a bank name from the FEV: MS2Sound_X.fsb, or the language variant of the voice banks.</summary>
     public Fsb5 Bank(string name)
     {

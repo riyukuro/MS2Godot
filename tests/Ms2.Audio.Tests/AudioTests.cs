@@ -39,6 +39,22 @@ public class AudioTests
         return (frames, frames * 1152.0 / Math.Max(rate, 1), rate, ch);
     }
 
+    /// <summary>One library per Data/Sound folder for the process (CSoundService loads MS2Sound.fev once): a second field's
+    /// open gets the same project and the banks the first one opened, without reading the file again.</summary>
+    [Test]
+    public void SharedLibraryIsLoadedOncePerFolder()
+    {
+        var dir = SoundDir();
+        var a = SoundLibrary.Shared(dir);
+        var plan = a.ResolveMusic(35);
+        Assert.That(plan, Is.Not.Null);
+        var b = SoundLibrary.Shared(dir);
+        Assert.That(b, Is.SameAs(a));
+        Assert.That(b.Fev, Is.SameAs(a.Fev));
+        Assert.That(b.Bank("MS2Sound_BGM"), Is.SameAs(a.Bank("MS2Sound_BGM")));
+        Assert.That(b.ResolveMusic(35).Loop.Name, Is.EqualTo(plan.Loop.Name));
+    }
+
     [Test]
     public void TriaBgmDecodesToPlayablePcm()
     {
