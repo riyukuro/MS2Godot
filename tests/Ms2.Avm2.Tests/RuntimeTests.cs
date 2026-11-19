@@ -362,7 +362,9 @@ public class RuntimeTests
         }
         var a = Clip("a", root); var b = Clip("b", root);
         var bKid = Clip("b.kid", b); var aKid = Clip("a.kid", a);
-        // marked: b.kid, a.kid (children of the later and the earlier sibling), then the siblings, then a clip off the stage
+        // marked: b.kid, a.kid (children of the later and the earlier sibling), then the siblings, then a clip off the stage.
+        // The "off last" expectation pins a guess: the client keeps off-stage clips on the play list too (sfr_as3_16.cpp:2347,
+        // sfr_as3_18.cpp:3375) and the exact order is STILL-OPEN (see SortByPlayList).
         var off = (AsMovieClip)mcClass.Construct();
         off.FrameScripts[0] = new AsPlainFunction(rt, new NativeMethod("off", (_, x) => { seen.Add("off"); return Rt.Undef; }));
         p.MarkScript(off);

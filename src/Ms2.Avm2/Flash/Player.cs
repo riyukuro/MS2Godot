@@ -400,7 +400,15 @@ namespace Ms2.Avm2.Flash
             MarkScript(mc);
         }
 
-        internal void MarkScript(AsMovieClip mc) { if (!mc.ScriptQueued) { mc.ScriptQueued = true; scriptQueue.Add(mc); } }
+        bool queueUnordered;    // a mark that did not come from Advance's pre-order walk is in the queue
+
+        /// <summary>Marks a clip's frame script. <paramref name="inOrder"/>: the caller marks in play-list order (Advance).</summary>
+        internal void MarkScript(AsMovieClip mc, bool inOrder = false)
+        {
+            if (mc.ScriptQueued) return;
+            mc.ScriptQueued = true; scriptQueue.Add(mc);
+            if (!inOrder) queueUnordered = true;
+        }
 
         /// <summary>
         /// One entry of the action queue's AL_Frame level (MovieRoot::ActionEntry): a frameConstructed/exitFrame event for
@@ -417,7 +425,8 @@ namespace Ms2.Avm2.Flash
         void QueueFrameActions(bool events)
         {
             if (events) QueueBroadcast("frameConstructed");
-            if (scriptQueue.Count > 1) SortByPlayList();
+            if (queueUnordered && scriptQueue.Count > 1) SortByPlayList();
+            queueUnordered = false;
             foreach (var mc in scriptQueue)
             {
                 mc.ScriptQueued = false;
@@ -435,29 +444,49 @@ namespace Ms2.Avm2.Flash
         /// sfr_as3_17d.cpp:177: after the previous in-list sibling's branch, before the next one, right after the parent
         /// when it has none; AvmInteractiveObj::FindInsertToPlayList @0x142501a60 puts it right after its parent), so the
         /// walk is the display tree in pre-order: a parent's script before its children's, siblings in display order.
-        /// Clips off the stage are not on the play list; they keep their mark order after the others (STILL-OPEN: the
-        /// client does not run them at all).
+        /// Advance marks in that order already; only construction and goto can leave the queue out of it, so the sort runs
+        /// only when queueUnordered is set. It reuses its buffers and compares two clips by climbing to their common
+        /// ancestor, so a tick without it allocates nothing.
+        /// Off the stage: the client keeps an AS3-built clip with no parent on the play list too (AddScriptableMovieClip
+        /// FUN_1424e9380, sfr_as3_16.cpp:2347 calls AddToPlayList; removeChild's MoveBranchInPlayList with a null parent puts
+        /// the branch at the head, sfr_as3_18.cpp:3375, 2976-2984), so those clips run after the stage tree, oldest first,
+        /// each branch in pre-order. Here they keep their mark order after the stage's clips. STILL-OPEN: the exact
+        /// off-stage order (the test pins this guess).
+        /// STILL-OPEN: setChildIndex (@0x142526610, sfr_as3_19.cpp:3017) does not call MoveBranchInPlayList, so the client
+        /// keeps the old play-list place of a re-indexed child; this sort follows the current child index.
         /// </summary>
         void SortByPlayList()
         {
-            var keyed = new (AsMovieClip Mc, int[] Path, int Seq)[scriptQueue.Count];
-            for (int i = 0; i < keyed.Length; i++)
+            int n = scriptQueue.Count;
+            if (sortBuf.Length < n) sortBuf = new PlayKey[Math.Max(n, sortBuf.Length * 2)];
+            for (int i = 0; i < n; i++)
             {
                 var mc = scriptQueue[i];
-                var up = new List<int>();
-                AsDisplayObject o = mc;
-                while (o.Parent != null) { up.Add(o.Parent.Children.IndexOf(o)); o = o.Parent; }
-                keyed[i] = (mc, ReferenceEquals(o, Stage) ? Enumerable.Reverse(up).ToArray() : null, i);
+                int depth = 0; AsDisplayObject o = mc;
+                while (o.Parent != null) { depth++; o = o.Parent; }
+                sortBuf[i] = new PlayKey { Mc = mc, Depth = ReferenceEquals(o, Stage) ? depth : -1, Seq = i };
             }
-            Array.Sort(keyed, static (a, b) =>
+            Array.Sort(sortBuf, 0, n, playOrder ??= new PlayOrder());
+            for (int i = 0; i < n; i++) { scriptQueue[i] = sortBuf[i].Mc; sortBuf[i] = default; }
+        }
+
+        struct PlayKey { public AsMovieClip Mc; public int Depth, Seq; }
+        PlayKey[] sortBuf = new PlayKey[16];
+        PlayOrder playOrder;
+
+        sealed class PlayOrder : IComparer<PlayKey>
+        {
+            public int Compare(PlayKey a, PlayKey b)
             {
-                if (a.Path == null || b.Path == null) return a.Path == b.Path ? a.Seq.CompareTo(b.Seq) : a.Path == null ? 1 : -1;
-                int n = Math.Min(a.Path.Length, b.Path.Length);
-                for (int k = 0; k < n; k++) if (a.Path[k] != b.Path[k]) return a.Path[k].CompareTo(b.Path[k]);
-                int c = a.Path.Length.CompareTo(b.Path.Length);   // an ancestor comes first
-                return c != 0 ? c : a.Seq.CompareTo(b.Seq);
-            });
-            for (int i = 0; i < keyed.Length; i++) scriptQueue[i] = keyed[i].Mc;
+                if (a.Depth < 0 || b.Depth < 0) return (a.Depth < 0) == (b.Depth < 0) ? a.Seq.CompareTo(b.Seq) : a.Depth < 0 ? 1 : -1;
+                AsDisplayObject x = a.Mc, y = b.Mc; int dx = a.Depth, dy = b.Depth;
+                while (dx > dy) { x = x.Parent; dx--; }
+                while (dy > dx) { y = y.Parent; dy--; }
+                if (ReferenceEquals(x, y)) { int c = a.Depth.CompareTo(b.Depth); return c != 0 ? c : a.Seq.CompareTo(b.Seq); }   // an ancestor comes first
+                while (!ReferenceEquals(x.Parent, y.Parent)) { x = x.Parent; y = y.Parent; }
+                var kids = x.Parent.Children;
+                return kids.IndexOf(x).CompareTo(kids.IndexOf(y));
+            }
         }
 
         void QueueBroadcast(string type)
@@ -576,8 +605,8 @@ namespace Ms2.Avm2.Flash
                 foreach (var a in todo) RT.Guard("deferred", a);
             }
             // STILL-OPEN: the client queues enterFrame at AL_EnterFrame while the frame advances and runs it after the
-            // advance; here it is sent before. Marked clips off the stage (not on the play list) also run their scripts
-            // here, where QueueFrameActions only walks the play list.
+            // advance; here it is sent before. Marked clips off the stage run after the stage's (see
+            // SortByPlayList for the STILL-OPEN off-stage order).
             SendBroadcast("enterFrame");
             UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
             RT.Guard("advance", null, this, static p => p.Advance(p.Stage));
@@ -609,7 +638,7 @@ namespace Ms2.Avm2.Flash
                         if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
                 }
                 BuildFrame(mc, next);
-                MarkScript(mc);
+                MarkScript(mc, inOrder: true);
             }
             // the children as they are now (a child added by a frame is advanced next frame), in a pooled copy
             if (o is AsContainer c && c.Children.Count is int n and > 0)
