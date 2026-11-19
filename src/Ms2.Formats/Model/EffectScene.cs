@@ -62,6 +62,33 @@ public sealed class EffectMesh
     /// default). The client's opacity is this times the base map's alpha (NiStandardMaterial HandleColorAccumulation and
     /// CompositeFinalRGBAColor; ms2standardmaterial.cpp:758-791).</summary>
     public double Opacity(double t) => Alpha != null ? Alpha(AlphaCtl.Local(t)) : Mesh.MaterialAlpha;
+
+    /// <summary>The material's colour terms at effect time t, NiMaterialColorController keys applied (Target 0 ambient, 1
+    /// diffuse, 3 emissive): lit = emissive + diffuse, amb = the ambient colour, which the scene's ambient light multiplies.
+    /// The client's diffuse coefficient is emissive + matAmbient * lightAmbient + matDiffuse * lightDiffuse
+    /// (NiStandardMaterial::HandleColorAccumulation -> HandleShadingCoefficients, NiStandardMaterial.cpp:3677-3740), and the
+    /// base map's colour is multiplied by it. Without lights reaching the mesh the diffuse light is taken as full (white).
+    /// A mesh without any colour gets nothing from emissive and diffuse: an additive mesh lit only by its ambient colour
+    /// (portal_b's Box01: ambient blue, diffuse and emissive black) draws that colour, not white.
+    /// Without an NiMaterialProperty: diffuse white, emissive and ambient black.
+    /// STILL-OPEN: NiVertexColorProperty LIGHTING_E (flags bit 3 clear) drops the ambient and diffuse terms (:3719-3723) and
+    /// takes the opacity from the emissive alpha (:4437-4444); it is not applied here (nor in the field shaders).</summary>
+    public void Shade(double t, double[] lit, double[] amb)
+    {
+        double[] dif = null, emi = null, am = null;
+        foreach (var a in Colors)
+        {
+            var v = a.Curve(a.Ctl != null ? a.Ctl.Local(t) : t);
+            if (a.Target == 0) am = v; else if (a.Target == 1) dif = v; else if (a.Target == 3) emi = v;
+        }
+        var m = Mesh;
+        for (int i = 0; i < 3; i++)
+        {
+            double d = dif != null ? dif[i] : m.Diffuse != null ? m.Diffuse[i] : 1, e = emi != null ? emi[i] : m.Emissive != null ? m.Emissive[i] : 0;
+            lit[i] = Math.Min(1, d + e);
+            amb[i] = am != null ? am[i] : m.Ambient != null ? m.Ambient[i] : 0;
+        }
+    }
 }
 
 public enum EmitterKind { Mesh, Box, Sphere, Cylinder, Other }

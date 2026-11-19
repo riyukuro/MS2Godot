@@ -10,12 +10,7 @@ public class EffectMaterialTests
 {
     const string Archive = "Resource/Model/Effect";
 
-    static (PackSet, NifSpec) Env()
-    {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA"); var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
-        if (string.IsNullOrEmpty(data) || string.IsNullOrEmpty(nx)) Assert.Ignore("MS2_DATA / MS2_NIFXML not set");
-        return (new PackSet(data), new NifSpec(nx));
-    }
+    static (PackSet, NifSpec) Env() => NifEnv.Open();
 
     static EffectScene Load(string entry)
     {
@@ -56,5 +51,45 @@ public class EffectMaterialTests
     {
         var m = new EffectMesh { Mesh = new ModelMesh() };
         Assert.That(m.Opacity(0), Is.EqualTo(1.0));
+    }
+
+    /// <summary>The portal arch (portal_b's Box01, additive): diffuse and emissive black, ambient blue. Its colour is the
+    /// ambient term alone, never the white an additive mesh without diffuse or emissive used to draw.</summary>
+    [Test]
+    public void AmbientOnlyMeshKeepsItsAmbientColour()
+    {
+        var sc = Load("bg/common/eff_com_portal_b.nif");
+        var box = sc.Meshes.Single(m => m.Mesh.Name == "Box01");
+        Assert.That(box.Mesh.AlphaFlags & 1, Is.EqualTo(1), "blended");
+        double[] lit = new double[3], amb = new double[3];
+        for (double t = 0; t < 3; t += 0.5)
+        {
+            box.Shade(t, lit, amb);
+            Assert.That(lit, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }).Within(1e-6), "emissive + diffuse");
+            Assert.That(amb, Is.EqualTo(new[] { 0.1137, 0.3412, 0.9137 }).Within(1e-3), "ambient");
+        }
+    }
+
+    /// <summary>Without a material: diffuse white (full light), no emissive and no ambient.</summary>
+    [Test]
+    public void NoMaterialShadesWhite()
+    {
+        var m = new EffectMesh { Mesh = new ModelMesh() };
+        double[] lit = new double[3], amb = new double[3];
+        m.Shade(0, lit, amb);
+        Assert.That(lit, Is.EqualTo(new[] { 1.0, 1.0, 1.0 }));
+        Assert.That(amb, Is.EqualTo(new[] { 0.0, 0.0, 0.0 }));
+    }
+
+    /// <summary>An NiMaterialColorController on the ambient colour (Target 0) replaces it; diffuse + emissive is clamped to 1.</summary>
+    [Test]
+    public void ColourControllersReplaceTheirTerm()
+    {
+        var m = new EffectMesh { Mesh = new ModelMesh { Ambient = new[] { 1f, 1f, 1f }, Diffuse = new[] { 0.8f, 0.2f, 0f }, Emissive = new[] { 0.5f, 0f, 0f } } };
+        m.Colors.Add(new ColorAnim { Target = 0, Curve = _ => new[] { 0.25, 0.5, 0.75 } });
+        double[] lit = new double[3], amb = new double[3];
+        m.Shade(0, lit, amb);
+        Assert.That(lit, Is.EqualTo(new[] { 1.0, 0.2, 0.0 }).Within(1e-6));
+        Assert.That(amb, Is.EqualTo(new[] { 0.25, 0.5, 0.75 }));
     }
 }

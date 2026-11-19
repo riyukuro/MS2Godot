@@ -8,7 +8,9 @@ static class FxParam
 {
     public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
         Frames = "frames", Alpha = "alpha", BaseR0 = "base_r0", BaseR1 = "base_r1", GlowR0 = "glow_r0", GlowR1 = "glow_r1",
-        BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp";
+        BaseUv2 = "base_uv2", GlowUv2 = "glow_uv2", BaseClamp = "base_clamp", GlowClamp = "glow_clamp",
+        HasDetail = "has_detail", DetailTex = "detail_tex", DetailR0 = "detail_r0", DetailR1 = "detail_r1", DetailUv2 = "detail_uv2", DetailClamp = "detail_clamp",
+        Ambient = "mat_ambient";
 }
 
 /// <summary>
@@ -22,14 +24,15 @@ public sealed partial class EffectInstance : Node3D
     sealed class MeshState
     {
         public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
-        public string BaseKey; public TexMap BaseMap, GlowMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the two drawn maps
-        public TexTransform BaseT, GlowT;                         // working transforms the uv controllers write each frame
+        public string BaseKey; public TexMap BaseMap, GlowMap, DetailMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the drawn maps
+        public TexTransform BaseT, GlowT, DetailT;                // working transforms the uv controllers write each frame
         public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
-        public double[] Dif, Emi;                                 // the material's static diffuse and emissive (white / black without one)
+        public readonly double[] Lit = new double[3], Amb = new double[3];   // EffectMesh.Shade's output, reused every frame
         public bool Static, Placed;                               // no node from it to the root animates or faces the camera: placed once
         // the last value set on each per-frame shader parameter: a parameter is set again only when its value changes
-        public Color LastTint = Colors.White; public float LastAlpha; public Texture2D LastTex;
-        public readonly Vector3[] LastRows = { new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0) };   // base r0 r1, glow r0 r1 (the shader defaults)
+        public Color LastTint = Colors.White; public Vector3 LastAmb; public float LastAlpha; public Texture2D LastTex;
+        // base r0 r1, glow r0 r1, detail r0 r1 (the shader defaults)
+        public readonly Vector3[] LastRows = { new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0) };
     }
 
     sealed class PSys
@@ -66,6 +69,14 @@ uniform sampler2D tex : repeat_enable, filter_linear;
 uniform bool has_tex = true;
 uniform sampler2D glow_tex : repeat_enable, filter_linear;
 uniform bool has_glow = false;
+uniform sampler2D detail_tex : repeat_enable, filter_linear;
+uniform bool has_detail = false;
+uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
+uniform bool detail_uv2 = false;
+uniform int detail_clamp = 0;
+uniform vec3 mat_ambient = vec3(0.0);
+global uniform vec3 ms2_ambient;       // the scene's ambient light colour * dimmer (Field.cs)
 uniform vec3 base_r0 = vec3(1.0, 0.0, 0.0);
 uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
 uniform vec3 glow_r0 = vec3(1.0, 0.0, 0.0);
@@ -89,7 +100,14 @@ vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
 }
 void fragment() {
     vec4 t = has_tex ? texture(tex, map_uv(base_uv2 ? UV2 : UV, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
-    vec3 col = t.rgb * tint.rgb;
+    // the detail map multiplies the base colour by twice its colour and the opacity by its alpha (MS2StandardMaterial::
+    // HandleDetailMap, ms2standardmaterial.cpp:681-694, its opacity at :342-343)
+    if (has_detail) {
+        vec4 d = texture(detail_tex, map_uv(detail_uv2 ? UV2 : UV, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0)));
+        t = vec4(t.rgb * d.rgb * 2.0, t.a * d.a);
+    }
+    // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
+    vec3 col = t.rgb * clamp(tint.rgb + mat_ambient * ms2_ambient, 0.0, 1.0);
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
     FOG = vec4(ms2_fog_color, fog_share);
@@ -187,16 +205,21 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt);
                 ms.GlowMap = m.Maps.GetValueOrDefault("glow");
             }
+            if (m.Textures.TryGetValue("detail", out var dn) && mb.Texture(dn) is { } dt)
+            {
+                mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dt);
+                ms.DetailMap = m.Maps.GetValueOrDefault("detail");
+            }
             MapSetup(mat, ms.BaseMap, m, FxParam.BaseUv2, FxParam.BaseClamp);
             MapSetup(mat, ms.GlowMap, m, FxParam.GlowUv2, FxParam.GlowClamp);
+            MapSetup(mat, ms.DetailMap, m, FxParam.DetailUv2, FxParam.DetailClamp);
             ms.Mat = mat;
             SetRows(ms, ms.BaseMap?.Transform, 0, true);
             SetRows(ms, ms.GlowMap?.Transform, 1, true);
-            ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform();
+            SetRows(ms, ms.DetailMap?.Transform, 2, true);
+            ms.BaseT = new TexTransform(); ms.GlowT = new TexTransform(); ms.DetailT = new TexTransform();
             ms.Add = add;
-            ms.Dif = m.Diffuse?.Select(v => (double)v).ToArray() ?? new double[] { 1, 1, 1 };
-            ms.Emi = m.Emissive?.Select(v => (double)v).ToArray() ?? new double[3];
-            if (m.Diffuse != null || m.Emissive != null) mat.SetShaderParameter(FxParam.Tint, ms.LastTint = Tint(ms, 0));
+            Shade(ms, 0, true);
             mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = (float)em.Opacity(0));   // the static material alpha (portal meshes are 0.05-0.75)
             ms.LastTex = ms.Base;
             if (em.Flip != null)
@@ -241,24 +264,20 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         Advance(0);
     }
 
-    /// <summary>The unlit colour of a mesh at effect time t: the material's emissive plus diffuse (clamped), with NiMaterialColorController keys applied.
-    /// Without any colour an additive mesh stays white (as before).
+    /// <summary>A mesh's colour terms at effect time t (EffectMesh.Shade) as the tint and mat_ambient parameters, each set
+    /// only when it changed (always when force).
     /// STILL-OPEN, the lights: the client lights effect meshes. A skill effect's EffectNode passes its parent's dynamic effects
     /// (the lights) down only when useLighting, which defaults to true (LightUnaffectedNode::UpdateEffectsDownward,
     /// lightunaffectednode.cpp:75; nifeffectparam.cpp:353). Which of the field's lights reach it there, and which reach a field
-    /// entity's EffectMesh graph, is not traced, so the mesh is drawn unshaded: diffuse at full light plus emissive.</summary>
-    static Color Tint(MeshState ms, double t)
+    /// entity's EffectMesh graph, is not traced, so the mesh is drawn unshaded: diffuse at full light plus emissive, plus the
+    /// ambient colour times the field's ambient light.</summary>
+    static void Shade(MeshState ms, double t, bool force)
     {
-        double[] dif = ms.Dif, emi = ms.Emi;
-        bool add = ms.Add;
-        foreach (var a in ms.Def.Colors)
-        {
-            var v = a.Curve(a.Ctl.Local(t));
-            if (a.Target == 1) dif = v; else if (a.Target == 3) emi = v;
-        }
-        double r = Math.Min(1, dif[0] + emi[0]), g = Math.Min(1, dif[1] + emi[1]), b = Math.Min(1, dif[2] + emi[2]);
-        if (add && r + g + b < 1e-4) return Colors.White;
-        return new Color((float)r, (float)g, (float)b);
+        ms.Def.Shade(t, ms.Lit, ms.Amb);
+        var c = new Color((float)ms.Lit[0], (float)ms.Lit[1], (float)ms.Lit[2]);
+        var a = new Vector3((float)ms.Amb[0], (float)ms.Amb[1], (float)ms.Amb[2]);
+        if (force || c != ms.LastTint) ms.Mat.SetShaderParameter(FxParam.Tint, ms.LastTint = c);
+        if (force || a != ms.LastAmb) ms.Mat.SetShaderParameter(FxParam.Ambient, ms.LastAmb = a);
     }
 
     // MS2_PERF_FX=1: every effect's _Process timed (wall time and managed bytes allocated); from 600 frames after the first
@@ -376,7 +395,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         {
             var d = ms.Def;
             if (!ms.Static || !ms.Placed) { ms.Node.Transform = World(d.Node, t, camLocal); ms.Placed = true; }
-            if (d.Colors.Count > 0) { var c = Tint(ms, t); if (c != ms.LastTint) ms.Mat.SetShaderParameter(FxParam.Tint, ms.LastTint = c); }
+            if (d.Colors.Count > 0) Shade(ms, t, false);
             if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
             if (d.Uv.Count > 0) AnimateUv(ms, t);
             if (d.Flip != null && ms.Flip != null && ms.Flip.Length > 0)
@@ -394,11 +413,13 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         foreach (var ps in systems) Step(ps, dt, camLocal);
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
+    // the MS2_PERF_FX probe's segment counters (a measuring tool, printed by Probe; untouched when the probe is off):
+    // ticks in camera, meshes, systems, buffer set, draw loop, and the particle count
     static readonly long[] seg = new long[6];
 
     // The uv controllers of one mesh at effect time t: each active controller replaces one component of its map's transform
     // (UvOp); a map without a static transform gets the controller's default one (TexTransform.ControllerDefault). Only the
-    // base and glow maps are drawn here, so controllers on the dark, detail, normal and decal maps have nothing to move.
+    // base, glow and detail maps are drawn here, so controllers on the dark, normal and decal maps have nothing to move.
     // The working transform is rebuilt from the static one each frame and the running controllers replayed over it. The
     // client instead keeps whatever UpdateValue last wrote into the map's transform, so the two differ only when one of two
     // controllers on a map stops (its range is over, or it is inactive) while the other runs: here the stopped component
@@ -410,29 +431,31 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     static readonly TexTransform NoTransform = TexTransform.ControllerDefault();
     static void AnimateUv(MeshState ms, float t)
     {
-        bool baseOn = false, glowOn = false;
+        bool baseOn = false, glowOn = false, detailOn = false;
         foreach (var op in ms.Def.Uv)
         {
             if (!op.Ctl.Active) continue;
             TexTransform w;
             if (op.Slot == ms.BaseKey && ms.BaseMap != null) { if (!baseOn) { ms.BaseT.CopyFrom(ms.BaseMap.Transform ?? NoTransform); baseOn = true; } w = ms.BaseT; }
             else if (op.Slot == "glow" && ms.GlowMap != null) { if (!glowOn) { ms.GlowT.CopyFrom(ms.GlowMap.Transform ?? NoTransform); glowOn = true; } w = ms.GlowT; }
+            else if (op.Slot == "detail" && ms.DetailMap != null) { if (!detailOn) { ms.DetailT.CopyFrom(ms.DetailMap.Transform ?? NoTransform); detailOn = true; } w = ms.DetailT; }
             else continue;
             w.Set(op.Operation, (float)op.Curve(op.Ctl.Local(t)));
         }
         if (baseOn) SetRows(ms, ms.BaseT, 0, false);
         if (glowOn) SetRows(ms, ms.GlowT, 1, false);
+        if (detailOn) SetRows(ms, ms.DetailT, 2, false);
     }
 
-    // a map's texture transform as the shader's two rows (identity without one), map 0 base or 1 glow; a row is set only
+    // a map's texture transform as the shader's two rows (identity without one), map 0 base, 1 glow or 2 detail; a row is set only
     // when it differs from the last one set (always when force)
     static void SetRows(MeshState ms, TexTransform tt, int map, bool force)
     {
         Vector3 a = new(1, 0, 0), b = new(0, 1, 0);
         if (tt != null) { var r = ms.Rows; tt.Rows(r); a = new(r[0], r[1], r[2]); b = new(r[3], r[4], r[5]); }
         int k = map * 2;
-        if (force || a != ms.LastRows[k]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR0 : FxParam.GlowR0, ms.LastRows[k] = a);
-        if (force || b != ms.LastRows[k + 1]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR1 : FxParam.GlowR1, ms.LastRows[k + 1] = b);
+        if (force || a != ms.LastRows[k]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR0 : map == 1 ? FxParam.GlowR0 : FxParam.DetailR0, ms.LastRows[k] = a);
+        if (force || b != ms.LastRows[k + 1]) ms.Mat.SetShaderParameter(map == 0 ? FxParam.BaseR1 : map == 1 ? FxParam.GlowR1 : FxParam.DetailR1, ms.LastRows[k + 1] = b);
     }
 
     // a map's uv set and clamp mode. The map reads its own uv set (TEXCOORD_MASK; NiStandardMaterialDescriptor.cpp:1006,
