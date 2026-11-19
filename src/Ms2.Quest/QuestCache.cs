@@ -30,7 +30,7 @@ public sealed partial class QuestTable
                      () => Load(packs, languages, locale, FeatureOn(featuresOff)));
 
     // its own method, so the closure holds the feature set only (not the load's other arguments)
-    static Func<string, bool> FeatureOn(IReadOnlyCollection<string> featuresOff) => f => !featuresOff.Contains(f);
+    internal static Func<string, bool> FeatureOn(IReadOnlyCollection<string> featuresOff) => f => !featuresOff.Contains(f);
 
     /// <summary>A table read back from <see cref="Snapshot"/> bytes, wired as a parsed one.</summary>
     public static QuestTable FromSnapshot(ReadOnlyMemory<byte> body, Func<string, bool> featureOn)

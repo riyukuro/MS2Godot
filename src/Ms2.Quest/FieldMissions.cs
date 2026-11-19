@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
+using Ms2.Formats.Cache;
 using Ms2.Formats.Pack;
 
 namespace Ms2.Quest;
@@ -27,7 +28,7 @@ public sealed class FieldMissions
     public string CountFormat;
 
     readonly string locale;
-    readonly Func<string, bool> featureOn;
+    Func<string, bool> featureOn;
 
     public FieldMissions(string locale, Func<string, bool> featureOn)
     {
@@ -93,6 +94,27 @@ public sealed class FieldMissions
         }
         return m;
     }
+
+    /// <summary>
+    /// <see cref="Load(PackSet, string[], string, Func{string, bool}, ReservedWords)"/> with the features named in
+    /// <paramref name="featuresOff"/> off and the quest table's <paramref name="words"/>, from the install's cache when it holds
+    /// this load (<see cref="CacheStore.Of"/>; else parsed, and cached). The file holds no word tables: they are the quest
+    /// table's, shared after the read as the parse shares them.
+    /// </summary>
+    public static FieldMissions Load(PackSet packs, string[] languages, string locale, IReadOnlyCollection<string> featuresOff, ReservedWords words)
+    {
+        var featureOn = QuestTable.FeatureOn(featuresOff);
+        if (words == null) return Load(packs, languages, locale, featureOn);
+        var m = CacheStore.Load(packs, "missions", QuestTable.CacheConfig(languages, locale, featuresOff), QuestTable.CacheBuild,
+                                () => Load(packs, languages, locale, featureOn, new ReservedWords()), t => t.featureOn = featureOn);
+        m.Words.ShareTables(words);
+        return m;
+    }
+
+    /// <summary>Writes the cache file of this load when it is missing (the setup step).</summary>
+    public static bool BuildCache(PackSet packs, string[] languages, string locale, IReadOnlyCollection<string> featuresOff, CacheStore cache) =>
+        cache.Ensure("missions", QuestTable.CacheConfig(languages, locale, featuresOff), QuestTable.CacheBuild,
+                     () => Load(packs, languages, locale, QuestTable.FeatureOn(featuresOff), new ReservedWords()));
 
     /// <summary>
     /// IsElementAvailable (commonutil.cpp): a non-empty locale other than the client's skips the element, as does a

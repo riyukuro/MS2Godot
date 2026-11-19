@@ -1,4 +1,5 @@
 using System.Numerics;
+using Ms2.Formats.Cache;
 using Ms2.Formats.Pack;
 
 namespace Ms2.Quest;
@@ -15,7 +16,7 @@ public sealed class QuestMapGraph
 
     readonly Dictionary<int, short> indexOf = new();
     readonly short[][] mid;                     // m_78: the intermediate index of the best path, 0 = direct
-    readonly Func<int, int, bool> hasPortal;
+    Func<int, int, bool> hasPortal;
     readonly int[] mapIds;                      // index -> field id
 
     public int Count => indexOf.Count;
@@ -48,7 +49,7 @@ public sealed class QuestMapGraph
     /// asking every pair (n² list scans).</summary>
     public QuestMapGraph(IReadOnlyList<int> fields, IReadOnlyDictionary<int, List<int>> portalTargets)
     {
-        hasPortal = (a, b) => portalTargets.TryGetValue(a, out var l) && l.Contains(b);
+        hasPortal = HasPortal(portalTargets);
         var map = mapIds = Index(fields, indexOf);
         int n = map.Length;
         var at = new Dictionary<int, List<short>>();
@@ -124,6 +125,13 @@ public sealed class QuestMapGraph
         }
     }
 
+    // its own method, so the closure holds the lists only (a graph read from the cache gets the same function)
+    static Func<int, int, bool> HasPortal(IReadOnlyDictionary<int, List<int>> portalTargets) =>
+        (a, b) => portalTargets.TryGetValue(a, out var l) && l.Contains(b);
+
+    /// <summary>The cache build key of the field meta table and the graph (<see cref="CacheStore"/>).</summary>
+    public static string CacheBuild => CacheStore.Build(typeof(QuestMapGraph).Assembly);
+
     sealed class Built
     {
         public Lazy<FieldMeta> Meta;
@@ -134,10 +142,26 @@ public sealed class QuestMapGraph
 
     static Built For(PackSet packs) => shared.GetValue(packs, p =>
     {
-        var b = new Built { Meta = new Lazy<FieldMeta>(() => FieldMeta.Load(p)) };
-        b.Graph = new Lazy<QuestMapGraph>(() => From(b.Meta.Value));
+        // per install (CacheStore.Of): the table and the graph's path tables, read back instead of parsed and built
+        var b = new Built { Meta = new Lazy<FieldMeta>(() => CacheStore.Load(p, "fieldmeta", "", CacheBuild, () => FieldMeta.Load(p), _ => { })) };
+        b.Graph = new Lazy<QuestMapGraph>(() =>
+        {
+            var meta = b.Meta.Value;
+            return CacheStore.Load(p, "questmap", "", CacheBuild, () => From(meta), g => g.hasPortal = HasPortal(meta.PortalTargets));
+        });
         return b;
     });
+
+    /// <summary>Writes the cache files of the field meta table and its graph when they are missing (the setup step); the names built.</summary>
+    public static List<string> BuildCache(PackSet packs, CacheStore cache)
+    {
+        var built = new List<string>();
+        FieldMeta meta = null;
+        FieldMeta Meta() => meta ??= FieldMeta.Load(packs);
+        if (cache.Ensure("fieldmeta", "", CacheBuild, Meta)) built.Add("fieldmeta");
+        if (cache.Ensure("questmap", "", CacheBuild, () => From(Meta()))) built.Add("questmap");
+        return built;
+    }
 
     /// <summary>The field meta table of <paramref name="packs"/>, read once, on the first call (without the map graph).</summary>
     public static FieldMeta SharedMeta(PackSet packs) => For(packs).Meta.Value;

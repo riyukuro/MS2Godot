@@ -40,7 +40,11 @@ public static class UiCode
     }
 
     /// <summary>Points the game tables at this install's caches (before the first table is built).</summary>
-    public static void UseCaches() => Ms2.Ui.GameTables.AdditionalCacheOf = d => AdditionalCachePath(d);
+    public static void UseCaches()
+    {
+        Ms2.Ui.GameTables.AdditionalCacheOf = d => AdditionalCachePath(d);
+        DataCache.Use();
+    }
 
     /// <summary>Builds the additional effect table cache when it is missing (a worker thread), then removes the ones built for
     /// other Xml.m2d keys or versions. Returns the build time in seconds, or -1 when it was there.</summary>

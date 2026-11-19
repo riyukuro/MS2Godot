@@ -967,7 +967,7 @@ public partial class HudScene : Node, IUiStageHost
         try
         {
             var perf = PerfLog.On && fieldMissions == null ? new PerfLog.Steps("field missions") : null;
-            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale, f => !data.FeaturesOff.Contains(f),
+            fieldMissions ??= FieldMissions.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale, data.FeaturesOff,
                                                  questTable?.Words);     // the same languages, locale and features: its tables
             perf?.Step("load");
             perf?.Done();

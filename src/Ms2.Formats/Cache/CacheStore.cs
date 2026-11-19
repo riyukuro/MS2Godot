@@ -20,6 +20,25 @@ public sealed class CacheStore
 
     public CacheStore(string dir) => Dir = dir;
 
+    /// <summary>The store of a pack set's data folder (set by the game; null, or a null store, parses every table).</summary>
+    public static Func<Pack.PackSet, CacheStore> Of;
+
+    /// <summary>Told each <see cref="Load{T}"/> outcome (the game's perf log).</summary>
+    public static Action<Outcome> Logged;
+
+    /// <summary>
+    /// <see cref="Get{T}"/> on the store of <paramref name="packs"/> (<see cref="Of"/>), or <paramref name="parse"/> when it
+    /// has none: for the tables read once per pack set inside the libraries.
+    /// </summary>
+    public static T Load<T>(Pack.PackSet packs, string piece, string config, string build, Func<T> parse, Action<T> wire) where T : class
+    {
+        var store = Of?.Invoke(packs);
+        if (store == null) return parse();
+        var t = store.Get(piece, config, build, parse, wire, out var outcome);
+        Logged?.Invoke(outcome);
+        return t;
+    }
+
     /// <summary>The build part of a key: the module version id of each assembly (deterministic builds: it changes with the code).</summary>
     public static string Build(params Assembly[] code) =>
         string.Join(",", code.Append(typeof(CacheStore).Assembly).Distinct().Select(a => a.ManifestModule.ModuleVersionId.ToString("N")[..12]));

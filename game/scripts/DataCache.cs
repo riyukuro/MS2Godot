@@ -23,6 +23,18 @@ public static class DataCache
     static string storeData;
     static CacheStore store;
 
+    /// <summary>Points the tables the libraries read once per pack set (<see cref="CacheStore.Of"/>) at this install's store.</summary>
+    public static void Use()
+    {
+        CacheStore.Of = p => Store(p.DataDir);
+        CacheStore.Logged = Log;
+    }
+
+    static void Log(CacheStore.Outcome outcome)
+    {
+        if (outcome != null && (PerfLog.On || outcome.Diff != null)) GD.Print("table cache: " + outcome);
+    }
+
     /// <summary>The client archives the tables are read from.</summary>
     static IEnumerable<string> Inputs(string dataDir) => new[] { "Xml.m2d", "Xml.m2h" }.Select(f => System.IO.Path.Combine(dataDir, f));
 
@@ -81,7 +93,7 @@ public static class DataCache
     public static QuestTable Quests(PackSet packs, QuestConfig c)
     {
         var t = QuestTable.Load(packs, c.Languages, c.Locale, c.FeaturesOff, Store(packs.DataDir), out var outcome);
-        if (outcome != null && (PerfLog.On || outcome.Diff != null)) GD.Print("table cache: " + outcome);
+        Log(outcome);
         return t;
     }
 
@@ -91,9 +103,14 @@ public static class DataCache
         var built = new List<string>();
         var s = Store(packs.DataDir);
         if (s == null || CacheStore.Mode == "off") return built;
-        progress?.Invoke("Reading the client's quest data", 0);
+        const string phase = "Reading the client's quest data";
+        progress?.Invoke(phase, 0);
+        built.AddRange(QuestMapGraph.BuildCache(packs, s));
+        progress?.Invoke(phase, 0.1);
         if (QuestTable.BuildCache(packs, quests.Languages, quests.Locale, quests.FeaturesOff, s)) built.Add("quests");
-        progress?.Invoke("Reading the client's quest data", 1);
+        progress?.Invoke(phase, 0.7);
+        if (FieldMissions.BuildCache(packs, quests.Languages, quests.Locale, quests.FeaturesOff, s)) built.Add("missions");
+        progress?.Invoke(phase, 1);
         return built;
     }
 }
