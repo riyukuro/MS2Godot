@@ -292,4 +292,32 @@ public class SnapshotTests
         }
         finally { Directory.Delete(dir, true); }
     }
+    [Test]
+    public void AFailedWriteLeavesNoFileAndAWriteSweepsDeadProcessesFiles()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-cachefile-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            // the rename fails (a folder holds the name): the temporary file goes too
+            var blocked = Path.Combine(dir, "blocked.bin");
+            Directory.CreateDirectory(blocked);
+            Directory.CreateDirectory(Path.Combine(blocked, "x"));
+            Assert.Throws(Is.InstanceOf<IOException>().Or.InstanceOf<UnauthorizedAccessException>(), () => CacheFile.Write(blocked, "k", new byte[] { 1, 2, 3 }));
+            Assert.That(Directory.GetFiles(dir), Is.Empty);
+            // a stopped process's file of the piece is removed by the piece's next write; this process's and another piece's stay
+            var store = new CacheStore(dir);
+            var key = CacheStore.Key("root", "cfg", "b1");
+            var dead = store.PathOf("root", key) + CacheFile.TmpMark + (int.MaxValue - 1);
+            var mine = store.PathOf("root", "other key") + CacheFile.TmpMark + Environment.ProcessId;
+            var otherPiece = store.PathOf("rootx", key) + CacheFile.TmpMark + (int.MaxValue - 1);
+            foreach (var f in new[] { dead, mine, otherPiece }) File.WriteAllText(f, "partial");
+            store.Write("root", key, new byte[] { 4, 5 });
+            Assert.That(File.Exists(dead), Is.False);
+            Assert.That(File.Exists(mine), Is.True);
+            Assert.That(File.Exists(otherPiece), Is.True);
+            Assert.That(store.Read("root", key), Is.EqualTo(new byte[] { 4, 5 }));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }

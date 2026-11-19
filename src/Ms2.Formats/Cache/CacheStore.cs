@@ -94,6 +94,24 @@ public sealed class CacheStore
             if (k == null || k.Split('|') is not { Length: >= 3 } q || q[1] != build || onlyConfig)
                 try { File.Delete(f); } catch (IOException) { }
         }
+        // the piece's files of writes that did not finish (a process stopped between the write and the rename); those of a
+        // process still running stay
+        foreach (var f in Directory.GetFiles(Dir, piece + "-*.bin" + CacheFile.TmpMark + "*"))
+        {
+            var name = Path.GetFileName(f);
+            int at = piece.Length + 1 + 16 + 4;
+            if (name.Length <= at + CacheFile.TmpMark.Length || !name.StartsWith(piece, StringComparison.Ordinal)
+                || !int.TryParse(name.AsSpan(at + CacheFile.TmpMark.Length), out int pid) || Running(pid)) continue;
+            try { File.Delete(f); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    static bool Running(int pid)
+    {
+        if (pid == Environment.ProcessId) return true;
+        try { using var p = System.Diagnostics.Process.GetProcessById(pid); return !p.HasExited; }
+        catch (ArgumentException) { return false; }
+        catch (InvalidOperationException) { return false; }
     }
 
     /// <summary>What a piece's load did, for the perf log.</summary>

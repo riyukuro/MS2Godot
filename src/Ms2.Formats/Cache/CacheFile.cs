@@ -26,15 +26,28 @@ public static class CacheFile
         BinaryPrimitives.WriteInt64LittleEndian(head.AsSpan(o), body.Length); o += 8;
         BinaryPrimitives.WriteUInt32LittleEndian(head.AsSpan(o), Crc32C(body));
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
-        var tmp = path + ".tmp" + Environment.ProcessId;
-        using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+        var tmp = path + TmpMark + Environment.ProcessId;
+        try
         {
-            fs.Write(head);
-            fs.Write(body);
-            fs.Flush(true);
+            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                fs.Write(head);
+                fs.Write(body);
+                fs.Flush(true);
+            }
+            File.Move(tmp, path, true);
         }
-        File.Move(tmp, path, true);
+        catch
+        {
+            // a full disk or a file in the way: no partial file is left (a process stopped here leaves its file to
+            // CacheStore's sweep of the dead process's files)
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
     }
+
+    /// <summary>What a file being written has after its name, before the writing process's id.</summary>
+    public const string TmpMark = ".tmp";
 
     /// <summary>The body of the file at <paramref name="path"/> when it is whole and built for <paramref name="key"/>; else null.</summary>
     public static byte[] Read(string path, string key) =>
