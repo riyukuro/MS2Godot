@@ -67,6 +67,14 @@ public sealed partial class PlayerNameTag : CanvasLayer
 
     public PlayerNameTag() { }
 
+    /// <summary>The field was swapped under the HUD (HudScene.SwapField): the old field's player, model and camera are
+    /// dropped and found again in the new field; the tag hides until then.</summary>
+    public void FieldChanged()
+    {
+        field = null; player = null; model = null; dummies = null; camera = null;
+        if (node != null) node.Visible = false;
+    }
+
     /// <summary>The PC's name changed (the own FieldAddUser, OnAddUser's SetName): setData's name line again.</summary>
     public void SetName(string name)
     {

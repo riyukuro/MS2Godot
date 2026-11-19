@@ -78,6 +78,7 @@ public partial class HudScene : Node, IUiStageHost
 
     public override void _Ready()
     {
+       
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--frametime") frameCase = args[i + 1];
@@ -110,7 +111,8 @@ public partial class HudScene : Node, IUiStageHost
         assets = new UiAssets(PackSet.Shared(dataDir));   // the field's pack set: its archives and the per-pack-set UI caches are shared
 
         xblock = World.FieldContents.PendingXBlock ?? ArgField() ?? "02000001_tw_tria";   // as Field picks it; the field scene consumes the move
-        AddChild(GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
+        xblockFieldId = XblockFieldId();
+        AddChild(fieldScene = GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         BuildHud();
         WatchParty();
         WatchPcInfo();
@@ -312,13 +314,15 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// UIScreenMask (uiscreenmask.cpp), shown at field entry: UISceneGame::vfunc_55 (WorldLoadComplete, @0x141ac78a0) runs
-    /// FindObject(0x4e55)->vfunc_2 = LoadSwf(10). The scene is built once per field, so the movie is made here and goes with
-    /// the scene (vfunc_56 / vfunc_49 hide it on field unload and scene exit). Every field loads it; one without a bgMask
+    /// FindObject(0x4e55)->vfunc_2 = LoadSwf(10). The scene's first field makes it here; a field move unloads it
+    /// (<see cref="WorldUnLoadComplete"/>: vfunc_56 runs its vfunc_3, FUN_1422dc080) and the new field's load complete makes
+    /// it again with that field's bgMask (<see cref="WorldLoadComplete"/>). Every field loads it; one without a bgMask
     /// makes no load call, so it shows nothing. A resize lays it out again (vfunc_43).
     /// </summary>
     void ScreenMask()
     {
         if (screenMask != null) { screenMaskLayer.Offset = UiScale.MovieOrigin; screenMask.Relayout(GetWindow().Size); return; }
+        if (worldLoadPending) return;       // unloaded by a field move: made again at the new field's load complete
         string bgMask = "";
         try { bgMask = FieldData.FindByXBlock(assets.Packs, xblock)?.BgMask ?? ""; } catch (Exception ex) { GD.PushWarning("screen mask field data: " + ex.Message); }
         // between the world UI layers (5) and the HUD (10); the movie draws only while its CommonDepth layer is shown
@@ -755,16 +759,19 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// The system lines (UISystemText, uisystemtext.cpp), run by their movie; kept across relayouts, placed under the target
-    /// HP bar (vfunc_43). A message shown before the movie is loaded is parked and shown at OnLoadComplete.
+    /// HP bar (vfunc_43). A message shown before the movie is loaded is parked and shown at OnLoadComplete. The controller
+    /// lives with the scene; a field move unloads its movie and loads it again (<see cref="WorldUnLoadComplete"/>,
+    /// <see cref="WorldLoadComplete"/>), and the slot keeps its place among the HUD movies meanwhile.
     /// </summary>
     void SystemTextLines(Control ui)
     {
-        if (systemText != null) { ui.AddChild(systemText); systemText.Relayout(GetWindow().Size); return; }
+        ui.AddChild(systemTextSlot = new Control { Name = "uisystemtext", MouseFilter = Control.MouseFilterEnum.Ignore });
+        if (systemText != null) { systemTextSlot.AddChild(systemText); systemText.Relayout(GetWindow().Size); return; }
+        if (SystemText != null) return;     // unloaded by a field move: loaded again at the new field's load complete
         SystemText = new Ms2.Ui.Hud.SystemTextController { UpperHpBar = TargetBar, TickMs = () => (uint)Time.GetTicksMsec() };
         // STILL-OPEN: PlaySystemSound (the emergency line's "emergency_notice"): this HUD has no system sound player
         SystemText.SystemSound += key => GD.Print($"system text: sound {key} is not played");
-        systemText = new MovieDialog(assets, SystemText, NewModel(), GetWindow().Size);
-        ui.AddChild(systemText);
+        LoadSystemText();
         // OnBadgeEquip mode 4 (scenestategame.cpp:11075): the gem error's system notice, whatever window is open
         if (Ms2Godot.Net.LiveSession.Instance is { } live)
         {
@@ -784,6 +791,14 @@ public partial class HudScene : Node, IUiStageHost
         }
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;
+    Control systemTextSlot;                 // the system lines' place among the HUD movies
+
+    /// <summary>UISystemText::vfunc_2 (via UIHeadUpDisplay): its movie loads; OnLoadComplete replays a parked line.</summary>
+    void LoadSystemText()
+    {
+        systemText = new MovieDialog(assets, SystemText, NewModel(), GetWindow().Size);
+        systemTextSlot.AddChild(systemText);
+    }
 
     /// <summary>
     /// The shared log's sinks for a user's chat line (UIMessengerBrowser::vfunc_84): ShowSystemNotice through this HUD's system
@@ -988,8 +1003,103 @@ public partial class HudScene : Node, IUiStageHost
         ui.AddChild(notice);
     }
 
-    /// <summary>The xblock of the field this scene runs: a portal move's target (the scene reloads per move), else --field.</summary>
+    /// <summary>The xblock of the field this scene runs: the first field's, then each move's target (<see cref="SwapField"/>), else --field.</summary>
     string xblock;
+    /// <summary>That field's id (0 when the xblock has no field row): the offline field id of the quest and map windows.</summary>
+    int xblockFieldId;
+    int XblockFieldId()
+    {
+        try { return FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0; }
+        catch (Exception e) { GD.PushWarning("field id: " + e.Message); return 0; }
+    }
+    Node fieldScene;                        // field.tscn's instance, this scene's child
+    bool worldLoadPending;                  // a move's field is loading: WorldLoadComplete runs at its load complete
+    QuestButtonInputs questGuideInputs;
+
+    /// <summary>The number of field moves this scene has run, for checks.</summary>
+    public int FieldMoves { get; private set; }
+
+    /// <summary>
+    /// A field move under this HUD (FieldContents, where the client's LoadMap runs WorldService FUN_141bbc580,
+    /// worldservice_1.cpp:9962). The client keeps CUIService, the scene and every dialog for the process; only the world
+    /// goes. So the HUD and its dialogs stay, the field scene is freed and a new one is made at the same place, and the
+    /// per-field parts are reset in the client's order:
+    /// <list type="number">
+    /// <item>FUN_141bbc580 :9973 CUIService FUN_141adc3d0 = CloseDialog(eUI_4f38) (uiservice.cpp:1567), the pet system
+    /// dialog: not ported here, nothing to close.</item>
+    /// <item>:10019 FUN_141adb900 (uiservice.cpp:1316): UIUpperHpBar FUN_141b4d0a0 (uiupperhpbar.cpp:367) removes the buff
+    /// displays of its entities (the target bar has none here: no buff display is ported; the entities and shown state
+    /// stay, as in the client); the loading screen's StartProgress (the move's cover); UnloadBackgroundMovie (the
+    /// background movie is the login's here, none in a field); FUN_141ad9dc0 (uiservice.cpp:626) =
+    /// GFxMovieDamage::UnloadExpiredFonts (@0x140b61ce0), whose UIDamageText::ClearAll is <see cref="DamageText.ClearAll"/>
+    /// (its font expiry has no counterpart); the cutscene's ClearTalks (no cutscene dialog here); FUN_141adbcd0(0) =
+    /// UISwfEntityManager::SetEnabled(false) (uiswfentitymanager.cpp:794, m_0a, the hide-UI toggle's state; STILL-OPEN:
+    /// the toggle is not ported, so there is nothing to reset); m_b120 = 1 (a SetMode is deferred while it is set,
+    /// uiservice.cpp:1375; no mode change is ported).</item>
+    /// <item>UISceneGame::vfunc_56 (WorldUnLoadComplete, @0x141ac78f0, uiscenegame.cpp:300):
+    /// <see cref="WorldUnLoadComplete"/>.</item>
+    /// </list>
+    /// Then the new field's load complete runs vfunc_55 (<see cref="WorldLoadComplete"/>). The HUD's own hold on the old
+    /// field (the own PC's name tag, HP bar and damage numbers, the minimap, the field facts) is dropped and found again in
+    /// the new field. STILL-OPEN: whether the client's minimap is rebuilt at a move or refreshed in place
+    /// (UIMinimapDialog::OnLoadComplete -> BuildUIData / BuildField, uiminimapentity.cpp:1104) is not traced; it is opened
+    /// again for the new field, as at field entry.
+    /// </summary>
+    public void SwapField()
+    {
+        damageText?.ClearAll();                      // FUN_141ad9dc0 -> UIDamageText::ClearAll
+        WorldUnLoadComplete();
+        if (fieldScene != null && IsInstanceValid(fieldScene))
+        {
+            int at = fieldScene.GetIndex();
+            RemoveChild(fieldScene);                 // out of the groups at once: nothing finds the old field's nodes
+            fieldScene.QueueFree();
+            xblock = World.FieldContents.PendingXBlock ?? xblock;
+            xblockFieldId = XblockFieldId();
+            AddChild(fieldScene = GD.Load<PackedScene>("res://field.tscn").Instantiate());
+            MoveChild(fieldScene, at);
+        }
+        player = null; field = null;
+        playerNameTag?.FieldChanged();
+        playerBar?.FieldChanged();
+        if (minimap != null) { minimap.Host.Unload(); minimap.GetParent()?.RemoveChild(minimap); minimap.QueueFree(); }
+        minimap = null; minimapSide = null;
+        slotField = null; slotFieldId = null;       // the quick slots' field facts (FieldData of the field)
+        communityFieldId = null;
+        if (questGuideSide != null) questGuideSide.FieldId = xblockFieldId;
+        if (questGuideInputs != null) questGuideInputs.FieldId = xblockFieldId;
+        if (questLogSide?.Detail != null) questLogSide.Detail.FieldId = xblockFieldId;
+        if (worldMapSide != null) { worldMapSide.FieldId = xblockFieldId; worldMapSide.VisitedFields = new[] { (uint)xblockFieldId }; }
+        SystemMenuFacts();
+        FieldMoves++;
+        worldLoadPending = true;
+    }
+
+    /// <summary>
+    /// UISceneGame::vfunc_56 (WorldUnLoadComplete, @0x141ac78f0, uiscenegame.cpp:300): FUN_141add0b0 runs vfunc_3 on the
+    /// screen mask (0x4e55, FUN_1422dc080: its movie unloads) and on the system text (0x4e41, @0x141b15e80: its movie
+    /// unloads and the parked line is forgotten). The shown lines go with the movie.
+    /// </summary>
+    void WorldUnLoadComplete()
+    {
+        if (screenMask != null) { screenMask.Host.Unload(); screenMaskLayer.QueueFree(); }
+        screenMask = null; screenMaskLayer = null;
+        if (systemText != null) { systemText.Host.Unload(); systemText.GetParent()?.RemoveChild(systemText); systemText.QueueFree(); }
+        systemText = null;
+        SystemText?.ForgetParked();
+    }
+
+    /// <summary>
+    /// UISceneGame::vfunc_55 (WorldLoadComplete, @0x141ac78a0): FUN_141add040 runs vfunc_2 on the screen mask (LoadSwf(10),
+    /// uiscreenmask.cpp:47, with the new field's bgMask) and on the system text (its movie loads; a line parked during the
+    /// load is shown).
+    /// </summary>
+    void WorldLoadComplete()
+    {
+        worldLoadPending = false;
+        ScreenMask();
+        if (systemText == null && SystemText != null && systemTextSlot != null && IsInstanceValid(systemTextSlot)) LoadSystemText();
+    }
 
     static string ArgField()
     {
@@ -1288,7 +1398,6 @@ public partial class HudScene : Node, IUiStageHost
             var parts = questState.Split(':');
             log.State = new QuestShotState(questTable, int.Parse(parts[0]), parts[1].Split(',').Select(int.Parse), parts.Length > 2 ? int.Parse(parts[2]) : 0);
         }
-        int fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
         try
         {
             var perf = PerfLog.On && fieldMissions == null ? new PerfLog.Steps("field missions") : null;
@@ -1300,9 +1409,9 @@ public partial class HudScene : Node, IUiStageHost
         catch (Exception e) { GD.PushWarning("field missions: " + e.Message); }
         var meta = fieldMeta;
         var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
-        var inputs = new QuestButtonInputs
+        var inputs = questGuideInputs = new QuestButtonInputs
         {
-            FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
+            FieldId = xblockFieldId, FieldExists = f => f == xblockFieldId, LocalPlayerAlive = true, HasFieldData = true,
             DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
         };
         questGuideSide = new Ms2.Ui.Hud.QuestGuideController
@@ -1311,7 +1420,7 @@ public partial class HudScene : Node, IUiStageHost
             State = log.State,
             Missions = fieldMissions,
             ParentField = f => meta.ParentFields.TryGetValue(f, out int p) ? p : null,
-            FieldId = fieldId,
+            FieldId = xblockFieldId,
             GotoButtons = (d, q) => QuestCommon.Buttons(d, q, inputs, meta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
             FeatureOn = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]),
             PageCount = (int)constants.Float("QuestGuidePageCount", 4),
@@ -1353,19 +1462,18 @@ public partial class HudScene : Node, IUiStageHost
             }
             SetWordFeatures();
             questLogModel = NewModel();
-            var fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
             questLogSide = new Ms2.Ui.Hud.QuestDialogController
             {
                 Log = log,
                 Detail = new QuestDetailContext
                 {
-                    FieldId = fieldId,
+                    FieldId = xblockFieldId,
                     LocalTm = Ms2.Net.MsTime.LocalTm,
                     Map = QuestMapGraph.Shared(assets.Packs).Graph,
                     // offline: the player is alive in this field, no party search, the server time unknown (no end time line)
                     Buttons = (d, q) => QuestCommon.Buttons(d, q, new QuestButtonInputs
                     {
-                        FieldId = fieldId, FieldExists = f => f == fieldId, LocalPlayerAlive = true, HasFieldData = true,
+                        FieldId = xblockFieldId, FieldExists = f => f == xblockFieldId, LocalPlayerAlive = true, HasFieldData = true,
                         DirectQuestFindParty = Ms2.Ui.LobbyFeatures.IsEnabled(assets.Packs, Ms2.Ui.FeatureTable.Names[0xdc - 1]),
                     }, fieldMeta, log.State, dungeonRooms ??= DungeonRooms.Load(assets.Packs, questTable.Available)),
                 },
@@ -1494,7 +1602,7 @@ public partial class HudScene : Node, IUiStageHost
                     id => meta.ParentFields.TryGetValue(id, out int p) ? p : null);
             }
             catch (Exception e) { GD.PushWarning("world map: " + e.Message); return; }
-            int fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+            int fieldId = xblockFieldId;
             worldMapSide = new Ms2.Ui.Hud.WorldMapController
             {
                 Table = worldMapTable,
@@ -1665,7 +1773,6 @@ public partial class HudScene : Node, IUiStageHost
         }
         catch (Exception e) { GD.PushWarning("learning quest table: " + e.Message); return; }
         var live = Ms2Godot.Net.LiveSession.Instance;
-        int offlineField = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
         var folders = GameOptions.Folders();
         long who = Ms2Godot.Flow.Session.Chosen?.User?.CharacterId ?? 0;
         bool gameStart = learningNewMarks == null || learningNewMarksFor != who;
@@ -1678,7 +1785,7 @@ public partial class HudScene : Node, IUiStageHost
             NewMarks = learningNewMarks,
             HasLocalPlayer = () => true,
             PlayerLevel = () => hudModel.Player.Level,
-            FieldId = () => live?.FieldId ?? offlineField,
+            FieldId = () => live?.FieldId ?? xblockFieldId,
             AutoOpenOff = () => GameOptions.LearningQuest.Value,
             CharacterFile = folders == null ? null : System.IO.Path.Combine(folders.Value.Character, "learningQuestCharacter.xml"),
             AccountFile = folders == null ? null : System.IO.Path.Combine(folders.Value.Account, "learningQuestAccount.xml"),
@@ -2907,6 +3014,7 @@ public partial class HudScene : Node, IUiStageHost
             playerInfo.FlushSlotRefresh();
         }
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
+        if (worldLoadPending) WorldLoadComplete();
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());

@@ -91,6 +91,29 @@ public sealed partial class DamageText : CanvasLayer
     public DamageText() { }
 
     /// <summary>
+    /// UIDamageText::ClearAll (@0x1419135c0, uidamagetext.cpp:523), which a field move runs from GFxMovieDamage::
+    /// UnloadExpiredFonts (@0x140b61ce0, gfxmoviedamage.cpp:249, called by CUIService FUN_141ad9dc0 in FUN_141adb900,
+    /// uiservice.cpp:1316): the normal and follower lists and their counters are emptied (m_normals, m_ownerFollowers,
+    /// m_counter, m_ownerFollowerCounter, their positions and m_queue) and ClearContainer removes every shown number. The
+    /// old field's camera and player are dropped with them and found again in the new field. There is no spawn queue
+    /// (m_queue, m_nLastQueueTime) and no m_bClearing here: numbers are made at once. UnloadExpiredFonts' other part, the
+    /// movie font library's expiry (fonts unused for 60 s), has no counterpart: this movie has no loaded font library.
+    /// </summary>
+    public void ClearAll()
+    {
+        normals.Clear();
+        followers.Clear();
+        normalCounter.Clear();
+        followerCounter.Clear();
+        foreach (var c in clips) Kill(c);       // ClearContainer
+        clips.Clear();
+        camera = null; field = null; player = null; pcDummies = null; pcModel = null;
+    }
+
+    /// <summary>The numbers in the lists and the clips shown, for checks.</summary>
+    public int Count => normals.Count + followers.Count + clips.Count;
+
+    /// <summary>
     /// A hit on an npc by the local player (grade 0); other grades are not ported. FUN_141911e90: nothing when the npc is
     /// out of show distance (FUN_141914d40, IsWithinShowDistance: its distance to the local player, kept each frame by
     /// WorldService, over DamageDistance); the number stands at the damage record's hit point <paramref name="hit"/>, or at

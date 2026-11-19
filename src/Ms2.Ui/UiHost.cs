@@ -116,13 +116,15 @@ public sealed class UiHost
     /// handleRemovedFromStage → destroyTooltipByOwner → "Tooltip" "destroyTooltip", and UIComponent.handleRemoveFromStage →
     /// unregisterMouseEvent likewise), so a dialog closed while one of its tooltips shows leaves none behind in the run's
     /// tooltip movie; the unload also stops the content (its listeners, and the Timers of classes the movie defines; its setInterval keeps running: <see cref="AsLoader.unloadAndStop"/>). vfunc_27
-    /// follows.
+    /// follows. Last the entity is dropped (m_30 = 0, uiswfentity.cpp:248), so the controller reads as not loaded until its
+    /// movie loads again.
     /// </summary>
     public void Unload()
     {
         Model.Changed -= OnStatus;
         Model.AlignWidgets?.Remove(Controller);
         if (Player?.HostLoader is { } loader) RT.Guard("unload " + Id, () => loader.unloadAndStop());
+        Entity = null;
     }
 
     // ---- AS -> C++ --------------------------------------------------------------------------------------------

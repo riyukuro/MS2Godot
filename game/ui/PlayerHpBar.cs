@@ -47,6 +47,9 @@ public sealed partial class PlayerHpBar : CanvasLayer
 
     public PlayerHpBar() { }
 
+    /// <summary>The field was swapped under the HUD (HudScene.SwapField): the new field's camera is found again.</summary>
+    public void FieldChanged() => camera = null;
+
     /// <summary>PC::vfunc_10: on spawn, a hurt PC's bar is made active (not shown).</summary>
     public void Spawn(long cur, long max)
     {

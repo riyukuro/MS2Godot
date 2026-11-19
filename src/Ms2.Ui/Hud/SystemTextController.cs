@@ -8,8 +8,8 @@ namespace Ms2.Ui.Hud;
 /// letter, emergency, interact and guild megaphone lines, the AI warning). The movie's SystemText entity queues, plays
 /// and fades each line; this side picks the AS method by the message type and parks a message shown before the movie
 /// is loaded.
-/// STILL-OPEN: vfunc_2 / vfunc_3 (show; hide and forget the parked message), which CUIService::HideWorldUI /
-/// ShowWorldUI call (uiservice.cpp:960, :995), are not ported: this HUD has no world UI hide. The field name line
+/// vfunc_3's own part runs at a field unload (<see cref="ForgetParked"/>). STILL-OPEN: CUIService::HideWorldUI /
+/// ShowWorldUI's calls of vfunc_2 / vfunc_3 (uiservice.cpp:960, :995) are not ported: this HUD has no world UI hide. The field name line
 /// (CUIService::FUN_141adba40, uiservice.cpp:1346: ShowMessage(the field's name, 7, 0) on field entry when
 /// GetFieldNameId != 0) is not fed.
 /// </summary>
@@ -35,6 +35,17 @@ public sealed class SystemTextController : UiController
     string parkedText = "";     // m_78
     uint parkedExpiry;          // m_80: the parked timed message's expiry tick
     readonly SortedDictionary<int, uint> timed = new();     // m_88: type -> expiry tick (std::map<int, unsigned int>)
+
+    /// <summary>
+    /// vfunc_3 (@0x141b15e80, uisystemtext.cpp:225) after UIHeadUpDisplay::vfunc_3's unload: the parked message is
+    /// forgotten (m_78.Empty(), m_70 = 0; m_80 is left). UISceneGame::vfunc_56 (WorldUnLoadComplete, @0x141ac78f0) runs
+    /// it at a field unload, so a line parked during the old field is not shown in the next one.
+    /// </summary>
+    public void ForgetParked()
+    {
+        parkedText = "";
+        parkedType = 0;
+    }
 
     /// <summary>The parked message (m_70, m_78), for the tests.</summary>
     public (int Type, string Text) Parked => (parkedType, parkedText);
