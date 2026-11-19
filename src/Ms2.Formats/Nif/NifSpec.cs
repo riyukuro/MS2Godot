@@ -28,8 +28,10 @@ public sealed class NifSpec
     readonly Dictionary<string, string> storage = new();
     readonly Dictionary<string, XElement> structs = new();
     readonly Dictionary<string, XElement> objs = new();
-    readonly Dictionary<string, NifExpr> exprCache = new();
-    readonly Dictionary<string, List<NifField>> fieldCache = new();
+    // filled on first use; concurrent (a field's navmesh loads on a worker with the spec the main thread builds models with,
+    // and one spec serves the whole process): a racing fill computes the same value twice
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, NifExpr> exprCache = new();
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<NifField>> fieldCache = new();
 
     public NifSpec(string path, uint version = V30_2_0_3, uint userVersion = 0, uint bsVersion = 0)
     {

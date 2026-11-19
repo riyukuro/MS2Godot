@@ -25,6 +25,15 @@ public sealed class ModelBuilder
 
     public ModelBuilder(NifSpec spec, PackSet packs) { this.spec = spec; this.packs = packs; }
 
+    static readonly Dictionary<string, NifSpec> specs = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The one parsed spec of a nif.xml for the process (main thread). Every model build (the field, the HUD portrait, a
+    /// dialog's avatar) reads the same file, and its field and expression lists are filled on first use, so a new
+    /// NifSpec per build parsed the file again and refilled them.
+    /// </summary>
+    public static NifSpec SharedSpec(string path) => specs.TryGetValue(path, out var s) ? s : specs[path] = new NifSpec(path);
+
     public static Transform3D ToGodot(Xform x)
     {
         var r = x.R;

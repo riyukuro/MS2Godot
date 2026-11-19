@@ -96,7 +96,7 @@ public sealed partial class AvatarView : Node
     /// <summary>The model in the player's current look (<see cref="Look.PlayerLook"/>), in its idle, lit, with its pivot.</summary>
     void Dress(PackSet packs, string nifXml)
     {
-        var builder = new ModelBuilder(new Ms2.Formats.Nif.NifSpec(nifXml), packs);
+        var builder = new ModelBuilder(ModelBuilder.SharedSpec(nifXml), packs);
         var (visual, anim, _, _) = Look.PlayerLook.Build(builder, packs);
         copy = visual;
         view.AddChild(copy);
