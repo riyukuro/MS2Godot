@@ -1412,6 +1412,74 @@ public partial class LiveSession : Node
                 }
             }
         }
+        // MS2_LIVE_BM_SHOTS=<dir> with MS2_LIVE_BM="sell:<item id>:<price>" or "buy": the black market opened as its open
+        // answer does. sell registers one of that item twice (the register page's OnClickRegister, as the slot and the
+        // price box send it, then the boxes' OK) and cancels the second from its row's cancel button; buy searches from the
+        // search page's button and buys the first row. A shot after each step as bm_<step>.png.
+        string bmShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_BM_SHOTS");
+        string bm = System.Environment.GetEnvironmentVariable("MS2_LIVE_BM");
+        if (!string.IsNullOrEmpty(bmShots) && !string.IsNullOrEmpty(bm) && tree.CurrentScene is Ui.HudScene bmHud)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(bmShots);
+            void Shot(string name) { flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(bmShots, name)); GD.Print("live: shot " + name); }
+            async Task Boxes()
+            {
+                for (int i = 0; i < 3 && (MessageBoxLayer.Instance?.Shown ?? false); i++)
+                {
+                    Shot($"bm_box_{System.DateTime.Now:HHmmss}_{i}.png");
+                    MessageBoxLayer.Instance.Tick(0);
+                    await Frames(20);
+                    MessageBoxLayer.Instance.Click(0);
+                    await Frames(90);
+                }
+            }
+            await Frames(240);
+            GD.Print("live: bm open: " + bmHud.OpenBlackMarketScripted());
+            await Until(() => bmHud.BlackMarketDialog != null, 600); await Frames(180);
+            Shot("bm_open.png");
+            var book = Instance?.BlackMarket;
+            var parts = bm.Split(':');
+            if (parts[0] == "sell" && parts.Length == 3 && book != null)
+            {
+                int itemId = int.Parse(parts[1]); long price = long.Parse(parts[2]);
+                GD.Print("live: bm tab register: " + bmHud.ClickBlackMarket("m_buttonBar", "tab:1"));
+                await Frames(120);
+                for (int n = 0; n < 2; n++)
+                {
+                    var item = Instance.Items.All.FirstOrDefault(i => i.Id == itemId);
+                    if (item == null) { GD.Print("live: bm no item " + itemId); break; }
+                    int before = book.OwnProducts.Count;
+                    bmHud.BlackMarketDialog?.OnCallback("OnClickRegister", new object[] { item.Uid.ToString(), price.ToString(), 1 });
+                    await Frames(30);
+                    await Boxes();
+                    await Until(() => book.OwnProducts.Count > before, 60 * 8); await Frames(60);
+                    GD.Print($"live: bm register {n}: {before} -> {book.OwnProducts.Count} own");
+                    Shot($"bm_register_{n}.png");
+                }
+                int had = book.OwnProducts.Count;
+                var cancel = new[] { "find:m_cancelSell" };
+                GD.Print("live: bm cancel click: " + bmHud.ClickBlackMarket(cancel));
+                await Frames(30);
+                await Boxes();
+                await Until(() => book.OwnProducts.Count < had, 60 * 8); await Frames(60);
+                GD.Print($"live: bm cancel: {had} -> {book.OwnProducts.Count} own");
+                Shot("bm_cancel.png");
+            }
+            else if (parts[0] == "buy" && book != null)
+            {
+                GD.Print("live: bm search click: " + bmHud.ClickBlackMarket("m_searchPage", "find:m_search"));
+                await Until(() => book.SearchProducts.Count > 0, 60 * 8); await Frames(90);
+                GD.Print($"live: bm search: {book.SearchProducts.Count} rows");
+                Shot("bm_search.png");
+                GD.Print("live: bm buy click: " + bmHud.ClickBlackMarket("m_searchPage", "find:m_buy"));
+                await Frames(30);
+                await Boxes();
+                await Frames(60 * 4);
+                Shot("bm_buy.png");
+            }
+            await Frames(120);
+        }
+
         // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at
         // most 5 s) and 2 s more; "~N" waits N s instead. With MS2_LIVE_CHAT_SHOTS=<dir> the screen is shot after each as
         // chat_<n>.png
