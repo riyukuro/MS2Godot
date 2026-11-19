@@ -360,16 +360,30 @@ public sealed class ItemDataTable
             rows = new();
             string entry = $"itemdata/{file:000}.xml";                 // LoadItemDataFile: "{0:03d}.xml"
             if (packs.Exists("Xml", entry))
-                foreach (var e in GameStrings.Parse(packs.Read("Xml", entry)).Root.Elements("item"))
+                using (var r = Ms2.Formats.Text.XmlRows.Open(packs.Read("Xml", entry)))
                 {
-                    if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
-                    if (FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
-                    rows.TryAdd(i, ItemData.Load(i, env, LobbyFeatures.IsEnabled(packs, "GlobalTransferType")));                  // std::map::insert keeps the first
+                    // the root's <item> children, each read as its own element (no document of the whole file)
+                    r.MoveToContent();
+                    if (!r.IsEmptyElement)
+                    {
+                        r.Read();
+                        while (r.NodeType != System.Xml.XmlNodeType.EndElement && !r.EOF)
+                        {
+                            if (r.NodeType != System.Xml.XmlNodeType.Element) { r.Read(); continue; }
+                            if (r.LocalName != "item" || r.NamespaceURI.Length != 0) { r.Skip(); continue; }
+                            var e = (XElement)XNode.ReadFrom(r);
+                            if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
+                            if (FeatureElements.SelectEnvironment(packs, e) is not { } env) continue;
+                            rows.TryAdd(i, ItemData.Load(i, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType")));   // std::map::insert keeps the first
+                        }
+                    }
                 }
             files[file] = rows;
         }
         return rows.TryGetValue(id, out var d) ? d : null;
     }
+
+    bool? globalTransferType;
 
     Dictionary<int, uint> textColors;
 
