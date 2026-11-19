@@ -336,7 +336,7 @@ public partial class FieldContents : Node3D
     {
         if (loading == null) return;
         var picture = Picture(packs, image);
-        loading.Start(picture, picture == null ? screenShot ?? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage()) : null, tip, true, true);
+        loading.Start(picture, picture == null ? screenShot ?? Capture() : null, tip, true, true);
         shownCover = loading;
     }
 
@@ -355,15 +355,38 @@ public partial class FieldContents : Node3D
             foreach (var ch in n.GetChildren()) Hide(ch);
         }
         Hide(GetTree().Root);
-        void Captured()
+        AfterDrawnFrame(GetTree(), drawn =>
         {
-            RenderingServer.FramePostDraw -= Captured;
-            var shot = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
+            var shot = drawn ? Capture() : null;
             foreach (var c in hidden) if (IsInstanceValid(c)) c.Visible = true;
             ShowLoading(null, tip, shot);
             then();
+        });
+    }
+
+    /// <summary>The viewport's last drawn frame, or null when no window can draw (headless or minimized: nothing to take).</summary>
+    Texture2D Capture() => DisplayServer.WindowCanDraw() ? ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage()) : null;
+
+    /// <summary>
+    /// Runs <paramref name="then"/> once: after the next frame Godot draws (true), or at the next process frame when no
+    /// window can draw (false). Headless, or with the window minimized, Godot draws no frame and emits no FramePostDraw,
+    /// so a wait on it alone would never end.
+    /// </summary>
+    internal static void AfterDrawnFrame(SceneTree tree, Action<bool> then)
+    {
+        bool done = false;
+        void Finish(bool drawn)
+        {
+            if (done) return;
+            done = true;
+            RenderingServer.FramePostDraw -= Drawn;
+            tree.ProcessFrame -= Process;
+            then(drawn);
         }
-        RenderingServer.FramePostDraw += Captured;
+        void Drawn() => Finish(true);
+        void Process() { if (!DisplayServer.WindowCanDraw()) Finish(false); }
+        RenderingServer.FramePostDraw += Drawn;
+        tree.ProcessFrame += Process;
     }
 
     /// <summary>The picture entry when the data has it, else null (the screenshot).</summary>
@@ -435,17 +458,14 @@ public partial class FieldContents : Node3D
         Travel.LoadingTip = PickTip();
         GD.Print($"field move -> {target}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
         // the loading screen comes up at once at 0%; the load starts once a frame with it has been drawn. The client has no
-        // wait of its own here: the move's teardown (WorldService FUN_141bbc580, worldservice_1.cpp:9962) starts the
-        // progress screen (CUIService FUN_141adb900) and the load (FUN_141bbc1d0, worldservice_1.cpp:3350) follows
-        // without a delay; the one frame is what puts the screen up before the old field goes.
+        // wait of its own here: WorldService::LoadMap (worldservice_1.cpp:3320) calls FUN_141bbc1d0, which first runs the
+        // move's teardown (FUN_141bbc580, :3353; it starts the progress screen, CUIService FUN_141adb900) and goes on
+        // loading in the same call (EntityWorldManager::LoadMap, :3383); the one frame is what puts the screen up before
+        // the old field goes. Headless or minimized no frame is drawn, and the load starts at the next frame.
         if (Travel.LoadingImage != null) { ShowLoading(Travel.LoadingImage, Travel.LoadingTip); Go(); }
         else ShowLoadingOverField(Travel.LoadingTip, () => Go());
 
-        void Go()
-        {
-            void Drawn() { RenderingServer.FramePostDraw -= Drawn; Fire(); }
-            RenderingServer.FramePostDraw += Drawn;
-        }
+        void Go() => AfterDrawnFrame(GetTree(), _ => Fire());
         void Fire()
         {
             if (!IsInstanceValid(this) || !IsInsideTree()) return;

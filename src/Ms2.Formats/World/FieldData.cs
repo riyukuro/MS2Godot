@@ -114,7 +114,13 @@ public sealed class FieldData
         return ix;
     });
 
-    /// <summary>The &lt;environment&gt; without a locale of a fieldData element, or null (also for a null element).</summary>
+    /// <summary>
+    /// The first &lt;environment&gt; without a locale of a fieldData element, or null (also for a null element).
+    /// STILL-OPEN: the client picks the environment by locale and feature: @0x14028f8d0 (commonutil.cpp:1064) keeps the
+    /// available ones (IsElementAvailable) and folds them with CFeatureManager::SelectFeatureElement (:1078; ported as
+    /// Ms2.Ui FeatureElements), so the higher feature level or the client's locale wins. Taking the first one without a
+    /// locale gives a different environment for 9 of the table's entries.
+    /// </summary>
     public static XElement DefaultEnvironment(XElement fd)
     {
         if (fd == null) return null;
@@ -141,7 +147,7 @@ public sealed class FieldData
 
     static FieldData FromEntry(XElement fd)
     {
-        var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+        var env = DefaultEnvironment(fd);      // the first without a locale; the client's pick is STILL-OPEN, see there
         var xb = (string)env?.Element("xblock")?.Attribute("name");
         if (xb == null) return null;
         var o = new FieldData { Id = (int?)fd.Attribute("id") ?? 0, XBlock = xb };
