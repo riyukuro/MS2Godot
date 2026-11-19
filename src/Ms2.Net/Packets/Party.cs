@@ -117,6 +117,7 @@ public abstract record PartyMessage(int Mode) {
             case 7: return new PartyDisband();                                                             // OnPartyDisband
             case 8: return new PartyLeaderChange(r.ReadLong());                                            // OnPartyLeaderChange
             case 9: return PartyInfo.ReadBody(r);                                                          // OnPartyInfo
+            case 0xb: return new PartyInvite(r.ReadUnicodeString(), r.ReadInt());                          // OnPartyInvite
             case 0xc: case 0xd: { long id = r.ReadLong(); return new PartyMemberUpdate(mode, id, PartyUser.Read(r)); }   // OnPartyMemberInfoUpdate
             case 0xf: return new PartyGearScore(r.ReadLong(), r.ReadInt());                                // OnPartyMemberGearScore
             case 0x13: {                                                                                   // FUN_14162dfc0: DecodeFlags
@@ -143,6 +144,9 @@ public sealed record PartyMemberUpdate(int UpdateMode, long CharacterId, PartyUs
 public sealed record PartyGearScore(long CharacterId, int Value) : PartyMessage(0xf);
 /// <summary>Mode 0x13: ApplyFlags (userproxy.cpp:1539) sets m_0, m_44 (max HP), m_48 (HP) and m_4c (tomb flags).</summary>
 public sealed record PartyMemberFlags(long CharacterId, long AccountId, int MaxHp, int Hp, short TombFlags) : PartyMessage(0x13);
+/// <summary>OnPartyInvite @0x14162c8b0 (partymanager.cpp:968): an invite, the inviter's name (partyName) and the party's
+/// kind (partyKind; the Maple2 server sends its party id). The answer sends both back (SendPartyMode2).</summary>
+public sealed record PartyInvite(string PartyName, int Kind) : PartyMessage(0xb);
 /// <summary>A mode the party window does not use (search, votes, dungeon matching, notices); its body is not read.</summary>
 public sealed record PartyOtherMode(int OtherMode) : PartyMessage(OtherMode);
 
@@ -217,6 +221,10 @@ public sealed class PartyBook {
     public long LeaderId { get; private set; }
     public bool Matchmaking { get; private set; }
     public int DungeonId { get; private set; }
+    /// <summary>partyName (GetPartyName @0x14162b4f0): the last invite's name, kept for its answer.</summary>
+    public string PartyName { get; private set; } = "";
+    /// <summary>partyKind (GetPartyKind @0x14162b540): the last invite's kind, kept for its answer.</summary>
+    public int PartyKind { get; private set; }
 
     /// <summary>OpenDialog(0x4e45): OnPartyInfo with more than one member, or a join while the window is closed (FUN_141924680).</summary>
     public event Action Opened;
@@ -232,6 +240,8 @@ public sealed class PartyBook {
     public event Action MembersRefreshed;
     /// <summary>UIPartyDialog::ChangeChief(old, new); either may be null.</summary>
     public event Action<PartyMember, PartyMember> ChiefChanged;
+    /// <summary>OnPartyInvite's answer or box, after <see cref="PartyName"/> and <see cref="PartyKind"/> are kept.</summary>
+    public event Action<PartyInvite> Invited;
 
     /// <summary>IsInParty (:526): more than one member.</summary>
     public bool IsInParty => members.Count > 1;
@@ -289,6 +299,10 @@ public sealed class PartyBook {
                 else RemoveAt(members.IndexOf(m));
                 break;
             }
+            case PartyInvite invite:                        // :968
+                PartyName = invite.PartyName ?? ""; PartyKind = invite.Kind;
+                Invited?.Invoke(invite);
+                break;
             case PartyDisband:                              // :1066
                 Clear(); Closed?.Invoke();
                 break;

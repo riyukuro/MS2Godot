@@ -12,6 +12,15 @@ public sealed record PartyInviteRequest(string Name) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(1); w.WriteUnicodeString(Name ?? ""); }
 }
 
+/// <summary>CPartyManager::SendPartyMode2 @0x14162b950 (partymanager.cpp:743): the answer to an invite (u8 2), then
+/// Unk_PartyJoinRequest (FUN_1401fc0b0): the invite's name, the answer as u8, the invite's kind. Answers: 1 accept, 9 decline,
+/// 12 the box timed out, 20 (0x14) the refuse option, 21 (0x15) a PvP point or the box closed by CloseAll.</summary>
+public sealed record PartyInviteAnswer(string Name, int Answer, int Kind) : IOutPacket {
+    public const int Accept = 1, Decline = 9, TimedOut = 12, Refused = 0x14, Busy = 0x15;
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w) { w.WriteByte(2); w.WriteUnicodeString(Name ?? ""); w.WriteByte((byte)Answer); w.WriteInt(Kind); }
+}
+
 /// <summary>CPartyManager::SendPartyMode3 (partymanager.cpp:819): leave the party (u8 3).</summary>
 public sealed record PartyLeaveRequest : IOutPacket {
     public Outbound Op => Outbound.Party;

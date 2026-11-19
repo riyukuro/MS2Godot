@@ -218,4 +218,32 @@ public class MessageBoxTests
         Assert.That(names, Is.EqualTo(new[] { "0:", "0:Tester01" }));
         Assert.That(c.IsIdle, Is.True);
     }
+
+    [Test]
+    public void PartyInviteRefusesOrShowsItsBoxAndAnswers()
+    {
+        var answers = new List<int>();
+        var invite = new Ms2.Net.Packets.PartyInvite("Inviter", 77);
+        Assert.That(PartyInviteBox.OnInvite(invite, true, false, answers.Add), Is.Null);
+        Assert.That(PartyInviteBox.OnInvite(invite, false, true, answers.Add), Is.Null);
+        Assert.That(answers, Is.EqualTo(new[] { 0x14, 0x15 }), "the refuse option, then a PvP point");
+        answers.Clear();
+
+        var (h, c) = Load();
+        c.AnswerPartyInvite = answers.Add;
+        var box = PartyInviteBox.OnInvite(invite, false, false, answers.Add);
+        h.Player.Tick();
+        Assert.That(c.CurrentBox, Is.SameAs(box));
+        Assert.That((box.Type, box.Extra, box.Listener), Is.EqualTo((1, "partyinvite_77", (IMessageBoxListener)null)));
+        Assert.That((box.Modaless, box.NoInputBlock, box.EnterAllowed), Is.EqualTo((true, true, false)));
+        Assert.That(box.Msg, Does.Contain("Inviter"), "s_msg_party_invite with the inviter's name");
+        TestContext.WriteLine("invite: " + Box(h) + " / " + h.Child("m_contents", Box(h)) + " / " + box.Msg);
+        Click(h, "m_button1");
+        Assert.That(answers, Is.EqualTo(new[] { 9 }), "no declines");
+        Assert.That(c.IsIdle, Is.True);
+        PartyInviteBox.OnInvite(invite, false, false, answers.Add);
+        Click(h, "m_button0");
+        Assert.That(answers, Is.EqualTo(new[] { 9, 1 }), "yes accepts");
+        Assert.That(c.IsIdle, Is.True);
+    }
 }

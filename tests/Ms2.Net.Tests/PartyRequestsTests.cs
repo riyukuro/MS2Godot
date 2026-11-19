@@ -57,4 +57,15 @@ public class PartyRequestsTests
         Assert.That(Bytes(new DungeonGiveUpRequest()), Is.EqualTo(new byte[] { 5 }));
         Assert.That(Bytes(new ClubCreateRequest("Club")), Is.EqualTo(Concat(new byte[] { 1 }, Str("Club"))));
     }
+
+    [Test]
+    public void TheInviteAnswerIsSendPartyMode2()
+    {
+        // SendPartyMode2 (partymanager.cpp:743): u8 2, then FUN_1401fc0b0: the name, the answer as u8, the kind as i32
+        var p = new PartyInviteAnswer("Inviter", PartyInviteAnswer.Accept, 77);
+        Assert.That(p.Op, Is.EqualTo(Outbound.Party));
+        Assert.That(Bytes(p), Is.EqualTo(Concat(new byte[] { 2 }, Str("Inviter"), new byte[] { 1 }, BitConverter.GetBytes(77))));
+        Assert.That(Bytes(new PartyInviteAnswer("A", PartyInviteAnswer.Refused, -1)), Is.EqualTo(Concat(new byte[] { 2 }, Str("A"), new byte[] { 0x14 }, BitConverter.GetBytes(-1))));
+        Assert.That((PartyInviteAnswer.Decline, PartyInviteAnswer.TimedOut, PartyInviteAnswer.Busy), Is.EqualTo((9, 12, 0x15)));
+    }
 }

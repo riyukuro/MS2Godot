@@ -79,4 +79,18 @@ public class PartyPacketTests {
         Assert.That(book.Members, Is.Empty);
         Assert.That(log, Is.EqualTo(new[] { "open", "add C", "chief Me B", "update C 1", "update C 1ff", "remove B", "close" }));
     }
+
+    [Test]
+    public void TheInviteReadsAndIsKeptForItsAnswer() {
+        // OnPartyInvite (partymanager.cpp:968): partyName, then partyKind; the Maple2 server's PartyPacket.Invite (mode 11)
+        var invite = (PartyInvite) Read(Body(w => { w.WriteByte(0xb); w.WriteUnicodeString("Inviter"); w.WriteInt(77); }));
+        Assert.That((invite.PartyName, invite.Kind), Is.EqualTo(("Inviter", 77)));
+        var book = new PartyBook();
+        PartyInvite raised = null;
+        book.Invited += m => raised = m;
+        book.Apply(invite, 1, false);
+        Assert.That(raised, Is.SameAs(invite));
+        Assert.That((book.PartyName, book.PartyKind), Is.EqualTo(("Inviter", 77)));
+        Assert.That(book.IsInParty, Is.False, "an invite changes no party");
+    }
 }

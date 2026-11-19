@@ -220,6 +220,13 @@ public partial class LiveSession : Node
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+
+    /// <summary>CPartyManager::SendPartyMode2 (partymanager.cpp:743): the answer to the last invite, with its name and kind.</summary>
+    public void AnswerPartyInvite(int answer)
+    {
+        GD.Print($"live: party invite answer {answer}");
+        Send(new PartyInviteAnswer(Party.PartyName, answer, Party.PartyKind));
+    }
     /// <summary>The chat window's UserChat (0x11) sends (FUN_141276f80).</summary>
     public void SendChat(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
@@ -589,6 +596,8 @@ public partial class LiveSession : Node
             {
                 var m = PartyMessage.Read(p.Reader());   // CPartyManager::OnParty (partymanager.cpp:447); no ExpectEnd: the client ignores trailing bytes
                 Party.Apply(m, CharacterId, PartyWindowOpen());
+                if (m is PartyInvite invite)        // OnPartyInvite (partymanager.cpp:968); no PvP state yet, so no PvP point
+                    Ms2.Ui.Hud.PartyInviteBox.OnInvite(invite, GameOptions.AccountCommunity.DisablePartyRequest, false, AnswerPartyInvite);
                 GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
             }
             else if (game.Is(p, Inbound.ItemInventory))

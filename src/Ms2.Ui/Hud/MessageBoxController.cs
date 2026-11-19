@@ -210,6 +210,9 @@ public sealed class MessageBoxController : UiController
     /// on with the binding skip (EquipGem(item, a0, 1)); false when the inventory no longer has the item.</summary>
     public Func<long, int, bool> UseBindGemEquipItem;
 
+    /// <summary>CPartyManager::SendPartyMode2(answer): HandlePartyinviteButton's answer to the last invite.</summary>
+    public Action<int> AnswerPartyInvite;
+
     /// <summary>A tag this port has no handler for (HandlePlainTag / FUN_1419fa910's other tags).</summary>
     public event Action<int, string> UnportedTag;
 
@@ -393,8 +396,21 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindEquipItemButton(button);
         if (tag == "useBindGemEquipItem")
             return HandleUseBindGemEquipItemButton(button);
+        if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
+            return HandlePartyinviteButton(button);
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
+    }
+
+    /// <summary>HandlePartyinviteButton @0x1419fb930 (uimessagebox.cpp:1326): button 0 accepts (1); any other declines (9),
+    /// 21 while CloseAll closes the boxes. STILL-OPEN: 12 when the box's timer pressed the button (GetTimer().m_nButton)
+    /// waits for the box timer port.</summary>
+    bool HandlePartyinviteButton(int button)
+    {
+        int result = button == 0 ? Ms2.Net.Packets.PartyInviteAnswer.Accept : Ms2.Net.Packets.PartyInviteAnswer.Decline;
+        if (result == Ms2.Net.Packets.PartyInviteAnswer.Decline && closing) result = Ms2.Net.Packets.PartyInviteAnswer.Busy;
+        AnswerPartyInvite?.Invoke(result);
+        return true;
     }
 
     /// <summary>HandleGameexitButton @0x1419fb480.</summary>

@@ -28,6 +28,9 @@ public sealed class MessageBoxData
     public bool EnterAllowed = true;
     /// <summary>m_20f: set by FUN_141a024c0, Esc then does nothing (FUN_141a03100).</summary>
     public bool NoEscape;
+    /// <summary>m_20c (false in the ctor): set by FUN_141a02460, read by FUN_141a03050; a box with it does not take the input
+    /// block of vfunc_47 (FUN_14151f8b0: every queued box has it). The input block is the movie's modal background here.</summary>
+    public bool NoInputBlock;
     public IMessageBoxListener Listener;
     /// <summary>Delegate&lt;bool(int, const CMsgBoxData&amp;)&gt;: answers the box instead of the listener.</summary>
     public Func<int, MessageBoxData, bool> Callback;
