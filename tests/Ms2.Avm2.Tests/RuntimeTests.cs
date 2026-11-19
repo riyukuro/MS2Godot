@@ -29,6 +29,17 @@ public class RuntimeTests
     }
 
     [Test]
+    public void ClassObjectsInheritObjectMethods()
+    {
+        // A class object is an Object: `SomeClass.hasOwnProperty("x")` (fl.motion.AnimatorFactoryBase.addTargetInfo) used to throw
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var cls = rt.GetClass("flash.geom.Point");
+        Assert.That(rt.CallProperty(cls, Name.Public("hasOwnProperty"), new object[] { "nothing" }), Is.EqualTo(false));
+        Assert.That(rt.CallProperty(cls, Name.Public("hasOwnProperty"), new object[] { "polar" }), Is.EqualTo(true));
+    }
+
+    [Test]
     public void Vector3DFollowsScaleform()
     {
         // flash.geom.Vector3D (sfr_as3_11.cpp): the class used to be undefined, so `new Vector3D(..)` in a movie failed
@@ -71,6 +82,18 @@ public class RuntimeTests
         Assert.That(q.focalLength, Is.EqualTo(pp.focalLength));
         var m = q.toMatrix3D();
         Assert.That(m.rawData.Items.Count, Is.EqualTo(16));
+        // Transform: the root starts with a 55 degree projection centred on the stage; matrix3D carries position and z rotation
+        var root = rt.Player.Root;
+        if (root != null)
+        {
+            var rp = root.transform.perspectiveProjection;
+            Assert.That(rp.fieldOfView, Is.EqualTo(55));
+            Assert.That((rp.projectionCenter.x, rp.projectionCenter.y), Is.EqualTo((400.0, 300.0)));
+            var m3 = (AsMatrix3D)rt.GetClass("flash.geom.Matrix3D").Construct();
+            m3.appendRotation(90, AsVector3D.Z_AXIS);
+            root.transform.matrix3D = m3;
+            Assert.That(root.rotation, Is.EqualTo(90).Within(1e-6));
+        }
     }
 
     [Test]

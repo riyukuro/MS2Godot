@@ -232,6 +232,8 @@ public sealed partial class Runtime
                     if (p.HasDynamic(n.Local)) return p.GetDynamic(n.Local);
                     if (p.Traits != null && p is not AsClass && p.Traits.Find(n) is { } pb) return ReadBinding(o, pb, p.Slots);
                 }
+                // A class object is an Object: it inherits Object's methods (hasOwnProperty, ...) (its table is copied from Object before the methods are added to Object).
+                if (o is AsClass && ObjectClass.InstanceTraits.Find(n) is { } cb) return ReadBinding(o, cb, null);
             }
             if (o.Class != null && !o.Class.InstancesDynamic && !(o is AsClass) && !(o is ScriptObject))
             {

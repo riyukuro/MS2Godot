@@ -221,7 +221,14 @@ public class AsTransform : AsObject
     {
         get
         {
-            if (Owner == null || !perspective.TryGetValue(Owner, out var d)) return null;
+            if (Owner == null) return null;
+            double fov0, focal0; (double X, double Y) ctr0;
+            if (perspective.TryGetValue(Owner, out var d0)) { fov0 = d0.Fov; focal0 = d0.Focal; ctr0 = d0.Center; }
+            // The root movie (and every loaded sprite) starts with a 55 degree field of view, so it always has perspective data
+            // (sfr_as3_17d.cpp, sfr_as3_18.cpp).
+            else if (Owner == Owner.P?.Root) { fov0 = 55; focal0 = 0; ctr0 = (0, 0); }
+            else return null;
+            var d = (Fov: fov0, Focal: focal0, Center: ctr0);
             var rt = Class.Runtime;
             var pp = (AsPerspectiveProjection)rt.GetClass("flash.geom.PerspectiveProjection").Construct(d.Fov, d.Focal, d.Center.X, d.Center.Y);
             pp.Bound = Owner;
@@ -242,5 +249,34 @@ public class AsTransform : AsObject
             perspective.AddOrUpdate(Owner, value);
         }
     }
+    static readonly ConditionalWeakTable<AsDisplayObject, AsMatrix3D> matrix3Ds = new();
+
+    /// <summary>The object's 3D matrix (Transform::matrix3DGet, @0x14248ac20): the one last assigned, else the identity
+    /// moved to the object's position. Only the position, scale and z rotation reach the 2D display list; the runtime has no 3D scene.</summary>
+    [As] public AsMatrix3D matrix3D
+    {
+        get
+        {
+            if (Owner == null) return null;
+            var rt = Class.Runtime;
+            if (matrix3Ds.TryGetValue(Owner, out var stored)) return AsMatrix3D.New(rt, stored.Mat.Clone());
+            var m = Mat4.Identity(); m[0, 3] = Owner.x; m[1, 3] = Owner.y;
+            return AsMatrix3D.New(rt, m);
+        }
+        // Transform::matrix3DSet (@0x14248af20): translation, z rotation and x/y scale go to the object; null drops the 3D state.
+        set
+        {
+            if (Owner == null) return;
+            if (value == null) { matrix3Ds.Remove(Owner); return; }
+            var m = value.Mat;
+            matrix3Ds.AddOrUpdate(Owner, AsMatrix3D.New(Class.Runtime, m.Clone()));
+            Owner.x = m[0, 3]; Owner.y = m[1, 3];
+            Owner.z = m[2, 3];
+            Owner.rotation = Math.Atan2(m[1, 0], m[0, 0]) * 180 / Math.PI;
+            Owner.scaleX = Math.Sqrt(m[0, 0] * m[0, 0] + m[1, 0] * m[1, 0] + m[2, 0] * m[2, 0]);
+            Owner.scaleY = Math.Sqrt(m[0, 1] * m[0, 1] + m[1, 1] * m[1, 1] + m[2, 1] * m[2, 1]);
+        }
+    }
+
     [As] public AsRectangle pixelBounds => AsRectangle.New(Class.Runtime, Owner?.GetBounds(null) ?? RectD.None);
 }
