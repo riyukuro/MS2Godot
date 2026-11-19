@@ -182,6 +182,16 @@ public class ServerTests
 
 public class ReflectionDumpTests
 {
+    [Test]
+    public void CustomRendererSkipsTheRootObjectButSeesNested()
+    {
+        var d = new ReflectionDump { Custom = o => o is Node1 ? (System.Text.Json.Nodes.JsonNode)"brief" : null };
+        var root = new Node1 { Next = new Node1() };
+        var j = d.Dump(root).AsObject();
+        Assert.That(j["Name"]!.GetValue<string>(), Is.EqualTo("root"));   // the root is dumped in full
+        Assert.That(j["Next"]!.GetValue<string>(), Is.EqualTo("brief"));  // nested objects go through the renderer
+    }
+
     class Node1 { public string Name = "root"; int hidden = 5; public Node1 Next; public Node1 Back; public int Auto { get; set; } = 9; public int Computed => throw new Exception("getter ran"); public static int Counter = 3; public Action Callback = () => { }; }
     class Base { int secret = 11; }
     class Derived : Base { public int Open = 1; }

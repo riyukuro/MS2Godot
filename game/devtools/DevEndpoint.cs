@@ -23,6 +23,7 @@ public partial class DevEndpoint : Node
     DevLogger logger;
     string infoFile;
     bool inRequest;
+    long frames, busyFrames, ticks;   // cost accounting: time spent inside _Process, idle frames included
 
     static DevEndpoint instance;
 
@@ -64,17 +65,20 @@ public partial class DevEndpoint : Node
 
     public override void _Process(double delta)
     {
-        if (server == null || server.Queue.Idle || inRequest) return;
+        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        frames++;
+        if (server == null || server.Queue.Idle || inRequest) { ticks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; return; }
+        busyFrames++;
         inRequest = true;
         try { server.Queue.Drain(Dispatch, FrameBudgetMs); }
-        finally { inRequest = false; }
+        finally { inRequest = false; ticks += System.Diagnostics.Stopwatch.GetTimestamp() - t0; }
     }
 
     JsonNode Dispatch(Request r)
     {
         switch (r.Cmd)
         {
-            case "ping": return new JsonObject { ["pid"] = System.Environment.ProcessId, ["frame"] = (long)Engine.GetProcessFrames(), ["fps"] = Engine.GetFramesPerSecond() };
+            case "ping": return new JsonObject { ["pid"] = System.Environment.ProcessId, ["frame"] = (long)Engine.GetProcessFrames(), ["fps"] = Engine.GetFramesPerSecond(), ["endpoint"] = new JsonObject { ["frames"] = frames, ["busyFrames"] = busyFrames, ["processMs"] = ticks * 1000.0 / System.Diagnostics.Stopwatch.Frequency } };
             case "tree": return Tree(r);
             case "node": return NodeProps(r);
             case "material": return MaterialInfo(r);

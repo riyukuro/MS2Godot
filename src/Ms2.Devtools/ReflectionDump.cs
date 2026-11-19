@@ -94,7 +94,7 @@ public sealed class ReflectionDump
         if (o is DateTime or DateTimeOffset or TimeSpan or Guid) return o.ToString();
         if (o is Delegate) return "<" + t.Name + ">";
         if (o is Type ty) return ty.FullName;
-        if (Custom?.Invoke(o) is { } custom) return custom;
+        if ((depth > 0 || t.IsValueType) && Custom?.Invoke(o) is { } custom) return custom;
         if (o is Pointer) return "<ptr>";
 
         if (!t.IsValueType)
