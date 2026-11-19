@@ -40,7 +40,7 @@ public partial class LoadingShot : Node
                 case "--noframe": frame = false; break;
                 case "--progress": var p = args[++i].Split(','); count = int.Parse(p[0]); total = int.Parse(p[1]); break;
             }
-        var packs = new PackSet(Settings.DataDir);
+        var packs = PackSet.Shared(Settings.DataDir);
         var assets = new UiAssets(packs);
         if (map != 0 && picture == null)
         {

@@ -20,7 +20,7 @@ public static class NativeUi
         if (Art != null) return true;
         var data = Settings.DataDir;
         if (string.IsNullOrEmpty(data)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); return false; }
-        Assets = new UiAssets(new PackSet(data));
+        Assets = new UiAssets(PackSet.Shared(data));
         Art = new NativeArt(Assets);
         return true;
     }

@@ -46,7 +46,7 @@ public partial class LoginScene : Control
         var data = Settings.DataDir;
         if (string.IsNullOrEmpty(data)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
 
-        assets = new UiAssets(new PackSet(data));
+        assets = new UiAssets(PackSet.Shared(data));
         window = GetViewportRect().Size;        // window pixels (LobbyLayout.UseWindowPixels)
         RenderingServer.SetDefaultClearColor(clear);
 

@@ -106,7 +106,7 @@ public partial class CharacterListScene : LobbyFieldScene
             if (args[i] == "--limit" && int.TryParse(args[i + 1], out int lim)) limitArg = lim;
         }
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
-        uiPacks = new PackSet(Settings.DataDir);
+        uiPacks = PackSet.Shared(Settings.DataDir);
         tables = new CreateTables(uiPacks);
         mapId = tables.SelectMap(SelectedJobGroup());
         return tables.XBlockOf(mapId) ?? defaultName;
@@ -320,7 +320,6 @@ public partial class CharacterListScene : LobbyFieldScene
 
     void Reload()
     {
-        uiPacks?.Dispose();
         GetTree().ReloadCurrentScene();
     }
 

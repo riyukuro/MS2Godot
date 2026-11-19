@@ -181,7 +181,7 @@ public partial class GameFlow : Node
         if (deleteConstants is { } k) return k;
         try
         {
-            using var packs = new PackSet(Settings.DataDir);
+            var packs = PackSet.Shared(Settings.DataDir);
             var c = Ms2.Ui.FeatureElements.Constants(packs);
             k = ((int)c.Float("CharacterDestroyDivisionLevel", 20), (uint)c.Float("CharacterDestroyWaitSecond", 86400));
         }
@@ -227,7 +227,7 @@ public partial class GameFlow : Node
     Func<string, string> CommonStrings()
     {
         if (commonStrings != null) return commonStrings;
-        try { using var packs = new PackSet(Settings.DataDir); commonStrings = new GameStrings(packs, GameOptions.StringLanguage).Common(); }
+        try { var packs = PackSet.Shared(Settings.DataDir); commonStrings = new GameStrings(packs, GameOptions.StringLanguage).Common(); }
         catch (Exception ex) { GD.PushWarning("flow strings: " + ex.Message); commonStrings = _ => null; }
         return commonStrings;
     }
@@ -259,7 +259,7 @@ public partial class GameFlow : Node
         int subJob1 = 0;
         try
         {
-            using var packs = new PackSet(Settings.DataDir);
+            var packs = PackSet.Shared(Settings.DataDir);
             subJob1 = new Ui.Create.CreateTables(packs).SubJob1(request.JobGroup);
         }
         catch (Exception ex) { GD.PushWarning("flow create: " + ex.Message); }
@@ -286,7 +286,7 @@ public partial class GameFlow : Node
         string tip = "";
         try
         {
-            using var packs = new PackSet(Settings.DataDir);
+            var packs = PackSet.Shared(Settings.DataDir);
             xblock = FieldData.XBlockOf(packs, map);
             if (xblock == null || !packs.Exists(XBlock.Archive, $"xblock/{xblock.ToLowerInvariant()}.xblock")) { xblock = null; }
             tip = World.FieldContents.PickTip(packs);
@@ -312,14 +312,11 @@ public partial class GameFlow : Node
             RenderingServer.FramePostDraw -= Captured;
             var shot = ImageTexture.CreateFromImage(GetViewport().GetTexture().GetImage());
             foreach (var c in hidden) if (IsInstanceValid(c)) c.Visible = true;
-            if (Travel.Pending != null) World.FieldContents.CoverLoad(CoverPacks ??= new PackSet(Settings.DataDir), this, shot);
+            if (Travel.Pending != null) World.FieldContents.CoverLoad(PackSet.Shared(Settings.DataDir), this, shot);
             loadingFrames = 0;                       // the cover draws for a few frames before the scene change blocks
         }
         RenderingServer.FramePostDraw += Captured;
     }
-
-    /// <summary>The packs the flow's loading screen reads its movie from (kept: the screen outlives the call).</summary>
-    static PackSet CoverPacks;
 
     public override void _Process(double delta)
     {

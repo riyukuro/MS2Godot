@@ -132,7 +132,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
             if (args[i] == "--resize" && args[i + 1].Split('x') is [var w, var h] && int.TryParse(w, out int rw) && int.TryParse(h, out int rh)) resizeTo = new Vector2I(rw, rh);
         }
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
-        uiPacks = new PackSet(Settings.DataDir);
+        uiPacks = PackSet.Shared(Settings.DataDir);
         tables = new CreateTables(uiPacks);
         if (job == 0 && page == Page.Create)
         {
@@ -374,7 +374,6 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
     void Reload()
     {
-        uiPacks?.Dispose();
         GetTree().ReloadCurrentScene();
     }
 
@@ -442,7 +441,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
             if (frame == 430) Save($"create_name_refused_{job}.png");
             if (frame == 431) RefuseScripted(6);
             if (frame == 440) Save($"create_refused_closed_{job}.png");
-            if (frame == 450) { packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
+            if (frame == 450) { packs.Dispose(); GetTree().Quit(0); }
         }
     }
 
@@ -462,7 +461,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         if (frame == 80 && page == Page.Create) ClickObj(Content("m_create"));
         if (frame == 90) Save($"{name}_before.png");
         if (frame == 91) GetWindow().Size = to;
-        if (frame == 150) { Save($"{name}_resized_{to.X}x{to.Y}.png"); packs.Dispose(); uiPacks?.Dispose(); GetTree().Quit(0); }
+        if (frame == 150) { Save($"{name}_resized_{to.X}x{to.Y}.png"); packs.Dispose(); GetTree().Quit(0); }
     }
 
     // ---- the create movie's objects, for the scripted shots ----
