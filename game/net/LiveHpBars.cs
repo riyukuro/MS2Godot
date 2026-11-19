@@ -209,12 +209,13 @@ public sealed class PcHpBar
     /// <summary>UIHpBar::Entity::vfunc_8 for a PC: not shown or dead (hp 0) hides.</summary>
     bool Hidden => !Shown || cur <= 0;
 
-    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped, vfunc_8 decides with the distance
-    /// check last, vfunc_6 places at the screen point, vfunc_7 hides without one.</summary>
+    /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped, vfunc_8 decides, vfunc_6 places at the
+    /// screen point, vfunc_7 hides without one. UIHpBar::Entity::vfunc_8 (uihpbar.cpp:184) returns "show" before the base's
+    /// distance check (m_54) for a PC in battle or with hp != max, so those bars are never hidden for being far.</summary>
     public void Update(Vector2? screen, bool far = false)
     {
         if (!Active) return;
-        if (Hidden || far) { clip.Hide(); return; }
+        if (Hidden || far && !(InBattle || cur != max)) { clip.Hide(); return; }
         if (screen == null) { clip.Hide(); return; }
         clip.Draw(screen.Value, 1, true, cur, max, ref dirty);
     }

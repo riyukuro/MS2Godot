@@ -58,12 +58,13 @@ public sealed class NpcHpBar
     }
 
     /// <summary>One frame (UIHudEntity::vfunc_15): an inactive entity is skipped; vfunc_8's rules (the shown flag, dead)
-    /// run first and the distance check (Entity::vfunc_8's m_54, in the base) last; vfunc_6 places at the screen point,
+    /// run first and the distance check (Entity::vfunc_8's m_54, in the base) last, which a tag 2 npc skips
+    /// (UIHpBar::Entity::vfunc_8 returns "show" for it before the base, uihpbar.cpp:184); vfunc_6 places at the screen point,
     /// vfunc_7 hides without one. The npc's vfunc_8 has no timer of its own (see the class comment).</summary>
     public void Update(Vector2? screen, bool far = false)
     {
         if (!Active) return;
-        if (!Shown || Dead || far || screen == null) { clip.Hide(); return; }
+        if (!Shown || Dead || far && !Npc.Row.AlwaysDisplayHpBar || screen == null) { clip.Hide(); return; }
         clip.Draw(screen.Value, Rank, Npc.Row.Friendly == 1, cur, max, ref dirty);
     }
 

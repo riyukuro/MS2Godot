@@ -314,7 +314,11 @@ public sealed class PartyBook {
 
     /// <summary>IsInParty (:526): more than one member.</summary>
     public bool IsInParty => members.Count > 1;
-    public PartyMember Find(long characterId) => members.FirstOrDefault(m => m.CharacterId == characterId);
+    public PartyMember Find(long characterId)
+    {
+        for (int i = 0; i < members.Count; i++) if (members[i].CharacterId == characterId) return members[i];   // no closure: the HP bars ask per frame
+        return null;
+    }
     /// <summary>FindMemberByName (partymanager.cpp:629): the first member with the name, case ignored (CompareNoCase).</summary>
     public PartyMember FindByName(string name) => members.FirstOrDefault(m => string.Equals(m.User.Name, name, StringComparison.OrdinalIgnoreCase));
     /// <summary>IsLocalPlayerLeader (:530).</summary>

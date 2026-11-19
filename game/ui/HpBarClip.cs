@@ -46,7 +46,8 @@ public sealed class HpBarClip
     {
         if (movie == null || node == null && !Build()) return;
         node.Visible = true;
-        if (needsOpen || rank != openRank) { Open(rank); dirty = true; }
+        if (rank != openRank) { Open(rank); dirty = true; }
+        else if (needsOpen) { needsOpen = false; dirty = true; }     // the same rank reopens without re-reading the timeline
         if (dirty) { SetWidth(friendly, cur, max); dirty = false; }
         node.Position = UiScale.StagePoint(screen, u);   // SetPositionFloat (uihpbar.cpp:171, 480, 618)
     }
@@ -66,7 +67,7 @@ public sealed class HpBarClip
     {
         needsOpen = false; openRank = rank;
         gauge?.QueueFree(); gauge = null; gaugeFriendly = null;    // the frame may name another gauge symbol
-        node.GotoLabel("_rank" + rank);
+        node.GotoLabel(RankLabel(rank));
         var guide = node.Children.FirstOrDefault(c => c.Name == "m_guideHp" && node.Frame >= c.First && node.Frame <= c.Last);
         var bounds = guide?.Def?["id"] is { } id && node.Scope.Symbol((int)id)?["bounds"] is { } b ? UiBuilder.Rc(b) : new Rect2(0, 0, 58, 5);
         var m = guide == null ? Transform2D.Identity : PlacedAt(guide.Def, node.Frame);
@@ -78,6 +79,9 @@ public sealed class HpBarClip
         foreach (var c in node.Children)                                     // configUI hides the guide; the gauge is drawn below
             if (c.Name is "m_guideHp" or "m_renderHp") c.Node.Visible = false;
     }
+
+    static readonly string[] rankLabels = new string[16];
+    static string RankLabel(int rank) => (uint)rank < rankLabels.Length ? rankLabels[rank] ??= "_rank" + rank : "_rank" + rank;
 
     /// <summary>An instance's placement matrix at a frame, from the timeline (a 9-slice instance's node is built at scale 1).</summary>
     static Transform2D PlacedAt(System.Text.Json.Nodes.JsonObject def, int frame)

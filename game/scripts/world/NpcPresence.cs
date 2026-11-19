@@ -167,13 +167,8 @@ public sealed partial class NpcPresence : CanvasLayer
             if (n.Row.HpBar && barMovie != null)
             {
                 bars[n] = new NpcHpBar(n, barMovie, u, this, pool: barPool);
-                // the anchor's row and model node are looked up once (UIHudEntity::Entity caches its node, m_20);
-                // a row with another parent keeps the full walk
-                var modelNode = n.Body?.GetNodeOrNull<Node3D>("Model");
-                var effUi = modelNode != null ? EffectDummyTable.Find(n.Row.EffectDummies, "Eff_UI") : null;
-                barAnchor[n] = effUi != null && effUi.ParentNode == "Scene Root"
-                    ? (Func<Vector3>)(() => DummyAnchor.Point(effUi, modelNode, "Scene Root") ?? n.Root.GlobalPosition)
-                    : () => Dummy(n, "Eff_UI") ?? n.Root.GlobalPosition;
+                // the point is memoized per model while the npc stands still (DummyMemo)
+                barAnchor[n] = () => Dummy(n, "Eff_UI") ?? n.Root.GlobalPosition;
             }
         Npcs = npcs.ToList();
     }

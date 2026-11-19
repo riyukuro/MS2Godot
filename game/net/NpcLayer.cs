@@ -149,12 +149,10 @@ public sealed class NpcLayer
         i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
         if (Bars != null)
         {
-            // the anchor's row and model node are looked up once (UIHudEntity::Entity caches its anchor node, m_20);
-            // a row with another parent keeps the full walk
-            var modelNode = i.Placeholder ? null : i.Visual?.GetNodeOrNull<Node3D>("Model");
-            var effUi = modelNode != null ? Ms2.Formats.World.EffectDummyTable.Find(row.EffectDummies, "Eff_UI") : null;
-            Func<Godot.Vector3> anchor = effUi != null && effUi.ParentNode == "Scene Root"
-                ? () => World.DummyAnchor.Point(effUi, modelNode, "Scene Root") ?? root.GlobalPosition
+            // the point is memoized per model while the npc stands still (DummyMemo, as the name tag's anchor)
+            var modelNode = i.Placeholder ? null : i.Visual?.GetNodeOrNull<Node3D>(ModelPath);
+            Func<Godot.Vector3> anchor = modelNode != null
+                ? () => World.DummyAnchor.Point(row.EffectDummies, "Eff_UI", modelNode, "Scene Root") ?? root.GlobalPosition
                 : () => World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition;
             // CNpc::vfunc_80: the row's hpBar flag makes the entity (hidden until active and shown); CNpc::vfunc_12's
             // property tag 2 row is shown and filled from the spawn stat
@@ -170,6 +168,8 @@ public sealed class NpcLayer
         inst[n.ObjectId] = i;
         Spawned++;
     }
+
+    static readonly NodePath ModelPath = "Model";
 
     public void Remove(int id, bool dead)
     {
@@ -213,7 +213,7 @@ public sealed class NpcLayer
         if (seq != null) Play(i, seq.Id);
     }
 
-    /// <summary>PCBase::vfunc_112 on an npc (CNpc::vfunc_112 @0x141090820 returns early for a dead npc whose corpse is
+    /// <summary>PCBase::vfunc_112 on an npc (CNpc::vfunc_112 @0x141090740 returns early for a dead npc whose corpse is
     /// hittable): a hit sets the shown flag only while it is off, and only for the local player's. A dead npc's bar never
     /// draws either way.</summary>
     public void Damaged(int id, bool byLocalPlayer)
@@ -222,7 +222,9 @@ public sealed class NpcLayer
     }
 
     /// <summary>CNpc::vfunc_66 (@0x1410935b0): the emotion changed to battle, so a living npc's bar is made active with
-    /// its current stat pair (UpdateHpBar = FUN_141992180); a living-out change does nothing to it.</summary>
+    /// its current stat pair (UpdateHpBar = FUN_141992180); a living-out change does nothing to it.
+    /// STILL-OPEN: the client also sets the npc's emotion from its states (StateSkill SetEmotion(1) for a battle skill,
+    /// stateskill.cpp:432; the idle states 0, stateidle.cpp:388), which this follows only through the sync bit.</summary>
     public void Stance(int id, bool battle)
     {
         if (!battle || !inst.TryGetValue(id, out var i) || i.Dead || i.Bar == null) return;
@@ -242,7 +244,7 @@ public sealed class NpcLayer
         {
             i.Dead = true; Deaths++;
             Tags?.Died(i.Root);
-            if (i.Bar != null) i.Bar.Dead = true;      // vfunc_8: a dead npc's bar drops
+            if (i.Bar != null) { i.Bar.Dead = true; Bars?.Remove(i.Root); }      // vfunc_8: a dead npc's bar drops for good; its entry and clip go back to the pool
             var dead = table.Find(i.NpcId)?.SoundDead;
             if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
             if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }

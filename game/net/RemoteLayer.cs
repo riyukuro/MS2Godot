@@ -175,12 +175,13 @@ public sealed partial class RemoteLayer : Node3D
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
                     break;
                 case SkillDamageEvent dmg:
-                    // FUN_141671c20: only a record the skill's damage flag set reaches vfunc_112, and only with an entry
-                    // (a miss or a block carries none); the target's own sight-range check drops out-of-sight hits
+                    // FUN_141671c20 (pcbase.cpp:3922) calls vfunc_112 whenever the target has an entry, a miss (type 2) too
+                    // (AddDamage keeps every pair, skillrecord.cpp:554) and whatever the total; the skill's HasDamage
+                    // (skillattackdata.cpp:384) is the real gate and is not read here (STILL-OPEN)
                     bool byLocal = dmg.Damage.OwnerId == Tracker.SelfObjectId;
                     foreach (var t in dmg.Damage.Targets)
                     {
-                        if (!t.Hits.Any(h => h.Damage > 0)) continue;
+                        if (t.Hits.Length == 0) continue;
                         npcs.Damaged(t.TargetId, byLocal);
                         // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                         if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);

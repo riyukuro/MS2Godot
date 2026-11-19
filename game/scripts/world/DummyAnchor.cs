@@ -56,15 +56,4 @@ public static class DummyAnchor
     }
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, DummyMemo> memos = new();
-    /// <summary>
-    /// The world point of a row and model node looked up once per actor (the client caches its anchor node the same way,
-    /// UIHudEntity::Entity keeps the looked-up node in m_20), with the row's parent the model's root as the npc and pc
-    /// tables place their Eff_UI; the full walk above stays for a row with another parent.
-    /// </summary>
-    public static Vector3? Point(EffectDummy row, Node3D model, string rootName)
-    {
-        if (row == null || model == null) return null;
-        var root = ClientWorld(model);
-        return DummyWorld.Resolve(row, root, root.R) is { } w ? FieldBuilder.ToGodotPoint(w.T) : (Vector3?)null;
-    }
 }
