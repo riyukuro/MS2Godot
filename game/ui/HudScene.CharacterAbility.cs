@@ -37,7 +37,8 @@ public partial class HudScene
     /// <summary>
     /// The dialog's C++ side and its listeners, at the HUD's build: the level change (NotifyChangeMyLevel, the dialog's
     /// OnChangeMyLevel and the game menu's vfunc_oa0_9) and, live, the CharacterAbility packets: a load rebuilds the open
-    /// dialog's table, a learn plays its LearnAbility (both also redo the game menu's mark, FUN_141938850).
+    /// dialog's table, a learn plays its LearnAbility (both also redo the game menu's mark, FUN_141938850); a rewarded
+    /// quest runs the game menu's vfunc_o178_2.
     /// </summary>
     void CharacterAbility()
     {
@@ -78,12 +79,7 @@ public partial class HudScene
                 characterAbilityMovie = null;
             };
         }
-        if (gameMenu != null)
-        {
-            gameMenu.AbilityTable = table;
-            gameMenu.Abilities = abilities;
-            gameMenu.IsQuestRewarded = rewarded;
-        }
+        gameMenu?.SetCharacterAbility(table, abilities, rewarded);   // the game menu is built first: its mark is redone
         Action<StatusEvent> onStatus = e =>
         {
             if (e != StatusEvent.Level) return;
@@ -93,17 +89,25 @@ public partial class HudScene
         hudModel.Changed += onStatus;
         Action<Ms2.Net.Packets.CharacterAbilityMessage> onPacket = m =>
         {
-            // the dialog's methods need its movie (m_30), which only an open dialog has here
-            if (m is Ms2.Net.Packets.CharacterAbilityMessage.Loaded) { if (CharacterAbilityOpen) characterAbility.BuildAbilityTable(); }
-            else if (m is Ms2.Net.Packets.CharacterAbilityMessage.Learned l && table.GetAbility(l.Id) is { } a && CharacterAbilityOpen)
+            // the client tests only the dialog's movie (m_30): here it is there from open until OnEndClose
+            if (m is Ms2.Net.Packets.CharacterAbilityMessage.Loaded) { if (characterAbilityMovie != null) characterAbility.BuildAbilityTable(); }
+            else if (m is Ms2.Net.Packets.CharacterAbilityMessage.Learned l && table.GetAbility(l.Id) is { } a && characterAbilityMovie != null)
                 characterAbility.OnAbilityLearned(a);
             gameMenu?.UpdateCharacterAbilityNotify();
         };
         if (live != null) live.CharacterAbilityReceived += onPacket;
+        // the game menu's UIQuestEventListener slot 2 (vfunc_o178_2): UIQuestEventDispatcher::vfunc_2 (@0x141aa8a30) sends a
+        // rewarded quest of type 3, 4, 5, 7 or 10 to slots 8 to 12 instead
+        Action<int> onRewarded = id =>
+        {
+            if (AbilityQuestTable().Quest(id)?.Type is 3 or 4 or 5 or 7 or 10) return;
+            gameMenu?.OnQuestRewarded(id);
+        };
+        if (live != null) live.Quests.Rewarded += onRewarded;
         unwatchCharacterAbility = () =>
         {
             hudModel.Changed -= onStatus;
-            if (live != null) live.CharacterAbilityReceived -= onPacket;
+            if (live != null) { live.CharacterAbilityReceived -= onPacket; live.Quests.Rewarded -= onRewarded; }
         };
     }
 

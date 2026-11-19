@@ -162,10 +162,12 @@ public sealed class GameMenuController : UiController
         return Rt.IsNullish(entry) ? null : Host.Invoke(entry, "getChildByName", "m_button") is { } b && !Rt.IsNullish(b) ? b : null;
     }
 
-    /// <summary>FUN_141938ae0 (@0x141938ae0)'s tail: setNotifyCount(the entry's name, count) on its top entry's button. The
-    /// character ability's (0x4f0c) count is <paramref name="value"/> itself (it is not kept: RefreshMenu sends 0).</summary>
+    /// <summary>FUN_141938ae0 (@0x141938ae0): nothing without a local player; else setNotifyCount(the entry's name, count) on
+    /// its top entry's button. The character ability's (0x4f0c) count is <paramref name="value"/> itself (it is not kept:
+    /// RefreshMenu sends 0).</summary>
     public void UpdateNotifyCount(int uiId, int value = 0)
     {
+        if (!Model.HasLocalPlayer) return;              // pPc == NULL (uigamemenudialog.cpp:1317-1319)
         if (Host?.Entity == null || Table == null) return;
         int count = uiId == CharacterAbilityUiId ? value : NotifyCount(uiId);
         int id = Table.FindIdByUiId(uiId);
@@ -210,6 +212,26 @@ public sealed class GameMenuController : UiController
     {
         UpdateCharacterAbilityNotify();
         UpdateNotifyCount(0x4f18);
+    }
+
+    /// <summary>vfunc_o178_2 @0x1419376a0 (uigamemenudialog.cpp:996-1004), a rewarded quest (the quest event dispatcher's
+    /// vfunc_2, OnQuest mode 4, for a quest whose type has no slot of its own): the learning quest count and, for the
+    /// constant's quest (CharacterAbilityOpenQuestID), the character ability mark.
+    /// STILL-OPEN: its UpdateQuestMenu (the quest button) and FUN_141938100 are not ported.</summary>
+    public void OnQuestRewarded(int questId)
+    {
+        UpdateNotifyCount(0x4f18);
+        if (questId == (int)Model.Tables.CharacterAbilityOpenQuestID) UpdateCharacterAbilityNotify();
+    }
+
+    /// <summary>The character ability state the mark reads, set after the menu was built (the HUD makes the game menu
+    /// first): RefreshMenu ran FUN_141938850 without it, so the mark is redone with it.</summary>
+    public void SetCharacterAbility(CharacterAbilityTable table, CharacterAbilityData abilities, Func<int, bool> isQuestRewarded)
+    {
+        AbilityTable = table;
+        Abilities = abilities;
+        IsQuestRewarded = isQuestRewarded;
+        UpdateCharacterAbilityNotify();
     }
 
     /// <summary>SetMenuEnable @0x141939770.</summary>

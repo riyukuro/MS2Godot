@@ -27,7 +27,7 @@ public class GameMenuTests
     static UiModel NewModel() => new(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f) };
     static bool FeatureOn(int id) => NewModel().IsFeatureEnabled(id);
 
-    static (UiHost, GameMenuController) Load()
+    static (UiHost, GameMenuController) Load(UiModel model = null)
     {
         var c = new GameMenuController { Table = GameMenuTable.Load(Packs(), FeatureOn) };
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
@@ -38,7 +38,7 @@ public class GameMenuTests
                 if (xr.NodeType == System.Xml.XmlNodeType.Element && xr.Name == "key" && xr.GetAttribute("id") is { } id && xr.GetAttribute("value") is { } v)
                     strs[id] = v.Replace("\\n", "\n");
         p.Translate = k => strs.TryGetValue(k, out var t) ? t : k;
-        var h = new UiHost(p, c, NewModel());
+        var h = new UiHost(p, c, model ?? NewModel());
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 30; i++) p.Tick();
         foreach (var e in rt.Errors) TestContext.WriteLine("  error: " + e);
@@ -103,5 +103,71 @@ public class GameMenuTests
         Assert.That(c.OnCallback("ugcshop_event", Array.Empty<object>()), Is.True);
         Assert.That(action?.Id, Is.EqualTo(15));
         Assert.That(c.OnCallback("nosuchentry", Array.Empty<object>()), Is.False);
+    }
+
+    /// <summary>Entry 0x14's (characterability) m_notifyUp on its top entry's button.</summary>
+    static bool AbilityUp(UiHost h, GameMenuController c)
+    {
+        var t = c.Table;
+        string top = t.Find(t.FindTopId(0x14)).Name;
+        var button = h.Invoke(h.Invoke(h.Child("m_menus"), "getChildByName", top), "getChildByName", "m_button");
+        return Rt.ToBoolean(h.Get(h.Get(button, "m_notifyUp"), "visible"));
+    }
+
+    static UiModel LevelSixty()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        m.Player.Level = 60;
+        return m;
+    }
+
+    static CharacterAbilityTable OneAbility() => CharacterAbilityTable.Load(
+        System.Xml.Linq.XDocument.Parse("<ms2><category id='1' name='a' tooltip='b'/></ms2>"),
+        System.Xml.Linq.XDocument.Parse("<ms2><ability id='10' categoryID='1' requireLevel='50'/></ms2>"), _ => true, k => k);
+
+    [Test]
+    public void AbilityStateSetAfterTheBuildRaisesTheMark()
+    {
+        var model = LevelSixty();
+        var (h, c) = Load(model);
+        Assert.That(AbilityUp(h, c), Is.False, "built without the ability state");
+        int quest = (int)model.Tables.CharacterAbilityOpenQuestID;
+        c.SetCharacterAbility(OneAbility(), new CharacterAbilityData(), id => id == quest);
+        Assert.That(AbilityUp(h, c), Is.True);
+        var learned = new CharacterAbilityData();
+        learned.Ids.Add(10);
+        c.SetCharacterAbility(OneAbility(), learned, id => id == quest);
+        Assert.That(AbilityUp(h, c), Is.False, "every ability learned");
+    }
+
+    [Test]
+    public void TheOpenQuestsRewardRaisesTheMark()
+    {
+        var model = LevelSixty();
+        var (h, c) = Load(model);
+        int quest = (int)model.Tables.CharacterAbilityOpenQuestID;
+        var rewarded = new HashSet<int>();
+        c.SetCharacterAbility(OneAbility(), new CharacterAbilityData(), rewarded.Contains);
+        Assert.That(AbilityUp(h, c), Is.False);
+        rewarded.Add(quest);
+        c.OnQuestRewarded(quest + 1);
+        Assert.That(AbilityUp(h, c), Is.False, "another quest's reward leaves the mark");
+        c.OnQuestRewarded(quest);
+        Assert.That(AbilityUp(h, c), Is.True);
+    }
+
+    [Test]
+    public void TheRewardRecountsTheLearningQuestOnlyWithALocalPlayer()
+    {
+        var model = NewModel();
+        var (h, c) = Load(model);
+        var asked = new List<int>();
+        c.NotifyCount = id => { asked.Add(id); return 0; };
+        c.OnQuestRewarded(1);
+        Assert.That(asked, Is.Empty, "no local player");
+        model.HasLocalPlayer = true;
+        c.OnQuestRewarded(1);
+        Assert.That(asked, Is.EqualTo(new[] { 0x4f18 }));
     }
 }

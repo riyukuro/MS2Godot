@@ -122,6 +122,10 @@ public sealed class QuestBook {
     public event Action<int> Started;
     /// <summary>After <see cref="Changed"/> for OnQuest mode 3 on a known quest (its progress): UIQuestEventListener slot 3.</summary>
     public event Action<int> ProgressUpdated;
+    /// <summary>After <see cref="Changed"/> for OnQuest mode 4 on a known quest (its reward, questmanager_2.cpp:1035-1044):
+    /// UIQuestEventDispatcher::vfunc_2 (@0x141aa8a30), which calls UIQuestEventListener slot 2 for the quest types without a
+    /// slot of their own.</summary>
+    public event Action<int> Rewarded;
 
     /// <summary>Per-quest table data the client reads from the quest XML: basic questType, basic repeatable, require groupID.</summary>
     public readonly record struct QuestInfoRow(int Type, int Repeatable, int GroupId);
@@ -138,7 +142,7 @@ public sealed class QuestBook {
                 if (quests.TryGetValue(x.Id, out var u)) { u.State = 1; u.Progress = x.Progress.ToArray(); Changed?.Invoke(x.Id); ProgressUpdated?.Invoke(x.Id); }   // an unknown id returns early in OnQuest
                 break;
             case QuestMessage.Complete x:
-                if (quests.TryGetValue(x.Id, out var c)) { c.State = 2; c.CompletionCount = x.CompletionCount; c.CompleteTime = x.CompleteTime; Changed?.Invoke(x.Id); }
+                if (quests.TryGetValue(x.Id, out var c)) { c.State = 2; c.CompletionCount = x.CompletionCount; c.CompleteTime = x.CompleteTime; Changed?.Invoke(x.Id); Rewarded?.Invoke(x.Id); }
                 break;
             case QuestMessage.Result x: if (x.ResultCode == 0 && quests.Remove(x.Id)) Changed?.Invoke(x.Id); break;
             case QuestMessage.Abandon x: if (quests.Remove(x.Id)) Changed?.Invoke(x.Id); break;
