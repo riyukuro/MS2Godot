@@ -58,7 +58,7 @@ The field load keeps its all-thread bytes and collections checked. They are the 
 
 ## Limits (`PerfGate baseline`)
 
-The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A count's limit is the baseline max plus the larger of two amounts: the spread the baseline runs showed, or a floor. The floors are:
+The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A count's limit is the baseline max plus the spread the baseline runs showed plus a floor, so no limit is closer to the max than its floor. The floors are:
 
 | Kind | Floor |
 |---|---|
@@ -69,7 +69,7 @@ The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A coun
 | kept objects: first opens, and each dialog's first repeat (`open.<dialog>.repeat1.kept_objects`) | 3% or 64 |
 | kept objects: the later repeats (`open.<dialog>.repeat.kept_objects`) | 3% or 16 |
 | JIT methods (main thread) | 2% or 8 |
-| collections | 1 |
+| collections | 2 |
 
 The noise behind the floors comes from the baseline's 10 runs (26 sessions) of the same tree on a loaded machine:
 
@@ -79,7 +79,7 @@ The noise behind the floors comes from the baseline's 10 runs (26 sessions) of t
 - **Kept objects:** first opens and first repeats are exact in every run. The later repeats move by up to 8, except shop's (−14 to 45). Skill's first repeat keeps 830 objects: that is a field NPC's emoticon balloon, which a gate session times from a fixed seed (`NpcEmoticons`), so it falls in that window every run. With the tick-count seed it fell in a random window (options' repeats moved by up to 129). Leaks the size of worldmap's first open (1,978 kept) fail either way.
 - **Collections:** most are exact. The checked ones move by up to 3, and the field load by up to 8.
 
-Leave-one-out over those 10 runs (a baseline from 9, compare the 10th) passes 10 of 10. With the idle windows' floor at 2% or 1 KB it passed 9 of 10: one install session's three-dialog window, at 167 KB a frame, was 1.7% past the other nine's limit. That window is still the tightest, with 1.0% (1.6 KB a frame) to spare. The only tighter count is a field load's gen2 collections, at its limit of one over the max. Build a baseline from 10 runs, not fewer.
+Leave-one-out over those 10 runs (a baseline from 9, compare the 10th) passes 10 of 10. The tightest is one install session's three-dialog idle window: 167 KB a frame, 5.4 KB (3.2%) under the other nine's limit, two thirds of its 8 KB floor. With the floor inside the spread instead of on top of it, and the idle windows' floor at 2% or 1 KB, it passed 9 of 10. Build a baseline from 10 runs, not fewer.
 
 **Runtime:** about 120 s for `run.sh` and about 170 to 190 s for `--full` (setup about 30 s, then about 45 s per session). That excludes the build and any wait for a heavy slot.
 

@@ -124,8 +124,8 @@ static Dictionary<string, double[]> Metrics(JsonObject run) =>
 
 static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(); return a.Length == 0 ? 0 : a.Length % 2 == 1 ? a[a.Length / 2] : (a[a.Length / 2 - 1] + a[a.Length / 2]) / 2; }
 
-// The slack a count gets over the worst value the baseline runs saw: the spread they showed, at least a floor per
-// kind. tools/perfgate/README.md has the run-to-run noise the floors come from.
+// The slack a count gets over the worst value the baseline runs saw: the spread they showed plus a floor per kind, so
+// a limit is never closer to the max than its floor. tools/perfgate/README.md has the run-to-run noise the floors come from.
 static (double Rel, double Abs) CountTolerance(string name) =>
     name.EndsWith("bytes_per_frame") ? (0.05, 8192)   // the idle windows: ±10 KB a frame run to run
     : name.EndsWith("bytes") ? (0.02, 16384)
@@ -135,7 +135,7 @@ static (double Rel, double Abs) CountTolerance(string name) =>
     : name.EndsWith("kept_objects") ? (0.03, 64)   // first opens and the first repeat: options moves by ~100 between runs
     : name.EndsWith(".objects") || name.EndsWith(".nodes") ? (0.03, 16)
     : name.EndsWith("jit_methods") ? (0.02, 8)
-    : (0, 1);   // collections
+    : (0, 2);   // collections
 
 static JsonObject Baseline(List<JsonObject> runFiles)
 {
@@ -158,7 +158,7 @@ static JsonObject Baseline(List<JsonObject> runFiles)
         {
             double lo = all.Min(), hi = all.Max();
             var (rel, abs) = CountTolerance(name);
-            double slack = Math.Max(hi - lo, Math.Max(Math.Abs(hi) * rel, abs));
+            double slack = hi - lo + Math.Max(Math.Abs(hi) * rel, abs);   // the floor on top of the spread, never inside it
             outM[name] = new JsonObject { ["min"] = lo, ["max"] = hi, ["limit"] = Math.Ceiling(hi + slack) };
         }
     }
