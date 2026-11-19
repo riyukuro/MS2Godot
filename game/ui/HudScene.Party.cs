@@ -119,7 +119,7 @@ public partial class HudScene
             return partyNameChecker.CheckClubName(name, out var message) == 0 ? null : message;
         };
         if (partyLayer == null) AddChild(partyLayer = new CanvasLayer { Layer = 10 });
-        var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();
@@ -189,7 +189,7 @@ public partial class HudScene
             c.CloseCharacterInfo += () => { if (PcInfoOpen) pcInfo.Close(); };   // RequestCloseDialog(0x4ec8)
             c.ItemClicked += (id, t) => GD.Print($"popup menu: item {id} ({menuModel.Tables.PopupMenuName(id)}) for {t?.Name}: its handler is not ported");
             if (popupLayer == null) AddChild(popupLayer = new CanvasLayer { Layer = 11 });
-            var m = new MovieDialog(assets, c, menuModel ??= NewModel(), GetWindow().Size);
+            var m = new MovieDialog(assets, c, menuModel ??= NewModel(), ScreenMode.PixelSize(GetWindow()));
             popupMenu = c; popupMovie = m;
             popupLayer.AddChild(m);
         }

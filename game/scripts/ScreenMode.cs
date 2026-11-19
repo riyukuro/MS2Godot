@@ -153,6 +153,14 @@ public static class ScreenMode
         };
     }
 
+    /// <summary>
+    /// The size a scene in window pixels lays out at (<see cref="UseWindowPixels"/>): the emulated w x h in the Linux full
+    /// window, the window's own size otherwise. The client sizes every movie to the back buffer (GFxMovie::vfunc_7,
+    /// gfxmovie.cpp:146), which a full window's SetDisplayMode makes w x h (windowservice.cpp:293-334); the window's OS
+    /// size there is the screen's, so a movie laid out at it is wider than what is drawn and cut off at the right.
+    /// </summary>
+    public static Vector2I PixelSize(Window w) => w == Root && Emulated is { } e ? e : w.Size;
+
     static void SetPixels(Window w)
     {
         if (Emulated is { } e)

@@ -251,7 +251,7 @@ public partial class FieldContents : Node3D
         LoadingMovie cover;
         try
         {
-            cover = new LoadingMovie(Ui(packs), root.Size);
+            cover = new LoadingMovie(Ui(packs), ScreenMode.PixelSize(root));
             overlay.AddChild(cover);
         }
         catch (Exception ex) { GD.PushWarning("loading screen: " + ex.Message); carried = (overlay, null); return true; }
@@ -317,7 +317,7 @@ public partial class FieldContents : Node3D
         AddChild(overlay);
         try
         {
-            loading = new LoadingMovie(Ui(packs), GetTree().Root.Size);
+            loading = new LoadingMovie(Ui(packs), ScreenMode.PixelSize(GetTree().Root));
             overlay.AddChild(loading);
             loading.Controller.FadeInComplete += OnLoadingClosed;
         }

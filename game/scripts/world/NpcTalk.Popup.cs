@@ -122,7 +122,7 @@ public sealed partial class NpcTalk
         ui ??= new UiAssets(packs);
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the npc talk popup runs interpreted");
         if (popupLayer == null) AddChild(popupLayer = new CanvasLayer { Layer = 10, Name = "PopupNpcTalk" });
-        popupMovie = new MovieDialog(ui, popup, PopupModel(), GetWindow().Size);
+        popupMovie = new MovieDialog(ui, popup, PopupModel(), ScreenMode.PixelSize(GetWindow()));
         popupLayer.AddChild(popupMovie);
         GD.Print($"npc talk popup: quest {popup.Quest}");
     }

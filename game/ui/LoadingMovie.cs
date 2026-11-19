@@ -12,7 +12,9 @@ namespace Ms2Godot.Ui;
 /// stretch back on under it. Before, the stretch came on when the old scene left and off when the new one entered, in
 /// the same frame after this node's _Process had taken the stretched transform's inverse, so the frame drawn before the
 /// new scene's long first build showed the screen shrunk to the top-left (1/1.436 of a 1920 x 1034 window). It is still
-/// drawn through the inverse of the root's final transform, for a window whose stretch is on before the screen comes.
+/// drawn through the inverse of the root's final transform, for a window whose canvas_items stretch is on before the screen
+/// comes; not through the viewport stretch of the Linux full window, which scales the finished image (undoing it drew the
+/// screen at 1024 / 1440 of the screen's height, in the top left of the picture).
 /// A new window size gives the movie its new stage (<see cref="MovieDialog.Relayout"/>).
 /// </summary>
 public partial class LoadingMovie : Node2D
@@ -96,9 +98,12 @@ public partial class LoadingMovie : Node2D
     {
         var root = GetTree()?.Root;
         if (root == null || Dialog == null) return;
-        Transform = root.GetFinalTransform().AffineInverse();
-        if (root.Size == window) return;
-        window = root.Size;
+        // only the canvas_items stretch is drawn through the canvas; the viewport stretch (the Linux full window,
+        // ScreenMode.Emulated) renders at the content size and scales the finished image, so it is not undone here
+        Transform = root.ContentScaleMode == Window.ContentScaleModeEnum.CanvasItems ? root.GetFinalTransform().AffineInverse() : Transform2D.Identity;
+        var size = ScreenMode.PixelSize(root);
+        if (size == window) return;
+        window = size;
         Dialog.Relayout(window);
     }
 }

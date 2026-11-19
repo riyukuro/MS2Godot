@@ -104,7 +104,7 @@ public partial class HudScene
         }
         if (!blackMarket.CanOpen()) return;
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        blackMarketMovie = new MovieDialog(assets, blackMarket, hudModel, GetWindow().Size);
+        blackMarketMovie = new MovieDialog(assets, blackMarket, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"black market: load={blackMarketMovie.Loaded} in {sw.ElapsedMilliseconds} ms");
         uiRoot.AddChild(blackMarketMovie);
         if (blackMarketMovie.Loaded) blackMarket.Opened();

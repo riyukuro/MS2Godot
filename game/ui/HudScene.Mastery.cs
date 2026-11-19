@@ -139,7 +139,7 @@ public partial class HudScene
         if (mastery == null) Mastery();
         if (masteryMovie != null) { masteryMovie.Host.Unload(); masteryMovie.QueueFree(); masteryMovie = null; }
         mastery.CastingBar = CastingBar;
-        masteryMovie = new MovieDialog(assets, mastery, hudModel, GetWindow().Size);
+        masteryMovie = new MovieDialog(assets, mastery, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(masteryMovie);
     }
 }

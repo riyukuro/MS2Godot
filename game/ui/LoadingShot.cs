@@ -50,7 +50,7 @@ public partial class LoadingShot : Node
         }
         var layer = new CanvasLayer { Layer = 100 };
         AddChild(layer);
-        movie = new LoadingMovie(assets, GetWindow().Size);
+        movie = new LoadingMovie(assets, ScreenMode.PixelSize(GetWindow()));
         layer.AddChild(movie);
         GD.Print($"loading movie: load={movie.Dialog.Loaded}, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
         movie.Start(picture, screenShot != null ? LoadPng(screenShot) : null, tip, guide, frame);

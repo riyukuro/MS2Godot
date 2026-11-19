@@ -157,7 +157,7 @@ public partial class HudScene
             mail = c;
         }
         var t = System.Diagnostics.Stopwatch.StartNew();
-        mailMovie = new MovieDialog(assets, mail, hudModel, GetWindow().Size);
+        mailMovie = new MovieDialog(assets, mail, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"mail: load={mailMovie.Loaded} in {t.ElapsedMilliseconds} ms ({book.Mails.Count} mails)");
         uiRoot.AddChild(mailMovie);
     }

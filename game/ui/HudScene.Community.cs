@@ -145,7 +145,7 @@ public partial class HudScene
             community = c;
         }
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        communityMovie = new MovieDialog(assets, community, hudModel, GetWindow().Size);
+        communityMovie = new MovieDialog(assets, community, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"community: load={communityMovie.Loaded} in {sw.ElapsedMilliseconds} ms ({book.Count} entries)");
         uiRoot.AddChild(communityMovie);
     }
@@ -178,7 +178,7 @@ public partial class HudScene
         if (GuideRefusesOpen("CommunityQueryDialog")) return;
         if (CommunityQueryOpen) return;
         if (communityQueryMovie != null) { communityQueryMovie.Host.Unload(); communityQueryMovie.QueueFree(); communityQueryMovie = null; }
-        communityQueryMovie = new MovieDialog(assets, communityQuery, hudModel, GetWindow().Size);
+        communityQueryMovie = new MovieDialog(assets, communityQuery, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"community: query load={communityQueryMovie.Loaded} (mode {communityQuery.Mode})");
         uiRoot.AddChild(communityQueryMovie);
     }

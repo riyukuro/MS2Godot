@@ -109,7 +109,7 @@ public partial class HudScene
             c.Unloaded += () => { guildMovie?.Host.Unload(); guildMovie?.QueueFree(); guildMovie = null; };
             guild = c;
         }
-        guildMovie = new MovieDialog(assets, guild, hudModel, GetWindow().Size);
+        guildMovie = new MovieDialog(assets, guild, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"guild: load={guildMovie.Loaded} (in guild {book.InGuild})");
         uiRoot.AddChild(guildMovie);
     }

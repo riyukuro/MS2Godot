@@ -123,7 +123,7 @@ public partial class HudScene
         };
         trade = c;
         var t = System.Diagnostics.Stopwatch.StartNew();
-        tradeMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        tradeMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"trade: load={tradeMovie.Loaded} in {t.ElapsedMilliseconds} ms with {live.Trades.PartnerName}");
         uiRoot.AddChild(tradeMovie);
         c.PlaceBesideInventory();

@@ -68,7 +68,7 @@ public partial class HudScene
         // GetProfileImagePath (@0x141336c90): FUN_141028be0(id, picture, 1)
         c.ProfileImagePath = pc => Ms2Godot.Net.ProfileImageService.Images.Path(pc.CharacterId, pc.Picture, true);
         BindBoxAnswers();
-        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();

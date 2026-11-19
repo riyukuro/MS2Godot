@@ -366,7 +366,7 @@ public sealed partial class NpcTalk : Node
         ui ??= new UiAssets(packs);
         tables ??= GameTables.Shared(packs, GameOptions.StringLanguage);
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the talk window runs interpreted");
-        var size = (Vector2)GetWindow().Size;
+        var size = (Vector2)ScreenMode.PixelSize(GetWindow());
         side = new TalkCinematicController
         {
             Talking = true,

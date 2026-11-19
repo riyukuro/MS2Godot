@@ -126,7 +126,7 @@ public partial class HudScene
             achieve = c;
         }
         var t = System.Diagnostics.Stopwatch.StartNew();
-        achieveMovie = new MovieDialog(assets, achieve, hudModel, GetWindow().Size);
+        achieveMovie = new MovieDialog(assets, achieve, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"trophy: load={achieveMovie.Loaded} in {t.ElapsedMilliseconds} ms");
         uiRoot.AddChild(achieveMovie);
     }

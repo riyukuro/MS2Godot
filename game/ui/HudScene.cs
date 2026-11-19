@@ -240,18 +240,18 @@ public partial class HudScene : Node, IUiStageHost
         hudLayer?.QueueFree();
         foreach (var n in worldUi) n.QueueFree();
         BuildHud();
-        if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(GetWindow().Size); }
-        foreach (var (m, _) in messengers) m.Relayout(GetWindow().Size);
-        groupMessenger?.Relayout(GetWindow().Size);
-        foreach (var (m, _) in groupWindows) m.Relayout(GetWindow().Size);
-        notice?.Relayout(GetWindow().Size);
-        questLog?.Relayout(GetWindow().Size);
-        worldMap?.Relayout(GetWindow().Size);
-        achieveMovie?.Relayout(GetWindow().Size);
-        systemMenuMovie?.Relayout(GetWindow().Size);
-        optionMovie?.Relayout(GetWindow().Size);       // GFxManager::ResizeMovies, then the dialog's alignment
-        partyMovie?.Relayout(GetWindow().Size);
-        popupMovie?.Relayout(GetWindow().Size);
+        if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(ScreenMode.PixelSize(GetWindow())); }
+        foreach (var (m, _) in messengers) m.Relayout(ScreenMode.PixelSize(GetWindow()));
+        groupMessenger?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        foreach (var (m, _) in groupWindows) m.Relayout(ScreenMode.PixelSize(GetWindow()));
+        notice?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        questLog?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        worldMap?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        achieveMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        systemMenuMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        optionMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));       // GFxManager::ResizeMovies, then the dialog's alignment
+        partyMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        popupMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
     }
 
     /// <summary>
@@ -320,7 +320,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void ScreenMask()
     {
-        if (screenMask != null) { screenMaskLayer.Offset = UiScale.MovieOrigin; screenMask.Relayout(GetWindow().Size); return; }
+        if (screenMask != null) { screenMaskLayer.Offset = UiScale.MovieOrigin; screenMask.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         if (worldLoadPending) return;       // unloaded by a field move: made again at the new field's load complete
         string bgMask = "";
         try { bgMask = FieldData.FindByXBlock(assets.Packs, xblock)?.BgMask ?? ""; } catch (Exception ex) { GD.PushWarning("screen mask field data: " + ex.Message); }
@@ -328,7 +328,7 @@ public partial class HudScene : Node, IUiStageHost
         screenMaskLayer = new CanvasLayer { Layer = 9, Offset = UiScale.MovieOrigin };
         MovieLayerHost.Bind(screenMaskLayer, Ms2.Ui.CommonDepth.ScreenMask);
         AddChild(screenMaskLayer);
-        screenMask = new MovieDialog(assets, new Ms2.Ui.Hud.ScreenMaskController(bgMask), hudModel, GetWindow().Size);
+        screenMask = new MovieDialog(assets, new Ms2.Ui.Hud.ScreenMaskController(bgMask), hudModel, ScreenMode.PixelSize(GetWindow()));
         screenMaskLayer.AddChild(screenMask);
     }
 
@@ -392,7 +392,7 @@ public partial class HudScene : Node, IUiStageHost
         c.Leave += t => GD.Print($"system menu: leave field (map type {t}): OnLeaveFieldClick is not ported");
         c.OpenGameOption += OpenGameOption;
         if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
-        var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();
@@ -478,7 +478,7 @@ public partial class HudScene : Node, IUiStageHost
         if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
         var c = new GameOptionController { Dialog = optionDialog };
         optionHost.Movie = c;
-        var m = new MovieDialog(assets, c, menuModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();
@@ -544,7 +544,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void UpperHud(Control ui)
     {
-        if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(GetWindow().Size); return; }
+        if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         var model = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
         if (GatePath != null) model.ServerTime = () => GateClock;   // the perf gate: no minute change mid-run
         model.Features.Clear();
@@ -568,7 +568,7 @@ public partial class HudScene : Node, IUiStageHost
         upperHudSide = new Ms2.Ui.Hud.UpperHudController();
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHudSide.ToggleFishingBook += ToggleFishingBook;
-        upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
+        upperHud = new MovieDialog(assets, upperHudSide, model, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(upperHud);
         WatchLivePlayer(model);     // live, the mesos of ServerEnter and the Meso packets (status event 8)
     }
@@ -576,9 +576,9 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>The target HP bar (UIUpperHpBar, uiupperhpbar.cpp), run by its movie; kept across relayouts.</summary>
     void TargetHpBar(Control ui)
     {
-        if (targetBar != null) { ui.AddChild(targetBar); targetBar.Relayout(GetWindow().Size); return; }
+        if (targetBar != null) { ui.AddChild(targetBar); targetBar.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         TargetBar = new Ms2.Ui.Hud.UpperHpBarController();
-        targetBar = new MovieDialog(assets, TargetBar, NewModel(), GetWindow().Size);
+        targetBar = new MovieDialog(assets, TargetBar, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(targetBar);
     }
 
@@ -588,9 +588,9 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void CastingGauge(Control ui)
     {
-        if (castingBar != null) { ui.AddChild(castingBar); castingBar.Relayout(GetWindow().Size); return; }
+        if (castingBar != null) { ui.AddChild(castingBar); castingBar.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         CastingBar = new Ms2.Ui.Hud.CastingBarController();
-        castingBar = new MovieDialog(assets, CastingBar, NewModel(), GetWindow().Size);
+        castingBar = new MovieDialog(assets, CastingBar, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(castingBar);
     }
 
@@ -601,7 +601,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void GuideEventPane(Control ui)
     {
-        if (guideEvent != null) { ui.AddChild(guideEvent); guideEvent.Relayout(GetWindow().Size); return; }
+        if (guideEvent != null) { ui.AddChild(guideEvent); guideEvent.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         GuideEvent = new Ms2.Ui.Hud.GuideEventController
         {
             NowMs = () => (uint)Time.GetTicksMsec(),
@@ -622,7 +622,7 @@ public partial class HudScene : Node, IUiStageHost
             InventoryOf = GuideInventoryOf,
             InventoryTabOf = GuideInventoryTabOf,
         };
-        guideEvent = new MovieDialog(assets, GuideEvent, NewModel(), GetWindow().Size);
+        guideEvent = new MovieDialog(assets, GuideEvent, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(guideEvent);
         if (Ms2Godot.Net.LiveSession.Instance is { } live)
         {
@@ -765,7 +765,7 @@ public partial class HudScene : Node, IUiStageHost
     void SystemTextLines(Control ui)
     {
         ui.AddChild(systemTextSlot = new Control { Name = "uisystemtext", MouseFilter = Control.MouseFilterEnum.Ignore });
-        if (systemText != null) { systemTextSlot.AddChild(systemText); systemText.Relayout(GetWindow().Size); return; }
+        if (systemText != null) { systemTextSlot.AddChild(systemText); systemText.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         if (SystemText != null) return;     // unloaded by a field move: loaded again at the new field's load complete
         SystemText = new Ms2.Ui.Hud.SystemTextController { UpperHpBar = TargetBar, TickMs = () => (uint)Time.GetTicksMsec() };
         // STILL-OPEN: PlaySystemSound (the emergency line's "emergency_notice"): this HUD has no system sound player
@@ -795,7 +795,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>UISystemText::vfunc_2 (via UIHeadUpDisplay): its movie loads; OnLoadComplete replays a parked line.</summary>
     void LoadSystemText()
     {
-        systemText = new MovieDialog(assets, SystemText, NewModel(), GetWindow().Size);
+        systemText = new MovieDialog(assets, SystemText, NewModel(), ScreenMode.PixelSize(GetWindow()));
         systemTextSlot.AddChild(systemText);
     }
 
@@ -928,7 +928,7 @@ public partial class HudScene : Node, IUiStageHost
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
-        minimap = new MovieDialog(assets, c, model, GetWindow().Size);
+        minimap = new MovieDialog(assets, c, model, ScreenMode.PixelSize(GetWindow()));
         minimapSlot.AddChild(minimap);
     }
 
@@ -998,7 +998,7 @@ public partial class HudScene : Node, IUiStageHost
     void NoticeTab(Control ui, ClientConstants constants)
     {
         if (string.IsNullOrEmpty(constants.String("NoticeDialogUrl", ""))) return;
-        notice ??= new MovieDialog(assets, new NoticeDialogController(), hudModel, GetWindow().Size);
+        notice ??= new MovieDialog(assets, new NoticeDialogController(), hudModel, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(notice);
     }
 
@@ -1172,7 +1172,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void Chat(Control ui)
     {
-        var window = GetWindow().Size;
+        var window = ScreenMode.PixelSize(GetWindow());
         if (messengers.Count == 0)
         {
             ChatLog.Model = hudModel;
@@ -1215,7 +1215,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (GroupInviteOpen) { groupInvite.RefreshUserList(); return; }
         if (groupInviteMovie != null) { groupInviteMovie.Host.Unload(); groupInviteMovie.QueueFree(); groupInviteMovie = null; }
-        groupInviteMovie = new MovieDialog(assets, groupInvite, hudModel, GetWindow().Size);
+        groupInviteMovie = new MovieDialog(assets, groupInvite, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"groupchat: invite dialog load={groupInviteMovie.Loaded} (chat {groupInvite.GroupId})");
         uiRoot.AddChild(groupInviteMovie);
     }
@@ -1262,7 +1262,7 @@ public partial class HudScene : Node, IUiStageHost
         };
         b.OpenWindow = w =>
         {
-            var m = new MovieDialog(assets, w, hudModel, GetWindow().Size);
+            var m = new MovieDialog(assets, w, hudModel, ScreenMode.PixelSize(GetWindow()));
             if (!m.Loaded) { m.QueueFree(); return false; }
             groupWindows.Add((m, w));
             w.Unloaded += () =>
@@ -1391,7 +1391,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void Quests(Control ui)
     {
-        if (questGuide != null) { ui.AddChild(questGuide); questGuide.Relayout(GetWindow().Size); return; }
+        if (questGuide != null) { ui.AddChild(questGuide); questGuide.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         var log = QuestLogSource();
         if (log == null) return;
         if (questState != null)
@@ -1428,7 +1428,7 @@ public partial class HudScene : Node, IUiStageHost
             MaxCount = (int)constants.Float("QuestGuideMaxCount", 40),
         };
         var model = NewModel();
-        questGuide = new MovieDialog(assets, questGuideSide, model, GetWindow().Size);
+        questGuide = new MovieDialog(assets, questGuideSide, model, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(questGuide);
     }
 
@@ -1483,7 +1483,7 @@ public partial class HudScene : Node, IUiStageHost
             questLogSide.Unloaded += () => { questLog?.Host.Unload(); questLog?.QueueFree(); questLog = null; };
         }
         var t = System.Diagnostics.Stopwatch.StartNew();
-        questLog = new MovieDialog(assets, questLogSide, questLogModel, GetWindow().Size);
+        questLog = new MovieDialog(assets, questLogSide, questLogModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"quest log: load={questLog.Loaded} in {t.ElapsedMilliseconds} ms, compiled bodies {Ms2.Avm2.GeneratedCode.Count}");
         uiRoot.AddChild(questLog);
     }
@@ -1546,7 +1546,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (eventWidgets != null)
         {
-            foreach (var w in eventWidgets) { ui.AddChild(w); w.Relayout(GetWindow().Size); }
+            foreach (var w in eventWidgets) { ui.AddChild(w); w.Relayout(ScreenMode.PixelSize(GetWindow())); }
             return;
         }
         eventWidgets = new List<MovieDialog>();
@@ -1556,7 +1556,7 @@ public partial class HudScene : Node, IUiStageHost
         foreach (var c in widgets)
         {
             if (!c.ShouldOpen()) continue;
-            var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+            var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
             c.Unloaded += () => { eventWidgets.Remove(m); m.Host.Unload(); m.QueueFree(); };
             eventWidgets.Add(m);
             ui.AddChild(m);
@@ -1621,7 +1621,7 @@ public partial class HudScene : Node, IUiStageHost
             };
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }
-        worldMap = new MovieDialog(assets, worldMapSide, model, GetWindow().Size);
+        worldMap = new MovieDialog(assets, worldMapSide, model, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(worldMap);
     }
 
@@ -1687,7 +1687,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         levelUpGuide.Table = questTable;
         levelUpGuide.State = log.State;
-        levelUpGuideMovie = new MovieDialog(assets, levelUpGuide, hudModel, GetWindow().Size);
+        levelUpGuideMovie = new MovieDialog(assets, levelUpGuide, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(levelUpGuideMovie);
     }
 
@@ -1741,7 +1741,7 @@ public partial class HudScene : Node, IUiStageHost
                 gameDictionaryMovie = null;
             };
         }
-        gameDictionaryMovie = new MovieDialog(assets, gameDictionary, hudModel, GetWindow().Size);
+        gameDictionaryMovie = new MovieDialog(assets, gameDictionary, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(gameDictionaryMovie);
     }
 
@@ -1822,7 +1822,7 @@ public partial class HudScene : Node, IUiStageHost
     void OpenLearningQuestMovie()
     {
         if (learningQuestMovie != null) { learningQuestMovie.Host.Unload(); learningQuestMovie.QueueFree(); learningQuestMovie = null; }
-        var m = learningQuestMovie = new MovieDialog(assets, learningQuest, hudModel, GetWindow().Size);
+        var m = learningQuestMovie = new MovieDialog(assets, learningQuest, hudModel, ScreenMode.PixelSize(GetWindow()));
         learningQuestVideo = new MovieVideo(m, assets.Packs, () =>
             m.Host.Child("m_video") is Ms2.Avm2.Flash.AsContainer video ? video.getChildByName("videoPlayer") : null);
         m.AddChild(learningQuestVideo);
@@ -1890,7 +1890,7 @@ public partial class HudScene : Node, IUiStageHost
                 adventureLevelMovie = null;
             };
         }
-        adventureLevelMovie = new MovieDialog(assets, adventureLevel, hudModel, GetWindow().Size);
+        adventureLevelMovie = new MovieDialog(assets, adventureLevel, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(adventureLevelMovie);
     }
 
@@ -2106,7 +2106,7 @@ public partial class HudScene : Node, IUiStageHost
     void PlayerInfo(Control ui)
     {
         var p = hudModel.Player;
-        var window = GetWindow().Size;
+        var window = ScreenMode.PixelSize(GetWindow());
         playerInfo = new Ms2.Ui.Hud.MainPlayerInfoController
         {
             SlotWorld = QuickSlotWorld,
@@ -2151,7 +2151,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchBuddies();
         WatchGuild();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
-        ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
+        ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
         foreach (var n in gameMenuMovie.GetChildren())
             if (n is As3View v) v.ImageLookup = url => url.StartsWith(face, StringComparison.OrdinalIgnoreCase) ? portrait?.Image : null;
@@ -2229,7 +2229,7 @@ public partial class HudScene : Node, IUiStageHost
         void EquipChanged() => c.MarkDirty((long)Time.GetTicksMsec());
         me.Changed += Changed; me.StatPoints.Changed += Changed; me.EquipChanged += EquipChanged;
         if (live != null) live.AchievesChanged += Changed;
-        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             me.Changed -= Changed; me.StatPoints.Changed -= Changed; me.EquipChanged -= EquipChanged;
@@ -2320,7 +2320,7 @@ public partial class HudScene : Node, IUiStageHost
         if (uploadDialogMovie != null) { uploadDialogMovie.Host.Unload(); uploadDialogMovie.QueueFree(); uploadDialogMovie = null; }
         var c = new Ms2.Ui.Hud.UgcImageUploadController(Ugc());
         BindBoxAnswers();
-        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();
@@ -2569,7 +2569,7 @@ public partial class HudScene : Node, IUiStageHost
         c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
         c.NoticeText += SystemNoticeText;
         BindBoxAnswers();
-        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();
@@ -2742,7 +2742,7 @@ public partial class HudScene : Node, IUiStageHost
         c.Request += (name, _) => GD.Print($"shop: {name} is not sent (display only)");
         c.OpenDialog += id => GD.Print($"shop: dialog 0x{id:x} is not in this HUD");
         c.ReadShopInfo(info);
-        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.ReadProducts(products);
         // the movie goes when the close tween ends (OnEndClose -> Unload), as the other dialogs' movies do
         c.Unloaded += () =>
@@ -2859,7 +2859,7 @@ public partial class HudScene : Node, IUiStageHost
             live.SkillPointsChanged += onPoints;
         }
         else c.RequestTree += () => Callable.From(() => c.OnSkillBookTree(UiFixture.NoSkillTabs())).CallDeferred();
-        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             hudModel.Changed -= onStatus;

@@ -55,7 +55,7 @@ public partial class HudScene
     {
         if (fishingBook == null) FishingBookSide();
         if (fishingBookMovie != null) { fishingBookMovie.Host.Unload(); fishingBookMovie.QueueFree(); fishingBookMovie = null; }
-        fishingBookMovie = new MovieDialog(assets, fishingBook, hudModel, GetWindow().Size);
+        fishingBookMovie = new MovieDialog(assets, fishingBook, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(fishingBookMovie);
     }
 }
