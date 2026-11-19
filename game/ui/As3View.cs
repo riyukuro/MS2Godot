@@ -718,6 +718,10 @@ public partial class As3View : Node2D
         if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
+    /// <summary>When set and false, keys pass this movie by to the views under it (the idle message box,
+    /// <see cref="MessageBoxLayer"/>); null takes them always.</summary>
+    public Func<bool> TakesKeys;
+
     public override void _UnhandledInput(InputEvent ev)
     {
         // under a field move's loading screen the scene's movies (the HUD, the field's) take no mouse (Ms2.Ui.FieldMoveCover);
@@ -751,6 +755,7 @@ public partial class As3View : Node2D
             }
             case InputEventKey k:
             {
+                if (TakesKeys?.Invoke() == false) return;
                 uint code = FlashKeyCode(k.Keycode);
                 if (code == 0 && k.Unicode == 0) return;
                 Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);

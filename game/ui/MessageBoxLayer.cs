@@ -51,6 +51,10 @@ public partial class MessageBoxLayer : CanvasLayer
         controller.UnportedTag += (b, t) => GD.Print($"message box: button {b} of tag {t}: its handler is not ported");
         movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), ScreenMode.PixelSize(root));
         AddChild(movie);
+        // UIMessageBox::vfunc_13 @0x1419f7560 (uimessagebox.cpp:435) returns 0 with no box shown (FUN_1419f8270: m_count == 0),
+        // and the typed characters (WM_CHAR, gfxmovieeventhandler.cpp:257) go to the focused field of the scene's dialog: the
+        // idle layer, the root's last child, lets every key by
+        if (movie.GetChildren().OfType<As3View>().FirstOrDefault() is { } view) view.TakesKeys = () => Shown;
         MessageBoxQueue.Layer = controller;
     }
 

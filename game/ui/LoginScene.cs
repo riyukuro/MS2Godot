@@ -177,19 +177,14 @@ public partial class LoginScene : Control
         frames++;
         if (frames == 90) Save("login_default.png");
         if (frames == 91 && typeId != null)
-            foreach (var ch in typeId)
-            {
-                // typed into the id field initData focused
-                dialog.Player.Key(0, ch, true);
-                dialog.Player.Key(0, 0, false);
-            }
+            Type(typeId);            // into the id field initData focused
         if (frames == 120 && typeId != null)
         {
             Save("login_id_typed.png");
             Controller.TabKey();                 // to the password field (its TextField takes the focus when it draws)
         }
         if (frames == 125 && typeId != null)
-            foreach (var ch in "secret") { dialog.Player.Key(0, ch, true); dialog.Player.Key(0, 0, false); }
+            Type("secret");
         if (frames == 135 && typeId != null)
         {
             // a click on the Login button (window pixels)
@@ -205,6 +200,18 @@ public partial class LoginScene : Control
             else GetWindow().Size = resizeTo.Value;          // the window resized after the scene is up
         }
         if (frames == 170) { Save($"login_resized_{resizeTo?.X}x{resizeTo?.Y}.png"); GetTree().Quit(); }
+    }
+
+    /// <summary>Keys as the window sends them: each character's key event (keycode and unicode) down and up through the
+    /// engine's input, the path a keyboard takes.</summary>
+    static void Type(string text)
+    {
+        foreach (var ch in text)
+        {
+            var key = char.IsAsciiLetter(ch) ? (Key)char.ToUpperInvariant(ch) : char.IsAsciiDigit(ch) ? (Key)ch : Key.None;
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Unicode = ch, Pressed = true });
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
+        }
     }
 
     void Save(string name)
