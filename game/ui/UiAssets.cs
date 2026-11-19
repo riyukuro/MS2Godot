@@ -235,7 +235,14 @@ public sealed class UiAssets
         return tex;
     }
 
-    /// <summary>A DDS or PNG from Resource/Image.m2d, e.g. "map/minimap/02000001.dds" (null when absent).</summary>
+    /// <summary>
+    /// A DDS or PNG from Resource/Image.m2d, e.g. "map/minimap/02000001.dds" (null when absent), kept for the session.
+    /// The client reads the file again on every movie load: GFxImageLoader::LoadProtocolImage (gfximageloader.cpp:171-218)
+    /// has no cache, and the Loader's ImageResource sits on the movie heap (sfr_as3_18.cpp:8374-8389), which the dialog's
+    /// close unloads (UIDialog::FUN_141924330, UISwfEntity::FUN_1422dc080). The port keeps the textures for the repeat
+    /// open's time: re-reading the world map's 203 tiles on every open costs about 0.9 MB of allocation each time. The
+    /// cache is bounded by the images the movies name (one set of world map tiles), so repeat opens keep nothing new.
+    /// </summary>
     public Texture2D ImageFile(string entry)
     {
         if (string.IsNullOrEmpty(entry)) return null;

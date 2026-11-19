@@ -79,6 +79,11 @@ public partial class GlyphShadow : Node2D
     /// draw times the shadow parameters the movies use, not by the strings: dynamic text (counts, timers, chat) reuses the
     /// glyphs. Free text could still reach many distinct glyphs (a font's whole Hangul set), so the cache is dropped whole
     /// past CacheLimit entries; a node keeps the textures its last draw used until it draws again.
+    /// It lives for the session as the client's does: the shadow rasters sit in the renderer's GlyphCache
+    /// (Renderer2D::pGlyphCache, render_renderer2d.h:171), which outlives the movies and is only emptied by ClearCache or
+    /// SetParams (render_glyphcache.h:207-208). So a dialog's first close keeps
+    /// its new glyphs' rasters, about two engine objects each: myinfo's first open adds 67 (of its 143 kept objects), the world
+    /// map's names 765 (of 1,978).
     /// </summary>
     static readonly System.Collections.Generic.Dictionary<(ulong, int, long, float, float), Entry> cache = new();
     const int CacheLimit = 4096;
