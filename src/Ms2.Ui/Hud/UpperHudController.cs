@@ -1,3 +1,4 @@
+using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 
 namespace Ms2.Ui.Hud;
@@ -25,9 +26,17 @@ public sealed class UpperHudController : UiController
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
-        if (Model.IsFeatureEnabled(Feature.SearchTooltip) && Host.Child("m_searchButton") is { } search)
-            Host.Invoke(search, "changeTooltipText", Model.Tables.Common("s_gamedictionary_tooltip_search") ?? "");
-        Host.SetVisible(Host.Child("m_searchInput"), false);
+        if (Host.Child("m_searchButton") is { } search)
+        {
+            if (Model.IsFeatureEnabled(Feature.SearchTooltip))
+                Host.Invoke(search, "changeTooltipText", Model.Tables.Common("s_gamedictionary_tooltip_search") ?? "");
+            Listen(search, "buttonClick", OnSearchClick);                          // AddClickHandler(OnSearchClick)
+        }
+        if (Host.Child("m_searchInput") is { } searchInput)
+        {
+            Listen(searchInput, "focusOut", OnSearchInputFocusOut);                 // AddFocusOutListener(FUN_141357050)
+            Host.SetVisible(searchInput, false);
+        }
         if (Model.IsFeatureEnabled(Feature.InputMode))
         {
             Host.SetVisible(Host.Child("m_keyboardMode"), !MouseMode);
@@ -55,6 +64,41 @@ public sealed class UpperHudController : UiController
         Host.Invoke("arrangePos");
         UpdateMaidReadyCount();
         Shown();
+    }
+
+    /// <summary>CUIService::ToggleDialog(0x4f0b), the dictionary, from the search button.</summary>
+    public event Action ToggleDictionary;
+
+    void Listen(object target, string type, Action a)
+    {
+        Func<object[], object> f = _ => { a(); return null; };
+        Host.Invoke(target, "addEventListener", type, f, false, 0, false);
+    }
+
+    /// <summary>OnSearchClick @0x141356f90: the dictionary with feature 0x2f; without it the search input shows, focused,
+    /// and the button is disabled until the input loses focus.</summary>
+    void OnSearchClick()
+    {
+        if (Model.IsFeatureEnabled(Feature.SearchTooltip)) { ToggleDictionary?.Invoke(); return; }
+        if (Host.Child("m_searchInput") is { } input)
+        {
+            Host.Set(input, "focused", 1);                                          // SetFocused(1)
+            Host.SetVisible(input, true);                                           // vfunc_3(1)
+        }
+        if (Host.Child("m_searchButton") is { } search) Host.Set(search, "enabled", false);
+    }
+
+    /// <summary>FUN_141357050 (uiupperhuddialog.cpp:561): the shown search input that lost focus hides, emptied, and the
+    /// search button is enabled again.</summary>
+    void OnSearchInputFocusOut()
+    {
+        if (Host.Child("m_searchInput") is not { } input || !Rt.ToBoolean(Host.Get(input, "visible"))) return;
+        if (Rt.ToNumber(Host.Get(input, "focused")) != 0) return;
+        Host.SetVisible(input, false);
+        Host.Set(input, "text", "");                                                // SetTextW(L"")
+        Host.Invoke(input, "invalidate");                                           // vfunc_24(1)
+        Host.Invoke(input, "validateNow");
+        if (Host.Child("m_searchButton") is { } search) Host.Set(search, "enabled", true);
     }
 
     /// <summary>vfunc_46 (uiupperhuddialog.cpp:462), when the HUD is shown: m_marat hides without feature 0x3d, then arrangePos.</summary>

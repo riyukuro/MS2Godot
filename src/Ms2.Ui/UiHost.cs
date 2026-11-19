@@ -71,6 +71,7 @@ public sealed class UiHost
     /// <summary>Constructs the movie and runs the client's load sequence. Returns false when the document class failed.</summary>
     public bool Load(int frames = 5)
     {
+        if (Controller.IsDialogEntity) Model.TopLayer = Id;        // UIDialog's open: FUN_1422d4dd0(m_20)
         if (!Player.Start()) return false;
         Mark?.Invoke("as-construct");
         for (int i = 0; i < frames; i++) Player.Tick();        // configUI runs in the first frames, before the client's OnLoadComplete
@@ -121,6 +122,8 @@ public sealed class UiHost
         var rest = args.Skip(1).ToArray();
         if (ev != Id) return null;      // another loader inside the movie (msLoader of an image or sub movie)
         Calls.Add(name);
+        // GFxMovieHeadUpDisplay's callback: "OnTopMostLayer" makes this movie the top one, then goes to the entity too
+        if (name.Equals("OnTopMostLayer", StringComparison.OrdinalIgnoreCase)) Model.TopLayer = Id;
         switch (name)
         {
             case "loadInit": return null;       // the client's CreateGameEntity: Load() finds the entity

@@ -27,8 +27,23 @@ public sealed partial class ReservedWords
     HashSet<long> itemIds = new();
     /// <summary>The npcs of FindNpcData with their "friendly" attribute (npcdata.cpp:1449).</summary>
     Dictionary<long, int> npcFriendly = new();
-    /// <summary>GameDictionaryManager m_items, m_npcs, m_mobs (gamedictionarymanager.cpp:52-128, LoadEntry): the ids whose key has a value other than 0.</summary>
-    HashSet<long> dictItems = new(), dictNpcs = new(), dictMobs = new();
+    /// <summary>GameDictionaryManager m_items, m_npcs, m_mobs (gamedictionarymanager.cpp:52-128, LoadEntry): the keys whose value is not 0, by id.</summary>
+    SortedDictionary<long, DictionaryEntry> dictItems = new(), dictNpcs = new(), dictMobs = new();
+    /// <summary>The CFieldData rows (fielddata.cpp:573-749) by id with their m_bMapSearch.</summary>
+    Dictionary<long, bool> fieldMapSearch = new();
+
+    /// <summary>GameDictionaryData (gamedictionarymanager.cpp:117-126, LoadEntry): a &lt;key&gt;'s id, grade, invisibleLevel and FieldID.</summary>
+    public sealed record DictionaryEntry(int Id, int Grade, int InvisibleLevel, int FieldId);
+
+    /// <summary>GameDictionaryManager::GetAll(1) (gamedictionarymanager.cpp:131): the npc entries in id order (a CRBMap).</summary>
+    public IEnumerable<DictionaryEntry> DictionaryNpcs => dictNpcs.Values;
+    /// <summary>GetAll(2): the monster entries in id order.</summary>
+    public IEnumerable<DictionaryEntry> DictionaryMobs => dictMobs.Values;
+    /// <summary>GetAll(3): the item entries in id order.</summary>
+    public IEnumerable<DictionaryEntry> DictionaryItems => dictItems.Values;
+
+    /// <summary>CFieldData::FindField(id) finds a row and its m_bMapSearch is set (fielddata.cpp:548, 697).</summary>
+    public bool FieldMapSearch(long id) => fieldMapSearch.TryGetValue(id, out bool search) && search;
     /// <summary>WorldMapManager m_68 (worldmapmanager.cpp:527, LoadFieldTiles) keys; HasFieldSearchInfo (worldmapmanager.cpp:924) is a find in it.</summary>
     HashSet<long> fieldSearch = new();
 
@@ -78,7 +93,7 @@ public sealed partial class ReservedWords
     bool BossNotifyDefault(long id, int friendly)
     {
         if (!FeatureEnabled(GameDictionaryFeature)) return false;
-        return friendly > 0 ? !dictNpcs.Contains(id) : !dictMobs.Contains(id);
+        return friendly > 0 ? !dictNpcs.ContainsKey(id) : !dictMobs.ContainsKey(id);
     }
 
     /// <summary>
@@ -92,7 +107,7 @@ public sealed partial class ReservedWords
         if (id == 0) return "";
         if (!itemIds.Contains(id)) return "";
         string name = Get(ItemName, id);
-        if (FeatureEnabled(GameDictionaryFeature) && dictItems.Contains(id))
+        if (FeatureEnabled(GameDictionaryFeature) && dictItems.ContainsKey(id))
             return $"<u><a href='event:itemdictionary,{id}'><FONT color='{LinkColor}'>{name}</FONT></a></u>";
         return name;
     }
@@ -171,18 +186,23 @@ public sealed partial class ReservedWords
         }
 
         // gamedictionarymanager.cpp:52-128, 245-: <key id value>, value 0 skipped; no availability test in LoadEntry
-        HashSet<long> Dict(string file)
+        SortedDictionary<long, DictionaryEntry> Dict(string file)
         {
-            var set = new HashSet<long>();
+            var map = new SortedDictionary<long, DictionaryEntry>();
             string entry = entries.FirstOrDefault(n => string.Equals(n, "table/kr/" + file, StringComparison.OrdinalIgnoreCase))
                         ?? entries.FirstOrDefault(n => string.Equals(n, "table/" + file, StringComparison.OrdinalIgnoreCase));
-            if (entry == null) return set;
-            var ids = new List<long>();
+            if (entry == null) return map;
+            var rows = new List<DictionaryEntry>();
             if (Rows(packs.Read(A, entry), "key",
-                    r => { if (FieldMissions.Int(r.GetAttribute("value")) != 0) ids.Add(FieldMissions.Long(r.GetAttribute("id"))); },
+                    r =>
+                    {
+                        if (FieldMissions.Int(r.GetAttribute("value")) == 0) return;
+                        rows.Add(new DictionaryEntry(FieldMissions.Int(r.GetAttribute("id")), FieldMissions.Int(r.GetAttribute("grade")),
+                                                     FieldMissions.Int(r.GetAttribute("invisibleLevel")), FieldMissions.Int(r.GetAttribute("FieldID"))));
+                    },
                     null, null))
-                set.UnionWith(ids);
-            return set;
+                foreach (var row in rows) map[row.Id] = row;      // SetAt: a later key of the same id replaces the earlier
+            return map;
         }
         dictNpcs = Dict("monsterwebfinder_npc.xml");
         dictMobs = Dict("monsterwebfinder_mob.xml");
@@ -214,6 +234,7 @@ public sealed partial class ReservedWords
             }
             searchable[FieldMissions.Long((string)f.Attribute("id"))] = search;
         }
+        fieldMapSearch = searchable;
         var tiles = new HashSet<long>();
         string Table(string name) =>
             entries.FirstOrDefault(n => string.Equals(n, "table/kr/" + name, StringComparison.OrdinalIgnoreCase))

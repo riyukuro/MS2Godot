@@ -96,6 +96,10 @@ public sealed class UiModel
     public Func<DateTime> ServerTime;
     /// <summary>A label the host shows when the values are not from a live character (fixture data); null = live.</summary>
     public string FixtureLabel;
+    /// <summary>UISwfEntityManager m_258: the key of the top-most dialog (FUN_1422d4dd0). A dialog's open (UIDialog,
+    /// uidialog.cpp:583) and a movie's "OnTopMostLayer" callback (gfxmovieheadupdisplay.cpp:100) set it; FUN_1422d4e20
+    /// compares a dialog's key with it.</summary>
+    public string TopLayer;
 
     /// <summary>The rest exp bonus in percent shown in the exp tooltip: a client constant (ClientConstants m_6b00) / 100.
     /// The constant's key in the client's tables is not identified yet; 100 until it is.</summary>

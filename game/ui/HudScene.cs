@@ -61,7 +61,7 @@ public partial class HudScene : Node, IUiStageHost
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
-    string openShot;                        // --uigen-open inventory|myinfo|levelupguide: the shot opens that window, as I or P does
+    string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]: the shot opens that window, as I or P does
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
@@ -456,6 +456,7 @@ public partial class HudScene : Node, IUiStageHost
             for (int i = 0; i < tokens.Length; i++) model.Player.Tokens[tokens[i]] = w[5 + i];
         }
         upperHudSide = new Ms2.Ui.Hud.UpperHudController();
+        upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHud = new MovieDialog(assets, upperHudSide, model, GetWindow().Size);
         ui.AddChild(upperHud);
     }
@@ -837,6 +838,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }      // action 400006, DIK 50 (keytable.cpp:744)
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
         if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
+        if (gameDictionary?.IsClosed == false && k.Keycode == Key.Enter && gameDictionary.EnterKey()) return true;
         if (k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
         if (k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
         if (k.PhysicalKeycode == Key.K) { ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
@@ -845,6 +847,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
         if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
+        if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         return false;
     }
 
@@ -930,9 +933,7 @@ public partial class HudScene : Node, IUiStageHost
                 var parts = questState.Split(':');
                 log.State = new QuestShotState(questTable, int.Parse(parts[0]), parts[1].Split(',').Select(int.Parse), parts.Length > 2 ? int.Parse(parts[2]) : 0);
             }
-            // CFeatureManager by id for the bold words' dictionary links (feature 0x2f)
-            questTable.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length
-                                                    && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]);
+            SetWordFeatures();
             questLogModel = NewModel();
             var fieldId = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
             questLogSide = new Ms2.Ui.Hud.QuestDialogController
@@ -1161,6 +1162,59 @@ public partial class HudScene : Node, IUiStageHost
     }
 
 
+    /// <summary>CFeatureManager by id for the bold words' dictionary links (feature 0x2f) and the dictionary's tables.</summary>
+    void SetWordFeatures() =>
+        questTable.Words.FeatureEnabled = id => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length
+                                                && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1]);
+
+
+    // ---- dictionary: uigamedictionarydialog run by its own ActionScript, UIGameDictionaryDialog's C++ side as GameDictionaryController
+
+    MovieDialog gameDictionaryMovie;
+    Ms2.Ui.Hud.GameDictionaryController gameDictionary;  // kept between opens, as the client keeps the dialog (tab, search text)
+
+    /// <summary>CUIService::ToggleDialog(0x4f0b): the game menu's dictionary.</summary>
+    void ToggleGameDictionary()
+    {
+        if (gameDictionaryMovie != null && gameDictionary?.IsClosed == false) gameDictionary.Close();
+        else OpenGameDictionary();
+    }
+
+    /// <summary>
+    /// Opens the dictionary over the reserved word table's dictionary lists, the npc table and the field meta. Offline no
+    /// npc field has an open time window (no server time), and the item tooltip's owner is the fixture character.
+    /// </summary>
+    void OpenGameDictionary()
+    {
+        if (gameDictionaryMovie != null) { gameDictionaryMovie.Host.Unload(); gameDictionaryMovie.QueueFree(); gameDictionaryMovie = null; }
+        if (QuestLogSource() == null) return;
+        SetWordFeatures();
+        if (gameDictionary == null)
+        {
+            gameDictionary = new Ms2.Ui.Hud.GameDictionaryController
+            {
+                Words = questTable.Words,
+                Npcs = World.FieldContents.Npcs(assets.Packs),
+                Meta = fieldMeta,
+            };
+            gameDictionary.Owner = () =>
+            {
+                var live = Ms2Godot.Net.LiveSession.Instance;
+                var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+                return me?.ToPcInfo(live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()) is { } r ? (r.CharacterId, r.Name) : null;
+            };
+            gameDictionary.Unloaded += () =>
+            {
+                gameDictionaryMovie?.Host.Unload();
+                gameDictionaryMovie?.QueueFree();
+                gameDictionaryMovie = null;
+            };
+        }
+        gameDictionaryMovie = new MovieDialog(assets, gameDictionary, hudModel, GetWindow().Size);
+        uiRoot.AddChild(gameDictionaryMovie);
+    }
+
+
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
     UiModel hudModel;
@@ -1272,6 +1326,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4e2d) ToggleInventory();
         else if (id == 0x2711) ToggleMyInfo();      // "characterinfo" (gameeventmanagercli.cpp:486-494)
         else if (id == 0x4efa) ToggleLevelUpGuide();
+        else if (id == 0x4f0b) ToggleGameDictionary();
         else if (id == 0x4f2d) ToggleSkillBook();
     }
 
@@ -2011,6 +2066,17 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "inventory" && frames == 200) ToggleInventory();
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
+        if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
+        {
+            // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)
+            var parts = openShot.Split(':', 3);
+            if (parts.Length == 3)
+            {
+                OpenGameDictionary();
+                gameDictionary?.OpenTabWithSearch(int.Parse(parts[1]), parts[2], true);
+            }
+            else ToggleGameDictionary();
+        }
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)

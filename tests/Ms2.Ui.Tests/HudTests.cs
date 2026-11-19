@@ -452,6 +452,37 @@ public class HudTests
     }
 
     [Test]
+    public void UpperHudSearchButton()
+    {
+        static void Click(UiHost h, string name)
+        {
+            var b = ((AsDisplayObject)h.Child(name)).GetBounds(null);
+            h.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
+            for (int i = 0; i < 5; i++) h.Player.Tick();
+        }
+        // OnSearchClick with feature 0x2f: ToggleDialog(0x4f0b)
+        var c = new UpperHudController();
+        int toggles = 0;
+        c.ToggleDictionary += () => toggles++;
+        var h = Load(c, Model());
+        Click(h, "m_searchButton");
+        Assert.That(toggles, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+        // without it: the search input shows and the button is disabled
+        var m = Model();
+        m.Features.Remove(Feature.SearchTooltip);
+        c = new UpperHudController();
+        c.ToggleDictionary += () => toggles++;
+        h = Load(c, m);
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_searchInput"), "visible")), Is.False);
+        Click(h, "m_searchButton");
+        Assert.That(toggles, Is.EqualTo(1));
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_searchInput"), "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_searchButton"), "enabled")), Is.False);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void UpperHpBarShowsTheTarget()
     {
         var m = Model();

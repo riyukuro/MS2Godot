@@ -27,6 +27,7 @@ public sealed class NpcRow
     public string Icon = "";                     // environment iconName (NpcDataCli m_strIcon, npcdatacli.cpp:169)
     public string ShopIcon = "";                 // environment shopIconName (NpcDataCli m_strShopIcon, npcdatacli.cpp:171)
     public string Illust;                        // environment illust: the talk portrait (Resource/Image quest/illust/<illust>.dds)
+    public string Portrait;                      // environment portrait (CNpcData m_strPortrait, npcdata.cpp:1467): the dictionary's picture
     public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
@@ -125,6 +126,7 @@ public sealed class NpcTable
             Nametag = Int(env, "nametag") != 0,
             Kind = Int(env, "kind"),
             Illust = (string)env.Attribute("illust"),
+            Portrait = (string)env.Attribute("portrait"),
             Minimap = (string)env.Attribute("minimap") is not ("0" or "false" or "False"),      // CNpcData: true unless set off
             MinimapIcon = (string)env.Attribute("minimapIconName"),
             Icon = (string)env.Attribute("iconName") ?? "",
