@@ -126,7 +126,7 @@ public class SniffTests {
         Decode(true, 0x25, r => ItemPutOn.Read(r));
         Decode(true, 0x26, r => ItemPutOff.Read(r));
         Decode(true, 0x47, r => BuffMessage.Read(r));
-        Decode(true, 0x1D, r => ChatMessage.Read(r), maxBuild: 2540); // build 2546 appends a field
+        Decode(true, 0x1D, r => ChatMessage.Read(r)); // no end check: build 2546 appends a field the client ignores
         int rides = Decode(true, 0x7A, r => UserSyncIn.Read(r));
         Assert.That(rides, Is.GreaterThan(100));
     }

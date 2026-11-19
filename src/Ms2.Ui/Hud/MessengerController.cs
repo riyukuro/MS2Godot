@@ -8,11 +8,12 @@ namespace Ms2.Ui.Hud;
 /// UIMessenger (ms2/client/ms2/uimessenger.cpp), the C++ side of a chat window (uimessengerdialog). The movie's own
 /// MessengerDialog draws everything; this side sizes and aligns the window from its option document, fills the tab bar and
 /// the chat target list, sets the screen setting of the selected tab, shows the lines of the shared log
-/// (<see cref="MessengerBrowser"/>) its tab's panel setting lets through, and takes the window's keys.
+/// (<see cref="MessengerBrowser"/>, which takes the chat packets' lines, RecvOp 0x1d) its tab's panel setting lets through,
+/// and takes the window's keys.
 /// UIMessengerBrowser::LoadDefaultWindows (:3149) makes one window per table/default/DefaultMessenger&lt;i&gt;.xml, named
 /// messengerdialog&lt;i&gt;.xml.
 /// Not ported yet: the character folder's saved windows (LoadWindows :3689, FUN_141a27570) and saving them (vfunc_4 :638);
-/// the chat packets' lines (RecvOp 0x1d); sending a line (SendChat :4208, which only sends; the line shows when the server
+/// sending a line (SendChat :4208, which only sends; the line shows when the server
 /// sends it back) and slash commands (FUN_141a10fd0); the input history; whisper, emoticon, tab menu, attach/detach and
 /// the extra components (m_2e0 / m_2f0).
 /// </summary>
@@ -331,6 +332,21 @@ public sealed class MessengerController : UiController
         if (Hidden(tab, kind)) return true;
         SetOutput(MessengerBrowser.ReplaceFontSize((uint)ScreenOf(tab).FontSize, msg), false);
         return true;
+    }
+
+    /// <summary>
+    /// vfunc_87 (@0x141a15ae0, :2094), a whisper came in (UIMessengerBrowser::vfunc_84): nothing without tabs or a movie;
+    /// else the names of the tabs whose subject setting shows whispers (FUN_141482200 m_nWhisper), the current tab left
+    /// out, go to the movie's whisperFrom as an array, when there is one. The text and the whisper window are not read.
+    /// </summary>
+    public void WhisperFrom(string text, string window)
+    {
+        if (Tabs.Count == 0 || Host?.Entity == null) return;
+        var current = CurrentTab;
+        var names = new List<object>();
+        foreach (var tab in Tabs)
+            if (tab.Panel["Subject", "whisper"] != 0 && tab != current) names.Add(tab.Name);
+        if (names.Count > 0) Host.Invoke("whisperFrom", names);
     }
 
     int MaxScrollV() => textOutput != null && Host.Get(textOutput, "textField") is AsObject tf ? (int)Rt.ToNumber(Host.Get(tf, "maxScrollV")) : 0;

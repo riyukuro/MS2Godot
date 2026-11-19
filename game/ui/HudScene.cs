@@ -131,6 +131,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors = null;
         unwatchNotices?.Invoke();
         unwatchNotices = null;
+        unwatchChat?.Invoke();
+        unwatchChat = null;
         unwatchNewItems?.Invoke();
         unwatchNewItems = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
@@ -489,9 +491,31 @@ public partial class HudScene : Node, IUiStageHost
             Action<Ms2.Net.Packets.NoticeMessage> onNotice = Notices.OnNotice;
             live.Notice += onNotice;
             unwatchNotices = () => live.Notice -= onNotice;
+            WireUserChat(live);
+            Action<Ms2.Net.Packets.ChatMessage, Func<Ms2.Net.Packets.WeddingChatHall>> onChat = ChatLog.OnUserChat;
+            live.UserChat += onChat;
+            unwatchChat = () => live.UserChat -= onChat;
         }
     }
-    Action unwatchGemErrors, unwatchNotices;
+    Action unwatchGemErrors, unwatchNotices, unwatchChat;
+
+    /// <summary>
+    /// The shared log's sinks for a user's chat line (UIMessengerBrowser::vfunc_84): ShowSystemNotice through this HUD's system
+    /// text (@0x1412751f0: nothing without it; with bLog also the chat copy of kind 0x14), the local character id, the
+    /// features and the server time. The sinks left null are the windows and managers not ported (see the browser's).
+    /// </summary>
+    void WireUserChat(Ms2Godot.Net.LiveSession live)
+    {
+        ChatLog.ShowSystemNotice = (text, type, log) =>
+        {
+            if (SystemText == null) return;
+            SystemText.ShowMessage(text, type, 0);
+            if (log) ChatLog.AddSystemLine(text, Ms2.Ui.Hud.TalkKind.SystemNotice);
+        };
+        ChatLog.SystemSound = key => GD.Print($"chat: system sound {key} is not played");
+        ChatLog.LocalCharacterId = () => live.CharacterId;
+        ChatLog.ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    }
 
     /// <summary>OnNotice (0x71)'s routing; its sinks are this HUD's system text, the shared chat log and the box queue.</summary>
     public Ms2.Ui.Hud.NoticeController Notices { get; private set; }
@@ -504,9 +528,7 @@ public partial class HudScene : Node, IUiStageHost
             Tables = hudModel.Tables,
             Trigger = hudModel.Tables.TriggerStrings,
             ReplaceValueWords = t => hudModel.Tables.ReservedWords.ReplaceValueWords(t, hudModel.HasLocalPlayer ? hudModel.Player.Name : null),
-            Language = lang,
-            // DAT_143ab0248, the client's region: an assumption here from the string language (KR 0, JP 1, CN 3, the others 2)
-            Region = lang switch { "KR" => 0, "JP" => 1, "CN" => 3, _ => 2 },
+            Language = lang,                    // DAT_143ab0250: "KR", or SetLanguage (localepath.cpp:577) for "-language"
             ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ShowMessage = (t, type, option) => SystemText?.ShowMessage(t, type, option),
             ChatLine = ChatLog.AddSystemLine,
@@ -705,9 +727,9 @@ public partial class HudScene : Node, IUiStageHost
     /// UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): a chat window (UIMessenger) per
     /// table/default/DefaultMessenger&lt;i&gt;.xml, named messengerdialog&lt;i&gt;.xml, first load; then UIGroupMessengerBrowser,
     /// the group chat bar, all over the shared log (<see cref="ChatLog"/>). The saved windows of the character folder
-    /// (LoadWindows :3689) are not read yet. Lines typed are not shown: SendChat (:4208) only sends the command and the
-    /// line arrives with the chat packet (0x1d), which the live session does not carry yet.
-    /// The log's lines here: the welcome line (UISceneGame::vfunc_48, uiscenegame.cpp:187: s_msg_chatting_welcome, or
+    /// (LoadWindows :3689) are not read yet. A line typed is shown when it comes back as the chat packet (0x1d,
+    /// <see cref="Ms2.Ui.Hud.MessengerBrowser.OnUserChat"/>, wired with the system text); SendChat (:4208) only sends it.
+    /// The log's other lines: the welcome line (UISceneGame::vfunc_48, uiscenegame.cpp:187: s_msg_chatting_welcome, or
     /// s_msg_chatting_welcome_pubtest2 while the public test game event runs; game events are not modelled, so the plain
     /// one), the system notices' copies (<see cref="SystemNotice"/>) and the new items of a live session (ItemInventory mode
     /// 7 -> the item event dispatcher's vfunc_4, uiitemenchantdialog.cpp:2146 -> UIMessengerBrowser::vfunc_5). Of mode 7

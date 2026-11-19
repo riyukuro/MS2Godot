@@ -13,9 +13,17 @@ public sealed class NoticeController
     public ServerStringGroup Trigger = ServerStringGroup.Empty;
     /// <summary>CReservedWordTable::ReplaceValueWords with the player's name and gender.</summary>
     public Func<string, string> ReplaceValueWords = s => s;
-    /// <summary>The client language's name (DAT_143ab0250) and region (DAT_143ab0248) for GetLocalizedText.</summary>
+    /// <summary>The client language's name for GetLocalizedText: DAT_143ab0250 (localepath.cpp:62) starts "KR"; SetLanguage
+    /// (@0x1406507a0, :577) sets it, through SetLanguageByCode (:278) for the "-language" launch argument
+    /// (unit_1414b1230.cpp:336). The scene passes the string language the assets were loaded with.</summary>
     public string Language = "KR";
-    public int Region;
+    /// <summary>
+    /// The client region (DAT_143ab0248, localepath.cpp:61) for GetLocalizedText's fallbacks. It starts at 0 (KR) and only
+    /// FUN_1406509e0 (localepath.cpp:597) writes it, through SetRegionByCode (:293), which only FUN_1414b1f10
+    /// (unit_1414b1230.cpp:321) calls, for the "-locale" launch argument. This port runs as the KR client
+    /// (<see cref="LobbyFeatures.LocaleName"/>), so 0.
+    /// </summary>
+    public int Region = 0;
     /// <summary>GetServerTime (unix seconds); FUN_14028b820 makes it local time.</summary>
     public Func<long> ServerTime = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 

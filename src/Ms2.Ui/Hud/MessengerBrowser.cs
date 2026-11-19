@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Ms2.Net.Packets;
 using Ms2.Quest;
 using Ms2.Ui.Items;
 
@@ -122,8 +123,8 @@ public sealed class PanelSetting
 /// UIMessengerBrowser (uimessenger.cpp), the side all chat windows share: the log of chat lines (m_logs, at most 500), the
 /// lines not yet shown (m_pendingLogs), the windows, and the panel statics (s_nGlobal and the shared screen setting
 /// DAT_143adda48, messengerdata.cpp:600). The browser's own movie and its listener slots other than the item gain are not
-/// ported; nor are the chat packets (RecvOp 0x1d / 0x1e, vfunc_84 / vfunc_85) and the font size rewrite of the log
-/// (FUN_141a27ad0 :3873).
+/// ported; nor are the linked items (RecvOp 0x1e, vfunc_85) and the font size rewrite of the log (FUN_141a27ad0 :3873).
+/// A user's chat line (RecvOp 0x1d) goes in through <see cref="OnUserChat"/>.
 /// </summary>
 public sealed class MessengerBrowser
 {
@@ -245,6 +246,206 @@ public sealed class MessengerBrowser
         shown = 0;
         logs.Clear();
         pending.Clear();
+    }
+
+    // ---- RecvOp 0x1d: UIMessengerBrowser::vfunc_84 (@0x141a22140, uimessenger.cpp:2829) -------------------------------
+
+    /// <summary>ShowSystemNotice(text, type, bLog) (@0x1412751f0, unit_141274d10_uihelpers.cpp:255): UISystemText 0x4e41's
+    /// ShowMessage(text, type, 0), and with bLog a system line of kind 0x14; nothing without the system text.</summary>
+    public Action<string, int, bool> ShowSystemNotice;
+    /// <summary>PlaySystemSound(name, "") (@0x141276180). STILL-OPEN: no system sound player; null plays nothing.</summary>
+    public Action<string> SystemSound;
+    /// <summary>The local player's character id (MyPC FUN_141656a80); 0 without one.</summary>
+    public Func<long> LocalCharacterId = () => 0;
+    /// <summary>BlindManager::IsBlocked(0, name). STILL-OPEN: the blind list is not ported, so nobody is blocked.</summary>
+    public Func<string, bool> IsBlinded = _ => false;
+    /// <summary>CBuddyManager FUN_140ae5240(name) / FUN_140ae51b0(character id), the block list. STILL-OPEN: the buddy
+    /// manager is not ported, so nobody is blocked.</summary>
+    public Func<string, long, bool> IsBlockedBuddy = (_, _) => false;
+    /// <summary>
+    /// The whisper block option (CGameOption community settings m_b7): instead of showing a whisper the client sends
+    /// CommandChat kind 6 to its sender (FUN_141276f80). STILL-OPEN: the game option is not ported, so null = off.
+    /// </summary>
+    public Action<string> WhisperBlockedReply;
+    /// <summary>UIWhisperNotifyDialog (0x4e5e) AddWhisper(character id, text, window). STILL-OPEN: that dialog is not
+    /// ported; null without it.</summary>
+    public Action<long, string, string> WhisperNotify;
+    /// <summary>CUIService FUN_141add1f0, a type 0xd / 0xe line with string id 0x35. STILL-OPEN: not identified.</summary>
+    public Action FieldStringNotice;
+    /// <summary>FUN_140d2ab10 (unit_140d2a7e0_chatlinkhelpers.cpp:227), a type 0xf announcement: the text made the line
+    /// its link kind stands for, null when unusable. STILL-OPEN: not ported, so every type 0xf line is dropped.</summary>
+    public Func<string, string> Announcement = _ => null;
+    /// <summary>CUserCommandCli::ExecuteInternal(text), a type 10 line. STILL-OPEN: the user commands are not ported.</summary>
+    public Action<string> UserCommand;
+    /// <summary>ShowChatBalloon(name, text, type), the speech balloon over the speaker. STILL-OPEN: not ported.</summary>
+    public Action<string, string, int> ChatBalloon;
+    /// <summary>CFeatureManager::IsFeatureEnabled; the model's when null.</summary>
+    public Func<int, bool> FeatureEnabled;
+    /// <summary>CClubClientManager::GetClubName for type 0x14 lines (see <see cref="ChatHtml.Context.ClubName"/>).</summary>
+    public Func<long, string> ClubName = _ => "";
+
+    /// <summary>The wedding feature vfunc_84 tests before a type 0x19 line.</summary>
+    public const int WeddingFeature = 0x104;
+    /// <summary>The system sounds of a whisper and a guild megaphone line (uimessenger.cpp s_strWhisperSound,
+    /// s_strGuildMegaphoneSound).</summary>
+    public const string WhisperSound = "system_notice_whisper", GuildMegaphoneSound = "System_GuildMegaphone";
+
+    bool Feature(int id) => FeatureEnabled?.Invoke(id) ?? Model?.IsFeatureEnabled(id) ?? false;
+
+    /// <summary>
+    /// vfunc_84 (:2829). The text (the reader's: a common string id's GetStringCommon, else the packet's) loses its P, BR,
+    /// TEXTFORMAT and FONT tags (FUN_140d2c650 / <see cref="RemoveHtmlTag"/>). STILL-OPEN: CBanTextChecker's
+    /// MaskBannedWords and FilterReservedWords and CDynamicBanWordManager::FilterText are not ported, so the text is not
+    /// masked. An empty text or a blinded name ends it; then by type: 5 the common string 0x4d as the text and as a system
+    /// notice; 6 FormatStringId(0x8cd, name) as a notice; 3 a whisper (the block reply, else each window's
+    /// <see cref="MessengerController.WhisperFrom"/>, the notify dialog and the whisper sound); 0x11 and 0x1a the text as a
+    /// logged notice; 0xd / 0xe the same, or FUN_141add1f0 for string id 0x35; 0xf only when the announcement is usable;
+    /// 0x10 / 0x19 for the local player's own line FormatStringId(0xac7 / 0xaca, the item's name) as a logged notice.
+    /// Type 10 is a user command and ends it. Other than a whisper sent (4), a blocked name or character ends it. STILL-OPEN:
+    /// ColorItemLinks (the item links) is not ported. The balloon, then for 0x12 s_guild_chat_mega_phone as a guild
+    /// megaphone notice with its sound. The html is the wedding line for 0x19 (read only with feature 0x104, else the line
+    /// is dropped; STILL-OPEN: FUN_141841180 needs the wedding table, so "") or <see cref="ChatHtml.Line"/> at the shared
+    /// font size, and goes into the log (FUN_141a26e00) and the report log (<see cref="ReportLine"/>) by its kind
+    /// (<see cref="ChatHtml.Kind"/>). <paramref name="readWedding"/> reads the packet's WeddingChatHall.
+    /// </summary>
+    public void OnUserChat(ChatMessage m, Func<WeddingChatHall> readWedding = null)
+    {
+        var t = Tables;
+        string name = m.Name ?? "";
+        string text = m.Common ? t.Common(m.CommonId) ?? "" : m.Text ?? "";
+        int type = m.Type;
+        long charId = m.CharacterId;
+        text = RemoveChatTags(text);
+        if (text.Length == 0) return;
+        if (IsBlinded(name)) return;
+        switch (type)
+        {
+            case 5:
+                text = t.Common(0x4d) ?? "";
+                if (text.Length > 0) ShowSystemNotice?.Invoke(text, 1, false);        // FUN_141275260(0x4d, 1, 0)
+                break;
+            case 6:
+                text = ClientFormat.Format(t.Common(0x8cd), name);
+                ShowSystemNotice?.Invoke(text, 1, false);
+                break;
+            case 3:
+                if (WhisperBlockedReply != null) { WhisperBlockedReply(name); return; }
+                foreach (var w in Windows) w?.WhisperFrom(text, m.WhisperWindow ?? "");
+                WhisperNotify?.Invoke(charId, text, m.WhisperWindow ?? "");
+                SystemSound?.Invoke(WhisperSound);
+                break;
+            case 0x11 or 0x1a:
+                ShowSystemNotice?.Invoke(text, 1, true);
+                break;
+            case 0xd or 0xe:
+                if (m.CommonId == 0x35) FieldStringNotice?.Invoke();
+                else ShowSystemNotice?.Invoke(text, 1, true);
+                break;
+            case 0xf:
+                if (Announcement(text) is not { } line) return;
+                text = line;
+                break;
+            case 0x10 or 0x19:
+                if (Model?.HasLocalPlayer == true && LocalCharacterId() == charId)
+                    ShowSystemNotice?.Invoke(ClientFormat.Format(t.Common(type == 0x10 ? 0xac7 : 0xaca), t.ItemName(m.ItemId)), 1, true);
+                break;
+        }
+        if (type == 10) { UserCommand?.Invoke(text); return; }
+        if (type != 4 && IsBlockedBuddy(name, charId)) return;
+        ChatBalloon?.Invoke(name, text, type);
+        if (type == 0x12)
+        {
+            ShowSystemNotice?.Invoke(ClientFormat.Format(t.Common("s_guild_chat_mega_phone"), name, text), SystemTextController.GuildMegaphone, false);
+            SystemSound?.Invoke(GuildMegaphoneSound);
+        }
+        string html;
+        if (type == 0x19)
+        {
+            if (!Feature(WeddingFeature)) return;
+            readWedding?.Invoke();
+            html = "";
+        }
+        else
+        {
+            var c = new ChatHtml.Context
+            {
+                Tables = t, LocalName = Model?.HasLocalPlayer == true ? Model.Player.Name : null, FeatureEnabled = Feature, ClubName = ClubName,
+            };
+            html = ChatHtml.Line(c, m, text, (uint)GlobalScreen.FontSize);
+        }
+        int kind = ChatHtml.Kind(type);
+        AddLog(html, kind);
+        ReportLine(name, html, kind);
+    }
+
+    /// <summary>FUN_140d2c650 (unit_140d2a7e0_chatlinkhelpers.cpp:468): the P, BR, TEXTFORMAT and FONT tags removed.</summary>
+    public static string RemoveChatTags(string text)
+    {
+        foreach (var tag in new[] { "P", "BR", "TEXTFORMAT", "FONT" }) text = RemoveHtmlTag(text, tag);
+        return text;
+    }
+
+    /// <summary>
+    /// RemoveHtmlTag (@0x140d2c730, :478), case-blind: up to 20 times the first "&lt;tag" up to its "&gt;" and then the first
+    /// "&lt;/tag&gt;" are removed; an open tag without its "&gt;" or its close clears the text, and so does an open tag
+    /// (matched case-sensitively, as the client's last Find on the text) left after 20.
+    /// </summary>
+    public static string RemoveHtmlTag(string text, string tag)
+    {
+        string lowerTag = Lower(tag), open = "<" + lowerTag, end = "</" + lowerTag + ">";
+        var sb = new System.Text.StringBuilder(text);
+        var lower = new System.Text.StringBuilder(Lower(text));
+        for (int n = 0; n < 20; n++)
+        {
+            int begin = lower.ToString().IndexOf(open, StringComparison.Ordinal);
+            if (begin < 0) return sb.ToString();
+            int close = lower.ToString().IndexOf('>', begin);
+            if (close < 0 || close <= begin) return "";
+            lower.Remove(begin, close - begin + 1);
+            sb.Remove(begin, close - begin + 1);
+            begin = lower.ToString().IndexOf(end, StringComparison.Ordinal);
+            if (begin < 0) return "";
+            lower.Remove(begin, end.Length);
+            sb.Remove(begin, end.Length);
+        }
+        string s = sb.ToString();
+        return s.IndexOf(open, StringComparison.Ordinal) >= 0 ? "" : s;
+    }
+
+    /// <summary>CStringW::MakeLower, one character for one (the indexes stay the text's).</summary>
+    static string Lower(string s) => string.Create(s.Length, s, (span, src) => { for (int i = 0; i < src.Length; i++) span[i] = char.ToLowerInvariant(src[i]); });
+
+    /// <summary>A report line: the speaker and the line's html (MessengerData::ReportLog).</summary>
+    public readonly record struct ReportLog(string Name, string Text);
+
+    readonly List<(long Time, string Line)> timedLogs = new();    // m_timedLogs, a multimap by server time
+    readonly LinkedList<ReportLog> reports = new();               // m_reports
+    /// <summary>GetServerTime for the report lines.</summary>
+    public Func<long> ServerTime = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+    public IReadOnlyList<(long Time, string Line)> TimedLogs => timedLogs;
+    public IReadOnlyCollection<ReportLog> Reports => reports;
+
+    /// <summary>
+    /// FUN_141a271b0 (:3772): a user line of kind 1, 2, 3, 0x18, 4, 0x15, 0x16, 0x17 or 0x1a ([Normal], [Party], [Guild],
+    /// [GuildMegaphone], [Whisper], [World], [Channel], [Super], [Club]) is kept as "tag[name] html" by the server time
+    /// (the earliest dropped past 51) and as a report line (the oldest dropped past 500); false for other kinds.
+    /// </summary>
+    public bool ReportLine(string name, string html, int kind)
+    {
+        string tag = kind switch
+        {
+            1 => "[Normal]", 2 => "[Party]", 3 => "[Guild]", 0x18 => "[GuildMegaphone]", 4 => "[Whisper]", 0x15 => "[World]",
+            0x16 => "[Channel]", 0x17 => "[Super]", 0x1a => "[Club]", _ => null,
+        };
+        if (tag == null) return false;
+        if (timedLogs.Count > 0x32) timedLogs.RemoveAt(0);
+        long now = ServerTime();
+        int at = timedLogs.FindLastIndex(e => e.Time <= now) + 1;   // multimap::insert: after the equal keys
+        timedLogs.Insert(at, (now, $"{tag}[{name}] {html}"));
+        reports.AddLast(new ReportLog(name, html));
+        if (reports.Count > MaxLogs) reports.RemoveFirst();
+        return true;
     }
 
     static readonly Regex FontSizes = new("size='(1[2-8])'", RegexOptions.CultureInvariant);

@@ -19,6 +19,19 @@ public sealed class GameTables
     readonly Dictionary<string, string> titleNames = new(), itemNames = new();
     readonly Dictionary<int, string> statNames = new(), specialNames = new(), statOptions = new();
 
+    /// <summary>
+    /// TextToHtml's chat colours s_color0 .. s_color24 (FUN_14183e690, texttohtml.cpp:285): the Client::Constants colour
+    /// values from +0xb528 in steps of 0x58 (clientconstants.h:682-706), read from table/colorconstants.xml (Define defaults
+    /// 0xffffff, unit_1402ab440_constantsblocks.cpp:1416-1440). Declared before <see cref="Empty"/>, which reads it.
+    /// </summary>
+    public static readonly string[] ChatColorKeys =
+    {
+        "chatUserNormal", "chatUserNotice", "chatUserWhisper", "chatUserMapNotice", "chatUserParty", "chatUserGuild",
+        "chatUserSuper", "chatUserWorld", "chatUserChannel", "chatUserClub",
+        "chatTextNormal", "chatTextNotice", "chatTextMapNotice", "chatTextWhisperTo", "chatTextWhisperFail", "chatTextWhisperFrom",
+        "chatTextParty", "chatTextGuild", "chatTextSuper", "chatTextWorld", "chatTextChannel", "chatTextSystemMessage",
+        "chatTextMinorSystemMessage", "chatTextGMColor", "chatTextClub",
+    };
     public static readonly GameTables Empty = new();
 
     // the client reads its tables once (each table singleton loads at startup or on first use) and every window reads the
@@ -103,6 +116,9 @@ public sealed class GameTables
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
+        // MentoringDataTable::Load (mentoringdatatable.cpp:55): GetXmlPath("Table", "MentoringConfig.xml"), <ms2>, <MentoringConfig>
+        if (Xml("table/mentoringconfig.xml")?.Root is { Name.LocalName: "ms2" } mentoring && mentoring.Element("MentoringConfig") is { } mentoringConfig)
+            Ms2.Ui.Items.ItemData.Bool(mentoringConfig, "isShowIcon", ref MentoringShowIcon);
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
         {
@@ -392,14 +408,13 @@ public sealed class GameTables
         (4, "HonorTokenMax"), (5, "KarmaTokenMax"), (6, "LuTokenMax"), (7, "HabiTokenMax"), (0xc, "ReverseCoinMax"),
         (0xd, "MentorTokenMax"), (0xe, "MenteeTokenMax"),
     };
-    /// <summary>The chat colour constants (table/colorconstants.xml; Define defaults 0xffffff, constantsblocks.cpp:1426-1438),
-    /// read as the subject colours s_color10 / 16..20 (texttohtml.cpp:300-310) and the system line colour s_color21.</summary>
-    public readonly Dictionary<string, uint> ChatTextColors = new()
-    {
-        ["chatTextNormal"] = 0xffffff, ["chatTextParty"] = 0xffffff, ["chatTextGuild"] = 0xffffff,
-        ["chatTextSuper"] = 0xffffff, ["chatTextWorld"] = 0xffffff, ["chatTextChannel"] = 0xffffff,
-        ["chatTextSystemMessage"] = 0xffffff,
-    };
+    /// <summary>The chat colours by key (<see cref="ChatColorKeys"/>).</summary>
+    public readonly Dictionary<string, uint> ChatTextColors = ChatColorKeys.ToDictionary(k => k, _ => 0xffffffu);
+    /// <summary>s_color<paramref name="n"/> (<see cref="ChatColorKeys"/>).</summary>
+    public uint ChatColor(int n) => ChatTextColors[ChatColorKeys[n]];
+    /// <summary>MentoringDataTable m_bShowIcon (+0x30, mentoringdatatable.cpp:37 default true): table/MentoringConfig.xml
+    /// &lt;ms2&gt;&lt;MentoringConfig isShowIcon&gt; (LoadConfig :77, XmlGetAttr bool).</summary>
+    public bool MentoringShowIcon = true;
     /// <summary>The default messenger windows' documents (table/default/defaultmessenger&lt;i&gt;.xml), in order.</summary>
     public readonly List<System.Xml.Linq.XDocument> DefaultMessengers = new();
     /// <summary>The world map's field description (string table 0x4b, string/&lt;lang&gt;/maptiledesc.xml); null = none.</summary>

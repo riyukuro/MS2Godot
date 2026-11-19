@@ -126,20 +126,40 @@ public sealed record BuffMessage(BuffMode Mode, int ObjectId, int BuffKey, int C
 }
 
 /// <summary>
-/// Inbound 0x1D chat line: i64 account id, i64 character id, name, bool, text, i32 chat type, bool gm, i32 channel, then by type:
-/// 3 whisper-from: string; 16 super and 25 wedding: i32; 20 club: i64; and a final bool. The client reader was not located in the
-/// decomp; layout from the server writer and checked on recordings.
+/// Inbound 0x1D, a user's chat line (UIMessengerBrowser::vfunc_84, uimessenger.cpp:2829; reader FUN_1407a5500,
+/// unit_1407a4f20_packetserializers.cpp:166, writer FUN_1407a5330 :148): i64 account id (m_00), i64 character id (m_08),
+/// unicode name (m_10), u8 common: an i32 common string id (m_48) whose text (GetStringCommon) is the line, else a unicode
+/// text (m_18); i32 type (m_20), u8 gm (m_34), i32 gender (m_30); then type 3: the whisper window's ReadUnicodeStringA
+/// (m_38 m_strWindow, a unicode string made narrow), type 0x14: i64 club id (m_40), type 0x10 / 0x19: i32 item id (m_50,
+/// m_nFieldId); last a u8 (m_4c), the chat image flag FUN_141842770 tests. A type 0x19 line is followed by a <see cref="WeddingChatHall"/> the handler
+/// reads itself. No ExpectEnd: the client ignores trailing bytes (later builds append a field).
 /// </summary>
-public sealed record ChatMessage(long AccountId, long CharacterId, string Name, string Text, int ChatType, bool Gm, int Channel, string WhisperTo, int Extra, long ClubId) {
+public sealed record ChatMessage(long AccountId, long CharacterId, string Name, bool Common, int CommonId, string Text, int Type,
+    bool Gm, int Gender, string WhisperWindow, long ClubId, int ItemId, byte ShowImage) {
     public static ChatMessage Read(ByteReader r) {
-        long acc = r.ReadLong(), chr = r.ReadLong(); string name = r.ReadUnicodeString(); r.ReadBool(); string text = r.ReadUnicodeString();
-        int type = r.ReadInt(); bool gm = r.ReadBool(); int ch = r.ReadInt();
-        string w = null; int extra = 0; long club = 0;
-        if (type == 3) w = r.ReadUnicodeString();
-        else if (type == 16 || type == 25) extra = r.ReadInt();
-        else if (type == 20) club = r.ReadLong();
-        r.ReadBool();
-        r.ExpectEnd("ChatMessage");
-        return new ChatMessage(acc, chr, name, text, type, gm, ch, w, extra, club);
+        long acc = r.ReadLong(), chr = r.ReadLong();
+        string name = r.ReadUnicodeString();
+        bool common = r.ReadByte() != 0;
+        int commonId = 0; string text = "";
+        if (common) commonId = r.ReadInt(); else text = r.ReadUnicodeString();
+        int type = r.ReadInt();
+        bool gm = r.ReadByte() != 0;
+        int gender = r.ReadInt();
+        string whisper = ""; long club = 0; int item = 0;
+        if (type == 3) whisper = r.ReadUnicodeString();
+        else if (type == 0x14) club = r.ReadLong();
+        else if (type == 0x10 || type == 0x19) item = r.ReadInt();
+        byte last = r.ReadByte();
+        return new ChatMessage(acc, chr, name, common, commonId, text, type, gm, gender, whisper, club, item, last);
     }
+}
+
+/// <summary>
+/// The wedding hall block after a type 0x19 chat line (reader FUN_1407a5960, unit_1407a4f20_packetserializers.cpp:205):
+/// i64, i32 hall, i32 room, i64 time, two unicode strings. vfunc_84 reads it only with feature 0x104 on. STILL-OPEN: what
+/// the first i64 and the strings are; the wedding line builder (FUN_141841180) needs the wedding table, not ported.
+/// </summary>
+public sealed record WeddingChatHall(long Id, int Hall, int Room, long Time, string Text1, string Text2) {
+    public static WeddingChatHall Read(ByteReader r) =>
+        new(r.ReadLong(), r.ReadInt(), r.ReadInt(), r.ReadLong(), r.ReadUnicodeString(), r.ReadUnicodeString());
 }
