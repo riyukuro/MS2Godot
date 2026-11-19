@@ -118,6 +118,10 @@ public partial class Field : Node3D
             int pct = t > 0 ? (int)((double)c / t * 100) : 0;
             if (pct != shownPct) { shownPct = pct; World.FieldContents.CoverProgress(c, t); }
         };
+        // the field enter's FUN_141739450(false) (CSceneStateGame::vfunc_1, scenestategame.cpp:2006): a closed taxi station
+        // draws its DisabledAsset, so the swap comes before the build reads NifAsset; the open one's effect after it
+        int taxiField = fd?.Id ?? 0;
+        var taxis = World.TaxiStations.BeforeBuild(map, World.TaxiStations.IsOpen(packs, taxiField));
         await Budget();
         foreach (var _ in fb.BuildSteps(map)) await Budget();
         var fieldWorld = fb.World;
@@ -127,6 +131,7 @@ public partial class Field : Node3D
         AddChild(Fade);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
+        if (taxis.Count > 0) AddChild(World.TaxiStations.Start(packs, builder, taxis, taxiField));
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");

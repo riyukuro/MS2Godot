@@ -64,6 +64,8 @@ public partial class LiveSession : Node
     public event Action<short> GemEquipError;
     /// <summary>OnBadgeEquip modes 0 and 1, for any PC of the field (the own one included): a gem put on or taken off.</summary>
     public event Action<BadgeEquipMessage> BadgeEquipped;
+    /// <summary>OnTaxi, after its ids joined the found-taxi list (<see cref="StubHudData.FoundTaxis"/>).</summary>
+    public event Action<Ms2.Net.Packets.TaxiFound> TaxiFound;
     /// <summary>OnNotice (0x71, scenestategame.cpp:9216): a system notice, routed by <see cref="Ms2.Ui.Hud.NoticeController"/>.</summary>
     public event Action<NoticeMessage> Notice;
     /// <summary>UIMessengerBrowser::vfunc_84 (0x1d, uimessenger.cpp:2829): a user's chat line, and the packet's reader for the
@@ -504,6 +506,8 @@ public partial class LiveSession : Node
         {
             Adventure.ServerEnter();
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
+            // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122)
+            if (entry.Enter?.UnlockedTaxis is { } taxis) StubHudData.Instance.FoundTaxis = new HashSet<int>(taxis);
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
@@ -814,6 +818,16 @@ public partial class LiveSession : Node
                 if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
                 else if (b.Mode is 0 or 1) BadgeEquipped?.Invoke(b);
                 GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
+            }
+            else if (game.Is(p, Inbound.Taxi))
+            {
+                var t = Ms2.Net.Packets.TaxiFound.Read(p.Reader());   // CSceneStateGame::OnTaxi (scenestategame.cpp:7902): the ids join DAT_143ab3078
+                if (t.Fields.Length > 0)                            // the client returns on an empty list
+                {
+                    StubHudData.Instance.FoundTaxis.UnionWith(t.Fields);
+                    TaxiFound?.Invoke(t);
+                }
+                GD.Print($"live: taxi found {string.Join(",", t.Fields)} open {t.Open}");
             }
             else if (game.Is(p, Inbound.UserState))
             {

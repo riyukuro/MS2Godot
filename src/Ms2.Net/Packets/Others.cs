@@ -21,6 +21,19 @@ public sealed record DeadUser(int ObjectId, bool Flag) {
     public static DeadUser Read(ByteReader r) => new(r.ReadInt(), r.ReadByte() != 0);
 }
 
+/// <summary>Inbound 0x80 (CSceneStateGame::OnTaxi, scenestategame.cpp:7902): i32 count and that many u32 field ids (the CAtlArray
+/// operator>>, gameevent.cpp:509-519), then u8 bOpen. The ids join the found-taxi list; bOpen plays the reveal. The client
+/// ignores trailing bytes.</summary>
+public sealed record TaxiFound(int[] Fields, bool Open) {
+    public static TaxiFound Read(ByteReader r) {
+        int n = r.ReadInt();
+        if (n < 0 || n > r.Available / 4) throw new PacketLayoutException($"Taxi: {n} ids");
+        var a = new int[n];
+        for (int i = 0; i < n; i++) a[i] = r.ReadInt();
+        return new TaxiFound(a, r.ReadByte() != 0);
+    }
+}
+
 /// <summary>Inbound 0x2F (OnUserBattle): i32 object id, u8 emotion (the combat stance face).</summary>
 public sealed record UserBattle(int ObjectId, byte Emotion) {
     public static UserBattle Read(ByteReader r) { var p = new UserBattle(r.ReadInt(), r.ReadByte()); r.ExpectEnd("UserBattle"); return p; }
