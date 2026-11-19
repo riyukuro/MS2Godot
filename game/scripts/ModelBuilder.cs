@@ -342,6 +342,20 @@ public sealed class ModelBuilder
             var glow = m.Textures.TryGetValue("glow", out var glowName) ? Texture(glowName) : null;
             sm.SetShaderParameter(ShaderParam.HasGlow, glow != null);
             if (glow != null) sm.SetShaderParameter(ShaderParam.GlowTex, glow);
+            // a sphere-mapped environment map adds env * gloss to the specular (HandleMS2PostLightTextureApplication,
+            // ms2standardmaterial.cpp); MS2GlassMaterial also adds the specular's average to the opacity
+            var env = m.EnvMap != null ? Texture(m.EnvMap) : null;
+            sm.SetShaderParameter(ShaderParam.HasEnv, env != null);
+            if (env != null)
+            {
+                sm.SetShaderParameter(ShaderParam.EnvTex, env);
+                sm.SetShaderParameter(ShaderParam.EnvU, new Vector3(m.EnvU[0], m.EnvU[1], m.EnvU[2]));
+                sm.SetShaderParameter(ShaderParam.EnvV, new Vector3(m.EnvV[0], m.EnvV[1], m.EnvV[2]));
+                var gloss = m.Textures.TryGetValue("gloss", out var gn) ? Texture(gn) : null;
+                sm.SetShaderParameter(ShaderParam.HasGloss, gloss != null);
+                if (gloss != null) sm.SetShaderParameter(ShaderParam.GlossTex, gloss);
+            }
+            sm.SetShaderParameter(ShaderParam.Glass, m.Material == "MS2GlassMaterial");
             int flipSlot = m.FlipSlot == "base" ? 0 : m.FlipSlot == "dark" ? 1 : -1;
             var flip = flipSlot >= 0 ? FlipArray(m.FlipFrames) : null;
             if (flip != null)

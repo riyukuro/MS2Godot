@@ -52,6 +52,8 @@ public sealed class ModelMesh
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
     public Dictionary<string, int> ExtraInts = new();          // NiIntegerExtraData by name (ColorOverrideMapIndex, ...)
+    public string EnvMap;                 // sphere-mapped environment map (NiTextureEffect) on the mesh, or null
+    public float[] EnvU, EnvV;            // its sphere-map axes in the mesh's own space (see ModelData.Load), unit xyz
 
     public ModelMesh Clone() => (ModelMesh)MemberwiseClone();
 }
@@ -365,6 +367,49 @@ public sealed class ModelData
         return o;
     }
 
+    /// <summary>
+    /// The environment map Gamebryo gives a mesh: NiNode::PushLocalEffects adds each node's effect list to the state the
+    /// node passes down (scene root first), and NiDynamicEffectState::AddEffect keeps one environment map, the last one
+    /// added, so the nearest node with an ENVIRONMENT_MAP (texture type 2) NiTextureEffect decides. The standard material
+    /// then uses it only with its switch on (NiStandardMaterialDescriptor::SetEnvMapDescriptor). Only the SPHERE_MAP
+    /// coordinate generation (2, TEXEFFECT_SPHERICAL) is read: there NiTextureEffect::UpdateProjection makes the world
+    /// projection rows 0.5 * Rot column 2 and -0.5 * Rot column 1 (Rot the effect's world rotation) with translation
+    /// (0.5, 0.5, 0), so u = 0.5 * dot(EnvU, R) + 0.5 and v = -0.5 * dot(EnvV, R) + 0.5 for the world reflection vector R.
+    /// EnvU and EnvV are those two columns in the mesh's own space (scene root space for a skinned mesh).
+    /// </summary>
+    static void ReadEnvMap(NifFile nif, Dictionary<int, int> parent, int root, int mi, ModelData md, Dictionary<int, int> boneOf, ModelMesh mesh)
+    {
+        var B = nif.Blocks;
+        int fx = -1;
+        for (int n = parent.TryGetValue(mi, out var p0) ? p0 : root; fx < 0; n = parent[n])
+        {
+            foreach (var e in B[n].Ints("Effects"))
+                if (e >= 0 && B[(int)e].Type == "NiTextureEffect" && B[(int)e].IntOr("Texture Type", -1) == 2) fx = (int)e;
+            if (n == root || !parent.ContainsKey(n)) break;
+        }
+        if (fx < 0) return;
+        var ef = B[fx];
+        if (ef.IntOr("Switch State", 1) == 0 || ef.IntOr("Coordinate Generation Type", -1) != 2) return;
+        long src = ef.IntOr("Source Texture", -1);
+        if (src < 0) return;
+        // the effect's transform in scene root space (bone World excludes the root's own transform, as the meshes do)
+        int ep = parent.TryGetValue(fx, out var p1) ? p1 : root;
+        var fxWorld = (boneOf.TryGetValue(ep, out var eb) ? md.Bones[eb].World : Xform.Identity).Compose(XformOf(ef));
+        var meshWorld = mesh.Skinned ? Xform.Identity
+                      : (mesh.ParentBone >= 0 ? md.Bones[mesh.ParentBone].World : Xform.Identity).Compose(mesh.Local);
+        var rel = meshWorld.Inverse().Compose(fxWorld) with { T = new Vec3(0, 0, 0) };
+        float[] Axis(Vec3 a)
+        {
+            var v = rel.Apply(a);
+            double l = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+            if (l == 0) l = 1;
+            return new[] { (float)(v.X / l), (float)(v.Y / l), (float)(v.Z / l) };
+        }
+        mesh.EnvMap = nif.StrField(B[(int)src], "File Name");
+        mesh.EnvU = Axis(new Vec3(0, 0, 1));
+        mesh.EnvV = Axis(new Vec3(0, 1, 0));
+    }
+
     public static ModelData Load(NifFile nif)
     {
         var B = nif.Blocks;
@@ -514,6 +559,7 @@ public sealed class ModelData
                 mesh.ParentBone = boneOf.TryGetValue(par, out var pb) ? pb : -1;
                 mesh.Local = XformOf(b);
             }
+            ReadEnvMap(nif, parent, root, i, md, boneOf, mesh);
             md.Meshes.Add(mesh);
         }
         return md;

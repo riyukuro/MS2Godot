@@ -21,6 +21,8 @@
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
 // evenly over flip_period, looping; a uv translation (NiTextureTransformController, translate U or V) moves linearly
 // between its first and last key over the controller's start..stop range, looping.
+// A sphere-mapped environment map (NiTextureEffect on the mesh's node or an ancestor) adds to the specular, and
+// MS2GlassMaterial turns that specular into opacity too (see fragment()).
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
 #include "res://shaders/ms2_fog.gdshaderinc"
@@ -55,6 +57,7 @@ global uniform vec3 ms2_sun_ambient; // directional light ambient colour * dimme
 global uniform vec3 ms2_hfog_color; // height fog colour (gamma space)
 global uniform vec3 ms2_hfog;       // height fog: upper height, lower height, density at and below the lower height (0 = none)
 global uniform vec3 ms2_sun_dir;     // world direction the light travels
+global uniform vec3 ms2_sun_specular; // directional light specular colour * dimmer
 
 uniform sampler2D base_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D dark_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -75,6 +78,15 @@ uniform float fade_alpha = 1.0;     // FADE: the NiMaterialProperty alpha Transp
 // material alpha, not the vertex alpha.
 uniform bool fade_vc_swap = false;
 uniform vec3 emissive = vec3(0.0);
+// sphere-mapped environment map: the effect texture (Texture Clamping 0 = clamp both), its projection axes in the mesh's
+// own space (NifModel ReadEnvMap) and the gloss map that scales it
+uniform sampler2D env_tex : filter_linear_mipmap, repeat_disable;
+uniform bool has_env = false;
+uniform vec3 env_u = vec3(0.0, 0.0, 1.0);
+uniform vec3 env_v = vec3(0.0, 1.0, 0.0);
+uniform sampler2D gloss_tex : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform bool has_gloss = false;
+uniform bool glass = false;          // MS2GlassMaterial
 uniform vec3 mat_ambient = vec3(0.7058824);
 uniform vec3 mat_diffuse = vec3(0.7058824);
 uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -93,15 +105,36 @@ uniform vec2 dark_scroll_range;
 varying vec3 world_normal;
 varying vec3 world_pos;
 varying vec4 vcolor;
+varying vec3 env_u_world;
+varying vec3 env_v_world;
+#ifndef POINT_LIT
+varying vec2 env_uv;
+#endif
 #ifdef POINT_LIT
 varying vec3 sun_share;  // the sun's part of the output colour (gamma), which the shadow scales in light()
 #endif
+
+// The SPHERICAL texture effect uv (NiStandardMaterial::HandleTextureEffectUVSetGen): the world reflection
+// R = normalize(reflect(-(CameraPos - WorldPos), normalize(WorldNrm))) (CalculateViewVector, WorldReflect) projected by
+// the effect's world projection matrix (ProjectTextureCoordinates with SCM_OBJ_WORLDPROJECTIONTRANSFORM, made by
+// NiTextureEffect::UpdateProjection for SPHERE_MAP): u = 0.5 R.U + 0.5, v = -0.5 R.V + 0.5.
+vec2 env_sphere_uv(vec3 wpos, vec3 wnrm, vec3 cam, vec3 u_axis, vec3 v_axis) {
+	vec3 r = normalize(reflect(-(cam - wpos), normalize(wnrm)));
+	return vec2(0.5 * dot(u_axis, r) + 0.5, -0.5 * dot(v_axis, r) + 0.5);
+}
 
 void vertex() {
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vcolor = has_vcolor ? CUSTOM0 : vec4(1.0);
 	fog_share = ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
+	env_u_world = normalize((MODEL_MATRIX * vec4(env_u, 0.0)).xyz);
+	env_v_world = normalize((MODEL_MATRIX * vec4(env_v, 0.0)).xyz);
+#ifndef POINT_LIT
+	// unshadowed (blended) meshes light per vertex (PERVERTEXFORLIGHTS), and the sphere-map uv is then made in the
+	// vertex shader too (NiStandardMaterial, ENVMAPTYPE on the vertex descriptor without a normal map)
+	env_uv = env_sphere_uv(world_pos, world_normal, INV_VIEW_MATRIX[3].xyz, env_u_world, env_v_world);
+#endif
 }
 
 vec2 scroll(int axis, vec4 key, vec2 range) {
@@ -133,12 +166,38 @@ void fragment() {
 		t.rgb *= sample_slot(dark_tex, 1, duv).rgb;
 	}
 	float a = t.a * vcolor.a;
+	// The environment map's specular (MS2StandardMaterial::HandleMS2PostLightTextureApplication,
+	// ms2standardmaterial.cpp:1489-1560, through NiStandardMaterial::HandleEnvMap): the env rgb sampled saturated
+	// (TextureRGBSample) times the glossiness, the gloss map's rgb (HandleGlossMap; no gloss map: the env alone), times the
+	// first directional light's specular * dimmer (SCM_OBJ_SPECULAR, HandleMS2Light) when the pixel shader lights; added
+	// to the specular accumulator. Per-pixel lighting (the opaque form, whose sun casts the shadow) has that light; the
+	// per-vertex blended forms leave it out. This shader draws no light specular (NiSpecularProperty) to add it to.
+	vec3 spec = vec3(0.0);
+	if (has_env) {
+#ifdef POINT_LIT
+		vec2 euv = env_sphere_uv(world_pos, world_normal, INV_VIEW_MATRIX[3].xyz, normalize(env_u_world), normalize(env_v_world));
+#else
+		vec2 euv = env_uv;
+#endif
+		spec = clamp(texture(env_tex, euv).rgb, 0.0, 1.0);
+		if (has_gloss) {
+			spec *= clamp(texture(gloss_tex, UV).rgb, 0.0, 1.0);
+		}
+#ifdef POINT_LIT
+		spec *= ms2_sun_specular;
+#endif
+	}
 #ifdef FADE
 	if (fade_vc_swap) {
 		a = t.a;
 	}
 	a *= fade_alpha;    // the faded material alpha; alpha_ref is the test reference scaled the same way
 #endif
+	// MS2GlassMaterial::HandleMS2FinalPixelOutputs (ms2glassmaterial.cpp, 0x142774510): the opacity (the faded one too) is
+	// saturate(opacity + (spec.r + spec.g + spec.b) / 3) (CalculateDiffuseOnlyAlpha), tested after that
+	if (glass) {
+		a = clamp(a + (spec.r + spec.g + spec.b) / 3.0, 0.0, 1.0);
+	}
 	if (alpha_test && a < alpha_ref) {
 		discard;
 	}
@@ -166,6 +225,9 @@ void fragment() {
 		c += g;
 		c0 += g;
 	}
+	// the final colour is diffuse + specular (CompositeFinalRGBColor), before the fog; the shadow does not scale it
+	c += spec;
+	c0 += spec;
 	// Height fog (mapxblock heightfog), the engine's CalculateHeightFog fragment (NiStandardMaterialNodeLibrary, MS2 patch):
 	// HeightFogOut = 1 above UpperZ, Weight * (z - LowerZ) / (UpperZ - LowerZ) + 1 - Weight between, 1 - Weight below LowerZ;
 	// ApplyFog then lerps from the fog colour to the colour by it. Weight = percentage / 100 (ApplyEffect::SetFogEffect,
