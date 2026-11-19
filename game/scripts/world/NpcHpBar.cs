@@ -28,13 +28,13 @@ public sealed class NpcHpBar
     bool dirty;
     readonly HpBarClip clip;
 
-    public NpcHpBar(FieldNpcs.Placed npc, UiMovie movie, float u, Node parent)
+    public NpcHpBar(FieldNpcs.Placed npc, UiMovie movie, float u, Node parent, long? spawnCur = null, long? spawnMax = null)
     {
         Npc = npc;
         clip = new HpBarClip(movie, u, parent);
         // CNpc::vfunc_12 (@0x14108f710): a property tag 2 npc's bar is shown and set from its HP stat (current, max) at spawn.
-        // Those stats come with the server's FieldAddNpc; the offline stand-in spawns the npc whole, at its stat hp.
-        if (npc.Row.AlwaysDisplayHpBar) { Shown = true; Activate(npc.Row.Hp, npc.Row.Hp); }
+        // Those stats come with the server's FieldAddNpc; the offline stand-in spawns the npc whole, at its row's stat hp.
+        if (npc.Row.AlwaysDisplayHpBar) { Shown = true; Activate(spawnCur ?? npc.Row.Hp, spawnMax ?? npc.Row.Hp); }
     }
 
     /// <summary>The rank of the bar (FUN_141992680): the row's class, 10 with big_hp_bar.</summary>

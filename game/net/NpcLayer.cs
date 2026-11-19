@@ -29,7 +29,8 @@ public sealed class NpcLayer
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public bool Placeholder, Dead;
         public float Height = 150;
-        public ShaderMaterial HpMat;
+        public ShaderMaterial HpMat;                 // a replay's stand-in quad
+        public World.NpcHpBar Bar;                  // a live field's movie bar
         public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
     }
 
@@ -43,6 +44,8 @@ public sealed class NpcLayer
     public CombatLayer Combat;
     /// <summary>The npcs' name tags (the movie tag); none when null.</summary>
     public LiveNameTags Tags;
+    /// <summary>The live field's head bars (the uihpbar movie); null in a replay, whose bars stay the stand-in quads.</summary>
+    public LiveHpBars Bars;
     public int Deaths, NoDeathSequence;
 
     // kfm name (lower case) -> its entry in the Npc pack; the folder layout differs by id range (NN/NN/NNNNNNNN or NN/NNNNNNNN)
@@ -141,13 +144,19 @@ public sealed class NpcLayer
         parent.AddChild(root);
         root.Position = i.Target;
         Tags?.AddNpc(root, i.Placeholder ? null : i.Visual, row);
-        if (Combat != null && n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health)
+        if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
+        i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
+        if (Bars != null)
+        {
+            // CNpc::vfunc_80: the row's hpBar flag makes the entity (hidden until active and shown); CNpc::vfunc_12's
+            // property tag 2 row is shown and filled from the spawn stat
+            i.Bar = Bars.AddNpc(i.Talk, () => World.NpcPresence.Dummy(i.Talk, "Eff_UI") ?? root.GlobalPosition, n.Stats[2].Health, n.Stats[0].Health);
+        }
+        else if (Combat != null && n.Stats[0].Health > 0 && n.Stats[2].Health < n.Stats[0].Health)
         {
             i.HpMat = Combat.HpBar(root, i.Height);
             i.HpMat.SetShaderParameter(ShaderParam.Fill, (float)n.Stats[2].Health / n.Stats[0].Health);
         }
-        if (!i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(i.TargetYaw), 0);
-        i.Talk = new World.FieldNpcs.Placed { Row = row, Root = root, Body = i.Visual, Height = i.Height, ObjectId = n.ObjectId };
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
         Spawned++;
@@ -157,6 +166,7 @@ public sealed class NpcLayer
     {
         if (dead || !inst.Remove(id, out var i)) return;      // a dead npc stays until it is removed
         Tags?.Remove(i.Root);
+        Bars?.Remove(i.Root);
         i.Root.QueueFree();
     }
 
@@ -194,16 +204,30 @@ public sealed class NpcLayer
         if (seq != null) Play(i, seq.Id);
     }
 
-    /// <summary>An hp update: draws the bar once the npc is hurt; at 0 the death sequence plays and the body stays until it is removed.</summary>
+    /// <summary>PCBase::vfunc_112 on an npc: a hit sets the shown flag only while it is off, and only for the local player's.</summary>
+    public void Damaged(int id, bool byLocalPlayer)
+    {
+        if (inst.TryGetValue(id, out var i) && i.Bar is { Shown: false }) i.Bar.Shown = byLocalPlayer;
+    }
+
+    /// <summary>An hp update: the bar is filled (and made active by the first stat, standing in for the battle stance the
+    /// server never sends); at 0 the death sequence plays and the body stays until it is removed.</summary>
     public void SetHp(int id, long cur, long max)
     {
         if (!inst.TryGetValue(id, out var i) || max <= 0) return;
-        if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
+        if (i.Bar != null)
+        {
+            // OnStat (FUN_141992230) only marks the change; the client activates the bar on the npc's battle stance
+            // (CNpc::vfunc_66), which this server never sends, so the first stat stands in for the activation.
+            if (i.Bar.Active) i.Bar.Stat(cur, max); else i.Bar.Activate(cur, max);
+        }
+        else if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
         i.HpMat?.SetShaderParameter(ShaderParam.Fill, Mathf.Clamp((float)cur / max, 0f, 1f));
         if (cur <= 0 && !i.Dead)
         {
             i.Dead = true; Deaths++;
             Tags?.Died(i.Root);
+            if (i.Bar != null) i.Bar.Dead = true;      // vfunc_8: a dead npc's bar drops
             var dead = table.Find(i.NpcId)?.SoundDead;
             if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
             if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }

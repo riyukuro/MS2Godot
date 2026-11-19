@@ -21,6 +21,8 @@ public sealed partial class RemoteLayer : Node3D
         public Vector3 Target; public float TargetYaw; public string Name, Current = "";
         public Vector3 LastPos; public float Speed;
         public int ObjectId; public long CharacterId; public string Picture = "";
+        public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance
+        public PcHpBar Bar;
         public Func<Vector3> Anchor;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems = Array.Empty<Ms2.Net.Packets.EquipItem>();
@@ -34,6 +36,7 @@ public sealed partial class RemoteLayer : Node3D
     readonly NpcLayer npcs;
     readonly CombatLayer combat;
     readonly LiveNameTags tags;
+    readonly LiveHpBars bars;
     readonly PackSet packs;
     readonly Dictionary<int, Remote> users = new();
     readonly Dictionary<byte, (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run)> bodies = new();
@@ -73,6 +76,8 @@ public sealed partial class RemoteLayer : Node3D
             InParty = id => LiveSession.Instance?.Party is { } p && p.PartyId != 0 && p.Find(id) != null,
         });
         npcs.Tags = tags;
+        field.AddChild(bars = new LiveHpBars(packs));
+        npcs.Bars = bars;
     }
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
@@ -103,14 +108,26 @@ public sealed partial class RemoteLayer : Node3D
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
+        r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
         root.Position = r.Target; r.LastPos = r.Target;
         visual.Rotation = new Vector3(0, Mathf.DegToRad(r.TargetYaw), 0);
         anim.Play("idle"); r.Current = "idle";
+        // PC::vfunc_10: a hurt spawn makes a party member's bar active at once (not shown)
+        if (r.HpCur != r.HpMax) EnsureBar(r)?.Spawn(r.HpCur, r.HpMax, r.InBattle);
         return r;
     }
+
+    /// <summary>PC::vfunc_80's gate: the party gauge option on (the status option the client reads at +0xc), in a party,
+    /// and one of its members (MyPC::IsMemberByCharId).</summary>
+    bool CanPcBar(long characterId) =>
+        bars.PartyGauge && LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(characterId) != null;
+
+    /// <summary>The member's bar, made on demand (PC::vfunc_80 is called from UpdateHpBar, OnStat and a hit, so the
+    /// entity is made at the first of those, not at the spawn).</summary>
+    PcHpBar EnsureBar(Remote r) => r.Bar ??= CanPcBar(r.CharacterId) ? bars.AddPc(r.Root, r.Anchor) : null;
 
     void Drain()
     {
@@ -121,17 +138,42 @@ public sealed partial class RemoteLayer : Node3D
             {
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
-                    if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); old.Root.QueueFree(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); bars.Remove(old.Root); old.Root.QueueFree(); }
                     users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++;
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
-                    if (users.Remove(rem.ObjectId, out var gone)) { tags.Remove(gone.Root); gone.Root.QueueFree(); GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left"); }
+                    if (users.Remove(rem.ObjectId, out var gone))
+                    {
+                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Root.QueueFree();
+                        GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
+                    }
                     break;
                 case UserMovedEvent mv:
                     if (!users.TryGetValue(mv.ObjectId, out var r)) break;
                     r.Target = G(mv.Position); r.TargetYaw = mv.YawDegrees;
                     if (++movedSeen <= 3 || movedSeen % 100 == 0) GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}");
+                    break;
+                case UserStatEvent st:
+                    // OnStat (vfunc_74 -> FUN_141992230): an hp change shows the member's bar
+                    if (!users.TryGetValue(st.Stat.ObjectId, out var su)) break;
+                    if (st.Stat.TryGet(PlayerStat.Health, out long hpMax, out long hpCur)) { su.HpMax = hpMax; su.HpCur = hpCur; }
+                    EnsureBar(su)?.Stat(su.HpCur, su.HpMax);
+                    break;
+                case UserBattleEvent bat:
+                    // OnUserBattle -> SetEmotion: the stance byte; a change runs UpdateHpBar on both sides
+                    if (!users.TryGetValue(bat.ObjectId, out var sb)) break;
+                    sb.InBattle = bat.Emotion != 0;
+                    EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
+                    break;
+                case SkillDamageEvent dmg:
+                    // PCBase::vfunc_112 on each target: a hit shows an off bar only for the local player's hit
+                    bool byLocal = dmg.Damage.OwnerId == Tracker.SelfObjectId;
+                    foreach (var t in dmg.Damage.Targets)
+                    {
+                        npcs.Damaged(t.TargetId, byLocal);
+                        if (users.TryGetValue(t.TargetId, out var hit) && hit.Bar != null) hit.Bar.Hit(byLocal);
+                    }
                     break;
                 case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
                 case NpcAddedEvent na: npcs.Add(na); NpcsAdded++; break;
