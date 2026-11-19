@@ -1,5 +1,5 @@
-// Field mesh lighting in the way Gamebryo's standard material does it on D3D9: per-pixel
-// emissive + material ambient * (ambient + sun ambient) + material diffuse * sun * N.L, times the base
+// Field mesh lighting in the way the client's MS2StandardMaterial does it on D3D9: per-pixel
+// emissive + material ambient * ambient + material diffuse * (sun * N.L + sun ambient * (1 - N.L)), times the base
 // texture (with the decal and dark maps), all in gamma space: textures are sampled raw, not as sRGB. Not clamped:
 // the client renders to an HDR target, and values over 1 feed the bloom pass (Ms2Bloom).
 // The material colour (ambient = diffuse) is the entity's MaterialColor, passed as the MultiMesh
@@ -148,20 +148,25 @@ void fragment() {
 #endif
 	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
 	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(world_pos, normalize(world_normal));
-	// Gamebryo's Light fragment (NiStandardMaterialNodeLibrary.cpp:2475-2477) adds the sun's ambient to the ambient
-	// accumulator with no N.L, and ComputeShadingCoefficients (:2824-2825) multiplies that accumulator by the material ambient:
-	// Diffuse = MatEmissive + MatAmbient * LightAmbientAccum + MatDiffuse * LightDiffuseAccum
-	vec3 lit = unsun + amb * ms2_sun_ambient + dif * ms2_sun_color * ndl;
+	// Field meshes are MS2StandardMaterial type 0, whose light node is "MS2Light", not Gamebryo's "Light"
+	// (MS2StandardMaterial::HandleMS2Light, ms2standardmaterial.cpp:852-875). MS2Light (ms2materialnodelibrary.cpp:316-328)
+	// puts the light's ambient into the diffuse accumulator, not the ambient one:
+	// DiffuseAccumOut += LightDiffuse * LightIntensity * Attenuate; DiffuseAccumOut += LightAmbient * (1 - LightIntensity * Shadow)
+	// with LightIntensity = max(0, N.L) and Attenuate = Shadow for a directional light. Lit: sun * N.L + sun ambient * (1 - N.L);
+	// fully in shadow: sun ambient alone.
+	vec3 lit = unsun + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl));
 	vec3 c = lit * t.rgb;
-	vec3 c0 = unsun * t.rgb;   // the same colour with no sun: fully in its shadow
+	vec3 c0 = (unsun + dif * ms2_sun_ambient) * t.rgb;   // the same colour fully in the sun's shadow (Shadow = 0)
 	if (has_glow) {
 		vec3 g = texture(glow_tex, UV).rgb;
 		c += g;
 		c0 += g;
 	}
-	// Height fog (mapxblock heightfog): a standard height blend, none above `upper`, full density at and below `lower`.
-	// The exact client curve is not recoverable from the on-disk shaders; the numbers are the map's own.
-	float hf = ms2_hfog.z * (1.0 - smoothstep(ms2_hfog.y, ms2_hfog.x, world_pos.y));
+	// Height fog (mapxblock heightfog), the engine's CalculateHeightFog fragment (NiStandardMaterialNodeLibrary, MS2 patch):
+	// HeightFogOut = 1 above UpperZ, Weight * (z - LowerZ) / (UpperZ - LowerZ) + 1 - Weight between, 1 - Weight below LowerZ;
+	// ApplyFog then lerps from the fog colour to the colour by it. Weight = percentage / 100 (ApplyEffect::SetFogEffect,
+	// applyeffect.cpp:625-665). So the fog share is Weight * (1 - (z - LowerZ) / (UpperZ - LowerZ)), linear in height.
+	float hf = ms2_hfog.z * (1.0 - clamp((world_pos.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
 #ifndef ADD
 	c = mix(c, ms2_hfog_color, hf);
 	c0 = mix(c0, ms2_hfog_color, hf);
@@ -169,9 +174,8 @@ void fragment() {
 	// the output is written in gamma space by Godot's linear -> sRGB conversion
 #ifdef POINT_LIT
 	// opaque: everything but the sun is emission; the sun's share comes back in light(), times its shadow. Out of the
-	// shadow the sum is to_linear(c), the formula above. Gamebryo's Light fragment (NiStandardMaterialNodeLibrary.cpp,
-	// "Light": DiffuseAccumOut += LightDiffuse * LightIntensity * Attenuate, AmbientAccumOut += LightAmbient * Attenuate,
-	// Attenuate = Shadow for a directional light) takes both of the sun's terms off in its shadow.
+	// shadow the sum is to_linear(c), the formula above; in full shadow it is to_linear(c0), the sun ambient alone (MS2Light
+	// above). In between Godot's shadow factor interpolates the two (exact in linear space, close in gamma space).
 	EMISSION = to_linear(c0);
 	sun_share = to_linear(c) - to_linear(c0);
 	ALBEDO = vec3(1.0);
