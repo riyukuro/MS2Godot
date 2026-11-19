@@ -136,6 +136,56 @@ public class GameOptionTests
         Assert.That(Rt.ToInt32(h.Get(dp, "length")), Is.GreaterThan(0), "FillResolutionCombo's rows");
     }
 
+    /// <summary>The Sound page's volume slider box (SliderEx.updateTooltip) is centred on the thumb with its percent text
+    /// centred in it: the autoSize CENTER field is placed by x, which is its text rectangle's left side (TextField::GetX /
+    /// SetX, sfr_gfx_03e.cpp:760, sfr_gfx_03f.cpp:861), not the matrix origin.</summary>
+    [Test]
+    public void SoundSliderTooltipIsCentred()
+    {
+        var (h, host) = Load(7);
+        var slider = h.Invoke(h.Entity, "getTabChild", "m_mainSoundStep", -1) as AsObject;
+        Assert.That(slider, Is.Not.Null);
+        foreach (var v in new[] { 0.0, 8.0, 10.0 })
+        {
+            var c = SliderTooltipCentres(h.Player, slider, v);
+            Assert.That(c.Text, Is.EqualTo(c.Box).Within(1.0), $"value {v}: text centred in its box");
+            Assert.That(c.Gap, Is.EqualTo(c.Left).Within(0.1), $"value {v}: the text keeps the gap measured from the box's left");
+            Assert.That(c.BoxOnSlider, Is.EqualTo(c.Thumb).Within(1.0), $"value {v}: box centred on the thumb");
+        }
+    }
+
+    /// <summary>SliderEx's value box after its private showTooltip / updateTooltip run at the value (scaleform.ms2.controls.SliderEx):
+    /// in the tooltip's space the centres of the box art (m_bg) and of the percent text field (m_percent), the text's gap
+    /// from the box's left and the gap the first call measured (m_tooltipAddSize.left); in the slider's space the centres
+    /// of the box art and of the thumb.</summary>
+    static (double Box, double Text, double Gap, double Left, double BoxOnSlider, double Thumb) SliderTooltipCentres(Player p, AsObject slider, double value)
+    {
+        object Get(object o, string n) => p.RT.GetProperty(o, Name.Public(n));
+        void Private(string name, params object[] args)
+        {
+            foreach (var b in slider.Traits.All) if (b.Local == name) { b.Method.Invoke(slider, args); return; }
+            Assert.Fail("no " + name);
+        }
+        object Find(object o, string name)
+        {
+            if (Get(o, "name") as string == name) return o;
+            if (o is not AsContainer) return null;
+            for (int i = 0, n = Rt.ToInt32(Get(o, "numChildren")); i < n; i++)
+                if (Find(p.Call(o, "getChildAt", (double)i), name) is { } f) return f;
+            return null;
+        }
+        p.RT.SetProperty(slider, Name.Public("value"), value);
+        Private("showTooltip", true);
+        Private("updateTooltip");
+        var tip = Get(slider, "m_tooltip");
+        double Left(object o, object space) => Rt.ToNumber(Get(p.Call(o, "getBounds", space), "x"));
+        double Centre(object o, object space) { var r = p.Call(o, "getBounds", space); return Rt.ToNumber(Get(r, "x")) + Rt.ToNumber(Get(r, "width")) / 2; }
+        var box = Find(tip, "m_bg"); var text = Find(tip, "m_percent");
+        Assert.That(box, Is.Not.Null); Assert.That(text, Is.InstanceOf<AsTextField>());
+        return (Centre(box, tip), Centre(text, tip), Left(text, tip) - Left(box, tip), Rt.ToNumber(Get(Get(slider, "m_tooltipAddSize"), "left")),
+            Centre(box, slider), Centre(Get(slider, "thumb"), slider));
+    }
+
     [Test]
     public void SoundPageAppliesAndCloses()
     {

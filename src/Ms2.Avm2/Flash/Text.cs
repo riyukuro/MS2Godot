@@ -424,6 +424,37 @@ public class AsTextField : AsInteractiveObject
     }
 
     public override RectD LocalBounds() => Box;
+
+    /// <summary>x / y are where the text rectangle's top-left corner sits in the parent, not the matrix origin: the
+    /// geometry data's position is the matrix applied to the view rect's top-left, rounded to whole twips
+    /// (TextField::GetX / GetY @0x1425b95f0 / @0x1425b9690, sfr_gfx_03e.cpp:760; UpdateAndGetGeomData @0x1425beb10,
+    /// sfr_gfx_03f.cpp:949). Reading the view rect first runs a pending reformat (DocView::GetViewRect), so an
+    /// autoSize CENTER field that grew reads its new left edge.
+    /// STILL-OPEN: the client caches the position in its geometry data and recomputes it only after a change that sets
+    /// Flags_NeedUpdateGeomData (a text, size, scale or rotation change; SetX / SetY store it); this reads it live.</summary>
+    protected override double GetX() { var b = Box; var m = Matrix; return Twips(m.A * b.X + m.C * b.Y + m.Tx); }
+    protected override double GetY() { var b = Box; var m = Matrix; return Twips(m.B * b.X + m.D * b.Y + m.Ty); }
+    static double Twips(double px) => Math.Floor(px * 20 + 0.5) / 20;
+
+    /// <summary>Puts the text rectangle's left side at x: the parent point (x, x) (Point(T v) sets both,
+    /// render_types2d.h:32) taken into the field's space, moved left by the view rect's x and taken back to the parent
+    /// gives the new matrix origin's x; an infinite x is 0 (TextField::SetX @0x1425be380, sfr_gfx_03f.cpp:861).</summary>
+    protected override void SetX(double v)
+    {
+        if (double.IsInfinity(v)) v = 0;
+        var m = Matrix;
+        var (px, py) = m.Inverse().Apply(v, v);
+        base.SetX(m.Apply(px - Box.X, py).X);
+    }
+
+    /// <summary>Puts the text rectangle's top at y, from the point (0, y) (TextField::SetY @0x1425be670, sfr_gfx_03f.cpp:890).</summary>
+    protected override void SetY(double v)
+    {
+        if (double.IsInfinity(v)) v = 0;
+        var m = Matrix;
+        var (px, py) = m.Inverse().Apply(0, v);
+        base.SetY(m.Apply(px, py - Box.Y).Y);
+    }
     public override bool HitsContent(double gx, double gy) { var (lx, ly) = GlobalToLocal(gx, gy); return Box.Contains(lx, ly); }
     protected override bool DefaultTabEnabled => type == "input";
 

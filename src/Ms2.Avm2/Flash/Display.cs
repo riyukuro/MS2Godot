@@ -115,8 +115,14 @@ public class AsDisplayObject : AsEventDispatcher
     [As] public AsStage stage { get { for (AsDisplayObject o = this; o != null; o = o.Parent) if (o is AsStage s) return s; return null; } }
     public bool OnStage => stage != null;
 
-    [As] public double x { get => Matrix.Tx; set { if (double.IsNaN(value)) return; var m = Matrix; m.Tx = value; Matrix = m; ScriptMoved(); } }
-    [As] public double y { get => Matrix.Ty; set { if (double.IsNaN(value)) return; var m = Matrix; m.Ty = value; Matrix = m; ScriptMoved(); } }
+    [As] public double x { get => GetX(); set { if (double.IsNaN(value)) return; SetX(value); } }
+    [As] public double y { get => GetY(); set { if (double.IsNaN(value)) return; SetY(value); } }
+    // DisplayObject::xGet / xSet go through the virtual GetX / SetX (sfr_as3_07.cpp:963); a text field overrides them
+    // (TextField::GetX, sfr_gfx_03e.cpp:760; TextField::SetX, sfr_gfx_03f.cpp:861).
+    protected virtual double GetX() => Matrix.Tx;
+    protected virtual double GetY() => Matrix.Ty;
+    protected virtual void SetX(double v) { var m = Matrix; m.Tx = v; Matrix = m; ScriptMoved(); }
+    protected virtual void SetY(double v) { var m = Matrix; m.Ty = v; Matrix = m; ScriptMoved(); }
     // The 3x3 of the last matrix3D set, kept until a rotation, scale or z setter runs: those call UpdateTransform3D
     // (sfr_gfx_06.cpp:1903-1920), which rebuilds M34 from the properties and so replaces it. Is3D is the node flag
     // SetMatrix3D sets and Clear3D clears.
