@@ -6,8 +6,17 @@
 // @0x327 (detail) rgb = lerp(gkHeightFogColor, Detail.a * Glow.a, height fog factor). The depth fog is off (GenerateShaderDescArray
 // @0x142776070 clears FOGENABLED); the height fog stays.
 // Here: unshaded, drawn by the glow camera only (layer 20) into GlowPass's linear HDR target, which keeps the value as written.
+// The glow click swaps the material only (MS2MaterialSwapProcessor, postprocessingservice.cpp:2830-2836), so the mesh's
+// NiStencilProperty draw mode culls as in the colour pass: ModelBuilder.GlowMaterial adds field_lit's cull define.
 shader_type spatial;
-render_mode unshaded, cull_disabled;
+#if defined(CULL_NONE)
+#define MS2_CULL cull_disabled
+#elif defined(CULL_FRONT)
+#define MS2_CULL cull_front
+#else
+#define MS2_CULL cull_back
+#endif
+render_mode unshaded, MS2_CULL;
 
 global uniform vec3 ms2_hfog_color; // height fog colour (gamma space), as field_lit
 global uniform vec3 ms2_hfog;       // upper height, lower height, density at and below the lower height (0 = none)

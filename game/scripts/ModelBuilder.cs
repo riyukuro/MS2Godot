@@ -309,7 +309,19 @@ public sealed class ModelBuilder
         if (skin != null) { g.Skin = skin; g.Skeleton = ".."; }
     }
 
-    static Shader glowShader;
+    static string glowCode;
+    static readonly Dictionary<string, Shader> glowShaders = new();
+
+    /// <summary>The glow shader with the mesh's cull define (CullDefine): the glow pass culls as the colour pass does.</summary>
+    static Shader GlowVariant(string cull)
+    {
+        var key = cull ?? "";
+        if (glowShaders.TryGetValue(key, out var sh)) return sh;
+        glowCode ??= GD.Load<Shader>("res://shaders/field_glow.gdshader").Code;
+        int nl = glowCode.IndexOf('\n', glowCode.IndexOf("shader_type")) + 1;
+        glowShaders[key] = sh = new Shader { Code = cull == null ? glowCode : glowCode.Insert(nl, $"#define {cull}\n") };
+        return sh;
+    }
 
     /// <summary>The glow pass material of a mesh with a glow map (shaders/field_glow), or null.
     /// Null as well for a mesh the client's glow click leaves out (FUN_1414cffc0, ms2materialswapprocessor.cpp:158-170): one
@@ -321,8 +333,7 @@ public sealed class ModelBuilder
     {
         if (!m.Textures.TryGetValue("glow", out var glowName) || Texture(glowName) is not { } glow) return null;
         if (m.AlphaBlendOn && (((m.AlphaFlags >> 1) & 15) != 6 || ((m.AlphaFlags >> 5) & 15) != 7)) return null;   // NiAlphaProperty SRCALPHA 6, INVSRCALPHA 7
-        glowShader ??= GD.Load<Shader>("res://shaders/field_glow.gdshader");
-        var sm = new ShaderMaterial { Shader = glowShader };
+        var sm = new ShaderMaterial { Shader = GlowVariant(CullDefine(m)) };
         bool OnUv2(string key) => uv2 && m.Maps.TryGetValue(key, out var map) && map.UvSet == 1;
         var tex = m.Textures.TryGetValue("base", out var baseName) ? Texture(baseName) : null;
         sm.SetShaderParameter(ShaderParam.HasTex, tex != null);

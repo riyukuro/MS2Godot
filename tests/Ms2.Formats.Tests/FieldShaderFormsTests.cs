@@ -20,14 +20,14 @@ public class FieldShaderFormsTests
         ("shell", new[] { "BLEND", "SHELL" }),
     };
 
-    static string ShaderSource()
+    static string ShaderSource(string file = "field_lit.gdshader")
     {
         for (var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory); dir != null; dir = dir.Parent)
         {
-            var path = Path.Combine(dir.FullName, "game", "shaders", "field_lit.gdshader");
+            var path = Path.Combine(dir.FullName, "game", "shaders", file);
             if (File.Exists(path)) return File.ReadAllText(path);
         }
-        Assert.Fail("game/shaders/field_lit.gdshader not found above the test directory");
+        Assert.Fail($"game/shaders/{file} not found above the test directory");
         return null!;
     }
 
@@ -104,6 +104,25 @@ public class FieldShaderFormsTests
                 Assert.That(modes[0], Does.Contain("ambient_light_disabled").And.Contain("specular_disabled"), name);
                 Assert.That(lines.Any(l => l.StartsWith("instance uniform float ms2_receive")), name);
             }
+        }
+    }
+
+    /// <summary>The cull mode each cull define (ModelBuilder.CullDefine) gives, in the colour shader and the glow shader alike:
+    /// the glow click swaps the material only (postprocessingservice.cpp:2830-2836), so the draw mode culls the glow too.</summary>
+    [TestCase("field_lit.gdshader")]
+    [TestCase("field_glow.gdshader")]
+    public void CullFollowsTheDefine(string file)
+    {
+        var src = ShaderSource(file);
+        foreach (var (cull, mode) in new[] { ((string)null, "cull_back"), ("CULL_NONE", "cull_disabled"), ("CULL_FRONT", "cull_front") })
+        {
+            var defines = cull == null ? new string[0] : new[] { cull };
+            var modes = Resolve(src, defines).Where(l => l.StartsWith("render_mode ")).ToList();
+            Assert.That(modes, Has.Count.EqualTo(1), $"{file} {cull}");
+            Assert.That(modes[0].TrimEnd(';').EndsWith(", MS2_CULL"), $"{file} {cull}: {modes[0]}");
+            // the live #define of MS2_CULL, read by turning it into a plain line
+            var cullLine = Resolve(src.Replace("#define MS2_CULL ", "MS2_CULL= "), defines).Single(l => l.StartsWith("MS2_CULL= "));
+            Assert.That(cullLine.Substring("MS2_CULL= ".Length).Trim(), Is.EqualTo(mode), $"{file} {cull}");
         }
     }
 }
