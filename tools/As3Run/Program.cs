@@ -9,7 +9,7 @@ using Ms2.Formats.Pack;
 //   As3Run drive [--frames N] [--after N] [--max-objects N] [--out FILE] [--only SUBSTR]  every movie driven by input: pointer, text, keys
 //   As3Run scan [--frames N] [--out FILE] [--only SUBSTR] every movie: construct the document class, run N frames, coverage report
 string data = Environment.GetEnvironmentVariable("MS2_DATA");
-bool hostMode = true; int frames = 60, after = 30, maxObjects = 200; bool trace = false, tree = false; string outFile = null, only = null;
+bool hostMode = true, controllers = false; int frames = 60, after = 30, maxObjects = 200; bool trace = false, tree = false; string outFile = null, only = null;
 var pos = new List<string>();
 for (int i = 0; i < args.Length; i++)
 {
@@ -22,6 +22,7 @@ for (int i = 0; i < args.Length; i++)
         case "--out": outFile = args[++i]; break;
         case "--only": only = args[++i]; break;
         case "--gen": Console.Error.WriteLine($"compiled bodies: {GeneratedCode.LoadAssembly(args[++i])} blocks"); break;
+        case "--controllers": controllers = true; break;
         case "--nohost": hostMode = false; break;
         case "--after": after = int.Parse(args[++i]); break;
         case "--max-objects": maxObjects = int.Parse(args[++i]); break;
@@ -57,8 +58,38 @@ void InstallHostStatics(Runtime rt)
     Static("com.scaleform.mmo.GameDataModel", "notifySlotUse", "notifySlotShiftClick", "notifySlotDragStart", "notifySlotDragEnd", "getSlotTooltip", "getBagSlotBindings");
 }
 
+// Stage 2: a movie that has a ported controller opens as the game does (UiHost.Load over the fixture model), so the controller's own
+// Host.Invoke calls reach the entries with real argument shapes. Movies without one go through the generic path below.
+Ms2.Ui.UiModel hostModel = null;
+var controllerLog = new Dictionary<string, string>();
+Ms2.Ui.UiController MakeController(string key)
+{
+    foreach (var t in typeof(Ms2.Ui.UiController).Assembly.GetTypes().Where(t => !t.IsAbstract && typeof(Ms2.Ui.UiController).IsAssignableFrom(t) && t.GetConstructor(Type.EmptyTypes) != null))
+    {
+        try { var c = (Ms2.Ui.UiController)Activator.CreateInstance(t); if (string.Equals(c.Movie, key, StringComparison.OrdinalIgnoreCase)) return c; }
+        catch (Exception) { }
+    }
+    return null;
+}
 (Runtime, Player, bool) RunMovie(string key, Action<string> traceOut, int[] hostErrors = null, List<string> hostList = null)
 {
+    if (controllers && MakeController(key) is { } ctl)
+    {
+        if (hostModel == null)
+        {
+            var tables = new Ms2.Ui.GameTables(packs, "en");
+            hostModel = new Ms2.Ui.UiModel(tables) { Keys = new Ms2.Ui.KeyTable(packs, "en") };
+            Ms2.Ui.UiFixture.Apply(hostModel);
+            hostModel.ServerTime = () => new DateTime(2026, 1, 1, 9, 5, 0);
+        }
+        var (hrt, hp) = src.Open(ctl.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); }, ctl.Libraries);
+        hp.StageW = 1280; hp.StageH = 720;
+        var host = new Ms2.Ui.UiHost(hp, ctl, hostModel);
+        bool hok = host.Load();
+        controllerLog[key] = $"{ctl.GetType().Name}\tcalls={host.Calls.Count}\tunhandled={host.Unhandled.Count}\tloaderrors={hrt.Errors.Count}";
+        for (int f = 0; f < frames; f++) hp.Tick();
+        return (hrt, hp, hok);
+    }
     var (rt, p) = src.Open(key, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); },
         hostMode && libraries.TryGetValue(key, out var libs) ? libs : null);
     if (traceOut != null) rt.Trace = traceOut;
@@ -436,6 +467,9 @@ switch (pos[0])
         rep.AppendLine();
         rep.AppendLine("## Missing APIs (movies, hits, actions)");
         foreach (var (m, v) in missByKey.OrderByDescending(x => x.Value.Movies.Count).ThenByDescending(x => x.Value.Hits)) rep.AppendLine($"{v.Movies.Count,4} {v.Hits,7}  {m}   [{string.Join(",", v.Actions.Take(4))}] e.g. {string.Join(", ", v.Movies.Take(3))}");
+        rep.AppendLine();
+        rep.AppendLine($"## Ported controllers used: {controllerLog.Count}");
+        foreach (var (k2, v2) in controllerLog.OrderBy(x => x.Key)) rep.AppendLine($"{k2}\t{v2}");
         rep.AppendLine();
         rep.AppendLine("## Per movie");
         rep.Append(rows);
