@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using Maple2.PacketLib.Tools;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
@@ -156,5 +157,89 @@ public class FishingBookTests
         Assert.That(d.Find(1).IsNew, Is.True);
         c.Close();
         Assert.That(d.Find(1).IsNew, Is.False);
+    }
+
+    // ---- the dialog's own output ----
+
+    static (FishingBookController, UiHost) Opened()
+    {
+        var (h, c) = Open();
+        h.Model.HasLocalPlayer = true;
+        return (c, h);
+    }
+
+    static object M(UiHost h, AsObject o, string k) => h.Get(o, k);
+
+    [Test]
+    public void SetFishSendsAcquireAndMedalZeroForAnIdWithoutData()
+    {
+        var (c, h) = Opened();
+        var o = c.FishObject(0xfffffff0u);
+        Assert.That((Rt.ToNumber(M(h, o, "acquire")), Rt.ToNumber(M(h, o, "medal"))), Is.EqualTo((0.0, 0.0)));
+        Assert.That(Rt.IsNullish(M(h, o, "fishName")), Is.True, "no other member");
+    }
+
+    [Test]
+    public void SetFishSendsTheFishDataForAKnownId()
+    {
+        var d = new FishingBookData();
+        var (_, c0) = Open();
+        uint id = c0.SortedIds(0)[0];
+        d.Apply(new FishingMessage.List(new[] { new FishingMessage.Record(id, 2, 0, 50) }), true);
+        var (h, c) = Open(d);
+        var o = c.FishObject(id);
+        Assert.That(Rt.ToNumber(M(h, o, "acquire")), Is.EqualTo(1));
+        Assert.That(M(h, o, "iconPath"), Is.EqualTo(tables.Fish.Get(id).IconPath));
+        Assert.That(Rt.ToString(M(h, o, "totalCatchCount")), Is.Not.Empty);
+        var unknown = Open().Item2.FishObject(id);
+        Assert.That(Rt.ToNumber(h.Get(unknown, "acquire")), Is.EqualTo(0), "not caught: not acquired");
+    }
+
+    [Test]
+    public void SetFisherSendsTheMasteryInItsGradeAndTheBestTitle()
+    {
+        var (c, h) = Opened();
+        var g = tables.Fishing;
+        h.Model.Player.FishingMastery = g.Value(2) + 7;
+        var o = c.FisherObject();
+        Assert.That((Rt.ToNumber(M(h, o, "curMastery")), Rt.ToNumber(M(h, o, "maxMastery"))),
+            Is.EqualTo((7.0, (double)(g.Value(3) - g.Value(2)))));
+        Assert.That(Rt.ToString(M(h, o, "fisherTitle")), Is.EqualTo(tables.Common("s_fishing_none_title")), "no title: s_fishing_none_title");
+        Assert.That(Rt.ToString(M(h, o, "fisherGradeName")), Is.EqualTo(c.GradeName(2)));
+    }
+
+    [Test]
+    public void BestFisherTitleIdTakesTheFirstOfTheListThePlayerHas()
+    {
+        var (c, h) = Opened();
+        var tt = tables.TitleTags;
+        uint pro = tt.FindTitleId("fisherPro"), beginner = tt.FindTitleId("fisherBeginner"), master = tt.FindTitleId("fisherMaster");
+        Assume.That(pro != 0 && beginner != 0 && master != 0);
+        c.HasTitleId = id => id == beginner || id == pro;
+        Assert.That(c.BestFisherTitleId(), Is.EqualTo(pro), "fisherPro comes before fisherBeginner");
+        c.HasTitleId = id => id == beginner;
+        Assert.That(c.BestFisherTitleId(), Is.EqualTo(beginner));
+        c.HasTitleId = _ => false;
+        c.AchieveCompleted = a => a == FishingBookController.FisherTitles[2].AchieveId;
+        Assert.That(c.BestFisherTitleId(), Is.EqualTo(master), "a completed trophy counts");
+        h.Model.HasLocalPlayer = false;
+        Assert.That(c.BestFisherTitleId(), Is.EqualTo(0u));
+    }
+
+    static ByteReader Pkt(Action<ByteWriter> f)
+    { var w = new ByteWriter(); f(w); return new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()); }
+
+    [Test]
+    public void AModeSevenListReplacesTheRecordsOnlyWhenTheFeatureIsOn()
+    {
+        var d = new FishingBookData();
+        d.Apply(new FishingMessage.Result(9, 1, true, false, new FishingMessage.Record(9, 1, 0, 1)), true);
+        ByteReader List() => Pkt(w => { w.WriteByte(7); w.WriteInt(1); w.WriteInt(4); w.WriteInt(1); w.WriteInt(0); w.WriteInt(10); });
+        d.Receive(List(), false, out var ch);
+        Assert.That((ch, d.Count, d.Find(9) != null), Is.EqualTo((false, 1, true)), "feature off: nothing read, nothing changed");
+        var bad = Pkt(w => w.WriteByte(7));   // truncated: would throw if read
+        Assert.DoesNotThrow(() => d.Receive(bad, false, out _));
+        d.Receive(List(), true, out ch);
+        Assert.That((ch, d.Count, d.Find(9) == null, d.Find(4) != null), Is.EqualTo((true, 1, true, true)));
     }
 }

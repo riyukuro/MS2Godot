@@ -14,6 +14,10 @@ namespace Ms2.Ui.Hud;
 /// mode (CInputKeyHandler::IsDebugMode), which is <see cref="DebugMode"/> here, off.
 /// STILL-OPEN: the descriptions keep their "$map:{id}$" words as the client's GetDescription leaves them; the movie's text
 /// handling is not ported past ReplaceBoldWords.
+/// STILL-OPEN: OnFishingResult (fishingmanager.cpp:1382), which mode 8 also runs: the result timer, CloseDialog 0x4ee7, the
+/// guide trigger, the reward notice and the success sound; mode 7 also sets m_bFishing = 0. Only the records are kept here.
+/// The base callbacks are covered: UiHost runs the UIDialog callback (DialogCallback) before OnCallback, and UIObject's
+/// vfunc_49 (GetTooltip, @0x14131edf0) is empty in the client and in <see cref="UiController.GetTooltip"/>.
 /// </remarks>
 public sealed class FishingBookController : UiController
 {
@@ -148,6 +152,12 @@ public sealed class FishingBookController : UiController
     public void SetFisher()
     {
         if (!Model.HasLocalPlayer || !Loaded) return;
+        Host.Invoke("setFisher", FisherObject());
+    }
+
+    /// <summary>The object SetFisher sends.</summary>
+    public AsObject FisherObject()
+    {
         uint exp = Pc.FishingMastery;
         int grade = Mastery.Grade(exp);
         uint baseValue = Mastery.Value(grade);
@@ -156,8 +166,8 @@ public sealed class FishingBookController : UiController
         string strTitle = title == 0 ? Common("s_fishing_none_title") : Model.Tables.TitleName((int)title);
         string strGrade = GradeName(grade);
         if (grade == Mastery.MaxGrade) strGrade += " " + Common("s_fishing_mastery_gauge_level_max");
-        Host.Invoke("setFisher", Host.Obj(("fisherTitleID", title), ("fisherTitle", strTitle), ("fisherGradeName", strGrade),
-            ("curMastery", exp - baseValue), ("maxMastery", nextBase - baseValue)));
+        return Host.Obj(("fisherTitleID", title), ("fisherTitle", strTitle), ("fisherGradeName", strGrade),
+            ("curMastery", exp - baseValue), ("maxMastery", nextBase - baseValue));
     }
 
     /// <summary>
@@ -185,7 +195,13 @@ public sealed class FishingBookController : UiController
     public void SetFish(uint fishId)
     {
         if (!Loaded) return;
-        var obj = Host.Obj();
+        Host.Invoke("setFish", FishObject(fishId));
+    }
+
+    /// <summary>The object SetFish sends: the fish's data, or for an id without data the else branch of SetFish
+    /// (uifishingbookdialog.cpp), {acquire: 0, medal: 0}.</summary>
+    public AsObject FishObject(uint fishId)
+    {
         if (Table.Get(fishId) is { } data)
         {
             int area = Mastery.Grade(data.Mastery);
@@ -207,9 +223,9 @@ public sealed class FishingBookController : UiController
                 members.Add(("bigSizeCatchCount", ClientFormat.Format(Model.Tables.Common(0xbdb), BigSizeCatchCount(fishId))));
                 members.Add(("bestRecord", ClientFormat.Format(Model.Tables.Common(0xbdc), BestRecord(fishId))));
             }
-            obj = Host.Obj(members.ToArray());
+            return Host.Obj(members.ToArray());
         }
-        Host.Invoke("setFish", obj);
+        return Host.Obj(("acquire", 0), ("medal", 0));
     }
 
     /// <summary>

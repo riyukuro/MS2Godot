@@ -20,6 +20,7 @@ public abstract record FishingMessage {
     /// <summary>Mode 8: a result. <see cref="Fish"/> is set when it succeeded.</summary>
     public sealed record Result(uint FishId, uint Size, bool Success, bool Auto, Record? Fish) : FishingMessage;
 
+    // No end check: OnFishing (fishingmanager.cpp) reads the fields it needs and does not test the packet's end.
     public static FishingMessage Read(ByteReader r) {
         byte mode = r.ReadByte();
         switch (mode) {
@@ -27,7 +28,6 @@ public abstract record FishingMessage {
                 int n = r.ReadInt();
                 var list = new List<Record>();
                 for (int i = 0; i < n; i++) list.Add(ReadRecord(r));
-                r.ExpectEnd("Fishing list");
                 return new List(list);
             }
             case 8: {
@@ -36,7 +36,6 @@ public abstract record FishingMessage {
                 bool ok = r.ReadByte() != 0;
                 bool auto = r.ReadByte() != 0;
                 Record? rec = ok ? ReadRecord(r) : null;
-                r.ExpectEnd("Fishing result");
                 return new Result(id, size, ok, auto, rec);
             }
         }

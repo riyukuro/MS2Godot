@@ -28,8 +28,9 @@ public class FishingPacketTests {
         Assert.That((f.Success, f.Auto, f.Fish), Is.EqualTo((false, true, (FishingMessage.Record?) null)));
     }
 
-    [Test] public void TrailingBytesAreAnError() {
-        Assert.That(() => FishingMessage.Read(R(w => { w.WriteByte(7); w.WriteInt(0); w.WriteByte(1); })), Throws.Exception);
+    [Test] public void TrailingBytesAreIgnored() {
+        // the client has no end check in OnFishing
+        Assert.That(FishingMessage.Read(R(w => { w.WriteByte(7); w.WriteInt(0); w.WriteByte(1); })), Is.InstanceOf<FishingMessage.List>());
     }
 
     [Test] public void OtherModesAreNotTheBooks() {

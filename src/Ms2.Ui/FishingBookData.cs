@@ -33,6 +33,14 @@ public sealed class FishingBookData
     /// the fishing state, which is not kept here); mode 8 with a success makes the record of the fish (a new one is marked
     /// m_bNew) and reads its values over it. True when the fish list changed.
     /// </summary>
+    public FishingMessage Receive(Maple2.PacketLib.Tools.ByteReader r, bool featureEnabled, out bool changed)
+    {
+        // the client tests feature 0xb before it reads the mode
+        var m = featureEnabled ? FishingMessage.Read(r) : null;
+        changed = m != null && Apply(m, true);
+        return m;
+    }
+
     public bool Apply(FishingMessage m, bool featureEnabled)
     {
         if (!featureEnabled) return false;

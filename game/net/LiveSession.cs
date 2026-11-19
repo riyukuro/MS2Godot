@@ -823,8 +823,8 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Fishing))
             {
-                var m = FishingMessage.Read(p.Reader());           // modes 7 (the list) and 8 (a catch); the others are not the book's
-                if (m != null && FishingBook.Apply(m, FishingFeature()))
+                var m = FishingBook.Receive(p.Reader(), FishingFeature(), out var changed);   // feature 0xb, then modes 7 (the list) and 8 (a catch); the others are not the book's
+                if (changed)
                     FishingReceived?.Invoke(m);
                 GD.Print($"live: fishing {m?.GetType().Name ?? "other mode"} ({FishingBook.Count} fish)");
             }
