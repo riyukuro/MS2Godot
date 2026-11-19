@@ -56,7 +56,7 @@ public sealed class FieldBuilder
     /// <summary>Optional: the field load's entity count, bumped as each entity of the set is placed (see <see cref="World.LoadCount"/>).</summary>
     public World.LoadCount Load;
     /// <summary>One drawn copy of a mesh of an entity: instance <see cref="Index"/> of <see cref="Mm"/>.</summary>
-    public sealed class FadeDraw { public MultiMesh Mm; public int Index; public ModelMesh Mesh; public Node3D Parent; }
+    public sealed class FadeDraw { public MultiMesh Mm; public int Index; public ModelMesh Mesh; public Node3D Parent; public bool NotReceiving; }
     /// <summary>The draws of every entity BGTransparencyMgr can fade (<see cref="IsFadeTarget"/>), for world/FieldFade.</summary>
     public readonly Dictionary<FieldEntity, List<FadeDraw>> FadeDraws = new();
 
@@ -68,11 +68,11 @@ public sealed class FieldBuilder
     /// </summary>
     public static bool IsFadeTarget(FieldEntity e) => e.HasMixin("MS2MapProperties") && e.Bool("Transparency");
 
-    void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent)
+    void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving)
     {
         if (!IsFadeTarget(e)) return;
         if (!FadeDraws.TryGetValue(e, out var list)) FadeDraws[e] = list = new List<FadeDraw>();
-        list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent });
+        list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
     }
 
     /// <summary>The blended draws with the client's alpha key, for <see cref="AlphaSort"/>.</summary>
@@ -396,6 +396,7 @@ public sealed class FieldBuilder
         foreach (var (key, ents) in groups)
         {
             var me = models[key.Split('\n')[0]];
+            bool noRecv = key.EndsWith(NotReceivingKey);
             int mi = 0;
             // shells (FUN_1413fa4c0): the shared group draws through ModelBuilder.MakeFluidShell; an own group draws each
             // blended mesh's depth-only shell as a twin instance sorted just behind its colour, so it comes right before it
@@ -424,9 +425,10 @@ public sealed class FieldBuilder
                         {
                             om.SetInstanceTransform(i, ModelBuilder.ToGodot(obj[i].Transform) * local);
                             om.SetInstanceColor(i, InstanceColor(obj[i]));
-                            AddFadeDraw(obj[i], om, i, mesh, visuals);
+                            AddFadeDraw(obj[i], om, i, mesh, visuals, noRecv);
                         }
                         var on = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
+                        if (noRecv) { on.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; }
                         visuals.AddChild(on);
                         SortAsObject(on, mesh, obj, local);
                         if (glow != null)
@@ -462,7 +464,7 @@ public sealed class FieldBuilder
                 {
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
                     mm.SetInstanceColor(i, InstanceColor(ents[i]));
-                    AddFadeDraw(ents[i], mm, i, mesh, visuals);
+                    AddFadeDraw(ents[i], mm, i, mesh, visuals, noRecv);
                 }
                 // the sun's shadow: a MultiMesh is culled as a whole, and its box spans the field, so as one caster every copy is drawn
                 // again in every shadow cascade. The shadow casters are per-cell twins (tight boxes, culled per cascade); the visible
@@ -470,7 +472,7 @@ public sealed class FieldBuilder
                 // is transparent, and Godot leaves transparent materials out of the shadow pass (observed: Henesys, Ellinia and Tria
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
-                if (!mesh.AlphaBlendOn && key.EndsWith(NotReceivingKey)) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; }
+                if (noRecv) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; }
                 visuals.AddChild(node);
                 if (!mesh.AlphaBlendOn && !mesh.NoShadow && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
@@ -599,7 +601,7 @@ public sealed class FieldBuilder
     /// <summary>The group key suffix of copies that receive no sun shadow (after BatchKey; '\n' never ends one).</summary>
     const string NotReceivingKey = "\nnorecv";
     static readonly StringName ReceiveParam = "ms2_receive";
-    /// <summary>Opaque MultiMeshes drawn with the sun's shadow off (ShadowReceivers).</summary>
+    /// <summary>MultiMeshes (opaque and blended) drawn with the sun's shadow off (ShadowReceivers).</summary>
     public int NotReceivingDraws;
 
     /// <summary>

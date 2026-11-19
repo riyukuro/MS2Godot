@@ -17,7 +17,10 @@
 // The field's point and spot lights are added to the
 // diffuse term (ms2_lights.gdshaderinc). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
 // and nothing else: light() scales the sun's share of the colour above by the shadow, so the sun is counted once. The
-// blended forms are not shadowed.
+// blended forms (BLEND, ADD, FADE) take it the same way: the client's receiver list (ms2shadowclickgenerator.cpp:914-975)
+// and material descriptor do not filter on alpha, and a light with a shadow map turns per-vertex lighting off
+// (NiStandardMaterial.cpp:652-666, SHADOWMAPFORLIGHT -> PERVERTEXFORLIGHTS 0), so a blended receiver lights per pixel like
+// the opaque form; a blended copy that receives no shadow (ms2_receive 0) keeps the per-vertex env uv and no sun specular.
 // Texture animation from the NIF's controllers: a flipbook (NiFlipController) on the base or dark slot plays its frames
 // evenly over flip_period, looping; a uv translation (NiTextureTransformController, translate U or V) moves linearly
 // between its first and last key over the controller's start..stop range, looping.
@@ -44,22 +47,24 @@ render_mode unshaded, blend_mix, depth_draw_always, MS2_CULL;
 // a prop faded out by BGTransparencyMgr (world/FieldFade): TransparencyMaterial::FUN_141860140 turns blending on (the
 // mesh's own NiAlphaProperty cloned, or a default one) and the z-buffer write on
 #ifdef ADD
-render_mode unshaded, blend_add, depth_draw_always, MS2_CULL;
+render_mode ambient_light_disabled, specular_disabled, blend_add, depth_draw_always, MS2_CULL;
 #else
-render_mode unshaded, blend_mix, depth_draw_always, MS2_CULL;
+render_mode ambient_light_disabled, specular_disabled, blend_mix, depth_draw_always, MS2_CULL;
 #endif
 #else
 #ifdef ADD
-render_mode unshaded, blend_add, depth_draw_never, MS2_CULL;
+render_mode ambient_light_disabled, specular_disabled, blend_add, depth_draw_never, MS2_CULL;
 #else
 #ifdef BLEND
-render_mode unshaded, blend_mix, depth_draw_never, MS2_CULL;
+render_mode ambient_light_disabled, specular_disabled, blend_mix, depth_draw_never, MS2_CULL;
 #else
 render_mode ambient_light_disabled, specular_disabled, MS2_CULL;
 #define POINT_LIT
 #endif
 #endif
 #endif
+// every form but SHELL takes the sun's shadow through light()
+#define LIT
 #endif
 
 global uniform vec3 ms2_ambient;     // ambient light colour * dimmer
@@ -132,7 +137,7 @@ varying vec3 env_v_world;
 #ifndef POINT_LIT
 varying vec2 env_uv;
 #endif
-#ifdef POINT_LIT
+#ifdef LIT
 varying vec3 sun_share;  // the sun's part of the output colour (gamma), which the shadow scales in light()
 // 0 for copies the client takes out of the shadow's receiver list (ShadowReceivers: IsReceivingShadow off, or a
 // UseShellRender instancing batch below shadow level 4): the sun's share is then not scaled by the shadow
@@ -243,14 +248,19 @@ void fragment() {
 	// ms2standardmaterial.cpp:1489-1560, through NiStandardMaterial::HandleEnvMap): the env rgb sampled saturated
 	// (TextureRGBSample) times the glossiness, the gloss map's rgb (HandleGlossMap; no gloss map: the env alone), times the
 	// first directional light's specular * dimmer (SCM_OBJ_SPECULAR, HandleMS2Light) when the pixel shader lights; added
-	// to the specular accumulator. Per-pixel lighting (the opaque form, whose sun casts the shadow) has that light; the
-	// per-vertex blended forms leave it out. This shader draws no light specular (NiSpecularProperty) to add it to.
+	// to the specular accumulator. Per-pixel lighting (a copy that receives the sun's shadow) has that light; per-vertex
+	// lighting (a blended copy that receives none) leaves it out. This shader draws no light specular (NiSpecularProperty) to add it to.
 	vec3 spec = vec3(0.0);
 	if (has_env) {
-#ifdef POINT_LIT
 		vec2 euv = env_sphere_uv(world_pos, world_normal, INV_VIEW_MATRIX[3].xyz, normalize(env_u_world), normalize(env_v_world));
+#ifndef POINT_LIT
+#ifdef LIT
+		if (ms2_receive < 0.5) {
+			euv = env_uv;   // no shadow map: per-vertex lighting, the uv from the vertex shader
+		}
 #else
-		vec2 euv = env_uv;
+		euv = env_uv;
+#endif
 #endif
 		spec = clamp(texture(env_tex, euv).rgb, 0.0, 1.0);
 		if (has_gloss) {
@@ -258,6 +268,12 @@ void fragment() {
 		}
 #ifdef POINT_LIT
 		spec *= ms2_sun_specular;
+#else
+#ifdef LIT
+		if (ms2_receive >= 0.5) {
+			spec *= ms2_sun_specular;
+		}
+#endif
 #endif
 	}
 	// MS2GlassMaterial::HandleMS2FinalPixelOutputs (ms2glassmaterial.cpp, 0x142774510): the opacity (the faded one too) is
@@ -306,8 +322,8 @@ void fragment() {
 	c = mix(c, ms2_hfog_color, hf);
 	c0 = mix(c0, ms2_hfog_color, hf);
 #endif
-#ifdef POINT_LIT
-	// opaque: everything but the sun is emission; the sun's share comes back in light(), times its shadow. Out of the
+#ifdef LIT
+	// lit forms: everything but the sun is emission; the sun's share comes back in light(), times its shadow. Out of the
 	// shadow the sum is c, the formula above; in full shadow it is c0, the sun ambient alone (MS2Light above). In between
 	// Godot's shadow factor interpolates the two, as the client's Shadow term does.
 	EMISSION = c0;
@@ -326,7 +342,7 @@ void fragment() {
 #endif
 }
 
-#ifdef POINT_LIT
+#ifdef LIT
 // Only the sun's shadow is read here: the shader's own sun term (sun_share) is scaled by it. Field.cs makes no other
 // Godot light that reaches field meshes (FieldLights draws the point and spot lights in ms2_lights.gdshaderinc).
 void light() {
