@@ -76,6 +76,14 @@ public sealed partial class NpcTalk : Node
     /// <summary>$MyPCName: the live character's name, else the sandbox's.</summary>
     public string PlayerName { get => live?.Me.User?.Name ?? playerName; set => playerName = value; }
     public bool Open => window != null;
+    /// <summary>UITalkManager::m_nNpcId / m_nTalking: the npc the talk is with, null when there is no talk.</summary>
+    public FieldNpcs.Placed TalkingNpc => talking;
+    /// <summary>The npc scripts (LoadNpcTalks), the monologues included.</summary>
+    public NpcScriptTable ScriptTable => Scripts(packs);
+    /// <summary>A content's text with its object and value words replaced, for this character.</summary>
+    public string ResolveText(string text) => Scripts(packs).Resolve(text, PlayerName, player?.Gender);
+    /// <summary>CEffectService::PlayVoiceAt: the voice event at a place.</summary>
+    public static void PlayVoiceAt(string voice, Vector3 at) => Sound(voice, at);
     /// <summary>The page shown sends a quest packet on next: button set 6 accept (Quest 2), 7 complete (Quest 4), 8 progress (Quest 0x12).</summary>
     public bool OnQuestPage => side != null && side.ButtonSet is 6 or 7 or 8;
     public int Talks;
@@ -115,7 +123,7 @@ public sealed partial class NpcTalk : Node
     }
     public NpcTalk() { }
 
-    static NpcScriptTable Scripts(PackSet packs) => scripts ??= new NpcScriptTable(packs, new GameStrings(packs, GameOptions.StringLanguage));
+    static NpcScriptTable Scripts(PackSet packs) => scripts ??= new NpcScriptTable(packs, new GameStrings(packs, GameOptions.StringLanguage), e => FeatureElements.IsAvailable(packs, e));
 
     /// <summary>The client's quest data (QuestDataTable), loaded once.</summary>
     public static QuestTable ClientQuests(PackSet packs)

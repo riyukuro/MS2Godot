@@ -13,9 +13,9 @@ namespace Ms2.Ui.Hud;
 /// </para>
 /// <para>
 /// The npc side is CNpc::vfunc_85 (@0x1410904c0, <see cref="NpcBalloon"/>): the npc's balloon, made on first use.
-/// STILL-OPEN: nothing shows a balloon yet: PCBase::ShowChatBalloon (pcbase.cpp:1664) has the chat's
-/// (UIMessengerBrowser::ShowChatBalloon), the npc monologue's (UITalkManager::ShowNpcMonologue, called by
-/// CNpc::UpdateMonologue) and the talk and cut scene callers, none ported; the PCs' and pets' balloons (pc.cpp:1589,
+/// The npc monologue (UITalkManager::ShowNpcMonologue, called by CNpc::UpdateMonologue) shows through
+/// <see cref="NpcMonologue"/>. STILL-OPEN: PCBase::ShowChatBalloon's (pcbase.cpp:1664) other callers, the chat's
+/// (UIMessengerBrowser::ShowChatBalloon) and the talk and cut scene ones, are not ported; the PCs' and pets' balloons (pc.cpp:1589,
 /// cubespawnobject.cpp:242) and the gem skins (itemgem.cpp:674/688) have no caller here.
 /// </para>
 /// </summary>

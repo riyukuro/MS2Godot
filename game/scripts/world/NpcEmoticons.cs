@@ -34,6 +34,8 @@ namespace Ms2Godot.World;
 ///   npc, its entity made on first use by CNpc::vfunc_85 (<see cref="ChatBalloonController.NpcBalloon"/>), which the
 ///   emoticon's hide test asks for each frame (<see cref="EmoticonController.Actor.Balloon"/>). The balloon sits in
 ///   CommonDepth ChatBalloon (7).
+/// - The idle monologues (<see cref="NpcMonologue"/>): each npc's frame runs CNpc::UpdateMonologue, which shows a
+///   &lt;monologue&gt; of the npc's scripts in its balloon. STILL-OPEN: the mobs (not in this layer) run it in the client too.
 /// </summary>
 public sealed partial class NpcEmoticons : CanvasLayer
 {
@@ -42,6 +44,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         public FieldNpcs.Placed Placed;
         public EmoticonController.Actor Actor;
         public ChatBalloonController.Actor Balloon;
+        public NpcMonologue.Npc Monologue;
         public bool Spawned;
     }
 
@@ -52,11 +55,13 @@ public sealed partial class NpcEmoticons : CanvasLayer
     readonly Dictionary<FieldNpcs.Placed, Npc> npcs = new();
     readonly Dictionary<EmoticonController.Actor, Npc> byActor = new();
     readonly Dictionary<ChatBalloonController.Actor, Npc> byBalloon = new();
+    readonly Dictionary<NpcMonologue.Npc, Npc> byMonologue = new();
     readonly NpcQuestMarks marks;
     EmoticonController controller;
     MovieDialog movie;
     ChatBalloonController balloons;
     MovieDialog balloonMovie;
+    NpcMonologue monologue;
     Camera3D camera;
     Field field;
     Viewport sizeSource;
@@ -137,6 +142,22 @@ public sealed partial class NpcEmoticons : CanvasLayer
             AddChild(balloonMovie);
         }
         catch (Exception e) { GD.PushWarning("chat balloon movie: " + e.Message); balloons = null; balloonMovie = null; }
+        if (balloons == null || talk == null) return;
+        monologue = new NpcMonologue(balloons, talk.ScriptTable)
+        {
+            // MS2Ticks: the tables' seconds in ms (ParseTick)
+            IntervalMs = (uint)(constants.Float("MonologueInterval", 0) * 1000f),
+            RandomMs = (uint)(constants.Float("MonologueRandom", 0) * 1000f),
+            ShowTimeMs = (uint)(constants.Float("MonologueShowTime", 0) * 1000f),
+            InSubScene = () => MovieLayerHost.Layers.InTalk,     // the cut scene sub scenes are not ported
+            QuestState = m => byMonologue.TryGetValue(m, out var x) ? x.Actor.Quest.State : 4,     // m_questState, kept by RefreshQuestState
+            TalkingObjectId = () => talk.TalkingNpc is { } t && npcs.TryGetValue(t, out var x) ? x.Actor.ObjectId : 0,
+            Resolve = talk.ResolveText,
+            PlayVoice = (m, v) =>
+            {
+                if (byMonologue.TryGetValue(m, out var x) && IsInstanceValid(x.Placed.Root)) NpcTalk.PlayVoiceAt(v, x.Placed.Root.GlobalPosition);
+            },
+        };
     }
 
     void Add(FieldNpcs.Placed n)
@@ -165,6 +186,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
             };
             x.Balloon = b;
             byBalloon[b] = x;
+            x.Monologue = new NpcMonologue.Npc { ObjectId = a.ObjectId, NpcId = n.Row.Id, Balloon = b };
+            byMonologue[x.Monologue] = x;
             a.Balloon = () => balloons.NpcBalloon(b);
         }
         npcs[n] = byActor[a] = x;
@@ -192,6 +215,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
             controller.Release(npcs[gone].Actor.ObjectId);
             byActor.Remove(npcs[gone].Actor);
             if (npcs[gone].Balloon is { } b) { balloons?.RemoveNpc(b); byBalloon.Remove(b); }
+            if (npcs[gone].Monologue is { } m) byMonologue.Remove(m);
             npcs.Remove(gone);
         }
         foreach (var n in now) Add(n);
@@ -244,6 +268,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 n.Spawned = true;
             }
             controller.NpcTick(a, () => QuestMark(a));
+            if (monologue != null && n.Monologue != null) monologue.Update(n.Monologue, (float)delta);    // CNpc::vfunc_53
         }
         bool layer = MovieLayerHost.Layers.IsVisible(CommonDepth.Emoticon);
         controller.Process(Project);
