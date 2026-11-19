@@ -394,6 +394,7 @@ public partial class LiveSession : Node
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();
             ItemReader.ExtraOf ??= id => { try { return Kinds().ExtraOf(id); } catch (Exception e) { GD.Print($"live: item kinds unavailable ({e.Message})"); return null; } };
+            ItemReader.UgcMode ??= () => ProfileImageService.Images.Mode;      // CUgcManager::GetMode, set by UgcSetMode
             ItemReader.Known ??= id => { try { return Kinds().Known(id); } catch { return true; } };   // data unavailable: read every id
             Items.TabOf = id => { try { return Kinds().TabOf(id); } catch { return 7; } };
             Items.BaseSlots ??= BaseSlotTable();

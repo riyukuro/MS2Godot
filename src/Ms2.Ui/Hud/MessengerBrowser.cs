@@ -198,7 +198,7 @@ public sealed class MessengerBrowser
     {
         if (item?.Data == null || item.Data.IsUgcType) return;
         var t = Tables;
-        string name = Model != null ? new ItemTooltip(Model, 0).Name(item) ?? "" : t.ItemName(item.ItemId);
+        string name = Model != null ? new ItemTooltip(Model, 0).Name(item) : t.ItemName(item.ItemId);
         string html = ClientFormat.Format(t.Common("s_html_chat_linkable_title"), "''", t.Items.TextColor(item.Rarity),
             (uint)GlobalScreen.FontSize, ClientFormat.Format(t.Common("s_format_item"), name));
         bool install = item.Data.IsInstallItem;
@@ -305,8 +305,7 @@ public sealed class MessengerBrowser
     /// the id formatted unsigned), the grade's colour (CItemDataTable::GetTextColorString, itemdatatable.cpp:408:
     /// "#{0:x}" of GetTextColor) and the held item's name (CItem::FUN_140527b10, <see cref="ItemTooltip.Name"/>), else
     /// GetItemDisplayName(id). STILL-OPEN: GetItemDisplayName's pet-item form (itemugcmesh.cpp:1014, type 0xb: common
-    /// 0xcd5 / 0xcd6 of the pet's name) and the names ItemTooltip.Name does not make (UGC, score, pet, gem) fall back to
-    /// the item's string table name.
+    /// 0xcd5 / 0xcd6 of the pet's name) is not ported, so an item not held gives its string table name.
     /// </summary>
     public string ItemLink(int id, int grade, long uid)
     {
@@ -315,7 +314,7 @@ public sealed class MessengerBrowser
             + grade.ToString(CultureInfo.InvariantCulture) + "'";
         string color = "#" + Tables.Items.TextColor(grade).ToString("x", CultureInfo.InvariantCulture);
         var held = FindHeldItem?.Invoke(uid);
-        string name = (held != null && Model != null ? new ItemTooltip(Model, 0).Name(held) : null) ?? Tables.ItemName(id);
+        string name = held != null && Model != null ? new ItemTooltip(Model, 0).Name(held) : Tables.ItemName(id);
         return LinkMarkup(href, color, name);
     }
 

@@ -24,6 +24,8 @@ public sealed class EquipItem {
     /// <summary>The gem block's type (CItemGem::vfunc_4: the gem's CGemBase m_nType, what GetGem()->vfunc_1() returns); 0 without
     /// a gem.</summary>
     public byte GemType;
+    /// <summary>A pet skin gem's pet id (CGemPetSkin m_nPetId, the type 11 gem's i32); 0 for another gem or none.</summary>
+    public int GemPetId;
     /// <summary>Inventory records only: the bag slot (the record's i16 after the uid).</summary>
     public short InventorySlot;
     /// <summary>CItem m_60, m_88, m_9c, m_a0 (the stream's ints and longs after the times, item.cpp:2658-2664).
@@ -53,6 +55,13 @@ public sealed class EquipItem {
     public long BindingId; public string BindingName = "";
     /// <summary>CItem::m_2c (IsNew 0x1405268f0, SetNew 0x1405268d0; ctor default 0). Set only by OnItemInventory mode 7 (scenestategame.cpp:2844); cleared by InvenSlot::vfunc_14 0x141406a60 / vfunc_20 0x141408cd0 and the tab clear FUN_14199be00.</summary>
     public bool IsNew;
+    /// <summary>The custom music score block was read (CItem m_spMusic: a score item whose table/musicscore.xml row is a custom
+    /// note, FUN_140525680), with its title (m_str28) and its m_str20 (GetMusicWriter; CItemCustomMusicScore::IsEmpty tests it).</summary>
+    public bool HasMusic; public string MusicTitle = "", MusicWriter = "";
+    /// <summary>A pet item's name (CItem m_strB8, the pet block's first string, item.cpp:2693); "" for other items.</summary>
+    public string PetName = "";
+    /// <summary>CItem m_strE0 (FUN_140529500): the name OnItemInventory mode 7 carries when it is not empty (scenestategame.cpp:2846).</summary>
+    public string NotifiedName = "";
 }
 
 /// <summary>CItemOption::Deserialize (itemoptiondata_1.cpp:242): 5 groups of stat and special options (id -> BaseOption
@@ -107,6 +116,9 @@ public sealed class SocketGem {
 /// the creation time (ASTooltip::SetItemCreateTime).</summary>
 public sealed class UgcLook {
     public long Uid; public string Author = ""; public long CreationTime;
+    /// <summary>m_str20 (the file name), m_str28 (the item name GetUgcItemName shows), m_n30 (GetLocalPath tests it) and m_strUrl
+    /// (cleared at read in UGC mode 1, ugcdef.cpp:1565).</summary>
+    public string FileName = "", ItemName = "", Url = ""; public byte Flag30;
     /// <summary>The look's state byte, the last one CUgcItemLook::Read (0x140893250) reads (m_n60); CUgcItemLook::FUN_140893520 tests it for 2.</summary>
     public byte State;
 }
@@ -134,11 +146,16 @@ public static class ItemReader {
     /// <summary>UgcItemLook (CUgcItemLook::Read, ugcdef.cpp:1551): i64 id, file name, item name, u8, i32, i64 account, i64 character, author, i64 creation time, url, u8.</summary>
     public static UgcLook ReadUgcLook(ByteReader r) {
         var look = new UgcLook { Uid = r.ReadLong() };
-        r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
+        look.FileName = r.ReadUnicodeString(); look.ItemName = r.ReadUnicodeString(); look.Flag30 = r.ReadByte();
+        r.ReadInt(); r.ReadLong(); r.ReadLong();
         look.Author = r.ReadUnicodeString(); look.CreationTime = r.ReadLong();
-        r.ReadUnicodeString(); look.State = r.ReadByte();
+        look.Url = r.ReadUnicodeString(); look.State = r.ReadByte();
+        if (UgcMode?.Invoke() == 1) look.Url = "";      // TSingleton<CUgcManager>::GetMode() == 1
         return look;
     }
+
+    /// <summary>CUgcManager::GetMode (the UGC mode the server sets); null reads as mode 0.</summary>
+    public static Func<int> UgcMode;
 
     /// <summary>A pet item as FieldAddUser carries it: i32 id, i64 uid, i32 rarity, then the item body with a pet block.</summary>
     public static EquipItem ReadPetItem(ByteReader r) {
@@ -326,16 +343,18 @@ public static class ItemReader {
                 it.GemType = type;
                 r.ReadInt();
                 if (type == 1) { for (int i = 0; i < 10; i++) r.ReadByte(); }
-                else if (type == 11) r.ReadInt();
+                else if (type == 11) it.GemPetId = r.ReadInt();
             }
         }
         if ((extra & ItemExtra.Music) != 0) {
             // CItemCustomMusicScore::ReadFromStream 0x140632620: i32, i32, string, string, i32, i64, u8, i64, i64
-            r.ReadInt(); r.ReadInt(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadInt(); r.ReadLong(); r.ReadByte(); r.ReadLong(); r.ReadLong();
+            it.HasMusic = true;
+            r.ReadInt(); r.ReadInt(); it.MusicTitle = r.ReadUnicodeString(); it.MusicWriter = r.ReadUnicodeString();
+            r.ReadInt(); r.ReadLong(); r.ReadByte(); r.ReadLong(); r.ReadLong();
         }
         if ((extra & ItemExtra.Pet) != 0) {
             // item.cpp:2655: string, i64, i32, i32 pet level, u8
-            r.ReadUnicodeString(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool();
+            it.PetName = r.ReadUnicodeString(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool();
         }
 
         var t = it.Transfer;

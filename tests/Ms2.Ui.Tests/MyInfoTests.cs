@@ -369,7 +369,7 @@ public class MyInfoTests
         Assert.That(emptyShown, Has.Some.Contains("Transparency Badge"), "lv10_badges_hover_empty_slot.png");
         var badge = c.GetSlotTooltip(MyInfoController.GemBag + ".2");
         Assert.That(badge["enablePuton"], Is.EqualTo(""));
-        Assert.That(badge.ContainsKey("itemName"), Is.False, "a gem's name (GetGemName) is not ported");
+        Assert.That(badge["itemName"], Is.EqualTo(t.ItemName(70200001)), "GetGemName: a chat balloon gem (not a pet skin) is its table name");
         Assert.That(errors, Is.Empty);
 
         // the tooltip movie draws the top's name and hint

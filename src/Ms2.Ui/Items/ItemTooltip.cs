@@ -101,21 +101,71 @@ public sealed partial class ItemTooltip
     };
 
     /// <summary>
-    /// CItem::FUN_140527b10 (item.cpp:2264): the string table name; a gacha box or coin keeps it; an unlimited enchant
-    /// level formats s_word_item_unlimited_enchant(level, name); an enchant level "+%d %s". Null where the name needs
-    /// what is not ported: a UGC look (GetUgcItemName), a score's music title, a pet's name and pet table, a gem's name.
+    /// CItem::FUN_140527b10 (item.cpp:2264): the string table name (FUN_141811980(1, id)), then by the item's kind:
+    /// a UGC block gives GetUgcItemName of its look; a score item its music title (GetMusicTitle); a pet item the pet
+    /// block's name (or the table name) as common 0xcd6 s_word_battle_pet for a type 1 pet of CPetDataTable, 0xcd5
+    /// s_word_pet for another one, unformatted without one; a gacha box or coin the name; a gem the name followed by its
+    /// gem name when that is not empty. Then an unlimited enchant level formats s_word_item_unlimited_enchant(level,
+    /// name), an enchant level "+%d %s". A made item (no record) has no UGC look, music block, pet name or gem.
     /// </summary>
     public string Name(Item item)
     {
         var d = item.Data;
+        var rec = item.Record;
         string name = Tables.ItemName(d.Id);
-        if (item.Record?.HasUgc == true || d.IsScoreItem || d.IsPetItem) return null;
+        if (rec?.HasUgc == true && rec.Ugc != null) return UgcItemName(rec.Ugc, name);
+        if (d.IsScoreItem) return MusicTitle(item, name);
+        if (d.IsPetItem)
+        {
+            if (!string.IsNullOrEmpty(rec?.PetName)) name = rec.PetName;           // m_strB8
+            return Tables.Pets.TypeOf((uint)d.PetId) switch
+            {
+                1 => Format(Tables.Common(0xcd6), name),                            // FormatStringId(0xcd6, name)
+                int => Format(Tables.Common(0xcd5), name),
+                null => name,
+            };
+        }
         if (d.OpenGachaBoxParam0 != 0 || Tables.GachaBoxes.IsCoinItem(d.Id)) return name;
-        if (d.IsGemItem) return null;
+        if (d.IsGemItem && GemName(item) is { Length: > 0 } gem) return name + gem;
         if (item.UnlimitedEnchantLevel > 0) return Format(Common("s_word_item_unlimited_enchant"), item.UnlimitedEnchantLevel, name);
         if (item.EnchantLevel > 0) return "+" + item.EnchantLevel.ToString(CultureInfo.InvariantCulture) + " " + name;
         return name;
     }
+
+    /// <summary>
+    /// GetUgcItemName (@0x141277a90, uihelpers): a blocked look (CUgcItemLook::FUN_140893520, state 2) gives common 0xf4
+    /// s_item_ugc_name_blocked; a look with a local path (GetLocalPath, ugcdef.cpp:1508: m_n30 set and an url holding
+    /// "item/" or "blueprint/") its own item name m_str28; else the fallback. STILL-OPEN: GetDownloadFilePath's shutdown
+    /// test (CGameEventValueManager shutdown value 0xb for kinds 0xc9 / 0xd1 empties the path) is not ported, so such a
+    /// look always has its path.
+    /// </summary>
+    public string UgcItemName(Ms2.Net.Packets.UgcLook look, string fallback)
+    {
+        if (look.State == 2) return Tables.Common(0xf4);
+        bool localPath = look.Flag30 != 0 && (look.Url.Contains("item/", StringComparison.Ordinal) || look.Url.Contains("blueprint/", StringComparison.Ordinal));
+        return localPath ? look.ItemName : fallback;
+    }
+
+    /// <summary>
+    /// CItem::GetMusicTitle (@0x1405296c0, item.cpp:2393): a custom score with its music block (FUN_140525680, m_spMusic)
+    /// gives the block's title when the block is not empty (CItemCustomMusicScore::IsEmpty: m_str20 empty), else the name
+    /// OnItemInventory mode 7 set (m_strE0) when there is one; every other case the string table name.
+    /// </summary>
+    static string MusicTitle(Item item, string name)
+    {
+        if (item.Record is { HasMusic: true } rec)
+        {
+            if (!string.IsNullOrEmpty(rec.MusicWriter)) return rec.MusicTitle;
+            if (!string.IsNullOrEmpty(rec.NotifiedName)) return rec.NotifiedName;
+        }
+        return name;
+    }
+
+    /// <summary>
+    /// CItem::GetGemName (@0x140529de0) through CItemGem::FUN_1405a7d60: the gem's vfunc_11, which only CGemPetSkin
+    /// (type 11) fills: string table 0x3b (petname) of its pet id (@0x1405a6d50); "" for any other gem or none.
+    /// </summary>
+    string GemName(Item item) => item.Record is { GemType: 11 } rec ? Tables.StringTableText(0x3b, rec.GemPetId) : "";
 
     /// <summary>
     /// FUN_1409d0710 (astooltip.cpp:2131), "itemDescription": the string table's tooltipDescription with its value words

@@ -480,8 +480,8 @@ public sealed class ShopController : UiController
         }
     }
 
-    /// <summary>CItem::FUN_140527b10: the item's display name (ItemTooltip.Name; its branches not ported give "").</summary>
-    string ItemName(Item item) => new ItemTooltip(Model, 0).Name(item) ?? "";
+    /// <summary>CItem::FUN_140527b10: the item's display name (ItemTooltip.Name).</summary>
+    string ItemName(Item item) => new ItemTooltip(Model, 0).Name(item);
 
     /// <summary>The flags PopulateProduct builds the slot with: item, its lock state, count and no drag.</summary>
     public const int SlotFlags = 0x415;

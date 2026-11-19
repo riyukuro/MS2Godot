@@ -568,7 +568,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         string text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(key) ?? "", Pc.Name);
         var box = MessageBoxQueue.Create(0x11, text, null, tag);
         box.ItemUid = item.Uid;
-        box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item) ?? "", 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+        box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item), 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
         box.SetButtonLabelIds(0x477, 0x478, 0);
         return box;
     }

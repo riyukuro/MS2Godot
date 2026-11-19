@@ -1304,7 +1304,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             var box = MessageBoxQueue.Create(17, text, null, BindOnGemEquipBox);
             box.Append(slot);
             box.ItemUid = item.Uid;
-            box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item) ?? "", 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+            box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item), 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
             box.SetButtonLabelIds(1143, 1144, 0);
             ShowBox(box);
             return true;

@@ -196,6 +196,8 @@ public sealed class ItemData
     public bool IsEquipItem => Type == 1;
     /// <summary>GetShopId (:1181): param1 of a type 0x14 item, else 0.</summary>
     public int ShopId => Type == 0x14 ? Param1 : 0;
+    /// <summary>GetPetId (itemdata.cpp:1134): param1 of a pet item (type 0xb), else 0.</summary>
+    public int PetId => Type == 0xb ? Param1 : 0;
     /// <summary>HasCubeTextureMesh (:987).</summary>
     public bool HasCubeTextureMesh => UccMesh.Length > 0;
     public bool IsRideItem => Type == 9;                       // :681

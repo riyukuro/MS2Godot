@@ -104,7 +104,7 @@ public sealed class ItemBook {
                 if (TabOf != null) foreach (var i in items.Values.Where(i => TabOf(i.Id) == x.Tab).ToList()) items.Remove(i.Uid);
                 Changed?.Invoke(0); break;
             case ItemMessage.ExpandCount x: SetExtraSlots(x.Tab, x.Count); Changed?.Invoke(0); break;
-            case ItemMessage.NotifyNew x: if (items.TryGetValue(x.Uid, out var nw)) { nw.IsNew = true; NotifiedNew?.Invoke(x.Uid, x.Arg); Changed?.Invoke(x.Uid); } break;
+            case ItemMessage.NotifyNew x: if (items.TryGetValue(x.Uid, out var nw)) { nw.IsNew = true; if (!string.IsNullOrEmpty(x.Name)) nw.NotifiedName = x.Name; NotifiedNew?.Invoke(x.Uid, x.Arg); Changed?.Invoke(x.Uid); } break;
             case ItemMessage.Error x: ErrorReceived?.Invoke(x.Code, x.ItemId, x.Value); break;
         }
     }
