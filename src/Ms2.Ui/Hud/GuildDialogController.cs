@@ -7,16 +7,17 @@ namespace Ms2.Ui.Hud;
 
 /// <summary>
 /// The C++ side of the guild dialog, UIGuildDialog (client/ms2/uiguilddialog.cpp; UI id 0x4e4f), for its movie uiguilddialog.
-/// The state is <see cref="GuildBook"/> (CGuildManager). Only the side outside a guild is here: the Join page (the search by
-/// propensity or by name, the join requests and their cancel, this character's requests) and the Create page (the create
-/// box). The pages are made on first use (EnsurePageCreated) and laid on the movie root.
-/// STILL-OPEN: the in-guild pages (Info, Member, Skill, MemberSkill, Event, AcceptMember, Manager, House, Storage, Raid,
-/// ChampionShip, ChampionShipHistroy) and their callbacks, the invite (onClickInviteMember), the master popup
+/// The state is <see cref="GuildBook"/> (CGuildManager). Outside a guild: the Join page (the search by propensity or by
+/// name, the join requests and their cancel, this character's requests) and the Create page (the create box). In a guild:
+/// the Info and Member pages, the accept page (the requests sent to the guild), the leave and disband boxes. The pages are
+/// made on first use (EnsurePageCreated) and laid on the movie root.
+/// STILL-OPEN: the other in-guild pages (Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip,
+/// ChampionShipHistroy) and their callbacks, the invite (onClickInviteMember), the master popup
 /// (OnSearchGuildMasterPopupMenu, 0x4e39) as an event, the block check of OnClickCreateGuild (CBlockManager
 /// FindBlockedAction(7)), the web guide button (UIDialog::BindWebGuideButton, uidialog.cpp:997), the championship icon
 /// (CGameRule::IsGuildChampionshipOpen), the event buttons of the 0x8a handler FUN_141968140 (modes 0x76/0x77), the
-/// master and grade info, the member list, the requests for the guild (FUN_14196da70 passes their count, 0 here) and the
-/// tab settings (vfunc_54 / vfunc_53, "Histroy" lastTabIndex).
+/// requests for the guild in the game menu's notify count (UIGameMenuDialog::FUN_1419381c0) and the tab settings
+/// (vfunc_54 / vfunc_53, "Histroy" lastTabIndex).
 /// </summary>
 public sealed class GuildDialogController : UiController, IMessageBoxListener
 {
@@ -36,10 +37,12 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
 
     int tab;                    // m_nTab (0 in the ctor)
     int searchPage = 1;         // m_nSearchPage (1 in the ctor)
+    int acceptPage = 1;         // m_nAcceptPage (1 in the ctor)
     object createPage;          // m_createPage
     object joinPage;            // m_joinPage
     object infoPage;            // m_infoPage
     object memberPage;          // m_memberPage
+    object acceptRequestPage;   // m_acceptRequestPage
     int memberSort;             // m_nMemberSort (0 in the ctor)
 
     /// <summary>GetStringCommon.</summary>
@@ -84,6 +87,12 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public object JoinPage => joinPage;
     /// <summary>The Create page (m_createPage) once made.</summary>
     public object CreatePage => createPage;
+    /// <summary>The Info page (m_infoPage) once made.</summary>
+    public object InfoPage => infoPage;
+    /// <summary>The Member page (m_memberPage) once made.</summary>
+    public object MemberPage => memberPage;
+    /// <summary>The accept page (m_acceptRequestPage) once made.</summary>
+    public object AcceptRequestPage => acceptRequestPage;
 
     bool NoMovie => Host?.Entity == null;
 
@@ -95,6 +104,14 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.SearchRefresh += OnSearchRefresh;
         Book.MyRequestsRefresh -= BuildSearchMy;
         Book.MyRequestsRefresh += BuildSearchMy;
+        Book.RequestsForGuildRefresh -= OnRequestsForGuild;
+        Book.RequestsForGuildRefresh += OnRequestsForGuild;
+        Book.GuildInfoRefresh -= OnGuildInfoRefresh;
+        Book.GuildInfoRefresh += OnGuildInfoRefresh;
+        Book.MemberRefresh -= OnMemberRefresh;
+        Book.MemberRefresh += OnMemberRefresh;
+        Book.MemberRemoved -= OnMemberRemoved;
+        Book.MemberRemoved += OnMemberRemoved;
         if (!NoMovie)
         {
             InitializeGuildDialog();
@@ -113,8 +130,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
             if (FeatureEnabled(ChampionshipFeature) && Host.Child("m_championshipIcon") is { } icon)
                 Host.SetVisible(icon, false);                   // IsGuildChampionshipOpen && IsInGuild; STILL-OPEN: never open
         }
-        // FUN_14196da70: setAcceptMemberCount(the requests for the guild); m_joinRequestsForGuild is not ported, so 0
-        if (!NoMovie) Host.Invoke(Host.Entity, "setAcceptMemberCount", 0);
+        OnRequestsForGuild();                                   // FUN_14196da70: setAcceptMemberCount(the requests' count)
     }
 
     /// <summary>vfunc_67 (:297): ClosePopup on the root, UIDialog's close, ClearSearchResults. The pages stay
@@ -125,11 +141,16 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         base.Close();
         Book.SearchRefresh -= OnSearchRefresh;
         Book.MyRequestsRefresh -= BuildSearchMy;
+        Book.RequestsForGuildRefresh -= OnRequestsForGuild;
+        Book.GuildInfoRefresh -= OnGuildInfoRefresh;
+        Book.MemberRefresh -= OnMemberRefresh;
+        Book.MemberRemoved -= OnMemberRemoved;
         Book.ClearSearchResults();
         createPage = null;
         joinPage = null;
         infoPage = null;
         memberPage = null;
+        acceptRequestPage = null;
     }
 
     /// <summary>InitializeGuildDialog (:2945).</summary>
@@ -149,19 +170,30 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public void OpenCategoryPage(string category)
     {
         if (NoMovie) return;
-        SetPageVisible(joinPage, false);                    // HideAllPages
-        SetPageVisible(createPage, false);
-        SetPageVisible(infoPage, false);
-        SetPageVisible(memberPage, false);
+        HideAllPages();
         if (category == "Join") CreateJoinPage();
         else if (category == "Create") EnsurePageCreated("guild_create_page", ref createPage);   // CreateCreatePage
         else if (category == "Info") CreateInfoPage();
         else if (category == "Member") CreateMemberPage();
-        // the other in-guild pages: STILL-OPEN
+        else if (category == "AcceptMember") CreateAcceptRequestPage();
+        // Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
         else if (category == "Member") SetPageVisible(memberPage, true);
+        else if (category == "AcceptMember") SetPageVisible(acceptRequestPage, true);
+    }
+
+    /// <summary>HideAllPages (@0x1419698f0).</summary>
+    void HideAllPages()
+    {
+        SetPageVisible(joinPage, false);
+        SetPageVisible(createPage, false);
+        SetPageVisible(infoPage, false);
+        SetPageVisible(memberPage, false);
+        SetPageVisible(acceptRequestPage, false);
+        // m_skillPage, m_skillPage2, m_eventPage, m_housePage, m_storagePage, m_raidPage, m_managePage,
+        // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
     /// <summary>CreateInfoPage (@0x14196a000): made now, UpdateGuildInfo, SetMasterInfo, UpdateGuildExp, the fund and the
@@ -182,6 +214,76 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (!EnsurePageCreated("guild_member_page", ref memberPage)) return;
         BuildMembers();
         if (Host.Child("m_sortDropdown", memberPage) is { } sort) Host.Set(sort, "selectedIndex", memberSort);
+    }
+
+    /// <summary>CreateAcceptRequestPage (@0x14196a440): made now, the guild info, the requests and the member count
+    /// text.</summary>
+    void CreateAcceptRequestPage()
+    {
+        if (!EnsurePageCreated("guild_accept_request_page", ref acceptRequestPage)) return;
+        UpdateGuildInfo();
+        OnRequestsForGuild();
+        SetChildText(acceptRequestPage, "m_memberCountText", ClientFormat.Format(Common(1000), Book.MemberCount, Book.Capacity));
+    }
+
+    /// <summary>FUN_14196da70 (@0x14196da70): the requests' count to the root, then (with the accept page up) its rows,
+    /// a page of 7.</summary>
+    void OnRequestsForGuild()
+    {
+        if (NoMovie) return;
+        var all = Book.RequestsForGuild;
+        Host.Invoke(Host.Entity, "setAcceptMemberCount", all.Count);
+        if (acceptRequestPage == null) return;
+        int start = (acceptPage - 1) * 7;
+        if (all.Count <= start)
+        {
+            start = 0;
+            acceptPage = 1;
+        }
+        int end = Math.Min(start + 7, all.Count);
+        int pages = all.Count / 7 + (all.Count % 7 != 0 ? 1 : 0);
+        var rows = new List<object>();
+        for (int i = start; i < end; i++)
+        {
+            var r = all[i];
+            if (r == null) continue;
+            rows.Add(Host.Obj(
+                ("charSn", MailTexts.IdText(r.CharId)),
+                ("charname", r.Name),
+                ("memberInfo", ClientFormat.Format(Common(0x402), r.Level, JobName(r.Job))),
+                ("trophy", r.TrophyTotal),
+                ("requestSn", MailTexts.IdText(r.Id)),
+                ("imgpath", ImagePath(r.CharId, r.Picture))));
+        }
+        // the auto-accept check box is the guild's "listed in the search" flag (FUN_1404d1860): STILL-OPEN, so false
+        Host.Invoke(acceptRequestPage, "buildRequestMemberPage", acceptPage, pages, false, rows);
+    }
+
+    void OnGuildInfoRefresh()
+    {
+        if (IsClosed || NoMovie || !Book.InGuild) return;
+        UpdateGuildInfo();
+    }
+
+    /// <summary>FUN_141973b20 (@0x141973b20): one member's row to the root and the member page, then the master's info and
+    /// the player's rights when the row's member is the master or the player. FUN_14196e590 (the skill page's fund) is
+    /// STILL-OPEN with the skill page.</summary>
+    void OnMemberRefresh(string name)
+    {
+        if (IsClosed || NoMovie || Book.FindMemberByName(name) is not { } m) return;
+        var row = MemberRow(m);
+        Host.Invoke(Host.Entity, "addOrUpdateMember", row);
+        if (memberPage != null) Host.Invoke(memberPage, "addOrUpdateMember", row);
+        if (Book.IsMaster(name)) SetMasterInfo();
+        if (PlayerName() == name) SetPlayer();
+    }
+
+    /// <summary>RemoveMember (@0x141973df0).</summary>
+    void OnMemberRemoved(string name)
+    {
+        if (IsClosed || NoMovie) return;
+        Host.Invoke(Host.Entity, "removeMember", name);
+        if (memberPage != null) Host.Invoke(memberPage, "removeMember", name);
     }
 
     void SetChildText(object page, string name, string text)
@@ -455,8 +557,29 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
             case "onrequestcanceljoin":
                 if (args.Length > 0) Book.CancelJoin(unchecked((long)ReservedWords.ParseUInt64(Str(0))));
                 return true;
+            case "onacceptmemeber":                   // the movie's spelling
+                if (args.Length > 0) Book.Respond(unchecked((long)ReservedWords.ParseUInt64(Str(0))), true);
+                return true;
+            case "onrejectmember":
+                if (args.Length > 0) Book.Respond(unchecked((long)ReservedWords.ParseUInt64(Str(0))), false);
+                return true;
+            case "onacceptmemberprevpage":
+                acceptPage--;
+                if (acceptPage < 1) acceptPage = 1;
+                OnRequestsForGuild();
+                return true;
+            case "onacceptmembernextpage":
+                acceptPage++;
+                OnRequestsForGuild();
+                return true;
             case "onsearchguildmasterpopupmenu":
                 if (args.Length > 0) PopupRequested?.Invoke(Float(0), Float(1), Str(2));
+                return true;
+            case "onbreakguild":
+                ShowBox(MessageBoxQueue.Create(1, Common(0x3df), this, "breakGuild"));   // ShowMessageBox(BlockFormat(0x3df), 1, ...)
+                return true;
+            case "onleaveguild":
+                ShowBox(MessageBoxQueue.Create(1, Common(0x3e0), this, "leaveGuild"));  // ShowMessageBox(BlockFormat(0x3e0), 1, ...)
                 return true;
             case "onsetpropensity":
                 if (args.Length > 0 && Int(0) == 1)
@@ -483,8 +606,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
             if (parts.Length == 1)
             {
                 MessageBoxQueue.Next();
-                close = false;
-                // breakGuild, leaveGuild, expelMember, changeMaster, sendMail, unregistPvP: in a guild, STILL-OPEN
+                close = false;                  // the client closes the box first and no handler closes it again
+                if (tag.StartsWith("breakGuild", StringComparison.Ordinal)) Book.Break();             // OnBreakGuild
+                else if (tag.StartsWith("leaveGuild", StringComparison.Ordinal)) Book.Leave();       // SendGuildMode7
+                // expelMember, changeMaster, sendMail, unregistPvP: in a guild, STILL-OPEN
             }
             else
             {

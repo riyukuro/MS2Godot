@@ -613,6 +613,8 @@ public partial class LiveSession : Node
         moveClock.Reset();
         GD.Print($"live: ResponseFieldEnter sent, portal {answer.Portal}, map {fieldEntry.Current.MapId}{(ms > 0 ? $", {ms} ms after the move's RequestFieldEnter" : "")}");
         FieldEntered?.Invoke(fieldEntry.Current.MapId, ms);
+        // FUN_1413bd5c0 (NotifyCompleteMyPC): a member with the invite right asks for the guild's join requests
+        if (Guilds.InGuild && Guilds.HasMemberPermissionOf(CharacterId, 2)) Guilds.ListRequests();
     }
 
     /// <summary>Movement out: the player's record packets and state changes become UserSync (0x12) and State (0x80); its offline
@@ -892,7 +894,7 @@ public partial class LiveSession : Node
             {
                 var m = GuildMessage.Read(p.Reader());            // CGuildManager::FUN_1413b6370 (guildmanager.cpp:301)
                 Guilds.Apply(m);
-                GD.Print($"live: guild type 0x{m.Type:x2} (guild {Guilds.GuildId}, {Guilds.MyRequests.Count} requests, {Guilds.SearchResults.Count} results)");
+                GD.Print($"live: guild type 0x{m.Type:x2} (guild {Guilds.GuildId}, {Guilds.MyRequests.Count} mine, {Guilds.RequestsForGuild.Count} for the guild, {Guilds.SearchResults.Count} results)");
             }
             else if (game.Is(p, Inbound.Prestige))
             {
@@ -1248,6 +1250,111 @@ public partial class LiveSession : Node
                 await Until(() => (Instance?.Mails.Mails.Count ?? 0) < before, 60 * 5); await Frames(120);
                 GD.Print($"live: mail tab {tab}: {before} -> {Instance?.Mails.Mails.Count} mails");
                 Shot($"mail_{tab}_removed.png");
+            }
+        }
+        // MS2_LIVE_GUILD_SHOTS=<dir> with MS2_LIVE_GUILD_STEP: one scripted step of the guild dialog against the live
+        // server, each with its shots. create: the Create page's button, the name (MS2_LIVE_GUILD_NAME) into the box, the
+        // box's OK, the created box's OK. apply: the Join page's first row's join. accept: the accept page's first row's
+        // accept. look: the Info and Member pages. leave / break: the Info page's button, the box's OK.
+        string guildShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_GUILD_SHOTS");
+        if (!string.IsNullOrEmpty(guildShots) && tree.CurrentScene is Ui.HudScene guildHud)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(guildShots);
+            void Shot(string name) { flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(guildShots, name)); GD.Print("live: shot " + name); }
+            async Task<bool> BoxUp(int max = 60 * 10)
+            {
+                for (int i = 0; i < max; i++) { if (MessageBoxLayer.Instance?.Shown ?? false) return true; await Frames(1); }
+                return false;
+            }
+            string step = System.Environment.GetEnvironmentVariable("MS2_LIVE_GUILD_STEP") ?? "";
+            await Frames(240);
+            guildHud.OpenGuildScripted();
+            await Until(() => guildHud.GuildDialog != null, 600); await Frames(180);
+            switch (step)
+            {
+                case "create":
+                {
+                    Shot("guild_before.png");
+                    guildHud.GuildDialog.OpenCategoryPage("Create");
+                    await Frames(120);
+                    Shot("guild_create_page.png");
+                    GD.Print($"live: guild create page button {(guildHud.ClickGuild(guildHud.GuildDialog.CreatePage, "m_createGuildButton") ? "clicked" : "not there")}");
+                    await Frames(60);
+                    await BoxUp();
+                    MessageBoxLayer.Instance?.Type(System.Environment.GetEnvironmentVariable("MS2_LIVE_GUILD_NAME") ?? "");
+                    await Frames(30);
+                    Shot("guild_create_box.png");
+                    MessageBoxLayer.Instance?.Click(0);
+                    await Until(() => Instance?.Guilds.InGuild ?? false, 60 * 20);
+                    await Frames(60);
+                    await BoxUp();
+                    Shot("guild_created_box.png");
+                    MessageBoxLayer.Instance?.Click(0);       // the created box's OK
+                    await Frames(60);
+                    Shot("guild_created.png");
+                    break;
+                }
+                case "apply":
+                {
+                    await Until(() => Instance?.Guilds.SearchResults.Count > 0, 60 * 20); await Frames(120);
+                    Shot("guild_search_list.png");
+                    GD.Print($"live: guild search {(Instance?.Guilds.SearchResults.Count ?? 0)} result(s), join row {(guildHud.ClickGuild(guildHud.GuildDialog.JoinPage, "m_searchGuild", "m_list", "row:0", "m_joinButton") ? "clicked" : "not there")}");
+                    await Until(() => Instance?.Guilds.MyRequests.Count > 0, 60 * 10); await Frames(120);
+                    Shot("guild_applied.png");
+                    break;
+                }
+                case "accept":
+                {
+                    await Until(() => Instance?.Guilds.RequestsForGuild.Count > 0, 60 * 20); await Frames(120);
+                    guildHud.GuildDialog.OpenCategoryPage("AcceptMember");
+                    await Frames(180);
+                    Shot("guild_accept_list.png");
+                    GD.Print($"live: guild accept row {(guildHud.ClickGuild(guildHud.GuildDialog.AcceptRequestPage, "m_list", "row:0", "m_accept") ? "clicked" : "not there")}");
+                    await Until(() => Instance?.Guilds.RequestsForGuild.Count == 0, 60 * 10); await Frames(120);
+                    Shot("guild_accept_done.png");
+                    guildHud.GuildDialog.OpenCategoryPage("Info");
+                    await Frames(180);
+                    Shot("guild_info_2.png");
+                    guildHud.GuildDialog.OpenCategoryPage("Member");
+                    await Frames(180);
+                    Shot("guild_members_after_join.png");
+                    break;
+                }
+                case "look":
+                {
+                    await Until(() => Instance?.Guilds.InGuild ?? false, 60 * 10); await Frames(60);
+                    Shot("guild_info.png");
+                    guildHud.GuildDialog.OpenCategoryPage("Member");
+                    await Frames(180);
+                    Shot("guild_members.png");
+                    break;
+                }
+                case "leave":
+                {
+                    await Until(() => guildHud.GuildDialog?.InfoPage != null, 600); await Frames(60);
+                    Shot("guild_info_before_leave.png");
+                    GD.Print($"live: guild leave button {(guildHud.ClickGuild(guildHud.GuildDialog.InfoPage, "m_leaveGuild") ? "clicked" : "not there")}");
+                    await Frames(60);
+                    await BoxUp();
+                    Shot("guild_leave_box.png");
+                    MessageBoxLayer.Instance?.Click(0);
+                    await Until(() => !(Instance?.Guilds.InGuild ?? true), 60 * 10); await Frames(120);
+                    Shot("guild_left.png");
+                    break;
+                }
+                case "break":
+                {
+                    await Until(() => guildHud.GuildDialog?.InfoPage != null, 600); await Frames(60);
+                    Shot("guild_info_before_break.png");
+                    GD.Print($"live: guild break button {(guildHud.ClickGuild(guildHud.GuildDialog.InfoPage, "m_breakGuild") ? "clicked" : "not there")}");
+                    await Frames(60);
+                    await BoxUp();
+                    Shot("guild_break_box.png");
+                    MessageBoxLayer.Instance?.Click(0);
+                    await Until(() => !(Instance?.Guilds.InGuild ?? true), 60 * 10); await Frames(120);
+                    Shot("guild_broken.png");
+                    break;
+                }
             }
         }
         // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at

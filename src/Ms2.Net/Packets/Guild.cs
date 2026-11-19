@@ -36,6 +36,37 @@ public sealed class GuildSearchEntry {
 }
 
 /// <summary>
+/// One join request sent to a guild, CGuildJoinRequestForGuild (ReadStream @0x1404c7ad0): i64 the request id (f18), i64 the
+/// guild id (f20), i64 the applicant's account id (f28), i64 the applicant's character id (f30 — the accept page names it
+/// "charSn" and pictures it), the name (f38), the profile picture code (f40, ReadUnicodeStringA: the same wire as
+/// ReadUnicodeString), i32 the job code (f48), i32 the job (f4c), i32 the level (f50), the trophy counts (f54,
+/// Unk_IntTriple) and i64 the time (f60, not shown).
+/// </summary>
+public sealed class GuildJoinRequestForGuild {
+    public long Id;                  // f18
+    public long GuildId;             // f20
+    public long AccountId;           // f28
+    public long CharId;              // f30
+    public string Name = "";         // f38
+    public string Picture = "";      // f40
+    public int JobCode;              // f48
+    public int Job;                  // f4c
+    public int Level;                // f50
+    public (int Combat, int Adventure, int Life) Trophy;   // f54
+    public long Time;                // f60
+
+    /// <summary>Unk_IntTriple::Sum.</summary>
+    public int TrophyTotal => Trophy.Combat + Trophy.Adventure + Trophy.Life;
+
+    public static GuildJoinRequestForGuild Read(ByteReader r) => new() {
+        Id = r.ReadLong(), GuildId = r.ReadLong(), AccountId = r.ReadLong(), CharId = r.ReadLong(),
+        Name = r.ReadUnicodeString(), Picture = r.ReadUnicodeString(),
+        JobCode = r.ReadInt(), Job = r.ReadInt(), Level = r.ReadInt(),
+        Trophy = (r.ReadInt(), r.ReadInt(), r.ReadInt()), Time = r.ReadLong(),
+    };
+}
+
+/// <summary>
 /// One join request this character sent, CGuildJoinRequestForChar (ReadStream @0x1404c8150): i64 the request id (f18),
 /// i64 the guild id (f20), the guild name (f28), i32 the guild exp (f30), the mark (f38), the trophy counts (f44), i32 the
 /// member count (f50), i32 the capacity (f40), the master's name (f58), then i64 f60, f68 and f70 (their meaning is
@@ -75,19 +106,30 @@ public sealed class GuildJoinRequest {
 /// <item>0x57 OnPacketSearchResults (@0x1413c59e0): i32 count, then per entry u8 has and, when set, a
 /// <see cref="GuildSearchEntry"/>.</item>
 /// <item>0x30 OnPacketMyJoinRequestRemoved (@0x1413c5f90): the guild name, i64 the request id, u8 joined.</item>
+/// <item>0x55 OnPacketJoinRequestsForGuild (@0x1413c5690): i32 count, then per entry u8 has and, when set, a
+/// <see cref="GuildJoinRequestForGuild"/>.</item>
+/// <item>0x2d OnPacketJoinRequestReceived (@0x1413c6460): one <see cref="GuildJoinRequestForGuild"/> (no count).</item>
+/// <item>0x2e OnPacketJoinRequestWithdrawn (@0x1413c6580): i64 the request id.</item>
+/// <item>0x2f FUN_1413c6180: the requestor's name, the applicant's name, u8 accepted, i64 the request id.</item>
+/// <item>0x54 OnPacketJoinRequestAnswer (@0x1413c5520): i64 the applicant's character id, their name, u8 accepted.</item>
+/// <item>0x12 OnPacketMemberJoined (@0x1413bfaf0): the inviter's name, the member's name, u8 notify, then
+/// <see cref="GuildMember.Read"/> of the member (mode 3: the whole record).</item>
+/// <item>0x13 OnPacketMemberLeft (@0x1413bfe50): the name.</item>
+/// <item>2 FUN_1413bda00: u8 result (0 = disbanded).</item>
+/// <item>7 FUN_1413be350: no body.</item>
 /// </list>
 /// The other types are not read here (STILL-OPEN).
 /// </summary>
 public sealed record GuildMessage(byte Type) {
-    /// <summary>Type 0: the guild id; type 0x52/0x53: the guild id.</summary>
+    /// <summary>Type 0: the guild id; types 0x52/0x53 and 0x54: an id.</summary>
     public long GuildId { get; init; }
     /// <summary>Type 0: the guild as far as it could be read (null when the packet holds only the id).</summary>
     public GuildInfo Info { get; init; }
-    /// <summary>Type 1: the result (0 = created).</summary>
+    /// <summary>Types 1 and 2: the result (0 = created / disbanded).</summary>
     public int Result { get; init; }
-    /// <summary>Types 1, 0x52, 0x53, 0x30: the guild name.</summary>
+    /// <summary>Types 1, 0x52, 0x53, 0x30, 0x2f (the requestor), 0x12 (the inviter), 0x13: the name.</summary>
     public string Name { get; init; } = "";
-    /// <summary>Type 0x30: the request id.</summary>
+    /// <summary>Types 0x30, 0x2e and 0x2f: the request id.</summary>
     public long RequestId { get; init; }
     /// <summary>Type 0x30: the request was answered by joining.</summary>
     public bool Joined { get; init; }
@@ -96,6 +138,18 @@ public sealed record GuildMessage(byte Type) {
     /// <summary>Type 0x57; <see cref="SearchCount"/> is the count as sent (0 shows the no-result box).</summary>
     public IReadOnlyList<GuildSearchEntry> Results { get; init; } = Array.Empty<GuildSearchEntry>();
     public int SearchCount { get; init; }
+    /// <summary>Type 0x55: the join requests sent to the guild.</summary>
+    public IReadOnlyList<GuildJoinRequestForGuild> GuildRequests { get; init; } = Array.Empty<GuildJoinRequestForGuild>();
+    /// <summary>Type 0x2d: the one request that arrived.</summary>
+    public GuildJoinRequestForGuild NewRequest { get; init; }
+    /// <summary>Types 0x2f and 0x54: the answer.</summary>
+    public bool Accepted { get; init; }
+    /// <summary>Types 0x2f, 0x54 and 0x12: the applicant's (the new member's) name.</summary>
+    public string Applicant { get; init; } = "";
+    /// <summary>Type 0x12: the member that joined.</summary>
+    public GuildMember Member { get; init; }
+    /// <summary>Type 0x12: the notice line is wanted.</summary>
+    public bool Notify { get; init; }
 
     public static GuildMessage Read(ByteReader r) {
         byte t = r.ReadByte();
@@ -125,6 +179,23 @@ public sealed record GuildMessage(byte Type) {
                 return new(t) { Results = list, SearchCount = n };
             }
             case 0x30: return new(t) { Name = r.ReadUnicodeString(), RequestId = r.ReadLong(), Joined = r.ReadByte() != 0 };
+            case 0x55: {
+                int n = r.ReadInt();
+                var list = new List<GuildJoinRequestForGuild>();
+                for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildJoinRequestForGuild.Read(r));
+                return new(t) { GuildRequests = list };
+            }
+            case 0x2d: return new(t) { NewRequest = GuildJoinRequestForGuild.Read(r) };
+            case 0x2e: return new(t) { RequestId = r.ReadLong() };
+            case 0x2f: return new(t) { Name = r.ReadUnicodeString(), Applicant = r.ReadUnicodeString(), Accepted = r.ReadByte() != 0, RequestId = r.ReadLong() };
+            case 0x54: return new(t) { GuildId = r.ReadLong(), Applicant = r.ReadUnicodeString(), Accepted = r.ReadByte() != 0 };
+            case 0x12: {
+                string inviter = r.ReadUnicodeString(), name = r.ReadUnicodeString();
+                bool notify = r.ReadByte() != 0;
+                return new(t) { Name = inviter, Applicant = name, Member = GuildMember.Read(r), Notify = notify };
+            }
+            case 0x13: return new(t) { Name = r.ReadUnicodeString() };
+            case 2: return new(t) { Result = r.ReadByte() };
             default: return new(t);
         }
     }

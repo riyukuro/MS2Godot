@@ -7,13 +7,15 @@ namespace Ms2.Ui;
 /// <summary>
 /// The guild state the guild dialog reads, CGuildManager (client/ms2/guildmanager.cpp), with what its type switch
 /// FUN_1413b6370 (:301) does on the Guild packets (0x8A) the port reads, and its checked sends (SendOp::Guild 0x4B). The
-/// client's UI calls come out as events. Only the not-in-guild side is here: the guild id, this character's join requests
-/// (m_joinRequestsForChar), the search results and the search propensity (m_468). STILL-OPEN: the rest of CGuildInfo (name,
-/// members, grades, skills, ...), the requests for the guild (m_joinRequestsForGuild) and the invite (m_invite).
+/// client's UI calls come out as events. The not-in-guild side: the guild id, this character's join requests
+/// (m_joinRequestsForChar), the search results and the search propensity (m_468). The in-guild side: the guild info, the
+/// join requests sent to the guild (m_joinRequestsForGuild) and the members. STILL-OPEN: the invite (m_invite) and the
+/// rest of the in-guild updates.
 /// </summary>
 public sealed class GuildBook
 {
     readonly List<GuildJoinRequest> myRequests = new();     // m_joinRequestsForChar
+    readonly List<GuildJoinRequestForGuild> requests = new();   // m_joinRequestsForGuild
     readonly List<GuildSearchEntry> results = new();        // the search results (ClearSearchResults clears them)
 
     /// <summary>GetStringCommon: the common string of an id.</summary>
@@ -27,6 +29,8 @@ public sealed class GuildBook
     public Func<string, string> CheckName;
     /// <summary>The local player's level (PCBase vfunc_78), or null without a local player.</summary>
     public Func<int?> Level = () => null;
+    /// <summary>The local player's name (CGuildManager::GetMyName), or null without a local player.</summary>
+    public Func<string> PlayerName = () => null;
     /// <summary>Client::Constants GuildNameLengthMin and GuildCreateMinLevel.</summary>
     public int NameLengthMin = 2, CreateMinLevel;
 
@@ -44,6 +48,15 @@ public sealed class GuildBook
     public event Action<int> SearchRefresh;
     /// <summary>The open guild dialog's FUN_14196d660: this character's join requests again.</summary>
     public event Action MyRequestsRefresh;
+    /// <summary>The open guild dialog's FUN_14196da70: the requests for the guild again.</summary>
+    public event Action RequestsForGuildRefresh;
+    /// <summary>The open guild dialog's UpdateGuildInfo: the header (the member count) changed.</summary>
+    public event Action GuildInfoRefresh;
+    /// <summary>The open guild dialog's FUN_141973b20(name): one member's row again, then the master and the player's
+    /// rights (the client calls it also when the row's member is gone from the list).</summary>
+    public event Action<string> MemberRefresh;
+    /// <summary>The open guild dialog's RemoveMember(name).</summary>
+    public event Action<string> MemberRemoved;
 
     /// <summary>GetGuildId: CGuildInfo's first field, 0 outside a guild.</summary>
     public long GuildId { get; private set; }
@@ -96,6 +109,9 @@ public sealed class GuildBook
     /// <summary>m_joinRequestsForChar: the join requests this character sent, in the order read.</summary>
     public IReadOnlyList<GuildJoinRequest> MyRequests => myRequests;
 
+    /// <summary>m_joinRequestsForGuild (FUN_1413c7f80): the join requests sent to the guild, in the order read.</summary>
+    public IReadOnlyList<GuildJoinRequestForGuild> RequestsForGuild => requests;
+
     /// <summary>The search results of the last type 0x57.</summary>
     public IReadOnlyList<GuildSearchEntry> SearchResults => results;
 
@@ -113,9 +129,11 @@ public sealed class GuildBook
             case 0:
                 // OnPacketGuildInfo (:1525): Read, then both request lists are cleared. Read keeps the header, the members,
                 // the grades and the skills; a packet only the id of it reads leaves no Info.
+                if (InGuild) ResetGuild();
                 GuildId = m.GuildId;
                 Info = m.Info;
                 myRequests.Clear();
+                requests.Clear();
                 break;
             case 1:
                 // OnPacketCreateGuild (@0x1413bd8a0): a result is ShowGuildError(1, result, 0); else the sound, the box
@@ -164,7 +182,97 @@ public sealed class GuildBook
                 else { SearchRefresh?.Invoke(0); MyRequestsRefresh?.Invoke(); }
                 break;
             }
+            case 2:
+                // FUN_1413bda00 (@0x1413bda00): a result is ShowGuildError(2, result, 0); else FUN_1413b5f90 (the guild is
+                // gone), the box of common 0x38a and CloseDialog(0x4e4f).
+                if (m.Result != 0) { ShowGuildError(2, m.Result, 0); break; }
+                ResetGuild();
+                Box?.Invoke(Common(0x38a));
+                DialogClose?.Invoke();
+                break;
+            case 7:
+                // FUN_1413be350 (@0x1413be350): no body; the guild is gone, the dialog closes and the line 0x395 names the
+                // guild it just left.
+                if (!InGuild) break;
+                string left = GuildName;
+                ResetGuild();
+                DialogClose?.Invoke();
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x395), left), 0xd);
+                break;
+            case 0x12:
+            {
+                // OnPacketMemberJoined (@0x1413bfaf0): the member is added (or updated) by name; a full record (mode 3)
+                // also draws the dialog again and prints the line 0x3a8 when the notice byte is set.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Applicant) is { } old) Info.Members.Remove(old);
+                if (m.Member is { } member) Info.Members.Add(member);
+                if (m.Member?.Mode == 3)
+                {
+                    if (m.Notify) ChatLine?.Invoke(ClientFormat.Format(Common(0x3a8), m.Name, m.Applicant), 0xd);
+                    GuildInfoRefresh?.Invoke();
+                    MemberRefresh?.Invoke(m.Applicant);
+                }
+                break;
+            }
+            case 0x13:
+            {
+                // OnPacketMemberLeft (@0x1413bfe50): the member of the name is removed, the line 0x3a6, and the dialog's
+                // UpdateGuildInfo and RemoveMember.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } gone) Info.Members.Remove(gone);
+                ChatLine?.Invoke(ClientFormat.Format(Common(0x3a6), m.Name), 0xd);
+                GuildInfoRefresh?.Invoke();
+                MemberRemoved?.Invoke(m.Name);
+                break;
+            }
+            case 0x54:
+                // OnPacketJoinRequestAnswer (@0x1413c5520): the line 0x3d0 (accepted) or 0x3d1 (rejected) of the name.
+                if (!InGuild) break;
+                if (m.GuildId != 0)       // unsigned > 0
+                    ChatLine?.Invoke(ClientFormat.Format(Common(m.Accepted ? 0x3d0 : 0x3d1), m.Applicant), 0xd);
+                break;
+            case 0x55:
+                // OnPacketJoinRequestsForGuild (@0x1413c5690): the list replaced, then the dialog's FUN_14196da70.
+                if (!InGuild) break;
+                requests.Clear();
+                requests.AddRange(m.GuildRequests);
+                RequestsForGuildRefresh?.Invoke();
+                break;
+            case 0x2d:
+                // OnPacketJoinRequestReceived (@0x1413c6460): the request added, then the dialog's FUN_14196da70.
+                if (!InGuild) break;
+                requests.Add(m.NewRequest);
+                RequestsForGuildRefresh?.Invoke();
+                break;
+            case 0x2e:
+            {
+                // OnPacketJoinRequestWithdrawn (@0x1413c6580): the first request of the id is removed, then the dialog's
+                // FUN_14196da70.
+                if (!InGuild) break;
+                int i = requests.FindIndex(r => r.Id == m.RequestId);
+                if (i >= 0) requests.RemoveAt(i);
+                RequestsForGuildRefresh?.Invoke();
+                break;
+            }
+            case 0x2f:
+            {
+                // FUN_1413c6180 (@0x1413c6180): the first request of the id is removed, the dialog draws the list again
+                // and the line 0x3bd (accepted) or 0x3be (rejected) names the guild and the applicant.
+                if (!InGuild) break;
+                int i = requests.FindIndex(r => r.Id == m.RequestId);
+                if (i >= 0) requests.RemoveAt(i);
+                RequestsForGuildRefresh?.Invoke();
+                ChatLine?.Invoke(ClientFormat.Format(Common(m.Accepted ? 0x3bd : 0x3be), m.Name, m.Applicant), 0xd);
+                break;
+            }
         }
+    }
+
+    /// <summary>FUN_1413b5f90's Reset: the guild state is gone (the request lists are kept, as the client keeps them).</summary>
+    void ResetGuild()
+    {
+        GuildId = 0;
+        Info = null;
     }
 
     /// <summary>FUN_1413b6d10 (:405): create a guild. False in a guild or with an invite; a name shorter than
@@ -191,6 +299,46 @@ public sealed class GuildBook
 
     /// <summary>SendGuildMode83 (@0x1413bc540): cancel a join request.</summary>
     public void CancelJoin(long id) => Send(new GuildJoinCancelRequest(id));
+
+    /// <summary>SendGuildMode84 (@0x1413bc5b0): answer a join request sent to the guild (the id is the request's, the
+    /// movie hands it back as its requestSn).</summary>
+    public void Respond(long id, bool accept) => Send(new GuildRespondRequest(id, accept));
+
+    /// <summary>SendGuildMode85 (@0x1413bc630): in a guild, ask for the join requests sent to the guild. The client asks
+    /// from a member with the invite right when the local player is complete.</summary>
+    public void ListRequests()
+    {
+        if (!InGuild) return;
+        Send(new GuildListRequestsRequest());
+    }
+
+    /// <summary>HasMemberPermission by the character id (the client asks by the local player's name).</summary>
+    public bool HasMemberPermissionOf(long charId, int mask) =>
+        Info?.Members.FirstOrDefault(m => m.CharId == charId) is { } me && ((GetGrade(me.Grade)?.Permissions ?? 0) & mask) != 0;
+
+    /// <summary>SendGuildMode7 (@0x1413b75a0): leave the guild. The client sends it only from a member who is not the
+    /// master; the master gets the notice of common 0x396 instead.</summary>
+    public void Leave()
+    {
+        if (!InGuild) return;
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return;
+        if (IsMaster(myName)) { Notice?.Invoke(Common(0x396), 1, true); return; }
+        Send(new GuildLeaveRequest());
+    }
+
+    /// <summary>SendGuildMode2 (@0x1413b7020): disband the guild. The client sends it only from the master of a
+    /// one-member guild; a guild with members gets the notice of common 0x40e, a member who is not the master nothing.</summary>
+    public bool Break()
+    {
+        if (!InGuild) return false;
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return false;
+        if (MemberCount > 1) { Notice?.Invoke(Common(0x40e), 1, true); return false; }
+        if (!IsMaster(myName)) return false;
+        Send(new GuildBreakRequest());
+        return true;
+    }
 
     /// <summary>SendGuildMode86 (@0x1413bc6a0): not in a guild, ask for this character's join requests.</summary>
     public void SendMyRequests()

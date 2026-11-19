@@ -43,3 +43,32 @@ public sealed record GuildSearchByNameRequest(string Name) : IOutPacket {
     public Outbound Op => Outbound.Guild;
     public void Write(ByteWriter w) { w.WriteByte(0x58); w.WriteUnicodeString(Name); }
 }
+
+/// <summary>SendGuildMode84 (@0x1413bc5b0): answer a join request sent to the guild (u8 0x54, i64 the request id, u8
+/// accept). The accept page hands the movie both the request id ("requestSn") and the character id ("charSn") and the
+/// movie passes back the request id.</summary>
+public sealed record GuildRespondRequest(long Id, bool Accept) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x54); w.WriteLong(Id); w.WriteByte(Accept ? (byte)1 : (byte)0); }
+}
+
+/// <summary>SendGuildMode85 (@0x1413bc630): ask for the join requests sent to the guild (u8 0x55, no body), answered by
+/// type 0x55. The client sends it from a member with the invite right when the local player is complete.</summary>
+public sealed record GuildListRequestsRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) => w.WriteByte(0x55);
+}
+
+/// <summary>SendGuildMode7 (@0x1413b75a0): leave the guild (u8 7, no body). The client sends it only from a member who
+/// is not the master.</summary>
+public sealed record GuildLeaveRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) => w.WriteByte(7);
+}
+
+/// <summary>SendGuildMode2 (@0x1413b7020): disband the guild (u8 2, no body). The client sends it only from the master
+/// of a one-member guild.</summary>
+public sealed record GuildBreakRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) => w.WriteByte(2);
+}

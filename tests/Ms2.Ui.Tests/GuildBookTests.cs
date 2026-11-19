@@ -5,7 +5,8 @@ using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
 
-/// <summary>CGuildManager's not-in-guild side (GuildBook): the Guild types it applies and its checked sends.</summary>
+/// <summary>CGuildManager (GuildBook): the Guild types it applies — outside a guild the requests and the search, in a
+/// guild the requests for the guild, the members, the leave and the disband — and its checked sends.</summary>
 public class GuildBookTests {
     static GuildBook Book(List<IOutPacket> sent, List<string> notices) {
         var b = new GuildBook { Common = id => $"c{id:x}", CommonByKey = k => k, Send = sent.Add, Level = () => 10, CreateMinLevel = 5 };
@@ -109,5 +110,116 @@ public class GuildBookTests {
             Is.EqualTo((true, false, true, false)));
         Assert.That(b.GetGrade(1).Name, Is.EqualTo("Member"));
         Assert.That(b.GetGrade(2), Is.Null);
+    }
+
+    /// <summary>A book in a guild: the master Ma (grade 0, all rights) and the member bo (grade 1, right 8).</summary>
+    static GuildBook InGuild(List<IOutPacket> sent, List<string> lines) {
+        var b = Book(sent, new List<string>());
+        b.ChatLine += (t, _) => lines.Add(t);
+        b.PlayerName = () => "Ma";
+        var info = new GuildInfo { Id = 7, Name = "Gd", MaxMembers = 50, MasterCharId = 12 };
+        info.Members.Add(Member("bo", 13, 1, 20, 200, 1, 2, 3));
+        info.Members.Add(Member("Ma", 12, 0, 40, 100, 4));
+        info.Grades.Add(new GuildGrade(0, "Master", 4095));
+        info.Grades.Add(new GuildGrade(1, "Member", 8));
+        b.Apply(new GuildMessage((byte)0) { GuildId = 7, Info = info });
+        return b;
+    }
+
+    [Test]
+    public void TheRequestsForTheGuildFollowThePacketsAndAskOnlyWithTheRight() {
+        var sent = new List<IOutPacket>();
+        var b = InGuild(sent, new List<string>());
+        int refresh = 0;
+        b.RequestsForGuildRefresh += () => refresh++;
+        var request = new GuildJoinRequestForGuild { Id = 4, CharId = 13, Name = "bo", Job = 200, Level = 20 };
+        b.Apply(new GuildMessage(0x55) { GuildRequests = new[] { request } });
+        Assert.That((b.RequestsForGuild.Single().Name, refresh), Is.EqualTo(("bo", 1)));
+        b.Apply(new GuildMessage(0x2d) { NewRequest = new GuildJoinRequestForGuild { Id = 5, CharId = 13, Name = "bo" } });
+        Assert.That((b.RequestsForGuild.Count, refresh), Is.EqualTo((2, 2)));
+        b.Apply(new GuildMessage(0x2e) { RequestId = 4 });
+        b.Apply(new GuildMessage(0x2e) { RequestId = 4 });      // a second withdraw of the same id finds nothing
+        Assert.That((b.RequestsForGuild.Count, refresh), Is.EqualTo((1, 4)));
+        b.ListRequests();                                       // SendGuildMode85 asks whenever this is a guild
+        Assert.That(sent.Last(), Is.EqualTo(new GuildListRequestsRequest()));
+        // FUN_1413bd5c0 asks only from a member with the invite right (2): bo (grade 1, rights 8) does not have it
+        Assert.That((b.HasMemberPermissionOf(12, 2), b.HasMemberPermissionOf(13, 2)), Is.EqualTo((true, false)));
+    }
+
+    [Test]
+    public void TheAnswersAndTheMemberPacketsDrawTheLinesAndTheLists() {
+        var sent = new List<IOutPacket>(); var lines = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Apply(new GuildMessage(0x54) { GuildId = 13, Applicant = "bo", Accepted = true });
+        b.Apply(new GuildMessage(0x54) { GuildId = 0, Applicant = "bo", Accepted = false });   // id 0: no line
+        Assert.That(lines, Is.EqualTo(new[] { "c3d0" }));
+        b.Apply(new GuildMessage(0x2f) { Name = "Ma", Applicant = "bo", Accepted = true, RequestId = 4 });
+        Assert.That(lines.Last(), Is.EqualTo("c3bd"));
+        string refreshed = null;
+        b.MemberRefresh += n => refreshed = n;
+        b.Apply(new GuildMessage(0x12) { Name = "Ma", Applicant = "bo", Member = Member("bo", 13, 1, 21, 300, 1, 2, 3), Notify = true });
+        Assert.That((lines.Last(), refreshed, b.MemberCount, b.Members.Single(m => m.Name == "bo").Level), Is.EqualTo(("c3a8", "bo", 2, 21)));
+        b.Apply(new GuildMessage(0x12) { Name = "Ma", Applicant = "bo", Member = Member("bo", 13, 1, 22, 300), Notify = true });
+        Assert.That(b.MemberCount, Is.EqualTo(2));            // bo replaced, not added twice
+        string removed = null;
+        b.MemberRemoved += n => removed = n;
+        b.Apply(new GuildMessage(0x13) { Name = "bo" });
+        Assert.That((lines.Last(), removed, b.MemberCount), Is.EqualTo(("c3a6", "bo", 1)));
+    }
+
+    [Test]
+    public void LeaveIsOnlyForAMemberWhoIsNotTheMaster() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>(); var boxes = new List<string>(); var lines = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.Box += boxes.Add;
+        int closed = 0;
+        b.DialogClose += () => closed++;
+        b.Leave();
+        Assert.That((sent.Count, notices.Single(), closed), Is.EqualTo((0, "c396", 0)));     // the master cannot leave
+        b.PlayerName = () => "bo";
+        b.Leave();
+        Assert.That(sent.Last(), Is.EqualTo(new GuildLeaveRequest()));
+        b.Apply(new GuildMessage(7));
+        Assert.That((b.InGuild, lines.Last(), closed, boxes.Count), Is.EqualTo((false, "c395", 1, 0)));   // no box of its own
+    }
+
+    [Test]
+    public void BreakIsOnlyForTheMasterOfAOneMemberGuild() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>(); var boxes = new List<string>(); var lines = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.Box += boxes.Add;
+        int closed = 0;
+        b.DialogClose += () => closed++;
+        Assert.That(b.Break(), Is.False);                     // the member count comes first, master or not
+        Assert.That((sent.Count, notices.Single()), Is.EqualTo((0, "c40e")));
+        b.Apply(new GuildMessage(0x13) { Name = "bo" });      // bo left: the master is alone
+        b.PlayerName = () => "zz";
+        Assert.That(b.Break(), Is.False);                     // not the master: nothing sent, no second notice
+        Assert.That((sent.Count, notices.Count), Is.EqualTo((0, 1)));
+        b.PlayerName = () => "Ma";
+        Assert.That(b.Break(), Is.True);
+        Assert.That(sent.Last(), Is.EqualTo(new GuildBreakRequest()));
+        b.Apply(new GuildMessage(2) { Result = 0 });
+        Assert.That((b.InGuild, boxes.Single(), closed), Is.EqualTo((false, "c38a", 1)));
+    }
+
+    [Test]
+    public void TheDisbandPacketClearsTheGuildAndBoxesTheLeaveJustClosesIt() {
+        var sent = new List<IOutPacket>(); var boxes = new List<string>(); var lines = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Box += boxes.Add;
+        int closed = 0;
+        b.DialogClose += () => closed++;
+        b.Apply(new GuildMessage(2) { Result = 0 });
+        Assert.That((b.InGuild, boxes.Single(), closed), Is.EqualTo((false, "c38a", 1)));
+        b.Apply(new GuildMessage(7));
+        Assert.That(b.InGuild, Is.False);                     // FUN_1413be350 is only the answer to a send
+        var failed = InGuild(new List<IOutPacket>(), lines);
+        var errorNotices = new List<string>();
+        failed.Notice += (t, _, _) => errorNotices.Add(t);
+        failed.Apply(new GuildMessage(2) { Result = 1 });
+        Assert.That((failed.InGuild, errorNotices.Single()), Is.EqualTo((true, "c403")));   // ShowGuildError(2, 1, 0)
     }
 }

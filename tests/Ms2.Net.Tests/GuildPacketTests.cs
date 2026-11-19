@@ -22,6 +22,11 @@ public class GuildPacketTests {
         Assert.That(Bytes(new GuildMyRequestsRequest()), Is.EqualTo(new byte[] { 0x56 }));
         Assert.That(Bytes(new GuildSearchRequest(0x7fffffff)), Is.EqualTo(new byte[] { 0x57, 0xff, 0xff, 0xff, 0x7f, 1, 0, 0, 0 }));
         Assert.That(Bytes(new GuildSearchByNameRequest("Gd")), Is.EqualTo(Cat(new byte[] { 0x58 }, Str("Gd"))));
+        Assert.That(Bytes(new GuildRespondRequest(5, true)), Is.EqualTo(Cat(new byte[] { 0x54 }, Id5, new byte[] { 1 })));
+        Assert.That(Bytes(new GuildRespondRequest(5, false)), Is.EqualTo(Cat(new byte[] { 0x54 }, Id5, new byte[] { 0 })));
+        Assert.That(Bytes(new GuildListRequestsRequest()), Is.EqualTo(new byte[] { 0x55 }));
+        Assert.That(Bytes(new GuildLeaveRequest()), Is.EqualTo(new byte[] { 7 }));
+        Assert.That(Bytes(new GuildBreakRequest()), Is.EqualTo(new byte[] { 2 }));
     }
 
     [Test]
@@ -35,6 +40,51 @@ public class GuildPacketTests {
         Assert.That((sent.Type, sent.GuildId, sent.Name), Is.EqualTo(((byte)0x52, 9L, "Gd")));
         var removed = GuildMessage.Read(R(w => { w.WriteByte(0x30); w.WriteUnicodeString("Gd"); w.WriteLong(4); w.WriteByte(1); }));
         Assert.That((removed.Name, removed.RequestId, removed.Joined), Is.EqualTo(("Gd", 4L, true)));
+        var disbanded = GuildMessage.Read(R(w => { w.WriteByte(2); w.WriteByte(0); }));
+        Assert.That(disbanded.Result, Is.EqualTo(0));
+        var leave = GuildMessage.Read(R(w => w.WriteByte(7)));
+        Assert.That(leave.Type, Is.EqualTo((byte)7));
+        var answer = GuildMessage.Read(R(w => { w.WriteByte(0x54); w.WriteLong(13); w.WriteUnicodeString("bo"); w.WriteByte(1); }));
+        Assert.That((answer.GuildId, answer.Applicant, answer.Accepted), Is.EqualTo((13L, "bo", true)));
+        var withdrawn = GuildMessage.Read(R(w => { w.WriteByte(0x2e); w.WriteLong(4); }));
+        Assert.That(withdrawn.RequestId, Is.EqualTo(4L));
+        var answered = GuildMessage.Read(R(w => { w.WriteByte(0x2f); w.WriteUnicodeString("Ma"); w.WriteUnicodeString("bo"); w.WriteByte(1); w.WriteLong(4); }));
+        Assert.That((answered.Name, answered.Applicant, answered.Accepted, answered.RequestId), Is.EqualTo(("Ma", "bo", true, 4L)));
+        var left = GuildMessage.Read(R(w => { w.WriteByte(0x13); w.WriteUnicodeString("bo"); }));
+        Assert.That(left.Name, Is.EqualTo("bo"));
+    }
+
+    [Test]
+    public void TheRequestsForTheGuildReadTheirEntries() {
+        var arrived = GuildMessage.Read(R(w => { w.WriteByte(0x2d);
+            w.WriteLong(4); w.WriteLong(9); w.WriteLong(11); w.WriteLong(13); w.WriteUnicodeString("bo"); w.WriteUnicodeString("img");
+            w.WriteInt(100); w.WriteInt(200); w.WriteInt(20); w.WriteInt(1); w.WriteInt(2); w.WriteInt(3); w.WriteLong(77);
+        }));
+        var r = arrived.NewRequest;
+        Assert.That((r.Id, r.GuildId, r.AccountId, r.CharId, r.Name, r.Picture, r.JobCode, r.Job, r.Level, r.TrophyTotal, r.Time),
+            Is.EqualTo((4L, 9L, 11L, 13L, "bo", "img", 100, 200, 20, 6, 77L)));
+        var list = GuildMessage.Read(R(w => {
+            w.WriteByte(0x55); w.WriteInt(1); w.WriteByte(1);
+            w.WriteLong(4); w.WriteLong(9); w.WriteLong(11); w.WriteLong(13); w.WriteUnicodeString("bo"); w.WriteUnicodeString("img");
+            w.WriteInt(100); w.WriteInt(200); w.WriteInt(20); w.WriteInt(1); w.WriteInt(2); w.WriteInt(3); w.WriteLong(77);
+        }));
+        Assert.That(list.GuildRequests.Single().Name, Is.EqualTo("bo"));
+    }
+
+    [Test]
+    public void TheMemberJoinedReadsTheNamesTheNoticeAndTheMember() {
+        var m = GuildMessage.Read(R(w => {
+            w.WriteByte(0x12); w.WriteUnicodeString("Ma"); w.WriteUnicodeString("bo"); w.WriteByte(1);
+            w.WriteByte(3); w.WriteByte(1); w.WriteLong(1);
+            w.WriteLong(10); w.WriteLong(13); w.WriteUnicodeString("bo"); w.WriteByte(0); w.WriteInt(0); w.WriteInt(200); w.WriteShort(20);
+            w.WriteInt(100); w.WriteInt(2000); w.WriteShort(2); w.WriteUnicodeString("img2"); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0);
+            w.WriteInt(1); w.WriteInt(2); w.WriteInt(3);
+            w.WriteUnicodeString(""); w.WriteLong(0); w.WriteLong(66); w.WriteLong(0);
+            w.WriteInt(0); w.WriteInt(0); w.WriteInt(5); w.WriteInt(6); w.WriteInt(0); w.WriteLong(0);
+            w.WriteInt(0); w.WriteByte(1);
+        }));
+        Assert.That((m.Name, m.Applicant, m.Notify), Is.EqualTo(("Ma", "bo", true)));
+        Assert.That((m.Member.Mode, m.Member.Grade, m.Member.Name, m.Member.CharId, m.Member.Level), Is.EqualTo((3, 1, "bo", 13L, 20)));
     }
 
     [Test]
