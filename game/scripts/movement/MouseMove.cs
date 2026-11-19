@@ -27,6 +27,7 @@ public partial class MouseMove : Node
     public override void _UnhandledInput(InputEvent e)
     {
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mb) return;
+        if (Ms2.Ui.FieldMoveCover.Up) return;       // no field to click under a move's loading screen
         var from = camera.ProjectRayOrigin(mb.Position);
         var to = from + camera.ProjectRayNormal(mb.Position) * 20000f;
         var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));

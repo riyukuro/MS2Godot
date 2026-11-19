@@ -339,7 +339,7 @@ public partial class GameFlow : Node
 
     public override void _Input(InputEvent e)
     {
-        if (Current == State.Game && e is InputEventKey { Pressed: true, Echo: false, Keycode: Godot.Key.Escape })
+        if (Current == State.Game && Ms2.Ui.FieldMoveCover.TakesInput && e is InputEventKey { Pressed: true, Echo: false, Keycode: Godot.Key.Escape })
         {
             var vp = GetViewport();
             (GetTree().CurrentScene as Ui.HudScene)?.Escape();

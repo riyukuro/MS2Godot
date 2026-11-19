@@ -731,6 +731,7 @@ public partial class Field : Node3D
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (Ms2.Ui.FieldMoveCover.Up) return;       // no field under a move's loading screen
         if (e is InputEventMouseButton mb && mb.Pressed)
         {
             // Unk_PCMove::IsActionKeyDown: wheel forward reads as zoom in (300008), back as zoom out (300009), for the one
@@ -753,7 +754,7 @@ public partial class Field : Node3D
     public override void _Process(double delta)
     {
         if (player == null) return;
-        if (Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
+        if (Ms2.Ui.FieldMoveCover.TakesInput && Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
         {
             float step = (float)Math.Min(delta, 1.0 / 15);
             if (Input.IsKeyPressed(Key.Left)) camYaw += step;

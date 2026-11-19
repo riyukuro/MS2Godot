@@ -329,6 +329,7 @@ public partial class LiveSession : Node
         ProfileImageService.Images.Arrived -= PictureArrived;
         exitCts.Cancel();
         StopGuide();
+        Ms2.Ui.FieldMoveCover.Lower();        // no field move outlives the session
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
     }
@@ -1389,7 +1390,11 @@ public partial class LiveSession : Node
         // /dungeon command: the server moves the player to the room's server with GameToGame 0x10), "portal:<id>" or
         // "portal:any" (the player put in that open portal's box, then the action key), "~N" (wait N s), "mark:<name>"
         // (the node count and the managed heap after a full collect). With MS2_LIVE_MOVE_SHOTS=<dir> the screen is shot
-        // before and after each move as move_<n>_before.png / move_<n>_after.png.
+        // before and after each move as move_<n>_before.png / move_<n>_after.png. With MS2_LIVE_MOVE_PROBE=1 each move's
+        // loading screen gets input: the move key (Up) held and the inventory key (I) pressed under it, and the frames in
+        // which any of it reached the player or the HUD are counted (Ms2.Ui.FieldMoveCover); once the cover is down the
+        // held key must move the player, which shows the injected key works.
+        bool probeInput = System.Environment.GetEnvironmentVariable("MS2_LIVE_MOVE_PROBE") == "1";
         string moves = System.Environment.GetEnvironmentVariable("MS2_LIVE_MOVES");
         if (!string.IsNullOrEmpty(moves) && Instance is { } live)
         {
@@ -1459,9 +1464,11 @@ public partial class LiveSession : Node
                     }
                     else GD.Print($"live: move {n}: portal {id} ({what}), {(sent ? "sent" : "not sent")}");
                 }
+                var probe = sent && probeInput ? ProbeUnderCover(n) : null;
                 if (sent)
                 {
                     await Until(() => entered > before, 60 * 90);
+                    if (probe != null) await probe;
                     // the longest frame in the 3 s after the entry: a hitch once the new field is up
                     var clock = System.Diagnostics.Stopwatch.StartNew(); double worst = 0;
                     for (int i = 0; i < 180; i++) { double t0 = clock.Elapsed.TotalMilliseconds; await Frames(1); worst = Math.Max(worst, clock.Elapsed.TotalMilliseconds - t0); }
@@ -1477,5 +1484,56 @@ public partial class LiveSession : Node
         bool ok = flow.Current == GameFlow.State.Game;
         GD.Print(ok ? "live: auto run done" : "live: auto run failed");
         tree.Quit(ok ? 0 : 1);
+        return;
+
+        static void Key(Godot.Key key, bool down) =>
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = down });
+        async System.Threading.Tasks.Task ProbeUnderCover(int n)
+        {
+            await Until(() => Ms2.Ui.FieldMoveCover.Up, 60 * 10);
+            if (!Ms2.Ui.FieldMoveCover.Up) { GD.Print($"live: move {n}: probe: the cover never came up"); return; }
+            Key(Godot.Key.Up, true);
+            Key(Godot.Key.I, true); Key(Godot.Key.I, false);
+            int frames = 0, inputFrames = 0, movedFrames = 0, inventoryFrames = 0, players = 0;
+            var seen = new Dictionary<ulong, Vector3>();
+            var notes = new List<string>();
+            while (Ms2.Ui.FieldMoveCover.Up && frames < 60 * 120)
+            {
+                await Frames(1);
+                if (!Ms2.Ui.FieldMoveCover.Up) break;      // the frame the cover went down is the field's
+                frames++;
+                if (tree.CurrentScene is Ui.HudScene h && h.InventoryOpen) inventoryFrames++;
+                bool input = false, moved = false;
+                foreach (var node in tree.GetNodesInGroup(Player.Group))
+                {
+                    if (node is not Player pl || !IsInstanceValid(pl) || !pl.IsInsideTree()) continue;
+                    var id = pl.GetInstanceId();
+                    var now = pl.GlobalPosition;
+                    if (!seen.TryGetValue(id, out var at)) players++;
+                    seen[id] = now;
+                    // a walk step: across the ground (a fall or the arrival's placement is not input), under a teleport's size
+                    var step = new Vector2(now.X - at.X, now.Z - at.Z).Length();
+                    bool walk = at != default && step > 0.05f && step < 50f;
+                    bool held = pl.Input2 != Vector2.Zero || pl.MouseInput != Vector2.Zero || pl.JumpHeld;
+                    if (held) input = true;
+                    if (walk) moved = true;
+                    if ((held || walk) && notes.Count < 6)
+                        notes.Add($"f{frames} {id % 10000}: input {pl.Input2}/{pl.MouseInput}/{pl.JumpHeld} step {step:F2} dy {now.Y - at.Y:F2} state {pl.State}");
+                }
+                if (input) inputFrames++;
+                if (moved) movedFrames++;
+            }
+            // the cover is down: the same held key now moves the player
+            var after = tree.GetFirstNodeInGroup(Player.Group) as Player;
+            var start = after?.GlobalPosition ?? Vector3.Zero;
+            await Frames(45);
+            float walked = after != null && IsInstanceValid(after) ? after.GlobalPosition.DistanceTo(start) : -1;
+            Key(Godot.Key.Up, false);
+            await Frames(10);
+            GD.Print($"live: move {n}: probe under the cover {frames} frames ({players} player(s)): input reached a player in "
+                     + $"{inputFrames}, a player walked in {movedFrames}, the inventory was open in {inventoryFrames}; "
+                     + $"after the cover the held key moved the player {walked:F0} units");
+            foreach (var x in notes) GD.Print($"live: move {n}: probe {x}");
+        }
     }
 }

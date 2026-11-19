@@ -472,6 +472,8 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     public bool SystemMenuOpen => systemMenu?.IsOpen == true;
+    /// <summary>Scripted runs: the inventory dialog is open.</summary>
+    public bool InventoryOpen => inventory?.IsClosed == false;
 
     /// <summary>A scripted click on one of the system menu movie's named children (the centre of its bounds), for proof
     /// runs; <paramref name="row"/> clicks that row of a list's renderers instead.</summary>
@@ -941,6 +943,13 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Input(InputEvent e)
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
+        // under a field move's loading screen no hotkey opens a dialog (Ms2.Ui.FieldMoveCover); the message box's keys are
+        // its own layer's (MessageBoxLayer), which saw them first
+        if (Ms2.Ui.FieldMoveCover.Up)
+        {
+            if (e is InputEventKey) vp.SetInputAsHandled();
+            return;
+        }
         if (ChatKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
         if (DialogKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();
     }

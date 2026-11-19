@@ -711,6 +711,9 @@ public partial class As3View : Node2D
 
     public override void _UnhandledInput(InputEvent ev)
     {
+        // under a field move's loading screen the scene's movies (the HUD, the field's) take no mouse (Ms2.Ui.FieldMoveCover);
+        // the layers under the root (the message box, the tooltip) still do
+        if (Ms2.Ui.FieldMoveCover.Up && GetTree().CurrentScene is { } scene && scene.IsAncestorOf(this)) return;
         // the dispatch (AS3 -> controller -> scene change) can take this view out of the tree: the viewport is taken before it
         var vp = GetViewport();
         switch (ev)

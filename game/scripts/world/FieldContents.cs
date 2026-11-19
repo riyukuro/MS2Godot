@@ -157,12 +157,15 @@ public partial class FieldContents : Node3D
             // the field is loaded: the loading screen shows 100%, then fades once the new field has drawn. A portal move's
             // cover was started before the move and is still up; a move without one (first entry) starts it here.
             if (!adopted) ShowLoading(Travel.LoadingImage, Travel.LoadingTip);
+            // entered under the loading screen: no input until it has faded (OnLoadingClosed); with none, at once
+            if (loading != null) Ms2.Ui.FieldMoveCover.Raise(); else Ms2.Ui.FieldMoveCover.Lower();
             if (Load != null && Load.Total > 0) loading?.Progress(Load.Count, Load.Total); else loading?.Progress(1, 1);
             settleFrames = 3;
         }
         // a field shown without a loading screen (the sandbox's first field) is faded in at once: the client enters every
         // field through the loading screen, so its NotifyFadeInComplete always comes
         else if (talk != null) Callable.From(OnLoadingClosed).CallDeferred();
+        else Ms2.Ui.FieldMoveCover.Lower();
         if (shotDir != null && player != null) { if (offline) PlanShots(); else PlanLiveTalk(); }
     }
 
@@ -321,6 +324,7 @@ public partial class FieldContents : Node3D
     void OnLoadingClosed()
     {
         GD.Print("loading screen closed");
+        Ms2.Ui.FieldMoveCover.Lower();      // NotifyFadeInComplete: the field takes input
         talk?.OnFadeInComplete();       // UIPopupNpcTalkDialog's NotifyFadeInComplete
     }
 
@@ -424,6 +428,7 @@ public partial class FieldContents : Node3D
         moveReady = ready;
         if (moving) return;
         moving = true;
+        Ms2.Ui.FieldMoveCover.Raise();      // the field and MyPC go at the move (FUN_141bbc580): no input reaches them from now
         talk?.End();
         // UILoadingProgress::GetLoadingImagePath: a picture of the target map, or a screenshot of this field (see PickForMove)
         Travel.LoadingImage = new LoadingImageTable(packs).PickForMove(target, fieldId, new Random());
@@ -469,6 +474,7 @@ public partial class FieldContents : Node3D
     /// </summary>
     public static void ServerMove(SceneTree tree, int map, Func<bool> ready = null)
     {
+        Ms2.Ui.FieldMoveCover.Raise();
         var packs = PackSet.Shared(Settings.DataDir);
         Travel.Move Build()
         {
@@ -508,6 +514,7 @@ public partial class FieldContents : Node3D
     {
         if (player == null || portals == null || moving) return;
         if (shotDir != null) { RunSteps((float)delta); return; }
+        if (Ms2.Ui.FieldMoveCover.Up) { actionHeld = false; return; }     // no interaction under a move's loading screen
         bool action = Input.IsKeyPressed(Key.Space);
         bool pressed = action && !actionHeld;
         actionHeld = action;

@@ -9,8 +9,9 @@ namespace Ms2Godot.Movement;
 /// </summary>
 public static class MoveInput
 {
-    /// <summary>While a text field has focus (chat) movement and jump keys are ignored.</summary>
-    public static Func<bool> Blocked = () => Ui.UiFocus.IsTyping;
+    /// <summary>While a text field has focus (chat), or under a field move's loading screen (Ms2.Ui.FieldMoveCover),
+    /// movement and jump keys are ignored.</summary>
+    public static Func<bool> Blocked = () => Ui.UiFocus.IsTyping || Ms2.Ui.FieldMoveCover.Up;
 
     public struct State
     {

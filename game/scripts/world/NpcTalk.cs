@@ -669,6 +669,7 @@ public sealed partial class NpcTalk : Node
 
     public override void _Input(InputEvent e)
     {
+        if (Ms2.Ui.FieldMoveCover.Up) return;       // the talk ended at the move; the next field's has not begun
         if (e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) PopupKey(PopupNpcTalkController.PopupKey.Escape);
         if (window == null || side == null) return;
         if (e is not InputEventKey { Pressed: true } k) return;
