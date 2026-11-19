@@ -1,5 +1,5 @@
 // Field mesh lighting in the way Gamebryo's standard material does it on D3D9: per-pixel
-// emissive + ambient * material + material * (sun * N.L + sun ambient * (1 - N.L)), times the base
+// emissive + material ambient * (ambient + sun ambient) + material diffuse * sun * N.L, times the base
 // texture (with the decal and dark maps), all in gamma space: textures are sampled raw, not as sRGB. Not clamped:
 // the client renders to an HDR target, and values over 1 feed the bloom pass (Ms2Bloom).
 // The material colour (ambient = diffuse) is the entity's MaterialColor, passed as the MultiMesh
@@ -148,7 +148,10 @@ void fragment() {
 #endif
 	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
 	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(world_pos, normalize(world_normal));
-	vec3 lit = unsun + dif * (ms2_sun_color * ndl + ms2_sun_ambient * (1.0 - ndl));
+	// Gamebryo's Light fragment (NiStandardMaterialNodeLibrary.cpp:2475-2477) adds the sun's ambient to the ambient
+	// accumulator with no N.L, and ComputeShadingCoefficients (:2824-2825) multiplies that accumulator by the material ambient:
+	// Diffuse = MatEmissive + MatAmbient * LightAmbientAccum + MatDiffuse * LightDiffuseAccum
+	vec3 lit = unsun + amb * ms2_sun_ambient + dif * ms2_sun_color * ndl;
 	vec3 c = lit * t.rgb;
 	vec3 c0 = unsun * t.rgb;   // the same colour with no sun: fully in its shadow
 	if (has_glow) {
