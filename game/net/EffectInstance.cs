@@ -259,8 +259,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
             mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
+            // The quad's corners sit at +-(right +- up) times the particle size (initial size times the size multiplier):
+            // NiPSFacingQuadGeneratorKernel.cpp:127-131, NiPSAlignedQuadGeneratorKernelVV.cpp:103-129. So the quad is 2 x 2
+            // and the per-particle basis carries the size. STILL-OPEN: the aligned quads' velocity scale is
+            // (amount * speed * limit + rest) / (amount * speed + 1) per axis there (NiPSAlignedQuadGeneratorKernelVV.cpp:108-118).
             ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = 0, VisibleInstanceCount = 0,
-                Mesh = new QuadMesh { Size = Vector2.One, Material = mat }, CustomAabb = new Aabb(new Vector3(-5000, -5000, -5000), new Vector3(10000, 10000, 10000)) };
+                Mesh = new QuadMesh { Size = new Vector2(2, 2), Material = mat }, CustomAabb = new Aabb(new Vector3(-5000, -5000, -5000), new Vector3(10000, 10000, 10000)) };
             ps.Node = new MultiMeshInstance3D { Multimesh = ps.MM, Name = d.Name ?? "particles", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             z.AddChild(ps.Node);
             systems.Add(ps);
@@ -391,6 +395,13 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         long q0 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         var cam = needCam ? FrameCamera() : null;
         var camLocal = cam != null ? z.GlobalTransform.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
+        // the camera's right and up in this effect's space (file space), for the facing particle quads
+        Vector3 camRight = new(1, 0, 0), camUp = new(0, 0, 1);
+        if (cam != null)
+        {
+            var inv = z.GlobalTransform.Basis.Inverse();
+            camRight = (inv * cam.GlobalBasis.X).Normalized(); camUp = (inv * cam.GlobalBasis.Y).Normalized();
+        }
         // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
         foreach (int i in dynNodes) done[i] = false;
         long q1 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
@@ -414,7 +425,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         }
 
         long q2 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-        foreach (var ps in systems) Step(ps, dt, camLocal);
+        foreach (var ps in systems) Step(ps, dt, camLocal, camRight, camUp);
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
     // the MS2_PERF_FX probe's segment counters (a measuring tool, printed by Probe; untouched when the probe is off):
@@ -474,9 +485,14 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
 
     readonly List<(Vector3 axis, float pct)> drags = new();
 
-    void Step(PSys ps, float dt, Vector3 camLocal)
+    void Step(PSys ps, float dt, Vector3 camLocal, Vector3 camRight, Vector3 camUp)
     {
         var d = ps.Def;
+        // The particles live in the system's model space and the system's world transform, its scale too, is applied when
+        // they are drawn (NiPSParticleSystem::UpdateWorldData keeps the scale of a world-space system, NiPSParticleSystem.cpp:
+        // 510-520); an emitter only rotates the velocity into that space (NiPSBoxEmitter.cpp:100-103). Here the particles
+        // are kept in the effect's space, so the system node's scale multiplies their size, emitted speed and the forces.
+        float psScale = World(d.Node, t, camLocal).Basis.Scale.X;
         // forces on at this time
         Vector3 accel = Vector3.Zero; drags.Clear();
         foreach (var f in d.Forces)
@@ -487,6 +503,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (f.Kind == ForceKind.Gravity) accel += new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z) * (float)f.Strength;
             else if (f.Kind == ForceKind.Drag) drags.Add((new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z), (float)f.Percentage));
         }
+        accel *= psScale;
         // simulate
         bool anyDrag = drags.Count > 0;
         for (int i = ps.Count - 1; i >= 0; i--)
@@ -513,7 +530,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 bool on = e.On == null || e.On(e.OnCtl.Local(t)) > 0.5;
                 if (!on || rate <= 0) continue;
                 ps.Accum[ei] += rate * dt;
-                while (ps.Accum[ei] >= 1 && ps.Count < ps.Pos.Length) { ps.Accum[ei] -= 1; Emit(ps, e, camLocal); }
+                while (ps.Accum[ei] >= 1 && ps.Count < ps.Pos.Length) { ps.Accum[ei] -= 1; Emit(ps, e, camLocal, psScale); }
                 if (ps.Count >= ps.Pos.Length) ps.Accum[ei] = 0;
             }
         long qd = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
@@ -538,12 +555,13 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         float initialTime = (float)d.InitialTime, flipSpan = Mathf.Max((float)(d.FinalTime - d.InitialTime), 1e-4f);
         float flipFactor = d.PingPong ? 1 : 0.999f, numFrames = d.NumFrames, frameMod = Mathf.Max(d.FramesAcross * d.FramesDown, 1);
         float cx = camLocal.X, cy = camLocal.Y, cz = camLocal.Z;
+        float rx = camRight.X, ry = camRight.Y, rz = camRight.Z, ux = camUp.X, uy = camUp.Y, uz = camUp.Z;
         float[] age = ps.Age, life = ps.Life, psize = ps.Size, rot = ps.Rot, frame0 = ps.Frame0;
         Vector3[] ppos = ps.Pos, pvel = ps.Vel;
         for (int i = 0; i < ps.Count; i++)
         {
-            float n = age[i] / life[i];
-            float size = psize[i];
+            float n = life[i] > 0 ? age[i] / life[i] : 1f;     // a zero lifespan is drawn once at its end
+            float size = psize[i] * psScale;
             if (sizeKeys) size *= (float)Lerp(d.SizeKeys, n);
             if (grow) size *= Mathf.Clamp(age[i] / growTime, 0f, 1f);
             if (shrink) size *= Mathf.Clamp((life[i] - age[i]) / shrinkTime, 0f, 1f);
@@ -574,14 +592,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             }
             else
             {
-                // right: up (Vector3.Back) cross toCam, normalized (Vector3.Right when parallel); upv: toCam cross right, normalized
-                float rx = 0f * tz - 1f * ty, ry = 1f * tx - 0f * tz, rz = 0f * ty - 0f * tx, r2 = rx * rx + ry * ry + rz * rz;
-                if (r2 > 1e-6f) { float l = MathF.Sqrt(r2); rx /= l; ry /= l; rz /= l; } else { rx = 1f; ry = 0f; rz = 0f; }
-                float ux = ty * rz - tz * ry, uy = tz * rx - tx * rz, uz = tx * ry - ty * rx, u2 = ux * ux + uy * uy + uz * uz;
-                if (u2 == 0f) { ux = 0f; uy = 0f; uz = 0f; } else { float l = MathF.Sqrt(u2); ux /= l; uy /= l; uz /= l; }
+                // Screen-aligned: every quad spans the camera's right and up (NiPSFacingQuadGenerator.cpp:337-345), its corners
+                // at +-(right +- up) turned by the particle's rotation (NiPSFacingQuadGeneratorKernel.cpp:87-99): top right
+                // (c + s) right + (c - s) up, so the quad's x axis is c right - s up and its y axis c up + s right.
                 float c = MathF.Cos(rot[i]), s = MathF.Sin(rot[i]);
-                xx = (rx * c + ux * s) * size; xy = (ry * c + uy * s) * size; xz = (rz * c + uz * s) * size;
-                yx = (ux * c - rx * s) * size; yy = (uy * c - ry * s) * size; yz = (uz * c - rz * s) * size;
+                xx = (rx * c - ux * s) * size; xy = (ry * c - uy * s) * size; xz = (rz * c - uz * s) * size;
+                yx = (ux * c + rx * s) * size; yy = (uy * c + ry * s) * size; yz = (uz * c + rz * s) * size;
             }
             // one buffer write per system instead of three engine calls per particle: 12 transform floats (rows), colour, custom data
             int o = i * 20;
@@ -634,8 +650,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         cr += (k[i1].r / 255f - cr) * u; cg += (k[i1].g / 255f - cg) * u; cb += (k[i1].b / 255f - cb) * u; ca += (k[i1].a / 255f - ca) * u;
     }
 
-    void Emit(PSys ps, EmitterDef e, Vector3 camLocal)
+    void Emit(PSys ps, EmitterDef e, Vector3 camLocal, float psScale)
     {
+        // the lifespan is drawn first; a particle already past it is not created (NiPSEmitter.cpp:139-144, its age at
+        // emission is 0 here)
+        float lifespan = (float)e.Lifespan + Spread((float)e.LifespanVar / 2);
+        if (lifespan < 0) return;
         int i = ps.Count++;
         ParticlesEmitted++;
         var ew = World(e.Node >= 0 ? e.Node : ps.Def.Node, t, camLocal);
@@ -667,8 +687,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         var dir = (ew.Basis.Orthonormalized() * new Vector3((float)dl.X, (float)dl.Y, (float)dl.Z)).Normalized();
         float speed = (float)e.Speed + Spread((float)e.SpeedVar / 2);
         if (e.SpeedFlipRatio > 0 && R() < e.SpeedFlipRatio) speed = -speed;
-        ps.Vel[i] = dir * speed;
-        ps.Life[i] = Mathf.Max(0.02f, (float)e.Lifespan + Spread((float)e.LifespanVar / 2));
+        ps.Vel[i] = dir * (speed * psScale);
+        ps.Life[i] = lifespan;
         ps.Size[i] = Mathf.Max(0f, (float)e.Size + Spread((float)e.SizeVar));
         ps.Age[i] = 0;
         ps.Rot[i] = (float)e.RotAngle + Spread((float)e.RotAngleVar);
