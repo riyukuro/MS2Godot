@@ -42,19 +42,43 @@ public class ShopTests
         new ShopProduct { Serial = 91, ItemId = 13000003, Rarity = 1, Price = 1990, OriginalPrice = 2400, Count = 1, Categories = "RH" },
     };
 
-    static (UiHost, ShopController) Load(UiModel model)
+    sealed class MemoryFolder : ICharacterFolder
+    {
+        public readonly Dictionary<string, string> Files = new();
+        public string Read(string file) => Files.TryGetValue(file, out var t) ? t : null;
+        public void Write(string file, string text) => Files[file] = text;
+    }
+
+    static (UiHost, ShopController) Load(UiModel model, ICharacterFolder folder = null)
     {
         var c = new ShopController { Categories = new ShopCategoryTable(Packs()), Npcs = new Ms2.Formats.World.NpcTable(Packs()) };
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;
         p.Translate = k => k.TrimStart('$');
-        var h = new UiHost(p, c, model);
+        var h = new UiHost(p, c, model) { Folder = folder };
         c.ReadShopInfo(Header());
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         c.ReadProducts(Products());
         for (int i = 0; i < 5; i++) p.Tick();
         foreach (var e in rt.Errors) TestContext.WriteLine("  error: " + e);
         return (h, c);
+    }
+
+    [Test]
+    public void TheShopOpensWhereItsSettingsFilePlacedIt()
+    {
+        // UIShopDialog::vfunc_52 returns 1 (its drag bar is inside m_dialog), so vfunc_54 reads the saved transform and
+        // vfunc_43 keeps the dialog there instead of re-running the proxy's alignment
+        var (plain, _) = Load(NewModel());
+        double alignedY = Rt.ToNumber(plain.Get(plain.Entity, "y"));
+        var folder = new MemoryFolder();
+        folder.Files["ShopDialog.xml"] = "<ShopDialog>\n\t<transform editAlign=\"0\" x=\"224\" y=\"145.45\" rateX=\"0.122093\" rateY=\"0.14094\" />\n</ShopDialog>";
+        var (h, _) = Load(NewModel(), folder);
+        for (int i = 0; i < 30; i++) h.Player.Tick();
+        double x = Rt.ToNumber(h.Get(h.Entity, "x")), y = Rt.ToNumber(h.Get(h.Entity, "y"));
+        Assert.That(x, Is.EqualTo(0.122093 * 1280).Within(0.05));
+        Assert.That(y, Is.EqualTo(0.14094 * 720).Within(0.05));
+        Assert.That(y, Is.Not.EqualTo(alignedY).Within(1));
     }
 
     [Test]

@@ -72,8 +72,9 @@ public abstract class UiController
     /// <summary>vfunc_55 (uidialog.cpp:487): closed (m_68) with the close finished (m_c0 2), not while the close tween runs.</summary>
     public bool IsClosed => closed && closeState == 2;
 
-    /// <summary>vfunc_52 (uidialog.cpp:220): the dialog has a m_dragBar child.</summary>
-    bool HasDragBar => Host.Child("m_dragBar") != null;
+    /// <summary>vfunc_52 (uidialog.cpp:220): the dialog has a m_dragBar child. Dialogs whose drag bar sits deeper override
+    /// it (UIShopDialog returns 1).</summary>
+    protected virtual bool HasDragBar => Host.Child("m_dragBar") != null;
 
     /// <summary>ASDisplayObject::GetPosition of m_30 (asdisplayobject.cpp:465).</summary>
     (float X, float Y) Position() =>

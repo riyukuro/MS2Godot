@@ -20,6 +20,10 @@ public sealed class ShopController : UiController
     protected override string EntityMethod => "initShop";
     public override string TypeName => "ShopDialog";                       // GetTypeName (@0x141af2be0)
 
+    /// <summary>vfunc_52 (@0x141af7dc0, uishopdialog.cpp:1379) returns 1: the drag bar is in the shop clip under the proxy
+    /// (m_dialog), not a child of the proxy itself, so the saved position (ShopDialog.xml) is read and kept.</summary>
+    protected override bool HasDragBar => true;
+
     /// <summary>The ui id (vfunc_48).</summary>
     public const int UiId = 0x4e3b;
 
