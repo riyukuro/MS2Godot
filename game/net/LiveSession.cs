@@ -166,6 +166,16 @@ public partial class LiveSession : Node
     /// only. Until the HUD sets its texts the book resolves with an empty set (no system mail template).</summary>
     public Ms2.Ui.MailBook Mails => mails ??= new Ms2.Ui.MailBook(Ms2.Ui.MailTexts.Empty()) { CharacterId = () => CharacterId };
     Ms2.Ui.MailBook mails;
+    /// <summary>CBlackMarketMan (blackmarketman.cpp): the own listings and the search results from the BlackMarket packets
+    /// (0x98, OnBlackMarket @0x140a20650); live only. Its sends (BlackMarket 0x5F) go out while the game connection is up.
+    /// The HUD sets the texts, the item data and the dialog.</summary>
+    public Ms2.Ui.BlackMarketBook BlackMarket => blackMarket ??= new Ms2.Ui.BlackMarketBook { Send = SendBlackMarket };
+    Ms2.Ui.BlackMarketBook blackMarket;
+    /// <summary>The black market sends (BlackMarket 0x5F).</summary>
+    public void SendBlackMarket(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
     /// <summary>IsDialogClosed(0x4e49) == 0: the mail list is open (set by the HUD).</summary>
     public Func<bool> MailListOpen = () => false;
     /// <summary>The mail dialogs' sends (Mail 0x2D).</summary>
@@ -719,6 +729,12 @@ public partial class LiveSession : Node
                 var m = TradeMessage.Read(p.Reader());            // CTradeManagerEx::OnTrade (trademanagerex_1.cpp, @0x14185bd20)
                 if (m != null) Trades.OnTrade(m);
                 GD.Print($"live: trade code {m?.Code.ToString() ?? "?"}");
+            }
+            else if (game.Is(p, Inbound.BlackMarket))
+            {
+                var m = BlackMarketMessage.Read(p.Reader());      // CBlackMarketMan::OnBlackMarket (networkservice.cpp:690, @0x140a20650)
+                BlackMarket.OnBlackMarket(m);
+                GD.Print($"live: black market mode {m.Mode} ({BlackMarket.OwnProducts.Count} own, {BlackMarket.SearchProducts.Count} found)");
             }
             else if (game.Is(p, Inbound.Buddy))
             {

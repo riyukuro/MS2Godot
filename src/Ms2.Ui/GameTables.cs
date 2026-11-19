@@ -99,6 +99,14 @@ public sealed class GameTables
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
         GuildCreatePrice = (int)k.Float("GuildCreatePrice", GuildCreatePrice);
         GuildCreateMinLevel = (int)k.Float("GuildCreateMinLevel", GuildCreateMinLevel);
+        PropertyProtectionTime = (int)k.Float("PropertyProtectionTime", PropertyProtectionTime);
+        // Value<__int64> BlackMarketSellMinPrice / BlackMarketSellMaxPrice (read whole: an integer text), min clamped to 0 and
+        // max raised to min (unit_1402ab440_constantsblocks.cpp:942-945); Value<int> BlackMarketSellEndDay (:1002)
+        long int64(string key, long def) => long.TryParse(k.String(key), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out long v) ? v : (long)k.Float(key, def);
+        BlackMarketSellMinPrice = Math.Max(0, int64("BlackMarketSellMinPrice", BlackMarketSellMinPrice));
+        BlackMarketSellMaxPrice = Math.Max(BlackMarketSellMinPrice, int64("BlackMarketSellMaxPrice", BlackMarketSellMaxPrice));
+        BlackMarketSellEndDay = (int)k.Float("BlackMarketSellEndDay", BlackMarketSellEndDay);
         GuildNameLengthMin = (int)k.Float("GuildNameLengthMin", GuildNameLengthMin);
         GuildNameLengthMax = (int)k.Float("GuildNameLengthMax", GuildNameLengthMax);
         UGCImgUploadSizeLimit = (int)k.Float("UGCImgUploadSizeLimit", UGCImgUploadSizeLimit);
@@ -360,6 +368,14 @@ public sealed class GameTables
     /// the guild create box (UIGuildDialog::OnClickCreateGuild), the create send (CGuildManager::FUN_1413b6d10) and
     /// CBanTextChecker::CheckGuildName.</summary>
     public int GuildCreatePrice = 1000, GuildCreateMinLevel = 0, GuildNameLengthMin = 2, GuildNameLengthMax = 10;
+    /// <summary>Client::Constants PropertyProtectionTime (+0x6aa8, Define default 0: unit_1402ab440_constantsblocks.cpp:1040),
+    /// shown by the black market's result 37 (CBlackMarketMan::FUN_140a21ca0).</summary>
+    public int PropertyProtectionTime = 0;
+    /// <summary>Client::Constants BlackMarketSellMinPrice / BlackMarketSellMaxPrice (Define defaults 10 and 9900000000, the
+    /// min at least 0 and the max at least the min: unit_1402ab440_constantsblocks.cpp:942-945), the register price limits
+    /// (BlackMarketPageItemRegister::OnClickRegister), and BlackMarketSellEndDay (7: :1002), the sale days its texts show.</summary>
+    public long BlackMarketSellMinPrice = 10, BlackMarketSellMaxPrice = 9900000000;
+    public int BlackMarketSellEndDay = 7;
     /// <summary>CGuildXmlData's property map: the accumulated exp (accumExp) by guild level, in level order.</summary>
     public readonly SortedDictionary<int, int> GuildAccumExp = new();
 
