@@ -217,6 +217,15 @@ public partial class FieldContents : Node3D
         GD.Print($"arrived at portal {p.Id} ({p.Entity.Name}) from field {move.FromFieldId}, ms2 {p.Position}");
     }
 
+    /// <summary>
+    /// The loading screen's showGuide (UILoadingProgress::StartProgress @0x1419dfa60, uiloadingprogress.cpp:89-95): the
+    /// client's is true while the local player's level is below a client constant (GetClientConstants() + 0x6e28); the
+    /// sandbox character is level 1, below it. The movie's startProgress makes a new input guide each time and only hides
+    /// the last one, and the client keeps one UILoadingProgress for the process (uiservice.cpp:2337), so each move adds a
+    /// hidden guide to the loading screen while it is true, there as here. STILL-OPEN: the constant's name and value.
+    /// </summary>
+    public static bool ShowInputGuide = true;
+
     /// <summary>The loading screen last started (by <see cref="CoverLoad"/> or a portal move), while it is up.</summary>
     static LoadingMovie shownCover;
     /// <summary>True while a field's loading screen covers the screen (GameFlow hands its first-entry picture over to it).</summary>
@@ -250,7 +259,7 @@ public partial class FieldContents : Node3D
         // so the screen is the framed one (vfunc_52 is true on the lobby scene), not UILoadingProgressLobby's
         var picture = Picture(packs, Travel.LoadingImage);
         cover.Start(picture, picture == null ? screenShot ?? ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage()) : null,
-                    Travel.LoadingTip, true, true);
+                    Travel.LoadingTip, ShowInputGuide, true);
         shownCover = cover;
         carried = (overlay, cover);
         return true;
@@ -336,7 +345,7 @@ public partial class FieldContents : Node3D
     {
         if (loading == null) return;
         var picture = Picture(packs, image);
-        loading.Start(picture, picture == null ? screenShot ?? Capture() : null, tip, true, true);
+        loading.Start(picture, picture == null ? screenShot ?? Capture() : null, tip, ShowInputGuide, true);
         shownCover = loading;
     }
 
@@ -452,7 +461,6 @@ public partial class FieldContents : Node3D
         moveReady = ready;
         if (moving) return;
         moving = true;
-       
         Ms2.Ui.FieldMoveCover.Raise();      // the field and MyPC go at the move (FUN_141bbc580): no input reaches them from now
         talk?.End();
         // UILoadingProgress::GetLoadingImagePath: a picture of the target map, or a screenshot of this field (see PickForMove)
@@ -474,7 +482,6 @@ public partial class FieldContents : Node3D
             // a move to another server: the loading screen stays up until the new server's field entry came
             if (moveReady != null && !moveReady()) { GetTree().CreateTimer(0.05).Timeout += Fire; return; }
             moveReady = null;
-           
             if (shotDir != null) Shot("loading.png");
             Travel.Pending = nextMove?.Invoke();
             nextMove = null;
@@ -495,6 +502,18 @@ public partial class FieldContents : Node3D
     Func<bool> moveReady;
 
     /// <summary>
+    /// The move's field change, at the end of the frame. Under the HUD only the field scene is swapped
+    /// (<see cref="HudScene.SwapField"/>): the client's CUIService and its dialogs live for the process and a move only
+    /// unloads the world (WorldService FUN_141bbc580, worldservice_1.cpp:9962). A field run on its own (field.tscn as the
+    /// scene) changes the scene.
+    /// </summary>
+    static void ChangeField(SceneTree tree)
+    {
+        if (tree.CurrentScene is HudScene hud) hud.CallDeferred(HudScene.MethodName.SwapField);
+        else tree.ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
+    }
+
+    /// <summary>
     /// The server's field entry in game (LiveSession, RequestFieldEnter error 0): the same move a portal walk takes, to the
     /// entry's map, arriving where the entry says (LiveSession.Decorate), no portal of ours. The login entry builds its
     /// field through the same scene and Travel.Pending (GameFlow.BeginLoading). A map the data does not have loads the
@@ -503,19 +522,6 @@ public partial class FieldContents : Node3D
     /// With <paramref name="ready"/> (a GameToGame: the old field goes at once, the entry comes from the next server) the
     /// field is built only once it returns true; the loading screen stays up until then.
     /// </summary>
-    /// <summary>
-    /// The move's field change, at the end of the frame. Under the HUD only the field scene is swapped
-    /// (<see cref="HudScene.SwapField"/>): the client's CUIService and its dialogs live for the process and a move only
-    /// unloads the world (WorldService FUN_141bbc580, worldservice_1.cpp:9962). A field run on its own (field.tscn as the
-    /// scene) changes the scene.
-    /// </summary>
-    static void ChangeField(SceneTree tree)
-    {
-       
-        if (tree.CurrentScene is HudScene hud) hud.CallDeferred(HudScene.MethodName.SwapField);
-        else tree.ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
-    }
-
     public static void ServerMove(SceneTree tree, int map, Func<bool> ready = null)
     {
         Ms2.Ui.FieldMoveCover.Raise();

@@ -78,7 +78,6 @@ public partial class HudScene : Node, IUiStageHost
 
     public override void _Ready()
     {
-       
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--hudshot") shotDir = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--frametime") frameCase = args[i + 1];
@@ -1037,7 +1036,9 @@ public partial class HudScene : Node, IUiStageHost
     /// the toggle is not ported, so there is nothing to reset); m_b120 = 1 (a SetMode is deferred while it is set,
     /// uiservice.cpp:1375; no mode change is ported).</item>
     /// <item>UISceneGame::vfunc_56 (WorldUnLoadComplete, @0x141ac78f0, uiscenegame.cpp:300):
-    /// <see cref="WorldUnLoadComplete"/>.</item>
+    /// <see cref="WorldUnLoadComplete"/>. STILL-OPEN: its first steps, the UISceneEntity::vfunc_56 base call and, when the
+    /// sub scene is not 0x620001d, SetSubSceneId(0x620001d) with UITalkManager::SendNpcTalkMode0 (:303-306), have no
+    /// counterpart; the NPC talk is likely covered by FieldContents.BeginMove's talk?.End().</item>
     /// </list>
     /// Then the new field's load complete runs vfunc_55 (<see cref="WorldLoadComplete"/>). The HUD's own hold on the old
     /// field (the own PC's name tag, HP bar and damage numbers, the minimap, the field facts) is dropped and found again in

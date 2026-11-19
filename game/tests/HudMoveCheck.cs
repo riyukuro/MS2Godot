@@ -9,8 +9,8 @@ namespace Ms2Godot.Tests;
 /// <summary>
 /// Headless check (res://tests/hud_move.tscn): field moves under the HUD keep the HUD and its dialogs, as the client's
 /// CUIService and dialogs live for the process and a move only unloads the world (WorldService FUN_141bbc580). It opens the
-/// HUD (res://ui/hud.tscn) on 02000001_tw_tria and runs four moves through FieldContents.ServerMove (2000062, 2000001,
-/// 2000062, and one more while that field still loads), checking after each that
+/// HUD (res://ui/hud.tscn) on 02000001_tw_tria and runs ten moves through FieldContents.ServerMove between 2000062 and
+/// 2000001 (the fourth started while the third's field still loads), checking after each that
 /// <list type="bullet">
 /// <item>the HUD node is the same and has one field scene child;</item>
 /// <item>the dialogs the client keeps are the same instances (the target bar, top bar, quest tracker and their controllers,
@@ -19,8 +19,8 @@ namespace Ms2Godot.Tests;
 /// and system text movies are loaded again (UISceneGame vfunc_56 / vfunc_55), a system line shown during the load is
 /// shown at its end, and one parked when the next move unloads the movie is forgotten (UISystemText::vfunc_3);</item>
 /// <item>the window stays in window pixels on every frame (the canvas stretch never comes on);</item>
-/// <item>the Godot object and node counts after the fourth move are at most 2% above the ones after the second (the same
-/// field), counted after a full GC.</item>
+/// <item>the Godot object and node counts after the tenth move are at most 1% above the ones after the sixth (the same
+/// field, two round trips later), counted after a full GC, with the loading screen's input guide off (see _Ready).</item>
 /// </list>
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -28,6 +28,9 @@ public partial class HudMoveCheck : Node
 {
     public override void _Ready()
     {
+        // no input guide: each start with one adds a hidden guide to the kept loading screen, as the client's movie does
+        // (FieldContents.ShowInputGuide), which the count below would take for a leak
+        FieldContents.ShowInputGuide = false;
         GetTree().Root.CallDeferred(Node.MethodName.AddChild, new HudMoveDriver());
         GetTree().CallDeferred(SceneTree.MethodName.ChangeSceneToFile, "res://ui/hud.tscn");
     }
@@ -37,11 +40,12 @@ public partial class HudMoveCheck : Node
 public partial class HudMoveDriver : Node
 {
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
-    static readonly int[] Route = { 2000062, 2000001, 2000062, 2000001 };
+    static readonly int[] Route = { 2000062, 2000001, 2000062, 2000001, 2000062, 2000001, 2000062, 2000001, 2000062, 2000001 };
     HudScene hud;
     object targetBar, upperHud, questGuide, targetSide, systemSide, systemMovie, screenMask;
-    int stage = -1, wait, frames, failures;
-    long objectsAfterFirst, nodesAfterFirst;
+    int stage = -1, wait, failures;
+    readonly ulong startMs = Time.GetTicksMsec();
+    long objectsBefore, nodesBefore;
 
     // Godot objects that only managed wrappers still hold go when the GC runs, which made the raw count swing by 4-14k
     // between runs with the same nodes; collect first, so the count is what the scene holds
@@ -70,7 +74,8 @@ public partial class HudMoveDriver : Node
 
     public override void _Process(double delta)
     {
-        if (++frames > 20000) { Fail($"timed out at stage {stage}"); Finish(); return; }
+        // wall time, not frames: headless frames are unthrottled, so a frame budget ran out on a loaded machine
+        if (Time.GetTicksMsec() - startMs > 480_000) { Fail($"timed out at stage {stage}"); Finish(); return; }
         if (stage == -1)
         {
             if (GetTree().CurrentScene is not HudScene h || !Settled()) return;
@@ -105,15 +110,16 @@ public partial class HudMoveDriver : Node
         if (++wait < 30) return;
         wait = 0;
         Check();
-        if (stage == 1) (objectsAfterFirst, nodesAfterFirst) = Census();
-        if (stage == 3)
+        if (stage == 5) (objectsBefore, nodesBefore) = Census();
+        if (stage == Route.Length - 1)
         {
             var (now, nodes) = Census();
-            GD.Print($"hud move: objects after move 2 {objectsAfterFirst} ({nodesAfterFirst} nodes), after move 4 {now} ({nodes} nodes)");
-            if (now - objectsAfterFirst > objectsAfterFirst / 50) Fail($"objects grew per move: {objectsAfterFirst} -> {now}");
-            if (nodes - nodesAfterFirst > nodesAfterFirst / 50) Fail($"nodes grew per move: {nodesAfterFirst} -> {nodes}");
+            GD.Print($"hud move: objects after move 6 {objectsBefore} ({nodesBefore} nodes), after move {stage + 1} {now} ({nodes} nodes)");
+            if (now - objectsBefore > objectsBefore / 100) Fail($"objects grew per move: {objectsBefore} -> {now}");
+            if (nodes - nodesBefore > nodesBefore / 100) Fail($"nodes grew per move: {nodesBefore} -> {nodes}");
+            Finish();
+            return;
         }
-        if (stage == 3) { Finish(); return; }
         if (stage == 2) return;             // the fourth move starts during the third's load (above); here it has ended
         Remember();
         StartMove();
@@ -162,6 +168,8 @@ public partial class HudMoveDriver : Node
     {
         SetProcess(false);
         GD.Print($"hud move: {(failures == 0 ? "ok" : "FAIL")}, {failures} failures");
+        // let the GC release the wrappers it still holds, so the quit does not report them as leaked
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
         GetTree().Quit(failures == 0 ? 0 : 1);
     }
 }
