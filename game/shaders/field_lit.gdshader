@@ -70,6 +70,8 @@ uniform bool has_vcolor = false;     // CUSTOM0 holds rgba vertex colours
 uniform bool vcolor_amb_diff = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
+// NiMaterialProperty alpha (1 without a material): the opacity unless AMB_DIFF vertex colours give it (see fragment())
+uniform float mat_alpha = 1.0;
 uniform float fade_alpha = 1.0;     // FADE: the NiMaterialProperty alpha TransparencyStandardMaterial sets (vfunc_4)
 // FADE: the mesh has its own NiVertexColorProperty, which TransparencyMaterial::FUN_141860140 swaps for a new one that
 // TransparencyStandardMaterial::vfunc_2 sets to source mode 3, lighting E_A_D. The engine's descriptor takes mode 3 as
@@ -165,7 +167,21 @@ void fragment() {
 		vec2 duv = (dark_uv2 ? UV2 : UV) + scroll(dark_scroll_axis, dark_scroll_key, dark_scroll_range);
 		t.rgb *= sample_slot(dark_tex, 1, duv).rgb;
 	}
-	float a = t.a * vcolor.a;
+	// NiStandardMaterial::HandleColors (NiStandardMaterial.cpp:4360-4456): the opacity is split from the diffuse colour, which
+	// is the vertex colour only for source AMB_DIFF with lighting E_A_D; otherwise it is the material diffuse, whose alpha is
+	// the NiMaterialProperty alpha (a mesh without its own NiVertexColorProperty has the default, SOURCE_IGNORE + E_A_D,
+	// NiVertexColorProperty.inl:17-22). The base map's alpha multiplies it (HandleBaseMap, :4503-4525). FADE: the fade
+	// material's alpha replaces the material alpha, and its swapped property (source mode 3) takes the diffuse from the
+	// material too (:4398, "MS2: v2525").
+	bool vc_opacity = vcolor_amb_diff;
+	float m_alpha = mat_alpha;
+#ifdef FADE
+	if (fade_vc_swap) {
+		vc_opacity = false;
+	}
+	m_alpha = fade_alpha;    // the faded material alpha; alpha_ref is the test reference scaled the same way
+#endif
+	float a = t.a * (vc_opacity ? vcolor.a : m_alpha);
 	// The environment map's specular (MS2StandardMaterial::HandleMS2PostLightTextureApplication,
 	// ms2standardmaterial.cpp:1489-1560, through NiStandardMaterial::HandleEnvMap): the env rgb sampled saturated
 	// (TextureRGBSample) times the glossiness, the gloss map's rgb (HandleGlossMap; no gloss map: the env alone), times the
@@ -187,12 +203,6 @@ void fragment() {
 		spec *= ms2_sun_specular;
 #endif
 	}
-#ifdef FADE
-	if (fade_vc_swap) {
-		a = t.a;
-	}
-	a *= fade_alpha;    // the faded material alpha; alpha_ref is the test reference scaled the same way
-#endif
 	// MS2GlassMaterial::HandleMS2FinalPixelOutputs (ms2glassmaterial.cpp, 0x142774510): the opacity (the faded one too) is
 	// saturate(opacity + (spec.r + spec.g + spec.b) / 3) (CalculateDiffuseOnlyAlpha), tested after that
 	if (glass) {

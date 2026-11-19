@@ -333,6 +333,7 @@ public sealed class ModelBuilder
             if (decal != null) sm.SetShaderParameter(ShaderParam.DecalTex, decal);
             sm.SetShaderParameter(ShaderParam.HasVcolor, m.Colors != null);
             sm.SetShaderParameter(ShaderParam.VcolorAmbDiff, m.VertexColorsAmbDiff);
+            sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
             // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
             bool test = m.AlphaTestOn || (m.AlphaTest && !m.AlphaBlendOn);
             sm.SetShaderParameter(ShaderParam.AlphaTest, test);

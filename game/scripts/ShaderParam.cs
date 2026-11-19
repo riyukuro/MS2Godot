@@ -9,6 +9,7 @@ static class ShaderParam
         AlphaRef = "alpha_ref",
         AlphaTest = "alpha_test",
         FadeAlpha = "fade_alpha",
+        MatAlpha = "mat_alpha",
         FadeVcSwap = "fade_vc_swap",
         BaseTex = "base_tex",
         Color0 = "color0",
