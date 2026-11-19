@@ -278,6 +278,22 @@ switch (pos[0])
         foreach (var l in rows.ToString().Split('\n').Where(l => l.Contains("\tDIFF")).Take(30)) Console.WriteLine(l);
         return 0;
     }
+    case "where":
+    {
+        // where <name>...: the movies that link each symbol name (SymbolClass / ExportAssets), and the movies that import them
+        var want = pos.Skip(1).ToHashSet(StringComparer.OrdinalIgnoreCase); bool prefix = want.Remove("--prefix");
+        var imports = new Dictionary<string, List<string>>();
+        foreach (var k in byKey.Keys.OrderBy(k => k))
+        {
+            var m = src.Movie(k);
+            if (m == null) continue;
+            imports[k] = m.Imports.Select(g => Path.GetFileNameWithoutExtension(g.Url)).ToList();
+            foreach (var n in m.SymbolClasses.Values.Concat(m.Exports.Values).Where(x => prefix ? want.Any(w => x.StartsWith(w, StringComparison.OrdinalIgnoreCase)) : want.Contains(x)).Distinct())
+                Console.WriteLine($"{n}\tlinked by {k}");
+        }
+        foreach (var n in want) foreach (var (k, l) in imports) foreach (var i in l) { if (src.Movie(i)?.SymbolClasses.Values.Concat(src.Movie(i).Exports.Values).Contains(n) == true) Console.WriteLine($"{n}\t{k} imports {i}"); }
+        return 0;
+    }
     case "scan":
     {
         var keys = byKey.Keys.Where(k => only == null || k.Contains(only)).OrderBy(k => k).ToList();

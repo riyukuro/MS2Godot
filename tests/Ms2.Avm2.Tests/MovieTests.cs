@@ -26,6 +26,23 @@ public class MovieTests
         return (rt, p);
     }
 
+    /// <summary>A namespace constant (<c>namespace motion_internal = "..."</c>, a script trait with a namespace value) is the
+    /// namespace itself: fl.motion's MotionBase keeps spanStart in it, and the timeline code reaches it through an RTQName whose
+    /// namespace comes from that constant. It used to read back as null (public), so the write found no property.</summary>
+    [Test]
+    public void NamespaceConstantQualifiesRuntimeNames()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        var source = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var (rt, p) = source.Open("bg_login_2020_spring", r => r.Budget = 20_000_000);
+        p.External = (n, a) => null;
+        p.Start();
+        Assert.That(rt.Errors.Where(e => e.Contains("spanStart")), Is.Empty);
+        Assert.That(rt.Missing.Keys.Where(k => k.Contains("spanStart")), Is.Empty);
+    }
+
     static object Get(Player p, object o, string n) => p.RT.GetProperty(o, Name.Public(n));
 
     static MovieSource Fresh()

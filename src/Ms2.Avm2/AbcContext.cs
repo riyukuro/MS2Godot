@@ -75,7 +75,10 @@ public sealed class AbcContext
         0x0A => Avm2.Rt.False,
         0x0C => null,
         0x00 => Avm2.Rt.Undef,
-        _ => Avm2.Rt.Undef,     // namespaces as values are not used by the UI code
+        // a namespace constant (CONSTANT_Namespace / Package / PackageInternal / Protected / Explicit / StaticProtected /
+        // Private): the value of `namespace foo = "uri"` declarations, which qualify later `foo::name` / RTQName accesses
+        0x05 or 0x08 or 0x16 or 0x17 or 0x18 or 0x19 or 0x1A => new AsNamespace(Rt, NsAt(index)),
+        _ => Avm2.Rt.Undef,
     };
 
     static object TypeDefault(string type) => type switch
