@@ -565,6 +565,8 @@ public partial class As3View : Node2D
         var p = url;
         if (p.StartsWith("img://", StringComparison.OrdinalIgnoreCase)) { int c = p.IndexOf(':', 6); p = c >= 0 ? p[(c + 1)..] : p[6..]; }
         p = p.Replace('\\', '/').TrimStart('.', '/');
+        // the upload dialog's "./Custom/Thumbnail/<title>.png" (Common.getImgUrl: "img://icon:" + the path)
+        if (p.StartsWith("custom/", StringComparison.OrdinalIgnoreCase)) return Net.UgcFileService.TextureOfPath(p);
         int at = p.IndexOf("resource/image/", StringComparison.OrdinalIgnoreCase);
         if (at >= 0) p = p[(at + "resource/image/".Length)..];
         return assets.ImageFile(p.ToLowerInvariant());

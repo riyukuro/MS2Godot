@@ -91,6 +91,8 @@ public sealed class GameTables
         BothHandGearScorePenaltyDiv = k.Float("BothHandGearScorePenaltyDiv", BothHandGearScorePenaltyDiv);
         ClubNameLengthMin = (int)k.Float("ClubNameLengthMin", ClubNameLengthMin);
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
+        UGCImgUploadSizeLimit = (int)k.Float("UGCImgUploadSizeLimit", UGCImgUploadSizeLimit);
+        UGCImgFileCountCheck = (int)k.Float("UGCImgFileCountCheck", UGCImgFileCountCheck);
         // JobTable::Load (jobtable.cpp:309): table/job.xml; SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every
         // ./Data/Xml/SkillData/*.xml (FindSkillFiles :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
@@ -199,6 +201,10 @@ public sealed class GameTables
     /// <summary>Client::Constants ClubNameLengthMin / ClubNameLengthMax (Define defaults 2, 12:
     /// unit_1402ab440_constantsblocks.cpp:1195, :1196), read by UIPartyDialog::OnCreateClubClick and the club name check.</summary>
     public int ClubNameLengthMin = 2, ClubNameLengthMax = 12;
+    /// <summary>Client::Constants UGCImgUploadSizeLimit / UGCImgFileCountCheck (Define defaults 1024, 300:
+    /// unit_1402ab440_constantsblocks.cpp:772, :773): the largest width and height a UGC image may have, and the file count
+    /// at which CUgcManager::RefreshLocalFiles warns (ugcmanager_4.cpp:2794).</summary>
+    public int UGCImgUploadSizeLimit = 1024, UGCImgFileCountCheck = 300;
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>

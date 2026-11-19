@@ -1202,7 +1202,7 @@ public partial class HudScene : Node, IUiStageHost
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.Button += name =>
         {
-            if (name == "onchangeprofile") ChangeProfile();
+            if (name == "onchangeprofile") Ugc().OpenProfileUpload();   // UIMyInfoDialog::OnChangeProfile
             else GD.Print($"character: {name} is not sent (display only)");
         };
         // GetProfileImagePath (@0x141336c90): FUN_141028be0(id, picture, 1)
@@ -1248,24 +1248,81 @@ public partial class HudScene : Node, IUiStageHost
         myInfo?.OnProfileImage(characterId, key);
     }
 
+    // ---- the UGC uploads: CUgcManager and the image upload dialog (UIUGCImageUploadDialog, 0x4e56) --------------------
+
+    Ms2.Ui.Hud.UgcManager ugc;
+    Ms2.Ui.Hud.UgcImageUploadController uploadDialog;   // the dialog's C++ side while its movie is loaded
+    MovieDialog uploadDialogMovie;                      // from open until OnEndClose
+
     /// <summary>
-    /// The character window's onchangeprofile (UIMyInfoDialog::OnChangeProfile -> CUgcManager::OpenProfileUpload): in UGC
-    /// mode 1 the "UGC is shut down" notice (common string 0x2e7), else the profile picture's upload.
-    /// STAND-IN: the client opens its upload dialog (0x4e56) to pick an image file; that dialog is not ported, so the
-    /// uploaded picture is the game menu's face portrait (CreatePortrait 92 x 106) as a PNG.
-    /// STILL-OPEN: the blocked-action check (CBlockManager::FindBlockedAction(3)).
+    /// The run's CUgcManager for this HUD: its files under user://ugc/ (<see cref="Ms2Godot.Net.UgcFileService"/>), the
+    /// upload dialog as the one dialog it opens, the character window as the profile viewer, the posts through the web
+    /// host's urq.aspx and the keys to the game server.
+    /// STILL-OPEN: the blocked-action check (CBlockManager::FindBlockedAction(3)); dialogs 0x4e69 and 0x4e70, which
+    /// OpenExclusiveUploadDialog closes, are not in this HUD.
     /// </summary>
-    void ChangeProfile()
+    Ms2.Ui.Hud.UgcManager Ugc()
     {
-        var live = Ms2Godot.Net.LiveSession.Instance;
-        if (Ms2Godot.Net.ProfileImageService.Images.Mode == 1) { SystemNotice(UgcShutdownKey); return; }
-        if (live == null) { GD.Print("character: no live session, the profile picture is not uploaded"); return; }
-        var image = portrait?.Image?.GetImage();
-        if (image == null || image.IsEmpty()) { GD.Print("character: no portrait to upload yet"); return; }
-        byte[] png = image.SavePngToBuffer();
-        if (png.Length == 0 || png.Length >= Ms2.Ui.ProfileImages.MaxUploadSize) { GD.Print($"character: portrait PNG of {png.Length} bytes is not uploaded"); return; }
-        GD.Print($"character: uploading the portrait as the profile picture ({png.Length} bytes)");
-        live.UploadProfilePicture(png, (code, text) => { if (code != 0) GD.Print($"character: profile upload failed (code {code})"); });
+        if (ugc != null) return ugc;
+        var m = new Ms2.Ui.Hud.UgcManager(new Ms2Godot.Net.UgcFileService(this), hudModel.Tables)
+        {
+            Mode = () => Ms2Godot.Net.ProfileImageService.Images.Mode,
+            CommonNotice = id => ShowSystemText(Ms2.Ui.Hud.MessageBoxData.Common(id)),     // FUN_141275260(id, 1, 1)
+            Notice = ShowSystemText,                                                         // ShowSystemNotice(text, 1, 1)
+            Box = (id, listener, tag) => Ms2.Ui.Hud.MessageBoxQueue.ShowCommon(id, 0, listener, tag),   // FUN_140d73bc0(id, 0, ..)
+            TextBox = text => Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, ""),
+            DialogOpen = id => id == Ms2.Ui.Hud.UgcManager.UploadDialogId && uploadDialog is { IsClosed: false },
+            CloseDialog = id => { if (id == Ms2.Ui.Hud.UgcManager.UploadDialogId && uploadDialog is { IsClosed: false }) uploadDialog.Close(); },
+            ToggleDialog = id =>
+            {
+                if (id != Ms2.Ui.Hud.UgcManager.UploadDialogId) return;
+                if (uploadDialog is { IsClosed: false }) uploadDialog.Close();
+                else OpenUploadDialog();
+            },
+            UploadDialog = () => uploadDialog is { IsClosed: false } ? uploadDialog : null,
+            MyInfo = () => myInfo is { IsClosed: false } ? myInfo : null,
+            HasLocalPlayer = () => true,    // the HUD is the field's, over the own player
+            InField = () => true,
+            User = () => Ms2Godot.Net.LiveSession.Instance?.UgcUser ?? default,
+            Post = Ms2Godot.Net.ProfileImageService.Post,
+            SendProfileKey = key => Ms2Godot.Net.LiveSession.Instance?.SendUgc(new Ms2.Net.Packets.UgcProfileImageRequest(key)),
+            SendUploadFailed = () => Ms2Godot.Net.LiveSession.Instance?.SendUgc(new Ms2.Net.Packets.UgcUploadFailedRequest()),
+            LobbyProfile = (id, key) => GD.Print($"ugc: the lobby's profile key for {id} is not in the field"),
+        };
+        return ugc = m;
+    }
+
+    void ShowSystemText(string text) => SystemText?.ShowMessage(text, Ms2.Ui.Hud.SystemTextController.Warning, 0);
+
+    /// <summary>CUIService::ToggleDialog(0x4e56) when it is not up: the upload dialog's movie over the HUD.</summary>
+    void OpenUploadDialog()
+    {
+        if (uploadDialogMovie != null) { uploadDialogMovie.Host.Unload(); uploadDialogMovie.QueueFree(); uploadDialogMovie = null; }
+        var c = new Ms2.Ui.Hud.UgcImageUploadController(Ugc());
+        BindBoxAnswers();
+        var m = new MovieDialog(assets, c, hudModel, GetWindow().Size);
+        c.Unloaded += () =>
+        {
+            m.Host.Unload();
+            m.QueueFree();
+            if (uploadDialogMovie == m) uploadDialogMovie = null;
+        };
+        uploadDialog = c; uploadDialogMovie = m;
+        uiRoot.AddChild(m);
+    }
+
+    /// <summary>The scripted live run's upload dialog, while it is up.</summary>
+    public Ms2.Ui.Hud.UgcImageUploadController UploadDialog => uploadDialog is { IsClosed: false } ? uploadDialog : null;
+
+    /// <summary>A scripted click in the upload dialog at the fraction (<paramref name="fx"/>, <paramref name="fy"/>) of a
+    /// member's bounds (the list's first cell, the upload button); false while the dialog or the member is not there.</summary>
+    public bool ClickUploadDialog(string member, double fx = 0.5, double fy = 0.5)
+    {
+        if (UploadDialog == null || uploadDialogMovie is not { } m) return false;
+        if (m.Host.Child(member, m.Host.Entity) is not Ms2.Avm2.Flash.AsDisplayObject o) return false;
+        var b = o.GetBounds(null);
+        m.Player.Click(b.X + b.W * fx, b.Y + b.H * fy);
+        return true;
     }
 
     /// <summary>The scripted live run's character window click on the profile picture (open the window first; false while
@@ -1276,9 +1333,6 @@ public partial class HudScene : Node, IUiStageHost
         myInfo.OnCallback("onchangeprofile", System.Array.Empty<object>());
         return true;
     }
-
-    /// <summary>Common string 0x2e7 (commonstringtable.cpp:2365).</summary>
-    const string UgcShutdownKey = "s_msg_ugc_shutdown";
 
     static Ms2.Ui.Hud.AvatarRotateLimit avatarLimit;   // UIAvatarPC::vfunc_1's constants, read once
 
@@ -1807,6 +1861,8 @@ public partial class HudScene : Node, IUiStageHost
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
+        ugc?.Update();             // CUgcManager::Update: the picked file's refresh
+        if (uploadDialog is { IsClosed: false } upload) upload.Tick();     // UIUGCImageUploadDialog::vfunc_72
         alignWidgets?.ProcessPendingLayout();      // the end of UISwfEntityManager::UpdateEntities
         playerInfo?.UpdateEffects();      // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:625): m_effectManager->Update()
         // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:639): the queued slot refresh, when its 200 ms timer fires

@@ -85,14 +85,16 @@ public sealed partial class ProfileImageService : Node
     }
 
     /// <summary>
-    /// UploadUgcFile for a profile picture: the body posted to urq.aspx up to 3 times, 500 ms apart, until an answer of two
-    /// fields comes back; <paramref name="done"/> gets that answer's code and text (6 when none came).
+    /// CSoapClient::UploadUgcFile in SOAP mode 2: the body posted to urq.aspx up to 3 times, 500 ms apart, while the answer
+    /// is code 5 (no answer) or 6 (not two fields); <paramref name="done"/> gets the last answer's text (UploadPendingUgc
+    /// keeps it and reads no code). False without a web host (not SOAP mode 2: UploadPendingUgc's 1).
     /// </summary>
-    public static void Upload(byte[] body, Action<int, string> done)
+    public static bool Post(byte[] body, Action<string> done)
     {
         var url = Images.UploadUrl;
-        if (instance == null || url == null) { done(6, ""); return; }
-        instance.Post(url, body, 3, done);
+        if (instance == null || url == null) return false;
+        instance.Post(url, body, 3, (_, text) => done(text));
+        return true;
     }
 
     void Post(string url, byte[] body, int tries, Action<int, string> done)
@@ -102,8 +104,8 @@ public sealed partial class ProfileImageService : Node
         http.RequestCompleted += (result, code, _, reply) =>
         {
             http.QueueFree();
-            var (c, text) = result == (long)HttpRequest.Result.Success ? ProfileImages.ParseUploadReply(reply) : (6, "");
-            if (c == 6 && tries > 1)
+            var (c, text) = result == (long)HttpRequest.Result.Success ? ProfileImages.ParseUploadReply(reply) : (5, "");
+            if ((c == 5 || c == 6) && tries > 1)
             {
                 GD.Print($"profile images: upload answer {code} '{System.Text.Encoding.UTF8.GetString(reply ?? Array.Empty<byte>())}', trying again");
                 GetTree().CreateTimer(0.5).Timeout += () => Post(url, body, tries - 1, done);
@@ -112,6 +114,6 @@ public sealed partial class ProfileImageService : Node
             done(c, text);
         };
         if (http.RequestRaw(url, new[] { "Content-Type: application/octet-stream" }, HttpClient.Method.Post, body) != Error.Ok)
-        { http.QueueFree(); done(6, ""); }
+        { http.QueueFree(); done(5, ""); }
     }
 }

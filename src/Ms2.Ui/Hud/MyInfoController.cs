@@ -360,6 +360,17 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
         Host.Set(p, "label", info.IsLocal ? "$s_myInfo_menu_select_profile_enable" : "$s_myInfo_menu_select_profile_disable");
     }
 
+    /// <summary>ShowProfileImage (@0x14132faf0): while open, vfunc_98 of <paramref name="path"/> (the upload dialog's
+    /// preview of a picked file's thumbnail).</summary>
+    public void ShowProfileImage(string path)
+    {
+        if (IsClosed) return;
+        SetProfileImage(path ?? "");
+    }
+
+    /// <summary>RefreshProfileImage (@0x14132fa90): vfunc_98 of GetProfileImagePath, the stored picture again.</summary>
+    public void RefreshProfileImage() => SetProfileImage(ProfilePath());
+
     /// <summary>
     /// UIPCInfoDialog's UIUGCEventDispatcher listener (uipcinfodialog.cpp:545): a picture for the shown character, while
     /// the window is open, becomes its picture and is shown again (vfunc_98 of the picture's path).

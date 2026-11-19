@@ -622,22 +622,14 @@ public partial class LiveSession : Node
         if (u != null) u.Picture = key;
     }
 
-    /// <summary>
-    /// The own profile picture's upload (CUgcViewerProfile through CSoapClient::UploadUgcFile, kind 5): the PNG posted to the
-    /// web host's urq.aspx; on code 0 the stored key goes to the game server (SendUGCMode11), which sets it and tells the
-    /// field. <paramref name="done"/> gets the answer's code and text.
-    /// </summary>
-    public void UploadProfilePicture(byte[] png, Action<int, string> done)
+    /// <summary>CUgcUploadCtrl's user: DAT_143ab2830 (UIServerListDialog::GetServerId(), the picked server), the account and
+    /// the own character.</summary>
+    public Ms2.Ui.Hud.UgcUser UgcUser => new(Session.ServerId, accountId, CharacterId);
+
+    /// <summary>CUgcManager's SendUGCMode* packets, while the game connection is up.</summary>
+    public void SendUgc(Ms2.Net.Wire.IOutPacket packet)
     {
-        long id = CharacterId;
-        // DAT_143ab2830: UIServerListDialog::GetServerId(), the picked server
-        var body = ProfileImages.UploadBody(Session.ServerId, ProfileImages.ProfileKind, accountId, id, 0, id, png);
-        ProfileImageService.Upload(body, (code, text) =>
-        {
-            GD.Print($"live: profile upload answer {code} '{text}'");
-            if (code == 0 && game != null) Send(new UgcProfileImageRequest(text));
-            done?.Invoke(code, text);
-        });
+        if (game != null) Send(packet);
     }
 
     /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>
@@ -685,21 +677,42 @@ public partial class LiveSession : Node
         await Until(() => flow.Current == GameFlow.State.Game);
         // MS2_LIVE_HOLD: seconds to stay in the field (a movement script runs meanwhile)
         int hold = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_HOLD"), out var hs) ? hs : 2;
-        // MS2_LIVE_PROFILE_SHOTS=<dir>: open the character window, click its profile picture (the upload), and shoot the
-        // window before the click and once the own picture came back
+        // MS2_LIVE_PROFILE_SHOTS=<dir>: the profile picture's upload through the character window and the upload dialog
+        // (0x4e56): MS2_LIVE_PROFILE_IMAGE (a PNG, DDS or JPEG) copied into the upload folder as a player would, the window's
+        // picture clicked, the dialog's first thumbnail clicked (the preview), Upload, the terms box agreed; shots of each
+        // step and of the window once the own picture came back
         string profileShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PROFILE_SHOTS");
         if (!string.IsNullOrEmpty(profileShots) && tree.CurrentScene is Ui.HudScene hud)
         {
             DirAccess.MakeDirRecursiveAbsolute(profileShots);
             void Shot(string name) { flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(profileShots, name)); GD.Print("live: shot " + name); }
+            string image = System.Environment.GetEnvironmentVariable("MS2_LIVE_PROFILE_IMAGE");
+            if (!string.IsNullOrEmpty(image) && System.IO.File.Exists(image))
+            {
+                string to = UgcFileService.Global(Ms2.Ui.Hud.UgcManager.ImageFolder + "\\" + System.IO.Path.GetFileName(image));
+                System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(to)!);
+                System.IO.File.Copy(image, to, true);
+            }
             await Frames(240);
-            hud.ClickChangeProfile();
+            hud.ClickChangeProfile();       // the window opens
             await Frames(120);
             Shot("profile_before.png");
+            hud.ClickChangeProfile();       // its picture: the upload dialog
+            await Until(() => hud.UploadDialog != null, 600); await Frames(120);
+            Shot("profile_dialog.png");
+            GD.Print($"live: upload dialog lists {hud.UploadDialog?.Manager.FileCount} file(s) in {UgcFileService.Global(Ms2.Ui.Hud.UgcManager.ImageFolder, true)}");
+            hud.ClickUploadDialog("m_imageList", 0.125, 0.125);     // the first thumbnail: OnPreview
+            await Frames(60);
+            Shot("profile_preview.png");
+            hud.ClickUploadDialog("m_btnUpload");                   // OnUpload: the terms box
+            await Frames(60);
+            Shot("profile_terms.png");
             bool back = false;
             void Seen(long id, string key) { if (id == Instance?.CharacterId && !string.IsNullOrEmpty(key)) back = true; }
             ProfileImageService.Images.Arrived += Seen;     // the download of the new picture finished
-            hud.ClickChangeProfile();
+            MessageBoxLayer.Instance?.Tick(0);
+            await Frames(10);
+            MessageBoxLayer.Instance?.Click(0);
             await Until(() => back, 60 * 20);
             ProfileImageService.Images.Arrived -= Seen;
             GD.Print(back ? "live: own profile picture came back" : "live: no profile picture came back");

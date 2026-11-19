@@ -37,6 +37,8 @@ public sealed class MessageBoxData
     // check boxes (flag 8)
     public string Check0 = "", Check1 = "";
     public bool Check0Enabled = true, Check1Enabled = true, Check0Selected = true, Check1Selected = true, MustCheck;
+    /// <summary>m_bAgreement (+0x200, false in the ctor): the terms boxes' "already agreed" (SetAgreement @0x141a02730).</summary>
+    public bool Agreement;
     // Unk_MsgBoxChecks() @0x141a07430: both enabled and both selected.
     // text input (flag 2)
     public int InputType, InputMaxChars = 20, InputMaxLine, InputShowLimit;
@@ -57,6 +59,13 @@ public sealed class MessageBoxData
     {
         [0x475] = "s_word_ok", [0x476] = "s_word_cancel", [0x477] = "s_word_yes", [0x478] = "s_word_no",
         [0x5a0] = "s_word_exit_yes", [0x5a1] = "s_word_exit_no", [0x982] = "s_common_max_size", [0x984] = "s_common_text_count",
+        // the UGC upload dialog's and the terms box's (UIUGCImageUploadDialog, CUgcManager, ShowTermsMessageBox)
+        [0x34] = "s_err_lack_meso", [0x2de] = "s_msg_ugc_cannot_edit", [0x2e0] = "s_msg_ugc_not_select",
+        [0x2e1] = "s_msg_ugc_not_file_preview", [0x2e2] = "s_msg_ugc_not_file_noexist", [0x2e3] = "s_msg_ugc_too_many_files",
+        [0x2e7] = "s_msg_ugc_shutdown", [0x2e9] = "s_msg_ugc_fail_file_exist", [0x2ea] = "s_msg_ugc_fail_file_size",
+        [0x2ec] = "s_msg_ugc_item_edit_thumbnail_tooltip", [0x461] = "s_ugc_err_code", [0x467] = "s_ugc_upload_ok_profile",
+        [0x469] = "s_ugc_upload_ok_banner", [0x9cf] = "s_ugc_edit_terms_text_content", [0x9d0] = "s_ugc_edit_terms_agree",
+        [0x9d5] = "s_ugc_profile_terms", [0x9d6] = "s_ugc_guildmark_terms", [0x9d7] = "s_ugc_guildposter_terms",
     };
 
     /// <summary>The common string table by key (set by the host; empty text until it is).</summary>
@@ -173,6 +182,9 @@ public sealed class MessageBoxData
         CountMsg = Common(0x984);
     }
 
+    /// <summary>SetAgreement @0x141a02730.</summary>
+    public void SetAgreement(bool agreed) => Agreement = agreed;
+
     /// <summary>SetSize @0x141a02770.</summary>
     public void SetSize(int w, int h) { Flags |= 0x10; Width = w; Height = h; }
 
@@ -216,7 +228,8 @@ public sealed class MessageBoxData
     };
 
     /// <summary>FillObj @0x141a034d0, for the members this port keeps: the common members, the input (2), the first item
-    /// (1), the check boxes (8) and the size (0x10); the timer, second item, link and per-type members are not ported.
+    /// (1), the check boxes (8), the size (0x10) and the terms boxes' agreement (WriteAgreement @0x141a056f0, types 0x1b,
+    /// 0x1c and 0x1f); the timer, second item, link and the other per-type members are not ported.
     /// <paramref name="showModaless"/> is FUN_14151f9c0, <paramref name="rbMerat"/> is feature 0x61. <paramref name="model"/>
     /// holds the item slot bindings (CreateItemInfoSlot); without it the item block is left out.</summary>
     public Dictionary<string, object> FillObj(bool showModaless, bool rbMerat = false, UiModel model = null)
@@ -277,6 +290,7 @@ public sealed class MessageBoxData
             o["width"] = Width;
             o["height"] = Height;
         }
+        if (Type is 0x1b or 0x1c or 0x1f) o["agreement"] = Agreement;
         if (rbMerat) o["rbmerat"] = true;
         return o;
     }

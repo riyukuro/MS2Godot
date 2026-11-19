@@ -120,6 +120,49 @@ public static class MessageBoxQueue
         Show(d);
         return d;
     }
+
+    /// <summary>FUN_140d73bc0: <see cref="ShowMessageBox"/> of common string <paramref name="id"/> (GetStringCommon).</summary>
+    public static MessageBoxData ShowCommon(int id, int type, IMessageBoxListener listener, string tag) =>
+        ShowMessageBox(MessageBoxData.Common(id), type, listener, tag);
+
+    // ---- the terms boxes (unit_140d74b20_termsagreementmessagebox.cpp) -----------------------------------------------
+
+    /// <summary>g_143ac2fb8 (Unk_BitSet11): the terms the player agreed to, by bit, for this run (memory only).</summary>
+    static readonly HashSet<int> agreedTerms = new();
+
+    /// <summary>g_1439f5a0c: the bit of the terms box shown last.</summary>
+    static int termsBit;
+
+    /// <summary>
+    /// FUN_140d74640 -> ShowTermsMessageBox @0x140d746e0: a terms box (type 0x1b, "MessageBoxTerms") with the text of
+    /// common string <paramref name="textId"/> and the tag "terms": yes / no, the title of common string
+    /// <paramref name="titleId"/>, the "I agree" check box (0x9d0, checked), and the bit's "already agreed"; shown now.
+    /// </summary>
+    public static MessageBoxData ShowTerms(IMessageBoxListener listener, int bit, int titleId, int textId)
+    {
+        var box = Create(0x1b, MessageBoxData.Common(textId), listener, "terms");
+        box.SetButtonPreset(1);
+        box.Title = MessageBoxData.Common(titleId);
+        box.SetCheckbox0(MessageBoxData.Common(0x9d0), true);
+        termsBit = bit;
+        box.SetAgreement(agreedTerms.Contains(bit));
+        Show(box);
+        return box;
+    }
+
+    /// <summary>
+    /// FUN_140d74e80: the answer of a terms box from its click tag (MessageBoxTerms.getExtraData: the tag, then
+    /// ",checkbox0:" and the check box's state). A tag that starts with "terms" and has a second part marks the last
+    /// box's bit agreed (FUN_140d74e50; not bit 8) whatever was checked; the answer is whether that part says "true".
+    /// </summary>
+    public static bool TermsAgreed(string tag)
+    {
+        if (tag == null || !tag.StartsWith("terms", StringComparison.Ordinal)) return false;
+        var parts = tag.Split(',');
+        if (parts.Length < 2) return false;
+        if (termsBit != 8) agreedTerms.Add(termsBit);
+        return parts[1].Contains("true", StringComparison.Ordinal);
+    }
 }
 
 /// <summary>

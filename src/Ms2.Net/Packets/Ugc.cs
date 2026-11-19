@@ -49,3 +49,10 @@ public sealed record UgcProfileImageRequest(string Key) : IOutPacket {
     public Outbound Op => Outbound.Ugc;
     public void Write(ByteWriter w) { w.WriteByte(0x0b); w.WriteUnicodeString(Key ?? ""); }
 }
+
+/// <summary>CUgcManager::SendUGCMode0 (@0x141883800): the upload failed (u8 0, nothing else); sent by FUN_141882d80 for a
+/// nonzero upload answer.</summary>
+public sealed record UgcUploadFailedRequest : IOutPacket {
+    public Outbound Op => Outbound.Ugc;
+    public void Write(ByteWriter w) { w.WriteByte(0); }
+}
