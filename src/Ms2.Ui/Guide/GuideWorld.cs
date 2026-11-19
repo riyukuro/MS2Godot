@@ -242,6 +242,10 @@ public abstract class GuideNode
     public abstract bool Visible { get; }
     /// <summary>ASButton::IsSelected.</summary>
     public virtual bool Selected => false;
+    /// <summary>ASDisplayObject's x, y and z.</summary>
+    public abstract (double X, double Y, double Z) Position { get; }
+    /// <summary>ASDisplayObject::GetWidthCeil (asdisplayobject.cpp:539).</summary>
+    public virtual double WidthCeil => 0;
     /// <summary>The child of a name.</summary>
     public abstract GuideNode Child(string name);
 }

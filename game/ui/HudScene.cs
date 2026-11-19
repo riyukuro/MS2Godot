@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Godot;
+using Ms2.Avm2;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
@@ -69,6 +70,7 @@ public partial class HudScene : Node, IUiStageHost
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
     string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve: the shot opens that window, as I, P or Y does
     string guideShot;                       // --uigen-guide summary:TEXTID|tip:TEXTID|tutorial:TEXTID: the guide pane shows that text
+    int arrowShot;                          // --uigen-arrow 170|200|60540: the shot points that game menu arrow (the tables' rows)
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
@@ -89,6 +91,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-sysmenu") sysmenuShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-open") openShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-guide") guideShot = args[i + 1];
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-arrow") arrowShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-drag") dragShot = args[i + 1];
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--worldmap") worldMapShot = int.Parse(args[i + 1]);
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--uigen-options") optionShot = int.Parse(args[i + 1]);
@@ -155,7 +158,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors = null;
         CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
         GuideEvent?.Hide();                 // UIGuideEvent::vfunc_3 (:877): the tips are dropped with the scene
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) liveSession.GuidePane = null;
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; }
         unwatchNotices?.Invoke();
         unwatchNotices = null;
         unwatchChat?.Invoke();
@@ -589,10 +592,88 @@ public partial class HudScene : Node, IUiStageHost
             Strings = Ms2.Ui.Guide.GuideStrings.Shared(assets.Packs, assets.Language),
             // PlaySystemSound (table/systemsound.xml through the audio bank); the print is the no-bank fallback
             SystemSound = key => { if (FieldAudio.Instance?.PlayUi(key) != true) GD.Print($"guide: system sound {key} is not played"); },
+            // the arrows' position sources (the client's singletons, uiguideeventarrow.cpp): the dialog registry, the
+            // camera projection and the gates
+            DialogOfName = FindGuideDialog,
+            ArrowBlocked = GuidePopupOrBoxOpen,
+            DialogArrowBlocked = GuideCinematicOrBox,
+            ProjectWorld = ProjectGuideWorld,
+            GameMenuChildPos = GameMenuChildPos,
         };
         guideEvent = new MovieDialog(assets, GuideEvent, NewModel(), GetWindow().Size);
         ui.AddChild(guideEvent);
-        if (Ms2Godot.Net.LiveSession.Instance is { } live) live.GuidePane = GuideEvent;
+        if (Ms2Godot.Net.LiveSession.Instance is { } live)
+        {
+            live.GuidePane = GuideEvent;
+            live.FindDialogOf = FindGuideDialog;      // the guide's dialog conditions over the HUD's dialogs
+        }
+    }
+
+    /// <summary>
+    /// CUIService::FindObjectByName (the guide's dialog lookups): the open movies' controllers by their type name. The
+    /// HUD holds one movie per dialog, as the client holds one dialog object per UI class, and its always-on movies
+    /// (the game menu, the minimap) answer like the client's. By id: the guide's tables always name the dialog too, so
+    /// the id lookup is not wired (STILL-OPEN if an arrow kind needs it).
+    /// </summary>
+    public Ms2.Ui.Guide.GuideDialog FindGuideDialog(string name)
+    {
+        Ms2.Ui.Guide.GuideDialog found = null;
+        void Walk(Node n)
+        {
+            if (found != null) return;
+            if (n is MovieDialog { Loaded: true } m && !m.Host.Controller.IsClosed
+                && m.Host.Controller.TypeName.Equals(name, StringComparison.OrdinalIgnoreCase))
+            {
+                found = new Ms2.Ui.Guide.GuideControllerDialog(m.Host.Controller);
+                return;
+            }
+            foreach (var c in n.GetChildren()) Walk(c);
+        }
+        Walk(this);
+        return found;
+    }
+
+    /// <summary>FUN_141274f80 (unit_141274d10_uihelpers.cpp:181): a popup menu or the message box layer is open.</summary>
+    bool GuidePopupOrBoxOpen() =>
+        (popupMenu != null && !popupMenu.IsClosed) || MessageBoxLayer.Instance?.Shown == true;
+
+    /// <summary>UIGuideEventArrowDialog::vfunc_2's gates (uiguideeventarrow.cpp:569-575): the cinematic sub scene or a
+    /// shown message box.</summary>
+    bool GuideCinematicOrBox() =>
+        Ms2Godot.Net.LiveSession.Instance?.Guide?.World.SubSceneId == 0x6200041 || MessageBoxLayer.Instance?.Shown == true;
+
+    /// <summary>
+    /// UIGuideEventArrow::vfunc_2's projection (@0x14195dee0): the camera's place of the point (FUN_140af0700) at the
+    /// movie's stage units (the client's projection times the UI scale), its y shifted by FUN_1412762d0; null when the
+    /// point is behind the camera. The guide's field points are the client's (x, y, z); Godot's are (x, -z, y).
+    /// </summary>
+    (double X, double Y)? ProjectGuideWorld(System.Numerics.Vector3 pos)
+    {
+        var c = GetViewport().GetCamera3D();
+        var godot = new Vector3(pos.X, pos.Z, -pos.Y);
+        if (c == null || c.IsPositionBehind(godot)) return null;
+        var p = c.UnprojectPosition(godot);
+        var f = GetTree().GetFirstNodeInGroup(Field.Group) as Field;
+        return (p.X / u, p.Y / u + PlayerNameTag.PitchShift(f, godot));
+    }
+
+    /// <summary>
+    /// GetGameMenuPathPosition's remap (uiguideeventarrow.cpp:911-929): a path element the menu table moved — the
+    /// movie's getChildObjectPos(shown, original) on the clip the walk is at gives the shown entry's place and half
+    /// width; null when the element is no moved entry (the plain child walk applies). The menu's set is the game one
+    /// (EGameMenuSet 0; the game pad menu set is not switched here).
+    /// </summary>
+    (double X, double Y, double HalfWidth)? GameMenuChildPos(string element, Ms2.Ui.Guide.GuideNode clip)
+    {
+        var t = gameMenu?.Table;
+        if (t == null || clip is not Ms2.Ui.Guide.GuideObjectNode node) return null;
+        var def = t.FindByName(element);
+        if (def == null || !t.IsChild(def.Id)) return null;
+        string shown = t.Find(t.FindTopId(def.Id))?.Name ?? element;
+        var v = node.Host.Invoke(node.Target, "getChildObjectPos", shown, element);
+        if (v is not AsObject o) return null;
+        return (Rt.ToNumber(node.Host.Get(o, "x")), Rt.ToNumber(node.Host.Get(o, "y")),
+            Rt.ToNumber(node.Host.Get(o, "width")) / 2);
     }
 
     /// <summary>
@@ -2668,6 +2749,26 @@ public partial class HudScene : Node, IUiStageHost
                 case "tutorial": GuideEvent?.ShowTutorial(1, textId, true); break;
             }
         }
+        if (arrowShot != 0 && frames == 200)
+        {
+            // --uigen-arrow: the tables' own uiArrowDialog rows at the game menu — the inventory button and the
+            // character info one of guide_tutorial_100.xml (events 170 and 200) and the menu group of
+            // guide_mapleguide.xml (event 60540, its text is the mouse-over lesson)
+            Ms2.Ui.Guide.GuideDialogArrow a = arrowShot switch
+            {
+                170 => new(170, new(-80, 23, 0), 2, 1, 2, 0, "GameMenuDialog", -1, new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0),
+                200 => new(200, new(-80, 23, 0), 1, 1, 3, 0, "GameMenuDialog", -1, new[] { "m_menus", "characterinfo", "m_button" }, Array.Empty<string>(), "", 0),
+                60540 => new(60540, new(-20, 0, 0), 2, 1, 5, 0, "GameMenuDialog", -1, new[] { "m_menus", "charactergroup" }, Array.Empty<string>(), "", 0),
+                _ => null,
+            };
+            if (a != null)
+            {
+                GuideEvent?.AddArrow(a);
+                // the tutorial's scene for the two buttons: the pointer over the character group's button opens its
+                // dropdown, so the moved entry's place resolves (the mouse-over lesson of event 60540's text)
+                if (arrowShot is 170 or 200) HoverGroupDropdown();
+            }
+        }
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)
@@ -2708,9 +2809,26 @@ public partial class HudScene : Node, IUiStageHost
         }
     }
 
-    /// <summary>The first display object named <paramref name="name"/> under <paramref name="o"/> (breadth first).</summary>
-    static Ms2.Avm2.Flash.AsDisplayObject Descendant(UiHost h, Ms2.Avm2.Flash.AsDisplayObject o, string name)
+    /// <summary>
+    /// The arrow shots' tutorial scene: the pointer over the game menu's character group button, which opens the
+    /// group's dropdown (the movie's own roll-over handler), so the arrow at the moved entry inside it resolves.
+    /// </summary>
+    void HoverGroupDropdown()
     {
+        if (gameMenuMovie?.Host.Entity is not Ms2.Avm2.Flash.AsContainer root) return;
+        var group = Descendant(gameMenuMovie.Host, root, "charactergroup") as Ms2.Avm2.Flash.AsContainer;
+        var button = group?.Children.FirstOrDefault(k => k.InstanceName == "m_button");
+        if (button == null) { GD.PushWarning("arrow shot: no character group button"); return; }
+        var b = group.GetBounds(null);
+        for (double y = b.Y; y < b.Y + b.H; y += 2)
+            for (double x = b.X; x < b.X + b.W; x += 2)
+                for (var t = gameMenuMovie.Player.MouseTarget(x, y); t != null; t = t.Parent)
+                    if (t == button) { gameMenuMovie.Player.MouseMove(x + 1, y + 1); return; }
+        GD.PushWarning("arrow shot: no hit on the group button");
+    }
+
+    /// <summary>The first display object named <paramref name="name"/> under <paramref name="o"/> (breadth first).</summary>
+    static Ms2.Avm2.Flash.AsDisplayObject Descendant(UiHost h, Ms2.Avm2.Flash.AsDisplayObject o, string name)    {
         var queue = new Queue<Ms2.Avm2.Flash.AsDisplayObject>();
         queue.Enqueue(o);
         while (queue.Count > 0)

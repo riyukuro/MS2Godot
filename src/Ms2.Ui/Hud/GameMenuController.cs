@@ -16,6 +16,10 @@ public sealed class GameMenuController : UiController
     public override string Movie => "uigamemenudialog";
     protected override string EntityMethod => "addMenuEntity";
 
+    /// <summary>GetTypeName (@0x141936630, uigamemenudialog.cpp:809): the settings file's name and what the guide's
+    /// dialog lookups match (CUIService::FindObjectByName compares it).</summary>
+    public override string TypeName => "GameMenuDialog";
+
     /// <summary>CGameMenuTable (GetGameMenuTable).</summary>
     public GameMenuTable Table;
     /// <summary>CGameMenuItem::IsVisible for an item with a filter (@0x140cf0bf0): a running game event by id or type, the

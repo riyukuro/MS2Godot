@@ -28,6 +28,13 @@ public partial class LiveSession
     /// it (UpdateEntities does nothing until the pane is there and loaded, guideentity_1b.cpp).</summary>
     public IGuideEventPane GuidePane { get; set; }
 
+    /// <summary>
+    /// The HUD's dialog registry (CUIService::FindObjectByName over the scene's open movies), which the guide's dialog
+    /// conditions read; null before the HUD runs. The lookups are by type name — every dialog reference the guide's
+    /// tables hold names the dialog by, an id always with its name.
+    /// </summary>
+    public Func<string, GuideDialog> FindDialogOf { get; set; }
+
     void StartGuide()
     {
         if (guide != null) return;
@@ -93,6 +100,9 @@ public partial class LiveSession
         public override long ServerTime => s.GameSession?.ServerTime ?? base.ServerTime;
         public override int SceneId => s.fieldEntry.Answered ? 0x620000c : 0;
         public override IGuideEventPane Pane => s.GuidePane;
+        /// <summary>The HUD's dialog registry (its FindDialogOf); the base's null leaves the dialog conditions off,
+        /// as the client's while no dialog object is there.</summary>
+        public override GuideDialog FindDialog(string name) => s.FindDialogOf?.Invoke(name);
         public override void GuideLog(string text) => GD.Print(text);
         public override void Send(Ms2.Net.Wire.IOutPacket packet) => s.Send(packet);
 

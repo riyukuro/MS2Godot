@@ -335,4 +335,103 @@ public class GuideEventTests
         c.ReleaseArrow(61);
         Assert.That(Panel().Children, Is.Empty);
     }
+
+    [Test]
+    public void AGameMenuArrowPointsAtTheMovedInventoryButton()
+    {
+        // Event 170 of guide_tutorial_100.xml: the arrow at the game menu's inventory button. The menu table moves the
+        // inventory into the character group, so the path's "inven" resolves through the movie's getChildObjectPos
+        // (GetGameMenuPathPosition @0x14195fc40) — the same wiring the HUD's game menu gives the pane.
+        Model();
+        var menu = new GameMenuController { Table = GameMenuTable.Load(packs, Model().IsFeatureEnabled) };
+        var (rt, menuPlayer) = src.Open(menu.Movie, r => r.Budget = 20_000_000);
+        menuPlayer.StageW = 1280; menuPlayer.StageH = 720;
+        var strs = new Dictionary<string, string>();
+        using (var xr = System.Xml.XmlReader.Create(new MemoryStream(packs.Read("Xml", "string/en/korflash.xml"))))
+            while (xr.Read())
+                if (xr.NodeType == System.Xml.XmlNodeType.Element && xr.Name == "key" && xr.GetAttribute("id") is { } id && xr.GetAttribute("value") is { } v)
+                    strs[id] = v.Replace("\\n", "\n");
+        menuPlayer.Translate = k => strs.TryGetValue(k, out var t) ? t : k;
+        var menuHost = new UiHost(menuPlayer, menu, Model());
+        Assert.That(menuHost.Load(), Is.True, "game menu load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 10; i++) menuPlayer.Tick();
+        foreach (var e in rt.Errors) TestContext.WriteLine("menu error: " + e);
+
+        // the menu table's remap of a moved entry, as the HUD's GameMenuChildPos wires it
+        (double X, double Y, double HalfWidth)? ChildPos(string element, GuideNode clip)
+        {
+            var t = menu.Table;
+            var def = t.FindByName(element);
+            if (def == null || !t.IsChild(def.Id)) return null;
+            string shown = t.Find(t.FindTopId(def.Id))?.Name ?? element;
+            if (clip is not GuideObjectNode node) return null;
+            var v = node.Host.Invoke(node.Target, "getChildObjectPos", shown, element);
+            return v is AsObject o ? (Rt.ToNumber(node.Host.Get(o, "x")), Rt.ToNumber(node.Host.Get(o, "y")),
+                Rt.ToNumber(node.Host.Get(o, "width")) / 2) : null;
+        }
+
+        var c = new GuideEventController
+        {
+            Strings = GuideStrings.Parse(packs, "en"),
+            DialogOfName = n => string.Equals(n, "GameMenuDialog", StringComparison.OrdinalIgnoreCase)
+                ? new GuideControllerDialog(menu) : null,
+            GameMenuChildPos = ChildPos,
+        };
+        var h = Load(c);
+
+        // the dialog the pane found is the game menu, open at its movie
+        var d = c.DialogOfName("GameMenuDialog");
+        Assert.That(d, Is.Not.Null);
+        Assert.That(d.Hidden, Is.False);
+        Assert.That(d.Root, Is.Not.Null);
+        Assert.That(d.Root.Child("m_menus"), Is.Not.Null, "the menu bar child");
+
+        // the tutorial's scene: the pointer over the character group's button opens its dropdown (the mouse-over
+        // lesson), and the arrow of the event 170 row points at the moved inventory button in it — the position
+        // resolves through the movie's getChildObjectPos over the open list
+        var charGroup = ((Ms2.Avm2.Flash.AsContainer)menuHost.Entity).Children
+            .SelectMany(k => k is Ms2.Avm2.Flash.AsContainer mc ? mc.Children : Enumerable.Empty<Ms2.Avm2.Flash.AsDisplayObject>())
+            .FirstOrDefault(k => k.InstanceName == "charactergroup");
+        Assert.That(charGroup, Is.Not.Null, "the character group entry");
+        var groupButton = ((Ms2.Avm2.Flash.AsContainer)charGroup).Children.FirstOrDefault(k => k.InstanceName == "m_button");
+        Assert.That(groupButton, Is.Not.Null, "the group's button");
+        var gb = charGroup.GetBounds(null);
+        bool hitGroup = false; double gx = 0, gy = 0;
+        for (double y = gb.Y; !hitGroup && y < gb.Y + gb.H; y += 2)
+            for (double x = gb.X; !hitGroup && x < gb.X + gb.W; x += 2)
+                for (var t = menuPlayer.MouseTarget(x, y); t != null; t = t.Parent)
+                    if (t == groupButton) { gx = x; gy = y; hitGroup = true; break; }
+        Assert.That(hitGroup, Is.True, "the group button takes the pointer");
+        menuPlayer.MouseMove(gx + 1, gy + 1);
+        for (int i = 0; i < 10; i++) menuPlayer.Tick();
+
+        c.AddArrow(new GuideDialogArrow(170, new(-80, 23, 0), 2, 1, 2, 0, "GameMenuDialog", -1,
+            new[] { "m_menus", "inven", "m_button" }, Array.Empty<string>(), "", 0));
+        var panel = ((Ms2.Avm2.Flash.AsContainer)h.Entity).Children
+            .FirstOrDefault(k => string.IsNullOrEmpty(k.InstanceName)) as Ms2.Avm2.Flash.AsContainer;
+        var arrow = panel.Children.Single();
+        c.Process();
+        Assert.That(Rt.ToBoolean(h.Get(arrow, "visible")), Is.True, "the arrow points at the moved button");
+        Assert.That(Rt.ToNumber(h.Get(arrow, "x")), Is.GreaterThan(0));
+        Assert.That(Rt.ToNumber(h.Get(arrow, "y")), Is.GreaterThan(0));
+        Assert.That(Rt.ToBoolean(h.Invoke(h.Entity, "hasGuideArrow")), Is.True);
+
+        // the gates hide it: a popup or the message box (FUN_141274f80), the cinematic sub scene for the dialog kinds
+        bool blocked = true;
+        c.DialogArrowBlocked = () => blocked;
+        c.Process();
+        Assert.That(Rt.ToBoolean(h.Get(arrow, "visible")), Is.False, "the gate hides the arrow");
+        blocked = false;
+        c.Process();
+        Assert.That(Rt.ToBoolean(h.Get(arrow, "visible")), Is.True, "and it shows again when the gate opens");
+
+        // a path element that is no moved entry (the menu group itself, event 60540's) takes the plain walk
+        c.ReleaseArrow(170);
+        c.AddArrow(new GuideDialogArrow(60540, new(-20, 0, 0), 2, 1, 5, 0, "GameMenuDialog", -1,
+            new[] { "m_menus", "charactergroup" }, Array.Empty<string>(), "", 0));
+        c.Process();
+        var group = panel.Children.Single();
+        Assert.That(Rt.ToBoolean(h.Get(group, "visible")), Is.True, "the arrow at the menu group");
+        Assert.That(Rt.ToNumber(h.Get(group, "x")), Is.GreaterThan(0));
+    }
 }
