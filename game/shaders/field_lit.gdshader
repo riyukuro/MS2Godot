@@ -8,7 +8,9 @@
 // NiVertexColorProperty says so. A glow map adds its colour on top. ModelBuilder compiles this three
 // times: opaque, with BLEND (NiAlphaProperty src alpha / inverse src alpha) and with BLEND and ADD
 // (src alpha / one); both blended forms skip the depth write. A fourth form, SHELL (with BLEND), is the depth-only
-// first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell). The field's point and spot lights are added to the
+// first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell).
+// A fifth form, FLUID (with BLEND), is the colour pass of a shared fluid shell: it blends in gamma space against the
+// screen copy (see FLUID below). The field's point and spot lights are added to the
 // diffuse term (ms2_lights.gdshaderinc). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
 // and nothing else: light() scales the sun's share of the colour above by the shadow, so the sun is counted once. The
 // blended forms are not shadowed.
@@ -83,6 +85,17 @@ uniform int dark_scroll_axis = -1;
 uniform vec4 dark_scroll_key;
 uniform vec2 dark_scroll_range;
 
+#ifdef FLUID
+// The client blends in gamma space: D3D9 keeps D3DRS_SRGBWRITEENABLE and D3DSAMP_SRGBTEXTURE at their initial 0
+// (NiDX9RenderState.cpp:132, :209), and nothing in the client or engine sets them. So its target holds the gamma values
+// the shaders write, and source alpha / inverse source alpha mixes those values. Godot mixes the linear values, which lets
+// more of the colour behind show through (water at alpha 0.75 over a grey floor: R 50 in gamma, 101 in linear).
+// The fluid colour pass draws before every other transparent (ModelBuilder.MakeFluidShell), so the screen copy Godot takes
+// after the opaque pass is exactly the colour behind it. This form mixes with it in gamma space and writes the result
+// with alpha 1.
+uniform sampler2D screen_tex : hint_screen_texture, filter_nearest;
+#endif
+
 varying vec3 world_normal;
 varying vec3 world_pos;
 varying vec4 vcolor;
@@ -98,6 +111,10 @@ void vertex() {
 
 vec3 to_linear(vec3 c) {
 	return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+vec3 to_gamma(vec3 c) {
+	return mix(c * 12.92, 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
 }
 
 vec2 scroll(int axis, vec4 key, vec2 range) {
@@ -185,6 +202,11 @@ void fragment() {
 #endif
 #ifdef BLEND
 	ALPHA = a;
+#endif
+#ifdef FLUID
+	vec3 behind = to_gamma(textureLod(screen_tex, SCREEN_UV, 0.0).rgb);
+	ALBEDO = to_linear(mix(behind, c, clamp(a, 0.0, 1.0)));
+	ALPHA = 1.0;
 #endif
 #ifdef SHELL
 	ALPHA = 0.0;
