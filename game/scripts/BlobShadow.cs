@@ -84,7 +84,7 @@ public partial class BlobShadow : MeshInstance3D
         }
         query.From = from;
         query.To = from + Vector3.Down * 4000;
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
+        using var hit = GetWorld3D().DirectSpaceState.IntersectRay(query);
         if (hit.Count == 0) { Visible = false; return; }
         Visible = true;
         var p = (Vector3)hit[PhysicsKeys.Position];

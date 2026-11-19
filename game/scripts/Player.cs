@@ -712,7 +712,7 @@ public partial class Player : CharacterBody3D
     Vector3? TopPoint()
     {
         var from = GlobalPosition + Forward * MoveConfig.LadderTopProbe + new Vector3(0, 500, 0);
-        var hit = GetWorld3D().DirectSpaceState.IntersectRay(topRay.Set(from, from + new Vector3(0, -1000, 0), GetRid()));
+        using var hit = GetWorld3D().DirectSpaceState.IntersectRay(topRay.Set(from, from + new Vector3(0, -1000, 0), GetRid()));
         return hit.Count == 0 ? null : (Vector3)hit[PhysicsKeys.Position];
     }
 

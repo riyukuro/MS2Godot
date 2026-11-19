@@ -26,7 +26,7 @@ public sealed partial class FrameProbe : Node
         if (n % Window != 0) return;
         objs = (long)Performance.GetMonitor(Performance.Monitor.ObjectCount);
         GD.Print($"frameprobe frames {n} bytes/frame avg {total / Window} max {max} objects {objs} frame ms {ms / Window:F2} gen0 {GC.CollectionCount(0) - gc0}");
-        foreach (var kv in System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(acc, k => k.Value), 14)) GD.Print($"  site {kv.Key} {kv.Value / Window} B/frame");
+        foreach (var kv in System.Linq.Enumerable.Take(System.Linq.Enumerable.OrderByDescending(acc, k => k.Value), 14)) GD.Print($"  site {kv.Key} {kv.Value / Window} B/frame"); // perf-ok: env-gated probe, prints once per window
         Census("window " + n);
         acc.Clear();
         total = 0; max = 0; ms = 0; gc0 = GC.CollectionCount(0);

@@ -62,6 +62,6 @@ public static class FieldShadows
     static void NoCasters(Node n)
     {
         if (n is GeometryInstance3D g) g.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
-        foreach (var c in n.GetChildren()) NoCasters(c);
+        foreach (var c in n.Kids()) NoCasters(c);
     }
 }

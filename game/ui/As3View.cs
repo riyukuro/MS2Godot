@@ -201,7 +201,7 @@ public partial class As3View : Node2D
         {
             var n = stack.Pop();
             if (byNode.TryGetValue(n, out var e) && e.Holder == n) Drop(e);
-            foreach (var ch in n.GetChildren()) stack.Push(ch);
+            foreach (var ch in n.Kids()) stack.Push(ch);
         }
         root.Holder.GetParent()?.RemoveChild(root.Holder);
         root.Holder.QueueFree();
