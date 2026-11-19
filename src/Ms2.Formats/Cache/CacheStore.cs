@@ -1,0 +1,118 @@
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Ms2.Formats.Cache;
+
+/// <summary>
+/// The cache files of one client data folder (one Xml.m2d): one file per piece and configuration, named by a hash of its
+/// key. A key is the piece, its configuration (language, locale, features) and the build of the code that makes and reads
+/// it (the module version ids of its assemblies), so a changed parser or table class reads as a missing file. A missing,
+/// stale or damaged file is parsed again; the parse is also the reference the check mode compares the cache with.
+/// </summary>
+public sealed class CacheStore
+{
+    public string Dir { get; }
+
+    /// <summary>MS2_UICACHE: "off" parses every piece as without a cache; "check" reads the cache and a parse and
+    /// reports their first difference; anything else (the default) reads the cache.</summary>
+    public static string Mode => (Environment.GetEnvironmentVariable("MS2_UICACHE") ?? "").Trim().ToLowerInvariant();
+
+    public CacheStore(string dir) => Dir = dir;
+
+    /// <summary>The build part of a key: the module version id of each assembly (deterministic builds: it changes with the code).</summary>
+    public static string Build(params Assembly[] code) =>
+        string.Join(",", code.Append(typeof(CacheStore).Assembly).Distinct().Select(a => a.ManifestModule.ModuleVersionId.ToString("N")[..12]));
+
+    public static string Key(string piece, string config, string build) => $"{piece}|{build}|{config}";
+
+    static string Short(string s) => Convert.ToHexString(SHA1.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant()[..16];
+
+    public string PathOf(string piece, string key) => Path.Combine(Dir, $"{piece}-{Short(key)}.bin");
+
+    /// <summary>The file of the key is there with the key in its header (its body is checked when read).</summary>
+    public bool Has(string piece, string key) => CacheFile.KeyOf(PathOf(piece, key)) == key;
+
+    public byte[] Read(string piece, string key) => CacheFile.Read(PathOf(piece, key), key);
+
+    /// <summary>Writes the piece's file, then removes the piece's files of other builds (those of other configurations stay).</summary>
+    public void Write(string piece, string key, ReadOnlySpan<byte> body)
+    {
+        var path = PathOf(piece, key);
+        CacheFile.Write(path, key, body);
+        var build = key.Split('|')[1];
+        foreach (var f in Directory.GetFiles(Dir, piece + "-*.bin"))
+        {
+            if (f == path) continue;
+            var k = CacheFile.KeyOf(f);
+            if (k == null || k.Split('|') is not { Length: >= 3 } p || p[0] != piece || p[1] != build)
+                try { File.Delete(f); } catch (IOException) { }
+        }
+    }
+
+    /// <summary>What a piece's load did, for the perf log.</summary>
+    public sealed class Outcome
+    {
+        public string Piece, Source, Diff;
+        public double ReadMs, ParseMs, WriteMs;
+        public long Bytes;
+        public override string ToString() =>
+            $"{Piece}: {Source}" + (Bytes > 0 ? $" {Bytes / 1048576.0:F1} MB" : "") + (ReadMs > 0 ? $" read {ReadMs:F0} ms" : "")
+            + (ParseMs > 0 ? $" parse {ParseMs:F0} ms" : "") + (WriteMs > 0 ? $" write {WriteMs:F0} ms" : "") + (Diff != null ? $" DIFF {Diff}" : "");
+    }
+
+    /// <summary>
+    /// The piece from its cache file, else from <paramref name="parse"/> (and the file is written for the next session).
+    /// <paramref name="wire"/> sets what a snapshot does not hold (the functions over the table's data) on a read table.
+    /// </summary>
+    public T Get<T>(string piece, string config, string build, Func<T> parse, Action<T> wire, out Outcome outcome) where T : class
+    {
+        outcome = new Outcome { Piece = piece };
+        var mode = Mode;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        if (mode == "off") { outcome.Source = "off"; var p = parse(); outcome.ParseMs = sw.Elapsed.TotalMilliseconds; return p; }
+        var key = Key(piece, config, build);
+        T cached = null;
+        var body = Read(piece, key);
+        if (body != null)
+        {
+            try { cached = Snapshot.Read<T>(body); wire(cached); outcome.Bytes = body.Length; }
+            catch (Exception e) when (e is InvalidDataException or InvalidCastException or ArgumentException or TypeLoadException)
+            { cached = null; outcome.Diff = "unreadable: " + e.Message; }
+        }
+        outcome.ReadMs = sw.Elapsed.TotalMilliseconds;
+        if (cached != null && mode != "check") { outcome.Source = "cache"; return cached; }
+        sw.Restart();
+        var fresh = parse();
+        outcome.ParseMs = sw.Elapsed.TotalMilliseconds;
+        if (cached != null)
+        {
+            outcome.Source = "check";
+            outcome.Diff = Snapshot.Diff(cached, fresh);
+            return cached;
+        }
+        outcome.Source = "parse";
+        sw.Restart();
+        try
+        {
+            var bytes = Snapshot.Write(fresh);
+            Directory.CreateDirectory(Dir);
+            Write(piece, key, bytes);
+            outcome.Bytes = bytes.Length;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { outcome.Diff = "not written: " + e.Message; }
+        outcome.WriteMs = sw.Elapsed.TotalMilliseconds;
+        return fresh;
+    }
+
+    /// <summary>Builds the piece's file when it is not there (the setup step); true when it was built.</summary>
+    public bool Ensure<T>(string piece, string config, string build, Func<T> parse) where T : class
+    {
+        var key = Key(piece, config, build);
+        if (Has(piece, key)) return false;
+        var bytes = Snapshot.Write(parse());
+        Directory.CreateDirectory(Dir);
+        Write(piece, key, bytes);
+        return true;
+    }
+}

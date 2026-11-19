@@ -128,8 +128,7 @@ public sealed partial class NpcTalk : Node
     /// <summary>The client's quest data (QuestDataTable), loaded once.</summary>
     public static QuestTable ClientQuests(PackSet packs)
     {
-        var d = StubHudData.Instance;
-        return questTable ??= QuestTable.Load(packs, new GameStrings(packs, GameOptions.StringLanguage).Languages, d.Locale, f => !d.FeaturesOff.Contains(f));
+        return questTable ??= DataCache.Quests(packs, DataCache.QuestConfig.Current(packs));
     }
 
     static QuestScriptTable QuestScripts(PackSet packs) =>

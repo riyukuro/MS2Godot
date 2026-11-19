@@ -47,8 +47,15 @@ public static class UiGenerator
             using (var s = File.OpenRead(gfx)) hash = Convert.ToHexString(SHA1.HashData(s)).ToLowerInvariant();
             if (stampFile != null) { Directory.CreateDirectory(Path.GetDirectoryName(stampFile)); File.WriteAllText(stampFile, stamp + "\n" + hash + "\n"); }
         }
-        return $"{hash[..16]}-v{Version}";
+        return KeyOf(hash);
     }
+
+    /// <summary>The cache key of the UI code of a Gfx.m2d whose SHA-1 (hex) is <paramref name="gfxSha1"/>.</summary>
+    public static string KeyOf(string gfxSha1) => $"{gfxSha1[..16]}-v{Version}";
+
+    /// <summary>The Gfx.m2d hash prefix of a key made by <see cref="KeyOf"/> for this translator version, else null.</summary>
+    public static string HashOfKey(string key) =>
+        key.Length == 16 + 2 + Version.ToString().Length && key.EndsWith($"-v{Version}", StringComparison.Ordinal) ? key[..16] : null;
 
     /// <summary>
     /// Translates and compiles every movie of <paramref name="dataDir"/> into <paramref name="dllPath"/>. With

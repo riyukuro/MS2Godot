@@ -153,9 +153,14 @@ public partial class SetupScreen : Control
         uiBar = new ProgressBar { MinValue = 0, MaxValue = 1, Step = 0.001 };
         box.AddChild(uiLabel);
         box.AddChild(uiBar);
+        Ms2.Formats.Pack.PackSet packs = null;
+        DataCache.QuestConfig quests = null;
+        try { packs = Ms2.Formats.Pack.PackSet.Shared(data); quests = DataCache.QuestConfig.Current(packs); }
+        catch (System.Exception e) { GD.PushWarning("table cache: " + e.Message); }
         uiBuild = System.Threading.Tasks.Task.Run(() =>
         {
-            var r = UiCode.Built(data) ? null : UiCode.Build(data, (phase, f) => { uiPhase = phase; uiFrac = f; });
+            void progress(string phase, double f) { uiPhase = phase; uiFrac = f; }
+            var r = UiCode.Built(data) ? null : UiCode.Build(data, progress);
             // the client tables the UI reads, parsed once per install (after the code: a new code key starts a new folder)
             uiPhase = "Building the UI tables";
             try
@@ -164,6 +169,15 @@ public partial class SetupScreen : Control
                 if (s >= 0) GD.Print($"UI tables built: additional effects in {s:F1} s");
             }
             catch (System.Exception e) { GD.PushWarning("UI tables build failed: " + e.Message); }
+            // the client's tables the field and HUD read, once per install (UiCode.Prune keeps them with their client)
+            if (packs != null)
+                try
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    var built = DataCache.Build(packs, quests, progress);
+                    if (built.Count > 0) { GD.Print($"table cache built: {string.Join(", ", built)} in {sw.Elapsed.TotalSeconds:F1} s"); if (r == null) UiCode.Prune(); }
+                }
+                catch (System.Exception e) { GD.PushWarning("table cache build failed: " + e.GetBaseException().Message); }
             return r;
         });
         SetProcess(true);

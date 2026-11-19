@@ -1080,11 +1080,11 @@ public partial class HudScene : Node, IUiStageHost
     {
         try
         {
-            bool featureOn(string f) => !data.FeaturesOff.Contains(f);
             var perf = PerfLog.On && questTable == null ? new PerfLog.Steps("quest tables") : null;
             fieldMeta ??= QuestMapGraph.SharedMeta(assets.Packs);
             perf?.Step("field-meta");
-            questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale, featureOn);
+            questTable ??= DataCache.Quests(assets.Packs, new DataCache.QuestConfig
+            { Languages = new GameStrings(assets.Packs, assets.Language).Languages, Locale = data.Locale, FeaturesOff = data.FeaturesOff });
             perf?.Step("quest-table");
             perf?.Done();
             fieldCodes ??= QuestTable.FieldCodes(FieldData.Document(assets.Packs), questTable.Available);   // the session's parsed table

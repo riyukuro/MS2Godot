@@ -160,14 +160,24 @@ public sealed partial class QuestTable
     public QuestRewards Rewards = new();
 
     readonly string locale;
-    readonly Func<string, bool> featureOn;
+    Func<string, bool> featureOn;
+    Dictionary<string, string> commonStrings;                           // stringcommon, the first language that has a key
 
     public QuestTable(string locale, Func<string, bool> featureOn)
     {
         this.locale = locale;
+        Wire(featureOn);
+    }
+
+    /// <summary>The table's functions over its own data: set by the constructor, and again on a table read from a cache.</summary>
+    void Wire(Func<string, bool> featureOn)
+    {
         this.featureOn = featureOn ?? (_ => true);
         Words.QuestName = id => QuestName(id);
+        if (commonStrings != null) Common = CommonString;
     }
+
+    string CommonString(string key) => commonStrings.TryGetValue(key, out var v) ? v : "";
 
     /// <summary>
     /// Everything from the client data: QuestData.xml (the quests), the chapter and quest texts and the string tables
@@ -194,7 +204,7 @@ public sealed partial class QuestTable
 
         t.Words.LoadBold(packs, t.Available, packs.Exists(FieldMeta.Archive, FieldMeta.Entry) ? QuestMapGraph.SharedMeta(packs).ParentFields : null);   // the shared table, not a second read
 
-        var common = new Dictionary<string, string>();
+        var common = t.commonStrings = new Dictionary<string, string>();
         foreach (var lang in languages)
         {
             string entry = $"string/{lang}/stringcommon.xml";
@@ -202,7 +212,7 @@ public sealed partial class QuestTable
             foreach (var k in Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))).Descendants("key"))
                 common.TryAdd((string)k.Attribute("id") ?? "", ((string)k.Attribute("value") ?? "").Replace("\\n", "\n"));
         }
-        t.Common = key => common.TryGetValue(key, out var v) ? v : "";
+        t.Common = t.CommonString;
 
         // the texts of the client's language: the first language that has a file kind fills the ids it holds
         foreach (var lang in languages)

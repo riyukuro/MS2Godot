@@ -1,3 +1,4 @@
+using System.Linq;
 using Godot;
 using Ms2.Avm2;
 using Ms2.UiGen;
@@ -8,17 +9,21 @@ namespace Ms2Godot;
 /// The UI code built from the player's own client (<see cref="UiGenerator"/>): the UI movies' ActionScript translated to
 /// C# and compiled into user://uigen/KEY/Ms2.UiCode.dll, where KEY is the Gfx.m2d hash with the translator version. It is
 /// built on the first launch with a new Gfx.m2d (the setup screen) and loaded at startup; without it the movies run in
-/// the interpreter. Nothing of it is in the repo.
+/// the interpreter. Nothing of it is in the repo. The other per-install files (<see cref="DataCache"/>) are under the
+/// same folder; the client files' hashes are remembered in one stamp file per path, so two client folders keep theirs.
 /// </summary>
 public static class UiCode
 {
     const string Root = "user://uigen";
-    static string RootPath => ProjectSettings.GlobalizePath(Root);
-    static string StampFile => System.IO.Path.Combine(RootPath, "gfx-stamp.txt");
+    public static string RootPath => ProjectSettings.GlobalizePath(Root);
     static bool loaded;
 
+    /// <summary>The hashes of the client files the per-install files are built from (each file hashed once, then by its stamp).</summary>
+    public static readonly Ms2.Formats.Cache.Stamps Stamps = new(System.IO.Path.Combine(RootPath, "stamps.tsv"));
+
     /// <summary>The assembly path for a data folder (hashes Gfx.m2d the first time; then its stamp).</summary>
-    public static string DllPath(string dataDir) => System.IO.Path.Combine(RootPath, UiGenerator.Key(dataDir, StampFile), UiGenerator.DllName);
+    public static string DllPath(string dataDir) =>
+        System.IO.Path.Combine(RootPath, UiGenerator.KeyOf(Stamps.Hash(System.IO.Path.Combine(dataDir, "Resource", "Gfx.m2d"))), UiGenerator.DllName);
 
     static string XmlStampFile => System.IO.Path.Combine(RootPath, "xml-stamp.txt");
 
@@ -81,15 +86,31 @@ public static class UiCode
             foreach (var d in System.IO.Directory.GetDirectories(exe, "data_*")) yield return d;
     }
 
-    /// <summary>Builds the assembly (a worker thread), then removes the ones built for other keys.</summary>
+    /// <summary>Builds the assembly (a worker thread), then removes the per-install files no client on file is for.</summary>
     public static UiGenerator.Result Build(string dataDir, System.Action<string, double> progress)
     {
         var dll = DllPath(dataDir);
         var r = UiGenerator.Build(dataDir, dll, null, progress, AssemblyDirs());
-        if (r.Ok)
-            foreach (var d in System.IO.Directory.GetDirectories(RootPath))
-                if (System.IO.Path.GetFileName(d) != System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(dll)))
-                    try { System.IO.Directory.Delete(d, true); } catch (System.Exception e) { GD.PushWarning($"UI code: {d}: {e.Message}"); }
+        if (r.Ok) Prune();
         return r;
+    }
+
+    /// <summary>
+    /// Removes the folders under user://uigen built for client files that are no longer there or have changed (no stamp
+    /// line's hash names them) or by another translator version; those of every client folder still on disk stay.
+    /// </summary>
+    public static void Prune()
+    {
+        if (!System.IO.Directory.Exists(RootPath)) return;
+        var known = Stamps.Known();
+        bool Known(string prefix) => known.Any(h => h.StartsWith(prefix, System.StringComparison.Ordinal));
+        foreach (var d in System.IO.Directory.GetDirectories(RootPath))
+        {
+            var name = System.IO.Path.GetFileName(d);
+            bool keep = UiGenerator.HashOfKey(name) is { } gfx ? Known(gfx) : DataCache.InputsOf(d) is { } inputs && inputs.All(Known);
+            if (!keep)
+                try { System.IO.Directory.Delete(d, true); } catch (System.Exception e) { GD.PushWarning($"per-install files: {d}: {e.Message}"); }
+        }
+        try { System.IO.File.Delete(System.IO.Path.Combine(RootPath, "gfx-stamp.txt")); } catch (System.IO.IOException) { }   // the stamp file of the first layout
     }
 }
