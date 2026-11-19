@@ -18,8 +18,11 @@ public partial class LiveSession
     /// <summary>The GameToGame moves the next server took (a scripted run counts them).</summary>
     public int Migrations { get; private set; }
 
-    /// <summary>CSceneStateMove's reconnect timer (m_timer.Start(10000)) and its retry limit (m_nRetry &lt; 5).</summary>
-    const int ReconnectWaitMs = 10000, ReconnectRetries = 5;
+    /// <summary>CSceneStateMove's reconnect timer (m_timer.Start(10000), GameClient.MoveConnectWaitMs) and its retry limit (m_nRetry &lt; 5).</summary>
+    const int ReconnectWaitMs = GameClient.MoveConnectWaitMs, ReconnectRetries = 5;
+
+    /// <summary>Cancelled when the session leaves the tree (_ExitTree): a move still connecting stops and leaves nothing behind.</summary>
+    readonly System.Threading.CancellationTokenSource exitCts = new();
 
     /// <summary>
     /// CNetworkService::OnGameToGame @0x14153be30 (networkservice.cpp:942). An error shows GetFieldMoveErrorMessage's box and
@@ -51,29 +54,39 @@ public partial class LiveSession
         old?.Dispose();
         Migrating = true;
         Ms2Godot.World.FieldContents.ServerMove(GetTree(), m.FieldId, () => !Migrating);
-        _ = MigrateAsync(m);
+        _ = MigrateAsync(m, exitCts.Token);
     }
 
     /// <summary>
     /// CSceneStateMove::OnUpdate @0x14174cb70 (scenestatemove.cpp:79): ConnectTo the stored address, a 10 s timer; when it runs
     /// out unconnected, m_nRetry goes up and the next update connects again (the connect at the top runs whatever m_nRetry
-    /// is, so the fifth failure still makes a sixth attempt, given up when its timer runs out). Connected, the key check and the entry run as at login (GameClient.EnterAsync:
+    /// is, so the fifth failure still makes a sixth attempt, given up when its timer runs out). Each connect here is bounded by
+    /// that 10 s (a connect not made by then is a failed attempt). The address is the packet's (DAT_143ab2a48,
+    /// networkservice.cpp:951), except that MS2_LIVE_LOGIN's host, when set, replaces it (<c>host</c>: a test setup whose
+    /// servers announce an address this machine cannot reach). Connected, the key check and the entry run as at login (GameClient.EnterAsync:
     /// OnRequestKey's ResponseKey with the GameToGame tokens, OnMoveResult, then the packets up to RequestFieldEnter).
-    /// A MoveResult error shows GetFieldMoveErrorMessage's box (OnMoveResult, networkservice.cpp:905) and the state stays.
+    /// A MoveResult error shows GetFieldMoveErrorMessage's box (OnMoveResult, networkservice.cpp:905) and the state stays. The
+    /// loading screen stays up over it, as in the client: CSceneStateMove takes nothing down (scenestatemove.cpp), and the
+    /// loading screen's movie is in a higher depth layer than the box's (UILoadingProgress m_2c 0x29, CommonDepth.ClearScreen,
+    /// uiloadingprogress.cpp:63; UIMessageBox m_2c 25, CommonDepth.Dialog, uimessagebox.cpp:374). STILL-OPEN: whether the
+    /// client's loading movie takes the mouse over the box (ours does not: the box still takes clicks and keys).
     /// STILL-OPEN: the first attempt's chat line (Unk_SSGFormatMsg 0x2dd with the address and port) and the retry text on the
     /// loading screen (UILoadingProgress::SetMoveChannelMessage, "s_reconnect_to_server" with the attempt number); after the
     /// sixth attempt, RestoreServerAddress (kind 0x11 only: once more to the saved address, "s_reconnect_to_server_fail") and
     /// else the 0x20f/7 message box and TerminateProcess. None of that is done here: a run out of attempts stays on the
     /// loading screen, offline.
     /// </summary>
-    async Task MigrateAsync(GameToGame m)
+    async Task MigrateAsync(GameToGame m, System.Threading.CancellationToken exit)
     {
         for (int attempt = 0; ; attempt++)
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                (entry, game) = await GameClient.EnterAsync(m, accountId, machine, host, requestGlobalFactor: !Factors.Applied);
+                var (e, t) = await GameClient.EnterAsync(m, accountId, machine, host, ct: exit, requestGlobalFactor: !Factors.Applied);
+                // the session left the tree while the entry ran: nothing is taken, the connection goes
+                if (exit.IsCancellationRequested) { t.Dispose(); return; }
+                (entry, game) = (e, t);
                 Migrations++;
                 GD.Print($"live: GameToGame entry after {moveClock.ElapsedMilliseconds} ms ({attempt + 1} attempt(s))");
                 TakeEntry();
@@ -93,7 +106,12 @@ public partial class LiveSession
             {
                 GD.PushWarning($"live: GameToGame connect attempt {attempt + 1} failed: {e.Message}");
                 int left = ReconnectWaitMs - (int)clock.ElapsedMilliseconds;
-                if (left > 0) await Task.Delay(left);
+                try { if (left > 0) await Task.Delay(left, exit); }
+                catch (OperationCanceledException) { return; }
+            }
+            catch (OperationCanceledException) when (exit.IsCancellationRequested)
+            {
+                return;
             }
             catch (Exception e)
             {

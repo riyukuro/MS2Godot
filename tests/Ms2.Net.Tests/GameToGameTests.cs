@@ -70,6 +70,36 @@ public class GameToGameTests {
         Assert.ThrowsAsync<InvalidOperationException>(async () => await GameClient.EnterAsync(go, 1, new byte[16]));
     }
 
+    /// <summary>A connect that does not complete (a full accept queue drops the SYN, as a filtered address does) ends with the move's
+    /// connect wait as a failed attempt (SocketException TimedOut), not after the OS's own connect timeout.</summary>
+    [Test] public async Task AConnectThatHangsIsAFailedAttemptAfterTheWait() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start(1);
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var fill = new List<TcpClient>();
+        try {
+            // nothing accepts: the accept queue fills, and the next SYN is dropped
+            for (int i = 0; i < 8; i++) {
+                var c = new TcpClient();
+                var t = c.ConnectAsync(IPAddress.Loopback, port);
+                fill.Add(c);
+                if (await Task.WhenAny(t, Task.Delay(300)) != t) break;
+            }
+            var go = GameToGame.Read(new ByteReader(OkBody(1, 2, new byte[] { 127, 0, 0, 1 }, (ushort) port, 3, 0)));
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var enter = GameClient.EnterAsync(go, 1, new byte[16], connectWaitMs: 500);
+            var done = await Task.WhenAny(enter, Task.Delay(5000));
+            Assert.That(done, Is.SameAs(enter), "the connect was not bounded");
+            var e = Assert.ThrowsAsync<SocketException>(async () => await enter);
+            Assert.That(e.SocketErrorCode, Is.EqualTo(SocketError.TimedOut));
+            Assert.That(clock.ElapsedMilliseconds, Is.LessThan(3000));
+        } finally {
+            foreach (var c in fill) c.Dispose();
+            l.Stop();
+        }
+    }
+
+    [Test] public void TheMoveConnectWaitIsTheClientsTimer() => Assert.That(GameClient.MoveConnectWaitMs, Is.EqualTo(10000));
+
     static async Task<(ushort op, byte[] body)> ReadFrame(NetworkStream s, FakeServer srv) {
         var head = new byte[6]; await s.ReadExactlyAsync(head);
         var frame = new byte[6 + BitConverter.ToInt32(head, 2)]; head.CopyTo(frame, 0);

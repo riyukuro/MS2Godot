@@ -327,6 +327,7 @@ public partial class LiveSession : Node
     {
         Field.Built -= OnFieldBuilt;
         ProfileImageService.Images.Arrived -= PictureArrived;
+        exitCts.Cancel();
         StopGuide();
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
