@@ -156,10 +156,15 @@ def lint(f, ns, lines):
     pf = perframe_methods(lines)
     defined = {header_name(x)[0] for x in lines if header_name(x)}
     gtext = "\n".join(lines)
-    # names of Godot dictionaries: declared with the qualified type, or unqualified in a file that uses Godot.Collections and not System's
-    gdicts = set(re.findall(r"\bGodot\.Collections\.Dictionary(?:<[^;=()]*>)?\s+(\w+)", gtext))
+    # names of Godot dictionaries: declared with the qualified (non-generic) type, or unqualified in a file that uses Godot.Collections
+    # and not System's; a `Dictionary<K,V>` is the typed Godot one or System's and is skipped; a name after a dot is System's
+    # (System.Collections.Generic.Dictionary). Also: a variable set from a call that returns a Godot Dictionary, and a foreach
+    # variable over the calls that return an Array of Dictionaries.
+    gdicts = set(re.findall(r"\bGodot\.Collections\.Dictionary(?!\s*<)\s+(\w+)", gtext))
     if re.search(r"^using Godot\.Collections;", gtext, re.M) and not re.search(r"^using System\.Collections\.Generic;", gtext, re.M):
-        gdicts |= set(re.findall(r"\bDictionary(?:<[^;=()]*>)?\s+(\w+)\s*(?:=|in\b|[;,)])", gtext))
+        gdicts |= set(re.findall(r"(?<![\w.])Dictionary(?!\s*<)\s+(\w+)\s*(?:=|in\b|[;,)])", gtext))
+    gdicts |= set(re.findall(r"\b(?:var|using\s+var)\s+(\w+)\s*=\s*[^;=]*?\b(?:IntersectRay|GetRestInfo)\s*\(", gtext))
+    gdicts |= set(re.findall(r"\bforeach\s*\(\s*(?:var|(?:Godot\.Collections\.)?Dictionary)\s+(\w+)\s+in\s+[^)]*?\b(?:GetPropertyList|GetMethodList|GetSignalList|GetScriptPropertyList|ShapedTextGetGlyphs)\s*\(", gtext))
     for n in ns:
         if n - 1 >= len(lines): continue
         raw = lines[n - 1]; s = code(raw)
@@ -179,8 +184,8 @@ def lint(f, ns, lines):
             if re.search(r"\b(?:StringName|NodePath|Variant)\s+\w+\s*=\s*\"", s) and not re.search(r"\b(static|const)\b", s):
                 hit(f, n, "StringName/NodePath/Variant built from a literal outside a static field", "static readonly StringName/NodePath/Variant")
         if isgame:
-            for m in re.finditer(r"\b(\w+)\s*\[\s*\"[^\"]*\"\s*\]", s):
-                if m.group(1) in gdicts:
+            for m in re.finditer(r"\b(\w+)\s*\[\s*\"[^\"]*\"\s*\]|\(\s*(?:Godot\.Collections\.)?Dictionary\s*\)\s*[\w.()]+\)\s*\[\s*\"", s):
+                if m.group(1) is None or m.group(1) in gdicts:
                     hit(f, n, "string literal key on a Godot Dictionary (a new Variant with a finalizer-owned disposer per read)",
                         "a static readonly Variant key (see PhysicsKeys, GlyphKeys)", cold_ok=True)
                     break

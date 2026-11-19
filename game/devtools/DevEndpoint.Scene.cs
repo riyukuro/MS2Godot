@@ -77,7 +77,7 @@ public partial class DevEndpoint
         if (props.Count > 0)
         {
             var known = new HashSet<string>();
-            foreach (var d in n.GetPropertyList()) known.Add(d["name"].AsString());
+            foreach (var d in n.GetPropertyList()) known.Add(d["name"].AsString());   // perf-ok: dev endpoint request, not per frame
             var values = new JsonObject();
             foreach (var p in props)
                 values[p] = known.Contains(p) ? FromVariant(n.Get(p), 0) : "<no such property>";
@@ -88,9 +88,9 @@ public partial class DevEndpoint
             var names = new JsonArray();
             foreach (var d in n.GetPropertyList())
             {
-                var usage = (PropertyUsageFlags)d["usage"].AsInt64();
+                var usage = (PropertyUsageFlags)d["usage"].AsInt64();   // perf-ok: dev endpoint request, not per frame
                 if ((usage & (PropertyUsageFlags.Editor | PropertyUsageFlags.ScriptVariable)) != 0 && (usage & PropertyUsageFlags.Category) == 0)
-                    names.Add(d["name"].AsString());
+                    names.Add(d["name"].AsString());   // perf-ok: dev endpoint request, not per frame
             }
             result["propertyNames"] = names;
         }

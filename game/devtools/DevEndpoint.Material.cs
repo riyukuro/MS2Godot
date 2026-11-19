@@ -76,7 +76,7 @@ public partial class DevEndpoint
                 if (owner != null)
                     foreach (var d in owner.GetPropertyList())
                     {
-                        string pn = d["name"].AsString();
+                        string pn = d["name"].AsString();   // perf-ok: dev endpoint request, not per frame
                         if (pn.StartsWith("instance_shader_parameters/")) inst.Add(pn["instance_shader_parameters/".Length..]);
                     }
                 var parms = new JsonObject();
@@ -116,9 +116,9 @@ public partial class DevEndpoint
         int n = 0;
         foreach (var d in o.GetPropertyList())
         {
-            var usage = (PropertyUsageFlags)d["usage"].AsInt64();
+            var usage = (PropertyUsageFlags)d["usage"].AsInt64();   // perf-ok: dev endpoint request, not per frame
             if ((usage & PropertyUsageFlags.Storage) == 0 || (usage & PropertyUsageFlags.Category) != 0) continue;
-            string name = d["name"].AsString();
+            string name = d["name"].AsString();   // perf-ok: dev endpoint request, not per frame
             if (name.StartsWith("resource_") || name == "script") continue;
             var v = o.Get(name);
             if (v.VariantType == Variant.Type.Nil) continue;

@@ -344,7 +344,7 @@ public sealed class NxController
         if (faceCache.TryGetValue((rid, shapeIdx), out var w)) return w;
         var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
         // GodotConcavePolygonShape3D::get_data: { faces, backface_collision }
-        var faces = (Vector3[])((Godot.Collections.Dictionary)PhysicsServer3D.ShapeGetData(shape))["faces"];
+        var faces = (Vector3[])((Godot.Collections.Dictionary)PhysicsServer3D.ShapeGetData(shape))["faces"];   // perf-ok: once per shape, cached in faceCache
         var xf = ((Transform3D)PhysicsServer3D.BodyGetState(rid, PhysicsServer3D.BodyState.Transform)) * PhysicsServer3D.BodyGetShapeTransform(rid, shapeIdx);
         w = new Vector3[faces.Length];
         for (int i = 0; i < faces.Length; i++) w[i] = xf * faces[i];
