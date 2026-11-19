@@ -1,7 +1,7 @@
 namespace Ms2.Ui.Hud;
 
 /// <summary>UIMainPlayerInfo (ms2/client/ms2/uimainplayerinfo.cpp): the HP/SP orb, EP gauge, name tag and the quick slots.</summary>
-public sealed class MainPlayerInfoController : UiController
+public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip
 {
     /// <summary>The ctor (@0x1419ee140) and UIBuiltInDialog's (uibuiltindialog.cpp:19) have no SetTweenEnabled: m_c4 stays 0,
     /// no open / close tween.</summary>
@@ -38,6 +38,7 @@ public sealed class MainPlayerInfoController : UiController
     /// <summary>OnLoadComplete (uimainplayerinfo.cpp:506).</summary>
     public override void OnLoadComplete()
     {
+        InitEffects();
         base.OnLoadComplete();
         ChangeSkillSlot(SlotExpand ? 1 : 0);
         InitPlayerInfo();
@@ -55,7 +56,70 @@ public sealed class MainPlayerInfoController : UiController
     void ChangeSkillSlot(int slot)
     {
         Host.Invoke("changeSkillSlot", slot, PadShowsKeys);
+        UpdateEffectPositions();
         Host.Invoke(Slot, "onSlotModeChange", 0);       // SyncSlotMode, m_nSlotMode = 0
+    }
+
+    // ---- the buff strip ----
+
+    /// <summary>m_effectManager: the "m_effectManager" clip's buffs and debuffs; null before the load.</summary>
+    BuffEffectManager effects;
+    /// <summary>m_pending: the buffs added or updated before the load, by key.</summary>
+    readonly Dictionary<int, Skills.AdditionalBuff> pendingBuffs = new();
+    /// <summary>GetTickCountMs2, the add tick and cooldown ring clock.</summary>
+    public Func<uint> TickMs = () => (uint)Environment.TickCount64;
+    /// <summary>IsUpperTargetId (the buff list's).</summary>
+    public Func<int, bool> IsUpperTargetId = _ => false;
+
+    /// <summary>The effect part of OnLoadInit (uimainplayerinfo.cpp:485, with a local player): the manager over m_effectManager
+    /// with tooltip align 5, 0x15 shown, 7 columns, rows going up; its positions; then the pending buffs.</summary>
+    void InitEffects()
+    {
+        if (!Model.HasLocalPlayer || Host.Child("m_effectManager") is not { } clip) return;
+        effects = new BuffEffectManager(Host, Model, clip) { TooltipAlign = 5, Max = 0x15, Columns = 7, Up = true, TickMs = () => TickMs(), IsUpperTargetId = id => IsUpperTargetId(id) };
+        UpdateEffectPositions();
+        foreach (var b in pendingBuffs.Values.ToList()) AddBuffEffect(b);
+        pendingBuffs.Clear();
+    }
+
+    /// <summary>UpdateEffectPositions @0x1419f21b0: the buffs at (-395, -12) and the debuffs at (0x48, -12); with the expanded
+    /// pad (-478, -60) and (0x5d, -60).</summary>
+    void UpdateEffectPositions()
+    {
+        if (effects == null) return;
+        if (SlotExpand) effects.SetPosA(-478, -60); else effects.SetPosA(-395, -12);
+        if (SlotExpand) effects.SetPosB(0x5d, -60); else effects.SetPosB(0x48, -12);
+    }
+
+    /// <summary>AddBuffEffect @0x1419f0fe0: to the manager, else pending; then FUN_1419f37f0(5).</summary>
+    public void AddBuffEffect(Skills.AdditionalBuff buff)
+    {
+        if (effects != null) effects.AddEffect(buff);
+        else pendingBuffs[buff.Key] = buff;
+        QueueSlotRefresh(RefreshGray | RefreshRecharge);
+    }
+
+    /// <summary>UpdateBuffEffect @0x1419f10b0.</summary>
+    public void UpdateBuffEffect(Skills.AdditionalBuff buff)
+    {
+        if (effects != null) effects.UpdateEffect(buff);
+        else pendingBuffs[buff.Key] = buff;
+        QueueSlotRefresh(RefreshGray | RefreshRecharge);
+    }
+
+    /// <summary>RemoveBuffEffect @0x1419f1180.</summary>
+    public void RemoveBuffEffect(int key)
+    {
+        if (effects != null) effects.RemoveEffect(key);
+        else pendingBuffs.Remove(key);
+        QueueSlotRefresh(RefreshGray | RefreshRecharge);
+    }
+
+    /// <summary>The effect part of vfunc_15 @0x1419ef820, every frame with a local player: m_effectManager-&gt;Update().</summary>
+    public void UpdateEffects()
+    {
+        if (!Model.HasLocalPlayer) return;
+        effects?.Update();
     }
 
     /// <summary>RefreshQuickSlots (uimainplayerinfo.cpp:1071): m_slot.updateBindSlot(expand). The slot contents come
@@ -255,7 +319,8 @@ public sealed class MainPlayerInfoController : UiController
 
     /// <summary>FUN_1419f37f0 (uimainplayerinfo.cpp:1527): queue a refresh of every slot. The client queues
     /// <see cref="RefreshGray"/> on a level, HP, SP or EP change (vfunc_oa0_9/3/4/5, :713-763) and on a bag item added or removed
-    /// (vfunc_21/22, :839-849); gray | recharge on buff and cooldown changes.</summary>
+    /// (vfunc_21/22, :839-849); gray | recharge on buff and cooldown changes. STILL-OPEN: flag 8 (SkillSlot::FUN_14175f510,
+    /// part of the buff list's 0xd) is not ported.</summary>
     public void QueueSlotRefresh(int flags) => pendingRefresh |= flags;
 
     /// <summary>

@@ -36,7 +36,15 @@ public static class FeatureElements
     /// <paramref name="keyAttr"/> (a later one replaces the kept one when SelectFeatureElement picks it, taking its place
     /// in the order), in order of the kept elements' positions among the available ones.
     /// </summary>
-    public static List<XElement> Collect(PackSet packs, XElement parent, string child, string keyAttr)
+    public static List<XElement> Collect(PackSet packs, XElement parent, string child, string keyAttr) =>
+        Collect(packs, parent, child, e => (string)e.Attribute(keyAttr) ?? "");
+
+    /// <summary>FUN_14028fd90 (commonutil.cpp:2131): <see cref="Collect(PackSet, XElement, string, string)"/> keyed by two
+    /// attributes as "<paramref name="keyAttr1"/>_<paramref name="keyAttr2"/>".</summary>
+    public static List<XElement> Collect(PackSet packs, XElement parent, string child, string keyAttr1, string keyAttr2) =>
+        Collect(packs, parent, child, e => ((string)e.Attribute(keyAttr1) ?? "") + "_" + ((string)e.Attribute(keyAttr2) ?? ""));
+
+    static List<XElement> Collect(PackSet packs, XElement parent, string child, Func<XElement, string> keyOf)
     {
         var byKey = new Dictionary<string, (int Index, XElement Elem)>();
         int index = 0;
@@ -44,7 +52,7 @@ public static class FeatureElements
         {
             if (!IsAvailable(packs, e)) continue;
             ++index;
-            string key = (string)e.Attribute(keyAttr) ?? "";
+            string key = keyOf(e);
             if (byKey.TryGetValue(key, out var kept))
             {
                 if (Fold(packs, kept.Elem, e) == e) byKey[key] = (index, e);

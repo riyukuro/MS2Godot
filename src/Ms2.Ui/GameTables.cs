@@ -98,6 +98,12 @@ public sealed class GameTables
             && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
         Skills = new Skills.SkillTables(new Skills.JobTable(Xml("table/job.xml"), collect),
             new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
+        // SkillDataTableCli's additional effects: ./Data/Xml/Additional/*.xml (not recursive)
+        List<string> additionalFiles = null;
+        Additional = new Skills.AdditionalTable(
+            () => additionalFiles ??= packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase)
+                && n.IndexOf('/', 11) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList(),
+            Xml, e => LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")));
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
@@ -199,6 +205,71 @@ public sealed class GameTables
     public int ClubNameLengthMin = 2, ClubNameLengthMax = 12;
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
+    /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>
+    public readonly Skills.AdditionalTable Additional = Ms2.Ui.Skills.AdditionalTable.Empty;
+
+    /// <summary>
+    /// CStringTable::FUN_141812290 (stringtable.cpp:774): the <paramref name="tag"/> text of an additional effect's level in
+    /// stringAdditionalDescription.xml. LoadLevelDescFiles (:1171) reads the available &lt;key&gt; rows one per id and level
+    /// (FUN_14028fd90: a later one replaces the kept one when SelectFeatureElement picks it), each with the ParseSkillDesc
+    /// tags (:1289; non-empty, "\n" as a line break). FUN_141815160 (:1216) takes the level's row, else FUN_141815330: the
+    /// row of the highest level not above it ("" when the first is higher). The text's object words are replaced on first
+    /// use (CDesc::FUN_141813a30, :574). "tooltipDescription" is then filled with the level's comma separated stringParam
+    /// (FUN_141813790, :984), and "name" gets "$level$" replaced by the level (ReplaceLevelToken). With several string
+    /// languages, the first language that has the effect is used (the client loads one language's file).
+    /// </summary>
+    public string AdditionalDescription(uint id, ushort level, string tag)
+    {
+        if (levelDescs == null)
+        {
+            levelDescs = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
+            foreach (var lang in strings?.Languages ?? Array.Empty<string>())
+            {
+                string entry = $"string/{lang}/stringadditionaldescription.xml";
+                if (!packs.Exists("Xml", entry)) continue;
+                var file = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
+                var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+                if (root?.Name != "ms2") continue;
+                foreach (var e in FeatureElements.Collect(packs, root, "key", "id", "level"))
+                {
+                    uint key = (uint)ReservedWords.Atoi((string)e.Attribute("id") ?? "");
+                    ushort lv = e.Attribute("level") is { } la ? (ushort)ReservedWords.Atoi((string)la) : (ushort)1;
+                    var desc = new Dictionary<string, string>(StringComparer.Ordinal);
+                    foreach (var t in SkillDescTags)
+                        if ((string)e.Attribute(t) is { Length: > 0 } v) desc[t] = v.Replace("\\n", "\n");
+                    if (!file.TryGetValue(key, out var levels)) file[key] = levels = new SortedDictionary<ushort, Dictionary<string, string>>();
+                    levels[lv] = desc;
+                }
+                foreach (var (k, v) in file) levelDescs.TryAdd(k, v);
+            }
+        }
+        string text = "";
+        if (levelDescs.TryGetValue(id, out var byLevel))
+        {
+            Dictionary<string, string> d = null;
+            if (!byLevel.TryGetValue(level, out d))
+                foreach (var (lv, row) in byLevel)
+                {
+                    if (level < lv) break;
+                    d = row;
+                }
+            if (d != null && d.TryGetValue(tag, out var t))
+            {
+                if (t.Contains('$')) d[tag] = t = ReservedWords.ReplaceObjectWords(t);
+                text = t;
+            }
+        }
+        if (string.Equals(tag, "tooltipDescription", StringComparison.OrdinalIgnoreCase)
+            && Additional.GetLevel(id, level) is { StringParam.Length: > 0 } lvData)
+            text = Ms2.Quest.ClientFormat.Format(text, lvData.StringParam.Split(',').Cast<object>().ToArray());
+        if (string.Equals(tag, "name", StringComparison.OrdinalIgnoreCase))
+            text = text.Replace("$level$", level.ToString(CultureInfo.InvariantCulture));
+        return text;
+    }
+    /// <summary>ParseSkillDesc (stringtable.cpp:1289): "name" (read first by FUN_141815650) and its tags.</summary>
+    static readonly string[] SkillDescTags = { "name", "uiDescription", "mainDescription", "functionDescription", "tooltipDescription", "guideDescription" };
+    Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>> levelDescs;
+
     /// <summary>CStringTable::FUN_141811980(4, id): the skill's name (string table 4 "skillName"); "" when unknown.</summary>
     public string SkillName(uint id) => Lazy(ref skillNames, "skillname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>CStringTable::FUN_141811980(7, id): string table 7 "popupMenu" (a popup menu item's label); "" when unknown.</summary>

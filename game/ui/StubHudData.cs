@@ -23,6 +23,11 @@ public sealed class StubHudData
     public int InteractState = 1;
     /// <summary>Features the server has switched off (the reference run had no cash shop, Meret Market or job change quest).</summary>
     public HashSet<string> FeaturesOff = new() { "LapentaFrontierQuest" };
+    /// <summary>The offline player's object id (its buffs' owner and caster).</summary>
+    public int ObjectId = 1;
+    /// <summary>The own buffs, as the own FieldAddUser's list would add them. The reference run shows Snipe (10500111 level 1,
+    /// keep condition 99, enabled, no span) above Q.</summary>
+    public List<BuffPacket> Buffs = new() { new(BuffPacket.Add, 1, 1, 1, 0, new BuffState(0, 0, 10500111, 1, 1, 1), 0) };
 
     public double HpRatio => Player.HpMax == 0 ? 0 : (double)Player.HpCurrent / Player.HpMax;
     public double SpRatio => SpMax == 0 ? 0 : (double)SpCurrent / SpMax;

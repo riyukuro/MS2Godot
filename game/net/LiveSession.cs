@@ -76,6 +76,30 @@ public partial class LiveSession : Node
     public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
     /// <summary>Raised after the local player's skill book changed (the Job packet's mode).</summary>
     public event Action<int> SkillBookChanged;
+    /// <summary>
+    /// The local player's AdditionalCliList feed: the own FieldAddUser's list (DecodeListPacket, additionalcli_2.cpp:721, each
+    /// one an add) and each OnBuff 0x47 (scenestategame.cpp:7591) whose owner is the local player. Null = the own actor was
+    /// replaced (its list's dtor runs ClearAll, additionalcli_2.cpp:184). Kept until the HUD
+    /// takes them (<see cref="TakeBuffs"/>), then raised.
+    /// </summary>
+    public event Action<BuffPacket> BuffReceived;
+    /// <summary>The own FieldAddUser object id, -1 before it.</summary>
+    public int SelfObjectId => selfObject;
+    readonly Queue<BuffPacket> pendingBuffs = new();
+    bool buffsTaken;
+    /// <summary>The buff packets kept so far, and raise <see cref="BuffReceived"/> from now on.</summary>
+    public BuffPacket[] TakeBuffs()
+    {
+        buffsTaken = true;
+        var all = pendingBuffs.ToArray();
+        pendingBuffs.Clear();
+        return all;
+    }
+    void OwnBuff(BuffPacket b)
+    {
+        if (buffsTaken) BuffReceived?.Invoke(b);
+        else pendingBuffs.Enqueue(b);
+    }
     public CharacterCreateRefused LastRefusal { get; private set; }
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
@@ -400,8 +424,18 @@ public partial class LiveSession : Node
                     var u = FieldAddUser.Read(p.Reader());
                     bool self = u.User.CharacterId == entry.Enter.CharacterId;
                     if (self) { selfObject = u.ObjectId; Me.Apply(u); }
+                    if (self)
+                    {
+                        OwnBuff(null);
+                        foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b));
+                    }
                     if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
                     GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
+                }
+                else if (game.Is(p, Inbound.Buff))
+                {
+                    var b = BuffPacket.Read(p.Reader());
+                    if (b.OwnerObjectId == selfObject) OwnBuff(b);
                 }
                 else if (game.Is(p, Inbound.SyncNumber))
                 {

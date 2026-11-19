@@ -123,6 +123,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _ExitTree()
     {
         unwatchQuickSlotState?.Invoke();
+        unwatchBuffs?.Invoke();
         unwatchQuickSlotState = null;
         unwatchParty?.Invoke();
         unwatchParty = null;
@@ -1119,6 +1120,7 @@ public partial class HudScene : Node, IUiStageHost
             SlotWorld = QuickSlotWorld,
             TooltipPlayer = () => { QuickSlotWorld(); return SkillTooltipPlayer(slotJobs); },
         };
+        OwnBuffs();
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));
         WatchQuickSlotState();
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
@@ -1390,6 +1392,37 @@ public partial class HudScene : Node, IUiStageHost
     object slotJobsBook;
     Ms2.Ui.Hud.MainPlayerInfoController playerInfo;
     ulong slotRefreshTick;
+    /// <summary>The local player's AdditionalCliList (its buff strip part).</summary>
+    Ms2.Ui.Skills.AdditionalBuffList ownBuffs;
+    Action unwatchBuffs;
+
+    /// <summary>
+    /// The local player's buffs onto the main player info panel (AddBuffUI / UpdateBuffUI / RemoveBuffUI): live, the session's
+    /// own FieldAddUser list and OnBuff packets on the server tick; offline, <see cref="StubHudData.Buffs"/> on the local tick.
+    /// </summary>
+    void OwnBuffs()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        ownBuffs = new Ms2.Ui.Skills.AdditionalBuffList(hudModel.Tables.Additional.GetLevel) { Strip = playerInfo };
+        playerInfo.IsUpperTargetId = ownBuffs.IsUpperTargetId;
+        if (live == null)
+        {
+            ownBuffs.ServerTick = () => (uint)System.Environment.TickCount64;
+            ownBuffs.SelfObjectId = data.ObjectId;
+            foreach (var b in data.Buffs) ownBuffs.Apply(b);
+            return;
+        }
+        ownBuffs.ServerTick = () => live.GameSession is { } gs ? unchecked((uint)gs.ServerTick) : 0;
+        Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
+        {
+            ownBuffs.SelfObjectId = live.SelfObjectId;
+            if (b == null) ownBuffs.ClearAll();
+            else ownBuffs.Apply(b);
+        };
+        foreach (var b in live.TakeBuffs()) onBuff(b);
+        live.BuffReceived += onBuff;
+        unwatchBuffs = () => live.BuffReceived -= onBuff;
+    }
     Action unwatchQuickSlotState;
     Ms2.Ui.Skills.WeaponActionTable weaponActions;
 
@@ -1418,7 +1451,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// The player state the HUD quick slots read (SkillSlot): the live session's bag, skill book and own hands, else the offline
     /// inventory and a new character's book of the HUD's job; the field data of the current map id (offline: the field of the
-    /// HUD's xblock). Cooldowns, buffs and the skill set have no feed yet and keep their idle values.
+    /// HUD's xblock). Cooldowns and the skill set have no feed yet and keep their idle values; the buffs only feed the buff strip.
     /// </summary>
     Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
     {
@@ -1775,6 +1808,7 @@ public partial class HudScene : Node, IUiStageHost
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
         alignWidgets?.ProcessPendingLayout();      // the end of UISwfEntityManager::UpdateEntities
+        playerInfo?.UpdateEffects();      // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:625): m_effectManager->Update()
         // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:639): the queued slot refresh, when its 200 ms timer fires
         if (playerInfo != null && Time.GetTicksMsec() - slotRefreshTick >= 200)
         {
