@@ -680,8 +680,9 @@ public sealed partial class NpcTalk : Node
             _ => null,
         };
         if (key == null) return;
+        var vp = GetViewport();   // taken before the dispatch, which can change the scene
         side.Key(key.Value);
-        GetViewport().SetInputAsHandled();
+        if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
     public override void _Process(double delta)

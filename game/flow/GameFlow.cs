@@ -341,8 +341,9 @@ public partial class GameFlow : Node
     {
         if (Current == State.Game && e is InputEventKey { Pressed: true, Echo: false, Keycode: Godot.Key.Escape })
         {
+            var vp = GetViewport();
             (GetTree().CurrentScene as Ui.HudScene)?.Escape();
-            GetViewport().SetInputAsHandled();
+            if (IsInstanceValid(vp)) vp.SetInputAsHandled();
         }
     }
 

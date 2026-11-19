@@ -678,6 +678,8 @@ public partial class As3View : Node2D
     {
         // no capture for a hidden view or a drag sprite that left the stage
         if (Player == null || !Player.Dragging || !IsVisibleInTree() || Player.DraggedSprite is not { OnStage: true }) return;
+        // the dispatch can change the scene and take this view out of the tree: the viewport is taken before it
+        var vp = GetViewport();
         switch (ev)
         {
             // the button came up where this window did not see it (focus lost: Godot releases the pressed buttons, or another
@@ -704,11 +706,13 @@ public partial class As3View : Node2D
             }
             default: return;
         }
-        GetViewport().SetInputAsHandled();
+        if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
     public override void _UnhandledInput(InputEvent ev)
     {
+        // the dispatch (AS3 -> controller -> scene change) can take this view out of the tree: the viewport is taken before it
+        var vp = GetViewport();
         switch (ev)
         {
             case InputEventMouseMotion mm:
@@ -742,7 +746,7 @@ public partial class As3View : Node2D
             }
             default: return;
         }
-        GetViewport().SetInputAsHandled();
+        if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
     /// <summary>Godot key → Flash keyCode (letters and digits share their ASCII codes).</summary>

@@ -156,16 +156,17 @@ public partial class LoginScene : Control
     /// </summary>
     public override void _Input(InputEvent e)
     {
+        var vp = GetViewport();   // taken before the dispatches, which can change the scene
         if (e is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape } && Scene.EscapePressed())
         {
-            GetViewport().SetInputAsHandled();
+            if (IsInstanceValid(vp)) vp.SetInputAsHandled();
             return;
         }
         if (dialog == null || !dialog.Visible) return;
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
-            if (k.Keycode is Key.Enter or Key.KpEnter) { Controller.EnterKey(); GetViewport().SetInputAsHandled(); }
-            else if (k.Keycode == Key.Tab) { Controller.TabKey(); GetViewport().SetInputAsHandled(); }
+            if (k.Keycode is Key.Enter or Key.KpEnter) { Controller.EnterKey(); if (IsInstanceValid(vp)) vp.SetInputAsHandled(); }
+            else if (k.Keycode == Key.Tab) { Controller.TabKey(); if (IsInstanceValid(vp)) vp.SetInputAsHandled(); }
         }
     }
 

@@ -880,8 +880,9 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>The scene's keys: the chat windows first, then the dialogs.</summary>
     public override void _Input(InputEvent e)
     {
-        if (ChatKeys(e)) { GetViewport().SetInputAsHandled(); return; }
-        if (DialogKeys(e)) GetViewport().SetInputAsHandled();
+        var vp = GetViewport();   // taken before the dispatches, which can change the scene
+        if (ChatKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
+        if (DialogKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
     /// <summary>

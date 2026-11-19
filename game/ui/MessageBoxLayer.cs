@@ -104,7 +104,8 @@ public partial class MessageBoxLayer : CanvasLayer
             Key.Tab => "tab",
             _ => null,
         };
-        if (key != null && controller.ProcessKey(key)) GetViewport().SetInputAsHandled();
+        var vp = GetViewport();   // taken before the dispatch, which can change the scene
+        if (key != null && controller.ProcessKey(key)) if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
     /// <summary>Scripted runs: text into the shown box's m_textInput, as typed.</summary>
