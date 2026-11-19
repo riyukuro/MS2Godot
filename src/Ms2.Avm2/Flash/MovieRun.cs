@@ -65,39 +65,46 @@ public sealed class MovieSource
     }
 
     /// <summary>A runtime and player for one movie, its imports' code loaded first. The document class is not constructed yet (call Start).</summary>
-    public (Runtime Rt, Player Player) Open(string key, Action<Runtime> setup = null)
+    /// <param name="libraries">
+    /// Movies the movie does not import but finds loaded beside it: the client loads each UI swf into a shared root movie
+    /// (GFxManager::Initialize @0x1422ad620 roots, UISwfEntityManager::LoadSwf @0x1422d1320 by the entity's group), and
+    /// getDefinitionByName looks up the root VM's one class table (VM::GetClass @0x142507be0 over vm.ClassTraitsSet), so a
+    /// class of any movie in that root, or of what those movies import, resolves. These load like imports, before the
+    /// movie's own imports.
+    /// </param>
+    public (Runtime Rt, Player Player) Open(string key, Action<Runtime> setup = null, IEnumerable<string> libraries = null)
     {
         key = Path.GetFileNameWithoutExtension(key);
         var m = Movie(key) ?? throw new FileNotFoundException("movie " + key);
         var layout = MainLayout(key, m);
         var rt = new Runtime();
         setup?.Invoke(rt);
+        var libs = libraries?.Select(Path.GetFileNameWithoutExtension).ToList() ?? new List<string>();
+        IEnumerable<string> Direct(SwfMovie mm) => mm.Imports.Select(g => Path.GetFileNameWithoutExtension(g.Url));
         var importKeys = new List<string>();
-        void ImportKeys(SwfMovie mm, HashSet<string> seen0)
+        void ImportKeys(IEnumerable<string> keys, HashSet<string> seen0)
         {
-            foreach (var g in mm.Imports)
+            foreach (var ik in keys)
             {
-                var ik = Path.GetFileNameWithoutExtension(g.Url);
                 if (!seen0.Add(ik) || Movie(ik) is not { } im) continue;
-                importKeys.Add(ik); ImportKeys(im, seen0);
+                importKeys.Add(ik); ImportKeys(Direct(im), seen0);
             }
         }
-        ImportKeys(m, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key });
+        ImportKeys(libs.Concat(Direct(m)), new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key });
         var player = new Player(rt, layout, importKeys.Select(k => (k, Layout(k))));
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { key };
-        void Imports(SwfMovie mm)
+        void Imports(IEnumerable<string> keys)
         {
-            foreach (var g in mm.Imports)
+            foreach (var ik in keys)
             {
-                var ik = Path.GetFileNameWithoutExtension(g.Url);
                 if (!seen.Add(ik)) continue;
                 var im = Movie(ik);
                 if (im == null) { rt.NoteMissing("movie " + ik); continue; }
-                Imports(im);
+                Imports(Direct(im));
                 foreach (var (n, abc) in Abc(ik)) rt.Load(abc, ik + ":" + n);
             }
         }
-        Imports(m);
+        Imports(libs.Concat(Direct(m)));
         foreach (var (n, abc) in Abc(key)) rt.Load(abc, key + ":" + n);
         return (rt, player);
     }

@@ -129,7 +129,8 @@ public sealed partial class NpcTalk : Node
     QuestRules Rules => live != null ? (liveRules ??= new QuestRules(ClientQuests(packs), LiveQuests)) : Records.Rules;
 
     LiveQuestState LiveQuests => liveQuests ??= new LiveQuestState(live.Quests, ClientQuests(packs), live.GameSession, live.CharacterId,
-        live.Me.User?.Level ?? StubHudData.Instance.Player.Level, live.FieldId, null) { JobGroup = live.Me.User?.JobCode };
+        live.Me.User?.Level ?? StubHudData.Instance.Player.Level, live.FieldId, null)
+    { JobGroup = live.Me.User?.JobCode };
 
     /// <summary>The record's state: 0 none, 1 started, 2 rewarded.</summary>
     int QuestState(int id) => QuestContext.Get(id)?.State ?? 0;
@@ -205,15 +206,22 @@ public sealed partial class NpcTalk : Node
         return Rules.CanStart(quest, npc) == true ? 0x5d9 : 0x5d8;
     }
 
-    /// <summary>SelectStringByQuestKind (cinematiccomponent.cpp:810) with "_epic", "", "_repeat", "_event": by the quest
-    /// type (FUN_14074b050), 1 and 6 by whether it repeats (FUN_1407640c0).</summary>
-    static string IconSuffix(QuestData d) => d.Type switch
-    {
-        0 => "_epic",
-        2 => "_event",
-        1 or 6 => d.Repeat != 0 ? "_repeat" : "",
-        _ => "",
-    };
+    static NpcQuestMarks questMarks;
+
+    /// <summary>The npcs' quest lists over the client's quest data (QuestDataTable m_430), built once.</summary>
+    public static NpcQuestMarks QuestMarks(PackSet packs) => questMarks ??= new NpcQuestMarks(ClientQuests(packs));
+
+    /// <summary>
+    /// CQuestManager::GetNpcQuestState for the npc on the character's records (the live session's, else the sandbox's): the
+    /// mark its overhead emoticon shows (CNpc's RefreshQuestState).
+    /// </summary>
+    public NpcQuestMarks.Mark QuestMark(int npcId) => QuestMarks(packs).Get(npcId, QuestContext, Rules);
+
+    /// <summary>The sandbox: start a quest on its records, its conditions met or not (the emoticon shots).</summary>
+    public bool SandboxAccept(int questId, bool conditionsMet) => live == null && Records.Accept(questId, conditionsMet);
+
+    /// <summary>The sandbox: drop a quest's record (the emoticon shots step one quest through its states).</summary>
+    public void SandboxForget(int questId) { if (live == null) Records.Forget(questId); }
 
     /// <summary>The complete talk's reward figures (FUN_140761ba0 ... FUN_140761ea0, FUN_140761c60) from the quest table.</summary>
     TalkCinematicController.QuestReward RewardOf(int quest)
@@ -224,8 +232,13 @@ public sealed partial class NpcTalk : Node
         var ctx = new QuestRewards.Context(StubHudData.Instance.Player.Level, 0);
         var r = new TalkCinematicController.QuestReward
         {
-            Exp = t.Rewards.Exp(d, ctx), Meso = t.Rewards.Meso(d, ctx), Karma = t.Rewards.Karma(d), Lu = t.Rewards.Lu(d),
-            GuildExp = t.Rewards.GuildExp(d, ctx), GuildFund = t.Rewards.GuildFund(d, ctx), FamePoint = t.Rewards.FamePoint(d),
+            Exp = t.Rewards.Exp(d, ctx),
+            Meso = t.Rewards.Meso(d, ctx),
+            Karma = t.Rewards.Karma(d),
+            Lu = t.Rewards.Lu(d),
+            GuildExp = t.Rewards.GuildExp(d, ctx),
+            GuildFund = t.Rewards.GuildFund(d, ctx),
+            FamePoint = t.Rewards.FamePoint(d),
             GuildCoin = t.Rewards.GuildCoin(d, ctx),
         };
         foreach (var x in d.Complete.ChoiceRewards) r.ChoiceRewards.Add((x.ItemId, x.Rank, x.Count));
@@ -346,7 +359,7 @@ public sealed partial class NpcTalk : Node
             Content = ContentOf(script.Contents[page]),
             ButtonSet = buttonSet,
             Flags = flags,
-            QuestOf = q => ClientQuests(packs).Quest(q) is { } d ? new(ClientQuests(packs).QuestName(q), d.Level, IconSuffix(d)) : null,
+            QuestOf = q => ClientQuests(packs).Quest(q) is { } d ? new(ClientQuests(packs).QuestName(q), d.Level, NpcQuestMarks.Suffix(d)) : null,
             QuestStateString = q => StateString(q, npc.Row.Id),
             IsQuestActive = q => QuestState(q) == 1,
             IsQuestRewarded = q => QuestState(q) == 2,
@@ -358,7 +371,8 @@ public sealed partial class NpcTalk : Node
             NpcName = id => Scripts(packs).NpcDisplayName(id),
             NpcIllust = id => id == npc.Row.Id ? npc.Row.Illust ?? "" : "",
             FileExists = ImageExists,
-            ClientWidth = (int)size.X, ClientHeight = (int)size.Y,
+            ClientWidth = (int)size.X,
+            ClientHeight = (int)size.Y,
             MovieScale = UiScale.ViewportFactor(size.X),
         };
         side.QuestIds.AddRange(quests);
@@ -460,28 +474,28 @@ public sealed partial class NpcTalk : Node
         switch (m)
         {
             case NpcTalkMessage.Open o:
-            {
-                liveRequested = null;
-                var npc = LiveNpc(o.ObjectId);
-                if (npc == null || window != null) { GD.Print($"talk: mode 1 for object {o.ObjectId}: {(npc == null ? "no such npc" : "a talk is open")}"); return; }
-                flags = o.Flags; page = o.Page;
-                questId = (flags & 4) != 0 && talkQuests.Count > 0 ? talkQuests[0] : 0;
-                script = FindTalkScript(npc, o.ScriptId);
-                liveTalking = npc;
-                if (script == null || page >= script.Contents.Count)
                 {
-                    // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui (OpenTalkUi: a shop,
-                    // a storage ...), and closing that ui ends the talk with SendNpcTalkMode0. STILL-OPEN: those talk uis are not
-                    // ported (searched: no OpenTalkUi / GetTalkUiId port in game/ or src/Ms2.Ui), so the talk ends at once, as
-                    // if the ui were closed, rather than leaving the server's talk open.
-                    GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported), NpcTalk 0 sent");
-                    liveTalking = null;
-                    live.SendTalk(new NpcTalkEndRequest());
+                    liveRequested = null;
+                    var npc = LiveNpc(o.ObjectId);
+                    if (npc == null || window != null) { GD.Print($"talk: mode 1 for object {o.ObjectId}: {(npc == null ? "no such npc" : "a talk is open")}"); return; }
+                    flags = o.Flags; page = o.Page;
+                    questId = (flags & 4) != 0 && talkQuests.Count > 0 ? talkQuests[0] : 0;
+                    script = FindTalkScript(npc, o.ScriptId);
+                    liveTalking = npc;
+                    if (script == null || page >= script.Contents.Count)
+                    {
+                        // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui (OpenTalkUi: a shop,
+                        // a storage ...), and closing that ui ends the talk with SendNpcTalkMode0. STILL-OPEN: those talk uis are not
+                        // ported (searched: no OpenTalkUi / GetTalkUiId port in game/ or src/Ms2.Ui), so the talk ends at once, as
+                        // if the ui were closed, rather than leaving the server's talk open.
+                        GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported), NpcTalk 0 sent");
+                        liveTalking = null;
+                        live.SendTalk(new NpcTalkEndRequest());
+                        return;
+                    }
+                    OpenWindow(npc, o.ButtonSet, (flags & 4) != 0 || (flags & 8) != 0 ? talkQuests : Enumerable.Empty<int>());
                     return;
                 }
-                OpenWindow(npc, o.ButtonSet, (flags & 4) != 0 || (flags & 8) != 0 ? talkQuests : Enumerable.Empty<int>());
-                return;
-            }
             case NpcTalkMessage.Next n:
                 LivePage(n.Flags, n.QuestId, n.ScriptId, n.Page, n.ButtonSet);
                 return;

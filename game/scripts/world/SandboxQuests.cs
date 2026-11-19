@@ -23,11 +23,12 @@ public sealed class SandboxQuests : IQuestContext
         Rules = new QuestRules(table, this);
     }
 
-    /// <summary>Quest mode 2: start the quest when the client's vfunc_1 lets it start.</summary>
-    public bool Accept(int questId)
+    /// <summary>Quest mode 2: start the quest when the client's vfunc_1 lets it start. <paramref name="conditionsMet"/>
+    /// false keeps it in progress (the shots of a quest giver's in-progress mark).</summary>
+    public bool Accept(int questId, bool conditionsMet = true)
     {
         if (Rules.CanStart(questId) != true) return false;
-        records[questId] = new QuestRecord(questId, 1, ServerTime + ++clock, 0, 0, true, false);
+        records[questId] = new QuestRecord(questId, 1, ServerTime + ++clock, 0, 0, conditionsMet, false);
         return true;
     }
 
@@ -38,6 +39,9 @@ public sealed class SandboxQuests : IQuestContext
         records[questId] = r with { State = 2, CompleteTime = ServerTime };
         return true;
     }
+
+    /// <summary>The quest's record is dropped: not started.</summary>
+    public void Forget(int questId) => records.Remove(questId);
 
     // ---- IQuestContext: the sandbox character (StubHudData) ----------------------------------------------------------
     public QuestRecord Get(int questId) => records.TryGetValue(questId, out var r) ? r : null;

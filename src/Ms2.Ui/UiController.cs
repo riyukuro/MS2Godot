@@ -25,6 +25,12 @@ public abstract class UiController
     public virtual AsObject FindEntity() => Host.Player.FindOwner(EntityMethod);
 
     /// <summary>
+    /// Movies the movie does not import whose classes it still finds by name, loaded beside it in the client's root movie
+    /// (see MovieSource.Open); none by default.
+    /// </summary>
+    public virtual IEnumerable<string> Libraries => null;
+
+    /// <summary>
     /// UIObject vfunc_43, on load and on resize (stage units). UIDialog's (uidialog.cpp:822) re-aligns the dialog through
     /// ASGameEntity::vfunc_25 = Invoke("alignment") (asgameentity.cpp:26), except that a dialog placed from its settings
     /// file (m_78) that has a drag bar and was not marked for re-alignment (m_60) keeps its place while its top left corner

@@ -88,6 +88,9 @@ public sealed class MovieLayers
         SetVisible(CommonDepth.UpperHud, on);
     }
 
+    /// <summary>The NPC talk scene (0x6200031) is the current sub scene: from <see cref="EnterTalk"/> to <see cref="LeaveTalk"/>.</summary>
+    public bool InTalk { get; private set; }
+
     /// <summary>
     /// The field gives way to the NPC talk scene (0x6200031): UISceneGamePlay::vfunc_49 hides the field's layers, then
     /// UISceneGameCinematicTalk::vfunc_48 (uiscenegame.cpp:849) opens the scene: CUIService FUN_141ada6f0 shows the layers
@@ -95,6 +98,7 @@ public sealed class MovieLayers
     /// </summary>
     public void EnterTalk()
     {
+        InTalk = true;
         SetFieldLayersVisible(false);
         SetVisible(CommonDepth.SystemText, true);
         SetVisible(CommonDepth.Tooltip, true);
@@ -112,6 +116,7 @@ public sealed class MovieLayers
     /// </summary>
     public void LeaveTalk()
     {
+        InTalk = false;
         SetVisible(CommonDepth.Emoticon, false);
         SetFieldLayersVisible(true);
     }

@@ -38,11 +38,12 @@ public partial class MovieDialog : Node2D
             }
             var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             Prefetch(controller.Movie, keys);
+            foreach (var l in controller.Libraries ?? Array.Empty<string>()) Prefetch(l, keys);
             perf.Step("swf-parse+read");
             foreach (var k in keys) src.Abc(k);
             perf.Step("abc-parse");
         }
-        var (rt, p) = src.Open(controller.Movie, r => r.Budget = 20_000_000);
+        var (rt, p) = src.Open(controller.Movie, r => r.Budget = 20_000_000, controller.Libraries);
         perf?.Step("layout+abc-load");
         Player = p;
         Resize(window);

@@ -41,9 +41,11 @@ public partial class FieldContents : Node3D
     bool moving;
 
     NpcTalk talk;
+    NpcEmoticons emoticons;
     List<FieldNpcs.Placed> spawned = new();
     int shotNpc;
     List<int> shotNpcs = new();
+    List<int> emoticonNpcs;
     Vector2? shotNpcNear, shotStand;    // --sandbox-npc-near, --sandbox-stand (map x, y)
     bool liveQuestSends;            // --sandbox-quest-sends: the live shot run presses next on quest pages too
     bool actionHeld;
@@ -89,6 +91,8 @@ public partial class FieldContents : Node3D
                 shotNpcs = args[i + 1].Split(',').Select(x => int.TryParse(x, out int v) ? v : 0).Where(v => v != 0).ToList();
                 shotNpc = shotNpcs.FirstOrDefault();
             }
+            if (args[i] == "--sandbox-emoticons" && i + 1 < args.Length)
+                emoticonNpcs = args[i + 1].Split(',').Select(x => int.TryParse(x, out int v) ? v : 0).Where(v => v != 0).ToList();
             if (args[i] == "--sandbox-npc-near" && i + 1 < args.Length) shotNpcNear = MapXY(args[i + 1]);
             if (args[i] == "--sandbox-stand" && i + 1 < args.Length) shotStand = MapXY(args[i + 1]);
         }
@@ -116,6 +120,8 @@ public partial class FieldContents : Node3D
             // a live field: the server's npcs (FieldAddNpc) are the ones to talk to, and the server answers the talk
             try { AddChild(talk = new NpcTalk(packs, null, player, Constants(packs), liveSession) { FieldId = fieldId }); }
             catch (Exception ex) { GD.PushWarning("live npc talk: " + ex.Message); }
+            try { AddChild(new NpcEmoticons(Ui(packs), Constants(packs), talk, null) { Viewer = player }); }
+            catch (Exception ex) { GD.PushWarning("live npc emoticons: " + ex.Message); }
         }
         if (offline && fnpcs.Spawned.Count > 0)
         {
@@ -128,6 +134,8 @@ public partial class FieldContents : Node3D
                 presence = $"; {np.Bodies} npc bodies, {np.NameTags} name tags";
                 spawned = fnpcs.Spawned;
                 if (player != null) AddChild(talk = new NpcTalk(packs, fnpcs.Spawned.Where(x => !x.Mob).ToList(), player, constants) { FieldId = fieldId });
+                // the emoticons after the name tags: their layer is drawn above
+                AddChild(emoticons = new NpcEmoticons(Ui(packs), constants, talk, fnpcs.Spawned.Where(x => !x.Mob)) { Viewer = player });
             }
             catch (Exception ex) { GD.PushWarning("npc presence: " + ex.Message); }
         }
@@ -460,6 +468,7 @@ public partial class FieldContents : Node3D
         player.ProcessPhysicsPriority = 10;      // after Field (keyboard input) and this node (scripted input)
         player.ScriptDriven = true;
         int leg = Travel.ShotLeg++;
+        if (leg == 0 && emoticonNpcs != null) { PlanEmoticons(); return; }
         if (leg == 0)
         {
             var p = portals.ById(shotPortal);
@@ -538,6 +547,54 @@ public partial class FieldContents : Node3D
     }
 
     /// <summary>Proof of the npc presence and talk: stand before an npc with a name tag and a script, talk, page, close, walk into it.</summary>
+    /// <summary>
+    /// The emoticon shots (--sandbox-shots DIR --sandbox-emoticons ID[,ID...]): a shot before each npc named, then a quest giver
+    /// of the field (an npc that starts and completes a quest it can offer now) through its marks: can start, in progress,
+    /// can complete. Then the emoticons' frame cost.
+    /// </summary>
+    void PlanEmoticons()
+    {
+        steps.Enqueue(("settle", 1.5f, null, "e0_spawn.png"));
+        if (talk == null || emoticons?.Controller == null) { GD.Print("no emoticons"); steps.Enqueue(("quit", 0, null, null)); return; }
+        var friendly = spawned.Where(x => !x.Mob && x.Row.Friendly != 0).ToList();
+        foreach (var n in friendly)
+        {
+            var m = talk.QuestMark(n.Row.Id);
+            if (!string.IsNullOrEmpty(n.Row.Icon) || m.State != 4)
+                GD.Print($"emoticon npc {n.Row.Id} kind {n.Row.Kind} icon '{n.Row.Icon}' mark {m.State} quest {m.QuestId}");
+        }
+        foreach (int id in emoticonNpcs)
+        {
+            var n = Pick(spawned, id);
+            if (n == null) { GD.Print($"no npc {id}"); continue; }
+            steps.Enqueue(("teleport", 0, () => { StandBefore(n); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 1.5f, null, $"e1_{id}.png"));
+        }
+        var quests = NpcTalk.ClientQuests(packs);
+        var giver = friendly.Select(n => (n, m: talk.QuestMark(n.Row.Id)))
+                            .FirstOrDefault(x => x.m.State == 0 && quests.Quest(x.m.QuestId) is { } d && d.CompleteNpc == x.n.Row.Id);
+        if (giver.n != null)
+        {
+            int q = giver.m.QuestId;
+            GD.Print($"emoticon quest giver {giver.n.Row.Id}: quest {q}");
+            steps.Enqueue(("teleport", 0, () => { StandBefore(giver.n); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 1.5f, null, "e2_quest_start.png"));
+            steps.Enqueue(("teleport", 0, () => { GD.Print($"accept {q} (in progress): {talk.SandboxAccept(q, false)}"); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 1.5f, null, "e3_quest_progress.png"));
+            steps.Enqueue(("teleport", 0, () => { talk.SandboxForget(q); GD.Print($"accept {q} (met): {talk.SandboxAccept(q, true)}"); return Vector3.Zero; }, null));
+            steps.Enqueue(("settle", 1.5f, null, "e4_quest_complete.png"));
+        }
+        else GD.Print("no quest giver with a startable quest it also completes");
+        steps.Enqueue(("teleport", 0, () =>
+        {
+            var c = emoticons.Controller;
+            GD.Print($"emoticons: {c.Entities.Count} entities, {c.Entities.Values.Count(e => e.Active)} active, {c.ClipsMade} clips, " +
+                     $"{emoticons.FrameMs / Math.Max(1, emoticons.Frames):0.000} ms a frame over {emoticons.Frames} frames");
+            return Vector3.Zero;
+        }, null));
+        steps.Enqueue(("quit", 0, null, null));
+    }
+
     void PlanTalk()
     {
         var n = shotNpc != 0 ? Pick(spawned, shotNpc) : spawned.FirstOrDefault(x => x.Row.Nametag && x.Row.Friendly == 2 && !x.Row.CapsuleIgnore && x.Row.Illust != null
