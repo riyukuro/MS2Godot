@@ -344,6 +344,35 @@ public class RuntimeTests
     }
 
     [Test]
+    public void FrameScriptsRunInPlayListOrder()
+    {
+        // FrameCounter::QueueFrameActions walks the play list (pPlayPrev); a child is spliced in next to its place in the
+        // parent (FindInsertToPlayList, sfr_as3_17d.cpp:177), so the order is the display tree's pre-order, not the order
+        // the clips were marked in.
+        var (rt, p, root) = FourFrames();
+        root.stop();
+        var seen = new List<string>();
+        var mcClass = rt.GetClass("flash.display.MovieClip");
+        AsMovieClip Clip(string tag, AsContainer into)
+        {
+            var mc = (AsMovieClip)mcClass.Construct();
+            mc.FrameScripts[0] = new AsPlainFunction(rt, new NativeMethod(tag, (_, a) => { seen.Add(tag); return Rt.Undef; }));
+            into.Children.Add(mc); mc.Parent = into;
+            return mc;
+        }
+        var a = Clip("a", root); var b = Clip("b", root);
+        var bKid = Clip("b.kid", b); var aKid = Clip("a.kid", a);
+        // marked: b.kid, a.kid (children of the later and the earlier sibling), then the siblings, then a clip off the stage
+        var off = (AsMovieClip)mcClass.Construct();
+        off.FrameScripts[0] = new AsPlainFunction(rt, new NativeMethod("off", (_, x) => { seen.Add("off"); return Rt.Undef; }));
+        p.MarkScript(off);
+        foreach (var mc in new[] { bKid, aKid, b, a }) p.MarkScript(mc);
+        p.RunFrameActions();
+        Assert.That(seen, Is.EqualTo(new[] { "a", "a.kid", "b", "b.kid", "off" }));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
     public void GotoRunsTheTargetFrameScriptBetweenFrameConstructedAndExitFrame()
     {
         // FrameCounter::QueueFrameActions queues frameConstructed, then the frame scripts (AL_Frame), then exitFrame, and

@@ -400,7 +400,7 @@ namespace Ms2.Avm2.Flash
             MarkScript(mc);
         }
 
-        void MarkScript(AsMovieClip mc) { if (!mc.ScriptQueued) { mc.ScriptQueued = true; scriptQueue.Add(mc); } }
+        internal void MarkScript(AsMovieClip mc) { if (!mc.ScriptQueued) { mc.ScriptQueued = true; scriptQueue.Add(mc); } }
 
         /// <summary>
         /// One entry of the action queue's AL_Frame level (MovieRoot::ActionEntry): a frameConstructed/exitFrame event for
@@ -417,6 +417,7 @@ namespace Ms2.Avm2.Flash
         void QueueFrameActions(bool events)
         {
             if (events) QueueBroadcast("frameConstructed");
+            if (scriptQueue.Count > 1) SortByPlayList();
             foreach (var mc in scriptQueue)
             {
                 mc.ScriptQueued = false;
@@ -426,6 +427,37 @@ namespace Ms2.Avm2.Flash
             }
             scriptQueue.Clear();
             if (events) QueueBroadcast("exitFrame");
+        }
+
+        /// <summary>
+        /// The marked clips in the client's play-list order (QueueFrameActions walks pPlayPrev from the frame counter). A
+        /// child joins the list next to its place in the parent (AvmDisplayObjContainer::FindInsertToPlayList @0x142501920,
+        /// sfr_as3_17d.cpp:177: after the previous in-list sibling's branch, before the next one, right after the parent
+        /// when it has none; AvmInteractiveObj::FindInsertToPlayList @0x142501a60 puts it right after its parent), so the
+        /// walk is the display tree in pre-order: a parent's script before its children's, siblings in display order.
+        /// Clips off the stage are not on the play list; they keep their mark order after the others (STILL-OPEN: the
+        /// client does not run them at all).
+        /// </summary>
+        void SortByPlayList()
+        {
+            var keyed = new (AsMovieClip Mc, int[] Path, int Seq)[scriptQueue.Count];
+            for (int i = 0; i < keyed.Length; i++)
+            {
+                var mc = scriptQueue[i];
+                var up = new List<int>();
+                AsDisplayObject o = mc;
+                while (o.Parent != null) { up.Add(o.Parent.Children.IndexOf(o)); o = o.Parent; }
+                keyed[i] = (mc, ReferenceEquals(o, Stage) ? Enumerable.Reverse(up).ToArray() : null, i);
+            }
+            Array.Sort(keyed, static (a, b) =>
+            {
+                if (a.Path == null || b.Path == null) return a.Path == b.Path ? a.Seq.CompareTo(b.Seq) : a.Path == null ? 1 : -1;
+                int n = Math.Min(a.Path.Length, b.Path.Length);
+                for (int k = 0; k < n; k++) if (a.Path[k] != b.Path[k]) return a.Path[k].CompareTo(b.Path[k]);
+                int c = a.Path.Length.CompareTo(b.Path.Length);   // an ancestor comes first
+                return c != 0 ? c : a.Seq.CompareTo(b.Seq);
+            });
+            for (int i = 0; i < keyed.Length; i++) scriptQueue[i] = keyed[i].Mc;
         }
 
         void QueueBroadcast(string type)
