@@ -3,12 +3,23 @@
 One command measures the game's CPU-side cost, headless. A second compares the result with the stored baseline and exits 1 on a regression.
 
 ```sh
-MS2_DATA=... MS2_NIFXML=... tools/perfgate/run.sh SCRATCH            # the merge gate's run: setup + 2 sessions
-MS2_DATA=... MS2_NIFXML=... tools/perfgate/run.sh --full SCRATCH     # setup + 3 sessions, as the baseline runs use
+export MS2_DATA="<the raw KR client>/Data" MS2_NIFXML="$PWD/external/nifxml/nif.xml"
+tools/perfgate/run.sh SCRATCH            # the merge gate's run: setup + 2 sessions
+tools/perfgate/run.sh --full SCRATCH     # setup + 3 sessions, as the baseline runs use
 dotnet run --project tools/PerfGate -- compare tools/perfgate/baseline.json SCRATCH/run.json
 ```
 
-`SCRATCH` must be empty or must not exist. Run the gate in a heavy slot: it builds the game, then runs Godot three times (four with `--full`). `compare` exits 1 when a count metric is past its limit or missing. It only records times (`PERFGATE_TIMES=1` lists them against the baseline).
+The inputs are the merge gate's, the same as every suite's: `MS2_DATA` is the raw KR client's `Data` folder (not a restored one), and `MS2_NIFXML` is the `external/nifxml` submodule's `nif.xml`. Other inputs give other counts: a restored Data folder and another nif.xml moved 13 metrics, for example worldmap's kept objects from 966 to 1978. So each session records the inputs' fingerprint, and so does the baseline. The fingerprint covers the `nif.xml` and `Xml.m2d` hashes, plus one hash over the pack indexes (every `.m2h` in `Data` and `Data/Resource`, by name and content). `compare` exits 2 when the fingerprints are not the same ("inputs differ, rebuild the baseline").
+
+`SCRATCH` must be empty or must not exist. The run's temporary files go there too (`SCRATCH/tmp`, as `TMPDIR`). Run the gate in a heavy slot: it builds the game, then runs Godot three times (four with `--full`). It only records times (`PERFGATE_TIMES=1` lists them against the baseline).
+
+Exit codes, for `run.sh` and every `PerfGate` command:
+
+| Code | Meaning |
+|---|---|
+| 0 | pass |
+| 1 | a regression (`compare` only): a count metric past its limit, or missing from the run |
+| 2 | a gate error: a bad or missing file, a session that failed or wrote no result, inputs that differ from the baseline's, or a baseline entry without a limit |
 
 ## What a run measures
 
@@ -28,7 +39,9 @@ dotnet run --project tools/PerfGate -- compare tools/perfgate/baseline.json SCRA
 Every window starts 15 frames after a full collection, and its object counts are read after one. So a window's collections come from its own allocation, its object counts are live objects, and finalizer frees from earlier garbage don't land in it. Two once-per-session costs are moved out of every window, in the gate session only:
 
 - The HUD clock is fixed, so its once-a-minute redraw never lands in one.
-- GodotSharp's wrapper tracker (`DisposablesTracker`, a `ConcurrentDictionary`) is grown past twice its size after the field load. Its one growth in a session rebuilds every entry, about 3.3 MB at the field's ~60,000 wrappers. Before this, that rebuild landed in one of the first 8 opens, whichever crossed the growth point.
+- GodotSharp's wrapper tracker (`DisposablesTracker`, a `ConcurrentDictionary`) is grown past twice its size after the field load. Its one growth in a session rebuilds every entry, about 3.3 MB at the field's ~60,000 wrappers. Before this, that rebuild landed in one of the first 8 opens, whichever crossed the growth point. If the pre-grow fails (GodotSharp no longer has the tracker), the session quits without a result and `run.sh` exits 2.
+
+`run.sh` also pins the gen0 budget (`DOTNET_GCgen0size=0x3000000`, 48 MB). The runtime otherwise derives it from the CPU's cache size, so the collection counts would depend on the machine. 48 MB is the runtime's default cap (`GCGen0MaxBudget`), the value a large-cache CPU gets anyway.
 
 ## What is checked
 
@@ -50,9 +63,11 @@ The baseline is built from several runs (`PerfGate baseline OUT RUN...`). A coun
 | Kind | Floor |
 |---|---|
 | bytes | 2% or 16 KB |
+| bytes per frame (idle windows) | 2% or 1 KB |
 | bytes per effect frame | 5% or 8 B |
 | objects, nodes | 3% or 16 |
-| kept objects | 3% or 64 |
+| kept objects: first opens, and each dialog's first repeat (`open.<dialog>.repeat1.kept_objects`) | 3% or 64 |
+| kept objects: the later repeats (`open.<dialog>.repeat.kept_objects`) | 3% or 16 |
 | JIT methods (main thread) | 2% or 8 |
 | collections | 1 |
 
@@ -61,7 +76,7 @@ The noise behind the floors comes from 5 runs (13 sessions) of the same tree on 
 - **Main-thread bytes:** every dialog's first open stays within 0.3% of its median, and its repeats within 1%. No open was more than 1 MB above its dialog's median. The 3.3 MB tracker rebuild is the size of a regression the limits catch: the earlier runs, made before the pre-grow, fail on exactly that open.
 - **JIT methods (main thread):** repeats compile 4 to 13 methods per open. First opens move by up to 9 (myinfo 356 to 365), and the field load by up to 31 of 10,050.
 - **Objects and nodes:** first opens are the same in every run. Repeats stay within ±4, except where noted below.
-- **Kept objects:** most dialogs are exact. Options (−43 to 54), shop repeats (−22 to 79) and skill's first repeat (−4 to 506) move. Real leaks are in the hundreds: worldmap's first open keeps 966.
+- **Kept objects:** most dialogs are exact. Options (−43 to 54), shop repeats (−22 to 79) and skill's first repeat (−4 to 506) move. Skill's first repeat is a field NPC's emoticon balloon that falls in its window. So each dialog's first repeat is its own metric, and the later repeats get a floor of 16: a leak of a few dozen objects per open fails there. Leaks the size of worldmap's first open (966 kept) fail either way.
 - **Collections:** most are exact. The others move by 1, and the field load by up to 7.
 
 Leave-one-out over those 5 runs (a baseline from 4, compare the 5th) passes 5 of 5.

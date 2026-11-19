@@ -90,7 +90,11 @@ public partial class HudScene
                 ["jit_all_methods"] = m.JitAll,
                 ["jit_ms"] = Math.Round(TimeSpan.FromTicks(m.JitTicks).TotalMilliseconds, 3),
             };
-            GatePregrowTrackers();   // after the field's numbers: they stay the player's
+            // the inputs' fingerprint (run.sh's MS2_PERF_GATE_INPUTS): compare refuses a run whose inputs are not the baseline's
+            gateOut["inputs"] = System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_INPUTS") is { Length: > 0 } inputs ? JsonNode.Parse(inputs) : null;
+            // after the field's numbers: they stay the player's. Without it the tracker's growth lands in a window, so the
+            // session fails rather than measure that (no result file: run.sh exits 2)
+            if (!GatePregrowTrackers()) { GD.PushError("perf gate: the DisposablesTracker pre-grow failed"); GetTree().Quit(2); }
             return;
         }
         int t = gateFrame - GateSettle;
@@ -148,23 +152,23 @@ public partial class HudScene
     /// the first few opens it reaches it. The gate grows both tables up front, past twice their count (they never
     /// shrink), so that one-time engine cost lands outside every measured window.
     /// </summary>
-    static void GatePregrowTrackers()
+    static bool GatePregrowTrackers()
     {
         var t = typeof(GodotObject).Assembly.GetType("Godot.DisposablesTracker");
         const System.Reflection.BindingFlags F = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
-        void Grow<T>(string name) where T : class
+        bool Grow<T>(string name) where T : class
         {
             if (t?.GetProperty(name, F)?.GetValue(null) is not System.Collections.Concurrent.ConcurrentDictionary<WeakReference<T>, byte> d)
             {
-                GD.PushWarning($"perf gate: no DisposablesTracker.{name}; its growth may land in a window");
-                return;
+                GD.PushError($"perf gate: no DisposablesTracker.{name}");
+                return false;
             }
             var keys = new WeakReference<T>[d.Count + 1024];
             for (int i = 0; i < keys.Length; i++) d.TryAdd(keys[i] = new WeakReference<T>(null), 0);
             foreach (var k in keys) d.TryRemove(k, out _);
+            return true;
         }
-        Grow<GodotObject>("GodotObjectInstances");
-        Grow<IDisposable>("OtherInstances");
+        return Grow<GodotObject>("GodotObjectInstances") & Grow<IDisposable>("OtherInstances");
     }
 
     void GateIdleStart(string name) { gateIdleName = name; gateIdle = GateMark.Now(); gateFrameMs.Clear(); }

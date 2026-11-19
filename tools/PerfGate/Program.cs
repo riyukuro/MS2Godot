@@ -5,18 +5,30 @@ using System.Text.Json.Nodes;
 //   PerfGate summarize OUT.json SESSION.json...   one run's metrics: every value per metric, over the sessions
 //   PerfGate baseline OUT.json RUN.json...        a baseline with limits from one or more summarized runs
 //   PerfGate compare BASELINE.json RUN.json       exit 1 when any count is past its limit (or missing), else 0
+// Every command exits 2 on an error: a missing or bad file, a session without the inputs' fingerprint, runs whose
+// inputs differ, or (compare) a run whose inputs are not the baseline's ("inputs differ, rebuild the baseline").
 // A metric whose name ends in "ms" is a time: recorded and printed (median and worst against the baseline's), never a
 // failure, as machine load moves it several times over (IsTime lists the other recorded-only metrics). Every other
 // metric is a count (bytes, objects, nodes, collections, main-thread JIT-compiled methods): its worst value is held
 // to a limit.
 var opt = new JsonSerializerOptions { WriteIndented = true };
 if (args.Length < 3) return Usage();
-switch (args[0])
+try
 {
-    case "summarize": Write(args[1], Summarize(args.Skip(2).Select(Load))); return 0;
-    case "baseline": Write(args[1], Baseline(args.Skip(2).Select(Metrics).ToList())); return 0;
-    case "compare": return Compare(Load(args[1]), Metrics(args[2]));
-    default: return Usage();
+    switch (args[0])
+    {
+        case "summarize": Write(args[1], Summarize(args.Skip(2).Select(Load).ToList())); return 0;
+        case "baseline": Write(args[1], Baseline(args.Skip(2).Select(Load).ToList())); return 0;
+        case "compare": return Compare(Load(args[1]), Load(args[2]));
+        default: return Usage();
+    }
+}
+catch (GateError e) { Console.Error.WriteLine("perfgate: " + e.Message); return 2; }
+catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException
+    or FormatException or NullReferenceException or KeyNotFoundException)
+{
+    Console.Error.WriteLine($"perfgate: {e.GetType().Name}: {e.Message}");
+    return 2;
 }
 
 static int Usage()
@@ -25,7 +37,20 @@ static int Usage()
     return 2;
 }
 
-JsonObject Load(string path) => JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+static JsonObject Load(string path) => JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new GateError($"{path}: not a JSON object");
+
+// The inputs' fingerprint (run.sh: nif.xml, Xml.m2d, the pack indexes) every one of the files must carry, the same in all.
+static JsonNode Inputs(IEnumerable<(string What, JsonObject O)> files)
+{
+    string first = null, firstWhat = null;
+    foreach (var (what, o) in files)
+    {
+        var s = (o["inputs"] as JsonObject)?.ToJsonString() ?? throw new GateError($"{what} has no inputs fingerprint (run tools/perfgate/run.sh)");
+        if (first == null) { first = s; firstWhat = what; }
+        else if (s != first) throw new GateError($"inputs differ between {firstWhat} ({first}) and {what} ({s})");
+    }
+    return first == null ? throw new GateError("no input files") : JsonNode.Parse(first);
+}
 void Write(string path, JsonNode n) => File.WriteAllText(path, n.ToJsonString(opt) + "\n");
 
 // recorded only, never checked:
@@ -40,8 +65,9 @@ static bool IsTime(string name) => name.EndsWith("ms") || name.EndsWith("jit_all
         || name.Contains(".install.") && System.Text.RegularExpressions.Regex.IsMatch(name, @"\.gc\d$"));
 
 // one run's metrics: name -> every value (one per session, or per open)
-static JsonObject Summarize(IEnumerable<JsonObject> sessions)
+static JsonObject Summarize(List<JsonObject> sessions)
 {
+    var inputs = Inputs(sessions.Select((o, i) => ($"session {i + 1}", o)));
     var m = new SortedDictionary<string, List<double>>(StringComparer.Ordinal);
     void Add(string name, JsonNode v) { if (!m.TryGetValue(name, out var l)) m[name] = l = new(); l.Add(v.GetValue<double>()); }
     void AddAll(string prefix, JsonObject o, params string[] skip)
@@ -70,11 +96,17 @@ static JsonObject Summarize(IEnumerable<JsonObject> sessions)
             Add(idle + ".fx_us_per_effect_ms", o["fx_us_per_effect"]);   // a time (its name ends in ms for the rule above)
         }
         double firstMs = 0, repeatMs = 0;
+        var repeats = new Dictionary<string, int>();
         foreach (var e in s["opens"].AsArray())
         {
             var o = e.AsObject();
             bool first = (string)o["kind"] == "first";
-            AddAll($"open.{(string)o["dialog"]}.{(first ? c : "repeat")}", o);
+            string d = (string)o["dialog"], prefix = $"open.{d}.{(first ? c : "repeat")}";
+            int rep = first ? 0 : repeats[d] = repeats.GetValueOrDefault(d) + 1;
+            // the first repeat's kept objects are their own metric: they move by hundreds (skill: -4 to 506, a field
+            // balloon that falls in its window), the later repeats' are tight, so a small per-open leak fails there
+            AddAll(prefix, o, rep == 1 ? new[] { "kept_objects" } : Array.Empty<string>());
+            if (rep == 1 && o["kept_objects"] is { } kept) Add($"open.{d}.repeat1.kept_objects", kept);
             if (first) firstMs += o["ms"].GetValue<double>(); else repeatMs += o["ms"].GetValue<double>();
         }
         // every dialog's open time summed, per session: one first open each is a single, noisy sample; the sum is not
@@ -83,29 +115,32 @@ static JsonObject Summarize(IEnumerable<JsonObject> sessions)
     }
     var metrics = new JsonObject();
     foreach (var (k, l) in m) metrics[k] = new JsonArray(l.Select(x => (JsonNode)x).ToArray());
-    return new JsonObject { ["sessions"] = n, ["metrics"] = metrics };
+    return new JsonObject { ["sessions"] = n, ["inputs"] = inputs, ["metrics"] = metrics };
 }
 
-static Dictionary<string, double[]> Metrics(string path)
-{
-    var o = JsonNode.Parse(File.ReadAllText(path))!["metrics"].AsObject();
-    return o.ToDictionary(kv => kv.Key, kv => kv.Value.AsArray().Select(x => x.GetValue<double>()).ToArray());
-}
+static Dictionary<string, double[]> Metrics(JsonObject run) =>
+    (run["metrics"] as JsonObject ?? throw new GateError("a run file has no metrics"))
+    .ToDictionary(kv => kv.Key, kv => kv.Value.AsArray().Select(x => x.GetValue<double>()).ToArray());
 
 static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(); return a.Length == 0 ? 0 : a.Length % 2 == 1 ? a[a.Length / 2] : (a[a.Length / 2 - 1] + a[a.Length / 2]) / 2; }
 
 // The slack a count gets over the worst value the baseline runs saw: the spread they showed, at least a floor per
 // kind. tools/perfgate/README.md has the run-to-run noise the floors come from.
 static (double Rel, double Abs) CountTolerance(string name) =>
-    name.EndsWith("bytes") || name.EndsWith("bytes_per_frame") ? (0.02, 16384)
+    name.EndsWith("bytes_per_frame") ? (0.02, 1024)
+    : name.EndsWith("bytes") ? (0.02, 16384)
     : name.EndsWith("bytes_per_effect_frame") ? (0.05, 8)
-    : name.EndsWith("kept_objects") ? (0.03, 64)   // options, shop and skill repeats move by up to ~50 between runs
+    // a repeat's kept objects (after the first repeat, its own metric): a leak of a few dozen per open fails
+    : name.EndsWith(".repeat.kept_objects") ? (0.03, 16)
+    : name.EndsWith("kept_objects") ? (0.03, 64)   // first opens and the first repeat: options moves by ~100 between runs
     : name.EndsWith(".objects") || name.EndsWith(".nodes") ? (0.03, 16)
     : name.EndsWith("jit_methods") ? (0.02, 8)
     : (0, 1);   // collections
 
-static JsonObject Baseline(List<Dictionary<string, double[]>> runs)
+static JsonObject Baseline(List<JsonObject> runFiles)
 {
+    var inputs = Inputs(runFiles.Select((o, i) => ($"run {i + 1}", o)));
+    var runs = runFiles.Select(Metrics).ToList();
     var outM = new JsonObject();
     foreach (var name in runs.SelectMany(r => r.Keys).Distinct().OrderBy(x => x, StringComparer.Ordinal))
     {
@@ -131,18 +166,26 @@ static JsonObject Baseline(List<Dictionary<string, double[]>> runs)
     {
         ["note"] = "tools/perfgate: limits from PerfGate baseline over the runs below; change only with a Perf-baseline: trailer",
         ["runs"] = runs.Count,
+        ["inputs"] = inputs,
         ["metrics"] = outM,
     };
 }
 
-static int Compare(JsonObject baseline, Dictionary<string, double[]> run)
+static int Compare(JsonObject baseline, JsonObject runFile)
 {
+    string bi = (baseline["inputs"] as JsonObject)?.ToJsonString() ?? throw new GateError("the baseline has no inputs fingerprint");
+    string ri = (runFile["inputs"] as JsonObject)?.ToJsonString() ?? throw new GateError("the run has no inputs fingerprint");
+    if (bi != ri) throw new GateError($"inputs differ, rebuild the baseline (baseline {bi}, run {ri}; see tools/perfgate/README.md)");
+    var run = Metrics(runFile);
+    if (baseline["metrics"] is not JsonObject bm0) throw new GateError("the baseline has no metrics");
     int fails = 0, checkedN = 0;
     var notes = new List<string>();
     var times = new List<string>();
-    foreach (var (name, b) in baseline["metrics"].AsObject())
+    foreach (var (name, b) in bm0)
     {
         bool time = IsTime(name);
+        if (b is not JsonObject || b[time ? "median" : "limit"] is not JsonValue)
+            throw new GateError($"baseline entry {name} has no {(time ? "median" : "limit")}");
         if (!run.TryGetValue(name, out var v) || v.Length == 0)
         {
             if (time) notes.Add($"note {name}: missing from the run");
@@ -163,7 +206,7 @@ static int Compare(JsonObject baseline, Dictionary<string, double[]> run)
                 notes.Add($"note {name}: {worst:0.##}, baseline {b["min"]}..{bmax:0.##} (lower: a baseline update may be due)");
         }
     }
-    foreach (var name in run.Keys.Where(k => !baseline["metrics"].AsObject().ContainsKey(k)).OrderBy(x => x, StringComparer.Ordinal))
+    foreach (var name in run.Keys.Where(k => !bm0.ContainsKey(k)).OrderBy(x => x, StringComparer.Ordinal))
         notes.Add($"note {name}: not in the baseline");
     foreach (var n in notes) Console.WriteLine(n);
     if (Environment.GetEnvironmentVariable("PERFGATE_TIMES") == "1") foreach (var t in times) Console.WriteLine(t);
@@ -171,3 +214,5 @@ static int Compare(JsonObject baseline, Dictionary<string, double[]> run)
     Console.WriteLine(fails == 0 ? $"perfgate: OK, {checkedN} count metrics within their limits" : $"perfgate: FAIL, {fails} of {checkedN} count metrics past their limits");
     return fails == 0 ? 0 : 1;
 }
+
+sealed class GateError(string message) : Exception(message);
