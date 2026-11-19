@@ -24,7 +24,6 @@ public sealed class EquipApplier
 
     readonly PackSet packs;
     readonly ModelBuilder mb;
-    readonly Dictionary<int, Dictionary<int, XElement>> docs = new();
     readonly Dictionary<string, ModelData> nifs = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<ModelMesh, ArrayMesh> meshes = new();
     public int Resolved, NoModelEntry, NoAsset, Loaded, Failed, MissingItemIds, NotAttached;
@@ -33,11 +32,26 @@ public sealed class EquipApplier
     public EquipApplier(PackSet packs, ModelBuilder mb)
     {
         this.packs = packs; this.mb = mb;
+        shared = tables.GetValue(packs, _ => new ItemTables());
         if (!mb.TextureArchives.Contains(ItemArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(ItemArchive).ToArray();
     }
 
-    readonly Dictionary<int, Dictionary<int, int>> presets = new();
-    readonly Dictionary<int, string> characterIdle = new();
+    /// <summary>
+    /// The item tables read from the pack set, kept for the process (main thread): every character build (the field's
+    /// players, the HUD portrait, each open of a dialog's avatar) makes its own EquipApplier, and reading itemdata and
+    /// itemmodel per applier parsed the same files again per build.
+    /// </summary>
+    sealed class ItemTables
+    {
+        public readonly Dictionary<int, Dictionary<int, XElement>> Models = new();     // itemmodel/{prefix}.xml: ItemModel by id
+        public readonly Dictionary<int, Dictionary<int, int>> Presets = new();         // itemdata/{prefix}.xml: item -> tool itemPreset
+        public readonly Dictionary<int, string> CharacterIdle = new();                 // item -> its <effect characterIdle>
+    }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, ItemTables> tables = new();
+    readonly ItemTables shared;
+    Dictionary<int, Dictionary<int, XElement>> docs => shared.Models;
+    Dictionary<int, Dictionary<int, int>> presets => shared.Presets;
+    Dictionary<int, string> characterIdle => shared.CharacterIdle;
     readonly HashSet<string> itemNodes = new(StringComparer.Ordinal);    // node names of the models hung on the character
     Ms2.Formats.World.EffectTable effects;
     public int IdleEffects, IdleEffectsOpen;
