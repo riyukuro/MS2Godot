@@ -139,6 +139,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPcInfo = null;
         unwatchBuddies?.Invoke();
         unwatchBuddies = null;
+        unwatchGuild?.Invoke();
+        unwatchGuild = null;
         unwatchGemErrors?.Invoke();
         unwatchGemErrors = null;
         CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
@@ -931,6 +933,7 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveKeys(k)) return true;
         if (MailKeys(k)) return true;
         if (CommunityKeys(k)) return true;
+        if (GuildKeys(k)) return true;
         return false;
     }
 
@@ -1700,6 +1703,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchMails();
         c.MenuAction += def => { if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest(); };
         WatchBuddies();
+        WatchGuild();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
@@ -1720,6 +1724,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4f0b) ToggleGameDictionary();
         else if (id == 0x4e49) ToggleMail();
         else if (id == 0x4e4d) ToggleCommunity();
+        else if (id == GuildDialogController.UiId) ToggleGuild();
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
         else if (id == 0x4f67) ToggleAdventureLevel();
@@ -2543,6 +2548,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "achieve" && frames == 200) ToggleAchieve();
         if (openShot == "mail" && frames == 200) ToggleMail();
         if (openShot == "community" && frames == 200) ToggleCommunity();
+        if (openShot == "guild" && frames == 200) ToggleGuild();
         if (skillShot != null && frames == 200)
         {
             // the shot's character: sub job and level (the capture's Lv 1 Archer is 500,1)

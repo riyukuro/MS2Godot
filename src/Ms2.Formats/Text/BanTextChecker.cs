@@ -286,6 +286,13 @@ public sealed class BanTextChecker
     /// banned words, the start-with words and the whole banned words; no limit scan.</summary>
     public int CheckClubName(string name, out string message) => Check(name, (Checks)0xd8, default, out message);
 
+    /// <summary>CBanTextChecker::CheckGuildName (commonstringtable.cpp:815): CheckTextWithLimit with the options (0xd9, true) and
+    /// the limit (GuildNameLengthMin, GuildNameLengthMax, spaces allowed, trim checked, the character check on, a wide
+    /// character counting once, punctuation allowed). The client reads the two lengths from its constants (+0x9d60,
+    /// +0x9db8); here the caller passes them.</summary>
+    public int CheckGuildName(string name, int min, int max, out string message) =>
+        Check(name, (Checks)0xd9, new Limit(min, max, true, false, false, false, true), out message);
+
     /// <summary>CBanTextChecker::CheckBuddyMemo (@0x140226220, commonstringtable.cpp:964): CheckTypes(0xd8, true), the same
     /// tables as the club name; the friend dialogs' block memo.</summary>
     public int CheckBuddyMemo(string memo, out string message) => Check(memo, (Checks)0xd8, default, out message);

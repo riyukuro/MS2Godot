@@ -115,6 +115,10 @@ public sealed class GameTables
         BothHandGearScorePenaltyDiv = k.Float("BothHandGearScorePenaltyDiv", BothHandGearScorePenaltyDiv);
         ClubNameLengthMin = (int)k.Float("ClubNameLengthMin", ClubNameLengthMin);
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
+        GuildCreatePrice = (int)k.Float("GuildCreatePrice", GuildCreatePrice);
+        GuildCreateMinLevel = (int)k.Float("GuildCreateMinLevel", GuildCreateMinLevel);
+        GuildNameLengthMin = (int)k.Float("GuildNameLengthMin", GuildNameLengthMin);
+        GuildNameLengthMax = (int)k.Float("GuildNameLengthMax", GuildNameLengthMax);
         UGCImgUploadSizeLimit = (int)k.Float("UGCImgUploadSizeLimit", UGCImgUploadSizeLimit);
         UGCImgFileCountCheck = (int)k.Float("UGCImgFileCountCheck", UGCImgFileCountCheck);
         // JobTable::Load (jobtable.cpp:309): table/job.xml; SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every
@@ -130,6 +134,16 @@ public sealed class GameTables
         // MentoringDataTable::Load (mentoringdatatable.cpp:55): GetXmlPath("Table", "MentoringConfig.xml"), <ms2>, <MentoringConfig>
         if (Xml("table/mentoringconfig.xml")?.Root is { Name.LocalName: "ms2" } mentoring && mentoring.Element("MentoringConfig") is { } mentoringConfig)
             Ms2.Ui.Items.ItemData.Bool(mentoringConfig, "isShowIcon", ref MentoringShowIcon);
+        // CGuildXmlData::LoadGuildProperty (@0x1404d5a50, guilddef_2.cpp:489): Table/GuildProperty.xml, <ms2>, the
+        // <property> elements collected by level (FUN_14028faa0), each read by GuildProperty::FUN_1404d4990 ("level" f18,
+        // "accumExp" f1c) into a map by level
+        if (Xml("table/guildproperty.xml")?.Root is { Name.LocalName: "ms2" } guildRoot)
+            foreach (var e in FeatureElements.Collect(packs, guildRoot, "property", "level"))
+            {
+                int.TryParse((string)e.Attribute("level"), out int level);
+                int.TryParse((string)e.Attribute("accumExp"), out int accumExp);
+                GuildAccumExp[level] = accumExp;
+            }
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
         {
@@ -258,6 +272,23 @@ public sealed class GameTables
     /// <summary>Client::Constants ClubNameLengthMin / ClubNameLengthMax (Define defaults 2, 12:
     /// unit_1402ab440_constantsblocks.cpp:1195, :1196), read by UIPartyDialog::OnCreateClubClick and the club name check.</summary>
     public int ClubNameLengthMin = 2, ClubNameLengthMax = 12;
+    /// <summary>Client::Constants GuildCreatePrice / GuildCreateMinLevel (Define defaults 1000, 0:
+    /// unit_1402ab440_constantsblocks.cpp:947, :948) and GuildNameLengthMin / GuildNameLengthMax (2, 10: :1193, :1194), read by
+    /// the guild create box (UIGuildDialog::OnClickCreateGuild), the create send (CGuildManager::FUN_1413b6d10) and
+    /// CBanTextChecker::CheckGuildName.</summary>
+    public int GuildCreatePrice = 1000, GuildCreateMinLevel = 0, GuildNameLengthMin = 2, GuildNameLengthMax = 10;
+    /// <summary>CGuildXmlData's property map: the accumulated exp (accumExp) by guild level, in level order.</summary>
+    public readonly SortedDictionary<int, int> GuildAccumExp = new();
+
+    /// <summary>CGuildXmlData::GetLevelByExp (@0x1404d7130, guilddef_2.cpp:621): 0 without the table; the level of the first
+    /// entry, in level order, whose accumExp is above <paramref name="exp"/>; else GetMaxLevel, the last level.</summary>
+    public int GuildLevelByExp(int exp)
+    {
+        if (GuildAccumExp.Count == 0) return 0;
+        foreach (var (level, accumExp) in GuildAccumExp)
+            if (exp < accumExp) return level;
+        return GuildAccumExp.Keys.Last();
+    }
     /// <summary>Client::Constants UGCImgUploadSizeLimit / UGCImgFileCountCheck (Define defaults 1024, 300:
     /// unit_1402ab440_constantsblocks.cpp:772, :773): the largest width and height a UGC image may have, and the file count
     /// at which CUgcManager::RefreshLocalFiles warns (ugcmanager_4.cpp:2794).</summary>

@@ -172,6 +172,15 @@ public partial class LiveSession : Node
     /// only. Its sends (Buddy 0x30) go out while the game connection is up.</summary>
     public Ms2.Ui.BuddyBook Buddies => buddies ??= new Ms2.Ui.BuddyBook { Send = SendBuddy };
     Ms2.Ui.BuddyBook buddies;
+    /// <summary>CGuildManager: the guild id, this character's join requests and the search results from the Guild packets
+    /// (0x8A); live only. Its sends (Guild 0x4B) go out while the game connection is up.</summary>
+    public Ms2.Ui.GuildBook Guilds => guilds ??= new Ms2.Ui.GuildBook { Send = SendGuild };
+    Ms2.Ui.GuildBook guilds;
+    /// <summary>The guild dialog's sends (Guild 0x4B).</summary>
+    public void SendGuild(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
     /// <summary>The open friend dialogs' vfunc_79 on a Buddy packet, after the book took it (set by the HUD).</summary>
     public event Action<BuddyMessage> BuddyPacket;
     /// <summary>The friend dialogs' sends (Buddy 0x30, EventReward 0x97).</summary>
@@ -682,6 +691,12 @@ public partial class LiveSession : Node
                 var m = BuddyMessage.Read(p.Reader());            // CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy (buddymanager.cpp:95)
                 if (m != null) { Buddies.Apply(m); BuddyPacket?.Invoke(m); }
                 GD.Print($"live: buddy protocol {m?.Protocol.ToString() ?? "?"} ({Buddies.Count} entries, {Buddies.ReceivedCount} received)");
+            }
+            else if (game.Is(p, Inbound.Guild))
+            {
+                var m = GuildMessage.Read(p.Reader());            // CGuildManager::FUN_1413b6370 (guildmanager.cpp:301)
+                Guilds.Apply(m);
+                GD.Print($"live: guild type 0x{m.Type:x2} (guild {Guilds.GuildId}, {Guilds.MyRequests.Count} requests, {Guilds.SearchResults.Count} results)");
             }
             else if (game.Is(p, Inbound.Prestige))
             {
