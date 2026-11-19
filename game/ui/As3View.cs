@@ -905,14 +905,30 @@ public partial class GraphicsNode : Node2D
 /// <summary>
 /// A runtime text field: the lines the runtime laid out (English breaking, single-line captions shrunk to 80% then cut
 /// with an ellipsis), in the game font of its format, aligned in its box. Drawn at the on-screen scale for crisp glyphs.
+/// The glyphs are drawn by a face node under the field's <see cref="TextClip"/>: text that does not fit the box is cut at
+/// its text rect.
 /// </summary>
 public partial class FieldNode : Node2D
 {
     readonly AsTextField tf;
     readonly UiAssets assets;
-    public FieldNode(AsTextField tf, UiAssets assets) { this.tf = tf; this.assets = assets; }
+    readonly TextClip clip = new();
+    readonly Node2D face = new() { Name = "Face" };
 
-    public override void _Draw()
+    public FieldNode(AsTextField tf, UiAssets assets)
+    {
+        this.tf = tf; this.assets = assets;
+        AddChild(clip);
+        clip.Inner.AddChild(face);
+        face.Draw += DrawFace;
+    }
+
+    public FieldNode() { }
+
+    /// <summary>A redraw of the field is its face's.</summary>
+    public override void _Draw() => face.QueueRedraw();
+
+    void DrawFace()
     {
         var font = assets.FontFor(tf.FontClass);
         var (lines, fit) = tf.Fitted();
@@ -930,18 +946,26 @@ public partial class FieldNode : Node2D
         // lines advance by the line height plus the field's leading; the baseline is the font's ascent below the line top
         float lineH = (float)TextMeasure.LineHeight(tf.FontClass, size, tf.Leading);
         float ascent = assets.AscentRatio(tf.FontClass) * size;
-        DrawSetTransform(Vector2.Zero, 0, new Vector2(k, k));
-        float y = (float)tf.FirstLineTop(lines.Count);
+        face.DrawSetTransform(Vector2.Zero, 0, new Vector2(k, k));
+        float y = (float)tf.FirstLineTop(lines.Count), width = 0;
         foreach (var line in lines)
         {
             float w = font.GetStringSize(line, HorizontalAlignment.Left, -1, px).X * k;
+            width = Math.Max(width, w);
             float x = (float)box.X + 2;
             if (align == "center") x = (float)(box.X + (box.W - w) / 2);
             else if (align == "right") x = (float)(box.X + box.W - 2 - w);
-            DrawString(font, new Vector2(x, y + ascent) / k, line, HorizontalAlignment.Left, -1, px, color);
+            face.DrawString(font, new Vector2(x, y + ascent) / k, line, HorizontalAlignment.Left, -1, px, color);
             y += lineH;
         }
-        DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        face.DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        // the text is as tall as its lines less the last one's leading (DocView::Format); an auto-sized field grows to it
+        float textHeight = lines.Count * lineH - (float)tf.Leading;
+        var field = new Rect2((float)box.X, (float)box.Y, (float)box.W, (float)box.H);
+        bool on = tf.autoSizeMode == "none" && !TextClip.Fits(tf.type != "input", width, textHeight, field.Size);
+        var rect = TextClip.TextRect(field);
+        if (on != clip.ClipContents || (on && (clip.Position != rect.Position || clip.Size != rect.Size)))
+            Callable.From(() => clip.Set(on, rect)).CallDeferred();
     }
 }
 
@@ -980,7 +1004,8 @@ public partial class FieldText : Node2D
         string D(object v) => v == null || Rt.IsNullish(v) ? "" : Rt.ToString(v);
         var filters = Filters();
         string key = string.Join("|", tf.Box.X, tf.Box.Y, tf.Box.W, tf.Box.H, D(f?.font), D(f?.size), D(f?.color), D(f?.align),
-            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType, tf.TextAutoSize);
+            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType, tf.TextAutoSize,
+            tf.type, tf.autoSizeMode);
         bool rebuilt = key != built;
         if (rebuilt)
         {
@@ -996,12 +1021,14 @@ public partial class FieldText : Node2D
             def["multiline"] = tf.multiline;
             def["initial"] = "";
             def["readable"] = tf.antiAliasType == "advanced" ? true : null;
+            def["readOnly"] = tf.type != "input";
+            def["autoSize"] = tf.autoSizeMode != "none";
             var sym = new JsonObject
             {
                 ["bounds"] = new JsonObject { ["x"] = tf.Box.X, ["y"] = tf.Box.Y, ["w"] = tf.Box.W, ["h"] = tf.Box.H },
                 ["text"] = def,
             };
-            node = new TextNode(scope, sym, sx, sy);
+            node = new TextNode(scope, sym, sx, sy) { PlacedInField = true };
             AddChild(node);
             if (filters != null) node.ApplyFilters(filters, sy);
             built = key;
@@ -1018,6 +1045,7 @@ public partial class FieldText : Node2D
         node.Scale = new Vector2(scale, scale);
         node.RecenterScaled(scale);
         node.Position = origin - origin * scale + new Vector2(0, (float)(tf.FirstLineTop(node.NumLines, scale) - (tf.Box.Y + 2)));
+        node.RefreshClip();
         return true;
     }
 

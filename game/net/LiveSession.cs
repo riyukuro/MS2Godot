@@ -934,7 +934,8 @@ public partial class LiveSession : Node
         // MS2_LIVE_MAIL_SHOTS=<dir>: the mail list opened as O does; on each tab (MS2_LIVE_MAIL_TABS, default "0,1": 0 the
         // system mails, 1 the player mails) the list is shot, its first row clicked (the read), the take (the page's button;
         // on tab 1 the row's check mark, Collect and the box's OK), then the page's remove button and the box's OK, with a
-        // shot after each as mail_<tab>_<step>.png
+        // shot after each as mail_<tab>_<step>.png. MS2_LIVE_MAIL_STEPS=list stops each tab at its list shot (no read, take or
+        // remove request is sent)
         string mailShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_MAIL_SHOTS");
         if (!string.IsNullOrEmpty(mailShots) && tree.CurrentScene is Ui.HudScene mailHud)
         {
@@ -957,6 +958,7 @@ public partial class LiveSession : Node
                 Step("tab", "m_tab", "tab:" + tab);
                 await Frames(120);
                 Shot($"mail_{tab}_list.png");
+                if (System.Environment.GetEnvironmentVariable("MS2_LIVE_MAIL_STEPS") == "list") continue;
                 if (!Step("row", "m_list", "row:0")) continue;
                 await Frames(120);
                 Shot($"mail_{tab}_read.png");

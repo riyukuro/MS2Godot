@@ -272,7 +272,11 @@ public partial class TextNode : Node2D
         else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
         Label.PivotOffset = Vector2.Zero;
         ApplyLineAdvance();
-        AddChild(snap);
+        // a timeline field's static text is never clipped; an auto-sized field grows to its text (TextClip)
+        Clips = (string)sym["kind"] != "staticText" && (bool?)Def["autoSize"] != true;
+        ReadOnly = (bool?)Def["readOnly"] != false;
+        AddChild(clip);
+        clip.Inner.AddChild(snap);
         snap.AddChild(lineShift);
         lineShift.AddChild(Label);
         if (Readable) SetNotifyTransform(true);
@@ -285,6 +289,45 @@ public partial class TextNode : Node2D
 
     readonly Node2D lineShift = new();
     readonly Node2D snap = new();
+    readonly TextClip clip = new();
+
+    /// <summary>A dynamic field (DefineEditText, not static text) that is not auto-sized: its glyphs are cut at its text rect
+    /// when the text does not fit (<see cref="TextClip"/>).</summary>
+    public bool Clips;
+
+    /// <summary>The field is not an input field (DocView::IsReadOnly): only then does text that fits go unclipped.</summary>
+    public bool ReadOnly = true;
+
+    /// <summary>
+    /// The node's own transform is not the field's: a script field's node (FieldText) is moved and scaled inside the field
+    /// for the vertical alignment and the text auto size, so its text rect is the field's taken back through that, and the
+    /// text's size in the field is its size here times the scale.
+    /// </summary>
+    public bool PlacedInField;
+
+    /// <summary>The clip again for the node's place: a script field's node is moved without its text changing.</summary>
+    public void RefreshClip() => UpdateClip(Layout());
+
+    /// <summary>
+    /// The clip of <see cref="TextClip"/> for the lines as laid out: Scaleform's text width (the widest line) and text height
+    /// (<see cref="FlashTextHeight"/>'s, without setting the line advance) in field units, against the field's box.
+    /// </summary>
+    void UpdateClip(List<LayoutLine> all)
+    {
+        bool on = false;
+        var rect = TextClip.TextRect(Bounds);
+        if (Clips)
+        {
+            float scale = PlacedInField ? Math.Abs(Scale.X) : 1, width = 0;
+            foreach (var l in all) width = Math.Max(width, l.Width.Width * Label.Scale.X);
+            var (height, advance) = LineMetrics();
+            float textHeight = height + (Math.Max(1, all.Count) - 1) * advance + SizedHeightMove();
+            on = !TextClip.Fits(ReadOnly, width * scale, textHeight * scale, Bounds.Size);
+            if (PlacedInField) rect = Transform.AffineInverse() * rect;
+        }
+        if (on != clip.ClipContents || (on && (clip.Position != rect.Position || clip.Size != rect.Size)))
+            Callable.From(() => clip.Set(on, rect)).CallDeferred();
+    }
 
     /// <summary>
     /// Readability text (GlyphParam::OptRead: a CSMTextSettings tag, a device font or a script-made field). Its glyphs
@@ -347,6 +390,7 @@ public partial class TextNode : Node2D
         var ls = Label.LabelSettings;
         bool exact = align == HorizontalAlignment.Center || align == HorizontalAlignment.Right;
         var all = Layout();
+        UpdateClip(all);
         // the label draws the lines that fit the field (FitLines), the bottom alignment's count at most
         int fit = FitLines(all), cap = fit < all.Count - Label.LinesSkipped ? fit : -1;
         if (bottomCap >= 0) cap = cap < 0 ? bottomCap : Math.Min(cap, bottomCap);
