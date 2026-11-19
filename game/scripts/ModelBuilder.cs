@@ -613,12 +613,17 @@ public sealed class ModelBuilder
         }
         if (entry == null) GD.PushWarning($"texture {fileName} not found in {string.Join(", ", TextureArchives)}");
         else
-        {
-            var img = new Image();
-            var err = img.LoadDdsFromBuffer(packs.Read(archive, entry));
-            if (err != Error.Ok) GD.PushWarning($"texture {entry}: {err}");
-            else tex = ImageTexture.CreateFromImage(img);
-        }
+            // the process's texture cache (NifCache, the client's CNifLoadingService): a texture a field, an effect or
+            // a character view loaded before is not read and decoded again; class 5 (DependTime) as the field's
+            // palette textures and the item and effect texture loads take it
+            tex = NifCache.Texture(packs, (archive + "/" + entry).ToLowerInvariant(), NifCache.CacheClass.DependTime, () =>
+            {
+                var img = new Image();
+                var err = img.LoadDdsFromBuffer(packs.Read(archive, entry));
+                if (err == Error.Ok) return ImageTexture.CreateFromImage(img);
+                GD.PushWarning($"texture {entry}: {err}");
+                return null;
+            });
         textures[fileName] = tex;
         return tex;
     }

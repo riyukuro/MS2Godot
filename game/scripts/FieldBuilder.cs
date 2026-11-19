@@ -47,7 +47,9 @@ public sealed class FieldBuilder
 
     /// <summary>Optional: true for a model drawn elsewhere per entity (world/FieldProps: self-animating NIFs); its visible
     /// entities go to <see cref="DrawnElsewhere"/> instead of a MultiMesh. Collision stays here.</summary>
-    public Func<string, NifFile, bool> DrawsInstance;
+    public Func<string, ModelData, KfAnimation, bool> DrawsInstance;
+    /// <summary>The field's hold on the models it uses (NifCache); the field disposes it when it is freed.</summary>
+    public NifCache.Lease Lease;
     public readonly List<FieldEntity> DrawnElsewhere = new();
     /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
@@ -79,11 +81,11 @@ public sealed class FieldBuilder
     sealed class ModelEntry
     {
         public ModelData Data;
-        public List<(ModelMesh mesh, Transform3D local)> Meshes = new();
+        public List<(ModelMesh mesh, Transform3D local)> Meshes;
         public Aabb Bounds;              // union of the mesh bounds in model space
-        public List<Shape3D> Collision = new();   // cooked PhysX meshes of the NIF, model space
-        public List<Shape3D> Overlap = new();     // the same meshes for the overlap tests (TwoSidedSpace), by index
-        public bool Elsewhere;           // DrawsInstance took it
+        public List<Shape3D> Collision;  // cooked PhysX meshes of the NIF, model space
+        public List<Shape3D> Overlap;    // the same meshes for the overlap tests (TwoSidedSpace), by index
+        public bool Elsewhere;           // DrawsInstance took it (per field)
     }
 
     readonly Dictionary<string, ModelEntry> models = new(StringComparer.OrdinalIgnoreCase);
@@ -106,11 +108,46 @@ public sealed class FieldBuilder
         var (archive, entry) = assets.Resolve(llid);
         if (archive != null && packs.Exists(archive, entry))
         {
+            // the process's model cache (NifCache): a model a field built before is not parsed again; this field holds
+            // it (Lease) until it is freed
+            var asset = NifCache.Model(packs, (archive + "/" + entry).ToLowerInvariant(), NifCache.CacheClass.DependTime, Lease,
+                                       () => LoadAsset(archive, entry));
+            if (asset != null)
+            {
+                if (asset.ControllersError != null) GD.PushWarning($"controllers {llid}: {asset.ControllersError}");
+                me = new ModelEntry { Data = asset.Data, Meshes = asset.Meshes, Bounds = asset.Bounds, Collision = asset.Collision,
+                                      Overlap = asset.Overlap, Elsewhere = DrawsInstance?.Invoke(llid, asset.Data, asset.Controllers) == true };
+            }
+        }
+        if (me == null) Missing++;
+        models[llid] = me;
+        return me;
+    }
+
+    /// <summary>A field model as the field build uses it: its data, meshes at the file's pose, bounds, collision and
+    /// its own controllers' animation (FieldProps). Shared by every field that uses the model (NifCache); read only.</summary>
+    sealed class ModelAsset
+    {
+        public ModelData Data;
+        public readonly List<(ModelMesh mesh, Transform3D local)> Meshes = new();
+        public Aabb Bounds;
+        public readonly List<Shape3D> Collision = new();
+        public readonly List<Shape3D> Overlap = new();
+        public KfAnimation Controllers;     // null: none
+        public string ControllersError;
+    }
+
+    ModelAsset LoadAsset(string archive, string entry)
+    {
+        var me = new ModelAsset();
+        {
             try
             {
                 var nif = NifFile.Load(builder.Spec, packs.Read(archive, entry));
                 var md = ModelData.Load(nif);
-                me = new ModelEntry { Data = md, Elsewhere = DrawsInstance?.Invoke(llid, nif) == true };
+                me.Data = md;
+                try { me.Controllers = KfAnimation.FromControllers(nif); }
+                catch (Exception ex) { me.ControllersError = ex.Message; }
                 foreach (var cm in PhysXCollision.Load(nif))
                 {
                     // A triangle's front is its PhysX normal (v1 - v0) x (v2 - v0); Godot takes Plane(v0, v1, v2), the
@@ -156,8 +193,6 @@ public sealed class FieldBuilder
                 me = null;
             }
         }
-        if (me == null) Missing++;
-        models[llid] = me;
         return me;
     }
 

@@ -25,13 +25,9 @@ public sealed class FieldProps
     public FieldProps(ModelBuilder builder) { this.builder = builder; }
 
     /// <summary>FieldBuilder hook: true when this model animates itself, so the entity is drawn here instead of in a MultiMesh.</summary>
-    public bool TakesModel(string llid, NifFile nif)
+    public bool TakesModel(string llid, ModelData md, KfAnimation anim)
     {
-        KfAnimation anim = null;
-        try { anim = KfAnimation.FromControllers(nif); }
-        catch (Exception ex) { GD.PushWarning($"controllers {llid}: {ex.Message}"); }
         if (anim == null) return false;
-        var md = ModelData.Load(nif);
         // only animations that move a node the model has (or a rigid mesh)
         if (!anim.Channels.Keys.Any(n => md.BoneIndex(n) >= 0 || md.Meshes.Any(m => !m.Skinned && m.Name == n))) return false;
         byLlid[llid] = (md, anim);

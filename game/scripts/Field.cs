@@ -106,6 +106,7 @@ public partial class Field : Node3D
         var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0, CastsShadows = FieldShadows.MapObjects, ShadowLevel = FieldShadows.Level };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
+        fb.Lease = models;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
         abandon = () =>   // what a stopped load holds off the tree
         {
@@ -288,12 +289,14 @@ public partial class Field : Node3D
     {
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();
+        models.Dispose();   // the models stay cached for the next field until the sweep finds them unused (NifCache)
         // the root viewport outlives the field: a size change during the scene change (the HUD scene restoring the window's
         // content scale mode as it leaves) must not reach a field that is no longer in the tree
         if (rasterSource != null) { rasterSource.SizeChanged -= RasterOrigin; rasterSource = null; }
     }
 
     Viewport rasterSource;          // the viewport whose size_changed moves the projection window, while connected
+    readonly NifCache.Lease models = new();   // the field's hold on the cached models it built from (NifCache)
 
     bool began, restored;
     void Restore()
