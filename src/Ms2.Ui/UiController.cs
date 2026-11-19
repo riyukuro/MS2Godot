@@ -298,6 +298,12 @@ public abstract class UiController
         if (TweenEnabled) Host.Invoke("startOpen");
     }
 
+    /// <summary>
+    /// UIDialog::OnLoadComplete's open state (m_c0 0, shown) for a dialog that is not run as one here
+    /// (<see cref="IsDialog"/> false) but whose client OnLoadComplete still calls UIDialog's, so <see cref="IsClosed"/> is false.
+    /// </summary>
+    protected void MarkOpen() { closed = false; closeState = 0; }
+
     /// <summary>A call the subclass's vfunc_28 takes before UIDialog's dialog calls (UIGameOptionDialog's OnCloseDialog);
     /// true = handled.</summary>
     public virtual bool OnCallbackBeforeDialog(string name, object[] args) => false;

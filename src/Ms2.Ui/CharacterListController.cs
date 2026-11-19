@@ -98,6 +98,8 @@ public sealed class CharacterListController : UiController
     /// <summary>OnLoadComplete (uicharacterlistdialog.cpp:694-729).</summary>
     public override void OnLoadComplete()
     {
+        // UIDialog::OnLoadComplete first (:696): the dialog is open, so vfunc_ugc_1's vfunc_55 check lets pictures through
+        MarkOpen();
         if (Server is { } s) Host.Invoke(Host.Entity, "initData", Host.Obj(("name", s.Name ?? ""), ("iconPath", s.IconPath ?? "")));
         RefreshLobby();
         if (!DeleteAccountEnabled && Host.Get(Host.Entity, "m_deleteAccount") is { } del) Host.Set(del, "visible", false);
