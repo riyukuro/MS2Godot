@@ -58,4 +58,25 @@ public class AppliedChildListsTests
             }
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "5000 containers");
     }
+
+    [Test]
+    public void AChangedOrderOfAKnownParentAllocatesNoNewList()
+    {
+        var lists = new AppliedChildLists<P, N>();
+        var p = new P(); N a = new(), b = new();
+        var w = lists.Rent(); w.Add(a); w.Add(b); lists.Set(p, w); lists.Return(w);
+        var x = lists.Rent(); x.Add(b); x.Add(a);   // the pool's list, filled once so the allocation below is the Set's alone
+        lists.Return(x);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            var y = lists.Rent();
+            if (i % 2 == 0) { y.Add(b); y.Add(a); } else { y.Add(a); y.Add(b); }
+            if (lists.IsApplied(p, y)) Assert.Fail("unchanged");
+            lists.Set(p, y);
+            if (!lists.IsApplied(p, y)) Assert.Fail("not kept");
+            lists.Return(y);
+        }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100 changes");
+    }
 }

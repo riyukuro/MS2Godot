@@ -29,8 +29,13 @@ public sealed class AppliedChildLists<TKey, TNode> where TKey : class where TNod
         return true;
     }
 
-    /// <summary>Remembers <paramref name="want"/> as the parent's order (a copy: the caller's list is reused).</summary>
-    public void Set(TKey parent, List<TNode> want) => applied[parent] = new List<TNode>(want);
+    /// <summary>Remembers <paramref name="want"/> as the parent's order (a copy: the caller's list is reused). A parent that
+    /// already has a list keeps it (cleared and refilled), so a change allocates only for a parent's first order.</summary>
+    public void Set(TKey parent, List<TNode> want)
+    {
+        if (applied.TryGetValue(parent, out var last)) { last.Clear(); last.AddRange(want); }
+        else applied[parent] = new List<TNode>(want);
+    }
 
     public void Remove(TKey parent) => applied.Remove(parent);
 }

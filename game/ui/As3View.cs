@@ -267,7 +267,7 @@ public partial class As3View : Node2D
                 wanted.Add(e.Holder);
                 wanted.Add(e.Mask);
                 clip = e.Mask; clipEnd = (int)k.ClipDepth;
-                (clips ??= new()).Add((clip, clipped = new List<Node>()));
+                (clips ??= RentClips()).Add((clip, clipped = applied.Rent()));
                 continue;
             }
             Node2D top = e.Holder;
@@ -283,10 +283,17 @@ public partial class As3View : Node2D
             if (clip != null) clipped.Add(top);
             else wanted.Add(top);
         }
-        if (clips != null) foreach (var (mask, kids) in clips) Apply(mask, kids);
+        if (clips != null)
+        {
+            foreach (var (mask, kids) in clips) { Apply(mask, kids); applied.Return(kids); }
+            clips.Clear(); clipPool.Push(clips);
+        }
         Apply(into, wanted);
         applied.Return(wanted);
     }
+
+    readonly Stack<List<(MaskShape Mask, List<Node> Kids)>> clipPool = new();
+    List<(MaskShape Mask, List<Node> Kids)> RentClips() => clipPool.Count > 0 ? clipPool.Pop() : new();
 
     /// <summary>
     /// Makes <paramref name="want"/> the children of <paramref name="into"/>, in that order: nodes from elsewhere are moved
