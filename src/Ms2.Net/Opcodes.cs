@@ -100,6 +100,7 @@ public enum Outbound : ushort {
     RequestTimeSync = 0x0B,
     ResponseClientTickSync = 0x0C,
     ResponseFieldEnter = 0x10,
+    RequestMoveField = 0x6C,    // SendOp::RequestMoveField (commonfiles/opcodes.h): MyPC::SendRequestMoveFieldMode0/3
     UserSync = 0x12,
     UserChat = 0x11,
     RequestServerList = 0x14,

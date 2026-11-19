@@ -90,7 +90,7 @@ public class GameClientTests {
         using (game) {
             Assert.That(e.Enter.CharacterId, Is.EqualTo(20000000000)); Assert.That(e.Enter.UnlockedMaps, Is.EqualTo(new[] { 2000001 }));
             Assert.That(e.Sync.Number, Is.EqualTo(0));
-            Assert.That(e.Field.MapId, Is.EqualTo(2000001)); Assert.That(e.Field.Position, Is.EqualTo(new System.Numerics.Vector3(1, 2, 3))); Assert.That(e.Field.FieldKey, Is.EqualTo(55));
+            Assert.That(e.Field.MapId, Is.EqualTo(2000001)); Assert.That(e.Field.Position, Is.EqualTo(new System.Numerics.Vector3(1, 2, 3))); Assert.That(e.Field.Portal, Is.EqualTo(55));
         }
         l.Stop();
     }
@@ -218,7 +218,7 @@ public class GameClientTests {
         Assert.That(go.Ok, Is.True, go.Message);
         var (e, game) = await GameClient.EnterAsync(go, o.Result.AccountId, machine, hp[0]);
         using (game) {
-            TestContext.Out.WriteLine($"map {e.Field.MapId} pos {e.Field.Position} fieldKey {e.Field.FieldKey} char {e.Enter.CharacterId} ch {e.Enter.Channel}");
+            TestContext.Out.WriteLine($"map {e.Field.MapId} pos {e.Field.Position} portal {e.Field.Portal} char {e.Enter.CharacterId} ch {e.Enter.Channel}");
             Assert.That(e.Enter.CharacterId, Is.EqualTo(ch.User.CharacterId));
             var ex = Environment.GetEnvironmentVariable("MS2_LIVE_EXPECT")?.Split(',');
             if (ex != null) {

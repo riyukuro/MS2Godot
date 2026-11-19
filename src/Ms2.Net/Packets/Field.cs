@@ -5,8 +5,13 @@ using Ms2.Net.Wire;
 
 namespace Ms2.Net.Packets;
 
-/// <summary>Inbound 0x16: u8 error, i32 map, u8 field type, u8 instance type, i32 instance id, i32 dungeon id, vec3 position, vec3 rotation, i32 field key.</summary>
-public sealed record RequestFieldEnter(byte Error, int MapId, byte FieldType, byte InstanceType, int InstanceId, int DungeonId, Vector3 Position, Vector3 Rotation, int FieldKey) {
+/// <summary>
+/// Inbound 0x16, CSceneStateGame::OnRequestFieldEnter @0x14170f930 (scenestategame.cpp:2335): u8 error; on 0, i32 map,
+/// u8 field type, u8 instance type, i32 instance id, i32 dungeon id, vec3 position, vec3 rotation, i32 portal. The client
+/// passes the last int to WorldService::LoadMap(map, 1, nPortal) @0x141bbbe40, which keeps it (m_2c0, worldservice_1.cpp:3319)
+/// for <see cref="ResponseFieldEnter"/>. The server sends it at login and on every move in game.
+/// </summary>
+public sealed record RequestFieldEnter(byte Error, int MapId, byte FieldType, byte InstanceType, int InstanceId, int DungeonId, Vector3 Position, Vector3 Rotation, int Portal) {
     public static RequestFieldEnter Read(ByteReader r) {
         byte err = r.ReadByte();
         if (err != 0) return new RequestFieldEnter(err, 0, 0, 0, 0, 0, default, default, 0);
@@ -15,11 +20,29 @@ public sealed record RequestFieldEnter(byte Error, int MapId, byte FieldType, by
     }
 }
 
-/// <summary>Outbound 0x10: the field key, answered once the map has loaded.</summary>
-public sealed record ResponseFieldEnter(int FieldKey) : IOutPacket {
+/// <summary>
+/// Outbound 0x10 (scenestategame.cpp:2284, OnLoadUgcMap; also CubeMapInformationService, cubemapinformationservice_3.cpp:5703):
+/// the portal of the entry (WorldService FUN_141bd98d0 @0x141bd98d0 = LoadMap's nPortal), sent once the map has loaded.
+/// </summary>
+public sealed record ResponseFieldEnter(int Portal) : IOutPacket {
     public Outbound Op => Outbound.ResponseFieldEnter;
-    public void Write(ByteWriter w) => w.WriteInt(FieldKey);
+    public void Write(ByteWriter w) => w.WriteInt(Portal);
     public static ResponseFieldEnter Read(ByteReader r) { var p = new ResponseFieldEnter(r.ReadInt()); r.ExpectEnd("ResponseFieldEnter"); return p; }
+}
+
+/// <summary>
+/// Outbound RequestMoveField (0x6C) mode 0, MyPC::SendRequestMoveFieldMode0 @0x14152a0c0 (mypc.cpp:3143) through the
+/// payload encoder @0x1401fa9a0: u8 0, i32 current map (DAT_143ab2870), i32 portal id, i32, i32, wstr (+0x10, the call's
+/// last argument), wstr (+0x18, the call's fifth argument: the password the password portal's box passes,
+/// actionkeyobject.cpp:1160). The portal action (FUN_140956370, actionkeyobject.cpp:1136) sends (portal id, 0, 0, "", "")
+/// for a default portal.
+/// </summary>
+public sealed record RequestMoveFieldPortal(int MapId, int PortalId, int A = 0, int B = 0, string First = "", string Password = "") : IOutPacket {
+    public Outbound Op => Outbound.RequestMoveField;
+    public void Write(ByteWriter w) {
+        w.WriteByte(0); w.WriteInt(MapId); w.WriteInt(PortalId); w.WriteInt(A); w.WriteInt(B);
+        w.WriteUnicodeString(First ?? ""); w.WriteUnicodeString(Password ?? "");
+    }
 }
 
 /// <summary>Inbound 0x18.</summary>

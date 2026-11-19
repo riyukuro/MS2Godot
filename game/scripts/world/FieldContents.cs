@@ -388,40 +388,93 @@ public partial class FieldContents : Node3D
     public bool Enter(FieldPortals.Portal p)
     {
         if (moving) return false;
-        string xblock = null;
-        try { xblock = FieldData.XBlockOf(packs, p.TargetField); } catch { }
-        if (xblock == null || !packs.Exists(XBlock.Archive, $"xblock/{xblock.ToLowerInvariant()}.xblock"))
+        string xblock = XBlockOf(packs, p.TargetField);
+        if (xblock == null)
         {
             GD.Print($"portal {p.Id}: field {p.TargetField} is not in the data");
             return false;
         }
+        GD.Print($"portal {p.Id} ({p.Entity.Name}) -> field {p.TargetField} {xblock} portal {p.TargetPortal}");
+        BeginMove(p.TargetField, () => new Travel.Move(p.TargetField, xblock, p.TargetPortal, fieldId));
+        return true;
+    }
+
+    /// <summary>The field's xblock when the data has it, else null.</summary>
+    static string XBlockOf(PackSet packs, int field)
+    {
+        try
+        {
+            string xblock = FieldData.XBlockOf(packs, field);
+            return xblock != null && packs.Exists(XBlock.Archive, $"xblock/{xblock.ToLowerInvariant()}.xblock") ? xblock : null;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// A field move from this field: the talk ends, the loading screen comes up at once at 0% (the target map's picture or a
+    /// screenshot of this field), and once it has been drawn the field scene changes with the move <paramref name="move"/>
+    /// builds then (a newer move asked meanwhile replaces it: the last one the server sent is the one loaded).
+    /// </summary>
+    void BeginMove(int target, Func<Travel.Move> move)
+    {
+        nextMove = move;
+        if (moving) return;
         moving = true;
         talk?.End();
         // UILoadingProgress::GetLoadingImagePath: a picture of the target map, or a screenshot of this field (see PickForMove)
-        Travel.LoadingImage = new LoadingImageTable(packs).PickForMove(p.TargetField, fieldId, new Random());
+        Travel.LoadingImage = new LoadingImageTable(packs).PickForMove(target, fieldId, new Random());
         Travel.LoadingTip = PickTip();
-        GD.Print($"portal {p.Id} ({p.Entity.Name}) -> field {p.TargetField} {xblock} portal {p.TargetPortal}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
+        GD.Print($"field move -> {target}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
         // the loading screen comes up at once at 0%; the load starts once it has been drawn
         if (Travel.LoadingImage != null) { ShowLoading(Travel.LoadingImage, Travel.LoadingTip); Go(); }
         else ShowLoadingOverField(Travel.LoadingTip, Go);
-        return true;
 
         void Go() => GetTree().CreateTimer(0.15).Timeout += () =>
         {
+            if (!IsInstanceValid(this) || !IsInsideTree()) return;
             if (shotDir != null) Shot("loading.png");
-            Travel.Pending = new Travel.Move(p.TargetField, xblock, p.TargetPortal, fieldId);
+            Travel.Pending = nextMove?.Invoke();
+            nextMove = null;
             // The client's loading screen (UILoadingProgress) is a UI object CUIService registers once (uiservice.cpp:2337),
             // not part of the field: StartProgress at the move (FUN_141adb900), StopProgress after the load, the same movie
             // on screen all the way through the field change. So the cover leaves this field for the tree root, as the
             // flow's first-entry cover (GameFlow's loading layer) does, and the next field takes it over; freed with
             // this scene, the screen would show the empty clear colour while the next field builds.
-            if (overlay != null && loading != null)
+            if (overlay != null && loading != null && Travel.Pending != null)
             {
                 overlay.Reparent(GetTree().Root, false);
                 carried = (overlay, loading);
             }
             GetTree().ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
         };
+    }
+    Func<Travel.Move> nextMove;
+
+    /// <summary>
+    /// The server's field entry in game (LiveSession, RequestFieldEnter error 0): the same move a portal walk takes, to the
+    /// entry's map, arriving where the entry says (LiveSession.Decorate), no portal of ours. The login entry builds its
+    /// field through the same scene and Travel.Pending (GameFlow.BeginLoading). A map the data does not have loads the
+    /// default field, as the login entry's does. No field up (a move while the previous one still loads): the field scene
+    /// changes at once and the new field's load puts up its own loading screen (Field.BeginLoad -> CoverLoad).
+    /// </summary>
+    public static void ServerMove(SceneTree tree, int map)
+    {
+        var packs = PackSet.Shared(Settings.DataDir);
+        Travel.Move Build()
+        {
+            string xblock = XBlockOf(packs, map);
+            if (xblock == null) GD.Print($"field move: map {map} is not in the data, the default field loads");
+            return Net.LiveSession.Decorate(xblock == null ? null : new Travel.Move(map, xblock, 0, (tree.GetFirstNodeInGroup(Group) as FieldContents)?.fieldId ?? 0));
+        }
+        if (tree.GetFirstNodeInGroup(Group) is FieldContents here && here.IsInsideTree() && here.player != null)
+        {
+            here.BeginMove(map, Build);
+            return;
+        }
+        Travel.LoadingImage = null;
+        Travel.LoadingTip = PickTip(packs);
+        Travel.Pending = Build();
+        tree.ChangeSceneToFile(Flow.Session.GameScene ?? "res://field.tscn");
     }
 
     public override void _Process(double delta)
@@ -445,7 +498,12 @@ public partial class FieldContents : Node3D
         actionHeld = action;
         if (!offline)
         {
-            // live: the talk only; the server moves the player through portals
+            // live: the action key in an open portal asks the server for the move (PortalAction FUN_140956370 ->
+            // MyPC::SendRequestMoveFieldMode0); its RequestFieldEnter moves us (LiveSession.OnRequestFieldEnter). Elsewhere the talk.
+            // STILL-OPEN: the portal action's checks before the send (the shadow-continent pk box 0x971, the missing-target box
+            // 0x99d, the required-quest notice, the password box for m_b18c portals, MyPC FUN_141529ae0) and the portal types
+            // that are not walked into (FieldPortals keeps no type yet).
+            if (pressed && !(talk != null && talk.Open) && LivePortalAction()) return;
             if (pressed) talk?.ActionKey();
             return;
         }
@@ -453,6 +511,28 @@ public partial class FieldContents : Node3D
         if (action && TryEnter()) return;
         if (pressed) talk?.ActionKey();
     }
+
+    /// <summary>Live: the action key with the player in an open portal's box asks the server for that portal's move.</summary>
+    public bool LivePortalAction()
+    {
+        if (offline || player == null || portals == null || moving) return false;
+        if (portals.At(FieldPortals.ToMs2(player.GlobalPosition)) is not { Enabled: true } p || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
+        ls.SendPortalMove(p.Id);
+        return true;
+    }
+
+    /// <summary>A scripted live run: puts the player in portal <paramref name="id"/>'s box (as a walk into it ends); false
+    /// when the field has no such open portal.</summary>
+    public bool StandInPortal(int id)
+    {
+        if (player == null || portals?.ById(id) is not { Enabled: true } p) return false;
+        var pos = FieldBuilder.ToGodotPoint(p.Position) + new Vector3(0, 5, 0);
+        player.GlobalPosition = pos; player.Velocity = Vector3.Zero;
+        return true;
+    }
+
+    /// <summary>The open portals of the field (ids), for a scripted live run.</summary>
+    public IEnumerable<FieldPortals.Portal> OpenPortals => portals?.All.Where(x => x.Enabled) ?? Enumerable.Empty<FieldPortals.Portal>();
 
     bool TryEnter()
     {

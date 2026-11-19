@@ -34,7 +34,7 @@ public partial class LiveSession : Node
     byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
     Player player;           // the own player, once the field is built
     RemoteLayer remote;      // the other players and npcs, once the field is built
-    bool answered;           // ResponseFieldEnter sent for this entry
+    readonly FieldEntry fieldEntry = new();   // RequestFieldEnter: the current entry and its one ResponseFieldEnter
     public bool Busy { get; private set; }
     /// <summary>The last create the server refused (null after a create that went through).</summary>
     /// <summary>The account's character limit from CharMaxCount 0xB8 (DAT_1439f4a84); 0 until the server sent it.</summary>
@@ -274,6 +274,13 @@ public partial class LiveSession : Node
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>The portal action's move (PortalAction FUN_140956370, actionkeyobject.cpp:1136): RequestMoveField mode 0 from the
+    /// current map (DAT_143ab2870, the last RequestFieldEnter's map) through the portal; the server answers with RequestFieldEnter.</summary>
+    public void SendPortalMove(int portalId) {
+        if (fieldEntry.Current is not { } f) return;
+        Send(new RequestMoveFieldPortal(f.MapId, portalId));
+        GD.Print($"live: portal {portalId} move requested from map {f.MapId}");
+    }
 
     /// <summary>CPartyManager::SendPartyMode2 (partymanager.cpp:743): the answer to the last invite, with its name and kind.</summary>
     public void AnswerPartyInvite(int answer)
@@ -486,34 +493,84 @@ public partial class LiveSession : Node
             });
             GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
             login.Dispose(); login = null;
-            answered = false;
+            fieldEntry.Enter(entry.Field);
             syncNumber = entry.Sync?.Number ?? 0;
             var f = entry.Field;
             chosen.User.MapA = f.MapId;
+            this.chosen = chosen;
             guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
-            GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} fieldKey {f.FieldKey}");
+            GD.Print($"live: RequestFieldEnter map {f.MapId} pos {f.Position} rot {f.Rotation} portal {f.Portal}");
             return true;
         }
         catch (Exception ex) { GD.PushWarning("live: enter failed: " + ex.Message); return false; }
         finally { Busy = false; }
     }
 
-    /// <summary>The server's arrival (position, rotation, field key) on the move the flow built for the chosen map.</summary>
+    CharacterEntry chosen;
+
+    /// <summary>The server's arrival (position, rotation, portal) on the move built for the entry's map.</summary>
     public static Travel.Move Decorate(Travel.Move m)
     {
-        var f = Instance?.entry?.Field;
+        var f = Instance?.fieldEntry.Current;
         if (m == null || f == null) return m;
-        return m with { At = new Vec3(f.Position.X, f.Position.Y, f.Position.Z), RotZDeg = f.Rotation.Z, FieldKey = f.FieldKey };
+        return m with { At = new Vec3(f.Position.X, f.Position.Y, f.Position.Z), RotZDeg = f.Rotation.Z, EntryPortal = f.Portal };
     }
 
     void OnFieldBuilt(Field field, ModelBuilder builder)
     {
         if (entry == null) return;
-        remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
+        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
-        field.TreeExiting += () => { remote = null; guide?.StopAndUpdate(); };   // the map's unload (worldservice_1.cpp:10021)   // the field is freed: its tracker stops filling Events
+        // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
+        // updates on the map's unload (worldservice_1.cpp:10021)
+        field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); };
+        // the field is whole: the entry's answer (the login's comes through the flow as well; only one goes out)
+        field.Loaded += FieldLoaded;
         GD.Print("live: remote layer ready");
     }
+
+    /// <summary>
+    /// RequestFieldEnter in game (CSceneStateGame::OnRequestFieldEnter @0x14170f930, scenestategame.cpp:2335), the same
+    /// packet the login's entry ends with. An error shows GetFieldMoveErrorMessage's box and changes nothing. Error 0:
+    /// WorldService::LoadMap(map, 1, nPortal) — the old field's teardown (FUN_141bbc580, worldservice_1.cpp:9963: every
+    /// object, PC, npc, effect and the own MyPC (SetMyPC(0)) go; the loading screen starts, CUIService FUN_141adb900) and
+    /// the new field's load — which here is the scene change every field load takes (FieldContents.ServerMove, the
+    /// portal move's path: the loading screen, then the field scene with the entry as its move). UITalkManager
+    /// FUN_141b21390 ends the talk (m_nTalking, m_nSpecialNpc = 0). The own object comes again with the new field's
+    /// FieldAddUser (OnAddUser builds a new MyPC); the sync number stays until the server sends one (OnSyncNumber,
+    /// networkservice.cpp:799, is not reset by the move).
+    /// STILL-OPEN: CGuideManager QueueOccurrence(1, map), DAT_143ab2890 = 0 (the free-roam test field flag),
+    /// FUN_140930ba0 (the dungeon room id and its group type), GFxSceneService FUN_1422ba0d0 and, for field type 0xd,
+    /// SetSubScene(0x6200086) have no port here.
+    /// </summary>
+    void OnRequestFieldEnter(RequestFieldEnter f)
+    {
+        if (!fieldEntry.Enter(f))
+        {
+            string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
+            GD.Print($"live: RequestFieldEnter error {f.Error}");
+            Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, "");   // ShowMessageBox(GetFieldMoveErrorMessage(err), 0, 0, L"")
+            return;
+        }
+        entry = entry with { Field = f };
+        if (chosen != null) chosen.User.MapA = f.MapId;
+        // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
+        if (player != null && IsInstanceValid(player)) player.Live = false;
+        player = null;
+        selfObject = -1;
+        moveClock.Restart();
+        GD.Print($"live: RequestFieldEnter in game: map {f.MapId} type {f.FieldType} instance {f.InstanceType}/{f.InstanceId} dungeon {f.DungeonId} pos {f.Position} portal {f.Portal}");
+        FieldMoveStarted?.Invoke(f);
+        Ms2Godot.World.FieldContents.ServerMove(GetTree(), f.MapId);
+    }
+
+    /// <summary>Raised when an in-game RequestFieldEnter starts a field move (the field scene is about to change).</summary>
+    public event Action<RequestFieldEnter> FieldMoveStarted;
+    /// <summary>Raised when the entry's answer went out: the field is loaded (the time since the move's RequestFieldEnter, ms; 0 at login).</summary>
+    public event Action<int, long> FieldEntered;
+    readonly System.Diagnostics.Stopwatch moveClock = new();
+    /// <summary>The entry the client is in (or loading).</summary>
+    public RequestFieldEnter CurrentEntry => fieldEntry.Current;
 
     /// <summary>The own Stat (0x2E; CSceneStateGame::OnStat, scenestategame.cpp:9424): health, spirit and stamina reach the HUD data.</summary>
     void ApplyStat(PlayerStat st)
@@ -530,11 +587,15 @@ public partial class LiveSession : Node
     /// COutPacket ResponseFieldEnter with the world's field key).</summary>
     public void FieldLoaded()
     {
-        if (entry == null || answered) return;
-        answered = true;
-        Send(new ResponseFieldEnter(entry.Field.FieldKey));
+        if (entry == null) return;
+        var answer = fieldEntry.Answer();
+        if (answer == null) return;
+        Send(answer);
         BindPlayer();
-        GD.Print($"live: ResponseFieldEnter sent, fieldKey {entry.Field.FieldKey}");
+        long ms = moveClock.IsRunning ? moveClock.ElapsedMilliseconds : 0;
+        moveClock.Reset();
+        GD.Print($"live: ResponseFieldEnter sent, portal {answer.Portal}, map {fieldEntry.Current.MapId}{(ms > 0 ? $", {ms} ms after the move's RequestFieldEnter" : "")}");
+        FieldEntered?.Invoke(fieldEntry.Current.MapId, ms);
     }
 
     /// <summary>Movement out: the player's record packets and state changes become UserSync (0x12) and State (0x80); its offline
@@ -637,6 +698,8 @@ public partial class LiveSession : Node
                 player?.OnSyncNumber();
                 GD.Print($"live: SyncNumber {syncNumber}");
             }
+            else if (game.Is(p, Inbound.RequestFieldEnter))
+                OnRequestFieldEnter(RequestFieldEnter.Read(p.Reader()));
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());
@@ -1283,6 +1346,74 @@ public partial class LiveSession : Node
                     GD.Print($"live: trade: bag after the cancel: {th.BagText()}");
                 }
             }
+        }
+        // MS2_LIVE_MOVES="step|step|...": field moves in game, each waiting for the new field's entry (FieldEntered, at most
+        // 90 s) and 3 s more: "warp:<map>" (the GM chat command, the server's RequestFieldEnter), "portal:<id>" or
+        // "portal:any" (the player put in that open portal's box, then the action key), "~N" (wait N s), "mark:<name>"
+        // (the node count and the managed heap after a full collect). With MS2_LIVE_MOVE_SHOTS=<dir> the screen is shot
+        // before and after each move as move_<n>_before.png / move_<n>_after.png.
+        string moves = System.Environment.GetEnvironmentVariable("MS2_LIVE_MOVES");
+        if (!string.IsNullOrEmpty(moves) && Instance is { } live)
+        {
+            string moveShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_MOVE_SHOTS");
+            if (!string.IsNullOrEmpty(moveShots)) DirAccess.MakeDirRecursiveAbsolute(moveShots);
+            void MoveShot(string name)
+            {
+                if (string.IsNullOrEmpty(moveShots)) return;
+                flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(moveShots, name));
+            }
+            int entered = 0; long lastMs = 0; int lastMap = 0;
+            void Entered(int map, long ms) { entered++; lastMs = ms; lastMap = map; }
+            live.FieldEntered += Entered;
+            await Frames(240);
+            int n = 0;
+            foreach (var step in moves.Split('|'))
+            {
+                if (step.StartsWith('~') && int.TryParse(step.AsSpan(1), out int wait)) { await Frames(60 * wait); continue; }
+                if (step.StartsWith("mark:"))
+                {
+                    await Frames(30);
+                    System.GC.Collect(); System.GC.WaitForPendingFinalizers(); System.GC.Collect();
+                    GD.Print($"live: mark {step[5..]}: nodes {Performance.GetMonitor(Performance.Monitor.ObjectNodeCount)}, objects "
+                             + $"{Performance.GetMonitor(Performance.Monitor.ObjectCount)}, managed heap {System.GC.GetTotalMemory(true) / 1024} KiB, "
+                             + $"static {Performance.GetMonitor(Performance.Monitor.MemoryStatic) / 1048576:F1} MiB, map {live.CurrentEntry?.MapId}");
+                    continue;
+                }
+                int before = entered, from = live.CurrentEntry?.MapId ?? 0;
+                bool sent = false;
+                MoveShot($"move_{n}_before.png");
+                if (step.StartsWith("warp:"))
+                {
+                    var parts = step[5..].Split(':');
+                    string cmd = "/warp " + parts[0] + (parts.Length > 1 ? " --portal " + parts[1] : "");
+                    sent = tree.CurrentScene is Ui.HudScene h && h.SubmitChatLine(cmd);
+                    GD.Print($"live: move {n}: {cmd} {(sent ? "sent" : "no chat window")}");
+                }
+                else if (step.StartsWith("portal:") && tree.GetFirstNodeInGroup(FieldContents.Group) is FieldContents fc)
+                {
+                    string id = step[7..];
+                    var p = id == "any" ? fc.OpenPortals.FirstOrDefault(x => x.TargetField != 0) : fc.OpenPortals.FirstOrDefault(x => x.Id.ToString() == id);
+                    if (p != null && fc.StandInPortal(p.Id))
+                    {
+                        await Frames(60);   // the position goes out with the next sync, as a walk into the box would
+                        MoveShot($"move_{n}_in_portal.png");
+                        sent = fc.LivePortalAction();
+                    }
+                    GD.Print($"live: move {n}: portal {id} {(p == null ? "not open here" : $"{p.Id} -> field {p.TargetField}")}, {(sent ? "sent" : "not sent")}");
+                }
+                if (sent)
+                {
+                    await Until(() => entered > before, 60 * 90);
+                    // the longest frame in the 3 s after the entry: a hitch once the new field is up
+                    var clock = System.Diagnostics.Stopwatch.StartNew(); double worst = 0;
+                    for (int i = 0; i < 180; i++) { double t0 = clock.Elapsed.TotalMilliseconds; await Frames(1); worst = Math.Max(worst, clock.Elapsed.TotalMilliseconds - t0); }
+                    GD.Print(entered > before ? $"live: move {n}: map {from} -> {lastMap} in {lastMs} ms, longest frame after {worst:F0} ms"
+                                              : $"live: move {n}: no field entry from map {from}");
+                }
+                MoveShot($"move_{n}_after.png");
+                n++;
+            }
+            live.FieldEntered -= Entered;
         }
         await Frames(60 * hold);
         bool ok = flow.Current == GameFlow.State.Game;

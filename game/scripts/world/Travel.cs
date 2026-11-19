@@ -9,10 +9,10 @@ public static class Travel
 {
     public sealed record Move(int FieldId, string XBlock, int PortalId, int FromFieldId)
     {
-        /// <summary>A server-given arrival (live mode): the player stands at this point (ms2 coordinates), facing RotZDeg; FieldKey answers RequestFieldEnter.</summary>
+        /// <summary>A server-given arrival (live mode): the player stands at this point (ms2 coordinates), facing RotZDeg; EntryPortal is the entry's portal (RequestFieldEnter's last int, answered by ResponseFieldEnter).</summary>
         public Ms2.Formats.Model.Vec3? At { get; init; }
         public double RotZDeg { get; init; }
-        public int FieldKey { get; init; }
+        public int EntryPortal { get; init; }
     }
 
     /// <summary>The move in progress; consumed by the field scene that loads it.</summary>
