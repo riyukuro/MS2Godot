@@ -74,7 +74,14 @@ public static class LayoutCache
                 (a, b) => a.AsSpan().SequenceEqual(b) ? null : LayoutCodec.Diff(LayoutCodec.Read(a), LayoutCodec.Read(b)) ?? "bytes differ",
                 out var outcome, onlyConfig: true);
             if (outcome != null && (PerfLog.On || outcome.Diff != null)) GD.Print("layout cache: " + outcome);
-            return LayoutCodec.Read(bytes, withLibrary);
+            // a whole file the codec can't read (its checksum matched: a codec fault) builds the layout from the movie, as
+            // without the cache; the file is left for the setup step's next build of a new layout code
+            try { return LayoutCodec.Read(bytes, withLibrary); }
+            catch (Exception e)
+            {
+                GD.PushWarning($"layout cache: {key}: unreadable ({e.GetType().Name}: {e.Message}); built from the movie");
+                return withLibrary ? full() : plain();
+            }
         })).Value;
     }
 
