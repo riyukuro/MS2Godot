@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Ms2.Avm2.Flash;
 
 /// <summary>A 2D affine matrix in Flash order: x' = a*x + c*y + tx, y' = b*x + d*y + ty.</summary>
@@ -209,5 +211,36 @@ public class AsTransform : AsObject
     }
     [As] public AsMatrix concatenatedMatrix => AsMatrix.New(Class.Runtime, Owner?.ToGlobalMatrix() ?? Mat.Identity);
     [As] public AsColorTransform concatenatedColorTransform => colorTransform;
+    // The per-object perspective data a Transform.perspectiveProjection assignment leaves on the display object.
+    static readonly ConditionalWeakTable<AsDisplayObject, AsPerspectiveProjection> perspective = new();
+
+    /// <summary>The object's perspective data as a new PerspectiveProjection bound to it, or null when none was set
+    /// (Transform::perspectiveProjectionGet, @0x14248bcc0). On the root with no centre the centre is the middle of the
+    /// stage and the focal length follows the stage width.</summary>
+    [As] public AsPerspectiveProjection perspectiveProjection
+    {
+        get
+        {
+            if (Owner == null || !perspective.TryGetValue(Owner, out var d)) return null;
+            var rt = Class.Runtime;
+            var pp = (AsPerspectiveProjection)rt.GetClass("flash.geom.PerspectiveProjection").Construct(d.Fov, d.Focal, d.Center.X, d.Center.Y);
+            pp.Bound = Owner;
+            if (Owner == Owner.P?.Root)
+            {
+                if (d.Center.X == 0 && d.Center.Y == 0) pp.Center = (Owner.P.StageW / 2, Owner.P.StageH / 2);
+                pp.Focal = pp.CalculateFocalLength(Owner.P.StageW);
+            }
+            return pp;
+        }
+        // Transform::perspectiveProjectionSet (@0x14248c0d0): the focal length is recomputed from the stage width, then
+        // the projection and its data bind to the object.
+        set
+        {
+            if (value == null || Owner == null) return;
+            if (Owner.P != null) value.Focal = value.CalculateFocalLength(Owner.P.StageW);
+            value.Bound = Owner;
+            perspective.AddOrUpdate(Owner, value);
+        }
+    }
     [As] public AsRectangle pixelBounds => AsRectangle.New(Class.Runtime, Owner?.GetBounds(null) ?? RectD.None);
 }

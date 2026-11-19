@@ -29,6 +29,83 @@ public class RuntimeTests
     }
 
     [Test]
+    public void Vector3DFollowsScaleform()
+    {
+        // flash.geom.Vector3D (sfr_as3_11.cpp): the class used to be undefined, so `new Vector3D(..)` in a movie failed
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var cls = rt.GetClass("flash.geom.Vector3D");
+        Assert.That(cls, Is.Not.Null);
+        var a = (AsVector3D)cls.Construct(1.0, 2.0, 2.0);
+        Assert.That(a.length, Is.EqualTo(3));
+        Assert.That(a.w, Is.EqualTo(0));
+        var b = AsVector3D.New(rt, 0, 0, 1);
+        var c = a.crossProduct(b);
+        Assert.That((c.x, c.y, c.z), Is.EqualTo((2.0, -1.0, 0.0)));
+        Assert.That(a.dotProduct(b), Is.EqualTo(2));
+        Assert.That(a.add(b).z, Is.EqualTo(3));
+        Assert.That(a.subtract(b).z, Is.EqualTo(1));
+        Assert.That(a.normalize(), Is.EqualTo(3));
+        Assert.That(a.length, Is.EqualTo(1).Within(1e-12));
+        Assert.That(a.nearEquals(a.clone(), 1e-9), Is.True);
+        Assert.That(AsVector3D.distance(b, AsVector3D.New(rt, 0, 0, 4)), Is.EqualTo(3));
+        Assert.That(b.ToAsString(), Is.EqualTo("(x=0, y=0, z=1)"));
+        Assert.That(AsVector3D.X_AXIS.x, Is.EqualTo(1));
+        Assert.That(AsVector3D.Z_AXIS, Is.SameAs(AsVector3D.Z_AXIS));
+    }
+
+    [Test]
+    public void PerspectiveProjectionFollowsScaleform()
+    {
+        // flash.geom.PerspectiveProjection (sfr_as3_11.cpp): the defaults, the argument ctor, and Transform.perspectiveProjection
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var cls = rt.GetClass("flash.geom.PerspectiveProjection");
+        Assert.That(cls, Is.Not.Null);
+        var pp = (AsPerspectiveProjection)cls.Construct();
+        Assert.That(pp.fieldOfView, Is.EqualTo(55));
+        Assert.That(pp.projectionCenter.x, Is.EqualTo(250));
+        Assert.That(pp.focalLength, Is.EqualTo(250 / Math.Tan(55 * Math.PI / 360)).Within(1e-9));
+        var q = (AsPerspectiveProjection)cls.Construct(90.0, 0.0);
+        Assert.That(q.fieldOfView, Is.EqualTo(90));
+        Assert.That(q.focalLength, Is.EqualTo(pp.focalLength));
+        var m = q.toMatrix3D();
+        Assert.That(m.rawData.Items.Count, Is.EqualTo(16));
+    }
+
+    [Test]
+    public void Matrix3DFollowsScaleform()
+    {
+        // flash.geom.Matrix3D (sfr_as3_11.cpp): undefined before, which stopped the Flash timeline helpers that build one
+        var (rt, _) = Empty();
+        Runtime.Current = rt;
+        var cls = rt.GetClass("flash.geom.Matrix3D");
+        Assert.That(cls, Is.Not.Null);
+        var m = (AsMatrix3D)cls.Construct();
+        Assert.That(m.determinant, Is.EqualTo(1));
+        m.appendTranslation(10, 20, 30);
+        m.appendScale(2, 2, 2);                    // append: scale after the move
+        var p = m.transformVector(AsVector3D.New(rt, 1, 1, 1));
+        Assert.That((p.x, p.y, p.z), Is.EqualTo((22.0, 42.0, 62.0)));
+        var q = m.deltaTransformVector(AsVector3D.New(rt, 1, 1, 1));
+        Assert.That((q.x, q.y, q.z), Is.EqualTo((2.0, 2.0, 2.0)));
+        var inv = m.clone(); inv.invert();
+        var back = inv.transformVector(p);
+        Assert.That((back.x, back.y, back.z), Is.EqualTo((1.0, 1.0, 1.0)).Within(1e-9));
+        m.prependTranslation(1, 0, 0);             // prepend: the move happens first
+        Assert.That(m.transformVector(AsVector3D.New(rt, 0, 0, 0)).x, Is.EqualTo(22));
+        // rawData is column by column with the translation in pixels (stored in twips)
+        var raw = m.rawData;
+        Assert.That(raw.Items.Count, Is.EqualTo(16));
+        Assert.That(m.position.x, Is.EqualTo(22 / 20.0));
+        var r = (AsMatrix3D)cls.Construct();
+        r.appendRotation(90, AsVector3D.Z_AXIS);
+        var v = r.transformVector(AsVector3D.New(rt, 1, 0, 0));
+        Assert.That((v.x, v.y, v.z), Is.EqualTo((0.0, 1.0, 0.0)).Within(1e-6));
+        Assert.Throws<AsThrow>(() => m.recompose(null));
+    }
+
+    [Test]
     public void DisplayListAndEvents()
     {
         var (rt, p) = Empty();
