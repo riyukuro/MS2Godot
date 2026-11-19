@@ -15,10 +15,10 @@ LINQ = re.compile(r"\.(Select|SelectMany|Where|OfType|Cast<\w+>|Any|All|First|Fi
                   r"ToList|ToArray|ToDictionary|ToHashSet|OrderBy|OrderByDescending|ThenBy|GroupBy|Distinct|Skip|Take|Sum|Min|Max|Average|"
                   r"Zip|Concat|Count)\s*[(<]")
 MODS = r"(?:(?:public|private|protected|internal|static|override|virtual|sealed|async|unsafe|new|extern|partial)\s+)*"
-HEADER = re.compile(r"^\s*" + MODS + r"[\w<>\[\],.?]+(?:\s*<[^>]*>)?\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^;]*)$")
+HEADER = re.compile(r"^\s*" + MODS + r"[\w<>\[\],.?]+(?:\s*<[^>]*>)?\s+(\w+)\s*(?:<[^>]*>)?\s*\((.*)$")
 NOTKW = re.compile(r"^\s*(if|for|foreach|while|switch|using|lock|return|else|catch|case|new|yield|throw|var|await|do|fixed|try)\b")
-PHYS = r"(IntersectRay|GetRestInfo|IntersectShape|IntersectPoint)"
-SHAPE = re.compile(r"\bnew\s+(?:Box|Sphere|Capsule|Cylinder|Concave|Convex)\w*Shape3D\b|\b(?:Box|Sphere|Capsule|Cylinder|Concave|Convex)\w*Shape3D\s+\w+\s*=\s*new\s*\(")
+PHYS = r"(IntersectRay|GetRestInfo)"   # Dictionary results; IntersectShape/IntersectPoint/CastMotion return an Array<T> or float[] (nothing to dispose)
+SHAPE = re.compile(r"\bnew\s+(?:Box|Sphere|Capsule|Cylinder|WorldBoundary)\w*Shape3D\b|\b(?:Box|Sphere|Capsule|Cylinder)\w*Shape3D\s+\w+\s*=\s*new\s*\(")   # primitives only: a mesh shape carries its own data and cannot be shared
 
 class Fail(Exception): pass
 
@@ -158,19 +158,20 @@ def lint(f, ns, lines):
                     "a static readonly StringName/NodePath (see the Meta/PhysicsKeys tables)")
             if re.search(r"\b(?:StringName|NodePath|Variant)\s+\w+\s*=\s*\"", s) and not re.search(r"\b(static|const)\b", s):
                 hit(f, n, "StringName/NodePath/Variant built from a literal outside a static field", "static readonly StringName/NodePath/Variant")
-        if (re.search(r"new\s+(StringName|NodePath)\s*\(", s) or re.search(r"\b(StringName|NodePath)\s+\w+\s*=\s*new\s*\(", s)) \
+        if (re.search(r"new\s+(StringName|NodePath)\s*\(\s*\"[^\"]*\"\s*\)", s) or re.search(r"\b(StringName|NodePath)\s+\w+\s*=\s*new\s*\(\s*\"[^\"]*\"\s*\)", s)) \
                 and not re.search(r"\b(static|const)\b", s):
             hit(f, n, "new StringName/NodePath outside a static field", "static readonly StringName/NodePath")
-        if re.search(r"\.GetChildren\s*\(", s):
+        if re.search(r"(?<![\w])GetChildren\s*\(", s) and not re.search(r"\b(?:override|virtual|abstract)\b|\b(?:public|private|protected|internal|static)\s+[\w<>\[\].]+\s+GetChildren\b", s):
             hit(f, n, "GetChildren() allocates a Godot array and a managed array", "foreach (var c in node.Kids()) or GetChildCount()/GetChild(i)")
-        if hot and LINQ.search(s):
-            m = LINQ.search(s)
+        lq = [x for x in LINQ.finditer(s) if not re.search(r"\b(Mathf|Math|MathF|Mathd)\s*$", s[:x.start()])]
+        if hot and lq:
+            m = lq[0]
             recv = re.search(r"(\w+)\s*\.\s*(?:ToArray|ToList|Count|Any)\s*[(<]", s)
             if not (recv and recv.group(1) in lists and m.group(1) in ("ToArray", "Count")):
                 hit(f, n, f"LINQ in {name} (allocates every call)", "an indexed loop over a reused list")
         for m in re.finditer(r"\.%s\s*\(" % PHYS, s):
             if "using" in s.split(m.group(0))[0] or re.match(r"\s*return\b", s): continue
-            a = re.match(r"\s*(?:var|[\w.<>,\[\]]+)\s+(\w+)\s*=\s*[\w.()\[\]]*$", s[:m.start()])
+            a = re.match(r"\s*(?:(?:var|[\w.<>,\[\]]+)\s+)?(\w+)\s*=\s*[\w.()\[\]]*$", s[:m.start()])
             if a:
                 v = a.group(1)
                 if re.search(r"\b%s\.Dispose\(\)|using\s*\(\s*%s\b|using\s+var\s+%s\b" % (v, v, v), b): continue
@@ -180,7 +181,7 @@ def lint(f, ns, lines):
             a = re.match(r"\s*(?:using\s+)?(?:var|RDUniform)\s+(\w+)\s*=", s)
             ok = (re.search(r"\busing\b", s) is not None) if a and "using" in s else False
             if a and not ok:
-                v = a.group(1); ok = re.search(r"\b%s\.Dispose\(\)" % v, b) is not None
+                v = a.group(1); ok = re.search(r"\b%s\.Dispose\(\)|\breturn\s+%s\s*;" % (v, v), b) is not None
             elif not a: ok = re.search(r"\.Dispose\(\)", b) is not None
             if not ok:
                 hit(f, n, "new RDUniform without Dispose (tracked until a GC finalizes it)", "Dispose after UniformSetCacheRD.GetCache copied it")
@@ -190,7 +191,7 @@ def lint(f, ns, lines):
             rd = pm.group(1) if pm else "renderData"
             if not re.search(r"using\s+var\s+\w+\s*=\s*%s\b|\b%s\.Dispose\(\)|using\s*\(\s*\w*\s*=?\s*%s\b" % (rd, rd, rd), b):
                 hit(f, h + 1, "_RenderCallback does not dispose its RenderData (one wrapper per frame)", f"`using var data = {rd};` as the first line")
-        if SHAPE.search(s) and (in_loop(lines, n - 1) or re.search(r"\b(foreach|for|while)\s*\(.*\).*new\s+\w+Shape3D", s)):
+        if SHAPE.search(s) and (in_loop(lines, n - 1) or re.search(r"\b(foreach|for|while)\s*\(.*\)", s)):
             ctx = "\n".join(lines[max(0, n - 5):n])
             if "TryGetValue" not in ctx and "??=" not in ctx:
                 hit(f, n, "new Shape3D inside a loop (a wrapper and engine object per entity of a repeated size)",
