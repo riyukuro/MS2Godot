@@ -6,7 +6,7 @@ namespace Ms2Godot.Net;
 /// <summary>The effect shader's parameter names, allocated once: a string literal passed to SetShaderParameter makes a new finalizable StringName on every call.</summary>
 static class FxParam
 {
-    public static readonly StringName HasTex = "has_tex", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
+    public static readonly StringName HasTex = "has_tex", HeightFog = "height_fog", Tex = "tex", HasGlow = "has_glow", GlowTex = "glow_tex", Tint = "tint",
         Frames = "frames", Alpha = "alpha", UvOff = "uv_off", UvScale = "uv_scale", UvRot = "uv_rot";
 }
 
@@ -53,6 +53,8 @@ uniform vec2 uv_scale = vec2(1.0);
 uniform float uv_rot = 0.0;
 uniform float alpha = 1.0;
 uniform vec4 tint = vec4(1.0);
+FOGDECL
+void vertex() { FOGVERT }
 void fragment() {
     vec2 uv = UV - 0.5;
     float c = cos(uv_rot), s = sin(uv_rot);
@@ -60,7 +62,8 @@ void fragment() {
     vec4 t = has_tex ? texture(tex, uv) : vec4(1.0);
     vec3 col = t.rgb * tint.rgb;
     if (has_glow) col += texture(glow_tex, uv).rgb;   // a glow map adds its colour whatever the material colour is
-    ALBEDO = col;
+    FOG = vec4(ms2_fog_color, fog_share);
+    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
     ALPHA = clamp(t.a * tint.a * alpha, 0.0, 1.0);
 }";
     static readonly string PartCode = @"shader_type spatial;
@@ -69,16 +72,50 @@ uniform sampler2D tex : filter_linear;
 uniform bool has_tex = true;
 uniform vec2 frames = vec2(1.0, 1.0);
 varying float frame;
-void vertex() { frame = INSTANCE_CUSTOM.x; }
+FOGDECL
+void vertex() { frame = INSTANCE_CUSTOM.x; FOGVERT }
 void fragment() {
     float fi = floor(frame + 0.5);
     vec2 cell = vec2(mod(fi, frames.x), floor(fi / frames.x));
     vec4 t = has_tex ? texture(tex, (UV + cell) / frames) : vec4(1.0);
-    ALBEDO = t.rgb * COLOR.rgb;
+    FOG = vec4(ms2_fog_color, fog_share);
+    ALBEDO = ms2_fog_apply(t.rgb * COLOR.rgb, CAMERA_VISIBLE_LAYERS);
     ALPHA = clamp(t.a * COLOR.a, 0.0, 1.0);
 }";
+    // The client's fog for an effect's meshes and particle systems. A NIF effect carries no NiFogProperty (none of the
+    // effect pack's nifs has one), so its meshes take the default fog property ApplyEffect::SetFog sets for the field
+    // (applyeffect.cpp:586-622: NiFogProperty::ms_spDefault), and their materials are the field's: MS2StandardMaterial
+    // (CalculateBiasedFog, ms2standardmaterial.cpp:535-584), or a plain NiStandardMaterial (SoftParticlesMaterial), whose
+    // CalculateFog takes the same FogStartEnd and gakFogBias with the same linear-z formula (NiStandardMaterial.cpp:5074-5131,
+    // NiStandardMaterialNodeLibrary.cpp:1663-1792). So the depth fog is ms2_fog.gdshaderinc's, per vertex, and ApplyFog
+    // lerps to the fog colour by it in every blend mode (an additive effect adds the fog colour at a distance). The height
+    // fog comes first, but not on meshes whose dest blend is ONE (NiStandardMaterial::GenerateDescriptor,
+    // NiStandardMaterial.cpp:687-697; the Godot height_fog flag). The glow and shimmer passes have no fog
+    // (ms2glowmaterial.cpp:126, ms2shimmermaterial.cpp:52); the ribbon, swoosh, beam and lightning effects turn it off on
+    // their own meshes (NiFogProperty SetFog(false)), and are not drawn here.
+    const string FogDecl = @"#include ""res://shaders/ms2_fog.gdshaderinc""
+global uniform vec3 ms2_hfog_color;
+global uniform vec3 ms2_hfog;
+uniform bool height_fog = true;
+varying vec3 fog_world;
+vec3 ms2_fog_apply(vec3 c, uint layers) {
+    if ((layers & FOG_LAYER) != 0u && height_fog) {
+        float hf = ms2_hfog.z * (1.0 - clamp((fog_world.y - ms2_hfog.y) / (ms2_hfog.x - ms2_hfog.y), 0.0, 1.0));
+        c = mix(c, ms2_hfog_color, hf);
+    }
+    return c;
+}";
+    const string FogVert = "fog_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; fog_share = ms2_fog_share(VIEW_MATRIX, fog_world, CAMERA_VISIBLE_LAYERS);";
 
-    static Shader Sh(ref Shader cache, string code, string blend) => cache ??= new Shader { Code = code.Replace("BLEND", blend) };
+    // FogDecl / FogVert in place of the FOGDECL / FOGVERT marks: the height fog goes into the colour, the depth fog
+    // through FOG (as character_lit; the colour buffer holds gamma values)
+    static string WithFog(string code) => code.Replace("FOGDECL", FogDecl).Replace("FOGVERT", FogVert);
+
+    // the engine's bAdditive for the height fog: an NiAlphaProperty whose dest blend is ONE, blending on or not
+    // (NiStandardMaterial.cpp:690-692)
+    static bool DestOne(int alphaFlags) => alphaFlags >= 0 && ((alphaFlags >> 5) & 15) == 0;
+
+    static Shader Sh(ref Shader cache, string code, string blend) => cache ??= new Shader { Code = WithFog(code).Replace("BLEND", blend) };
 
     static float Rad(float x) => x;
 
@@ -101,6 +138,7 @@ void fragment() {
             var mat = new ShaderMaterial { Shader = add ? Sh(ref meshAdd, MeshCode, "blend_add") : Sh(ref meshMix, MeshCode, "blend_mix") };
             ms.Base = m.Textures.TryGetValue("base", out var bn) ? mb.Texture(bn) : (m.Textures.TryGetValue("shader0", out var s0) ? mb.Texture(s0) : null);
             mat.SetShaderParameter(FxParam.HasTex, ms.Base != null);
+            if (DestOne(m.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
             if (ms.Base != null) mat.SetShaderParameter(FxParam.Tex, ms.Base);
             if (m.Textures.TryGetValue("glow", out var gn) && mb.Texture(gn) is { } gt) { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gt); }
             ms.Add = add;
@@ -121,6 +159,7 @@ void fragment() {
             var mat = new ShaderMaterial { Shader = d.Additive ? Sh(ref partAdd, PartCode, "blend_add") : Sh(ref partMix, PartCode, "blend_mix") };
             var tex = d.Texture != null ? mb.Texture(d.Texture) : null;
             mat.SetShaderParameter(FxParam.HasTex, tex != null);
+            if (DestOne(d.AlphaFlags)) mat.SetShaderParameter(FxParam.HeightFog, false);
             if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
             mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
