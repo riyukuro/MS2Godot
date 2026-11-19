@@ -142,6 +142,62 @@ public class MovieTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>PopupImageBalloonAni declares m_popup private, so a public-namespace read from outside (Value::GetMember, the host's
+    /// Get) finds no member and answers undefined, as Scaleform does; the popup that open() makes is reachable as the last child
+    /// of m_dummy. Not a runtime gap.</summary>
+    [Test]
+    public void PrivateSlotIsNotReadableFromOutside()
+    {
+        var (rt, p) = Open("uipopupimageballoon");
+        var dlg = p.FindOwner("createEntity");
+        var e = p.Call(dlg, "createEntity", 7.0, "imageballoon_Ani", false) as AsObject;
+        p.Tick();
+        Assert.That(e, Is.Not.Null);
+        p.Call(e, "open", p.NewObject(("text", "0123"), ("imgpath", ""), ("skin", "")));
+        Assert.That(e.Traits.FindAny("m_popup").Ns.Kind, Is.EqualTo(NsKind.Private));
+        Assert.That(Get(p, e, "m_popup"), Is.SameAs(Undefined.Value));
+        var dummy = Get(p, e, "m_dummy");
+        var last = p.Call(dummy, "getChildAt", Rt.ToNumber(Get(p, dummy, "numChildren")) - 1);
+        Assert.That(Rt.ToString(p.Call(last, "toString")), Is.EqualTo("PopupImageBalloon"));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    /// <summary>Loader.load of a movie that itself imports others: the imports' code loads before the loaded movie's own
+    /// (MovieRun's LoadUrl path), so a class that only an import defines resolves afterwards.</summary>
+    [Test]
+    public void LoadedMovieImportsLoadWithIt()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        var keys = packs.List("Resource/Gfx").Where(e => e.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase)).ToDictionary(e => Path.GetFileNameWithoutExtension(e).ToLowerInvariant(), e => e);
+        var source = new MovieSource(k => keys.TryGetValue(k.ToLowerInvariant(), out var e) ? packs.Read("Resource/Gfx", e) : null);
+        string target = null, imported = null, cls = null;
+        foreach (var k in keys.Keys.OrderBy(k => k))
+        {
+            var m = source.Movie(k);
+            if (m == null || k == "uiexpbar") continue;
+            foreach (var g in m.Imports)
+            {
+                var ik = Path.GetFileNameWithoutExtension(g.Url);
+                if (ik.Equals(k, StringComparison.OrdinalIgnoreCase)) continue;
+                var im = source.Movie(ik);
+                var c = im?.SymbolClasses.Values.FirstOrDefault(n => n.Contains('.'));
+                if (c != null) { target = k; imported = ik; cls = c; break; }
+            }
+            if (target != null) break;
+        }
+        if (target == null) Assert.Ignore("no movie imports a movie with a packaged class");
+        TestContext.Out.WriteLine("target=" + target + " imported=" + imported + " cls=" + cls);
+        var (rt, p) = source.Open("uiexpbar", r => r.Budget = 20_000_000);
+        p.External = (n, a) => null;
+        Assert.That(p.Start(), Is.True);
+        Assert.That(rt.GetClass(cls), Is.Null, "the class is not loaded yet");
+        var loader = rt.GetClass("flash.display.Loader").Construct();
+        p.LoadUrl((AsLoader)loader, target + ".swf");
+        Assert.That(rt.GetClass(cls), Is.Not.Null, cls + " (from " + imported + ", imported by " + target + ")");
+    }
+
     [Test]
     public void ExpBarSetExp()
     {
