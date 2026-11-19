@@ -148,7 +148,7 @@ public static class NifCache
     /// <summary>The counts of kept models and textures, for checks.</summary>
     public static (int Models, int Textures) Count => (models.Count, textures.Count);
 
-    /// <summary>ClearNifCache / ClearTextureCache: everything goes (the client: shutdown and the ClearCaches command; here checks).</summary>
+    /// <summary>ClearNifCache / ClearTextureCache: everything goes (the client: shutdown and the ClearCaches command; here the quit path, GameFlow._ExitTree, and checks).</summary>
     public static void Clear()
     {
         models.Clear();

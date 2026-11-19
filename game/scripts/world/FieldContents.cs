@@ -370,7 +370,8 @@ public partial class FieldContents : Node3D
     /// <summary>
     /// Runs <paramref name="then"/> once: after the next frame Godot draws (true), or at the next process frame when no
     /// window can draw (false). Headless, or with the window minimized, Godot draws no frame and emits no FramePostDraw,
-    /// so a wait on it alone would never end.
+    /// so a wait on it alone would never end. It also never fires while a window can draw but Godot skips the draw
+    /// (low-processor mode with nothing changed, or a disabled render loop); neither is used by the game.
     /// </summary>
     internal static void AfterDrawnFrame(SceneTree tree, Action<bool> then)
     {

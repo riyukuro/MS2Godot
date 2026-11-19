@@ -76,6 +76,7 @@ public partial class GameFlow : Node
     public override void _ExitTree()
     {
         DisplayNative.RestoreDisplayMode();
+        NifCache.Clear();   // CNifLoadingService::OnShutdown: ClearTextureCache, ClearNifCache (@0x141555e90)
         UiBridge.ToHost -= OnHost;
         CharacterCreateScene.CharacterCreated -= OnCreated;
         CharacterCreateScene.Cancelled -= OnCreateCancelled;
