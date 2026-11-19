@@ -598,11 +598,11 @@ public class HudTests
         Assert.That(Rt.ToNumber(h.Get(h.Get(subject, "dataProvider"), "length")), Is.EqualTo(6));
         Assert.That(Rt.ToNumber(h.Get(subject, "selectedIndex")), Is.EqualTo(2));
         Assert.That(Rt.ToNumber(h.Get(subject, "menuRowCount")), Is.EqualTo(6));
-        // Return focuses the input; Return again with text releases it and clears it (the line is not sent here)
+        // Return focuses the input; Return again with text releases it and clears it (no local player: nothing is sent)
         var input = (AsObject)h.Child("m_textInput");
         Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
         Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(1));
-        h.Set(input, "text", "HelloWorld");
+        h.Set(h.Get(input, "textField"), "text", "HelloWorld");
         Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
         Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(0));
         Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo(""));
@@ -611,6 +611,172 @@ public class HudTests
         c.OnKey(MessengerController.DikReturn, false);
         Assert.That(c.OnKey(0, true), Is.True);
         Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    /// <summary>A loaded chat window with a local player "Me", its log's sends and notices collected.</summary>
+    static (MessengerController c, UiHost h, UiModel m, List<UserChatRequest> sent, List<string> notices) ChatWindow()
+    {
+        var m = Model();
+        m.HasLocalPlayer = true;
+        m.Player.Name = "Me";
+        var log = new MessengerBrowser { Model = m };
+        var sent = new List<UserChatRequest>();
+        var notices = new List<string>();
+        log.SendPacket = sent.Add;
+        log.ShowSystemNotice = (t, _, _) => notices.Add(t);
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true, log);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        return (c, h, m, sent, notices);
+    }
+
+    [Test]
+    public void MessengerSendsTheTypedLineToTheSelectedTarget()
+    {
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        c.OnKey(MessengerController.DikReturn, false);
+        // typed into the component's text field, where key presses land
+        var field = h.Get(input, "textField");
+        h.Set(field, "text", "  hello <b> ");
+        c.OnKey(MessengerController.DikReturn, false);
+        // social (0) is selected: kind 0, the text trimmed and escaped (FUN_141842320); the input released
+        Assert.That(sent, Is.EqualTo(new[] { new UserChatRequest(0, "hello &lt;b&gt;", "", 0) }));
+        Assert.That(c.Browser.LastChannel, Is.EqualTo(1));
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(0));
+        // an empty line sends nothing
+        c.OnKey(MessengerController.DikReturn, false);
+        h.Set(h.Get(input, "textField"), "text", "   ");
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(sent.Count, Is.EqualTo(1));
+        // no local player: SendChat sends nothing
+        m.HasLocalPlayer = false;
+        c.SubmitLine("hi", "");
+        Assert.That(sent.Count, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerWhisperCommand()
+    {
+        var (c, h, m, sent, notices) = ChatWindow();
+        c.SubmitLine("/w Bob hi there", "");
+        Assert.That(sent, Is.EqualTo(new[] { new UserChatRequest(4, "hi there", "Bob", 0) }));
+        Assert.That((c.Browser.LastChannel, c.Browser.WhisperTarget), Is.EqualTo((4, "Bob")));
+        // Return on the unfocused input after a whisper starts the next one: "{0} {1} " of common 0xaa5 and the target
+        var input = (AsObject)h.Child("m_textInput");
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(1));
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo(m.Tables.Common(0xaa5) + " Bob "));
+        // "/w" alone: the rest of the line (CStringW::Mid(-1) is the whole line) is not empty but the target is: notice 0x4e
+        c.SubmitLine("/w", "");
+        Assert.That(notices, Is.EqualTo(new[] { m.Tables.Common(0x4e) }));
+        // a target name but no message sends nothing, nor does a quoted empty target
+        c.SubmitLine("/w Bob", "");
+        Assert.That(sent.Count, Is.EqualTo(1));
+        // to oneself (any case): the system line 0x430, not sent
+        int logs = c.Browser.Logs.Count;
+        c.SubmitLine("/w me hello", "");
+        Assert.That(sent.Count, Is.EqualTo(1));
+        Assert.That(c.Browser.Logs.Count, Is.EqualTo(logs + 1));
+        Assert.That(c.Browser.Logs.Last().Msg, Does.Contain(m.Tables.Common(0x430)));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerTargetCommandsAndPartyGuildRouting()
+    {
+        var (c, h, m, sent, notices) = ChatWindow();
+        var subject = (AsObject)h.Child("m_subject");
+        var input = (AsObject)h.Child("m_textInput");
+        // "/p" selects the party target (world, channel, social, party: row 3) and keeps the rest of the line
+        c.OnKey(MessengerController.DikReturn, false);
+        c.SubmitLine("/p", "");
+        Assert.That(Rt.ToNumber(h.Get(subject, "selectedIndex")), Is.EqualTo(3));
+        Assert.That(sent, Is.Empty);
+        // not in a party: notice 0x335; in one: kind 7
+        c.SubmitLine("hi", "");
+        Assert.That(notices, Is.EqualTo(new[] { m.Tables.Common(0x335) }));
+        c.Browser.IsInParty = () => true;
+        c.SubmitLine("hi", "");
+        Assert.That(sent, Is.EqualTo(new[] { new UserChatRequest(7, "hi", "", 0) }));
+        Assert.That(c.Browser.LastChannel, Is.EqualTo(2));
+        // guild without a guild: notice 0x388
+        c.SendChat(MessengerController.Guild, "hi", "", 0);
+        Assert.That(notices.Last(), Is.EqualTo(m.Tables.Common(0x388)));
+        c.Browser.IsInGuild = () => true;
+        c.SendChat(MessengerController.Guild, "hi", "", 0);
+        Assert.That(sent.Last(), Is.EqualTo(new UserChatRequest(8, "hi", "", 0)));
+        // guild megaphone without permission 0x800: notice 0x415
+        c.SendChat(MessengerController.GuildMegaphone, "hi", "", 0);
+        Assert.That(notices.Last(), Is.EqualTo(m.Tables.Common(0x415)));
+        // world and channel go out as their type
+        c.SendChat(MessengerController.World, "hi", "", 0);
+        c.SendChat(MessengerController.Channel, "hi", "", 0);
+        Assert.That(sent.TakeLast(2).Select(s => s.Kind), Is.EqualTo(new[] { 0xb, 0xc }));
+        // an unknown club: notice 0x50, nothing sent
+        int count = sent.Count;
+        c.SubmitLine("/club Nobody hi", "");
+        Assert.That(sent.Count, Is.EqualTo(count));
+        // an input started with a command loses the command when the target changes (vfunc_93)
+        h.Set(h.Get(input, "textField"), "text", "/p hello");
+        c.OnCallback("eventChangeTalkTarget", Array.Empty<object>());
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo("hello"));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerUnknownAndFunctionCommandsGoOutAsTheyAre()
+    {
+        var (c, h, m, sent, _) = ChatWindow();
+        // no such command: the whole line, with the selected target's type (social)
+        c.SubmitLine("/nosuchcommand hello", "");
+        Assert.That(sent, Is.EqualTo(new[] { new UserChatRequest(0, "/nosuchcommand hello", "", 0) }));
+        Assert.That(c.Browser.LastChannel, Is.EqualTo(1));
+        // a chat type 10 command with a function (Roll): its name replaced by "/" + the function
+        var roll = m.Tables.UserCommands.Aliases.Where(a => a.Value.Function == "Roll").Select(a => a.Key).FirstOrDefault();
+        Assert.That(roll, Is.Not.Null, "a Roll alias in table/chatcommand.xml");
+        c.SubmitLine(roll + " 1", "");
+        Assert.That(sent.Last(), Is.EqualTo(new UserChatRequest(0, "/Roll 1", "", 0)));
+        // help: the help lines go to the log, nothing is sent
+        int n = sent.Count, logs = c.Browser.Logs.Count;
+        var help = m.Tables.UserCommands.Aliases.Where(a => a.Value.Function == "Help").Select(a => a.Key).First();
+        c.Browser.CommandHooks.ChatLine = c.Browser.AddSystemLine;
+        c.SubmitLine(help, "");
+        Assert.That(sent.Count, Is.EqualTo(n));
+        Assert.That(c.Browser.Logs.Count, Is.EqualTo(logs + 1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ChatCommandTable()
+    {
+        var m = Model();
+        var u = m.Tables.UserCommands;
+        // case-blind aliases; the whisper and party commands' chat types
+        Assert.That(u.ChatType("/w"), Is.EqualTo(4));
+        Assert.That(u.ChatType("/W"), Is.EqualTo(4));
+        Assert.That(u.ChatType("/p"), Is.EqualTo(7));
+        Assert.That(u.ChatType("/nosuchcommand"), Is.EqualTo(UserCommands.NoChatType));
+        Assert.That(u.Tooltip(), Is.Not.Empty);
+    }
+
+    [Test]
+    public void ChatSendHelpers()
+    {
+        Assert.That(MessengerController.HasChatLink("<a href='event:itemTooltip,1'>x</a>"), Is.True);
+        Assert.That(MessengerController.HasChatLink("event:itemTooltip"), Is.False, "found past the first character only");
+        Assert.That(MessengerController.HasChatLink("plain"), Is.False);
+        Assert.That(MessengerController.Escape("<a>"), Is.EqualTo("&lt;a&gt;"));
+        int pos = 0;
+        Assert.That(UserCommands.Tokenize("/w  Bob hi", " ", ref pos), Is.EqualTo("/w"));
+        Assert.That(UserCommands.Tokenize("/w  Bob hi", " ", ref pos), Is.EqualTo("Bob"));
+        Assert.That(UserCommands.Mid("/w  Bob hi", pos), Is.EqualTo("hi"));
+        pos = 0;
+        UserCommands.Tokenize("/w", " ", ref pos);
+        Assert.That(UserCommands.Tokenize("/w", " ", ref pos), Is.EqualTo(""));
+        Assert.That(pos, Is.EqualTo(-1));
+        Assert.That(UserCommands.Mid("/w", pos), Is.EqualTo("/w"));
     }
 
     [Test]

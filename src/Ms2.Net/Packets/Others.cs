@@ -155,6 +155,21 @@ public sealed record ChatMessage(long AccountId, long CharacterId, string Name, 
 }
 
 /// <summary>
+/// Outbound 0x11 (SendOp::UserChat), a chat line to send: FUN_141276f80 (unit_141274d10_uihelpers.cpp:913) writes the
+/// Unk_CommandChat record with FUN_1401fa700 (unit_1401f9eb0_packetpayloadserializers.cpp:415): i32 kind (+4), unicode
+/// message (+8), unicode target (+0x10, the whisper's name), i64 value (+0x18, the club id of a club line).
+/// </summary>
+public sealed record UserChatRequest(int Kind, string Message, string Target, long Value) : Ms2.Net.Wire.IOutPacket {
+    public Outbound Op => Outbound.UserChat;
+    public void Write(ByteWriter w) {
+        w.WriteInt(Kind);
+        w.WriteUnicodeString(Message ?? "");
+        w.WriteUnicodeString(Target ?? "");
+        w.WriteLong(Value);
+    }
+}
+
+/// <summary>
 /// The wedding hall block after a type 0x19 chat line (reader FUN_1407a5960, unit_1407a4f20_packetserializers.cpp:205):
 /// i64, i32 hall, i32 room, i64 time, two unicode strings. vfunc_84 reads it only with feature 0x104 on. STILL-OPEN: what
 /// the first i64 and the strings are; the wedding line builder (FUN_141841180) needs the wedding table, not ported.

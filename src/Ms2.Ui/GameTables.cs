@@ -186,6 +186,11 @@ public sealed class GameTables
     /// <summary>CServerString m_trigger: string/&lt;language&gt;/stringtrigger.xml, read on first use.</summary>
     public Hud.ServerStringGroup TriggerStrings => triggerStrings ??= packs == null ? Hud.ServerStringGroup.Empty
         : Hud.ServerStringGroup.Load(packs, strings.Languages, "stringtrigger.xml", e => FeatureElements.IsAvailable(packs, e), ReservedWords.ReplaceObjectWords);
+    Hud.UserCommands userCommands;
+    /// <summary>CUserCommandCli: Table/chatCommand.xml with string table 0x38 (string/&lt;language&gt;/stringchatcommand.xml
+    /// "name"), read on first use.</summary>
+    public Hud.UserCommands UserCommands => userCommands ??= packs == null ? new Hud.UserCommands()
+        : new Hud.UserCommands(packs, strings?.Table("stringchatcommand", "name"), common);
     /// <summary>CItemDataTable, read per file on first use.</summary>
     public readonly Items.ItemDataTable Items = Ms2.Ui.Items.ItemDataTable.Empty;
     /// <summary>ItemGachaBoxTable (table/gacha_info.xml), read on first use.</summary>

@@ -12,10 +12,11 @@ namespace Ms2.Ui.Hud;
 /// and takes the window's keys.
 /// UIMessengerBrowser::LoadDefaultWindows (:3149) makes one window per table/default/DefaultMessenger&lt;i&gt;.xml, named
 /// messengerdialog&lt;i&gt;.xml.
+/// Return sends the typed line (<see cref="SubmitLine"/>): a slash command through the client's command table
+/// (<see cref="UserCommands"/>), else packet 0x11 to the selected target (<see cref="SendChat"/>, which only sends; the
+/// line shows when the server sends it back).
 /// Not ported yet: the character folder's saved windows (LoadWindows :3689, FUN_141a27570) and saving them (vfunc_4 :638);
-/// sending a line (SendChat :4208, which only sends; the line shows when the server
-/// sends it back) and slash commands (FUN_141a10fd0); the input history; whisper, emoticon, tab menu, attach/detach and
-/// the extra components (m_2e0 / m_2f0).
+/// the input history; whisper list, emoticon, tab menu, attach/detach and the extra components (m_2e0 / m_2f0).
 /// </summary>
 public sealed class MessengerController : UiController
 {
@@ -407,23 +408,288 @@ public sealed class MessengerController : UiController
     }
 
     /// <summary>
-    /// FUN_141a11e30 (:1532). Focused: the trimmed text goes to SubmitLine (not sent here, see the class notes) and the input
-    /// is released; empty, it is only released. Not focused: the input takes the focus with the caret after its text (the
-    /// browser's last channel m_1b0 is 0 until a line is sent, so no whisper or talk target).
+    /// FUN_141a11e30 (:1532), Return. Focused: the text with "&lt;" / "&gt;" escaped (FUN_141842320) and the html text
+    /// without its P, BR, TEXTFORMAT and FONT tags (FUN_140d2c650); the trimmed text, unless empty, goes to
+    /// <see cref="SubmitLine"/>; then the input is released (FUN_141a12260). The input history (FUN_140d2c2a0) and the IME
+    /// composition string the client appends (GetImeCompositionString(2)) are not kept here. Not focused (after vfunc_78,
+    /// the extra components, not ported): after a whisper (the browser's last channel 4) the input starts a whisper to
+    /// its target, after a club line (0x1a) a talk to its club, else it takes the focus with the caret after its text.
     /// </summary>
     void Submit()
     {
         if (InputFocused)
         {
+            string text = Escape(Rt.ToString(Host.Get(textInput, "text")));
+            string html = MessengerBrowser.RemoveChatTags(Rt.ToString(Host.Get(textInput, "htmlText")));
+            text = UserCommands.Trim(text);
+            if (text.Length > 0) SubmitLine(text, html);
             Release();
             return;
         }
+        if (Browser.LastChannel == 4) { SetFocused(textInput, 1); BeginWhisper(Browser.WhisperTarget); return; }
+        if (Browser.LastChannel == 0x1a) { SetFocused(textInput, 1); BeginTalk(Browser.TalkTarget); return; }
         int length = Rt.ToString(Host.Get(textInput, "text")).Length;
         SetFocused(textInput, 1);
-        if (!InputFocused) SetFocused(textInput, 1);          // ASTextInput::FocusAndSetSelection (astextinput.cpp:264)
+        FocusAndSetSelection(length, length);
         Validate(textInput);
-        if (Host.Get(textInput, "textField") is AsObject tf) Host.Invoke(tf, "setSelection", length, length);
+    }
+
+    /// <summary>ASTextInput::FocusAndSetSelection (astextinput.cpp:264): the focus if it has none, then the text field's
+    /// selection.</summary>
+    void FocusAndSetSelection(int begin, int end)
+    {
+        if (!InputFocused) SetFocused(textInput, 1);
         Validate(textInput);
+        if (Host.Get(textInput, "textField") is AsObject tf) Host.Invoke(tf, "setSelection", begin, end);
+    }
+
+    /// <summary>FUN_141842320 (texttohtml.cpp:708): "&lt;" and "&gt;" as their entities.</summary>
+    public static string Escape(string text) => (text ?? "").Replace("<", "&lt;").Replace(">", "&gt;");
+
+    /// <summary>HasChatLink (@0x140d2aa60, unit_140d2a7e0_chatlinkhelpers.cpp:208): the html holds an item, achievement,
+    /// bill or meret market link (found past its first character).</summary>
+    public static bool HasChatLink(string html)
+    {
+        html ??= "";
+        foreach (var e in new[] { "event:itemTooltip", "event:achieveTooltip", "event:billDialog", "event:searchFromMeratmarket" })
+            if (html.IndexOf(e, StringComparison.Ordinal) > 0) return true;
+        return false;
+    }
+
+    /// <summary>RemoveSubstring (@0x141a14c40): the first (case-sensitive) part removed; false without it.</summary>
+    static bool RemoveSubstring(ref string text, string part)
+    {
+        int pos = text.IndexOf(part, StringComparison.Ordinal);
+        if (pos < 0) return false;
+        text = text.Remove(pos, part.Length);
+        return true;
+    }
+
+    /// <summary>
+    /// SubmitLine (@0x141a0f1d0, :1223): a line with links is sent as its html. A line starting with "/" is a command
+    /// (<see cref="RunCommand"/>); else the selected target's type (FUN_141a144a0) unless FUN_141a12380 asks first, sent
+    /// through FUN_141a12e40 (SendChat with no target; the history is not kept).
+    /// </summary>
+    public void SubmitLine(string text, string html)
+    {
+        bool links = HasChatLink(html);
+        string send = links ? html : text;
+        if (text.Length > 0 && text[0] == '/')
+        {
+            RunCommand(text, html, links);
+            return;
+        }
+        int type = SelectedType();
+        if (Browser.ConfirmSend(type, send)) return;
+        SendChat(type, send, "", 0);
+    }
+
+    /// <summary>FUN_141a144a0 (:1896): the type of the target list's selected row, else the first type.</summary>
+    int SelectedType() => subject != null ? TypeAt((int)Rt.ToNumber(Host.Get(subject, "selectedIndex"))) : TypeAt(FirstSubjectIndex());
+
+    UserCommands Commands => Model?.Tables.UserCommands ?? UserCommands.Empty;
+
+    /// <summary>
+    /// FUN_141a10fd0 (:4364), a slash command line; 1 = used. An emotion's command, then a user command function
+    /// (CUserCommandCli::Execute) runs; else the first word's chat type (FUN_141a11c60). A target type selects that target
+    /// (and with super chat shown and selected, opens its dialog); a club line takes the club name and the rest as the
+    /// message (an unknown club gets notice 0x50), a whisper the target and the rest (no target gets notice 0x4e); with
+    /// links the message is the html without "command target ". Then SendChat.
+    /// </summary>
+    public int RunCommand(string text, string html, bool links)
+    {
+        if (Browser.ExecuteEmotion(text)) return 1;
+        if (Commands.Execute(text, Browser.CommandHooks) != 0) return 1;
+        int pos = 0;
+        string command = UserCommands.Tokenize(text, " ", ref pos);
+        if (CommandChat(command, text, out int type)) return 1;
+        string msg = "", target = "";
+        long clubId = 0;
+        switch (type)
+        {
+            case Social or Party or Guild or 9 or World or Channel or Super or GuildMegaphone:
+                SelectSubject(type);
+                if (!IsTypeHidden(Super) && SelectedType() == Super) Browser.OpenSuperChatDialog?.Invoke();
+                return 1;
+            case Talk:
+            {
+                string club = UserCommands.Tokenize(text, " ", ref pos).Trim('"');
+                msg = UserCommands.Trim(UserCommands.Mid(text, pos));
+                if (msg.Length == 0) return 0;
+                clubId = Browser.ClubIdByName(club);
+                if (clubId == 0) { Browser.ShowSystemNotice?.Invoke(Model.Tables.Common(0x50), 1, true); return 0; }
+                if (links)
+                {
+                    msg = html;
+                    if (!RemoveSubstring(ref msg, command + " " + club + " ")) return 0;
+                }
+                if (msg.Length == 0) return 0;
+                break;
+            }
+            case 4:
+                target = UserCommands.Tokenize(text, " ", ref pos).Trim('"');
+                msg = UserCommands.Trim(UserCommands.Mid(text, pos));
+                if (msg.Length == 0) return 0;
+                if (target.Length == 0) { Browser.ShowSystemNotice?.Invoke(Model.Tables.Common(0x4e), 1, true); return 0; }
+                if (links)
+                {
+                    msg = html;
+                    if (!RemoveSubstring(ref msg, command + " " + target + " ")) return 0;
+                }
+                if (msg.Length == 0 || target.Length == 0) return 0;
+                break;
+        }
+        SendChat(type, msg, target, clubId);
+        return 1;
+    }
+
+    /// <summary>
+    /// FUN_141a11c60 (:1509): the command's chat type (0x1b for none; an empty command is used up as is). A command with a
+    /// function has every "command" in the line replaced by "/function". No type, a command (10) or a function (0x15)
+    /// line goes out as it is with the selected target's type (FUN_141a11be0); true = sent.
+    /// </summary>
+    bool CommandChat(string command, string text, out int type)
+    {
+        type = UserCommands.NoChatType;
+        if (command.Length == 0) return true;
+        var info = Commands.Find(command);
+        int t = UserCommands.NoChatType;
+        if (info != null)
+        {
+            t = info.ChatType;
+            if (info.Function.Length > 0) text = text.Replace(command, "/" + info.Function, StringComparison.Ordinal);
+        }
+        type = t;
+        if (t is UserCommands.NoChatType or UserCommands.CommandType or UserCommands.FunctionType)
+        {
+            SendAsIs(SelectedType(), text);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>FUN_141a11be0: the line sent as the type's CommandChat, no other test; the last channel is its kind.</summary>
+    void SendAsIs(int type, string text)
+    {
+        Browser.SendUserChat(new Ms2.Net.Packets.UserChatRequest(type, text, "", 0));
+        Browser.LastChannel = ChatHtml.Kind(type);
+    }
+
+    /// <summary>
+    /// SendChat (@0x141a10660, :4208), nothing without the local player. STILL-OPEN: CBanTextChecker's MaskBannedWords and
+    /// FilterReservedWords are not ported. By the type's kind (FUN_141482f00), a non-empty line (kind 1 even an empty
+    /// one) goes out through FUN_141276f80: wedding / super (0x17; type 0x19 with feature 0x104 and a WeddingChat super
+    /// chat item), world, channel and normal as the type; a whisper as 4, keeping its target; party as 7 in a party,
+    /// else notice 0x335; guild as 8 in a guild, else 0x388; guild megaphone as 0x12 in a guild with permission 0x800
+    /// (else 0x388 / 0x415); a club line as 0x14 with the club id for a known club, keeping its name, else 0x36b. Each
+    /// send sets the browser's last channel; then the idle timer is reset.
+    /// </summary>
+    public void SendChat(int type, string text, string target, long clubId)
+    {
+        if (Model?.HasLocalPlayer != true) return;
+        var b = Browser;
+        int channel = ChatHtml.Kind(type);
+        text ??= ""; target ??= "";
+        bool Send(int kind, long value = 0)
+        {
+            b.SendUserChat(new Ms2.Net.Packets.UserChatRequest(kind, text, target, value));
+            b.LastChannel = channel;
+            return true;
+        }
+        switch (channel)
+        {
+            case 0x17:
+                if (text.Length > 0)
+                {
+                    if (b.IsFeatureEnabled(MessengerBrowser.WeddingFeature) && b.SuperChatItemFunction() == "WeddingChat") type = 0x19;
+                    Send(type);
+                }
+                break;
+            case 0x15 or 0x16:
+                if (text.Length > 0) Send(type);
+                break;
+            case 1:
+                Send(type);
+                break;
+            case 4:
+                if (text.Length > 0) { Send(4); b.WhisperTarget = target; }
+                break;
+            case 2:
+                if (text.Length > 0) { if (b.IsInParty()) Send(Party); else b.Notice(0x335); }
+                break;
+            case 3:
+                if (text.Length > 0) { if (b.IsInGuild()) Send(Guild); else b.Notice(0x388); }
+                break;
+            case 0x18:
+                if (text.Length == 0) break;
+                if (!b.IsInGuild()) { b.Notice(0x388); break; }
+                if (!b.HasGuildPermission(Model.Player.Name ?? "", 0x800)) { b.Notice(0x415); break; }
+                Send(GuildMegaphone);
+                break;
+            case 0x1a:
+                if (text.Length > 0 && clubId != 0)
+                {
+                    if (b.HasClub(clubId)) { Send(Talk, clubId); b.TalkTarget = b.ClubName(clubId) ?? ""; }
+                    else b.Notice(0x36b);
+                }
+                break;
+        }
+        b.ResetIdleTimer?.Invoke();
+    }
+
+    /// <summary>SelectSubject (@0x141a146d0, :1946): only for the current window (FUN_141a12f30, see <see cref="OnKey"/>);
+    /// the type's row selected, then vfunc_93.</summary>
+    void SelectSubject(int type)
+    {
+        if (!InputFocused && IsKeyDown(DikTab)) return;
+        if (subject == null) return;
+        Host.Set(subject, "selectedIndex", IndexOfType(type));
+        SubjectChanged();
+    }
+
+    /// <summary>
+    /// vfunc_93 (:2171), the target changed (also eventChangeTalkTarget): a line starting with "/" loses its first word
+    /// and the space after it (the whole html without a space), the input gets the html back with the caret at the end,
+    /// and the selected row becomes the saved target. STILL-OPEN: for a super, world or channel target the client then
+    /// calls GetClientPlatform()->vfunc_43(2, false, 1000), not identified.
+    /// </summary>
+    void SubjectChanged()
+    {
+        if (textInput == null) return;                       // FUN_1422dc2d0: the movie is loaded
+        string html = Rt.ToString(Host.Get(textInput, "htmlText"));
+        string text = Rt.ToString(Host.Get(textInput, "text"));
+        if (text.Length > 0 && text[0] == '/')
+        {
+            int space = text.IndexOf(' ');
+            if (space != -1) RemoveSubstring(ref html, text.Substring(0, space + 1));
+            else html = "";
+        }
+        SetInputText(html, true);
+        if (subject != null)
+        {
+            targetSelectedIndex = (int)Rt.ToNumber(Host.Get(subject, "selectedIndex"));
+            UpdateSuperWorldChatEffect();
+        }
+    }
+
+    /// <summary>SetInputText (:2470): the input's html text; with bSelectEnd the caret after it; then validated.</summary>
+    void SetInputText(string html, bool selectEnd)
+    {
+        if (textInput == null) return;
+        Host.Set(textInput, "htmlText", html);
+        if (selectEnd && html.Length > 0) FocusAndSetSelection(html.Length, html.Length);
+        Validate(textInput);
+    }
+
+    /// <summary>BeginWhisper (@0x141a17900, :2482): "{whisper command} " or "{whisper command} {target} " (common 0xaa5).</summary>
+    void BeginWhisper(string target) => BeginLine(0xaa5, target);
+    /// <summary>BeginTalk (@0x141a17a60): the same with the club command (common 0xaa6).</summary>
+    void BeginTalk(string target) => BeginLine(0xaa6, target);
+
+    void BeginLine(int id, string target)
+    {
+        string command = Model.Tables.Common(id);
+        SetInputText(string.IsNullOrEmpty(target) ? command + " " : command + " " + target + " ", true);
     }
 
     /// <summary>FUN_141a12260 (:1578): a focused input loses the focus and its text; true = it was focused.</summary>
@@ -444,7 +710,11 @@ public sealed class MessengerController : UiController
             case "eventfocusin": return true;                  // vfunc_90: Unk_MdNames::FUN_141482c80(name), one window
             case "eventfocusout": return true;                 // vfunc_91: the history iterator back to the end
             case "eventchangetab": SelectTab(args.Length > 0 ? Rt.ToString(args[0]) : ""); return true;
-            case "eventpresssubjecttab": UpdateSuperWorldChatEffect(); return true;    // the super chat dialog only for type 0x10
+            case "eventchangetalktarget": SubjectChanged(); return true;     // vfunc_93
+            case "eventpresssubjecttab":
+                UpdateSuperWorldChatEffect();
+                if (!IsTypeHidden(Super) && SelectedType() == Super) Browser.OpenSuperChatDialog?.Invoke();
+                return true;
             case "updatealigntypeandoffset": UpdateAlignAndOffset(); return true;
         }
         return false;

@@ -248,6 +248,106 @@ public sealed class MessengerBrowser
         pending.Clear();
     }
 
+    // ---- sending: UIMessenger::SendChat (@0x141a10660, :4208) and FUN_141276f80 (unit_141274d10_uihelpers.cpp:913) ----
+
+    /// <summary>m_1b0: the kind (FUN_141482f00) of the last line sent; with 4 or 0x1a, Return on an unfocused input starts
+    /// a whisper to <see cref="WhisperTarget"/> or a talk to <see cref="TalkTarget"/> (FUN_141a11e30 :1532).</summary>
+    public int LastChannel;
+    /// <summary>m_strWhisperTarget, the last whisper's recipient.</summary>
+    public string WhisperTarget = "";
+    /// <summary>m_1a8, the last club line's club name.</summary>
+    public string TalkTarget = "";
+
+    /// <summary>FUN_140710590 of packet 0x11 (the game session's send); null = no session, nothing goes out.</summary>
+    public Action<UserChatRequest> SendPacket;
+    /// <summary>MyPC::IsInParty.</summary>
+    public Func<bool> IsInParty = () => false;
+    /// <summary>CGuildManager::IsInGuild. STILL-OPEN: the guild manager is not ported, so not in a guild.</summary>
+    public Func<bool> IsInGuild = () => false;
+    /// <summary>CGuildManager::HasMemberPermission(name, permission). STILL-OPEN: not ported, so none.</summary>
+    public Func<string, int, bool> HasGuildPermission = (_, _) => false;
+    /// <summary>CClubClientManager::GetClubIdByName; 0 = no such club. STILL-OPEN: the club manager is not ported.</summary>
+    public Func<string, long> ClubIdByName = _ => 0;
+    /// <summary>CClubClientManager::GetClub(id) is not null. STILL-OPEN: not ported, so no club.</summary>
+    public Func<long, bool> HasClub = _ => false;
+    /// <summary>The function name of the local player's selected super chat item (MyPC FUN_1416639e0, then the item
+    /// data's function.name); "" without one. STILL-OPEN: the selection is not modelled.</summary>
+    public Func<string> SuperChatItemFunction = () => "";
+    /// <summary>DAT_143ab2914, the local player's GM level (FUN_140930150, scenestategame.cpp:5854); 0 by default.</summary>
+    public Func<int> GmLevel = () => 0;
+    /// <summary>ExecuteEmotionCommand(text): an emotion's slash command ran. STILL-OPEN: not ported, so none.</summary>
+    public Func<string, bool> ExecuteEmotion = _ => false;
+    /// <summary>
+    /// FUN_141a12380 (:4450): with the community options m_b0 / m_b1 / m_b2 set, a super / world / channel line asks in a
+    /// message box first (sent from its OnSuperChatConfirm / OnWorldChatConfirm / OnChannelChatConfirm); true = asked.
+    /// STILL-OPEN: the game options and those boxes are not ported, so it never asks.
+    /// </summary>
+    public Func<int, string, bool> ConfirmSend = (_, _) => false;
+    /// <summary>CUIService::OpenDialog(0x4f58), the super chat dialog. STILL-OPEN: not ported; null does nothing.</summary>
+    public Action OpenSuperChatDialog;
+    /// <summary>WorldService::ResetIdleTimer.</summary>
+    public Action ResetIdleTimer;
+    /// <summary>FUN_141276e00 (:882)'s CBanTextChecker FUN_140225210 of a whisper target; nonzero = refused. STILL-OPEN:
+    /// the checker is not ported, so 0.</summary>
+    public Func<string, int> TargetCheck = _ => 0;
+    /// <summary>CBlockManager::FindBlockedAction(2), a chat penalty: its kind and, for other kinds than 2, the
+    /// FUN_140a2fcd0 remaining time line; null = none. STILL-OPEN: the block manager is not ported.</summary>
+    public Func<(int Kind, string Remaining)?> ChatPenalty = () => null;
+    /// <summary>The field data's HasLimitContent(0x100). STILL-OPEN: the field's limits are not loaded, so false.</summary>
+    public Func<bool> FieldChatLimited = () => false;
+    /// <summary>The hooks of the slash command functions (<see cref="UserCommands.Execute"/>).</summary>
+    public readonly UserCommands.Hooks CommandHooks = new();
+
+    /// <summary>
+    /// FUN_141276f80 (unit_141274d10_uihelpers.cpp:913), a CommandChat send. A whisper (kind 4) to the local player's own
+    /// name (CompareNoCase, FUN_141276e00 result 10) gets the system line 0x430, a target the checker refuses 0x431; a chat
+    /// penalty gets 0x433 (penalty kind 2) or 0x442 and the remaining time; under GM level 0x32 a field that limits chat
+    /// gets s_field_limit_content_chat (all kind 0x14 lines, FUN_1412751b0); else packet 0x11 (FUN_1401fa700 writes the
+    /// record) goes out. 1 = sent.
+    /// </summary>
+    public int SendUserChat(UserChatRequest chat)
+    {
+        var t = Tables;
+        if (chat.Kind == 4)
+        {
+            int result = 0;
+            if (Model?.HasLocalPlayer == true && string.Equals(chat.Target ?? "", Model.Player.Name ?? "", StringComparison.OrdinalIgnoreCase)) result = 10;
+            else result = TargetCheck(chat.Target ?? "");
+            if (result != 0)
+            {
+                AddSystemLine(t.Common(result == 10 ? 0x430 : 0x431), TalkKind.SystemNotice);
+                return 0;
+            }
+        }
+        if (ChatPenalty() is { } penalty)
+        {
+            if (penalty.Kind == 2) AddSystemLine(t.Common(0x433), TalkKind.SystemNotice);
+            else
+            {
+                AddSystemLine(t.Common(0x442), TalkKind.SystemNotice);
+                AddSystemLine(penalty.Remaining, TalkKind.SystemNotice);
+            }
+            return 0;
+        }
+        if (GmLevel() < UserCommands.GmCommandLevel && FieldChatLimited())
+        {
+            AddSystemLine(t.Common("s_field_limit_content_chat"), TalkKind.SystemNotice);
+            return 0;
+        }
+        SendPacket?.Invoke(chat);
+        return 1;
+    }
+
+    /// <summary>FUN_141275260 (unit_141274d10_uihelpers.cpp:267): the common string of the id, unless empty, through
+    /// ShowSystemNotice(text, 1, 1).</summary>
+    public void Notice(int id)
+    {
+        string text = Tables.Common(id);
+        if (!string.IsNullOrEmpty(text)) ShowSystemNotice?.Invoke(text, 1, true);
+    }
+
+    internal bool IsFeatureEnabled(int id) => Feature(id);
+
     // ---- RecvOp 0x1d: UIMessengerBrowser::vfunc_84 (@0x141a22140, uimessenger.cpp:2829) -------------------------------
 
     /// <summary>ShowSystemNotice(text, type, bLog) (@0x1412751f0, unit_141274d10_uihelpers.cpp:255): UISystemText 0x4e41's

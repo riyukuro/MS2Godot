@@ -47,4 +47,17 @@ public class ChatTests {
         Assert.That(m.ItemId, Is.EqualTo(5));
         Assert.That(WeddingChatHall.Read(r), Is.EqualTo(new WeddingChatHall(1, 2, 3, 4, "a", "b")));
     }
+
+    [Test]
+    public void UserChatRequestBytes() {
+        // FUN_1401fa700: kind, message, target, value
+        var w = new ByteWriter();
+        var p = new UserChatRequest(4, "hi", "Bob", 7);
+        p.Write(w);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        Assert.That(p.Op, Is.EqualTo(Outbound.UserChat));
+        Assert.That((int)Outbound.UserChat, Is.EqualTo(0x11));
+        Assert.That((r.ReadInt(), r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadLong()), Is.EqualTo((4, "hi", "Bob", 7L)));
+        Assert.That(r.Available, Is.EqualTo(0));
+    }
 }

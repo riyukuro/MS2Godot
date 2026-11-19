@@ -86,6 +86,7 @@ public enum Outbound : ushort {
     ResponseClientTickSync = 0x0C,
     ResponseFieldEnter = 0x10,
     UserSync = 0x12,
+    UserChat = 0x11,
     RequestServerList = 0x14,
     State = 0x80,
     GlobalFactor = 0x82,

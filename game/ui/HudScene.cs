@@ -494,7 +494,7 @@ public partial class HudScene : Node, IUiStageHost
             WireUserChat(live);
             Action<Ms2.Net.Packets.ChatMessage, Func<Ms2.Net.Packets.WeddingChatHall>> onChat = ChatLog.OnUserChat;
             live.UserChat += onChat;
-            unwatchChat = () => live.UserChat -= onChat;
+            unwatchChat = () => { live.UserChat -= onChat; ChatLog.SendPacket = null; };
         }
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;
@@ -515,6 +515,19 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.SystemSound = key => GD.Print($"chat: system sound {key} is not played");
         ChatLog.LocalCharacterId = () => live.CharacterId;
         ChatLog.ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        ChatLog.SendPacket = chat =>
+        {
+            GD.Print($"chat: send kind {chat.Kind} ({chat.Message.Length} chars)");
+            live.SendChat(chat);
+        };
+        ChatLog.IsInParty = () => live.Party.IsInParty;
+        ChatLog.CommandHooks.ChatLine = ChatLog.AddSystemLine;
+        ChatLog.CommandHooks.GmLevel = ChatLog.GmLevel;
+        ChatLog.CommandHooks.Unported = (name, args) =>
+        {
+            GD.Print($"chat: the user command {name} is not ported");
+            return 1;
+        };
     }
 
     /// <summary>OnNotice (0x71)'s routing; its sinks are this HUD's system text, the shared chat log and the box queue.</summary>
