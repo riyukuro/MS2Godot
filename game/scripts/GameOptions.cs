@@ -62,7 +62,7 @@ public static class GameOptions
 
     /// <summary>GetAccountFolder "../../Config/&lt;account id&gt;" and GetCharacterFolder "…/&lt;account id&gt;/&lt;character
     /// id&gt;" (unit_141274d10_uihelpers.cpp:408-420), beside the game file. Null without a chosen character.</summary>
-    static (string Account, string Character)? Folders()
+    public static (string Account, string Character)? Folders()
     {
         if (Ms2Godot.Flow.Session.Chosen?.User is not { } u) return null;
         var root = System.IO.Path.GetDirectoryName(FilePath);

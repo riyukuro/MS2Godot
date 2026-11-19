@@ -26,6 +26,8 @@ public sealed class QuestData
     public bool ForceRegist;
     /// <summary>basic exceptChapterClear (m_2f).</summary>
     public bool ExceptChapterClear;
+    /// <summary>basic account (m_2c, questdata.cpp:1289): an account quest.</summary>
+    public bool Account;
     /// <summary>basic property bits (m_54, ParseProperty): 0 special, 1 hidebeginablelist, 2 availablecompletionticket, 3 HideWorldMap.</summary>
     public int Properties;
     /// <summary>start npc (m_2e8).</summary>
@@ -48,6 +50,8 @@ public sealed class QuestData
     public int Rank = 5;
     /// <summary>The &lt;completeReward&gt; block (m_complete).</summary>
     public readonly CompleteReward Complete = new();
+    /// <summary>m_rewards: the &lt;acceptReward&gt; &lt;v&gt; rows that load (questdata.cpp:1432-1440), in order.</summary>
+    public readonly List<QuestRewardItem> AcceptRewards = new();
     /// <summary>m_conditions: the &lt;condition&gt; rows that load (CConditionCommonData::Load), in order.</summary>
     public readonly List<QuestCondition> Conditions = new();
     /// <summary>basic autoStart (m_2d).</summary>
@@ -272,6 +276,7 @@ public sealed partial class QuestTable
         QueryInt(basic, "chapterID", ref d.Chapter);
         QueryInt(basic, "standardLevel", ref d.Level);
         QueryBool(basic, "exceptChapterClear", ref d.ExceptChapterClear);
+        QueryBool(basic, "account", ref d.Account);
         QueryInt(basic, "repeatable", ref d.Repeat);
         QueryInt(basic, "questType", ref d.Type);
         QueryBool(basic, "locking", ref d.Locking);
@@ -359,6 +364,17 @@ public sealed partial class QuestTable
                 c.ChoiceRewards.Add(new QuestRewardItem(code, itemRank, count));
             }
         }
+        // <acceptReward>'s <v> rows into m_rewards (questdata.cpp:1432), loaded as the complete reward's are
+        if (q.Element("acceptReward") is { } accept)
+            foreach (var v in accept.Elements("v"))
+            {
+                if ((string)v.Attribute("feature") is { Length: > 0 } f && !featureOn(f)) continue;
+                int code = 0, itemRank = 0, count = 0;
+                QueryInt(v, "code", ref code);
+                QueryInt(v, "rank", ref itemRank);
+                QueryInt(v, "count", ref count);
+                d.AcceptRewards.Add(new QuestRewardItem(code, itemRank, count));
+            }
         return d;
     }
 

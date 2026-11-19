@@ -139,6 +139,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchChat = null;
         unwatchNewItems?.Invoke();
         unwatchNewItems = null;
+        unwatchLearningQuest?.Invoke();
+        unwatchLearningQuest = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         unwatchLivePlayer?.Invoke();
         unwatchLivePlayer = null;
@@ -240,6 +242,7 @@ public partial class HudScene : Node, IUiStageHost
         PlayerInfo(uiRoot);
         GameMenu(uiRoot);
         EventWidgets(uiRoot);
+        LearningQuest();
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
@@ -1234,6 +1237,103 @@ public partial class HudScene : Node, IUiStageHost
     }
 
 
+    // ---- learning quest: uilearningquestdialog run by its own ActionScript, UILearningQuestDialog's C++ side as LearningQuestController
+
+    MovieDialog learningQuestMovie;
+    MovieVideo learningQuestVideo;
+    Ms2.Ui.Hud.LearningQuestController learningQuest;
+    Action unwatchLearningQuest;
+    static SortedDictionary<int, Ms2.Ui.Hud.LearningQuestController.Learning> learningRows;   // CLearningQuestTable, read once
+    static Dictionary<int, int> learningNewMarks;    // the dialog's m_310 of this game session, kept across field scenes
+    static long learningNewMarksFor = -1;            // the character it was made for
+
+    /// <summary>
+    /// The dialog object, made at field entry (the client builds it with the UI and keeps it): the seen files read, and for
+    /// the first field of a character the game start's new marks (NotifyGameStart) and OnChangeServer's
+    /// <see cref="Ms2.Ui.Hud.LearningQuestController.MarkDirty"/>. A quest record change (vfunc_o178_2) and a level change
+    /// (vfunc_oa0_9) mark it again; <see cref="_Process"/> runs its vfunc_72, which opens it on a new learning quest.
+    /// </summary>
+    void LearningQuest()
+    {
+        if (learningQuest != null) return;       // a window relayout keeps it
+        var log = QuestLogSource();
+        if (log == null) return;
+        try
+        {
+            learningRows ??= Ms2.Ui.Hud.LearningQuestController.Load(
+                Ms2.Ui.FeatureElements.Collect(assets.Packs, assets.Table("table/learningquest.xml").Root, "learning", "id"), questTable);
+        }
+        catch (Exception e) { GD.PushWarning("learning quest table: " + e.Message); return; }
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        int offlineField = FieldData.FindByXBlock(assets.Packs, xblock)?.Id ?? 0;
+        var folders = GameOptions.Folders();
+        long who = Ms2Godot.Flow.Session.Chosen?.User?.CharacterId ?? 0;
+        bool gameStart = learningNewMarks == null || learningNewMarksFor != who;
+        if (gameStart) { learningNewMarks = new Dictionary<int, int>(); learningNewMarksFor = who; }
+        var c = learningQuest = new Ms2.Ui.Hud.LearningQuestController
+        {
+            Rows = learningRows,
+            Table = questTable,
+            State = log.State,
+            NewMarks = learningNewMarks,
+            HasLocalPlayer = () => true,
+            PlayerLevel = () => hudModel.Player.Level,
+            FieldId = () => live?.FieldId ?? offlineField,
+            AutoOpenOff = () => GameOptions.LearningQuest.Value,
+            CharacterFile = folders == null ? null : System.IO.Path.Combine(folders.Value.Character, "learningQuestCharacter.xml"),
+            AccountFile = folders == null ? null : System.IO.Path.Combine(folders.Value.Account, "learningQuestAccount.xml"),
+        };
+        c.SendStart += id =>
+        {
+            if (live != null) live.SendTalk(new Ms2.Net.Packets.QuestLearningRequest(id));
+            else GD.Print($"learning quest: start of learning quest {id} not sent (offline)");
+        };
+        c.OpenModelHouse += () => GD.Print("learning quest: the model house dialog (0x4f3f) is not in this HUD yet");
+        c.OpenRequested += OpenLearningQuestMovie;
+        c.Unloaded += () =>
+        {
+            learningQuestMovie?.Host.Unload();
+            learningQuestMovie?.QueueFree();
+            learningQuestMovie = null;
+            learningQuestVideo = null;
+        };
+        c.LoadSeen();
+        if (gameStart) { c.OnGameStart(); c.MarkDirty(); }
+        Action<int> onQuest = _ => c.MarkDirty();
+        Action<Ms2.Ui.StatusEvent> onStatus = e => { if (e == Ms2.Ui.StatusEvent.Level) c.MarkDirty(); };
+        hudModel.Changed += onStatus;
+        if (live != null) live.Quests.Changed += onQuest;
+        unwatchLearningQuest = () =>
+        {
+            hudModel.Changed -= onStatus;
+            if (live != null) live.Quests.Changed -= onQuest;
+        };
+    }
+
+    /// <summary>FUN_141924680, the dialog shown: its movie with the guide video's picture (setVideo's VideoPlayer in m_video).</summary>
+    void OpenLearningQuestMovie()
+    {
+        if (learningQuestMovie != null) { learningQuestMovie.Host.Unload(); learningQuestMovie.QueueFree(); learningQuestMovie = null; }
+        var m = learningQuestMovie = new MovieDialog(assets, learningQuest, hudModel, GetWindow().Size);
+        learningQuestVideo = new MovieVideo(m, assets.Packs, () =>
+            m.Host.Child("m_video") is Ms2.Avm2.Flash.AsContainer video ? video.getChildByName("videoPlayer") : null);
+        m.AddChild(learningQuestVideo);
+        uiRoot.AddChild(m);
+    }
+
+    /// <summary>
+    /// UIGameMenuDialog::OpenLearningQuestDialog (@0x14193bdf0), the game menu's learning quest entry: nothing while the
+    /// dialog is open; on a field that does not allow it the notice s_learning_quest_dungeon, else the first learning quest
+    /// that can be taken opens it, or the notice s_learning_quest_empty when there is none. It does not close the dialog.
+    /// </summary>
+    void OpenLearningQuest()
+    {
+        if (learningQuest == null || !learningQuest.IsClosed) return;
+        if (!learningQuest.FieldAllows()) SystemNotice("s_learning_quest_dungeon");
+        else if (!learningQuest.PickFirst(false)) SystemNotice("s_learning_quest_empty");
+    }
+
+
     // ---- HP/SP orb, skill slots and the EXP bar: their movies --------------------------------------------------------
 
     UiModel hudModel;
@@ -1363,6 +1463,7 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += GameMenuToggle;
         WatchAchieves();
         WatchMails();
+        c.MenuAction += def => { if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest(); };
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, GetWindow().Size));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
@@ -2171,6 +2272,7 @@ public partial class HudScene : Node, IUiStageHost
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
+        learningQuest?.Update();             // UILearningQuestDialog::vfunc_72: the new learning quest after MarkDirty
         if (PerfLog.On) PerfScript();
         if (shotDir == null) return;
         if (questShot != null && frames == 200) OpenQuestLog();
@@ -2180,6 +2282,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "inventory" && frames == 200) ToggleInventory();
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
+        if (openShot == "learningquest" && frames == 200) OpenLearningQuest();
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)

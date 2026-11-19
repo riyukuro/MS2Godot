@@ -139,3 +139,10 @@ public sealed record QuestGuideRewardRequest(int QuestId) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(0x18); w.WriteInt(QuestId); }
 }
+
+/// <summary>Outbound 0x29 mode 0x10 (UILearningQuestDialog vfunc_28 "onOk" @0x140ea12a0, uilearningquestdialog.cpp:179-181):
+/// u8 0x10, i32 learning id (m_18c, the shown row of Table/learningQuest.xml). Starts the learning quest.</summary>
+public sealed record QuestLearningRequest(int LearningId) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(0x10); w.WriteInt(LearningId); }
+}
