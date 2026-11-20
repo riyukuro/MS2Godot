@@ -274,12 +274,21 @@ public sealed class NxController
                collided && safeF <= 0 && motionResult.GetCollisionUnsafeFraction() <= 0;
     }
 
+    /// <summary>The body's shape at <paramref name="at"/> is inside some shape (SAT, the test's first step).</summary>
+    bool Inside(Vector3 at, Vector3 dir) => StartedInside(TestMotion(at, dir * ProbeMotion, CastMargin, false), dir * ProbeMotion);
+
     /// <summary>
     /// NxSweepCapsuleTriangles and the other shape sweeps: the distance along <paramref name="dir"/> to the first contact of
     /// the body's shape, within <paramref name="length"/>: one motion test (PhysicsServer3D.BodyTestMotion, with its
     /// parameter and result objects kept, so a sweep allocates nothing), then the gap to the touched point is closed.
     /// A sweep that starts inside a shape passes through it, as SweepCapsuleBox's d == 0 does (CharacterController.cpp:366-374):
     /// <see cref="SweepFromInside"/>.
+    /// <para>The test's cast is GodotPhysics3D's: a GJK distance test on the shape plus its motion, then a bisection. Against
+    /// a large box (thousands of cm) the GJK test reports separation for a motion that passes through the box in 1-3% of
+    /// casts, and the cast reports no hit: a body landing on such a floor fell through it. So the move is probed with the
+    /// SAT overlap test (the test's first step, which does not miss) every 1.8 capsule radii up to where the cast stopped;
+    /// a probe inside a shape brackets the missed contact, which is then bisected with the same probe. STILL-OPEN: a shape
+    /// thinner than the probe step, crossed between two probes and missed by the cast, is still passed through.</para>
     /// </summary>
     Contact? Sweep(Vector3 from, Vector3 dir, float length)
     {
@@ -327,6 +336,24 @@ public sealed class NxController
             }
         }
 
+        // the SAT probes over what the casts let through
+        float reach = hit ? safe : length, lo = 0;
+        float step = 1.8f * (shapeNode.Shape is CapsuleShape3D c0 ? c0.Radius : MoveConfig.Radius);
+        for (float t = Mathf.Min(step, reach); t > lo; t = Mathf.Min(t + step, reach))
+        {
+            if (!Inside(from + dir * t, dir)) { lo = t; continue; }
+            float hi = t;
+            for (int i = 0; i < 16 && hi - lo > 1e-3f; i++)
+            {
+                float mid = (lo + hi) * 0.5f;
+                if (Inside(from + dir * mid, dir)) hi = mid; else lo = mid;
+            }
+            safe = lo;
+            unsafeD = hi;
+            hit = true;
+            have = false;
+            break;
+        }
         if (!hit) return null;
 
         // what is touched there, and the exact stop: the casts' collision test leaves up to ~1e-3 of the bracket, so the
