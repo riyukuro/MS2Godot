@@ -399,7 +399,7 @@ public partial class As3View : Node2D
             if (fresh)
             {
                 Checked(true, "unsynced object", o);
-                e = new Entry { Obj = o, Holder = new Node2D { Name = string.IsNullOrEmpty(o.InstanceName) ? o.Class?.LocalName ?? "obj" : o.InstanceName, Visible = false }, Visible = false };
+                e = new Entry { Obj = o, Holder = new Node2D { Name = HolderName(string.IsNullOrEmpty(o.InstanceName) ? o.Class?.LocalName ?? "obj" : o.InstanceName), Visible = false }, Visible = false };
                 o.Tag = e; entries.Add(e); byNode[e.Holder] = e;
             }
             else e = (Entry)o.Tag;
