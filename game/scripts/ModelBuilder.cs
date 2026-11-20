@@ -324,13 +324,41 @@ public sealed class ModelBuilder
         return format;
     }
 
-    /// <summary>A morph target's weight range: its key values (with a tenth of the span either side for Bezier overshoot)
-    /// or its fixed weight.</summary>
+    /// <summary>A morph target's weight range: its key values, each Bezier segment's extremes between them, or its fixed
+    /// weight.</summary>
     static (float lo, float hi) MorphRange(MorphAnim a, int t)
     {
         if (a.Weights[t] is not { } k) return (a.Static[t], a.Static[t]);
-        float lo = k.Values.Min(), hi = k.Values.Max(), pad = k.KeyType == 2 ? 0.1f * (hi - lo) : 0f;
-        return (lo - pad, hi + pad);
+        float lo = k.Values.Min(), hi = k.Values.Max();
+        if (k.KeyType == 2 && k.InTans != null && k.OutTans != null)
+            for (int j = 0; j + 1 < k.Values.Length; j++)
+            {
+                var (sl, sh) = BezierSegmentRange(k.Values[j], k.Values[j + 1], k.OutTans[j], k.InTans[j + 1]);
+                lo = Mathf.Min(lo, sl); hi = Mathf.Max(hi, sh);
+            }
+        return (lo, hi);
+    }
+
+    /// <summary>The range of one Bezier key segment as field_uv's key_segment draws it (NiInterpScalar::Bezier,
+    /// NiInterpScalar.cpp:26-36): f(u) = p + (dp + (A + B u) u) u on 0..1, from its ends and the roots of f'(u) =
+    /// dp + 2 A u + 3 B u^2 inside the segment.</summary>
+    static (float lo, float hi) BezierSegmentRange(float p, float q, float dp, float dq)
+    {
+        float A = 3f * (q - p) - (dq + 2f * dp), B = dp + dq - 2f * (q - p);
+        float lo = Mathf.Min(p, q), hi = Mathf.Max(p, q);
+        void At(float u)
+        {
+            if (!(u > 0f && u < 1f)) return;
+            float f = p + (dp + (A + B * u) * u) * u;
+            lo = Mathf.Min(lo, f); hi = Mathf.Max(hi, f);
+        }
+        if (Mathf.Abs(B) < 1e-9f) { if (Mathf.Abs(A) > 1e-9f) At(-dp / (2f * A)); }
+        else
+        {
+            float disc = A * A - 3f * B * dp;
+            if (disc >= 0f) { float sq = Mathf.Sqrt(disc); At((-A + sq) / (3f * B)); At((-A - sq) / (3f * B)); }
+        }
+        return (lo, hi);
     }
 
     /// <summary>A morphing mesh's bounds in its own space: each vertex moved by every target over its weight range.</summary>
@@ -710,7 +738,7 @@ public sealed class ModelBuilder
             }
             SetUvTransforms(sm, m);
             SetBillboard(sm, m);
-        SetMorph(sm, m);
+            SetMorph(sm, m);
             return sm;
         }
         return CharacterMaterial(m, tex);
