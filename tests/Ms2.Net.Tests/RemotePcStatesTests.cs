@@ -260,6 +260,35 @@ public class RemotePcStatesTests {
         Assert.That(b.Jumping, Is.True);
     }
 
+    [Test] public void RandomJumpSubFollowsClientTable() {
+        // StateJump::StateJump (@0x1417d5160, statejump.cpp:82-85): m_aSub = {0x21, 0x23, 0x22, 0x24};
+        // StateJump::vfunc_4 (@0x1417d5320, statejump.cpp:107-116): toggle = (toggle + 1) % 2; odd rand -> (m_aSub + 2)[toggle], even -> m_aSub[toggle]
+        int oddSeed = 0;
+        while (true) { var r = new Random(oddSeed); if (r.Next(2) == 1 && r.Next(2) == 1 && r.Next(2) == 1) break; oddSeed++; }
+        var b = new Body();
+        var sm = new RemotePcStates(b, oddSeed);
+        var oddSubs = new int[3];
+        for (int i = 0; i < 3; i++) {
+            sm.ChangeState(RemotePcStates.StateIdle);
+            sm.Push(Rec(6, 0x25, b.Position, Vector2.Zero, 0f));
+            sm.Update(1 / 60f);
+            oddSubs[i] = sm.Sub;
+        }
+        Assert.That(oddSubs, Is.EqualTo(oddSubs[0] == 0x22 ? new[] { 0x22, 0x24, 0x22 } : new[] { 0x24, 0x22, 0x24 }));
+
+        int evenSeed = 0;
+        while (true) { var r = new Random(evenSeed); if (r.Next(2) == 0 && r.Next(2) == 0 && r.Next(2) == 0) break; evenSeed++; }
+        var sm2 = new RemotePcStates(new Body(), evenSeed);
+        var evenSubs = new int[3];
+        for (int i = 0; i < 3; i++) {
+            sm2.ChangeState(RemotePcStates.StateIdle);
+            sm2.Push(Rec(6, 0x25, Vector3.Zero, Vector2.Zero, 0f));
+            sm2.Update(1 / 60f);
+            evenSubs[i] = sm2.Sub;
+        }
+        Assert.That(evenSubs, Is.EqualTo(evenSubs[0] == 0x21 ? new[] { 0x21, 0x23, 0x21 } : new[] { 0x23, 0x21, 0x23 }));
+    }
+
     [Test] public void GroundMaterialRefreshesEvery200Ms() {
         // PC::vfunc_53: vfunc_93(true) on the first frame and whenever m_timer970 (200 ms) has expired
         var b = new Body();

@@ -132,7 +132,7 @@ public sealed class RemotePcStates
     float walkSpeed1, walkSpeed2; int walkRun = 1, walkChanged;
     // StateJump
     Vector3 jumpDir; int jumpFirstSteer; float jumpSavedSpeed; bool jumpHadInput; static int jumpToggle;
-    static readonly int[] JumpSubs = { 0x21, 0x22, 0x23, 0x24 };   // m_aSub: {0x21, 0x22} then +2 {0x23, 0x24}
+    static readonly int[] JumpSubs = { 0x21, 0x23, 0x22, 0x24 };   // m_aSub (@0x1417d5160, statejump.cpp:82-85): {0x21, 0x23}, +2 {0x22, 0x24}
 
     public RemotePcStates(IRemotePc owner, int seed = 0)
     {
