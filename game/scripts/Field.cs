@@ -191,6 +191,7 @@ public partial class Field : Node3D
             var ground = new World.GroundEffects(packs, builder);
             AddChild(ground);
             steps.EffectFile = f => ground.Play(f, player.GlobalPosition, player.Visual?.GlobalRotation.Y ?? 0);
+            steps.Ground = () => player.GroundMaterial;
             player.Landed += steps.Land;
         }
         var nav = NavDebug.Start(this, packs, assets, spec, flats, fieldName, navOn);   // the navmesh; F9 / --nav: its overlay

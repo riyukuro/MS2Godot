@@ -193,7 +193,7 @@ public partial class FieldAudio : Node
                 // the ground effects of a step or a landing play whether or not there is a sound bank (CGroundEffectDataManager::
                 // PlayEffects inserts the effect files through CEffectService, groundeffectdata.cpp:275-305); the bank adds the sounds
                 var ground = new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
-                a.Footsteps = new FootstepSounds(null, ground, map, player, anim);
+                a.Footsteps = new FootstepSounds(null, ground, player, anim);
                 a.AddChild(a.Footsteps);
             }
             if (!a.Open(dataDir, packs)) return a;

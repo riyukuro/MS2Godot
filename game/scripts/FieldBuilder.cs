@@ -22,6 +22,9 @@ public sealed class FieldBuilder
     public static readonly StringName KindMeta = "ms2_kind";
     /// <summary>Meta on a collider body or node: its PropCollisionGroup.</summary>
     public static readonly StringName GroupMeta = "ms2_group";
+    /// <summary>Meta on a collision shape whose entity has a MapAttribute (0xde5dd580): the ground material that
+    /// PCBase::UpdateGroundMaterial reads from the entity in the controller's hit report.</summary>
+    public static readonly StringName GroundMeta = "ms2_ground";
     const int GeneratedBoxGroup = 9;
 
     readonly PackSet packs;
@@ -209,6 +212,23 @@ public sealed class FieldBuilder
     /// <summary>The finished field from <see cref="BuildSteps"/>.</summary>
     public Node3D World { get; private set; }
 
+    /// <summary>Marks a collision shape with its entity's MapAttribute, when the entity has one.</summary>
+    public static void TagGround(CollisionShape3D cs, string material)
+    {
+        if (!string.IsNullOrEmpty(material)) cs.SetMeta(GroundMeta, material);
+    }
+
+    /// <summary>
+    /// PCBase::UpdateGroundMaterial (0x141670ed0, pcbase.cpp:2441-2454) on the entity of a touched shape: the entity's
+    /// MapAttribute (0xde5dd580), "default" when it has none. The material belongs to the shape the controller touched,
+    /// so a stone cube next to a lower water cube is stone (no material) wherever the feet are on it.
+    /// </summary>
+    public static string GroundMaterial(GodotObject collider, int shape)
+    {
+        var owner = collider is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
+        return owner != null && owner.HasMeta(GroundMeta) ? (string)owner.GetMeta(GroundMeta) : "default";
+    }
+
     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset) standing on the
     // entity position, turned by the Z rotation only; scale is ignored
     BoxShape3D GeneratePhysXBox(FieldEntity e, out Transform3D at)
@@ -358,9 +378,11 @@ public sealed class FieldBuilder
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
                 // entity, so the hit report and the ground ray can name it (both actors of a cube are the same entity)
                 bool fallReturn = e.HasMixin("MS2CubeProp") && e.Bool("IsFallReturn") && (group == 9 || group == 8);
+                var material = e.Get("MapAttribute");
                 CollisionShape3D Tag(CollisionShape3D cs)
                 {
                     if (fallReturn) cs.SetMeta(FallReturnMeta, entityIndex);
+                    TagGround(cs, material);
                     return cs;
                 }
                 // PropService::HandleSceneGraphAddedMessage (PropService.cpp:460-465, exe 0x142062560) returns before

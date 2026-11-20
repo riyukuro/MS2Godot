@@ -134,6 +134,7 @@ public partial class Player
     {
         hitGroup = -1;
         hitFallReturn = -1;
+        hitGround = null;
     }
 
     /// <summary>

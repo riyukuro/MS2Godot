@@ -1,11 +1,10 @@
 using Godot;
 using Ms2.Audio;
-using Ms2.Formats.World;
 
 namespace Ms2Godot;
 
 /// <summary>
-/// Footsteps after CGroundEffectDataManager::PlayEffects: the ground material under the character (the cube entity's MapAttribute)
+/// Footsteps after CGroundEffectDataManager::PlayEffects: the ground material of what the character touched (<see cref="Ground"/>)
 /// picks groundeffect/&lt;ground&gt;.xml, the step's action (walk, run0, run1, land) the sound events. The client fires a step when the
 /// animation's text key "run*" / "walk*" is reached (PCBase::TextKeyEvent); the player's KF files in this client data carry
 /// only start/end keys, so steps follow a fixed cadence of two per animation cycle (run0 then run1, the two feet) unless
@@ -13,15 +12,12 @@ namespace Ms2Godot;
 /// </summary>
 public partial class FootstepSounds : Node
 {
-    const float Cell = 150f;   // cube size of the field's ground entities
-
     SoundLibrary library;
     /// <summary>The sound bank; null plays the steps' effect files only.</summary>
     public SoundLibrary Library { get => library; set => library = value; }
     readonly GroundEffectTable table;
     readonly CharacterBody3D body;
     readonly AnimationPlayer anim;
-    readonly Dictionary<(int, int, int), string> grounds = new();
     readonly Dictionary<string, AudioStreamWav> decoded = new();
     readonly AudioStreamPlayer3D[] voices = new AudioStreamPlayer3D[4];
     int nextVoice;
@@ -40,27 +36,19 @@ public partial class FootstepSounds : Node
     /// <summary>Called with every effect file a step picks, for its visual parts (the sounds play here).</summary>
     public Action<string> EffectFile;
 
-    public FootstepSounds(SoundLibrary library, GroundEffectTable table, FieldMap map, CharacterBody3D body, AnimationPlayer anim)
+    /// <summary>
+    /// The ground material for a step or a landing: PCBase::FUN_141671480 (pcbase.cpp:2488), the material of the entity
+    /// in the controller's hit report (the player's <c>GroundMaterial</c>). The client reads no position grid: a cell
+    /// lookup by position picked the neighbouring or a lower cube near an edge (water under the side of a stone cube).
+    /// "" plays nothing (PlayEffects returns on an empty ground, groundeffectdata.cpp:275); null is "default".
+    /// </summary>
+    public Func<string> Ground;
+
+    public FootstepSounds(SoundLibrary library, GroundEffectTable table, CharacterBody3D body, AnimationPlayer anim)
     {
         this.library = library; this.table = table; this.body = body; this.anim = anim;
         Name = "FootstepSounds";
-        foreach (var e in map.Entities)
-        {
-            var g = e.Get("MapAttribute");
-            if (string.IsNullOrEmpty(g)) continue;
-            var p = e.Position;
-            grounds[((int)Math.Floor(p.X / Cell), (int)Math.Floor(p.Y / Cell), (int)Math.Floor(p.Z / Cell))] = g;
-        }
         for (int i = 0; i < voices.Length; i++) { voices[i] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; body.AddChild(voices[i]); }
-    }
-
-    /// <summary>The ground material at a Godot-space point (standing on it), "default" when there is none.</summary>
-    public string GroundAt(Vector3 p)
-    {
-        int cx = (int)Math.Floor(p.X / Cell), cy = (int)Math.Floor(-p.Z / Cell), cz = (int)Math.Floor((p.Y - 1f) / Cell);
-        for (int dz = 0; dz < 4; dz++)
-            if (grounds.TryGetValue((cx, cy, cz - dz), out var g)) return g;
-        return "default";
     }
 
     public override void _Process(double delta)
@@ -95,9 +83,10 @@ public partial class FootstepSounds : Node
     /// <summary>Play the sounds of one action ("walk", "run0", "run1", "land") on the ground under the character.</summary>
     public void Step(string action)
     {
-        LastGround = GroundAt(body.GlobalPosition);
+        LastGround = Ground == null ? "default" : Ground();
         LastAction = action;
         stepCount++;
+        if (string.IsNullOrEmpty(LastGround)) return;
         var files = table.PickFiles(LastGround, action, rng);
         foreach (var f in files) EffectFile?.Invoke(f);
         if (library == null) return;

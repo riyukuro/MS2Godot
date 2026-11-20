@@ -51,6 +51,15 @@ public partial class Player : CharacterBody3D
     /// <summary>PCBase::FUN_141675ed0: the entity in the controller's hit report is water (kind 8).</summary>
     public bool OnWater => hitGroup == MoveConfig.WaterGroup;
     public float GroundDistance { get; private set; }
+    /// <summary>
+    /// PCBase::vfunc_93(true) (0x141671130, pcbase.cpp:2458-2483) and UpdateGroundMaterial (0x141670ed0,
+    /// pcbase.cpp:2441-2454), read by FUN_141671480 (pcbase.cpp:2488) for CGroundEffectDataManager::PlayEffects
+    /// (groundeffectdata.cpp:275): the material of the entity in the controller's hit report, "default" when that
+    /// entity has none or when the actor is neither on the ground nor above anything (m_unk_9a8: FUN_141671a30 or the
+    /// down ray), "" when the report holds no entity (PlayEffects then plays nothing).
+    /// STILL-OPEN: the equipment's ground override (m_str960, FUN_141670e50 from equipment.cpp:2790) is not ported.
+    /// </summary>
+    public string GroundMaterial => hitGround == null ? "" : Grounded || GroundDistance < float.MaxValue ? hitGround : "default";
     /// <summary>The last controller move touched something below (NXCC_COLLISION_DOWN).</summary>
     public bool Grounded => (nxHit & NxController.Hit.Down) != 0;
     /// <summary>The last landing's drop (the height the client sends in StateFallDamage; the server applies damage).</summary>
@@ -62,6 +71,7 @@ public partial class Player : CharacterBody3D
     float stateTime, airTime, baseSpeed = MoveConfig.RunSpeed, yawDeg, targetYawDeg;
     Vector3 kVel;                         // GameObjectController m_kVelocity (horizontal)
     int hitGroup = -1;                    // GameObjectControllerHitReport m_entity: its collision group, -1 = none
+    string hitGround;                     // the hit report entity's ground material, null = no entity
     NxController nx;
     NxController.Hit nxHit;               // GameObjectController m_nCollisionFlags of the last move
     bool fallTimerRunning;                // GameObjectController m_kFallTimer is running (airTime is its elapsed time)
@@ -398,6 +408,7 @@ public partial class Player : CharacterBody3D
         hitGroup = owner != null && owner.HasMeta(FieldBuilder.KindMeta) ? (int)owner.GetMeta(FieldBuilder.KindMeta)
                  : collider is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
         hitFallReturn = FallReturnEntity(collider, shape);
+        hitGround = FieldBuilder.GroundMaterial(collider, shape);
     }
 
     // ---- GameObjectController: jump and fall integration -------------------------------------------------------------

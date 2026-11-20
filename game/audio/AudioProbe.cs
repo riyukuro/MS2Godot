@@ -55,7 +55,7 @@ public partial class AudioProbe : Node
         lib.AddAnimation("run", new Animation { Length = 0.6f, LoopMode = Animation.LoopModeEnum.Linear });
         anim.AddAnimationLibrary("", lib);
         var table = new Ms2.Audio.GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
-        foot = new FootstepSounds(audio.Library, table, map, body, anim) { OnFloor = () => true };
+        foot = new FootstepSounds(audio.Library, table, body, anim) { OnFloor = () => true };
         AddChild(foot);
         // stand on the first grass cube and on the first rock cube
         foreach (var kind in new[] { "grass", "rock" })
@@ -64,7 +64,9 @@ public partial class AudioProbe : Node
             if (e == null) continue;
             var p = FieldBuilder.ToGodotPoint(e.Position) + new Vector3(75, 150, -75);
             body.GlobalPosition = p;
-            GD.Print($"audio probe: at {p}: ground '{foot.GroundAt(p)}'");
+            // the probe has no controller: stand in for its hit report with the cube's material
+            foot.Ground = () => e.Get("MapAttribute");
+            GD.Print($"audio probe: at {p}: ground '{foot.Ground()}'");
             foot.Step("walk");
             foot.Step("run0");
             foot.Step("run1");
