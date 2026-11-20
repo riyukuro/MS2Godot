@@ -971,4 +971,33 @@ public class AudioTests
         Assert.That(SoundLibrary.MatchesWaveName("en_Male_Greet_01", "Male_Greet_01", "en_"), Is.True);
         Assert.That(SoundLibrary.MatchesWaveName("jp_Male_Greet_01", "Male_Greet_01", "en_"), Is.False);
     }
+
+    [Test]
+    public void SoundMusicEffectCasterKindFollowsMyPcVsRemotePcAndSystem()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.PlayMusic(35, 0f, 0x80, false), Is.True);
+        var fx = new SoundMusicEffectState();
+        var cue15 = new SoundMusicEffectParam(CueId: 15, Priority: 0x80);
+
+        // Remote PC / NPC (PCBase::vfunc_58 = 3, pcbase.cpp:1092): CasterKindForActor(false) = 3 (> 1) does NOT change the cue.
+        int remoteKind = SoundMusicEffectState.CasterKindForActor(isMyPc: false);
+        Assert.That(remoteKind, Is.EqualTo(SoundMusicEffectState.CasterOtherPc));
+        var remoteRes = fx.Apply(mc, cue15, nowSeconds: 0.0, currentMusicVolume: 1f, categoryMusicVolume: 1f, casterKind: remoteKind);
+        Assert.That(remoteRes, Is.EqualTo((false, false, false)));
+        Assert.That(mc.CurrentCueId, Is.EqualTo(35), "effect cast by remote PC must not change local cue");
+
+        // Local player (MyPC::vfunc_58 = 1, mypc.cpp:1247): CasterKindForActor(true) = 1 (<= 1) changes the cue.
+        int myPcKind = SoundMusicEffectState.CasterKindForActor(isMyPc: true);
+        Assert.That(myPcKind, Is.EqualTo(SoundMusicEffectState.CasterMyPc));
+        var myPcRes = fx.Apply(mc, cue15, nowSeconds: 0.0, currentMusicVolume: 1f, categoryMusicVolume: 1f, casterKind: myPcKind);
+        Assert.That(myPcRes.CueChanged, Is.True);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(15), "effect cast by my PC must change local cue");
+
+        // System/world effect (e.g. CSceneStateGame::FUN_141739450 taxi req.m_nObject = 0, scenestategame.cpp:11909,11918): applies.
+        var popRes = fx.Apply(mc, new SoundMusicEffectParam(CueId: 0, Priority: 0x80), nowSeconds: 1.0, currentMusicVolume: 1f, categoryMusicVolume: 1f, casterKind: SoundMusicEffectState.CasterSystem);
+        Assert.That(popRes.CueChanged, Is.True);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(35));
+    }
 }

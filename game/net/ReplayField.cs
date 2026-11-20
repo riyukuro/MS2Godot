@@ -268,26 +268,36 @@ public partial class ReplayField : Field
             }
             else npcs.PlaySequence(u.ActorId, motion.SequenceName);
         }
-        PlayFx(motion.MotionEffect, who.Value.root.Position, who.Value.yaw);
+        PlayFx(motion.MotionEffect, who.Value.root.Position, who.Value.yaw, CasterKindOf(u.ActorId));
     }
 
-    void PlayFx(string id, Vector3 at, float yaw)
+    /// <summary>
+    /// Effect target kind for an actor id per WorldService::GetObjectKind (@0x141bd1a10, worldservice_1.cpp:6304-6309):
+    /// StateSkill (stateskill.cpp:541,757,824,856,1834,2367,2383) and CMagic hit effects (magicdata.cpp:2797,2805) pass
+    /// MyPC::vfunc_58 = 1 (@0x141522cc0, mypc.cpp:1247) for the local player and PCBase::vfunc_58 = 3 (pcbase.cpp:1092)
+    /// for remote PCs and NPCs.
+    /// </summary>
+    int CasterKindOf(int actorId) =>
+        Ms2.Audio.SoundMusicEffectState.CasterKindForActor(actors.TryGetValue(actorId, out var a) && a.IsSelf);
+
+    void PlayFx(string id, Vector3 at, float yaw, int casterKind)
     {
         int before = combat.ParticleSystemsRun;
-        combat.PlayEffect(id, at, yaw);
+        combat.PlayEffect(id, at, yaw, casterKind);
         if (System.Environment.GetEnvironmentVariable("MS2_FXLOG") != null && combat.ParticleSystemsRun > before) GD.Print($"fx {id} at {replay.Stream.PlayedSeconds:F1}s systems +{combat.ParticleSystemsRun - before}");
     }
 
     void OnDamage(SkillDamage d)
     {
         var motion = d.SkillId != 0 ? skills.Motion(d.SkillId, d.Level, d.Motion) : null;
+        int casterKind = CasterKindOf(d.OwnerId);
         bool hitFx = false;
         foreach (var t in d.Targets)
         {
             var who = Find(t.TargetId);
             if (who == null) continue;
             foreach (var h in t.Hits) { combat.Number(who.Value.root.Position + new Vector3(0, who.Value.height + 40, 0), h.Damage, h.Flag); DamageNumbers++; }
-            if (!hitFx && motion != null && motion.HitEffects.Count > 0) { PlayFx(motion.HitEffects[0], who.Value.root.Position + new Vector3(0, who.Value.height * 0.5f, 0), 0); }
+            if (!hitFx && motion != null && motion.HitEffects.Count > 0) { PlayFx(motion.HitEffects[0], who.Value.root.Position + new Vector3(0, who.Value.height * 0.5f, 0), 0, casterKind); }
         }
     }
 

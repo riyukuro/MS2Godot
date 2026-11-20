@@ -144,7 +144,8 @@ public partial class TaxiStations : Node3D
             }
             if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
             {
-                FieldAudio.Instance?.PlayEffectSoundMusic(part, Ms2.Audio.SoundMusicEffectState.CasterOther);
+                // CSceneStateGame::FUN_141739450 (@0x141739450, scenestategame.cpp:11909,11918): req.m_nObject = 0 (system).
+                FieldAudio.Instance?.PlayEffectSoundMusic(part, Ms2.Audio.SoundMusicEffectState.CasterSystem);
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath) || Scene(part.FilePath) is not { } sc) continue;

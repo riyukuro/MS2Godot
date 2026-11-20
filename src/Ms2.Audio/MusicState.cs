@@ -629,10 +629,21 @@ public readonly record struct SoundMusicEffectParam(
 /// </summary>
 public sealed class SoundMusicEffectState
 {
-    /// <summary>Unk_EffectTarget::m_nKind values (effectservice.cpp:255,304,360,2169; soundmusiceffectparam.cpp:139-140).</summary>
+    /// <summary>
+    /// Unk_EffectTarget::m_nKind values (effectservice.cpp:255,304,360,2169; soundmusiceffectparam.cpp:139-140;
+    /// WorldService::GetObjectKind @0x141bd1a10, worldservice_1.cpp:6304-6309: MyPC::vfunc_58 @0x141522cc0,
+    /// mypc.cpp:1247 returns 1; PCBase::vfunc_58, pcbase.cpp:1092 returns 3 for other PCs/NPCs).
+    /// </summary>
     public const int CasterSystem = 0;
     public const int CasterMyPc = 1;
     public const int CasterOther = 2;
+    public const int CasterOtherPc = 3;
+
+    /// <summary>
+    /// Maps a combat actor to Unk_EffectTarget::m_nKind per WorldService::GetObjectKind (worldservice_1.cpp:6304-6309):
+    /// 1 for the local player (MyPC::vfunc_58, mypc.cpp:1247), 3 for remote PCs and NPCs (PCBase::vfunc_58, pcbase.cpp:1092).
+    /// </summary>
+    public static int CasterKindForActor(bool isMyPc) => isMyPc ? CasterMyPc : CasterOtherPc;
 
     bool active;
     double startTime;
