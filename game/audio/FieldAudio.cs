@@ -1,4 +1,4 @@
-using System.Xml.Linq;
+using System.Globalization;
 using Godot;
 using Ms2.Audio;
 using Ms2.Formats.Pack;
@@ -7,9 +7,10 @@ using Ms2.Formats.World;
 namespace Ms2Godot;
 
 /// <summary>
-/// Sound of a loaded field, after CSoundEventMgr::PlayMusic and the fielddata bgm entry: the field's
-/// table/fielddata.xml entry names a music cue (&lt;bgm id="35" param="5"/&gt;); the cue is resolved through MS2Sound.fev to
-/// the bank sample and played looped. Also plays UI sounds by event name.
+/// Sound of a loaded field, after CSoundEventMgr::PlayMusic / SetMusicParameter / OnMusicCallback and the fielddata
+/// &lt;bgm&gt; entry: the field's table/fielddata.xml entry names a music cue and parameter (&lt;bgm id="35" param="5"/&gt;);
+/// MusicController drives the cue's segment graph (intro, loop, bridge/intermission transitions via parameter 5, one-shots)
+/// and boss combat BGM switching. Voice banks follow GameOptions.Voice (CSoundService @0x1417aea70, soundservice.cpp:418-433).
 /// </summary>
 public partial class FieldAudio : Node
 {
@@ -22,17 +23,24 @@ public partial class FieldAudio : Node
 
     public override void _ExitTree()
     {
+        Unchain();
         if (Instance == this) Instance = null;
     }
 
     SoundLibrary library;
     SystemSoundTable systemSounds;
     public SoundLibrary Library => library;
+    public MusicController MusicState { get; private set; }
+    public BossBgmTracker BossBgm { get; private set; }
     public AmbientSounds Ambient { get; set; }
     public FootstepSounds Footsteps { get; private set; }
     AudioStreamPlayer music;
     AudioStreamPlayer ui;
-    MusicPlan plan;
+    int playGeneration;
+    MusicSegment activeSegment;
+    float activeSegmentVolume = 1f;
+    string bgmName;
+    readonly Dictionary<int, (SoundClip Clip, Pcm16 Pcm)> cueSegments = new();
 
     /// <summary>Music category volume, the client's CSoundEventMgr::m_fNowMusicVolume, multiplied onto the FEV-authored cue
     /// volume. The client sets it from the sound options (FUN_14125fe20, gameoptionstruct.cpp:2727: SetCategoryVolume(2,
@@ -46,13 +54,13 @@ public partial class FieldAudio : Node
     public void ApplyVolumes(Ms2.Formats.Options.SoundVolumes v)
     {
         MusicVolume = v.Category[2];
-        if (music != null && plan != null)
-            music.VolumeDb = Mathf.LinearToDb(plan.Loop.Volume * MusicVolume);
+        if (music != null && activeSegment != null)
+            music.VolumeDb = Mathf.LinearToDb(activeSegmentVolume * MusicVolume);
         GD.Print($"audio: music volume {MusicVolume:F2}");
     }
 
     public int BgmCue { get; private set; }
-    public string BgmName => plan?.Loop.Name;
+    public string BgmName => bgmName;
     public bool MusicPlaying => music != null && music.Playing;
     public double MusicPosition => music?.GetPlaybackPosition() ?? 0;
 
@@ -67,9 +75,10 @@ public partial class FieldAudio : Node
             return false;
         }
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        library = SoundLibrary.Shared(dir);
-        GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks, {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events, {library.Fev.CueIds.Count()} music cues");
         MusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
+        library = SoundLibrary.Shared(dir, GameOptions.Voice);
+        MusicState = new MusicController(library.Fev);
+        GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks (voice {library.LanguageName}), {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events in {library.Fev.Groups.Count} groups, {library.Fev.CueIds.Count()} music cues");
         GD.Print($"audio: music volume {MusicVolume:F2}");
         if (packs != null)
             systemSounds = SystemSounds(packs);
@@ -94,68 +103,157 @@ public partial class FieldAudio : Node
         return t;
     }
 
-    /// <summary>The bgm cue of a field's fielddata entry (default environment), 0 when the field has none.</summary>
-    public static int FieldBgmCue(PackSet packs, string xblockName)
+    /// <summary>The full &lt;bgm&gt; spec of a field's fielddata entry (default environment; CFieldDataCli::vfunc_1 @0x140a55500, fielddatacli.cpp:240-249).</summary>
+    public static FieldBgmSpec FieldBgm(PackSet packs, string xblockName)
     {
-        var fd = FieldData.EntryByXBlock(packs, xblockName);      // the table's index, parsed once per pack set
-        return (int?)FieldData.DefaultEnvironment(fd)?.Element("bgm")?.Attribute("id") ?? 0;
+        var fd = FieldData.EntryByXBlock(packs, xblockName);
+        var bgm = FieldData.DefaultEnvironment(fd)?.Element("bgm");
+        if (bgm == null) return default;
+        return new FieldBgmSpec(
+            BgmId: ParseInt(bgm, "id"),
+            BgmParam: ParseInt(bgm, "param"),
+            BgmValue: ParseFloat(bgm, "value"),
+            BossBgmId: ParseInt(bgm, "boss"),
+            BossBgmParam: ParseInt(bgm, "bossParam"),
+            BossBgmValue: ParseFloat(bgm, "bossValue"),
+            EnterSystemSound: (string)bgm.Attribute("enterSystemSound") ?? "");
     }
 
+    /// <summary>The bgm cue of a field's fielddata entry (default environment), 0 when the field has none.</summary>
+    public static int FieldBgmCue(PackSet packs, string xblockName) => FieldBgm(packs, xblockName).BgmId;
+
+    static int ParseInt(System.Xml.Linq.XElement e, string attr) =>
+        (string)e.Attribute(attr) is { } s && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
+
+    static float ParseFloat(System.Xml.Linq.XElement e, string attr) =>
+        (string)e.Attribute(attr) is { } s && float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0f;
+
     /// <summary>
-    /// PlayMusic(cue): resolve, decode on a worker thread and start looped. Returns false when the cue is unknown.
+    /// PlayMusic(cue) with optional field parameter, following WorldService (@0x141bc7b80, worldservice_1.cpp:4866-4872)
+    /// and CSoundEventMgr::PlayMusic (@0x14177c100, soundeventmgr.cpp:1151-1203). Decodes on a worker thread and plays the
+    /// cue's segment graph (including bridge/intermission and intro-&gt;loop transitions). Returns false when the cue is unknown.
     /// </summary>
-    public bool PlayBgm(int cue)
+    public bool PlayBgm(int cue, int paramId = 0, float paramValue = 0f, uint priority = MusicController.DefaultPriority, bool force = false)
     {
         BgmCue = cue;
-        if (library == null || cue == 0) return false;
-        plan = library.ResolveMusic(cue);
-        if (plan == null)
+        if (library == null || MusicState == null || cue == 0) return false;
+        if (!MusicState.PlayMusic(cue, 0f, priority, force))
         {
-            GD.PushWarning($"audio: music cue {cue} not found in MS2Sound.fev");
+            if (library.Fev.GetMusicCue(cue) == null)
+                GD.PushWarning($"audio: music cue {cue} not found in MS2Sound.fev");
             return false;
         }
-        var p = plan;
+        if (paramId != 0)
+            MusicState.SetMusicParameter(paramId, paramValue, priority, force);
+        return StartCurrentCue();
+    }
+
+    /// <summary>Starts a field's BGM spec and initializes its boss combat BGM tracker.</summary>
+    public bool PlayFieldBgm(FieldBgmSpec spec, bool force = false)
+    {
+        if (MusicState != null)
+            BossBgm = new BossBgmTracker(MusicState, spec);
+        if (!string.IsNullOrEmpty(spec.EnterSystemSound))
+            PlayUi(spec.EnterSystemSound);
+        return PlayBgm(spec.BgmId, spec.BgmParam, spec.BgmValue, MusicController.DefaultPriority, force);
+    }
+
+    /// <summary>Sets a live FMOD music parameter (CSoundEventMgr::SetMusicParameter @0x14177c420).</summary>
+    public bool SetMusicParameter(int paramId, float value, uint priority = MusicController.DefaultPriority, bool force = false) =>
+        MusicState != null && MusicState.SetMusicParameter(paramId, value, priority, force);
+
+    /// <summary>Reads a live FMOD music parameter (CSoundEventMgr::GetMusicParameter @0x14177c710).</summary>
+    public bool TryGetMusicParameter(int paramId, out float value)
+    {
+        if (MusicState != null) return MusicState.TryGetMusicParameter(paramId, out value);
+        value = 0f;
+        return false;
+    }
+
+    /// <summary>Syncs Godot audio playback to whatever cue/segment <see cref="MusicState"/> currently holds (e.g. after BossBgm switches cues).</summary>
+    public bool SyncMusicToState() => StartCurrentCue();
+
+    bool StartCurrentCue()
+    {
+        var cue = MusicState?.CurrentCue;
+        var startSeg = MusicState?.CurrentSegment;
+        if (cue == null || startSeg == null) return false;
+        var startClip = library.ResolveSegment(startSeg);
+        if (startClip == null) return false;
+
+        BgmCue = cue.Id;
+        bgmName = startClip.Name;
+
+        int gen = ++playGeneration;
+        activeSegment = null;
+        cueSegments.Clear();
         music.Stop();
         Unchain();
-        System.Threading.Tasks.Task.Run(() =>
-        {
-            var intro = p.Intro != null ? SafeDecode.Decode(p.Intro) : null;
-            var loop = SafeDecode.Decode(p.Loop);
-            if (loop == null) return;   // undecodable loop: the cue stays silent (warning logged)
-            Callable.From(() => StartMusic(p, intro, loop)).CallDeferred();
-        });
+
+        DecodeAndPlaySegment(gen, cue, startSeg, startClip);
         return true;
     }
 
-    Pcm16 loopPcm;
-
-    void StartMusic(MusicPlan p, Pcm16 intro, Pcm16 loop)
+    void DecodeAndPlaySegment(int gen, MusicCue cue, MusicSegment seg, SoundClip clip)
     {
-        // the decode outlives a field that changed or quit meanwhile: its players are freed with it
-        if (!IsInstanceValid(this) || !IsInsideTree()) return;
-        if (p != plan) return;   // another cue was requested meanwhile
-        loopPcm = loop;
-        if (intro != null) { music.Stream = Stream(intro, false); music.Finished += OnMusicFinished; chained = true; }
-        else music.Stream = Stream(loop, true);
-        music.VolumeDb = Mathf.LinearToDb(p.Loop.Volume * MusicVolume);
-        music.Play();
-        GD.Print($"audio: bgm cue {p.Cue} -> {(intro != null ? p.Intro.Name + " + " : "")}{p.Loop.Name} ({loop.Seconds:F1} s, {loop.Rate} Hz, {loop.Channels} ch), playing={music.Playing}");
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            var pcm = SafeDecode.Decode(clip);
+            if (pcm == null) return;   // undecodable segment stays silent
+            Callable.From(() =>
+            {
+                if (!IsInstanceValid(this) || !IsInsideTree() || gen != playGeneration) return;
+                cueSegments[seg.Id] = (clip, pcm);
+                PlaySegment(cue, seg);
+            }).CallDeferred();
+        });
     }
 
-    bool chained;   // the intro is playing and OnMusicFinished starts the loop
+    void PlaySegment(MusicCue cue, MusicSegment seg)
+    {
+        if (seg == null || !cueSegments.TryGetValue(seg.Id, out var entry)) return;
+        Unchain();
+        activeSegment = seg;
+        activeSegmentVolume = entry.Clip.Volume;
+        bgmName = entry.Clip.Name;
+        // CSoundEventMgr OnMusicCallback (@0x14177caf0, soundeventmgr.cpp:1369): fires on segment start, toggling param 5 (0 <-> 10).
+        MusicState.OnSegmentStarted();
+        bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
+        music.Stream = Stream(entry.Pcm, selfLoop);
+        music.VolumeDb = Mathf.LinearToDb(activeSegmentVolume * MusicVolume);
+        if (!selfLoop)
+        {
+            music.Finished += OnSegmentFinished;
+            chained = true;
+        }
+        music.Play();
+        GD.Print($"audio: bgm cue {cue.Id} seg {seg.Id} -> {entry.Clip.Name} ({entry.Pcm.Seconds:F1} s, {entry.Pcm.Rate} Hz, {entry.Pcm.Channels} ch, loop={selfLoop}), playing={music.Playing}");
+    }
+
+    bool chained;   // current segment is non-looping and OnSegmentFinished advances the FEV segment graph
 
     void Unchain()
     {
         if (!chained) return;
-        music.Finished -= OnMusicFinished;
+        if (music != null && IsInstanceValid(music))
+            music.Finished -= OnSegmentFinished;
         chained = false;
     }
 
-    void OnMusicFinished()
+    void OnSegmentFinished()
     {
         Unchain();
-        music.Stream = Stream(loopPcm, true);
-        music.Play();
+        if (MusicState == null) return;
+        var next = MusicState.AdvanceSegment();
+        if (next == null) return;   // one-shot cue or no matching link condition: stop cleanly
+        if (cueSegments.ContainsKey(next.Id))
+        {
+            PlaySegment(MusicState.CurrentCue, next);
+            return;
+        }
+        var clip = library.ResolveSegment(next);
+        if (clip == null) return;
+        DecodeAndPlaySegment(playGeneration, MusicState.CurrentCue, next, clip);
     }
 
     /// <summary>Play a sound event by name (event volume from the FEV).</summary>
@@ -165,6 +263,16 @@ public partial class FieldAudio : Node
         if (clip == null) return false;
         PlayClip(clip);
         GD.Print($"audio: event {eventName} -> {clip.Name} volume {clip.Volume:F2}");
+        return true;
+    }
+
+    /// <summary>Play a trigger/programmer voice tag (MS2Sound_Voice8/9 in the configured voice language; CEffectService::PlayTriggerVoice).</summary>
+    public bool PlayVoiceTag(string tag)
+    {
+        var clip = library?.ResolveVoiceTag(tag);
+        if (clip == null) return false;
+        PlayClip(clip);
+        GD.Print($"audio: voice tag {tag} -> {clip.Name} ({library.LanguageName})");
         return true;
     }
 
@@ -180,7 +288,7 @@ public partial class FieldAudio : Node
 
     public bool PlayUiClick() => PlayUi("button_click");
 
-    /// <summary>The field's sound: bgm cue, ambient sound entities and, when a player is given, footsteps. Never throws.</summary>
+    /// <summary>The field's sound: bgm cue and parameters, ambient sound entities and, when a player is given, footsteps. Never throws.</summary>
     public static FieldAudio Start(Node parent, string dataDir, PackSet packs, string fieldName, FieldMap map, CharacterBody3D player = null, AnimationPlayer anim = null)
     {
         FieldAudio a = null;
@@ -198,7 +306,7 @@ public partial class FieldAudio : Node
             }
             if (!a.Open(dataDir, packs)) return a;
             if (a.Footsteps != null) a.Footsteps.Library = a.library;
-            a.PlayBgm(FieldBgmCue(packs, fieldName));
+            a.PlayFieldBgm(FieldBgm(packs, fieldName));
             a.Ambient = new AmbientSounds(a.library);
             a.AddChild(a.Ambient);
             a.Ambient.Build(map);
