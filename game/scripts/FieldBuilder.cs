@@ -446,13 +446,15 @@ public sealed class FieldBuilder
                 if (isMesh && !fluid && generated == null)
                     foreach (var shape in me.Collision) npcGround.Add(shape, xf);
 
-                // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes
-                if (me.Particles != null && e.Bool("IsVisible", true) && !e.HasMixin("EffectMesh"))
+                // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes; a model that
+                // plays through the effect runtime (PlaysAsEffect) runs them there, so a skinned EffectMesh map model, which
+                // stays on the prop path, runs them here
+                if (me.Particles != null && e.Bool("IsVisible", true) && !(assets.Resolve(llid) is (string pa, string) && e.PlaysAsEffect(pa, me.Data)))
                 {
                     if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
                     else ParticleEntities.Add((e, me.Particles));
                 }
-                if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
+                if (assets.Resolve(llid) is (string ea, string ee) && e.PlaysAsEffect(ea, me.Data)) { EffectEntities.Add((e, ea, ee)); }
                 else if (e.Bool("IsVisible", true) && me.Elsewhere)
                 {
                     DrawnElsewhere.Add(e);

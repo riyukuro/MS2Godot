@@ -128,6 +128,24 @@ public sealed class FieldEntity
     /// looked up by name ignoring case, and so is the own-model compare.</summary>
     public bool HasMixin(string m) => Flat != null && (string.Equals(Flat.Name, m, StringComparison.OrdinalIgnoreCase) || Flat.Mixins.Contains(m));
 
+    /// <summary>The effect archive, where the effect models live.</summary>
+    public const string EffectArchive = "Resource/Model/Effect";
+
+    /// <summary>
+    /// A visible EffectMesh entity whose model plays through the effect runtime (world/FieldEffects): its alpha and transform
+    /// controllers and its particle systems run, looping. The EffectMesh flat model sets IsStatic False. Gamebryo's
+    /// SceneGraphService makes an entity's scene graph dynamic when IsStatic is false (SetIsDynamic(!isStatic),
+    /// scenegraphservice.cpp:2377-2380). It then updates every dynamic scene graph each tick on the game clock, with the
+    /// controllers on (:102-106, UpdateDynamicEntities :208-240). Nothing there depends on the model's archive, so effect
+    /// models from the map archive (the 02020120 crystal rings, the light and aurora effects) play too. A skinned model from
+    /// another archive (the butterflies, the crow crowds) stays on the prop path, because the effect runtime has no skinning.
+    /// Its particle systems run on the dynamic-model particle path (the game's FieldBuilder.ParticleEntities), at the entity's
+    /// transform. STILL-OPEN: there they do not follow the skinned bones, and no such model has been checked against the client.
+    /// </summary>
+    public bool PlaysAsEffect(string archive, ModelData model) =>
+        Bool("IsVisible", true) && HasMixin("EffectMesh")
+        && (string.Equals(archive, EffectArchive, StringComparison.OrdinalIgnoreCase) || (archive != null && model != null && !model.Meshes.Any(m => m.Skinned)));
+
     /// <summary>
     /// The entity's meshes cast shadows. On SceneGraphAdded (WorldService::FUN_141bbfe30, worldservice_1.cpp:3637) the client
     /// runs FUN_141567000 (unit_141567000.cpp:112-124): for a Mesh (0xbd4f8e8e) or Actor (0x48ccc02d) entity it reads
