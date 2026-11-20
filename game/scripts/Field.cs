@@ -154,7 +154,7 @@ public partial class Field : Node3D
 
         BuildEnvironment(map, fieldName);
         await Budget();
-        GD.Print($"MS2Godot lights: {FieldLights.Add(this, map)}");
+        GD.Print($"MS2Godot lights: {FieldLights.Add(FieldLightSet.Read(map.Entities))}");
         await Budget();
         Movement.MoveProof.Effects = (packs, builder);   // the scripted run's fx step
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);

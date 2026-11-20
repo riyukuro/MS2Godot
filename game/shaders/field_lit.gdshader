@@ -15,7 +15,7 @@
 // (src alpha / one); both blended forms skip the depth write. A fourth form, SHELL (with BLEND), is the depth-only
 // first pass of a fluid cube: colour unchanged (alpha 0 = blend ZERO / ONE), depth written (ModelBuilder.MakeFluidShell).
 // The field's point and spot lights are added to the
-// diffuse term (ms2_lights.gdshaderinc). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
+// diffuse term (ms2_lights.gdshaderinc), but for those the instance's ms2_light_off masks out (FieldLightSet.Unlit). The opaque form takes the sun's shadow from Godot's DirectionalLight3D (Field.cs)
 // and nothing else: light() scales the sun's share of the colour above by the shadow, so the sun is counted once. The
 // blended forms (BLEND, ADD, FADE) take it the same way: the client's receiver list (ms2shadowclickgenerator.cpp:914-975)
 // and material descriptor do not filter on alpha, and a light with a shadow map turns per-vertex lighting off
@@ -144,6 +144,9 @@ varying vec3 sun_share;  // the sun's part of the output colour (gamma), which t
 // UseShellRender instancing batch below shadow level 4): the sun's share is then not scaled by the shadow
 instance uniform float ms2_receive = 1.0;
 #endif
+// The field lights that do not reach this copy, one bit per light in FieldLights order (FieldLightSet.Unlit: the client's
+// per-receiver relight, range and MaxPointLights / MaxSpotLights); 0, the default, takes every light.
+instance uniform float ms2_light_off = 0.0;
 
 // The SPHERICAL texture effect uv (NiStandardMaterial::HandleTextureEffectUVSetGen): the world reflection
 // R = normalize(reflect(-(CameraPos - WorldPos), normalize(WorldNrm))) (CalculateViewVector, WorldReflect) projected by
@@ -285,7 +288,7 @@ void fragment() {
 	}
 #endif
 	float ndl = max(dot(normalize(world_normal), -ms2_sun_dir), 0.0);
-	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(world_pos, normalize(world_normal));
+	vec3 unsun = emissive + ms2_ambient * amb + dif * ms2_point_lights(world_pos, normalize(world_normal), int(ms2_light_off));
 	// Field meshes are MS2StandardMaterial type 0, whose light node is "MS2Light", not Gamebryo's "Light"
 	// (MS2StandardMaterial::HandleMS2Light, ms2standardmaterial.cpp:852-875). MS2Light (ms2materialnodelibrary.cpp:316-328)
 	// puts the light's ambient into the diffuse accumulator, not the ambient one:

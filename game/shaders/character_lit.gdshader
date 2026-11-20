@@ -86,6 +86,18 @@ void vertex() {
 	fog_share = ms2_fog_share(VIEW_MATRIX, world_pos, CAMERA_VISIBLE_LAYERS);
 }
 
+// One light's specular intensity: Blinn-Phong with the material glossiness as the power, cut where the light's half-lambert
+// term is 0; hair averages it with the anisotropic term of its tangent ht (1 - (T.H)^2).
+float spec_term(vec3 l, vec3 n, vec3 v, vec3 ht, float hl) {
+	vec3 h = normalize(l + v);
+	float s = pow(max(1e-5, dot(n, h)), spec_power);
+	if (has_hair) {
+		float th = dot(ht, h);
+		s = 0.5 * (s + pow(max(1e-5, 1.0 - th * th), spec_power));
+	}
+	return hl <= 0.0 ? 0.0 : s;
+}
+
 void fragment() {
 	vec4 t = has_tex ? texture(base_tex, UV) : vec4(1.0);
 	if (alpha_test && t.a < alpha_ref) {
@@ -119,7 +131,8 @@ void fragment() {
 
 	float half_lambert = pow(0.5 * dot(l, n) + 0.5, 2.0);
 	float fresnel = fresnel_boost * pow(1.0 - abs(dot(n, v)), fresnel_exponent);
-	float intensity = half_lambert + max(0.0, -dot(rim_dir, n)) * fresnel;
+	float rim = max(0.0, -dot(rim_dir, n)) * fresnel;
+	float intensity = half_lambert + rim;
 	bool own = own_lights > 0.5;
 	vec3 sun_color = own ? own_sun_color : ms2_sun_color;
 	vec3 sun_ambient = own ? own_sun_ambient : ms2_sun_ambient;
@@ -129,24 +142,41 @@ void fragment() {
 		float band = max(0.0, smoothstep(-sss_power, 1.0, ndl) - smoothstep(0.0, 1.0, ndl));
 		diffuse += sun_color * sss_color * band;
 	}
+	vec3 ht = vec3(0.0);
+	if (specular_on && has_hair) {
+		vec2 d = texture(hair_tex, UV).rg * 2.0 - 1.0;
+		ht = normalize(tg * d.x + bn * d.y);
+	}
+	vec3 spec_light = specular_on ? (own ? own_sun_specular : ms2_sun_specular) * spec_term(l, n, v, ht, half_lambert) : vec3(0.0);
+	// The field's point and spot lights (ms2_lights.gdshaderinc), each through the same light fragment as the sun with its own
+	// vector and Attenuate (MS2CharacterLight, ms2materialnodelibrary.cpp:1336-1440): the half-lambert term plus the rim
+	// (the rim does not depend on the light) times LightDiffuse * Attenuate, LightAmbient * (1 - that intensity) unattenuated,
+	// the skin's LambSkin band (:3385-3446) on the raw N.L times Attenuate, and the specular times Attenuate. A character gets
+	// every light of the field (FieldLightSet: OnRenderedEntityAdded attaches them all, LightService.cpp:1926-1932).
 	if (!own) {
-		diffuse += ms2_point_lights(world_pos, n);
+		int count = int(ms2_light_count);
+		for (int i = 0; i < count; i++) {
+			vec3 pl;
+			float att = ms2_light_at(i, world_pos, pl);
+			float hl = pow(0.5 * dot(pl, n) + 0.5, 2.0);
+			float li = hl + rim;
+			vec3 ld = ms2_light_diffuse(i);
+			diffuse += ld * (li * att) + ms2_light_ambient(i) * (1.0 - li);
+			if (skin) {
+				float pndl = dot(pl, n);
+				diffuse += ld * sss_color * (max(0.0, smoothstep(-sss_power, 1.0, pndl) - smoothstep(0.0, 1.0, pndl)) * att);
+			}
+			if (specular_on) {
+				spec_light += ms2_light_specular(i) * (spec_term(pl, n, v, ht, hl) * att);
+			}
+		}
 	}
 	diffuse *= color_boost;
 
 	vec3 spec = vec3(0.0);
 	if (specular_on) {
-		vec3 h = normalize(l + v);
-		float s = pow(max(1e-5, dot(n, h)), spec_power);
-		if (has_hair) {
-			vec2 d = texture(hair_tex, UV).rg * 2.0 - 1.0;
-			vec3 ht = normalize(tg * d.x + bn * d.y);
-			float th = dot(ht, h);
-			s = 0.5 * (s + pow(max(1e-5, 1.0 - th * th), spec_power));
-		}
-		if (half_lambert <= 0.0) s = 0.0;
 		vec3 g = has_gloss ? texture(gloss_tex, UV).rgb : vec3(1.0);
-		spec = (own ? own_sun_specular : ms2_sun_specular) * s * mat_specular * g;
+		spec = spec_light * mat_specular * g;
 	}
 
 	vec3 lit = clamp(emissive + (own ? own_ambient : ms2_ambient) * mat_ambient + diffuse * mat_diffuse, 0.0, 1.0);
