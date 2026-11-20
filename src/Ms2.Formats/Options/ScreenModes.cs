@@ -96,6 +96,29 @@ public sealed class ScreenModes
     }
 
     /// <summary>
+    /// The screen mode a window request is: 0 full screen, 1 window, 2 full window (the "fullScreen" option,
+    /// gameoptionstruct.cpp:1980; FUN_14125e910's bWindowed = mode 0 is the full screen flag, bFullWindow = mode 2,
+    /// gameoptionstruct.cpp:2225-2226).
+    /// </summary>
+    public static int ModeOf(WindowRequest r) => r.Maximize ? 2 : r.Fullscreen ? 0 : 1;
+
+    /// <summary>
+    /// The graphic option made to describe the window as it is. In the client the option always is the window: the window
+    /// is only ever made from it, at startup (MS2RenderService::OnInit, ms2renderservice.cpp:699-743) and by the options
+    /// dialog (FUN_14125e910, then the dialog stores its mode and row, gameoption.cpp:1310-1320), and its frame (style
+    /// 0xca0000) has no sizing border. The options dialog's fill reads the option (CGameOptionGraphicDefault::vfunc_6,
+    /// gameoption.cpp:1064-1077: the window radio selected for mode 1, the full window radio for mode 2; the resolution row
+    /// of the option's size). A window this game made another way (a scene started on its own, a scripted request) is
+    /// taken into the option here, so the radio and the row show the window's mode and size. The size's row when the
+    /// adapter has it (<see cref="PickRow"/>), else the size alone. Nothing is saved.
+    /// </summary>
+    public void Adopt(GameOption.Graphic g, WindowRequest window)
+    {
+        g.ScreenMode = ModeOf(window);
+        if (!PickRow(g, window.Width, window.Height)) { g.Width = window.Width; g.Height = window.Height; }
+    }
+
+    /// <summary>
     /// The client area of a fixed window of w x h (ApplyWindowMode's windowed branch, windowservice.cpp:337-374): the size
     /// is clamped to the screen, and the outer rectangle (client plus the 0xca0000 frame, <paramref name="frame"/>) is
     /// centred on the screen, rounded down, not above or left of 0,0. Returns the client size and the outer position.

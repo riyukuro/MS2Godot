@@ -287,6 +287,32 @@ public class GameOptionDialogTests
         Assert.That(h.T.Text["m_devicename"], Is.EqualTo("GPU"));
     }
 
+    /// <summary>
+    /// The screen mode radio shows the window's mode (CGameOptionGraphicDefault::vfunc_6, gameoption.cpp:1064-1077, reads
+    /// the option, which in the client is always the window): a stored full window at 1920 x 1080 with the game in a
+    /// 1280 x 720 window shows the window radio and the 1280 x 720 row once the window is taken into the option.
+    /// </summary>
+    [Test]
+    public void TheScreenModeRadioShowsTheWindow()
+    {
+        var h = new FakeHost();
+        var g = h.Opt.GraphicOption;
+        g.ScreenMode = 2; g.ResolutionIndex = 0; g.Width = 1920; g.Height = 1080;
+        h.M.Adopt(g, new WindowRequest(false, false, 1280, 720));
+        var (d, _) = Open(h);
+        d.Call("OnOpenTab", 6);
+        ShowGraphics(d);
+        Assert.That((h.T.Selected["m_screenModeWindow"], h.T.Selected["m_screenModeFullWindow"]), Is.EqualTo((true, false)));
+        Assert.That(h.T.Rows[h.T.RowSelected].Label, Does.Contain("1280,720"));
+        Assert.That((g.ScreenMode, g.ResolutionIndex, g.Width, g.Height), Is.EqualTo((1, 2, 1280, 720)));
+        h.M.Adopt(g, new WindowRequest(true, true, 1920, 1080));
+        Assert.That((g.ScreenMode, g.ResolutionIndex), Is.EqualTo((2, 0)), "a full window");
+        h.M.Adopt(g, new WindowRequest(true, false, 1280, 720));
+        Assert.That(g.ScreenMode, Is.EqualTo(0), "full screen: neither radio is set by the fill");
+        h.M.Adopt(g, new WindowRequest(false, false, 1366, 768));
+        Assert.That((g.ScreenMode, g.ResolutionIndex, g.Width, g.Height), Is.EqualTo((1, 2, 1366, 768)), "a size with no row: the size alone");
+    }
+
     [Test]
     public void DisplayQualityFollowsOnlyAfterTheFill()
     {

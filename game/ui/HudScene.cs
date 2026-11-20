@@ -133,6 +133,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _EnterTree()
     {
         restoreScale = ScreenMode.UseWindowPixels(GetWindow());
+        ScreenMode.AdoptWindow();       // started on its own: the options dialog shows this window (ScreenModes.Adopt)
         Ms2Godot.Net.ProfileImageService.Images.Ready += ProfileImageReady;
     }
 

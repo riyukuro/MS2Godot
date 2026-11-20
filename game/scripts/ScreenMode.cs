@@ -70,17 +70,36 @@ public static class ScreenMode
         return true;
     }
 
-    /// <summary>The options dialog's window request (FUN_14124ce20 after FUN_14125e910).</summary>
+    /// <summary>The options dialog's window request (FUN_14124ce20 after FUN_14125e910), or a scripted one; the option
+    /// follows the window (<see cref="ScreenModes.Adopt"/>), as the dialog's store does after its request.</summary>
     public static void ApplyRequest(WindowRequest r)
     {
         if (Headless || Root == null) return;
         Apply(r);
+        Modes.Adopt(GameOptions.Current.GraphicOption, r with { Width = PixelSize(Root).X, Height = PixelSize(Root).Y });
+    }
+
+    /// <summary>The last request the window was made from (<see cref="Apply"/>); null while it is as the engine opened it.</summary>
+    public static WindowRequest? Current { get; private set; }
+
+    /// <summary>
+    /// A scene started without the game's startup (no <see cref="ApplyAtStartup"/>: the window is the engine's, sized by
+    /// the command line) takes that window into the graphic option, so the options dialog shows the window's mode and
+    /// size (<see cref="ScreenModes.Adopt"/>). A window made from the option is left alone.
+    /// </summary>
+    public static void AdoptWindow()
+    {
+        if (Headless || Root == null || Current != null) return;
+        var w = Root;
+        var size = PixelSize(w);
+        Modes.Adopt(GameOptions.Current.GraphicOption, new WindowRequest(w.Borderless && w.AlwaysOnTop, w.Borderless && !w.AlwaysOnTop, size.X, size.Y));
     }
 
     /// <summary>ApplyWindowMode (windowservice.cpp:291-375) for a request.</summary>
     static void Apply(WindowRequest r)
     {
         var w = Root;
+        Current = r;
         if (r.Borderless)
         {
             if (OperatingSystem.IsWindows())
