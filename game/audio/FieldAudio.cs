@@ -306,24 +306,13 @@ public partial class FieldAudio : Node
             ApplyPlayerGain(1);
         }
 
-        if (!activeSelfLoop && activeSegment != null && !segmentTransitionRequested && activeSegmentSeconds > 0.0)
+        if (!activeSelfLoop && activeSegment != null && !segmentTransitionRequested && !nextPredecodeRequested && activeSegmentSeconds > 0.0)
         {
             var activePlayer = musicPlayers[crossfade.ActiveSlot];
-            if (activePlayer != null && activePlayer.Playing)
+            if (activePlayer != null && activePlayer.Playing && activePlayer.GetPlaybackPosition() >= activeSegmentSeconds - 2.0)
             {
-                double pos = activePlayer.GetPlaybackPosition();
-                int xfadeMs = MusicState?.CurrentCue?.CrossfadeMs ?? 0;
-                double xfadeSec = xfadeMs > 0 ? Math.Min(xfadeMs * 0.001, activeSegmentSeconds) : 0.0;
-                if (!nextPredecodeRequested && pos >= activeSegmentSeconds - xfadeSec - 2.0)
-                {
-                    nextPredecodeRequested = true;
-                    PredecodeNextSegment();
-                }
-                if (xfadeMs > 0 && MusicCrossfade.ShouldBeginSegmentCrossfade(pos, activeSegmentSeconds, xfadeMs))
-                {
-                    segmentTransitionRequested = true;
-                    AdvanceToNextSegment(xfadeMs);
-                }
+                nextPredecodeRequested = true;
+                PredecodeNextSegment();
             }
         }
     }

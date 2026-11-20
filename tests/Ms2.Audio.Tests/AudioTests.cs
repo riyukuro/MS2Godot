@@ -537,45 +537,75 @@ public class AudioTests
         Assert.That(xf.ActiveGain, Is.EqualTo(1f));
         Assert.That(xf.OutgoingGain, Is.EqualTo(0f));
 
-        // Segment-end crossfade window check (clamped when crossfade exceeds segment length).
-        Assert.That(MusicCrossfade.ShouldBeginSegmentCrossfade(97.5, 100.0, 2000), Is.False);
-        Assert.That(MusicCrossfade.ShouldBeginSegmentCrossfade(98.0, 100.0, 2000), Is.True);
-        Assert.That(MusicCrossfade.ShouldBeginSegmentCrossfade(0.0, 1.0, 2000), Is.True);
-        Assert.That(MusicCrossfade.ShouldBeginSegmentCrossfade(99.9, 100.0, 0), Is.False);
+        // EndOfSegment links (TransitionType = 4, all 311 links in MS2Sound.fev) chain with 0 ms overlap.
+        var endLink = new MusicLink { TransitionType = MusicLink.TransitionEndOfSegment };
+        Assert.That(MusicCrossfade.LinkCrossfadeMs(endLink, 2000), Is.EqualTo(0));
 
-        // Per-frame allocation guard (godot-csharp-perf): Step and ShouldBeginSegmentCrossfade allocate 0 bytes.
+        // Per-frame allocation guard (godot-csharp-perf): Step and LinkCrossfadeMs allocate 0 bytes.
         xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
         xf.Step(0.001f);
-        MusicCrossfade.ShouldBeginSegmentCrossfade(10.0, 100.0, 2000);
+        MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 10_000; i++)
         {
             if (!xf.IsFading) xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
             xf.Step(0.016f);
-            _ = MusicCrossfade.ShouldBeginSegmentCrossfade(10.0, 100.0, 2000);
+            _ = MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
         }
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
         Assert.That(allocated, Is.EqualTo(0), "MusicCrossfade per-frame stepping must not allocate");
     }
 
     [Test]
-    public void ThemeCrossfadeUsesFevThemeCrossfadeMsAndPeeksNextSegment()
+    public void ThemeCrossfadeUsesFevThemeCrossfadeMsOnlyOnCueChangeNotInThemeLinks()
     {
         var lib = SoundLibrary.Shared(SoundDir());
         var mc = new MusicController(lib.Fev);
+        var xf = new MusicCrossfade();
 
-        // Tria (cue 35) has CrossfadeMs = 2000 in comp/thms/thmd; after OnSegmentStarted(), PeekNextSegment predicts bridge (seg 87) without mutating CurrentSegment.
+        // Tria (cue 35) has CrossfadeMs = 2000 in comp/thms/thmd, and links 84 -> 87 -> 84 are TransitionType = 4 (EndOfSegment).
         Assert.That(mc.PlayFieldBgm(new FieldBgmSpec(BgmId: 35, BgmParam: 5, BgmValue: 0f)), Is.True);
         Assert.That(mc.CurrentCue.CrossfadeMs, Is.EqualTo(2000));
+        xf.BeginTransition(mc.CurrentCue.CrossfadeMs, hasActiveAudio: false);
         mc.OnSegmentStarted();
+        var seg84 = mc.CurrentSegment;
+        Assert.That(seg84.Id, Is.EqualTo(84));
+        Assert.That(seg84.OutgoingLinks[0].TransitionType, Is.EqualTo(MusicLink.TransitionEndOfSegment));
+
+        // 84 -> 87 (bridge): sequential EndOfSegment link has 0 ms crossfade and zero overlap.
         var peeked = mc.PeekNextSegment();
         Assert.That(peeked, Is.Not.Null);
         Assert.That(peeked.Id, Is.EqualTo(87));
         Assert.That(mc.CurrentSegment.Id, Is.EqualTo(84), "PeekNextSegment must not mutate CurrentSegment");
+        int link1Fade = MusicCrossfade.LinkCrossfadeMs(seg84.OutgoingLinks[0], mc.CurrentCue.CrossfadeMs);
+        Assert.That(link1Fade, Is.EqualTo(0));
+        var seg87 = mc.AdvanceSegment();
+        Assert.That(seg87.Id, Is.EqualTo(87));
+        var step87 = xf.BeginTransition(link1Fade, hasActiveAudio: true);
+        Assert.That(step87.Crossfading, Is.False);
+        Assert.That(xf.IsFading, Is.False);
+        Assert.That(xf.OutgoingGain, Is.EqualTo(0f));
+        Assert.That(xf.ActiveGain, Is.EqualTo(1f));
+        mc.OnSegmentStarted();
 
-        var clip = lib.ResolveSegment(mc.CurrentSegment);
-        Assert.That(MusicCrossfade.ShouldBeginSegmentCrossfade(clip.Seconds - 2.1, clip.Seconds, mc.CurrentCue.CrossfadeMs), Is.False);
-        Assert.That(MusicCrossfade.ShouldBeginSegmentCrossfade(clip.Seconds - 1.9, clip.Seconds, mc.CurrentCue.CrossfadeMs), Is.True);
+        // 87 -> 84 (back to BGM_Tria_01): also sequential EndOfSegment with 0 ms crossfade and zero overlap.
+        int link2Fade = MusicCrossfade.LinkCrossfadeMs(seg87.OutgoingLinks[0], mc.CurrentCue.CrossfadeMs);
+        Assert.That(link2Fade, Is.EqualTo(0));
+        var back84 = mc.AdvanceSegment();
+        Assert.That(back84.Id, Is.EqualTo(84));
+        var step84 = xf.BeginTransition(link2Fade, hasActiveAudio: true);
+        Assert.That(step84.Crossfading, Is.False);
+        Assert.That(xf.IsFading, Is.False);
+        Assert.That(xf.OutgoingGain, Is.EqualTo(0f));
+        Assert.That(xf.ActiveGain, Is.EqualTo(1f));
+
+        // Cue change (35 -> 23, Boss01): crossfades over the incoming theme's CrossfadeMs (2000 ms).
+        Assert.That(mc.PlayMusic(23, 0f, MusicController.DefaultPriority, false), Is.True);
+        Assert.That(mc.CurrentCue.CrossfadeMs, Is.EqualTo(2000));
+        var cueChange = xf.BeginTransition(mc.CurrentCue.CrossfadeMs, hasActiveAudio: true);
+        Assert.That(cueChange.Crossfading, Is.True);
+        Assert.That(xf.IsFading, Is.True);
+        Assert.That(xf.FadeDuration, Is.EqualTo(2.0f).Within(1e-5f));
 
         // Zero allocation on PeekNextSegment in steady state.
         long before = GC.GetAllocatedBytesForCurrentThread();

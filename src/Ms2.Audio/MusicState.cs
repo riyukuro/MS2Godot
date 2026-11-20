@@ -356,12 +356,14 @@ public sealed class BossBgmTracker
 }
 
 /// <summary>
-/// Two-player crossfade state for FMOD Ex interactive music theme transitions:
+/// Two-player crossfade state for FMOD Ex interactive music cue transitions:
 /// - Client calls FMOD::MusicSystem::promptCue (CSoundEventMgr::PlayMusic @0x14177c100, soundeventmgr.cpp:1165,1186).
-/// - MS2Sound.fev comp/thms/thm /thmd stores each theme's crossfadeMs (offset 11, parsed into MusicTheme.CrossfadeMs);
-///   all 311 links in comp/lnks/lnk /lnkd have TransitionType = 4 (EndOfSegment).
-/// - The actual mixer crossfade runs inside fmod_event64.dll (not recovered in MapleStory2.exe); this models the
-///   two-voice linear overlap over CrossfadeMs between cues and at end-of-segment transitions with zero per-frame allocations.
+/// - MS2Sound.fev comp/thms/thm /thmd stores each theme's crossfadeMs (offset 11, parsed into MusicTheme.CrossfadeMs)
+///   for cue/theme changes; all 311 in-theme links in comp/lnks/lnk /lnkd have TransitionType = 4 (EndOfSegment), so
+///   segments inside a theme play back-to-back with 0 ms crossfade.
+/// - STILL-OPEN: the exact FMOD Ex crossfade curve (linear vs equal-power) lives inside fmod_event64.dll (not
+///   recovered in MapleStory2.exe); this models a two-voice linear ramp over CrossfadeMs on cue changes with zero
+///   per-frame allocations.
 /// </summary>
 public sealed class MusicCrossfade
 {
@@ -443,16 +445,12 @@ public sealed class MusicCrossfade
     }
 
     /// <summary>
-    /// True once a non-looping segment of length <paramref name="segmentSeconds"/> at <paramref name="positionSeconds"/>
-    /// enters its end-of-segment crossfade window for <paramref name="crossfadeMs"/>. Zero allocations.
+    /// Crossfade duration (ms) for an in-theme segment link (comp/lnks/lnk /lnkd). All 311 links in MS2Sound.fev have
+    /// TransitionType == 4 (EndOfSegment), which chains segments sequentially back-to-back with 0 ms overlap; theme
+    /// CrossfadeMs applies on cue/theme changes (promptCue), not EndOfSegment links. Zero allocations.
     /// </summary>
-    public static bool ShouldBeginSegmentCrossfade(double positionSeconds, double segmentSeconds, int crossfadeMs)
-    {
-        if (crossfadeMs <= 0 || segmentSeconds <= 0.0) return false;
-        double fadeSec = crossfadeMs * 0.001;
-        if (fadeSec > segmentSeconds) fadeSec = segmentSeconds;
-        return positionSeconds >= segmentSeconds - fadeSec;
-    }
+    public static int LinkCrossfadeMs(MusicLink link, int themeCrossfadeMs) =>
+        link == null || link.TransitionType == MusicLink.TransitionEndOfSegment ? 0 : themeCrossfadeMs;
 
     public void StopAll()
     {
