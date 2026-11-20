@@ -356,6 +356,81 @@ public partial class MovementSyncCheck : Node3D
         return ok;
     }
 
+    // The shapes under the spawn of field 02020140_bf, as the field builds them (dumped from the running game, kept to the bit):
+    // 150 cm cubes of one chunk body, three as one-sided 12-triangle meshes (the spawn stands on one's top face, its tip on
+    // that face's diagonal) and the rest as boxes. Kind, basis columns X Y Z, origin.
+    static readonly (char kind, float[] xf)[] SpawnCubes =
+    {
+        ('B', new[] { 1.1924881E-08f, 4.371139E-08f, 1f, 1f, -5.2125306E-16f, -1.1924881E-08f, 0f, 1f, -4.371139E-08f, -8250f, 8775f, 7949.9995f }),
+        ('M', new[] { 1f, 0f, 0f, 0f, -4.371139E-08f, -1f, 0f, 1f, -4.371139E-08f, -8250f, 8700f, 8099.9995f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8250f, 8775f, 8250f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8400f, 8625f, 8250f }),
+        ('M', new[] { 1f, 0f, 0f, 0f, -4.371139E-08f, -1f, 0f, 1f, -4.371139E-08f, -8400f, 8700f, 8099.9995f }),
+        ('B', new[] { -1f, 3.821371E-15f, 8.742278E-08f, 8.742278E-08f, 4.371139E-08f, 1f, 0f, 1f, -4.371139E-08f, -8550f, 8625f, 8099.9995f }),
+        ('B', new[] { -1f, 3.821371E-15f, 8.742278E-08f, 8.742278E-08f, 4.371139E-08f, 1f, 0f, 1f, -4.371139E-08f, -8550f, 8775f, 7949.9995f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8550f, 8625f, 8250f }),
+        ('B', new[] { -1f, 3.821371E-15f, 8.742278E-08f, 8.742278E-08f, 4.371139E-08f, 1f, 0f, 1f, -4.371139E-08f, -8550f, 8775f, 8250f }),
+        ('B', new[] { 1f, 0f, 0f, 0f, -4.371139E-08f, -1f, 0f, 1f, -4.371139E-08f, -8400f, 8775f, 8250f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8550f, 8175.0005f, 8250f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8550f, 8025.0005f, 8250f }),
+        ('M', new[] { -1f, -5.3531012E-24f, -1.2246469E-16f, -1.2246469E-16f, 4.371139E-08f, 1f, 0f, 1f, -4.371139E-08f, -8400f, 8700f, 7949.9995f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8550f, 7875.0005f, 8250f }),
+        ('B', new[] { 1f, 0f, 0f, 0f, -4.371139E-08f, -1f, 0f, 1f, -4.371139E-08f, -8550f, 8775f, 8099.9995f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8550f, 8325f, 8250f }),
+        ('B', new[] { -4.371139E-08f, -4.371139E-08f, -1f, -1f, 1.9106855E-15f, 4.371139E-08f, 0f, 1f, -4.371139E-08f, -8550f, 8475f, 8250f }),
+    };
+    static readonly Vector3[] CubeFaces =
+    {
+        new(75, 75, 150), new(75, -75, 0), new(75, -75, 150), new(75, -75, 0), new(75, 75, 150), new(75, 75, 0),
+        new(-75, -75, 0), new(75, -75, 150), new(75, -75, 0), new(-75, -75, 150), new(75, 75, 150), new(75, -75, 150),
+        new(75, 75, 0), new(-75, -75, 0), new(75, -75, 0), new(-75, 75, 150), new(75, 75, 0), new(75, 75, 150),
+        new(-75, -75, 150), new(-75, 75, 0), new(-75, 75, 150), new(-75, 75, 0), new(-75, -75, 150), new(-75, -75, 0),
+        new(75, -75, 150), new(-75, -75, 0), new(-75, -75, 150), new(-75, -75, 0), new(75, 75, 0), new(-75, 75, 0),
+        new(75, 75, 0), new(-75, 75, 150), new(-75, 75, 0), new(75, 75, 150), new(-75, -75, 150), new(-75, 75, 150),
+    };
+
+    // A body standing on the 02020140_bf spawn, falling by every length from 0.5 to 30 in 1/1024 steps (gravity's moves).
+    // GodotPhysics3D's cast misses the mesh cube's top face for some lengths (its GJK distance on the triangle edge under the
+    // tip reports the motion separate; 2.6133 in the field), so the move ended inside the cube and the next one fell through
+    // it, out of the world. The client's sweep does not miss a triangle under the capsule (CharacterController.cpp:297-374).
+    bool SpawnCubeStands()
+    {
+        var chunk = new StaticBody3D { CollisionLayer = 512 };
+        var face = new ConcavePolygonShape3D { Data = CubeFaces, BackfaceCollision = false };
+        var box = new BoxShape3D { Size = new Vector3(150, 150, 150) };
+        foreach (var (kind, f) in SpawnCubes)
+            chunk.AddChild(new CollisionShape3D
+            {
+                Shape = kind == 'M' ? face : box,
+                Transform = new Transform3D(new Basis(new Vector3(f[0], f[1], f[2]), new Vector3(f[3], f[4], f[5]), new Vector3(f[6], f[7], f[8])), new Vector3(f[9], f[10], f[11])),
+            });
+        AddChild(chunk);
+        var (b, nx) = Bodies(1, 0)[0];
+        var spawn = new Vector3(-8400, 8851, 8100);
+        b.GlobalPosition = spawn;
+        int moves = 0, sank = 0;
+        float firstLen = -1, low = float.MaxValue;
+        for (int k = 0; k <= 29 * 1024; k++)
+        {
+            float len = 0.5f + k / 1024f;
+            nx.Move(new Vector3(0, -len, 0));
+            moves++;
+            float y = b.GlobalPosition.Y;
+            low = Mathf.Min(low, y);
+            if (y < 8849f)
+            {
+                sank++;
+                if (firstLen < 0) firstLen = len;
+                b.GlobalPosition = spawn;
+            }
+        }
+        b.QueueFree();
+        chunk.QueueFree();
+        bool ok = sank == 0;
+        GD.Print($"movement sync check: 02020140_bf spawn on its mesh cube, {moves} falls from 0.5 to 29.5, {sank} sank into the cube (first at length {firstLen:0.####}), lowest feet {low:0.##}: {(ok ? "OK" : "FAIL")}");
+        return ok;
+    }
+
     void Run()
     {
         runner.CameraYaw = Mathf.Pi / 2;
@@ -365,12 +440,13 @@ public partial class MovementSyncCheck : Node3D
         var floor = new StaticBody3D { Position = new Vector3(0, -50, 0) };
         floor.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(20000, 100, 20000) } });
         AddChild(floor);
+        bool spawn = SpawnCubeStands();
         bool land = Landings(floor);
         bool alloc = MoveAllocations();
         bool meshLand = MeshLandings();
         bool oneSided = OneSidedMeshes();
         bool walls = OneSidedWalls(floor);
-        bool ok = dir && land && alloc && meshLand && oneSided && walls;
+        bool ok = dir && spawn && land && alloc && meshLand && oneSided && walls;
         GetTree().Quit(ok ? 0 : 1);
     }
 }
