@@ -68,6 +68,9 @@ material does it: in gamma space, with the entity's material colour, vertex colo
 NIF (`game/shaders/field_lit.gdshader`). Details:
 
 - Lighting is not clamped, as in the client's HDR target. The sun's ambient colour lights the side facing away from it.
+- Point and spot light entities light the field meshes they reach and every character, with the client's falloff
+  (1 / max(1, constant + linear d + quadratic d²), the spot cone and exponent, no range cut-off). As in the client, a mesh
+  takes at most 3 point and 2 spot lights, picked by range, bound and the light's priority (`FieldLightSet`).
 - Entities without a `MaterialColor`, such as portals, keep the NIF material's own colours.
 - Glow maps add their colour.
 - The decal slot is drawn over the base (banner emblems).
@@ -111,7 +114,7 @@ language, event groups beyond the event category.
 Known gaps:
 
 - Glow maps feed the bloom through a separate half-size target (signs get their halo); the combination in the bright pass is inferred. Characters and mobs get the client's ground shadow quad (Shadow.dds); field meshes still have no sun shadow map.
-- No point or spot lights (indoor maps are darker than they should be), no cast shadows on field meshes.
+- No shadows from point and spot lights (31 light entities set CastShadows), no cast shadows on field meshes.
 - No particle systems (`NiPSParticleSystem`).
 
 The pilot viewer (the player character on a ground plane; keys `1` idle, `2` walk) is still `game/main.tscn`.
