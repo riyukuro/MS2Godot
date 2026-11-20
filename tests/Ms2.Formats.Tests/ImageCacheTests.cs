@@ -266,15 +266,30 @@ public class ImageCacheTests
         var root = AppContext.BaseDirectory;
         while (root != null && !File.Exists(Path.Combine(root, "MS2Godot.sln"))) root = Path.GetDirectoryName(root);
         Assume.That(root, Is.Not.Null, "solution root not found");
-#if DEBUG
         var configs = new[] { "Debug", "Release", "ExportRelease", "ExportDebug" };
-#else
-        var configs = new[] { "Release", "Debug", "ExportRelease", "ExportDebug" };
-#endif
-        var dll = configs.Select(c => Path.Combine(root, "game", ".godot", "mono", "temp", "bin", c, "MS2Godot.dll")).FirstOrDefault(File.Exists);
+        var dll = configs
+            .Select(c => Path.Combine(root, "game", ".godot", "mono", "temp", "bin", c, "MS2Godot.dll"))
+            .Where(File.Exists)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
         Assume.That(dll, Is.Not.Null, "build game/MS2Godot.csproj first");
+        var dllTime = File.GetLastWriteTimeUtc(dll);
+        var gameDir = Path.Combine(root, "game");
+        string newer = null;
+        foreach (var f in Directory.EnumerateFiles(gameDir, "*.*", SearchOption.AllDirectories))
+        {
+            var rel = Path.GetRelativePath(gameDir, f);
+            if (rel.StartsWith(".godot" + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || rel.StartsWith("obj" + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || rel.StartsWith("bin" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                continue;
+            if (!f.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) && !f.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)) continue;
+            if (File.GetLastWriteTimeUtc(f) > dllTime) { newer = rel; break; }
+        }
+        Assume.That(newer, Is.Null, $"probed {dll} is older than game/{newer}; rebuild game/MS2Godot.csproj first");
+        TestContext.WriteLine($"probing {dll} (mode={mode})");
         var runtimeConfig = Path.ChangeExtension(dll, ".runtimeconfig.json");
-        Assume.That(File.Exists(runtimeConfig), Is.True, "missing MS2Godot.runtimeconfig.json");
+        Assume.That(File.Exists(runtimeConfig), Is.True, $"missing runtimeconfig next to {dll}");
         var host = Path.Combine(AppContext.BaseDirectory, "testhost.dll");
         Assume.That(File.Exists(host), Is.True, "missing testhost.dll");
         var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
@@ -287,9 +302,13 @@ public class ImageCacheTests
         using var p = System.Diagnostics.Process.Start(psi)!;
         var outTask = p.StandardOutput.ReadToEndAsync();
         var errTask = p.StandardError.ReadToEndAsync();
-        Assert.That(p.WaitForExit(30_000), Is.True, "module initializer probe timed out");
+        if (!p.WaitForExit(30_000))
+        {
+            try { p.Kill(true); p.WaitForExit(5_000); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+            Assert.Fail($"module initializer probe timed out (mode={mode}, dll={dll})");
+        }
         p.WaitForExit();
-        Assert.That(p.ExitCode, Is.EqualTo(0), $"mode={mode} exit={p.ExitCode}\nstdout: {outTask.Result}\nstderr: {errTask.Result}");
+        Assert.That(p.ExitCode, Is.EqualTo(0), $"mode={mode} dll={dll} exit={p.ExitCode}\nstdout: {outTask.Result}\nstderr: {errTask.Result}");
         Assert.That(outTask.Result, Does.Contain("MODULE_INIT_OK"));
     }
 

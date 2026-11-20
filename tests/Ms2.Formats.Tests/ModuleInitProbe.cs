@@ -46,6 +46,9 @@ internal static class StartupHook
         var expectedDir = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.Equals(asmDir, expectedDir, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"AssemblyDir '{asmDir}' != '{expectedDir}'");
+        var summary = (string)precompiled.GetProperty("Summary")!.GetValue(null) ?? "";
+        if (!summary.Contains(" precompiled in place from ", StringComparison.Ordinal))
+            throw new InvalidOperationException($"unexpected Summary '{summary}'");
         var formats = alc.LoadFromAssemblyName(new AssemblyName("Ms2.Formats"));
         var cacheStore = formats.GetType("Ms2.Formats.Cache.CacheStore") ?? throw new InvalidOperationException("missing CacheStore");
         if (cacheStore.GetField("Of")!.GetValue(null) == null)

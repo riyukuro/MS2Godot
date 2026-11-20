@@ -78,10 +78,17 @@ public static class Precompiled
         if (!string.IsNullOrEmpty(loc) || ctx == null || ctx == AssemblyLoadContext.Default
             || !string.Equals(ctx.GetType().FullName, "GodotPlugins.PluginLoadContext", StringComparison.Ordinal))
         {
-            AssemblyDir = !string.IsNullOrEmpty(loc) ? Path.GetDirectoryName(loc)
-                : Directory.Exists(AppContext.BaseDirectory) ? AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                : null;
-            Summary = AssemblyDir != null ? $"in place from {AssemblyDir}" : "no preload";
+            if (string.IsNullOrEmpty(loc)) { Summary = "no build folder"; return; }
+            AssemblyDir = Path.GetDirectoryName(loc);
+            if (AssemblyDir == null || !Directory.Exists(AssemblyDir)) { AssemblyDir = null; Summary = "no build folder"; return; }
+            int r2r = 0;
+            foreach (var file in Directory.GetFiles(AssemblyDir, "*.dll"))
+            {
+                var name = Path.GetFileNameWithoutExtension(file);
+                if (name == Self || name.StartsWith("Godot", StringComparison.Ordinal)) continue;
+                if (Mvid(file) is { r2r: true }) r2r++;
+            }
+            Summary = $"{r2r} precompiled in place from {AssemblyDir}";
             return;
         }
         if (Engine.IsEditorHint()) { Summary = "editor"; return; }
@@ -148,6 +155,7 @@ public static class Precompiled
         if (Off) return null;
         if (AssemblyDir == null) { GD.PushWarning("precompiled code: no build folder"); return null; }
         var rtDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        // Cosmetic in a self-contained export where RuntimeDirectory == AssemblyDir (crossgen2 accepts a repeated -r pattern).
         var refs = string.Equals(Path.GetFullPath(rtDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                                  Path.GetFullPath(AssemblyDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
                                  StringComparison.OrdinalIgnoreCase)
