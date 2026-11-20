@@ -629,7 +629,7 @@ public class RuntimeTests
     [Test]
     public void TheDoubleClickWindowIsWallTimeNotTheMovieTimer()
     {
-        // GenerateMouseEvents reads the time as Timer::GetTicks()/1000 (sfr_as3_17.cpp:7131), the wall clock: the movie's
+        // GenerateMouseEvents reads the time as Timer::GetTicks()/1000 (sfr_as3_17.cpp:7134), the wall clock: the movie's
         // timer falls behind it when frames are dropped, and a slow second click must not become a double click
         var (rt, p) = Empty();
         double now = 1000;
@@ -651,11 +651,54 @@ public class RuntimeTests
     }
 
     [Test]
+    public void TheDoubleClickClockWrapsAt32Bits()
+    {
+        // tm is the tick count cut to a UInt32 and compared as tm <= PrevClickTime + 300 in UInt32 (sfr_as3_17.cpp:7134,
+        // :7140), so after 2^32 ms of uptime the clock wraps to 0 and a double click across the wrap still counts; a cast
+        // that saturates would stick at uint.MaxValue and no double click would come again
+        var (rt, p) = Empty();
+        double now = 4294967200;            // 2^32 - 96 ms
+        p.Clock = () => now;
+        var seen = new List<string>();
+        MouseSprite(rt, p, 0, "A", seen);
+        void Click() { p.MouseMove(10, 10); p.MouseButton(true); p.MouseButton(false); }
+
+        Click();
+        now += 100;                         // past the wrap: tm is 4, PrevClickTime + 300 is 204
+        Click();
+        now += 1000;
+        Click();
+        now += 100;
+        Click();
+        Assert.That(seen, Is.EqualTo(new[] { "A click", "A doubleClick", "A click", "A doubleClick" }));
+    }
+
+    [Test]
+    public void AThirdQuickClickIsAPlainClick()
+    {
+        // a double click sets PrevClickTime to 0 (sfr_as3_17.cpp:7159-7160) and a zero PrevClickTime is no double click
+        // (:7135), so three clicks within 300 ms are click, doubleClick, click
+        var (rt, p) = Empty();
+        double now = 1000;
+        p.Clock = () => now;
+        var seen = new List<string>();
+        MouseSprite(rt, p, 0, "A", seen);
+        void Click() { p.MouseMove(10, 10); p.MouseButton(true); p.MouseButton(false); }
+
+        Click();
+        now += 100;
+        Click();
+        now += 100;
+        Click();
+        Assert.That(seen, Is.EqualTo(new[] { "A click", "A doubleClick", "A click" }));
+    }
+
+    [Test]
     public void AReleaseAwayFromThePressStillStartsADoubleClick()
     {
         // IsMouseInsideEntityLast stays set over a drag from A to B (the drag block clears it, the entity change sets it
         // again, sfr_as3_17.cpp:7060-7068, :7246), so the release over B notes the click time though it clicks nothing (B
-        // was not pressed, :7151); a click on B at the same pixel within 300 ms is then a double click on B
+        // was not pressed, :7153); a click on B at the same pixel within 300 ms is then a double click on B
         var (rt, p) = Empty();
         double now = 1000;
         p.Clock = () => now;

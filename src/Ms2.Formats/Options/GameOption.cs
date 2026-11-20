@@ -100,6 +100,9 @@ public sealed class GameOption
     /// option (a file that does not parse reads as missing). Here it goes to a temporary file that is renamed over the old
     /// one, as the cache writers do, so the file is always the old one or the new one, whole. A failed write leaves no
     /// temporary file and throws.
+    /// STILL-OPEN: a symlinked or read-only option file. The rename replaces a symlink with a plain file instead of writing
+    /// through it, and on a read-only file the rename's outcome depends on the platform (it replaces the file where the
+    /// directory is writable, it fails on Windows) where the client's in-place write fails; neither case is handled.
     /// </summary>
     public static void WriteFile(string path, XDocument doc)
     {

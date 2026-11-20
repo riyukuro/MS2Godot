@@ -1413,7 +1413,7 @@ namespace Ms2.Avm2.Flash
         static readonly System.Diagnostics.Stopwatch wallClock = System.Diagnostics.Stopwatch.StartNew();
 
         /// <summary>The double click's clock in ms: GenerateMouseEvents reads Timer::GetTicks()/1000 as a UInt32
-        /// (sfr_as3_17.cpp:7131), the wall clock, not the movie's frame timer, which falls behind when frames are dropped.
+        /// (sfr_as3_17.cpp:7134), the wall clock, not the movie's frame timer, which falls behind when frames are dropped.
         /// Tests set their own.</summary>
         public Func<double> Clock = () => wallClock.Elapsed.TotalMilliseconds;
 
@@ -1460,10 +1460,10 @@ namespace Ms2.Avm2.Flash
                 if (pressedBy[LeftButton] != null && t != over) inside = false;
                 if (pressed != null && inside)      // the button was down (GetPrevButtonsState() & buttonMask)
                 {
-                    // sfr_as3_17.cpp:7128-7158: a release within 300 ms of the last click at the same pixel is a double click.
+                    // sfr_as3_17.cpp:7131-7165: a release within 300 ms of the last click at the same pixel is a double click.
                     // The top-most entity gets doubleClick when its doubleClickEnabled is set; a click needs the release over
                     // the entity the press went to. The last click is noted on every such release, also one away from the press.
-                    uint tm = (uint)Clock();
+                    uint tm = (uint)(ulong)Clock();
                     int ax = (int)MouseX, ay = (int)MouseY;
                     ref var dci = ref lastClick[button];
                     bool dblClick = dci.Time != 0 && tm <= unchecked(dci.Time + (uint)DoubleClickMs) && dci.X == ax && dci.Y == ay;

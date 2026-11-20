@@ -71,7 +71,7 @@ public class CharacterListTests
         // CharacterListDialog listens to m_charlist's itemDoubleClick (onDoubleClickCharacter -> clickStart -> OnGameStart, as
         // the Start button), which CLIK's CoreList raises from its renderers' doubleClick (setupRenderer: doubleClickEnabled =
         // true). The client hands WM_LBUTTONDBLCLK to the movie as a plain mouse down (@0x1422da5a0) and GFx makes the second
-        // release within 300 ms at the same pixel a doubleClick (sfr_as3_17.cpp:7133-7163).
+        // release within 300 ms at the same pixel a doubleClick (sfr_as3_17.cpp:7131-7165).
         var (h, c) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
         var started = new List<string>();
         c.GameStart += started.Add;
