@@ -438,7 +438,15 @@ public partial class Field : Node3D
         // PSSM split fit follows the camera and dropped the player's and npcs' shadows near the feet when zoomed in, so the
         // sun uses one orthogonal map over the same 4000 range. STILL-OPEN: the box is camera-fitted, not target-centred
         // as in the client; Godot exposes no custom directional shadow projection.
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal, DirectionalShadowMaxDistance = 4000, ShadowReverseCullFace = sunBackfaces };
+        // The edge filter: the light flat (MS2DirectionalLight_Outside_ preset, ms2directionallight.flat) sets ShadowTechnique
+        // NiPCFShadowTechnique and SizeHint 2048, so the client's map is 4000/2048 = 1.95 units a texel. That technique's
+        // PCFShadowMap fragment (NiShadowManager.cpp:180-202; StandardMaterialNodeLibraryFragments.xml:2049) is a 4x4 tap
+        // grid weighted (1-frac, 1, 1, frac) per axis, a 3-texel box: a smooth linear ramp about 5.9 units wide, with no
+        // noise. Godot's default Soft Low filter gives about the same width (2-texel disk radius) but rotates only 4
+        // samples per pixel, which shows as a grainy dither along the edge. Soft High (16 samples, quality radius 3) with
+        // blur 2/3 keeps the same 2-texel radius and is smooth.
+        RenderingServer.DirectionalSoftShadowFilterSetQuality(RenderingServer.ShadowQuality.SoftHigh);
+        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal, DirectionalShadowMaxDistance = 4000, ShadowBlur = 2f / 3f, ShadowReverseCullFace = sunBackfaces };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
