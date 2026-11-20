@@ -209,7 +209,8 @@ public sealed partial class DamageText : CanvasLayer
         }
         if (plus != null) number.MoveChild(plus, -1);   // a leading "+" goes on top
         float w = 0;
-        foreach (var c in number.GetChildren()) if (c is MovieClipNode g) w = Math.Max(w, g.Position.X + g.Bounds.End.X);
+        for (int i = 0; i < number.GetChildCount(); i++)      // by index: GetChildren() is a tracked array per call
+            if (number.GetChild(i) is MovieClipNode g) w = Math.Max(w, g.Position.X + g.Bounds.End.X);
         number.Position = new Vector2(-w / 2, -h / 2);
         if (a.Direct("dummy")?.Node is MovieClipNode dummy)
         {
