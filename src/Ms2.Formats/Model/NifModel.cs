@@ -82,6 +82,9 @@ public sealed class ModelMesh
     public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
     public float FlipPeriod;
     public List<UvAnim> UvAnims = new();  // NiTextureTransformControllers: translate, rotate or scale of one map
+    /// <summary>The active CLAMP NiTextureTransformControllers. Not APP_INIT, so a field model's app time is past their stop
+    /// when the field is entered, and each holds its last key: a constant on the map's transform (ModelBuilder).</summary>
+    public List<UvAnim> UvHolds = new();
     public MorphAnim Morph;               // a keyed relative POSITION morph (Positions = its target 0), or null
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
@@ -427,7 +430,8 @@ public sealed class ModelData
 
     /// <summary>
     /// The flipbook (NiFlipController) and uv (NiTextureTransformController) controllers on the mesh's NiTexturingProperty.
-    /// Only active, looping controllers; time keys of the flipbook are taken as evenly spaced.
+    /// Only active, looping controllers; time keys of the flipbook are taken as evenly spaced. An active CLAMP uv controller
+    /// goes to UvHolds.
     /// </summary>
     static void ReadTextureControllers(NifFile nif, NifStruct mb, ModelMesh mesh)
     {
@@ -440,7 +444,9 @@ public sealed class ModelData
                 var cb = B[(int)c];
                 c = cb.IntOr("Next Controller", -1);
                 long flags = cb.IntOr("Flags", 0);
-                if ((flags & 8) == 0 || ((flags >> 1) & 3) != 0) continue;   // inactive, or not a loop
+                int cycle = (int)((flags >> 1) & 3);
+                if ((flags & 8) == 0 || cycle is not (0 or 2)) continue;   // inactive, or REVERSE
+                if (cycle == 2 && cb.Type != "NiTextureTransformController") continue;
                 int slot = (int)cb.IntOr("Texture Slot", 0);
                 string slotName = slot < SlotNames.Length ? SlotNames[slot] : null;
                 float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
@@ -456,10 +462,10 @@ public sealed class ModelData
                 else if (cb.Type == "NiTextureTransformController")
                 {
                     long op = cb.IntOr("Operation", -1);
-                    if (op is < 0 or > 4 || ReadFloatAnim<UvAnim>(nif, cb) is not { } ua) continue;
+                    if (op is < 0 or > 4 || ReadFloatAnim<UvAnim>(nif, cb, clamp: cycle == 2) is not { } ua) continue;
                     ua.Slot = slotName;
                     ua.Operation = (int)op;
-                    mesh.UvAnims.Add(ua);
+                    (cycle == 2 ? mesh.UvHolds : mesh.UvAnims).Add(ua);
                 }
             }
         }
@@ -485,11 +491,11 @@ public sealed class ModelData
     /// An active, looping (flags bit 3, cycle LOOP) float controller with an NiFloatInterpolator over linear or Bezier
     /// keys, or null.
     /// </summary>
-    static T ReadFloatAnim<T>(NifFile nif, NifStruct cb) where T : FloatAnim, new()
+    static T ReadFloatAnim<T>(NifFile nif, NifStruct cb, bool clamp = false) where T : FloatAnim, new()
     {
         var B = nif.Blocks;
         long flags = cb.IntOr("Flags", 0);
-        if ((flags & 8) == 0 || ((flags >> 1) & 3) != 0) return null;   // inactive, or not a loop
+        if ((flags & 8) == 0 || ((flags >> 1) & 3) != (clamp ? 2 : 0)) return null;   // inactive, or not a loop (a clamp when asked)
         float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
         long ip = cb.IntOr("Interpolator", -1);
         if (stop <= start || ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") return null;

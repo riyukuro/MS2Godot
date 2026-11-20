@@ -436,7 +436,8 @@ public sealed class ModelBuilder
     /// <summary>
     /// The texture transforms of the maps the field shaders draw (field_uv): each map's static NiTextureTransform, and its
     /// running uv controllers over it. A map a controller moves but that has no transform gets the controller's default
-    /// one (NiTextureTransformController.cpp:146-151, TexTransform.ControllerDefault). STILL-OPEN: the shader takes at
+    /// one (NiTextureTransformController.cpp:146-151, TexTransform.ControllerDefault). A CLAMP controller (ModelMesh.UvHolds)
+    /// holds its last key in the static transform: the field's app time is past its stop. STILL-OPEN: the shader takes at
     /// most 4 controllers of up to 4 keys each; others keep the static value (field scan: one 5-key translate on a base
     /// and one on a glow map, 4 entities).
     /// </summary>
@@ -468,8 +469,15 @@ public sealed class ModelBuilder
                 }
                 n++;
             }
-            var t = tm?.Transform ?? (moved ? TexTransform.ControllerDefault() : null);
+            bool held = tm != null && m.UvHolds.Exists(h => h.Slot == UvMaps[map]);
+            var t = tm?.Transform ?? (moved || held ? TexTransform.ControllerDefault() : null);
             if (t == null) continue;
+            if (held)
+            {
+                t = t.Clone();
+                foreach (var h in m.UvHolds)
+                    if (h.Slot == UvMaps[map]) t.Set(h.Operation, h.Values[^1]);
+            }
             any = true;
             method[map] = t.Method + 1;
             tt[7 * map] = t.TU; tt[7 * map + 1] = t.TV; tt[7 * map + 2] = t.SU; tt[7 * map + 3] = t.SV;
