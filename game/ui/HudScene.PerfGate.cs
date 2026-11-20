@@ -298,7 +298,13 @@ public partial class HudScene
     {
         var m = GateMark.Now();
         var o = GateDelta(gateIdle, m);
-        if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1") o["attrib"] = WrapperAttrib.Result();
+        if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1")
+        {
+            o["attrib"] = WrapperAttrib.Result();
+            o["attrib_us"] = WrapperAttrib.ResultUs();
+            o["attrib_bytes"] = WrapperAttrib.ResultBytes();
+            o["attrib_markers"] = WrapperAttrib.ResultMarkers();
+        }
         o["wrapper_types"] = GateGrowth(gateCensus, GateCensus());   // after the mark; the collection below follows
         GateCollect();
         GateFinalized(o, m);
