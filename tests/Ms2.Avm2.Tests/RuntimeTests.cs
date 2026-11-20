@@ -1075,4 +1075,67 @@ public class RuntimeTests
             + "<A HREF=\"event:itemTooltip,7,3,7,15000001,3\">[</A><A HREF=\"event:itemTooltip,7,3,7,15000001,3\"><B>Sword</B></A>"
             + "<A HREF=\"event:itemTooltip,7,3,7,15000001,3\">]</A></FONT>" + Font("EEEEEE") + " </FONT></P></TEXTFORMAT>"));
     }
+
+    [Test]
+    public void OptimizedAdvanceSkipsStaticSubtreesAndLoopsWithoutAllocating()
+    {
+        var (rt, p) = Empty();
+        var mcCls = rt.GetClass("flash.display.MovieClip");
+        var spCls = rt.GetClass("flash.display.Sprite");
+        // 400 static containers on stage, none playing
+        for (int i = 0; i < 400; i++)
+        {
+            var box = (AsSprite)spCls.Construct();
+            box.addChild((AsSprite)spCls.Construct());
+            p.Stage.addChild(box);
+        }
+        p.Tick(); // warm up
+        long b0 = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 50; i++) p.Tick();
+        long quietBytes = GC.GetAllocatedBytesForCurrentThread() - b0;
+        Assert.That(quietBytes, Is.EqualTo(0), "a quiet movie tick allocates nothing");
+
+        // one 2-frame clip nested under a sprite, with a placement that stays alive across the loop (first=0)
+        var holder = (AsSprite)spCls.Construct();
+        var clip = (AsMovieClip)mcCls.Construct();
+        var pl = new JsonObject { ["first"] = 0, ["depth"] = 1 };
+        clip.TL = Timeline.From(new JsonObject { ["frames"] = 2, ["children"] = new JsonArray { pl } }, p.Main);
+        var child = (AsSprite)spCls.Construct();
+        clip.addChild(child);
+        clip.Live[pl] = child;
+        var order = new List<string>();
+        var childClip = (AsMovieClip)mcCls.Construct();
+        childClip.TL = Timeline.From(new JsonObject { ["frames"] = 2 }, p.Main);
+        clip.addChild(childClip);
+        clip.FrameScripts[1] = new AsPlainFunction(rt, new NativeMethod("p", (_, _) => { order.Add("parent"); return Rt.Undef; }));
+        childClip.FrameScripts[1] = new AsPlainFunction(rt, new NativeMethod("c", (_, _) => { order.Add("child"); return Rt.Undef; }));
+        holder.addChild(clip);
+        p.Stage.addChild(holder);
+
+        p.Tick(); // frame 0 -> 1: parent script runs before child script in pre-order
+        Assert.That(clip.currentFrame, Is.EqualTo(2));
+        Assert.That(childClip.currentFrame, Is.EqualTo(2));
+        Assert.That(order, Is.EqualTo(new[] { "parent", "child" }));
+
+        // stop child, remove and re-add parent, resume and verify looping allocates nothing and skips the 400 static boxes
+        childClip.stop();
+        p.Stage.removeChild(holder);
+        p.Tick(); // off-stage clip is pruned and does not advance
+        Assert.That(clip.currentFrame, Is.EqualTo(2));
+        p.Stage.addChild(holder);
+        p.Tick(); // frame 1 -> 0 (loop)
+        Assert.That(clip.currentFrame, Is.EqualTo(1));
+        Assert.That(childClip.currentFrame, Is.EqualTo(2), "stopped child stays on its frame");
+
+        // warm up loop, then measure 40 ticks (20 wraps + 20 frame scripts)
+        int scriptRuns = 0;
+        clip.FrameScripts[1] = new AsPlainFunction(rt, new NativeMethod("p2", (_, _) => { scriptRuns++; return Rt.Undef; }));
+        for (int i = 0; i < 4; i++) p.Tick();
+        scriptRuns = 0;
+        long b1 = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 40; i++) p.Tick();
+        long loopBytes = GC.GetAllocatedBytesForCurrentThread() - b1;
+        Assert.That(scriptRuns, Is.EqualTo(20));
+        Assert.That(loopBytes, Is.EqualTo(0), "looping a playing clip with a frame script allocates nothing per tick");
+    }
 }

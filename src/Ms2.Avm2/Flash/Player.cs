@@ -83,6 +83,12 @@ namespace Ms2.Avm2.Flash
         readonly List<Action> later = new();
         readonly List<AsMovieClip> scriptQueue = new();     // clips whose frame needs its script (Flag_NeedExecuteFrame)
         readonly List<FrameAction> frameActions = new();    // the action queue's AL_Frame level, run from frameHead on
+        // MovieImpl::pPlayListOptHead (sfr_gfx_01i.cpp:3255 @0x14256d390): playing multi-frame clips, so Advance skips
+        // quiet movies and static subtrees instead of walking the whole display list every tick.
+        readonly List<AsMovieClip> playingClips = new();
+        readonly List<AsDisplayObject> advanceBuf = new();
+        uint advanceEpoch;
+        bool advancing;
         int frameHead;
         (SymbolScope Scope, JsonObject Sym, JsonObject Placement)? pending;
 
@@ -511,7 +517,7 @@ namespace Ms2.Avm2.Flash
                 if (a.Type != null) { RT.Guard(a.Type, a.Target.Class?.Name ?? "", (p: this, t: a.Type, d: a.Target), static x => x.p.Dispatch(x.t, x.d)); continue; }
                 var mc = (AsMovieClip)a.Target;
                 if (mc.FrameScripts.TryGetValue(a.Frame, out var fn))
-                    RT.Guard($"frame script {mc.Class.Name}@{a.Frame + 1}", () => fn.Call(mc, Array.Empty<object>()));
+                    RT.Guard("frame script", mc.Class.Name, (fn, mc), static x => x.fn.Call(x.mc, Array.Empty<object>()));
             }
             foreach (var x in frameActions) { x.Target = null; x.Type = null; spareActions.Push(x); }
             frameActions.Clear(); frameHead = 0;
@@ -544,6 +550,7 @@ namespace Ms2.Avm2.Flash
 
         void EnterStage(AsDisplayObject o)
         {
+            if (o is AsMovieClip mc && mc.CanAdvance) RegisterPlaying(mc);
             o.Send("flash.events.Event", "addedToStage");
             if (o is AsContainer c) foreach (var ch in c.Children.ToList()) EnterStage(ch);
         }
@@ -672,7 +679,7 @@ namespace Ms2.Avm2.Flash
             // SortByPlayList for the STILL-OPEN off-stage order).
             SendBroadcast("enterFrame");
             UpdateDrag();               // AvmSprite::AdvanceFrame: DoMouseDrag before the frame moves on
-            if (advanceTimelines) RT.Guard("advance", null, this, static p => p.Advance(p.Stage));
+            if (advanceTimelines && playingClips.Count > 0) RT.Guard("advance", null, this, static p => p.AdvanceTimelines());
             RunFrameActions();
             double dt = 1000.0 / FrameRate;
             RT.Guard("clock", null, (rt: RT, dt), static x => x.rt.AdvanceClock(x.dt));
@@ -690,28 +697,88 @@ namespace Ms2.Avm2.Flash
             if (RenderInvalidated) { SendBroadcast("render"); RenderInvalidated = false; }
         }
 
+        internal void RegisterPlaying(AsMovieClip mc)
+        {
+            if (!mc.TrackedPlaying)
+            {
+                mc.TrackedPlaying = true;
+                playingClips.Add(mc);
+            }
+            if (advancing) MarkAdvancePath(mc);
+        }
+
+        void MarkAdvancePath(AsDisplayObject o)
+        {
+            for (var p = o; p != null && p.AdvanceEpoch != advanceEpoch; p = p.Parent)
+                p.AdvanceEpoch = advanceEpoch;
+        }
+
+        static void ResetAdvanceEpoch(AsDisplayObject o)
+        {
+            o.AdvanceEpoch = 0;
+            if (o is AsContainer c)
+                foreach (var k in c.Children) ResetAdvanceEpoch(k);
+        }
+
+        /// <summary>
+        /// Advances every playing multi-frame clip on the stage in pre-order (matching MovieImpl::AdvanceFrame's
+        /// optimized play list pPlayListOptHead, sfr_gfx_01i.cpp:3255 @0x14256d390): only paths leading to a playing clip
+        /// are descended, and a reusable buffer replaces per-container ArrayPool.Shared Rent/Return calls.
+        /// </summary>
+        void AdvanceTimelines()
+        {
+            if (++advanceEpoch == 0) { ResetAdvanceEpoch(Stage); advanceEpoch = 1; }
+            int any = 0;
+            for (int i = playingClips.Count - 1; i >= 0; i--)
+            {
+                var mc = playingClips[i];
+                if (!mc.CanAdvance || !mc.OnStage)
+                {
+                    mc.TrackedPlaying = false;
+                    playingClips[i] = playingClips[^1];
+                    playingClips.RemoveAt(playingClips.Count - 1);
+                    continue;
+                }
+                MarkAdvancePath(mc);
+                any++;
+            }
+            if (any == 0) return;
+            advancing = true;
+            try { Advance(Stage); }
+            finally { advancing = false; advanceBuf.Clear(); }
+        }
+
         void Advance(AsDisplayObject o)
         {
-            if (o is AsMovieClip mc && mc.Playing && mc.TL != null && mc.totalFrames > 1)
+            if (o is AsMovieClip mc && mc.CanAdvance)
             {
                 int next = (mc.Frame + 1) % mc.totalFrames;
                 if (next == 0)
                 {
-                    foreach (var (pl, ch) in mc.Live.ToList())
-                        if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
+                    List<JsonObject> drop = null;
+                    foreach (var (pl, _) in mc.Live)
+                        if (J.Iv(pl["first"]) > 0) (drop ??= new()).Add(pl);
+                    if (drop != null)
+                        foreach (var pl in drop)
+                            if (mc.Live.Remove(pl, out var ch) && ch.Parent == mc) mc.RemoveChildInternal(ch, true);
                 }
                 BuildFrame(mc, next);
                 MarkScript(mc, inOrder: true);
             }
-            // the children as they are now (a child added by a frame is advanced next frame), in a pooled copy
+            // snapshot only children on a playing path (a child added by a frame is advanced next frame, except a new
+            // playing child created by BuildFrame above, whose RegisterPlaying already marked its path)
             if (o is AsContainer c && c.Children.Count is int n and > 0)
             {
-                var kids = System.Buffers.ArrayPool<AsDisplayObject>.Shared.Rent(n);
-                // per element: List.CopyTo is a bulk copy, which marks the cards of the whole destination range of the
-                // (old) pooled array; an element store marks a card only for a young child
-                for (int i = 0; i < n; i++) kids[i] = c.Children[i];
-                try { for (int i = 0; i < n; i++) Advance(kids[i]); }
-                finally { Array.Clear(kids, 0, n); System.Buffers.ArrayPool<AsDisplayObject>.Shared.Return(kids); }
+                int start = advanceBuf.Count;
+                for (int i = 0; i < n; i++)
+                {
+                    var k = c.Children[i];
+                    if (k.AdvanceEpoch == advanceEpoch) advanceBuf.Add(k);
+                }
+                int end = advanceBuf.Count;
+                if (end == start) return;
+                try { for (int i = start; i < end; i++) Advance(advanceBuf[i]); }
+                finally { advanceBuf.RemoveRange(start, end - start); }
             }
         }
 

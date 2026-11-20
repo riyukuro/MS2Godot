@@ -88,6 +88,8 @@ public class AsDisplayObject : AsEventDispatcher
 
     /// <summary>The renderer has drawn this object's current state.</summary>
     public void ClearMarks() => marks = 0;
+    /// <summary>Set to <see cref="Player"/>'s current advance epoch when this object or a descendant is a playing multi-frame clip.</summary>
+    internal uint AdvanceEpoch;
     public bool CacheAsBitmapFlag;
     public bool HitTestDisabled;
     /// <summary>Free slot for the renderer (its node for this object).</summary>
@@ -502,9 +504,16 @@ public class AsSprite : AsContainer
 [AsClass("flash.display.MovieClip", "flash.display.Sprite", Dynamic = true)]
 public class AsMovieClip : AsSprite
 {
-    public Timeline TL;
+    Timeline tl;
+    bool playing = true;
+    internal bool TrackedPlaying;
+    /// <summary>True when this clip's timeline advances each frame (MovieImpl::AdvanceFrame's optimized play list criterion).</summary>
+    internal bool CanAdvance => playing && tl != null && tl.Frames > 1;
+    void TrackPlaying() { if (CanAdvance) P?.RegisterPlaying(this); }
+
+    public Timeline TL { get => tl; set { tl = value; TrackPlaying(); } }
     public int Frame;                       // 0-based
-    public bool Playing = true;
+    public bool Playing { get => playing; set { playing = value; TrackPlaying(); } }
     public readonly Dictionary<int, AsFunction> FrameScripts = new();
     public readonly Dictionary<JsonObject, AsDisplayObject> Live = new(ReferenceEqualityComparer.Instance);
     public bool TimelineBuilt;
