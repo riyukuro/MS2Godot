@@ -37,4 +37,6 @@ public partial class Player
         skillSequence = null;
         return false;
     }
+    /// <summary>The own cast's sequence is cancelled (State::vfunc_7(1)): the movement animations take the body back.</summary>
+    public void CancelSkillSequence() => skillSequence = null;
 }

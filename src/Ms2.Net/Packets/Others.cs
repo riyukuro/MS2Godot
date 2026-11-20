@@ -73,6 +73,35 @@ public sealed record SkillCancel(long CastUid, int ActorId) {
     public static SkillCancel Read(ByteReader r) { var p = new SkillCancel(r.ReadLong(), r.ReadInt()); r.ExpectEnd("SkillCancel"); return p; }
 }
 
+/// <summary>
+/// Inbound 0x40 (CSceneStateGame::OnSkillUseFailed @0x1417187b0, scenestategame.cpp:3425): u8 mode, i64 skill uid, i32 skill id,
+/// u8 error; mode 6 adds i32 state (:3442); then i32 start tick, i16 cooldown in tenths of a second (ReadShortDiv10), i32 charge
+/// uses (:3450-3452). The client reads past the error only with a local player.
+/// </summary>
+public sealed record SkillUseFailed(byte Mode, long SkillUid, int SkillId, byte Error, int State, int StartTick, float Cooldown, int Uses) {
+    public static SkillUseFailed Read(ByteReader r) {
+        byte mode = r.ReadByte(); long uid = r.ReadLong(); int id = r.ReadInt(); byte error = r.ReadByte();
+        int state = mode == 6 ? r.ReadInt() : 0;
+        var p = new SkillUseFailed(mode, uid, id, error, state, r.ReadInt(), r.ReadShort() / 10f, r.ReadInt());
+        r.ExpectEnd("SkillUseFailed"); return p;
+    }
+}
+
+/// <summary>One entry of <see cref="SkillCooldown"/>: the cooldown key (group &lt;&lt; 32 | skill id), the end tick (0 ends it), the charge uses.</summary>
+public readonly record struct SkillCooldownEntry(long Key, int EndTick, int Uses);
+
+/// <summary>
+/// Inbound 0x42 (CSceneStateGame::OnSkillCooldown @0x14172f030, scenestategame.cpp:7856): u8 count, then per entry i64 cooldown
+/// key, i32 end tick, i32 charge uses.
+/// </summary>
+public sealed record SkillCooldown(SkillCooldownEntry[] Entries) {
+    public static SkillCooldown Read(ByteReader r) {
+        var e = new SkillCooldownEntry[r.ReadByte()];
+        for (int i = 0; i < e.Length; i++) e[i] = new SkillCooldownEntry(r.ReadLong(), r.ReadInt(), r.ReadInt());
+        r.ExpectEnd("SkillCooldown"); return new SkillCooldown(e);
+    }
+}
+
 /// <summary>Inbound 0x41 (OnStateSkill): u8 type; the client acts only on type 6 (i32 actor, i64 cast uid, i32 skill id, i32 level). Bytes beyond what the client reads are kept in Rest.</summary>
 public sealed record StateSkill(byte Type, int ActorId, long CastUid, int SkillId, int Level, byte[] Rest) {
     public static StateSkill Read(ByteReader r) {

@@ -207,6 +207,8 @@ public sealed class SkillData
     public bool DisableChangeSkillIconEffect;
     /// <summary>&lt;stateAttr rechargeMaxCount cooldownGroupID&gt;.</summary>
     public uint RechargeMaxCount, CooldownGroupId;
+    /// <summary>&lt;stateAttr rechargeShareOrigin&gt; (skilloverlapcompare.cpp:870): the charges are kept under the origin skill.</summary>
+    public bool RechargeShareOrigin;
     /// <summary>&lt;stateAttr autoTargeting autoTargetingType moveType keyIsDown useDefaultSkill useDefaultSkillID&gt; (:858-864).</summary>
     public int AutoTargeting, MoveType;
     /// <summary>&lt;kinds jump&gt; (:841): the skill cast instead while jumping up or falling (GetCastSkillId).</summary>
@@ -248,6 +250,7 @@ public sealed class SkillData
         {
             s.RechargeMaxCount = Xml.UInt(state, "rechargeMaxCount");
             s.CooldownGroupId = Xml.UInt(state, "cooldownGroupID");
+            s.RechargeShareOrigin = Xml.Bool(state, "rechargeShareOrigin");
             s.AutoTargeting = Xml.Int(state, "autoTargeting");
             s.AutoTargetingType = Xml.UInt(state, "autoTargetingType");
             s.MoveType = Xml.Int(state, "moveType");
@@ -315,6 +318,8 @@ public sealed class SkillData
     public SkillLevelData GetLevelData(int level) => level is >= 0 and <= ushort.MaxValue && levels.TryGetValue((ushort)level, out var l) ? l : null;
     /// <summary>GetOriginId @0x1407e9b50 (:947): originID, else the id.</summary>
     public uint OriginId => OriginIdRaw != 0 ? OriginIdRaw : Id;
+    /// <summary>GetRechargeId @0x1407e9b90 (skilloverlapcompare.cpp:956): the origin id when the charges are shared, else the id.</summary>
+    public uint RechargeId => RechargeShareOrigin ? OriginId : Id;
     /// <summary>FUN_1407e9de0 (:1053): main type 6 is a passive skill.</summary>
     public bool IsPassive => MainType == 6;
     /// <summary>IsEmotion @0x1407e9d30 (:1018): main types 14 and 15.</summary>

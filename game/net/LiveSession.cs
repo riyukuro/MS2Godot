@@ -1009,6 +1009,7 @@ public partial class LiveSession : Node
                     CharacterAbilityReceived?.Invoke(m);
                 GD.Print($"live: character ability {m?.GetType().Name ?? "other mode"} ({CharacterAbility.Ids.Count} learned)");
             }
+            else if (HandleOwnSkill(p)) { }
             else if (game.Is(p, Inbound.RegionSkill))
             {
                 // OnRegionSkill (scenestategame.cpp:7718-7749): mode 0 adds the region skill object of the id, mode 1 removes

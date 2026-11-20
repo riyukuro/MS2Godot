@@ -123,6 +123,8 @@ public class SniffTests {
         Decode(true, 0x3E, r => SkillSync.Read(r));
         Decode(true, 0x3F, r => SkillCancel.Read(r));
         Decode(true, 0x41, r => StateSkill.Read(r));
+        Decode(true, 0x40, r => SkillUseFailed.Read(r));
+        Decode(true, 0x42, r => SkillCooldown.Read(r));
         Decode(true, 0x25, r => ItemPutOn.Read(r));
         Decode(true, 0x26, r => ItemPutOff.Read(r));
         Decode(true, 0x47, r => BuffMessage.Read(r));

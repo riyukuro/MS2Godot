@@ -57,7 +57,10 @@ public enum Inbound : ushort {
     SkillDamage = 0x3D,
     SkillSync = 0x3E,
     SkillCancel = 0x3F,
+    SkillUseFailed = 0x40,      // CSceneStateGame::OnSkillUseFailed (scenestategame.cpp:3425)
     StateSkill = 0x41,
+    SkillCooldown = 0x42,       // CSceneStateGame::OnSkillCooldown (scenestategame.cpp:7856)
+    SkillResetCooldown = 0x43,  // CSceneStateGame::OnSkillResetCooldown (scenestategame.cpp:4231): no body read
     FieldAddNpc = 0x55,
     FieldRemoveNpc = 0x56,
     FieldDeadNpc = 0x57,

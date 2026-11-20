@@ -141,4 +141,53 @@ public partial class HudScene
         }
         ownPointTime = OwnPointTime(me);
     }
+    Action unwatchOwnSkill;
+    Func<uint, int, float> slotCooldownRemain;
+    Func<uint, (float, bool)> slotCooldownTotal;
+    Func<SkillData, int> slotRechargeRemain;
+
+    /// <summary>
+    /// The live session's own skill packets: the cooldowns look up the HUD's skill rows, and the own state's cancel (State::vfunc_7(1)
+    /// from OnSkillCancel / OnSkillUseFailed) ends the own cast's sequence when the player is in the skill state (0x10) of the uid.
+    /// STILL-OPEN: the player has no other state ids, so mode 6's cancel of a state other than 0x10 does nothing.
+    /// </summary>
+    void WatchOwnSkill()
+    {
+        unwatchOwnSkill?.Invoke();
+        if (Net.LiveSession.Instance is not { } live) return;
+        live.SkillRows = id => hudModel?.Tables.Skills.GetSkillData(id);
+        Action<long, int> on = (uid, state) =>
+        {
+            if (state != 0x10 || ownCast == null || player == null || (object)player.SkillSequence != ownSequence) return;
+            if (uid != 0 && uid != ownCast.CastId) return;
+            GD.Print($"cast: skill {ownCast.Skill.Id} cancelled by the server");
+            player.CancelSkillSequence();
+            ownCast = null;
+        };
+        live.OwnStateCancelled += on;
+        unwatchOwnSkill = () => live.OwnStateCancelled -= on;
+    }
+
+    /// <summary>Each frame: CSkillSystem::Update's cooldown part at the server tick (0 B/frame).</summary>
+    static void TickCooltimes()
+    {
+        if (Net.LiveSession.Instance is { } live) live.Cooltimes.Update((uint)Net.LiveSession.CastTick());
+    }
+
+    /// <summary>The quick slots' cooldown reads: the live session's CSkillSystem table at the server tick, idle offline.</summary>
+    void SlotCooldowns(SlotWorld w)
+    {
+        if (Net.LiveSession.Instance is not { } live) return;
+        slotCooldownRemain ??= (id, mode) => Net.LiveSession.Instance?.Cooltimes.Remain(id, mode != 0, (uint)Net.LiveSession.CastTick()) ?? 0f;
+        slotCooldownTotal ??= id =>
+        {
+            float total = 0; bool byGroup = false;
+            Net.LiveSession.Instance?.Cooltimes.Remain(id, true, (uint)Net.LiveSession.CastTick(), out _, out total, out byGroup);
+            return (total, byGroup);
+        };
+        slotRechargeRemain ??= s => Net.LiveSession.Instance?.Cooltimes.RechargeRemain(s) ?? 0;
+        w.CooldownRemain = slotCooldownRemain;
+        w.CooldownTotal = slotCooldownTotal;
+        w.RechargeRemain = slotRechargeRemain;
+    }
 }

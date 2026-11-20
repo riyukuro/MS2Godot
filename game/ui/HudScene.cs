@@ -308,6 +308,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchDamageNumbers();
 
         HudModel();
+        WatchOwnSkill();
         ScreenMask();
         NoticeTab(uiRoot, constants);
         Minimap(uiRoot);
@@ -2642,7 +2643,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// The player state the HUD quick slots read (SkillSlot): the live session's bag, skill book and own hands, else the offline
     /// inventory and a new character's book of the HUD's job; the field data of the current map id (offline: the field of the
-    /// HUD's xblock). Cooldowns and the skill set have no feed yet and keep their idle values; the buffs only feed the buff strip.
+    /// HUD's xblock); the cooldowns the live session's (idle offline). The skill set has no feed yet and keeps its idle value; the buffs only feed the buff strip.
     /// </summary>
     Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
     {
@@ -2687,6 +2688,7 @@ public partial class HudScene : Node, IUiStageHost
         };
         world.Weapon = weaponActions.HeldAction(Hand(5), Hand(4), hudModel.Tables.Items.Get, world.CanUse) is { } action
             ? (action.RightHand, action.LeftHand) : null;
+        SlotCooldowns(world);
         return world;
     }
 
@@ -2964,6 +2966,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         PerfLog.Frame(perfState);
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
+        TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
