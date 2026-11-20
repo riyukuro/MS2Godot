@@ -66,6 +66,12 @@ public enum Inbound : ushort {
     StateSkill = 0x41,
     SkillCooldown = 0x42,       // CSceneStateGame::OnSkillCooldown (scenestategame.cpp:7856)
     SkillResetCooldown = 0x43,  // CSceneStateGame::OnSkillResetCooldown (scenestategame.cpp:4231): no body read
+    ItemDrop = 0x29,            // RecvOp ItemDrop (commonfiles/opcodes.h:49)
+    ItemUpdate = 0x2A,          // RecvOp ItemUpdate (opcodes.h:50)
+    FieldAddItem = 0x2B,        // RecvOp FieldAddItem (opcodes.h:51): CSceneStateGame::OnFieldAddItem
+    FieldRemoveItem = 0x2C,     // RecvOp FieldRemoveItem (opcodes.h:52): CSceneStateGame::OnFieldRemoveItem
+    FieldPickupItem = 0x2D,     // RecvOp FieldPickupItem (opcodes.h:53): CSceneStateGame::OnFieldPickupItem
+    ItemDropNotice = 0xBA,      // RecvOp ItemDropNotice (opcodes.h:193): CSceneStateGame::OnItemDropNotice
     FieldAddNpc = 0x55,
     FieldRemoveNpc = 0x56,
     FieldDeadNpc = 0x57,
@@ -118,6 +124,8 @@ public enum Outbound : ushort {
     RequestItemLock = 0x87,   // SendOp::RequestItemLock: CItemLockManager (unnamed/unit_1406125d0_itemlockmanager.cpp)
     RequestItemStorage = 0x18,   // SendOp::RequestItemStorage (commonfiles/opcodes.h): CStore::Request*, FUN_140de2dc0, FUN_140de31f0, StoreSlot::vfunc_18
     RequestItemUse = 0x19,
+    RequestItemPickup = 0x1C,   // SendOp RequestItemPickup (commonfiles/opcodes.h:333): CDropItem::SendRequestItemPickup
+    RequestMesoPickup = 0x1D,   // SendOp RequestMesoPickup (opcodes.h:334): MyPC::FUN_1415310e0
     BadgeEquip = 0x47,
     RequestTimeSync = 0x0B,
     ResponseClientTickSync = 0x0C,

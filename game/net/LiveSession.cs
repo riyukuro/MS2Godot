@@ -47,6 +47,7 @@ public partial class LiveSession : Node
     byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
     Player player;           // the own player, once the field is built
     RemoteLayer remote;      // the other players and npcs, once the field is built
+    DropLayer drops;         // the dropped items and meso, once the field is built
     readonly FieldEntry fieldEntry = new();   // RequestFieldEnter: the current entry and its one ResponseFieldEnter
     public bool Busy { get; private set; }
     /// <summary>The last create the server refused (null after a create that went through).</summary>
@@ -673,6 +674,10 @@ public partial class LiveSession : Node
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
         remote.Numbered = (n, npc) => DamageNumbered?.Invoke(n, npc);
+        var kinds = Kinds();
+        var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
+            id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
+        field.TreeExiting += () => { if (drops == dropLayer) drops = null; };
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
         field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); };
@@ -861,6 +866,8 @@ public partial class LiveSession : Node
                 if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
                 GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
             }
+            else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader()); drops?.Add(item); }
+            else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.Remove(FieldRemoveItem.Read(p.Reader()).ObjectId);
             else if (game.Is(p, Inbound.Buff))
             {
                 var b = BuffPacket.Read(p.Reader());
