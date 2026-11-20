@@ -63,6 +63,12 @@ public sealed class ModelMesh
     /// the opaque buckets and before the depth-sorted alpha list. The outermost sort-adjust ancestor decides, as its OnVisible
     /// marks its whole subtree's visible objects after the inner ones did (NiSortAdjustNode.cpp:36-57).</summary>
     public bool NoSort;
+    /// <summary>Rigid meshes: the bone of the nearest NiBillboardNode above the mesh, or -1. Its FaceMode is BillboardMode
+    /// (NiBillboardNode.h:34-41: 0 ALWAYS_FACE_CAMERA, 1 ROTATE_ABOUT_UP, 2 RIGID_FACE_CAMERA, 3 ALWAYS_FACE_CENTER,
+    /// 4 RIGID_FACE_CENTER), and InBillboard takes the mesh's space to that node's.</summary>
+    public int Billboard = -1;
+    public int BillboardMode;
+    public Xform InBillboard = Xform.Identity;
     /// <summary>A material controller the field shader runs from the scene time: the alpha, a flipbook on the base or dark
     /// map, or a uv controller on a map it draws (base, dark, glow, decal0).</summary>
     public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || UvAnims.Any(s => s.Slot is "base" or "dark" or "glow" or "decal0");
@@ -806,6 +812,16 @@ public sealed class ModelData
                 int par = parent.TryGetValue(i, out var pi) ? pi : root;
                 mesh.ParentBone = boneOf.TryGetValue(par, out var pb) ? pb : -1;
                 mesh.Local = XformOf(b);
+                // the nearest NiBillboardNode above the mesh, and the mesh's transform below it
+                for (int n = par, guard = 0; n >= 0 && n != root && guard < 256; n = parent.TryGetValue(n, out int up) ? up : -1, guard++)
+                {
+                    if (B[n].Type != "NiBillboardNode" || !boneOf.TryGetValue(n, out int bb)) continue;
+                    mesh.Billboard = bb;
+                    mesh.BillboardMode = (int)(B[n].IntOr("Billboard Mode", 1) & 7);   // FACE_MODE_MASK (NiBillboardNode.h:81)
+                    var meshWorld = (mesh.ParentBone >= 0 ? md.Bones[mesh.ParentBone].World : Xform.Identity).Compose(mesh.Local);
+                    mesh.InBillboard = md.Bones[bb].World.Inverse().Compose(meshWorld);
+                    break;
+                }
             }
             ReadEnvMap(nif, parent, root, i, md, boneOf, mesh);
             md.Meshes.Add(mesh);

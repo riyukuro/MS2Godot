@@ -123,6 +123,7 @@ uniform int flip_slot = -1;          // 0 base, 1 dark
 uniform int flip_count = 1;
 uniform float flip_period = 1.0;
 #include "res://shaders/field_uv.gdshaderinc"
+#include "res://shaders/field_billboard.gdshaderinc"
 
 varying vec3 world_normal;
 varying vec2 base_uv;    // each drawn map's uv through its texture transform (field_uv map_uv)
@@ -153,6 +154,11 @@ vec2 env_sphere_uv(vec3 wpos, vec3 wnrm, vec3 cam, vec3 u_axis, vec3 v_axis) {
 }
 
 void vertex() {
+	if (bb_mode >= 0) {
+		mat4 f = bb_matrix(MODEL_MATRIX, INV_VIEW_MATRIX);
+		VERTEX = (f * vec4(VERTEX, 1.0)).xyz;
+		NORMAL = normalize(mat3(f) * NORMAL);
+	}
 	base_uv = map_uv(0, UV);
 	dark_uv = map_uv(1, dark_uv2 ? UV2 : UV);
 	glow_uv = map_uv(2, UV);

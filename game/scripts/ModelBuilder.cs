@@ -303,7 +303,22 @@ public sealed class ModelBuilder
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, (Mesh.ArrayFormat)format);
         mesh.SurfaceSetMaterial(0, BuildMaterial(m, instanceColor));
+        if (instanceColor && m.Billboard >= 0) mesh.CustomAabb = BillboardAabb(m);
         return mesh;
+    }
+
+    /// <summary>A billboard mesh's bounds in its own space: the sphere it sweeps as it turns about its billboard node's
+    /// origin (field_billboard), so a turned billboard is not culled by its rest bounds.</summary>
+    static Aabb BillboardAabb(ModelMesh m)
+    {
+        var x = ToGodot(m.InBillboard);
+        float r = 0;
+        for (int i = 0; i + 2 < m.Positions.Length; i += 3)
+            r = Mathf.Max(r, (x * new Vector3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2])).Length());
+        var inv = x.AffineInverse();
+        var c = inv.Origin;
+        float e = r * inv.Basis.Scale.X;
+        return new Aabb(c - new Vector3(e, e, e), new Vector3(2 * e, 2 * e, 2 * e));
     }
 
     /// <summary>A mesh with a glow map also joins the glow pass: a twin on the glow layer sharing its mesh, parent and skin.</summary>
@@ -332,6 +347,17 @@ public sealed class ModelBuilder
 
     // the maps field_uv transforms, in its map order
     static readonly string[] UvMaps = { "base", "dark", "glow", "decal0" };
+
+    /// <summary>A mesh under an NiBillboardNode (ModelMesh.Billboard): its face mode and its transform below that node, for
+    /// field_billboard, which turns it to the camera in the vertex shader.</summary>
+    static void SetBillboard(ShaderMaterial sm, ModelMesh m)
+    {
+        if (m.Billboard < 0) return;
+        var x = ToGodot(m.InBillboard);
+        sm.SetShaderParameter(ShaderParam.BbMode, m.BillboardMode);
+        sm.SetShaderParameter(ShaderParam.BbX, new Projection(x));
+        sm.SetShaderParameter(ShaderParam.BbXInv, new Projection(x.AffineInverse()));
+    }
 
     /// <summary>
     /// The texture transforms of the maps the field shaders draw (field_uv): each map's static NiTextureTransform, and its
@@ -415,6 +441,7 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.DetailUv2, OnUv2("detail"));
         sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
         SetUvTransforms(sm, m);
+        SetBillboard(sm, m);
         if (frozenAt >= 0 && m.AnimatesMaterial) sm.SetShaderParameter(ShaderParam.FrozenTime, frozenAt);
         return sm;
     }
@@ -599,6 +626,7 @@ public sealed class ModelBuilder
                 sm.SetShaderParameter(ShaderParam.FlipPeriod, m.FlipPeriod);
             }
             SetUvTransforms(sm, m);
+            SetBillboard(sm, m);
             return sm;
         }
         return CharacterMaterial(m, tex);

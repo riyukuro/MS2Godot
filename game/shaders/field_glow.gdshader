@@ -33,12 +33,16 @@ uniform bool detail_uv2 = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
 #include "res://shaders/field_uv.gdshaderinc"
+#include "res://shaders/field_billboard.gdshaderinc"
 
 varying vec2 base_uv;
 varying vec2 glow_uv;
 varying vec3 world_pos;
 
 void vertex() {
+	if (bb_mode >= 0) {
+		VERTEX = (bb_matrix(MODEL_MATRIX, INV_VIEW_MATRIX) * vec4(VERTEX, 1.0)).xyz;
+	}
 	base_uv = map_uv(0, base_uv2 ? UV2 : UV);
 	glow_uv = map_uv(2, glow_uv2 ? UV2 : UV);
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
