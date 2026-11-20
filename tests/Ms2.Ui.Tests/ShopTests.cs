@@ -983,4 +983,26 @@ public class ShopTests
         int calls = System.Text.RegularExpressions.Regex.Matches(body, @"\b(shop\?\.Process|shop\.Process|ShopTick)\s*\(").Count;
         Assert.That(calls, Is.EqualTo(1), "UIShopDialog::vfunc_72 must run once per frame in HudScene._Process");
     }
+
+    [Test]
+    public void BindLiveNetworkWiresSendSystemShopOnCloseWithSortKind()
+    {
+        Packs();
+        var (_, c) = Load(NewModel());
+        var sent = new List<IOutPacket>();
+        int talkEnd = 0;
+        c.BindLiveNetwork(sent.Add, () => talkEnd++);
+
+        c.SortKind = 4;
+        c.Close();
+        Assert.That(talkEnd, Is.EqualTo(1));
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new SystemShopRequest(4, 0) }));
+        Assert.That(c.SortKind, Is.EqualTo(0));
+
+        // Closing again with SortKind == 0 sends no SystemShopRequest
+        sent.Clear();
+        c.Close();
+        Assert.That(talkEnd, Is.EqualTo(2));
+        Assert.That(sent, Is.Empty);
+    }
 }

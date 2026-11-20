@@ -192,6 +192,15 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         RequireAchieveText = (id, grade) => achieveTexts?.Invoke()?.GradeTitle(id, grade) ?? "";
     }
 
+    /// <summary>Wires the live session's Shop (0x28), SystemShop (0x65), and NpcTalk end sends
+    /// (uishopdialog.cpp:711-714, networkservice.cpp:530).</summary>
+    public void BindLiveNetwork(Action<Ms2.Net.Wire.IOutPacket> sendShop, Action sendNpcTalkEnd)
+    {
+        Send = sendShop;
+        SendNpcTalkEnd = sendNpcTalkEnd;
+        SendSystemShop = (type, state) => sendShop?.Invoke(new SystemShopRequest((byte)type, (byte)state));
+    }
+
     /// <summary>UIShopDialog::Selection (uishopdialog.cpp:551): tracks the pending request's serial, list index and command.</summary>
     struct PendingSelection
     {

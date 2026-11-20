@@ -34,6 +34,7 @@ public enum Inbound : ushort {
     Quest = 0x52,
     Party = 0x53,
     Shop = 0x51,
+    SystemShop = 0xA1,      // RecvOp SystemShop (commonfiles/opcodes.h:169): CSceneStateGame::OnSystemShop
     GlobalFactor = 0xD6,
     UserSync = 0x1C,
     UserChat = 0x1D,
@@ -117,6 +118,7 @@ public enum Outbound : ushort {
     RequestSkillBookTree = 0xA2,
     NpcTalk = 0x22,
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
+    SystemShop = 0x65,      // SendOp::SystemShop (commonfiles/opcodes.h:406): CNetworkService::SendSystemShop / coin shop open
     Quest = 0x29,
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,

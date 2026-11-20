@@ -230,4 +230,11 @@ public class ShopPacketTests {
         me.Apply(new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "Hero" }, HasPet = false });
         Assert.That(me.Pet, Is.Null);
     }
+
+    [Test] public void SystemShopRequestEncodesTypeAndState() {
+        var close = new SystemShopRequest(4, 0);
+        Assert.That((close.Op, WriteOut(close)), Is.EqualTo((Outbound.SystemShop, new byte[] { 4, 0 })));
+        var open = new SystemShopRequest(8, 1);
+        Assert.That((open.Op, WriteOut(open)), Is.EqualTo((Outbound.SystemShop, new byte[] { 8, 1 })));
+    }
 }

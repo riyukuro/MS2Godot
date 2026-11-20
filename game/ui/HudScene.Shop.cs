@@ -56,8 +56,7 @@ public partial class HudScene
             c.BindLiveState(
                 () => live.Guilds, () => live.Achieves, () => achieveTexts, () => live.Me,
                 () => live.Items.All, () => live.PlayingScoreUid, hudModel.Tables.Items, itemUse.Error);
-            c.Send = live.SendShop;
-            c.SendNpcTalkEnd = () => live.SendTalk(new NpcTalkEndRequest());
+            c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));
         }
         else
         {
