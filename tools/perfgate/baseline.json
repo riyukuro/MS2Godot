@@ -8,9 +8,9 @@
   },
   "metrics": {
     "field.install.gc0": {
-      "min": 38,
+      "min": 37,
       "max": 39,
-      "limit": 42
+      "limit": 43
     },
     "field.install.gc1": {
       "min": 35,
@@ -18,29 +18,29 @@
       "limit": 41
     },
     "field.install.gc2": {
-      "min": 10,
+      "min": 9,
       "max": 11,
-      "limit": 14
+      "limit": 15
     },
     "field.install.jit_all_methods": {
-      "median": 7837.5,
-      "median_max": 9146,
-      "worst": 9146
+      "median": 7560,
+      "median_max": 8660,
+      "worst": 8660
     },
     "field.install.jit_methods": {
-      "min": 6112,
-      "max": 6152,
-      "limit": 6316
+      "min": 6114,
+      "max": 6141,
+      "limit": 6291
     },
     "field.install.jit_ms": {
-      "median": 625.122,
-      "median_max": 669.308,
-      "worst": 669.308
+      "median": 631.202,
+      "median_max": 701.348,
+      "worst": 701.348
     },
     "field.install.ms": {
-      "median": 6400.2,
-      "median_max": 9463.2,
-      "worst": 9463.2
+      "median": 5939.55,
+      "median_max": 8910.7,
+      "worst": 8910.7
     },
     "field.install.nodes": {
       "min": 18448,
@@ -53,9 +53,9 @@
       "limit": 28017
     },
     "field.install.total_bytes": {
-      "min": 2494873496,
-      "max": 2495236376,
-      "limit": 2545503984
+      "min": 2495173488,
+      "max": 2495262776,
+      "limit": 2545257320
     },
     "field.session.gc0": {
       "min": 37,
@@ -64,8 +64,8 @@
     },
     "field.session.gc1": {
       "min": 34,
-      "max": 39,
-      "limit": 46
+      "max": 38,
+      "limit": 44
     },
     "field.session.gc2": {
       "min": 9,
@@ -73,24 +73,24 @@
       "limit": 17
     },
     "field.session.jit_all_methods": {
-      "median": 7399.25,
-      "median_max": 8348,
-      "worst": 8651
+      "median": 7376,
+      "median_max": 8632,
+      "worst": 9814
     },
     "field.session.jit_methods": {
-      "min": 6103,
-      "max": 6137,
-      "limit": 6294
+      "min": 6108,
+      "max": 6151,
+      "limit": 6318
     },
     "field.session.jit_ms": {
-      "median": 614.764,
-      "median_max": 645.098,
-      "worst": 665.948
+      "median": 617.043,
+      "median_max": 652.068,
+      "worst": 729.246
     },
     "field.session.ms": {
-      "median": 5209.3,
-      "median_max": 7245.55,
-      "worst": 7694.4
+      "median": 5081.075,
+      "median_max": 7871.15,
+      "worst": 10689.7
     },
     "field.session.nodes": {
       "min": 18448,
@@ -103,9 +103,9 @@
       "limit": 28017
     },
     "field.session.total_bytes": {
-      "min": 2495121704,
-      "max": 2495255640,
-      "limit": 2545294689
+      "min": 2494930256,
+      "max": 2495246272,
+      "limit": 2545467214
     },
     "idle.install.finalized_godot_per_frame": {
       "min": 1,
@@ -113,19 +113,19 @@
       "limit": 2
     },
     "idle.install.finalized_other_per_frame": {
-      "min": 1.6,
-      "max": 1.6,
-      "limit": 2
+      "min": 0,
+      "max": 0,
+      "limit": 1
     },
     "idle.install.frame_median_ms": {
-      "median": 3.41,
-      "median_max": 4.939,
-      "worst": 4.939
+      "median": 3.686,
+      "median_max": 5.104,
+      "worst": 5.104
     },
     "idle.install.frame_worst_ms": {
-      "median": 36.325,
-      "median_max": 53.028,
-      "worst": 53.028
+      "median": 36.871,
+      "median_max": 38.388,
+      "worst": 38.388
     },
     "idle.install.fx_bytes_per_effect_frame": {
       "min": 1.32,
@@ -133,9 +133,9 @@
       "limit": 10
     },
     "idle.install.fx_us_per_effect_ms": {
-      "median": 16.238,
-      "median_max": 18.141,
-      "worst": 18.141
+      "median": 15.585,
+      "median_max": 18.501,
+      "worst": 18.501
     },
     "idle.install.gc0": {
       "median": 0,
@@ -153,24 +153,24 @@
       "worst": 0
     },
     "idle.install.jit_all_methods": {
-      "median": 2010,
-      "median_max": 2689,
-      "worst": 2689
+      "median": 1808,
+      "median_max": 2363,
+      "worst": 2363
     },
     "idle.install.jit_methods": {
       "min": 8,
-      "max": 9,
-      "limit": 18
+      "max": 8,
+      "limit": 16
     },
     "idle.install.jit_ms": {
-      "median": 0.847,
-      "median_max": 1.215,
-      "worst": 1.215
+      "median": 0.966,
+      "median_max": 1.245,
+      "worst": 1.245
     },
     "idle.install.main_bytes_per_frame": {
-      "min": 23279.6,
-      "max": 26590.9,
-      "limit": 38095
+      "min": 23142.1,
+      "max": 26770.6,
+      "limit": 38592
     },
     "idle.install.nodes": {
       "min": 0,
@@ -183,14 +183,14 @@
       "limit": 10
     },
     "idle.install.total_bytes_per_frame": {
-      "median": 24779.5,
-      "median_max": 26590.9,
-      "worst": 26590.9
+      "median": 24629.35,
+      "median_max": 26770.6,
+      "worst": 26770.6
     },
     "idle.install.wrappers_per_frame": {
-      "min": 2.43,
-      "max": 2.43,
-      "limit": 3
+      "min": 0.92,
+      "max": 0.92,
+      "limit": 2
     },
     "idle.session.finalized_godot_per_frame": {
       "min": 0.99,
@@ -198,19 +198,19 @@
       "limit": 2
     },
     "idle.session.finalized_other_per_frame": {
-      "min": 1.6,
-      "max": 1.6,
-      "limit": 2
+      "min": 0,
+      "max": 0,
+      "limit": 1
     },
     "idle.session.frame_median_ms": {
-      "median": 3.653,
-      "median_max": 4.326,
-      "worst": 5.054
+      "median": 3.435,
+      "median_max": 4.172,
+      "worst": 4.633
     },
     "idle.session.frame_worst_ms": {
-      "median": 36.002,
-      "median_max": 39.098,
-      "worst": 39.211
+      "median": 35.476,
+      "median_max": 39.642,
+      "worst": 42.054
     },
     "idle.session.fx_bytes_per_effect_frame": {
       "min": 1.32,
@@ -218,9 +218,9 @@
       "limit": 10
     },
     "idle.session.fx_us_per_effect_ms": {
-      "median": 16.227,
-      "median_max": 17.483,
-      "worst": 19.399
+      "median": 15.465,
+      "median_max": 16.832,
+      "worst": 17.884
     },
     "idle.session.gc0": {
       "min": 0,
@@ -238,9 +238,9 @@
       "limit": 2
     },
     "idle.session.jit_all_methods": {
-      "median": 2117.5,
-      "median_max": 2449,
-      "worst": 2726
+      "median": 2106.5,
+      "median_max": 2370.5,
+      "worst": 2769
     },
     "idle.session.jit_methods": {
       "min": 8,
@@ -248,14 +248,14 @@
       "limit": 22
     },
     "idle.session.jit_ms": {
-      "median": 1.036,
-      "median_max": 1.592,
-      "worst": 2.121
+      "median": 1.012,
+      "median_max": 1.338,
+      "worst": 1.441
     },
     "idle.session.main_bytes_per_frame": {
-      "min": 23284.4,
-      "max": 26917.6,
-      "limit": 38743
+      "min": 23130.4,
+      "max": 26446.7,
+      "limit": 37955
     },
     "idle.session.nodes": {
       "min": 0,
@@ -268,14 +268,14 @@
       "limit": 18
     },
     "idle.session.total_bytes_per_frame": {
-      "median": 24855.75,
-      "median_max": 25782.85,
-      "worst": 26921.6
+      "median": 24440.675,
+      "median_max": 25447.7,
+      "worst": 26449.5
     },
     "idle.session.wrappers_per_frame": {
-      "min": 2.43,
-      "max": 2.43,
-      "limit": 3
+      "min": 0.92,
+      "max": 0.92,
+      "limit": 2
     },
     "idle_3_open.install.finalized_godot_per_frame": {
       "min": 3.12,
@@ -283,19 +283,19 @@
       "limit": 4
     },
     "idle_3_open.install.finalized_other_per_frame": {
-      "min": 3.2,
-      "max": 3.2,
-      "limit": 4
+      "min": 0.98,
+      "max": 0.98,
+      "limit": 2
     },
     "idle_3_open.install.frame_median_ms": {
-      "median": 4.756,
-      "median_max": 5.562,
-      "worst": 5.562
+      "median": 5.056,
+      "median_max": 5.658,
+      "worst": 5.658
     },
     "idle_3_open.install.frame_worst_ms": {
-      "median": 37.647,
-      "median_max": 38.435,
-      "worst": 38.435
+      "median": 37.166,
+      "median_max": 40.678,
+      "worst": 40.678
     },
     "idle_3_open.install.fx_bytes_per_effect_frame": {
       "min": 0,
@@ -303,9 +303,9 @@
       "limit": 8
     },
     "idle_3_open.install.fx_us_per_effect_ms": {
-      "median": 17.234,
-      "median_max": 18.781,
-      "worst": 18.781
+      "median": 17.541,
+      "median_max": 18.156,
+      "worst": 18.156
     },
     "idle_3_open.install.gc0": {
       "median": 0,
@@ -323,7 +323,7 @@
       "worst": 0
     },
     "idle_3_open.install.jit_all_methods": {
-      "median": 2.5,
+      "median": 2,
       "median_max": 6,
       "worst": 6
     },
@@ -338,9 +338,9 @@
       "worst": 0
     },
     "idle_3_open.install.main_bytes_per_frame": {
-      "min": 31957,
-      "max": 35248.9,
-      "limit": 46733
+      "min": 32728.1,
+      "max": 35389,
+      "limit": 46242
     },
     "idle_3_open.install.nodes": {
       "min": -220,
@@ -353,14 +353,14 @@
       "limit": -204
     },
     "idle_3_open.install.total_bytes_per_frame": {
-      "median": 33745.2,
-      "median_max": 35248.9,
-      "worst": 35248.9
+      "median": 34084.15,
+      "median_max": 35389,
+      "worst": 35389
     },
     "idle_3_open.install.wrappers_per_frame": {
-      "min": 5.34,
-      "max": 5.34,
-      "limit": 6
+      "min": 3.31,
+      "max": 3.31,
+      "limit": 4
     },
     "idle_3_open.session.finalized_godot_per_frame": {
       "min": 3.12,
@@ -368,19 +368,19 @@
       "limit": 4
     },
     "idle_3_open.session.finalized_other_per_frame": {
-      "min": 3.2,
-      "max": 3.2,
-      "limit": 4
+      "min": 0.98,
+      "max": 0.98,
+      "limit": 2
     },
     "idle_3_open.session.frame_median_ms": {
-      "median": 4.186,
-      "median_max": 5.332,
-      "worst": 5.589
+      "median": 4.075,
+      "median_max": 6.812,
+      "worst": 7.896
     },
     "idle_3_open.session.frame_worst_ms": {
-      "median": 36.859,
-      "median_max": 43.399,
-      "worst": 50.267
+      "median": 36.872,
+      "median_max": 40.785,
+      "worst": 41.949
     },
     "idle_3_open.session.fx_bytes_per_effect_frame": {
       "min": 0,
@@ -388,9 +388,9 @@
       "limit": 8
     },
     "idle_3_open.session.fx_us_per_effect_ms": {
-      "median": 16.753,
-      "median_max": 18.41,
-      "worst": 19.051
+      "median": 15.627,
+      "median_max": 20.651,
+      "worst": 22.781
     },
     "idle_3_open.session.gc0": {
       "min": 0,
@@ -408,8 +408,8 @@
       "limit": 2
     },
     "idle_3_open.session.jit_all_methods": {
-      "median": 2.75,
-      "median_max": 6,
+      "median": 2.5,
+      "median_max": 4,
       "worst": 6
     },
     "idle_3_open.session.jit_methods": {
@@ -423,9 +423,9 @@
       "worst": 0
     },
     "idle_3_open.session.main_bytes_per_frame": {
-      "min": 31944.5,
-      "max": 35258.3,
-      "limit": 46765
+      "min": 30449.4,
+      "max": 38370.3,
+      "limit": 54484
     },
     "idle_3_open.session.nodes": {
       "min": -220,
@@ -438,14 +438,14 @@
       "limit": -204
     },
     "idle_3_open.session.total_bytes_per_frame": {
-      "median": 33144.8,
-      "median_max": 34933.7,
-      "worst": 35258.3
+      "median": 32679.775,
+      "median_max": 36718.15,
+      "worst": 38370.3
     },
     "idle_3_open.session.wrappers_per_frame": {
-      "min": 5.34,
-      "max": 5.34,
-      "limit": 6
+      "min": 3.31,
+      "max": 3.31,
+      "limit": 4
     },
     "idle_live.install.finalized_godot_per_frame": {
       "min": 1.36,
@@ -453,19 +453,19 @@
       "limit": 2
     },
     "idle_live.install.finalized_other_per_frame": {
-      "min": 2.26,
-      "max": 2.26,
-      "limit": 3
+      "min": 0.75,
+      "max": 0.75,
+      "limit": 1
     },
     "idle_live.install.frame_median_ms": {
-      "median": 3.948,
-      "median_max": 5.18,
-      "worst": 5.18
+      "median": 4.112,
+      "median_max": 4.421,
+      "worst": 4.421
     },
     "idle_live.install.frame_worst_ms": {
-      "median": 424.306,
-      "median_max": 450.15,
-      "worst": 450.15
+      "median": 444.798,
+      "median_max": 492.851,
+      "worst": 492.851
     },
     "idle_live.install.fx_bytes_per_effect_frame": {
       "min": 0,
@@ -473,9 +473,9 @@
       "limit": 8
     },
     "idle_live.install.fx_us_per_effect_ms": {
-      "median": 16.784,
-      "median_max": 18.419,
-      "worst": 18.419
+      "median": 16.497,
+      "median_max": 17.255,
+      "worst": 17.255
     },
     "idle_live.install.gc0": {
       "median": 0,
@@ -499,18 +499,18 @@
     },
     "idle_live.install.jit_methods": {
       "min": 34,
-      "max": 34,
-      "limit": 42
+      "max": 37,
+      "limit": 48
     },
     "idle_live.install.jit_ms": {
-      "median": 4.966,
-      "median_max": 5.336,
-      "worst": 5.336
+      "median": 4.771,
+      "median_max": 6.426,
+      "worst": 6.426
     },
     "idle_live.install.main_bytes_per_frame": {
-      "min": 72698.9,
-      "max": 76005.3,
-      "limit": 87504
+      "min": 73526.1,
+      "max": 75210.5,
+      "limit": 85087
     },
     "idle_live.install.nodes": {
       "min": 30,
@@ -523,14 +523,14 @@
       "limit": 104
     },
     "idle_live.install.total_bytes_per_frame": {
-      "median": 74220.25,
-      "median_max": 76005.3,
-      "worst": 76005.3
+      "median": 74236.95,
+      "median_max": 75210.5,
+      "worst": 75210.5
     },
     "idle_live.install.wrappers_per_frame": {
-      "min": 3.83,
-      "max": 3.83,
-      "limit": 5
+      "min": 2.31,
+      "max": 2.31,
+      "limit": 3
     },
     "idle_live.session.finalized_godot_per_frame": {
       "min": 1.36,
@@ -538,19 +538,19 @@
       "limit": 2
     },
     "idle_live.session.finalized_other_per_frame": {
-      "min": 2.26,
-      "max": 2.26,
-      "limit": 3
+      "min": 0.75,
+      "max": 0.75,
+      "limit": 1
     },
     "idle_live.session.frame_median_ms": {
-      "median": 3.677,
-      "median_max": 4.252,
-      "worst": 5.054
+      "median": 4.085,
+      "median_max": 4.891,
+      "worst": 5.542
     },
     "idle_live.session.frame_worst_ms": {
-      "median": 426.038,
-      "median_max": 449.596,
-      "worst": 455.963
+      "median": 448.376,
+      "median_max": 510.754,
+      "worst": 551.934
     },
     "idle_live.session.fx_bytes_per_effect_frame": {
       "min": 0,
@@ -558,9 +558,9 @@
       "limit": 8
     },
     "idle_live.session.fx_us_per_effect_ms": {
-      "median": 15.989,
-      "median_max": 17.27,
-      "worst": 19.762
+      "median": 16.468,
+      "median_max": 18.216,
+      "worst": 19.428
     },
     "idle_live.session.gc0": {
       "min": 0,
@@ -578,8 +578,8 @@
       "limit": 2
     },
     "idle_live.session.jit_all_methods": {
-      "median": 133,
-      "median_max": 134,
+      "median": 131.25,
+      "median_max": 137,
       "worst": 137
     },
     "idle_live.session.jit_methods": {
@@ -588,14 +588,14 @@
       "limit": 48
     },
     "idle_live.session.jit_ms": {
-      "median": 4.708,
-      "median_max": 5.079,
-      "worst": 5.342
+      "median": 4.498,
+      "median_max": 5.354,
+      "worst": 6.246
     },
     "idle_live.session.main_bytes_per_frame": {
-      "min": 72108.4,
-      "max": 76653.8,
-      "limit": 89392
+      "min": 71582.1,
+      "max": 76185.7,
+      "limit": 88982
     },
     "idle_live.session.nodes": {
       "min": 30,
@@ -608,14 +608,14 @@
       "limit": 104
     },
     "idle_live.session.total_bytes_per_frame": {
-      "median": 73957.675,
-      "median_max": 75192.4,
-      "worst": 76653.8
+      "median": 74303.675,
+      "median_max": 75535.85,
+      "worst": 76185.7
     },
     "idle_live.session.wrappers_per_frame": {
-      "min": 3.83,
-      "max": 3.83,
-      "limit": 5
+      "min": 2.31,
+      "max": 2.31,
+      "limit": 3
     },
     "move.install.finalized_godot_per_frame": {
       "min": 1.36,
@@ -623,19 +623,19 @@
       "limit": 2
     },
     "move.install.finalized_other_per_frame": {
-      "min": 3.97,
-      "max": 3.97,
-      "limit": 5
+      "min": 1.4,
+      "max": 1.4,
+      "limit": 2
     },
     "move.install.frame_median_ms": {
-      "median": 4.016,
-      "median_max": 4.957,
-      "worst": 4.957
+      "median": 4.406,
+      "median_max": 5.347,
+      "worst": 5.347
     },
     "move.install.frame_worst_ms": {
-      "median": 386.942,
-      "median_max": 407.527,
-      "worst": 407.527
+      "median": 398.355,
+      "median_max": 439.473,
+      "worst": 439.473
     },
     "move.install.fx_bytes_per_effect_frame": {
       "min": 0,
@@ -643,9 +643,9 @@
       "limit": 8
     },
     "move.install.fx_us_per_effect_ms": {
-      "median": 16.76,
-      "median_max": 19.007,
-      "worst": 19.007
+      "median": 16.912,
+      "median_max": 18.827,
+      "worst": 18.827
     },
     "move.install.gc0": {
       "median": 0,
@@ -673,14 +673,14 @@
       "limit": 17
     },
     "move.install.jit_ms": {
-      "median": 1.308,
-      "median_max": 1.521,
-      "worst": 1.521
+      "median": 1.32,
+      "median_max": 1.357,
+      "worst": 1.357
     },
     "move.install.main_bytes_per_frame": {
-      "min": 130968.1,
-      "max": 135297.1,
-      "limit": 147819
+      "min": 132555.3,
+      "max": 135257.8,
+      "limit": 146153
     },
     "move.install.nodes": {
       "min": 30,
@@ -693,14 +693,14 @@
       "limit": 46
     },
     "move.install.total_bytes_per_frame": {
-      "median": 133174.2,
-      "median_max": 135297.1,
-      "worst": 135297.1
+      "median": 133613.4,
+      "median_max": 135257.8,
+      "worst": 135257.8
     },
     "move.install.wrappers_per_frame": {
-      "min": 5.43,
-      "max": 5.43,
-      "limit": 6
+      "min": 2.85,
+      "max": 2.85,
+      "limit": 3
     },
     "move.session.finalized_godot_per_frame": {
       "min": 1.36,
@@ -708,19 +708,19 @@
       "limit": 2
     },
     "move.session.finalized_other_per_frame": {
-      "min": 3.97,
-      "max": 3.97,
-      "limit": 5
+      "min": 1.4,
+      "max": 1.4,
+      "limit": 2
     },
     "move.session.frame_median_ms": {
-      "median": 3.9,
-      "median_max": 4.886,
-      "worst": 5.668
+      "median": 3.926,
+      "median_max": 5.374,
+      "worst": 6.119
     },
     "move.session.frame_worst_ms": {
-      "median": 385.212,
-      "median_max": 401.069,
-      "worst": 407.27
+      "median": 399.828,
+      "median_max": 427.292,
+      "worst": 449.712
     },
     "move.session.fx_bytes_per_effect_frame": {
       "min": 0,
@@ -728,9 +728,9 @@
       "limit": 8
     },
     "move.session.fx_us_per_effect_ms": {
-      "median": 16.217,
-      "median_max": 17.694,
-      "worst": 19.442
+      "median": 15.808,
+      "median_max": 18.666,
+      "worst": 19.764
     },
     "move.session.gc0": {
       "min": 0,
@@ -748,9 +748,9 @@
       "limit": 2
     },
     "move.session.jit_all_methods": {
-      "median": 42.75,
-      "median_max": 44,
-      "worst": 45
+      "median": 44.5,
+      "median_max": 47.5,
+      "worst": 48
     },
     "move.session.jit_methods": {
       "min": 9,
@@ -758,14 +758,14 @@
       "limit": 17
     },
     "move.session.jit_ms": {
-      "median": 1.319,
-      "median_max": 1.602,
-      "worst": 1.856
+      "median": 1.239,
+      "median_max": 1.344,
+      "worst": 1.448
     },
     "move.session.main_bytes_per_frame": {
-      "min": 131363.7,
-      "max": 136657,
-      "limit": 150143
+      "min": 130317,
+      "max": 136993.8,
+      "limit": 151863
     },
     "move.session.nodes": {
       "min": 30,
@@ -778,14 +778,14 @@
       "limit": 46
     },
     "move.session.total_bytes_per_frame": {
-      "median": 132832.425,
-      "median_max": 134919.85,
-      "worst": 136657
+      "median": 133026.8,
+      "median_max": 135885.25,
+      "worst": 136993.8
     },
     "move.session.wrappers_per_frame": {
-      "min": 5.43,
-      "max": 5.43,
-      "limit": 6
+      "min": 2.85,
+      "max": 2.85,
+      "limit": 3
     },
     "open.inventory.install.finalized_godot": {
       "min": 67,
@@ -793,9 +793,9 @@
       "limit": 83
     },
     "open.inventory.install.finalized_other": {
-      "min": 1343,
-      "max": 1343,
-      "limit": 1411
+      "min": 197,
+      "max": 197,
+      "limit": 213
     },
     "open.inventory.install.gc0": {
       "median": 0,
@@ -813,19 +813,19 @@
       "worst": 0
     },
     "open.inventory.install.jit_all_methods": {
-      "median": 55,
-      "median_max": 60,
-      "worst": 60
+      "median": 56,
+      "median_max": 61,
+      "worst": 61
     },
     "open.inventory.install.jit_methods": {
-      "min": 47,
-      "max": 60,
-      "limit": 81
+      "min": 46,
+      "max": 61,
+      "limit": 84
     },
     "open.inventory.install.jit_ms": {
-      "median": 5.26,
-      "median_max": 6.484,
-      "worst": 6.484
+      "median": 5.799,
+      "median_max": 8.813,
+      "worst": 8.813
     },
     "open.inventory.install.kept_objects": {
       "min": 42,
@@ -833,14 +833,14 @@
       "limit": 106
     },
     "open.inventory.install.main_bytes": {
-      "min": 25079488,
-      "max": 25110928,
-      "limit": 25644587
+      "min": 24979360,
+      "max": 25013176,
+      "limit": 25547256
     },
     "open.inventory.install.ms": {
-      "median": 101.93,
-      "median_max": 125.21,
-      "worst": 125.21
+      "median": 103.989,
+      "median_max": 131.272,
+      "worst": 131.272
     },
     "open.inventory.install.nodes": {
       "min": 1683,
@@ -853,14 +853,14 @@
       "limit": 1877
     },
     "open.inventory.install.total_bytes": {
-      "median": 25106200,
-      "median_max": 25110928,
-      "worst": 25110928
+      "median": 24985616,
+      "median_max": 25013176,
+      "worst": 25013176
     },
     "open.inventory.install.wrappers": {
-      "min": 3114,
-      "max": 3114,
-      "limit": 3270
+      "min": 2072,
+      "max": 2072,
+      "limit": 2176
     },
     "open.inventory.repeat.finalized_godot": {
       "min": 90,
@@ -868,9 +868,9 @@
       "limit": 118
     },
     "open.inventory.repeat.finalized_other": {
-      "min": 1342,
-      "max": 1345,
-      "limit": 1416
+      "min": 197,
+      "max": 197,
+      "limit": 213
     },
     "open.inventory.repeat.gc0": {
       "min": 0,
@@ -888,9 +888,9 @@
       "limit": 2
     },
     "open.inventory.repeat.jit_all_methods": {
-      "median": 7,
-      "median_max": 7,
-      "worst": 248
+      "median": 6.5,
+      "median_max": 8,
+      "worst": 258
     },
     "open.inventory.repeat.jit_methods": {
       "min": 4,
@@ -898,9 +898,9 @@
       "limit": 18
     },
     "open.inventory.repeat.jit_ms": {
-      "median": 0.43,
-      "median_max": 0.461,
-      "worst": 1.076
+      "median": 0.391,
+      "median_max": 0.482,
+      "worst": 0.743
     },
     "open.inventory.repeat.kept_objects": {
       "min": -4,
@@ -908,14 +908,14 @@
       "limit": 20
     },
     "open.inventory.repeat.main_bytes": {
-      "min": 17060736,
-      "max": 17393056,
-      "limit": 18073238
+      "min": 16855680,
+      "max": 17335120,
+      "limit": 18161263
     },
     "open.inventory.repeat.ms": {
-      "median": 67.896,
-      "median_max": 70.295,
-      "worst": 116.796
+      "median": 68.076,
+      "median_max": 71.863,
+      "worst": 177.062
     },
     "open.inventory.repeat.nodes": {
       "min": 1683,
@@ -928,14 +928,14 @@
       "limit": 1834
     },
     "open.inventory.repeat.total_bytes": {
-      "median": 17075608,
-      "median_max": 17090776,
-      "worst": 17393056
+      "median": 16968360,
+      "median_max": 17090176,
+      "worst": 17335120
     },
     "open.inventory.repeat.wrappers": {
-      "min": 3071,
-      "max": 3071,
-      "limit": 3225
+      "min": 1947,
+      "max": 1947,
+      "limit": 2045
     },
     "open.inventory.repeat1.kept_objects": {
       "min": 0,
@@ -948,9 +948,9 @@
       "limit": 85
     },
     "open.inventory.session.finalized_other": {
-      "min": 1343,
-      "max": 1343,
-      "limit": 1411
+      "min": 197,
+      "max": 197,
+      "limit": 213
     },
     "open.inventory.session.gc0": {
       "min": 0,
@@ -968,19 +968,19 @@
       "limit": 2
     },
     "open.inventory.session.jit_all_methods": {
-      "median": 57.75,
-      "median_max": 60.5,
-      "worst": 62
+      "median": 58.75,
+      "median_max": 61.5,
+      "worst": 63
     },
     "open.inventory.session.jit_methods": {
-      "min": 46,
-      "max": 62,
+      "min": 48,
+      "max": 63,
       "limit": 86
     },
     "open.inventory.session.jit_ms": {
-      "median": 5.655,
-      "median_max": 8.034,
-      "worst": 9.507
+      "median": 5.523,
+      "median_max": 7.621,
+      "worst": 10.512
     },
     "open.inventory.session.kept_objects": {
       "min": 42,
@@ -988,14 +988,14 @@
       "limit": 110
     },
     "open.inventory.session.main_bytes": {
-      "min": 25079480,
-      "max": 25118560,
-      "limit": 25660012
+      "min": 24979568,
+      "max": 25104520,
+      "limit": 25731563
     },
     "open.inventory.session.ms": {
-      "median": 91.549,
-      "median_max": 113.994,
-      "worst": 129.433
+      "median": 95.44,
+      "median_max": 124.734,
+      "worst": 156.628
     },
     "open.inventory.session.nodes": {
       "min": 1683,
@@ -1008,14 +1008,14 @@
       "limit": 1881
     },
     "open.inventory.session.total_bytes": {
-      "median": 25095260,
-      "median_max": 25112380,
-      "worst": 25118560
+      "median": 25004414,
+      "median_max": 25057956,
+      "worst": 25104520
     },
     "open.inventory.session.wrappers": {
-      "min": 3114,
-      "max": 3114,
-      "limit": 3270
+      "min": 2072,
+      "max": 2072,
+      "limit": 2176
     },
     "open.myinfo.install.finalized_godot": {
       "min": 295,
@@ -1023,9 +1023,9 @@
       "limit": 311
     },
     "open.myinfo.install.finalized_other": {
-      "min": 2755,
-      "max": 2755,
-      "limit": 2893
+      "min": 2003,
+      "max": 2003,
+      "limit": 2104
     },
     "open.myinfo.install.gc0": {
       "median": 0,
@@ -1043,19 +1043,19 @@
       "worst": 0
     },
     "open.myinfo.install.jit_all_methods": {
-      "median": 116.5,
-      "median_max": 119,
-      "worst": 119
+      "median": 118,
+      "median_max": 121,
+      "worst": 121
     },
     "open.myinfo.install.jit_methods": {
-      "min": 108,
-      "max": 118,
-      "limit": 136
+      "min": 114,
+      "max": 120,
+      "limit": 134
     },
     "open.myinfo.install.jit_ms": {
-      "median": 11.693,
-      "median_max": 13.102,
-      "worst": 13.102
+      "median": 12.318,
+      "median_max": 13.61,
+      "worst": 13.61
     },
     "open.myinfo.install.kept_objects": {
       "min": 139,
@@ -1063,14 +1063,14 @@
       "limit": 203
     },
     "open.myinfo.install.main_bytes": {
-      "min": 44668664,
-      "max": 44892864,
-      "limit": 46014922
+      "min": 44608864,
+      "max": 44732848,
+      "limit": 45751489
     },
     "open.myinfo.install.ms": {
-      "median": 175.036,
-      "median_max": 237.828,
-      "worst": 237.828
+      "median": 177.416,
+      "median_max": 247.757,
+      "worst": 247.757
     },
     "open.myinfo.install.nodes": {
       "min": 2802,
@@ -1083,14 +1083,14 @@
       "limit": 3754
     },
     "open.myinfo.install.total_bytes": {
-      "median": 44773060,
-      "median_max": 44892864,
-      "worst": 44892864
+      "median": 44703444,
+      "median_max": 44732848,
+      "worst": 44732848
     },
     "open.myinfo.install.wrappers": {
-      "min": 6166,
-      "max": 6166,
-      "limit": 6475
+      "min": 5516,
+      "max": 5516,
+      "limit": 5792
     },
     "open.myinfo.repeat.finalized_godot": {
       "min": 277,
@@ -1098,9 +1098,9 @@
       "limit": 305
     },
     "open.myinfo.repeat.finalized_other": {
-      "min": 2755,
-      "max": 2758,
-      "limit": 2899
+      "min": 2003,
+      "max": 2003,
+      "limit": 2104
     },
     "open.myinfo.repeat.gc0": {
       "min": 0,
@@ -1118,19 +1118,19 @@
       "limit": 2
     },
     "open.myinfo.repeat.jit_all_methods": {
-      "median": 48,
-      "median_max": 70,
-      "worst": 155
+      "median": 27.5,
+      "median_max": 72,
+      "worst": 219
     },
     "open.myinfo.repeat.jit_methods": {
       "min": 4,
-      "max": 11,
-      "limit": 26
+      "max": 9,
+      "limit": 22
     },
     "open.myinfo.repeat.jit_ms": {
-      "median": 0.434,
-      "median_max": 0.642,
-      "worst": 0.967
+      "median": 0.484,
+      "median_max": 0.564,
+      "worst": 1.211
     },
     "open.myinfo.repeat.kept_objects": {
       "min": 0,
@@ -1138,14 +1138,14 @@
       "limit": 16
     },
     "open.myinfo.repeat.main_bytes": {
-      "min": 17804496,
-      "max": 17972192,
-      "limit": 18499332
+      "min": 17734200,
+      "max": 17889344,
+      "limit": 18402275
     },
     "open.myinfo.repeat.ms": {
-      "median": 103.796,
-      "median_max": 112.17,
-      "worst": 129.196
+      "median": 105.81,
+      "median_max": 117.219,
+      "worst": 132.199
     },
     "open.myinfo.repeat.nodes": {
       "min": 2802,
@@ -1158,14 +1158,14 @@
       "limit": 3611
     },
     "open.myinfo.repeat.total_bytes": {
-      "median": 17859060,
-      "median_max": 17917904,
-      "worst": 17972192
+      "median": 17776504,
+      "median_max": 17872816,
+      "worst": 17889344
     },
     "open.myinfo.repeat.wrappers": {
-      "min": 6013,
-      "max": 6013,
-      "limit": 6314
+      "min": 5282,
+      "max": 5282,
+      "limit": 5547
     },
     "open.myinfo.repeat1.kept_objects": {
       "min": -4,
@@ -1178,9 +1178,9 @@
       "limit": 311
     },
     "open.myinfo.session.finalized_other": {
-      "min": 2755,
-      "max": 2755,
-      "limit": 2893
+      "min": 2003,
+      "max": 2003,
+      "limit": 2104
     },
     "open.myinfo.session.gc0": {
       "min": 0,
@@ -1198,19 +1198,19 @@
       "limit": 2
     },
     "open.myinfo.session.jit_all_methods": {
-      "median": 118,
+      "median": 117.5,
       "median_max": 120,
-      "worst": 123
+      "worst": 122
     },
     "open.myinfo.session.jit_methods": {
-      "min": 115,
+      "min": 109,
       "max": 119,
-      "limit": 131
+      "limit": 137
     },
     "open.myinfo.session.jit_ms": {
-      "median": 12.124,
-      "median_max": 12.692,
-      "worst": 13.896
+      "median": 11.988,
+      "median_max": 13.129,
+      "worst": 14.471
     },
     "open.myinfo.session.kept_objects": {
       "min": 139,
@@ -1218,14 +1218,14 @@
       "limit": 203
     },
     "open.myinfo.session.main_bytes": {
-      "min": 44765536,
-      "max": 44794016,
-      "limit": 45718377
+      "min": 44703136,
+      "max": 44728720,
+      "limit": 45648879
     },
     "open.myinfo.session.ms": {
-      "median": 165.8,
-      "median_max": 186.795,
-      "worst": 210.172
+      "median": 173.374,
+      "median_max": 263.732,
+      "worst": 340.13
     },
     "open.myinfo.session.nodes": {
       "min": 2802,
@@ -1238,14 +1238,14 @@
       "limit": 3754
     },
     "open.myinfo.session.total_bytes": {
-      "median": 44771940,
-      "median_max": 44779776,
-      "worst": 44794016
+      "median": 44713974,
+      "median_max": 44719920,
+      "worst": 44728720
     },
     "open.myinfo.session.wrappers": {
-      "min": 6166,
-      "max": 6166,
-      "limit": 6475
+      "min": 5516,
+      "max": 5516,
+      "limit": 5792
     },
     "open.options.install.finalized_godot": {
       "min": 25,
@@ -1253,9 +1253,9 @@
       "limit": 41
     },
     "open.options.install.finalized_other": {
-      "min": 452,
-      "max": 452,
-      "limit": 475
+      "min": 152,
+      "max": 152,
+      "limit": 168
     },
     "open.options.install.gc0": {
       "median": 0,
@@ -1283,9 +1283,9 @@
       "limit": 40
     },
     "open.options.install.jit_ms": {
-      "median": 2.502,
-      "median_max": 3.036,
-      "worst": 3.036
+      "median": 2.434,
+      "median_max": 2.672,
+      "worst": 2.672
     },
     "open.options.install.kept_objects": {
       "min": 137,
@@ -1293,14 +1293,14 @@
       "limit": 201
     },
     "open.options.install.main_bytes": {
-      "min": 22494528,
-      "max": 22638880,
-      "limit": 23236010
+      "min": 22372304,
+      "max": 22496856,
+      "limit": 23071346
     },
     "open.options.install.ms": {
-      "median": 60.99,
-      "median_max": 83.085,
-      "worst": 83.085
+      "median": 60.145,
+      "median_max": 81.061,
+      "worst": 81.061
     },
     "open.options.install.nodes": {
       "min": 602,
@@ -1313,14 +1313,14 @@
       "limit": 707
     },
     "open.options.install.total_bytes": {
-      "median": 22494608,
-      "median_max": 22638880,
-      "worst": 22638880
+      "median": 22469456,
+      "median_max": 22496856,
+      "worst": 22496856
     },
     "open.options.install.wrappers": {
-      "min": 1077,
-      "max": 1077,
-      "limit": 1131
+      "min": 815,
+      "max": 815,
+      "limit": 856
     },
     "open.options.repeat.finalized_godot": {
       "min": 66,
@@ -1328,9 +1328,9 @@
       "limit": 94
     },
     "open.options.repeat.finalized_other": {
-      "min": 451,
-      "max": 454,
-      "limit": 480
+      "min": 152,
+      "max": 152,
+      "limit": 168
     },
     "open.options.repeat.gc0": {
       "min": 0,
@@ -1348,9 +1348,9 @@
       "limit": 2
     },
     "open.options.repeat.jit_all_methods": {
-      "median": 20.5,
-      "median_max": 22,
-      "worst": 29
+      "median": 18,
+      "median_max": 21,
+      "worst": 28
     },
     "open.options.repeat.jit_methods": {
       "min": 4,
@@ -1358,9 +1358,9 @@
       "limit": 12
     },
     "open.options.repeat.jit_ms": {
-      "median": 0.437,
-      "median_max": 0.482,
-      "worst": 0.824
+      "median": 0.435,
+      "median_max": 0.549,
+      "worst": 0.749
     },
     "open.options.repeat.kept_objects": {
       "min": 14,
@@ -1368,14 +1368,14 @@
       "limit": 110
     },
     "open.options.repeat.main_bytes": {
-      "min": 14392928,
-      "max": 14519680,
-      "limit": 14936826
+      "min": 14366240,
+      "max": 14509312,
+      "limit": 14942571
     },
     "open.options.repeat.ms": {
-      "median": 47.49,
-      "median_max": 50.149,
-      "worst": 77.331
+      "median": 48.605,
+      "median_max": 55.539,
+      "worst": 80.198
     },
     "open.options.repeat.nodes": {
       "min": 601,
@@ -1388,14 +1388,14 @@
       "limit": 698
     },
     "open.options.repeat.total_bytes": {
-      "median": 14490860,
-      "median_max": 14517480,
-      "worst": 14519680
+      "median": 14464232,
+      "median_max": 14464976,
+      "worst": 14509312
     },
     "open.options.repeat.wrappers": {
-      "min": 1068,
-      "max": 1068,
-      "limit": 1122
+      "min": 790,
+      "max": 790,
+      "limit": 830
     },
     "open.options.repeat1.kept_objects": {
       "min": 86,
@@ -1408,9 +1408,9 @@
       "limit": 41
     },
     "open.options.session.finalized_other": {
-      "min": 452,
-      "max": 452,
-      "limit": 475
+      "min": 152,
+      "max": 152,
+      "limit": 168
     },
     "open.options.session.gc0": {
       "min": 0,
@@ -1438,9 +1438,9 @@
       "limit": 40
     },
     "open.options.session.jit_ms": {
-      "median": 2.444,
-      "median_max": 2.785,
-      "worst": 3.032
+      "median": 2.582,
+      "median_max": 3.446,
+      "worst": 3.632
     },
     "open.options.session.kept_objects": {
       "min": 137,
@@ -1448,14 +1448,14 @@
       "limit": 201
     },
     "open.options.session.main_bytes": {
-      "min": 22397456,
-      "max": 22522016,
-      "limit": 23097017
+      "min": 22372224,
+      "max": 22497560,
+      "limit": 23072848
     },
     "open.options.session.ms": {
-      "median": 62.014,
-      "median_max": 77.69,
-      "worst": 87.416
+      "median": 62.05,
+      "median_max": 74.235,
+      "worst": 90.865
     },
     "open.options.session.nodes": {
       "min": 602,
@@ -1468,14 +1468,14 @@
       "limit": 707
     },
     "open.options.session.total_bytes": {
-      "median": 22499322,
-      "median_max": 22508476,
-      "worst": 22522016
+      "median": 22476306,
+      "median_max": 22490976,
+      "worst": 22497560
     },
     "open.options.session.wrappers": {
-      "min": 1077,
-      "max": 1077,
-      "limit": 1131
+      "min": 815,
+      "max": 815,
+      "limit": 856
     },
     "open.quest.install.finalized_godot": {
       "min": 29,
@@ -1483,9 +1483,9 @@
       "limit": 45
     },
     "open.quest.install.finalized_other": {
-      "min": 462,
-      "max": 462,
-      "limit": 486
+      "min": 177,
+      "max": 177,
+      "limit": 193
     },
     "open.quest.install.gc0": {
       "median": 0,
@@ -1504,8 +1504,8 @@
     },
     "open.quest.install.jit_all_methods": {
       "median": 35,
-      "median_max": 35,
-      "worst": 35
+      "median_max": 36,
+      "worst": 36
     },
     "open.quest.install.jit_methods": {
       "min": 35,
@@ -1513,9 +1513,9 @@
       "limit": 43
     },
     "open.quest.install.jit_ms": {
-      "median": 3.672,
-      "median_max": 4.011,
-      "worst": 4.011
+      "median": 3.979,
+      "median_max": 4.286,
+      "worst": 4.286
     },
     "open.quest.install.kept_objects": {
       "min": 16,
@@ -1523,14 +1523,14 @@
       "limit": 80
     },
     "open.quest.install.main_bytes": {
-      "min": 23088768,
-      "max": 23101744,
-      "limit": 23576755
+      "min": 23066400,
+      "max": 23084920,
+      "limit": 23565139
     },
     "open.quest.install.ms": {
-      "median": 67.148,
-      "median_max": 116.469,
-      "worst": 116.469
+      "median": 62.817,
+      "median_max": 126.116,
+      "worst": 126.116
     },
     "open.quest.install.nodes": {
       "min": 616,
@@ -1543,14 +1543,14 @@
       "limit": 745
     },
     "open.quest.install.total_bytes": {
-      "median": 23091976,
-      "median_max": 23101744,
-      "worst": 23101744
+      "median": 23066544,
+      "median_max": 23084920,
+      "worst": 23084920
     },
     "open.quest.install.wrappers": {
-      "min": 1112,
-      "max": 1112,
-      "limit": 1168
+      "min": 879,
+      "max": 879,
+      "limit": 923
     },
     "open.quest.repeat.finalized_godot": {
       "min": 68,
@@ -1558,9 +1558,9 @@
       "limit": 96
     },
     "open.quest.repeat.finalized_other": {
-      "min": 461,
-      "max": 464,
-      "limit": 491
+      "min": 177,
+      "max": 177,
+      "limit": 193
     },
     "open.quest.repeat.gc0": {
       "min": 0,
@@ -1578,9 +1578,9 @@
       "limit": 2
     },
     "open.quest.repeat.jit_all_methods": {
-      "median": 18,
-      "median_max": 22,
-      "worst": 35
+      "median": 20,
+      "median_max": 23,
+      "worst": 33
     },
     "open.quest.repeat.jit_methods": {
       "min": 4,
@@ -1588,9 +1588,9 @@
       "limit": 14
     },
     "open.quest.repeat.jit_ms": {
-      "median": 0.424,
-      "median_max": 0.461,
-      "worst": 0.688
+      "median": 0.43,
+      "median_max": 0.476,
+      "worst": 0.668
     },
     "open.quest.repeat.kept_objects": {
       "min": -4,
@@ -1598,14 +1598,14 @@
       "limit": 20
     },
     "open.quest.repeat.main_bytes": {
-      "min": 8603192,
-      "max": 8709184,
-      "limit": 8989360
+      "min": 8577824,
+      "max": 8694464,
+      "limit": 8984994
     },
     "open.quest.repeat.ms": {
-      "median": 38.068,
-      "median_max": 42.861,
-      "worst": 71.172
+      "median": 40,
+      "median_max": 46.707,
+      "worst": 71.529
     },
     "open.quest.repeat.nodes": {
       "min": 616,
@@ -1618,14 +1618,14 @@
       "limit": 729
     },
     "open.quest.repeat.total_bytes": {
-      "median": 8701492,
-      "median_max": 8706336,
-      "worst": 8709184
+      "median": 8675876,
+      "median_max": 8677984,
+      "worst": 8694464
     },
     "open.quest.repeat.wrappers": {
-      "min": 1100,
-      "max": 1100,
-      "limit": 1155
+      "min": 837,
+      "max": 837,
+      "limit": 879
     },
     "open.quest.repeat1.kept_objects": {
       "min": 0,
@@ -1638,9 +1638,9 @@
       "limit": 45
     },
     "open.quest.session.finalized_other": {
-      "min": 462,
-      "max": 462,
-      "limit": 486
+      "min": 177,
+      "max": 177,
+      "limit": 193
     },
     "open.quest.session.gc0": {
       "min": 0,
@@ -1659,18 +1659,18 @@
     },
     "open.quest.session.jit_all_methods": {
       "median": 35,
-      "median_max": 35.5,
-      "worst": 36
+      "median_max": 36.5,
+      "worst": 38
     },
     "open.quest.session.jit_methods": {
       "min": 35,
-      "max": 35,
-      "limit": 43
+      "max": 38,
+      "limit": 49
     },
     "open.quest.session.jit_ms": {
-      "median": 3.646,
-      "median_max": 4.034,
-      "worst": 4.609
+      "median": 3.708,
+      "median_max": 4.358,
+      "worst": 4.884
     },
     "open.quest.session.kept_objects": {
       "min": 16,
@@ -1678,14 +1678,14 @@
       "limit": 80
     },
     "open.quest.session.main_bytes": {
-      "min": 23009776,
-      "max": 23199760,
-      "limit": 23853740
+      "min": 23066336,
+      "max": 23164760,
+      "limit": 23726480
     },
     "open.quest.session.ms": {
-      "median": 63.711,
-      "median_max": 99.56,
-      "worst": 146.051
+      "median": 56.653,
+      "median_max": 132.909,
+      "worst": 192.672
     },
     "open.quest.session.nodes": {
       "min": 616,
@@ -1698,24 +1698,24 @@
       "limit": 745
     },
     "open.quest.session.total_bytes": {
-      "median": 23091822,
-      "median_max": 23150172,
-      "worst": 23199760
+      "median": 23071834,
+      "median_max": 23124664,
+      "worst": 23164760
     },
     "open.quest.session.wrappers": {
-      "min": 1112,
-      "max": 1112,
-      "limit": 1168
+      "min": 879,
+      "max": 879,
+      "limit": 923
     },
     "open.shop.install.finalized_godot": {
-      "min": 177,
+      "min": 178,
       "max": 180,
-      "limit": 199
+      "limit": 198
     },
     "open.shop.install.finalized_other": {
-      "min": 1862,
-      "max": 1862,
-      "limit": 1956
+      "min": 889,
+      "max": 889,
+      "limit": 934
     },
     "open.shop.install.gc0": {
       "median": 1,
@@ -1734,18 +1734,18 @@
     },
     "open.shop.install.jit_all_methods": {
       "median": 112,
-      "median_max": 173,
-      "worst": 173
+      "median_max": 139,
+      "worst": 139
     },
     "open.shop.install.jit_methods": {
       "min": 109,
-      "max": 110,
-      "limit": 119
+      "max": 111,
+      "limit": 121
     },
     "open.shop.install.jit_ms": {
-      "median": 9.98,
-      "median_max": 11.346,
-      "worst": 11.346
+      "median": 9.939,
+      "median_max": 12.111,
+      "worst": 12.111
     },
     "open.shop.install.kept_objects": {
       "min": 153,
@@ -1753,14 +1753,14 @@
       "limit": 217
     },
     "open.shop.install.main_bytes": {
-      "min": 77580368,
-      "max": 77678768,
-      "limit": 79330744
+      "min": 77491208,
+      "max": 77510024,
+      "limit": 79079041
     },
     "open.shop.install.ms": {
-      "median": 209.858,
-      "median_max": 404.175,
-      "worst": 404.175
+      "median": 240.816,
+      "median_max": 396.867,
+      "worst": 396.867
     },
     "open.shop.install.nodes": {
       "min": 2583,
@@ -1773,14 +1773,14 @@
       "limit": 3244
     },
     "open.shop.install.total_bytes": {
-      "median": 77596708,
-      "median_max": 77679200,
-      "worst": 77679200
+      "median": 77499452,
+      "median_max": 77510456,
+      "worst": 77510456
     },
     "open.shop.install.wrappers": {
-      "min": 4796,
-      "max": 4799,
-      "limit": 5042
+      "min": 3892,
+      "max": 3894,
+      "limit": 4091
     },
     "open.shop.repeat.finalized_godot": {
       "min": 160,
@@ -1788,9 +1788,9 @@
       "limit": 188
     },
     "open.shop.repeat.finalized_other": {
-      "min": 1886,
-      "max": 1889,
-      "limit": 1987
+      "min": 890,
+      "max": 890,
+      "limit": 935
     },
     "open.shop.repeat.gc0": {
       "min": 0,
@@ -1808,9 +1808,9 @@
       "limit": 2
     },
     "open.shop.repeat.jit_all_methods": {
-      "median": 74.5,
-      "median_max": 75,
-      "worst": 122
+      "median": 75,
+      "median_max": 77,
+      "worst": 121
     },
     "open.shop.repeat.jit_methods": {
       "min": 4,
@@ -1818,9 +1818,9 @@
       "limit": 18
     },
     "open.shop.repeat.jit_ms": {
-      "median": 0.374,
-      "median_max": 0.412,
-      "worst": 0.745
+      "median": 0.406,
+      "median_max": 0.529,
+      "worst": 1.074
     },
     "open.shop.repeat.kept_objects": {
       "min": -4,
@@ -1828,14 +1828,14 @@
       "limit": 20
     },
     "open.shop.repeat.main_bytes": {
-      "min": 17389016,
-      "max": 17559160,
-      "limit": 18080488
+      "min": 17295576,
+      "max": 17481240,
+      "limit": 18016529
     },
     "open.shop.repeat.ms": {
-      "median": 89.364,
-      "median_max": 111.117,
-      "worst": 149.827
+      "median": 88.869,
+      "median_max": 102.233,
+      "worst": 130.493
     },
     "open.shop.repeat.nodes": {
       "min": 2583,
@@ -1848,14 +1848,14 @@
       "limit": 3082
     },
     "open.shop.repeat.total_bytes": {
-      "median": 17443668,
-      "median_max": 17488528,
-      "worst": 17559160
+      "median": 17357848,
+      "median_max": 17395688,
+      "worst": 17492664
     },
     "open.shop.repeat.wrappers": {
-      "min": 4690,
-      "max": 4690,
-      "limit": 4925
+      "min": 3715,
+      "max": 3715,
+      "limit": 3901
     },
     "open.shop.repeat1.kept_objects": {
       "min": 0,
@@ -1868,9 +1868,9 @@
       "limit": 199
     },
     "open.shop.session.finalized_other": {
-      "min": 1862,
-      "max": 1862,
-      "limit": 1956
+      "min": 889,
+      "max": 889,
+      "limit": 934
     },
     "open.shop.session.gc0": {
       "min": 1,
@@ -1898,9 +1898,9 @@
       "limit": 121
     },
     "open.shop.session.jit_ms": {
-      "median": 9.611,
-      "median_max": 10.404,
-      "worst": 11.074
+      "median": 9.81,
+      "median_max": 12.138,
+      "worst": 14.236
     },
     "open.shop.session.kept_objects": {
       "min": 153,
@@ -1908,14 +1908,14 @@
       "limit": 217
     },
     "open.shop.session.main_bytes": {
-      "min": 77580288,
-      "max": 77678768,
-      "limit": 79330824
+      "min": 77490840,
+      "max": 77526208,
+      "limit": 79112101
     },
     "open.shop.session.ms": {
-      "median": 195.112,
-      "median_max": 256.274,
-      "worst": 263.138
+      "median": 195.242,
+      "median_max": 315.334,
+      "worst": 331.186
     },
     "open.shop.session.nodes": {
       "min": 2583,
@@ -1928,14 +1928,14 @@
       "limit": 3244
     },
     "open.shop.session.total_bytes": {
-      "median": 77590168,
-      "median_max": 77631600,
-      "worst": 77679200
+      "median": 77499508,
+      "median_max": 77517704,
+      "worst": 77526640
     },
     "open.shop.session.wrappers": {
-      "min": 4796,
-      "max": 4799,
-      "limit": 5042
+      "min": 3891,
+      "max": 3894,
+      "limit": 4092
     },
     "open.skill.install.finalized_godot": {
       "min": 118,
@@ -1943,9 +1943,9 @@
       "limit": 134
     },
     "open.skill.install.finalized_other": {
-      "min": 1646,
-      "max": 1646,
-      "limit": 1729
+      "min": 338,
+      "max": 338,
+      "limit": 355
     },
     "open.skill.install.gc0": {
       "median": 0,
@@ -1963,9 +1963,9 @@
       "worst": 0
     },
     "open.skill.install.jit_all_methods": {
-      "median": 59.5,
-      "median_max": 192,
-      "worst": 192
+      "median": 59,
+      "median_max": 61,
+      "worst": 61
     },
     "open.skill.install.jit_methods": {
       "min": 55,
@@ -1973,9 +1973,9 @@
       "limit": 63
     },
     "open.skill.install.jit_ms": {
-      "median": 4.086,
-      "median_max": 4.724,
-      "worst": 4.724
+      "median": 4.107,
+      "median_max": 4.818,
+      "worst": 4.818
     },
     "open.skill.install.kept_objects": {
       "min": 91,
@@ -1983,14 +1983,14 @@
       "limit": 155
     },
     "open.skill.install.main_bytes": {
-      "min": 58973048,
-      "max": 59093536,
-      "limit": 60395895
+      "min": 58853832,
+      "max": 58992424,
+      "limit": 60310865
     },
     "open.skill.install.ms": {
-      "median": 101.3,
-      "median_max": 271.868,
-      "worst": 271.868
+      "median": 135.447,
+      "median_max": 199.11,
+      "worst": 199.11
     },
     "open.skill.install.nodes": {
       "min": 2518,
@@ -2003,14 +2003,14 @@
       "limit": 2860
     },
     "open.skill.install.total_bytes": {
-      "median": 59033004,
-      "median_max": 59093536,
-      "worst": 59093536
+      "median": 58951064,
+      "median_max": 58992424,
+      "worst": 58992424
     },
     "open.skill.install.wrappers": {
-      "min": 4344,
-      "max": 4344,
-      "limit": 4562
+      "min": 3103,
+      "max": 3103,
+      "limit": 3259
     },
     "open.skill.repeat.finalized_godot": {
       "min": 108,
@@ -2018,9 +2018,9 @@
       "limit": 136
     },
     "open.skill.repeat.finalized_other": {
-      "min": 1643,
-      "max": 1646,
-      "limit": 1732
+      "min": 338,
+      "max": 338,
+      "limit": 355
     },
     "open.skill.repeat.gc0": {
       "min": 0,
@@ -2038,8 +2038,8 @@
       "limit": 2
     },
     "open.skill.repeat.jit_all_methods": {
-      "median": 78.5,
-      "median_max": 83,
+      "median": 78,
+      "median_max": 80,
       "worst": 109
     },
     "open.skill.repeat.jit_methods": {
@@ -2048,9 +2048,9 @@
       "limit": 12
     },
     "open.skill.repeat.jit_ms": {
-      "median": 0.292,
-      "median_max": 0.342,
-      "worst": 0.659
+      "median": 0.322,
+      "median_max": 0.35,
+      "worst": 0.506
     },
     "open.skill.repeat.kept_objects": {
       "min": -4,
@@ -2058,14 +2058,14 @@
       "limit": 20
     },
     "open.skill.repeat.main_bytes": {
-      "min": 13810776,
-      "max": 14005696,
-      "limit": 14480730
+      "min": 13734824,
+      "max": 13905488,
+      "limit": 14354262
     },
     "open.skill.repeat.ms": {
-      "median": 69.323,
-      "median_max": 92.271,
-      "worst": 115.487
+      "median": 68.485,
+      "median_max": 82.9,
+      "worst": 102.664
     },
     "open.skill.repeat.nodes": {
       "min": 2518,
@@ -2078,14 +2078,14 @@
       "limit": 2762
     },
     "open.skill.repeat.total_bytes": {
-      "median": 13881348,
-      "median_max": 13930768,
-      "worst": 14005696
+      "median": 13757664,
+      "median_max": 13759120,
+      "worst": 13905488
     },
     "open.skill.repeat.wrappers": {
-      "min": 4248,
-      "max": 4248,
-      "limit": 4461
+      "min": 2964,
+      "max": 2964,
+      "limit": 3113
     },
     "open.skill.repeat1.kept_objects": {
       "min": 809,
@@ -2098,9 +2098,9 @@
       "limit": 134
     },
     "open.skill.session.finalized_other": {
-      "min": 1646,
-      "max": 1646,
-      "limit": 1729
+      "min": 338,
+      "max": 338,
+      "limit": 355
     },
     "open.skill.session.gc0": {
       "min": 0,
@@ -2118,9 +2118,9 @@
       "limit": 2
     },
     "open.skill.session.jit_all_methods": {
-      "median": 59,
-      "median_max": 59.5,
-      "worst": 60
+      "median": 59.5,
+      "median_max": 127,
+      "worst": 195
     },
     "open.skill.session.jit_methods": {
       "min": 55,
@@ -2128,9 +2128,9 @@
       "limit": 63
     },
     "open.skill.session.jit_ms": {
-      "median": 4.153,
-      "median_max": 4.598,
-      "worst": 4.945
+      "median": 4.186,
+      "median_max": 4.794,
+      "worst": 5.461
     },
     "open.skill.session.kept_objects": {
       "min": 91,
@@ -2138,14 +2138,14 @@
       "limit": 155
     },
     "open.skill.session.main_bytes": {
-      "min": 58972928,
-      "max": 59108688,
-      "limit": 60426622
+      "min": 58853912,
+      "max": 58993296,
+      "limit": 60312546
     },
     "open.skill.session.ms": {
-      "median": 104.758,
-      "median_max": 142.928,
-      "worst": 184.496
+      "median": 124.506,
+      "median_max": 338.797,
+      "worst": 534.91
     },
     "open.skill.session.nodes": {
       "min": 2518,
@@ -2158,24 +2158,24 @@
       "limit": 2860
     },
     "open.skill.session.total_bytes": {
-      "median": 59023034,
-      "median_max": 59081928,
-      "worst": 59108688
+      "median": 58937334,
+      "median_max": 58965932,
+      "worst": 58993296
     },
     "open.skill.session.wrappers": {
-      "min": 4344,
-      "max": 4344,
-      "limit": 4562
+      "min": 3103,
+      "max": 3103,
+      "limit": 3259
     },
     "open.worldmap.install.finalized_godot": {
-      "min": 201,
-      "max": 210,
-      "limit": 235
+      "min": 196,
+      "max": 203,
+      "limit": 226
     },
     "open.worldmap.install.finalized_other": {
-      "min": 97,
-      "max": 97,
-      "limit": 113
+      "min": 35,
+      "max": 35,
+      "limit": 51
     },
     "open.worldmap.install.gc0": {
       "median": 1,
@@ -2203,9 +2203,9 @@
       "limit": 159
     },
     "open.worldmap.install.jit_ms": {
-      "median": 12.148,
-      "median_max": 16.197,
-      "worst": 16.197
+      "median": 12.718,
+      "median_max": 13.631,
+      "worst": 13.631
     },
     "open.worldmap.install.kept_objects": {
       "min": 1974,
@@ -2213,14 +2213,14 @@
       "limit": 2038
     },
     "open.worldmap.install.main_bytes": {
-      "min": 80659912,
-      "max": 80794472,
-      "limit": 82544922
+      "min": 80567560,
+      "max": 80677648,
+      "limit": 82401289
     },
     "open.worldmap.install.ms": {
-      "median": 246.754,
-      "median_max": 489.615,
-      "worst": 489.615
+      "median": 281.143,
+      "median_max": 372.015,
+      "worst": 372.015
     },
     "open.worldmap.install.nodes": {
       "min": 2180,
@@ -2233,14 +2233,14 @@
       "limit": 3201
     },
     "open.worldmap.install.total_bytes": {
-      "median": 80665720,
-      "median_max": 80794904,
-      "worst": 80794904
+      "median": 80568640,
+      "median_max": 80678080,
+      "worst": 80678080
     },
     "open.worldmap.install.wrappers": {
-      "min": 2855,
-      "max": 2864,
-      "limit": 3017
+      "min": 2861,
+      "max": 2868,
+      "limit": 3019
     },
     "open.worldmap.repeat.finalized_godot": {
       "min": 172,
@@ -2248,9 +2248,9 @@
       "limit": 200
     },
     "open.worldmap.repeat.finalized_other": {
-      "min": 1777,
-      "max": 1780,
-      "limit": 1872
+      "min": 742,
+      "max": 742,
+      "limit": 780
     },
     "open.worldmap.repeat.gc0": {
       "min": 0,
@@ -2268,9 +2268,9 @@
       "limit": 2
     },
     "open.worldmap.repeat.jit_all_methods": {
-      "median": 32,
+      "median": 32.5,
       "median_max": 34,
-      "worst": 99
+      "worst": 95
     },
     "open.worldmap.repeat.jit_methods": {
       "min": 4,
@@ -2278,9 +2278,9 @@
       "limit": 14
     },
     "open.worldmap.repeat.jit_ms": {
-      "median": 0.441,
-      "median_max": 0.483,
-      "worst": 0.664
+      "median": 0.457,
+      "median_max": 0.546,
+      "worst": 0.716
     },
     "open.worldmap.repeat.kept_objects": {
       "min": 0,
@@ -2288,14 +2288,14 @@
       "limit": 16
     },
     "open.worldmap.repeat.main_bytes": {
-      "min": 22213672,
-      "max": 22410000,
-      "limit": 23054528
+      "min": 22116328,
+      "max": 22293720,
+      "limit": 22916987
     },
     "open.worldmap.repeat.ms": {
-      "median": 96.096,
-      "median_max": 102.18,
-      "worst": 238.907
+      "median": 96.288,
+      "median_max": 112.339,
+      "worst": 138.758
     },
     "open.worldmap.repeat.nodes": {
       "min": 2180,
@@ -2308,14 +2308,14 @@
       "limit": 2569
     },
     "open.worldmap.repeat.total_bytes": {
-      "median": 22311232,
-      "median_max": 22358680,
-      "worst": 22410000
+      "median": 22201748,
+      "median_max": 22260840,
+      "worst": 22293720
     },
     "open.worldmap.repeat.wrappers": {
-      "min": 4157,
-      "max": 4157,
-      "limit": 4365
+      "min": 3143,
+      "max": 3143,
+      "limit": 3301
     },
     "open.worldmap.repeat1.kept_objects": {
       "min": -4,
@@ -2323,14 +2323,14 @@
       "limit": 60
     },
     "open.worldmap.session.finalized_godot": {
-      "min": 201,
-      "max": 209,
-      "limit": 233
+      "min": 196,
+      "max": 208,
+      "limit": 236
     },
     "open.worldmap.session.finalized_other": {
-      "min": 97,
-      "max": 97,
-      "limit": 113
+      "min": 35,
+      "max": 35,
+      "limit": 51
     },
     "open.worldmap.session.gc0": {
       "min": 1,
@@ -2349,8 +2349,8 @@
     },
     "open.worldmap.session.jit_all_methods": {
       "median": 153,
-      "median_max": 154.5,
-      "worst": 156
+      "median_max": 153,
+      "worst": 153
     },
     "open.worldmap.session.jit_methods": {
       "min": 151,
@@ -2358,9 +2358,9 @@
       "limit": 159
     },
     "open.worldmap.session.jit_ms": {
-      "median": 12.214,
-      "median_max": 12.826,
-      "worst": 13.804
+      "median": 12.308,
+      "median_max": 17.895,
+      "worst": 18.075
     },
     "open.worldmap.session.kept_objects": {
       "min": 1974,
@@ -2368,14 +2368,14 @@
       "limit": 2038
     },
     "open.worldmap.session.main_bytes": {
-      "min": 80659912,
-      "max": 80786776,
-      "limit": 82529376
+      "min": 80567560,
+      "max": 80722712,
+      "limit": 82492319
     },
     "open.worldmap.session.ms": {
-      "median": 230.842,
-      "median_max": 390.4,
-      "worst": 445.521
+      "median": 267.525,
+      "median_max": 502.562,
+      "worst": 763.358
     },
     "open.worldmap.session.nodes": {
       "min": 2180,
@@ -2388,29 +2388,29 @@
       "limit": 3201
     },
     "open.worldmap.session.total_bytes": {
-      "median": 80673104,
-      "median_max": 80749704,
-      "worst": 80787208
+      "median": 80585322,
+      "median_max": 80645708,
+      "worst": 80723144
     },
     "open.worldmap.session.wrappers": {
-      "min": 2855,
-      "max": 2863,
-      "limit": 3015
+      "min": 2861,
+      "max": 2873,
+      "limit": 3029
     },
     "opens.install.sum_ms": {
-      "median": 928.605,
-      "median_max": 1604.301,
-      "worst": 1604.301
+      "median": 1075.264,
+      "median_max": 1458.742,
+      "worst": 1458.742
     },
     "opens.repeat.sum_ms": {
-      "median": 1568.996,
-      "median_max": 1703.338,
-      "worst": 1802.695
+      "median": 1596.152,
+      "median_max": 1847.215,
+      "worst": 1849.649
     },
     "opens.session.sum_ms": {
-      "median": 917.964,
-      "median_max": 1171.177,
-      "worst": 1254.448
+      "median": 958.656,
+      "median_max": 1664.3,
+      "worst": 2258.349
     }
   }
 }
