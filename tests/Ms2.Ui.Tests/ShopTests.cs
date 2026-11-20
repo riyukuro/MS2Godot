@@ -734,6 +734,22 @@ public class ShopTests
         boxes[0].InvokeCallback(0, null);
         Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
 
+        // FUN_1418ffba0 rule (uicommon.cpp:1183-1209), with the live default (state unwired) asking for the agreement
+        c.CanBuyUgcPackage = null;
+        Assert.That(c.NeedsUgcAgreement(itemData), Is.True, "unwired home state never buys silently");
+        c.PackageIndoorSize = _ => "large";
+        c.UgcHome = () => new ShopController.UgcHomeState(true, 5, "large", false);
+        Assert.That(c.NeedsUgcAgreement(itemData), Is.False, "same size, has plot");
+        c.UgcHome = () => new ShopController.UgcHomeState(true, 5, "small", false);
+        Assert.That(c.NeedsUgcAgreement(itemData), Is.True, "package size differs from the plot");
+        c.UgcHome = () => new ShopController.UgcHomeState(true, 0, null, false);
+        Assert.That(c.NeedsUgcAgreement(itemData), Is.True, "has a home but no plot");
+        c.UgcHome = () => new ShopController.UgcHomeState(true, 0, null, true);
+        Assert.That(c.NeedsUgcAgreement(itemData), Is.False, "no home at all");
+        c.UgcHome = () => new ShopController.UgcHomeState(false, 0, null, false);
+        Assert.That(c.NeedsUgcAgreement(itemData), Is.False, "GetUGCMapInfo null");
+        c.CanBuyUgcPackage = _ => true;
+
         // CloseShop closes active buyItem message box
         boxClosed = false;
         c.CurrentBox = () => MessageBoxQueue.Create(0x11, "", c, "buyItem,1,1");

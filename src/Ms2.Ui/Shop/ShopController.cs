@@ -116,7 +116,36 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// <summary>onClickPreview (uishopdialog.cpp:1165): item id, x, y for UIInteriorPreviewDialog (0x4ee3).</summary>
     public Action<int, float, float> OpenInteriorPreview;
     /// <summary>FUN_1418ffba0 (uishopdialog.cpp:974): true when buying a UGCMapPackage requires the 0x1f confirm box.</summary>
-    public Func<ItemData, bool> CanBuyUgcPackage = _ => false;
+    public Func<ItemData, bool> CanBuyUgcPackage;
+
+    /// <summary>The local player's UGC map info as FUN_1418ffba0 reads it (uicommon.cpp:1183-1209): the plot id (m_nField1c),
+    /// the indoor size type of that plot (FUN_1408a0d30, null when the plot has none) and MyPC::HasNoHome. Null result =
+    /// the client's GetUGCMapInfo is null. STILL-OPEN: the live session does not carry the home state, so the live wiring
+    /// leaves this unset and <see cref="NeedsUgcAgreement"/> asks for the agreement box (the client would buy at once only
+    /// when the package fits the player's home).</summary>
+    public Func<UgcHomeState> UgcHome;
+    /// <summary>The indoor size type of a UGCMapPackage item (GetUGCMapPackageData(function arg 0)->m_strIndoorSizeType);
+    /// STILL-OPEN: the package table is not ported, null = unknown.</summary>
+    public Func<ItemData, string> PackageIndoorSize;
+
+    public readonly record struct UgcHomeState(bool Known, int PlotId, string PlotIndoorSize, bool HasNoHome);
+
+    /// <summary>FUN_1418ffba0 (uicommon.cpp:1183-1209): the agreement box is needed when the package's indoor size differs
+    /// from the player's plot, or the player has a home but no plot. State not wired = ask (never buy silently).</summary>
+    public bool NeedsUgcAgreement(ItemData data)
+    {
+        if (CanBuyUgcPackage != null) return CanBuyUgcPackage(data);
+        if (data == null) return false;
+        if (UgcHome == null) return true;
+        var home = UgcHome();
+        if (!home.Known) return false;                    // GetUGCMapInfo() == 0 -> return 0
+        if (home.PlotIndoorSize != null)
+        {
+            string package = PackageIndoorSize?.Invoke(data);
+            if (package != null && package != home.PlotIndoorSize) return true;
+        }
+        return home.PlotId == 0 && !home.HasNoHome;
+    }
     /// <summary>CAchieveManager::IsBeforeStartGrade (uishopdialog.cpp:1295, :3599): true when player meets achieve
     /// (defaults false so absent state refuses as the client does).</summary>
     public Func<int, int, bool> HasAchieve = (_, _) => false;
@@ -1703,7 +1732,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                 int count = Hud.MessageBoxData.WToI(parts[2]);
                 var p = FindCurrentProduct(serial);
                 if (p?.Item == null) return false;
-                if (p.Item.Data.FunctionName == "UGCMapPackage" && CanBuyUgcPackage(p.Item.Data))
+                if (p.Item.Data.FunctionName == "UGCMapPackage" && NeedsUgcAgreement(p.Item.Data))
                 {
                     CloseBox?.Invoke();
                     var box = Hud.MessageBoxQueue.CreateWithCallback(Common(0x6ec), 0x1f, ConfirmUgcPurchase);
