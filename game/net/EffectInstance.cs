@@ -30,7 +30,7 @@ public sealed partial class EffectInstance : Node3D
         public readonly double[] Lit = new double[3], Amb = new double[3];   // EffectMesh.Shade's output, reused every frame
         public bool Static, Placed;                               // no node from it to the root animates or faces the camera: placed once
         // the last value set on each per-frame shader parameter: a parameter is set again only when its value changes
-        public Color LastTint = Colors.White; public Vector3 LastAmb; public float LastAlpha; public Texture2D LastTex;
+        public Vector4 LastTint = Vector4.One; public Vector3 LastAmb; public float LastAlpha; public Texture2D LastTex;
         // base r0 r1, glow r0 r1, detail r0 r1 (the shader defaults)
         public readonly Vector3[] LastRows = { new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0), new(1, 0, 0), new(0, 1, 0) };
     }
@@ -115,9 +115,13 @@ void fragment() {
         t = vec4(t.rgb * d.rgb * 2.0, t.a * d.a);
     }
     // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
-    // The coefficient is not saturated (EffectMesh.Shade). The client renders into an FP16 target and tonemaps and blooms it
-    // (postprocessingservice.cpp:1401-1411, 1751); the clamp stands in for that.
-    // STILL-OPEN: the FP16 target, tonemap and bloom (postprocessingservice.cpp); the bloom port is a separate lane.
+    // The coefficient is not saturated (EffectMesh.Shade), and neither is the colour the pixel shader writes:
+    // HandleMS2FinalPixelOutputs (@0x14274fd00, ms2standardmaterial.cpp:758-792) ends in CompositeFinalRGBColor and CompositeFinalRGBAColor,
+    // which pass the colour on as it is (NiStandardMaterialNodeLibrary.cpp:3057-3106). The client blends it into its FP16
+    // scene target, which PostProcessingService::OnInit (@0x1416a4860, postprocessingservice.cpp:1750-1751) turns on whenever
+    // the device can convert FP16 to RGBA32 (@0x1416a69a0, :1946-1991; SetFloatTargetFormat @0x1416a36f0, :1400-1411), the
+    // HDR option aside. So a colour above 1 at a low opacity keeps its hue and weight, and only the display clamps the sum.
+    // Godot's 3D buffer is RGBA16F too, so the colour goes out unclamped.
     // The vertex colour takes the place of the terms EffectMesh.VertexColors names (Shade leaves those out of tint and
     // mat_ambient), and its alpha that of the material alpha (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450).
     vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
@@ -127,10 +131,14 @@ void fragment() {
     vec3 col = t.rgb * coef;
     // a glow map adds its colour whatever the material colour is
     if (has_glow) col += texture(glow_tex, map_uv(glow_uv2 ? UV2 : UV, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
-    col = clamp(col, 0.0, 1.0);
+    // The opacity is not saturated either: CompositeFinalRGBAColor writes it as it is, and the FP16 target blends with it
+    // unclamped, so an opacity above 1 (the 02020120 crystals' material alpha 1.2, their ring's controller peak 1.5) weighs
+    // the colour by more than 1 (SRCALPHA) and an additive mesh adds more than its colour.
+    // STILL-OPEN: MS2AlphaBoostMaterial (ms2materialnodelibrary.cpp:839-846) also scales the colour by an opacity above 1;
+    // the particle shader (PartCode) still clamps its colour and opacity.
     FOG = vec4(ms2_fog_color, fog_share);
     ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
-    ALPHA = clamp(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0, 1.0);
+    ALPHA = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
@@ -360,7 +368,9 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     static void Shade(MeshState ms, double t, bool force)
     {
         ms.Def.Shade(t, ms.Lit, ms.Amb);
-        var c = new Color((float)ms.Lit[0], (float)ms.Lit[1], (float)ms.Lit[2]);
+        // a Vector4, not a Color: Godot converts a Color set on a vec4 uniform from sRGB to linear, which took 0.5 to 0.21;
+        // the colour buffer holds gamma values (field_lit, ModelBuilder's Vector3 colours), so the coefficient goes in as it is
+        var c = new Vector4((float)ms.Lit[0], (float)ms.Lit[1], (float)ms.Lit[2], 1f);
         var a = new Vector3((float)ms.Amb[0], (float)ms.Amb[1], (float)ms.Amb[2]);
         if (force || c != ms.LastTint) ms.Mat.SetShaderParameter(FxParam.Tint, ms.LastTint = c);
         if (force || a != ms.LastAmb) ms.Mat.SetShaderParameter(FxParam.Ambient, ms.LastAmb = a);

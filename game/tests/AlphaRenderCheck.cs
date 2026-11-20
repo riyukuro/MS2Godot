@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using Godot;
 using Ms2.Formats.Model;
+using Ms2Godot.Net;
 using Ms2Godot.World;
 
 namespace Ms2Godot.Tests;
@@ -13,7 +14,8 @@ namespace Ms2Godot.Tests;
 /// character path, with its glow twin and its Attached step) or GlowMaterial (the field glow), draws them in a SubViewport
 /// of its own over black, and compares the centre pixel with the value the client's opacity gives:
 /// the NiAlphaController alpha, the vertex alpha (EMISSIVE + LIGHTING_E, AMB_DIFF + E_A_D), the test on the opacity, ONE / ONE
-/// unweighted, the z write of a blended mesh, DRAW_BOTH, the glow pass's opacity, and the closest-point alpha sort.
+/// unweighted, the z write of a blended mesh, DRAW_BOTH, the glow pass's opacity, the closest-point alpha sort, and an
+/// effect mesh's unsaturated colour (EffectInstance).
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class AlphaRenderCheck : Node
@@ -78,6 +80,22 @@ public partial class AlphaRenderCheck : Node
         vp.GetNode<Camera3D>("Cam").GlobalTransform = model.GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 0, 10));
         cases.Add((name, vp, check));
         return root;
+    }
+
+    /// <summary>One mesh played by the effect runtime (EffectInstance), blended (0xED) at the material alpha, in a new
+    /// viewport; the camera sits at file (0,0,10) looking down file -z.</summary>
+    void Effect(string name, Func<Color, string> check, ModelMesh m, float alpha)
+    {
+        m.AlphaFlags = 0xED; m.MaterialAlpha = alpha;
+        var sc = new EffectScene { Duration = 10 };
+        sc.Nodes.Add(new EffectNode { Name = "n" });
+        sc.Meshes.Add(new EffectMesh { Mesh = m, Node = 0 });
+        var vp = View(1u);
+        var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
+        vp.AddChild(fx);
+        fx.FileSpace = Transform3D.Identity;
+        vp.GetNode<Camera3D>("Cam").GlobalTransform = fx.GetChild<Node3D>(0).GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 0, 10));
+        cases.Add((name, vp, check));
     }
 
     // the read-back value in the space the blend runs in (calibrated: an opaque emissive 0.5 quad)
@@ -177,6 +195,16 @@ public partial class AlphaRenderCheck : Node
         var small = Emit(Quad("small", 5), 0, 1, 0);
         small.AlphaFlags = 0xED; small.ZFlags = 1; small.Bound = new float[] { 0, 0, 5, 0.5f };
         Model("sort_closest", main, Rgb(1, 0, 0, "closest-point sort draws the big-bound quad last"), big, small);
+
+        // the effect mesh's colour is not saturated before the blend (CompositeFinalRGBAColor into the FP16 target): emissive
+        // (1.6, 1, 2) at material alpha 0.5, SRCALPHA / INVSRCALPHA over black, gives (0.8, 0.5, 1), not the clamped 0.5 grey
+        Effect("fx_unclamped", Rgb(0.8f, 0.5f, 1f, "effect emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
+        // the effect mesh's coefficient reaches the shader as it is: emissive 0.5 at alpha 1 reads 0.5, as the field mesh's
+        // calib_half does (set as a Color, Godot decoded it from sRGB to 0.21)
+        Effect("fx_tint_gamma", Grey(0.5f, "effect emissive 0.5 at alpha 1"), Emit(Quad("q", 0), 0.5f, 0.5f, 0.5f), 1f);
+        // nor is the opacity: material alpha 1.5 (the crystal ring's controller peak) weighs emissive (0.4, 0.2, 0.3) by 1.5
+        // over black, (0.6, 0.3, 0.45), where a saturated opacity gives the emissive as it is
+        Effect("fx_opacity_over_1", Rgb(0.6f, 0.3f, 0.45f, "effect emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
 
         // the shadow of a blended mesh, with or without the z write: it stops casting and a shadow-only twin with the opaque form casts in its place
         var castRoot = Model("caster", main, null, Mesh(Quad("blend_zw", 0), 0xED), Mesh(Quad("blend_nozw", 0, 0.5f), 0xED, 1));
