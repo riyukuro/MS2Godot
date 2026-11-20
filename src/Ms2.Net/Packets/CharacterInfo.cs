@@ -216,6 +216,9 @@ public sealed class MyCharacter {
     public long PremiumTime; public short WeddingState;
     /// <summary>The own FieldAddUser's equips, layer-2 outfits and gems (PCGemEquip::ReadFromStream, gemslot_2.cpp:92).</summary>
     public IReadOnlyList<EquipItem> Equips, Outfit2, Gems;
+    /// <summary>The summoned pet from FieldAddUser (PC::ReadPetItem, scenestategame.cpp:11284; STILL-OPEN: post-enter
+    /// pet summon/unsummon packets).</summary>
+    public EquipItem Pet;
     public readonly StatPointBook StatPoints = new();
     public event Action Changed;
     /// <summary>A put-on / put-off changed the equip lists (before <see cref="Changed"/>): the item event dispatcher's
@@ -230,6 +233,7 @@ public sealed class MyCharacter {
         CodiStart = u.SkinTabStart; CodiEnd = u.SkinTabEnd; CodiItems = u.Outfit2.Count;
         PremiumTime = u.PremiumTime; WeddingState = u.WeddingState;
         Equips = u.Equips.ToList(); Outfit2 = u.Outfit2.ToList(); Gems = u.Badges.ToList();
+        Pet = u.HasPet ? u.Pet : null;
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
         State = 0;
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)

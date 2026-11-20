@@ -145,6 +145,53 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// <summary>Fame grade title (uishopdialog.cpp:3627, questmasktable.cpp:571).</summary>
     public Func<int, int, string> FameGradeName;
 
+    /// <summary>Unk_Inventory::FUN_140a5f7b0 (inventory.cpp:835): sums item counts across <paramref name="items"/>
+    /// matching string tag <paramref name="tag"/> that the player can use.</summary>
+    public static long CountItemsByTag(IEnumerable<EquipItem> items, ItemDataTable table, int tag, Func<Item, int> itemUseError = null)
+    {
+        if (tag == 0 || items == null || table == null) return 0;
+        long total = 0;
+        foreach (var e in items)
+        {
+            if (e == null || e.Amount <= 0) continue;
+            var data = table.Get(e.Id);
+            if (data == null || ItemTags.ByName(data.StringTag) != tag) continue;
+            if (itemUseError != null)
+            {
+                var it = Item.Create(table, e.Id, e.Rarity);
+                if (it != null) { it.Record = e; it.Count = (uint)e.Amount; if (itemUseError(it) != 0) continue; }
+            }
+            total += e.Amount;
+        }
+        return total;
+    }
+
+    /// <summary>Wires the live session's guild, inventory, pet, playing-score, and achievement state onto this controller
+    /// (uishopdialog.cpp:2099, :2429-2454, :3563-3709; itemugcmesh.cpp:1091; inventory.cpp:835; achievemanager.cpp:447).</summary>
+    public void BindLiveState(
+        Func<GuildBook> guilds,
+        Func<AchieveBook> achieves,
+        Func<AchieveTexts> achieveTexts,
+        Func<MyCharacter> me,
+        Func<IEnumerable<EquipItem>> items,
+        Func<long> playingScoreUid,
+        ItemDataTable itemTable,
+        Func<Item, int> itemUseError = null)
+    {
+        ItemCount = (id, _) => items?.Invoke()?.Where(e => e.Id == id).Sum(e => (long)e.Amount) ?? 0;
+        ItemTagCount = tag => CountItemsByTag(items?.Invoke(), itemTable, tag, itemUseError);
+        GuildFund = () => guilds?.Invoke()?.Info?.Fund ?? 0;
+        IsInGuild = () => guilds?.Invoke()?.InGuild ?? false;
+        IsGuildMaster = () => me?.Invoke()?.User?.Name is { } name && (guilds?.Invoke()?.IsMaster(name) ?? false);
+        GuildTotalTrophy = () => guilds?.Invoke()?.TotalTrophy ?? 0;
+        GuildMemberJoinTime = () => me?.Invoke()?.User?.Name is { } name && guilds?.Invoke()?.FindMemberByName(name) is { } m ? m.Fc8 : null;
+        GuildMemberChampionshipScore = () => me?.Invoke()?.User?.Name is { } name && guilds?.Invoke()?.FindMemberByName(name) is { } m ? m.Fe0 : null;
+        IsSummonedPet = uid => uid != 0 && me?.Invoke()?.Pet is { } pet && pet.Uid == uid;
+        PlayingScoreUid = playingScoreUid ?? (() => 0);
+        HasAchieve = (id, grade) => achieves?.Invoke()?.Find(id) is { } a && a.StartGrade > grade;
+        RequireAchieveText = (id, grade) => achieveTexts?.Invoke()?.GradeTitle(id, grade) ?? "";
+    }
+
     /// <summary>UIShopDialog::Selection (uishopdialog.cpp:551): tracks the pending request's serial, list index and command.</summary>
     struct PendingSelection
     {

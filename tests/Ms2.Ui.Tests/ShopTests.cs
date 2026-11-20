@@ -865,4 +865,78 @@ public class ShopTests
         c.BuyProduct(1, 0);
         Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
     }
+
+    [Test]
+    public void BindLiveStateWiresGuildFundTagCountSummonedPetPlayingScoreAndGates()
+    {
+        Packs();
+        var model = NewModel();
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        var notices = new List<string>();
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.SystemNotice = notices.Add;
+
+        // Build live GuildBook with Fund = 5000 and local player "Hero" as master
+        var guildInfo = new GuildInfo { Id = 42, Name = "TestGuild", MasterCharId = 100, Fund = 5_000 };
+        guildInfo.Members.Add(new GuildMember { CharId = 100, Name = "Hero", Fc8 = 1000, Triple = (10, 5, 5), Fe0 = 250 });
+        var guilds = new GuildBook();
+        guilds.Apply(new GuildMessage(0) { GuildId = 42, Info = guildInfo });
+
+        var me = new MyCharacter();
+        me.Apply(new FieldAddUser
+        {
+            ObjectId = 1,
+            User = new UserBlock { CharacterId = 100, Name = "Hero" },
+            HasPet = true,
+            Pet = new EquipItem { Id = 60000001, Uid = 555_000L, Amount = 1 },
+        });
+
+        // Pick a real item id with a non-empty ItemTags entry for tag-paid currency testing
+        var taggedData = model.Tables.Items.Get(20000028);
+        taggedData.StringTag = "DungeonRewardTicketA";
+        int ticketTag = ItemTags.ByName("DungeonRewardTicketA");
+        Assert.That(ticketTag, Is.GreaterThan(0));
+        var invItems = new List<EquipItem> { new() { Id = 20000028, Uid = 11L, Amount = 12, Rarity = 1 } };
+        long playingScore = 777_000L;
+
+        c.BindLiveState(() => guilds, () => null, () => null, () => me, () => invItems, () => playingScore, model.Tables.Items);
+
+        // 1. GuildFund & IsGuildMaster wired -> currency 7 product passes
+        var guildProd = c.Products(0)[1];
+        guildProd.Record.Currency = 7;
+        guildProd.Record.Price = 2_000;
+        Assert.That(c.CanPayProduct(guildProd, 1), Is.True);
+        Assert.That(c.CheckGuildMaster(guildProd, true), Is.True);
+        Assert.That(c.GuildTotalTrophy(), Is.EqualTo(20));
+        Assert.That(c.GuildMemberJoinTime(), Is.EqualTo(1000L));
+        Assert.That(c.GuildMemberChampionshipScore(), Is.EqualTo(250));
+
+        // 2. ItemTagCount wired -> tag-paid stack gets MaxAffordableCount = 6 (12 tickets / price 2)
+        var stackData = model.Tables.Items.Get(20000028);
+        stackData.SlotMax = 99;
+        var tagProd = new ShopController.Product
+        {
+            Record = new ShopProduct { Serial = 50, ItemId = 20000028, Currency = 1, CurrencyItemTag = ticketTag, Price = 2, Bundle = 1 },
+            Item = Item.Create(model.Tables.Items, 20000028, 1),
+        };
+        Assert.That(c.ItemTagCount(ticketTag), Is.EqualTo(12));
+        Assert.That(c.MaxAffordableCount(tagProd), Is.EqualTo(6));
+
+        // 3. IsSummonedPet wired -> selling summoned pet uid refuses and sends nothing
+        var summonedPet = Item.Create(model.Tables.Items, 20000028, 1);
+        summonedPet.Uid = 555_000L;
+        Assert.That(c.RequestSellItem(summonedPet, 1), Is.False);
+        Assert.That(sent, Is.Empty);
+        Assert.That(notices, Has.Count.EqualTo(1));
+
+        // 4. PlayingScoreUid wired -> CanSellItem refuses currently playing score with box
+        var scoreItem = Item.Create(model.Tables.Items, 20000028, 1);
+        scoreItem.Uid = 777_000L;
+        scoreItem.Data.Type = 0xc; // IsScoreItem
+        Assert.That(c.CanSellItem(scoreItem), Is.False);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+    }
 }

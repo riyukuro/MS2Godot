@@ -34,7 +34,6 @@ public partial class HudScene
             ServerTime = Now,
             ShopSeedResetTime = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("ShopSeedResetTime", 0),
             ItemUseError = itemUse.Error,
-            ItemCount = (id, _) => live != null ? live.Items.All.Where(e => e.Id == id).Sum(e => (long)e.Amount) : 0,
             EmptySlotCount = tab => live?.Inventory?.Cells(tab).Count(cell => cell.Empty) ?? 0,
             FindInventorySlotItem = key => inventory?.FindSlotItem(key),
             SellInventoryItem = item => inventory?.TrySellItem(item),
@@ -54,6 +53,9 @@ public partial class HudScene
         };
         if (live != null)
         {
+            c.BindLiveState(
+                () => live.Guilds, () => live.Achieves, () => achieveTexts, () => live.Me,
+                () => live.Items.All, () => live.PlayingScoreUid, hudModel.Tables.Items, itemUse.Error);
             c.Send = live.SendShop;
             c.SendNpcTalkEnd = () => live.SendTalk(new NpcTalkEndRequest());
         }

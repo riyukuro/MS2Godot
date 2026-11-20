@@ -221,4 +221,13 @@ public class ShopPacketTests {
         var p = ShopPacket.Read(Reader(w));
         Assert.That((p.Command, p.Info, p.Products), Is.EqualTo((12, (ShopInfo) null, (IReadOnlyList<ShopProduct>) null)));
     }
+
+    [Test] public void MyCharacterApplyStoresSummonedPetFromFieldAddUser() {
+        var me = new MyCharacter();
+        var pet = new EquipItem { Id = 60000001, Uid = 987654321L, Amount = 1 };
+        me.Apply(new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "Hero" }, HasPet = true, Pet = pet });
+        Assert.That(me.Pet, Is.SameAs(pet));
+        me.Apply(new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "Hero" }, HasPet = false });
+        Assert.That(me.Pet, Is.Null);
+    }
 }

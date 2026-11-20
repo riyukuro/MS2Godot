@@ -285,6 +285,9 @@ public partial class LiveSession : Node
     public event Action<ShopPacket> ShopReceived;
     /// <summary>The npc shop's sends (Shop 0x28).</summary>
     public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
+    /// <summary>CInstrumentManager's currently playing score uid (FUN_140c8dab0, petmanager.cpp:141; STILL-OPEN:
+    /// instrument play packets are not ported yet, so 0).</summary>
+    public long PlayingScoreUid { get; private set; }
     /// <summary>CNpc::OpenTalkUi / CloseTalkUi (unit_14108e1e0_npcactorandvibrate.cpp:1350): talk UI dialog id (0x4e3b shop).</summary>
     public event Action<int> TalkUiOpen, TalkUiClose;
     public void RaiseTalkUiOpen(int dialogId) => TalkUiOpen?.Invoke(dialogId);
