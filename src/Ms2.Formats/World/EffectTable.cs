@@ -10,6 +10,10 @@ public sealed class EffectPart
     public string Type;                  // nif, sound, ...
     public string FilePath;              // for nif: path in Resource/Model/Effect
     public string SoundGroup, SoundEvent;   // for soundEvent: FEV group path and event name
+    /// <summary>soundMusic effect type 3 attributes (CSoundMusicEffectParam::vfunc_1 @0x14178fdb0, soundmusiceffectparam.cpp:69-84).</summary>
+    public int MusicCueId = -1, MusicParamId = -1, MusicPriority = 0x80;
+    public float MusicParamValue, MusicVolume = -1f;
+    public string MusicReverb = "";
     public float StartDelay, Duration;
     public float[] Translate = new float[3], Rotation = new float[3];
     public float Scale = 1f;
@@ -62,6 +66,15 @@ public sealed class EffectTable
                 foreach (var e in x.Descendants("effect"))
                 {
                     var p = new EffectPart { Type = (string)e.Attribute("type"), FilePath = (string)e.Attribute("filePath"), SoundGroup = (string)e.Attribute("group"), SoundEvent = (string)e.Attribute("event"), StartDelay = F((string)e.Attribute("startDelay")), Duration = F((string)e.Attribute("duration")) };
+                    if (string.Equals(p.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
+                    {
+                        p.MusicCueId = I((string)e.Attribute("cueID"), -1);
+                        p.MusicParamId = I((string)e.Attribute("paramID"), -1);
+                        p.MusicParamValue = F((string)e.Attribute("paramValue"), 0f);
+                        p.MusicPriority = I((string)e.Attribute("priority"), 0x80);
+                        p.MusicVolume = F((string)e.Attribute("volume"), -1f);
+                        p.MusicReverb = (string)e.Attribute("reverb") ?? "";
+                    }
                     var t = e.Element("transform");
                     if (t != null) { p.Translate = V((string)t.Attribute("translate")); p.Rotation = V((string)t.Attribute("rotation")); p.Scale = F((string)t.Attribute("scale"), 1f); }
                     p.Loop = B((string)e.Attribute("loop"), false);
@@ -115,6 +128,18 @@ public sealed class EffectTable
         return new[] { F(p[0]) / 255f, F(p[1]) / 255f, F(p[2]) / 255f };
     }
 
+    /// <summary>TinyXML QueryIntAttribute (sscanf "%d") semantics: accepts leading int prefix such as "1.0" -> 1.</summary>
+    static int I(string s, int def)
+    {
+        if (string.IsNullOrEmpty(s)) return def;
+        var span = s.AsSpan().TrimStart();
+        if (span.Length == 0) return def;
+        int end = (span[0] == '+' || span[0] == '-') ? 1 : 0;
+        int digits = 0;
+        while (end < span.Length && span[end] >= '0' && span[end] <= '9') { end++; digits++; }
+        if (digits == 0) return def;
+        return int.TryParse(span.Slice(0, end), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : def;
+    }
     static float[] V(string s)
     {
         var r = new float[3];

@@ -110,6 +110,12 @@ void fragment() {
                 continue;
             }
             if (part.Type == "light" && part.Light != null) { QueueLight(part, at, yawRadians); continue; }
+            if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
+            {
+                FieldAudio.Instance?.PlayEffectSoundMusic(part);
+                EffectSounds++;
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
             if (Particles && TryScene(part, at, yawRadians)) continue;
             var e = Effect(part.FilePath);

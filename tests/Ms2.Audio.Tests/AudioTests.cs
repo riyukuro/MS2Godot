@@ -663,4 +663,112 @@ public class AudioTests
         Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
         Assert.That(mc.CurrentCueId, Is.EqualTo(192));
     }
+
+    // ---- SoundMusic effect type 3 (CSoundMusicEffect, soundmusiceffectparam.cpp:125-176) -------------------------
+
+    [Test]
+    public void SoundMusicEffectAppliesCueParamFadeRestoreAndZeroAllocTick()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.PlayMusic(35, 0f, 0x80, false), Is.True);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(35));
+
+        var fx = new SoundMusicEffectState();
+        const float categoryVol = 0.8f;
+
+        // Caster kind > 1 is rejected (CSoundMusicEffect::vfunc_3, soundmusiceffectparam.cpp:139-140).
+        var rejected = fx.Apply(mc, new SoundMusicEffectParam(CueId: 15, ParamId: 5, ParamValue: 10f, Volume: 0.5f, Duration: 1f),
+            nowSeconds: 10.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol, casterKind: 2);
+        Assert.That(rejected, Is.EqualTo((false, false, false)));
+        Assert.That(mc.CurrentCueId, Is.EqualTo(35));
+        Assert.That(fx.IsFading, Is.False);
+
+        // Apply cue 15 + param 5 = 10 + linear volume fade to 0.5 * categoryVol over 1.0 s.
+        var applied = fx.Apply(mc, new SoundMusicEffectParam(CueId: 15, ParamId: 5, ParamValue: 10f, Priority: 0x80, Volume: 0.5f, Duration: 1.0f),
+            nowSeconds: 10.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol, casterKind: 1);
+        Assert.That(applied, Is.EqualTo((true, true, true)));
+        Assert.That(mc.CurrentCueId, Is.EqualTo(15));
+        Assert.That(mc.TryGetMusicParameter(5, out float p5) && p5 == 10f, Is.True);
+        Assert.That(fx.IsFading, Is.True);
+
+        // vfunc_9 linear interpolation (soundmusiceffectparam.cpp:166-172): 0.8 -> 0.4 over [10.0, 11.0].
+        Assert.That(fx.Tick(10.0, categoryVol, out float v), Is.True);
+        Assert.That(v, Is.EqualTo(0.8f).Within(1e-5f));
+        Assert.That(fx.Tick(10.5, categoryVol, out v), Is.True);
+        Assert.That(v, Is.EqualTo(0.6f).Within(1e-5f));
+        Assert.That(fx.Tick(11.0, categoryVol, out v), Is.True);
+        Assert.That(v, Is.EqualTo(0.4f).Within(1e-5f));
+        // Past startTime + duration: returns false and restores category volume (~CSoundMusicEffect :125-128).
+        Assert.That(fx.Tick(11.01, categoryVol, out v), Is.False);
+        Assert.That(v, Is.EqualTo(categoryVol).Within(1e-5f));
+        Assert.That(fx.IsFading, Is.False);
+
+        // cueID == 0 pops back to previous cue (35); volume <= 0 or duration == 0 returns FadeStarted == false.
+        var popped = fx.Apply(mc, new SoundMusicEffectParam(CueId: 0, Priority: 0x80, Volume: -1f, Duration: 0f),
+            nowSeconds: 12.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol, casterKind: 0);
+        Assert.That(popped, Is.EqualTo((true, false, false)));
+        Assert.That(mc.CurrentCueId, Is.EqualTo(35));
+        Assert.That(fx.IsFading, Is.False);
+
+        // Per-frame allocation guard on SoundMusicEffectState.Tick.
+        fx.Apply(mc, new SoundMusicEffectParam(Volume: 0.5f, Duration: 1000f), nowSeconds: 0.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol);
+        fx.Tick(0.016, categoryVol, out _);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10_000; i++)
+            fx.Tick(i * 0.016, categoryVol, out _);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0), "SoundMusicEffectState.Tick must not allocate");
+    }
+
+    [Test]
+    public void EffectTableParsesRealSoundMusicEffectsAndDrivesMusicController()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
+        var table = new Ms2.Formats.World.EffectTable(packs);
+
+        var startParts = table.Get("cinematic/start_sound_music_effect.xml");
+        var endParts = table.Get("cinematic/end_sound_music_effect.xml");
+        Assert.That(startParts, Is.Not.Null);
+        Assert.That(endParts, Is.Not.Null);
+        Assert.That(startParts.Count, Is.EqualTo(4));
+        Assert.That(endParts.Count, Is.EqualTo(4));
+
+        // Verify CSoundMusicEffectParam::vfunc_1 attribute parsing (including TinyXML int-prefix "1.0" -> 1).
+        Assert.That(startParts[0].MusicCueId, Is.EqualTo(15));
+        Assert.That(startParts[0].MusicPriority, Is.EqualTo(128));
+        Assert.That(startParts[0].MusicParamId, Is.EqualTo(-1));
+        Assert.That(startParts[0].MusicVolume, Is.EqualTo(-1f));
+        Assert.That(startParts[1].MusicReverb, Is.EqualTo("Bath"));
+        Assert.That(startParts[2].MusicParamId, Is.EqualTo(1));
+        Assert.That(startParts[2].MusicParamValue, Is.EqualTo(0.2f).Within(1e-5f));
+        Assert.That(startParts[3].Duration, Is.EqualTo(1.0f).Within(1e-5f));
+        Assert.That(startParts[3].MusicVolume, Is.EqualTo(0.5f).Within(1e-5f));
+
+        Assert.That(endParts[0].MusicCueId, Is.EqualTo(0));
+        Assert.That(endParts[1].MusicReverb, Is.EqualTo("Pre"));
+        Assert.That(endParts[2].MusicParamId, Is.EqualTo(1));
+        Assert.That(endParts[3].MusicVolume, Is.EqualTo(1.0f).Within(1e-5f));
+
+        // Play start then end through MusicController + SoundMusicEffectState from Tria (cue 35).
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.PlayMusic(35, 0f, 0x80, false), Is.True);
+        var fx = new SoundMusicEffectState();
+        float vol = 1.0f;
+        foreach (var p in startParts)
+            fx.Apply(mc, new SoundMusicEffectParam(p.MusicCueId, p.MusicParamId, p.MusicParamValue, p.MusicPriority, p.MusicVolume, p.Duration, p.StartDelay, p.MusicReverb),
+                nowSeconds: 0.0, currentMusicVolume: vol, categoryMusicVolume: 1.0f);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(15));
+        Assert.That(fx.IsFading, Is.True);
+        Assert.That(fx.Tick(1.0, 1.0f, out vol), Is.True);
+        Assert.That(vol, Is.EqualTo(0.5f).Within(1e-5f));
+
+        foreach (var p in endParts)
+            fx.Apply(mc, new SoundMusicEffectParam(p.MusicCueId, p.MusicParamId, p.MusicParamValue, p.MusicPriority, p.MusicVolume, p.Duration, p.StartDelay, p.MusicReverb),
+                nowSeconds: 2.0, currentMusicVolume: vol, categoryMusicVolume: 1.0f);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(35), "end_sound_music_effect cueID=0 restores Tria");
+        Assert.That(fx.IsFading, Is.True);
+        Assert.That(fx.Tick(2.5, 1.0f, out vol), Is.True);
+        Assert.That(vol, Is.EqualTo(0.75f).Within(1e-5f));
+    }
 }

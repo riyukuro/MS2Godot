@@ -36,11 +36,14 @@ public partial class FieldAudio : Node
     public FootstepSounds Footsteps { get; private set; }
     readonly AudioStreamPlayer[] musicPlayers = new AudioStreamPlayer[MusicCrossfade.SlotCount];
     readonly MusicCrossfade crossfade = new();
+    readonly SoundMusicEffectState soundMusicFade = new();
     readonly float[] slotSegmentVolume = { 1f, 1f };
     AudioStreamPlayer ui;
     int playGeneration;
     MusicSegment activeSegment;
     double activeSegmentSeconds;
+    double audioClock;
+    float categoryMusicVolume = 1f;
     bool activeSelfLoop;
     bool segmentTransitionRequested;
     bool nextPredecodeRequested;
@@ -59,7 +62,8 @@ public partial class FieldAudio : Node
     /// playing cue at once. SetAllMute and the sound service's main volume are not carried here yet.</summary>
     public void ApplyVolumes(Ms2.Formats.Options.SoundVolumes v)
     {
-        MusicVolume = v.Category[2];
+        categoryMusicVolume = v.Category[2];
+        MusicVolume = categoryMusicVolume;
         ApplyPlayerGain(0);
         ApplyPlayerGain(1);
         GD.Print($"audio: music volume {MusicVolume:F2}");
@@ -69,6 +73,7 @@ public partial class FieldAudio : Node
     public string BgmName => bgmName;
     public bool MusicPlaying => (musicPlayers[0]?.Playing ?? false) || (musicPlayers[1]?.Playing ?? false);
     public bool MusicCrossfading => crossfade.IsFading;
+    public bool SoundMusicFading => soundMusicFade.IsFading;
     public double MusicPosition => musicPlayers[crossfade.ActiveSlot]?.GetPlaybackPosition() ?? 0;
 
     /// <summary>The Data/Sound folder under the client's Data folder; null when there is none.</summary>
@@ -82,7 +87,8 @@ public partial class FieldAudio : Node
             return false;
         }
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        MusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
+        categoryMusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
+        MusicVolume = categoryMusicVolume;
         library = SoundLibrary.Shared(dir, GameOptions.Voice);
         MusicState = new MusicController(library.Fev);
         GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks (voice {library.LanguageName}), {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events in {library.Fev.Groups.Count} groups, {library.Fev.CueIds.Count()} music cues");
@@ -209,7 +215,53 @@ public partial class FieldAudio : Node
     /// <summary>Syncs Godot audio playback to whatever cue/segment <see cref="MusicState"/> currently holds (e.g. after BossBgm switches cues).</summary>
     public bool SyncMusicToState() => StartCurrentCue();
 
-    /// <summary>Stops both music players and clears any in-progress crossfade.</summary>
+    /// <summary>
+    /// Executes a SoundMusic effect part (effect type 3, CSoundMusicEffect::vfunc_3 @0x1417900e0,
+    /// soundmusiceffectparam.cpp:133-156): PlayMusic + SetMusicParameter + linear volume fade with restore.
+    /// </summary>
+    public bool PlaySoundMusicEffect(in SoundMusicEffectParam param, int casterKind = 0)
+    {
+        if (MusicState == null) return false;
+        if (param.StartDelay > 0f)
+        {
+            var delayed = param with { StartDelay = 0f };
+            GetTree().CreateTimer(param.StartDelay).Timeout += () => { if (IsInstanceValid(this) && IsInsideTree()) ApplySoundMusicEffect(delayed, casterKind); };
+            return true;
+        }
+        return ApplySoundMusicEffect(param, casterKind);
+    }
+
+    /// <summary>Plays a parsed <see cref="EffectPart"/> of type <c>soundMusic</c>.</summary>
+    public bool PlayEffectSoundMusic(EffectPart part, int casterKind = 0)
+    {
+        if (part == null) return false;
+        var param = new SoundMusicEffectParam(
+            CueId: part.MusicCueId,
+            ParamId: part.MusicParamId,
+            ParamValue: part.MusicParamValue,
+            Priority: part.MusicPriority,
+            Volume: part.MusicVolume,
+            Duration: part.Duration,
+            StartDelay: part.StartDelay,
+            Reverb: part.MusicReverb);
+        return PlaySoundMusicEffect(param, casterKind);
+    }
+
+    bool ApplySoundMusicEffect(in SoundMusicEffectParam param, int casterKind)
+    {
+        if (casterKind > 1 || MusicState == null) return false;
+        var res = soundMusicFade.Apply(MusicState, param, audioClock, MusicVolume, categoryMusicVolume, casterKind);
+        if (res.CueChanged) StartCurrentCue();
+        if (!res.FadeStarted)
+        {
+            MusicVolume = categoryMusicVolume;
+            ApplyPlayerGain(0);
+            ApplyPlayerGain(1);
+        }
+        return res.CueChanged || res.ParamApplied || res.FadeStarted;
+    }
+
+    /// <summary>Stops both music players and clears any in-progress crossfade or SoundMusic volume fade.</summary>
     public void StopMusic()
     {
         playGeneration++;
@@ -221,22 +273,37 @@ public partial class FieldAudio : Node
         nextPredecodeRequested = false;
         cueSegments.Clear();
         crossfade.StopAll();
+        MusicVolume = soundMusicFade.Stop(categoryMusicVolume);
         if (musicPlayers[0] != null && IsInstanceValid(musicPlayers[0])) musicPlayers[0].Stop();
         if (musicPlayers[1] != null && IsInstanceValid(musicPlayers[1])) musicPlayers[1].Stop();
     }
 
     public override void _Process(double delta)
     {
+        audioClock += delta;
+        bool gainDirty = false;
+        if (soundMusicFade.IsFading)
+        {
+            soundMusicFade.Tick(audioClock, categoryMusicVolume, out float fadedVolume);
+            MusicVolume = fadedVolume;
+            gainDirty = true;
+        }
+
         if (crossfade.IsFading)
         {
             int stopSlot = crossfade.Step((float)delta);
-            ApplyPlayerGain(0);
-            ApplyPlayerGain(1);
+            gainDirty = true;
             if (stopSlot >= 0)
             {
                 var old = musicPlayers[stopSlot];
                 if (old != null && IsInstanceValid(old)) old.Stop();
             }
+        }
+
+        if (gainDirty)
+        {
+            ApplyPlayerGain(0);
+            ApplyPlayerGain(1);
         }
 
         if (!activeSelfLoop && activeSegment != null && !segmentTransitionRequested && activeSegmentSeconds > 0.0)

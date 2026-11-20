@@ -471,3 +471,112 @@ public sealed class MusicCrossfade
         else gain1 = value;
     }
 }
+
+/// <summary>
+/// Parameters of a SoundMusic effect (kEffectSoundMusic = 3, CSoundMusicEffectParam @0x14178fd20,
+/// vfunc_1 @0x14178fdb0, soundmusiceffectparam.cpp:69-84).
+/// </summary>
+public readonly record struct SoundMusicEffectParam(
+    int CueId = -1,
+    int ParamId = -1,
+    float ParamValue = 0f,
+    int Priority = 0x80,
+    float Volume = -1f,
+    float Duration = 0f,
+    float StartDelay = 0f,
+    string Reverb = "");
+
+/// <summary>
+/// Godot-free runtime of CSoundMusicEffect (effect type 3, soundmusiceffectparam.cpp:118-176):
+/// - vfunc_3 (@0x1417900e0, :133-156): rejects caster kind &gt; 1 (m_unk_18 &gt; 1), invokes PlayMusic(cueID, 0, priority, 0)
+///   when cueID != -1, SetMusicParameter(paramID, paramValue, priority, 0) when paramID != -1, ignores reverb (the client's
+///   CSoundEventMgr::FUN_14177ddd0 at soundeventmgr.cpp:1738 is an empty stub returning 1), and plans a linear volume fade
+///   from GetMusicVolume() to GetCategoryVolume(soundOption, 2) * volume when volume &gt; 0 and duration != 0.
+/// - vfunc_9 (@0x1417902b0, :161-176): linearly interpolates music volume while now &lt;= startTime + duration.
+/// - ~CSoundMusicEffect (@0x141790060, :125-128): restores music volume to GetCategoryVolume(soundOption, 2).
+/// Zero per-frame allocations.
+/// </summary>
+public sealed class SoundMusicEffectState
+{
+    bool active;
+    double startTime;
+    float duration;
+    float startVolume;
+    float targetVolume;
+    float deltaVolume;
+
+    public bool IsFading => active;
+    public double StartTime => startTime;
+    public float Duration => duration;
+    public float StartVolume => startVolume;
+    public float TargetVolume => targetVolume;
+    public float DeltaVolume => deltaVolume;
+
+    /// <summary>CSoundMusicEffect::vfunc_3 (@0x1417900e0, soundmusiceffectparam.cpp:133-156).</summary>
+    public (bool CueChanged, bool ParamApplied, bool FadeStarted) Apply(
+        MusicController music,
+        in SoundMusicEffectParam param,
+        double nowSeconds,
+        float currentMusicVolume,
+        float categoryMusicVolume,
+        int casterKind = 0)
+    {
+        // soundmusiceffectparam.cpp:139-140: m_unk_18 > 1 returns false (only system=0 / local player=1 apply).
+        if (casterKind > 1) return (false, false, false);
+
+        bool cueChanged = false;
+        bool paramApplied = false;
+        if (music != null && param.CueId != -1)
+        {
+            int prevCue = music.CurrentCueId;
+            if (music.PlayMusic(param.CueId, 0f, (uint)param.Priority, false))
+                cueChanged = music.CurrentCueId != prevCue;
+        }
+        if (music != null && param.ParamId != -1)
+            paramApplied = music.SetMusicParameter(param.ParamId, param.ParamValue, (uint)param.Priority, false);
+
+        // soundmusiceffectparam.cpp:145-146: non-empty reverb calls CSoundEventMgr::FUN_14177ddd0 (stub returning 1).
+        if (param.Volume <= 0f || param.Duration == 0f)
+        {
+            active = false;
+            return (cueChanged, paramApplied, false);
+        }
+
+        startTime = nowSeconds;
+        duration = param.Duration;
+        startVolume = currentMusicVolume;
+        targetVolume = categoryMusicVolume * param.Volume;
+        deltaVolume = targetVolume - startVolume;
+        active = true;
+        return (cueChanged, paramApplied, true);
+    }
+
+    /// <summary>
+    /// CSoundMusicEffect::vfunc_9 (@0x1417902b0, soundmusiceffectparam.cpp:161-176) and destructor restore
+    /// (@0x141790060, :125-128). Zero allocations.
+    /// </summary>
+    public bool Tick(double nowSeconds, float categoryMusicVolume, out float volume)
+    {
+        if (!active)
+        {
+            volume = categoryMusicVolume;
+            return false;
+        }
+        if (nowSeconds <= startTime + duration)
+        {
+            float t = (float)(nowSeconds - startTime) / duration;
+            volume = startVolume + t * deltaVolume;
+            return true;
+        }
+        active = false;
+        volume = categoryMusicVolume;
+        return false;
+    }
+
+    /// <summary>CSoundMusicEffect::~CSoundMusicEffect (@0x141790060, soundmusiceffectparam.cpp:125-128).</summary>
+    public float Stop(float categoryMusicVolume)
+    {
+        active = false;
+        return categoryMusicVolume;
+    }
+}

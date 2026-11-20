@@ -142,6 +142,11 @@ public partial class TaxiStations : Node3D
                 FieldAudio.Instance?.PlayEventAt(part.SoundGroup == null ? part.SoundEvent : part.SoundGroup + "/" + part.SoundEvent, at, part.StartDelay);
                 continue;
             }
+            if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
+            {
+                FieldAudio.Instance?.PlayEffectSoundMusic(part);
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath) || Scene(part.FilePath) is not { } sc) continue;
             float s = part.Scale <= 0 ? 1 : part.Scale;
             var q = new Quaternion(Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Quaternion(Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Quaternion(Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
