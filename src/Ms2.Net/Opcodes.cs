@@ -113,6 +113,7 @@ public enum Outbound : ushort {
     UserChat = 0x11,
     RequestServerList = 0x14,
     State = 0x80,
+    Skill = 0x20,               // SendOp::Skill (commonfiles/opcodes.h:337): the own skill sends, a sub-mode byte first
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
