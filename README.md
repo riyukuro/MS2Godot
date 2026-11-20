@@ -195,11 +195,18 @@ Further material features:
 - Blinn-Phong specular from the gloss map, with the NIF's specular colour and glossiness and the sun's specular colour.
 - Anisotropic hair highlights along the tangent map of `MS2CharacterHairMaterial`.
 
-The job's starter weapons come from `table/job.xml` `startItems` (knight: sword and shield). Each item hangs at the
-bone its model asks for (`targetnode`), sheathed: the sword at the hip, the shield on the back. Its node `selfnode`
-sits on that bone after the item's per-gender `dummy` offset.
+The job's starter weapons come from `table/job.xml` `startItems` (one-handed `RH` / `LH`, two-handed `BH` in `RH` with
+any `LH` model group linked to the left hand, and dual-wield `OH` filling `RH` then `LH`). When sheathed, each weapon
+hangs at the bone its model asks for (`targetnode`: `Weapon_Side_L_Point`, `Weapon_Side_R_Point` for a left-hand
+dual-wield weapon, `Weapon_Back_B_Point`, `Weapon_Back_R_Point`, or `Scene Root`) after the item's per-gender `dummy`
+offset. In battle stance (`--battle`, the offline attack key `X`, or the server's `FieldAddUser` / `UserBattle` emotion
+byte), weapons re-parent instantaneously to their hand points (`attachnode`, or `Weapon_Hand_R_Point` /
+`Weapon_Hand_L_Point` when `table/weaponaction.xml` `allowWeapon` permits the off-hand and the asset has no world-space
+dummy) with the dummy transform reset for the hand bone, and the stand/movement sequences take the weapon action's
+prefix (`Sword_Attack_Idle_A`, `LargeSword_Attack_Idle_A`, etc.). States whose `State::vfunc_15()` returns 0 (slow walk,
+water idle, swim, ladder, rope, climb, dash, mount) return the weapons to their sheathed points.
 
-Not done: face decals (FD), held weapons in battle stance (`Weapon_Hand_*` points).
+Not done: face decals (FD), world-space hovering weapon lerp (`worldmode` / `worldlerp` on Soul Binder orbs).
 
 Command line, for the field and the viewer:
 
@@ -207,6 +214,7 @@ Command line, for the field and the viewer:
 |---|---|
 | `--gender male\|female` | default female |
 | `--job <code>` | default 10, knight |
+| `--battle` | start in battle stance with weapons held in hands |
 | `--skin-color <row>` | palette row for the skin |
 | `--hair-color <row>` | palette row for the hair |
 | `--eye-color <row>` | palette row for the eyes |

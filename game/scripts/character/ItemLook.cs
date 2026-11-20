@@ -115,7 +115,10 @@ public static class StarterLook
                 break;
             }
         }
-        // the job's starting weapons: table/job.xml startItems, each in the slot its itemdata category names (RH, LH)
+        // the job's starting weapons: table/job.xml startItems, placed by category as TCreateCharInfo::FUN_14107b720
+        // (@0x14107b720, unit_14107ac30_tcreatecharinfo.cpp:365-431) and CEquipment::FUN_1411e6140 (@0x1411e6140,
+        // equipment.cpp:964-1035) assign them: RH and two-handed BH go to RH, LH to LH, and dual-wield OH (Thief
+        // daggers, Assassin stars) fills RH first and then LH
         if (packs.Exists("Xml", "table/job.xml"))
         {
             var jobs = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/job.xml")).TrimStart('\uFEFF'));
@@ -124,8 +127,13 @@ public static class StarterLook
             {
                 if (!int.TryParse(part, out int id)) continue;
                 var category = (string)Find(packs, genders, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("category");
-                if (!Enum.TryParse<EquipSlot>(category, out var slot) || items.Any(i => i.Slot == slot)) continue;
-                items.Add(new EquipItem { Id = id, Slot = slot, Color = ColorOf(id, category) });
+                EquipSlot slot;
+                if (category is "RH" or "BH") slot = EquipSlot.RH;
+                else if (category == "LH") slot = EquipSlot.LH;
+                else if (category == "OH") slot = items.All(i => i.Slot != EquipSlot.RH) ? EquipSlot.RH : EquipSlot.LH;
+                else if (!Enum.TryParse(category, out slot)) continue;
+                if (items.Any(i => i.Slot == slot)) continue;
+                items.Add(new EquipItem { Id = id, Slot = slot, Color = ColorOf(id, slot.ToString()) });
             }
         }
         return (items, palettes.Skin(skinRow));

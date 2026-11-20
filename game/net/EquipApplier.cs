@@ -45,12 +45,15 @@ public sealed class EquipApplier
     {
         public readonly Dictionary<int, Dictionary<int, XElement>> Models = new();     // itemmodel/{prefix}.xml: ItemModel by id
         public readonly Dictionary<int, Dictionary<int, int>> Presets = new();         // itemdata/{prefix}.xml: item -> tool itemPreset
+        public readonly Dictionary<int, int> Subtypes = new();                         // item -> limit type==1 subtype (weapon kind)
         public readonly Dictionary<int, string> CharacterIdle = new();                 // item -> its <effect characterIdle>
+        public Ms2.Ui.Skills.WeaponActionTable WeaponActions;                          // table/weaponaction.xml
     }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, ItemTables> tables = new();
     readonly ItemTables shared;
     Dictionary<int, Dictionary<int, XElement>> docs => shared.Models;
     Dictionary<int, Dictionary<int, int>> presets => shared.Presets;
+    Dictionary<int, int> subtypes => shared.Subtypes;
     Dictionary<int, string> characterIdle => shared.CharacterIdle;
     readonly HashSet<string> itemNodes = new(StringComparer.Ordinal);    // node names of the models hung on the character
     Ms2.Formats.World.EffectTable effects;
@@ -75,6 +78,9 @@ public sealed class EquipApplier
                     if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
                     if (int.TryParse((string)e.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0)
                         byItem[i] = p;
+                    var prop = e.Descendants("property").FirstOrDefault();
+                    if ((string)prop?.Attribute("type") == "1" && int.TryParse((string)prop.Attribute("subtype"), out int st))
+                        subtypes[i] = st;
                     // ItemEffect::Load (itemdatastruct.cpp:1609-1625): <effect characterIdle> of the item itself
                     if ((string)e.Descendants("effect").FirstOrDefault()?.Attribute("characterIdle") is { Length: > 0 } fx)
                         characterIdle[i] = fx;
@@ -84,6 +90,14 @@ public sealed class EquipApplier
         }
         return FindModel(byItem.TryGetValue(id, out int preset) ? preset : id);
     }
+
+    int WeaponSubtype(int id)
+    {
+        if (!subtypes.TryGetValue(id, out int st)) { FindItem(id); subtypes.TryGetValue(id, out st); }
+        return st;
+    }
+
+    Ms2.Ui.Skills.WeaponActionTable WeaponActions => shared.WeaponActions ??= Ms2.Ui.Skills.WeaponActionTable.Load(packs);
 
     XElement FindModel(int id)
     {
@@ -133,10 +147,18 @@ public sealed class EquipApplier
         var added = new List<MeshInstance3D>();
         itemNodes.Clear();
 
-        foreach (var item in Visible(items))
+        var visible = Visible(items);
+        var weaponBindings = new List<WeaponBinding>();
+        int rhSubtype = 0, lhSubtype = 0;
+        bool linkedLh = false;
+
+        foreach (var item in visible)
         {
             if (item.Slot == EquipSlot.SK || item.Slot == EquipSlot.FD) continue;     // skin (the body) and face decals
             var im = FindItem(item.Id);
+            int subtype = WeaponSubtype(item.Id);
+            if (item.Slot == EquipSlot.RH) rhSubtype = subtype;
+            else if (item.Slot == EquipSlot.LH) { lhSubtype = subtype; linkedLh = false; }
             if (im == null) { NoModelEntry++; MissingIds.Add(item.Id); continue; }
             foreach (var slot in im.Element("slots")?.Elements("slot") ?? Enumerable.Empty<XElement>())
             {
@@ -153,6 +175,13 @@ public sealed class EquipApplier
                     Loaded++;
                 }
                 string slotName = (string)slot.Attribute("name");
+                // CEquipment::FUN_1411ec190 (@0x1411ec190, equipment.cpp:2181-2201): an RH item whose ItemModel also
+                // defines a <slot name="LH"> group (bows, cannons, knuckles) links into LH too when LH is empty
+                if (item.Slot == EquipSlot.RH && lhSubtype == 0 && string.Equals(slotName, "LH", StringComparison.OrdinalIgnoreCase))
+                {
+                    lhSubtype = subtype;
+                    linkedLh = true;
+                }
                 if ((string)asset.Attribute("replace") == "1")
                     foreach (var n in bodyNodes)
                         if (n.Name.ToString().StartsWith(slotName, StringComparison.OrdinalIgnoreCase) && (n.Name.ToString().Length == slotName.Length || n.Name.ToString()[slotName.Length] == '_'))
@@ -171,8 +200,10 @@ public sealed class EquipApplier
                 if (string.IsNullOrEmpty((string)asset.Attribute("targetnode")) && (string)asset.Attribute("replace") != "1") NotAttached++;
                 else
                 {
-                    var made = isNif ? Attach(skel, body, md, asset, item, gender) : AttachKfm(skel, body, asset, item, gender, -1);
+                    List<(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)> hooks = null;
+                    var made = isNif ? Attach(skel, body, md, asset, item, gender, subtype, out hooks) : AttachKfm(skel, body, asset, item, gender, -1);
                     if (made == null) { MissingIds.Add(item.Id); continue; }
+                    if (hooks != null) AddWeaponBindings(weaponBindings, skel, body, asset, slotName, item, gender, subtype, hooks);
                     if (md != null) NoteNodes(md);
                     if (DyeOf(item, im) is { } dye)
                         foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
@@ -195,6 +226,7 @@ public sealed class EquipApplier
         if (skinColor is { } sc)
             foreach (var n in bodyNodes.Concat(added))
                 SetColors(n, true, sc, null, skinShade ?? sc);
+        SaveWeaponRig(visual, weaponBindings, rhSubtype, lhSubtype, linkedLh);
         PlayIdleEffects(visual, skel, body, items);
     }
 
@@ -293,16 +325,41 @@ public sealed class EquipApplier
 
     static string BaseName(StringName n) => n.ToString();
 
-    /// <summary>The asset's dummy offset for a gender (gender 2 = both), the first one with no animation sequence.</summary>
-    static Transform3D DummyOf(XElement asset, int gender)
+    /// <summary>
+    /// CEquipModel::GetPartName (@0x1412029d0, equipmodel.cpp:1084-1102): the sheathed target node of an asset. When a
+    /// dual-wield OH item (CItemData::FUN_14053d510 @0x14053d510, itemdata.cpp:925-934: subtype 31 dagger or 34 star) is
+    /// worn in LH (slot 4), "_L_"/" L " and "_R_"/" R " in targetnode are swapped so the left-hand weapon sheathes on the
+    /// opposite side (Weapon_Side_R_Point).
+    /// </summary>
+    static string SheathedTarget(XElement asset, EquipSlot equippedSlot, int subtype)
     {
+        string target = (string)asset.Attribute("targetnode");
+        if (string.IsNullOrEmpty(target) || equippedSlot != EquipSlot.LH || subtype is not (31 or 34)) return target;
+        if (target.Contains("_L_", StringComparison.Ordinal)) return target.Replace("_L_", "_R_", StringComparison.Ordinal);
+        if (target.Contains("_R_", StringComparison.Ordinal)) return target.Replace("_R_", "_L_", StringComparison.Ordinal);
+        if (target.Contains(" L ", StringComparison.Ordinal)) return target.Replace(" L ", " R ", StringComparison.Ordinal);
+        if (target.Contains(" R ", StringComparison.Ordinal)) return target.Replace(" R ", " L ", StringComparison.Ordinal);
+        return target;
+    }
+
+    /// <summary>
+    /// The asset's dummy offset for a gender (gender 2 = both) on <paramref name="targetNode"/>: ModelPart::Load
+    /// (@0x140543ca0, itemdatastruct.cpp:393-394) defaults an omitted dummy targetnode to the asset's sheathed targetnode,
+    /// and FUN_141200390 (@0x141200390, equipmodel.cpp:563-604) resets the attach node to identity before applying the
+    /// first dummy whose sequence is empty and whose targetnode matches the current parent node.
+    /// </summary>
+    static Transform3D DummyOf(XElement asset, int gender, string targetNode = null)
+    {
+        string assetTarget = (string)asset.Attribute("targetnode") ?? "";
+        targetNode ??= assetTarget;
         foreach (var d in asset.Elements("dummy"))
         {
             var g = (string)d.Attribute("gender");
             if (g != null && g != "2" && g != gender.ToString()) continue;
             if (!string.IsNullOrEmpty((string)d.Attribute("sequence"))) continue;
             var node = (string)d.Attribute("targetnode");
-            if (!string.IsNullOrEmpty(node) && node != (string)asset.Attribute("targetnode")) continue;    // for another node (held)
+            if (string.IsNullOrEmpty(node)) node = assetTarget;
+            if (node.Length > 0 && !string.Equals(node, targetNode, StringComparison.Ordinal)) continue;
             var t = Floats((string)d.Attribute("translation"));
             var r = Floats((string)d.Attribute("rotation"));
             // degrees to radians, then efd::Matrix3::FromEulerAnglesXYZ (equipmodel.cpp:589-591): Gamebryo's rotations
@@ -321,9 +378,11 @@ public sealed class EquipApplier
         return v;
     }
 
-    List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender)
+    List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender,
+        int subtype, out List<(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)> weaponHooks)
     {
         var made = new List<MeshInstance3D>();
+        weaponHooks = item.Slot is EquipSlot.RH or EquipSlot.LH ? new() : null;
         // Rigid items, as the client attaches them: the item's self nodes are every node whose name starts with the
         // asset's selfnode, the outermost on each path (CP, CPA; HR0 and HR1 for "HR"; a node named exactly selfnode
         // too): FUN_141422110, itemugcmesh.cpp:295-320 (GetObjectByName, then a breadth-first walk that stops at the
@@ -347,10 +406,14 @@ public sealed class EquipApplier
             else if (sm != null)
                 selfInv = ((sm.ParentBone >= 0 ? ModelBuilder.ToGodot(md.Bones[sm.ParentBone].World) : Transform3D.Identity) * ModelBuilder.ToGodot(sm.Local)).AffineInverse();
         }
-        var dummy = DummyOf(asset, gender);
+        string sheathedTarget = SheathedTarget(asset, item.Slot, subtype);
+        var dummy = DummyOf(asset, gender, sheathedTarget);
         foreach (var m in md.Meshes)
         {
-            var mi = new MeshInstance3D { Name = $"eq{item.Id}_{m.Name}", Mesh = Mesh(m) };
+            string meshName = $"eq{item.Id}_{m.Name}";
+            if (skel.GetNodeOrNull(meshName) != null || skel.GetNodeOrNull(meshName + "_attach") != null)
+                meshName = $"eq{item.Id}_{item.Slot}_{m.Name}";
+            var mi = new MeshInstance3D { Name = meshName, Mesh = Mesh(m) };
             // SetShadowCaster @0x141567330 (unit_141567000.cpp; for a merged mesh the call is CEquipment::MergeMeshes, equipment.cpp:2436) skips a "NoShadow"-tagged subtree (ModelMesh.NoShadow)
             if (m.NoShadow) mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             mi.SetMeta("mesh", m.FileName ?? m.Name);
@@ -374,7 +437,7 @@ public sealed class EquipApplier
             else
             {
                 // rigid: the item's self node sits on the body's target node (a bone, or a rigid body mesh under a bone)
-                string target = (string)asset.Attribute("targetnode") ?? "Bip01 Head";
+                string target = sheathedTarget ?? "Bip01 Head";
                 string bone = target;
                 var targetLocal = Transform3D.Identity;     // the target node relative to its bone
                 var rel = SelfRelative(md, m, selfName);
@@ -392,14 +455,170 @@ public sealed class EquipApplier
                 // a mesh outside the self nodes keeps the earlier placement: on the self node's frame, or on its own parent
                 // node when the declared self node is not in the item; no selfnode keeps identity
                 var selfFallback = selfName != null ? parentWorld.AffineInverse() : Transform3D.Identity;
-                mi.Transform = rel is { } r ? targetLocal * dummy * r
-                    : targetLocal * dummy * (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
+                var baseLocal = rel is { } r ? r : (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
+                mi.Transform = targetLocal * dummy * baseLocal;
                 att.AddChild(mi);
+                weaponHooks?.Add((att, mi, bone, targetLocal, baseLocal));
             }
             ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name));
             made.Add(mi);
         }
         return made;
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, WeaponRig> rigs = new();
+    /// <summary>The weapon stance rig built for a character visual during <see cref="Apply"/>; null when it wears no weapon.</summary>
+    public static WeaponRig RigOf(Node3D visual) => visual != null && rigs.TryGetValue(visual, out var r) ? r : null;
+
+    internal readonly record struct WeaponBinding(
+        BoneAttachment3D Attach,
+        MeshInstance3D Mesh,
+        EquipSlot EffectiveSlot,
+        bool HasWorldDummy,
+        int Subtype,
+        string SheathedBone,
+        string HeldBone,
+        Transform3D SheathedTransform,
+        Transform3D HeldTransform);
+
+    /// <summary>
+    /// Precomputes the sheathed and held bone attachments and transforms of a rigid weapon asset:
+    /// <list type="bullet">
+    /// <item>effective slot (CEquipModel::FUN_141202940 @0x141202940, equipmodel.cpp:1071-1080): for a dual-wield OH item
+    /// (subtype 31/34), the equipped slot (RH or LH); otherwise the &lt;slot&gt; group in the ItemModel (RH or LH, so
+    /// two-handed bows and cannons in &lt;slot name="LH"&gt; take LH and knuckles with both groups take RH and LH);</item>
+    /// <item>held target (PC::FUN_141658150 @0x141658150, pc.cpp:3962-4033): asset attachnode when non-empty, else
+    /// Weapon_Hand_R_Point for RH and Weapon_Hand_L_Point for LH;</item>
+    /// <item>dummy transform (FUN_141200390 @0x141200390, equipmodel.cpp:563-604): matched against the held target node
+    /// (identity when the asset's dummy is for the sheathed targetnode).</item>
+    /// </list>
+    /// </summary>
+    static void AddWeaponBindings(
+        List<WeaponBinding> list,
+        Skeleton3D skel,
+        ModelData body,
+        XElement asset,
+        string slotName,
+        EquipItem item,
+        int gender,
+        int subtype,
+        List<(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)> hooks)
+    {
+        if (hooks.Count == 0) return;
+        EquipSlot effectiveSlot = subtype is 31 or 34
+            ? item.Slot
+            : string.Equals(slotName, "LH", StringComparison.OrdinalIgnoreCase) ? EquipSlot.LH : EquipSlot.RH;
+        string attachAttr = (string)asset.Attribute("attachnode");
+        string heldTarget = !string.IsNullOrEmpty(attachAttr)
+            ? attachAttr
+            : effectiveSlot == EquipSlot.LH ? "Weapon_Hand_L_Point" : "Weapon_Hand_R_Point";
+        string heldBone = heldTarget;
+        var heldTargetLocal = Transform3D.Identity;
+        if (skel.FindBone(heldBone) < 0)
+        {
+            var bodyMesh = body.Meshes.FirstOrDefault(x => x.FileName == heldTarget && x.ParentBone >= 0);
+            heldBone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
+            if (bodyMesh != null) heldTargetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
+        }
+        var heldDummy = DummyOf(asset, gender, heldTarget);
+        bool hasWorldDummy = false;
+        foreach (var d in asset.Elements("dummy"))
+        {
+            var g = (string)d.Attribute("gender");
+            if (g != null && g != "2" && g != gender.ToString()) continue;
+            if ((string)d.Attribute("worldmode") is "1" or "true" || (string)d.Attribute("worldlerp") is "1" or "true")
+            {
+                hasWorldDummy = true;
+                break;
+            }
+        }
+        foreach (var h in hooks)
+        {
+            list.Add(new WeaponBinding(
+                h.att,
+                h.mesh,
+                effectiveSlot,
+                hasWorldDummy,
+                subtype,
+                h.sheathedBone,
+                heldBone,
+                h.mesh.Transform,
+                heldTargetLocal * heldDummy * h.baseLocal));
+        }
+    }
+
+    void SaveWeaponRig(Node3D visual, List<WeaponBinding> bindings, int rhSubtype, int lhSubtype, bool linkedLh)
+    {
+        rigs.Remove(visual);
+        if (bindings.Count == 0) return;
+        // PC::UpdateWeaponAction (@0x141653f00, pc.cpp:2838-2874): left hand counts 0 when it is the right hand's linked
+        // item or when IsAllowed rejects the pair; then FindAction(right, left)
+        int left = linkedLh || !WeaponActions.IsAllowed(rhSubtype, lhSubtype) ? 0 : lhSubtype;
+        var wa = WeaponActions.FindAction(rhSubtype, left) ?? WeaponActions.FindAction(0, 0);
+        rigs.Add(visual, new WeaponRig(bindings.ToArray(), WeaponActions, wa, rhSubtype, lhSubtype));
+    }
+
+    /// <summary>
+    /// Moves a character's equipped weapons between their sheathed nodes and hand nodes on battle stance and movement
+    /// state transitions (PC::FUN_141659000 @0x141659000, pc.cpp:2491-2511; PC::FUN_141657c80 @0x141657c80, :2473-2488;
+    /// PC::FUN_141658150 @0x141658150, :3962-4033; FUN_141201d50 @0x141201d50, equipmodel.cpp:931-965). Plain C# state
+    /// (not a Godot Node) so the scene tree node and object counts are unchanged.
+    /// </summary>
+    public sealed class WeaponRig
+    {
+        readonly WeaponBinding[] bindings;
+        readonly Ms2.Ui.Skills.WeaponActionTable table;
+        readonly int rhSubtype, lhSubtype;
+        public readonly string Prefix;
+        public readonly int RightHand;
+        public bool InBattle { get; private set; }
+        public bool StateAllowsWeapons { get; private set; } = true;
+        public bool WeaponsHeld { get; private set; }
+
+        internal WeaponRig(WeaponBinding[] bindings, Ms2.Ui.Skills.WeaponActionTable table, Ms2.Ui.Skills.WeaponAction action, int rhSubtype, int lhSubtype)
+        {
+            this.bindings = bindings;
+            this.table = table;
+            this.rhSubtype = rhSubtype;
+            this.lhSubtype = lhSubtype;
+            Prefix = action?.Prefix ?? "";
+            RightHand = action?.RightHand ?? 0;
+        }
+
+        /// <summary>PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon animation prefix while weapons are held.</summary>
+        public string ActivePrefix => WeaponsHeld ? Prefix : "";
+
+        /// <summary>
+        /// PC::FUN_141659000 (@0x141659000, pc.cpp:2491-2511): recomputes m_nD80 = vfunc_65() &amp;&amp; GetState()-&gt;vfunc_15()
+        /// (cleared when m_spWeaponActionD70-&gt;m_nRightHand == 0) and runs FUN_141657c80(bActive) on a change.
+        /// </summary>
+        public bool SetState(bool inBattle, bool stateAllowsWeapons, bool force = false)
+        {
+            InBattle = inBattle;
+            StateAllowsWeapons = stateAllowsWeapons;
+            bool held = inBattle && stateAllowsWeapons && RightHand != 0;
+            if (!force && held == WeaponsHeld) return false;
+            WeaponsHeld = held;
+            Apply(held);
+            return true;
+        }
+
+        void Apply(bool primary)
+        {
+            // PC::FUN_141658150 (@0x141658150, pc.cpp:3996): without a right-hand weapon, bPrimary is forced to 0
+            if (rhSubtype == 0) primary = false;
+            for (int i = 0; i < bindings.Length; i++)
+            {
+                ref readonly var b = ref bindings[i];
+                if (!GodotObject.IsInstanceValid(b.Attach) || !GodotObject.IsInstanceValid(b.Mesh)) continue;
+                bool toHand = primary;
+                if (b.EffectiveSlot == EquipSlot.LH)
+                    toHand = primary && !b.HasWorldDummy && table.IsAllowed(rhSubtype, b.Subtype);
+                string bone = toHand ? b.HeldBone : b.SheathedBone;
+                if (b.Attach.BoneName != bone) b.Attach.BoneName = bone;
+                b.Mesh.Transform = toHand ? b.HeldTransform : b.SheathedTransform;
+            }
+        }
     }
 
     /// <summary>

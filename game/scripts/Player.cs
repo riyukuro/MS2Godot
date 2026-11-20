@@ -25,6 +25,45 @@ public partial class Player : CharacterBody3D
     public string RootName;
     public AnimationPlayer Anim;
     public ActionAnims Anims;
+    /// <summary>The equipped weapons' sheathed / hand rig (PC::FUN_141659000 / FUN_141657c80).</summary>
+    public Net.EquipApplier.WeaponRig Weapons;
+    /// <summary>PCBase m_unk_160 (vfunc_65 @0x14166ced0, SetEmotion @0x14166cee0, pcbase.cpp:1264-1285): battle stance flag.</summary>
+    public bool InBattle { get; private set; }
+    /// <summary>PC m_nD80: whether weapons are currently attached to Weapon_Hand_R/L_Point.</summary>
+    public bool WeaponsHeld => Weapons?.WeaponsHeld ?? false;
+    /// <summary>PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon animation prefix while weapons are held.</summary>
+    public string WeaponPrefix => Weapons?.ActivePrefix ?? "";
+    float battleTimer = -1f;              // offline battle stance timeout (UserBattleDurationTick = 5000 ms); < 0 = indefinite
+    bool prevAttackKey;
+    public const float DefaultBattleStanceSeconds = 5f;
+
+    /// <summary>
+    /// PCBase::SetEmotion (@0x14166cee0, pcbase.cpp:1264-1279) + PC::FUN_141659000 (@0x141659000, pc.cpp:2491-2511):
+    /// sets the battle stance flag and updates weapon attachment between sheathed and hand points.
+    /// </summary>
+    public void SetBattleStance(bool inBattle, float durationSeconds = -1f)
+    {
+        InBattle = inBattle;
+        battleTimer = inBattle ? durationSeconds : -1f;
+        UpdateWeaponStance();
+    }
+
+    /// <summary>
+    /// State::vfunc_15 (@0x1417b8150, state.cpp:684): whether the current movement state allows weapons to remain in
+    /// the hand nodes during battle stance (StateIdle::vfunc_15 @0x1417cd740, stateidle.cpp:210: not in water idle;
+    /// StateWalk::vfunc_15 @0x141800a90, statewalk.cpp:376: running only, slow walk returns 0; StateJump @0x1417d6ac0,
+    /// StateFall @0x1417c7aa0, StateLand @0x1417da780: 1; swim, ladder, rope, climb, dash, ride: 0).
+    /// </summary>
+    public bool StateAllowsWeapons =>
+        Mount == null && State switch
+        {
+            MoveState.Idle => !OnWater,
+            MoveState.Walk => !WalkMode && !OnWater,
+            MoveState.Jump or MoveState.Fall or MoveState.Land => true,
+            _ => false,
+        };
+
+    void UpdateWeaponStance() => Weapons?.SetState(InBattle, StateAllowsWeapons);
     public Climbables Climbs = new();
     public CubeGrid Cubes = new();
     /// <summary>fielddata checkClimb: wall climbing (skill 20000011) is allowed in this field.</summary>
@@ -204,6 +243,17 @@ public partial class Player : CharacterBody3D
             Input2 = k.Move;
             WalkMode = k.Walk;
             JumpHeld = k.Jump;
+            // Offline attack key (defaultkey.xml keyAttack = X): StateSkill::vfunc_4 (@0x1417e5350, stateskill.cpp:432)
+            // enters battle stance for UserBattleDurationTick (5 s)
+            bool attackKey = !Live && !Ms2.Ui.FieldMoveCover.Up && Input.IsPhysicalKeyPressed(Key.X);
+            if (attackKey && !prevAttackKey && GetViewport()?.GuiGetFocusOwner() == null)
+                SetBattleStance(true, DefaultBattleStanceSeconds);
+            prevAttackKey = attackKey;
+        }
+        if (InBattle && battleTimer > 0)
+        {
+            battleTimer -= dt;
+            if (battleTimer <= 0) SetBattleStance(false);
         }
         // under a field move's loading screen the client's MyPC is gone (Ms2.Ui.FieldMoveCover): no key, click or script moves it
         if (Ms2.Ui.FieldMoveCover.Up) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
@@ -331,6 +381,7 @@ public partial class Player : CharacterBody3D
         ground.Frame(dt, OnOrAboveGround);
         TurnTowardTargetYaw(dt);
         TickBlendHold(dt);
+        UpdateWeaponStance();
         UpdateAnimation();
 
         StateSync(dt);                                   // the state sync and, offline, the server's out-of-bounds return
@@ -843,7 +894,9 @@ public partial class Player : CharacterBody3D
         switch (State)
         {
             case MoveState.Idle:
-                PlayAct(OnWater ? Act.WaterIdle : Act.Idle);
+                // StateIdle::PlayStandAnimation (@0x1417ce6f0, stateidle.cpp:518-531): BATTLE_IDLE (Attack_Idle_A) while
+                // in battle stance on land, IDLE (Idle_A) otherwise
+                PlayAct(OnWater ? Act.WaterIdle : InBattle ? Act.BattleIdle : Act.Idle);
                 break;
             case MoveState.Walk:
             {
@@ -868,7 +921,7 @@ public partial class Player : CharacterBody3D
                 PlayAct(Act.JumpFall);
                 break;
             case MoveState.Land:
-                if (stateTime < 0.05f) PlayAct(Act.JumpLand, restart: CurrentAnim != Anims.Name(Act.JumpLand));
+                if (stateTime < 0.05f) PlayAct(Act.JumpLand, restart: CurrentAnim != Anims.Name(Act.JumpLand, WeaponPrefix));
                 break;
             case MoveState.Ladder:
                 switch (lsub)
@@ -893,7 +946,7 @@ public partial class Player : CharacterBody3D
     void PlayAct(Act a, float speed = 1f, bool restart = false)
     {
         if (SkillSequencePlaying()) return;   // the own cast's motion plays to its end (PlayerSkill)
-        var name = Anims?.Name(a);
+        var name = Anims?.Name(a, WeaponPrefix);
         if (name == null || (name == CurrentAnim && !restart)) return;   // HasAnimation(string) makes a StringName per call: ask only on a change
         if (Anim.HasAnimation(name)) PlaySequence(name, speed, restart);
     }

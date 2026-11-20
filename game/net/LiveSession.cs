@@ -45,6 +45,8 @@ public partial class LiveSession : Node
     GameEntry entry;
     string host;
     int selfObject = -1;     // the own FieldAddUser object id
+    /// <summary>The own player's battle stance flag (FieldAddUser.InBattle and OnUserBattle 0x2F).</summary>
+    public bool SelfInBattle { get; private set; }
     byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
     Player player;           // the own player, once the field is built
     RemoteLayer remote;      // the other players and npcs, once the field is built
@@ -847,6 +849,7 @@ public partial class LiveSession : Node
     {
         player = found;
         player.Live = true;
+        player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         player.StateSyncOut += records =>
         {
@@ -898,7 +901,7 @@ public partial class LiveSession : Node
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
                 if (self)
                 {
-                    selfObject = u.ObjectId; Me.Apply(u); bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
+                    selfObject = u.ObjectId; SelfInBattle = u.InBattle; Me.Apply(u); player?.SetBattleStance(u.InBattle); bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
                     // a new MyPC holds nothing; PC::vfunc_12 (pc.cpp:853-855) holds the AddUser i32 (scenestategame.cpp:11218)
                     HeldItem.Release();
                     HeldItem.AddUser(u.HeldObject, ItemExists?.Invoke(u.HeldObject) ?? true);
@@ -914,6 +917,12 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader()); drops?.Add(item); }
             else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.OnRemovePacket(FieldRemoveItem.Read(p.Reader()).ObjectId);
             else if (game.Is(p, Inbound.FieldPickupItem) && drops != null) drops.OnPickupPacket(FieldPickupItem.Read(p.Reader(), drops.Describe));
+            else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject)
+            {
+                // CSceneStateGame::OnUserBattle (@0x141717580, scenestategame.cpp:3269-3288): SetEmotion(nEmotion)
+                SelfInBattle = p.Body[4] != 0;
+                player?.SetBattleStance(SelfInBattle);
+            }
             else if (game.Is(p, Inbound.Buff))
             {
                 var b = BuffPacket.Read(p.Reader());

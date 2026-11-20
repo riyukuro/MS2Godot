@@ -38,9 +38,17 @@ public partial class Main : Node3D
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = PackSet.Shared(data);
         var builder = new ModelBuilder(ModelBuilder.SharedSpec(nifxml), packs);
-        var (character, anim, _, _) = Look.PlayerLook.Build(builder, packs);
+        var (character, anim, md, dir) = Look.PlayerLook.Build(builder, packs);
         AddChild(character);
         player = anim;
+        if (System.Array.IndexOf(args, "--battle") >= 0)
+        {
+            string prefix = Net.EquipApplier.RigOf(character)?.ActivePrefix ?? "";
+            string kf = $"{dir}/{prefix.ToLowerInvariant()}attack_idle_a.kf";
+            if (!packs.Exists(ModelBuilder.ModelArchive, kf)) kf = $"{dir}/attack_idle_a.kf";
+            if (packs.Exists(ModelBuilder.ModelArchive, kf))
+                player.GetAnimationLibrary("").AddAnimation("idle", builder.KfAnimationFor(kf, md));
+        }
         GD.Print($"MS2Godot: character in {sw.ElapsedMilliseconds} ms");
         player.Play("idle");
 

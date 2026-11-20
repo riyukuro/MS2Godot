@@ -544,10 +544,13 @@ public partial class Field : Node3D
         player = Player.Create(visual, anim, FaceGrids);
         player.Gender = bodyDir == "male" ? 0 : 1;
         player.RootName = md.RootName;
+        player.Weapons = Net.EquipApplier.RigOf(visual);
         BlobShadow.Load(packs);
         // the player's CObjectShadow, of the myPC row (MyPC::vfunc_49, mypc.cpp:2879-2887)
         FieldShadows.Character(player, visual, Ms2.Formats.Options.GraphicOptionTable.MyPC, 100f, 3f);
         player.Anims = Movement.ActionAnims.Load(packs, builder, md, anim, bodyDir);
+        if (System.Array.IndexOf(OS.GetCmdlineUserArgs(), "--battle") >= 0 || Net.LiveSession.Instance?.SelfInBattle == true)
+            player.SetBattleStance(true);
         player.Climbs = Movement.Climbables.From(map);
         player.Cubes = Movement.CubeGrid.From(map);
         Movement.MoveConfig.LoadConstants(packs);

@@ -15,7 +15,7 @@ public sealed class ActionAnims
 {
     public enum Act
     {
-        Idle = 0, JumpDown = 2, JumpLand = 3, JumpUp = 4, JumpFall = 5, JumpDashDown = 6, JumpDashLand = 7,
+        Idle = 0, BattleIdle = 1, JumpDown = 2, JumpLand = 3, JumpUp = 4, JumpFall = 5, JumpDashDown = 6, JumpDashLand = 7,
         LadderLDown = 8, LadderRDown = 9, LadderDownLand = 10, LadderDownTake = 11, LadderIdle = 12,
         LadderLUp = 13, LadderRUp = 14, LadderUpLand = 15, LadderUpTake = 16,
         ClimbIdle = 17, ClimbLUp = 18, ClimbLCenter = 19, ClimbLDown = 20, ClimbRUp = 21, ClimbRCenter = 22,
@@ -38,12 +38,40 @@ public sealed class ActionAnims
     };
 
     // sequences that cycle; the rest play once and hold their last frame
-    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle };
+    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.BattleIdle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle };
 
     readonly Dictionary<Act, string> names = new();
+    readonly HashSet<string> missing = new(StringComparer.Ordinal);
     public readonly Dictionary<string, KfAnimation> Kf = new();
 
-    public string Name(Act a) => names.TryGetValue(a, out var n) ? n : null;
+    public string Name(Act a) => Name(a, null);
+
+    /// <summary>
+    /// CAnimationManager::PlayAnimation (@0x14099e1a0, animationmanager.cpp:248-265): while weapons are held in battle
+    /// stance, PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749) supplies the weapon action's prefix (e.g. "Sword_",
+    /// "LargeSword_") and the animation manager tries prefix + base before falling back to the unprefixed sequence.
+    /// </summary>
+    public string Name(Act a, string prefix)
+    {
+        if (!names.TryGetValue(a, out var baseKey)) return null;
+        bool loop = Looping.Contains(a);
+        if (!string.IsNullOrEmpty(prefix))
+        {
+            string prefKey = prefix.ToLowerInvariant() + baseKey;
+            if (!missing.Contains(prefKey))
+            {
+                if (Sequence(prefKey, loop) is { } loaded) return loaded;
+                missing.Add(prefKey);
+            }
+        }
+        if (player != null && !player.HasAnimation(baseKey))
+        {
+            if (missing.Contains(baseKey)) return null;
+            if (Sequence(baseKey, loop) == null) { missing.Add(baseKey); return null; }
+        }
+        return baseKey;
+    }
+
     public bool Has(Act a) => names.ContainsKey(a);
 
     // the body's actor file (female/female.kfm, male/male.kfm: the KFM whose model is the f_body / m_body we load) and its
@@ -113,6 +141,7 @@ public sealed class ActionAnims
             int id = (int)a;
             if (id >= TypeNames.Length || !table.TryGetValue(TypeNames[id], out var seq) || seq.Length == 0) continue;
             string key = seq.ToLowerInvariant();
+            if (a == Act.BattleIdle) { aa.names[a] = key; continue; }   // loaded on demand when battle stance turns on
             if (!lib.HasAnimation(key))
             {
                 KfAnimation kf;

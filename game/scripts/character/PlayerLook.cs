@@ -44,6 +44,7 @@ public static class PlayerLook
                 var (items, skin) = Live() ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
                 var equip = new EquipApplier(packs, builder) { Palettes = palettes };
                 equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
+                if (Array.IndexOf(args, "--battle") >= 0) EquipApplier.RigOf(visual)?.SetState(true, true);
                 GD.Print($"player look: {dir}, job {job}{(LiveSession.Active ? " (live)" : "")}, items {string.Join(" ", items.Select(i => $"{i.Slot}:{i.Id}"))}");
             }
             catch (Exception ex) { GD.PushWarning("player look: " + ex.Message); }

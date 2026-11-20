@@ -25,6 +25,7 @@ public sealed partial class RemoteLayer : Node3D
         public string Name;
         public int ObjectId; public long CharacterId; public string Picture = "";
         public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance (m_unk_160)
+        public EquipApplier.WeaponRig Weapons;
         public PcHpBar Bar;
         public byte Gender;
         /// <summary>The actor's cast record and skill state (RemoteLayer.Casts.cs), and the seconds its motion still plays.</summary>
@@ -223,6 +224,8 @@ public sealed partial class RemoteLayer : Node3D
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
         r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
+        r.Weapons = EquipApplier.RigOf(visual);
+        r.Weapons?.SetState(r.InBattle, true);
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
@@ -324,6 +327,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (sb.InBattle == (bat.Emotion != 0)) break;
                     sb.InBattle = bat.Emotion != 0;
                     sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test
+                    sb.Weapons?.SetState(sb.InBattle, true);
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
                     break;
                 case SkillDamageEvent dmg:
