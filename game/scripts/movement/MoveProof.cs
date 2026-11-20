@@ -14,6 +14,8 @@ namespace Ms2Godot.Movement;
 ///   dash                      start StateDash (the server / a skill does in the client)
 ///   wheel N                   one mouse wheel notch (1 in, -1 out), as the wheel handler sets it
 ///   cam                       print the camera zoom distance
+///   view DIST [PITCH [TURN]]  set the camera zoom distance (400 = the nearest), its angle from the up axis in degrees
+///                             (as Ctrl + up/down; - = the distance's own) and a Ctrl + left/right turn in degrees
 ///   camtrace S                print the zoom distance and the time since the command every frame for S seconds
 ///   click X Y Z               click to move to a point (needs --mouse-move)
 ///   ropes N                   print the N rope segments nearest the player
@@ -310,6 +312,11 @@ hold 0.8
                 break;
             case "wheel":                      // one mouse wheel notch this frame: 1 in, -1 out
                 (player.GetParent() as Field)?.Wheel(int.Parse(s[1]));
+                Next();
+                break;
+            case "view":                       // camera distance [pitch degrees [turn degrees]]
+                (player.GetParent() as Field)?.SetCameraView(F(s[1]),
+                    s.Length > 2 && s[2] != "-" ? F(s[2]) : null, s.Length > 3 ? F(s[3]) : null);
                 Next();
                 break;
             case "cam":                        // print the zoom distance

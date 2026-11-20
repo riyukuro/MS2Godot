@@ -679,6 +679,20 @@ public partial class Field : Node3D
     public void Wheel(int notch) => zoomInput = notch;
     /// <summary>The zoom distance (m_50), for scripted runs (MoveProof cam).</summary>
     public float CameraDistance => camDist;
+    /// <summary>
+    /// Scripted runs (MoveProof view): the zoom distance (m_50, clamped to MinCameraDistance .. farthest + player height),
+    /// the angle from the up axis in degrees as Ctrl + up/down sets it (null: the distance's own), and the Ctrl + left/right
+    /// turn in degrees. Any zoom coast stops; the shown camera then eases to it as after a wheel notch.
+    /// </summary>
+    public void SetCameraView(float dist, float? pitchDeg, float? turnDeg)
+    {
+        camVel = 0;
+        camCoastLeft = 0;
+        coastPhase = 0;
+        camDist = coastDist = Mathf.Clamp(dist, MinCameraDistance, cam.Distance + PlayerHeight);
+        camPitch = pitchDeg is float p ? Mathf.Clamp(Mathf.DegToRad(p), 0.15f, 1.57f) : null;
+        if (turnDeg is float t) camYaw += Mathf.DegToRad(t);
+    }
     Vector3? placedEye, camLook;
 
     static float Planar(Vector3 a, Vector3 b) => new Vector2(a.X - b.X, a.Z - b.Z).Length();
