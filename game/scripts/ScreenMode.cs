@@ -71,12 +71,14 @@ public static class ScreenMode
     }
 
     /// <summary>The options dialog's window request (FUN_14124ce20 after FUN_14125e910), or a scripted one; the option
-    /// follows the window (<see cref="ScreenModes.Adopt"/>), as the dialog's store does after its request.</summary>
+    /// takes the request (<see cref="ScreenModes.Adopt"/>), as the dialog's store does after its request: the row's size,
+    /// even when a window larger than the screen is clamped by ApplyWindowMode (windowservice.cpp:337-374;
+    /// FUN_14125e910 stores the mode's width and height, gameoptionstruct.cpp:2239-2248).</summary>
     public static void ApplyRequest(WindowRequest r)
     {
         if (Headless || Root == null) return;
         Apply(r);
-        Modes.Adopt(GameOptions.Current.GraphicOption, r with { Width = PixelSize(Root).X, Height = PixelSize(Root).Y });
+        Modes.Adopt(GameOptions.Current.GraphicOption, r);
     }
 
     /// <summary>The last request the window was made from (<see cref="Apply"/>); null while it is as the engine opened it.</summary>
