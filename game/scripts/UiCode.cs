@@ -18,8 +18,10 @@ public static class UiCode
     public static string RootPath => ProjectSettings.GlobalizePath(Root);
     static bool loaded;
 
+    static readonly System.Lazy<Ms2.Formats.Cache.Stamps> stamps = new(() => new(System.IO.Path.Combine(RootPath, "stamps.tsv")));
+
     /// <summary>The hashes of the client files the per-install files are built from (each file hashed once, then by its stamp).</summary>
-    public static readonly Ms2.Formats.Cache.Stamps Stamps = new(System.IO.Path.Combine(RootPath, "stamps.tsv"));
+    public static Ms2.Formats.Cache.Stamps Stamps => stamps.Value;
 
     /// <summary>The assembly path for a data folder (hashes Gfx.m2d the first time; then its stamp).</summary>
     public static string DllPath(string dataDir) =>

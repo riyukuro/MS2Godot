@@ -243,6 +243,57 @@ public class ImageCacheTests
     }
 
     [Test]
+    public void NonExecutableCompilerIsMadeExecutableOnUnix()
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var dll = Copy(typeof(object), "Lib.dll");
+        var compiler = Path.Combine(dir, "crossgen2");
+        // Godot's Linux export copies files from the publish folder without preserving the execute bit;
+        // copying the precompiled input to the -o target ($3) produces a matching ReadyToRun output.
+        File.WriteAllText(compiler, "#!/bin/sh\ncp \"$1\" \"$3\"\n");
+        File.SetUnixFileMode(compiler, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        var warnings = new List<string>();
+        var secs = PrecompiledImage.Compile(compiler, dll, "8.0", Array.Empty<string>(), TimeSpan.FromSeconds(30), warnings.Add);
+        Assert.That(secs, Is.Not.Null.And.GreaterThanOrEqualTo(0), string.Join("; ", warnings));
+        Assert.That(warnings, Is.Empty);
+        Assert.That(PrecompiledImage.ImageOf(dll, "8.0", out _), Is.Not.Null);
+    }
+
+    [TestCase("isolated")]
+    [TestCase("default")]
+    public void GameModuleInitializerRunsWithoutGodotCallbacks(string mode)
+    {
+        var root = AppContext.BaseDirectory;
+        while (root != null && !File.Exists(Path.Combine(root, "MS2Godot.sln"))) root = Path.GetDirectoryName(root);
+        Assume.That(root, Is.Not.Null, "solution root not found");
+#if DEBUG
+        var configs = new[] { "Debug", "Release", "ExportRelease", "ExportDebug" };
+#else
+        var configs = new[] { "Release", "Debug", "ExportRelease", "ExportDebug" };
+#endif
+        var dll = configs.Select(c => Path.Combine(root, "game", ".godot", "mono", "temp", "bin", c, "MS2Godot.dll")).FirstOrDefault(File.Exists);
+        Assume.That(dll, Is.Not.Null, "build game/MS2Godot.csproj first");
+        var runtimeConfig = Path.ChangeExtension(dll, ".runtimeconfig.json");
+        Assume.That(File.Exists(runtimeConfig), Is.True, "missing MS2Godot.runtimeconfig.json");
+        var host = Path.Combine(AppContext.BaseDirectory, "testhost.dll");
+        Assume.That(File.Exists(host), Is.True, "missing testhost.dll");
+        var dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+        if (string.IsNullOrEmpty(dotnet) || !File.Exists(dotnet)) dotnet = "dotnet";
+        var psi = new System.Diagnostics.ProcessStartInfo(dotnet) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+        foreach (var a in new[] { "exec", "--runtimeconfig", runtimeConfig, host }) psi.ArgumentList.Add(a);
+        psi.Environment["DOTNET_STARTUP_HOOKS"] = typeof(ImageCacheTests).Assembly.Location;
+        psi.Environment["MS2_TEST_MODULE_INIT"] = dll;
+        psi.Environment["MS2_TEST_MODULE_INIT_MODE"] = mode;
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        var outTask = p.StandardOutput.ReadToEndAsync();
+        var errTask = p.StandardError.ReadToEndAsync();
+        Assert.That(p.WaitForExit(30_000), Is.True, "module initializer probe timed out");
+        p.WaitForExit();
+        Assert.That(p.ExitCode, Is.EqualTo(0), $"mode={mode} exit={p.ExitCode}\nstdout: {outTask.Result}\nstderr: {errTask.Result}");
+        Assert.That(outTask.Result, Does.Contain("MODULE_INIT_OK"));
+    }
+
+    [Test]
     public void TheBuildsImagesRuntimeIsCompared()
     {
         Assert.That(PrecompiledImage.RuntimeMismatch(dir, "8.0.11"), Is.Null, "no file: nothing to compare");

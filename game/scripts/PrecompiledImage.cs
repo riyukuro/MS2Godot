@@ -103,6 +103,14 @@ public static class PrecompiledImage
         if (ImageOf(dll, runtime, out _) != null) { Prune(dll, image); return -1; }
         Prune(dll, image);
         if (compiler == null || !File.Exists(compiler)) { warn?.Invoke($"{name}: no compiler next to the assemblies"); return null; }
+        // Godot's Linux export copies files from the publish folder without preserving the execute bit.
+        if (!OperatingSystem.IsWindows())
+            try
+            {
+                var mode = File.GetUnixFileMode(compiler);
+                if ((mode & UnixFileMode.UserExecute) == 0) File.SetUnixFileMode(compiler, mode | UnixFileMode.UserExecute);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var tmp = image + ".tmp" + Environment.ProcessId;
         var psi = new System.Diagnostics.ProcessStartInfo(compiler) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };

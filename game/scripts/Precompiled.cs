@@ -53,6 +53,7 @@ public static class Precompiled
     /// </summary>
     public static IEnumerable<string> AssemblyDirs()
     {
+        if (AssemblyDir != null) yield return AssemblyDir;
         foreach (var c in new[] { "Debug", "ExportDebug", "ExportRelease", "Release" })
             yield return ProjectSettings.GlobalizePath("res://.godot/mono/temp/bin/" + c);
         yield return AppContext.BaseDirectory;
@@ -67,14 +68,29 @@ public static class Precompiled
 
     static void Preload()
     {
+        var loc = typeof(Precompiled).Assembly.Location;
+        var ctx = AssemblyLoadContext.GetLoadContext(typeof(Precompiled).Assembly);
+        // An exported build boots through this assembly itself (GodotPlugins.Game.Main.InitializeFromGameProject),
+        // loaded from disk by hostfxr into an isolated load context (not GodotPlugins.PluginLoadContext): its module
+        // initializer runs before Godot wires up its native callbacks, so no Godot API may be called here, and the
+        // runtime already maps the ReadyToRun images from disk. Only the editor / --path runs load from memory via
+        // GodotPlugins.PluginLoadContext (after GodotPlugins has initialized Godot's native callbacks).
+        if (!string.IsNullOrEmpty(loc) || ctx == null || ctx == AssemblyLoadContext.Default
+            || !string.Equals(ctx.GetType().FullName, "GodotPlugins.PluginLoadContext", StringComparison.Ordinal))
+        {
+            AssemblyDir = !string.IsNullOrEmpty(loc) ? Path.GetDirectoryName(loc)
+                : Directory.Exists(AppContext.BaseDirectory) ? AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                : null;
+            Summary = AssemblyDir != null ? $"in place from {AssemblyDir}" : "no preload";
+            return;
+        }
         if (Engine.IsEditorHint()) { Summary = "editor"; return; }
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        var ctx = AssemblyLoadContext.GetLoadContext(typeof(Precompiled).Assembly);
         var mvid = typeof(Precompiled).Assembly.ManifestModule.ModuleVersionId;
         // this build's folder: the one whose copy of this assembly is the loaded one
         foreach (var d in AssemblyDirs())
             if (Mvid(Path.Combine(d, Self + ".dll")) is { } m && m.id == mvid) { AssemblyDir = d; break; }
-        if (ctx == null || ctx == AssemblyLoadContext.Default || AssemblyDir == null) { Summary = "no build folder"; return; }
+        if (AssemblyDir == null) { Summary = "no build folder"; return; }
         if (Off) { Summary = "off"; return; }
         var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in ctx.Assemblies) loaded.Add(a.GetName().Name);
@@ -131,8 +147,13 @@ public static class Precompiled
     {
         if (Off) return null;
         if (AssemblyDir == null) { GD.PushWarning("precompiled code: no build folder"); return null; }
-        return PrecompiledImage.Compile(Compiler(), dll, PrecompiledImage.Runtime,
-            new[] { Path.Combine(System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory(), "*.dll"), Path.Combine(AssemblyDir, "*.dll") },
+        var rtDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var refs = string.Equals(Path.GetFullPath(rtDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                                 Path.GetFullPath(AssemblyDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                                 StringComparison.OrdinalIgnoreCase)
+            ? new[] { Path.Combine(AssemblyDir, "*.dll") }
+            : new[] { Path.Combine(rtDir, "*.dll"), Path.Combine(AssemblyDir, "*.dll") };
+        return PrecompiledImage.Compile(Compiler(), dll, PrecompiledImage.Runtime, refs,
             CompileTimeout, w => GD.PushWarning("precompiled code: " + w));
     }
 }
