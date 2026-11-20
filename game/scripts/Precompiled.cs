@@ -21,8 +21,24 @@ namespace Ms2Godot;
 /// </summary>
 public static class Precompiled
 {
+    static string summary = "not run";
+    static string exportSummaryDir;
+
     /// <summary>What <see cref="Preload"/> did, for the log (it runs before the log is up).</summary>
-    public static string Summary { get; private set; } = "not run";
+    public static string Summary => summary ??= ExportSummary(exportSummaryDir);
+
+    static string ExportSummary(string dir)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int r2r = 0;
+        foreach (var file in Directory.GetFiles(dir, "*.dll"))
+        {
+            var name = Path.GetFileNameWithoutExtension(file);
+            if (name == Self || name.StartsWith("Godot", StringComparison.Ordinal)) continue;
+            if (Mvid(file) is { r2r: true }) r2r++;
+        }
+        return $"{r2r} precompiled in place from {dir} in {sw.Elapsed.TotalMilliseconds:F0} ms";
+    }
 
     /// <summary>
     /// The libraries with an image that were bound before <see cref="Preload"/> ran (from memory: their code is the JIT's).
@@ -78,27 +94,22 @@ public static class Precompiled
         if (!string.IsNullOrEmpty(loc) || ctx == null || ctx == AssemblyLoadContext.Default
             || !string.Equals(ctx.GetType().FullName, "GodotPlugins.PluginLoadContext", StringComparison.Ordinal))
         {
-            if (string.IsNullOrEmpty(loc)) { Summary = "no build folder"; return; }
+            if (string.IsNullOrEmpty(loc)) { summary = "no build folder"; return; }
             AssemblyDir = Path.GetDirectoryName(loc);
-            if (AssemblyDir == null || !Directory.Exists(AssemblyDir)) { AssemblyDir = null; Summary = "no build folder"; return; }
-            int r2r = 0;
-            foreach (var file in Directory.GetFiles(AssemblyDir, "*.dll"))
-            {
-                var name = Path.GetFileNameWithoutExtension(file);
-                if (name == Self || name.StartsWith("Godot", StringComparison.Ordinal)) continue;
-                if (Mvid(file) is { r2r: true }) r2r++;
-            }
-            Summary = $"{r2r} precompiled in place from {AssemblyDir}";
+            if (AssemblyDir == null || !Directory.Exists(AssemblyDir)) { AssemblyDir = null; summary = "no build folder"; return; }
+            // Defer scanning the self-contained export's DLL headers until Summary is read for the log, so module init pays no I/O.
+            exportSummaryDir = AssemblyDir;
+            summary = null;
             return;
         }
-        if (Engine.IsEditorHint()) { Summary = "editor"; return; }
+        if (Engine.IsEditorHint()) { summary = "editor"; return; }
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var mvid = typeof(Precompiled).Assembly.ManifestModule.ModuleVersionId;
         // this build's folder: the one whose copy of this assembly is the loaded one
         foreach (var d in AssemblyDirs())
             if (Mvid(Path.Combine(d, Self + ".dll")) is { } m && m.id == mvid) { AssemblyDir = d; break; }
-        if (AssemblyDir == null) { Summary = "no build folder"; return; }
-        if (Off) { Summary = "off"; return; }
+        if (AssemblyDir == null) { summary = "no build folder"; return; }
+        if (Off) { summary = "off"; return; }
         var loaded = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in ctx.Assemblies) loaded.Add(a.GetName().Name);
         int n = 0;
@@ -118,7 +129,7 @@ public static class Precompiled
         // a launch says it too (the perf runs fail on it): a library bound before the images runs its code under the JIT
         if (early.Count > 0) GD.PushWarning($"precompiled code: bound from memory before the images, their code runs under the JIT: {string.Join(", ", early)}");
         var runtime = PrecompiledImage.RuntimeMismatch(Path.Combine(AssemblyDir, "r2r"), PrecompiledImage.Runtime);
-        Summary = $"{n} precompiled from {AssemblyDir} in {sw.Elapsed.TotalMilliseconds:F0} ms" + (runtime != null ? "; " + runtime : "")
+        summary = $"{n} precompiled from {AssemblyDir} in {sw.Elapsed.TotalMilliseconds:F0} ms" + (runtime != null ? "; " + runtime : "")
             + (early.Count > 0 ? $"; already loaded from memory: {string.Join(", ", early)}" : "");
     }
 

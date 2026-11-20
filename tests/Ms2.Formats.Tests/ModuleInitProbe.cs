@@ -36,7 +36,9 @@ internal static class StartupHook
             alc = new IsolatedLoadContext(path);
             asm = alc.LoadFromAssemblyPath(path);
         }
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         RuntimeHelpers.RunModuleConstructor(asm.ManifestModule.ModuleHandle);
+        sw.Stop();
         // Also run the static constructors of the types touched by the module initializer: beforefieldinit lets the
         // runtime execute them eagerly (e.g. under ReadyToRun), so none may call into Godot before NativeFuncs is up.
         RuntimeHelpers.RunClassConstructor((asm.GetType("Ms2Godot.DataCache") ?? throw new InvalidOperationException("missing DataCache")).TypeHandle);
@@ -47,13 +49,13 @@ internal static class StartupHook
         if (!string.Equals(asmDir, expectedDir, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"AssemblyDir '{asmDir}' != '{expectedDir}'");
         var summary = (string)precompiled.GetProperty("Summary")!.GetValue(null) ?? "";
-        if (!summary.Contains(" precompiled in place from ", StringComparison.Ordinal))
+        if (!summary.Contains(" precompiled in place from ", StringComparison.Ordinal) || !summary.EndsWith(" ms", StringComparison.Ordinal))
             throw new InvalidOperationException($"unexpected Summary '{summary}'");
         var formats = alc.LoadFromAssemblyName(new AssemblyName("Ms2.Formats"));
         var cacheStore = formats.GetType("Ms2.Formats.Cache.CacheStore") ?? throw new InvalidOperationException("missing CacheStore");
         if (cacheStore.GetField("Of")!.GetValue(null) == null)
             throw new InvalidOperationException("DataCache.Init did not register CacheStore.Of");
-        Console.WriteLine("MODULE_INIT_OK");
+        Console.WriteLine($"MODULE_INIT_OK ({sw.Elapsed.TotalMilliseconds:F1} ms): {summary}");
         Environment.Exit(0);
     }
 }
