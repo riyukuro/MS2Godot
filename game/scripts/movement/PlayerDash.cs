@@ -87,6 +87,11 @@ public partial class Player
         }
     }
 
+    /// <summary>
+    /// The skid (m_n10 = 0x1f). StateDash::vfunc_9 (0x1417c0180, state.cpp:1855-1861) on the first frame animation 7 is not
+    /// current: PlayAnimationById(7), vfunc_93(true) (the ground material refresh, with no StateLand ray) and PlayEffects
+    /// "land".
+    /// </summary>
     void DashSkid(float rushOver = 0)
     {
         dsub = DashSub.Skid;
@@ -96,6 +101,8 @@ public partial class Player
         float stop = Anims?.TextKey(CurrentAnim, "stop") ?? -1;
         dashStopDur = stop > 0 ? stop : 0;
         dashSkidding = true;
+        ground.Refresh(OnOrAboveGround);
+        Landed?.Invoke();
     }
 
     void DashAnimation()

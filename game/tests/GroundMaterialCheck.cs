@@ -16,6 +16,7 @@ namespace Ms2Godot.Tests;
 ///   water keeps "default" until the refresh; stepping off a ledge keeps the ledge's material until the refresh.
 /// - Landing: StateLand's ray (stateland.cpp:83-92) puts the entity under the feet in the hit report. A player whose report
 ///   still holds the stone wall lands on the water: the landing plays "water" and the report's entity is water.
+/// - Dash skid: StateDash::vfunc_9 (state.cpp:1855-1861) refreshes the material and plays one "land" when the skid starts.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class GroundMaterialCheck : Node3D
@@ -116,10 +117,19 @@ public partial class GroundMaterialCheck : Node3D
         g.Refresh(true);
         bool landing = wallFirst && player.OnWater && player.GroundMaterial == "water";
 
-        bool ok = shapes && snapshot && landing;
+        // StateDash's skid (state.cpp:1855-1861): one "land" and a refresh in the same frame. The report holds the stone
+        // now; the stored material still says water until the skid refreshes it.
+        int lands = 0;
+        player.Landed += () => lands++;
+        typeof(Player).GetMethod("NoteHit", Private).Invoke(player, new object[] { stone, 0 });
+        string beforeSkid = player.GroundMaterial;
+        typeof(Player).GetMethod("DashSkid", Private).Invoke(player, new object[] { 0f });
+        bool dash = beforeSkid == "water" && lands == 1 && player.GroundMaterial == "default";
+
+        bool ok = shapes && snapshot && landing && dash;
         GD.Print($"ground material check: stone edge '{edge}', stone middle '{middle}', water '{wet}', no entity '{none}'; " +
                  $"stone->water '{aBefore}' then '{aAfter}' at frame {aFrame}, off a ledge '{bBefore}' then '{bAfter}' at frame {bFrame}; " +
-                 $"landing from a wall report: water {player.OnWater}, '{player.GroundMaterial}': {(ok ? "OK" : "FAIL")}");
+                 $"landing from a wall report: water {landing}; dash skid '{beforeSkid}' then '{player.GroundMaterial}', {lands} land: {(ok ? "OK" : "FAIL")}");
         GetTree().Quit(ok ? 0 : 1);
     }
 }
