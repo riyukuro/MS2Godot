@@ -494,10 +494,7 @@ public sealed class ModelBuilder
     /// The texture transforms of the maps the field shaders draw (field_uv): each map's static NiTextureTransform, and its
     /// running uv controllers over it. A map a controller moves but that has no transform gets the controller's default
     /// one (NiTextureTransformController.cpp:146-151, TexTransform.ControllerDefault). A CLAMP controller (ModelMesh.UvHolds)
-    /// holds its last key in the static transform: the field's app time is past its stop; it is held only on a map with
-    /// its own transform: `held` needs tm != null, so a stopped CLAMP controller on a map without a transform leaves the
-    /// map untransformed. STILL-OPEN: the controller adds its default transform to such a map
-    /// (NiTextureTransformController.cpp:146-151), which would then keep the last key.
+    /// holds its last key in the static transform: the field's app time is past its stop (ModelMesh.DrawnTransform).
     /// STILL-OPEN: the shader takes at most UvCtlMax (12, the most one texturing property has in the KR data) controllers
     /// of up to 4 keys each; others keep the static value (field scan: a 5-key translate, on a base map in one model and a
     /// glow map in another: 2 models, 5 entities).
@@ -530,15 +527,8 @@ public sealed class ModelBuilder
                 }
                 n++;
             }
-            bool held = tm != null && m.UvHolds.Exists(h => h.Slot == UvMaps[map]);
-            var t = tm?.Transform ?? (moved || held ? TexTransform.ControllerDefault() : null);
+            var t = m.DrawnTransform(UvMaps[map], moved);
             if (t == null) continue;
-            if (held)
-            {
-                t = t.Clone();
-                foreach (var h in m.UvHolds)
-                    if (h.Slot == UvMaps[map]) t.Set(h.Operation, h.Values[^1]);
-            }
             any = true;
             method[map] = t.Method + 1;
             tt[2 * map] = new Vector4(t.TU, t.TV, t.SU, t.SV);

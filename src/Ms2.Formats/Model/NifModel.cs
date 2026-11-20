@@ -85,6 +85,23 @@ public sealed class ModelMesh
     /// <summary>The active CLAMP NiTextureTransformControllers. Not APP_INIT, so a field model's app time is past their stop
     /// when the field is entered, and each holds its last key: a constant on the map's transform (ModelBuilder).</summary>
     public List<UvAnim> UvHolds = new();
+
+    /// <summary>The static transform the field shaders draw a map with (ModelBuilder.SetUvTransforms), or null for none:
+    /// the map's own NiTextureTransform, or the controller default one (NiTextureTransformController.cpp:146-151,
+    /// TexTransform.ControllerDefault) when a controller moves or holds a map that has no transform (moved: a running
+    /// UvAnim on it), with each UvHold's last key set on it. A hold needs the map itself (Maps has the slot): on a slot the
+    /// mesh has no map in it is dropped, as nothing samples that slot.</summary>
+    public TexTransform DrawnTransform(string slot, bool moved)
+    {
+        Maps.TryGetValue(slot, out var tm);
+        bool held = tm != null && UvHolds.Exists(h => h.Slot == slot);
+        var t = tm?.Transform ?? (moved || held ? TexTransform.ControllerDefault() : null);
+        if (t == null || !held) return t;
+        t = t.Clone();
+        foreach (var h in UvHolds)
+            if (h.Slot == slot) t.Set(h.Operation, h.Values[^1]);
+        return t;
+    }
     public MorphAnim Morph;               // a keyed relative POSITION morph (Positions = its target 0), or null
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)

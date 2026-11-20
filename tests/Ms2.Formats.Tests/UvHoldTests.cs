@@ -28,5 +28,29 @@ public class UvHoldTests
         // the map's own transform keeps the file value (EffectScene reads it as the pre-start value)
         Assert.That(md.Meshes.Where(m => m.UvHolds.Count > 0).Select(m => m.Maps["base"].Transform.TV), Is.All.EqualTo(-1.2f).Within(1e-5));
         Assert.That(md.Meshes.SelectMany(m => m.UvAnims), Is.Empty);
+        // what the field shader is given (ModelBuilder.SetUvTransforms): the held last key, not the file value
+        foreach (var m in md.Meshes.Where(m => m.UvHolds.Count > 0))
+        {
+            var drawn = m.DrawnTransform("base", false);
+            Assert.That(drawn.TV, Is.EqualTo(1.1f).Within(1e-5));
+            Assert.That(m.Maps["base"].Transform.TV, Is.EqualTo(-1.2f).Within(1e-5), "the map's own transform is not changed");
+        }
+    }
+
+    /// <summary>A hold on a map without its own transform sets the key on the controller default one; a hold on a slot
+    /// the mesh has no map in is dropped.</summary>
+    [Test]
+    public void HoldWithoutTransformUsesControllerDefault()
+    {
+        var m = new ModelMesh();
+        m.Maps["base"] = new TexMap();
+        m.UvHolds.Add(new UvAnim { Slot = "base", Operation = 0, Values = new[] { 0f, 0.25f } });
+        m.UvHolds.Add(new UvAnim { Slot = "glow", Operation = 0, Values = new[] { 0.5f } });
+        var t = m.DrawnTransform("base", false);
+        Assert.That(t, Is.Not.Null);
+        Assert.That(t.TU, Is.EqualTo(0.25f));
+        Assert.That(t.SU, Is.EqualTo(TexTransform.ControllerDefault().SU));
+        Assert.That(m.DrawnTransform("glow", false), Is.Null);
+        Assert.That(m.DrawnTransform("dark", false), Is.Null);
     }
 }
