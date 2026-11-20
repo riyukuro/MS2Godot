@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml.Linq;
 using Godot;
 using Ms2.Formats.Model;
@@ -49,6 +50,14 @@ public sealed class ActionAnims
     // sequence ids by the lower-case kf name, which is the AnimationPlayer key
     KfmFile kfm;
     readonly Dictionary<string, int> seqIds = new(StringComparer.OrdinalIgnoreCase);
+    // companion <bodyDir>/<bodyDir>.xml text keys (NiTextKeyExtraData::LoadBinary, NiTextKeyExtraData.cpp:59-75;
+    // FUN_1414a90c0 @0x1414a90c0, ms2animationservice.cpp:349-422; installed at ms2memfile.cpp:333)
+    readonly Dictionary<string, List<(double time, string text)>> xmlKeys = new(StringComparer.OrdinalIgnoreCase);
+
+    void AppendXmlKeys(string key, KfAnimation kf)
+    {
+        if (xmlKeys.TryGetValue(key, out var extra)) kf.TextKeys.AddRange(extra);
+    }
 
     /// <summary>
     /// The KFM transition NiActorManager takes from one sequence to the next (NiKFMTool::GetTransition(cur, desired),
@@ -74,6 +83,24 @@ public sealed class ActionAnims
             foreach (var sq in aa.kfm.Sequences)
                 aa.seqIds.TryAdd(Path.GetFileNameWithoutExtension(sq.KfPath.Replace('\\', '/')), sq.Id);
         }
+        string xmlEntry = $"{bodyDir}/{bodyDir}.xml";
+        if (packs.Exists(ModelBuilder.ModelArchive, xmlEntry))
+        {
+            var kx = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read(ModelBuilder.ModelArchive, xmlEntry)));
+            foreach (var el in kx.Root?.Elements() ?? Enumerable.Empty<XElement>())
+            {
+                if (aa.xmlKeys.ContainsKey(el.Name.LocalName)) continue;   // FirstChild (ms2animationservice.cpp:395)
+                List<(double, string)> list = null;
+                foreach (var k in el.Elements("key"))
+                {
+                    string text = (string)k.Attribute("text");
+                    if (string.IsNullOrEmpty(text)) continue;
+                    double.TryParse((string)k.Attribute("time"), NumberStyles.Float, CultureInfo.InvariantCulture, out double t);
+                    (list ??= new()).Add((t, text));
+                }
+                if (list != null) aa.xmlKeys[el.Name.LocalName] = list;
+            }
+        }
         var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/pcactiondata.xml")));
         var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");
@@ -91,6 +118,7 @@ public sealed class ActionAnims
                 KfAnimation kf;
                 try { kf = builder.LoadKf($"{bodyDir}/{key}.kf"); }
                 catch (Exception) { continue; }        // the body has no such sequence
+                aa.AppendXmlKeys(key, kf);
                 var anim = ModelBuilder.BuildAnimation(kf, md);
                 if (!Looping.Contains(a)) anim.LoopMode = Animation.LoopModeEnum.None;
                 lib.AddAnimation(key, anim);
@@ -116,6 +144,7 @@ public sealed class ActionAnims
         KfAnimation kf;
         try { kf = builder.LoadKf($"{bodyDir}/{key}.kf"); }
         catch (Exception) { return null; }
+        AppendXmlKeys(key, kf);
         var anim = ModelBuilder.BuildAnimation(kf, md);
         anim.LoopMode = loop ? Animation.LoopModeEnum.Linear : Animation.LoopModeEnum.None;
         lib.AddAnimation(key, anim);

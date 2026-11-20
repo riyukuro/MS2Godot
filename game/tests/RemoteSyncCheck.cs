@@ -11,8 +11,8 @@ namespace Ms2Godot.Tests;
 /// Headless check (res://tests/remote_sync.tscn) of the remote PC body (Net.RemotePc) on real physics and the female body's
 /// action sequences: a stone floor and a water pool (entity shapes tagged as the field build tags them).
 /// - Spawned above the stone, a remote PC falls (the pending StateFall, pcbase.cpp:792) and lands with one "land" on stone.
-/// - A walk record moves it along the sender's camera at the run speed with the run sequence; its "run*" text keys, if the
-///   sequence has any, play steps on stone (PCBase::TextKeyEvent).
+/// - A walk record moves it along the sender's camera at the run speed with the run sequence; its "run*" text keys
+///   (loaded from female/female.xml as NiTextKeyExtraData::LoadBinary does) play steps on stone (PCBase::TextKeyEvent).
 /// - A jump record jumps it; it lands by itself with one more "land" on stone.
 /// - Spawned above the water, a remote PC lands with "land" on water and goes to the water idle (StateLand::vfunc_4).
 /// Quits with 0 when all hold, else 1.
@@ -98,8 +98,9 @@ public partial class RemoteSyncCheck : Node3D
                 if (Mathf.Abs(moved - 350f * 59f / 60f) > 15f) fails.Add($"walk moved {moved:0.0}");
                 if (stone.States.Cur != RemotePcStates.StateWalk) fails.Add($"walk state {stone.States.Cur}");
                 if (stone.Anim.CurrentAnimation != stone.Anims.Name(ActionAnims.Act.Run)) fails.Add($"run sequence {stone.Anim.CurrentAnimation}");
-                if (stoneFx.Any(f => f.g != "stone")) fails.Add($"steps {Fx(stoneFx)}");
-                GD.Print($"remote sync: walk moved {moved:0.0} in 1 s, {stoneFx.Count} step effects");
+                if (stoneFx.Count == 0) fails.Add("no step effects on stone");
+                if (stoneFx.Any(f => f.g != "stone" || !f.a.StartsWith("run", StringComparison.Ordinal))) fails.Add($"steps {Fx(stoneFx)}");
+                GD.Print($"remote sync: walk moved {moved:0.0} in 1 s, {stoneFx.Count} step effects {Fx(stoneFx)}");
                 stoneFx.Clear();
                 stone.States.StateChanged = s => { if (s == RemotePcStates.StateJump || s == RemotePcStates.StateLand) jumpStates = jumpStates * 10 + s; };
                 stone.States.Push(Rec(6, 0x21, stone, default));
