@@ -53,6 +53,10 @@ public interface IRemotePc
     float WalkSpeed { get; }
     float RunSpeed { get; }
     float SwimSpeed { get; }
+    /// <summary>PCBase::vfunc_96 (@0x141671680, pcbase.cpp:2269-2275): move-speed stat rate (CalcMsiR, 1 at base).</summary>
+    float MoveSpeedRate { get; }
+    /// <summary>PCBase::vfunc_97 (@0x141671720, pcbase.cpp:2504-2519): scale animation rate (m_fScaleA8 / m_fScaleAC, 1 when equal).</summary>
+    float ScaleAnimRate { get; }
     /// <summary>GameObjectController::GetGravity(true) (units/s^2, negative).</summary>
     float Gravity { get; }
     /// <summary>FUN_14166da60: the jump height (units).</summary>
@@ -128,8 +132,8 @@ public sealed class RemotePcStates
     /// <summary>The queued records (for tests).</summary>
     public int Queued => requests.Count;
 
-    // StateWalk
-    float walkSpeed1, walkSpeed2; int walkRun = 1, walkChanged;
+    // StateWalk (statewalk.h:29-33: m_fSpeed1/m_fSpeed2 store vfunc_96/vfunc_97; m_n50 is only set by MyPC's vfunc_8)
+    float walkSpeed1, walkSpeed2; int walkRun = 1; readonly int walkChanged = 0;
     // StateJump
     Vector3 jumpDir; int jumpFirstSteer; float jumpSavedSpeed; bool jumpHadInput; static int jumpToggle;
     static readonly int[] JumpSubs = { 0x21, 0x23, 0x22, 0x24 };   // m_aSub (@0x1417d5160, statejump.cpp:82-85): {0x21, 0x23}, +2 {0x22, 0x24}
@@ -339,8 +343,9 @@ public sealed class RemotePcStates
                 // STILL-OPEN: the water idle sound (StartIdleSound) and FUN_14166f8f0(0, 1)
                 break;
             case StateWalk:
-                // StateWalk::vfunc_4 (statewalk.cpp:101-154)
-                walkSpeed1 = walkSpeed2 = 0;                  // vfunc_96 / vfunc_97 (the speed pair the change test reads)
+                // StateWalk::vfunc_4 (@0x1417ff800, statewalk.cpp:101-154)
+                walkSpeed1 = pc.MoveSpeedRate;                // vfunc_96 (statewalk.cpp:103)
+                walkSpeed2 = pc.ScaleAnimRate;                // vfunc_97 (statewalk.cpp:104)
                 if (pc.OnWater) { ChangeState(StateSwim); return; }
                 WalkSpeedBySub();
                 WalkGait();                                   // State::vfunc_4 -> StateWalk::vfunc_10 sets m_n48
@@ -401,9 +406,9 @@ public sealed class RemotePcStates
             case StateWalk:
             {
                 // StateWalk::vfunc_3 (statewalk.cpp:166-211): m_unk_158 is 0 (vfunc_63), the speed by the sub, then
-                // the direction times the speed as the controller's velocity and the frame's move
+                // the direction times vfunc_95() as the controller's velocity and the frame's move
                 WalkSpeedBySub();
-                var v = MoveDirection() * Speed;
+                var v = MoveDirection() * EffectiveSpeed;
                 pc.SetVelocity(v);
                 MoveBy(v * dt, dt);
                 break;
@@ -412,7 +417,7 @@ public sealed class RemotePcStates
             {
                 // StateSwim::vfunc_3 (stateswim.cpp:141-174)
                 Speed = pc.SwimSpeed;
-                var v = MoveDirection() * Speed;
+                var v = MoveDirection() * EffectiveSpeed;
                 pc.SetVelocity(v);
                 MoveBy(v * dt, dt);
                 break;
@@ -421,7 +426,7 @@ public sealed class RemotePcStates
             {
                 // StateFall::vfunc_3 (statefall.cpp:147-160): an air velocity while there is a direction, a zero move
                 var d = MoveDirection();
-                if (d != Vector3.Zero) pc.SetVelocity(d * (Speed * pc.AirSpeedScale));
+                if (d != Vector3.Zero) pc.SetVelocity(d * (EffectiveSpeed * pc.AirSpeedScale));
                 MoveBy(Vector3.Zero, dt);
                 break;
             }
@@ -496,15 +501,33 @@ public sealed class RemotePcStates
         }
     }
 
+    /// <summary>PCBase::vfunc_95 (@0x141671620, pcbase.cpp:2238-2243): FUN_141671940() * vfunc_96() * m_f92c (m_f92c is 1).</summary>
+    float EffectiveSpeed => Speed * pc.MoveSpeedRate;
+
+    /// <summary>PCBase::vfunc_97 (@0x141671720, pcbase.cpp:2504-2519): animation rate from current vs base scale.</summary>
+    public static float ScaleRate(float cur, float baseScale)
+    {
+        float rate = 1f;
+        if (cur != baseScale)
+        {
+            if (baseScale / 2f > cur) rate = 1.5f;
+            else if (baseScale / 2f <= cur && cur < baseScale) rate = 2f - cur / baseScale;
+            else if (cur > baseScale && baseScale * 2f >= cur) rate = 1f - (cur - baseScale) / (baseScale * 2f);
+            else if (baseScale * 2f < cur) rate = 0.5f;
+        }
+        return rate;
+    }
+
     void WalkGait()
     {
-        pc.Gait(Speed, pc.RunSpeed, pc.WalkSpeed, out bool run);
+        pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
         walkRun = run ? 1 : 0;
     }
 
     /// <summary>
-    /// StateWalk::vfunc_9 (statewalk.cpp:322-373): water goes to StateSwim; a fall timer past sqrt(3 / |g|) s falls; else
-    /// the run (0x1c) or, at the walk sub or a walking gait, the walk (0x1d) sequence, again when the speed changed.
+    /// StateWalk::vfunc_9 (@0x141800580, statewalk.cpp:322-373): water goes to StateSwim; a fall timer past sqrt(3 / |g|) s
+    /// falls; else the run (0x1c) or, at the walk sub or a walking gait, the walk (0x1d) sequence, restarting when vfunc_96
+    /// (MoveSpeedRate) or vfunc_97 (ScaleAnimRate) changed.
     /// STILL-OPEN: the cube guide sequences (0x38 / 0x39) and the ride's 0x1f.
     /// </summary>
     void WalkFrame()
@@ -514,13 +537,13 @@ public sealed class RemotePcStates
         if (pc.InAirFor(delay)) { ChangeState(StateFall); return; }
         if (subs[StateWalk] == 0x19) walkRun = 0;
         int key = walkRun == 0 ? ActWalk : ActRun;
-        bool changed = !(Speed == walkSpeed1 && pc.RunSpeed == walkSpeed2 && walkChanged == 0);
+        bool changed = !(pc.MoveSpeedRate == walkSpeed1 && pc.ScaleAnimRate == walkSpeed2 && walkChanged == 0);
         if (!pc.IsAction(key) || changed)
         {
-            float rate = pc.Gait(Speed, pc.RunSpeed, pc.WalkSpeed, out bool run);
+            float rate = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
             walkRun = run ? 1 : 0;
-            walkSpeed1 = Speed;
-            walkSpeed2 = pc.RunSpeed;
+            walkSpeed1 = pc.MoveSpeedRate;
+            walkSpeed2 = pc.ScaleAnimRate;
             pc.PlayAction(key, rate, changed);
         }
     }
@@ -561,7 +584,7 @@ public sealed class RemotePcStates
         jumpSavedSpeed = Speed;
         jumpHadInput = MoveInput != Vector2.Zero;
         pc.StopJump();
-        pc.StartJump(pc.JumpHeight, jumpDir, Speed);
+        pc.StartJump(pc.JumpHeight, jumpDir, EffectiveSpeed);
     }
 
     /// <summary>
@@ -580,7 +603,7 @@ public sealed class RemotePcStates
             Speed = 100f;                            // FUN_141671960(1.0f)
         }
         else if (world != Vector3.Zero) jumpDir = world;
-        pc.SetVelocity(jumpDir * Speed * pc.AirSpeedScale);
+        pc.SetVelocity(jumpDir * EffectiveSpeed * pc.AirSpeedScale);
         MoveBy(Vector3.Zero, dt);
     }
 

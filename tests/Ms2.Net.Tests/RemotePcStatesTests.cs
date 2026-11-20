@@ -59,13 +59,16 @@ public class RemotePcStatesTests {
         public readonly List<(string action, string ground)> Effects = new();
         public void PlayEffects(string action) => Effects.Add((action, Material));
         public int Current = -1; public readonly List<int> Played = new();
+        public readonly List<(int action, float rate, bool restart)> PlayLog = new();
         public bool IsAction(int action) => Current == action;
         public bool HasAction(int action) => true;
-        public bool PlayAction(int action, float rate, bool restart) { if (Current != action || restart) Played.Add(action); Current = action; return true; }
-        public float Gait(float speed, float run, float walk, out bool isRun) { isRun = speed > walk; return 1f; }
+        public bool PlayAction(int action, float rate, bool restart) { PlayLog.Add((action, rate, restart)); if (Current != action || restart) Played.Add(action); Current = action; return true; }
+        public float Gait(float speed, float run, float walk, out bool isRun) { isRun = speed > walk; return (speed == run ? 1f : speed / run) * ScaleAnimRate; }
         public float WalkSpeed => 120f;
         public float RunSpeed => 350f;
         public float SwimSpeed => 350f;
+        public float MoveSpeedRate { get; set; } = 1f;
+        public float ScaleAnimRate { get; set; } = 1f;
         public float Gravity => -3460.2074f;
         public float JumpHeight => 100f;
         public float AirSpeedScale => 1f;
@@ -287,6 +290,63 @@ public class RemotePcStatesTests {
             evenSubs[i] = sm2.Sub;
         }
         Assert.That(evenSubs, Is.EqualTo(evenSubs[0] == 0x21 ? new[] { 0x21, 0x23, 0x21 } : new[] { 0x23, 0x21, 0x23 }));
+    }
+
+    [Test] public void StateWalkChangeTestUsesStatRates() {
+        // StateWalk::vfunc_4 (@0x1417ff800, statewalk.cpp:103-104) stores vfunc_96/vfunc_97 (MoveSpeedRate/ScaleAnimRate);
+        // StateWalk::vfunc_9 (@0x141800580, statewalk.cpp:356-371) compares those, not Speed/RunSpeed.
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.1f);
+        sm.SequenceEnded(RemotePcStates.ActJumpLand);
+        b.PlayLog.Clear();
+
+        // Walk entry: vfunc_96/vfunc_97 match what vfunc_4 stored -> plays ActRun with restart = false
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(1));
+        Assert.That(b.PlayLog[^1].action, Is.EqualTo(RemotePcStates.ActRun));
+        Assert.That(b.PlayLog[^1].restart, Is.False);
+
+        // 0x18 -> 0x19 sub change: switches to ActWalk with restart = false (rates unchanged)
+        sm.Push(Rec(2, 0x19, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(2));
+        Assert.That(b.PlayLog[^1].action, Is.EqualTo(RemotePcStates.ActWalk));
+        Assert.That(b.PlayLog[^1].restart, Is.False);
+
+        // 0x19 -> 0x18 sub change while staying in StateWalk: rates unchanged, sequence keeps running without restart
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(2));
+
+        // MoveSpeedRate (vfunc_96) changes -> restarts once (vfunc_10 updates walkRun to 1, switching to ActRun on the next frame), then holds
+        b.MoveSpeedRate = 1.5f;
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(3));
+        Assert.That(b.PlayLog[^1].restart, Is.True);
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(4));
+        Assert.That(b.PlayLog[^1].action, Is.EqualTo(RemotePcStates.ActRun));
+        Assert.That(b.PlayLog[^1].restart, Is.False);
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(4));
+
+        // ScaleAnimRate (vfunc_97) changes -> restarts once, then holds
+        b.ScaleAnimRate = 0.75f;
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(5));
+        Assert.That(b.PlayLog[^1].restart, Is.True);
+        Assert.That(b.PlayLog[^1].rate, Is.EqualTo(1.5f * 0.75f).Within(1e-4));
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog.Count, Is.EqualTo(5));
+
+        // PCBase::vfunc_97 (@0x141671720, pcbase.cpp:2504-2519)
+        Assert.That(RemotePcStates.ScaleRate(1f, 1f), Is.EqualTo(1f));
+        Assert.That(RemotePcStates.ScaleRate(0.4f, 1f), Is.EqualTo(1.5f));
+        Assert.That(RemotePcStates.ScaleRate(0.75f, 1f), Is.EqualTo(1.25f).Within(1e-5));
+        Assert.That(RemotePcStates.ScaleRate(1.5f, 1f), Is.EqualTo(0.75f).Within(1e-5));
+        Assert.That(RemotePcStates.ScaleRate(2.5f, 1f), Is.EqualTo(0.5f));
     }
 
     [Test] public void GroundMaterialRefreshesEvery200Ms() {

@@ -310,11 +310,15 @@ public sealed class RemotePc : IRemotePc
         return true;
     }
 
-    public float Gait(float speed, float run, float walk, out bool isRun) => ActionAnims.GaitRate(speed, run, walk, out isRun);
+    public float Gait(float speed, float run, float walk, out bool isRun) => ActionAnims.GaitRate(speed, run, walk, out isRun) * ScaleAnimRate;
 
     public float WalkSpeed => MoveConfig.WalkSpeed;
     public float RunSpeed => MoveConfig.RunSpeed;
     public float SwimSpeed => MoveConfig.SwimSpeed;
+    // STILL-OPEN: remote PC move-speed stat (PCBase::vfunc_96 -> CalcMsiR, pcbase.cpp:2269-2275) and scale easing
+    // (PCBase::vfunc_97, pcbase.cpp:2504-2519, m_fScaleA8 / m_fScaleAC) are not replicated yet, taken as 1f.
+    public float MoveSpeedRate => 1f;
+    public float ScaleAnimRate => 1f;
     public float Gravity => gravity;
     public float JumpHeight => MoveConfig.JumpParam;
     public float AirSpeedScale => MoveConfig.FallMoveSpeed;
