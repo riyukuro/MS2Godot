@@ -80,6 +80,26 @@ public sealed class MusicController
     /// <summary>CSoundEventMgr::GetCurrentMusicId (@0x14177caa0, soundeventmgr.cpp:1356-1365).</summary>
     public int CurrentCueId => musicHistory.Get(0, out var cur) ? cur.CueId : 0;
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<FevProject, MusicController> sharedByFev = new();
+
+    /// <summary>
+    /// Session-scoped MusicController per FEV project, matching the client's singleton CSoundEventMgr lifetime
+    /// (reset only at shutdown: WorldService::OnShutdown worldservice_1.cpp:10583, CSoundEventMgr::Shutdown
+    /// soundeventmgr.cpp:1036), not per field.
+    /// </summary>
+    public static MusicController Shared(FevProject fev)
+    {
+        if (fev == null) throw new ArgumentNullException(nameof(fev));
+        return sharedByFev.GetValue(fev, static f => new MusicController(f));
+    }
+
+    /// <summary>Resets all session music controllers (WorldService::OnShutdown worldservice_1.cpp:10583).</summary>
+    public static void ResetShared()
+    {
+        foreach (var (_, controller) in sharedByFev)
+            controller.ResetMusicState();
+    }
+
     public MusicController(FevProject fev)
     {
         this.fev = fev ?? throw new ArgumentNullException(nameof(fev));
@@ -182,7 +202,11 @@ public sealed class MusicController
         return false;
     }
 
-    /// <summary>CSoundEventMgr::ResetMusicState (@0x14177c8a0, soundeventmgr.cpp:1307-1323).</summary>
+    /// <summary>
+    /// CSoundEventMgr::ResetMusicState (@0x14177c8a0, soundeventmgr.cpp:1307-1323): clears cue/parameter histories
+    /// and playback state, while preserving static s_nParamHistoryOffset (@0x1439f86a8, :886) which the client does
+    /// not reset here.
+    /// </summary>
     public void ResetMusicState()
     {
         CurrentCue = null;
@@ -191,7 +215,6 @@ public sealed class MusicController
         musicHistory.Clear();
         paramHistories.Clear();
         paramValues.Clear();
-        paramHistoryOffset = -1;
     }
 
     /// <summary>

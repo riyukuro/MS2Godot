@@ -84,6 +84,7 @@ public partial class GameFlow : Node
     public override void _ExitTree()
     {
         StopLoginAudio();
+        MusicController.ResetShared();   // WorldService::OnShutdown (worldservice_1.cpp:10583) -> CSoundEventMgr::ResetMusicState
         SelectedLoginBgDay = null;
         DisplayNative.RestoreDisplayMode();
         NifCache.Clear();   // CNifLoadingService::OnShutdown: ClearTextureCache, ClearNifCache (@0x141555e90)

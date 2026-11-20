@@ -928,4 +928,37 @@ public class AudioTests
         Assert.That(fx.Tick(2.5, 1.0f, out vol), Is.True);
         Assert.That(vol, Is.EqualTo(0.75f).Within(1e-5f));
     }
+
+    // ---- Part 1 review fixes (ResetMusicState offset, ResolveSegment missing bank, session MusicController) -------
+
+    [Test]
+    public void Part1ReviewFixesPreserveParamOffsetHandleMissingBankAndShareSessionMusic()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+
+        // 1. CSoundEventMgr::ResetMusicState (@0x14177c8a0, soundeventmgr.cpp:1307-1323) preserves s_nParamHistoryOffset.
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.SetMusicParameter(5, 0f, priority: 0x40, force: false), Is.True);
+        Assert.That(mc.SetMusicParameter(5, -1f, priority: 0x80, force: false), Is.True);   // rejected pop decrements offset to -2
+        mc.ResetMusicState();
+        Assert.That(mc.SetMusicParameter(5, 1f, priority: 0x80, force: false), Is.True);
+        Assert.That(mc.SetMusicParameter(5, 2f, priority: 0x80, force: false), Is.True);
+        Assert.That(mc.SetMusicParameter(5, 3f, priority: 0x80, force: false), Is.True);
+        Assert.That(mc.SetMusicParameter(5, -1f, priority: 0x80, force: false), Is.True);   // uses preserved offset -2 -> index 0 (1f)
+        Assert.That(mc.TryGetMusicParameter(5, out float popped) && popped == 1f, Is.True, "paramHistoryOffset (-2) survived ResetMusicState");
+
+        // 2. SoundLibrary.ResolveSegment returns null (does not throw) when a segment's bank file is missing.
+        var missingBankSeg = new MusicSegment { Id = 999999, Bank = "MS2Sound_NoSuchBank_XYZ", Index = 0 };
+        Assert.That(lib.ResolveSegment(missingBankSeg), Is.Null);
+
+        // 3. One session MusicController per FevProject persists across fields until shutdown reset (worldservice_1.cpp:10583).
+        MusicController.ResetShared();
+        var s1 = MusicController.Shared(lib.Fev);
+        var s2 = MusicController.Shared(lib.Fev);
+        Assert.That(s2, Is.SameAs(s1));
+        Assert.That(s1.PlayMusic(35, 0f, 0x80, false), Is.True);
+        Assert.That(s2.CurrentCueId, Is.EqualTo(35));
+        MusicController.ResetShared();
+        Assert.That(s2.CurrentCueId, Is.EqualTo(0));
+    }
 }

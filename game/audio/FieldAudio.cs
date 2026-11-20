@@ -86,7 +86,8 @@ public partial class FieldAudio : Node
         categoryMusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
         MusicVolume = categoryMusicVolume;
         library = SoundLibrary.Shared(dir, GameOptions.Voice);
-        MusicState = new MusicController(library.Fev);
+        // One MusicController for the session (CSoundEventMgr singleton; resets only at shutdown, worldservice_1.cpp:10583, soundeventmgr.cpp:1036).
+        MusicState = MusicController.Shared(library.Fev);
         GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks (voice {library.LanguageName}), {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events in {library.Fev.Groups.Count} groups, {library.Fev.CueIds.Count()} music cues");
         GD.Print($"audio: music volume {MusicVolume:F2}");
         if (packs != null)
@@ -158,14 +159,22 @@ public partial class FieldAudio : Node
     /// </summary>
     public bool PlayBgm(int cue, int paramId = 0, float paramValue = 0f, uint priority = MusicController.DefaultPriority, bool force = false)
     {
-        BgmCue = cue;
         if (library == null || MusicState == null || cue == 0) return false;
         if (!MusicState.PlayMusic(cue, 0f, priority, force))
         {
             if (library.Fev.GetMusicCue(cue) == null)
                 GD.PushWarning($"audio: music cue {cue} not found in MS2Sound.fev");
+            // When a new FieldAudio node attaches after a scene reload on the same cue, resume playback on this node
+            // without pushing a duplicate history entry.
+            if (!MusicPlaying && MusicState.IsPlaying && MusicState.CurrentCueId == cue)
+            {
+                if (paramId != 0)
+                    MusicState.SetMusicParameter(paramId, paramValue, priority, force);
+                return StartCurrentCue();
+            }
             return false;
         }
+        BgmCue = MusicState.CurrentCueId;
         if (paramId != 0)
             MusicState.SetMusicParameter(paramId, paramValue, priority, force);
         return StartCurrentCue();
@@ -312,7 +321,14 @@ public partial class FieldAudio : Node
         var startSeg = MusicState?.CurrentSegment;
         if (cue == null || startSeg == null) return false;
         var startClip = library.ResolveSegment(startSeg);
-        if (startClip == null) return false;
+        if (startClip == null)
+        {
+            // MusicState has already moved to the new cue; stop any previous cue's playback so stale audio does not linger.
+            StopMusic();
+            BgmCue = cue.Id;
+            bgmName = null;
+            return false;
+        }
 
         BgmCue = cue.Id;
         bgmName = startClip.Name;

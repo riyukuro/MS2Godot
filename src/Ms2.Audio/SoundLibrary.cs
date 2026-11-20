@@ -112,11 +112,12 @@ public sealed class SoundLibrary
         LoopStartSample = s.LoopStart, LoopEndSample = s.LoopEnd, Volume = vol,
     };
 
-    /// <summary>Resolves one FEV music segment to its bank sample clip, or null if out of range.</summary>
+    /// <summary>Resolves one FEV music segment to its bank sample clip, or null if the bank is missing or index is out of range.</summary>
     public SoundClip ResolveSegment(MusicSegment seg)
     {
-        if (seg == null) return null;
-        var bank = Bank(seg.Bank);
+        if (seg == null || string.IsNullOrEmpty(seg.Bank)) return null;
+        Fsb5 bank;
+        try { bank = Bank(seg.Bank); } catch (FileNotFoundException) { return null; }
         if (seg.Index < 0 || seg.Index >= bank.Samples.Count) return null;
         return Clip(bank, bank.Samples[seg.Index], 1f);
     }
