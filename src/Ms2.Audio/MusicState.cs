@@ -659,7 +659,10 @@ public sealed class SoundMusicEffectState
             return (cueChanged, paramApplied, false);
         }
 
-        startTime = nowSeconds;
+        // CEffect::vfunc_3 (@0x14119f0b0, effectservice.cpp:365): m_dStartTime = dStart + m_fStartDelay.
+        // CSoundMusicEffect::vfunc_3 (:141-144) already prompted PlayMusic / SetMusicParameter above at creation;
+        // StartDelay only shifts the fade window [startTime, startTime + duration].
+        startTime = nowSeconds + param.StartDelay;
         duration = param.Duration;
         startVolume = currentMusicVolume;
         targetVolume = categoryMusicVolume * param.Volume;
@@ -681,7 +684,7 @@ public sealed class SoundMusicEffectState
         }
         if (nowSeconds <= startTime + duration)
         {
-            float t = (float)(nowSeconds - startTime) / duration;
+            float t = nowSeconds <= startTime ? 0f : (float)(nowSeconds - startTime) / duration;
             volume = startVolume + t * deltaVolume;
             return true;
         }

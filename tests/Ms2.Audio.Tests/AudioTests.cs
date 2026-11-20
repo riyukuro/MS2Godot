@@ -812,6 +812,33 @@ public class AudioTests
     }
 
     [Test]
+    public void SoundMusicEffectStartDelayPromptsCueAndParamImmediately()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.PlayMusic(35, 0f, 0x80, false), Is.True);
+
+        var fx = new SoundMusicEffectState();
+        const float categoryVol = 0.8f;
+        // CSoundMusicEffect::vfunc_3 (soundmusiceffectparam.cpp:133-156) + CEffect::vfunc_3 (effectservice.cpp:365):
+        // PlayMusic and SetMusicParameter fire at creation even with StartDelay > 0; StartDelay shifts m_dStartTime.
+        var res = fx.Apply(mc,
+            new SoundMusicEffectParam(CueId: 15, ParamId: 5, ParamValue: 10f, Volume: 0.5f, Duration: 1.0f, StartDelay: 2.0f),
+            nowSeconds: 10.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol, casterKind: SoundMusicEffectState.CasterSystem);
+        Assert.That(res, Is.EqualTo((true, true, true)));
+        Assert.That(mc.CurrentCueId, Is.EqualTo(15), "PlayMusic prompted immediately at creation");
+        Assert.That(mc.TryGetMusicParameter(5, out float p5) && p5 == 10f, Is.True, "SetMusicParameter prompted immediately at creation");
+        Assert.That(fx.StartTime, Is.EqualTo(12.0).Within(1e-6), "m_dStartTime = dStart + startDelay");
+
+        Assert.That(fx.Tick(11.0, categoryVol, out float v), Is.True);
+        Assert.That(v, Is.EqualTo(0.8f).Within(1e-5f), "volume holds before startTime");
+        Assert.That(fx.Tick(12.5, categoryVol, out v), Is.True);
+        Assert.That(v, Is.EqualTo(0.6f).Within(1e-5f), "midpoint of [12.0, 13.0]");
+        Assert.That(fx.Tick(13.01, categoryVol, out v), Is.False);
+        Assert.That(v, Is.EqualTo(categoryVol).Within(1e-5f), "restores category volume past startTime + duration");
+    }
+
+    [Test]
     public void EffectTableParsesRealSoundMusicEffectsAndDrivesMusicController()
     {
         var lib = SoundLibrary.Shared(SoundDir());

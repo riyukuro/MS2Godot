@@ -213,7 +213,8 @@ public partial class FieldAudio : Node
 
     /// <summary>
     /// Executes a SoundMusic effect part (effect type 3, CSoundMusicEffect::vfunc_3 @0x1417900e0,
-    /// soundmusiceffectparam.cpp:133-156): PlayMusic + SetMusicParameter + linear volume fade with restore.
+    /// soundmusiceffectparam.cpp:133-156): PlayMusic and SetMusicParameter prompt immediately at creation (not delayed
+    /// by StartDelay; CEffect::vfunc_3 effectservice.cpp:365 only shifts m_dStartTime for the linear volume fade).
     /// Defaults <paramref name="casterKind"/> to <see cref="SoundMusicEffectState.CasterOther"/> (rejected at
     /// m_unk_18 &gt; 1) unless the caller passes <see cref="SoundMusicEffectState.CasterSystem"/> (0) or
     /// <see cref="SoundMusicEffectState.CasterMyPc"/> (1).
@@ -221,12 +222,6 @@ public partial class FieldAudio : Node
     public bool PlaySoundMusicEffect(in SoundMusicEffectParam param, int casterKind = SoundMusicEffectState.CasterOther)
     {
         if (MusicState == null) return false;
-        if (param.StartDelay > 0f)
-        {
-            var delayed = param with { StartDelay = 0f };
-            GetTree().CreateTimer(param.StartDelay).Timeout += () => { if (IsInstanceValid(this) && IsInsideTree()) ApplySoundMusicEffect(delayed, casterKind); };
-            return true;
-        }
         return ApplySoundMusicEffect(param, casterKind);
     }
 
