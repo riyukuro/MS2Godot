@@ -478,6 +478,7 @@ public partial class TextNode : Node2D
     static float GodotBaseline(Font font, int fontSize)
     {
         var rids = font.GetRids();
+        using var ridsOwner = (Godot.Collections.Array)rids;
         if (rids.Count == 0) return font.GetAscent(fontSize);
         var ts = TextServerManager.GetPrimaryInterface();
         float asc = (float)ts.FontGetAscent(rids[0], fontSize), desc = (float)ts.FontGetDescent(rids[0], fontSize);

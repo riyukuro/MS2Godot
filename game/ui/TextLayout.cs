@@ -92,6 +92,11 @@ public partial class TextNode
         utf16 = cps;
         codePoints = cps.Select(c => char.ConvertToUtf32(t, c)).ToArray();
         if (font == null || string.IsNullOrEmpty(t)) return res;
+        // the font's faces and OpenType features, read once per layout and freed after it: each read is a new tracked Godot
+        // Array and Dictionary, which per run were left to the finalizer
+        var fontRids = font.GetRids();
+        using var fontRidsOwner = (Godot.Collections.Array)fontRids;
+        using var features = font.GetOpentypeFeatures();
         int ramp = ls.FontSize;
         int Utf16(int cp) => cp < cps.Count ? cps[cp] : t.Length;
         var ts = TextServerManager.GetPrimaryInterface();
@@ -118,7 +123,7 @@ public partial class TextNode
             // the zero-width space ends the paragraph's last run (an empty paragraph: a run of its own, at its line break's size)
             var runs = Runs(pstart, pend).ToList();
             if (runs.Count == 0)
-                ts.ShapedTextAddString(rid, "\u200B", font.GetRids(), ShapeSize(SizeAt(Math.Min(pend, cps.Count - 1))), font.GetOpentypeFeatures(), lang);
+                ts.ShapedTextAddString(rid, "\u200B", fontRids, ShapeSize(SizeAt(Math.Min(pend, cps.Count - 1))), features, lang);
             for (int r = 0; r < runs.Count; r++)
             {
                 var (a, b) = runs[r];
@@ -127,11 +132,11 @@ public partial class TextNode
                 {
                     // an IMG char: an object as wide as its advance (TextNode.ImageBox)
                     ts.ShapedTextAddObject(rid, a, new Vector2(img.Advance / Label.Scale.X, img.H / Label.Scale.Y), InlineAlignment.Center, 1);
-                    if (last) ts.ShapedTextAddString(rid, "\u200B", font.GetRids(), ShapeSize(FieldSize), font.GetOpentypeFeatures(), lang);
+                    if (last) ts.ShapedTextAddString(rid, "\u200B", fontRids, ShapeSize(FieldSize), features, lang);
                     continue;
                 }
-                ts.ShapedTextAddString(rid, t.Substring(Utf16(a), Utf16(b) - Utf16(a)) + (last ? "\u200B" : ""), font.GetRids(),
-                    ShapeSize(SizeAt(a)), font.GetOpentypeFeatures(), lang);
+                ts.ShapedTextAddString(rid, t.Substring(Utf16(a), Utf16(b) - Utf16(a)) + (last ? "\u200B" : ""), fontRids,
+                    ShapeSize(SizeAt(a)), features, lang);
             }
             var breaks = ts.ShapedTextGetLineBreaks(rid, (int)Label.Size.X, 0, flags);
             for (int i = 0; i + 1 < breaks.Length; i += 2)
