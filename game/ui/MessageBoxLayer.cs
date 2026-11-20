@@ -86,8 +86,19 @@ public partial class MessageBoxLayer : CanvasLayer
         if (instance == this) instance = null;
     }
 
-    /// <summary>GFxManager::ResizeMovies: the new stage, then the layer's alignment.</summary>
-    void Relayout() => movie?.Relayout(GetViewport().GetVisibleRect().Size);
+    /// <summary>The layer's movie (CUIService's one message box movie), while it is made.</summary>
+    public static MovieDialog LayerMovie => instance != null && IsInstanceValid(instance) ? instance.movie : null;
+
+    /// <summary>
+    /// GFxManager::ResizeMovies covers this movie as every other (gfxmanager.cpp:158): under the HUD the HUD's resize
+    /// restores it with its own movies (<see cref="MovieDialog.SceneResizes"/>); in another scene the layer runs the same
+    /// restore on its movie alone (<see cref="MovieDialog.Restore"/>).
+    /// </summary>
+    void Relayout()
+    {
+        if (movie == null || MovieDialog.SceneResizes) return;
+        MovieDialog.Restore(new[] { movie }, GetViewport().GetVisibleRect().Size);
+    }
 
     public bool Shown => controller?.IsIdle == false;
 

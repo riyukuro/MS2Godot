@@ -219,6 +219,29 @@ public partial class MovieDialog : Node2D
         rt.Guard("resize", () => st.Dispatch((AsEvent)rt.GetClass("flash.events.Event").Construct(AsEvent.RESIZE)));
     }
 
+    /// <summary>
+    /// The scene that resizes every movie itself while it runs (the HUD, <see cref="Restore"/> over its movies and the
+    /// message box and tooltip layers'); the layers resize their own movie only while there is none.
+    /// </summary>
+    public static Node SceneResizer;
+
+    /// <summary>True while <see cref="SceneResizer"/> is a live scene in the tree.</summary>
+    public static bool SceneResizes => SceneResizer != null && GodotObject.IsInstanceValid(SceneResizer) && SceneResizer.IsInsideTree();
+
+    /// <summary>
+    /// The device restore over a set of movies, in the client's order (GFxService::vfunc_17, gfxservice.cpp:101): every
+    /// movie's new viewport (GFxManager::ResizeMovies, gfxmanager.cpp:158, <see cref="ResizeViewport"/>), then every
+    /// dialog's vfunc_17 (UISwfEntityManager::vfunc_5, uiswfentitymanager.cpp:483), then every entity's layout (vfunc_1,
+    /// :413).
+    /// </summary>
+    public static void Restore(IReadOnlyList<MovieDialog> movies, Vector2 window)
+    {
+        var before = new (double W, double H)[movies.Count];
+        for (int i = 0; i < movies.Count; i++) before[i] = movies[i].ResizeViewport(window);
+        for (int i = 0; i < movies.Count; i++) movies[i].RestoreDevice(before[i]);
+        for (int i = 0; i < movies.Count; i++) movies[i].LayoutLoaded();
+    }
+
     /// <summary>UISwfEntityManager::vfunc_5 (uiswfentitymanager.cpp:483): the dialog's vfunc_17 with the stage cached
     /// before the resize (<see cref="UiController.RestoreDevice"/>).</summary>
     public void RestoreDevice((double W, double H) before) =>

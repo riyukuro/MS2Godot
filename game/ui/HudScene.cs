@@ -133,6 +133,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _EnterTree()
     {
         restoreScale = ScreenMode.UseWindowPixels(GetWindow());
+        MovieDialog.SceneResizer = this;    // the HUD resizes every movie, the message box and tooltip layers' too
         ScreenMode.AdoptWindow();       // started on its own: the options dialog shows this window (ScreenModes.Adopt)
         Ms2Godot.Net.ProfileImageService.Images.Ready += ProfileImageReady;
     }
@@ -196,6 +197,7 @@ public partial class HudScene : Node, IUiStageHost
         unbindBoxAnswers = null;
         Ms2Godot.Net.ProfileImageService.Images.Ready -= ProfileImageReady;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
+        if (MovieDialog.SceneResizer == this) MovieDialog.SceneResizer = null;
         restoreScale?.Invoke();
         restoreScale = null;
     }
@@ -245,6 +247,8 @@ public partial class HudScene : Node, IUiStageHost
         u = UiScale.For(window);
         resizing.Clear();
         CollectMovies(this, resizing);
+        foreach (var m in new[] { MessageBoxLayer.LayerMovie, TooltipLayer.LayerMovie })     // the root's message box and tooltip layers
+            if (m != null && m.IsInsideTree()) resizing.Add(m);
         var before = new (double W, double H)[resizing.Count];
         for (int i = 0; i < resizing.Count; i++) before[i] = resizing[i].ResizeViewport(window);   // ResizeMovies
         damageEffect?.Align(window);
@@ -261,7 +265,8 @@ public partial class HudScene : Node, IUiStageHost
     readonly List<MovieDialog> resizing = new();
 
     /// <summary>The scene's loaded movies (GFxManager's m_mapMovies), in tree order. The field's own movies follow its
-    /// viewport themselves (NpcEmoticons), as do the message box and tooltip layers, so the field is not walked.</summary>
+    /// viewport themselves (NpcEmoticons), so the field is not walked; the message box and tooltip layers, under the root,
+    /// are added by <see cref="Relayout"/>.</summary>
     void CollectMovies(Node n, List<MovieDialog> into)
     {
         for (int i = 0, count = n.GetChildCount(); i < count; i++)

@@ -62,8 +62,19 @@ public partial class TooltipLayer : CanvasLayer
         if (instance == this) instance = null;
     }
 
-    /// <summary>GFxManager::ResizeMovies.</summary>
-    void Relayout() => movie?.Relayout(GetViewport().GetVisibleRect().Size);
+    /// <summary>The layer's movie (CUIService's one tooltip movie), while it is made.</summary>
+    public static MovieDialog LayerMovie => instance != null && IsInstanceValid(instance) ? instance.movie : null;
+
+    /// <summary>
+    /// GFxManager::ResizeMovies covers this movie as every other (gfxmanager.cpp:158): under the HUD the HUD's resize
+    /// restores it with its own movies (<see cref="MovieDialog.SceneResizes"/>); in another scene the layer runs the same
+    /// restore on its movie alone (<see cref="MovieDialog.Restore"/>).
+    /// </summary>
+    void Relayout()
+    {
+        if (movie == null || MovieDialog.SceneResizes) return;
+        MovieDialog.Restore(new[] { movie }, GetViewport().GetVisibleRect().Size);
+    }
 
     /// <summary>vfunc_14 WM_MOUSEMOVE: the mouse in stage units; the event goes on to the rest of the UI.</summary>
     public override void _Input(InputEvent e)
