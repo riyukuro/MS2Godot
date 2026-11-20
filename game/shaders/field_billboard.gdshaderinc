@@ -18,9 +18,10 @@ vec3 bb_turn(vec3 d, vec3 at, vec3 v) {
 }
 
 // NiBillboardNode::RotateToCamera (NiBillboardNode.cpp:67-200) as a matrix on the mesh's own space: the billboard's
-// face matrix, in the billboard node's space, between bb_x and bb_x_inv. model is the mesh's MODEL_MATRIX; the
-// camera is the pass's (INV_VIEW_MATRIX): its back direction is column 2 (Gamebryo's -GetWorldDirection), up
-// column 1, right column 0.
+// face matrix, in the billboard node's space, between bb_x and bb_x_inv. model is the mesh's MODEL_MATRIX; inv_view
+// is the camera the billboard faces (field_lit passes MAIN_CAM_INV_VIEW_MATRIX, so the shadow pass keeps the eye's
+// face; field_glow its own pass's INV_VIEW_MATRIX): its back direction is column 2 (Gamebryo's
+// -GetWorldDirection), up column 1, right column 0.
 mat4 bb_matrix(mat4 model, mat4 inv_view) {
 	mat4 b = model * bb_x_inv;     // the billboard node's world transform before facing (m_kWorld)
 	float s = length(b[0].xyz);

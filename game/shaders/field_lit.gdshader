@@ -159,8 +159,10 @@ void vertex() {
 	if (morph_count > 0) {
 		VERTEX = morph_vertex(VERTEX, CUSTOM1.xyz, CUSTOM2.xyz, CUSTOM3.xyz);
 	}
+	// the main camera's frame, also in the shadow pass: the client's shadow click draws the caster geometry without
+	// RotateToCamera (ms2shadowclickgenerator.cpp:222/239), so a billboard's shadow is its face toward the eye
 	if (bb_mode >= 0) {
-		mat4 f = bb_matrix(MODEL_MATRIX, INV_VIEW_MATRIX);
+		mat4 f = bb_matrix(MODEL_MATRIX, MAIN_CAM_INV_VIEW_MATRIX);
 		VERTEX = (f * vec4(VERTEX, 1.0)).xyz;
 		NORMAL = normalize(mat3(f) * NORMAL);
 	}
