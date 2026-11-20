@@ -117,8 +117,13 @@ public partial class HudScene : Node, IUiStageHost
         BuildHud();
         WatchParty();
         WatchPcInfo();
-        // the portal action's notices (the required quest, a home that refused the visit): ShowSystemNotice(text, 1, 1)
-        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals) { livePortals.SystemNoticeSink = SystemNoticeText; livePortals.ChannelNoticeSink = ChannelNotice; }
+        // the portal and interact actions' notices & casting bar, the channel notices
+        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
+        {
+            livePortals.SystemNoticeSink = SystemNoticeText;
+            livePortals.ChannelNoticeSink = ChannelNotice;
+            livePortals.CastingBar = CastingBar;
+        }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
     }
@@ -144,7 +149,11 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     public override void _ExitTree()
     {
-        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals && livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
+        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
+        {
+            if (livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
+            if (livePortals.CastingBar == CastingBar) livePortals.CastingBar = null;
+        }
         unwatchDamage?.Invoke();
         unwatchDamage = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel && liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null;

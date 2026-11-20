@@ -163,5 +163,22 @@ public partial class LiveSession
             catch (Exception e) { GD.Print($"live: quest data unavailable ({e.Message})"); return false; }
             return data != null && QuestRules.IsComplete(data, q.State, q.Progress);
         }
+
+        public override bool? NearestInteractableUsable
+        {
+            get
+            {
+                if (!HasPlayer || s.InteractObjects == null) return null;
+                var p = PlayerPosition;
+                return s.InteractObjects.NearestUsable(new Ms2.Formats.Model.Vec3(p.X, p.Y, p.Z));
+            }
+        }
+
+        public override (float Distance, int State)? InteractObject(int interactId)
+        {
+            if (!HasPlayer || s.InteractObjects == null) return null;
+            var p = PlayerPosition;
+            return s.InteractObjects.NearestOfRow(new Ms2.Formats.Model.Vec3(p.X, p.Y, p.Z), interactId);
+        }
     }
 }

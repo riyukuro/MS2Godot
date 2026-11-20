@@ -114,9 +114,12 @@ public partial class FieldContents : Node3D
         }
         long tNpcs = sw.ElapsedMilliseconds;
         portals = new FieldPortals(map, fieldId, offline ? Masks(packs) : null);
-        // live: the server's portal list (FieldPortal 0x48) binds this field's portal entities; the ones it sent while the
-        // field loaded apply now
-        if (!offline && Ms2Godot.Net.LiveSession.Instance is { } lsPortals) lsPortals.AttachPortals(fieldName, map.Entities);
+        // live: the server's portal list (FieldPortal 0x48) and interact objects (InteractObject 0x63) bind this field's entities
+        if (!offline && Ms2Godot.Net.LiveSession.Instance is { } lsPortals)
+        {
+            lsPortals.AttachPortals(fieldName, map.Entities);
+            lsPortals.AttachInteractObjects(fieldName, map.Entities);
+        }
         string presence = "";
         if (!offline && player != null && Ms2Godot.Net.LiveSession.Instance is { } liveSession)
         {
@@ -570,11 +573,20 @@ public partial class FieldContents : Node3D
         actionHeld = action;
         if (!offline)
         {
-            // live: each frame the action key's poll finds the server-listed portal the player stands in (PortalAction
-            // vfunc_1, a kind 1 portal enters at once); the key on it runs the portal action (vfunc_2: its checks, then
-            // RequestMoveField); the server's RequestFieldEnter moves us (LiveSession.OnRequestFieldEnter). Elsewhere the talk.
-            bool onPortal = LivePortalPoll();
-            if (pressed && !(talk != null && talk.Open) && onPortal) { LivePortalUse(); return; }
+            // live: each frame the action key's poll runs its actions by ascending key, the first that applies taking the
+            // key (Unk_ActionKeyManager::Update, a CRBMap): gathering (4) and interact (0x12) objects, the server-listed
+            // portal the player stands in (0x13, PortalAction vfunc_1), the billboard (0x18); the key on it runs that
+            // action. Active StateInteraction casts tick here too (0 B/frame). Elsewhere the talk.
+            var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);
+            bool onInteract = LiveInteractPoll(playerMs2);
+            bool onPortal = !onInteract && LivePortalPoll();
+            if (!onInteract && !onPortal) onInteract = LiveInteractBillBoardPoll(playerMs2);
+            LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
+            if (pressed && !(talk != null && talk.Open))
+            {
+                if (onPortal) { LivePortalUse(); return; }
+                if (onInteract && LiveInteractUse(playerMs2)) return;
+            }
             if (pressed) talk?.ActionKey();
             return;
         }
@@ -596,6 +608,21 @@ public partial class FieldContents : Node3D
         if (offline || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return;
         ls.UsePortal();
     }
+
+    public bool LiveInteractPoll(Ms2.Formats.Model.Vec3 at) =>
+        !offline && player != null && !moving && Ms2Godot.Net.LiveSession.Instance is { } ls && ls.PollInteract(at);
+
+    public bool LiveInteractBillBoardPoll(Ms2.Formats.Model.Vec3 at) =>
+        !offline && player != null && !moving && Ms2Godot.Net.LiveSession.Instance is { } ls && ls.PollInteractBillBoard(at);
+
+    public void LiveInteractTick(Ms2.Formats.Model.Vec3 at, bool playerMoved)
+    {
+        if (offline || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return;
+        ls.TickInteract(at, playerMoved);
+    }
+
+    public bool LiveInteractUse(Ms2.Formats.Model.Vec3 at) =>
+        !offline && !moving && Ms2Godot.Net.LiveSession.Instance is { } ls && ls.UseInteract(at);
 
     /// <summary>A scripted live run: puts the player in the registered portal <paramref name="id"/>'s box (as a walk into it
     /// ends); false when the server listed no such portal with a box here.</summary>

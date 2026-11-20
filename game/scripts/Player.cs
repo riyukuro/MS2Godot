@@ -804,10 +804,39 @@ public partial class Player : CharacterBody3D
 
     // ---- animation -----------------------------------------------------------------------------------------------------
 
+    string interactAnim;
+    bool interactLoop;
+
+    /// <summary>StateInteraction::FUN_1417d25e0 / vfunc_4 0x8b / 0x8c: plays a gather/use motion from the body's sequences.</summary>
+    public void StartInteractAnim(string animName, bool loop)
+    {
+        if (string.IsNullOrEmpty(animName) || Anims == null || Anim == null) return;
+        string key = Anims.Sequence(animName, loop);
+        if (key == null) return;
+        interactAnim = key;
+        interactLoop = loop;
+        PlaySequence(key, 1f, restart: true);
+    }
+
+    public void StopInteractAnim()
+    {
+        interactAnim = null;
+        interactLoop = false;
+    }
+
     void UpdateAnimation()
     {
         if (Mount != null) { RideAnimation(); return; }
         if (Anims == null) return;
+        if (interactAnim != null)
+        {
+            if (State != MoveState.Idle || (!interactLoop && !Anim.IsPlaying()))
+            {
+                interactAnim = null;
+                interactLoop = false;
+            }
+            else return;
+        }
         switch (State)
         {
             case MoveState.Idle:

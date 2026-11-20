@@ -587,6 +587,7 @@ public partial class LiveSession : Node
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
         fieldEntry.Enter(entry.Field);
         NewFieldPortals(entry.Field.MapId);
+        NewFieldInteractObjects(entry.Field.MapId);
         syncNumber = entry.Sync?.Number ?? 0;
         var f = entry.Field;
         if (chosen != null) chosen.User.MapA = f.MapId;
@@ -684,6 +685,7 @@ public partial class LiveSession : Node
         bindPending = false;
         moveClock.Restart();
         NewFieldPortals(f.MapId);
+        NewFieldInteractObjects(f.MapId);
         guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
         GD.Print($"live: RequestFieldEnter in game: map {f.MapId} type {f.FieldType} instance {f.InstanceType}/{f.InstanceId} dungeon {f.DungeonId} pos {f.Position} portal {f.Portal}");
         FieldMoveStarted?.Invoke(f);
@@ -1145,6 +1147,7 @@ public partial class LiveSession : Node
                 SkillBookTree?.Invoke(t);
             }
             else if (game.Is(p, Inbound.FieldPortal)) OnFieldPortal(FieldPortalMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.InteractObject)) OnInteractObject(InteractObjectMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
             else if (game.Is(p, Inbound.DynamicChannel)) OnDynamicChannel(DynamicChannelMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.EnterUgcMap))

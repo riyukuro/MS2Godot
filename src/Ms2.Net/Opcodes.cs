@@ -66,6 +66,7 @@ public enum Inbound : ushort {
     FieldDeadNpc = 0x57,
     NpcControl = 0x58,
     InteractNpc = 0x59,
+    InteractObject = 0x63,  // RecvOp::InteractObject (commonfiles/opcodes.h:107): CSceneStateGame::OnInteractObject
     Buff = 0x47,
     UserMoveByPortal = 0x5F,
     StateFallDamage = 0x65,
@@ -125,6 +126,7 @@ public enum Outbound : ushort {
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
     SystemShop = 0x65,      // SendOp::SystemShop (commonfiles/opcodes.h:406): CNetworkService::SendSystemShop / coin shop open
     Quest = 0x29,
+    InteractObject = 0x31,  // SendOp::InteractObject (commonfiles/opcodes.h:354): CInteractObject::vfunc_8/vfunc_10, StateInteraction
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,
     RoomDungeon = 0x2B,
