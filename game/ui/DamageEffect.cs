@@ -48,18 +48,28 @@ public sealed partial class DamageEffect : CanvasLayer
         try { node = new UiMovie(ui, "uidamageeffect").BuildClass("dmgeff_entity_effect"); }
         catch (Exception e) { GD.PushWarning("damage effect movie: " + e.Message); }
         if (node == null) return;
-        // alignment: setActualScale(stageWidth / m_defaultSize, stageHeight / m_defaultSize), x = stageWidth * 0.5,
-        // y = stageHeight * 0.5, in stage units; the movie is drawn at the UI scale
-        float u = UiScale.For(window);
-        var stage = UiScale.MovieStage(window);
-        node.Scale = new Vector2(stage.X / DefaultSize, stage.Y / DefaultSize) * u;
-        node.Position = stage * 0.5f * u;
+        Align(window);
         foreach (var c in node.AllClips()) c.Loop();
         node.Visible = false;
         AddChild(node);
     }
 
     public DamageEffect() { }
+
+    /// <summary>
+    /// The movie's alignment for the window: setActualScale(stageWidth / m_defaultSize, stageHeight / m_defaultSize),
+    /// x = stageWidth * 0.5, y = stageHeight * 0.5, in stage units; the movie is drawn at the UI scale. Run at the load
+    /// and again when the window is resized (the entity's layout after the device restore, UISwfEntityManager::vfunc_1,
+    /// uiswfentitymanager.cpp:413), so the effect is kept with its state.
+    /// </summary>
+    public void Align(Vector2 window)
+    {
+        if (node == null) return;
+        float u = UiScale.For(window);
+        var stage = UiScale.MovieStage(window);
+        node.Scale = new Vector2(stage.X / DefaultSize, stage.Y / DefaultSize) * u;
+        node.Position = stage * 0.5f * u;
+    }
 
     /// <summary>The local player's HP changed (vfunc_oa0_3).</summary>
     public void Hp(long cur, long max)

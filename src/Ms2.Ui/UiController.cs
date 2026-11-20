@@ -228,6 +228,21 @@ public abstract class UiController
         LayoutAndClear(newW, newH);
     }
 
+    /// <summary>
+    /// UIDialog::vfunc_17 (uidialog.cpp:764), run for every loaded entity when the render device is restored after a
+    /// resize or a screen mode change (GFxService::vfunc_17 -> UISwfEntityManager::vfunc_5, gfxservice.cpp:101): an open
+    /// dialog with a drag bar keeps its position's ratio to the stage, from the stage cached before the resize to the new
+    /// one. Unlike <see cref="Resize"/> (vfunc_18) it leaves an open tween running. The layout follows separately, once
+    /// every entity has taken this step (UISwfEntityManager::vfunc_1, <see cref="LayoutAndClear"/>).
+    /// </summary>
+    public void RestoreDevice(double oldW, double oldH, double newW, double newH)
+    {
+        if (!IsDialog || !HasDragBar || IsClosed) return;
+        var (x, y) = Position();
+        float rateX = x / (float)(int)oldW, rateY = y / (float)(int)oldH;
+        SetPosition((float)(int)newW * rateX, (float)(int)newH * rateY);
+    }
+
     /// <summary>UIDialog::vfunc_28 (uidialog.cpp:879): the dialog callbacks every UIDialog handles before its subclass.</summary>
     internal bool DialogCallback(string name)
     {

@@ -19,7 +19,7 @@ namespace Ms2Godot.Ui;
 public sealed class HpBarClip
 {
     readonly UiMovie movie;
-    readonly float u;
+    float u;
     readonly Node parent;
     readonly Stack<MovieClipNode> pool;
     MovieClipNode node, gauge;
@@ -31,6 +31,13 @@ public sealed class HpBarClip
 
     public HpBarClip(UiMovie movie, float u, Node parent, Stack<MovieClipNode> pool = null)
     { this.movie = movie; this.u = u; this.parent = parent; this.pool = pool; }
+
+    /// <summary>The viewport scale after a resize (<see cref="PlayerHpBar.Resize"/>).</summary>
+    public void Rescale(float scale)
+    {
+        u = scale;
+        if (node != null) node.Scale = new Vector2(u, u);
+    }
 
     /// <summary>The guide's full width at the current rank (m_c0), 0 before the bar first opens.</summary>
     public int FullWidth => fullWidth;

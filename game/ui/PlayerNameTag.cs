@@ -67,6 +67,17 @@ public sealed partial class PlayerNameTag : CanvasLayer
 
     public PlayerNameTag() { }
 
+    /// <summary>
+    /// The window was resized: the movie's new viewport scale (GFxManager::ResizeMovies, GFxMovie::vfunc_7,
+    /// gfxmovie.cpp:146), kept alive with its state. STILL-OPEN: the clips already built keep the glyphs they were built
+    /// with at the old scale and are only scaled; the client's Scaleform draws them again at the new viewport scale.
+    /// </summary>
+    public void Resize(Vector2 window)
+    {
+        u = UiScale.For(window);
+        if (node != null) node.Scale = new Vector2(u, u);
+    }
+
     /// <summary>The field was swapped under the HUD (HudScene.SwapField): the old field's player, model and camera are
     /// dropped and found again in the new field; the tag hides until then.</summary>
     public void FieldChanged()

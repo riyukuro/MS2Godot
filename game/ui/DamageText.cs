@@ -61,7 +61,7 @@ public sealed partial class DamageText : CanvasLayer
     }
 
     readonly UiMovie movie;
-    readonly float u = 1;
+    float u = 1;
     readonly List<Entry> normals = new(), followers = new();
     /// <summary>CounterInfo, per owner: how many of its numbers are in the list (m_nCount) and the index the newest took (m_nIndex).</summary>
     sealed class Counter { public int Count = 1, Index; }
@@ -89,6 +89,13 @@ public sealed partial class DamageText : CanvasLayer
     }
 
     public DamageText() { }
+
+    /// <summary>
+    /// The window was resized: the movie's new viewport scale (GFxManager::ResizeMovies, GFxMovie::vfunc_7,
+    /// gfxmovie.cpp:146), kept alive with its state. STILL-OPEN: the clips already built keep the glyphs they were built
+    /// with at the old scale and are only scaled; the client's Scaleform draws them again at the new viewport scale.
+    /// </summary>
+    public void Resize(Vector2 window) => u = UiScale.For(window);
 
     /// <summary>
     /// UIDamageText::ClearAll (@0x1419135c0, uidamagetext.cpp:523), which a field move runs from GFxMovieDamage::

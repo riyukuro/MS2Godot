@@ -216,46 +216,58 @@ public partial class HudScene : Node, IUiStageHost
     bool relayoutQueued;
 
     /// <summary>
-    /// The window was resized. The client resets the device on WM_SIZE (GFxMovieEventHandler: OnDeviceLost, then
-    /// GFxService::vfunc_17 on restore), and GFxManager::ResizeMovies gives every movie the new render target size
-    /// (GFxMovie::vfunc_7) and sends SceneResize, so each dialog aligns itself to the new stage. Here the HUD is built
-    /// again at the new size; the dialogs run from their own movies are kept and laid out again.
+    /// The window was resized or its screen mode changed. The client builds no dialog again: the render device is reset
+    /// and every movie and dialog is kept (CUIService::OnDeviceReset @0x141ade1f0, uiservice.cpp:2829, only stores the new
+    /// size and the movies' scale). On the restore, in the order the reset callbacks were added:
+    /// <list type="number">
+    /// <item>GFxService::vfunc_17 (gfxservice.cpp:101) -> GFxManager::ResizeMovies (gfxmanager.cpp:158): every movie keeps
+    /// its stage size from before (UpdateStageSize), gets the new viewport (GFxMovie::vfunc_7) and a SceneResize, the AS3
+    /// stage's Event.RESIZE (<see cref="MovieDialog.ResizeViewport"/>);</item>
+    /// <item>UISwfEntityManager::vfunc_5 (uiswfentitymanager.cpp:483): every loaded entity's vfunc_17, an open dialog
+    /// keeping its position's ratio to the stage (UIDialog::vfunc_17, uidialog.cpp:764);</item>
+    /// <item>then UISwfEntityManager::vfunc_1 (:413): every loaded entity's layout, FUN_1422dc450 (uiswfentity.cpp:347);</item>
+    /// <item>CUIService::OnDeviceReset: DAT_143af62d4 / DAT_143af62d8 = the new size, then GFxManager::SetMoviesScale
+    /// (gfxmanager.cpp:754) with FUN_141276490(width, the UI scale option), stored on every movie but the background.</item>
+    /// </list>
+    /// The world UI layers (damage effect, the own name tag and HP bar, damage text) are movies too and take the same new
+    /// viewport scale, kept with their state.
+    /// STILL-OPEN: SetMoviesScale only stores the scale (GFxMovie::SetScale, gfxmovie.cpp:252) and GFxService's callback,
+    /// added at its OnInit before CUIService's (uiservice.cpp:1886), sets the viewports first, so in the client the new
+    /// scale may reach the viewports only at the next vfunc_7 or FUN_1422aff10. The callback order between the two services'
+    /// OnInit is not traced; here each movie takes the new scale with its new viewport (UiScale.For(window)).
     /// </summary>
     void Relayout()
     {
         relayoutQueued = false;
         if (!IsInsideTree()) return;     // queued before the scene left the tree
-        questLog?.GetParent()?.RemoveChild(questLog);         // the open dialog is kept and laid out again (vfunc_18)
-        worldMap?.GetParent()?.RemoveChild(worldMap);
-        achieveMovie?.GetParent()?.RemoveChild(achieveMovie);
-        minimap?.GetParent()?.RemoveChild(minimap);           // so is the minimap
-        questGuide?.GetParent()?.RemoveChild(questGuide);     // and the quest tracker
-        foreach (var (m, _) in messengers) m.GetParent()?.RemoveChild(m);     // and the chat windows
-        groupMessenger?.GetParent()?.RemoveChild(groupMessenger);
-        foreach (var (m, _) in groupWindows) m.GetParent()?.RemoveChild(m);     // and the group chat windows
-        notice?.GetParent()?.RemoveChild(notice);
-        upperHud?.GetParent()?.RemoveChild(upperHud);         // and the top bar
-        targetBar?.GetParent()?.RemoveChild(targetBar);       // and the target HP bar
-        systemText?.GetParent()?.RemoveChild(systemText);     // and the system lines
-        castingBar?.GetParent()?.RemoveChild(castingBar);     // and the cast gauge
-        guideEvent?.GetParent()?.RemoveChild(guideEvent);     // and the guide pane
-        if (eventWidgets != null)                             // and the event widgets (EventWidgets adds them back)
-            foreach (var w in eventWidgets) w.GetParent()?.RemoveChild(w);
-        hudLayer?.QueueFree();
-        foreach (var n in worldUi) n.QueueFree();
-        BuildHud();
-        if (minimap != null) { minimapSlot.AddChild(minimap); minimap.Relayout(ScreenMode.PixelSize(GetWindow())); }
-        foreach (var (m, _) in messengers) m.Relayout(ScreenMode.PixelSize(GetWindow()));
-        groupMessenger?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        foreach (var (m, _) in groupWindows) m.Relayout(ScreenMode.PixelSize(GetWindow()));
-        notice?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        questLog?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        worldMap?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        achieveMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        systemMenuMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        optionMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));       // GFxManager::ResizeMovies, then the dialog's alignment
-        partyMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
-        popupMovie?.Relayout(ScreenMode.PixelSize(GetWindow()));
+        var window = ScreenMode.PixelSize(GetWindow());
+        u = UiScale.For(window); stage = UiScale.MovieStage(window);
+        resizing.Clear();
+        CollectMovies(this, resizing);
+        var before = new (double W, double H)[resizing.Count];
+        for (int i = 0; i < resizing.Count; i++) before[i] = resizing[i].ResizeViewport(window);   // ResizeMovies
+        damageEffect?.Align(window);
+        playerNameTag?.Resize(window);
+        playerBar?.Resize(window);
+        damageText?.Resize(window);
+        for (int i = 0; i < resizing.Count; i++) resizing[i].RestoreDevice(before[i]);            // vfunc_5: each vfunc_17
+        for (int i = 0; i < resizing.Count; i++) resizing[i].LayoutLoaded();                      // vfunc_1: each layout
+        resizing.Clear();
+    }
+
+    readonly List<MovieDialog> resizing = new();
+
+    /// <summary>The scene's loaded movies (GFxManager's m_mapMovies), in tree order. The field's own movies follow its
+    /// viewport themselves (NpcEmoticons), as do the message box and tooltip layers, so the field is not walked.</summary>
+    void CollectMovies(Node n, List<MovieDialog> into)
+    {
+        for (int i = 0, count = n.GetChildCount(); i < count; i++)
+        {
+            var c = n.GetChild(i);
+            if (c == fieldScene) continue;
+            if (c is MovieDialog m) into.Add(m);
+            CollectMovies(c, into);
+        }
     }
 
     /// <summary>
@@ -299,17 +311,14 @@ public partial class HudScene : Node, IUiStageHost
         GameMenu(uiRoot);
         EventWidgets(uiRoot);
         LearningQuest();
-        if (unwatchPrestige == null) WatchPrestige();       // a window relayout keeps it
+        if (unwatchPrestige == null) WatchPrestige();
         CharacterAbility();
-        if (unwatchMeso == null) WatchMeso();               // a window relayout keeps it
+        if (unwatchMeso == null) WatchMeso();
         Mastery();
         SystemMenuFacts();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
-        if (questLog != null) uiRoot.AddChild(questLog);       // dialogs draw over the HUD (UIDialog m_e0: layer 4)
-        if (worldMap != null) uiRoot.AddChild(worldMap);
-        if (achieveMovie != null) uiRoot.AddChild(achieveMovie);
     }
 
     CanvasLayer screenMaskLayer;        // CommonDepth.ScreenMask (10): over the damage text and action guide, under the HUD
@@ -324,7 +333,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void ScreenMask()
     {
-        if (screenMask != null) { screenMaskLayer.Offset = UiScale.MovieOrigin; screenMask.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
+        if (screenMask != null) return;
         if (worldLoadPending) return;       // unloaded by a field move: made again at the new field's load complete
         string bgMask = "";
         try { bgMask = FieldData.FindByXBlock(assets.Packs, xblock)?.BgMask ?? ""; } catch (Exception ex) { GD.PushWarning("screen mask field data: " + ex.Message); }
@@ -548,7 +557,6 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void UpperHud(Control ui)
     {
-        if (upperHud != null) { ui.AddChild(upperHud); upperHud.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         var model = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
         if (GatePath != null) model.ServerTime = () => GateClock;   // the perf gate: no minute change mid-run
         model.Features.Clear();
@@ -580,7 +588,6 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>The target HP bar (UIUpperHpBar, uiupperhpbar.cpp), run by its movie; kept across relayouts.</summary>
     void TargetHpBar(Control ui)
     {
-        if (targetBar != null) { ui.AddChild(targetBar); targetBar.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         TargetBar = new Ms2.Ui.Hud.UpperHpBarController();
         targetBar = new MovieDialog(assets, TargetBar, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(targetBar);
@@ -592,7 +599,6 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void CastingGauge(Control ui)
     {
-        if (castingBar != null) { ui.AddChild(castingBar); castingBar.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         CastingBar = new Ms2.Ui.Hud.CastingBarController();
         castingBar = new MovieDialog(assets, CastingBar, NewModel(), ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(castingBar);
@@ -605,7 +611,6 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void GuideEventPane(Control ui)
     {
-        if (guideEvent != null) { ui.AddChild(guideEvent); guideEvent.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         GuideEvent = new Ms2.Ui.Hud.GuideEventController
         {
             NowMs = () => (uint)Time.GetTicksMsec(),
@@ -769,7 +774,6 @@ public partial class HudScene : Node, IUiStageHost
     void SystemTextLines(Control ui)
     {
         ui.AddChild(systemTextSlot = new Control { Name = "uisystemtext", MouseFilter = Control.MouseFilterEnum.Ignore });
-        if (systemText != null) { systemTextSlot.AddChild(systemText); systemText.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         if (SystemText != null) return;     // unloaded by a field move: loaded again at the new field's load complete
         SystemText = new Ms2.Ui.Hud.SystemTextController { UpperHpBar = TargetBar, TickMs = () => (uint)Time.GetTicksMsec() };
         // STILL-OPEN: PlaySystemSound (the emergency line's "emergency_notice"): this HUD has no system sound player
@@ -1395,7 +1399,6 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void Quests(Control ui)
     {
-        if (questGuide != null) { ui.AddChild(questGuide); questGuide.Relayout(ScreenMode.PixelSize(GetWindow())); return; }
         var log = QuestLogSource();
         if (log == null) return;
         if (questState != null)
@@ -1548,11 +1551,6 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void EventWidgets(Control ui)
     {
-        if (eventWidgets != null)
-        {
-            foreach (var w in eventWidgets) { ui.AddChild(w); w.Relayout(ScreenMode.PixelSize(GetWindow())); }
-            return;
-        }
         eventWidgets = new List<MovieDialog>();
         var log = QuestLogSource();
         var widgets = new List<Ms2.Ui.Hud.EventWidgetController> { new Ms2.Ui.Hud.BurningEventWidgetController(hudModel) };

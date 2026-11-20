@@ -185,6 +185,38 @@ public partial class MovieDialog : Node2D
         Host.Controller.Resize(oldW, oldH, Player.StageW, Player.StageH);
     }
 
+    /// <summary>
+    /// GFxManager::ResizeMovies (gfxmanager.cpp:158) for this movie, the device-restore step every movie takes first: the
+    /// stage size before the resize is kept (UpdateStageSize, :164, read back by FUN_1422b0840), then GFxMovie::vfunc_7
+    /// (gfxmovie.cpp:146) gives the movie the new viewport, (-1, -1, w + 2, h + 2) at its scale, and sends it SceneResize,
+    /// which the AS3 stage gets as Event.RESIZE (the movies run with SM_NoScale, gfxmovie.cpp:129; the event's dispatch,
+    /// sfr_as3_17d.cpp:1167). Returns the stage before the resize for the dialog's <see cref="RestoreDevice"/>.
+    /// STILL-OPEN: the client's SceneResize is handled inside Scaleform's HandleEvent; whether the stage's listeners run
+    /// at once or on the next Advance is not traced here. They run at once.
+    /// </summary>
+    public (double W, double H) ResizeViewport(Vector2 window)
+    {
+        var before = (Player.StageW, Player.StageH);
+        Resize(window);
+        Place(window);
+        SetClientStage(window);
+        if (Player.Stage is { } st)
+        {
+            var rt = Player.RT;
+            rt.Guard("resize", () => st.Dispatch((AsEvent)rt.GetClass("flash.events.Event").Construct(AsEvent.RESIZE)));
+        }
+        return before;
+    }
+
+    /// <summary>UISwfEntityManager::vfunc_5 (uiswfentitymanager.cpp:483): the dialog's vfunc_17 with the stage cached
+    /// before the resize (<see cref="UiController.RestoreDevice"/>).</summary>
+    public void RestoreDevice((double W, double H) before) =>
+        Host.Controller.RestoreDevice(before.W, before.H, Player.StageW, Player.StageH);
+
+    /// <summary>UISwfEntityManager::vfunc_1 (uiswfentitymanager.cpp:413), after every dialog's vfunc_17: each loaded entity's
+    /// layout, FUN_1422dc450.</summary>
+    public void LayoutLoaded() => Host.Controller.LayoutAndClear(Player.StageW, Player.StageH);
+
     /// <summary>The movie's next frames now (a shot steps the timeline instead of waiting for real time).</summary>
     public void Step(int frames)
     {

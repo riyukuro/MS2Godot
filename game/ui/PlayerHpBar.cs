@@ -24,7 +24,8 @@ public sealed partial class PlayerHpBar : CanvasLayer
 {
     readonly HpBarClip clip;
     readonly PlayerNameTag tag;
-    readonly float offset, u = 1;
+    readonly float offset;
+    float u = 1;
     long cur, max;
     bool active, keepAlive, shown, dead, battle, dirty;
     int period;                         // m_64: the timer period OnStat sets
@@ -46,6 +47,17 @@ public sealed partial class PlayerHpBar : CanvasLayer
     }
 
     public PlayerHpBar() { }
+
+    /// <summary>
+    /// The window was resized: the movie's new viewport scale (GFxManager::ResizeMovies, GFxMovie::vfunc_7,
+    /// gfxmovie.cpp:146), kept alive with its state. STILL-OPEN: the clips already built keep the glyphs they were built
+    /// with at the old scale and are only scaled; the client's Scaleform draws them again at the new viewport scale.
+    /// </summary>
+    public void Resize(Vector2 window)
+    {
+        u = UiScale.For(window);
+        clip?.Rescale(u);
+    }
 
     /// <summary>The field was swapped under the HUD (HudScene.SwapField): the new field's camera is found again.</summary>
     public void FieldChanged() => camera = null;

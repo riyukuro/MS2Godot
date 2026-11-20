@@ -123,6 +123,26 @@ public class DialogSettingsTests
         Assert.That(Pos(h).Y, Is.EqualTo(25).Within(0.05));
     }
 
+    /// <summary>The device restore after a resize (UIDialog::vfunc_17, then the layout, UISwfEntityManager::vfunc_5 /
+    /// vfunc_1): a dialog placed from its file keeps its ratio to the stage, and the layout keeps it there.</summary>
+    [Test]
+    public void ADeviceRestoreKeepsAPlacedDialogsRatioToTheStage()
+    {
+        var folder = new MemoryFolder();
+        var first = Open(folder);
+        Call(first, "OnStartDrag");
+        first.Set(first.Entity, "x", 100.0);
+        first.Set(first.Entity, "y", 50.0);
+        Call(first, "OnStopDrag");
+
+        var h = Open(folder);
+        h.Player.StageW = 960; h.Player.StageH = 540;
+        h.Controller.RestoreDevice(1920, 1080, 960, 540);
+        h.Controller.LayoutAndClear(960, 540);
+        Assert.That(Pos(h).X, Is.EqualTo(50).Within(0.05));
+        Assert.That(Pos(h).Y, Is.EqualTo(25).Within(0.05));
+    }
+
     [Test]
     public void CloseSavesTheTabsAndUnloadsAfterTheCloseTween()
     {
