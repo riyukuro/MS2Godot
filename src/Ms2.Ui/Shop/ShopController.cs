@@ -1312,10 +1312,14 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         if (IsPreviewHudOn() || force) PreviewItem?.Invoke(p.Item);
     }
 
-    /// <summary>CanPreviewItem (@0x141b03f70, uishopdialog.cpp:3434): local player gender allowed and item previewable.</summary>
+    /// <summary>CanPreviewItem (@0x141b03f70, uishopdialog.cpp:3434): a local player, the item's gender allowed, then
+    /// FUN_141b48950 (uiugcitemeditdialog.cpp:2337): not expired (CItem::IsExpired) and doNotPreview == 0 (IsPreviewable,
+    /// :2325). The client does not test the item type.</summary>
     public bool CanPreviewItem(Item item) =>
         Model != null && Model.HasLocalPlayer && item?.Data != null
-        && item.Data.IsGenderAllowed(Pc.Gender) && item.Data.DoNotPreview == 0 && item.Data.IsEquip;
+        && item.Data.IsGenderAllowed(Pc.Gender)
+        && !(item.ExpiryTime > 0 && item.ExpiryTime <= ServerTime())
+        && item.Data.DoNotPreview == 0;
 
     /// <summary>PreviewGachaItem (@0x141b04050, uishopdialog.cpp:3448): validates previewability (notice 0xf9 on fail).</summary>
     void PreviewGachaItem(int serial)

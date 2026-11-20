@@ -750,6 +750,16 @@ public class ShopTests
         Assert.That(c.NeedsUgcAgreement(itemData), Is.False, "GetUGCMapInfo null");
         c.CanBuyUgcPackage = _ => true;
 
+        // CanPreviewItem (uishopdialog.cpp:3434 -> FUN_141b48950): not expired, doNotPreview == 0, no item type test
+        var pv = Item.Create(model.Tables.Items, 11300001, 1);
+        itemData.Type = 2; itemData.DoNotPreview = 0; pv.ExpiryTime = 0;
+        Assert.That(c.CanPreviewItem(pv), Is.True, "a non-equip item is previewable");
+        pv.ExpiryTime = 5; c.ServerTime = () => 10;
+        Assert.That(c.CanPreviewItem(pv), Is.False, "expired");
+        pv.ExpiryTime = 0; itemData.DoNotPreview = 1;
+        Assert.That(c.CanPreviewItem(pv), Is.False, "doNotPreview");
+        itemData.DoNotPreview = 0;
+
         // CloseShop closes active buyItem message box
         boxClosed = false;
         c.CurrentBox = () => MessageBoxQueue.Create(0x11, "", c, "buyItem,1,1");
