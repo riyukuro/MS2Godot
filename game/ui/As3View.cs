@@ -51,6 +51,7 @@ public partial class As3View : Node2D
         public MaskShape Mask;           // set when this object masks following siblings or is masked by script
         public int Seen;                 // the last sync that walked it (MS2_PERF_SYNCCHECK)
         public bool ClipMask;            // a timeline mask (not drawn)
+        public bool Deferred;            // hidden: its holder is hidden and its subtree is left as it was (see SyncObject)
         public int Z;                    // the holder's z index (the dragged sprite's, see SyncObject)
         // the holder's transform, visibility and colour and the content's material as last set (the node defaults at first):
         // a property is set again only when it changes
@@ -155,7 +156,7 @@ public partial class As3View : Node2D
         {
             ScriptMaskWalks++;
             long changes = AsDisplayObject.Changes, own = Player.RT.DisplayMarks;
-            foreach (var e in scriptMasked) e.Obj.MarkChanged();
+            foreach (var e in scriptMasked) if (Reached(e.Obj)) e.Obj.MarkChanged();
             AsDisplayObject.Changes = changes; Player.RT.DisplayMarks = own;
         }
         var stage = Player.Stage;
@@ -231,7 +232,7 @@ public partial class As3View : Node2D
     void UpdateMasks()
     {
         HashSet<AsDisplayObject> now = null;
-        foreach (var e in scriptMasked) if (e.Obj.MaskObject is { } mo) (now ??= new()).Add(mo);
+        foreach (var e in scriptMasked) if (e.Obj.MaskObject is { } mo && Reached(e.Obj)) (now ??= new()).Add(mo);
         now ??= noMasks;
         if (now.Count == 0 && masks.Count == 0) return;
         foreach (var o in masks) if (!now.Contains(o)) Revisible(o, now);
@@ -257,6 +258,25 @@ public partial class As3View : Node2D
     /// </summary>
     static bool Drawn(AsDisplayObject o) => o.IsVisible && o.MaskOwner == null;
 
+    /// <summary>A timeline mask: an object with a clip depth on a timeline depth (SyncChildren clips the following depths to it).</summary>
+    static bool IsClipMask(AsDisplayObject k) => k.ClipDepth is int && k.Depth != int.MinValue;
+
+    /// <summary>
+    /// Whether the sync walks into a hidden object: only when it is a timeline mask. Any other hidden object's holder is
+    /// hidden and its subtree is deferred (<see cref="SyncObject"/>), as nothing under it is drawn: a node without
+    /// NF_Visible adds nothing to its parent (TreeContainer::NodeData::PropagateUp @0x14261c910, sfr_render_03c.cpp:687) and
+    /// its cache node takes the flag on Change_Visible (sfr_render_04p.cpp:248), and a hidden Godot CanvasItem hides its
+    /// children the same way.
+    /// </summary>
+    static bool Defers(AsDisplayObject o, bool clipMask) => !o.IsVisible && !clipMask;
+
+    /// <summary>Whether the sync reaches the object: no ancestor below the stage defers it (<see cref="Defers"/>).</summary>
+    static bool Reached(AsDisplayObject o)
+    {
+        for (var p = o.Parent; p != null; p = p.Parent) if (Defers(p, IsClipMask(p))) return false;
+        return true;
+    }
+
     /// <summary>
     /// Puts the nodes of a container's children under <paramref name="into"/> in display order (after the container's own
     /// <paramref name="content"/>); the children a timeline mask clips go under the mask's node, in display order. A child
@@ -272,7 +292,7 @@ public partial class As3View : Node2D
         foreach (var k in c.Children)
         {
             if (clip != null && k.Depth > clipEnd) clip = null;
-            bool clipMask = k.ClipDepth is int && k.Depth != int.MinValue;
+            bool clipMask = IsClipMask(k);
             bool visit = deep || k.ChangedBelow || k.Tag is not Entry;
             var e = visit ? SyncObject(k, nine, blend, clipMask, deep) : (Entry)k.Tag;
             if (clipMask)
@@ -291,8 +311,13 @@ public partial class As3View : Node2D
             {
                 if (e.Mask == null) { e.Mask = new MaskShape(); byNode[e.Mask] = e; }
                 var mo = k.MaskObject;
-                toC ??= c.ToGlobalMatrix().Inverse();
-                Checked(e.Mask.Refresh(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value)), "script mask polygons", e);
+                // a hidden masked object is not drawn, so neither is its mask: the polygons are made when it is shown again
+                // (showing it marks it, and so walks this container)
+                if (k.IsVisible)
+                {
+                    toC ??= c.ToGlobalMatrix().Inverse();
+                    Checked(e.Mask.Refresh(mo, (mo.Parent?.ToGlobalMatrix() ?? Mat.Identity).Then(toC.Value)), "script mask polygons", e);
+                }
                 if (e.Holder.GetParent() != e.Mask) { Checked(true, "masked holder parent", e); e.Holder.GetParent()?.RemoveChild(e.Holder); e.Mask.AddChild(e.Holder); }
                 top = e.Mask;
             }
@@ -361,13 +386,35 @@ public partial class As3View : Node2D
 
     /// <summary>
     /// Syncs one display object's holder and content (when it or an ancestor's context is marked) and walks into its
-    /// marked children; the object's marks are cleared.
+    /// marked children; the object's marks are cleared. A hidden object (<see cref="Defers"/>) only hides its holder: its
+    /// content and subtree are left as they were (a new one gets an empty holder), and the first sync that finds it shown
+    /// again redoes all of it. The marks under it stay set meanwhile, so the marks made under it stop there.
     /// </summary>
     Entry SyncObject(AsDisplayObject o, NineCtx nine, Material blend, bool clipMask, bool deep)
     {
         bool fresh = o.Tag is not Entry e;
-        bool self = deep || fresh || o.ChangedSelf;
-        bool kidsDeep = deep || fresh || o.ChangedDeep;
+        if (Defers(o, clipMask))
+        {
+            o.ClearMarks();
+            if (fresh)
+            {
+                Checked(true, "unsynced object", o);
+                e = new Entry { Obj = o, Holder = new Node2D { Name = string.IsNullOrEmpty(o.InstanceName) ? o.Class?.LocalName ?? "obj" : o.InstanceName, Visible = false }, Visible = false };
+                o.Tag = e; entries.Add(e); byNode[e.Holder] = e;
+            }
+            else e = (Entry)o.Tag;
+            e.Deferred = true;
+            e.Seen = gen;
+            e.ClipMask = false;
+            if (e.Visible) { Checked(true, "visible", e); e.Holder.Visible = e.Visible = false; }
+            if (o.MaskObject != null) scriptMasked.Add(e);
+            else scriptMasked.Remove(e);
+            if (checking) SeenBelow(e);
+            return e;
+        }
+        bool shown = !fresh && ((Entry)o.Tag).Deferred;
+        bool self = deep || fresh || shown || o.ChangedSelf;
+        bool kidsDeep = deep || fresh || shown || o.ChangedDeep;
         o.ClearMarks();
         blend = BlendFor(o.Blend) ?? blend;
         if (fresh)
@@ -377,6 +424,7 @@ public partial class As3View : Node2D
             o.Tag = e; entries.Add(e); byNode[e.Holder] = e;
         }
         else e = (Entry)o.Tag;
+        e.Deferred = false;
         e.Seen = gen;
         var m = o.Matrix;
         // Scale-9: every node under a grid sprite keeps its matrix; only shape meshes are made through the grid, from
@@ -477,10 +525,25 @@ public partial class As3View : Node2D
         finally { checking = false; }
     }
 
+    /// <summary>The masks of the objects the sync reaches: not under a deferred object (<see cref="Defers"/>).</summary>
     static void CollectMasks(AsDisplayObject o, HashSet<AsDisplayObject> masks)
     {
         if (o.MaskObject != null) masks.Add(o.MaskObject);
+        if (Defers(o, IsClipMask(o))) return;
         if (o is AsContainer c) foreach (var k in c.Children) CollectMasks(k, masks);
+    }
+
+    /// <summary>The check sync: the entries under a deferred object were walked as far as the sync goes (they are kept).</summary>
+    void SeenBelow(Entry root)
+    {
+        var stack = new Stack<Node>();
+        foreach (var ch in root.Holder.Kids()) stack.Push(ch);
+        while (stack.Count > 0)
+        {
+            var n = stack.Pop();
+            if (byNode.TryGetValue(n, out var e)) e.Seen = gen;
+            foreach (var ch in n.Kids()) stack.Push(ch);
+        }
     }
 
     /// <summary>In the check sync, logs a change it made (the marked sync missed it).</summary>
