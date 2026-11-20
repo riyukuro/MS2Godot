@@ -58,6 +58,11 @@ public sealed class FieldBuilder
     public readonly HashSet<FieldEntity> NotReceivingElsewhere = new();
     /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
+    /// <summary>Visible dynamic Mesh entities whose model holds particle systems, with the model's particles-only effect
+    /// scene: world/FieldEffects runs them, as the field's meshes draw the rest of the model.</summary>
+    public readonly List<(FieldEntity entity, EffectScene particles)> ParticleEntities = new();
+    /// <summary>The models of static entities with particle systems, which are not run (<see cref="IsStatic"/>).</summary>
+    public readonly List<string> StaticParticleModels = new();
     /// <summary>Optional: the field load's entity count, bumped as each entity of the set is placed (see <see cref="World.LoadCount"/>).</summary>
     public World.LoadCount Load;
     /// <summary>One drawn copy of a mesh of an entity: instance <see cref="Index"/> of <see cref="Mm"/>.</summary>
@@ -109,6 +114,7 @@ public sealed class FieldBuilder
         public List<Shape3D> Overlap;    // the same meshes for the overlap tests (TwoSidedSpace), by index
         public bool Elsewhere;           // DrawsInstance took it (per field)
         public bool AnimatesMaterial;    // a mesh has a shader-run controller (alpha, flipbook, uv scroll, morph): IsStatic splits the batch
+        public EffectScene Particles;    // the model's emitting particle systems (ModelAsset.Particles); null: none
     }
 
     readonly Dictionary<string, ModelEntry> models = new(StringComparer.OrdinalIgnoreCase);
@@ -140,7 +146,7 @@ public sealed class FieldBuilder
                 if (asset.ControllersError != null) GD.PushWarning($"controllers {llid}: {asset.ControllersError}");
                 me = new ModelEntry { Data = asset.Data, Meshes = asset.Meshes, Bounds = asset.Bounds, Collision = asset.Collision,
                                       Overlap = asset.Overlap, Elsewhere = DrawsInstance?.Invoke(llid, asset.Data, asset.Controllers) == true,
-                                      AnimatesMaterial = asset.Data.Meshes.Any(m => m.AnimatesMaterial) };
+                                      AnimatesMaterial = asset.Data.Meshes.Any(m => m.AnimatesMaterial), Particles = asset.Particles };
             }
         }
         if (me == null) Missing++;
@@ -159,6 +165,24 @@ public sealed class FieldBuilder
         public readonly List<Shape3D> Overlap = new();
         public KfAnimation Controllers;     // null: none
         public string ControllersError;
+        public EffectScene Particles;       // null: no emitting particle system (ParticlesOf)
+    }
+
+    /// <summary>
+    /// A field model's particle systems as an effect scene with no meshes (the field draws those). Every node of the
+    /// model's graph updates with it, so its NiPSParticleSystems simulate as an effect's do (EffectInstance). A system
+    /// with no emitter, or under a node that is culled in the file (its subtree is not drawn), is left out.
+    /// STILL-OPEN: a visibility controller that unculls such a node over time; a static entity's systems (updated once, at
+    /// add time, so nothing is emitted: FieldBuilder.IsStatic) are not run at all.
+    /// </summary>
+    static EffectScene ParticlesOf(NifFile nif)
+    {
+        if (!nif.Blocks.Any(b => b.Type is "NiPSParticleSystem" or "NiPSMeshParticleSystem")) return null;
+        var sc = EffectScene.Load(nif);
+        sc.Meshes.Clear();
+        bool Culled(int i) => i >= 0 && (sc.Nodes[i].Culled || Culled(sc.Nodes[i].Parent));
+        sc.Systems.RemoveAll(d => d.Emitters.Count == 0 || Culled(d.Node));
+        return sc.Systems.Count > 0 ? sc : null;
     }
 
     ModelAsset LoadAsset(string archive, string entry)
@@ -172,6 +196,8 @@ public sealed class FieldBuilder
                 me.Data = md;
                 try { me.Controllers = KfAnimation.FromControllers(nif); }
                 catch (Exception ex) { me.ControllersError = ex.Message; }
+                try { me.Particles = ParticlesOf(nif); }
+                catch (Exception ex) { GD.PushWarning($"particles {archive}:{entry}: {ex.Message}"); }
                 foreach (var cm in PhysXCollision.Load(nif))
                 {
                     // A triangle's front is its PhysX normal (v1 - v0) x (v2 - v0); Godot takes Plane(v0, v1, v2), the
@@ -370,6 +396,12 @@ public sealed class FieldBuilder
                 if (isMesh && !fluid && generated == null)
                     foreach (var shape in me.Collision) npcGround.Add(shape, xf);
 
+                // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes
+                if (me.Particles != null && e.Bool("IsVisible", true) && !e.HasMixin("EffectMesh"))
+                {
+                    if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
+                    else ParticleEntities.Add((e, me.Particles));
+                }
                 if (e.Bool("IsVisible", true) && e.HasMixin("EffectMesh") && assets.Resolve(llid) is (string ea, string ee) && ea == "Resource/Model/Effect") { EffectEntities.Add((e, ea, ee)); }
                 else if (e.Bool("IsVisible", true) && me.Elsewhere)
                 {

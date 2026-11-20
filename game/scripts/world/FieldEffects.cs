@@ -36,4 +36,27 @@ public static class FieldEffects
         GD.Print($"field effects: {n} of {list.Count}: " + string.Join(", ", list.GroupBy(x => x.entity.ModelName).Select(g => g.Key + " x" + g.Count())));
         return root;
     }
+
+    /// <summary>
+    /// The particle systems of dynamic field models (FieldBuilder.ParticleEntities). A dynamic entity is updated every tick
+    /// on the game clock (FieldBuilder.IsStatic), and its NiPSParticleSystems with it, so each plays as a looping effect at the
+    /// entity's position, rotation and scale, with the model's meshes left to the field draw.
+    /// </summary>
+    public static Node3D BuildParticles(ModelBuilder builder, List<(FieldEntity entity, EffectScene particles)> list, List<string> staticModels)
+    {
+        var root = new Node3D { Name = "FieldParticles" };
+        int n = 0;
+        foreach (var (e, scene) in list)
+        {
+            try
+            {
+                root.AddChild(new EffectInstance(scene, builder, 1e7f, n) { Name = "Particles_" + n, Position = FieldBuilder.ToGodotPoint(e.Position), FileSpace = ModelBuilder.ToGodot(e.EffectSpace) });
+                n++;
+            }
+            catch (Exception ex) { GD.PushWarning($"particles {e.ModelName}: {ex.Message}"); }
+        }
+        if (staticModels.Count > 0) GD.Print($"field particles not run, static entities: " + string.Join(", ", staticModels.GroupBy(x => x).Select(g => g.Key + " x" + g.Count())));
+        if (n > 0) GD.Print($"field particles: {n} entities, {list.Select(x => x.particles).Distinct().Sum(s => s.Systems.Count)} systems in {list.Select(x => x.particles).Distinct().Count()} models: " + string.Join(", ", list.GroupBy(x => x.entity.ModelName).Select(g => g.Key + " x" + g.Count())));
+        return root;
+    }
 }
