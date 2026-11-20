@@ -87,6 +87,7 @@ namespace Ms2.Avm2.Flash
         // quiet movies and static subtrees instead of walking the whole display list every tick.
         readonly List<AsMovieClip> playingClips = new();
         readonly List<AsDisplayObject> advanceBuf = new();
+        readonly List<KeyValuePair<JsonObject, AsDisplayObject>> wrapBuf = new();   // Advance's copy of Live at a loop to frame 0
         uint advanceEpoch;
         bool advancing;
         int frameHead;
@@ -763,8 +764,16 @@ namespace Ms2.Avm2.Flash
                     foreach (var (pl, _) in mc.Live)
                         if (J.Iv(pl["first"]) > 0) { any = true; break; }
                     if (any)
-                        foreach (var (pl, ch) in mc.Live.ToList())
-                            if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
+                    {
+                        // from a copy, as a removedFromStage handler can change Live (Advance itself is not re-entered)
+                        foreach (var kv in mc.Live) wrapBuf.Add(kv);
+                        try
+                        {
+                            foreach (var (pl, ch) in wrapBuf)
+                                if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
+                        }
+                        finally { wrapBuf.Clear(); }
+                    }
                 }
                 BuildFrame(mc, next);
                 MarkScript(mc, inOrder: true);
