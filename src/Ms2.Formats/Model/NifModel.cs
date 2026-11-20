@@ -462,6 +462,8 @@ public sealed class ModelData
                 else if (cb.Type == "NiTextureTransformController")
                 {
                     long op = cb.IntOr("Operation", -1);
+                    // Texture Slot of a Shader Map controller indexes the shader maps, not base/dark/glow/decal
+                    if (cb.IntOr("Shader Map", 0) != 0) continue;
                     if (op is < 0 or > 4 || ReadFloatAnim<UvAnim>(nif, cb, clamp: cycle == 2) is not { } ua) continue;
                     ua.Slot = slotName;
                     ua.Operation = (int)op;
