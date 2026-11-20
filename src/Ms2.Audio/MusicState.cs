@@ -210,24 +210,31 @@ public sealed class MusicController
 
     /// <summary>
     /// Evaluates the current segment's outgoing transition links (FEV comp/lnks/lfsd + cprm) against the live music
+    /// parameters without mutating state. Zero allocations.
+    /// </summary>
+    public MusicSegment PeekNextSegment()
+    {
+        if (CurrentSegment == null) return null;
+        var links = CurrentSegment.OutgoingLinks;
+        for (int i = 0; i < links.Count; i++)
+        {
+            if (LinkMatches(links[i]))
+                return fev.GetMusicSegment(links[i].TargetSegmentId);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Evaluates the current segment's outgoing transition links (FEV comp/lnks/lfsd + cprm) against the live music
     /// parameters when the segment reaches its end. Returns the next segment, or null when no link matches (the music
     /// stops, as on the 6 one-shot cues or when a condition does not match).
     /// </summary>
     public MusicSegment AdvanceSegment()
     {
-        if (CurrentSegment == null) { IsPlaying = false; return null; }
-        foreach (var link in CurrentSegment.OutgoingLinks)
-        {
-            if (LinkMatches(link))
-            {
-                CurrentSegment = fev.GetMusicSegment(link.TargetSegmentId);
-                IsPlaying = CurrentSegment != null;
-                return CurrentSegment;
-            }
-        }
-        CurrentSegment = null;
-        IsPlaying = false;
-        return null;
+        var next = PeekNextSegment();
+        CurrentSegment = next;
+        IsPlaying = next != null;
+        return next;
     }
 
     bool LinkMatches(MusicLink link)
@@ -325,5 +332,122 @@ public sealed class BossBgmTracker
         music.PlayFieldBgm(fieldBgm, force: false);
         playingBoss = false;
         return true;
+    }
+}
+
+/// <summary>
+/// Two-player crossfade state for FMOD Ex interactive music theme transitions:
+/// - Client calls FMOD::MusicSystem::promptCue (CSoundEventMgr::PlayMusic @0x14177c100, soundeventmgr.cpp:1165,1186).
+/// - MS2Sound.fev comp/thms/thm /thmd stores each theme's crossfadeMs (offset 11, parsed into MusicTheme.CrossfadeMs);
+///   all 311 links in comp/lnks/lnk /lnkd have TransitionType = 4 (EndOfSegment).
+/// - The actual mixer crossfade runs inside fmod_event64.dll (not recovered in MapleStory2.exe); this models the
+///   two-voice linear overlap over CrossfadeMs between cues and at end-of-segment transitions with zero per-frame allocations.
+/// </summary>
+public sealed class MusicCrossfade
+{
+    public const int SlotCount = 2;
+
+    int activeSlot;
+    bool activePlaying;
+    bool fading;
+    float fadeElapsed;
+    float fadeDuration;
+    float outgoingStartGain;
+    float gain0;
+    float gain1;
+
+    public int ActiveSlot => activeSlot;
+    public int OutgoingSlot => 1 - activeSlot;
+    public bool IsFading => fading;
+    public float FadeElapsed => fadeElapsed;
+    public float FadeDuration => fadeDuration;
+    public float Gain(int slot) => slot == 0 ? gain0 : gain1;
+    public float ActiveGain => Gain(activeSlot);
+    public float OutgoingGain => Gain(OutgoingSlot);
+
+    /// <summary>
+    /// Begins a transition into a new cue or segment using <paramref name="crossfadeMs"/> (MusicTheme.CrossfadeMs).
+    /// When <paramref name="hasActiveAudio"/> is true and <paramref name="crossfadeMs"/> &gt; 0, flips to the other slot
+    /// so the outgoing player fades out while the incoming player fades in from 0 to 1. If a previous crossfade was still
+    /// running, returns its old outgoing slot in <c>OutgoingSlotToStop</c> and fades the interrupted active slot from its
+    /// current gain to avoid a volume pop.
+    /// </summary>
+    public (int IncomingSlot, int OutgoingSlotToStop, bool Crossfading) BeginTransition(int crossfadeMs, bool hasActiveAudio)
+    {
+        if (hasActiveAudio && crossfadeMs > 0)
+        {
+            int stopNow = fading ? OutgoingSlot : -1;
+            float prevActiveGain = ActiveGain;
+            activeSlot = 1 - activeSlot;
+            activePlaying = true;
+            fading = true;
+            fadeElapsed = 0f;
+            fadeDuration = crossfadeMs * 0.001f;
+            outgoingStartGain = prevActiveGain > 0f ? prevActiveGain : 1f;
+            SetGain(activeSlot, 0f);
+            SetGain(OutgoingSlot, outgoingStartGain);
+            return (activeSlot, stopNow, true);
+        }
+
+        int stopOther = activePlaying || fading ? OutgoingSlot : -1;
+        activePlaying = true;
+        fading = false;
+        fadeElapsed = 0f;
+        fadeDuration = 0f;
+        outgoingStartGain = 0f;
+        SetGain(activeSlot, 1f);
+        SetGain(OutgoingSlot, 0f);
+        return (activeSlot, stopOther, false);
+    }
+
+    /// <summary>
+    /// Advances the active crossfade by <paramref name="deltaSeconds"/>. Zero allocations.
+    /// Returns the outgoing slot index to stop when the crossfade completes on this tick, or -1 otherwise.
+    /// </summary>
+    public int Step(float deltaSeconds)
+    {
+        if (!fading) return -1;
+        if (deltaSeconds > 0f) fadeElapsed += deltaSeconds;
+        if (fadeElapsed >= fadeDuration || fadeDuration <= 0f)
+        {
+            fading = false;
+            fadeElapsed = fadeDuration;
+            SetGain(activeSlot, 1f);
+            SetGain(OutgoingSlot, 0f);
+            return OutgoingSlot;
+        }
+        float t = fadeElapsed / fadeDuration;
+        SetGain(activeSlot, t);
+        SetGain(OutgoingSlot, outgoingStartGain * (1f - t));
+        return -1;
+    }
+
+    /// <summary>
+    /// True once a non-looping segment of length <paramref name="segmentSeconds"/> at <paramref name="positionSeconds"/>
+    /// enters its end-of-segment crossfade window for <paramref name="crossfadeMs"/>. Zero allocations.
+    /// </summary>
+    public static bool ShouldBeginSegmentCrossfade(double positionSeconds, double segmentSeconds, int crossfadeMs)
+    {
+        if (crossfadeMs <= 0 || segmentSeconds <= 0.0) return false;
+        double fadeSec = crossfadeMs * 0.001;
+        if (fadeSec > segmentSeconds) fadeSec = segmentSeconds;
+        return positionSeconds >= segmentSeconds - fadeSec;
+    }
+
+    public void StopAll()
+    {
+        activePlaying = false;
+        fading = false;
+        fadeElapsed = 0f;
+        fadeDuration = 0f;
+        outgoingStartGain = 0f;
+        gain0 = 0f;
+        gain1 = 0f;
+    }
+
+    void SetGain(int slot, float value)
+    {
+        if (slot == 0) gain0 = value;
+        else gain1 = value;
     }
 }
