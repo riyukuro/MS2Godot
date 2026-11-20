@@ -14,6 +14,9 @@ public sealed class ModelBone
 /// <summary>Which faces a mesh's draw culls (<see cref="ModelMesh.Cull"/>).</summary>
 public enum FaceCull { Back, Front, None }
 
+/// <summary>The blend a mesh draws with (ModelMesh.Blend).</summary>
+public enum BlendForm { Opaque, Mix, Add, AddUnweighted }
+
 public sealed class ModelMesh
 {
     public int Block = -1;                // the NiMesh block this came from
@@ -31,6 +34,18 @@ public sealed class ModelMesh
     public int ParentBone = -1;           // rigid meshes: the NiNode they hang from (-1 = scene root)
     public float[] Bound;                 // the NiMesh "Bounding Sphere" (its model bound): centre xyz, radius; null if absent
     public Xform Local = Xform.Identity;  // rigid meshes: transform relative to ParentBone
+    /// <summary>Skinned meshes: the mesh node's transform relative to the scene root, which places <see cref="Bound"/> (the
+    /// model bound is in the mesh's own space; its world bound is the mesh's world transform times it, NiBound::Update).</summary>
+    public Xform BoundToRoot = Xform.Identity;
+    /// <summary>Skinned meshes whose NiSkinningMeshModifier has RECOMPUTE_BOUNDS (flag 0x2): each skin bone's index and its
+    /// "Bone Bounds" entry (centre xyz, radius) in the skin's bone order, else null. The client then rebuilds the model bound
+    /// every update from the bones' world transforms (NiSkinningMeshModifier.cpp:913-916, UpdateModelBounds :1036-1056).</summary>
+    public List<(int Bone, float[] Bound)> BoneBounds;
+    /// <summary>With <see cref="BoneBounds"/>: the mesh node relative to the scene root, times the skin's Skeleton Transform
+    /// (m_kRootBoneParentToSkinTransform), times the scene root's own transform. UpdateModelBounds maps the merged bone bound
+    /// by GetWorldToSkinTransform = SkeletonTransform * RootBoneParentWorld^-1 (NiSkinningMeshModifier.inl:58-65) and the mesh
+    /// world transform then places it, so in skeleton (scene root) space the world bound is this times the merged bound.</summary>
+    public Xform BoneBoundsToRoot = Xform.Identity;
     public bool AlphaTest;                // has an NiAlphaProperty
     public float[] Ambient, Diffuse, Emissive;   // NiMaterialProperty colours (rgb), or null without a material
     public float[] Specular;              // NiMaterialProperty specular colour (rgb), or null
@@ -103,6 +118,55 @@ public sealed class ModelMesh
         var (above, below, equal) = AlphaTestClip;
         return !(above && alpha > reference || below && alpha < reference || equal && alpha == reference);
     }
+    /// <summary>The NiVertexColorProperty lighting mode is LIGHTING_E (flags bit 3 clear); without the property it is LIGHTING_E_A_D.</summary>
+    public bool LightingE => VertexColorFlags >= 0 && (VertexColorFlags & 8) == 0;
+
+    /// <summary>Which colour terms the mesh's vertex colours replace (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor,
+    /// NiStandardMaterial.cpp:4377-4450). The source is the NiVertexColorProperty flags bits 4-5. EMISSIVE (1): the vertex colour is
+    /// the emissive, in either lighting mode. AMB_DIFF (2): the vertex colour is the ambient and the diffuse, only with lighting
+    /// E_A_D. The MS2 source 3 ("MS2: v2525"): the vertex colour is the ambient alone, also only with E_A_D. The opacity is split
+    /// from the diffuse colour, or from the emissive under LIGHTING_E (:4436-4450), so it is the vertex alpha when the vertex
+    /// colour is that term: AMB_DIFF with E_A_D, EMISSIVE with E. A mesh without a vertex colour stream keeps the material's
+    /// terms. Effect meshes (EffectMesh.VertexColors) and character meshes (ModelBuilder.CharacterMaterial) take it from here.
+    /// STILL-OPEN: the field meshes still use <see cref="VertexColorsAmbDiff"/>, which does not require E_A_D.</summary>
+    public VertexColorUse VertexColors
+    {
+        get
+        {
+            if (Colors == null || VertexColorFlags < 0) return default;
+            int src = (VertexColorFlags >> 4) & 3;
+            bool ead = !LightingE;
+            return src switch
+            {
+                1 => new VertexColorUse(true, false, false, !ead),
+                2 when ead => new VertexColorUse(false, true, true, true),
+                3 when ead => new VertexColorUse(false, false, true, false),
+                _ => default,
+            };
+        }
+    }
+
+    /// <summary>NiAlphaProperty source blend factor, flag bits 1-4 (ONE 0, ZERO 1, SRCCOLOR 2, INVSRCCOLOR 3, DESTCOLOR 4,
+    /// INVDESTCOLOR 5, SRCALPHA 6, INVSRCALPHA 7, NiAlphaProperty.h:31-45; SRC_BLEND_MASK 0x1e, :112-113).</summary>
+    public int BlendSrc => AlphaFlags >= 0 ? (AlphaFlags >> 1) & 15 : 6;
+    /// <summary>NiAlphaProperty destination blend factor, flag bits 5-8 (DEST_BLEND_MASK 0x1e0, :114-115); the same factor values.</summary>
+    public int BlendDst => AlphaFlags >= 0 ? (AlphaFlags >> 5) & 15 : 7;
+
+    /// <summary>How the mesh's colour meets the target, from the NiAlphaProperty blend bit and factors, which the renderer hands
+    /// the D3D blend state as they are (NiDX9RenderState::ApplyAlpha, NiDX9RenderState.cpp:450-464): none (opaque),
+    /// SRCALPHA / INVSRCALPHA (Mix: src * a + dst * (1 - a)), any source over ONE weighted by the source alpha (Add:
+    /// dst + src * a), and ONE / ONE (AddUnweighted: dst + src, the opacity does not scale it). Every blended character and
+    /// map mesh is one of these (probe over the Npc, Item and Map NIFs).</summary>
+    public BlendForm Blend => !AlphaBlendOn ? BlendForm.Opaque
+        : BlendDst == 0 ? (BlendSrc == 0 ? BlendForm.AddUnweighted : BlendForm.Add)
+        : BlendForm.Mix;
+
+    /// <summary>The opacity the pixel shader tests and blends: the material alpha (the animated one when an NiAlphaController
+    /// drives it), or the vertex alpha where the vertex colour stands in for the term the opacity is split from
+    /// (<see cref="VertexColors"/>), times the base map's alpha (HandleBaseMap, NiStandardMaterial.cpp:4503-4525).</summary>
+    public static float Opacity(float baseAlpha, float materialAlpha, float vertexAlpha, bool vertexOpacity)
+        => baseAlpha * (vertexOpacity ? vertexAlpha : materialAlpha);
+
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, decal0, shaderN
@@ -931,6 +995,21 @@ public sealed class ModelData
                 // Vertices are in the skin's bind space; a bone's world transform times its bone transform maps that space
                 // to the scene root. The body's skins use the scene root itself; item skins (clothes) are often offset.
                 var bts = sk.Structs("Bone Transforms");
+                int mpar = parent.TryGetValue(i, out var mp) ? mp : root;
+                var meshToRoot = (boneOf.TryGetValue(mpar, out var mpb) ? md.Bones[mpb].World : Xform.Identity).Compose(XformOf(b));
+                mesh.BoundToRoot = meshToRoot;
+                if ((sk.IntOr("Flags", 0) & 2) != 0)
+                {
+                    var bb = sk.Structs("Bone Bounds");
+                    mesh.BoneBounds = new List<(int, float[])>();
+                    for (int p = 0; p < skBones.Length && p < bb.Length; p++)
+                    {
+                        var c = bb[p].Struct("Center");
+                        if (boneOf.TryGetValue((int)skBones[p], out int bbp))
+                            mesh.BoneBounds.Add((bbp, new[] { c.Float("x"), c.Float("y"), c.Float("z"), bb[p].Float("Radius") }));
+                    }
+                    mesh.BoneBoundsToRoot = meshToRoot.Compose(XformOf(sk.Struct("Skeleton Transform"))).Compose(md.RootLocal);
+                }
                 if (bts.Length > 0 && boneOf.TryGetValue((int)skBones[0], out int b0))
                 {
                     var toRoot = md.Bones[b0].World.Compose(XformOf(bts[0]));

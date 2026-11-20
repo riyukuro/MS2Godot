@@ -69,33 +69,11 @@ public sealed class EffectMesh
     /// CompositeFinalRGBAColor; ms2standardmaterial.cpp:758-791).</summary>
     public double Opacity(double t) => Alpha != null ? Alpha(AlphaCtl.Local(t)) : Mesh.MaterialAlpha;
 
-    /// <summary>The NiVertexColorProperty lighting mode is LIGHTING_E (flags bit 3 clear); without the property it is LIGHTING_E_A_D.</summary>
-    public bool LightingE => Mesh.VertexColorFlags >= 0 && (Mesh.VertexColorFlags & 8) == 0;
+    /// <summary>The NiVertexColorProperty lighting mode is LIGHTING_E (ModelMesh.LightingE).</summary>
+    public bool LightingE => Mesh.LightingE;
 
-    /// <summary>Which colour terms the mesh's vertex colours replace (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor,
-    /// NiStandardMaterial.cpp:4377-4450). The source is the NiVertexColorProperty flags bits 4-5. EMISSIVE (1): the vertex colour is
-    /// the emissive, in either lighting mode. AMB_DIFF (2): the vertex colour is the ambient and the diffuse, only with lighting
-    /// E_A_D. The MS2 source 3 ("MS2: v2525"): the vertex colour is the ambient alone, also only with E_A_D. The opacity is split
-    /// from the diffuse colour, or from the emissive under LIGHTING_E (:4436-4450), so it is the vertex alpha when the vertex
-    /// colour is that term: AMB_DIFF with E_A_D, EMISSIVE with E. A mesh without a vertex colour stream keeps the material's
-    /// terms, as ModelMesh.VertexColorsAmbDiff does for the field meshes.</summary>
-    public VertexColorUse VertexColors
-    {
-        get
-        {
-            var m = Mesh;
-            if (m.Colors == null || m.VertexColorFlags < 0) return default;
-            int src = (m.VertexColorFlags >> 4) & 3;
-            bool ead = !LightingE;
-            return src switch
-            {
-                1 => new VertexColorUse(true, false, false, !ead),
-                2 when ead => new VertexColorUse(false, true, true, true),
-                3 when ead => new VertexColorUse(false, false, true, false),
-                _ => default,
-            };
-        }
-    }
+    /// <summary>Which colour terms the mesh's vertex colours replace (ModelMesh.VertexColors).</summary>
+    public VertexColorUse VertexColors => Mesh.VertexColors;
 
     /// <summary>The material's colour terms at effect time t, NiMaterialColorController keys applied (Target 0 ambient, 1
     /// diffuse, 3 emissive): lit = emissive + diffuse, amb = the ambient colour, which the scene's ambient light multiplies.

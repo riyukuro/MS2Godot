@@ -396,6 +396,7 @@ public sealed class EquipApplier
                     : targetLocal * dummy * (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 att.AddChild(mi);
             }
+            ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name));
             made.Add(mi);
         }
         return made;

@@ -68,7 +68,13 @@ static class ShaderParam
         Skin = "skin",
         SpecPower = "spec_power",
         SpecularOn = "specular_on",
-        VcolorAmbDiff = "vcolor_amb_diff";
+        VcolorAmbDiff = "vcolor_amb_diff",
+        VcEmissive = "vc_emissive",
+        VcDiffuse = "vc_diffuse",
+        VcAmbient = "vc_ambient",
+        VcOpacity = "vc_opacity",
+        VcSource = "vc_source",
+        LightingE = "lighting_e";
 
     /// <summary>"color0".."color2", the character shader's three recolour parameters.</summary>
     public static readonly StringName[] Color = { "color0", "color1", "color2" };

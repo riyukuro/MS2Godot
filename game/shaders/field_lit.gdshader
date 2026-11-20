@@ -90,15 +90,6 @@ uniform float alpha_ref = 0.5;
 uniform vec3 alpha_clip = vec3(0.0, 1.0, 0.0);
 // NiMaterialProperty alpha (1 without a material): the opacity unless AMB_DIFF vertex colours give it (see fragment())
 uniform float mat_alpha = 1.0;
-// An NiAlphaController on the NiMaterialProperty (NifModel.ReadAlphaController): up to 8 keys, linear (type 1) or
-// Bezier (type 2); alpha_anim_time = start, stop, frequency, phase. alpha_anim_count 0 keeps mat_alpha.
-uniform int alpha_anim_count = 0;
-uniform int alpha_anim_type = 1;
-uniform vec4 alpha_anim_time = vec4(0.0, 1.0, 1.0, 0.0);
-uniform float alpha_anim_t[8];
-uniform float alpha_anim_v[8];
-uniform float alpha_anim_in[8];
-uniform float alpha_anim_out[8];
 uniform float fade_alpha = 1.0;     // FADE: the NiMaterialProperty alpha TransparencyStandardMaterial sets (vfunc_4)
 // FADE: the mesh has its own NiVertexColorProperty, which TransparencyMaterial::FUN_141860140 swaps for a new one that
 // TransparencyStandardMaterial::vfunc_2 sets to source mode 3, lighting E_A_D. The engine's descriptor takes mode 3 as
@@ -127,6 +118,8 @@ uniform float flip_period = 1.0;
 #include "res://shaders/field_uv.gdshaderinc"
 #include "res://shaders/field_billboard.gdshaderinc"
 #include "res://shaders/field_morph.gdshaderinc"
+#define ALPHA_ANIM_TIME anim_time()
+#include "res://shaders/ms2_alpha_anim.gdshaderinc"
 
 varying vec3 world_normal;
 varying vec2 base_uv;    // each drawn map's uv through its texture transform (field_uv map_uv)
@@ -188,27 +181,6 @@ void vertex() {
 	// vertex shader too (NiStandardMaterial, ENVMAPTYPE on the vertex descriptor without a normal map)
 	env_uv = env_sphere_uv(world_pos, world_normal, INV_VIEW_MATRIX[3].xyz, env_u_world, env_v_world);
 #endif
-}
-
-// The alpha controller's value (field_uv loop_time, then the end values outside the keys, else key_segment).
-float alpha_anim() {
-	float t = loop_time(alpha_anim_time);
-	int n = alpha_anim_count;
-	if (t <= alpha_anim_t[0]) {
-		return alpha_anim_v[0];
-	}
-	float r = alpha_anim_v[n - 1];
-	for (int i = 0; i < 7; i++) {
-		if (i + 1 >= n) {
-			break;
-		}
-		float t0 = alpha_anim_t[i], t1 = alpha_anim_t[i + 1];
-		if (t <= t1) {
-			r = key_segment(alpha_anim_type, (t - t0) / max(t1 - t0, 1e-6), alpha_anim_v[i], alpha_anim_v[i + 1], alpha_anim_out[i], alpha_anim_in[i + 1]);
-			break;
-		}
-	}
-	return r;
 }
 
 vec4 sample_slot(sampler2D tex, int slot, vec2 uv) {

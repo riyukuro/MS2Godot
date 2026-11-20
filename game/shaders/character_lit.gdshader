@@ -24,17 +24,11 @@
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
 #include "res://shaders/ms2_fog.gdshaderinc"
-// Blended meshes (NiAlphaProperty blend bit) take the BLEND form, additive ones (destination factor ONE) BLEND + ADD,
-// as field_lit's: blended without the z write, the material alpha times the base map's alpha (ModelBuilder.CharacterMaterial)
-#ifdef ADD
-render_mode unshaded, blend_add, depth_draw_never, cull_back;
-#else
-#ifdef BLEND
-render_mode unshaded, blend_mix, depth_draw_never, cull_back;
-#else
+// The render mode below is the opaque one. ModelBuilder.CharacterShader replaces that line with the mesh's own: its blend
+// (ModelMesh.Blend: blend_mix, blend_add, or blend_premul_alpha with ALPHA 0 for ONE / ONE), its z write and z test
+// (NiZBufferProperty, NiDX9RenderState::ApplyZBuffer, NiDX9RenderState.cpp:626-647) and its culling (NiStencilProperty draw
+// mode, ModelMesh.Cull), and defines BLEND (blended) and ONE (ONE / ONE) above it.
 render_mode unshaded, cull_back;
-#endif
-#endif
 
 global uniform vec3 ms2_ambient;       // scene ambient light colour * dimmer
 global uniform vec3 ms2_sun_color;     // directional light diffuse colour * dimmer
@@ -81,7 +75,14 @@ uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_glow = false;
 uniform float glow_scale = 1.0;
 uniform bool alpha_test = false;
-uniform float mat_alpha = 1.0;   // the NiMaterialProperty alpha (BLEND forms)
+uniform float mat_alpha = 1.0;   // the NiMaterialProperty alpha (1 without a material)
+#include "res://shaders/ms2_alpha_anim.gdshaderinc"
+// the terms the vertex colour (COLOR) stands in for (ModelMesh.VertexColors), and LIGHTING_E (ModelMesh.LightingE)
+uniform bool vc_emissive = false;
+uniform bool vc_diffuse = false;
+uniform bool vc_ambient = false;
+uniform bool vc_opacity = false;
+uniform bool lighting_e = false;
 uniform float alpha_ref = 0.5;
 // clip above / below / equal to alpha_ref (SCM_DEF_ALPHA_TEST_FUNC, D3D11ShaderConstantMap.cpp:3630-3687)
 uniform vec3 alpha_clip = vec3(0.0, 1.0, 0.0);
@@ -113,7 +114,12 @@ float spec_term(vec3 l, vec3 n, vec3 v, vec3 ht, float hl) {
 
 void fragment() {
 	vec4 t = has_tex ? texture(base_tex, UV) : vec4(1.0);
-	if (alpha_test && (alpha_clip.x > 0.5 && t.a > alpha_ref || alpha_clip.y > 0.5 && t.a < alpha_ref || alpha_clip.z > 0.5 && t.a == alpha_ref)) {
+	// The opacity (ModelMesh.Opacity): the material alpha, or the NiAlphaController's value in its place, or the vertex alpha
+	// where the vertex colour is the term the opacity is split from (NiStandardMaterial.cpp:4436-4450), times the base map's
+	// alpha (HandleBaseMap, :4503-4525). The alpha test runs on it (HandleAlphaTest after HandleMS2FinalPixelOutputs,
+	// ms2standardmaterial.cpp:786), as field_lit's.
+	float a = t.a * (vc_opacity ? COLOR.a : (alpha_anim_count > 0 ? alpha_anim() : mat_alpha));
+	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
 	if (has_ctrl) {
@@ -192,7 +198,11 @@ void fragment() {
 		spec = spec_light * mat_specular * g;
 	}
 
-	vec3 lit = clamp(emissive + (own ? own_ambient : ms2_ambient) * mat_ambient + diffuse * mat_diffuse, 0.0, 1.0);
+	// the vertex colour replaces the terms it stands in for; LIGHTING_E keeps the emissive alone (NiStandardMaterial.cpp:3719-3723)
+	vec3 emi = vc_emissive ? COLOR.rgb : emissive;
+	vec3 m_amb = vc_ambient ? COLOR.rgb : mat_ambient;
+	vec3 m_dif = vc_diffuse ? COLOR.rgb : mat_diffuse;
+	vec3 lit = clamp(lighting_e ? emi : emi + (own ? own_ambient : ms2_ambient) * m_amb + diffuse * m_dif, 0.0, 1.0);
 	vec3 c = lit * t.rgb;
 	if (has_glow) {
 		c += texture(glow_tex, UV).rgb * glow_scale;
@@ -208,8 +218,12 @@ void fragment() {
 	}
 	ALBEDO = c;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
 #ifdef BLEND
-	// NiStandardMaterial: the material alpha times the base map's alpha (HandleBaseMap, NiStandardMaterial.cpp:4503-4525)
-	ALPHA = t.a * mat_alpha;
+#ifdef ONE
+	// ONE / ONE adds the colour unweighted: blend_premul_alpha is src + dst * (1 - ALPHA)
+	ALPHA = 0.0;
+#else
+	ALPHA = a;
+#endif
 #endif
 	FOG = vec4(ms2_fog_color, fog_share);
 }

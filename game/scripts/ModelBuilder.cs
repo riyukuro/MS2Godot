@@ -205,6 +205,7 @@ public sealed class ModelBuilder
                 skel.AddChild(mi);
             }
             AddGlowTwin(mi, m, skin);
+            Attached(mi, m, skel, b => b);
         }
 
         var player = new AnimationPlayer { Name = "AnimationPlayer" };
@@ -280,7 +281,8 @@ public sealed class ModelBuilder
             for (int i = 0; i < nv; i++) u2[i] = new Vector2(m.Uvs1[i * 2], m.Uvs1[i * 2 + 1]);
             arrays[(int)Mesh.ArrayType.TexUV2] = u2;
         }
-        if (vertexColor && !instanceColor && m.Colors != null)
+        // character meshes carry COLOR where their vertex colours stand in for a colour term or the opacity (CharacterMaterial)
+        if ((vertexColor || m.VertexColors.Any) && !instanceColor && m.Colors != null)
         {
             var c = new Color[nv];
             for (int i = 0; i < nv; i++) c[i] = new Color(m.Colors[i * 4], m.Colors[i * 4 + 1], m.Colors[i * 4 + 2], m.Colors[i * 4 + 3]);
@@ -454,7 +456,8 @@ public sealed class ModelBuilder
     public void AddGlowTwin(MeshInstance3D mi, ModelMesh m, Skin skin, float frozenAt = -1f)
     {
         bool uv2 = mi.Mesh is ArrayMesh am && (am.SurfaceGetFormat(0) & Mesh.ArrayFormat.FormatTexUV2) != 0;
-        if (!GlowPass.Wanted || GlowMaterial(m, uv2, frozenAt) is not { } gm) return;
+        bool field = !(mi.Mesh?.SurfaceGetMaterial(0) is ShaderMaterial cm && IsCharacterShader(cm.Shader));
+        if (!GlowPass.Wanted || GlowMaterial(m, uv2, frozenAt, field) is not { } gm) return;
         var g = new MeshInstance3D { Name = mi.Name + "_glow", Mesh = mi.Mesh, Layers = GlowPass.Bit, MaterialOverride = gm, Transform = mi.Transform, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
         mi.GetParent().AddChild(g);
         if (skin != null) { g.Skin = skin; g.Skeleton = ".."; }
@@ -463,14 +466,15 @@ public sealed class ModelBuilder
     static string glowCode;
     static readonly Dictionary<string, Shader> glowShaders = new();
 
-    /// <summary>The glow shader with the mesh's cull define (CullDefine): the glow pass culls as the colour pass does.</summary>
-    static Shader GlowVariant(string cull)
+    /// <summary>The glow shader with the mesh's cull define (CullDefine): the glow pass culls as the colour pass does; and the
+    /// BLEND form (with ZWRITE for the z write bit) for a blended mesh.</summary>
+    static Shader GlowVariant(string cull, bool blend, bool zwrite)
     {
-        var key = cull ?? "";
-        if (glowShaders.TryGetValue(key, out var sh)) return sh;
+        var defines = (cull != null ? $"#define {cull}\n" : "") + (blend ? "#define BLEND\n" : "") + (blend && zwrite ? "#define ZWRITE\n" : "");
+        if (glowShaders.TryGetValue(defines, out var sh)) return sh;
         glowCode ??= GD.Load<Shader>("res://shaders/field_glow.gdshader").Code;
         int nl = glowCode.IndexOf('\n', glowCode.IndexOf("shader_type")) + 1;
-        glowShaders[key] = sh = new Shader { Code = cull == null ? glowCode : glowCode.Insert(nl, $"#define {cull}\n") };
+        glowShaders[defines] = sh = new Shader { Code = defines.Length == 0 ? glowCode : glowCode.Insert(nl, defines) };
         return sh;
     }
 
@@ -555,11 +559,12 @@ public sealed class ModelBuilder
     /// controllers at that time, as its field material does (<see cref="Freeze"/>).
     /// STILL-OPEN: a map on uv set 2 or above reads UV (the meshes carry two uv sets).</summary>
     /// <param name="uv2">the mesh carries its second uv set as UV2</param>
-    public Material GlowMaterial(ModelMesh m, bool uv2, float frozenAt = -1f)
+    /// <param name="field">a field mesh (vertex colours in CUSTOM0, field_lit's opacity rule) rather than a character mesh (COLOR)</param>
+    public Material GlowMaterial(ModelMesh m, bool uv2, float frozenAt = -1f, bool field = true)
     {
         if (!m.Textures.TryGetValue("glow", out var glowName) || Texture(glowName) is not { } glow) return null;
         if (m.AlphaBlendOn && (((m.AlphaFlags >> 1) & 15) != 6 || ((m.AlphaFlags >> 5) & 15) != 7)) return null;   // NiAlphaProperty SRCALPHA 6, INVSRCALPHA 7
-        var sm = new ShaderMaterial { Shader = GlowVariant(CullDefine(m)) };
+        var sm = new ShaderMaterial { Shader = GlowVariant(CullDefine(m), m.AlphaBlendOn, m.ZWrite) };
         bool OnUv2(string key) => uv2 && m.Maps.TryGetValue(key, out var map) && map.UvSet == 1;
         var tex = m.Textures.TryGetValue("base", out var baseName) ? Texture(baseName) : null;
         sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
@@ -574,6 +579,12 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.DetailUv2, OnUv2("detail"));
         // the glow pass ends in the same alpha test as the colour pass (MS2GlowMaterial -> HandleMS2FinalPixelOutputs ->
         // HandleAlphaTest with the property's function and reference, ms2standardmaterial.cpp:786)
+        // and tests (and blends) the colour pass's opacity: field_lit's for a field mesh (STILL-OPEN there: VertexColorsAmbDiff),
+        // character_lit's (ModelMesh.VertexColors) for a character mesh
+        sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
+        SetAlphaAnim(sm, m);
+        sm.SetShaderParameter(ShaderParam.VcSource, m.Colors == null ? 0 : field ? 1 : m.VertexColors.Any ? 2 : 0);
+        sm.SetShaderParameter(ShaderParam.VcOpacity, field ? m.VertexColorsAmbDiff : m.VertexColors.Opacity);
         sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
         sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
         SetAlphaClip(sm, m);
@@ -727,17 +738,7 @@ public sealed class ModelBuilder
             sm.SetShaderParameter(ShaderParam.HasVcolor, m.Colors != null);
             sm.SetShaderParameter(ShaderParam.VcolorAmbDiff, m.VertexColorsAmbDiff);
             sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
-            if (m.AlphaAnim is { } aa && aa.Times.Length <= 8)
-            {
-                float[] Pad(float[] v) { var r = new float[8]; if (v != null) System.Array.Copy(v, r, v.Length); return r; }
-                sm.SetShaderParameter(ShaderParam.AlphaAnimCount, aa.Times.Length);
-                sm.SetShaderParameter(ShaderParam.AlphaAnimType, aa.KeyType);
-                sm.SetShaderParameter(ShaderParam.AlphaAnimTime, new Vector4(aa.Start, aa.Stop, aa.Frequency, aa.Phase));
-                sm.SetShaderParameter(ShaderParam.AlphaAnimT, Pad(aa.Times));
-                sm.SetShaderParameter(ShaderParam.AlphaAnimV, Pad(aa.Values));
-                sm.SetShaderParameter(ShaderParam.AlphaAnimIn, Pad(aa.InTans));
-                sm.SetShaderParameter(ShaderParam.AlphaAnimOut, Pad(aa.OutTans));
-            }
+            SetAlphaAnim(sm, m);
             // only the property's test flag tests (NiStandardMaterialDescriptor.cpp:665-672); without it the mesh is drawn whole
             sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
             sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
@@ -779,22 +780,93 @@ public sealed class ModelBuilder
         return CharacterMaterial(m, tex);
     }
 
+    /// <summary>A mesh's NiAlphaController (ModelMesh.AlphaAnim) as the ms2_alpha_anim uniforms; up to 8 keys.</summary>
+    static void SetAlphaAnim(ShaderMaterial sm, ModelMesh m)
+    {
+        if (m.AlphaAnim is not { } aa || aa.Times.Length > 8) return;
+        static float[] Pad(float[] v) { var r = new float[8]; if (v != null) System.Array.Copy(v, r, v.Length); return r; }
+        sm.SetShaderParameter(ShaderParam.AlphaAnimCount, aa.Times.Length);
+        sm.SetShaderParameter(ShaderParam.AlphaAnimType, aa.KeyType);
+        sm.SetShaderParameter(ShaderParam.AlphaAnimTime, new Vector4(aa.Start, aa.Stop, aa.Frequency, aa.Phase));
+        sm.SetShaderParameter(ShaderParam.AlphaAnimT, Pad(aa.Times));
+        sm.SetShaderParameter(ShaderParam.AlphaAnimV, Pad(aa.Values));
+        sm.SetShaderParameter(ShaderParam.AlphaAnimIn, Pad(aa.InTans));
+        sm.SetShaderParameter(ShaderParam.AlphaAnimOut, Pad(aa.OutTans));
+    }
+
     static Shader characterShader;
     static string characterCode;
     static readonly Dictionary<string, Shader> characterShaders = new();
 
-    /// <summary>The character shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE), the same
-    /// forms as the field shader's (FieldShader).</summary>
+    /// <summary>The render modes and defines of a character mesh's shader form. Blended meshes (ModelMesh.Blend) blend as the
+    /// D3D state the NiAlphaProperty factors give (NiDX9RenderState::ApplyAlpha, NiDX9RenderState.cpp:450-464): SRCALPHA /
+    /// INVSRCALPHA blend_mix, a source over ONE blend_add, ONE / ONE blend_premul_alpha with ALPHA 0 (dst + src, unweighted).
+    /// The z write and z test are the mesh's NiZBufferProperty (NiDX9RenderState::ApplyZBuffer, :626-647; the render list
+    /// processor only re-sorts, it does not change them), as the effect meshes' (EffectInstance.RenderModes); a tested cut-out
+    /// with the write bit writes depth in the blended pass as it did when it drew opaque. Every form culls by the mesh's
+    /// NiStencilProperty draw mode (ModelMesh.Cull, NiDX9RenderState.cpp:380-389).</summary>
+    internal static (string Modes, string Defines) CharacterForm(ModelMesh m)
+    {
+        var blend = m.Blend;
+        if (blend == BlendForm.Opaque)
+            return (CullMode(m), "");
+        var op = blend switch { BlendForm.Mix => "blend_mix", BlendForm.Add => "blend_add", _ => "blend_premul_alpha" };
+        return ($"{op}, {Net.EffectInstance.RenderModes(m)}", blend == BlendForm.AddUnweighted ? "#define BLEND\n#define ONE\n" : "#define BLEND\n");
+    }
+
+    /// <summary>The character shader in the mesh's form (CharacterForm): its render mode line and defines.</summary>
     static Shader CharacterShader(ModelMesh m)
     {
-        characterShader ??= GD.Load<Shader>("res://shaders/character_lit.gdshader");
-        if (!m.AlphaBlendOn) return characterShader;
-        var forms = ((m.AlphaFlags >> 5) & 15) == 0 ? "#define BLEND\n#define ADD\n" : "#define BLEND\n";
-        if (characterShaders.TryGetValue(forms, out var sh)) return sh;
-        characterCode ??= characterShader.Code;
-        int nl = characterCode.IndexOf('\n', characterCode.IndexOf("shader_type")) + 1;
-        return characterShaders[forms] = new Shader { Code = characterCode.Insert(nl, forms) };
+        var (modes, defines) = CharacterForm(m);
+        return CharacterShaderOf(modes, defines);
     }
+
+    static Shader CharacterShaderOf(string modes, string defines)
+    {
+        characterShader ??= GD.Load<Shader>("res://shaders/character_lit.gdshader");
+        if (modes == "cull_back" && defines.Length == 0) return characterShader;
+        var key = defines + modes;
+        if (characterShaders.TryGetValue(key, out var sh)) return sh;
+        characterCode ??= characterShader.Code;
+        const string opaque = "render_mode unshaded, cull_back;";
+        int nl = characterCode.IndexOf('\n', characterCode.IndexOf("shader_type")) + 1;
+        var code = characterCode.Replace(opaque, $"render_mode unshaded, {modes};").Insert(nl, defines);
+        return characterShaders[key] = new Shader { Code = code };
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Mesh, ShaderMaterial> casterMaterials = new();
+
+    /// <summary>
+    /// What every built character mesh gets once it hangs under its skeleton (Build, EquipApplier.Attach): the shadow caster
+    /// of a blended mesh, and the client's alpha sort key (CharacterAlphaSort).
+    /// A blended mesh with the z write bit (CharacterForm) casts its shadow as the opaque tested form: the client's shadow
+    /// caster mark is per mesh, whatever its blend (SetShadowCaster, equipment.cpp:2436; the "NoShadow" tag excepted), and
+    /// Godot casts no shadow from a transparent material. So the blended mesh stops casting and a shadow-only twin of the
+    /// same mesh, skin and culling, drawn with the opaque form and the same opacity test, casts in its place. A child of the
+    /// mesh, so it hides, moves and frees with it. Blended meshes without the z write cast nothing (STILL-OPEN: whether the
+    /// client's shadow pass draws them).
+    /// </summary>
+    /// <param name="skelBone">the skeleton's bone index for a bone index of the mesh's model</param>
+    public static void Attached(MeshInstance3D mi, ModelMesh m, Skeleton3D skel, System.Func<int, int> skelBone)
+    {
+        if (m.Blend != BlendForm.Opaque && m.ZWrite && mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off
+            && mi.Mesh is { } mesh && mesh.SurfaceGetMaterial(0) is ShaderMaterial sm && IsCharacterShader(sm.Shader))
+        {
+            if (!casterMaterials.TryGetValue(mesh, out var caster))
+            {
+                caster = (ShaderMaterial)sm.Duplicate();
+                caster.Shader = CharacterShaderOf(CullMode(m), "");
+                casterMaterials.Add(mesh, caster);
+            }
+            mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+            var t = new MeshInstance3D { Name = mi.Name + "_shadow", Mesh = mesh, MaterialOverride = caster, CastShadow = GeometryInstance3D.ShadowCastingSetting.ShadowsOnly };
+            mi.AddChild(t);
+            if (mi.Skin != null) { t.Skin = mi.Skin; t.Skeleton = "../.."; }
+        }
+        CharacterAlphaSort.Register(mi, m, skel, skelBone);
+    }
+
+    static string CullMode(ModelMesh m) => m.Cull switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
 
     /// <summary>Whether <paramref name="s"/> is the character shader or one of its blended forms.</summary>
     internal static bool IsCharacterShader(Shader s) => s != null && (s == characterShader || characterShaders.ContainsValue(s));
@@ -807,7 +879,15 @@ public sealed class ModelBuilder
     ShaderMaterial CharacterMaterial(ModelMesh m, Texture2D tex)
     {
         var sm = new ShaderMaterial { Shader = CharacterShader(m) };
-        if (m.AlphaBlendOn) sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
+        // the opacity's terms (ModelMesh.Opacity): the material alpha, its NiAlphaController, the vertex colour's share
+        sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
+        SetAlphaAnim(sm, m);
+        var vc = m.VertexColors;
+        sm.SetShaderParameter(ShaderParam.VcEmissive, vc.Emissive);
+        sm.SetShaderParameter(ShaderParam.VcDiffuse, vc.Diffuse);
+        sm.SetShaderParameter(ShaderParam.VcAmbient, vc.Ambient);
+        sm.SetShaderParameter(ShaderParam.VcOpacity, vc.Opacity);
+        sm.SetShaderParameter(ShaderParam.LightingE, m.LightingE);
         sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
         if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
         int ctrlIndex = m.ExtraInts.TryGetValue("ColorOverrideMapIndex", out var ci) ? ci : 0;

@@ -149,18 +149,18 @@ public class FieldShaderFormsTests
         Assert.That(Test(ShaderSource("field_glow.gdshader")), Is.EqualTo(Test(ShaderSource())));
         Assert.That(ShaderSource("field_glow.gdshader"), Does.Contain("uniform vec3 alpha_clip"));
     }
-    /// <summary>Character meshes with the NiAlphaProperty blend bit blend as the field's (FieldShader): the BLEND form mixes
-    /// without the z write and writes the material alpha times the base alpha, BLEND + ADD (destination factor ONE) adds,
-    /// and the opaque form stays opaque. Without these forms a blended NPC or item part drew as an opaque sheet.</summary>
+    /// <summary>Character meshes with the NiAlphaProperty blend bit blend as the field's (FieldShader). The shader file holds the
+    /// opaque render mode, which ModelBuilder.CharacterShader replaces with the mesh's blend, z and cull state (the pixels are
+    /// checked in game/tests/alpha_render.tscn). BLEND writes the opacity the alpha test ran on; BLEND + ONE (ONE / ONE, drawn
+    /// as blend_premul_alpha) writes 0, so the colour adds unweighted (NiDX9RenderState::ApplyAlpha, NiDX9RenderState.cpp:450-464).</summary>
     [Test]
     public void CharacterShaderHasTheBlendedForms()
     {
         var src = ShaderSource("character_lit.gdshader");
-        string Mode(params string[] d) => Resolve(src, d).Single(l => l.StartsWith("render_mode "));
-        Assert.That(Mode(), Does.Not.Contain("blend_"));
-        Assert.That(Mode("BLEND"), Does.Contain("blend_mix").And.Contain("depth_draw_never"));
-        Assert.That(Mode("BLEND", "ADD"), Does.Contain("blend_add").And.Contain("depth_draw_never"));
-        Assert.That(Resolve(src, new[] { "BLEND" }).Any(l => l.StartsWith("ALPHA = ")), Is.True);
-        Assert.That(Resolve(src, new string[0]).Any(l => l.StartsWith("ALPHA = ")), Is.False);
+        Assert.That(Resolve(src, new string[0]).Single(l => l.StartsWith("render_mode ")), Is.EqualTo("render_mode unshaded, cull_back;"));
+        static string Alpha(IEnumerable<string> lines) => lines.SingleOrDefault(l => l.StartsWith("ALPHA = "));
+        Assert.That(Alpha(Resolve(src, new[] { "BLEND" })), Is.EqualTo("ALPHA = a;"));
+        Assert.That(Alpha(Resolve(src, new[] { "BLEND", "ONE" })), Is.EqualTo("ALPHA = 0.0;"));
+        Assert.That(Alpha(Resolve(src, new string[0])), Is.Null);
     }
 }
