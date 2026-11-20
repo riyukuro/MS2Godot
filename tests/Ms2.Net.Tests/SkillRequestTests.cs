@@ -54,4 +54,37 @@ public class SkillRequestTests
         long a = UniqueId.Next(1_790_000_000), b = UniqueId.Next(1_790_000_000);
         Assert.That(b, Is.EqualTo(a + 1), "each id takes the next counter value");
     }
+    [Test]
+    public void TheDamageSendWritesModeOneZeroThenEachTargetAndItsChain()
+    {
+        // StateSkill::FUN_1417ecce0 (stateskill.cpp:1370-1398)
+        var p = new SkillDamageRequest(0x0102030405060708, 2, new Vector3(10, 20, 30), new Vector3(0, -1, 0), 4,
+        [
+            new SkillDamageTarget(111, 5001, 0, []),
+            new SkillDamageTarget(222, 5002, 1, [new SkillDamageLink(333, 5003, 1, 0), new SkillDamageLink(444, 5004, 2, 0)]),
+            new SkillDamageTarget(555, 0, 2, []),
+        ]);
+        Assert.That(p.Op, Is.EqualTo(Outbound.Skill));
+        var want = Expect(w =>
+        {
+            w.WriteByte(1); w.WriteByte(0);
+            w.WriteLong(0x0102030405060708); w.WriteByte(2);
+            foreach (var f in new float[] { 10, 20, 30, 0, -1, 0 }) w.WriteFloat(f);
+            w.WriteByte(3); w.WriteInt(4);
+            w.WriteLong(111); w.WriteInt(5001); w.WriteByte(0); w.WriteBool(false);
+            w.WriteLong(222); w.WriteInt(5002); w.WriteByte(1);
+            w.WriteBool(true); w.WriteLong(333); w.WriteInt(5003); w.WriteByte(1); w.WriteByte(0);
+            w.WriteBool(true); w.WriteLong(444); w.WriteInt(5004); w.WriteByte(2); w.WriteByte(0);
+            w.WriteBool(false);
+            w.WriteLong(555); w.WriteInt(0); w.WriteByte(2); w.WriteBool(false);
+        });
+        Assert.That(Bytes(p), Is.EqualTo(want));
+    }
+
+    [Test]
+    public void TheDamageSendWithoutTargetsEndsAtTheSendCount()
+    {
+        var p = new SkillDamageRequest(7, 0, Vector3.Zero, Vector3.UnitX, 0, []);
+        Assert.That(Bytes(p).Length, Is.EqualTo(1 + 1 + 8 + 1 + 12 + 12 + 1 + 4));
+    }
 }
