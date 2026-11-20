@@ -13,10 +13,10 @@ namespace Ms2Godot.Tests;
 /// square on a stone floor from sync records (a new direction every 60 frames, a jump every 150), then stand (an idle record),
 /// fixed 60 fps. After 300 warm-up
 /// frames it measures 300 frames of the remote ticks only: main-thread bytes per frame, µs per remote tick (median and worst
-/// frame) and the engine object count change. A PC that has dropped through the test floor (a jump landing the controller
-/// sweep missed on the large test box, NxController's) keeps sweeping as it falls; its cost is left out and it is counted. Then the same frames for the previous model (a body gliding
+/// frame) and the engine object count change. Then the same frames for the previous model (a body gliding
 /// to the record's position with an idle/walk/run pick by speed). Prints one line per model; quits 0 when the replay allocates
-/// under 64 bytes per frame standing (a walking PC's controller sweeps every frame: NxController's cost).
+/// under 64 bytes per frame standing (a walking PC's controller sweeps every frame: NxController's cost) and 0 remotes fell
+/// below the floor.
 /// </summary>
 public partial class RemoteCostCheck : Node3D
 {
@@ -115,17 +115,13 @@ public partial class RemoteCostCheck : Node3D
         if (local == 300) { GC.Collect(); GC.WaitForPendingFinalizers(); frameUs.Clear(); bytes = 0; objects0 = (ulong)Performance.GetMonitor(Performance.Monitor.ObjectCount); }
         long b0 = GC.GetAllocatedBytesForCurrentThread();
         long t0 = Stopwatch.GetTimestamp();
-        long fallenBytes = 0;
         for (int i = 0; i < n; i++)
         {
             if (!replayPhase) { Glide(i, Dt); continue; }
-            bool below = pcs[i].Position.Z < -20;     // left the test floor (see the summary): its cost is counted apart
-            long f0 = below ? GC.GetAllocatedBytesForCurrentThread() : 0;
             pcs[i].Tick(Dt);
-            if (below) fallenBytes += GC.GetAllocatedBytesForCurrentThread() - f0;
         }
         double us = (Stopwatch.GetTimestamp() - t0) * 1e6 / Stopwatch.Frequency;
-        long db = GC.GetAllocatedBytesForCurrentThread() - b0 - fallenBytes;
+        long db = GC.GetAllocatedBytesForCurrentThread() - b0;
         if (local >= 300) { frameUs.Add(us); bytes += db; }
         if (local == 599)
         {
@@ -133,11 +129,18 @@ public partial class RemoteCostCheck : Node3D
             double perFrame = bytes / 300.0;
             long objs = (long)(ulong)Performance.GetMonitor(Performance.Monitor.ObjectCount) - (long)objects0;
             int fallen = replayPhase ? pcs.Count(p => p.Position.Z < -20) : 0;
+            if (fallen > maxFallen) maxFallen = fallen;
             string model = phase == 0 ? "replay walking" : phase == 1 ? "replay standing" : "glide";
-            GD.Print($"remote cost [{model}] {n} remotes: {perFrame:0.0} B/frame, {frameUs[150] / n:0.0} us per remote median, {frameUs[^1] / n:0.0} us worst frame per remote, objects {objs:+0;-0;0}, {fallen} below the floor (not counted)");
+            GD.Print($"remote cost [{model}] {n} remotes: {perFrame:0.0} B/frame, {frameUs[150] / n:0.0} us per remote median, {frameUs[^1] / n:0.0} us worst frame per remote, objects {objs:+0;-0;0}, {fallen} below the floor");
             if (phase == 1) replayBytes = perFrame;
-            if (phase == 2) GetTree().Quit(replayBytes < 64 ? 0 : 1);
+            if (phase == 2)
+            {
+                bool ok = replayBytes < 64 && maxFallen == 0;
+                if (!ok) GD.Print($"remote cost: FAIL (standing {replayBytes:0.0} B/frame, {maxFallen} below the floor)");
+                GetTree().Quit(ok ? 0 : 1);
+            }
         }
     }
     double replayBytes;
+    int maxFallen;
 }
