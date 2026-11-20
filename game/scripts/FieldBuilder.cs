@@ -91,6 +91,31 @@ public sealed class FieldBuilder
     /// </summary>
     public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> TriggerMeshDraws = new();
 
+    /// <summary>
+    /// The colliders of a trigger mesh entity: its own body (not a merged chunk) and its own overlap copies, whose collision
+    /// group the Trigger packet switches (FUN_140b60e40, see world/FieldTriggers). <see cref="Group"/> is the entity's
+    /// PropCollisionGroup (0xada5c5d2), the group a shown mesh gets.
+    /// </summary>
+    public sealed class TriggerCollider
+    {
+        public StaticBody3D Body;
+        public TwoSidedSpace Overlap;
+        public int OverlapKey = -1;
+        public int Group;
+
+        /// <summary>CPhysXHelper::FUN_141689d00 (physxhelper.cpp:326): the actor and each of its shapes go to
+        /// <paramref name="group"/> (layer bit n = group n), as a field body's group meta says.</summary>
+        public void SetGroup(int group)
+        {
+            Body.CollisionLayer = 1u << group;
+            Body.SetMeta(GroupMeta, group);
+            if (OverlapKey >= 0) Overlap.SetLayer(OverlapKey, 1u << group);
+        }
+    }
+
+    /// <summary>The colliders of every trigger mesh entity that has any (<see cref="TriggerCollider"/>).</summary>
+    public readonly Dictionary<FieldEntity, TriggerCollider> TriggerColliders = new();
+
     /// <summary>A trigger object of mesh kind (TriggerObject::Create, Ms2.Net.Packets.TriggerObjects.KindOf).</summary>
     public static bool IsTriggerMesh(FieldEntity e) => Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Mesh;
 
@@ -483,7 +508,12 @@ public sealed class FieldBuilder
                 // actor of a GeneratePhysX entity, else each actor of its NIF PhysX props), so they are left out of the
                 // world here.
                 // STILL-OPEN: whether any client query that passes no groups mask still meets them
-                if (e.Bool("DisableCollision")) continue;
+                // A trigger mesh keeps them: a Trigger packet's SetEntityCollisionGroup (FUN_140b60e40) sets its shapes'
+                // groups mask again (FUN_141689d00 with no mask, physxhelper.cpp:337-350), so it collides once a packet
+                // switches it; until then its body is on no layer
+                bool disabled = e.Bool("DisableCollision");
+                bool trigger = IsTriggerMesh(e);
+                if (disabled && !trigger) continue;
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -500,6 +530,24 @@ public sealed class FieldBuilder
                 // AddPhysXPropToPropData for an entity whose GeneratePhysX (0x38141815) is set, whatever its model: such an
                 // entity gets no NIF PhysX prop, and its only collision is the generated box below
                 bool generate = e.Bool("GeneratePhysX");
+                // A trigger mesh's colliders get a body of their own instead of the chunk's, so the Trigger packet can move
+                // them to another group (TriggerObjectMesh::vfunc_2 -> FUN_140b60e40; world/FieldTriggers). The body is made
+                // when the first shape comes, in the group it has at field load: the PropCollisionGroup for the NIF's
+                // meshes, 9 for the GeneratePhysX box (one or the other, never both: see below)
+                TriggerCollider tc = null;
+                StaticBody3D Body(int at)
+                {
+                    if (!trigger) return Chunk(e.Position, at);
+                    if (tc == null)
+                    {
+                        tc = new TriggerCollider { Group = group, Overlap = twoSided };
+                        tc.Body = new StaticBody3D { Name = $"Trigger_{entityIndex}", CollisionLayer = disabled ? 0u : 1u << at, CollisionMask = 0 };
+                        tc.Body.SetMeta(GroupMeta, at);
+                        colliders.AddChild(tc.Body);
+                        TriggerColliders[e] = tc;
+                    }
+                    return tc.Body;
+                }
                 if (generate && me.Collision.Count > 0) SkippedNifMeshes++;
                 else if (me.Collision.Count > 0)
                 {
@@ -507,8 +555,13 @@ public sealed class FieldBuilder
                     // PropCollisionGroup (ecrPhysX PropService::SetCollisionGroup, PropService.cpp:1471-1499)
                     for (int i = 0; i < me.Collision.Count; i++)
                     {
-                        Chunk(e.Position, group).AddChild(Tag(new CollisionShape3D { Shape = me.Collision[i], Transform = xf }));
-                        twoSided.Add(me.Overlap[i], xf, group);
+                        Body(group).AddChild(Tag(new CollisionShape3D { Shape = me.Collision[i], Transform = xf }));
+                        if (tc == null) twoSided.Add(me.Overlap[i], xf, group);
+                        else
+                        {
+                            if (tc.OverlapKey < 0) tc.OverlapKey = twoSided.AddOwn(disabled ? 0u : 1u << group);
+                            twoSided.AddOwn(tc.OverlapKey, me.Overlap[i], xf);
+                        }
                     }
                     Meshes++;
                 }
@@ -529,7 +582,7 @@ public sealed class FieldBuilder
                     // pcbase.cpp:4335-4342): KindMeta
                     var box = Tag(new CollisionShape3D { Shape = generated ?? GeneratePhysXBox(e, out generatedAt), Transform = generatedAt });
                     box.SetMeta(KindMeta, group);
-                    Chunk(e.Position, GeneratedBoxGroup).AddChild(box);
+                    Body(GeneratedBoxGroup).AddChild(box);
                     Boxes++;
                 }
             }

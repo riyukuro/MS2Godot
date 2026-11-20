@@ -18,6 +18,9 @@ public sealed partial class TwoSidedSpace : Node3D
 
     readonly List<(Shape3D shape, Transform3D xform, int group)> shapes = new();
     readonly Dictionary<int, Rid> bodies = new();
+    // the copies of a trigger mesh entity, on a body of their own whose layer FieldTriggers switches (see AddOwn)
+    readonly List<(Shape3D shape, Transform3D xform, int own)> ownShapes = new();
+    readonly List<(Rid body, uint layer)> owns = new();
     readonly PhysicsShapeQueryParameters3D query = new();
     Rid space;
 
@@ -25,9 +28,29 @@ public sealed partial class TwoSidedSpace : Node3D
     /// <paramref name="group"/>.</summary>
     public void Add(Shape3D shape, Transform3D xform, int group) => shapes.Add((shape, xform, group));
 
+    /// <summary>A body of its own on <paramref name="layer"/>, for the copies of one entity whose collision group changes at
+    /// run time (a trigger mesh, see world/FieldTriggers); its key for <see cref="AddOwn(int, Shape3D, Transform3D)"/> and
+    /// <see cref="SetLayer"/>.</summary>
+    public int AddOwn(uint layer)
+    {
+        owns.Add((default, layer));
+        return owns.Count - 1;
+    }
+
+    /// <summary>A mesh's overlap shape on the own body <paramref name="own"/>.</summary>
+    public void AddOwn(int own, Shape3D shape, Transform3D xform) => ownShapes.Add((shape, xform, own));
+
+    /// <summary>The own body's layer (bit n = group n; 0: no test meets it).</summary>
+    public void SetLayer(int own, uint layer)
+    {
+        var (body, _) = owns[own];
+        owns[own] = (body, layer);
+        if (body.IsValid) PhysicsServer3D.BodySetCollisionLayer(body, layer);
+    }
+
     public override void _Notification(int what)
     {
-        if (what == NotificationPredelete) shapes.Clear();
+        if (what == NotificationPredelete) { shapes.Clear(); ownShapes.Clear(); }
     }
 
     public override void _EnterTree()
@@ -47,6 +70,16 @@ public sealed partial class TwoSidedSpace : Node3D
             }
             PhysicsServer3D.BodyAddShape(body, shape.GetRid(), at * xform);
         }
+        for (int i = 0; i < owns.Count; i++)
+        {
+            var body = PhysicsServer3D.BodyCreate();
+            PhysicsServer3D.BodySetMode(body, PhysicsServer3D.BodyMode.Static);
+            PhysicsServer3D.BodySetCollisionLayer(body, owns[i].layer);
+            PhysicsServer3D.BodySetCollisionMask(body, 0);
+            PhysicsServer3D.BodySetSpace(body, space);
+            owns[i] = (body, owns[i].layer);
+        }
+        foreach (var (shape, xform, own) in ownShapes) PhysicsServer3D.BodyAddShape(owns[own].body, shape.GetRid(), at * xform);
         GetWorld3D().SetMeta(Meta, this);
     }
 
@@ -56,6 +89,11 @@ public sealed partial class TwoSidedSpace : Node3D
         if (world != null && world.HasMeta(Meta) && world.GetMeta(Meta).AsGodotObject() == this) world.RemoveMeta(Meta);
         foreach (var body in bodies.Values) PhysicsServer3D.FreeRid(body);
         bodies.Clear();
+        for (int i = 0; i < owns.Count; i++)
+        {
+            if (owns[i].body.IsValid) PhysicsServer3D.FreeRid(owns[i].body);
+            owns[i] = (default, owns[i].layer);
+        }
         PhysicsServer3D.FreeRid(space);
         space = default;
     }
