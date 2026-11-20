@@ -41,6 +41,7 @@ public sealed partial class EffectInstance : Node3D
         public Vector3[] Pos, Vel; public float[] Age, Life, Size, Rot, RotSpeed, Frame0; public int Count;
         public double[] Accum; public float[] Buf;
         public int Cap, LastCount;                                // the MultiMesh's instance count (live particles fit) and last frame's live count
+        public Aabb Box; public bool HasBox;                      // the MultiMesh's CustomAabb: every quad drawn so far, grown only (Step)
     }
 
     readonly EffectScene scene; readonly ModelBuilder mb;
@@ -311,7 +312,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // and the per-particle basis carries the size. STILL-OPEN: the aligned quads' velocity scale is
             // (amount * speed * limit + rest) / (amount * speed + 1) per axis there (NiPSAlignedQuadGeneratorKernelVV.cpp:108-118).
             ps.MM = new MultiMesh { TransformFormat = MultiMesh.TransformFormatEnum.Transform3D, UseColors = true, UseCustomData = true, InstanceCount = 0, VisibleInstanceCount = 0,
-                Mesh = new QuadMesh { Size = new Vector2(2, 2), Material = mat }, CustomAabb = new Aabb(new Vector3(-5000, -5000, -5000), new Vector3(10000, 10000, 10000)) };
+                Mesh = new QuadMesh { Size = new Vector2(2, 2), Material = mat } };
             ps.Node = new MultiMeshInstance3D { Multimesh = ps.MM, Name = d.Name ?? "particles", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
             z.AddChild(ps.Node);
             systems.Add(ps);
@@ -636,6 +637,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         float rx = camRight.X, ry = camRight.Y, rz = camRight.Z, ux = camUp.X, uy = camUp.Y, uz = camUp.Z;
         float[] age = ps.Age, life = ps.Life, psize = ps.Size, rot = ps.Rot, frame0 = ps.Frame0;
         Vector3[] ppos = ps.Pos, pvel = ps.Vel;
+        // the bounds of this frame's quads (a quad reaches |x axis| + |y axis| from its centre), for the culling box below
+        float bx0 = float.MaxValue, by0 = float.MaxValue, bz0 = float.MaxValue, bx1 = float.MinValue, by1 = float.MinValue, bz1 = float.MinValue;
         for (int i = 0; i < ps.Count; i++)
         {
             float n = life[i] > 0 ? age[i] / life[i] : 1f;     // a zero lifespan is drawn once at its end
@@ -649,7 +652,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // toCam: camera direction from the particle (Vector3.Back when on it)
             float tx = cx - pos.X, ty = cy - pos.Y, tz = cz - pos.Z, l2 = tx * tx + ty * ty + tz * tz;
             if (l2 > 1e-6f) { float l = MathF.Sqrt(l2); tx /= l; ty /= l; tz /= l; } else { tx = 0f; ty = 0f; tz = 1f; }
-            float xx, xy, xz, yx, yy, yz;                         // the basis X and Y columns (Z is toCam)
+            float xx, xy, xz, yx, yy, yz, reach;                  // the basis X and Y columns (Z is toCam); the quad's reach
             if (aligned)
             {
                 var vel = pvel[i];
@@ -667,6 +670,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 }
                 xx = ax * size * stretch; xy = ay * size * stretch; xz = az * size * stretch;
                 yx = sx * size; yy = sy * size; yz = sz * size;
+                reach = MathF.Abs(size) * (MathF.Abs(stretch) + 1f);
             }
             else
             {
@@ -676,7 +680,11 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
                 float c = MathF.Cos(rot[i]), s = MathF.Sin(rot[i]);
                 xx = (rx * c - ux * s) * size; xy = (ry * c - uy * s) * size; xz = (rz * c - uz * s) * size;
                 yx = (ux * c + rx * s) * size; yy = (uy * c + ry * s) * size; yz = (uz * c + rz * s) * size;
+                reach = MathF.Abs(size) * 2f;
             }
+            if (pos.X - reach < bx0) bx0 = pos.X - reach; if (pos.X + reach > bx1) bx1 = pos.X + reach;
+            if (pos.Y - reach < by0) by0 = pos.Y - reach; if (pos.Y + reach > by1) by1 = pos.Y + reach;
+            if (pos.Z - reach < bz0) bz0 = pos.Z - reach; if (pos.Z + reach > bz1) bz1 = pos.Z + reach;
             // one buffer write per system instead of three engine calls per particle: 12 transform floats (rows), colour, custom data
             int o = i * 20;
             buf[o] = xx; buf[o + 1] = yx; buf[o + 2] = tx; buf[o + 3] = pos.X;
@@ -694,6 +702,23 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         if (ProbeOn) seg[4] += System.Diagnostics.Stopwatch.GetTimestamp() - qd;
         long qb = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
         if (ps.Count > 0) ps.MM.Buffer = buf;
+        // The culling box: the quads drawn so far, grown only, by a quarter of its size past the new quads when they leave it,
+        // so it is set a few times per system and not per frame. A fixed 10 km box kept every system of a field drawn
+        // wherever the camera was (165 field-model systems on 02020120). Without it Godot would recompute the box from the
+        // buffer on every set. The particles are drawn in this node's space, so the box is in it too.
+        if (ps.Count > 0 && (!ps.HasBox || bx0 < ps.Box.Position.X || by0 < ps.Box.Position.Y || bz0 < ps.Box.Position.Z
+            || bx1 > ps.Box.End.X || by1 > ps.Box.End.Y || bz1 > ps.Box.End.Z))
+        {
+            if (ps.HasBox)
+            {
+                bx0 = Math.Min(bx0, ps.Box.Position.X); by0 = Math.Min(by0, ps.Box.Position.Y); bz0 = Math.Min(bz0, ps.Box.Position.Z);
+                bx1 = Math.Max(bx1, ps.Box.End.X); by1 = Math.Max(by1, ps.Box.End.Y); bz1 = Math.Max(bz1, ps.Box.End.Z);
+            }
+            float mx = (bx1 - bx0) * 0.25f, my = (by1 - by0) * 0.25f, mz = (bz1 - bz0) * 0.25f;
+            ps.Box = new Aabb(new Vector3(bx0 - mx, by0 - my, bz0 - mz), new Vector3(bx1 - bx0 + 2 * mx, by1 - by0 + 2 * my, bz1 - bz0 + 2 * mz));
+            ps.HasBox = true;
+            ps.MM.CustomAabb = ps.Box;
+        }
         if (ProbeOn) { seg[3] += System.Diagnostics.Stopwatch.GetTimestamp() - qb; seg[5] += ps.Count; }
         if (ps.Count != ps.LastCount || resized) { ps.MM.VisibleInstanceCount = ps.Count; ps.LastCount = ps.Count; }
     }
