@@ -103,7 +103,8 @@ public partial class Player
         {
             using var hit = space.IntersectRay(q);
             if (hit.Count == 0) return null;
-            var col = hit[PhysicsKeys.Collider].AsGodotObject() as Node;
+            using var colV = hit[PhysicsKeys.Collider];   // an object Variant carries a finalizable disposer
+            var col = colV.AsGodotObject() as Node;
             int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
             if ((groups & (1u << group)) != 0) return ((Vector3)hit[PhysicsKeys.Position], (Vector3)hit[PhysicsKeys.Normal]);
             exclude.Add((Rid)hit[PhysicsKeys.Rid]);

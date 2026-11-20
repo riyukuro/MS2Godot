@@ -81,7 +81,8 @@ public partial class LobbyFieldScene : Field
         {
             using var hit = space.IntersectRay(q);
             if (hit.Count == 0) return;
-            var col = hit[PhysicsKeys.Collider].AsGodotObject();
+            using var colV = hit[PhysicsKeys.Collider];   // an object Variant carries a finalizable disposer
+            var col = colV.AsGodotObject();
             int group = col is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
             if ((GroundGroups & (1u << group)) != 0)
             {
