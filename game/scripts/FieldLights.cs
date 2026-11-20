@@ -36,7 +36,8 @@ public static class FieldLights
             var pos = FieldBuilder.ToGodotPoint(l.Position);
             var dir = FieldBuilder.ToGodotPoint(l.Direction).Normalized();
             float dim = l.Dimmer;
-            Put(data, w, i, 0, pos.X, pos.Y, pos.Z, l.Spot ? 1f : 0f);
+            bool ambient = l.Ambient[0] * dim != 0 || l.Ambient[1] * dim != 0 || l.Ambient[2] * dim != 0;
+            Put(data, w, i, 0, pos.X, pos.Y, pos.Z, (l.Spot ? 1 : 0) + (ambient ? 2 : 0));
             Put(data, w, i, 1, l.Diffuse[0] * dim, l.Diffuse[1] * dim, l.Diffuse[2] * dim, l.Constant);
             Put(data, w, i, 2, l.Ambient[0] * dim, l.Ambient[1] * dim, l.Ambient[2] * dim, l.Linear);
             Put(data, w, i, 3, l.Specular[0] * dim, l.Specular[1] * dim, l.Specular[2] * dim, l.Quadratic);

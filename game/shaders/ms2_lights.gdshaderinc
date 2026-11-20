@@ -9,22 +9,17 @@
 // No shadow map from these lights (FieldLights), so the fragments' Shadow input keeps its default 1.0
 // (ms2materialnodelibrary.cpp:88-93).
 // Light data comes from FieldLights as a float texture, one column per light, six rows:
-//   0 position.xyz (Godot space), type (0 point, 1 spot)   1 diffuse * dimmer, constant
+//   0 position.xyz (Godot space), flags (1 spot, 2 the ambient colour is not black)   1 diffuse * dimmer, constant
 //   2 ambient * dimmer, linear                              3 specular * dimmer, quadratic
 //   4 direction.xyz, cos outer                              5 cos inner, exponent
 global uniform sampler2D ms2_lights : filter_nearest, repeat_disable;
 global uniform float ms2_light_count;
 
-// Light i at world position p: the unit vector towards the light (l) and its Attenuate.
-float ms2_light_at(int i, vec3 p, out vec3 l) {
-	vec4 r0 = texelFetch(ms2_lights, ivec2(i, 0), 0);
-	vec3 to = r0.xyz - p;
-	float d2 = dot(to, to);
-	float d = sqrt(d2);
-	l = to / max(d, 1e-6);
+// The Attenuate of light i (row 0 r0) at distance d along the unit vector l towards it.
+float ms2_light_atten(int i, vec4 r0, vec3 l, float d) {
 	float att = 1.0 / max(1.0, texelFetch(ms2_lights, ivec2(i, 1), 0).w + texelFetch(ms2_lights, ivec2(i, 2), 0).w * d
-		+ texelFetch(ms2_lights, ivec2(i, 3), 0).w * d2);
-	if (r0.w > 0.5) {
+		+ texelFetch(ms2_lights, ivec2(i, 3), 0).w * d * d);
+	if ((int(r0.w) & 1) != 0) {
 		vec4 r4 = texelFetch(ms2_lights, ivec2(i, 4), 0);
 		vec4 r5 = texelFetch(ms2_lights, ivec2(i, 5), 0);
 		float ca = dot(-l, r4.xyz);
@@ -34,6 +29,15 @@ float ms2_light_at(int i, vec3 p, out vec3 l) {
 		att *= t <= 0.0 ? 0.0 : pow(t, r5.y);
 	}
 	return att;
+}
+
+// Light i at world position p: the unit vector towards the light (l) and its Attenuate.
+float ms2_light_at(int i, vec3 p, out vec3 l) {
+	vec4 r0 = texelFetch(ms2_lights, ivec2(i, 0), 0);
+	vec3 to = r0.xyz - p;
+	float d = length(to);
+	l = to / max(d, 1e-6);
+	return ms2_light_atten(i, r0, l, d);
 }
 
 vec3 ms2_light_diffuse(int i) { return texelFetch(ms2_lights, ivec2(i, 1), 0).rgb; }
@@ -49,10 +53,19 @@ vec3 ms2_point_lights(vec3 p, vec3 n, int off) {
 		if (((off >> i) & 1) != 0) {
 			continue;
 		}
-		vec3 l;
-		float att = ms2_light_at(i, p, l);
+		vec4 r0 = texelFetch(ms2_lights, ivec2(i, 0), 0);
+		vec3 to = r0.xyz - p;
+		float d = length(to);
+		vec3 l = to / max(d, 1e-6);
 		float ndl = max(dot(l, n), 0.0);
-		sum += ms2_light_diffuse(i) * (ndl * att) + ms2_light_ambient(i) * (1.0 - ndl);
+		bool amb = (int(r0.w) & 2) != 0;
+		if (ndl <= 0.0 && !amb) {
+			continue;   // adds nothing: N.L is 0 and the ambient colour black
+		}
+		sum += ms2_light_diffuse(i) * (ndl * ms2_light_atten(i, r0, l, d));
+		if (amb) {
+			sum += ms2_light_ambient(i) * (1.0 - ndl);
+		}
 	}
 	return sum;
 }
