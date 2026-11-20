@@ -29,8 +29,8 @@
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
 #include "res://shaders/ms2_fog.gdshaderinc"
-// Culling from the mesh's NiStencilProperty draw mode (ModelMesh.DrawMode, ModelBuilder.FieldShader), as NiDX9RenderState
-// maps it (NiDX9RenderState.cpp:380-389, left-handed off): DRAW_BOTH = no culling, DRAW_CW = the front faces, DRAW_CCW and
+// Culling from the mesh's NiStencilProperty draw mode (ModelMesh.DrawMode, ModelBuilder.FieldShader), as the D3D11 renderer
+// maps it (D3D11RenderStateManager::ApplyStencilProperty, D3D11RenderStateManager.cpp:448-462): DRAW_BOTH = no culling, DRAW_CW = the front faces, DRAW_CCW and
 // DRAW_CCW_OR_BOTH (the default) = the back faces. The client's standard pixel shaders read no VFACE, so a back face lights
 // with the front face's normal, as world_normal does here.
 #if defined(CULL_NONE)

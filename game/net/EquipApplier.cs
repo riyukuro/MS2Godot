@@ -351,7 +351,7 @@ public sealed class EquipApplier
         foreach (var m in md.Meshes)
         {
             var mi = new MeshInstance3D { Name = $"eq{item.Id}_{m.Name}", Mesh = Mesh(m) };
-            // SetShadowCaster(mesh, true) (equipment.cpp:2436) skips a "NoShadow"-tagged subtree (ModelMesh.NoShadow)
+            // SetShadowCaster @0x141567330 (unit_141567000.cpp; for a merged mesh the call is CEquipment::MergeMeshes, equipment.cpp:2436) skips a "NoShadow"-tagged subtree (ModelMesh.NoShadow)
             if (m.NoShadow) mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             mi.SetMeta("mesh", m.FileName ?? m.Name);
             if (m.Skinned)

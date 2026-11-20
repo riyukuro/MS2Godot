@@ -612,8 +612,8 @@ public sealed class ModelBuilder
         return sh;
     }
 
-    /// <summary>The cull define for a mesh's NiStencilProperty draw mode (ModelMesh.DrawMode), as NiDX9RenderState maps it
-    /// (NiDX9RenderState.cpp:380-389, left-handed off): DRAW_BOTH (3) none, DRAW_CW (2) the front faces, DRAW_CCW and
+    /// <summary>The cull define for a mesh's NiStencilProperty draw mode (ModelMesh.DrawMode), as the D3D11 renderer maps it
+    /// (D3D11RenderStateManager::ApplyStencilProperty, D3D11RenderStateManager.cpp:448-462): DRAW_BOTH (3) none, DRAW_CW (2) the front faces, DRAW_CCW and
     /// DRAW_CCW_OR_BOTH the back faces (field_lit's default). The same mapping as the effect meshes (EffectInstance.RenderModes).</summary>
     internal static string CullDefine(ModelMesh m) => m.Cull switch { FaceCull.None => "CULL_NONE", FaceCull.Front => "CULL_FRONT", _ => null };
 
@@ -799,12 +799,12 @@ public sealed class ModelBuilder
     static readonly Dictionary<string, Shader> characterShaders = new();
 
     /// <summary>The render modes and defines of a character mesh's shader form. Blended meshes (ModelMesh.Blend) blend as the
-    /// D3D state the NiAlphaProperty factors give (NiDX9RenderState::ApplyAlpha, NiDX9RenderState.cpp:450-464): SRCALPHA /
+    /// D3D state the NiAlphaProperty factors give (D3D11RenderStateManager::ApplyAlphaProperty, D3D11RenderStateManager.cpp:381-401): SRCALPHA /
     /// INVSRCALPHA blend_mix, a source over ONE blend_add, ONE / ONE blend_premul_alpha with ALPHA 0 (dst + src, unweighted).
-    /// The z write and z test are the mesh's NiZBufferProperty (NiDX9RenderState::ApplyZBuffer, :626-647; the render list
+    /// The z write and z test are the mesh's NiZBufferProperty (D3D11RenderStateManager::ApplyZBufferProperty, D3D11RenderStateManager.cpp:490-505; the render list
     /// processor only re-sorts, it does not change them), as the effect meshes' (EffectInstance.RenderModes); a tested cut-out
     /// with the write bit writes depth in the blended pass as it did when it drew opaque. Every form culls by the mesh's
-    /// NiStencilProperty draw mode (ModelMesh.Cull, NiDX9RenderState.cpp:380-389).</summary>
+    /// NiStencilProperty draw mode (ModelMesh.Cull, D3D11RenderStateManager.cpp:448-462; DRAW_BOTH is CULL_NONE, :454-456).</summary>
     internal static (string Modes, string Defines) CharacterForm(ModelMesh m)
     {
         var blend = m.Blend;

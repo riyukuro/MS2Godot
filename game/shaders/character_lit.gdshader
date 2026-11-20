@@ -26,7 +26,7 @@ shader_type spatial;
 #include "res://shaders/ms2_fog.gdshaderinc"
 // The render mode below is the opaque one. ModelBuilder.CharacterShader replaces that line with the mesh's own: its blend
 // (ModelMesh.Blend: blend_mix, blend_add, or blend_premul_alpha with ALPHA 0 for ONE / ONE), its z write and z test
-// (NiZBufferProperty, NiDX9RenderState::ApplyZBuffer, NiDX9RenderState.cpp:626-647) and its culling (NiStencilProperty draw
+// (NiZBufferProperty, D3D11RenderStateManager::ApplyZBufferProperty, D3D11RenderStateManager.cpp:490-505) and its culling (NiStencilProperty draw
 // mode, ModelMesh.Cull), and defines BLEND (blended) and ONE (ONE / ONE) above it.
 render_mode unshaded, cull_back;
 
