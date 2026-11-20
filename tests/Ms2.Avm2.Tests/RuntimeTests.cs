@@ -1090,10 +1090,14 @@ public class RuntimeTests
             p.Stage.addChild(box);
         }
         p.Tick(); // warm up
+        // every constraint is made before its window: a Release build keeps "read - start" on the evaluation stack (no
+        // local) while the next Is.EqualTo boxes its expected value, and the JIT emits that box (a 24-byte Int32) before
+        // the pending counter read, so it was counted as the ticks' (a Debug build stores the local first)
+        var none = Is.EqualTo(0);
         long b0 = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 50; i++) p.Tick();
         long quietBytes = GC.GetAllocatedBytesForCurrentThread() - b0;
-        Assert.That(quietBytes, Is.EqualTo(0), "a quiet movie tick allocates nothing");
+        Assert.That(quietBytes, none, "a quiet movie tick allocates nothing");
 
         // one 2-frame clip nested under a sprite, with a placement that stays alive across the loop (first=0)
         var holder = (AsSprite)spCls.Construct();
@@ -1132,11 +1136,13 @@ public class RuntimeTests
         clip.FrameScripts[1] = new AsPlainFunction(rt, new NativeMethod("p2", (_, _) => { scriptRuns++; return Rt.Undef; }));
         for (int i = 0; i < 4; i++) p.Tick();
         scriptRuns = 0;
+        var noneLooping = Is.EqualTo(0);
+        var twenty = Is.EqualTo(20);
         long b1 = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 40; i++) p.Tick();
         long loopBytes = GC.GetAllocatedBytesForCurrentThread() - b1;
-        Assert.That(scriptRuns, Is.EqualTo(20));
-        Assert.That(loopBytes, Is.EqualTo(0), "looping a playing clip with a frame script allocates nothing per tick");
+        Assert.That(scriptRuns, twenty);
+        Assert.That(loopBytes, noneLooping, "looping a playing clip with a frame script allocates nothing per tick");
     }
 
     /// <summary>
