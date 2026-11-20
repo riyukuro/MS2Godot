@@ -92,10 +92,21 @@ public static class ScreenMode
     public static void AdoptWindow()
     {
         if (Headless || Root == null || Current != null) return;
+        var g = GameOptions.Current.GraphicOption;
+        StoredWindow ??= (g.ScreenMode, g.ResolutionIndex, g.Width, g.Height);
         var w = Root;
         var size = PixelSize(w);
         Modes.Adopt(GameOptions.Current.GraphicOption, new WindowRequest(w.Borderless && w.AlwaysOnTop, w.Borderless && !w.AlwaysOnTop, size.X, size.Y));
     }
+
+    /// <summary>
+    /// The window part of the graphic option as it was read, kept when a scene started on its own (a test run with
+    /// --resolution) took its window into the option (<see cref="AdoptWindow"/>); null in the game, whose window is made
+    /// from the option at startup. <see cref="GameOptions.Save"/> writes these instead, so such a run never stores its
+    /// window in the user's file. In the client the file's window is only ever one the option made (MS2RenderService::
+    /// OnInit, ms2renderservice.cpp:699-743, or the options dialog), which the game keeps.
+    /// </summary>
+    public static (int Mode, int Row, int Width, int Height)? StoredWindow { get; private set; }
 
     /// <summary>ApplyWindowMode (windowservice.cpp:291-375) for a request.</summary>
     static void Apply(WindowRequest r)

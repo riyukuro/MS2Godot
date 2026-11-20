@@ -255,7 +255,12 @@ public static class GameOptions
     {
         var o = Current;
         EnsureCharacter();
-        o.Save(doc);
+        // a scene started on its own shows its window in the option but keeps the file's (ScreenMode.StoredWindow)
+        var g = o.GraphicOption;
+        var shown = (g.ScreenMode, g.ResolutionIndex, g.Width, g.Height);
+        if (ScreenMode.StoredWindow is { } stored) (g.ScreenMode, g.ResolutionIndex, g.Width, g.Height) = stored;
+        try { o.Save(doc); }
+        finally { (g.ScreenMode, g.ResolutionIndex, g.Width, g.Height) = shown; }
         accountCommunity.Save(accountDoc);
         GameOption.SetOptionVersion(accountDoc);
         try { GameOption.WriteFile(FilePath, doc); }
