@@ -858,6 +858,11 @@ public sealed class ModelBuilder
             {
                 caster = (ShaderMaterial)sm.Duplicate();
                 caster.Shader = CharacterShaderOf(CullMode(m), "");
+                // the shadow write tests the base map's alpha only (NiDirectionalShadowWriteMaterial.cpp:192-229, with ALPHATEST
+                // and BASEMAPCOUNT 1, :109-110, :437-438): no material alpha, alpha controller or vertex alpha in its opacity
+                caster.SetShaderParameter(ShaderParam.MatAlpha, 1f);
+                caster.SetShaderParameter(ShaderParam.AlphaAnimCount, 0);
+                caster.SetShaderParameter(ShaderParam.VcOpacity, false);
                 casterMaterials.Add(mesh, caster);
             }
             mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;

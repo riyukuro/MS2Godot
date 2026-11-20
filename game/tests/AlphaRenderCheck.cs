@@ -269,6 +269,17 @@ public partial class AlphaRenderCheck : Node
             || tn.Mesh != nz.Mesh || tn.MaterialOverride is not ShaderMaterial tnm || tnm.Shader.Code.Contains("#define BLEND"))
             fails.Add("no opaque shadow-only twin of the blended mesh without the z write");
 
+        // the twin's opacity is the base map's alpha alone (NiDirectionalShadowWriteMaterial.cpp:192-229): a blended mesh at
+        // material alpha 0.3 still casts a full shadow, cut only by the base map
+        var faint = Mesh(Quad("blend_faint", 0), 0xED);
+        faint.MaterialAlpha = 0.3f;
+        var fr = Model("caster_faint", main, null, faint);
+        var ft = fr.GetNode("Model/" + ModelBuilder.SkeletonName).GetNode<MeshInstance3D>("blend_faint").GetNodeOrNull<MeshInstance3D>("blend_faint_shadow");
+        if (ft?.MaterialOverride is not ShaderMaterial ftm) fails.Add("no shadow twin of the faint blended mesh");
+        else if (ftm.GetShaderParameter(ShaderParam.MatAlpha).AsSingle() != 1f || ftm.GetShaderParameter(ShaderParam.AlphaAnimCount).AsInt32() != 0
+                 || ftm.GetShaderParameter(ShaderParam.VcOpacity).AsBool())
+            fails.Add($"shadow twin keeps the colour pass's opacity terms (mat_alpha {ftm.GetShaderParameter(ShaderParam.MatAlpha)})");
+
         for (int i = 0; i < 4; i++) await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         Color Px(SubViewport vp) => vp.GetTexture().GetImage().GetPixel(Size / 2, Size / 2);
         float half = Px(cases[0].Vp).R;
