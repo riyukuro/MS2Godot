@@ -35,6 +35,14 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     readonly float fadeSeconds;
     readonly Dictionary<string, EffectScene> scenes = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<int, List<Node3D>> kept = new();
+
+    /// <summary>An effect xml's light part (CLightEffect, lighteffectparam.cpp:363-377): it adds its light at its start delay
+    /// and the effect's end destroys it (FieldLights.Start / End), as CombatLayer's lights.</summary>
+    sealed class LiveLight
+    {
+        public EffectLightParam Param; public Vec3 Pos; public float Born, Start, End; public FieldLight Light; public int Handle;
+    }
+    readonly List<LiveLight> lights = new();
     public readonly RegionSkillObjects Objects = new();
     int nextHandle = 1, seed;
     public int Spawned;
@@ -56,11 +64,23 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         ls.RegionSkillReceived += Apply;
     }
 
-    public override void _ExitTree() { if (LiveSession.Instance is { } ls) ls.RegionSkillReceived -= Apply; }
+    public override void _ExitTree()
+    {
+        if (LiveSession.Instance is { } ls) ls.RegionSkillReceived -= Apply;
+        foreach (var l in lights) FieldLights.End(l.Light);
+        lights.Clear();
+    }
 
     public override void _Process(double delta)
     {
         if (Objects.Objects.Count > 0) Objects.Update(ServerTick, this);
+        for (int i = lights.Count - 1; i >= 0; i--)   // only a start or an end touches the light data
+        {
+            var l = lights[i];
+            l.Born += (float)delta;
+            if (l.Light == null && l.Born >= l.Start && l.Born < l.End) l.Light = FieldLights.Start(l.Param, l.Pos);
+            if (l.Born >= l.End) { FieldLights.End(l.Light); lights.RemoveAt(i); }
+        }
     }
 
     static uint ServerTick => (uint)(LiveSession.Instance?.ServerTick ?? 0);
@@ -86,17 +106,20 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     public int Spawn(string effect, Xform at, bool always, int randomIndex)
     {
-        var nodes = Play(effect, at, true);
+        int h = nextHandle;
+        var nodes = Play(effect, at, true, h);
         if (nodes == null) return 0;
-        int h = nextHandle++;
+        nextHandle++;
         kept[h] = nodes;
         return h;
     }
 
-    public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false);
+    public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0);
 
     public void FadeOut(int handle, float seconds)
     {
+        foreach (var l in lights)
+            if (l.Handle == handle) l.End = Math.Min(l.End, l.Born + Math.Max(seconds, 0));
         if (!kept.Remove(handle, out var nodes)) return;
         foreach (var n in nodes)
         {
@@ -107,8 +130,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     }
 
     /// <summary>The effect xml's parts at a Gamebryo world transform: nif parts through the effect scene runtime (startDelay,
-    /// duration; a looping part stays until it is faded), sound events at the point. Null when the xml is missing.</summary>
-    List<Node3D> Play(string xml, Xform at, bool keep)
+    /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point. Null
+    /// when the xml is missing.</summary>
+    List<Node3D> Play(string xml, Xform at, bool keep, int handle)
     {
         var parts = table.Get(xml);
         if (parts == null) return null;
@@ -119,6 +143,13 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             {
                 FieldAudio.Instance?.PlayEventAt(part.SoundGroup == null ? part.SoundEvent : part.SoundGroup + "/" + part.SoundEvent,
                     FieldBuilder.ToGodotPoint(at.T), part.StartDelay);
+                continue;
+            }
+            if (part.Type == "light" && part.Light != null)
+            {
+                var pos = at.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));   // the part's place in the effect's space
+                float dur = part.Loop ? 1e7f : part.Duration > 0 ? part.Duration : 0.6f;
+                lights.Add(new LiveLight { Param = part.Light, Pos = pos, Start = part.StartDelay, End = part.StartDelay + dur, Handle = keep ? handle : 0 });
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath) || Scene(part.FilePath) is not { } sc) continue;

@@ -112,4 +112,12 @@ public class WiringGuardTests
         Assert.That(l, Does.Contain("PutColourRows(data, w, i, l, scale);"), "every put light carries the HDR scale");
         Assert.That(f, Does.Not.Contain("bloom.Glow = hdrOn"), "Glow stays set: the render thread reads it");
     }
+    [Test]
+    public void RegionSkillLightPartsGoThroughTheFieldLights()
+    {
+        var r = Source("game/scripts/world/RegionSkills.cs");
+        Assert.That(r, Does.Contain("part.Type == \"light\" && part.Light != null"), "an effect xml's light part is played");
+        Assert.That(r, Does.Contain("l.Light = FieldLights.Start(l.Param, l.Pos);"), "it starts at its delay as CombatLayer's lights");
+        Assert.That(r, Does.Contain("FieldLights.End(l.Light);"), "its end frees the effect light slot");
+    }
 }
