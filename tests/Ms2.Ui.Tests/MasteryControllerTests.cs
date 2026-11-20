@@ -222,7 +222,8 @@ public class MasteryControllerTests
         var model = new UiModel(tables) { HasLocalPlayer = true };
         var data = new MasteryData();
         Array.Fill(data.Exp, uint.MaxValue - 1);       // every grade reached, none received
-        var closed = new MasteryController { Table = tables.MasteryRecipes, Data = data, World = model };
+        var world = model;
+        var closed = new MasteryController { Table = tables.MasteryRecipes, Data = data, World = () => world };
         var hosted = new MasteryController { Table = tables.MasteryRecipes, Data = data };
         var layout = new JsonObject
         {
@@ -233,6 +234,9 @@ public class MasteryControllerTests
         int n = hosted.TotalClaimableRewardLevels();
         Assert.That(n, Is.GreaterThan(0), "the data has grade rewards for the default job");
         Assert.That(closed.TotalClaimableRewardLevels(), Is.EqualTo(n), "no host: the HUD's model");
+        world = new UiModel(tables) { HasLocalPlayer = false };
+        Assert.That(closed.TotalClaimableRewardLevels(), Is.EqualTo(0), "a relayout's new model, not the first one");
+        world = model;
         model.HasLocalPlayer = false;
         Assert.That(closed.TotalClaimableRewardLevels(), Is.EqualTo(0), "no local player");
         Assert.That(new MasteryController { Table = tables.MasteryRecipes, Data = data }.TotalClaimableRewardLevels(), Is.EqualTo(0),

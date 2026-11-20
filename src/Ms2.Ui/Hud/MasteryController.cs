@@ -99,10 +99,11 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
 
     /// <summary>
     /// The model the CMasteryManager side reads before the dialog's movie is loaded (the game menu's count, FUN_141938ae0(0x4f1e)):
-    /// the HUD's, whose player is WorldService::GetLocalPlayer. Once the movie is loaded it is the host's model.
+    /// the HUD's, whose player is WorldService::GetLocalPlayer. Once the movie is loaded it is the host's model. Read on every
+    /// use: a HUD relayout builds a new model.
     /// </summary>
-    public UiModel World { get; init; }
-    UiModel Manager => Host?.Model ?? World;
+    public Func<UiModel> World { get; init; }
+    UiModel Manager => Host?.Model ?? World?.Invoke();
 
     ItemSlotBinder Reward => reward ??= new ItemSlotBinder(Model, "MasteryDialog_Reward") { IconType = 0x11 };
     ItemSlotBinder Require => require ??= new ItemSlotBinder(Model, "MasteryDialog_Require") { IconType = 1 };
