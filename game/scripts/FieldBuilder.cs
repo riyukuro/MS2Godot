@@ -91,7 +91,7 @@ public sealed class FieldBuilder
         public List<Shape3D> Collision;  // cooked PhysX meshes of the NIF, model space
         public List<Shape3D> Overlap;    // the same meshes for the overlap tests (TwoSidedSpace), by index
         public bool Elsewhere;           // DrawsInstance took it (per field)
-        public bool AnimatesMaterial;    // a mesh has a material controller (alpha, flipbook, uv scroll): IsStatic splits the batch
+        public bool AnimatesMaterial;    // a mesh has a shader-run controller (alpha, flipbook, uv scroll, morph): IsStatic splits the batch
     }
 
     readonly Dictionary<string, ModelEntry> models = new(StringComparer.OrdinalIgnoreCase);

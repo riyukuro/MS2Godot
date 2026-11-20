@@ -289,11 +289,11 @@ public sealed class ModelBuilder
         if (instanceColor)
         {
             // field meshes: second uv set as UV2, vertex colours as CUSTOM0 so that COLOR stays the instance colour
-            if (m.Colors != null)
-            {
-                arrays[(int)Mesh.ArrayType.Custom0] = m.Colors;
-                format |= (ulong)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift;
-            }
+            // and a keyed morph's targets 1-3 as offsets in CUSTOM1-3 (field_morph)
+            if (m.Colors != null) arrays[(int)Mesh.ArrayType.Custom0] = m.Colors;
+            if (m.Morph != null)
+                for (int t = 0; t < m.Morph.Deltas.Length; t++) arrays[(int)Mesh.ArrayType.Custom1 + t] = m.Morph.Deltas[t];
+            format |= FieldCustomFormat(m);
         }
         // file triangles are counter-clockwise (as in the glTF export); Godot's front faces are clockwise
         var idx = (int[])m.Indices.Clone();
@@ -304,7 +304,81 @@ public sealed class ModelBuilder
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, null, null, (Mesh.ArrayFormat)format);
         mesh.SurfaceSetMaterial(0, BuildMaterial(m, instanceColor));
         if (instanceColor && m.Billboard >= 0) mesh.CustomAabb = BillboardAabb(m);
+        else if (instanceColor && m.Morph != null) mesh.CustomAabb = MorphAabb(m);
         return mesh;
+    }
+
+    static readonly int[] CustomShift =
+    {
+        (int)Mesh.ArrayFormat.FormatCustom0Shift, (int)Mesh.ArrayFormat.FormatCustom1Shift,
+        (int)Mesh.ArrayFormat.FormatCustom2Shift, (int)Mesh.ArrayFormat.FormatCustom3Shift,
+    };
+
+    /// <summary>The custom array formats of a field mesh: rgba vertex colours in CUSTOM0, morph offsets (xyz) in CUSTOM1-3.</summary>
+    public static ulong FieldCustomFormat(ModelMesh m)
+    {
+        ulong format = 0;
+        if (m.Colors != null) format |= (ulong)Mesh.ArrayCustomFormat.RgbaFloat << CustomShift[0];
+        if (m.Morph != null)
+            for (int t = 0; t < m.Morph.Deltas.Length; t++) format |= (ulong)Mesh.ArrayCustomFormat.RgbFloat << CustomShift[t + 1];
+        return format;
+    }
+
+    /// <summary>A morph target's weight range: its key values (with a tenth of the span either side for Bezier overshoot)
+    /// or its fixed weight.</summary>
+    static (float lo, float hi) MorphRange(MorphAnim a, int t)
+    {
+        if (a.Weights[t] is not { } k) return (a.Static[t], a.Static[t]);
+        float lo = k.Values.Min(), hi = k.Values.Max(), pad = k.KeyType == 2 ? 0.1f * (hi - lo) : 0f;
+        return (lo - pad, hi + pad);
+    }
+
+    /// <summary>A morphing mesh's bounds in its own space: each vertex moved by every target over its weight range.</summary>
+    static Aabb MorphAabb(ModelMesh m)
+    {
+        var a = m.Morph;
+        var lo = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+        var hi = -lo;
+        for (int i = 0; i + 2 < m.Positions.Length; i += 3)
+        {
+            var v = new Vector3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2]);
+            Vector3 vl = v, vh = v;
+            for (int t = 0; t < a.Deltas.Length; t++)
+            {
+                var d = new Vector3(a.Deltas[t][i], a.Deltas[t][i + 1], a.Deltas[t][i + 2]);
+                var (wl, wh) = MorphRange(a, t);
+                Vector3 p = d * wl, q = d * wh;
+                vl += p.Min(q);
+                vh += p.Max(q);
+            }
+            if (!float.IsFinite(vl.X + vl.Y + vl.Z + vh.X + vh.Y + vh.Z)) continue;   // a NaN target vertex draws nothing
+            lo = lo.Min(vl);
+            hi = hi.Max(vh);
+        }
+        return lo.X > hi.X ? new Aabb() : new Aabb(lo, hi - lo);
+    }
+
+    /// <summary>A keyed morph (ModelMesh.Morph) for field_morph: the controller time, the fixed weights and each target's keys.</summary>
+    static void SetMorph(ShaderMaterial sm, ModelMesh m)
+    {
+        if (m.Morph is not { } a) return;
+        var keys = Vector3I.Zero;
+        var kv = new Vector4[96];
+        var fixedW = Vector3.Zero;
+        for (int t = 0; t < a.Deltas.Length; t++)
+        {
+            fixedW[t] = a.Static[t];
+            if (a.Weights[t] is not { } k) continue;
+            keys[t] = k.Times.Length * 4 + k.KeyType;
+            for (int j = 0; j < k.Times.Length; j++)
+                kv[32 * t + j] = new Vector4(k.Times[j], k.Values[j], k.InTans?[j] ?? 0f, k.OutTans?[j] ?? 0f);
+        }
+        sm.SetShaderParameter(ShaderParam.MorphCount, a.Deltas.Length);
+        sm.SetShaderParameter(ShaderParam.MorphTime, new Vector4(a.Start, a.Stop, a.Frequency, a.Phase));
+        sm.SetShaderParameter(ShaderParam.MorphClamp, a.Clamp);
+        sm.SetShaderParameter(ShaderParam.MorphStatic, fixedW);
+        sm.SetShaderParameter(ShaderParam.MorphKeys, keys);
+        sm.SetShaderParameter(ShaderParam.MorphKey, kv);
     }
 
     /// <summary>A billboard mesh's bounds in its own space: the sphere it sweeps as it turns about its billboard node's
@@ -442,6 +516,7 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
         SetUvTransforms(sm, m);
         SetBillboard(sm, m);
+        SetMorph(sm, m);
         if (frozenAt >= 0 && m.AnimatesMaterial) sm.SetShaderParameter(ShaderParam.FrozenTime, frozenAt);
         return sm;
     }
@@ -627,6 +702,7 @@ public sealed class ModelBuilder
             }
             SetUvTransforms(sm, m);
             SetBillboard(sm, m);
+        SetMorph(sm, m);
             return sm;
         }
         return CharacterMaterial(m, tex);

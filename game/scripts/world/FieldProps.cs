@@ -168,11 +168,11 @@ public sealed class FieldProps
         var colors = new Color[nv];
         Array.Fill(colors, col);
         arrays[(int)Godot.Mesh.ArrayType.Color] = colors;
-        ulong format = 0;
-        if (m.Colors != null) format |= (ulong)Godot.Mesh.ArrayCustomFormat.RgbaFloat << (int)Godot.Mesh.ArrayFormat.FormatCustom0Shift;
+        ulong format = ModelBuilder.FieldCustomFormat(m);
         mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Godot.Mesh.PrimitiveType.Triangles, arrays, null, null, (Godot.Mesh.ArrayFormat)format);
         mesh.SurfaceSetMaterial(0, src.SurfaceGetMaterial(0));
+        mesh.CustomAabb = src.CustomAabb;   // a billboard's or morph's swept bounds (ModelBuilder.BuildMesh)
         if (frozen) ModelBuilder.Freeze(mesh, freezeAt);
         return meshes[(md, mi, col, frozen)] = mesh;
     }

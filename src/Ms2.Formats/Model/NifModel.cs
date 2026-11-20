@@ -69,9 +69,9 @@ public sealed class ModelMesh
     public int Billboard = -1;
     public int BillboardMode;
     public Xform InBillboard = Xform.Identity;
-    /// <summary>A material controller the field shader runs from the scene time: the alpha, a flipbook on the base or dark
-    /// map, or a uv controller on a map it draws (base, dark, glow, decal0).</summary>
-    public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || UvAnims.Any(s => s.Slot is "base" or "dark" or "glow" or "decal0");
+    /// <summary>A controller the field shader runs from the scene time: the alpha, a flipbook on the base or dark map, a uv
+    /// controller on a map it draws (base, dark, glow, decal0), or a keyed morph.</summary>
+    public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || UvAnims.Any(s => s.Slot is "base" or "dark" or "glow" or "decal0") || Morph != null;
     public bool AlphaBlendOn => AlphaFlags >= 0 && (AlphaFlags & 1) != 0;
     public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
@@ -82,6 +82,7 @@ public sealed class ModelMesh
     public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
     public float FlipPeriod;
     public List<UvAnim> UvAnims = new();  // NiTextureTransformControllers: translate, rotate or scale of one map
+    public MorphAnim Morph;               // a keyed relative POSITION morph (Positions = its target 0), or null
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
@@ -178,6 +179,21 @@ public sealed class TexMap
 /// freq * t + phase, looped over Start..Stop; NiFloatKey::GenInterp holds the end values outside the keys.
 /// </summary>
 public sealed class AlphaAnim : FloatAnim { }
+
+/// <summary>
+/// A relative POSITION morph (NiMorphMeshModifier) under a running NiMorphWeightsController (see ModelData.ReadMorph):
+/// targets 1.. are offsets from target 0 (the mesh's Positions), each weighted by its NiFloatInterpolator's keys or by
+/// a fixed weight. The controller's time maps as freq * t + phase, looped over Start..Stop or, for Clamp, held in it
+/// (NiTimeController::ComputeScaledTime).
+/// </summary>
+public sealed class MorphAnim
+{
+    public float Start, Stop, Frequency = 1f, Phase;
+    public bool Clamp;
+    public float[][] Deltas;     // per target 1..: xyz offset per vertex, the mesh's own space
+    public float[] Static;       // per target 1..: its weight where Weights has no keys
+    public FloatAnim[] Weights;  // per target 1..: its keys (KeyType, Times, Values, tangents; time fields unused), or null
+}
 
 /// <summary>A looping float controller's time mapping and NiFloatData keys (see <see cref="AlphaAnim"/>).</summary>
 public class FloatAnim
@@ -493,6 +509,98 @@ public sealed class ModelData
         };
     }
 
+    /// <summary>
+    /// An NiMorphMeshModifier with relative targets (FLAG_RELATIVETARGETS) on POSITION alone, as every morph in the field
+    /// data, and the NiMorphWeightsController on the mesh. The modifier rewrites POSITION as target 0 (MORPH_POSITION)
+    /// plus each weighted target (NiMorphingKernel.cpp:30-40, weights under 0.001 skipped) on its first update, so the
+    /// stored POSITION is not what is drawn: Positions becomes target 0. A controller that does not run (inactive,
+    /// MANAGERCONTROLLED, a cycle other than LOOP or CLAMP) leaves the stored MORPHWEIGHTS, as does a target whose
+    /// NiFloatInterpolator does not update (no data and the invalid value -FLT_MAX; NiMorphWeightsController::Update
+    /// keeps the weight when Update fails); a target with no data and a valid value takes that value. Morph is set when
+    /// a target has linear or Bezier keys; otherwise the fixed weights are baked into Positions.
+    /// STILL-OPEN: absolute targets, morphed normals (FLAG_UPDATENORMALS), skinned morphs, TCB or other key types, more
+    /// than 4 targets or 32 keys a target: none in the field data. The first three keep the stored POSITION; the last
+    /// ones get the fixed weights baked.
+    /// </summary>
+    static void ReadMorph(NifFile nif, NifStruct mb, Dictionary<string, (double[] v, int n)> s, bool skinned, ModelMesh mesh)
+    {
+        var B = nif.Blocks;
+        NifStruct mod = null;
+        foreach (var m in mb.Ints("Modifiers"))
+            if (m >= 0 && B[(int)m].Type == "NiMorphMeshModifier") { mod = B[(int)m]; break; }
+        if (mod == null || skinned) return;
+        long flags = mod.IntOr("Flags", 0);
+        int nt = (int)mod.IntOr("Num Targets", 0);
+        var el = mod.Structs("Elements");
+        if ((flags & 1) == 0 || (flags & 2) != 0 || nt < 2 || el.Length != 1) return;
+        var sem = el[0].Struct("Semantic");
+        if (nif.StrField(sem, "Name") != "POSITION" || sem.Int("Index") != 0) return;
+        int nv = mesh.Positions.Length / 3;
+        var targets = new double[nt][];
+        for (int t = 0; t < nt; t++)
+        {
+            if (!s.TryGetValue(t == 0 ? "MORPH_POSITION" : "MORPH_POSITION" + t, out var ts) || ts.n != 3 || ts.v.Length != nv * 3) return;
+            targets[t] = ts.v;
+        }
+        if (!s.TryGetValue("MORPHWEIGHTS", out var ws) || ws.v.Length < nt) return;
+        var anim = new MorphAnim { Deltas = new float[nt - 1][], Static = new float[nt - 1], Weights = new FloatAnim[nt - 1] };
+        for (int t = 1; t < nt; t++) anim.Static[t - 1] = (float)ws.v[t];
+        for (long c = mb.IntOr("Controller", -1), guard = 0; c >= 0 && guard < 16; guard++)
+        {
+            var cb = B[(int)c];
+            c = cb.IntOr("Next Controller", -1);
+            if (cb.Type != "NiMorphWeightsController") continue;
+            long cf = cb.IntOr("Flags", 0);
+            int cycle = (int)((cf >> 1) & 3);
+            float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
+            // ACTIVE (0x8) and not MANAGERCONTROLLED (0x20), LOOP or CLAMP
+            if ((cf & 8) == 0 || (cf & 0x20) != 0 || cycle is not (0 or 2) || stop < start) break;
+            (anim.Start, anim.Stop, anim.Frequency, anim.Phase, anim.Clamp) = (start, stop, cb.Float("Frequency"), cb.Float("Phase"), cycle == 2);
+            var ips = cb.Ints("Interpolators");
+            for (int t = 1; t < nt && t < ips.Length; t++)
+            {
+                if (ips[t] < 0 || B[(int)ips[t]].Type != "NiFloatInterpolator") continue;
+                var ib = B[(int)ips[t]];
+                if (FloatKeys(nif, ib) is { } k) anim.Weights[t - 1] = k;
+                else if (ib.IntOr("Data", -1) < 0 && ib.Float("Value") != -float.MaxValue) anim.Static[t - 1] = ib.Float("Value");
+            }
+            break;
+        }
+        bool gpu = anim.Weights.Any(w => w != null) && nt <= 4 && anim.Weights.All(w => w == null || w.Times.Length <= 32);
+        var pos = new float[nv * 3];
+        for (int q = 0; q < pos.Length; q++)
+        {
+            double v = targets[0][q];
+            if (!gpu)
+                for (int t = 1; t < nt; t++)
+                    if (Math.Abs(anim.Static[t - 1]) >= 0.001f) v += anim.Static[t - 1] * targets[t][q];
+            pos[q] = (float)v;
+        }
+        mesh.Positions = pos;
+        if (!gpu) return;
+        for (int t = 1; t < nt; t++) anim.Deltas[t - 1] = targets[t].Select(x => (float)x).ToArray();
+        mesh.Morph = anim;
+    }
+
+    /// <summary>An NiFloatInterpolator's linear (1) or Bezier (2) keys as in ReadFloatAnim, or null.</summary>
+    static FloatAnim FloatKeys(NifFile nif, NifStruct ip)
+    {
+        long di = ip.IntOr("Data", -1);
+        if (di < 0) return null;
+        var data = nif.Blocks[(int)di].Struct("Data");
+        var keys = data.Structs("Keys");
+        int type = (int)data.IntOr("Interpolation", 0);
+        if (keys.Length == 0 || type is not (1 or 2)) return null;
+        return new FloatAnim
+        {
+            KeyType = type,
+            Times = keys.Select(k => k.Float("Time")).ToArray(),
+            Values = keys.Select(k => k.Float("Value")).ToArray(),
+            InTans = type == 2 ? keys.Select(k => k.Float("Forward")).ToArray() : null,
+            OutTans = type == 2 ? keys.Select(k => k.Float("Backward")).ToArray() : null,
+        };
+    }
+
     /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>
     static void ReadMaterial(NifFile nif, NifStruct b, ModelMesh mesh)
     {
@@ -716,6 +824,7 @@ public sealed class ModelData
             }
             ReadMaterial(nif, b, mesh);
             ReadTextureControllers(nif, b, mesh);
+            ReadMorph(nif, b, s, skinned, mesh);
             mesh.Indices = s["INDEX"].v.Select(x => (int)x).ToArray();
             bool zSet = false, stSet = false;
             foreach (var p in b.Ints("Properties"))

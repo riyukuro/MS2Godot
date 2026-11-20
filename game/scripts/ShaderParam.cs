@@ -23,6 +23,8 @@ static class ShaderParam
         UvCtlCount = "uv_ctl_count", UvCtlTarget = "uv_ctl_target", UvCtlKeys = "uv_ctl_keys", UvCtlTime = "uv_ctl_time",
         UvCtlT = "uv_ctl_t", UvCtlV = "uv_ctl_v", UvCtlIn = "uv_ctl_in", UvCtlOut = "uv_ctl_out",
         BbMode = "bb_mode", BbX = "bb_x", BbXInv = "bb_x_inv",
+        MorphCount = "morph_count", MorphTime = "morph_time", MorphClamp = "morph_clamp", MorphStatic = "morph_static",
+        MorphKeys = "morph_keys", MorphKey = "morph_key",
         BaseTex = "base_tex", BaseUv2 = "base_uv2",
         Color0 = "color0",
         Color1 = "color1",

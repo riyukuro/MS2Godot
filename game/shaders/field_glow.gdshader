@@ -34,12 +34,16 @@ uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
 #include "res://shaders/field_uv.gdshaderinc"
 #include "res://shaders/field_billboard.gdshaderinc"
+#include "res://shaders/field_morph.gdshaderinc"
 
 varying vec2 base_uv;
 varying vec2 glow_uv;
 varying vec3 world_pos;
 
 void vertex() {
+	if (morph_count > 0) {
+		VERTEX = morph_vertex(VERTEX, CUSTOM1.xyz, CUSTOM2.xyz, CUSTOM3.xyz);
+	}
 	if (bb_mode >= 0) {
 		VERTEX = (bb_matrix(MODEL_MATRIX, INV_VIEW_MATRIX) * vec4(VERTEX, 1.0)).xyz;
 	}
