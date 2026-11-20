@@ -802,8 +802,8 @@ public partial class Player : CharacterBody3D
     void PlayAct(Act a, float speed = 1f, bool restart = false)
     {
         var name = Anims?.Name(a);
-        if (name == null || !Anim.HasAnimation(name)) return;
-        if (name != CurrentAnim || restart) PlaySequence(name, speed, restart);
+        if (name == null || (name == CurrentAnim && !restart)) return;   // HasAnimation(string) makes a StringName per call: ask only on a change
+        if (Anim.HasAnimation(name)) PlaySequence(name, speed, restart);
     }
 
     // a BLEND transition's destination stays on its first frame until the blend ends: the time left, and the rate it then plays at
