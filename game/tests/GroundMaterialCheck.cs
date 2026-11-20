@@ -17,13 +17,16 @@ namespace Ms2Godot.Tests;
 /// - Landing: StateLand's ray (stateland.cpp:83-92) puts the entity under the feet in the hit report. A player whose report
 ///   still holds the stone wall lands on the water: the landing plays "water" and the report's entity is water.
 /// - Dash skid: StateDash::vfunc_9 (state.cpp:1855-1861) refreshes the material and plays one "land" when the skid starts.
+/// - Frame order: PC::vfunc_53 (pc.cpp:4436-4445) moves first and refreshes after, so on the refresh frame whose move
+///   first touches water from stone the stored material is already "water". A player runs from a stone cube onto a water
+///   cube of the same height; the 200 ms timer expires in the frame of that move.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class GroundMaterialCheck : Node3D
 {
     int frames;
     CharacterBody3D body;
-    Player player;
+    Player player, runner;
     StaticBody3D stone, water, bare;
 
     public override void _Ready()
@@ -39,6 +42,17 @@ public partial class GroundMaterialCheck : Node3D
         AddChild(player);
         player.SetProcess(false);
         player.SetPhysicsProcess(false);
+        Cube(new Vector3(1200, 0, 0), "");                      // a stone floor and a water floor at the same height
+        var pool = Cube(new Vector3(1350, 0, 0), "water");
+        ((Node)pool.GetChild(0)).SetMeta(FieldBuilder.KindMeta, MoveConfig.WaterGroup);
+        runner = Player.Create(new Node3D(), null);
+        AddChild(runner);
+        runner.SetProcess(false);
+        runner.SetPhysicsProcess(false);
+        runner.ScriptDriven = true;
+        runner.GlobalPosition = new Vector3(1240, 150, 0);
+        runner.BoundsMin = new Vector3(1000, -1000, -1000);       // the field's world box (field axes x, -z, y)
+        runner.BoundsMax = new Vector3(1600, 1000, 1000);
     }
 
     StaticBody3D Cube(Vector3 at, string material)
@@ -126,10 +140,22 @@ public partial class GroundMaterialCheck : Node3D
         typeof(Player).GetMethod("DashSkid", Private).Invoke(player, new object[] { 0f });
         bool dash = beforeSkid == "water" && lands == 1 && player.GroundMaterial == "default";
 
-        bool ok = shapes && snapshot && landing && dash;
+        // one real step: a frame on the stone (the first refresh), a frame that starts the walk, then a 200 ms frame whose
+        // move runs 70 units from the stone onto the water and whose end expires the timer
+        var step = typeof(Player).GetMethod("Step", Private);
+        step.Invoke(runner, new object[] { 1.0 / 60 });
+        string onStone = runner.GroundMaterial;
+        runner.Input2 = new Vector2(1, 0);
+        step.Invoke(runner, new object[] { 1.0 / 60 });
+        step.Invoke(runner, new object[] { GroundMaterialSnapshot.RefreshMs / 1000 });
+        string afterStep = runner.GroundMaterial;
+        bool order = onStone == "default" && runner.GlobalPosition.X > 1300 && afterStep == "water";
+
+        bool ok = shapes && snapshot && landing && dash && order;
         GD.Print($"ground material check: stone edge '{edge}', stone middle '{middle}', water '{wet}', no entity '{none}'; " +
                  $"stone->water '{aBefore}' then '{aAfter}' at frame {aFrame}, off a ledge '{bBefore}' then '{bAfter}' at frame {bFrame}; " +
-                 $"landing from a wall report: water {landing}; dash skid '{beforeSkid}' then '{player.GroundMaterial}', {lands} land: {(ok ? "OK" : "FAIL")}");
+                 $"landing from a wall report: water {landing}; dash skid '{beforeSkid}' then '{player.GroundMaterial}', {lands} land; " +
+                 $"step onto water at x {runner.GlobalPosition.X:0}: '{onStone}' then '{afterStep}': {(ok ? "OK" : "FAIL")}");
         GetTree().Quit(ok ? 0 : 1);
     }
 }

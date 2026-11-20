@@ -123,7 +123,8 @@ public partial class Player
         {
             using var hit = space.IntersectRay(q);
             if (hit.Count == 0) return null;
-            var obj = hit[PhysicsKeys.Collider].AsGodotObject();
+            using var colV = hit[PhysicsKeys.Collider];
+            var obj = colV.AsGodotObject();
             var col = obj as Node;
             int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
             if ((groups & (1u << group)) != 0) return (obj, (int)hit[PhysicsKeys.Shape]);

@@ -220,7 +220,6 @@ public partial class Player : CharacterBody3D
         bool hasInput = dir != Vector3.Zero;
         bool grounded = Grounded;
         ProbeGround();
-        ground.Frame(dt, OnOrAboveGround);   // PC::vfunc_53 (pc.cpp:4441-4445): vfunc_93(true) when m_timer970 expires
         stateTime += dt;
 
         switch (State)
@@ -325,6 +324,11 @@ public partial class Player : CharacterBody3D
             if (State == MoveState.Dash) DashAfterMove(before, dt);
         }
         else wallHit = false;
+        // PC::vfunc_53 (pc.cpp:4436-4445) runs PCBase::vfunc_53 first, whose state update (pcbase.cpp:3732) moves the
+        // controller; only then does it test m_timer970 and call vfunc_93(bExpired), whose down ray (pcbase.cpp:2466-2474)
+        // runs every frame. So the 200 ms refresh reads the hit report and the ground left by this frame's move.
+        ProbeGround();
+        ground.Frame(dt, OnOrAboveGround);
         TurnTowardTargetYaw(dt);
         TickBlendHold(dt);
         UpdateAnimation();
