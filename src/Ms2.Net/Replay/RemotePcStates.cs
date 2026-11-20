@@ -83,7 +83,9 @@ public interface IRemotePc
 /// control (m_pushControl, statemanager.cpp:591), the marker the sender stood on (m_str88, FUN_1417dc4c0
 /// statemanager.cpp:606-620), the cube cell (FUN_141678300) and the fixed Z rotation of PCBase::vfunc_21
 /// (AdditionalCliList::TryGetFixedZRotation) are not ported. FUN_141676b70 (m_unk_b80, the ride/stunt idle and walk subs
-/// 0xc / 0x17 / 0x27 / 0x87) is taken as 0.
+/// 0xc / 0x17 / 0x27 / 0x87) is taken as 0. The viewer's camera local-target mode (CameraMgr::IsLocalTargetMode,
+/// pcbase.cpp:1864-1869, which skips TurnTowardTargetYaw for a non-target PC while the viewer's camera is in local-target
+/// mode) is not ported yet.
 /// </summary>
 public sealed class RemotePcStates
 {
@@ -439,7 +441,10 @@ public sealed class RemotePcStates
     void MoveBy(Vector3 move, float dt)
     {
         pc.Move(move, dt);
-        TurnTowardTargetYaw(dt);                     // pcbase.cpp:1863-1868 (no local target camera for a remote)
+        // PCBase::vfunc_68 (@0x14166e100, pcbase.cpp:1864-1869): skipped for a non-target PC while the viewer's camera
+        // (CameraMgr::IsLocalTargetMode) is in local-target mode.
+        // STILL-OPEN: viewer camera local-target mode is not ported yet, so TurnTowardTargetYaw always runs.
+        TurnTowardTargetYaw(dt);
     }
 
     /// <summary>The current state's vfunc_9.</summary>
