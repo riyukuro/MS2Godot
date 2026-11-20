@@ -515,6 +515,14 @@ public class AsMovieClip : AsSprite
     public int Frame;                       // 0-based
     public bool Playing { get => playing; set { playing = value; TrackPlaying(); } }
     public readonly Dictionary<int, AsFunction> FrameScripts = new();
+    Dictionary<int, string> scriptLabels;
+    /// <summary>The error label of frame <paramref name="frame"/>'s script ("Class@frame", 1-based), made once.</summary>
+    internal string ScriptLabel(int frame)
+    {
+        scriptLabels ??= new();
+        if (!scriptLabels.TryGetValue(frame, out var s)) scriptLabels[frame] = s = $"{Class.Name}@{frame + 1}";
+        return s;
+    }
     public readonly Dictionary<JsonObject, AsDisplayObject> Live = new(ReferenceEqualityComparer.Instance);
     public bool TimelineBuilt;
     public int LastScriptFrame = -1;

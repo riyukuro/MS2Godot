@@ -1138,4 +1138,80 @@ public class RuntimeTests
         Assert.That(scriptRuns, Is.EqualTo(20));
         Assert.That(loopBytes, Is.EqualTo(0), "looping a playing clip with a frame script allocates nothing per tick");
     }
+
+    /// <summary>
+    /// The timeline advance gives the same frames and frame-script order as a walk of the whole display list: clips placed
+    /// by a frame the parent advances to, a playing clip nested in a static sprite placed late, playing clips a constructor
+    /// creates during the advance (into its own static sprite, and into an earlier static sprite that the walk has not reached
+    /// yet), the loop to frame 0, and a stopped clip that a script starts again.
+    /// </summary>
+    [Test]
+    public void AdvanceReachesClipsCreatedOrRestartedDuringTheFrame()
+    {
+        static JsonObject Pl(int id, int depth, int first, string name) => new() { ["id"] = id, ["depth"] = depth, ["first"] = first, ["name"] = name };
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject
+            {
+                // a 3-frame clip that places a static sprite "spawn" on its frame 2
+                ["2"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 3, ["children"] = new JsonArray(Pl(4, 1, 1, "spawn")) } },
+                // a static sprite holding a playing clip
+                ["3"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1, ["children"] = new JsonArray(Pl(5, 1, 0, "inner")) } },
+                ["4"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1 } },
+                ["5"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 3 } },
+            },
+            ["root"] = new JsonObject
+            {
+                ["frames"] = 4,
+                ["children"] = new JsonArray(Pl(2, 1, 1, "late"), Pl(3, 2, 2, "box"), Pl(4, 3, 2, "box2"), Pl(4, 4, 0, "host")),
+            },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        var mcCls = rt.GetClass("flash.display.MovieClip");
+        var made = new Dictionary<string, AsMovieClip>();
+        // a constructor that creates a playing clip and adds it: box2's into box2, spawn's into host (earlier in the
+        // walk than late's subtree, where spawn is made)
+        rt.OnAfterConstruct = o =>
+        {
+            // (the instance name is set after the constructor; the placement's is there already)
+            if (o is not AsContainer c || (string)c.Placement?["name"] is not ("box2" or "spawn") || made.Count >= 4) return;
+            string nm = (string)c.Placement["name"];
+            var mc = (AsMovieClip)mcCls.Construct();
+            mc.TL = Timeline.From(new JsonObject { ["frames"] = 3 }, p.Main);
+            var into = nm == "box2" ? c : (AsContainer)((AsContainer)p.Root).Children.First(k => k.InstanceName == "host");
+            into.addChild(mc);
+            made[nm + "#" + made.Count] = mc;
+        };
+        Assert.That(p.Start(), Is.True);
+        var root = (AsMovieClip)p.Root;
+        var order = new List<string>();
+        root.FrameScripts[2] = new AsPlainFunction(rt, new NativeMethod("r", (_, _) => { order.Add("root@3"); return Rt.Undef; }));
+        string Named(string n) => root.Children.FirstOrDefault(k => k.InstanceName == n) is AsMovieClip m ? m.currentFrame.ToString() : "-";
+        string Inner() => root.Children.FirstOrDefault(k => k.InstanceName == "box") is AsContainer b && b.Children.FirstOrDefault() is AsMovieClip m ? m.currentFrame.ToString() : "-";
+        var trace = new List<string>();
+        for (int i = 0; i < 9; i++)
+        {
+            if (i == 6) foreach (var m in made.Values) m.stop();
+            if (i == 7) foreach (var m in made.Values) m.play();
+            p.Tick();
+            trace.Add($"{root.currentFrame} late {Named("late")} inner {Inner()} made " + string.Join(",", made.Select(kv => kv.Key + ":" + kv.Value.currentFrame)));
+        }
+        // the frames the whole-list walk gives (bc18e31); the stop on the 7th tick holds the made clips for one tick
+        Assert.That(trace, Is.EqualTo(new[]
+        {
+            "2 late 2 inner - made spawn#0:2",
+            "3 late 3 inner 2 made spawn#0:3,box2#1:2",
+            "4 late 1 inner 3 made spawn#0:1,box2#1:3",
+            "1 late - inner - made spawn#0:2,box2#1:3",
+            "2 late 2 inner - made spawn#0:3,box2#1:3,spawn#2:2",
+            "3 late 3 inner 2 made spawn#0:1,box2#1:3,spawn#2:3,box2#3:2",
+            "4 late 1 inner 3 made spawn#0:1,box2#1:3,spawn#2:3,box2#3:2",
+            "1 late - inner - made spawn#0:2,box2#1:3,spawn#2:1,box2#3:2",
+            "2 late 2 inner - made spawn#0:3,box2#1:3,spawn#2:2,box2#3:2",
+        }));
+        Assert.That(order, Is.EqualTo(new[] { "root@3", "root@3" }));
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }

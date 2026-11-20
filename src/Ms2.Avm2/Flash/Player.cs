@@ -517,7 +517,7 @@ namespace Ms2.Avm2.Flash
                 if (a.Type != null) { RT.Guard(a.Type, a.Target.Class?.Name ?? "", (p: this, t: a.Type, d: a.Target), static x => x.p.Dispatch(x.t, x.d)); continue; }
                 var mc = (AsMovieClip)a.Target;
                 if (mc.FrameScripts.TryGetValue(a.Frame, out var fn))
-                    RT.Guard("frame script", mc.Class.Name, (fn, mc), static x => x.fn.Call(x.mc, Array.Empty<object>()));
+                    RT.Guard("frame script", mc.ScriptLabel(a.Frame), (fn, mc), static x => x.fn.Call(x.mc, Array.Empty<object>()));
             }
             foreach (var x in frameActions) { x.Target = null; x.Type = null; spareActions.Push(x); }
             frameActions.Clear(); frameHead = 0;
@@ -707,9 +707,13 @@ namespace Ms2.Avm2.Flash
             if (advancing) MarkAdvancePath(mc);
         }
 
+        /// <summary>Marks <paramref name="o"/> and its ancestors up to the first one already marked this tick. The walk always
+        /// goes past <paramref name="o"/> itself: a clip marked while it had no parent (a constructor's new clip, added after)
+        /// marks its ancestors when it is added.</summary>
         void MarkAdvancePath(AsDisplayObject o)
         {
-            for (var p = o; p != null && p.AdvanceEpoch != advanceEpoch; p = p.Parent)
+            o.AdvanceEpoch = advanceEpoch;
+            for (var p = o.Parent; p != null && p.AdvanceEpoch != advanceEpoch; p = p.Parent)
                 p.AdvanceEpoch = advanceEpoch;
         }
 
@@ -755,30 +759,29 @@ namespace Ms2.Avm2.Flash
                 int next = (mc.Frame + 1) % mc.totalFrames;
                 if (next == 0)
                 {
-                    List<JsonObject> drop = null;
+                    bool any = false;
                     foreach (var (pl, _) in mc.Live)
-                        if (J.Iv(pl["first"]) > 0) (drop ??= new()).Add(pl);
-                    if (drop != null)
-                        foreach (var pl in drop)
-                            if (mc.Live.Remove(pl, out var ch) && ch.Parent == mc) mc.RemoveChildInternal(ch, true);
+                        if (J.Iv(pl["first"]) > 0) { any = true; break; }
+                    if (any)
+                        foreach (var (pl, ch) in mc.Live.ToList())
+                            if (J.Iv(pl["first"]) > 0) { mc.Live.Remove(pl); if (ch.Parent == mc) mc.RemoveChildInternal(ch, true); }
                 }
                 BuildFrame(mc, next);
                 MarkScript(mc, inOrder: true);
             }
-            // snapshot only children on a playing path (a child added by a frame is advanced next frame, except a new
-            // playing child created by BuildFrame above, whose RegisterPlaying already marked its path)
+            // the children as they are now (a child added later in this tick is advanced next tick), in a reused buffer; a
+            // child is walked when its subtree holds a playing clip by the time the walk reaches it (a path a constructor
+            // marks during the walk included), which is when the whole-list walk did anything in it
             if (o is AsContainer c && c.Children.Count is int n and > 0)
             {
                 int start = advanceBuf.Count;
-                for (int i = 0; i < n; i++)
+                for (int i = 0; i < n; i++) advanceBuf.Add(c.Children[i]);
+                try
                 {
-                    var k = c.Children[i];
-                    if (k.AdvanceEpoch == advanceEpoch) advanceBuf.Add(k);
+                    for (int i = start; i < start + n; i++)
+                        if (advanceBuf[i].AdvanceEpoch == advanceEpoch) Advance(advanceBuf[i]);
                 }
-                int end = advanceBuf.Count;
-                if (end == start) return;
-                try { for (int i = start; i < end; i++) Advance(advanceBuf[i]); }
-                finally { advanceBuf.RemoveRange(start, end - start); }
+                finally { advanceBuf.RemoveRange(start, n); }
             }
         }
 
