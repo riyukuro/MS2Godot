@@ -117,7 +117,7 @@ void fragment() {
     // (postprocessingservice.cpp:1401-1411, 1751); the clamp stands in for that.
     // STILL-OPEN: the FP16 target, tonemap and bloom (postprocessingservice.cpp); the bloom port is a separate lane.
     // The vertex colour takes the place of the terms EffectMesh.VertexColors names (Shade leaves those out of tint and
-    // mat_ambient), and its alpha that of the material alpha (NiStandardMaterial::HandleColors, NiStandardMaterial.cpp:4377-4450).
+    // mat_ambient), and its alpha that of the material alpha (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450).
     vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
     if (vc_emi) coef += COLOR.rgb;
     if (vc_dif) coef += COLOR.rgb;

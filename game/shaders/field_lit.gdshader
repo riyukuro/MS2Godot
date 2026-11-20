@@ -237,7 +237,7 @@ void fragment() {
 		vec2 duv = (dark_uv2 ? UV2 : UV) + scroll(dark_scroll_axis, dark_scroll_key, dark_scroll_range);
 		t.rgb *= sample_slot(dark_tex, 1, duv).rgb;
 	}
-	// NiStandardMaterial::HandleColors (NiStandardMaterial.cpp:4360-4456): the opacity is split from the diffuse colour, which
+	// NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor (NiStandardMaterial.cpp:4360-4456): the opacity is split from the diffuse colour, which
 	// is the vertex colour only for source AMB_DIFF with lighting E_A_D; otherwise it is the material diffuse, whose alpha is
 	// the NiMaterialProperty alpha (a mesh without its own NiVertexColorProperty has the default, SOURCE_IGNORE + E_A_D,
 	// NiVertexColorProperty.inl:17-22). The base map's alpha multiplies it (HandleBaseMap, :4503-4525). FADE: the fade

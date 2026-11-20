@@ -72,7 +72,7 @@ public sealed class EffectMesh
     /// <summary>The NiVertexColorProperty lighting mode is LIGHTING_E (flags bit 3 clear); without the property it is LIGHTING_E_A_D.</summary>
     public bool LightingE => Mesh.VertexColorFlags >= 0 && (Mesh.VertexColorFlags & 8) == 0;
 
-    /// <summary>Which colour terms the mesh's vertex colours replace (NiStandardMaterial::HandleColors,
+    /// <summary>Which colour terms the mesh's vertex colours replace (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor,
     /// NiStandardMaterial.cpp:4377-4450). The source is the NiVertexColorProperty flags bits 4-5. EMISSIVE (1): the vertex colour is
     /// the emissive, in either lighting mode. AMB_DIFF (2): the vertex colour is the ambient and the diffuse, only with lighting
     /// E_A_D. The MS2 source 3 ("MS2: v2525"): the vertex colour is the ambient alone, also only with E_A_D. The opacity is split

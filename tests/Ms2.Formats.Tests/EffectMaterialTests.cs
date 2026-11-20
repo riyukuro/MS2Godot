@@ -95,7 +95,7 @@ public class EffectMaterialTests
 
     /// <summary>The Fairy Tree Lake milkyway ribbons (NiVertexColorProperty 40: AMB_DIFF, E_A_D): the vertex colours are the
     /// diffuse and ambient terms, so the material's grey diffuse and ambient (0.71) drop out of the shading and the vertex alpha,
-    /// which fades to 0 at the ribbon ends, is the opacity (NiStandardMaterial::HandleColors, NiStandardMaterial.cpp:4377-4450).</summary>
+    /// which fades to 0 at the ribbon ends, is the opacity (NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450).</summary>
     [Test]
     public void MilkywayRibbonTakesItsVertexColours()
     {
@@ -112,7 +112,7 @@ public class EffectMaterialTests
         }
     }
 
-    /// <summary>The vertex colour's terms by source (flags bits 4-5) and lighting mode (bit 3), HandleColors' switch
+    /// <summary>The vertex colour's terms by source (flags bits 4-5) and lighting mode (bit 3), HandleInitialSpecAmbDiffEmissiveColor's switch
     /// (NiStandardMaterial.cpp:4377-4450): EMISSIVE in both modes (opacity under E), AMB_DIFF and the MS2 source 3 only with
     /// E_A_D, IGNORE never; a mesh without vertex colours or without the property takes none.</summary>
     [Test]
