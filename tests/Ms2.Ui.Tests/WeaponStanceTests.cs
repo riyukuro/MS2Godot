@@ -1,0 +1,271 @@
+using System.Numerics;
+using System.Xml.Linq;
+using Ms2.Formats.Pack;
+using Ms2.Net.Packets;
+using Ms2.Ui.Items;
+using Ms2.Ui.Skills;
+using NUnit.Framework;
+
+namespace Ms2.Ui.Tests;
+
+/// <summary>
+/// Unit and state tests for weapon attachment nodes, per-gender dummy offsets and battle stance transitions
+/// (<see cref="WeaponStance"/>, <see cref="WeaponActionTable"/>, <see cref="ItemModelTable"/>).
+/// </summary>
+public class WeaponStanceTests
+{
+    static PackSet packs;
+    static ItemDataTable items;
+    static ItemModelTable models;
+    static WeaponActionTable actions;
+
+    static void LoadPacks()
+    {
+        if (packs != null) return;
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        packs = new PackSet(d);
+        items = new ItemDataTable(packs);
+        models = new ItemModelTable(packs);
+        actions = WeaponActionTable.Load(packs);
+    }
+
+    static void AssertVec(Vector3 actual, float x, float y, float z, string label = "")
+    {
+        Assert.That(actual.X, Is.EqualTo(x).Within(1e-4f), label + " X");
+        Assert.That(actual.Y, Is.EqualTo(y).Within(1e-4f), label + " Y");
+        Assert.That(actual.Z, Is.EqualTo(z).Within(1e-4f), label + " Z");
+    }
+
+    [TestCase(10, 0, "Sword_", 200001,
+        new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 0, 0, 0, 0, 10, 0 },
+        new float[] { 0, 0, 0, -10, -5, 0 })]
+    [TestCase(10, 1, "Sword_", 200001,
+        new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 0, 0, 0, -2, 10, 0 },
+        new float[] { 0, 0, 0, -10, -5, 0 })]
+    [TestCase(20, 0, "LargeSword_", 300001,
+        new[] { "Weapon_Back_R_Point" },
+        new[] { "Weapon_Hand_R_Point" },
+        new float[] { -6, 8, 9 },
+        new float[] { -5, -5, 0 })]
+    [TestCase(20, 1, "LargeSword_", 300001,
+        new[] { "Weapon_Back_R_Point" },
+        new[] { "Weapon_Hand_R_Point" },
+        new float[] { -8, 8, 9 },
+        new float[] { -5, -5, 0 })]
+    [TestCase(30, 0, "Staff_", 400001,
+        new[] { "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point" },
+        new float[] { -6, 0, 0 },
+        new float[] { 0, -10, 5 })]
+    [TestCase(30, 1, "Staff_", 400001,
+        new[] { "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point" },
+        new float[] { -10, 0, 0 },
+        new float[] { 0, -10, 5 })]
+    [TestCase(40, 0, "Sceptre_", 500001,
+        new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 0, 0, 0, -5, 5, 0 },
+        new float[] { 0, -90, 0, 0, 0, 0 })]
+    [TestCase(40, 1, "Sceptre_", 500001,
+        new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 0, 0, 0, -7, 5, 0 },
+        new float[] { 0, -90, 0, 0, 0, 0 })]
+    [TestCase(50, 0, "Bow_", 600001,
+        new[] { "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_L_Point" },
+        new float[] { -4, 0, 0 },
+        new float[] { 15, -10, 0 })]
+    [TestCase(50, 1, "Bow_", 600001,
+        new[] { "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_L_Point" },
+        new float[] { -6, 0, 0 },
+        new float[] { 15, -10, 0 })]
+    [TestCase(60, 0, "Cannon_", 700001,
+        new[] { "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_L_Point" },
+        new float[] { -8, -5, 17 },
+        new float[] { 0, 0, -12 })]
+    [TestCase(60, 1, "Cannon_", 700001,
+        new[] { "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_L_Point" },
+        new float[] { -16, -5, 21 },
+        new float[] { 4, 13, -2 })]
+    [TestCase(70, 0, "Dagger_", 800021,
+        new[] { "Weapon_Side_L_Point", "Weapon_Side_R_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 0, 0, 0, 0, 0, 0 },
+        new float[] { 0, 0, 0, 0, 0, 0 })]
+    [TestCase(70, 1, "Dagger_", 800021,
+        new[] { "Weapon_Side_L_Point", "Weapon_Side_R_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 0, 0, 0, 0, 0, 0 },
+        new float[] { 0, 0, 0, 0, 0, 0 })]
+    [TestCase(80, 0, "Star_", 900021,
+        new[] { "Weapon_Back_B_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { -4, 6, 0, -4, 6, 0 },
+        new float[] { 0, 0, 0, 0, 0, 0 })]
+    [TestCase(80, 1, "Star_", 900021,
+        new[] { "Weapon_Back_B_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { -6, 6, 0, -6, 6, 0 },
+        new float[] { 0, 0, 0, 0, 0, 0 })]
+    [TestCase(90, 0, "Blade_", 1000001,
+        new[] { "Weapon_Back_R_Point" },
+        new[] { "Weapon_Hand_R_Point" },
+        new float[] { -5, 5, 20 },
+        new float[] { -15, 0, 0 })]
+    [TestCase(90, 1, "Blade_", 1000001,
+        new[] { "Weapon_Back_R_Point" },
+        new[] { "Weapon_Hand_R_Point" },
+        new float[] { -5, 1, 18 },
+        new float[] { -15, 0, 0 })]
+    [TestCase(100, 0, "Knuckle_", 1100001,
+        new[] { "Weapon_Back_B_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 7, 2, -4, 7, 2, -4 },
+        new float[] { 77, 90, 127, 77, 90, 127 })]
+    [TestCase(100, 1, "Knuckle_", 1100001,
+        new[] { "Weapon_Back_B_Point", "Weapon_Back_B_Point" },
+        new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },
+        new float[] { 7, 2, -4, 7, 2, -4 },
+        new float[] { 77, 90, 127, 77, 90, 127 })]
+    [TestCase(110, 0, "Orb_", 1200001,
+        new[] { "Scene Root" },
+        new[] { "Scene Root" },
+        new float[] { 0, 0, 0 },
+        new float[] { 0, 0, 0 })]
+    [TestCase(110, 1, "Orb_", 1200001,
+        new[] { "Scene Root" },
+        new[] { "Scene Root" },
+        new float[] { 0, 0, 0 },
+        new float[] { 0, 0, 0 })]
+    public void StarterWeaponNodesAndOffsetsPerJobAndGender(
+        int jobGroup, int gender, string expectedPrefix, int expectedAttack,
+        string[] sheathedNodes, string[] heldNodes, float[] sheathedTranslations, float[] sheathedRotations)
+    {
+        LoadPacks();
+        var stance = WeaponStance.ForJob(packs, jobGroup, gender, items, models, actions);
+        Assert.That(stance.Action, Is.Not.Null, $"job {jobGroup} weapon action");
+        Assert.That(stance.Action.Prefix, Is.EqualTo(expectedPrefix));
+        Assert.That(stance.Action.NormalAttack, Is.EqualTo(expectedAttack));
+        Assert.That(stance.Parts.Count, Is.EqualTo(sheathedNodes.Length), $"job {jobGroup} gender {gender} part count");
+
+        // Initial sheathed state (InBattle = false, WeaponsHeld = false)
+        Assert.That(stance.InBattle, Is.False);
+        Assert.That(stance.WeaponsHeld, Is.False);
+        Assert.That(stance.ActionPrefix, Is.EqualTo(""));
+        Assert.That(stance.StandSequence, Is.EqualTo("Idle_A"));
+        var sheathed = stance.Placements();
+        Assert.That(sheathed.Select(p => p.TargetNode).ToArray(), Is.EqualTo(sheathedNodes));
+        for (int i = 0; i < sheathed.Count; i++)
+        {
+            AssertVec(sheathed[i].Translation, sheathedTranslations[i * 3], sheathedTranslations[i * 3 + 1], sheathedTranslations[i * 3 + 2], $"job {jobGroup} g{gender} part {i} sheathed T");
+            AssertVec(sheathed[i].Rotation, sheathedRotations[i * 3], sheathedRotations[i * 3 + 1], sheathedRotations[i * 3 + 2], $"job {jobGroup} g{gender} part {i} sheathed R");
+        }
+
+        // Battle stance on -> held in hands, dummy offsets reset to zero/identity on hand nodes
+        Assert.That(stance.SetBattle(true), Is.True);
+        Assert.That(stance.InBattle, Is.True);
+        Assert.That(stance.WeaponsHeld, Is.True);
+        Assert.That(stance.ActionPrefix, Is.EqualTo(expectedPrefix));
+        Assert.That(stance.StandSequence, Is.EqualTo("Attack_Idle_A"));
+        Assert.That(stance.ResolveSequence(stance.StandSequence), Is.EqualTo(expectedPrefix + "Attack_Idle_A"));
+        var held = stance.Placements();
+        Assert.That(held.Select(p => p.TargetNode).ToArray(), Is.EqualTo(heldNodes));
+        for (int i = 0; i < held.Count; i++)
+        {
+            AssertVec(held[i].Translation, 0, 0, 0, $"job {jobGroup} g{gender} part {i} held T");
+            AssertVec(held[i].Rotation, 0, 0, 0, $"job {jobGroup} g{gender} part {i} held R");
+        }
+    }
+
+    [Test]
+    public void StanceTransitionsMoveWeaponsBetweenSheathedAndHands()
+    {
+        LoadPacks();
+        // Knight (10, female): 1H sword 13200220 in RH + shield 14100190 in LH
+        var stance = WeaponStance.ForJob(packs, 10, 1, items, models, actions);
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" }));
+
+        // 1. Stance on (OnUserBattle emotion=1) -> both sword and shield move to hand nodes
+        Assert.That(stance.SetBattle(true), Is.True);
+        Assert.That(stance.WeaponsHeld, Is.True);
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" }));
+        AssertVec(stance.Placements()[1].Translation, 0, 0, 0, "shield in hand T");
+        AssertVec(stance.Placements()[1].Rotation, 0, 0, 0, "shield in hand R");
+
+        // 2. State gating: slow-walk, ladder, climb, water idle or riding returns 0 from State::vfunc_15 -> sheathes weapons while keeping InBattle = true
+        Assert.That(stance.SetState(WeaponStance.CanHoldInMoveState(onWater: false, walkMode: true, riding: false)), Is.True);
+        Assert.That(stance.InBattle, Is.True, "battle stance emotion stays on during slow-walk");
+        Assert.That(stance.WeaponsHeld, Is.False, "m_nD80 clears during slow-walk");
+        Assert.That(stance.ActionPrefix, Is.EqualTo(""));
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" }));
+        AssertVec(stance.Placements()[1].Translation, -2, 10, 0, "shield back on back T");
+        AssertVec(stance.Placements()[1].Rotation, -10, -5, 0, "shield back on back R");
+
+        // 3. Resume running / idle -> returns to hands while InBattle is still true
+        Assert.That(stance.SetState(WeaponStance.CanHoldInMoveState(onWater: false, walkMode: false, riding: false)), Is.True);
+        Assert.That(stance.WeaponsHeld, Is.True);
+        Assert.That(stance.ActionPrefix, Is.EqualTo("Sword_"));
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" }));
+
+        // 4. Stance timeout (OnUserBattle emotion=0) -> returns to sheathed nodes with per-gender dummy offsets
+        Assert.That(stance.SetBattle(false), Is.True);
+        Assert.That(stance.InBattle, Is.False);
+        Assert.That(stance.WeaponsHeld, Is.False);
+        Assert.That(stance.ActionPrefix, Is.EqualTo(""));
+        Assert.That(stance.StandSequence, Is.EqualTo("Idle_A"));
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" }));
+        AssertVec(stance.Placements()[1].Translation, -2, 10, 0, "shield sheathed after timeout T");
+        AssertVec(stance.Placements()[1].Rotation, -10, -5, 0, "shield sheathed after timeout R");
+
+        // 5. Casting a battle skill (StateSkill::vfunc_4 with m_bBattle) turns battle stance on and holds weapons
+        Assert.That(stance.OnSkill(isBattleSkill: true, motionHoldsWeapon: true), Is.True);
+        Assert.That(stance.InBattle, Is.True);
+        Assert.That(stance.WeaponsHeld, Is.True);
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" }));
+
+        // A skill motion with m_nHoldWeapon == 0 sheathes during the motion while keeping InBattle = true
+        Assert.That(stance.OnSkill(isBattleSkill: true, motionHoldsWeapon: false), Is.True);
+        Assert.That(stance.InBattle, Is.True);
+        Assert.That(stance.WeaponsHeld, Is.False);
+        Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" }));
+    }
+
+    [Test]
+    public void LeftHandDisallowedOrWithoutRightHandOrWorldDummyStaysSheathed()
+    {
+        var table = WeaponActionTable.Load(XDocument.Parse(@"
+<ms2>
+    <allowWeapon rh=""30"" lh=""0"" />
+    <allowWeapon rh=""32"" lh=""41"" />
+    <weapon rh=""0"" lh=""0"" normalAttack=""1"" actionprefix="""" />
+    <weapon rh=""30"" lh=""0"" normalAttack=""100001"" actionprefix=""Blunt_"" />
+    <weapon rh=""32"" lh=""0"" normalAttack=""200001"" actionprefix=""Sword_"" />
+    <weapon rh=""32"" lh=""41"" normalAttack=""200001"" actionprefix=""Sword_"" />
+</ms2>"));
+        Assert.That(table.IsAllowed(30, 0), Is.True);
+        Assert.That(table.IsAllowed(30, 41), Is.False, "blunt (30) disallows shield (41) in LH");
+        Assert.That(table.IsAllowed(32, 41), Is.True, "sword (32) allows shield (41) in LH");
+        Assert.That(table.IsAllowed(32, 40), Is.False, "sword (32) disallows codex (40) in LH");
+        Assert.That(table.IsAllowed(50, 0), Is.True, "two-handed sword (50) has no allowWeapon restriction");
+
+        // World-mode dummy on LH keeps the LH part on its sheathed node even when RH is held
+        var assetRh = ItemModelTable.ParseAsset(5, "RH", XElement.Parse(@"<asset name=""rh.nif"" selfnode=""Point01"" targetnode=""Weapon_Side_L_Point"" />"));
+        var assetLhWorld = ItemModelTable.ParseAsset(4, "LH", XElement.Parse(@"
+<asset name=""lh.nif"" selfnode=""Point01"" targetnode=""Weapon_Back_B_Point"">
+    <dummy gender=""2"" rotation=""0,0,0"" translation=""1,2,3"" worldmode=""true"" />
+</asset>"));
+        Assert.That(assetLhWorld.HasWorldDummy(0), Is.True);
+        Assert.That(assetLhWorld.HasWorldDummy(1), Is.True);
+        Assert.That(assetRh.HasWorldDummy(0), Is.False);
+    }
+}

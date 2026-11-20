@@ -1,4 +1,6 @@
 using System.Xml.Linq;
+using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Ui.Items;
 
@@ -18,6 +20,14 @@ public sealed class WeaponActionTable
 
     public static readonly WeaponActionTable Empty = new();
 
+    public static WeaponActionTable Load(PackSet packs)
+    {
+        if (packs == null) return Empty;
+        string path = packs.Exists("Xml", "table/weaponaction.xml") ? "table/weaponaction.xml"
+            : packs.Exists("Xml", "table/weaponAction.xml") ? "table/weaponAction.xml" : null;
+        return path != null ? Load(GameStrings.Parse(packs.Read("Xml", path))) : Empty;
+    }
+
     /// <summary>
     /// CWeaponActionTable::Load @0x141b74720 (:73): each &lt;weapon&gt; in file order, then each &lt;allowWeapon rh lh&gt; with its
     /// comma list of left hands (a later row for the same right hand replaces the earlier one, CAtlMap::SetAt).
@@ -25,7 +35,7 @@ public sealed class WeaponActionTable
     public static WeaponActionTable Load(XDocument doc)
     {
         var t = new WeaponActionTable();
-        var root = doc.Root?.Name == "ms2" ? doc.Root : null;
+        var root = doc?.Root?.Name == "ms2" ? doc.Root : null;
         if (root == null) return t;
         foreach (var w in root.Elements("weapon"))
             t.actions.Add(new WeaponAction(Xml.Int(w, "rh"), Xml.Int(w, "lh"), Xml.Int(w, "normalAttack"), (string)w.Attribute("actionprefix") ?? ""));

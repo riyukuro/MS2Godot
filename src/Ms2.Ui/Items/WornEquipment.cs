@@ -73,6 +73,12 @@ public sealed class WornEquipment
     public static bool IsWeapon(ItemData d, ItemModelTable models) => IsOneSlotWeapon(d, models) || IsTwoHanded(d, models);
 
     /// <summary>
+    /// CItemData::FUN_14053d510 (@0x14053d510, commonfiles/itemdata.cpp:925-934): a dual-wield OH weapon, equip subtype
+    /// 0x1f (31, dagger) or 0x22 (34, thrown star).
+    /// </summary>
+    public static bool IsDualWieldWeapon(ItemData d) => d != null && d.EquipSubtype is 0x1f or 0x22;
+
+    /// <summary>
     /// CEquipment::FUN_1411e1860(slot, 6, 0) (equipment.cpp:816), PC::FUN_141655e10: the item at the slot in the highest layer
     /// whose item the wearer can use (PC::CanUseItem, <paramref name="canUse"/>).
     /// </summary>
