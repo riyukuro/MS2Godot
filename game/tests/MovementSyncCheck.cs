@@ -10,7 +10,8 @@ namespace Ms2Godot.Tests;
 ///   receiver turns it by the sender's camera (PCBase::CalcMoveDirection, pcbase.cpp:2828-2840). With the camera turned a
 ///   quarter, the right key must still send x -1, y 0 (flags 0 + 8) and the forward key x 0, y +1 (flags 1 + 12).
 /// - The controller (NxController, MyPC's and the remotes' body): a walking body's sweeps allocate at most 8 B per move;
-///   bodies jumping on a 200 m floor box and on a mesh terrain never fall through.
+///   bodies jumping on a 200 m floor box and on a mesh terrain never fall through, nor bodies crossing one-sided walls from
+///   behind on that box.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class MovementSyncCheck : Node3D
@@ -283,6 +284,78 @@ public partial class MovementSyncCheck : Node3D
         return ok;
     }
 
+    // One-sided walls crossed from behind on the 200 m floor box: 80 walls facing +X every 200 cm, eight bodies walking +X
+    // at 4-8 per frame under gravity, started on a wall, between walls, and with jumps. The client's triangle sweeps cull back
+    // faces (the body walks through, inside the wall for a few moves) and its box sweep does not miss the floor
+    // (CharacterController.cpp:297-374), so no body falls through. Then a body standing 10 cm through a wall, gravity only.
+    bool OneSidedWalls(StaticBody3D floor)
+    {
+        const float z0 = 6000, x0 = -8000;
+        var walls = new StaticBody3D();
+        var quads = new (Vector3, Vector3, float)[80];
+        for (int w = 0; w < quads.Length; w++) quads[w] = (new Vector3(x0 + w * 200, 300, z0), Vector3.Right, 600);
+        walls.AddChild(new CollisionShape3D { Shape = OneSided(quads) });
+        AddChild(walls);
+        var rng = new System.Random(11);
+        var line = new System.Text.StringBuilder();
+        bool ok = true;
+        foreach (var (name, dx, jumps) in new[] { ("on a wall", 0f, false), ("between walls", 100f, false), ("on a wall with jumps", 0f, true) })
+        {
+            var bodies = Bodies(8, 0);
+            int falls = 0, firstFrame = -1;
+            float least = float.MaxValue;
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                var (b, nx) = bodies[i];
+                b.GlobalPosition = new Vector3(x0 + 200 * (i % 4) + dx, 1, z0 - 400 + i * 100);
+                float x = b.GlobalPosition.X, sp = 4f + (float)rng.NextDouble() * 4f, vy = 0;
+                for (int f = 0; f < 1800; f++)
+                {
+                    if (jumps && f % 150 == 75) vy = 10f + (float)rng.NextDouble() * 10f;
+                    vy -= 0.6f;
+                    if ((nx.Move(new Vector3(sp, vy, 0)) & Movement.NxController.Hit.Down) != 0) vy = 0;
+                    if (b.GlobalPosition.Y < -1f)
+                    {
+                        falls++;
+                        if (firstFrame < 0 || f < firstFrame) firstFrame = f;
+                        break;
+                    }
+                }
+                least = Mathf.Min(least, b.GlobalPosition.X - x);
+                b.QueueFree();
+            }
+            bool okCase = falls == 0 && least > 2000f;
+            ok &= okCase;
+            line.Append($"{name} {falls} of 8 fell (first at frame {firstFrame}), least walked {least:0}; ");
+        }
+        // a body standing in a wall, gravity only: 8 bodies, from 10 cm into its back to 10 cm past its centre and into its front
+        var standing = Bodies(8, 0);
+        float low = float.MaxValue;
+        int sunk = 0;
+        for (int i = 0; i < standing.Count; i++)
+        {
+            var (b4, nx4) = standing[i];
+            float wall = x0 + 200 * (2 + i), r = Movement.MoveConfig.Radius;
+            float[] into = { -r + 10, -r / 2, -10, 0, 10, r / 2, r - 10, r - 1 };
+            b4.GlobalPosition = new Vector3(wall + into[i], 25, z0 + 100 * (i - 4));
+            float vy4 = 0, lowI = float.MaxValue;
+            for (int f = 0; f < 300; f++)
+            {
+                vy4 -= 0.6f;
+                if ((nx4.Move(new Vector3(0, vy4, 0)) & Movement.NxController.Hit.Down) != 0) vy4 = 0;
+                lowI = Mathf.Min(lowI, b4.GlobalPosition.Y);
+            }
+            if (lowI <= -1f) sunk++;
+            low = Mathf.Min(low, lowI);
+            b4.QueueFree();
+        }
+        walls.QueueFree();
+        bool ok4 = sunk == 0;
+        ok &= ok4;
+        GD.Print($"movement sync check: one-sided walls crossed from behind on a 200 m floor box, {line}standing in a wall, gravity only, {sunk} of 8 fell, lowest feet {low:0.0}: {(ok ? "OK" : "FAIL")}");
+        return ok;
+    }
+
     void Run()
     {
         runner.CameraYaw = Mathf.Pi / 2;
@@ -296,7 +369,8 @@ public partial class MovementSyncCheck : Node3D
         bool alloc = MoveAllocations();
         bool meshLand = MeshLandings();
         bool oneSided = OneSidedMeshes();
-        bool ok = dir && land && alloc && meshLand && oneSided;
+        bool walls = OneSidedWalls(floor);
+        bool ok = dir && land && alloc && meshLand && oneSided && walls;
         GetTree().Quit(ok ? 0 : 1);
     }
 }
