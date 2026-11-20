@@ -465,23 +465,26 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         var w = p * l;
         if (n.Billboard)
         {
-            // always face the camera: the node's X axis toward the camera, Z kept up (Gamebryo cameras look along their X axis)
-            var to = camLocal - w.Origin;
-            if (to.LengthSquared() > 1e-6f)
+            // NiBillboardNode::RotateToCamera (BillboardFace; NiBillboardNode.cpp:66-205, run from OnVisible :212-216): the node's
+            // world rotation times the face matrix, which is a rotation in the node's own frame (m_kWorld.m_Rotate * kFaceMat, :199).
+            // The camera's position, direction, up and right go into that frame without the node's scale.
+            float s = w.Basis.Column0.Length();
+            if (s > 0)
             {
-                var x = to.Normalized();
-                var up = Vector3.Back;       // +Z in file space
-                var y = up.Cross(x);
-                if (y.LengthSquared() < 1e-6f) y = Vector3.Up;
-                y = y.Normalized();
-                var zz = x.Cross(y).Normalized();
-                float s = w.Basis.Scale.X;
-                w = new Transform3D(new Basis(x, y, zz).Scaled(new Vector3(s, s, s)), w.Origin);
+                var inv = w.Basis.Orthonormalized().Transposed();
+                var (c0, c1, c2) = BillboardFace.Face(n.BillboardMode, N(inv * (camLocal - w.Origin)), N(inv * camDirFx), N(inv * camUpFx),
+                                                      N(inv * camRightFx), s);
+                w = new Transform3D(w.Basis * new Basis(G(c0), G(c1), G(c2)), w.Origin);
             }
         }
         done[i] = true; world[i] = w;
         return w;
     }
+
+    // the camera's direction, up and right in this effect's space for the billboard nodes (set each Advance)
+    Vector3 camDirFx = new(0, 1, 0), camUpFx = new(0, 0, 1), camRightFx = new(1, 0, 0);
+    static System.Numerics.Vector3 N(Vector3 v) => new(v.X, v.Y, v.Z);
+    static Vector3 G(System.Numerics.Vector3 v) => new(v.X, v.Y, v.Z);
 
     float R() => (float)rng.NextDouble();
     float Spread(float v) => v * (2 * R() - 1);
@@ -494,12 +497,14 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         var cam = needCam ? FrameCamera() : null;
         var camLocal = cam != null ? z.GlobalTransform.AffineInverse() * cam.GlobalPosition : new Vector3(0, -1000, 300);
         // the camera's right and up in this effect's space (file space), for the facing particle quads
-        Vector3 camRight = new(1, 0, 0), camUp = new(0, 0, 1);
+        Vector3 camRight = new(1, 0, 0), camUp = new(0, 0, 1), camDir = new(0, 1, 0);
         if (cam != null)
         {
             var inv = z.GlobalTransform.Basis.Inverse();
             camRight = (inv * cam.GlobalBasis.X).Normalized(); camUp = (inv * cam.GlobalBasis.Y).Normalized();
+            camDir = (inv * -cam.GlobalBasis.Z).Normalized();   // Godot's camera looks along -Z
         }
+        camRightFx = camRight; camUpFx = camUp; camDirFx = camDir;
         // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
         foreach (int i in dynNodes) done[i] = false;
         long q1 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;

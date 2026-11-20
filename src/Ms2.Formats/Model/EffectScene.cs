@@ -35,6 +35,7 @@ public sealed class EffectNode
     public string Name;
     public Xform Local = Xform.Identity;
     public bool Billboard;
+    public int BillboardMode = -1;               // an NiBillboardNode's face mode (BillboardFace.ModeOf), -1 for other nodes
     public bool Culled;                          // NiAVObject APP_CULLED flag
     public KfChannel Anim; public TimeCtl AnimCtl;
 }
@@ -306,6 +307,7 @@ public sealed class EffectScene
             sc.Nodes.Add(new EffectNode
             {
                 Block = i, Name = n.Name(i), Local = XformOf(B[i]), Billboard = B[i].Type == "NiBillboardNode",
+                BillboardMode = B[i].Type == "NiBillboardNode" ? BillboardFace.ModeOf(B[i].IntOr("Billboard Mode", BillboardFace.RotateAboutUp)) : -1,
                 Culled = (B[i].IntOr("Flags", 0) & 1) != 0,
             });
         }
