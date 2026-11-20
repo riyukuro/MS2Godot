@@ -780,6 +780,24 @@ public sealed class ModelBuilder
     }
 
     static Shader characterShader;
+    static string characterCode;
+    static readonly Dictionary<string, Shader> characterShaders = new();
+
+    /// <summary>The character shader for a NiAlphaProperty: opaque, blended, or additive (destination factor ONE), the same
+    /// forms as the field shader's (FieldShader).</summary>
+    static Shader CharacterShader(ModelMesh m)
+    {
+        characterShader ??= GD.Load<Shader>("res://shaders/character_lit.gdshader");
+        if (!m.AlphaBlendOn) return characterShader;
+        var forms = ((m.AlphaFlags >> 5) & 15) == 0 ? "#define BLEND\n#define ADD\n" : "#define BLEND\n";
+        if (characterShaders.TryGetValue(forms, out var sh)) return sh;
+        characterCode ??= characterShader.Code;
+        int nl = characterCode.IndexOf('\n', characterCode.IndexOf("shader_type")) + 1;
+        return characterShaders[forms] = new Shader { Code = characterCode.Insert(nl, forms) };
+    }
+
+    /// <summary>Whether <paramref name="s"/> is the character shader or one of its blended forms.</summary>
+    internal static bool IsCharacterShader(Shader s) => s != null && (s == characterShader || characterShaders.ContainsValue(s));
 
     /// <summary>
     /// Character meshes: shaders/character_lit.gdshader with the NIF's material colours and the shader attributes the
@@ -788,8 +806,8 @@ public sealed class ModelBuilder
     /// </summary>
     ShaderMaterial CharacterMaterial(ModelMesh m, Texture2D tex)
     {
-        characterShader ??= GD.Load<Shader>("res://shaders/character_lit.gdshader");
-        var sm = new ShaderMaterial { Shader = characterShader };
+        var sm = new ShaderMaterial { Shader = CharacterShader(m) };
+        if (m.AlphaBlendOn) sm.SetShaderParameter(ShaderParam.MatAlpha, m.MaterialAlpha);
         sm.SetShaderParameter(ShaderParam.HasTex, tex != null);
         if (tex != null) sm.SetShaderParameter(ShaderParam.BaseTex, tex);
         int ctrlIndex = m.ExtraInts.TryGetValue("ColorOverrideMapIndex", out var ci) ? ci : 0;

@@ -115,7 +115,7 @@ public sealed partial class PortraitView : Node
         for (int i = 0; i < mi.Mesh.GetSurfaceCount(); i++)
             if ((mi.GetSurfaceOverrideMaterial(i) ?? mi.Mesh.SurfaceGetMaterial(i)) is ShaderMaterial sm && IsCharacter(sm)) return true;
         return false;
-        static bool IsCharacter(ShaderMaterial m) => m.Shader?.ResourcePath == "res://shaders/character_lit.gdshader";
+        static bool IsCharacter(ShaderMaterial m) => ModelBuilder.IsCharacterShader(m.Shader);
     }
 
     public override void _Process(double delta)

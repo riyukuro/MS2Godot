@@ -149,4 +149,18 @@ public class FieldShaderFormsTests
         Assert.That(Test(ShaderSource("field_glow.gdshader")), Is.EqualTo(Test(ShaderSource())));
         Assert.That(ShaderSource("field_glow.gdshader"), Does.Contain("uniform vec3 alpha_clip"));
     }
+    /// <summary>Character meshes with the NiAlphaProperty blend bit blend as the field's (FieldShader): the BLEND form mixes
+    /// without the z write and writes the material alpha times the base alpha, BLEND + ADD (destination factor ONE) adds,
+    /// and the opaque form stays opaque. Without these forms a blended NPC or item part drew as an opaque sheet.</summary>
+    [Test]
+    public void CharacterShaderHasTheBlendedForms()
+    {
+        var src = ShaderSource("character_lit.gdshader");
+        string Mode(params string[] d) => Resolve(src, d).Single(l => l.StartsWith("render_mode "));
+        Assert.That(Mode(), Does.Not.Contain("blend_"));
+        Assert.That(Mode("BLEND"), Does.Contain("blend_mix").And.Contain("depth_draw_never"));
+        Assert.That(Mode("BLEND", "ADD"), Does.Contain("blend_add").And.Contain("depth_draw_never"));
+        Assert.That(Resolve(src, new[] { "BLEND" }).Any(l => l.StartsWith("ALPHA = ")), Is.True);
+        Assert.That(Resolve(src, new string[0]).Any(l => l.StartsWith("ALPHA = ")), Is.False);
+    }
 }

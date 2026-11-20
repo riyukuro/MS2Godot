@@ -24,7 +24,17 @@
 shader_type spatial;
 #include "res://shaders/ms2_lights.gdshaderinc"
 #include "res://shaders/ms2_fog.gdshaderinc"
+// Blended meshes (NiAlphaProperty blend bit) take the BLEND form, additive ones (destination factor ONE) BLEND + ADD,
+// as field_lit's: blended without the z write, the material alpha times the base map's alpha (ModelBuilder.CharacterMaterial)
+#ifdef ADD
+render_mode unshaded, blend_add, depth_draw_never, cull_back;
+#else
+#ifdef BLEND
+render_mode unshaded, blend_mix, depth_draw_never, cull_back;
+#else
 render_mode unshaded, cull_back;
+#endif
+#endif
 
 global uniform vec3 ms2_ambient;       // scene ambient light colour * dimmer
 global uniform vec3 ms2_sun_color;     // directional light diffuse colour * dimmer
@@ -71,6 +81,7 @@ uniform sampler2D glow_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform bool has_glow = false;
 uniform float glow_scale = 1.0;
 uniform bool alpha_test = false;
+uniform float mat_alpha = 1.0;   // the NiMaterialProperty alpha (BLEND forms)
 uniform float alpha_ref = 0.5;
 // clip above / below / equal to alpha_ref (SCM_DEF_ALPHA_TEST_FUNC, D3D11ShaderConstantMap.cpp:3630-3687)
 uniform vec3 alpha_clip = vec3(0.0, 1.0, 0.0);
@@ -196,5 +207,9 @@ void fragment() {
 		c = mix(c, ms2_hfog_color, hf);
 	}
 	ALBEDO = c;   // the gamma value: the colour buffer holds gamma values (field_lit.gdshader)
+#ifdef BLEND
+	// NiStandardMaterial: the material alpha times the base map's alpha (HandleBaseMap, NiStandardMaterial.cpp:4503-4525)
+	ALPHA = t.a * mat_alpha;
+#endif
 	FOG = vec4(ms2_fog_color, fog_share);
 }
