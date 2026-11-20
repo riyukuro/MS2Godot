@@ -23,6 +23,9 @@ public sealed class EffectPart
     public bool AttachToNode, ApplyNodeTransform;
     /// <summary>update translate / rotation / scale: the parts of the parent's world the effect follows (true when absent).</summary>
     public bool UpdateTranslate = true, UpdateRotation = true, UpdateScale = true;
+    /// <summary>type="weather" fallType: the sky object WeatherEffect::vfunc_4 hands CEffectService::SetSkyObject
+    /// (0 clear, 1 snow, 2 heavy snow, 3 rain, 4 heavy rain, 5 sandstorm, 6 cherry blossom, 7 leaf fall).</summary>
+    public int FallType;
 }
 
 /// <summary>Effect definitions on demand from the Xml pack.</summary>
@@ -50,6 +53,7 @@ public sealed class EffectTable
                     var t = e.Element("transform");
                     if (t != null) { p.Translate = V((string)t.Attribute("translate")); p.Rotation = V((string)t.Attribute("rotation")); p.Scale = F((string)t.Attribute("scale"), 1f); }
                     p.Loop = B((string)e.Attribute("loop"), false);
+                    p.FallType = (int)F((string)e.Attribute("fallType"));
                     if (e.Element("attachInfo") is { } a)
                     {
                         p.AttachType = (string)a.Attribute("attachType");

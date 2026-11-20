@@ -143,6 +143,7 @@ public partial class Field : Node3D
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         AddChild(World.FieldEffects.BuildParticles(builder, fb.ParticleEntities, fb.StaticParticleModels));
+        if (World.FieldWeather.Create(packs, builder, fd?.MapEffectId) is { } weather) AddChild(weather);
         if (taxis.Count > 0) AddChild(World.TaxiStations.Start(packs, builder, taxis, taxiField));
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
