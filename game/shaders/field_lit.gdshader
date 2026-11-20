@@ -138,15 +138,17 @@ varying vec3 env_v_world;
 #ifndef POINT_LIT
 varying vec2 env_uv;
 #endif
+// Declared first and outside every #ifdef: instance uniforms of one name must have the same index in every shader form
+// (a fluid mesh draws SHELL with a BLEND colour pass as next_pass), so ms2_light_off is index 0 in all of them.
+// The field lights that do not reach this copy, one bit per light in FieldLights order (FieldLightSet.Unlit: the client's
+// per-receiver relight, range and MaxPointLights / MaxSpotLights); 0, the default, takes every light.
+instance uniform float ms2_light_off = 0.0;
 #ifdef LIT
 varying vec3 sun_share;  // the sun's part of the output colour (gamma), which the shadow scales in light()
 // 0 for copies the client takes out of the shadow's receiver list (ShadowReceivers: IsReceivingShadow off, or a
 // UseShellRender instancing batch below shadow level 4): the sun's share is then not scaled by the shadow
 instance uniform float ms2_receive = 1.0;
 #endif
-// The field lights that do not reach this copy, one bit per light in FieldLights order (FieldLightSet.Unlit: the client's
-// per-receiver relight, range and MaxPointLights / MaxSpotLights); 0, the default, takes every light.
-instance uniform float ms2_light_off = 0.0;
 
 // The SPHERICAL texture effect uv (NiStandardMaterial::HandleTextureEffectUVSetGen): the world reflection
 // R = normalize(reflect(-(CameraPos - WorldPos), normalize(WorldNrm))) (CalculateViewVector, WorldReflect) projected by
