@@ -449,12 +449,14 @@ public sealed class FieldBuilder
                 // a visible dynamic model's particle systems run (ParticlesOf), whichever draw takes its meshes; a model that
                 // plays through the effect runtime (PlaysAsEffect) runs them there, so a skinned EffectMesh map model, which
                 // stays on the prop path, runs them here
-                if (me.Particles != null && e.Bool("IsVisible", true) && !(assets.Resolve(llid) is (string pa, string) && e.PlaysAsEffect(pa, me.Data)))
+                var (ea, ee) = assets.Resolve(llid);
+                bool asEffect = ea != null && ee != null && e.PlaysAsEffect(ea, me.Data);
+                if (me.Particles != null && e.Bool("IsVisible", true) && !asEffect)
                 {
                     if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
                     else ParticleEntities.Add((e, me.Particles));
                 }
-                if (assets.Resolve(llid) is (string ea, string ee) && e.PlaysAsEffect(ea, me.Data)) { EffectEntities.Add((e, ea, ee)); }
+                if (asEffect) { EffectEntities.Add((e, ea, ee)); }
                 else if (e.Bool("IsVisible", true) && me.Elsewhere)
                 {
                     DrawnElsewhere.Add(e);
