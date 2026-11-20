@@ -98,6 +98,24 @@ public partial class AlphaRenderCheck : Node
         cases.Add((name, vp, check));
     }
 
+    /// <summary>One still particle at the effect's origin, shaded by <paramref name="m"/> as the system's material (blended
+    /// 0xED at the material alpha), in a new viewport; the camera as in <see cref="Effect"/>.</summary>
+    void Particle(string name, Func<Color, string> check, ModelMesh m, float alpha)
+    {
+        m.AlphaFlags = 0xED; m.MaterialAlpha = alpha;
+        var sc = new EffectScene { Duration = 10 };
+        sc.Nodes.Add(new EffectNode { Name = "n" });
+        var sys = new ParticleSystemDef { Node = 0, Name = "p", AlphaFlags = 0xED, MaxParticles = 1, Material = new EffectMesh { Mesh = m, Node = 0 } };
+        sys.Emitters.Add(new EmitterDef { Kind = EmitterKind.Box, Name = "e", Node = 0, Size = 20, Lifespan = 100, Rate = _ => 100, RateCtl = new TimeCtl() });
+        sc.Systems.Add(sys);
+        var vp = View(1u);
+        var fx = new EffectInstance(sc, mb, 10, 1) { Name = name };
+        vp.AddChild(fx);
+        fx.FileSpace = Transform3D.Identity;
+        vp.GetNode<Camera3D>("Cam").GlobalTransform = fx.GetChild<Node3D>(0).GlobalTransform * new Transform3D(Basis.Identity, new Vector3(0, 0, 10));
+        cases.Add((name, vp, check));
+    }
+
     // the read-back value in the space the blend runs in (calibrated: an opaque emissive 0.5 quad)
     bool srgbReadback;
     float Lin(float v) => srgbReadback ? (v <= 0.04045f ? v / 12.92f : Mathf.Pow((v + 0.055f) / 1.055f, 2.4f)) : v;
@@ -218,6 +236,10 @@ public partial class AlphaRenderCheck : Node
         // nor is the opacity: material alpha 1.5 (the crystal ring's controller peak) weighs emissive (0.4, 0.2, 0.3) by 1.5
         // over black, (0.6, 0.3, 0.45), where a saturated opacity gives the emissive as it is
         Effect("fx_opacity_over_1", Rgb(0.6f, 0.3f, 0.45f, "effect emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
+        // MINOR 4: the particle quads draw through the same standard material (SoftParticlesMaterial), so neither their colour
+        // nor their opacity is saturated either
+        Particle("fx_part_unclamped", Rgb(0.8f, 0.5f, 1f, "particle emissive (1.6, 1, 2) at alpha 0.5"), Emit(Quad("q", 0), 1.6f, 1f, 2f), 0.5f);
+        Particle("fx_part_opacity_over_1", Rgb(0.6f, 0.3f, 0.45f, "particle emissive (0.4, 0.2, 0.3) at alpha 1.5"), Emit(Quad("q", 0), 0.4f, 0.2f, 0.3f), 1.5f);
 
         // the shadow of a blended mesh, with or without the z write: it stops casting and a shadow-only twin with the opaque form casts in its place
         var castRoot = Model("caster", main, null, Mesh(Quad("blend_zw", 0), 0xED), Mesh(Quad("blend_nozw", 0, 0.5f), 0xED, 1));

@@ -166,9 +166,12 @@ void fragment() {
     if (vc_emi) coef += COLOR.rgb;
     if (vc_dif) coef += COLOR.rgb;
     if (vc_amb) coef += COLOR.rgb * ms2_ambient;
+    // neither the colour nor the opacity is saturated, as in the mesh shader (MeshCode): the quads draw through
+    // SoftParticlesMaterial, a standard material whose outputs go to the FP16 target as they are
+    // (CompositeFinalRGBAColor, NiStandardMaterialNodeLibrary.cpp:3057-3106; postprocessingservice.cpp:1750-1751)
     FOG = vec4(ms2_fog_color, fog_share);
-    ALBEDO = ms2_fog_apply(clamp(t.rgb * coef, 0.0, 1.0), CAMERA_VISIBLE_LAYERS);
-    ALPHA = clamp(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0, 1.0);
+    ALBEDO = ms2_fog_apply(t.rgb * coef, CAMERA_VISIBLE_LAYERS);
+    ALPHA = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
 }";
     // The client's fog for an effect's meshes and particle systems. A NIF effect carries no NiFogProperty (none of the
     // effect pack's nifs has one), so its meshes take the default fog property ApplyEffect::SetFog sets for the field
