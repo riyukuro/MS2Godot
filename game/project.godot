@@ -24,6 +24,7 @@ project/assembly_name="MS2Godot"
 [rendering]
 
 rendering_device/driver.linuxbsd="vulkan"
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=4
 
 [shader_globals]
 

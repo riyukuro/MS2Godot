@@ -439,13 +439,17 @@ public partial class Field : Node3D
         // sun uses one orthogonal map over the same 4000 range. STILL-OPEN: the box is camera-fitted, not target-centred
         // as in the client; Godot exposes no custom directional shadow projection.
         // The edge filter: the light flat (MS2DirectionalLight_Outside_ preset, ms2directionallight.flat) sets ShadowTechnique
-        // NiPCFShadowTechnique and SizeHint 2048, so the client's map is 4000/2048 = 1.95 units a texel. That technique's
-        // PCFShadowMap fragment (NiShadowManager.cpp:180-202; StandardMaterialNodeLibraryFragments.xml:2049) is a 4x4 tap
-        // grid weighted (1-frac, 1, 1, frac) per axis, a 3-texel box: a smooth linear ramp about 5.9 units wide, with no
-        // noise. Godot's default Soft Low filter gives about the same width (2-texel disk radius) but rotates only 4
-        // samples per pixel, which shows as a grainy dither along the edge. Soft High (16 samples, quality radius 3) with
-        // blur 2/3 keeps the same 2-texel radius and is smooth.
-        RenderingServer.DirectionalSoftShadowFilterSetQuality(RenderingServer.ShadowQuality.SoftHigh);
+        // NiPCFShadowTechnique and SizeHint 2048 over the 4000 box, 1.95 units a texel. That technique's PCFShadowMap fragment
+        // (NiShadowManager.cpp:180-202; StandardMaterialNodeLibraryFragments.xml:2049) is a 4x4 tap grid weighted
+        // (1-frac, 1, 1, frac) per axis, a 3-texel box: a smooth linear ramp about 5.9 units wide, with no noise.
+        // Godot's orthogonal map is not that map: it is the whole directional atlas (4096) fitted to the bounding sphere of the
+        // camera's view slice, so its texel size follows the field camera's fov and distance (about 1.5 units at fov 40), and
+        // the ramp width is not matched to the client's in units. What was measured, against our own shadow-off render at
+        // 2560x1440 and camera distance 600: the default Soft Low filter (4 rotated samples per pixel) has a 10-90% edge of
+        // 8 px with a grainy dither the client's PCF does not have; Soft High (16 samples) with blur 2/3 keeps the 8 px edge
+        // and halves the high-frequency residual (5.0 to 2.5). STILL-OPEN: derive the blur from the map's texel size.
+        // The filter quality is global (RenderingServer), so it is set once for every scene in project.godot
+        // (rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality = 4, Soft High), not here.
         var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal, DirectionalShadowMaxDistance = 4000, ShadowBlur = 2f / 3f, ShadowReverseCullFace = sunBackfaces };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
