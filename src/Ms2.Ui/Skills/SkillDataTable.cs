@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Numerics;
 using System.Xml.Linq;
 
 namespace Ms2.Ui.Skills;
@@ -49,6 +51,120 @@ public sealed class SkillMotionData
 
     /// <summary>GetMoveKey @0x140808040 (:1124): (u64)((float)(u64)(movetype &lt;&lt; 10) + sequenceSpeed * 100).</summary>
     public ulong MoveKey => (ulong)((float)(ulong)((long)MoveType << 10) + SequenceSpeed * 100f);
+
+    /// <summary>The motion's &lt;attack&gt; children in order (SkillMotionData::LoadMotion @0x1408080d0, skillleveldata.cpp:1134).</summary>
+    public readonly List<SkillAttackData> Attacks = new();
+}
+
+/// <summary>
+/// An area shape of a skill attack (Unk_RangeShape::Load @0x1408003b0, unit_1408001f0_skillrangeandtarget.cpp:67). The ctor
+/// (:39) zeroes every field.
+/// </summary>
+public class SkillRangeShape
+{
+    /// <summary>"rangeType": box 1, cylinder 2, frustum 3, hole_cylinder 4; anything else 0.</summary>
+    public int Shape;
+    /// <summary>"distance" (+0x10), "height" (+0x14), "width" (+0x18), "endWidth" (+0x1c).</summary>
+    public float Distance, Height, Width, EndWidth;
+    /// <summary>"rangeAdd" (+0x20): the shape's extra size behind and below (the collision's m_ptSize).</summary>
+    public Vector3 Add;
+    /// <summary>"rangeOffset" (+0x2c): the shape's offset from the caster, turned with the caster.</summary>
+    public Vector3 Offset;
+    /// <summary>"rangeZRotateDegree" (+0x38).</summary>
+    public float ZRotateDegree;
+
+    internal void LoadShape(XElement e)
+    {
+        Shape = ((string)e.Attribute("rangeType")) switch { "box" => 1, "cylinder" => 2, "frustum" => 3, "hole_cylinder" => 4, _ => 0 };
+        Distance = Xml.Float(e, "distance");
+        Height = Xml.Float(e, "height");
+        Width = Xml.Float(e, "width");
+        EndWidth = Xml.Float(e, "endWidth");
+        Add = Point(e, "rangeAdd");
+        Offset = Point(e, "rangeOffset");
+        ZRotateDegree = Xml.Float(e, "rangeZRotateDegree");
+    }
+
+    /// <summary>"x,y,z" (FUN_14028f060 @0x14028f060, commonutil.cpp:1172): anything but three numbers is the zero vector.</summary>
+    internal static Vector3 Point(XElement e, string name)
+    {
+        var parts = ((string)e.Attribute(name) ?? "").Split(',');
+        if (parts.Length != 3) return Vector3.Zero;
+        static float F(string t) => float.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0f;
+        return new Vector3(F(parts[0]), F(parts[1]), F(parts[2]));
+    }
+}
+
+/// <summary>
+/// An attack's &lt;range&gt; (Unk_RangeProperty::LoadElement @0x140800b50, unit_1408001f0_skillrangeandtarget.cpp:150): the
+/// shape, then the target filter. Absent, every field stays 0.
+/// STILL-OPEN: targetSelectType's buff / party / guild filter and targetStatCompare are not read.
+/// </summary>
+public sealed class SkillRange : SkillRangeShape
+{
+    /// <summary>"includeCaster" (+0x40), "applyTarget" (+0x44), "castTarget" (+0x48).</summary>
+    public int IncludeCaster, ApplyTarget, CastTarget;
+
+    internal void LoadElement(XElement attack)
+    {
+        var r = attack.Element("range");
+        if (r == null) return;
+        LoadShape(r);
+        IncludeCaster = Xml.Int(r, "includeCaster");
+        ApplyTarget = Xml.Int(r, "applyTarget");
+        CastTarget = Xml.Int(r, "castTarget");
+    }
+}
+
+/// <summary>An attack's &lt;arrow&gt; (SkillArrow::Load @0x1407df190, skillattackdata.cpp:99): the fields the target pick reads.</summary>
+public sealed class SkillArrow
+{
+    public int Overlap, NonTarget, BounceType, BounceCount;
+    public float BounceRadius;
+    /// <summary>"bounceOverlap", 1 by default (the ctor, :64).</summary>
+    public int BounceOverlap = 1;
+
+    /// <summary>IsNonTargetOne @0x1407dfbb0 (:168): nonTarget == 1.</summary>
+    public bool IsNonTargetOne => NonTarget == 1;
+
+    internal void Load(XElement attack)
+    {
+        var a = attack.Element("arrow");
+        if (a == null) return;
+        Overlap = Xml.Int(a, "overlap");
+        NonTarget = Xml.Int(a, "nonTarget");
+        BounceType = Xml.Int(a, "bounceType");
+        BounceCount = Xml.Int(a, "bounceCount");
+        BounceRadius = Xml.Float(a, "bounceRadius");
+        if (a.Attribute("bounceOverlap") != null) BounceOverlap = Xml.Int(a, "bounceOverlap");
+    }
+}
+
+/// <summary>
+/// An &lt;attack&gt; of a skill motion (SkillAttackData::Load @0x1407e1a50, skillattackdata.cpp:574): the parts the hit pick
+/// reads. The ctor (:490) sets direction 3.
+/// </summary>
+public sealed class SkillAttackData
+{
+    /// <summary>"point": the animation key the attack fires at.</summary>
+    public string Point = "";
+    /// <summary>"targetCount": the most targets one attack hits (CSkillSystem::FUN_141769410 @0x141769410).</summary>
+    public int TargetCount;
+    /// <summary>"direction": the hit order (CBaseCollision::Detect's sort mode, 0 random .. 6).</summary>
+    public int Direction = 3;
+    /// <summary>"attackMethodType" (an enum read as a number): 1 keeps the range at the caster (no rangeOffset).</summary>
+    public int AttackMethodType;
+    public readonly SkillRange Range = new();
+    public readonly SkillArrow Arrow = new();
+
+    internal static SkillAttackData Load(XElement e)
+    {
+        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType") };
+        if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
+        a.Range.LoadElement(e);
+        a.Arrow.Load(e);
+        return a;
+    }
 }
 
 /// <summary>A &lt;condition&gt;&lt;weapon lh rh&gt; of a skill (SkillCondition::Load @0x1407e6f20, skilloverlapcompare.cpp:554).</summary>
@@ -185,6 +301,7 @@ public sealed class SkillData
             {
                 var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype") };
                 if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
+                foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a));
                 lv.Motions.Add(md);
             }
             if (lv.Level < 1) return s;

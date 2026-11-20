@@ -145,6 +145,8 @@ public partial class HudScene : Node, IUiStageHost
     public override void _ExitTree()
     {
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals && livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
+        unwatchDamage?.Invoke();
+        unwatchDamage = null;
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
         unwatchQuickSlotState = null;
@@ -303,6 +305,7 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
         AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
+        WatchDamageNumbers();
 
         HudModel();
         ScreenMask();
@@ -2960,6 +2963,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Process(double delta)
     {
         PerfLog.Frame(perfState);
+        TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15

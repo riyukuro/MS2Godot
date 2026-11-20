@@ -199,6 +199,30 @@ public sealed class NpcLayer
         }
     }
 
+    /// <summary>A live npc by object id (WorldService::FindObjectById), dead or not; null when there is none.</summary>
+    public World.FieldNpcs.Placed Placed(int id) => inst.TryGetValue(id, out var i) ? i.Talk : null;
+
+    /// <summary>
+    /// The live npcs' body boxes for an own attack's area pick, in client space (z up): CNpc::BuildCollision
+    /// (unit_14108e1e0_npcactorandvibrate.cpp:1648) gives a box only to an npc whose collision shape is "box".
+    /// STILL-OPEN: the node collision boxes (m_arrE68 / m_arrE88) and the target kind query (FUN_141bd2ea0) are not ported.
+    /// </summary>
+    public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
+    {
+        foreach (var (id, i) in inst)
+        {
+            var row = i.Talk?.Row ?? i.Model?.Row;
+            if (row == null || i.Dead || row.CollisionShape != "box" || i.Root == null) continue;
+            var g = i.Root.GlobalPosition;
+            var p = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+            into.Add(new Ms2.Ui.Skills.HitCandidate
+            {
+                Id = id, Position = p,
+                Body = Ms2.Ui.Skills.SkillHit.NpcBody(row.CollisionWidth, row.CollisionDepth, row.CollisionHeight, p, i.TargetYaw),
+            });
+        }
+    }
+
     /// <summary>The live npcs that are not dead, for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> Talkable => inst.Values.Where(x => !x.Dead && x.Talk != null).Select(x => x.Talk);
 

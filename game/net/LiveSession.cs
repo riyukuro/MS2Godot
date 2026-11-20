@@ -176,6 +176,9 @@ public partial class LiveSession : Node
     /// <summary>A hit on the own player (OnSkillDamage 0x3D): the damage record's total (negative when the player is the
     /// victim), one per target record (MyPC::vfunc_113 posts NotifyDamagedMyPC of each, mypc.cpp:1265).</summary>
     public event Action<long> SelfDamaged;
+    /// <summary>A damage number the field's skill damage records show (RemoteLayer, UIDamageText's show test passed): the
+    /// number and the npc it is on (null when the target is not an npc).</summary>
+    public event Action<Ms2.Ui.Hud.DamageNumber, FieldNpcs.Placed> DamageNumbered;
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
     readonly HashSet<int> regionSkills = new();
@@ -585,6 +588,7 @@ public partial class LiveSession : Node
         regionSkills.Clear(); RegionSkillLog.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
+        remote.Numbered = (n, npc) => DamageNumbered?.Invoke(n, npc);
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
         field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); };

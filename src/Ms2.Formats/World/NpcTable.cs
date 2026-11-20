@@ -20,6 +20,12 @@ public sealed class NpcRow
     public float CapsuleHeight = 150f;
     public float CapsuleRadius = 25f;            // capsule radius (the client's default capsule is 25 x 105)
     public bool CapsuleIgnore;                   // capsule ignore: the npc's body does not block characters
+    /// <summary>
+    /// The environment's &lt;collision shape width depth height&gt; (CNpcData::LoadXml, npcdata.cpp:1604-1610; 0 when absent):
+    /// a "box" shape is the body box the skill area tests (CNpc::BuildCollision).
+    /// </summary>
+    public string CollisionShape = "";
+    public float CollisionWidth, CollisionDepth, CollisionHeight;
     public bool Nametag;                         // environment nametag: the npc shows a name tag
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
     public bool Minimap = true;                  // environment minimap: shown on the minimap
@@ -123,6 +129,10 @@ public sealed class NpcTable
             CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
             CapsuleRadius = Flt(env.Element("capsule"), "radius", 25f),
             CapsuleIgnore = Int(env.Element("capsule"), "ignore") != 0,
+            CollisionShape = (string)env.Element("collision")?.Attribute("shape") ?? "",
+            CollisionWidth = Flt(env.Element("collision"), "width", 0),
+            CollisionDepth = Flt(env.Element("collision"), "depth", 0),
+            CollisionHeight = Flt(env.Element("collision"), "height", 0),
             Nametag = Int(env, "nametag") != 0,
             Kind = Int(env, "kind"),
             Illust = (string)env.Attribute("illust"),

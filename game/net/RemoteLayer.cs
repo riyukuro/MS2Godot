@@ -86,6 +86,49 @@ public sealed partial class RemoteLayer : Node3D
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
 
+    /// <summary>A damage number to show (UIDamageText::FUN_141911e90): the number and the npc hit, null when the target is
+    /// not an npc.</summary>
+    public Action<Ms2.Ui.Hud.DamageNumber, World.FieldNpcs.Placed> Numbered;
+    readonly List<Ms2.Ui.Hud.DamageNumber> numbers = new();
+    Func<int, int> pcMask;
+    static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
+
+    /// <summary>
+    /// PCBase::FUN_141671c20's vfunc_111 per hit (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
+    /// show test (FUN_141913bd0) with the battle options; the party mask is IsMemberByCharId on a player's character.
+    /// STILL-OPEN: a number on another player (DamageText has no remote-PC target yet) is dropped.
+    /// </summary>
+    void ShowNumbers(SkillDamage d)
+    {
+        numbers.Clear();
+        pcMask ??= PcMask;
+        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers);
+        var o = GameOptions.Current?.BattleOption ?? defaultBattle;
+        foreach (var n in numbers)
+            if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask))
+                Numbered(n, npcs.Placed(n.TargetId));
+    }
+
+    int PcMask(int id) => !users.TryGetValue(id, out var r) ? 0
+        : LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(r.CharacterId) != null ? 2 : 4;
+
+    /// <summary>
+    /// The other players' and the npcs' bodies for an own attack's area pick, in client space (z up): a player's body box is
+    /// PC::SetDefaultBoundingBox's (<see cref="Ms2.Ui.Skills.SkillHit.PlayerBody"/>), the npcs' come from
+    /// <see cref="NpcLayer.HitCandidates"/>.
+    /// </summary>
+    public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
+    {
+        foreach (var (id, r) in users)
+        {
+            if (r.Root == null) continue;
+            var g = r.Root.GlobalPosition;
+            var p = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+            into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.TargetYaw) });
+        }
+        npcs.HitCandidates(into);
+    }
+
     /// <summary>An effect xml played at a point (CombatLayer.PlayEffect), the own cast's motion effect.</summary>
     public void PlayEffect(string effect, Vector3 at, float yawRadians) => combat.PlayEffect(effect, at, yawRadians);
 
@@ -189,6 +232,7 @@ public sealed partial class RemoteLayer : Node3D
                         // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                         if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
                     }
+                    if (Numbered != null) ShowNumbers(dmg.Damage);
                     break;
                 case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
                 case NpcStanceEvent st: npcs.Stance(st.ObjectId, st.Battle); break;

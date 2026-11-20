@@ -17,6 +17,21 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>The mode 1 sub-mode 0 send of an own attack's targets (StateSkill::FUN_1417ecce0, stateskill.cpp:1370). False offline.</summary>
+    public bool SendDamage(Ms2.Net.Packets.SkillDamageRequest req)
+    {
+        if (game == null) return false;
+        Send(req);
+        return true;
+    }
+
+    /// <summary>The field's other players and npcs an own attack can hit (cleared first); empty before the field is built.</summary>
+    public void HitCandidates(System.Collections.Generic.List<HitCandidate> into)
+    {
+        into.Clear();
+        remote?.HitCandidates(into);
+    }
+
     /// <summary>The cast id of a new own cast: GenerateUniqueId over the server time (offline the local clock).</summary>
     public static long NewCastId() =>
         Ms2.Net.Packets.UniqueId.Next(Instance?.GameSession?.ServerTime ?? System.DateTimeOffset.UtcNow.ToUnixTimeSeconds());

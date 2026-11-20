@@ -22,6 +22,13 @@ public partial class Player
         return true;
     }
 
+    /// <summary>The own cast's sequence while it plays, else null.</summary>
+    public string SkillSequence => skillSequence;
+
+    /// <summary>The own cast's sequence time in seconds (the kf's time, the one its text keys use), or -1 when it does not play.</summary>
+    public double SkillSequencePosition =>
+        skillSequence != null && (object)CurrentAnim == skillSequence && Anim != null ? Anim.CurrentAnimationPosition : -1;
+
     /// <summary>True while the own cast's sequence plays (PlayAct leaves the body to it); clears itself when it ends.</summary>
     bool SkillSequencePlaying()
     {

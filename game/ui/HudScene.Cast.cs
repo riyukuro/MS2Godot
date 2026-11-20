@@ -9,6 +9,17 @@ public partial class HudScene
 {
     readonly CastWorld castWorld = new();          // CSkillSystem's last cast time / skill, kept across casts
     Ms2.Formats.World.SkillTable castMotions;      // the motion effects, the table the replayed casts read
+    // StateSkill's record and m_nAttack for the own cast whose sequence plays, the sequence, and the next point's text key time
+    CastRecord ownCast;
+    int ownAttack;
+    string ownSequence;
+    double ownPointTime = -1;
+    static readonly SerialIds serialIds = new();   // GenerateSerialId's function static
+    static readonly Random crtRandom = new();
+    static readonly Func<int> crtRand = () => crtRandom.Next(0x8000);
+    Func<long> nextSerial;
+    readonly System.Collections.Generic.List<HitCandidate> hitObjects = new();
+    readonly System.Collections.Generic.List<int> hitIds = new();
 
     /// <summary>
     /// A key press bound to the attack (action 0x49401): CKeyTable::GetSkillIdByKey (keytable.cpp:1452) gives the skill, then the
@@ -64,9 +75,70 @@ public partial class HudScene
         var live = Net.LiveSession.Instance;
         bool sent = live?.SendCast(r, hudModel.IsFeatureEnabled(174)) ?? false;
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
-        if (motion != null && !string.IsNullOrEmpty(motion.SequenceName)) me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed);
+        if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed))
+            StartOwnAttacks(me, r);
         castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
         if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { } fx) live?.PlayFieldEffect(fx, g, me.Visual?.Rotation.Y ?? 0);
         GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
+    }
+
+    /// <summary>StateSkill's attack count at the start of the own cast's motion: attack 0, its point's text key.</summary>
+    void StartOwnAttacks(Player me, CastRecord r)
+    {
+        ownCast = r;
+        ownAttack = 0;
+        ownSequence = me.SkillSequence;
+        ownPointTime = OwnPointTime(me);
+    }
+
+    double OwnPointTime(Player me)
+    {
+        var a = SkillAttackFire.AttackAt(ownCast, ownAttack);
+        if (a == null || string.IsNullOrEmpty(a.Point) || me.Anims == null) return -1;
+        return me.Anims.TextKey(ownSequence, a.Point);
+    }
+
+    /// <summary>
+    /// Each frame: StateSkill::TextKeyEvent (stateskill.cpp:980) when the own sequence passes the current attack's point text
+    /// key, then FireAttacksAtPoint (<see cref="FireOwnPoint"/>). 0 B/frame until a point fires.
+    /// STILL-OPEN: the sequence's other text keys (move3, charging_attack, combo, inputcombo) are not read.
+    /// </summary>
+    void TickOwnAttacks()
+    {
+        if (ownCast == null) return;
+        if (player == null || (object)player.SkillSequence != ownSequence) { ownCast = null; return; }
+        if (ownPointTime < 0 || player.SkillSequencePosition < ownPointTime) return;
+        FireOwnPoint(player);
+    }
+
+    /// <summary>
+    /// StateSkill::FireAttacksAtPoint @0x1417f0f10: every attack in a row at the point fires (FUN_1417ecce0 through
+    /// <see cref="SkillAttackFire.Fire"/>, the send through LiveSession.SendDamage), then the next attack's point.
+    /// STILL-OPEN: CSkillRecord::FUN_141759ad0's z offset (the motion's m_fAC / m_fB8 and the record's cooldown and aim are not
+    /// read) is 0.
+    /// </summary>
+    void FireOwnPoint(Player me)
+    {
+        var live = Net.LiveSession.Instance;
+        int n = SkillAttackFire.AttacksAtPoint(ownCast, ownAttack);
+        if (n > 0)
+        {
+            live?.HitCandidates(hitObjects);
+            if (live == null) hitObjects.Clear();
+            var g = me.GlobalPosition;
+            var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+            float rotZ = me.FacingRotZ;
+            hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, rotZ), IsOwner = true });
+            nextSerial ??= () => serialIds.Next(Net.LiveSession.Instance?.SelfObjectId ?? 0);
+            for (int i = 0; i < n; i++)
+            {
+                var req = SkillAttackFire.Fire(ownCast, ownAttack, pos, rotZ, 0,
+                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitIds);
+                bool sent = req != null && (live?.SendDamage(req) ?? false);
+                GD.Print($"cast: skill {ownCast.Skill.Id} attack {ownAttack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
+                ownAttack++;
+            }
+        }
+        ownPointTime = OwnPointTime(me);
     }
 }

@@ -51,6 +51,9 @@ public sealed class CastRecord
     public int Key;
     public long ItemUid;
     public uint Origin;
+    /// <summary>m_nSendCount: counted up only by CSkillRecord::SendSkill (the sync send, skillrecord.cpp:441); 0 for a new
+    /// cast, sent with every damage send.</summary>
+    public int SendCount;
 
     /// <summary>GetCooldownKey: SkillLevelData::GetMotionKey of the record's motion.</summary>
     public ulong CooldownKey => Level.MotionKey(Motion);
