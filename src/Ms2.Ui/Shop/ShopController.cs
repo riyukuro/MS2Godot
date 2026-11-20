@@ -680,14 +680,6 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         Close();
     }
 
-    /// <summary>UIShopDialog::ArrangeInventory (@0x141b03620, uishopdialog.cpp:3262; called by vfunc_18 :1356): re-places
-    /// the open inventory beside the shop.</summary>
-    public void ArrangeInventory(UiController inventory, bool inventoryOpen)
-    {
-        if (Host?.Entity == null || !inventoryOpen || inventory == null) return;
-        PlaceSideBySide(this, OpenPosition(), inventory);
-    }
-
     /// <summary>UIShopDialog::vfunc_13 (@0x141af7b00, uishopdialog.cpp:1336): Enter while m_inputSearch has focus starts a search.</summary>
     public bool OnEnterKey()
     {
