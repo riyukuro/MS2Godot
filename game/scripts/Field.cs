@@ -343,7 +343,7 @@ public partial class Field : Node3D
         XDocument x = null;
         try
         {
-            x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", $"mapxblock/{fieldName}.xml")));
+            x = MapXBlock.Load(packs, fieldName);
             var f = x.Root?.Element("fog");
             if (f != null)
             {

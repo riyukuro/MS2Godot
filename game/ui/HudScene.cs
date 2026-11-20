@@ -908,7 +908,7 @@ public partial class HudScene : Node, IUiStageHost
     void OpenMinimap(World.FieldContents fc)
     {
         MinimapInfo info = null;
-        try { info = MinimapInfo.Parse(System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(assets.Packs.Read("Xml", $"mapxblock/{xblock}.xml")))); }
+        try { info = MinimapInfo.Parse(Ms2.Formats.World.MapXBlock.Load(assets.Packs, xblock)); }
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
         var model = NewModel();
         model.Field.Name = MapName();
