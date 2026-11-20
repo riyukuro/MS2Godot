@@ -839,6 +839,38 @@ public class AudioTests
     }
 
     [Test]
+    public void SoundMusicEffectNonFadingApplyPreservesRunningFadeAndStopRestores()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var mc = new MusicController(lib.Fev);
+        Assert.That(mc.PlayMusic(35, 0f, 0x80, false), Is.True);
+
+        var fx = new SoundMusicEffectState();
+        const float categoryVol = 0.8f;
+
+        // Effect A starts a 1.0 s volume fade (0.8 -> 0.4).
+        var fadeRes = fx.Apply(mc, new SoundMusicEffectParam(Volume: 0.5f, Duration: 1.0f),
+            nowSeconds: 0.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol, casterKind: SoundMusicEffectState.CasterSystem);
+        Assert.That(fadeRes.FadeStarted, Is.True);
+        Assert.That(fx.Tick(0.25, categoryVol, out float v), Is.True);
+        Assert.That(v, Is.EqualTo(0.7f).Within(1e-5f));
+
+        // Effect B applies a cue change with no fade (Volume = -1, Duration = 0): must NOT cancel Effect A's running fade.
+        var noFadeRes = fx.Apply(mc, new SoundMusicEffectParam(CueId: 15, Volume: -1f, Duration: 0f),
+            nowSeconds: 0.25, currentMusicVolume: v, categoryMusicVolume: categoryVol, casterKind: SoundMusicEffectState.CasterSystem);
+        Assert.That(noFadeRes, Is.EqualTo((true, false, false)));
+        Assert.That(mc.CurrentCueId, Is.EqualTo(15));
+        Assert.That(fx.IsFading, Is.True, "non-fading SoundMusic effect must not cancel a running fade");
+        Assert.That(fx.Tick(0.5, categoryVol, out v), Is.True);
+        Assert.That(v, Is.EqualTo(0.6f).Within(1e-5f));
+
+        // Freeing the fading effect mid-fade immediately restores category 2 volume (~CSoundMusicEffect, soundmusiceffectparam.cpp:125-128).
+        float restored = fx.Stop(categoryVol);
+        Assert.That(fx.IsFading, Is.False);
+        Assert.That(restored, Is.EqualTo(categoryVol).Within(1e-5f));
+    }
+
+    [Test]
     public void EffectTableParsesRealSoundMusicEffectsAndDrivesMusicController()
     {
         var lib = SoundLibrary.Shared(SoundDir());

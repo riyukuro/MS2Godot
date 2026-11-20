@@ -246,12 +246,6 @@ public partial class FieldAudio : Node
         if (casterKind > 1 || MusicState == null) return false;
         var res = soundMusicFade.Apply(MusicState, param, audioClock, MusicVolume, categoryMusicVolume, casterKind);
         if (res.CueChanged) StartCurrentCue();
-        if (!res.FadeStarted)
-        {
-            MusicVolume = categoryMusicVolume;
-            ApplyPlayerGain(0);
-            ApplyPlayerGain(1);
-        }
         return res.CueChanged || res.ParamApplied || res.FadeStarted;
     }
 

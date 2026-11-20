@@ -653,11 +653,10 @@ public sealed class SoundMusicEffectState
             paramApplied = music.SetMusicParameter(param.ParamId, param.ParamValue, (uint)param.Priority, false);
 
         // soundmusiceffectparam.cpp:145-146: non-empty reverb calls CSoundEventMgr::FUN_14177ddd0 (stub returning 1).
+        // soundmusiceffectparam.cpp:147-148: each CSoundMusicEffect fades independently; a non-fading effect returns
+        // false without cancelling another effect's running fade.
         if (param.Volume <= 0f || param.Duration == 0f)
-        {
-            active = false;
             return (cueChanged, paramApplied, false);
-        }
 
         // CEffect::vfunc_3 (@0x14119f0b0, effectservice.cpp:365): m_dStartTime = dStart + m_fStartDelay.
         // CSoundMusicEffect::vfunc_3 (:141-144) already prompted PlayMusic / SetMusicParameter above at creation;
