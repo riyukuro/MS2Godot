@@ -476,6 +476,8 @@ public sealed class ModelBuilder
 
     // the maps field_uv transforms, in its map order
     static readonly string[] UvMaps = { "base", "dark", "glow", "decal0" };
+    // field_uv's UV_CTL_MAX: the uv controllers one material takes
+    const int UvCtlMax = 12;
 
     /// <summary>A mesh under an NiBillboardNode (ModelMesh.Billboard): its face mode and its transform below that node, for
     /// field_billboard, which turns it to the camera in the vertex shader.</summary>
@@ -492,17 +494,21 @@ public sealed class ModelBuilder
     /// The texture transforms of the maps the field shaders draw (field_uv): each map's static NiTextureTransform, and its
     /// running uv controllers over it. A map a controller moves but that has no transform gets the controller's default
     /// one (NiTextureTransformController.cpp:146-151, TexTransform.ControllerDefault). A CLAMP controller (ModelMesh.UvHolds)
-    /// holds its last key in the static transform: the field's app time is past its stop. STILL-OPEN: the shader takes at
-    /// most 4 controllers of up to 4 keys each; others keep the static value (field scan: a 5-key translate, on a base map
-    /// in one model and a glow map in another: 2 models, 5 entities).
+    /// holds its last key in the static transform: the field's app time is past its stop; it is held only on a map with
+    /// its own transform: `held` needs tm != null, so a stopped CLAMP controller on a map without a transform leaves the
+    /// map untransformed. STILL-OPEN: the controller adds its default transform to such a map
+    /// (NiTextureTransformController.cpp:146-151), which would then keep the last key.
+    /// STILL-OPEN: the shader takes at most UvCtlMax (12, the most one texturing property has in the KR data) controllers
+    /// of up to 4 keys each; others keep the static value (field scan: a 5-key translate, on a base map in one model and a
+    /// glow map in another: 2 models, 5 entities).
     /// </summary>
     static void SetUvTransforms(ShaderMaterial sm, ModelMesh m)
     {
         var tt = new Vector4[8];
         var method = Vector4I.Zero;
-        var target = Vector4I.Zero;
-        var keys = Vector4I.Zero;
-        Vector4[] time = new Vector4[4], kt = new Vector4[4], kv = new Vector4[4], kin = new Vector4[4], kout = new Vector4[4];
+        int[] target = new int[UvCtlMax], keys = new int[UvCtlMax];
+        Vector4[] time = new Vector4[UvCtlMax], kt = new Vector4[UvCtlMax], kv = new Vector4[UvCtlMax],
+            kin = new Vector4[UvCtlMax], kout = new Vector4[UvCtlMax];
         int n = 0;
         bool any = false;
         for (int map = 0; map < UvMaps.Length; map++)
@@ -511,7 +517,7 @@ public sealed class ModelBuilder
             bool moved = false;
             foreach (var ua in m.UvAnims)
             {
-                if (ua.Slot != UvMaps[map] || ua.Times.Length > 4 || n == 4) continue;
+                if (ua.Slot != UvMaps[map] || ua.Times.Length > 4 || n == UvCtlMax) continue;
                 moved = true;
                 target[n] = map * 8 + ua.Operation;
                 keys[n] = ua.Times.Length * 4 + ua.KeyType;

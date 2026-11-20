@@ -37,17 +37,19 @@ float key_segment(int type, float u, float p, float q, float dp, float dq) {
 // map without one. The arrays are vec4: a std140 array element takes 16 bytes whatever its type.
 uniform vec4 uv_tt[8];
 uniform ivec4 uv_tt_method;
-// Up to 4 NiTextureTransformControllers (NifModel UvAnim): uv_ctl_target = map * 8 + operation (0 translate U,
-// 1 translate V, 2 rotate, 3 scale U, 4 scale V); uv_ctl_keys = key count (1-4) * 4 + key type; uv_ctl_time[c] =
+// Up to 12 NiTextureTransformControllers (NifModel UvAnim): uv_ctl_target[c] = map * 8 + operation (0 translate U,
+// 1 translate V, 2 rotate, 3 scale U, 4 scale V); uv_ctl_keys[c] = key count (1-4) * 4 + key type; uv_ctl_time[c] =
 // start, stop, frequency, phase; uv_ctl_t / _v / _in / _out[c][k] = key k's time, value and tangents.
+// 12 is the most one texturing property has in the data (KR: the eff_com_portal_e_* portals).
+const int UV_CTL_MAX = 12;
 uniform int uv_ctl_count = 0;
-uniform ivec4 uv_ctl_target;
-uniform ivec4 uv_ctl_keys;
-uniform vec4 uv_ctl_time[4];
-uniform vec4 uv_ctl_t[4];
-uniform vec4 uv_ctl_v[4];
-uniform vec4 uv_ctl_in[4];
-uniform vec4 uv_ctl_out[4];
+uniform int uv_ctl_target[UV_CTL_MAX];
+uniform int uv_ctl_keys[UV_CTL_MAX];
+uniform vec4 uv_ctl_time[UV_CTL_MAX];
+uniform vec4 uv_ctl_t[UV_CTL_MAX];
+uniform vec4 uv_ctl_v[UV_CTL_MAX];
+uniform vec4 uv_ctl_in[UV_CTL_MAX];
+uniform vec4 uv_ctl_out[UV_CTL_MAX];
 
 float uv_ctl_value(int c) {
 	float t = loop_time(uv_ctl_time[c]);
@@ -81,7 +83,7 @@ vec2 map_uv(int m, vec2 uv) {
 	}
 	vec4 a = uv_tt[2 * m], b = uv_tt[2 * m + 1];
 	float tx = a.x, ty = a.y, sx = a.z, sy = a.w, rot = b.x, cx = b.y, cy = b.z;
-	for (int c = 0; c < 4; c++) {
+	for (int c = 0; c < UV_CTL_MAX; c++) {
 		if (c >= uv_ctl_count) {
 			break;
 		}
