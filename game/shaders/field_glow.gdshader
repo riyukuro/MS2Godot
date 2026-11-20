@@ -32,6 +32,8 @@ uniform bool glow_uv2 = false;
 uniform bool detail_uv2 = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
+// clip above / below / equal to alpha_ref, as field_lit (SCM_DEF_ALPHA_TEST_FUNC, D3D11ShaderConstantMap.cpp:3630-3687)
+uniform vec3 alpha_clip = vec3(0.0, 1.0, 0.0);
 #include "res://shaders/field_uv.gdshaderinc"
 #include "res://shaders/field_billboard.gdshaderinc"
 #include "res://shaders/field_morph.gdshaderinc"
@@ -54,7 +56,7 @@ void vertex() {
 
 void fragment() {
 	float a = has_tex ? texture(base_tex, base_uv).a : 1.0;
-	if (alpha_test && a < alpha_ref) {
+	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
 	float g = texture(glow_tex, glow_uv).a;

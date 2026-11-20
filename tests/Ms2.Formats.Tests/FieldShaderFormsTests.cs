@@ -139,4 +139,14 @@ public class FieldShaderFormsTests
             Assert.That(cullLine.Substring("MS2_CULL= ".Length).Trim(), Is.EqualTo(mode), $"{file} {cull}");
         }
     }
+
+    /// <summary>The glow pass runs the colour pass's alpha test, function and reference included (MS2GlowMaterial ends in
+    /// HandleMS2FinalPixelOutputs -> HandleAlphaTest, ms2standardmaterial.cpp:786): field_glow clips with field_lit's test.</summary>
+    [Test]
+    public void GlowPassClipsAsTheColourPass()
+    {
+        static string Test(string src) => src.Split('\n').Select(l => l.Trim()).Single(l => l.StartsWith("if (alpha_test"));
+        Assert.That(Test(ShaderSource("field_glow.gdshader")), Is.EqualTo(Test(ShaderSource())));
+        Assert.That(ShaderSource("field_glow.gdshader"), Does.Contain("uniform vec3 alpha_clip"));
+    }
 }

@@ -126,8 +126,9 @@ public class RenderStateTests
         Assert.That(glass.AlphaTestKeeps(0f, glass.AlphaTestRef), Is.False);
     }
 
-    /// <summary>Each test function's clip sides, as SCM_DEF_ALPHA_TEST_FUNC fills them (D3D11ShaderConstantMap.cpp:3630-3687);
-    /// a mesh without the test flag clips below the reference.</summary>
+    /// <summary>Each test function's clip sides, as SCM_DEF_ALPHA_TEST_FUNC fills them (D3D11ShaderConstantMap.cpp:3630-3687).
+    /// A mesh without the test flag is not tested (NiStandardMaterialDescriptor.cpp:665-672): reference 0 and no clip side
+    /// (D3D11ShaderConstantMap.cpp:3647,3692), so every alpha stays. TEST_ALWAYS tests nothing either.</summary>
     [Test]
     public void AlphaTestFunctionsClip()
     {
@@ -137,7 +138,35 @@ public class RenderStateTests
             new[] { true, true, true }, new[] { true, false, false }, new[] { false, true, false }, new[] { true, true, false },
             new[] { false, false, true }, new[] { true, false, true }, new[] { false, true, true }, new[] { false, false, false },
         }));
-        var untested = new ModelMesh { AlphaFlags = 0x0ED };
-        Assert.That((untested.AlphaTestRef, untested.AlphaTestKeeps(0.25f, 0.5f), untested.AlphaTestKeeps(0.5f, 0.5f)), Is.EqualTo((0.5f, false, true)));
+        var untested = new ModelMesh { AlphaFlags = 0x0ED, AlphaThreshold = 128 };
+        Assert.That((untested.AlphaTests, untested.AlphaTestRef), Is.EqualTo((false, 0f)));
+        Assert.That(new[] { 0f, 0.25f, 0.75f }.Select(a => untested.AlphaTestKeeps(a, untested.AlphaTestRef)), Is.All.True);
+        Assert.That(new ModelMesh { AlphaFlags = 0x200 }.AlphaTests, Is.False);   // TEST_ALWAYS
+        Assert.That(new ModelMesh { AlphaFlags = 0x200 | 4 << 10 }.AlphaTests, Is.True);
+    }
+
+    /// <summary>Blended NPC and item meshes whose NiAlphaProperty has the test flag clear (flags 0x100D, 0x10ED): the client never
+    /// alpha-tests them (NiStandardMaterialDescriptor.cpp:665-672), so their faint pixels are drawn and blended. The port used to
+    /// cut them below 0.5. A field decal with the flag set still tests, the same in its glow pass.</summary>
+    [Test]
+    public void UntestedBlendedMeshesKeepTheirFaintPixels()
+    {
+        var (packs, spec) = NifEnv.Open();
+        ModelData Load(string dir, string file) => ModelData.Load(NifFile.Load(spec, packs.Read(dir,
+            packs.List(dir).Single(n => n.EndsWith("/" + file, StringComparison.OrdinalIgnoreCase)))));
+        foreach (var (dir, file) in new[] { ("Resource/Model/Npc", "21430201_m_bluelapenta.nif"), ("Resource/Model/Item", "11020395_m_fhwinter01.nif") })
+        {
+            var blended = Load(dir, file).Meshes.Where(m => m.AlphaFlags >= 0 && !m.AlphaTestOn).ToList();
+            Assert.That(blended, Is.Not.Empty, file);
+            foreach (var m in blended)
+            {
+                Assert.That(m.AlphaBlendOn, Is.True, $"{file} {m.Name}");
+                Assert.That(m.AlphaTests, Is.False, $"{file} {m.Name}");
+                Assert.That(m.AlphaTestKeeps(0.25f, m.AlphaTestRef), Is.True, $"{file} {m.Name}");
+            }
+        }
+        var decal = Load("Resource/Model/Map", "ca_fi_decal_gap_a01.nif").Meshes.Where(m => m.Textures.ContainsKey("glow")).ToList();
+        Assert.That(decal, Is.Not.Empty);
+        Assert.That(decal.All(m => m.AlphaTests), Is.True);
     }
 }

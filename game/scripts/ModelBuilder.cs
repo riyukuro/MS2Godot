@@ -572,7 +572,11 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.HasDetail, detail != null);
         if (detail != null) sm.SetShaderParameter(ShaderParam.DetailTex, detail);
         sm.SetShaderParameter(ShaderParam.DetailUv2, OnUv2("detail"));
-        sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
+        // the glow pass ends in the same alpha test as the colour pass (MS2GlowMaterial -> HandleMS2FinalPixelOutputs ->
+        // HandleAlphaTest with the property's function and reference, ms2standardmaterial.cpp:786)
+        sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
+        sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
+        SetAlphaClip(sm, m);
         SetUvTransforms(sm, m);
         SetBillboard(sm, m);
         SetMorph(sm, m);
@@ -652,11 +656,6 @@ public sealed class ModelBuilder
         mesh.SurfaceSetMaterial(0, shell);
     }
 
-    /// <summary>
-    /// The faded form of a field mesh's colour material (TransparencyMaterial::FUN_141860140): blending on with the mesh's
-    /// own NiAlphaProperty blend (an additive one stays additive; a mesh without one gets a default property, source alpha /
-    /// inverse source alpha) and the depth write on. The caller sets its alpha with <see cref="SetFade"/>.
-    /// </summary>
     /// <summary>The alpha test as the D3D11 renderer runs it: the reference is the property's threshold / 255, zero included
     /// (SCM_DEF_ALPHA_TEST_REF, D3D11ShaderConstantMap.cpp:3690-3700), and the test function picks which side of it is clipped
     /// (SCM_DEF_ALPHA_TEST_FUNC, :3630-3687). The taxi booth's glass tests GREATER 0 (flags 0x12ED), so every pixel with any
@@ -667,13 +666,16 @@ public sealed class ModelBuilder
         sm.SetShaderParameter(ShaderParam.AlphaClip, new Vector3(above ? 1 : 0, below ? 1 : 0, equal ? 1 : 0));
     }
 
+    /// <summary>
+    /// The faded form of a field mesh's colour material (TransparencyMaterial::FUN_141860140): blending on with the mesh's
+    /// own NiAlphaProperty blend (an additive one stays additive; a mesh without one gets a default property, source alpha /
+    /// inverse source alpha) and the depth write on. The caller sets its alpha with <see cref="SetFade"/>.
+    /// </summary>
     public static ShaderMaterial FadeMaterial(ShaderMaterial colour, ModelMesh m)
     {
         var fade = (ShaderMaterial)colour.Duplicate();
         fade.Shader = FieldVariant(m.AlphaBlendOn && ((m.AlphaFlags >> 5) & 15) == 0 ? "#define BLEND\n#define ADD\n#define FADE\n" : "#define BLEND\n#define FADE\n", CullDefine(m));
-        // only the property's own test flag tests: the 0.5 cut-out BuildMaterial gives an untested property would cut the
-        // faded alpha (texture alpha times the fade) away
-        fade.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn);
+        fade.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
         // the mesh's own NiVertexColorProperty is swapped for one with source mode 3 (TransparencyMaterial::FUN_141860140,
         // TransparencyStandardMaterial::vfunc_2); an inherited one is left as it is
         fade.SetShaderParameter(ShaderParam.FadeVcSwap, m.VertexColorFlags >= 0);
@@ -736,9 +738,8 @@ public sealed class ModelBuilder
                 sm.SetShaderParameter(ShaderParam.AlphaAnimIn, Pad(aa.InTans));
                 sm.SetShaderParameter(ShaderParam.AlphaAnimOut, Pad(aa.OutTans));
             }
-            // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
-            bool test = m.AlphaTestOn || (m.AlphaTest && !m.AlphaBlendOn);
-            sm.SetShaderParameter(ShaderParam.AlphaTest, test);
+            // only the property's test flag tests (NiStandardMaterialDescriptor.cpp:665-672); without it the mesh is drawn whole
+            sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
             sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
             SetAlphaClip(sm, m);
             if (m.Emissive != null) sm.SetShaderParameter(ShaderParam.Emissive, new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
@@ -831,8 +832,7 @@ public sealed class ModelBuilder
             sm.SetShaderParameter(ShaderParam.GlowTex, glow);
             sm.SetShaderParameter(ShaderParam.GlowScale, m.ExtraFloats.GetValueOrDefault("GlowModifier", 1f));
         }
-        bool test = m.AlphaTestOn || m.AlphaTest;
-        sm.SetShaderParameter(ShaderParam.AlphaTest, test);
+        sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTests);
         sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
         SetAlphaClip(sm, m);
         return sm;

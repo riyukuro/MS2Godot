@@ -77,13 +77,16 @@ public sealed class ModelMesh
     /// <summary>NiAlphaProperty test function, flag bits 10-12 (TEST_FUNC_MASK 0x1c00, NiAlphaProperty.h:116-118): 0 ALWAYS,
     /// 1 LESS, 2 EQUAL, 3 LESSEQUAL, 4 GREATER, 5 NOTEQUAL, 6 GREATEREQUAL, 7 NEVER (NiAlphaProperty.h:49-56).</summary>
     public int AlphaTestFunc => AlphaFlags >= 0 ? (AlphaFlags >> 10) & 7 : 0;
+    /// <summary>The pixel shader runs the alpha test: the property has the test flag and a function other than TEST_ALWAYS
+    /// (NiStandardMaterialDescriptor.cpp:665-672 sets ALPHATEST only then). A mesh without the flag is never tested, whatever
+    /// its threshold: the renderer hands it reference 0 and no clip side (D3D11ShaderConstantMap.cpp:3647,3692).</summary>
+    public bool AlphaTests => AlphaTestOn && AlphaTestFunc != 0;
     /// <summary>The alpha test reference the D3D11 renderer hands the pixel shader: the property's threshold / 255 while it
-    /// tests (SCM_DEF_ALPHA_TEST_REF, D3D11ShaderConstantMap.cpp:3690-3700), else the 0.5 cut-out the builders give a mesh
-    /// that tests without the property's flag.</summary>
-    public float AlphaTestRef => AlphaTestOn ? AlphaThreshold / 255f : 0.5f;
+    /// tests, else 0 (SCM_DEF_ALPHA_TEST_REF, D3D11ShaderConstantMap.cpp:3690-3700).</summary>
+    public float AlphaTestRef => AlphaTestOn ? AlphaThreshold / 255f : 0f;
     /// <summary>When the pixel shader clips, as SCM_DEF_ALPHA_TEST_FUNC fills it (D3D11ShaderConstantMap.cpp:3630-3687):
-    /// x clip above the reference, y below it, z equal to it. A mesh without the property's test flag clips below.</summary>
-    public (bool Above, bool Below, bool Equal) AlphaTestClip => !AlphaTestOn ? (false, true, false) : AlphaTestFunc switch
+    /// x clip above the reference, y below it, z equal to it. Without the property's test flag every side stays 0 (:3647).</summary>
+    public (bool Above, bool Below, bool Equal) AlphaTestClip => !AlphaTestOn ? (false, false, false) : AlphaTestFunc switch
     {
         1 => (true, false, true),     // TEST_LESS
         2 => (true, true, false),     // TEST_EQUAL
