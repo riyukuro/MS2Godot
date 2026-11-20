@@ -205,6 +205,18 @@ public partial class AlphaRenderCheck : Node
             cases.Add(("field_glow_vc", vp, Grey(0.25f, "field glow at vertex alpha 0.25")));
         }
 
+        // MINOR 5: the field glow runs field_lit's alpha test (MS2GlowMaterial ends in HandleMS2FinalPixelOutputs ->
+        // HandleAlphaTest, ms2standardmaterial.cpp:786): GREATER 128 passes material alpha 0.6 (opaque, no blend bit) and clips 0.4
+        foreach (var (name, ma, want) in new[] { ("field_glow_test_pass", 0.6f, 1f), ("field_glow_test_clip", 0.4f, 0f) })
+        {
+            var fm = Quad("q", 0);
+            fm.AlphaFlags = 0x200 | 4 << 10; fm.AlphaThreshold = 128; fm.MaterialAlpha = ma; fm.Textures["glow"] = "glow.dds";
+            var vp = View(main);
+            vp.AddChild(new MeshInstance3D { Mesh = mb.BuildMesh(fm, instanceColor: true), MaterialOverride = mb.GlowMaterial(fm, false) });
+            vp.GetNode<Camera3D>("Cam").Position = new Vector3(0, 0, 10);
+            cases.Add((name, vp, Grey(want, $"field glow, GREATER 128 at material alpha {ma}")));
+        }
+
         // a static entity's glow holds its alpha controller at the entity's add time, as field_lit does (frozen_time):
         // the keys give 0.25 only in a 0.02 s spike at t = 1 of a 2 s loop, so the scene time reads 1 almost always
         {
