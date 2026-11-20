@@ -172,12 +172,66 @@ public sealed class FieldLightSet
             if (always || AffectsReceiver(l, center, radius))
                 queue.Add((PriorityFor(l, id, center, radius), l.Index));
         }
-        // std::priority_queue pops the largest priority first; equal priorities keep the light order here
-        queue.Sort((a, b) => a.priority != b.priority ? b.priority.CompareTo(a.priority) : a.index.CompareTo(b.index));
+        // the client pops its std::priority_queue (largest priority first; its own heap order decides equal priorities)
+        queue = PopOrder(queue);
         uint bits = 0;
         for (int i = 0; i < queue.Count && i < max; i++)
             if (queue[i].priority > 0f) bits |= 1u << queue[i].index;
         return bits;
+    }
+
+    /// <summary>
+    /// The order a std::priority_queue&lt;LightPriority&gt; (operator&lt;, a max-heap over a vector) pops the entries pushed in
+    /// <paramref name="pushed"/> order (LightService::AddReceiverToLightQueue pushes, SetAffectedNodeLists pops until empty,
+    /// LightService.cpp:1215-1250, 1655-1675). Equal priorities come out in the heap's order, which is MSVC's push_heap /
+    /// pop_heap (hole sifted down to a leaf along the larger child, the right one on a tie, then sifted up).
+    /// STILL-OPEN: the push order is the light order here; the client pushes in the order its sort-axis sweep finds the lights.
+    /// </summary>
+    public static List<(float priority, int index)> PopOrder(List<(float priority, int index)> pushed)
+    {
+        var heap = new List<(float priority, int index)>();
+        foreach (var v in pushed)
+        {
+            heap.Add(v);
+            SiftUp(heap, heap.Count - 1, 0, v);
+        }
+        var popped = new List<(float priority, int index)>();
+        while (heap.Count > 0)
+        {
+            popped.Add(heap[0]);
+            var val = heap[^1];
+            heap.RemoveAt(heap.Count - 1);
+            if (heap.Count == 0) break;
+            int bottom = heap.Count, hole = 0, idx = 0;
+            int maxNonLeaf = (bottom - 1) / 2;
+            while (idx < maxNonLeaf)
+            {
+                idx = 2 * idx + 2;
+                if (heap[idx].priority < heap[idx - 1].priority) idx--;
+                heap[hole] = heap[idx];
+                hole = idx;
+            }
+            if (bottom % 2 == 0 && idx == (bottom - 2) / 2)
+            {
+                idx = bottom - 1;
+                heap[hole] = heap[idx];
+                hole = idx;
+            }
+            SiftUp(heap, hole, 0, val);
+        }
+        return popped;
+    }
+
+    static void SiftUp(List<(float priority, int index)> heap, int hole, int top, (float priority, int index) val)
+    {
+        while (hole > top)
+        {
+            int parent = (hole - 1) >> 1;
+            if (!(heap[parent].priority < val.priority)) break;
+            heap[hole] = heap[parent];
+            hole = parent;
+        }
+        heap[hole] = val;
     }
 
     /// <summary>LightService::LightAffectsReceiver (LightService.cpp:1466-1473): squared distance against (range + radius)^2, in floats.</summary>

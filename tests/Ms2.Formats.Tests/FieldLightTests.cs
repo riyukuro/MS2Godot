@@ -100,6 +100,22 @@ public class FieldLightTests
         Assert.That(p, Is.EqualTo(2.501f).Within(1e-3));
     }
 
+    /// <summary>Equal priorities come out in std::priority_queue's heap order, not the push order: pushing four equal
+    /// entries into an MSVC max-heap pops 0, 2, 1, 3 (hand-traced push_heap / pop_heap).</summary>
+    [Test]
+    public void EqualPrioritiesPopInHeapOrder()
+    {
+        var eq = Enumerable.Range(0, 4).Select(i => (1f, i)).ToList();
+        Assert.That(FieldLightSet.PopOrder(eq).Select(e => e.index), Is.EqualTo(new[] { 0, 2, 1, 3 }));
+        var mixed = new List<(float, int)> { (1f, 0), (3f, 1), (2f, 2), (3f, 3), (1f, 4) };
+        var order = FieldLightSet.PopOrder(mixed).Select(e => e.priority).ToArray();
+        Assert.That(order, Is.EqualTo(new[] { 3f, 3f, 2f, 1f, 1f }));
+        var set = FieldLightSet.Read(Enumerable.Range(0, 4).Select(i => Point(("Position", "0, 0, 0"))).ToArray());
+        // one point light allowed, four equal: the heap's first pop is light 0
+        Assert.That(set.Unlit(Lightable(maxPoint: 1), new Vec3(0, 0, 0), 10), Is.EqualTo(0b1110u));
+        Assert.That(set.Unlit(Lightable(maxPoint: 3), new Vec3(0, 0, 0), 10), Is.EqualTo(0b1000u), "pops 0, 2, 1: light 3 is left out");
+    }
+
     [Test]
     public void LimitsPerTypeByPriority()
     {
