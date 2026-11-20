@@ -200,9 +200,9 @@ void fragment() {
 
 	// the vertex colour replaces the terms it stands in for; LIGHTING_E keeps the emissive alone (NiStandardMaterial.cpp:3719-3723)
 	vec3 emi = vc_emissive ? COLOR.rgb : emissive;
-	vec3 m_amb = vc_ambient ? COLOR.rgb : mat_ambient;
-	vec3 m_dif = vc_diffuse ? COLOR.rgb : mat_diffuse;
-	vec3 lit = clamp(lighting_e ? emi : emi + (own ? own_ambient : ms2_ambient) * m_amb + diffuse * m_dif, 0.0, 1.0);
+	vec3 amb_m = vc_ambient ? COLOR.rgb : mat_ambient;
+	vec3 dif_m = vc_diffuse ? COLOR.rgb : mat_diffuse;
+	vec3 lit = clamp(lighting_e ? emi : emi + (own ? own_ambient : ms2_ambient) * amb_m + diffuse * dif_m, 0.0, 1.0);
 	vec3 c = lit * t.rgb;
 	if (has_glow) {
 		c += texture(glow_tex, UV).rgb * glow_scale;
