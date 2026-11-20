@@ -19,7 +19,7 @@ namespace Ms2Godot.World;
 ///   m_f16c + m_f170 and the bar by m_f164 + m_f174; the CNpc ctor sets m_f16c = OffsetNpcNametag, m_f164 = OffsetNpcHpbar
 ///   and both others to 0 (5 and 5 in the client's constants). Then both get FUN_1412762d0, the camera-pitch shift.
 /// </summary>
-public sealed partial class NpcPresence : CanvasLayer
+public sealed partial class NpcPresence : CanvasLayer, IMovieLayer
 {
     const float HideDistance = 1500, OpaqueDistance = 700;
 
@@ -147,6 +147,19 @@ public sealed partial class NpcPresence : CanvasLayer
     }
 
     public NpcPresence(ClientConstants constants) { this.constants = constants; Name = "NpcPresence"; Layer = 5; Offset = UiScale.MovieOrigin; }
+
+    public override void _EnterTree() => AddToGroup(IMovieLayer.Group);
+
+    /// <summary>
+    /// <see cref="IMovieLayer"/>: the new viewport scale for the built name tags and HP bars and the ones to come.
+    /// STILL-OPEN: the built clips keep the glyphs they were built with and are only scaled.
+    /// </summary>
+    public void Resize(Vector2 window)
+    {
+        u = UiScale.For(window);
+        foreach (var t in tags) t.Node.Scale = new Vector2(u, u);
+        foreach (var b in bars.Values) b.Rescale(u);
+    }
     public NpcPresence() { }
 
     public void Build(IEnumerable<FieldNpcs.Placed> npcs, UiAssets ui)

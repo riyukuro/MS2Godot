@@ -229,8 +229,9 @@ public partial class HudScene : Node, IUiStageHost
     /// <item>CUIService::OnDeviceReset: DAT_143af62d4 / DAT_143af62d8 = the new size, then GFxManager::SetMoviesScale
     /// (gfxmanager.cpp:754) with FUN_141276490(width, the UI scale option), stored on every movie but the background.</item>
     /// </list>
-    /// The world UI layers (damage effect, the own name tag and HP bar, damage text) are movies too and take the same new
-    /// viewport scale, kept with their state.
+    /// The world UI layers (damage effect, the own name tag and HP bar, damage text, and the <see cref="IMovieLayer"/> group:
+    /// other players' and npcs' name tags and HP bars) are movies too and take the same new viewport scale, kept with their
+    /// state.
     /// STILL-OPEN: SetMoviesScale only stores the scale (GFxMovie::SetScale, gfxmovie.cpp:252) and GFxService's callback,
     /// added at its OnInit before CUIService's (uiservice.cpp:1886), sets the viewports first, so in the client the new
     /// scale may reach the viewports only at the next vfunc_7 or FUN_1422aff10. The callback order between the two services'
@@ -250,6 +251,8 @@ public partial class HudScene : Node, IUiStageHost
         playerNameTag?.Resize(window);
         playerBar?.Resize(window);
         damageText?.Resize(window);
+        foreach (var n in GetTree().GetNodesInGroup(IMovieLayer.Group))     // the other world UI movies (ResizeMovies covers every movie)
+            if (n is IMovieLayer layer) layer.Resize(window);
         for (int i = 0; i < resizing.Count; i++) resizing[i].RestoreDevice(before[i]);            // vfunc_5: each vfunc_17
         for (int i = 0; i < resizing.Count; i++) resizing[i].LayoutLoaded();                      // vfunc_1: each layout
         resizing.Clear();

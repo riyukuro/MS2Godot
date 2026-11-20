@@ -24,7 +24,7 @@ namespace Ms2Godot.Net;
 /// viewer, fading to 40% at 1500, hidden beyond (m_54) and behind the camera.</item>
 /// </list>
 /// </summary>
-public sealed partial class LiveNameTags : CanvasLayer
+public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
 {
     sealed class Tag
     {
@@ -73,7 +73,21 @@ public sealed partial class LiveNameTags : CanvasLayer
     Color Rgb(string key, (float, float, float) def) { var (r, g, b) = constants.Color(key, def); return new Color(r, g, b); }
 
     /// <summary>The movies' draw scale (UiScale) for the window; the tags are built once the layer is in the tree.</summary>
-    public override void _EnterTree() => u = UiScale.For(GetViewport().GetVisibleRect().Size);
+    public override void _EnterTree()
+    {
+        u = UiScale.For(GetViewport().GetVisibleRect().Size);
+        AddToGroup(IMovieLayer.Group);
+    }
+
+    /// <summary>
+    /// <see cref="IMovieLayer"/>: the new viewport scale for the built tags and the ones to come.
+    /// STILL-OPEN: the built clips keep the glyphs they were built with and are only scaled.
+    /// </summary>
+    public void Resize(Vector2 window)
+    {
+        u = UiScale.For(window);
+        foreach (var t in tags.Values) t.Node.Scale = new Vector2(u, u);
+    }
 
     /// <summary>An npc's tag (FieldAddNpc), hung from its model's Eff_UI dummy.</summary>
     public void AddNpc(Node3D root, Node3D visual, NpcRow row)

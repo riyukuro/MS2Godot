@@ -28,6 +28,9 @@ public sealed class NpcHpBar
     bool dirty;
     readonly HpBarClip clip;
 
+    /// <summary>The viewport scale after a resize (<see cref="Ms2Godot.Ui.IMovieLayer"/>).</summary>
+    public void Rescale(float u) => clip.Rescale(u);
+
     public NpcHpBar(FieldNpcs.Placed npc, UiMovie movie, float u, Node parent, long? spawnCur = null, long? spawnMax = null,
         System.Collections.Generic.Stack<MovieClipNode> pool = null)
     {

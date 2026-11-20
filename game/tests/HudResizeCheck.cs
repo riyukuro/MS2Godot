@@ -20,6 +20,8 @@ namespace Ms2Godot.Tests;
 /// <item>the open inventory ends where its layout puts it on the new stage (its ratio step, UIDialog::vfunc_17, is
 /// covered by the Ms2.Ui test ADeviceRestoreKeepsAPlacedDialogsRatioToTheStage);</item>
 /// <item>back at 1280 x 720 every movie's root sits where it was before the round trip;</item>
+/// <item>the npcs' and other players' name tag and HP bar layers (NpcPresence, LiveNameTags, LiveHpBars) take the new
+/// scale (UiScale.For), and the npcs' built name tags are drawn at it;</item>
 /// <item>a movie's own stage Event.RESIZE listener (uicastingbar's CastingBar.onResizeStage is one) runs once per changed
 /// viewport and after the dialogs' restore and layout (queued by NotifyOnResize, sfr_gfx_01i.cpp:1240-1256, until the
 /// movie's next advance): a listener on the casting bar's stage sees the open inventory already where the step leaves it.</item>
@@ -140,6 +142,7 @@ public partial class HudResizeDriver : Node
         var inv = RootAt(inventoryMovie);
         inventoryMovie.LayoutLoaded();
         if (RootAt(inventoryMovie) != inv) Fail($"step {n}: the inventory is at {inv}, not where its layout puts it ({RootAt(inventoryMovie)})");
+        WorldLayers(n, window);
         int expected = window != windowBefore ? 1 : 0;
         if (resizes - resizesBefore != expected) Fail($"step {n}: the casting bar's stage got {resizes - resizesBefore} RESIZE events, not {expected}");
         else if (expected == 1 && invAtResize != inv) Fail($"step {n}: the stage RESIZE ran before the layout (the inventory was at {invAtResize}, ends at {inv})");
@@ -151,6 +154,36 @@ public partial class HudResizeDriver : Node
                     Fail($"step {n}: {m.Host.Controller.Movie} at {at}, was {start[m]}");
             }
         GD.Print($"hud resize: step {n} checked, inventory at ({inv.X:0.##}, {inv.Y:0.##})");
+    }
+
+    /// <summary>The world UI layers built outside the HUD's movies, read by name so the check builds on any tree.</summary>
+    void WorldLayers(int n, Vector2 window)
+    {
+        float u = UiScale.For(window);
+        int layers = 0, npcTags = 0;
+        void Walk(Node node)
+        {
+            for (int i = 0; i < node.GetChildCount(); i++)
+            {
+                var c = node.GetChild(i);
+                var type = c.GetType().Name;
+                if (type is "NpcPresence" or "LiveNameTags" or "LiveHpBars")
+                {
+                    layers++;
+                    if (Get(c, "u") is float lu && Math.Abs(lu - u) > 1e-5f) Fail($"step {n}: {type} draws at {lu}, not {u}");
+                    if (type == "NpcPresence" && Get(c, "tags") is System.Collections.IEnumerable tags)
+                        foreach (var t in tags)
+                        {
+                            npcTags++;
+                            if (t.GetType().GetField("Node")?.GetValue(t) is Node2D tag && Math.Abs(tag.Scale.X - u) > 1e-5f)
+                            { Fail($"step {n}: an npc name tag is drawn at {tag.Scale.X}, not {u}"); return; }
+                        }
+                }
+                Walk(c);
+            }
+        }
+        Walk(GetTree().Root);
+        if (layers == 0 || npcTags == 0) Fail($"step {n}: no npc name tags to check ({layers} layers)");
     }
 
     void Finish()

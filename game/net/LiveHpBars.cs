@@ -29,7 +29,7 @@ namespace Ms2Godot.Net;
 /// state every bar draws rank 1 and the friendly gauge — the optimizer's spawn gate (FUN_14123dbd0) and the mount's
 /// tag-hiding (the ridee's m_nNameTagHide).
 /// </summary>
-public sealed partial class LiveHpBars : CanvasLayer
+public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
 {
     sealed class Entry
     {
@@ -67,7 +67,21 @@ public sealed partial class LiveHpBars : CanvasLayer
     public LiveHpBars() { }
 
     /// <summary>The movies' draw scale (UiScale) for the window; the bars are built once the layer is in the tree.</summary>
-    public override void _EnterTree() => u = UiScale.For(GetViewport().GetVisibleRect().Size);
+    public override void _EnterTree()
+    {
+        u = UiScale.For(GetViewport().GetVisibleRect().Size);
+        AddToGroup(IMovieLayer.Group);
+    }
+
+    /// <summary>
+    /// <see cref="IMovieLayer"/>: the new viewport scale for the built bars and the ones to come.
+    /// STILL-OPEN: the built clips keep the glyphs they were built with and are only scaled.
+    /// </summary>
+    public void Resize(Vector2 window)
+    {
+        u = UiScale.For(window);
+        foreach (var e in bars.Values) { e.Npc?.Rescale(u); e.Pc?.Rescale(u); }
+    }
 
     /// <summary>An option's value; on when the option store is not loaded.</summary>
     static bool On(Func<Ms2.Formats.Options.GameOption.Status, bool> read)
@@ -164,6 +178,9 @@ public sealed class PcHpBar
     bool dirty;
 
     public PcHpBar(UiMovie movie, float u, Node parent, Stack<MovieClipNode> pool = null) => clip = new HpBarClip(movie, u, parent, pool);
+
+    /// <summary>The viewport scale after a resize (<see cref="IMovieLayer"/>).</summary>
+    public void Rescale(float u) => clip.Rescale(u);
 
     /// <summary>The spawn: PC::vfunc_10 activates a hurt spawn's bar, and OnAddUser applies the packet's emotion byte
     /// with SetEmotion (scenestategame.cpp:11188, a change from the ctor's 0), which runs UpdateHpBar. Not shown.</summary>
