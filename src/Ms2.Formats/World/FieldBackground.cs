@@ -35,7 +35,8 @@ public static class FieldBackground
 
     /// <summary>
     /// Background.onResizeNoScroll for a picture (a Bitmap has no m_size child): scaled to cover the stage, keeping its
-    /// ratio, and centred.
+    /// ratio, and centred. <paramref name="width"/> and <paramref name="height"/> are the bitmap's current width and
+    /// height (a1.width / a1.height), which onResizeNoScroll updates on each resize.
     /// </summary>
     public static (double X, double Y, double Width, double Height) ResizeNoScroll(double width, double height, uint stageWidth, uint stageHeight)
     {

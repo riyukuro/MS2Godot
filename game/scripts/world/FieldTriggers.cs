@@ -32,12 +32,13 @@ public sealed class FieldTriggers
             if (TriggerObjects.KindOf(e.HasMixin) is not { } kind) continue;
             int id = (int)e.Number("TriggerObjectID");
             kinds[id] = kind;     // CAtlMap::SetAt: a later entity with the same id replaces the earlier
-            if (kind == TriggerObjectKind.Mesh && meshDraws.TryGetValue(e, out var draws))
+            if (kind == TriggerObjectKind.Mesh && meshDraws.TryGetValue(e, out var draws) && draws.Count > 0)
             {
                 if (!meshes.TryGetValue(id, out var list)) meshes[id] = list = new();
                 else list.Clear();
                 foreach (var (mm, i) in draws) list.Add((mm, i, mm.GetInstanceTransform(i)));
             }
+            else meshes.Remove(id);
         }
     }
 

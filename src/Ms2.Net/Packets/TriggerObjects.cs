@@ -38,9 +38,9 @@ public sealed record TriggerObjectEvent(int Id, TriggerObjectKind Kind, bool Kno
 /// and Camera (:848) u8; a plain TriggerObject (:435) nothing. An id the service does not hold reads nothing more and is
 /// logged ("Trigger Object Sync Error"), so the client reads the next event from there; this does the same.
 /// The other types (camera, popups, effects, ...) are not read here.
-/// STILL-OPEN: the argument getters are slots of an unnamed reader (Unk_TrigArg, triggeractioncli.h:150); the widths above
-/// (1-byte bool and flag, 4-byte fade, float, string) follow the slot types, and the string is read as the server writes
-/// it (a UTF-16 string; the Maple2 server's TriggerObjectMesh.WriteTo), not from the client's getter body.
+/// The argument block at +8 of CInPacket (Unk_TrigArg, triggeractioncli.h:150) is CInputStream (commonfiles/stream.h:25):
+/// slot 0 ReadBool (bool), slot 1 ReadUInt8 (u8), slot 3 ReadInt32 (i32), slot 5 ReadFloat (float), and slot 6
+/// ReadUnicodeStringA (commonfiles/packet.cpp:537, which reads the UTF-16 string via ReadUnicodeString).
 /// </summary>
 public static class TriggerObjects
 {

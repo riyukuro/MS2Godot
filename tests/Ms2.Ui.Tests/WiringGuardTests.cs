@@ -67,4 +67,27 @@ public class WiringGuardTests
         Assert.That(upd, Is.GreaterThan(-1), "Field._Process must update the backdrop");
         Assert.That(ret, Is.GreaterThan(upd), "backdrop.Update must run before the null-player early return (GFxMovieBackground::vfunc_8)");
     }
+
+    [Test]
+    public void FieldBackdropValidatesBeforeViewportAndCachesContentAndPosition()
+    {
+        var s = Source("game/scripts/FieldBackdrop.cs");
+        int upd = s.IndexOf("public void Update(Camera3D camera, Node3D player)", StringComparison.Ordinal);
+        Assert.That(upd, Is.GreaterThan(-1));
+        string body = s.Substring(upd);
+        int valid = body.IndexOf("IsInstanceValid(rect)", StringComparison.Ordinal);
+        int vp = body.IndexOf("rect.GetViewportRect()", StringComparison.Ordinal);
+        Assert.That(valid, Is.GreaterThan(-1));
+        Assert.That(vp, Is.GreaterThan(valid), "IsInstanceValid(rect) must run before rect.GetViewportRect()");
+        Assert.That(body, Does.Not.Contain("rect.Size"), "Update must use cached content size instead of reading rect.Size each frame");
+        Assert.That(s, Does.Contain("FieldBackground.ResizeNoScroll(content.X, content.Y,"), "ResizeNoScroll must pass the bitmap's current width and height");
+        Assert.That(s, Does.Contain("if (pos == appliedPos) return;"), "rect.Position must only be written when it changes");
+    }
+
+    [Test]
+    public void FieldTriggersDropsStaleDrawsWhenLaterEntityReplacesId()
+    {
+        var s = Source("game/scripts/world/FieldTriggers.cs");
+        Assert.That(s, Does.Contain("else meshes.Remove(id);"), "a later entity with the same id must drop an earlier entity's draws");
+    }
 }

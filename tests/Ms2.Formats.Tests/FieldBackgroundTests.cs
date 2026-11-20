@@ -52,6 +52,13 @@ public class FieldBackgroundTests
         Assert.That(h, Is.InRange(1322, 1325));
         Assert.That(x, Is.EqualTo((1280 - w) / 2));
         Assert.That(y, Is.EqualTo((720 - h) / 2));
+
+        // a subsequent resize passes the bitmap's current width and height, as AS onResizeNoScroll reads a1.width / a1.height
+        var (x2, y2, w2, h2) = FieldBackground.ResizeNoScroll(w, h, 1600, 900);
+        Assert.That(w2, Is.EqualTo(1600));
+        Assert.That(h2, Is.EqualTo((uint)(1600 * h / w)));
+        Assert.That(x2, Is.EqualTo((1600 - w2) / 2));
+        Assert.That(y2, Is.EqualTo((900 - h2) / 2));
     }
 
     [Test]

@@ -24,13 +24,14 @@ public sealed class FieldBackdrop
     readonly TextureRect rect;
     readonly bool scroll, posFlag;
     readonly MinimapInfo minimap;     // null: no minimap, so vfunc_8 moves nothing (m_n98 == 0)
-    readonly Vector2 picture;
+    Vector2 content;                  // bitmap's current width and height (Background.onResizeNoScroll reads a1.width / height)
     Vector2 stage = new(-1, -1);
     Vector2 pos;
+    Vector2 appliedPos = new(float.NaN, float.NaN);
 
-    FieldBackdrop(TextureRect rect, Vector2 picture, bool scroll, bool posFlag, MinimapInfo minimap)
+    FieldBackdrop(TextureRect rect, Vector2 content, bool scroll, bool posFlag, MinimapInfo minimap)
     {
-        this.rect = rect; this.picture = picture; this.scroll = scroll; this.posFlag = posFlag; this.minimap = minimap;
+        this.rect = rect; this.content = content; this.scroll = scroll; this.posFlag = posFlag; this.minimap = minimap;
     }
 
     /// <summary>Adds the backdrop under parent and switches env to a canvas background; null when there is none.</summary>
@@ -67,19 +68,28 @@ public sealed class FieldBackdrop
     /// <summary>Background.onResize: on load and whenever the window size changes (GFxMovieBackground::vfunc_16 on WM_SIZE).</summary>
     void Resize(Vector2 size)
     {
-        stage = size;
         uint w = (uint)size.X, h = (uint)size.Y;
+        if (w == 0 || h == 0) return;
+        stage = size;
         if (scroll)
         {
             var (cw, ch) = FieldBackground.ResizeScroll(w, h);
-            rect.Size = new Vector2((float)cw, (float)ch);     // onResizeScroll sets the size only
+            content = new Vector2((float)cw, (float)ch);     // onResizeScroll sets the size only
         }
         else
         {
-            var (x, y, cw, ch) = FieldBackground.ResizeNoScroll(picture.X, picture.Y, w, h);
-            rect.Size = new Vector2((float)cw, (float)ch);
+            var (x, y, cw, ch) = FieldBackground.ResizeNoScroll(content.X, content.Y, w, h);
+            content = new Vector2((float)cw, (float)ch);
             pos = new Vector2((float)x, (float)y);
         }
+        rect.Size = content;
+        ApplyPosition();
+    }
+
+    void ApplyPosition()
+    {
+        if (pos == appliedPos) return;
+        appliedPos = pos;
         rect.Position = pos;
     }
 
@@ -89,21 +99,22 @@ public sealed class FieldBackdrop
     /// </summary>
     public void Update(Camera3D camera, Node3D player)
     {
+        if (!GodotObject.IsInstanceValid(rect)) return;
         var size = rect.GetViewportRect().Size;
         if (size != stage) Resize(size);
-        if (minimap == null || !GodotObject.IsInstanceValid(rect)) return;
+        if (minimap == null || stage.X <= 0 || stage.Y <= 0) return;
         uint w = (uint)stage.X, h = (uint)stage.Y;
         if (scroll && camera != null)
         {
             var up = camera.GlobalBasis.Y.Normalized();
-            pos.Y = (float)FieldBackground.CameraY(rect.Size.Y, h, FieldBackground.CameraAngle(up.X));
+            pos.Y = (float)FieldBackground.CameraY(content.Y, h, FieldBackground.CameraAngle(up.X));
         }
         if (posFlag && player != null)
         {
             var g = player.GlobalPosition;     // FieldBuilder.ToGodotPoint: (x, y, z) -> (x, z, -y)
             if (minimap.ToScreenX(new Vec3(g.X, -g.Z, g.Y), out var sx))
-                pos.X = (float)FieldBackground.PosX(rect.Size.X, w, sx);
+                pos.X = (float)FieldBackground.PosX(content.X, w, sx);
         }
-        rect.Position = pos;
+        ApplyPosition();
     }
 }
