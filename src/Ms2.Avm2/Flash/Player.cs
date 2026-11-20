@@ -705,16 +705,20 @@ namespace Ms2.Avm2.Flash
                 mc.TrackedPlaying = true;
                 playingClips.Add(mc);
             }
-            if (advancing) MarkAdvancePath(mc);
+            if (advancing) MarkAdvancePath(mc, toRoot: true);
         }
 
-        /// <summary>Marks <paramref name="o"/> and its ancestors up to the first one already marked this tick. The walk always
-        /// goes past <paramref name="o"/> itself: a clip marked while it had no parent (a constructor's new clip, added after)
-        /// marks its ancestors when it is added.</summary>
-        void MarkAdvancePath(AsDisplayObject o)
+        /// <summary>
+        /// Marks <paramref name="o"/> and its ancestors. Before the walk (<paramref name="toRoot"/> false) the marking stops at
+        /// the first ancestor already marked this tick, whose own path is marked then. During the walk a constructor or an
+        /// event handler can move a marked subtree under an unmarked parent (the old path stays marked above the old parent),
+        /// so a mark made then goes up to the root: a subtree that enters the stage re-registers every playing clip in it
+        /// (EnterStage), and so marks its new place.
+        /// </summary>
+        void MarkAdvancePath(AsDisplayObject o, bool toRoot = false)
         {
             o.AdvanceEpoch = advanceEpoch;
-            for (var p = o.Parent; p != null && p.AdvanceEpoch != advanceEpoch; p = p.Parent)
+            for (var p = o.Parent; p != null && (toRoot || p.AdvanceEpoch != advanceEpoch); p = p.Parent)
                 p.AdvanceEpoch = advanceEpoch;
         }
 

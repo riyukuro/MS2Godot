@@ -1214,4 +1214,60 @@ public class RuntimeTests
         Assert.That(order, Is.EqualTo(new[] { "root@3", "root@3" }));
         Assert.That(rt.Errors, Is.Empty);
     }
+
+    /// <summary>
+    /// A static sprite Y holding a playing clip X, moved by a constructor that runs during the advance (the root places
+    /// "spawn" on its frame 2): the advance gives X the frames of a walk of the whole display list. Y starts in A, after
+    /// or before the root on the stage; the constructor moves Y into Z (after the root), into W (before the root), back
+    /// into A (removed and added again), or off the stage; then the root loops. <paramref name="frame"/> is X's frame
+    /// after two ticks.
+    /// </summary>
+    [TestCase(false, "Z", 3)]
+    [TestCase(true, "Z", 4)]
+    [TestCase(false, "W", 2)]
+    [TestCase(true, "W", 3)]
+    [TestCase(false, "A", 3)]
+    [TestCase(true, "A", 3)]
+    [TestCase(false, "off", 1)]
+    [TestCase(true, "off", 2)]
+    public void AdvanceFollowsAPlayingClipMovedDuringTheWalk(bool aBeforeRoot, string to, int frame)
+    {
+        static JsonObject Pl(int id, int depth, int first, string name) => new() { ["id"] = id, ["depth"] = depth, ["first"] = first, ["name"] = name };
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject { ["4"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1 } } },
+            ["root"] = new JsonObject { ["frames"] = 2, ["children"] = new JsonArray(Pl(4, 1, 1, "spawn")) },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        var mcCls = rt.GetClass("flash.display.MovieClip");
+        var spCls = rt.GetClass("flash.display.Sprite");
+        AsSprite A = null, W = null, Y = null, Z = null;
+        rt.OnAfterConstruct = o =>
+        {
+            if (o is not AsContainer c || (string)c.Placement?["name"] != "spawn" || Z == null) return;
+            switch (to)
+            {
+                case "Z": Z.addChild(Y); break;
+                case "W": W.addChild(Y); break;
+                case "A": A.removeChild(Y); A.addChild(Y); break;
+                case "off": A.removeChild(Y); break;
+            }
+        };
+        Assert.That(p.Start(), Is.True);
+        A = (AsSprite)spCls.Construct(); W = (AsSprite)spCls.Construct(); Y = (AsSprite)spCls.Construct(); Z = (AsSprite)spCls.Construct();
+        var X = (AsMovieClip)mcCls.Construct();
+        X.TL = Timeline.From(new JsonObject { ["frames"] = 5 }, p.Main);
+        Y.addChild(X); A.addChild(Y);
+        p.Stage.addChildAt(W, 0);
+        if (aBeforeRoot) p.Stage.addChildAt(A, 1); else p.Stage.addChild(A);
+        p.Stage.addChild(Z);
+        p.Tick();
+        p.Tick();
+        // the frames of the whole-list walk (bc18e31): X is advanced wherever the walk finds it, once per container
+        // reached after the move (twice when it was walked under A before the root and again under Z after it)
+        Assert.That(X.currentFrame, Is.EqualTo(frame));
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }
