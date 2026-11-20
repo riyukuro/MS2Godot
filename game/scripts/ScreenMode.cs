@@ -113,7 +113,15 @@ public static class ScreenMode
     {
         var w = Root;
         Current = r;
-        if (r.Borderless)
+        if (Engine.IsEmbeddedInEditor())
+        {
+            // Not the client's: the editor's Game tab runs the project inside the editor's window, where the engine does not
+            // support changing the window's mode, flags, size or position (Engine.IsEmbeddedInEditor); doing it splits the
+            // game out into a second window and leaves the tab empty. The window stays the editor's; the option still
+            // records the request, so a run outside the editor opens as the option says.
+            Emulated = null;
+        }
+        else if (r.Borderless)
         {
             if (OperatingSystem.IsWindows())
             {
