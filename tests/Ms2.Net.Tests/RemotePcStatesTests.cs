@@ -69,6 +69,10 @@ public class RemotePcStatesTests {
         public float SwimSpeed => 350f;
         public float MoveSpeedRate { get; set; } = 1f;
         public float ScaleAnimRate { get; set; } = 1f;
+        float animSpeed = 1f;
+        public float? AnimSpeedReadOverride;
+        public int AnimSpeedReads;
+        public float AnimSpeed { get { AnimSpeedReads++; return AnimSpeedReadOverride ?? animSpeed; } set => animSpeed = value; }
         public float Gravity => -3460.2074f;
         public float JumpHeight => 100f;
         public float AirSpeedScale => 1f;
@@ -347,6 +351,43 @@ public class RemotePcStatesTests {
         Assert.That(RemotePcStates.ScaleRate(0.75f, 1f), Is.EqualTo(1.25f).Within(1e-5));
         Assert.That(RemotePcStates.ScaleRate(1.5f, 1f), Is.EqualTo(0.75f).Within(1e-5));
         Assert.That(RemotePcStates.ScaleRate(2.5f, 1f), Is.EqualTo(0.5f));
+    }
+
+    [Test] public void StateFallUsesOwnerAnimSpeed() {
+        // StateFall::vfunc_4 (@0x1417c6ef0, statefall.cpp:95, 128) calls State::vfunc_4 -> State::vfunc_10
+        // (@0x1417b8090, state.cpp:649-652 -> FUN_141670d80(1f)) and then PlayAnimation(m_strAnim, FUN_1416713c0()).
+        var b = new Body { MoveSpeedRate = 1.5f };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.1f);
+        sm.SequenceEnded(RemotePcStates.ActJumpLand);
+
+        // Walking sets AnimSpeed (m_f938) via StateWalk::vfunc_10 -> FUN_141670d80
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(b.AnimSpeed, Is.EqualTo(1.5f).Within(1e-4));
+
+        // Entering StateFall resets AnimSpeed to 1f (State::vfunc_4 -> State::vfunc_10) and reads FUN_1416713c0()
+        b.PlayLog.Clear();
+        int readsBefore = b.AnimSpeedReads;
+        b.Position = new Vector3(0, 0, 200);
+        sm.ChangeState(RemotePcStates.StateFall);
+        Assert.That(b.AnimSpeedReads, Is.GreaterThan(readsBefore));
+        Assert.That(b.AnimSpeed, Is.EqualTo(1f));
+        Assert.That(b.PlayLog[^1], Is.EqualTo((RemotePcStates.ActJumpFall, 1f, false)));
+
+        // When FUN_1416713c0() returns a non-unit rate, StateFall passes that rate to PlayAction (not hardcoded 1f)
+        b.AnimSpeedReadOverride = 1.25f;
+        b.PlayLog.Clear();
+        sm.ChangeState(RemotePcStates.StateFall, force: true);
+        Assert.That(b.PlayLog[^1], Is.EqualTo((RemotePcStates.ActJumpFall, 1.25f, false)));
+
+        // StateSwim::vfunc_9 (@0x1417fac90, stateswim.cpp:257-258) also updates and passes AnimSpeed via vfunc_10
+        b.AnimSpeedReadOverride = null;
+        b.PlayLog.Clear();
+        sm.ChangeState(RemotePcStates.StateSwim);
+        sm.Update(1 / 60f);
+        Assert.That(b.PlayLog[^1].action, Is.EqualTo(RemotePcStates.ActWaterSwim));
+        Assert.That(b.PlayLog[^1].rate, Is.EqualTo(1.5f).Within(1e-4));
     }
 
     [Test] public void GroundMaterialRefreshesEvery200Ms() {

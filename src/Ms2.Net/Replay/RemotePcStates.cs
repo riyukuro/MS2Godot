@@ -57,6 +57,9 @@ public interface IRemotePc
     float MoveSpeedRate { get; }
     /// <summary>PCBase::vfunc_97 (@0x141671720, pcbase.cpp:2504-2519): scale animation rate (m_fScaleA8 / m_fScaleAC, 1 when equal).</summary>
     float ScaleAnimRate { get; }
+    /// <summary>PCBase::m_f938: read by FUN_1416713c0 (@0x1416713c0, pcbase.cpp:2037-2041) and set by FUN_141670d80
+    /// (@0x141670d80, pcbase.cpp:1995-1999); starts at 1f (pcbase.cpp:787) and is updated by State::vfunc_10.</summary>
+    float AnimSpeed { get; set; }
     /// <summary>GameObjectController::GetGravity(true) (units/s^2, negative).</summary>
     float Gravity { get; }
     /// <summary>FUN_14166da60: the jump height (units).</summary>
@@ -339,7 +342,9 @@ public sealed class RemotePcStates
         switch (s)
         {
             case StateIdle:
-                // StateIdle::vfunc_4 (stateidle.cpp:167-191): sub 1 (0xc riding a stunt), 7 on water
+                // StateIdle::vfunc_4 (stateidle.cpp:167-191): State::vfunc_4 -> State::vfunc_10 sets m_f938 = 1f;
+                // sub 1 (0xc riding a stunt), 7 on water
+                pc.AnimSpeed = 1f;
                 subs[s] = 1;
                 if (pc.OnWater) subs[s] = 7;
                 // STILL-OPEN: the water idle sound (StartIdleSound) and FUN_14166f8f0(0, 1)
@@ -350,27 +355,34 @@ public sealed class RemotePcStates
                 walkSpeed2 = pc.ScaleAnimRate;                // vfunc_97 (statewalk.cpp:104)
                 if (pc.OnWater) { ChangeState(StateSwim); return; }
                 WalkSpeedBySub();
-                WalkGait();                                   // State::vfunc_4 -> StateWalk::vfunc_10 sets m_n48
+                WalkGait();                                   // State::vfunc_4 -> StateWalk::vfunc_10 sets m_n48 and m_f938
                 break;
             case StateLand:
-                // StateLand::vfunc_4 (stateland.cpp:74-101): sub 0x86, the ground ray and refresh, "land", then on water
-                // straight to StateIdle
+                // StateLand::vfunc_4 (stateland.cpp:74-101): State::vfunc_4 resets m_f938 = 1f, sub 0x86, the ground
+                // ray and refresh, "land", then on water straight to StateIdle
+                pc.AnimSpeed = 1f;
                 subs[s] = 0x86;
                 pc.LandRefresh();
                 pc.PlayEffects("land");
                 if (pc.OnWater) ChangeState(StateIdle);
                 break;
             case StateFall:
-                // StateFall::vfunc_4 (statefall.cpp:93-130): on water and on the ground it lands at once, else the fall
-                // sequence. STILL-OPEN: the set name prefix of the fall sequence (CEquipment::GetSetName).
+                // StateFall::vfunc_4 (@0x1417c6ef0, statefall.cpp:93-130): State::vfunc_4 (@0x1417b7e80, state.cpp:600-610)
+                // calls State::vfunc_10 (@0x1417b8090, state.cpp:649-652) -> FUN_141670d80(1f); on water and on the ground
+                // it lands at once, else plays the fall sequence at FUN_1416713c0() (statefall.cpp:128).
+                // STILL-OPEN: the set name prefix of the fall sequence (CEquipment::GetSetName).
+                pc.AnimSpeed = 1f;
                 if (pc.OnWater && pc.OnGround) { ChangeState(StateLand); return; }
-                pc.PlayAction(ActJumpFall, 1f, false);
+                pc.PlayAction(ActJumpFall, pc.AnimSpeed, false);
                 break;
             case StateJump:
+                pc.AnimSpeed = 1f;                            // State::vfunc_4 -> State::vfunc_10
                 JumpEnter();
                 break;
             case StateSwim:
-                // StateSwim::vfunc_4 (stateswim.cpp:89-129): with no ridee (FUN_1417fb370 is 0) sub 0x84 at the swim speed
+                // StateSwim::vfunc_4 (stateswim.cpp:89-129): State::vfunc_4 -> StateSwim::vfunc_10 sets m_f938;
+                // with no ridee (FUN_1417fb370 is 0) sub 0x84 at the swim speed
+                pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out _);
                 subs[s] = 0x84;
                 Speed = pc.SwimSpeed;
                 break;
@@ -461,9 +473,14 @@ public sealed class RemotePcStates
                 break;
             case StateJump: JumpFrame(); break;
             case StateSwim:
-                // StateSwim::vfunc_9 (stateswim.cpp:228-263), no ridee: the swim sequence. STILL-OPEN: the costume's swim
-                // name (PC::GetSwimAnimName) and the vfunc_10 rate.
-                if (!pc.IsAction(ActWaterSwim)) pc.PlayAction(ActWaterSwim, 1f, false);
+                // StateSwim::vfunc_9 (@0x1417fac90, stateswim.cpp:228-263), no ridee: StateSwim::vfunc_10
+                // (@0x1417fafb0, stateswim.cpp:266-270) sets m_f938 and PlayAnimation passes FUN_1416713c0().
+                // STILL-OPEN: the costume's swim name (PC::GetSwimAnimName).
+                if (!pc.IsAction(ActWaterSwim))
+                {
+                    pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.SwimSpeed, pc.WalkSpeed, out _);
+                    pc.PlayAction(ActWaterSwim, pc.AnimSpeed, false);
+                }
                 break;
         }
     }
@@ -482,15 +499,15 @@ public sealed class RemotePcStates
             case 1:
             {
                 int key = pc.BattleStance ? ActBattleIdle : ActIdle;     // PlayStandAnimation (stateidle.cpp:518-531)
-                if (!pc.IsAction(key)) pc.PlayAction(key, 1f, false);
+                if (!pc.IsAction(key)) pc.PlayAction(key, pc.AnimSpeed, false);
                 break;
             }
             case 7:
                 // PlayBoreWaitAnimation (stateidle.cpp:573-597). STILL-OPEN: PC::GetSwimAnimName's costume name.
-                if (!pc.IsAction(ActWaterIdle)) pc.PlayAction(ActWaterIdle, 1f, false);
+                if (!pc.IsAction(ActWaterIdle)) pc.PlayAction(ActWaterIdle, pc.AnimSpeed, false);
                 break;
             case 6:
-                if (!pc.IsAction(ActTalkIdle)) pc.PlayAction(ActTalkIdle, 1f, false);   // FUN_1417ce9f0 (stateidle.cpp:555-561)
+                if (!pc.IsAction(ActTalkIdle)) pc.PlayAction(ActTalkIdle, pc.AnimSpeed, false);   // FUN_1417ce9f0 (stateidle.cpp:555-561)
                 break;
         }
     }
@@ -525,7 +542,7 @@ public sealed class RemotePcStates
 
     void WalkGait()
     {
-        pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
+        pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
         walkRun = run ? 1 : 0;
     }
 
@@ -545,11 +562,11 @@ public sealed class RemotePcStates
         bool changed = !(pc.MoveSpeedRate == walkSpeed1 && pc.ScaleAnimRate == walkSpeed2 && walkChanged == 0);
         if (!pc.IsAction(key) || changed)
         {
-            float rate = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
+            pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
             walkRun = run ? 1 : 0;
             walkSpeed1 = pc.MoveSpeedRate;
             walkSpeed2 = pc.ScaleAnimRate;
-            pc.PlayAction(key, rate, changed);
+            pc.PlayAction(key, pc.AnimSpeed, changed);
         }
     }
 
@@ -621,7 +638,7 @@ public sealed class RemotePcStates
     {
         int limit = Ms(MathF.Sqrt(12f / MathF.Abs(pc.Gravity / 100f))) + Ms(pc.JumpApexTime);
         if (pc.OnGround) { ChangeState(StateLand); return; }
-        if (limit <= pc.FallTimeMs) { pc.PlayAction(ActJumpFall, 1f, false); return; }
+        if (limit <= pc.FallTimeMs) { pc.PlayAction(ActJumpFall, pc.AnimSpeed, false); return; }
         int sub = subs[StateJump];
         if (sub is not (0x21 or 0x22 or 0x23 or 0x24)) return;
         bool special = sub is 0x22 or 0x24;

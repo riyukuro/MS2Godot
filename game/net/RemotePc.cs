@@ -319,6 +319,7 @@ public sealed class RemotePc : IRemotePc
     // (PCBase::vfunc_97, pcbase.cpp:2504-2519, m_fScaleA8 / m_fScaleAC) are not replicated yet, taken as 1f.
     public float MoveSpeedRate => 1f;
     public float ScaleAnimRate => 1f;
+    public float AnimSpeed { get; set; } = 1f;
     public float Gravity => gravity;
     public float JumpHeight => MoveConfig.JumpParam;
     public float AirSpeedScale => MoveConfig.FallMoveSpeed;
