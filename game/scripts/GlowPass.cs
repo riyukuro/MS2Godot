@@ -42,6 +42,15 @@ public partial class GlowPass : SubViewport
         cam.Projection = src.Projection; cam.Size = src.Size; cam.FrustumOffset = src.FrustumOffset;   // the main camera's raster origin, in near-plane units
     }
 
+    /// <summary>PostProcessingService::SetClickActive(8, active) @0x1416aa450 (postprocessingservice.cpp:2163; from
+    /// SetSoftParticlesOption, applyeffect.cpp:490): the glow target is drawn only while the HDR bloom step is active. Off, the
+    /// viewport is not updated and _Process does not run, so the switched-off click costs nothing per frame.</summary>
+    public void SetActive(bool active)
+    {
+        RenderTargetUpdateMode = active ? UpdateMode.Always : UpdateMode.Disabled;
+        SetProcess(active);
+    }
+
     /// <summary>The target as a rendering device texture (render thread).</summary>
     public Rid Texture() => RenderingServer.TextureGetRdTexture(GetTexture().GetRid());
 }

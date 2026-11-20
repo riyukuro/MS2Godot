@@ -35,7 +35,16 @@ public partial class Field : Node3D
     protected Player player;
     protected Camera3D camera;
     FieldBackdrop backdrop;      // the sky picture, moved each frame as the client's background movie (FieldBackdrop)
+    /// <summary>The field in the tree (the one the option dialog's HDR switch reaches, as the client's SetHdr reaches the
+    /// running post-processing service and light service).</summary>
+    public static Field Active { get; private set; }
     FieldData fieldData;
+    Ms2Bloom bloom;
+    GlowPass glow;
+    Godot.Environment environment;
+    DirectionalLight3D sunLight;
+    float baseAmbient, baseSunDim;
+    Color ambientColor, sunColor, sunAmbient, sunSpecular;
     /// <summary>The prop fade between the player and the camera (BGTransparencyMgr).</summary>
     public World.FieldFade Fade { get; private set; }
     /// <summary>The field's trigger objects (CTriggerService), which the live session's Trigger packets drive.</summary>
@@ -111,6 +120,7 @@ public partial class Field : Node3D
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
         fieldData = fd;
         FieldShadows.Begin(packs, fd?.ShadowOptionHighLevel ?? 0);
+        bool hdrOn = Ms2.Formats.Options.GraphicGates.IsHdrEnabled(fd, GameOptions.Current.GraphicOption);
         var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0, CastsShadows = FieldShadows.MapObjects, ShadowLevel = FieldShadows.Level };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
         fb.DrawsInstance = contents.Props.TakesModel;
@@ -154,9 +164,9 @@ public partial class Field : Node3D
                  $"colliders {fb.Boxes} boxes / {fb.Meshes} PhysX-mesh entities ({fb.SkippedNifMeshes} GeneratePhysX entities without their NIF meshes) / {fb.Whiteboxes} whiteboxes, {fb.Missing} unresolved models; " +
                  $"entity set {tMap} ms, build {tBuild - tMap} ms");
 
-        BuildEnvironment(map, fieldName);
+        BuildEnvironment(map, fieldName, hdrOn);
         await Budget();
-        GD.Print($"MS2Godot lights: {FieldLights.Add(fb.Lights)}, {fb.LightMaskedDraws} draws masked");
+        GD.Print($"MS2Godot lights: {FieldLights.Add(fb.Lights, Ms2.Formats.Options.GraphicGates.LightDimmerScale(hdrOn))}, {fb.LightMaskedDraws} draws masked");
         await Budget();
         Movement.MoveProof.Effects = (packs, builder);   // the scripted run's fx step
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
@@ -187,9 +197,12 @@ public partial class Field : Node3D
         RasterOrigin();
         rasterSource = GetViewport();
         rasterSource.SizeChanged += RasterOrigin;
-        var bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale, GlowScale = hdr.GlowScale };
+        bloom = new Ms2Bloom { Threshold = hdr.Threshold, Offset = hdr.Offset, BloomScale = hdr.BloomScale, GlowScale = hdr.GlowScale };
         camera.Compositor = new Compositor { CompositorEffects = new Godot.Collections.Array<CompositorEffect> { bloom } };
-        if (OS.GetEnvironment("MS2_NOGLOW") != "1") bloom.Glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
+        if (OS.GetEnvironment("MS2_NOGLOW") != "1") glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
+        bloom.Glow = glow;   // set once: the render callback reads it, and with HDR off ConvertOnly returns before the read
+        Active = this;
+        SwitchPostProcess(hdrOn);
         AddChild(camera);
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         OnFieldBuilt(builder, map, fieldName);
@@ -302,6 +315,7 @@ public partial class Field : Node3D
     /// on the next frame).</summary>
     public override void _ExitTree()
     {
+        if (Active == this) Active = null;
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();
         models.Dispose();   // the models stay cached for the next field until the sweep finds them unused (NifCache)
@@ -346,7 +360,44 @@ public partial class Field : Node3D
 
     int hdrFieldId(string fieldName) { try { return FieldData.FindByXBlock(packs, fieldName)?.Id ?? 0; } catch { return 0; } }
 
-    void BuildEnvironment(FieldMap map, string fieldName)
+    /// <summary>The HDR switch of SetSoftParticlesOption @0x1409a4c60 (applyeffect.cpp:473-494), run after the field load by
+    /// ApplyEffect::Initialize (applyeffect.cpp:727-735, from worldservice_1.cpp:6696): BloomRenderStep (step 3) on or off, and
+    /// GlowRenderClick (click 8) on only with step 3 active. Off, the frame is only converted out (Ms2Bloom.ConvertOnly) and
+    /// the glow target is not drawn. STILL-OPEN: the soft-particle shader constants it also sets (soft depth is not drawn).</summary>
+    void SwitchPostProcess(bool hdrOn)
+    {
+        if (bloom != null) bloom.ConvertOnly = !hdrOn;
+        glow?.SetActive(hdrOn);
+    }
+
+    /// <summary>SetHdr @0x14125e300 (gameoptionstruct.cpp:2081-2090) on the running field: the post-processing switch
+    /// (SwitchPostProcess), then MS2LightService::ScaleLightIntensity @0x1414c0820 (ms2lightservice.cpp:395-403), every
+    /// light's stored Dimmer times 1.0 (HDR on) or 1.1. <paramref name="g"/> is the option being stored (the dialog's state).
+    /// SetHdr tests the field's raw m_bHdr where this calls IsHdrEnabled; the two agree while FieldHdr.Enabled is always true
+    /// (fielddatacli.cpp:75 and :250).</summary>
+    public void ApplyHdr(Ms2.Formats.Options.GameOption.Graphic g)
+    {
+        bool hdrOn = Ms2.Formats.Options.GraphicGates.IsHdrEnabled(fieldData, g);
+        SwitchPostProcess(hdrOn);
+        float k = Ms2.Formats.Options.GraphicGates.LightDimmerScale(hdrOn);
+        SetSunAndAmbient(k);
+        FieldLights.Rescale(k);
+    }
+
+    /// <summary>The ambient and directional lights' Dimmer, times the HDR light scale <paramref name="k"/>.</summary>
+    void SetSunAndAmbient(float k)
+    {
+        float ambient = baseAmbient * k, sunDim = baseSunDim * k;
+        if (environment != null) environment.AmbientLightEnergy = ambient;
+        if (sunLight != null) sunLight.LightEnergy = sunDim;
+        Vector3 Rgb(Color c, float m) => new(c.R * m, c.G * m, c.B * m);
+        RenderingServer.GlobalShaderParameterSet("ms2_ambient", Rgb(ambientColor, ambient));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_color", Rgb(sunColor, sunDim));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_ambient", Rgb(sunAmbient, sunDim));
+        RenderingServer.GlobalShaderParameterSet("ms2_sun_specular", Rgb(sunSpecular, sunDim));
+    }
+
+    void BuildEnvironment(FieldMap map, string fieldName, bool hdrOn)
     {
         Color fog = new(199 / 255f, 237 / 255f, 1f);
         float fogNear = 5276, fogFar = 20000;
@@ -382,7 +433,7 @@ public partial class Field : Node3D
         }
 
         float ambient = 0.8f, sunDim = 0.8f;
-        Color ambientColor = Colors.White, sunColor = Colors.White, sunAmbient = Colors.Black, sunSpecular = Colors.White;
+        ambientColor = Colors.White; sunColor = Colors.White; sunAmbient = Colors.Black; sunSpecular = Colors.White;
         var sunDir = new Vec3(0, 0, -1);
         bool sunCasts = false, sunBackfaces = false;
         foreach (var e in map.Entities)
@@ -417,7 +468,14 @@ public partial class Field : Node3D
         // The colour buffer holds gamma values (field_lit.gdshader) and Godot turns an environment colour from sRGB to
         // linear, so the background and fog colours are passed through LinearToSrgb: Godot's value is the client's
         // gamma value, and the depth fog mixes in gamma space as the client's does.
-        var env = new Godot.Environment
+        // Each light's Dimmer as it enters the world: times 1.1 unless HDR is on (HandleEntityEnterWorld @0x1414c08e0,
+        // ms2lightservice.cpp:407-433; GraphicGates.LightDimmerScale). STILL-OPEN: the client tests the bloom step's active
+        // flag as the light enters, and on the first field the lights may enter before ApplyEffect::Initialize turns that
+        // step on; here the scale follows the switch as Initialize leaves it.
+        baseAmbient = ambient; baseSunDim = sunDim;
+        float k = Ms2.Formats.Options.GraphicGates.LightDimmerScale(hdrOn);
+        ambient *= k; sunDim *= k;
+        var env = environment = new Godot.Environment
         {
             BackgroundMode = Godot.Environment.BGMode.Color,
             BackgroundColor = fog.LinearToSrgb(),
@@ -461,15 +519,11 @@ public partial class Field : Node3D
         // and halves the high-frequency residual (5.0 to 2.5). STILL-OPEN: derive the blur from the map's texel size.
         // The filter quality is global (RenderingServer), so it is set once for every scene in project.godot
         // (rendering/lights_and_shadows/directional_shadow/soft_shadow_filter_quality = 4, Soft High), not here.
-        var sun = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal, DirectionalShadowMaxDistance = 4000, ShadowBlur = 2f / 3f, ShadowReverseCullFace = sunBackfaces };
+        var sun = sunLight = new DirectionalLight3D { LightColor = sunColor, LightEnergy = sunDim, ShadowEnabled = sunCasts && FieldShadows.MapObjects, DirectionalShadowMode = DirectionalLight3D.ShadowMode.Orthogonal, DirectionalShadowMaxDistance = 4000, ShadowBlur = 2f / 3f, ShadowReverseCullFace = sunBackfaces };
         AddChild(sun);
         var d = FieldBuilder.ToGodotPoint(sunDir).Normalized();
         sun.LookAtFromPosition(Vector3.Zero, d, Mathf.Abs(d.Y) > 0.99f ? Vector3.Forward : Vector3.Up);
-        Vector3 Rgb(Color c, float k) => new(c.R * k, c.G * k, c.B * k);
-        RenderingServer.GlobalShaderParameterSet("ms2_ambient", Rgb(ambientColor, ambient));
-        RenderingServer.GlobalShaderParameterSet("ms2_sun_color", Rgb(sunColor, sunDim));
-        RenderingServer.GlobalShaderParameterSet("ms2_sun_ambient", Rgb(sunAmbient, sunDim));
-        RenderingServer.GlobalShaderParameterSet("ms2_sun_specular", Rgb(sunSpecular, sunDim));
+        SetSunAndAmbient(k);
         RenderingServer.GlobalShaderParameterSet("ms2_sun_dir", d);
     }
 

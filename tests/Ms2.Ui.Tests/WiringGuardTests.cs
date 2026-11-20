@@ -90,4 +90,26 @@ public class WiringGuardTests
         var s = Source("game/scripts/world/FieldTriggers.cs");
         Assert.That(s, Does.Contain("else meshes.Remove(id);"), "a later entity with the same id must drop an earlier entity's draws");
     }
+
+    /// <summary>SetHdr @0x14125e300 (gameoptionstruct.cpp:2081-2090) reaches the running field: the option dialog's switch
+    /// calls Field.ApplyHdr, which switches the bloom step and the glow click (SetSoftParticlesOption, applyeffect.cpp:488-490)
+    /// and rescales the lights (ScaleLightIntensity, ms2lightservice.cpp:395-403).</summary>
+    [Test]
+    public void OptionHdrSwitchReachesTheRunningField()
+    {
+        var h = Source("game/ui/GameOptionHost.cs");
+        Assert.That(h, Does.Contain("Field.Active?.ApplyHdr(state);"), "SetHdr must apply the switch to the running field");
+        var f = Source("game/scripts/Field.cs");
+        Assert.That(f, Does.Contain("bloom.ConvertOnly = !hdrOn;"), "HDR off: the bloom step only converts the frame out");
+        Assert.That(f, Does.Contain("glow?.SetActive(hdrOn);"), "HDR off: the glow click stops drawing and processing");
+        Assert.That(f, Does.Contain("FieldLights.Rescale(k);"), "the switch rescales the point and spot lights");
+        Assert.That(f, Does.Contain("SetSunAndAmbient(k);"), "the switch rescales the ambient and sun dimmers");
+        var g = Source("game/scripts/GlowPass.cs");
+        Assert.That(g, Does.Contain("SetProcess(active);"), "a switched-off glow pass must not run its _Process");
+        var l = Source("game/scripts/FieldLights.cs");
+        Assert.That(l, Does.Contain("PutLight(i, current.Lights[i]);"), "Rescale re-puts the field lights' columns");
+        Assert.That(l, Does.Contain("Refresh();"), "Rescale re-puts the effect lights' columns too (they are scaled as well)");
+        Assert.That(l, Does.Contain("PutColourRows(data, w, i, l, scale);"), "every put light carries the HDR scale");
+        Assert.That(f, Does.Not.Contain("bloom.Glow = hdrOn"), "Glow stays set: the render thread reads it");
+    }
 }

@@ -145,6 +145,24 @@ public sealed class FieldLightSet
         EffectVersion++;
     }
 
+    /// <summary>A light's colour rows in the shaders' light texture (ms2_lights.gdshaderinc: rows 1-3 of column
+    /// <paramref name="slot"/>, <paramref name="width"/> columns, RGBA floats): diffuse, ambient and specular, each times the
+    /// dimmer times <paramref name="dimmerScale"/> (the HDR light scale, ScaleLightIntensity, ms2lightservice.cpp:395-403), with
+    /// the constant, linear and quadratic attenuation in alpha.</summary>
+    public static void PutColourRows(float[] data, int width, int slot, FieldLight l, float dimmerScale)
+    {
+        float dim = l.Dimmer * dimmerScale;
+        Row(data, width, slot, 1, l.Diffuse, dim, l.Constant);
+        Row(data, width, slot, 2, l.Ambient, dim, l.Linear);
+        Row(data, width, slot, 3, l.Specular, dim, l.Quadratic);
+    }
+
+    static void Row(float[] data, int width, int slot, int row, float[] c, float dim, float a)
+    {
+        int o = (row * width + slot) * 4;
+        data[o] = c[0] * dim; data[o + 1] = c[1] * dim; data[o + 2] = c[2] * dim; data[o + 3] = a;
+    }
+
     /// <summary>The point and spot light entities of <paramref name="entities"/>, in their order (the light list order).</summary>
     public static FieldLightSet Read(IEnumerable<FieldEntity> entities)
     {

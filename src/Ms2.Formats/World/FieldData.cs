@@ -25,6 +25,9 @@ public sealed class FieldHdr
     public float Offset = 30f;                  // bright pass: x / (x + offset)
     public float BloomScale = 2f;               // final: scene + bloomscale * bloom
     public float GlowScale = 0.1f;              // glow-map share of the bright pass
+    /// <summary>CFieldDataCli m_bHdr (+0x220): true in the ctor (fielddatacli.cpp:75) and set true again by &lt;hdr&gt;
+    /// (fielddatacli.cpp:250-252), so no field turns it off; GraphicGates.IsHdrEnabled reads it.</summary>
+    public bool Enabled = true;
 }
 
 public sealed class FieldData
@@ -41,6 +44,10 @@ public sealed class FieldData
     /// <summary>&lt;shadow optionHighLevel&gt;: the shadow level the field forces at least (CFieldDataCli m_nShadowOptionHighLevel
     /// +0x258, default 0, fielddatacli.cpp:280); WorldService::FUN_141bbc4e0 hands it to FUN_141610450 (worldservice_1.cpp:626-633).</summary>
     public int ShadowOptionHighLevel;
+    /// <summary>CFieldDataCli +0x1fc, the field's outer-glow switch: false in the ctor (fielddatacli.cpp:72) and not read from
+    /// the xml; only the dev visual-effect dialog sets it (UIVisualEffectDialog::SetGlowEnabled @0x14135d4f0,
+    /// uiupperhuddialog.cpp:1819-1826), so it stays false in every field. GraphicGates.IsOuterGlowEnabled reads it.</summary>
+    public bool OuterGlow;
     /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
     public bool CheckClimb = true;
     /// <summary>&lt;property checkFly&gt; (CFieldData default 0), &lt;ui useEPSkill usePet&gt; (CFieldDataCli, default 1; fielddatacli.cpp:228).</summary>
@@ -203,6 +210,7 @@ public sealed class FieldData
             Read(hdr, "offset", ref o.Hdr.Offset);
             Read(hdr, "bloomscale", ref o.Hdr.BloomScale);
             Read(hdr, "glowscale", ref o.Hdr.GlowScale);
+            o.Hdr.Enabled = true;
         }
         return o;
     }

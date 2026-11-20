@@ -172,8 +172,13 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     /// <summary>SetQuality(state, quality, 0) @0x14125e1f0: the quality (the mirror flag m_b1f is not kept here).</summary>
     public void SetQuality(GameOption.Graphic state, int quality) => state.Quality = quality;
 
-    /// <summary>SetHdr @0x14125e300: the switch (the soft particles and the light scale are the renderer's, not ported).</summary>
-    public void SetHdr(GameOption.Graphic state, bool on) => state.DisplayHdr = on;
+    /// <summary>SetHdr @0x14125e300 (gameoptionstruct.cpp:2081-2090): the switch, then the running field's post-processing
+    /// switch and light scale (Field.ApplyHdr).</summary>
+    public void SetHdr(GameOption.Graphic state, bool on)
+    {
+        state.DisplayHdr = on;
+        Field.Active?.ApplyHdr(state);
+    }
 
     /// <summary>SetShimmer @0x14125e3b0: the switch (post-process click 6 is not ported).</summary>
     public void SetShimmer(GameOption.Graphic state, bool on) => state.DisplayShimmer = on;

@@ -25,8 +25,9 @@ public partial class Ms2Bloom : CompositorEffect
 {
     public GlowPass Glow;
     public float Threshold = 0.27f, Offset = 30f, BloomScale = 2f, GlowScale = 0.1f;
-    /// <summary>Only the gamma -> linear conversion, no bloom.</summary>
-    public bool ConvertOnly;
+    /// <summary>Only the gamma -> linear conversion, no bloom (BloomRenderStep, step 3, inactive: applyeffect.cpp:488). Read on
+    /// the render thread; the option dialog's HDR switch (Field.ApplyHdr) changes it while the field runs.</summary>
+    public volatile bool ConvertOnly;
 
     /// <summary>A compositor for a 3D view that draws the gamma-valued shaders without the bloom.</summary>
     public static Compositor GammaOut() => new() { CompositorEffects = new Array<CompositorEffect> { new Ms2Bloom { ConvertOnly = true } } };
@@ -243,7 +244,8 @@ void main() {
         for (uint view = 0; view < buffers.GetViewCount(); view++)
         {
             var color = buffers.GetColorLayer(view);
-            var glowTex = Glow != null && IsInstanceValid(Glow) ? Glow.Texture() : default;
+            var glowPass = Glow;   // read once: the main thread owns the field
+            var glowTex = glowPass != null && IsInstanceValid(glowPass) ? glowPass.Texture() : default;
             Run(0, q, Vector2.Zero, Image(0, color), Image(1, bright), Sampled(2, glowTex.IsValid ? glowTex : black));
             Run(1, q, new Vector2(texel, 0), Sampled(0, bright, true), Image(1, blurH));
             Run(1, q, new Vector2(0, texel), Sampled(0, blurH, true), Image(1, blurV));

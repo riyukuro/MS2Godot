@@ -108,4 +108,22 @@ public class FieldEffectLightTests
         var plain = new FieldEntity { Raw = new XEntity { Id = "p", ModelName = "m" }, Flat = new FlatModel { Name = "m" } };
         Assert.That(set.Unlit(plain, new Vec3(), 10) & (1u << fx.Index), Is.Not.EqualTo(0u));
     }
+    [Test]
+    public void AnEffectLightStartedWithHdrOffHasTheDimmerScaleAndATogglesRescalesIt()
+    {
+        // lighteffectparam.cpp:363-377: the effect light is an EffectPointLight entity, so HandleEntityEnterWorld gives it
+        // Dimmer x1.1 with HDR off and ScaleLightIntensity (ms2lightservice.cpp:395-403) rescales it with the others
+        var p = new EffectLightParam { Dimmer = 3, Range = 900, Constant = 1, Diffuse = new[] { 0.5f, 0.25f, 1f }, Specular = new[] { 1f, 1f, 1f } };
+        var set = Field(2);
+        var l = set.StartEffect(p, new Vec3());
+        var data = new float[24 * 6 * 4];
+        int o = (1 * 24 + l.Index) * 4;
+        FieldLightSet.PutColourRows(data, 24, l.Index, l, Options.GraphicGates.LightDimmerScale(false));
+        Assert.That(data[o], Is.EqualTo(0.5f * 3 * 1.1f).Within(1e-6f), "diffuse red, HDR off");
+        Assert.That(data[o + 2], Is.EqualTo(1f * 3 * 1.1f).Within(1e-6f));
+        Assert.That(data[o + 3], Is.EqualTo(1f), "the constant attenuation is not scaled");
+        FieldLightSet.PutColourRows(data, 24, l.Index, l, Options.GraphicGates.LightDimmerScale(true));
+        Assert.That(data[o], Is.EqualTo(0.5f * 3).Within(1e-6f), "diffuse red after the switch to HDR on");
+        Assert.That(l.Dimmer, Is.EqualTo(3f), "the stored Dimmer is kept; only the upload is scaled");
+    }
 }

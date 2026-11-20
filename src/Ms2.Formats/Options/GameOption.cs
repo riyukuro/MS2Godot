@@ -445,6 +445,9 @@ public sealed class GameOption
         public bool ShowFrameRate, AdvancedEffect;
         public int Width = 0x400, Height = 0x300, ShadowLevel = 2, MultisamplingIndex;
         public bool DisplayHdr, DisplayShimmer, Vsync = true, ShowEnchantEffect = true;
+        /// <summary>The outer-glow option (m_b1e): true on reset (gameoptionstruct.cpp:1928), never read from or written to the
+        /// file; only the dev visual-effect dialog changes it. GraphicGates.IsOuterGlowEnabled reads it.</summary>
+        public bool OuterGlow = true;
 
         public void Load(XDocument d)
         {
