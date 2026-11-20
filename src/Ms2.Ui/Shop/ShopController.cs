@@ -408,8 +408,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         }
         if (products[2].Count >= newTotal)
         {
-            newComplete = true;
-            EnableShop(true);
+            newComplete = true;                     // ReadNewProducts (uishopdialog.cpp:1683-1704) does not re-enable the shop
             UpdateProductList(2);
         }
     }

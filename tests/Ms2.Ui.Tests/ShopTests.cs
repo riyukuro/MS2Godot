@@ -653,7 +653,7 @@ public class ShopTests
             ShopPacket.WriteNewStart(new ShopNewStart(11000004, 106, 0, 1)))));
         c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(
             ShopPacket.WriteNewProducts(new[] { new ShopNewProduct { ItemId = 11300001, Rarity = 2, Categories = "CP", ProductType = 4, ProductKind = 1 } }))));
-        Assert.That(c.ShopEnabled, Is.True);
+        Assert.That(c.ShopEnabled, Is.False, "ReadNewProducts does not call EnableShop");
         Assert.That(c.Products(2), Has.Count.EqualTo(1));
         Assert.That(c.Products(2)[0].ProductKind, Is.EqualTo(2));
         var dp = h.Get(h.Get(c.ShopView, "m_list"), "dataProvider");
