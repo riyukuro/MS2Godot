@@ -329,17 +329,24 @@ public partial class As3View : Node2D
     }
 
     /// <summary>
-    /// Syncs one display object's holder and content (when it or an ancestor's context is marked) and walks into its
-    /// marked children; the object's marks are cleared.
+    /// One StringName per distinct holder name: assigning a string to Name makes a tracked wrapper each time, and a view makes
+    /// holders all through its life. AS3 sets instance names at runtime, so the table stops at <see cref="HolderNameCap"/>
+    /// entries and a later new name takes the plain wrapper.
     /// </summary>
-    /// <summary>One StringName per distinct holder name: assigning a string to Name makes a tracked wrapper each time, and a view makes holders all through its life.</summary>
+    internal const int HolderNameCap = 4096;
     static readonly Dictionary<string, StringName> holderNames = new();
     static StringName HolderName(string name)
     {
-        if (!holderNames.TryGetValue(name, out var sn)) holderNames[name] = sn = new StringName(name);
+        if (holderNames.TryGetValue(name, out var sn)) return sn;
+        sn = new StringName(name);
+        if (holderNames.Count < HolderNameCap) holderNames[name] = sn;
         return sn;
     }
 
+    /// <summary>
+    /// Syncs one display object's holder and content (when it or an ancestor's context is marked) and walks into its
+    /// marked children; the object's marks are cleared.
+    /// </summary>
     Entry SyncObject(AsDisplayObject o, NineCtx nine, Material blend, bool clipMask, bool deep)
     {
         bool fresh = o.Tag is not Entry e;

@@ -33,6 +33,16 @@ public class WiringGuardTests
     }
 
     [Test]
+    public void As3ViewHolderNameTableStopsGrowingAtItsCap()
+    {
+        var s = Source("game/ui/As3View.cs");
+        Assert.That(s, Does.Contain("internal const int HolderNameCap = 4096;"));
+        Assert.That(s, Does.Contain("if (holderNames.Count < HolderNameCap) holderNames[name] = sn;"),
+            "a name past the cap is not stored (AS3 sets instance names at runtime)");
+        Assert.That(s, Does.Not.Match(@"holderNames\[name\] = sn = "), "no unconditional store");
+    }
+
+    [Test]
     public void DummyAnchorAsksTheMemoBeforeTheMatricesAndStoresTheAnswer()
     {
         var s = Source("game/scripts/world/DummyAnchor.cs");
