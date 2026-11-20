@@ -86,6 +86,9 @@ public sealed partial class RemoteLayer : Node3D
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
 
+    /// <summary>An effect xml played at a point (CombatLayer.PlayEffect), the own cast's motion effect.</summary>
+    public void PlayEffect(string effect, Vector3 at, float yawRadians) => combat.PlayEffect(effect, at, yawRadians);
+
     (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run) Body(byte gender)
     {
         if (bodies.TryGetValue(gender, out var b)) return b;

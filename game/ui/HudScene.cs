@@ -1285,7 +1285,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>Unk_MsgKeys::FUN_14116d7a0, a key held now, for the DIK codes the chat asks about (Tab).</summary>
     static bool DikHeld(int dik) => dik == MessengerController.DikTab && Input.IsPhysicalKeyPressed(Key.Tab);
 
-    /// <summary>The scene's keys: the chat windows first, then the dialogs.</summary>
+    /// <summary>The scene's keys: the chat windows first, then the dialogs, then the own casts.</summary>
     public override void _Input(InputEvent e)
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
@@ -1297,7 +1297,8 @@ public partial class HudScene : Node, IUiStageHost
             return;
         }
         if (ChatKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
-        if (DialogKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();
+        if (DialogKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
+        if (CastKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();   // the attack key (HudScene.Cast)
     }
 
     /// <summary>
