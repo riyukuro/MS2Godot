@@ -76,7 +76,7 @@ public static class UiCode
         // its precompiled image when the setup step made it (Precompiled.Compile): the same assembly, without the JIT
         var image = Precompiled.ImageOf(dll);
         int n = GeneratedCode.LoadAssembly(image ?? dll);
-        GD.Print($"UI code: {n} blocks from {image ?? dll}; libraries: {Precompiled.Summary}");
+        GD.Print($"UI code: {n} blocks from {image ?? dll}; libraries: {Precompiled.Describe(OS.IsStdOutVerbose() || Ms2Godot.Ui.PerfLog.On)}");
         return loaded = true;
     }
 

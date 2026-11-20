@@ -262,7 +262,7 @@ public class ImageCacheTests
     [TestCase("isolated", false)]
     [TestCase("default", false)]
     [TestCase("isolated", true)]
-    public void GameModuleInitializerRunsWithoutGodotCallbacks(string mode, bool withPerf)
+    public void GameModuleInitializerRunsWithoutGodotCallbacks(string mode, bool countImages)
     {
         var root = AppContext.BaseDirectory;
         while (root != null && !File.Exists(Path.Combine(root, "MS2Godot.sln"))) root = Path.GetDirectoryName(root);
@@ -288,7 +288,7 @@ public class ImageCacheTests
             if (File.GetLastWriteTimeUtc(f) > dllTime) { newer = rel; break; }
         }
         Assume.That(newer, Is.Null, $"probed {dll} is older than game/{newer}; rebuild game/MS2Godot.csproj first");
-        TestContext.WriteLine($"probing {dll} (mode={mode}, perf={withPerf})");
+        TestContext.WriteLine($"probing {dll} (mode={mode}, countImages={countImages})");
         var runtimeConfig = Path.ChangeExtension(dll, ".runtimeconfig.json");
         Assume.That(File.Exists(runtimeConfig), Is.True, $"missing runtimeconfig next to {dll}");
         var host = Path.Combine(AppContext.BaseDirectory, "testhost.dll");
@@ -300,18 +300,17 @@ public class ImageCacheTests
         psi.Environment["DOTNET_STARTUP_HOOKS"] = typeof(ImageCacheTests).Assembly.Location;
         psi.Environment["MS2_TEST_MODULE_INIT"] = dll;
         psi.Environment["MS2_TEST_MODULE_INIT_MODE"] = mode;
-        if (withPerf) psi.Environment["MS2_PERF"] = "1";
-        else psi.Environment.Remove("MS2_PERF");
+        psi.Environment["MS2_TEST_MODULE_INIT_COUNT"] = countImages ? "1" : "0";
         using var p = System.Diagnostics.Process.Start(psi)!;
         var outTask = p.StandardOutput.ReadToEndAsync();
         var errTask = p.StandardError.ReadToEndAsync();
         if (!p.WaitForExit(30_000))
         {
             try { p.Kill(true); p.WaitForExit(5_000); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
-            Assert.Fail($"module initializer probe timed out (mode={mode}, perf={withPerf}, dll={dll})");
+            Assert.Fail($"module initializer probe timed out (mode={mode}, countImages={countImages}, dll={dll})");
         }
         p.WaitForExit();
-        Assert.That(p.ExitCode, Is.EqualTo(0), $"mode={mode} perf={withPerf} dll={dll} exit={p.ExitCode}\nstdout: {outTask.Result}\nstderr: {errTask.Result}");
+        Assert.That(p.ExitCode, Is.EqualTo(0), $"mode={mode} countImages={countImages} dll={dll} exit={p.ExitCode}\nstdout: {outTask.Result}\nstderr: {errTask.Result}");
         Assert.That(outTask.Result, Does.Contain("MODULE_INIT_OK"));
     }
 

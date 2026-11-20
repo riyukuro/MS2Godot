@@ -48,9 +48,10 @@ internal static class StartupHook
         var expectedDir = Path.GetDirectoryName(Path.GetFullPath(path));
         if (!string.Equals(asmDir, expectedDir, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"AssemblyDir '{asmDir}' != '{expectedDir}'");
-        var summary = (string)precompiled.GetProperty("Summary")!.GetValue(null) ?? "";
-        var expectCount = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MS2_PERF"));
-        if (expectCount)
+        var countImages = Environment.GetEnvironmentVariable("MS2_TEST_MODULE_INIT_COUNT") == "1";
+        var describe = precompiled.GetMethod("Describe", new[] { typeof(bool) }) ?? throw new InvalidOperationException("missing Describe(bool)");
+        var summary = (string)describe.Invoke(null, new object[] { countImages }) ?? "";
+        if (countImages)
         {
             var mid = $" precompiled in place from {expectedDir} in ";
             int i = summary.IndexOf(mid, StringComparison.Ordinal);

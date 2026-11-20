@@ -25,23 +25,22 @@ public static class Precompiled
     static string exportSummaryDir;
 
     /// <summary>What <see cref="Preload"/> did, for the log (it runs before the log is up).</summary>
-    public static string Summary => summary ??= ExportSummary(exportSummaryDir);
+    public static string Summary => Describe(countImages: false);
 
-    static bool WantExportCount()
+    /// <summary>
+    /// What <see cref="Preload"/> did, for the log. In an exported build, <paramref name="countImages"/> scans the
+    /// export folder's DLL headers to count ReadyToRun images (16-80 ms on a self-contained runtime); normal starts
+    /// pass false, and --verbose (OS.IsStdOutVerbose()) / MS2_PERF starts pass true.
+    /// </summary>
+    public static string Describe(bool countImages)
     {
-        if (!string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF"))) return true;
-        // OS.IsStdOutVerbose() calls into Godot's native callbacks; skip it when no Godot host initialized them (probes/tests).
-        var nf = typeof(OS).Assembly.GetType("Godot.NativeInterop.NativeFuncs");
-        var init = nf?.GetField("initialized", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
-        if (init != null && !Equals(init.GetValue(null), true)) return false;
-        return OS.IsStdOutVerbose();
+        if (summary != null) return summary;
+        if (!countImages) return $"precompiled in place from {exportSummaryDir}";
+        return summary = ExportSummary(exportSummaryDir);
     }
 
     static string ExportSummary(string dir)
     {
-        // A normal start skips scanning the ~200 self-contained runtime DLL headers (16-80 ms); count them only when
-        // --verbose (OS.IsStdOutVerbose()) or MS2_PERF asks for the detail.
-        if (!WantExportCount()) return $"precompiled in place from {dir}";
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int r2r = 0;
         foreach (var file in Directory.GetFiles(dir, "*.dll"))
@@ -110,8 +109,8 @@ public static class Precompiled
             if (string.IsNullOrEmpty(loc)) { summary = "no build folder"; return; }
             AssemblyDir = Path.GetDirectoryName(loc);
             if (AssemblyDir == null || !Directory.Exists(AssemblyDir)) { AssemblyDir = null; summary = "no build folder"; return; }
-            // No PE scan at module init: Summary reports "precompiled in place from {dir}" on a normal start and
-            // counts ReadyToRun headers only when --verbose (OS.IsStdOutVerbose()) or MS2_PERF asks for it.
+            // No PE scan at module init: Describe(false) reports "precompiled in place from {dir}" on a normal start
+            // and Describe(true) counts ReadyToRun headers only when the caller asks (--verbose / MS2_PERF).
             exportSummaryDir = AssemblyDir;
             summary = null;
             return;
