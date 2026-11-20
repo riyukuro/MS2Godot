@@ -1,5 +1,6 @@
 using Godot;
 using Ms2.Formats.Options;
+using Ms2.Ui.Hud;
 using Ms2Godot.Ui;
 
 namespace Ms2Godot.Tests;
@@ -9,7 +10,8 @@ namespace Ms2Godot.Tests;
 /// --typing-shots DIR for the picture after each field): the login screen as the game opens it, with the run's message box
 /// layer and tooltip layer under the tree's root (<see cref="Flow.GameFlow"/>), takes typed keys into both fields. The
 /// keys go through the engine's input as a keyboard's do (key events with their characters): an id into the id field
-/// the dialog focuses, Tab to the password field, a password. The idle message box layer, the root's last child, took
+/// the dialog focuses, Tab to the password field, a password; then a message box over the dialog and Enter, which closes
+/// the box and sends no login (the client asks the top dialog first, UISwfEntityManager @0x1422d1c20). The idle message box layer, the root's last child, took
 /// every key first, so nothing reached the login dialog. Quits with 0 when both fields hold what was typed, else 1.
 /// </summary>
 public partial class LoginTypingCheck : Node
@@ -37,7 +39,8 @@ public partial class LoginTypingDriver : Node
     public string ShotDir;
     public Vector2I? Size;
     const string Id = "abc12", Password = "secret";
-    int frames;
+    int frames, connects;
+    bool typed;
 
     static void Press(Key key, char ch)
     {
@@ -68,10 +71,18 @@ public partial class LoginTypingDriver : Node
         if (frames == 120) Type(Id);
         if (frames == 150) { Shot("login_id_typed.png"); Press(Key.Tab, '\t'); }
         if (frames == 155) Type(Password);
-        if (frames < 185) return;
-        Shot("login_password_typed.png");
-        bool ok = login.Controller.Id == Id && login.Controller.Password.Length == Password.Length;
-        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars -> {(ok ? "ok" : "FAIL")}");
+        if (frames == 185)
+        {
+            Shot("login_password_typed.png");
+            typed = login.Controller.Id == Id && login.Controller.Password.Length == Password.Length;
+            // a box over the filled dialog (as the wrong-password answer's): Enter is the box's, not a new login
+            login.Controller.Connect += () => connects++;
+            MessageBoxQueue.ShowMessageBox(Id, 0, null, "");
+        }
+        if (frames == 215) Press(Key.Enter, '\r');
+        if (frames < 245) return;
+        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && boxClosed && connects == 0;
+        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, Enter on a box: closed {boxClosed}, logins {connects} -> {(ok ? "ok" : "FAIL")}");
         SetProcess(false);
         GetTree().Quit(ok ? 0 : 1);
     }
