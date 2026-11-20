@@ -152,13 +152,7 @@ public static class GameOptions
     static void Write(string path, XDocument d)
     {
         if (path == null) { GD.Print("options: no character chosen, " + "the account and character files are not written"); return; }
-        try
-        {
-            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-            var settings = new XmlWriterSettings { Indent = true, IndentChars = "    ", Encoding = new System.Text.UTF8Encoding(false) };
-            using var w = XmlWriter.Create(path, settings);
-            d.Save(w);
-        }
+        try { GameOption.WriteFile(path, d); }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { GD.PushWarning("options: " + ex.Message); }
     }
 
@@ -264,14 +258,7 @@ public static class GameOptions
         o.Save(doc);
         accountCommunity.Save(accountDoc);
         GameOption.SetOptionVersion(accountDoc);
-        var path = FilePath;
-        try
-        {
-            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path));
-            var settings = new XmlWriterSettings { Indent = true, IndentChars = "    ", Encoding = new System.Text.UTF8Encoding(false) };
-            using var w = XmlWriter.Create(path, settings);
-            doc.Save(w);
-        }
+        try { GameOption.WriteFile(FilePath, doc); }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { GD.PushWarning("options: " + ex.Message); }
         Write(accountPath, accountDoc);
     }

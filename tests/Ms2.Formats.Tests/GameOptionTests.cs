@@ -118,4 +118,33 @@ public class GameOptionTests
         Assert.That(o.InterfaceOption.UIScale, Is.EqualTo(1f));
         Assert.That(o.BattleOption.TakeDamage, Is.EqualTo(3));
     }
+    /// <summary>GameOption.WriteFile: a write that fails part way (here a character XML cannot hold) leaves the file as
+    /// it was, whole, and no temporary file; a good write replaces it in the client's form (UTF-8 without a byte order
+    /// mark, four-space indent).</summary>
+    [Test]
+    public void AFailedOptionWriteKeepsTheOldFile()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-optwrite-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var path = Path.Combine(dir, "sub", "GameOption.xml");
+            var good = Doc("<ms2><graphic width=\"1920\" height=\"1080\"/><option version=\"21\"/></ms2>");
+            GameOption.WriteFile(path, good);
+            var whole = File.ReadAllBytes(path);
+            Assert.That(whole[0], Is.EqualTo((byte)'<'), "no byte order mark");
+            Assert.That(System.Text.Encoding.UTF8.GetString(whole), Does.Contain("\n    <graphic width=\"1920\" height=\"1080\" />"));
+
+            var bad = Doc("<ms2><graphic width=\"1280\" height=\"720\"/><option version=\"21\"/></ms2>");
+            bad.Root!.Element("option")!.SetAttributeValue("name", "a\u0001b");   // written after the graphic section
+            Assert.That(() => GameOption.WriteFile(path, bad), Throws.Exception);
+            Assert.That(File.ReadAllBytes(path), Is.EqualTo(whole), "the old file, whole");
+            Assert.That(Directory.GetFiles(Path.GetDirectoryName(path)!), Is.EqualTo(new[] { path }), "no temporary file is left");
+
+            bad.Root!.Element("option")!.SetAttributeValue("name", null);
+            GameOption.WriteFile(path, bad);
+            Assert.That(System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(path)), Does.Contain("width=\"1280\""));
+            Assert.That(Directory.GetFiles(Path.GetDirectoryName(path)!), Is.EqualTo(new[] { path }));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }

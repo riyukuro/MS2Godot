@@ -90,6 +90,38 @@ public sealed class GameOption
     /// <summary>SetOptionVersion (gameoption.cpp:2101): &lt;option version="21"/&gt; on any option file.</summary>
     public static void SetOptionVersion(XDocument doc) => Xml.WriteInt(doc, "option", "version", Version);
 
+    /// <summary>The temporary file's mark after the option file's name, before the writing process's id.</summary>
+    public const string TmpMark = ".tmp";
+
+    /// <summary>
+    /// An option file written as the client's SaveFile writes it (m_docGame/m_docAccount/m_docCharacter.SaveFile,
+    /// gameoption.cpp:1874-1875, :1914): the document, UTF-8 without a byte order mark, indented. Deviation: the client
+    /// writes the file in place, so a crash or a full disk mid-write leaves it cut short and the next start resets every
+    /// option (a file that does not parse reads as missing). Here it goes to a temporary file that is renamed over the old
+    /// one, as the cache writers do, so the file is always the old one or the new one, whole. A failed write leaves no
+    /// temporary file and throws.
+    /// </summary>
+    public static void WriteFile(string path, XDocument doc)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
+        var tmp = path + TmpMark + Environment.ProcessId;
+        try
+        {
+            var settings = new System.Xml.XmlWriterSettings { Indent = true, IndentChars = "    ", Encoding = new System.Text.UTF8Encoding(false) };
+            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                using (var w = System.Xml.XmlWriter.Create(fs, settings)) doc.Save(w);
+                fs.Flush(true);
+            }
+            File.Move(tmp, path, true);
+        }
+        catch
+        {
+            try { File.Delete(tmp); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
+    }
+
     static XElement Section(XDocument doc, string name) => doc.Root?.Element(name);
 
     /// <summary>The memcmp the option pages use for "changed" (vfunc_14): every public field of the two blocks is equal.</summary>
