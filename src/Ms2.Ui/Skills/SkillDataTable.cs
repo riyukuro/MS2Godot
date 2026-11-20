@@ -17,8 +17,38 @@ public sealed class SkillLevelData
     public SkillData Skill;
     /// <summary>HasSequenceName @0x140804450 (:873): a &lt;motion&gt; of the level has a sequenceName (SkillMotionData::Load :1161).</summary>
     public bool HasSequenceName;
+    /// <summary>The level's &lt;motion&gt; rows in file order (m_vMotion, SkillLevelData::Load :951).</summary>
+    public readonly List<SkillMotionData> Motions = new();
 
     public float Cooldown => CooldownMs * 0.001f;
+
+    /// <summary>
+    /// GetMotionKey @0x140804c90 (skillleveldata.cpp:984), the cast's cooldown key: 0 for a motion past the level's rows, else
+    /// the skill's targeting key (FUN_1407ea030) combined (Unk_HashKey::Combine, :89: h ^= v + 0x9e3779b9 + (h &lt;&lt; 6) + (h &gt;&gt; 2))
+    /// with the motion's move key.
+    /// </summary>
+    public ulong MotionKey(int motion)
+    {
+        if (Skill == null || motion < 0 || motion >= Motions.Count) return 0;
+        ulong h = Skill.TargetingKey;
+        h ^= Motions[motion].MoveKey + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
+}
+
+/// <summary>
+/// A &lt;motion&gt; of a skill level (SkillMotionData::Load @0x140808350, skillleveldata.cpp:1158): the parts the cast's cooldown
+/// key reads. The ctor (:1006) sets sequenceSpeed 1 and movetype 0.
+/// </summary>
+public sealed class SkillMotionData
+{
+    public string SequenceName = "";
+    public float SequenceSpeed = 1f;
+    /// <summary>"movetype" (:1190), an enum read as a number (XmlValue).</summary>
+    public int MoveType;
+
+    /// <summary>GetMoveKey @0x140808040 (:1124): (u64)((float)(u64)(movetype &lt;&lt; 10) + sequenceSpeed * 100).</summary>
+    public ulong MoveKey => (ulong)((float)(ulong)((long)MoveType << 10) + SequenceSpeed * 100f);
 }
 
 /// <summary>A &lt;condition&gt;&lt;weapon lh rh&gt; of a skill (SkillCondition::Load @0x1407e6f20, skilloverlapcompare.cpp:554).</summary>
@@ -61,13 +91,23 @@ public sealed class SkillData
     public bool DisableChangeSkillIconEffect;
     /// <summary>&lt;stateAttr rechargeMaxCount cooldownGroupID&gt;.</summary>
     public uint RechargeMaxCount, CooldownGroupId;
+    /// <summary>&lt;stateAttr autoTargeting autoTargetingType moveType keyIsDown useDefaultSkill useDefaultSkillID&gt; (:858-864).</summary>
+    public int AutoTargeting, MoveType;
+    /// <summary>&lt;kinds jump&gt; (:841): the skill cast instead while jumping up or falling (GetCastSkillId).</summary>
+    public uint Jump;
+    public uint AutoTargetingType, UseDefaultSkillId;
+    public bool KeyIsDown, UseDefaultSkill;
+    /// <summary>&lt;basic&gt;&lt;autoTargeting&gt; (Unk_SkillBlock160::Load @0x140803140, skillleveldata.cpp:551), loaded from &lt;basic&gt; (:877).</summary>
+    public float AutoTargetingMaxDegree, AutoTargetingMaxDistance, AutoTargetingMaxHeight;
+    public int AutoTargetUseMove;
     readonly Dictionary<ushort, SkillLevelData> levels = new();
 
     /// <summary>
     /// SkillData::Load: id, originID; under &lt;basic&gt; mainType, &lt;ui&gt; icon / attackType / tooltip, &lt;kinds&gt; rangeType /
     /// element, &lt;condition&gt; weapons; then the levels FUN_14028faa0(skill, "level", "value") picks: a level below 1 ends the
     /// load (SkillLevelData::Load returns 0, the skill keeps the levels read so far), and the max level is the highest.
-    /// A level's motion and additional effect loads are not read here (they count as loaded).
+    /// A level's &lt;motion&gt; rows keep the parts the cooldown key reads; the additional effect loads are not read here (they
+    /// count as loaded).
     /// </summary>
     public static SkillData Load(XElement e, Func<XElement, string, string, List<XElement>> collect)
     {
@@ -86,11 +126,25 @@ public sealed class SkillData
         {
             s.RangeType = Xml.Int(kinds, "rangeType");
             s.Element = Xml.Int(kinds, "element");
+            s.Jump = Xml.UInt(kinds, "jump");
         }
         if (basic.Element("stateAttr") is { } state)
         {
             s.RechargeMaxCount = Xml.UInt(state, "rechargeMaxCount");
             s.CooldownGroupId = Xml.UInt(state, "cooldownGroupID");
+            s.AutoTargeting = Xml.Int(state, "autoTargeting");
+            s.AutoTargetingType = Xml.UInt(state, "autoTargetingType");
+            s.MoveType = Xml.Int(state, "moveType");
+            s.KeyIsDown = Xml.Bool(state, "keyIsDown");
+            s.UseDefaultSkill = Xml.Bool(state, "useDefaultSkill");
+            s.UseDefaultSkillId = Xml.UInt(state, "useDefaultSkillID");
+        }
+        if (basic.Element("autoTargeting") is { } at)
+        {
+            s.AutoTargetingMaxDegree = Xml.Float(at, "autoTargetingMaxDegree");
+            s.AutoTargetingMaxDistance = Xml.Float(at, "autoTargetingMaxDistance");
+            s.AutoTargetingMaxHeight = Xml.Float(at, "autoTargetingMaxHeight");
+            s.AutoTargetUseMove = Xml.Int(at, "autoTargetUseMove");
         }
         if (basic.Element("changeSkill") is { } ch)
         {
@@ -127,6 +181,12 @@ public sealed class SkillData
                 Skill = s,
                 HasSequenceName = l.Elements("motion").Any(m => !string.IsNullOrEmpty((string)m.Attribute("sequenceName"))),
             };
+            foreach (var m in l.Elements("motion"))
+            {
+                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype") };
+                if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
+                lv.Motions.Add(md);
+            }
             if (lv.Level < 1) return s;
             s.levels[lv.Level] = lv;
             s.MaxLevelRaw = Math.Max(s.MaxLevelRaw, lv.Level);
@@ -148,6 +208,26 @@ public sealed class SkillData
     public bool IsItemCountKind => MainType is 3 or 5 or 17 or 18;
     /// <summary>FUN_1407e9bd0 (:965): the action of main types 7, 10, 11, 12, 13 (0x1e glide, 0x26, 0x1c, 0x20, 0x1d climb), else 0.</summary>
     public int ActionKind => MainType switch { 7 => 0x1e, 10 => 0x26, 11 => 0x1c, 12 => 0x20, 13 => 0x1d, _ => 0 };
+    /// <summary>
+    /// FUN_1407ea030 (skilloverlapcompare.cpp:1156): the autoTargeting block's key (Unk_SkillBlock160::GetKey,
+    /// skillleveldata.cpp:571: useMove + maxHeight &lt;&lt; 1 + maxDistance &lt;&lt; 11 + maxDegree &lt;&lt; 22, each float cut to u64), plus
+    /// autoTargetingType &lt;&lt; 32, autoTargeting &lt;&lt; 34 and moveType &lt;&lt; 35.
+    /// </summary>
+    public ulong TargetingKey
+    {
+        get
+        {
+            ulong k = (ulong)(long)AutoTargetUseMove;
+            k += (ulong)AutoTargetingMaxHeight << 1;
+            k += (ulong)AutoTargetingMaxDistance << 11;
+            k += (ulong)AutoTargetingMaxDegree << 22;
+            k += (ulong)AutoTargetingType << 32;
+            k += (ulong)((long)AutoTargeting << 34);
+            k += (ulong)((long)MoveType << 35);
+            return k;
+        }
+    }
+
     /// <summary>GetCooldownKey @0x1407e9c40 (:985): the cooldown group in the high word, the id in the low one.</summary>
     public ulong CooldownKey => ((ulong)CooldownGroupId << 32) | Id;
 }
