@@ -117,8 +117,8 @@ void fragment() {
     // the texture colour times the diffuse coefficient, emissive + diffuse (tint) + ambient * the scene ambient (EffectMesh.Shade)
     // The coefficient is not saturated (EffectMesh.Shade), and neither is the colour the pixel shader writes:
     // HandleMS2FinalPixelOutputs (@0x14274fd00, ms2standardmaterial.cpp:758-792) ends in CompositeFinalRGBColor and CompositeFinalRGBAColor,
-    // which pass the colour on as it is (NiStandardMaterialNodeLibrary.cpp:3057-3106). The client blends it into its FP16
-    // scene target, which PostProcessingService::OnInit (@0x1416a4860, postprocessingservice.cpp:1750-1751) turns on whenever
+    // which pass the colour on as it is (NiStandardMaterialNodeLibrary.cpp:3057-3106). On a device with FP16 support the client blends
+    // it into its FP16 scene target, which PostProcessingService::OnInit (@0x1416a4860, postprocessingservice.cpp:1750-1751) turns on whenever
     // the device can convert FP16 to RGBA32 (@0x1416a69a0, :1946-1991; SetFloatTargetFormat @0x1416a36f0, :1400-1411), the
     // HDR option aside. So a colour above 1 at a low opacity keeps its hue and weight, and only the display clamps the sum.
     // Godot's 3D buffer is RGBA16F too, so the colour goes out unclamped.
