@@ -187,6 +187,19 @@ public partial class AlphaRenderCheck : Node
             cases.Add(("field_glow_vc", vp, Grey(0.25f, "field glow at vertex alpha 0.25")));
         }
 
+        // a static entity's glow holds its alpha controller at the entity's add time, as field_lit does (frozen_time):
+        // the keys give 0.25 only in a 0.02 s spike at t = 1 of a 2 s loop, so the scene time reads 1 almost always
+        {
+            var fm = Quad("q", 0);
+            fm.AlphaFlags = 0xED; fm.MaterialAlpha = 0; fm.Textures["glow"] = "glow.dds";
+            fm.AlphaAnim = new AlphaAnim { Start = 0, Stop = 2, Frequency = 1, Phase = 0, KeyType = 1,
+                Times = new[] { 0f, 0.99f, 1f, 1.01f, 2f }, Values = new[] { 1f, 1f, 0.25f, 1f, 1f } };
+            var vp = View(main);
+            vp.AddChild(new MeshInstance3D { Mesh = mb.BuildMesh(fm, instanceColor: true), MaterialOverride = mb.GlowMaterial(fm, false, frozenAt: 1f) });
+            vp.GetNode<Camera3D>("Cam").Position = new Vector3(0, 0, 10);
+            cases.Add(("field_glow_frozen", vp, Grey(0.25f, "field glow alpha held at its frozen time")));
+        }
+
         // BLOCKER 5: the closest-point key (centre . view - radius). The big-bound red quad (bound radius 8 at distance 10:
         // key 2) draws after the small-bound green quad (radius 0.5 at distance 5: key 4.5), so red shows on top; Godot's
         // own key (AABB centre distance 10 against 5) draws green last
