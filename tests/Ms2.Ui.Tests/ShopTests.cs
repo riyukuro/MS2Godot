@@ -784,8 +784,8 @@ public class ShopTests
         var row = h.Obj(("serialID", 1), ("productType", 0));
         var tip = c.GetTooltip(new object[] { "", row });
         Assert.That(tip, Is.Not.Null);
-        Assert.That(tip.ContainsKey("requireAchieve"), Is.True);
-        Assert.That(tip["requireAchieve"]?.ToString(), Does.Contain("Test Trophy"));
+        Assert.That(tip.ContainsKey("itemGuideDescription"), Is.True);
+        Assert.That(tip["itemGuideDescription"]?.ToString(), Does.Contain("Test Trophy"));
         Assert.That(c.GetTooltip(new object[] { "m_coinInfo" }), Is.Null, "non-gacha shop has no coin tooltip");
     }
 

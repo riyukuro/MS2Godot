@@ -193,11 +193,19 @@ public sealed partial class ItemTooltip
     public void SetItemGuideDescription(Item item)
     {
         var d = item.Data;
-        if (item.Record?.HasUgc == true || d.IsScoreItem) return;
-        if (d.IsMultiRideItem && model.IsFeatureEnabled(0xad)) return;
-        if (d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19) return;
-        Data["itemGuideDescription"] = Tables.ItemDescription(d.Id, "guideDescription");
+        string text = null;
+        if (!(item.Record?.HasUgc == true || d.IsScoreItem)
+            && !(d.IsMultiRideItem && model.IsFeatureEnabled(0xad))
+            && !(d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19))
+            text = Tables.ItemDescription(d.Id, "guideDescription");
+        if (!string.IsNullOrEmpty(ShopGuideText))
+            text = string.IsNullOrEmpty(text) ? ShopGuideText : text + "\n" + ShopGuideText;   // :2355-2361
+        if (text != null) Data["itemGuideDescription"] = text;
     }
+
+    /// <summary>ASTooltip m_50 (FUN_1409dbc30, astooltip.cpp:506): the text the shop tooltip appends to the guide
+    /// description (the missing achievement requirement); set before filling.</summary>
+    public string ShopGuideText;
 
     /// <summary>
     /// FUN_1409d1d30 (astooltip.cpp:2367), "statDescription": flag 0x800 picks the compact FUN_1409d26d0 (:2450), else the

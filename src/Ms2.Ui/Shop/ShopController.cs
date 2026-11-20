@@ -1965,14 +1965,14 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             OwnerEquipment = equipment,
             ShiftHeld = ShiftHeld,
         };
-        if (!t.FillCompare(worn, p.Item)) return null;
-        t.SetEnablePreviewBoth(null, p.Item);
         if (type == 0 && p.Record.Achieve != 0 && !HasAchieve(p.Record.Achieve, p.Record.AchieveGrade))
         {
             string req = RequireAchieveText(p.Record.Achieve, p.Record.AchieveGrade);
             if (!string.IsNullOrEmpty(req))
-                t.Data["requireAchieve"] = Common("s_shop_tooltip_require_achieve", req);
+                t.ShopGuideText = Common("s_shop_tooltip_require_achieve", req);   // FUN_1409dbc30 (astooltip.cpp:506)
         }
+        if (!t.FillCompare(worn, p.Item)) return null;
+        t.SetEnablePreviewBoth(null, p.Item);
         return t.Data;
     }
 
