@@ -35,4 +35,14 @@ public class MinimapInfoTests
         Assert.That(u * 1024, Is.EqualTo(509).Within(2));
         Assert.That(v * 1024, Is.EqualTo(498).Within(2));
     }
+
+    // MinimapViewport::FUN_141486450: screen x minus the image's left edge; false off the frustum
+    [Test]
+    public void ScreenXIsTheImageColumnOfThePoint()
+    {
+        var m = MinimapInfo.Parse(XDocument.Parse(Xml));
+        Assert.That(m.ToScreenX(new Vec3(-900, -900, 3150), out var x), Is.True);
+        Assert.That(x, Is.EqualTo(509).Within(2));
+        Assert.That(m.ToScreenX(new Vec3(90000, -90000, 3150), out _), Is.False);
+    }
 }

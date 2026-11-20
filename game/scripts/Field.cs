@@ -34,6 +34,8 @@ public partial class Field : Node3D
     protected PackSet packs;
     protected Player player;
     protected Camera3D camera;
+    FieldBackdrop backdrop;      // the sky picture, moved each frame as the client's background movie (FieldBackdrop)
+    FieldData fieldData;
     /// <summary>The prop fade between the player and the camera (BGTransparencyMgr).</summary>
     public World.FieldFade Fade { get; private set; }
     FieldCamera cam = new();
@@ -105,6 +107,7 @@ public partial class Field : Node3D
         FieldData fd = null;
         try { fd = FieldData.FindByXBlock(packs, fieldName); }
         catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
+        fieldData = fd;
         FieldShadows.Begin(packs, fd?.ShadowOptionHighLevel ?? 0);
         var fb = new FieldBuilder(packs, assets, builder) { InstancingGrid = fd?.InstancingGrid ?? 0, CastsShadows = FieldShadows.MapObjects, ShadowLevel = FieldShadows.Level };
         var contents = new World.FieldContents(packs, builder, assets);   // animated props, actors, npcs, portals
@@ -423,7 +426,7 @@ public partial class Field : Node3D
             TonemapMode = Godot.Environment.ToneMapper.Linear,
         };
         AddChild(new WorldEnvironment { Environment = env });
-        FieldBackdrop.Add(this, env, packs, x);
+        backdrop = FieldBackdrop.Add(this, env, packs, x, fieldData);
         // The field shader draws the sun itself (ms2_sun_*); from this light it reads only the shadow, which scales the
         // shader's own sun term (field_lit.gdshader light()), so the sun is counted once. Its shadow is the light's
         // CastShadows, forced off below the mapObject shadow level (MS2LightService::UpdateLightShadow, ms2lightservice.cpp:356-385)
@@ -892,6 +895,7 @@ public partial class Field : Node3D
             if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
         }
         UpdateCamera(delta);
+        backdrop?.Update(camera, player);
         if (shotSettle > 0 && --shotSettle == 0)
         {
             var (_, _, _, shot) = script.Dequeue();

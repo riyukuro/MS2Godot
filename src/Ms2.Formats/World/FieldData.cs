@@ -53,6 +53,9 @@ public sealed class FieldData
     /// <summary>&lt;ui bgMask&gt;: the screen mask movie the field's UIScreenMask loads ("BG_mask_shadow.swf"; CFieldDataCli
     /// m_strBgMask, fielddatacli.cpp:220, the raw string); "" when absent.</summary>
     public string BgMask = "";
+    /// <summary>&lt;ui vscroll hscroll&gt;: CFieldDataCli m_nVScroll / m_nHScroll (default 1, fielddatacli.cpp:70, read at :221-222), the
+    /// background movie's camera and position flags (GFxMovieBackground(bg, vscroll, hscroll), uiservice.cpp:526).</summary>
+    public int VScroll = 1, HScroll = 1;
     /// <summary>&lt;property mapType&gt;: CFieldDataCli::m_nMapType (3 home, 5 dungeon, ... ; uisystemmenudialog.cpp:173).</summary>
     public int MapType;
     /// <summary>&lt;property channelGroupID&gt;: the channel group whose name (string table 23, channelGroupName) prefixes the
@@ -178,6 +181,8 @@ public sealed class FieldData
         o.GemSystem = BoolAttr(prop, "gemSystem", true);
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
         if ((string)env.Element("ui")?.Attribute("bgMask") is { } bm) o.BgMask = bm;
+        if ((string)env.Element("ui")?.Attribute("vscroll") is { } vs && int.TryParse(vs, NumberStyles.Integer, CultureInfo.InvariantCulture, out var vsi)) o.VScroll = vsi;
+        if ((string)env.Element("ui")?.Attribute("hscroll") is { } hs && int.TryParse(hs, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hsi)) o.HScroll = hsi;
         if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
         var fov = env.Element("fov");
         if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);

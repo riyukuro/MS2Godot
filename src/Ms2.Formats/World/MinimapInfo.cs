@@ -70,6 +70,23 @@ public sealed class MinimapInfo
         return ((sx - ImgLeft) / (ImgRight - ImgLeft), (sy - ImgTop) / (ImgBottom - ImgTop));
     }
 
+    /// <summary>
+    /// MinimapViewport::FUN_141486450 (minimapviewport.cpp:151) at scale 1: the point's x on the minimap screen, minus the
+    /// image's left edge ((fx * screen width) - image left). False, as the client's ProjectPoint (minimapviewport.cpp:166),
+    /// when the point falls outside the frustum's rectangle. The orthographic matrix of BuildMatrix
+    /// (minimapviewport.cpp:72-99) gives fx = (d.right + R) / (R - L) and fy = (d.up + T) / (T - B), d = point - camera.
+    /// STILL-OPEN: the perspective branch (a frustum without ortho="true") is not ported; it is taken as orthographic.
+    /// </summary>
+    public bool ToScreenX(Vec3 p, out double x)
+    {
+        var (right, _, up) = Axes();
+        var d = new Vec3(p.X - CamPos.X, p.Y - CamPos.Y, p.Z - CamPos.Z);
+        double fx = (Dot(right, d) + FrRight) / (FrRight - FrLeft);
+        double fy = (Dot(up, d) + FrTop) / (FrTop - FrBottom);
+        x = fx * (ScrRight - ScrLeft) - ImgLeft;
+        return fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1;
+    }
+
     static double Dot(Vec3 a, Vec3 b) => a.X * b.X + a.Y * b.Y + a.Z * b.Z;
 
     // transposed (clockwise) rotations, as Gamebryo's NiMatrix3::MakeXRotation etc.
