@@ -939,4 +939,32 @@ public class ShopTests
         Assert.That(c.CanSellItem(scoreItem), Is.False);
         Assert.That(boxes, Has.Count.EqualTo(1));
     }
+
+    [Test]
+    public void CanPayProductTruncatesTotalToSignedIntLikeClient()
+    {
+        Packs();
+        var model = NewModel();
+        model.Tables.ShopBuyConfirmPrice = uint.MaxValue;
+        model.Player.Mesos = 0;
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var notices = new List<string>();
+        c.Send = sent.Add;
+        c.SystemNotice = notices.Add;
+
+        var prod = c.Products(0)[1];
+        // Within positive signed 32-bit int: 2,000,000,000 with 0 mesos refuses
+        prod.Record.Price = 2_000_000_000L;
+        Assert.That(c.CanPayProduct(prod, 1), Is.False);
+        Assert.That(notices, Has.Count.EqualTo(1));
+
+        // Client FUN_140db8580 casts total to int: 3,000,000,000 wraps to -1,294,967,296, so 0 >= total passes and sends mode 4
+        notices.Clear();
+        prod.Record.Price = 3_000_000_000L;
+        Assert.That(c.CanPayProduct(prod, 1), Is.True);
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
+        Assert.That(notices, Is.Empty);
+    }
 }
