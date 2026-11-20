@@ -26,7 +26,7 @@ public partial class As3View : Node2D
     HashSet<AsDisplayObject> masks = noMasks;                 // their mask objects (not drawn)
     Transform2D viewXf;
     bool full = true;
-    long changesSeen = -1;                                    // AsDisplayObject.Changes after the last sync
+    long marksSeen = -1;                                      // Player.RT.DisplayMarks after the last sync
     int gen;
     double frameTime, caretTime;
     readonly TextCaret caret = new();
@@ -147,10 +147,13 @@ public partial class As3View : Node2D
         full = false; viewXf = gx;
         if (deep) moves++;
         // a script mask's polygons are mapped through the mask's and the masked object's ancestors, which mark neither
-        // the masked object nor always this stage (a mask out of the display list): after any mark anywhere the masked
-        // objects are walked (those marks are this view's own: they are not counted as changes for the other views)
-        if (AsDisplayObject.Changes != changesSeen && scriptMasked.Count > 0)
+        // the masked object nor always this stage (a mask out of the display list): after any mark in this movie the masked
+        // objects are walked. Every object the polygons are made from is this movie's (a mask and the object it masks are
+        // in one movie), and each mark counts in its own runtime's DisplayMarks, so another movie's marks change nothing
+        // here. These marks are this view's own: they are not counted as changes.
+        if (Player.RT.DisplayMarks != marksSeen && scriptMasked.Count > 0)
         {
+            ScriptMaskWalks++;
             long changes = AsDisplayObject.Changes, own = Player.RT.DisplayMarks;
             foreach (var e in scriptMasked) e.Obj.MarkChanged();
             AsDisplayObject.Changes = changes; Player.RT.DisplayMarks = own;
@@ -164,7 +167,7 @@ public partial class As3View : Node2D
             Sweep();
             UpdateMasks();
         }
-        changesSeen = AsDisplayObject.Changes;
+        marksSeen = Player.RT.DisplayMarks;
         SyncMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         var focus = Player.Focus as AsTextField;
         var fe = focus?.Tag as Entry;
@@ -429,6 +432,9 @@ public partial class As3View : Node2D
 
     /// <summary>MS2_PERF_SYNCCHECK: after every sync, a full sync checks that the marked one left nothing to change.</summary>
     static readonly bool SyncCheck = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_SYNCCHECK"));
+
+    /// <summary>The syncs that walked their view's script-masked objects again (a mark in the view's movie), over every view.</summary>
+    public static long ScriptMaskWalks;
 
     /// <summary>MS2_PERF_SYNCCHECK: differences the full syncs found, and the full syncs run, over every view.</summary>
     public static long CheckDiffs, CheckRuns;
