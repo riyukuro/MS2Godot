@@ -19,7 +19,10 @@ namespace Ms2Godot.Tests;
 /// <item>every movie's stage is the new window's (UiScale.MovieStage);</item>
 /// <item>the open inventory ends where its layout puts it on the new stage (its ratio step, UIDialog::vfunc_17, is
 /// covered by the Ms2.Ui test ADeviceRestoreKeepsAPlacedDialogsRatioToTheStage);</item>
-/// <item>back at 1280 x 720 every movie's root sits where it was before the round trip.</item>
+/// <item>back at 1280 x 720 every movie's root sits where it was before the round trip;</item>
+/// <item>a movie's own stage Event.RESIZE listener (uicastingbar's CastingBar.onResizeStage is one) runs once per changed
+/// viewport and after the dialogs' restore and layout (queued by NotifyOnResize, sfr_gfx_01i.cpp:1240-1256, until the
+/// movie's next advance): a listener on the casting bar's stage sees the open inventory already where the step leaves it.</item>
 /// </list>
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -43,6 +46,7 @@ public partial class HudResizeDriver : Node
     MovieDialog inventoryMovie;
     Ms2.Ui.Hud.InventoryController inventory;
     int step = -2, wait, failures;
+    int resizes, resizesBefore; (double X, double Y) invAtResize; Vector2 windowBefore;
     readonly ulong startMs = Time.GetTicksMsec();
 
     static object Get(object o, string name) => o?.GetType().GetField(name, Private)?.GetValue(o);
@@ -90,6 +94,10 @@ public partial class HudResizeDriver : Node
             inventory.View?.SelectTab(3);
             if (Get(hud, "questLog") == null) GD.Print("hud resize: no quest log in this data; the inventory is the open dialog checked");
             Collect(hud, movies);
+            var bar = (MovieDialog)Get(hud, "castingBar");
+            if (bar == null) { Fail("no casting bar movie"); Finish(); return; }
+            Func<object[], object> onResize = _ => { resizes++; invAtResize = RootAt(inventoryMovie); return null; };
+            bar.Host.Invoke(bar.Player.Stage, "addEventListener", "resize", onResize, false, 0, false);
             foreach (var m in movies) start[m] = RootAt(m);
             GD.Print($"hud resize: {movies.Count} movies at {ScreenMode.PixelSize(GetWindow())}");
             Next();
@@ -103,6 +111,8 @@ public partial class HudResizeDriver : Node
     void Next()
     {
         step++;
+        resizesBefore = resizes;
+        windowBefore = ScreenMode.PixelSize(GetWindow());
         var (full, w, h) = Steps[step];
         GD.Print($"hud resize: step {step + 1}: {(full ? "full screen" : "window")} {w}x{h}");
         ScreenMode.ApplyRequest(new WindowRequest(full, false, w, h));
@@ -130,6 +140,9 @@ public partial class HudResizeDriver : Node
         var inv = RootAt(inventoryMovie);
         inventoryMovie.LayoutLoaded();
         if (RootAt(inventoryMovie) != inv) Fail($"step {n}: the inventory is at {inv}, not where its layout puts it ({RootAt(inventoryMovie)})");
+        int expected = window != windowBefore ? 1 : 0;
+        if (resizes - resizesBefore != expected) Fail($"step {n}: the casting bar's stage got {resizes - resizesBefore} RESIZE events, not {expected}");
+        else if (expected == 1 && invAtResize != inv) Fail($"step {n}: the stage RESIZE ran before the layout (the inventory was at {invAtResize}, ends at {inv})");
         if (w == 1280 && !full)
             foreach (var m in movies)
             {

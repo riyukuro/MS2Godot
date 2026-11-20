@@ -78,6 +78,7 @@ public partial class MovieDialog : Node2D
 
     public override void _Process(double delta)
     {
+        if (resizePending) DeliverResize();         // the parent processes before its view, which advances the movie
         SetProcess(false);
         if (openPerf == null) return;
         // the first frame after the open: the time until this node is processed; the view (a child, processed after it)
@@ -188,24 +189,34 @@ public partial class MovieDialog : Node2D
     /// <summary>
     /// GFxManager::ResizeMovies (gfxmanager.cpp:158) for this movie, the device-restore step every movie takes first: the
     /// stage size before the resize is kept (UpdateStageSize, :164, read back by FUN_1422b0840), then GFxMovie::vfunc_7
-    /// (gfxmovie.cpp:146) gives the movie the new viewport, (-1, -1, w + 2, h + 2) at its scale, and sends it SceneResize,
-    /// which the AS3 stage gets as Event.RESIZE (the movies run with SM_NoScale, gfxmovie.cpp:129; the event's dispatch,
-    /// sfr_as3_17d.cpp:1167). Returns the stage before the resize for the dialog's <see cref="RestoreDevice"/>.
-    /// STILL-OPEN: the client's SceneResize is handled inside Scaleform's HandleEvent; whether the stage's listeners run
-    /// at once or on the next Advance is not traced here. They run at once.
+    /// (gfxmovie.cpp:146) gives the movie the new viewport, (-1, -1, w + 2, h + 2) at its scale. MovieImpl::SetViewport
+    /// (sfr_gfx_01i.cpp:1240-1256) calls the AS3 root's NotifyOnResize when the viewport changed (the movies run with
+    /// SM_NoScale, gfxmovie.cpp:129), which queues the stage's Event.RESIZE; it is dispatched when the movie next advances
+    /// (Event_Resize, sfr_as3_17d.cpp:1167), so after the dialogs' vfunc_17 and layout. Here it is queued to this node's
+    /// next process, which runs before the movie's view ticks (<see cref="DeliverResize"/>). Returns the stage before the
+    /// resize for the dialog's <see cref="RestoreDevice"/>.
+    /// STILL-OPEN: the AS3 root's NotifyOnResize body is not in the restored source; the queueing is Scaleform's.
     /// </summary>
     public (double W, double H) ResizeViewport(Vector2 window)
     {
         var before = (Player.StageW, Player.StageH);
+        bool changed = window != this.window;      // SetViewport notifies only a changed viewport
         Resize(window);
         Place(window);
         SetClientStage(window);
-        if (Player.Stage is { } st)
-        {
-            var rt = Player.RT;
-            rt.Guard("resize", () => st.Dispatch((AsEvent)rt.GetClass("flash.events.Event").Construct(AsEvent.RESIZE)));
-        }
+        if (changed) { resizePending = true; SetProcess(true); }
         return before;
+    }
+
+    bool resizePending;
+
+    /// <summary>The queued stage Event.RESIZE (<see cref="ResizeViewport"/>), dispatched before the movie's next advance.</summary>
+    void DeliverResize()
+    {
+        resizePending = false;
+        if (Player.Stage is not { } st) return;
+        var rt = Player.RT;
+        rt.Guard("resize", () => st.Dispatch((AsEvent)rt.GetClass("flash.events.Event").Construct(AsEvent.RESIZE)));
     }
 
     /// <summary>UISwfEntityManager::vfunc_5 (uiswfentitymanager.cpp:483): the dialog's vfunc_17 with the stage cached
