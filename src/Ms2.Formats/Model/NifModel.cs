@@ -63,9 +63,9 @@ public sealed class ModelMesh
     /// the opaque buckets and before the depth-sorted alpha list. The outermost sort-adjust ancestor decides, as its OnVisible
     /// marks its whole subtree's visible objects after the inner ones did (NiSortAdjustNode.cpp:36-57).</summary>
     public bool NoSort;
-    /// <summary>A material controller the field shader runs from the scene time: the alpha, or a flipbook or uv scroll on the
-    /// base or dark map (the shader runs no other slot's).</summary>
-    public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || Scrolls.Any(s => s.Slot is "base" or "dark");
+    /// <summary>A material controller the field shader runs from the scene time: the alpha, a flipbook on the base or dark
+    /// map, or a uv controller on a map it draws (base, dark, glow, decal0).</summary>
+    public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || UvAnims.Any(s => s.Slot is "base" or "dark" or "glow" or "decal0");
     public bool AlphaBlendOn => AlphaFlags >= 0 && (AlphaFlags & 1) != 0;
     public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
@@ -75,7 +75,7 @@ public sealed class ModelMesh
     public string FlipSlot;               // texture slot an NiFlipController cycles (base, dark, ...), or null
     public string[] FlipFrames;           // its source file names, played evenly over FlipPeriod seconds, looping
     public float FlipPeriod;
-    public List<TexScroll> Scrolls = new();   // NiTextureTransformController translations
+    public List<UvAnim> UvAnims = new();  // NiTextureTransformControllers: translate, rotate or scale of one map
     public string Material;               // active Gamebryo material name (MS2CharacterSkinMaterial, ...), or null
     public Dictionary<string, float> ExtraFloats = new();      // NiFloatExtraData by name (FresnelBoost, ColorBoost, ...)
     public Dictionary<string, float[]> ExtraColors = new();    // NiColorExtraData by name, rgba (OverrideColor0..2, ...)
@@ -86,13 +86,14 @@ public sealed class ModelMesh
     public ModelMesh Clone() => (ModelMesh)MemberwiseClone();
 }
 
-/// <summary>A looping texture translation: the offset along U (Axis 0) or V (Axis 1) of a slot's uv, linear between keys.</summary>
-public sealed class TexScroll
+/// <summary>
+/// An active, looping NiTextureTransformController: its value replaces one component of the slot's map transform,
+/// Operation 0 translate U, 1 translate V, 2 rotate, 3 scale U, 4 scale V (TexTransform.Set).
+/// </summary>
+public sealed class UvAnim : FloatAnim
 {
     public string Slot;
-    public int Axis;
-    public float Start, Stop;             // controller time range; the keys loop over it
-    public float[] Times, Values;
+    public int Operation;
 }
 
 /// <summary>
@@ -170,7 +171,10 @@ public sealed class TexMap
 /// (KeyType 2, NiBezFloatKey with InTan / OutTan in file order). NiTimeController::ComputeScaledTime maps the time as
 /// freq * t + phase, looped over Start..Stop; NiFloatKey::GenInterp holds the end values outside the keys.
 /// </summary>
-public sealed class AlphaAnim
+public sealed class AlphaAnim : FloatAnim { }
+
+/// <summary>A looping float controller's time mapping and NiFloatData keys (see <see cref="AlphaAnim"/>).</summary>
+public class FloatAnim
 {
     public float Start, Stop, Frequency = 1f, Phase;
     public int KeyType;
@@ -400,8 +404,8 @@ public sealed class ModelData
     static readonly string[] SlotNames = { "base", "dark", "detail", "gloss", "glow", "bump", "normal", "parallax", "decal0" };
 
     /// <summary>
-    /// The flipbook (NiFlipController) and uv translation (NiTextureTransformController, translate U / V) controllers on the
-    /// mesh's NiTexturingProperty. Only active, looping controllers; time keys of the flipbook are taken as evenly spaced.
+    /// The flipbook (NiFlipController) and uv (NiTextureTransformController) controllers on the mesh's NiTexturingProperty.
+    /// Only active, looping controllers; time keys of the flipbook are taken as evenly spaced.
     /// </summary>
     static void ReadTextureControllers(NifFile nif, NifStruct mb, ModelMesh mesh)
     {
@@ -430,18 +434,10 @@ public sealed class ModelData
                 else if (cb.Type == "NiTextureTransformController")
                 {
                     long op = cb.IntOr("Operation", -1);
-                    long ip = cb.IntOr("Interpolator", -1);
-                    if (op is not (0 or 1) || ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") continue;
-                    long di = B[(int)ip].IntOr("Data", -1);
-                    if (di < 0) continue;
-                    var keys = B[(int)di].Struct("Data").Structs("Keys");
-                    if (keys.Length == 0) continue;
-                    mesh.Scrolls.Add(new TexScroll
-                    {
-                        Slot = slotName, Axis = (int)op, Start = start, Stop = stop,
-                        Times = keys.Select(k => k.Float("Time")).ToArray(),
-                        Values = keys.Select(k => k.Float("Value")).ToArray(),
-                    });
+                    if (op is < 0 or > 4 || ReadFloatAnim<UvAnim>(nif, cb) is not { } ua) continue;
+                    ua.Slot = slotName;
+                    ua.Operation = (int)op;
+                    mesh.UvAnims.Add(ua);
                 }
             }
         }
@@ -458,28 +454,37 @@ public sealed class ModelData
         {
             var cb = B[(int)c];
             c = cb.IntOr("Next Controller", -1);
-            if (cb.Type != "NiAlphaController") continue;
-            long flags = cb.IntOr("Flags", 0);
-            if ((flags & 8) == 0 || ((flags >> 1) & 3) != 0) continue;   // inactive, or not a loop
-            float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
-            long ip = cb.IntOr("Interpolator", -1);
-            if (stop <= start || ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") continue;
-            long di = B[(int)ip].IntOr("Data", -1);
-            if (di < 0) continue;
-            var data = B[(int)di].Struct("Data");
-            var keys = data.Structs("Keys");
-            int type = (int)data.IntOr("Interpolation", 0);
-            if (keys.Length == 0 || type is not (1 or 2)) continue;
-            return new AlphaAnim
-            {
-                Start = start, Stop = stop, Frequency = cb.Float("Frequency"), Phase = cb.Float("Phase"), KeyType = type,
-                Times = keys.Select(k => k.Float("Time")).ToArray(),
-                Values = keys.Select(k => k.Float("Value")).ToArray(),
-                InTans = type == 2 ? keys.Select(k => k.Float("Forward")).ToArray() : null,
-                OutTans = type == 2 ? keys.Select(k => k.Float("Backward")).ToArray() : null,
-            };
+            if (cb.Type == "NiAlphaController" && ReadFloatAnim<AlphaAnim>(nif, cb) is { } aa) return aa;
         }
         return null;
+    }
+
+    /// <summary>
+    /// An active, looping (flags bit 3, cycle LOOP) float controller with an NiFloatInterpolator over linear or Bezier
+    /// keys, or null.
+    /// </summary>
+    static T ReadFloatAnim<T>(NifFile nif, NifStruct cb) where T : FloatAnim, new()
+    {
+        var B = nif.Blocks;
+        long flags = cb.IntOr("Flags", 0);
+        if ((flags & 8) == 0 || ((flags >> 1) & 3) != 0) return null;   // inactive, or not a loop
+        float start = cb.Float("Start Time"), stop = cb.Float("Stop Time");
+        long ip = cb.IntOr("Interpolator", -1);
+        if (stop <= start || ip < 0 || B[(int)ip].Type != "NiFloatInterpolator") return null;
+        long di = B[(int)ip].IntOr("Data", -1);
+        if (di < 0) return null;
+        var data = B[(int)di].Struct("Data");
+        var keys = data.Structs("Keys");
+        int type = (int)data.IntOr("Interpolation", 0);
+        if (keys.Length == 0 || type is not (1 or 2)) return null;
+        return new T
+        {
+            Start = start, Stop = stop, Frequency = cb.Float("Frequency"), Phase = cb.Float("Phase"), KeyType = type,
+            Times = keys.Select(k => k.Float("Time")).ToArray(),
+            Values = keys.Select(k => k.Float("Value")).ToArray(),
+            InTans = type == 2 ? keys.Select(k => k.Float("Forward")).ToArray() : null,
+            OutTans = type == 2 ? keys.Select(k => k.Float("Backward")).ToArray() : null,
+        };
     }
 
     /// <summary>The active material name and the float / colour extra data that carry its shader attributes.</summary>

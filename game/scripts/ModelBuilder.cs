@@ -307,10 +307,10 @@ public sealed class ModelBuilder
     }
 
     /// <summary>A mesh with a glow map also joins the glow pass: a twin on the glow layer sharing its mesh, parent and skin.</summary>
-    public void AddGlowTwin(MeshInstance3D mi, ModelMesh m, Skin skin)
+    public void AddGlowTwin(MeshInstance3D mi, ModelMesh m, Skin skin, float frozenAt = -1f)
     {
         bool uv2 = mi.Mesh is ArrayMesh am && (am.SurfaceGetFormat(0) & Mesh.ArrayFormat.FormatTexUV2) != 0;
-        if (!GlowPass.Wanted || GlowMaterial(m, uv2) is not { } gm) return;
+        if (!GlowPass.Wanted || GlowMaterial(m, uv2, frozenAt) is not { } gm) return;
         var g = new MeshInstance3D { Name = mi.Name + "_glow", Mesh = mi.Mesh, Layers = GlowPass.Bit, MaterialOverride = gm, Transform = mi.Transform, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
         mi.GetParent().AddChild(g);
         if (skin != null) { g.Skin = skin; g.Skeleton = ".."; }
@@ -330,13 +330,73 @@ public sealed class ModelBuilder
         return sh;
     }
 
+    // the maps field_uv transforms, in its map order
+    static readonly string[] UvMaps = { "base", "dark", "glow", "decal0" };
+
+    /// <summary>
+    /// The texture transforms of the maps the field shaders draw (field_uv): each map's static NiTextureTransform, and its
+    /// running uv controllers over it. A map a controller moves but that has no transform gets the controller's default
+    /// one (NiTextureTransformController.cpp:146-151, TexTransform.ControllerDefault). STILL-OPEN: the shader takes at
+    /// most 4 controllers of up to 4 keys each; others keep the static value (field scan: one 5-key translate on a base
+    /// and one on a glow map, 4 entities).
+    /// </summary>
+    static void SetUvTransforms(ShaderMaterial sm, ModelMesh m)
+    {
+        var tt = new float[28];
+        var method = Vector4I.Zero;
+        var target = Vector4I.Zero;
+        var keys = Vector4I.Zero;
+        float[] time = new float[16], kt = new float[16], kv = new float[16], kin = new float[16], kout = new float[16];
+        int n = 0;
+        bool any = false;
+        for (int map = 0; map < UvMaps.Length; map++)
+        {
+            m.Maps.TryGetValue(UvMaps[map], out var tm);
+            bool moved = false;
+            foreach (var ua in m.UvAnims)
+            {
+                if (ua.Slot != UvMaps[map] || ua.Times.Length > 4 || n == 4) continue;
+                moved = true;
+                target[n] = map * 8 + ua.Operation;
+                keys[n] = ua.Times.Length * 4 + ua.KeyType;
+                time[4 * n] = ua.Start; time[4 * n + 1] = ua.Stop; time[4 * n + 2] = ua.Frequency; time[4 * n + 3] = ua.Phase;
+                for (int k = 0; k < ua.Times.Length; k++)
+                {
+                    kt[4 * n + k] = ua.Times[k];
+                    kv[4 * n + k] = ua.Values[k];
+                    if (ua.InTans != null) { kin[4 * n + k] = ua.InTans[k]; kout[4 * n + k] = ua.OutTans[k]; }
+                }
+                n++;
+            }
+            var t = tm?.Transform ?? (moved ? TexTransform.ControllerDefault() : null);
+            if (t == null) continue;
+            any = true;
+            method[map] = t.Method + 1;
+            tt[7 * map] = t.TU; tt[7 * map + 1] = t.TV; tt[7 * map + 2] = t.SU; tt[7 * map + 3] = t.SV;
+            tt[7 * map + 4] = t.Rotate; tt[7 * map + 5] = t.CU; tt[7 * map + 6] = t.CV;
+        }
+        if (!any) return;
+        sm.SetShaderParameter(ShaderParam.UvTt, tt);
+        sm.SetShaderParameter(ShaderParam.UvTtMethod, method);
+        if (n == 0) return;
+        sm.SetShaderParameter(ShaderParam.UvCtlCount, n);
+        sm.SetShaderParameter(ShaderParam.UvCtlTarget, target);
+        sm.SetShaderParameter(ShaderParam.UvCtlKeys, keys);
+        sm.SetShaderParameter(ShaderParam.UvCtlTime, time);
+        sm.SetShaderParameter(ShaderParam.UvCtlT, kt);
+        sm.SetShaderParameter(ShaderParam.UvCtlV, kv);
+        sm.SetShaderParameter(ShaderParam.UvCtlIn, kin);
+        sm.SetShaderParameter(ShaderParam.UvCtlOut, kout);
+    }
+
     /// <summary>The glow pass material of a mesh with a glow map (shaders/field_glow), or null.
     /// Null as well for a mesh the client's glow click leaves out (FUN_1414cffc0, ms2materialswapprocessor.cpp:158-170): one
     /// that blends other than SRCALPHA / INVSRCALPHA (FUN_141567260, unit_141567000.cpp:158-168). Particle systems, the
-    /// predicate's other case, are not NiMesh and never reach here.
+    /// predicate's other case, are not NiMesh and never reach here. A static entity's (frozenAt >= 0) holds its uv
+    /// controllers at that time, as its field material does (<see cref="Freeze"/>).
     /// STILL-OPEN: a map on uv set 2 or above reads UV (the meshes carry two uv sets).</summary>
     /// <param name="uv2">the mesh carries its second uv set as UV2</param>
-    public Material GlowMaterial(ModelMesh m, bool uv2)
+    public Material GlowMaterial(ModelMesh m, bool uv2, float frozenAt = -1f)
     {
         if (!m.Textures.TryGetValue("glow", out var glowName) || Texture(glowName) is not { } glow) return null;
         if (m.AlphaBlendOn && (((m.AlphaFlags >> 1) & 15) != 6 || ((m.AlphaFlags >> 5) & 15) != 7)) return null;   // NiAlphaProperty SRCALPHA 6, INVSRCALPHA 7
@@ -354,6 +414,8 @@ public sealed class ModelBuilder
         if (detail != null) sm.SetShaderParameter(ShaderParam.DetailTex, detail);
         sm.SetShaderParameter(ShaderParam.DetailUv2, OnUv2("detail"));
         sm.SetShaderParameter(ShaderParam.AlphaTest, m.AlphaTestOn || m.AlphaBlendOn || m.AlphaTest);
+        SetUvTransforms(sm, m);
+        if (frozenAt >= 0 && m.AnimatesMaterial) sm.SetShaderParameter(ShaderParam.FrozenTime, frozenAt);
         return sm;
     }
 
@@ -536,13 +598,7 @@ public sealed class ModelBuilder
                 sm.SetShaderParameter(ShaderParam.FlipCount, m.FlipFrames.Length);
                 sm.SetShaderParameter(ShaderParam.FlipPeriod, m.FlipPeriod);
             }
-            foreach (var sc in m.Scrolls)
-            {
-                if (sc.Slot is not ("base" or "dark")) continue;
-                sm.SetShaderParameter(sc.Slot + "_scroll_axis", sc.Axis);
-                sm.SetShaderParameter(sc.Slot + "_scroll_key", new Vector4(sc.Times[0], sc.Times[^1], sc.Values[0], sc.Values[^1]));
-                sm.SetShaderParameter(sc.Slot + "_scroll_range", new Vector2(sc.Start, sc.Stop));
-            }
+            SetUvTransforms(sm, m);
             return sm;
         }
         return CharacterMaterial(m, tex);

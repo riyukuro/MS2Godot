@@ -32,19 +32,24 @@ uniform bool glow_uv2 = false;
 uniform bool detail_uv2 = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
+#include "res://shaders/field_uv.gdshaderinc"
 
+varying vec2 base_uv;
+varying vec2 glow_uv;
 varying vec3 world_pos;
 
 void vertex() {
+	base_uv = map_uv(0, base_uv2 ? UV2 : UV);
+	glow_uv = map_uv(2, glow_uv2 ? UV2 : UV);
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
 void fragment() {
-	float a = has_tex ? texture(base_tex, base_uv2 ? UV2 : UV).a : 1.0;
+	float a = has_tex ? texture(base_tex, base_uv).a : 1.0;
 	if (alpha_test && a < alpha_ref) {
 		discard;
 	}
-	float g = texture(glow_tex, glow_uv2 ? UV2 : UV).a;
+	float g = texture(glow_tex, glow_uv).a;
 	if (has_detail) {
 		g *= texture(detail_tex, detail_uv2 ? UV2 : UV).a;
 	}

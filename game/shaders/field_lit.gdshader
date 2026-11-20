@@ -122,18 +122,13 @@ uniform sampler2DArray flip_tex : filter_linear_mipmap_anisotropic, repeat_enabl
 uniform int flip_slot = -1;          // 0 base, 1 dark
 uniform int flip_count = 1;
 uniform float flip_period = 1.0;
-uniform int base_scroll_axis = -1;   // 0 u, 1 v
-uniform vec4 base_scroll_key;        // first time, last time, first value, last value
-uniform vec2 base_scroll_range;      // controller start, stop
-uniform int dark_scroll_axis = -1;
-uniform vec4 dark_scroll_key;
-uniform vec2 dark_scroll_range;
-// The controllers' time. A static entity (Bakeable IsStatic) is updated once, at the game time it is added
-// (SceneGraphService.cpp:2380 SetIsDynamic(!IsStatic), :1255-1262 AddToUpdateOnce), so its controllers hold that value:
-// frozen_time is that time. -1: the entity is dynamic and its controllers run on the scene time.
-uniform float frozen_time = -1.0;
+#include "res://shaders/field_uv.gdshaderinc"
 
 varying vec3 world_normal;
+varying vec2 base_uv;    // each drawn map's uv through its texture transform (field_uv map_uv)
+varying vec2 dark_uv;
+varying vec2 glow_uv;
+varying vec2 decal_uv;
 varying vec3 world_pos;
 varying vec4 vcolor;
 varying vec3 env_u_world;
@@ -158,6 +153,10 @@ vec2 env_sphere_uv(vec3 wpos, vec3 wnrm, vec3 cam, vec3 u_axis, vec3 v_axis) {
 }
 
 void vertex() {
+	base_uv = map_uv(0, UV);
+	dark_uv = map_uv(1, dark_uv2 ? UV2 : UV);
+	glow_uv = map_uv(2, UV);
+	decal_uv = map_uv(3, UV);
 	world_normal = (MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz;
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	vcolor = has_vcolor ? CUSTOM0 : vec4(1.0);
@@ -171,26 +170,9 @@ void vertex() {
 #endif
 }
 
-float anim_time() {
-	return frozen_time >= 0.0 ? frozen_time : TIME;
-}
-
-vec2 scroll(int axis, vec4 key, vec2 range) {
-	if (axis < 0) {
-		return vec2(0.0);
-	}
-	float t = range.x + mod(anim_time(), max(range.y - range.x, 1e-3));
-	float v = mix(key.z, key.w, clamp((t - key.x) / max(key.y - key.x, 1e-6), 0.0, 1.0));
-	return axis == 0 ? vec2(v, 0.0) : vec2(0.0, v);
-}
-
-// NiTimeController::ComputeScaledTime (NiTimeController.cpp:97-160) for a LOOP cycle: freq * t + phase, wrapped into
-// start..stop; then NiFloatKey::GenInterpDefault / GenInterp (NiFloatKey.cpp:196-211, :60-90): the end values outside
-// the keys, else the segment's normalized time into NiLinFloatKey (lerp) or NiBezFloatKey::Interpolate
-// (NiInterpScalar::Bezier, NiInterpScalar.cpp:26-36, with key 0's OutTan and key 1's InTan).
+// The alpha controller's value (field_uv loop_time, then the end values outside the keys, else key_segment).
 float alpha_anim() {
-	float span = max(alpha_anim_time.y - alpha_anim_time.x, 1e-3);
-	float t = alpha_anim_time.x + mod(alpha_anim_time.z * anim_time() + alpha_anim_time.w, span);
+	float t = loop_time(alpha_anim_time);
 	int n = alpha_anim_count;
 	if (t <= alpha_anim_t[0]) {
 		return alpha_anim_v[0];
@@ -202,16 +184,7 @@ float alpha_anim() {
 		}
 		float t0 = alpha_anim_t[i], t1 = alpha_anim_t[i + 1];
 		if (t <= t1) {
-			float u = (t - t0) / max(t1 - t0, 1e-6);
-			float p = alpha_anim_v[i], q = alpha_anim_v[i + 1];
-			if (alpha_anim_type == 2) {
-				float dp = alpha_anim_out[i], dq = alpha_anim_in[i + 1];
-				float A = 3.0 * (q - p) - (dq + 2.0 * dp);
-				float B = dp + dq - 2.0 * (q - p);
-				r = p + (dp + (A + B * u) * u) * u;
-			} else {
-				r = mix(p, q, u);
-			}
+			r = key_segment(alpha_anim_type, (t - t0) / max(t1 - t0, 1e-6), alpha_anim_v[i], alpha_anim_v[i + 1], alpha_anim_out[i], alpha_anim_in[i + 1]);
 			break;
 		}
 	}
@@ -227,15 +200,13 @@ vec4 sample_slot(sampler2D tex, int slot, vec2 uv) {
 }
 
 void fragment() {
-	vec2 buv = UV + scroll(base_scroll_axis, base_scroll_key, base_scroll_range);
-	vec4 t = has_tex ? sample_slot(base_tex, 0, buv) : vec4(1.0);
+	vec4 t = has_tex ? sample_slot(base_tex, 0, base_uv) : vec4(1.0);
 	if (has_decal) {
-		vec4 d = texture(decal_tex, UV);
+		vec4 d = texture(decal_tex, decal_uv);
 		t.rgb = mix(t.rgb, d.rgb, d.a);
 	}
 	if (has_dark) {
-		vec2 duv = (dark_uv2 ? UV2 : UV) + scroll(dark_scroll_axis, dark_scroll_key, dark_scroll_range);
-		t.rgb *= sample_slot(dark_tex, 1, duv).rgb;
+		t.rgb *= sample_slot(dark_tex, 1, dark_uv).rgb;
 	}
 	// NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor (NiStandardMaterial.cpp:4360-4456): the opacity is split from the diffuse colour, which
 	// is the vertex colour only for source AMB_DIFF with lighting E_A_D; otherwise it is the material diffuse, whose alpha is
@@ -312,7 +283,7 @@ void fragment() {
 	vec3 c = lit * t.rgb;
 	vec3 c0 = (unsun + dif * ms2_sun_ambient) * t.rgb;   // the same colour fully in the sun's shadow (Shadow = 0)
 	if (has_glow) {
-		vec3 g = texture(glow_tex, UV).rgb;
+		vec3 g = texture(glow_tex, glow_uv).rgb;
 		c += g;
 		c0 += g;
 	}
