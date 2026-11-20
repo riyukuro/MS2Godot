@@ -23,7 +23,9 @@ namespace Ms2Godot.World;
 /// the switch sets that body's layer, on the packet only.
 /// SetEntityCollisionGroup then runs WorldService::FUN_141bc8e00 (worldservice_1.cpp:4995-5009): each PC's
 /// controller gets ReportSceneChanged; NxController keeps no touched-shape state across moves for it to drop.
-/// STILL-OPEN: the fade over Fade tenths of a second (shown/hidden at once here); the model swap a shown mesh with a model
+/// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
+/// fade switches at once. The collision switch does not wait for it.
+/// STILL-OPEN: the model swap a shown mesh with a model
 /// name gets (property 0x770e5fc6 and skin scale 0x2d7cad2d); whether the server's npc ground drops a hidden mesh
 /// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
 /// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
@@ -34,15 +36,20 @@ namespace Ms2Godot.World;
 public sealed class FieldTriggers
 {
     readonly Dictionary<int, TriggerObjectKind> kinds = new();
-    readonly Dictionary<int, List<(MultiMesh Mm, int Index, Transform3D Xf)>> meshes = new();
+    readonly Dictionary<int, TriggerFade.Target> meshes = new();
     readonly Dictionary<int, FieldBuilder.TriggerCollider> colliders = new();
+
+    /// <summary>The node that runs the fades, in the tree with the field (null when built without fade draws).</summary>
+    public readonly TriggerFade Fader;
 
     /// <summary>The group FUN_140b60e40 puts a hidden trigger mesh's colliders in.</summary>
     public const int HiddenGroup = 5;
 
     public FieldTriggers(IEnumerable<FieldEntity> entities, IReadOnlyDictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> meshDraws,
-                         IReadOnlyDictionary<FieldEntity, FieldBuilder.TriggerCollider> meshColliders = null)
+                         IReadOnlyDictionary<FieldEntity, FieldBuilder.TriggerCollider> meshColliders = null,
+                         IReadOnlyDictionary<FieldEntity, List<FieldBuilder.FadeDraw>> fadeDraws = null)
     {
+        if (fadeDraws != null) Fader = new TriggerFade();
         foreach (var e in entities)
         {
             if (TriggerObjects.KindOf(e.HasMixin) is not { } kind) continue;
@@ -50,9 +57,9 @@ public sealed class FieldTriggers
             kinds[id] = kind;     // CAtlMap::SetAt: a later entity with the same id replaces the earlier
             if (kind == TriggerObjectKind.Mesh && meshDraws.TryGetValue(e, out var draws) && draws.Count > 0)
             {
-                if (!meshes.TryGetValue(id, out var list)) meshes[id] = list = new();
-                else list.Clear();
-                foreach (var (mm, i) in draws) list.Add((mm, i, mm.GetInstanceTransform(i)));
+                var t = meshes[id] = new TriggerFade.Target();
+                foreach (var (mm, i) in draws) t.All.Add((mm, i, mm.GetInstanceTransform(i)));
+                if (fadeDraws != null && fadeDraws.TryGetValue(e, out var drawn)) t.Draws.AddRange(drawn);
             }
             else meshes.Remove(id);
             if (kind == TriggerObjectKind.Mesh && meshColliders != null && meshColliders.TryGetValue(e, out var tc)) colliders[id] = tc;
@@ -63,9 +70,8 @@ public sealed class FieldTriggers
     /// <summary>The kind of the object with this id, or null when the field holds none.</summary>
     public TriggerObjectKind? KindOf(int id) => kinds.TryGetValue(id, out var k) ? k : null;
 
-    /// <summary>Whether the mesh object's instances are shown (null: no such drawn mesh).</summary>
-    public bool? MeshShown(int id) =>
-        meshes.TryGetValue(id, out var l) && l.Count > 0 ? l[0].Mm.GetInstanceTransform(l[0].Index).Basis != new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero) : null;
+    /// <summary>Whether the mesh object is shown (null: no such drawn mesh); a fading one changes when its fade ends.</summary>
+    public bool? MeshShown(int id) => meshes.TryGetValue(id, out var t) ? t.Shown : null;
 
     /// <summary>Reads one Trigger packet body and applies its object events; the count applied.</summary>
     public int Apply(ByteReader r)
@@ -75,10 +81,10 @@ public sealed class FieldTriggers
         {
             if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
             if (ev.Kind != TriggerObjectKind.Mesh) continue;
-            bool drawn = meshes.TryGetValue(ev.Id, out var list);
-            if (drawn)
-                foreach (var (mm, i, xf) in list)
-                    mm.SetInstanceTransform(i, ev.Show ? xf : new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), xf.Origin));
+            bool drawn = meshes.TryGetValue(ev.Id, out var t);
+            // WorldService::FadeEntity(id, bShow, nFade * 0.1f), triggeractioncli.cpp:650-651
+            if (drawn && Fader != null && t.Draws.Count > 0) Fader.FadeEntity(ev.Id, t, ev.Show, ev.Fade * 0.1f);
+            else if (drawn) TriggerFade.Switch(t, ev.Show);
             // FUN_140b60e40(entity, bShow), triggeractioncli.cpp:679: after the fade and model swap
             bool collides = colliders.TryGetValue(ev.Id, out var tc);
             if (collides) tc.SetGroup(ev.Show ? tc.Group : HiddenGroup);

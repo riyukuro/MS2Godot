@@ -151,7 +151,8 @@ public partial class Field : Node3D
         AddChild(new AlphaSort(fb.AlphaEntries, fieldWorld));   // the client's alpha key on the field's blended draws
         Fade = new World.FieldFade(fb.FadeDraws, () => player?.GlobalPosition, () => camera);   // BGTransparencyMgr
         AddChild(Fade);
-        Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws, fb.TriggerColliders);
+        Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws, fb.TriggerColliders, fb.TriggerFadeDraws);
+        AddChild(Triggers.Fader);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         foreach (var (e, off) in fb.LightOffElsewhere) contents.Props.LightOff[e] = off;

@@ -90,6 +90,8 @@ public sealed class FieldBuilder
     /// them by trigger id (TriggerObjectMesh::vfunc_2, triggeractioncli.cpp:643).
     /// </summary>
     public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> TriggerMeshDraws = new();
+    /// <summary>The drawn instances of every trigger mesh entity, which a Trigger packet's fade draws alone (<see cref="World.TriggerFade"/>).</summary>
+    public readonly Dictionary<FieldEntity, List<FadeDraw>> TriggerFadeDraws = new();
 
     /// <summary>
     /// The colliders of a trigger mesh entity: its own body (not a merged chunk) and its own overlap copies, whose collision
@@ -129,6 +131,11 @@ public sealed class FieldBuilder
     void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving, uint lightOff)
     {
         AddTriggerDraw(e, mm, index);
+        if (IsTriggerMesh(e))
+        {
+            if (!TriggerFadeDraws.TryGetValue(e, out var drawn)) TriggerFadeDraws[e] = drawn = new List<FadeDraw>();
+            drawn.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
+        }
         if (!IsFadeTarget(e)) return;
         if (!FadeDraws.TryGetValue(e, out var list)) FadeDraws[e] = list = new List<FadeDraw>();
         list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving, LightOff = lightOff });
