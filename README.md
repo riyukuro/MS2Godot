@@ -20,11 +20,17 @@ from the code after each merge with no hand marks.
   not cited, in a source file where another function is. The engine, middleware, runtime and library groups
   (Gamebryo, Scaleform, CRI, CEF, PhysX, the C runtime, Lua and the others) are *replaced*: Godot and MS2Godot's
   own runtime stand in for them, and a function there that is cited still shows as ported. The headline is ported
-  game functions over all game functions. The footer gives the cites of each kind and how many did not resolve.
-- UI movies: every movie in the client's `Gfx.m2d`. A movie's callbacks are the `ExternalInterface.call` names its
-  own classes raise (the shared library classes, the ones the small `uihpbar` movie also defines, such as the window base, are left out). *Done*: the movie's
-  name is a string in MS2Godot's code, and those files (with the controller base) name every callback, compared
-  without case as the client compares them. *Partial*: named, but not every callback is. *Missing*: never named.
+  functions over the game code and common files functions; the template instantiations are compiler-generated, so
+  they are counted apart with their own share, and the figure with them is in the sub-line. The footer gives the
+  cites of each kind and how many did not resolve.
+- UI movies: the movies of the client's `Gfx.m2d` that the client loads: `UI` + a dialog type name of the restored
+  source (a formatted name such as `DamageFont_{0}` covers every movie it can make), a string in the source that
+  names the movie, a `.swf`/`.gfx` name in the XML tables or the font config, or a movie that one of those names
+  inside its own bytes. The other movies are shown as an unused count and left out. A movie's callbacks are the
+  `ExternalInterface.call` names its own classes raise (the shared library classes, the ones the small `uihpbar`
+  movie also defines, such as the window base, are left out). *Done*: the movie's name is a string in MS2Godot's
+  code, and those files (with the controller base) name every callback, compared without case as the client
+  compares them. *Partial*: named, but not every callback is. *Missing*: never named.
 - Packets: the opcodes the client receives and sends (its `RecvOp` and `SendOp` uses), matched by value to
   `Ms2.Net`'s `Inbound` and `Outbound` tables. Received: *done* when MS2Godot dispatches on it, *partial* when the
   table has it and nothing dispatches on it. Sent: *done* when MS2Godot sends it, *partial* when only the table has
