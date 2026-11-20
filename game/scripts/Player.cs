@@ -57,7 +57,10 @@ public partial class Player : CharacterBody3D
     /// (groundeffectdata.cpp:275): the material of the entity in the controller's hit report, "default" when that
     /// entity has none or when the actor is neither on the ground nor above anything (m_unk_9a8: FUN_141671a30 or the
     /// down ray), "" when the report holds no entity (PlayEffects then plays nothing).
-    /// STILL-OPEN: the equipment's ground override (m_str960, FUN_141670e50 from equipment.cpp:2790) is not ported.
+    /// STILL-OPEN: the equipment's ground override is not ported. The set-effect update @0x1411ec480 (equipment.cpp:2790)
+    /// stores the worn set option part's groundAttribute (setitemoptionpart.h:34) in m_str960 via FUN_141670e50, and
+    /// FUN_141671480 (pcbase.cpp:2488) returns it instead of the touched ground when it is not empty, m_unk_9c4 != 8
+    /// and, when vfunc_62() is true, vfunc_61() == 2.
     /// </summary>
     public string GroundMaterial => hitGround == null ? "" : Grounded || GroundDistance < float.MaxValue ? hitGround : "default";
     /// <summary>The last controller move touched something below (NXCC_COLLISION_DOWN).</summary>
