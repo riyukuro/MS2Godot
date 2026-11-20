@@ -9,6 +9,16 @@ public sealed class SkillMotion
     public string SequenceName;          // e.g. Attack_01_A; the sequence of the actor's kfm / the player's kf
     public string MotionEffect;          // effect xml path (Xml pack effect/...), may be null
     public List<string> HitEffects = new();   // damage effectHit paths of its attack points
+    /// <summary>
+    /// The motion's other effect files and flags, as SkillMotionData::Load (@0x140808350, skillleveldata.cpp:1163-1175)
+    /// reads them; its launch-option gate (Unk_LaunchOptions::FUN_1406af020, launchoptions.cpp:78-81) is always true.
+    /// The region skill object (CRegionSkillObject) uses them: SplashInvokeEffect (+0x30) on a hit, LoopEffect (+0x38) as its
+    /// second loop, SplashEndEffect (+0x48) on the reset, SplashDurationCastEffect (+0x98) once after the start tick,
+    /// IgnoreOptimalHideCastEffect (+0xa0) to show them also for a non-local owner, SplashCastEffectStartDelay (+0xa1) to
+    /// list the points instead of spawning at once (skilloverlapcompare.h:211-222).
+    /// </summary>
+    public string LoopEffect, SplashInvokeEffect, SplashEndEffect, SplashDurationCastEffect;
+    public bool IgnoreOptimalHideCastEffect, SplashCastEffectStartDelay;
 }
 
 public sealed class SkillLevelRow
@@ -38,7 +48,13 @@ public sealed class SkillTable
                     var row = new SkillLevelRow { Level = int.TryParse((string)l.Attribute("value"), out int lv) ? lv : 1 };
                     foreach (var m in l.Elements("motion"))
                     {
-                        var mo = new SkillMotion { SequenceName = (string)m.Attribute("sequenceName"), MotionEffect = (string)m.Attribute("motionEffect") };
+                        var mo = new SkillMotion
+                        {
+                            SequenceName = (string)m.Attribute("sequenceName"), MotionEffect = (string)m.Attribute("motionEffect"),
+                            LoopEffect = (string)m.Attribute("loopEffect"), SplashInvokeEffect = (string)m.Attribute("splashInvokeEffect"),
+                            SplashEndEffect = (string)m.Attribute("splashEndEffect"), SplashDurationCastEffect = (string)m.Attribute("splashDurationCastEffect"),
+                            IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
+                        };
                         foreach (var d in m.Descendants("damage"))
                             if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);
                         row.Motions.Add(mo);
@@ -61,4 +77,20 @@ public sealed class SkillTable
     }
 
     public bool Has(int skillId) => skills.ContainsKey(skillId);
+
+    /// <summary>XmlQuery of a bool (tinyxmlhelper.cpp, @0x1408736d0): TiXmlElement::QueryBoolAttribute (tinyxml.cpp:620-645) sets
+    /// true when the value starts with "true", "yes" or "1" (StringEqual, case-insensitive prefix); else the flag stays false.</summary>
+    public static bool Flag(XElement e, string name) =>
+        (string)e.Attribute(name) is { Length: > 0 } v && (v.StartsWith("true", StringComparison.OrdinalIgnoreCase) || v.StartsWith("yes", StringComparison.OrdinalIgnoreCase) || v.StartsWith('1'));
+
+    /// <summary>
+    /// The level data and its motion 0, as CRegionSkillObject::Init gets them (regionskillobject.cpp:91-99: GetSkillData,
+    /// GetLevelData(nLevel), GetMotion(0)): null when the skill, that exact level or a motion is missing.
+    /// </summary>
+    public SkillMotion RegionMotion(int skillId, int level)
+    {
+        if (!skills.TryGetValue(skillId, out var levels)) return null;
+        var row = levels.FirstOrDefault(r => r.Level == level);
+        return row == null || row.Motions.Count == 0 ? null : row.Motions[0];
+    }
 }

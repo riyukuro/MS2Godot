@@ -179,6 +179,13 @@ public partial class LiveSession : Node
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
     readonly HashSet<int> regionSkills = new();
+    /// <summary>The field's OnRegionSkill messages in order, for a <see cref="World.RegionSkills"/> node made after them; cleared
+    /// with the ids on a new field.</summary>
+    public readonly List<Ms2.Net.Packets.RegionSkillMessage> RegionSkillLog = new();
+    /// <summary>An OnRegionSkill message (0x4C modes 0-2) of the current field.</summary>
+    public event Action<Ms2.Net.Packets.RegionSkillMessage> RegionSkillReceived;
+    /// <summary>CMainSystem::GetServerTick (mainsystem.cpp:312); 0 without a session.</summary>
+    public int ServerTick => game?.Session.ServerTick ?? 0;
     /// <summary>UserEnv mode 8 or 9 replaced the gathering counts or the received rewards.</summary>
     public event Action MasteryEnvChanged;
 
@@ -488,7 +495,7 @@ public partial class LiveSession : Node
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
         Busy = true;
-        regionSkills.Clear();                     // a new field: no region skill object survives it
+        regionSkills.Clear(); RegionSkillLog.Clear();   // a new field: no region skill object survives it
         try
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
@@ -575,7 +582,7 @@ public partial class LiveSession : Node
         triggerField = field;
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
-        regionSkills.Clear();
+        regionSkills.Clear(); RegionSkillLog.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
@@ -740,7 +747,7 @@ public partial class LiveSession : Node
     {
         try
         {
-            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
+            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
@@ -1000,11 +1007,12 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.RegionSkill))
             {
-                // OnRegionSkill (scenestategame.cpp:7721): mode 0 adds the region skill object of the id, mode 1 removes it.
-                // Only the ids are kept (the object's Init is not ported); mode 5's damage needs one.
-                var r = p.Reader();
-                int mode = r.ReadByte(), id = r.ReadInt();
-                if (mode == 0) regionSkills.Add(id); else if (mode == 1) regionSkills.Remove(id);
+                // OnRegionSkill (scenestategame.cpp:7718-7749): mode 0 adds the region skill object of the id, mode 1 removes
+                // it, mode 2 stops its loop effects. The ids serve mode 5's damage; the field's RegionSkills node draws the effects.
+                var m = Ms2.Net.Packets.RegionSkillMessage.Read(p.Reader());
+                if (m is Ms2.Net.Packets.RegionSkillMessage.Add) regionSkills.Add(m.Id);
+                else if (m is Ms2.Net.Packets.RegionSkillMessage.Remove) regionSkills.Remove(m.Id);
+                if (m != null) { RegionSkillLog.Add(m); RegionSkillReceived?.Invoke(m); }
             }
             else if (game.Is(p, Inbound.SkillDamage))
             {
