@@ -329,6 +329,28 @@ build needs `nif.xml` from the setup screen (the submodule is only used from a s
 Continuous integration (`.github/workflows/ci.yml`) builds the solution on .NET 8 and 10 and runs the tests; the tests that
 need game data skip there.
 
+## Launcher
+
+The flow opens on a launcher before the client's own logo and login screens. The client has no such page; this one is
+MS2Godot's, built from native Godot controls (no client movie and no client art).
+
+- **Single player** starts the offline flow exactly as before: the client's login screen accepts any id, the character
+  list is the stub list.
+- **Servers** is a list of login servers. *Add server* asks for a name and an address (`host:port`, the port from 1 to
+  65535); *Edit* and *Remove* change or drop an entry. *Connect* starts the live mode against that server: the client's
+  login dialog follows, and the id and password typed there are the live login. On open and on *Refresh* each entry
+  gets one TCP connect with a short timeout, off the main thread, and shows reachable with the time it took, or
+  unreachable. Only the address is contacted, never logged in.
+- The list is `user://servers.json`, in Godot's user data folder. A missing file, or one that does not parse, is an
+  empty list.
+- Keys: Tab moves between controls, Enter activates the focused one, Esc closes the add/edit dialog (and quits on the
+  launcher itself).
+
+The launcher is skipped, and the run starts as it did before it existed, when `MS2_LIVE_LOGIN` is set or the flow is
+scripted (`--flow-shots`); the test and perf scenes (`setup.tscn`, `hud.tscn`, `field.tscn`, `tests/*.tscn`) never show
+it. The environment overrides the launcher: `MS2_LIVE_LOGIN` (`host:port`) starts the live mode against that address
+without the launcher, and `MS2_LIVE_ACCOUNT` (`user:password`) overrides the id and password typed in the dialog.
+
 ## Settings
 
 The project contains no local paths. The paths are looked up in this order:

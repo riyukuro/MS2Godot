@@ -8,7 +8,7 @@ namespace Ms2Godot.Ui;
 /// MS2Godot's own pre-login page: single player (the offline flow, unchanged) or a saved login server. The client has no
 /// such page, so there is nothing to cite; this screen is native Godot Controls, not a client movie.
 /// The list is user://servers.json, edited in the Add/Edit dialog and checked on open and on Refresh by a TCP connect
-/// off the main thread with a short timeout.
+/// off the main thread with a short timeout. Enter activates the focused control; Esc closes the dialog, or quits here.
 /// Args after `--`: --launcher-shots DIR saves the empty list, a two-entry list and the add dialog, then quits.
 /// </summary>
 public partial class LauncherScene : Control
@@ -68,6 +68,7 @@ public partial class LauncherScene : Control
         Theme = MakeTheme();
         Build();
         RebuildRows();
+        single.GrabFocus();
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = ShotScript(); }
     }
 
@@ -148,6 +149,10 @@ public partial class LauncherScene : Control
 
         summary = Muted("");
         box.AddChild(summary);
+
+        var hint = Muted("Tab: move between controls  ·  Enter: connect or start  ·  Esc: quit");
+        hint.AddThemeFontSizeOverride("font_size", 14);
+        box.AddChild(hint);
 
         BuildDialog();
     }
@@ -317,7 +322,8 @@ public partial class LauncherScene : Control
         if (gen != generation || index >= rows.Count) return;
         var row = rows[index];
         if (!IsInstanceValid(row.Status)) return;
-        row.Status.Text = (reachable ? "reachable · " : "unreachable · ") + watch.ElapsedMilliseconds + " ms";
+        // the time of a failed attempt is only how long the timeout ran, so it is shown for a reachable entry alone
+        row.Status.Text = reachable ? "reachable · " + watch.ElapsedMilliseconds + " ms" : "unreachable";
         row.Status.AddThemeColorOverride("font_color", reachable ? ReachableColor : UnreachableColor);
     }
 
@@ -365,6 +371,16 @@ public partial class LauncherScene : Control
         CloseDialog();
         RebuildRows();
         add.GrabFocus();
+    }
+
+    /// <summary>Esc backs out: it closes the dialog, and on the screen itself it quits (there is no page before this one).</summary>
+    public override void _UnhandledInput(InputEvent e)
+    {
+        if (e is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) return;
+        var viewport = GetViewport();
+        if (overlay.Visible) CloseDialog();
+        else GetTree().Quit(0);
+        if (IsInstanceValid(viewport)) viewport.SetInputAsHandled();
     }
 
     // ---- scripted shots ----------------------------------------------------------------------------------------------
