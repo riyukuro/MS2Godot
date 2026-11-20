@@ -889,25 +889,20 @@ namespace Ms2.Avm2.Flash
                 if (o is AsContainer c)
                 {
                     var kids = c.Children;
-                    // CalcDisplayListHitTestMaskArray (0x1425fbff0), as in ContainerTopMost: a clip-depth mask decides for the
-                    // children up to its clip depth, so a scroll pane's rows outside its mask take no hit
-                    bool[] masked = null;
-                    for (int i = 0; i < kids.Count; i++)
+                    // as in ContainerTopMost: a clip-depth mask decides for the children up to its clip depth, so a scroll
+                    // pane's rows outside its mask take no hit
+                    var hit = MaskArray(kids, x, y);
+                    try
                     {
-                        if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
-                        masked ??= new bool[kids.Count];
-                        bool inside = PointTest(kids[i], x, y, true, false);
-                        int j = i + 1;
-                        for (; j < kids.Count && kids[j].Depth <= clip; j++) masked[j] = !inside;
-                        i = j - 1;
+                        for (int i = kids.Count - 1; i >= 0; i--)
+                        {
+                            var k = kids[i];
+                            if (k.ClipDepth != null || hit != null && !hit[i]) continue;
+                            var h = Hit(k);
+                            if (h != null) return h;
+                        }
                     }
-                    for (int i = kids.Count - 1; i >= 0; i--)
-                    {
-                        var k = kids[i];
-                        if (k.ClipDepth != null || masked != null && masked[i]) continue;
-                        var h = Hit(k);
-                        if (h != null) return h;
-                    }
+                    finally { ReturnMaskArray(hit); }
                 }
                 return o.HitsContent(x, y) ? o : null;
             }
@@ -997,6 +992,33 @@ namespace Ms2.Avm2.Flash
         }
 
         /// <summary>DisplayObjContainer::GetTopMostMouseEntity (sfr_gfx_06d.cpp:298), AVM2.</summary>
+        /// <summary>
+        /// CalcDisplayListHitTestMaskArray (0x1425fbff0): for each child, whether the point is inside the clip-depth mask that
+        /// covers it (a mask covers the children after it up to its clip depth; a mask's own entry is its own test; children no
+        /// mask covers are true). Null when no child is a mask. The array is pooled and may be longer than the child list: give
+        /// it back with <see cref="ReturnMaskArray"/> once the walk is done (the walk recurses, so each level has its own).
+        /// </summary>
+        static bool[] MaskArray(ChildList kids, double gx, double gy)
+        {
+            int n = kids.Count;
+            bool[] hit = null;
+            for (int i = 0; i < n; i++)
+            {
+                if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
+                if (hit == null) { hit = System.Buffers.ArrayPool<bool>.Shared.Rent(n); Array.Fill(hit, true, 0, n); }
+                hit[i] = PointTest(kids[i], gx, gy, true, false);
+                int k = i + 1;
+                for (; k < n && kids[k].Depth <= clip; k++) hit[k] = hit[i];
+                i = k - 1;
+            }
+            return hit;
+        }
+
+        static void ReturnMaskArray(bool[] hit)
+        {
+            if (hit != null) System.Buffers.ArrayPool<bool>.Shared.Return(hit);
+        }
+
         TopMostResult ContainerTopMost(AsContainer c, double gx, double gy, TopMostDescr d)
         {
             var holder = (c as AsSprite)?.IsHitAreaOf;
@@ -1006,20 +1028,16 @@ namespace Ms2.Avm2.Flash
             if (!LocalAndCheckBounds(c, gx, gy, out _, out _)) return TopMostResult.FoundNothing;
             if (c.MaskObject is { } mask && mask.MaskOwner == c && !PointTest(mask, gx, gy, true, false)) return Nothing(d);
 
-            // CalcDisplayListHitTestMaskArray: a clip-depth mask decides for the children up to its clip depth
+            var hit = MaskArray(c.Children, gx, gy);
+            try { return ContainerTopMost(c, gx, gy, d, holder, hit); }
+            finally { ReturnMaskArray(hit); }
+        }
+
+        /// <summary>ContainerTopMost's children walk, with the clip-depth mask array (<see cref="MaskArray"/>).</summary>
+        TopMostResult ContainerTopMost(AsContainer c, double gx, double gy, TopMostDescr d, AsSprite holder, bool[] hit)
+        {
             var kids = c.Children;
             int n = kids.Count;
-            bool[] hit = null;
-            for (int i = 0; i < n; i++)
-            {
-                if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
-                if (hit == null) { hit = new bool[n]; Array.Fill(hit, true); }
-                hit[i] = PointTest(kids[i], gx, gy, true, false);
-                int k = i + 1;
-                for (; k < n && kids[k].Depth <= clip; k++) hit[k] = hit[i];
-                i = k - 1;
-            }
-
             TopMostDescr saved = null;
             bool foundButMouseDisabled = false;
             for (int i = n - 1; i >= 0; i--)
@@ -1209,24 +1227,18 @@ namespace Ms2.Avm2.Flash
                 if (ignoreInvisible && !o.IsVisible) return false;
                 if (o.MaskObject is { } m && !PointTest(m, gx, gy, shapes, ignoreInvisible)) return false;
                 var kids = c.Children;
-                int n = kids.Count;
-                bool[] hit = null;
-                for (int i = 0; i < n; i++)
+                var hit = MaskArray(kids, gx, gy);
+                try
                 {
-                    if (kids[i].ClipDepth is not { } clip || clip <= 0) continue;
-                    if (hit == null) { hit = new bool[n]; Array.Fill(hit, true); }
-                    hit[i] = PointTest(kids[i], gx, gy, true, false);
-                    int k = i + 1;
-                    for (; k < n && kids[k].Depth <= clip; k++) hit[k] = hit[i];
-                    i = k - 1;
+                    for (int i = kids.Count - 1; i >= 0; i--)
+                    {
+                        var k = kids[i];
+                        if (ignoreInvisible && !k.IsVisible) continue;
+                        if (hit != null && (!hit[i] || k.ClipDepth is > 0)) continue;
+                        if (PointTest(k, gx, gy, shapes, ignoreInvisible)) return true;
+                    }
                 }
-                for (int i = n - 1; i >= 0; i--)
-                {
-                    var k = kids[i];
-                    if (ignoreInvisible && !k.IsVisible) continue;
-                    if (hit != null && (!hit[i] || k.ClipDepth is > 0)) continue;
-                    if (PointTest(k, gx, gy, shapes, ignoreInvisible)) return true;
-                }
+                finally { ReturnMaskArray(hit); }
                 return o is AsSprite sp && sp.GraphicsOrNull is { } g && DrawingHit(g, lx, ly, shapes);
             }
             switch (o)
