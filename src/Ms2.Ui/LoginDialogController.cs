@@ -93,7 +93,7 @@ public sealed class LoginDialogController : UiController
     public string Password => InputText("m_inputPW");
 
     string InputText(string member) =>
-        Host.Get(Host.Entity, member) is { } input && Host.Get(input, "text") is string s ? s : "";
+        Host?.Entity != null && Host.Get(Host.Entity, member) is { } input && Host.Get(input, "text") is string s ? s : "";
 
     static bool Is(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

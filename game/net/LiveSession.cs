@@ -13,14 +13,24 @@ namespace Ms2Godot.Net;
 
 /// <summary>
 /// The opt-in live mode: the login, character list, select and field entry run against a real server instead of the offline
-/// stubs. Off unless MS2_LIVE_LOGIN (host:port of the login server) and MS2_LIVE_ACCOUNT (user:password) are set; offline stays
-/// the default and nothing here runs then. MS2_LIVE_AUTO=1 drives the screens by itself (first character, no input), for a
-/// headless run. The transports only queue packets on their network thread; this node drains them in _Process.
+/// stubs. The launcher's Connect picks the login server (<see cref="UseServer"/>); MS2_LIVE_LOGIN (host:port) overrides it
+/// and starts the live mode without the launcher, and MS2_LIVE_ACCOUNT (user:password) overrides the id and password typed
+/// in the client's login dialog. Offline stays the default and nothing here runs then. MS2_LIVE_AUTO=1 drives the screens
+/// by itself (first character, no input), for a headless run. The transports only queue packets on their network thread;
+/// this node drains them in _Process.
 /// </summary>
 public partial class LiveSession : Node
 {
+    static string launchHost;
+    static int launchPort;
+
+    /// <summary>The launcher's picked login server; MS2_LIVE_LOGIN overrides it at login time.</summary>
+    public static void UseServer(string host, int port) { launchHost = host; launchPort = port; }
+    /// <summary>Drops the launcher's server, so a later start does not inherit it.</summary>
+    public static void ClearServer() { launchHost = null; launchPort = 0; }
+
     public static bool Enabled => !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"))
-                                  && !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT"));
+                                  || (!string.IsNullOrEmpty(launchHost) && launchPort > 0);
     public static LiveSession Instance { get; private set; }
     /// <summary>A live session is running: the field's offline npcs, mobs and portal walking stay off; the server's replace them.</summary>
     public static bool Active => Instance != null;
@@ -371,23 +381,47 @@ public partial class LiveSession : Node
         if (Instance == this) Instance = null;
     }
 
-    /// <summary>Login and the character list; the list replaces the stub list. False when the server refuses.</summary>
+    /// <summary>
+    /// Login and the character list; the list replaces the stub list. The id and password come from the client's login
+    /// dialog (UILoginDialog::SendLoginRequest, uilogindialog.cpp:204-246) unless MS2_LIVE_ACCOUNT overrides them. False
+    /// when the server refuses.
+    /// </summary>
     /// <summary>The server's LoginResult when the last login was refused (null when it failed otherwise or succeeded).</summary>
     public LoginResult LastLoginRefusal { get; private set; }
 
-    public async Task<bool> LoginAsync()
+    public async Task<bool> LoginAsync(string id = null, string password = null)
     {
         Busy = true;
         LastLoginRefusal = null;
         try
         {
-            var hp = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN").Split(':');
-            var up = System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT").Split(':', 2);
-            host = hp[0];
+            string envLogin = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN");
+            int port;
+            if (!string.IsNullOrEmpty(envLogin))
+            {
+                var hp = envLogin.Split(':');
+                host = hp[0];
+                port = int.Parse(hp[1], System.Globalization.CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                host = launchHost;
+                port = launchPort;
+            }
+            if (string.IsNullOrEmpty(host) || port <= 0) { GD.PushWarning("live: no login server"); return false; }
+            string user = id, pass = password ?? "";
+            string envAccount = System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
+            if (!string.IsNullOrEmpty(envAccount))
+            {
+                var up = envAccount.Split(':', 2);
+                user = up[0];
+                pass = up.Length > 1 ? up[1] : "";
+            }
+            if (string.IsNullOrEmpty(user)) { GD.PushWarning("live: no account id"); return false; }
             login?.Dispose();
             login = new TcpTransport();
             // the real client appends its region code to the id
-            var o = await new LoginClient(login).LoginAsync(host, int.Parse(hp[1]), up[0] + "KR", up.Length > 1 ? up[1] : "", machine);
+            var o = await new LoginClient(login).LoginAsync(host, port, user + "KR", pass, machine);
             if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); LastLoginRefusal = o.Result; return false; }
             accountId = o.Result.AccountId;
             if (o.Endpoint is { } ugc)
@@ -397,7 +431,7 @@ public partial class LiveSession : Node
                 ProfileImageService.Images.UploadBase = ugc.UploadBase;
                 GD.Print($"live: web host {ugc.Host}, uploads {(ugc.UploadBase.Length > 0 ? "on" : "off")}");
             }
-            Session.AccountId = up[0];
+            Session.AccountId = user;
             Session.Characters = o.Characters.ToList();
             if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
             GD.Print($"live: logged in, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");

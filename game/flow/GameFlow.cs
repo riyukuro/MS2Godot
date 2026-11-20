@@ -3,6 +3,7 @@ using Ms2.Audio;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2.Ui.Launch;
 using Ms2Godot.Ui;
 using Ms2Godot.Ui.Contracts;
 using Ms2Godot.Ui.Create;
@@ -62,6 +63,7 @@ public partial class GameFlow : Node
         CharacterCreateScene.CharacterCreated += OnCreated;
         CharacterCreateScene.Cancelled += OnCreateCancelled;
         Ui.LauncherScene.SinglePlayer += OnLauncherSinglePlayer;
+        Ui.LauncherScene.Connect += OnLauncherConnect;
 
 
         // the system menu's entries that leave the field (Ui.HudScene, uisystemmenudialog): OnSelectCharacter sends RequestQuit, whose answer
@@ -74,9 +76,10 @@ public partial class GameFlow : Node
         Net.LiveSession.Attach(this);
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
-        bool liveStart = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"));
-        bool flowScene = GetTree().CurrentScene?.SceneFilePath == "res://flow/flow.tscn";
-        Go(liveStart || !flowScene || shotDir != null ? State.Login : State.Launcher);
+        string liveLogin = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN");
+        var start = LaunchRoute.Decide(GetTree().CurrentScene?.SceneFilePath, liveLogin, shotDir != null, null);
+        if (start.Mode == LaunchMode.Live) Net.LiveSession.Attach(this);
+        Go(start.Mode == LaunchMode.Launcher ? State.Launcher : State.Login);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }
     }
@@ -98,6 +101,8 @@ public partial class GameFlow : Node
         CharacterCreateScene.CharacterCreated -= OnCreated;
         CharacterCreateScene.Cancelled -= OnCreateCancelled;
         Ui.LauncherScene.SinglePlayer -= OnLauncherSinglePlayer;
+        Ui.LauncherScene.Connect -= OnLauncherConnect;
+        Net.LiveSession.ClearServer();
         Session.GameScene = null;
         if (instance == this) instance = null;
     }
@@ -197,6 +202,18 @@ public partial class GameFlow : Node
         Go(State.Login);
     }
 
+    /// <summary>
+    /// A launcher entry's Connect: the live mode against that login server. The login screen that follows is the
+    /// client's own; its dialog's id and password go to <see cref="Net.LiveSession.LoginAsync"/>.
+    /// </summary>
+    void OnLauncherConnect(string host, int port)
+    {
+        if (Current != State.Launcher) return;
+        Net.LiveSession.UseServer(host, port);
+        Net.LiveSession.Attach(this);
+        Go(State.Login);
+    }
+
     void OnHost(string movie, string method, object[] a)
     {
         if (Current == State.Login && movie == UILoginDialogContract.Movie && method == UILoginDialogContract.ToHost.OnConnect)
@@ -246,7 +263,10 @@ public partial class GameFlow : Node
     // The live requests are awaited, so the continuation runs on Godot's context and may touch the session and the scene tree.
     async void LoginLive(Net.LiveSession live)
     {
-        if (await live.LoginAsync()) { Go(State.Lobby); return; }
+        // The dialog's own fields (UILoginDialog::SendLoginRequest reads m_inputID and m_inputPW, uilogindialog.cpp:204-246);
+        // MS2_LIVE_ACCOUNT overrides them when the run set it.
+        var login = GetTree().CurrentScene as Ui.LoginScene;
+        if (await live.LoginAsync(login?.Controller.Id, login?.Controller.Password)) { Go(State.Lobby); return; }
         if (live.LastLoginRefusal is { } r)
         {
             Ui.MessageBoxLayer.Ensure(this);
