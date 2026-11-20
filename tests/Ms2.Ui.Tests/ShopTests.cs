@@ -772,4 +772,97 @@ public class ShopTests
         Assert.That(tip["requireAchieve"]?.ToString(), Does.Contain("Test Trophy"));
         Assert.That(c.GetTooltip(new object[] { "m_coinInfo" }), Is.Null, "non-gacha shop has no coin tooltip");
     }
+
+    [Test]
+    public void BuyProductRequirementGatesRefuseAndAllowMatchingClient()
+    {
+        Packs();
+        var model = NewModel();
+        model.Tables.ShopBuyConfirmPrice = 10_000;
+        model.Player.Mesos = 100_000;
+        var (h, c) = Load(model);
+        long now = 1_700_000_000;
+        c.ServerTime = () => now;
+        var sent = new List<IOutPacket>();
+        var notices = new List<string>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = sent.Add;
+        c.SystemNotice = notices.Add;
+        c.ShowBox = boxes.Add;
+
+        var rec = c.Products(0)[1].Record;
+        rec.Price = 0; // free product: only the requirement gates can refuse
+
+        // 1. Guild trophy gate: outside guild -> silent refuse, sends nothing, opens no bill
+        rec.GuildTrophy = 1;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 0)));
+
+        // In guild, joined < 7 days ago -> s_err_lack_guild_require_date notice, refuses
+        c.IsInGuild = () => true;
+        c.GuildMemberJoinTime = () => now - 100;
+        c.GuildTotalTrophy = () => 10;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+
+        // In guild >= 7 days, trophies insufficient -> 0x5b notice, refuses
+        notices.Clear();
+        c.GuildMemberJoinTime = () => now - 604800;
+        c.GuildTotalTrophy = () => 0;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+        c.GuildTotalTrophy = () => 5;
+
+        // 2. Guild master gate (currency 7): non-master refuses with notice
+        notices.Clear();
+        rec.Currency = 7;
+        c.GuildFund = () => 10_000;
+        c.IsGuildMaster = () => false;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+        c.IsGuildMaster = () => true;
+        rec.Currency = 0;
+
+        // 3. Achievement gate: default HasAchieve refuses when absent
+        notices.Clear();
+        rec.Achieve = 21100001;
+        rec.AchieveGrade = 1;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+        c.HasAchieve = (id, g) => id == 21100001 && g <= 1;
+
+        // 4. Fame grade gate: default FameGradeOf(0) refuses when absent
+        notices.Clear();
+        rec.Alliance = 1;
+        rec.FameGrade = 2;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+        c.FameGradeOf = _ => 2;
+
+        // 5. Championship gate: rank and member score
+        notices.Clear();
+        rec.ChampionshipRank = 3;
+        rec.ChampionshipScore = 500;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)), "default rank 0 refuses");
+        notices.Clear();
+        c.GuildChampionshipRank = () => 3;
+        c.GuildMemberChampionshipScore = () => 100;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)), "insufficient member score refuses");
+        c.GuildMemberChampionshipScore = () => 500;
+
+        // 6. Guild NPC level gate: default level 0 refuses when absent
+        notices.Clear();
+        rec.GuildNpc = 2;
+        rec.GuildNpcLevel = 3;
+        c.BuyProduct(1, 0);
+        Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+        c.GuildNpcLevel = npc => npc == 2 ? 3 : 0;
+
+        // All gates satisfied -> sends mode 4
+        notices.Clear();
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
+    }
 }

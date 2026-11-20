@@ -12,7 +12,8 @@ namespace Ms2.Ui.Shop;
 /// 6, 7, 8, 9, 13, 14, 15), the tabs and category tree (CShopCategoryTable), the product rows, tooltips (vfunc_49),
 /// vfunc_28 callbacks, and the buy, buyback, sell, restock and new-items flows over Outbound 0x28 (<see cref="Send"/>).
 /// <para>STILL-OPEN: star / merat items (commands 11-12, UIMarketBillDialog 0x4f17), 3D preview avatar render target,
-/// search ban-word check (vfunc_80), guild / achieve / championship / fame buy gates and give-point event.</para>
+/// search ban-word check (vfunc_80), give-point event, and live state sources for fame grade, guild championship
+/// season rank table, and guild NPC levels (their buy gates refuse as the client does when state is absent).</para>
 /// </summary>
 public sealed class ShopController : UiController, Hud.IMessageBoxListener
 {
@@ -116,10 +117,33 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public Action<int, float, float> OpenInteriorPreview;
     /// <summary>FUN_1418ffba0 (uishopdialog.cpp:974): true when buying a UGCMapPackage requires the 0x1f confirm box.</summary>
     public Func<ItemData, bool> CanBuyUgcPackage = _ => false;
-    /// <summary>CAchieveManager::IsBeforeStartGrade (uishopdialog.cpp:1295, :3599): true when player meets achieve.</summary>
-    public Func<int, int, bool> HasAchieve = (_, _) => true;
-    /// <summary>GetRequireAchieveText (uishopdialog.cpp:1298): text of a missing achievement requirement.</summary>
+    /// <summary>CAchieveManager::IsBeforeStartGrade (uishopdialog.cpp:1295, :3599): true when player meets achieve
+    /// (defaults false so absent state refuses as the client does).</summary>
+    public Func<int, int, bool> HasAchieve = (_, _) => false;
+    /// <summary>GetRequireAchieveText / FUN_14093b9c0 (uishopdialog.cpp:1298, :3603): text of a missing achievement requirement.</summary>
     public Func<int, int, string> RequireAchieveText = (_, _) => "";
+    /// <summary>CGuildManager::IsInGuild (uishopdialog.cpp:3568, :3644, :3683, :3703).</summary>
+    public Func<bool> IsInGuild = () => false;
+    /// <summary>CGuildManager::IsMaster(playerName) (uishopdialog.cpp:3703).</summary>
+    public Func<bool> IsGuildMaster = () => false;
+    /// <summary>CGuildManager::GetTotalTrophy (uishopdialog.cpp:3576).</summary>
+    public Func<int> GuildTotalTrophy = () => 0;
+    /// <summary>CGuildMember::fc8 join timestamp in seconds, or null when local member is not found (uishopdialog.cpp:3573-3578).</summary>
+    public Func<long?> GuildMemberJoinTime = () => null;
+    /// <summary>CGuildSeason::GetRankForScore(CGuildManager::GetScore) (uishopdialog.cpp:3646-3647; STILL-OPEN: defaults 0).</summary>
+    public Func<int> GuildChampionshipRank = () => 0;
+    /// <summary>CStringTable(0x2d, rank) (uishopdialog.cpp:3648; STILL-OPEN).</summary>
+    public Func<int, string> GuildChampionshipRankName = _ => "";
+    /// <summary>CGuildMember::fe0 championship score, or null when local member is not found (uishopdialog.cpp:3660-3663).</summary>
+    public Func<int?> GuildMemberChampionshipScore = () => null;
+    /// <summary>CGuildManager::GetNpcLevel(npcId) (uishopdialog.cpp:3685; STILL-OPEN: defaults 0).</summary>
+    public Func<int, int> GuildNpcLevel = _ => 0;
+    /// <summary>Fame alliance grade (alliance != 0) or general fame grade (alliance == 0) (uishopdialog.cpp:3619-3622; STILL-OPEN: defaults 0).</summary>
+    public Func<int, int> FameGradeOf = _ => 0;
+    /// <summary>GetAllianceName(alliance) (uishopdialog.cpp:3626, questmasktable.cpp:556).</summary>
+    public Func<int, string> AllianceName;
+    /// <summary>Fame grade title (uishopdialog.cpp:3627, questmasktable.cpp:571).</summary>
+    public Func<int, int, string> FameGradeName;
 
     /// <summary>UIShopDialog::Selection (uishopdialog.cpp:551): tracks the pending request's serial, list index and command.</summary>
     struct PendingSelection
@@ -1392,22 +1416,147 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     Product FindCurrentProduct(int serial) =>
         group >= 0 && group < 3 && products[group].TryGetValue(serial, out var p) ? p : null;
 
+    /// <summary>Guild trophy gate (FUN_141b047f0, uishopdialog.cpp:3563): requires guild membership, 7 days (604800 s) in
+    /// the guild, and guild total trophies &gt;= product requirement.</summary>
+    public bool CheckGuildTrophy(Product p, bool notify)
+    {
+        if (p == null) return false;
+        int trophy = p.Record.GuildTrophy;
+        if (trophy < 1) return true;
+        if (!IsInGuild() || Model == null || !Model.HasLocalPlayer) return false;
+        if (GuildMemberJoinTime() is not { } joinTime) return false;
+        if (joinTime + 604800 > ServerTime())
+        {
+            if (notify) SystemNotice?.Invoke(Common("s_err_lack_guild_require_date"));
+            return false;
+        }
+        if (trophy <= GuildTotalTrophy()) return true;
+        if (notify) SystemNotice?.Invoke(Common(0x5b));
+        return false;
+    }
+
+    /// <summary>Guild master gate (FUN_141b04fd0, uishopdialog.cpp:3697): currency 7 (guild fund) requires guild master.</summary>
+    public bool CheckGuildMaster(Product p, bool notify)
+    {
+        if (p == null) return false;
+        if (p.Record.Currency == 7)
+        {
+            if (Model == null || !Model.HasLocalPlayer) return false;
+            if (!IsInGuild() || !IsGuildMaster())
+            {
+                if (notify) SystemNotice?.Invoke(Common("s_guild_err_buy_no_master"));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>Achievement gate (FUN_141b04a10, uishopdialog.cpp:3593): checks IsBeforeStartGrade(achieve, grade).</summary>
+    public bool CheckAchieve(Product p, bool notify)
+    {
+        if (p == null) return false;
+        int id = p.Record.Achieve;
+        if (id == 0) return true;
+        int grade = p.Record.AchieveGrade;
+        if (HasAchieve(id, grade)) return true;
+        if (notify) SystemNotice?.Invoke(Common(0x5c, RequireAchieveText(id, grade) ?? ""));
+        return false;
+    }
+
+    /// <summary>Fame (alliance) grade gate (FUN_141b04af0, uishopdialog.cpp:3612): requires fame grade &gt;= requirement.</summary>
+    public bool CheckFameGrade(Product p, bool notify)
+    {
+        if (p == null) return false;
+        int alliance = p.Record.Alliance;
+        int grade = p.Record.FameGrade;
+        if (grade == 0) return true;
+        if (FameGradeOf(alliance) >= grade) return true;
+        if (notify)
+        {
+            string allianceText = AllianceName?.Invoke(alliance) ?? Common($"s_quest_alliance_{alliance}");
+            string gradeText = StripTags(FameGradeName?.Invoke(alliance, grade) ?? Common($"s_fame_grade_{grade}"));
+            SystemNotice?.Invoke(Common("s_err_lack_fame_alliance", allianceText, gradeText));
+        }
+        return false;
+    }
+
+    /// <summary>Guild championship gate (FUN_141b04c30, uishopdialog.cpp:3638): requires guild rank and member score.</summary>
+    public bool CheckChampionship(Product p, bool notify)
+    {
+        if (p == null) return false;
+        int rank = p.Record.ChampionshipRank;
+        int score = p.Record.ChampionshipScore;
+        if (rank == 0 && score == 0) return true;
+        if (!IsInGuild()) return false;
+        if (GuildChampionshipRank() < rank)
+        {
+            if (notify) SystemNotice?.Invoke(Common(0x5d, GuildChampionshipRankName(rank) ?? ""));
+            return false;
+        }
+        if (Model == null || !Model.HasLocalPlayer) return false;
+        if (GuildMemberChampionshipScore() is not { } have) return false;
+        if (have < score)
+        {
+            if (notify) SystemNotice?.Invoke(Common(0x5e, score));
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Guild NPC level gate (FUN_141b04ed0, uishopdialog.cpp:3677): requires guild NPC level &gt;= requirement.</summary>
+    public bool CheckGuildNpc(Product p, bool notify)
+    {
+        if (p == null) return false;
+        int npc = p.Record.GuildNpc;
+        int level = p.Record.GuildNpcLevel;
+        if (npc == 0) return true;
+        if (!IsInGuild()) return false;
+        if (level > GuildNpcLevel(npc))
+        {
+            if (notify) SystemNotice?.Invoke(Common("s_err_lack_guild_npc_level"));
+            return false;
+        }
+        return true;
+    }
+
+    static string StripTags(string s)
+    {
+        if (string.IsNullOrEmpty(s) || s.IndexOf('<') < 0) return s ?? "";
+        var sb = new System.Text.StringBuilder(s.Length);
+        bool inTag = false;
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (c == '<') inTag = true;
+            else if (c == '>') inTag = false;
+            else if (!inTag) sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
     /// <summary>
-    /// UIShopDialog::BuyProduct (@0x141afd8e0, uishopdialog.cpp:2423): checks star event, buy period, star point currency,
-    /// affordability for 1 unit and sold-out status before opening the purchase bill (group 0) or requesting repurchase
-    /// (group 1).
-    /// STILL-OPEN: guild trophy / guild master / achieve / fame / championship / guild npc requirement checks.
+    /// UIShopDialog::BuyProduct (@0x141afd8e0, uishopdialog.cpp:2423): checks star event, guild trophy, buy period,
+    /// star point currency, affordability for 1 unit, guild master (currency 7), achievement, fame grade, guild trophy,
+    /// championship, guild NPC level and sold-out status before opening the purchase bill (group 0) or requesting
+    /// repurchase (group 1).
     /// </summary>
     public void BuyProduct(int serial, int rowIndex)
     {
         if (!HasStarEvent()) { ShowSimpleBox(Common("s_shop_no_star_point_event")); return; }
         var p = FindCurrentProduct(serial);
         if (p == null) return;
+        if (!CheckGuildTrophy(p, true)) return;
         if (group != 1)
         {
             if (!CheckBuyPeriod(p, out string periodError)) { ShowSimpleBox(periodError); return; }
             if (!CheckStarPointEvent(p)) return;
             if (!CanPayProduct(p, 1)) return;
+            if (!CheckGuildMaster(p, true)) return;
+            if (!CheckAchieve(p, true)) return;
+            if (!CheckFameGrade(p, true)) return;
+            if (!CheckGuildTrophy(p, true)) return;
+            if (!CheckChampionship(p, true)) return;
+            if (!CheckGuildNpc(p, true)) return;
             if (p.Record.SoldOut) { ShowSimpleBox(Common(0x49)); return; }
             ShowPurchaseBill(p, rowIndex);
         }
