@@ -169,6 +169,9 @@ public partial class Player : CharacterBody3D
     /// PCBase::vfunc_20().z: the facing as an MS2 Z rotation in degrees (forward = (sin z, -cos z) in MS2 axes); while riding
     /// it is the ridee's (pcbase.cpp:952), whose visual takes the facing here.
     /// </summary>
+    /// <summary>The facing as a godot direction (the ridee's when riding), as <see cref="FacingRotZ"/> reads it.</summary>
+    public Vector3 FacingDirection => (Mount?.Visual ?? Visual)?.GlobalBasis.Z ?? Forward;
+
     public float FacingRotZ
     {
         get

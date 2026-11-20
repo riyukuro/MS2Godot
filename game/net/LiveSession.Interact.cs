@@ -18,6 +18,9 @@ namespace Ms2Godot.Net;
 public partial class LiveSession
 {
     public LiveInteractObjects InteractObjects { get; private set; }
+    /// <summary>The field npcs InteractNpcAction (key 0x11) reads and its StateInteractionNpc cast; RemoteLayer fills it.</summary>
+    public LiveInteractNpc InteractNpcs { get; private set; }
+    bool npcPolled;
     /// <summary>The HUD's casting bar (UICastingBar 0x4e72); set by HudScene while the field HUD is up.</summary>
     public CastingBarController CastingBar;
     /// <summary>Cross-channel/field interact notices (FUN_1412751b0); the HUD sets it when chat is up.</summary>
@@ -27,6 +30,9 @@ public partial class LiveSession
     void NewFieldInteractObjects(int mapId)
     {
         InteractObjects?.CancelCast();
+        InteractNpcs ??= new LiveInteractNpc(new InteractNpcHost(this));
+        InteractNpcs.Clear();
+        npcPolled = false;
         var packs = PackSet.Shared(Settings.DataDir);
         InteractObjectTable tbl = null;
         try { tbl = InteractObjectTable.Shared(packs); }
@@ -55,17 +61,110 @@ public partial class LiveSession
             GD.Print($"live: InteractObject mode {m.Mode} name '{m.Name}' kind {m.Kind} state {m.State} result {m.Result}");
     }
 
-    /// <summary>Per-frame action-key poll for interact objects (0 B/frame).</summary>
-    public bool PollInteract(Vec3 at) => InteractObjects != null && InteractObjects.Poll(at);
+    void OnInteractNpc(InteractNpcMessage m)
+    {
+        bool applied = InteractNpcs != null && InteractNpcs.Apply(m);
+        GD.Print($"live: InteractNpc npc {m.ObjectId} talkable {(m.HasTalkable ? m.Talkable.ToString() : "-")}{(applied ? "" : " (no such npc)")}");
+    }
+
+    /// <summary>
+    /// Per-frame action-key poll before the portal, by ascending action key: GatheringAction (4), InteractNpcAction
+    /// (0x11, <see cref="LiveInteractNpc.Poll"/>), InteractAction (0x12). 0 B/frame.
+    /// </summary>
+    public bool PollInteract(Vec3 at)
+    {
+        npcPolled = false;
+        if (InteractObjects != null && InteractObjects.PollGatheringAction(at)) return true;
+        if (InteractNpcs != null && InteractNpcs.Poll(at)) { npcPolled = true; return true; }
+        return InteractObjects != null && InteractObjects.PollInteractAction(at);
+    }
 
     /// <summary>The billboard action's poll (key 0x18, after the portal; 0 B/frame).</summary>
     public bool PollInteractBillBoard(Vec3 at) => InteractObjects != null && InteractObjects.PollBillBoard(at);
 
     /// <summary>Per-frame tick for gathering respawns and active StateInteraction cast (0 B/frame).</summary>
-    public void TickInteract(Vec3 at, bool playerMoved) => InteractObjects?.Tick(at, playerMoved);
+    public void TickInteract(Vec3 at, bool playerMoved)
+    {
+        InteractObjects?.Tick(at, playerMoved);
+        InteractNpcs?.Tick(at, playerMoved);
+    }
 
     /// <summary>Action key press on the polled interact object.</summary>
-    public bool UseInteract(Vec3 at) => InteractObjects != null && InteractObjects.Use(at);
+    public bool UseInteract(Vec3 at)
+    {
+        if (npcPolled)
+        {
+            if (InteractNpcs == null) return false;
+            InteractObjects?.CancelCast();
+            return InteractNpcs.Use();
+        }
+        if (InteractObjects == null) return false;
+        InteractNpcs?.CancelCast();
+        return InteractObjects.Use(at);
+    }
+
+    sealed class InteractNpcHost : IInteractNpcHost
+    {
+        readonly LiveSession s;
+        float? interactDist;
+        public InteractNpcHost(LiveSession s) { this.s = s; }
+
+        public bool HasPlayer => s.selfObject >= 0 && s.player != null && IsInstanceValid(s.player);
+
+        public float InteractionDistance
+        {
+            get
+            {
+                if (interactDist is { } d) return d;
+                float v = 0f;     // Constants InteractionDistance.Define(.., 0.0f) (unit_1402ab440_constantsblocks.cpp:774)
+                try { v = FieldContents.Constants(PackSet.Shared(Settings.DataDir)).Float("InteractionDistance", 0f); } catch { }
+                interactDist = v;
+                return v;
+            }
+        }
+
+        public Vec3 PlayerForward
+        {
+            get
+            {
+                if (s.player == null || !IsInstanceValid(s.player)) return new Vec3(0, 0, 0);
+                var f = s.player.FacingDirection;      // godot (x, y, z) -> MS2 (x, -z, y), FieldPortals.ToMs2
+                return new Vec3(f.X, -f.Z, f.Y);
+            }
+        }
+
+        // STILL-OPEN: PvPInfo point (CPvPInfo::HasPoint / GetPoint, actionkeyobject.cpp:1667) is not tracked
+        public int? PvPPoint => null;
+        // STILL-OPEN: MyPC::FUN_141527160(0x1a), the state-change gate, is not ported
+        public bool CanEnterInteractNpcState => true;
+
+        public void Send(Ms2.Net.Wire.IOutPacket packet)
+        {
+            s.Send(packet);
+            s.InteractSends++;
+            GD.Print($"live: interact npc send {packet}");
+        }
+
+        public void StartCasting(ICastingEventListener listener, int durationMs, bool showBar)
+        {
+            if (s.CastingBar != null)
+                s.CastingBar.StartCastingText(listener, "", durationMs, showTime: false, activeBar: showBar, endText: "");
+            else
+                listener.OnCastingFinished();
+        }
+
+        public void CancelCasting() => s.CastingBar?.Cancel();
+
+        public void PlayPlayerAnim(string animName, bool loop)
+        {
+            if (s.player != null && IsInstanceValid(s.player)) s.player.StartInteractAnim(animName, loop);
+        }
+
+        public void StopPlayerInteractAnim()
+        {
+            if (s.player != null && IsInstanceValid(s.player)) s.player.StopInteractAnim();
+        }
+    }
 
     sealed class InteractHost : IInteractHost
     {

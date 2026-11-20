@@ -574,7 +574,7 @@ public partial class FieldContents : Node3D
         if (!offline)
         {
             // live: each frame the action key's poll runs its actions by ascending key, the first that applies taking the
-            // key (Unk_ActionKeyManager::Update, a CRBMap): gathering (4) and interact (0x12) objects, the server-listed
+            // key (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the interact npc (0x11) and interact (0x12) objects, the server-listed
             // portal the player stands in (0x13, PortalAction vfunc_1), the billboard (0x18); the key on it runs that
             // action. Active StateInteraction casts tick here too (0 B/frame). Elsewhere the talk.
             var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);

@@ -522,22 +522,27 @@ public sealed class LiveInteractObjects : ICastingEventListener
     /// the key wins): GatheringAction (key 4, <see cref="PollGathering"/>), then InteractAction (key 0x12, kinds other than
     /// 6 and 8). The portal (0x13) and the billboard action (0x18, <see cref="PollBillBoard"/>) come after. Zero allocations.
     /// </summary>
-    public bool Poll(Vec3 playerPos)
+    public bool Poll(Vec3 playerPos) => PollGatheringAction(playerPos) || PollInteractAction(playerPos);
+
+    /// <summary>GatheringAction (key 4), the first of <see cref="Poll"/>; clears the polled object when it does not take
+    /// the key. InteractNpcAction (key 0x11) sits between it and <see cref="PollInteractAction"/>.</summary>
+    public bool PollGatheringAction(Vec3 playerPos)
     {
         polled = null;
         polledGathering = false;
-        if (PollGathering(playerPos))
-        {
-            polled = gatherPick;
-            polledGathering = true;
-            return true;
-        }
-        if (PollAction(playerPos, ref interactPick, billBoard: false))
-        {
-            polled = interactPick;
-            return true;
-        }
-        return false;
+        if (!PollGathering(playerPos)) return false;
+        polled = gatherPick;
+        polledGathering = true;
+        return true;
+    }
+
+    /// <summary>InteractAction (key 0x12), the second of <see cref="Poll"/>.</summary>
+    public bool PollInteractAction(Vec3 playerPos)
+    {
+        if (!PollAction(playerPos, ref interactPick, billBoard: false)) return false;
+        polled = interactPick;
+        polledGathering = false;
+        return true;
     }
 
     /// <summary>BillBoardInteractAction (key 0x18): InteractAction::vfunc_1 with a vfunc_13 that takes kind 8 only

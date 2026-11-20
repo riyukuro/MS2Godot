@@ -46,6 +46,12 @@ public sealed class NpcRow
     public int Level = 1;                        // environment level (CNpcData m_nLevel, 1 when absent)
     public long Hp;                              // environment stat hp (CNpcData m_stat.m_aBase, NpcData::Load FirstChild("stat"); 0 when absent)
     public int Race;                             // environment raceString as CNpcData reads it (ParseRace), 0 when absent or unknown
+    // environment <interact> (CNpcData::LoadXml m_interact, npcdata.cpp:1595-1602; defaults npcdata.cpp:593)
+    public string InteractFunction = "";         // interactFunction: InteractNpcAction offers the npc only when set
+    public string InteractCastingAnimation = ""; // interactCastingAnimation: StateInteractionNpc's player animation
+    public int InteractCastingTime;              // interactCastingTime (ms): the casting bar duration
+    public int InteractCoolTime;                 // interactCoolTime
+    public bool InteractShowCastingBar = true;   // interactIsShowCastingBar: the casting gauge is drawn
     /// <summary>The npc's effect dummies: the default rows with the npc's &lt;effectdummy&gt; merged in (EffectDummyTable.MergeNpc).</summary>
     public IReadOnlyList<EffectDummy> EffectDummies = Array.Empty<EffectDummy>();
 
@@ -153,6 +159,14 @@ public sealed class NpcTable
             Race = ParseRace((string)env.Attribute("raceString")),
             EffectDummies = EffectDummyTable.MergeNpc(defaultDummies, env),
         };
+        if (env.Element("interact") is { } ia)
+        {
+            row.InteractFunction = (string)ia.Attribute("interactFunction") ?? "";
+            row.InteractCastingAnimation = (string)ia.Attribute("interactCastingAnimation") ?? "";
+            row.InteractCastingTime = Int(ia, "interactCastingTime");
+            row.InteractCoolTime = Int(ia, "interactCoolTime");
+            row.InteractShowCastingBar = EffectDummy.Bool(ia, "interactIsShowCastingBar", true);
+        }
         var normal = env.Element("normal");
         row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return row;

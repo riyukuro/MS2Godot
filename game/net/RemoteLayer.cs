@@ -37,6 +37,7 @@ public sealed partial class RemoteLayer : Node3D
     readonly ModelBuilder builder;
     readonly EquipApplier equip;
     readonly NpcLayer npcs;
+    readonly NpcTable npcTable;
     readonly CombatLayer combat;
     readonly LiveNameTags tags;
     readonly LiveHpBars bars;
@@ -72,6 +73,7 @@ public sealed partial class RemoteLayer : Node3D
         var table = new Ms2.Formats.World.NpcTable(packs);
         Tracker.NpcLayoutOf = id => { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); };
         npcs = new NpcLayer(packs, mb, table, this);
+        npcTable = table;
         combat = new CombatLayer(packs, mb, new EffectTable(packs), this);
         npcs.Combat = combat;
         field.AddChild(tags = new LiveNameTags(packs)
@@ -244,11 +246,29 @@ public sealed partial class RemoteLayer : Node3D
                 case SkillUsedEvent used: OnSkillUse(used.Use); break;
                 case SkillSyncedEvent ss: OnSkillSync(ss.Sync); break;
                 case SkillCancelledEvent sc: OnSkillCancel(sc); break;
-                case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
+                case NpcHpEvent hp:
+                    npcs.SetHp(hp.ObjectId, hp.Current, hp.Max);
+                    if (hp.Max > 0 && hp.Current <= 0) LiveSession.Instance?.InteractNpcs?.SetDead(hp.ObjectId, true);
+                    break;
                 case NpcStanceEvent st: npcs.Stance(st.ObjectId, st.Battle); break;
-                case NpcAddedEvent na: npcs.Add(na); NpcsAdded++; break;
-                case NpcRemovedEvent nr: npcs.Remove(nr.ObjectId, nr.Dead); break;
-                case NpcMovedEvent nm: npcs.Move(nm); break;
+                case NpcAddedEvent na:
+                    npcs.Add(na); NpcsAdded++;
+                    // the talkable byte FieldAddNpc reads (FUN_14174a560, scenestategame.cpp:3561) for InteractNpcAction
+                    LiveSession.Instance?.InteractNpcs?.Add(na.Npc.ObjectId, npcTable.Find(na.Npc.NpcId), na.Npc.Talkable,
+                        new Vec3(na.Npc.Position.X, na.Npc.Position.Y, na.Npc.Position.Z));
+                    break;
+                case NpcRemovedEvent nr:
+                    npcs.Remove(nr.ObjectId, nr.Dead);
+                    if (nr.Dead) LiveSession.Instance?.InteractNpcs?.SetDead(nr.ObjectId, true);
+                    else LiveSession.Instance?.InteractNpcs?.Remove(nr.ObjectId);
+                    break;
+                case NpcMovedEvent nm:
+                    npcs.Move(nm);
+                    {
+                        var mp = nm.Sync.Position.ToVector3();
+                        LiveSession.Instance?.InteractNpcs?.Move(nm.Sync.ObjectId, new Vec3(mp.X, mp.Y, mp.Z));
+                    }
+                    break;
             }
         }
     }
