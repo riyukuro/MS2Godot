@@ -1,71 +1,125 @@
 using System;
+using System.Reflection;
 using Godot;
 using Ms2.Audio;
+using Ms2Godot.Movement;
 
 namespace Ms2Godot.Tests;
 
 /// <summary>
-/// Headless check (res://tests/ground_material.tscn): a step or a landing takes its ground from the shape the feet touch
-/// (PCBase::UpdateGroundMaterial on the hit report's entity, pcbase.cpp:2441), not from a cell lookup by position. A stone
-/// cube (no MapAttribute) stands next to a cube of water one cell lower, the layout of a pool edge. A point on the stone
-/// 50 units from the edge lies in the water cube's 150-unit column, so a lookup that floors the position and searches down
-/// finds the water. The check casts the down ray the controller's hit report would see, feeds its shape to the footsteps
-/// and lands: on the stone it must be "default", on the water "water", and with no touched entity nothing plays.
+/// Headless check (res://tests/ground_material.tscn) of the ground a step or a landing plays on.
+/// - Shape: the material is the touched shape's entity's (PCBase::UpdateGroundMaterial, pcbase.cpp:2441), not a cell
+///   lookup by position. A stone cube (no MapAttribute) stands next to a cube of water one cell lower; a point on the stone
+///   50 units from the edge lies in the water cube's 150-unit column. On the stone it must be "default", on the water
+///   "water", and on a shape with no entity "" (nothing plays).
+/// - Snapshot: the stored material changes only on vfunc_93(true), every 200 ms (pc.cpp:4441-4445). Moving from stone onto
+///   water keeps "default" until the refresh; stepping off a ledge keeps the ledge's material until the refresh.
+/// - Landing: StateLand's ray (stateland.cpp:83-92) puts the entity under the feet in the hit report. A player whose report
+///   still holds the stone wall lands on the water: the landing plays "water" and the report's entity is water.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class GroundMaterialCheck : Node3D
 {
     int frames;
     CharacterBody3D body;
+    Player player;
+    StaticBody3D stone, water, bare;
 
     public override void _Ready()
     {
         // MS2 cubes: XY centred on the entity position, standing on its Z (GeneratePhysXBox)
-        Cube(new Vector3(0, 0, 0), null);           // stone at the top
-        Cube(new Vector3(-150, -150, 0), "water");  // the water cell beside it, one cell lower
+        stone = Cube(new Vector3(0, 0, 0), "");                 // stone at the top: an entity with no MapAttribute
+        water = Cube(new Vector3(-150, -150, 0), "water");      // the water cell beside it, one cell lower
+        bare = Cube(new Vector3(600, 0, 0), null);              // a shape with no entity
+        ((Node)water.GetChild(0)).SetMeta(FieldBuilder.KindMeta, MoveConfig.WaterGroup);
         body = new CharacterBody3D();
         AddChild(body);
+        player = Player.Create(new Node3D(), null);
+        AddChild(player);
+        player.SetProcess(false);
+        player.SetPhysicsProcess(false);
     }
 
-    void Cube(Vector3 at, string material)
+    StaticBody3D Cube(Vector3 at, string material)
     {
         var sb = new StaticBody3D { Position = at + new Vector3(0, 75, 0) };
         var cs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(150, 150, 150) } };
-        FieldBuilder.TagGround(cs, material);
+        if (material != null) FieldBuilder.TagGround(cs, material);
         sb.AddChild(cs);
         AddChild(sb);
+        return sb;
     }
 
-    (GodotObject collider, int shape) Down(Vector3 from)
+    Node Down(Vector3 from)
     {
         var hit = GetWorld3D().DirectSpaceState.IntersectRay(PhysicsRayQueryParameters3D.Create(from, from + Vector3.Down * 1000));
-        return hit.Count == 0 ? (null, -1) : ((GodotObject)hit["collider"], (int)hit["shape"]);
+        if (hit.Count == 0) return null;
+        var co = (CollisionObject3D)(GodotObject)hit["collider"];
+        return co.ShapeOwnerGetOwner(co.ShapeFindOwner((int)hit["shape"])) as Node;
     }
 
-    string Land(Vector3 at, bool touched)
+    string Land(Vector3 at)
     {
         var steps = new FootstepSounds(null, new GroundEffectTable(_ => null), body, null);
         AddChild(steps);
         int effects = 0;
         steps.EffectFile = _ => effects++;
-        body.GlobalPosition = at;
-        var (collider, shape) = Down(at);
-        steps.Ground = () => touched ? FieldBuilder.GroundMaterial(collider, shape) : "";
+        var snap = new GroundMaterialSnapshot { Entity = FieldBuilder.GroundMaterial(Down(at)) };
+        snap.Refresh(true);
+        steps.Ground = () => snap.Material;
         steps.Land();
         var g = steps.LastGround;
-        if (!touched && effects != 0) g = "played";
+        if (g == "" && effects != 0) g = "played";
         steps.QueueFree();
         return g;
+    }
+
+    // 60 fps frames of PC::vfunc_53 until the first refresh after the change; returns the material each frame saw
+    static (string before, string after, int frame) Change(GroundMaterialSnapshot s, Action change, bool onOrAbove)
+    {
+        const double dt = 1.0 / 60;
+        s.Frame(dt, true);                          // the first frame refreshes (the timer is not running)
+        s.Frame(dt, true);
+        change();
+        string before = null;
+        for (int f = 2; f < 30; f++)
+        {
+            if (s.Frame(dt, onOrAbove)) return (before, s.Material, f);
+            before ??= s.Material;
+            if (s.Material != before) return (before, s.Material, -f);
+        }
+        return (before, s.Material, -1);
     }
 
     public override void _PhysicsProcess(double delta)
     {
         if (++frames < 3) return;
         SetPhysicsProcess(false);
-        string edge = Land(new Vector3(-50, 150, 0), true), middle = Land(new Vector3(0, 150, 0), true);
-        string water = Land(new Vector3(-150, 0, 0), true), none = Land(new Vector3(0, 150, 0), false);
-        bool ok = edge == "default" && middle == "default" && water == "water" && none == "";
-        GD.Print($"ground material check: stone edge '{edge}', stone middle '{middle}', water '{water}', no entity '{none}': {(ok ? "OK" : "FAIL")}");
+        string edge = Land(new Vector3(-50, 150, 0)), middle = Land(new Vector3(0, 150, 0));
+        string wet = Land(new Vector3(-150, 0, 0)), none = Land(new Vector3(600, 150, 0));
+        bool shapes = edge == "default" && middle == "default" && wet == "water" && none == "";
+
+        var a = new GroundMaterialSnapshot { Entity = "" };
+        var (aBefore, aAfter, aFrame) = Change(a, () => a.Entity = "water", true);
+        var b = new GroundMaterialSnapshot { Entity = "rock" };
+        var (bBefore, bAfter, bFrame) = Change(b, () => { }, false);
+        // the refresh comes 200 ms after the timer start: the 12th 16.7 ms frame (13th with rounding), not earlier
+        bool snapshot = aBefore == "default" && aAfter == "water" && aFrame is 12 or 13 && bBefore == "rock" && bAfter == "default" && bFrame is 12 or 13;
+
+        // the report holds the stone wall; the player lands on the water 40 units below its feet
+        const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
+        typeof(Player).GetMethod("NoteHit", Private).Invoke(player, new object[] { stone, 0 });
+        bool wallFirst = !player.OnWater;
+        player.GlobalPosition = new Vector3(-150, 1, 0);
+        typeof(Player).GetMethod("LandRay", Private).Invoke(player, null);
+        var g = (GroundMaterialSnapshot)typeof(Player).GetField("ground", Private).GetValue(player);
+        g.Refresh(true);
+        bool landing = wallFirst && player.OnWater && player.GroundMaterial == "water";
+
+        bool ok = shapes && snapshot && landing;
+        GD.Print($"ground material check: stone edge '{edge}', stone middle '{middle}', water '{wet}', no entity '{none}'; " +
+                 $"stone->water '{aBefore}' then '{aAfter}' at frame {aFrame}, off a ledge '{bBefore}' then '{bAfter}' at frame {bFrame}; " +
+                 $"landing from a wall report: water {player.OnWater}, '{player.GroundMaterial}': {(ok ? "OK" : "FAIL")}");
         GetTree().Quit(ok ? 0 : 1);
     }
 }

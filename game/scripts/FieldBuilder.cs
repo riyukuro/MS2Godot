@@ -212,22 +212,19 @@ public sealed class FieldBuilder
     /// <summary>The finished field from <see cref="BuildSteps"/>.</summary>
     public Node3D World { get; private set; }
 
-    /// <summary>Marks a collision shape with its entity's MapAttribute, when the entity has one.</summary>
-    public static void TagGround(CollisionShape3D cs, string material)
-    {
-        if (!string.IsNullOrEmpty(material)) cs.SetMeta(GroundMeta, material);
-    }
+    /// <summary>
+    /// Marks a collision shape as an entity's: CPhysXHelper::GetEntityFromActor (physxhelper.cpp:269) finds the entity of
+    /// every field prop's actor, and the hit report keeps it. The value is the entity's MapAttribute (0xde5dd580), "" when
+    /// it has none.
+    /// </summary>
+    public static void TagGround(CollisionShape3D cs, string material) => cs.SetMeta(GroundMeta, material ?? "");
 
     /// <summary>
-    /// PCBase::UpdateGroundMaterial (0x141670ed0, pcbase.cpp:2441-2454) on the entity of a touched shape: the entity's
-    /// MapAttribute (0xde5dd580), "default" when it has none. The material belongs to the shape the controller touched,
-    /// so a stone cube next to a lower water cube is stone (no material) wherever the feet are on it.
+    /// The MapAttribute of the entity a touched shape owner belongs to: null when the shape has no entity
+    /// (GameObjectControllerHitReport::onShapeHit, 0x140cfade0, then clears the report's entity), "" when the entity has none.
     /// </summary>
-    public static string GroundMaterial(GodotObject collider, int shape)
-    {
-        var owner = collider is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
-        return owner != null && owner.HasMeta(GroundMeta) ? (string)owner.GetMeta(GroundMeta) : "default";
-    }
+    public static string GroundMaterial(Node owner) =>
+        owner != null && owner.HasMeta(GroundMeta) ? (string)owner.GetMeta(GroundMeta) : null;
 
     // CubeMapInformationService::GeneratePhysX: a box of GeneratePhysXDimension (150 cube when unset) standing on the
     // entity position, turned by the Z rotation only; scale is ignored
@@ -322,8 +319,13 @@ public sealed class FieldBuilder
                     {
                         // PhysXWhiteboxService: a box centred on the entity, half extents = ShapeDimensions / 2, in the
                         // entity's PropCollisionGroup (PhysXWhiteboxService.cpp:392-395, :440)
+                        // its prop goes to the scene graph with the entity (PhysXWhiteboxService.cpp:173-183) and
+                        // ecrPhysX::PropService keeps it as the entity's prop (:237-238) like any other, so a touched
+                        // whitebox is the hit report's entity
                         var whitebox = BoxOf(new Vector3((float)d.X, (float)d.Y, (float)d.Z));
-                        Chunk(e.Position, (int)e.Number("PropCollisionGroup")).AddChild(new CollisionShape3D { Shape = whitebox, Transform = xf });
+                        var wcs = new CollisionShape3D { Shape = whitebox, Transform = xf };
+                        TagGround(wcs, e.Get("MapAttribute"));
+                        Chunk(e.Position, (int)e.Number("PropCollisionGroup")).AddChild(wcs);
                         npcGround.Add(whitebox, xf);
                         Whiteboxes++;
                     }

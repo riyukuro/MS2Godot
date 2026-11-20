@@ -52,17 +52,19 @@ public partial class Player : CharacterBody3D
     public bool OnWater => hitGroup == MoveConfig.WaterGroup;
     public float GroundDistance { get; private set; }
     /// <summary>
-    /// PCBase::vfunc_93(true) (0x141671130, pcbase.cpp:2458-2483) and UpdateGroundMaterial (0x141670ed0,
-    /// pcbase.cpp:2441-2454), read by FUN_141671480 (pcbase.cpp:2488) for CGroundEffectDataManager::PlayEffects
-    /// (groundeffectdata.cpp:275): the material of the entity in the controller's hit report, "default" when that
-    /// entity has none or when the actor is neither on the ground nor above anything (m_unk_9a8: FUN_141671a30 or the
-    /// down ray), "" when the report holds no entity (PlayEffects then plays nothing).
+    /// PCBase::FUN_141671480 (pcbase.cpp:2488), read by CGroundEffectDataManager::PlayEffects (groundeffectdata.cpp:275):
+    /// the stored m_str958 (<see cref="GroundMaterialSnapshot"/>), refreshed every 200 ms and on landing, not the live hit
+    /// report. "" plays nothing.
     /// STILL-OPEN: the equipment's ground override is not ported. The set-effect update @0x1411ec480 (equipment.cpp:2790)
     /// stores the worn set option part's groundAttribute (setitemoptionpart.h:34) in m_str960 via FUN_141670e50, and
     /// FUN_141671480 (pcbase.cpp:2488) returns it instead of the touched ground when it is not empty, m_unk_9c4 != 8
     /// and, when vfunc_62() is true, vfunc_61() == 2.
+    /// STILL-OPEN: other players' steps and landings. The client plays them for every PCBase (each refreshes its own
+    /// m_str958); only the local player's are played here.
+    /// STILL-OPEN: the StateDash stop's landing (StateDash::vfunc_9 case 0x1f, state.cpp:1855-1861: animation 7, vfunc_93(true),
+    /// PlayEffects "land") has no counterpart in DashExit.
     /// </summary>
-    public string GroundMaterial => hitGround == null ? "" : Grounded || GroundDistance < float.MaxValue ? hitGround : "default";
+    public string GroundMaterial => ground.Material;
     /// <summary>The last controller move touched something below (NXCC_COLLISION_DOWN).</summary>
     public bool Grounded => (nxHit & NxController.Hit.Down) != 0;
     /// <summary>The last landing's drop (the height the client sends in StateFallDamage; the server applies damage).</summary>
@@ -74,7 +76,8 @@ public partial class Player : CharacterBody3D
     float stateTime, airTime, baseSpeed = MoveConfig.RunSpeed, yawDeg, targetYawDeg;
     Vector3 kVel;                         // GameObjectController m_kVelocity (horizontal)
     int hitGroup = -1;                    // GameObjectControllerHitReport m_entity: its collision group, -1 = none
-    string hitGround;                     // the hit report entity's ground material, null = no entity
+    readonly GroundMaterialSnapshot ground = new();   // m_str958 and the hit report entity's MapAttribute
+    ulong hitOwner;                       // the instance id of the last touched shape owner (its entity's metas are read once)
     NxController nx;
     NxController.Hit nxHit;               // GameObjectController m_nCollisionFlags of the last move
     bool fallTimerRunning;                // GameObjectController m_kFallTimer is running (airTime is its elapsed time)
@@ -212,6 +215,7 @@ public partial class Player : CharacterBody3D
         bool hasInput = dir != Vector3.Zero;
         bool grounded = Grounded;
         ProbeGround();
+        ground.Frame(dt, OnOrAboveGround);   // PC::vfunc_53 (pc.cpp:4441-4445): vfunc_93(true) when m_timer970 expires
         stateTime += dt;
 
         switch (State)
@@ -361,8 +365,11 @@ public partial class Player : CharacterBody3D
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();
         if (s == MoveState.Land)
         {
-            // StateLand::vfunc_4 (stateland.cpp:76-104): the ground's "land" effects, then on water (the hit report's
+            // StateLand::vfunc_4 (stateland.cpp:76-104): the entity under the feet goes into the hit report, the ground
+            // material is refreshed (vfunc_93(true)), the ground's "land" effects play, then on water (the hit report's
             // entity is kind 8, PCBase::FUN_141675ed0) straight on to StateIdle
+            LandRay();
+            ground.Refresh(OnOrAboveGround);
             Landed?.Invoke();
             if (OnWater) Enter(MoveState.Idle);
         }
@@ -406,12 +413,39 @@ public partial class Player : CharacterBody3D
         // controller goes to onControllerHit (0x140cfaec0), which only keeps the other controller
         if (collider is CharacterBody3D || collider is Node c && c.HasMeta(MoveConfig.ControllerMeta)) return;
         moveShapeHit = true;
-        // the entity's PropCollisionGroup: the shape's own when it differs from its body's (a GeneratePhysX cube box)
+        SetHitEntity(collider, shape);
+    }
+
+    /// <summary>The hit report's entity becomes the touched shape's (onShapeHit, SetEntity); the same owner as the last
+    /// one keeps what was read from it.</summary>
+    void SetHitEntity(GodotObject collider, int shape)
+    {
         var owner = collider is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
+        ulong id = owner?.GetInstanceId() ?? 0;
+        if (id != 0 && id == hitOwner) return;
+        hitOwner = id;
+        // the entity's PropCollisionGroup: the shape's own when it differs from its body's (a GeneratePhysX cube box)
         hitGroup = owner != null && owner.HasMeta(FieldBuilder.KindMeta) ? (int)owner.GetMeta(FieldBuilder.KindMeta)
                  : collider is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
         hitFallReturn = FallReturnEntity(collider, shape);
-        hitGround = FieldBuilder.GroundMaterial(collider, shape);
+        ground.Entity = FieldBuilder.GroundMaterial(owner);
+    }
+
+    /// <summary>m_unk_9a8 as vfunc_93 sets it: on the ground (FUN_141671a30), or the down ray from the feet hit something.</summary>
+    bool OnOrAboveGround => Grounded || GroundDistance < float.MaxValue;
+
+    /// <summary>
+    /// StateLand::vfunc_4 (stateland.cpp:83-92): RayCastFixedDirection from 30 above the feet straight down, length 50, on
+    /// the default groups; when it hits an entity other than the hit report's, GetHitReport()-&gt;SetEntity puts it there. So
+    /// the landing's material and its water test name the entity under the feet even when the landing move touched only
+    /// another controller or the report still held a wall.
+    /// </summary>
+    void LandRay()
+    {
+        if (RayHit(GlobalPosition + Vector3.Up * 30f, Vector3.Down, 50f, GroundGroups) is not var (col, shape)) return;
+        var owner = col is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
+        if (owner == null || !owner.HasMeta(FieldBuilder.GroundMeta)) return;   // kRay.m_hitEntity == 0: the report stays
+        SetHitEntity(col, shape);
     }
 
     // ---- GameObjectController: jump and fall integration -------------------------------------------------------------

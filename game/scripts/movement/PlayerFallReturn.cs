@@ -134,7 +134,8 @@ public partial class Player
     {
         hitGroup = -1;
         hitFallReturn = -1;
-        hitGround = null;
+        hitOwner = 0;
+        ground.Entity = null;
     }
 
     /// <summary>

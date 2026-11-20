@@ -113,6 +113,26 @@ public partial class Player
         return null;
     }
 
+    /// <summary><see cref="Ray"/>'s nearest hit as the collider and its shape index (Unk_RayCastInfo's entity comes from it).</summary>
+    (GodotObject collider, int shape)? RayHit(Vector3 from, Vector3 dir, float len, uint groups)
+    {
+        var q = rayQ.Set(from, from + dir.Normalized() * len, GetRid());
+        var exclude = rayQ.Ex;
+        var space = GetWorld3D().DirectSpaceState;
+        for (int i = 0; i < 16; i++)
+        {
+            using var hit = space.IntersectRay(q);
+            if (hit.Count == 0) return null;
+            var obj = hit[PhysicsKeys.Collider].AsGodotObject();
+            var col = obj as Node;
+            int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
+            if ((groups & (1u << group)) != 0) return (obj, (int)hit[PhysicsKeys.Shape]);
+            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
+            q.Exclude = exclude;
+        }
+        return null;
+    }
+
     bool IsCubeRay(Vector3 from, Vector3 dir, float len) =>
         Ray(from, dir, len, ClimbGroups) is var (p, n) && Cubes.CubeAt(p - n) != null;
 
