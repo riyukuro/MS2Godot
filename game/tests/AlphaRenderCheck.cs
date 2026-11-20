@@ -178,7 +178,7 @@ public partial class AlphaRenderCheck : Node
         small.AlphaFlags = 0xED; small.ZFlags = 1; small.Bound = new float[] { 0, 0, 5, 0.5f };
         Model("sort_closest", main, Rgb(1, 0, 0, "closest-point sort draws the big-bound quad last"), big, small);
 
-        // the shadow of a blended z-writing mesh: it stops casting and a shadow-only twin with the opaque form casts in its place
+        // the shadow of a blended mesh, with or without the z write: it stops casting and a shadow-only twin with the opaque form casts in its place
         var castRoot = Model("caster", main, null, Mesh(Quad("blend_zw", 0), 0xED), Mesh(Quad("blend_nozw", 0, 0.5f), 0xED, 1));
         var skel = castRoot.GetNode("Model/" + ModelBuilder.SkeletonName);
         var zw = skel.GetNode<MeshInstance3D>("blend_zw");
@@ -187,7 +187,12 @@ public partial class AlphaRenderCheck : Node
         if (tw == null || tw.CastShadow != GeometryInstance3D.ShadowCastingSetting.ShadowsOnly || tw.Mesh != zw.Mesh
             || tw.MaterialOverride is not ShaderMaterial tm || tm.Shader.Code.Contains("#define BLEND") || !tm.Shader.Code.Contains("render_mode unshaded, cull_back;"))
             fails.Add("no opaque shadow-only twin of the blended z-write mesh");
-        if (skel.GetNode<MeshInstance3D>("blend_nozw").GetChildCount() != 0) fails.Add("a twin for a mesh without the z write");
+        // the shadow write ignores the z-write bit (SetShadowCaster @0x141567330 marks every render object): the mesh without it casts the same way
+        var nz = skel.GetNode<MeshInstance3D>("blend_nozw");
+        var tn = nz.GetNodeOrNull<MeshInstance3D>("blend_nozw_shadow");
+        if (nz.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off || tn == null || tn.CastShadow != GeometryInstance3D.ShadowCastingSetting.ShadowsOnly
+            || tn.Mesh != nz.Mesh || tn.MaterialOverride is not ShaderMaterial tnm || tnm.Shader.Code.Contains("#define BLEND"))
+            fails.Add("no opaque shadow-only twin of the blended mesh without the z write");
 
         for (int i = 0; i < 4; i++) await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         Color Px(SubViewport vp) => vp.GetTexture().GetImage().GetPixel(Size / 2, Size / 2);

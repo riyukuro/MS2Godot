@@ -839,17 +839,19 @@ public sealed class ModelBuilder
     /// <summary>
     /// What every built character mesh gets once it hangs under its skeleton (Build, EquipApplier.Attach): the shadow caster
     /// of a blended mesh, and the client's alpha sort key (CharacterAlphaSort).
-    /// A blended mesh with the z write bit (CharacterForm) casts its shadow as the opaque tested form: the client's shadow
-    /// caster mark is per mesh, whatever its blend (SetShadowCaster, equipment.cpp:2436; the "NoShadow" tag excepted), and
-    /// Godot casts no shadow from a transparent material. So the blended mesh stops casting and a shadow-only twin of the
-    /// same mesh, skin and culling, drawn with the opaque form and the same opacity test, casts in its place. A child of the
-    /// mesh, so it hides, moves and frees with it. Blended meshes without the z write cast nothing (STILL-OPEN: whether the
-    /// client's shadow pass draws them).
+    /// Every blended mesh casts its shadow as the opaque tested form: SetShadowCaster @0x141567330 (unit_141567000.cpp, from
+    /// the character and equipment builds) marks every render object under the root with no blend check, skipping only the
+    /// "NoShadow" tagged subtrees and the helper objects, and the shadow write draws opaque, cut only by the alpha test
+    /// (NiDirectionalShadowWriteMaterial.cpp:405-409: alpha override on, blend off) into a depth-as-colour target
+    /// (NiShadowTechnique.cpp:66-71), so the colour pass's z-write bit does not matter. Godot casts no shadow from a
+    /// transparent material, so the blended mesh stops casting and a shadow-only twin of the same mesh, skin and culling,
+    /// drawn with the opaque form and the same opacity test, casts in its place. A child of the mesh, so it hides, moves and
+    /// frees with it.
     /// </summary>
     /// <param name="skelBone">the skeleton's bone index for a bone index of the mesh's model</param>
     public static void Attached(MeshInstance3D mi, ModelMesh m, Skeleton3D skel, System.Func<int, int> skelBone)
     {
-        if (m.Blend != BlendForm.Opaque && m.ZWrite && mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off
+        if (m.Blend != BlendForm.Opaque && mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off
             && mi.Mesh is { } mesh && mesh.SurfaceGetMaterial(0) is ShaderMaterial sm && IsCharacterShader(sm.Shader))
         {
             if (!casterMaterials.TryGetValue(mesh, out var caster))
