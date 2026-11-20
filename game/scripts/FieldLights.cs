@@ -24,32 +24,96 @@ public static class FieldLights
     /// <summary>The light mask is a float instance uniform: 24 bits are exact.</summary>
     const int MaxLights = 24;
 
+    static FieldLightSet current;
+    static float[] data;
+    static byte[] bytes;
+    static Image image;
+    static ImageTexture texture;
+
+    /// <summary>Sets the field's lights; returns how many. The texture is as wide as the light mask (<see cref="MaxLights"/>), so
+    /// an effect light that starts or ends only rewrites its column (<see cref="Refresh"/>): nothing is built per frame.</summary>
     public static int Add(FieldLightSet set)
     {
         int n = Math.Min(set?.Lights.Count ?? 0, MaxLights);
         if (set != null && set.Lights.Count > MaxLights) GD.PushWarning($"field lights: {set.Lights.Count} lights, using the first {MaxLights}");
-        int w = Math.Max(n, 1);
-        var data = new float[w * Rows * 4];
-        for (int i = 0; i < n; i++)
-        {
-            var l = set.Lights[i];
-            var pos = FieldBuilder.ToGodotPoint(l.Position);
-            var dir = FieldBuilder.ToGodotPoint(l.Direction).Normalized();
-            float dim = l.Dimmer;
-            bool ambient = l.Ambient[0] * dim != 0 || l.Ambient[1] * dim != 0 || l.Ambient[2] * dim != 0;
-            Put(data, w, i, 0, pos.X, pos.Y, pos.Z, (l.Spot ? 1 : 0) + (ambient ? 2 : 0));
-            Put(data, w, i, 1, l.Diffuse[0] * dim, l.Diffuse[1] * dim, l.Diffuse[2] * dim, l.Constant);
-            Put(data, w, i, 2, l.Ambient[0] * dim, l.Ambient[1] * dim, l.Ambient[2] * dim, l.Linear);
-            Put(data, w, i, 3, l.Specular[0] * dim, l.Specular[1] * dim, l.Specular[2] * dim, l.Quadratic);
-            Put(data, w, i, 4, dir.X, dir.Y, dir.Z, l.OuterCos);
-            Put(data, w, i, 5, l.InnerCos, l.Exponent, 0, 0);
-        }
-        var bytes = new byte[data.Length * 4];
-        Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length);
-        var img = Image.CreateFromData(w, Rows, false, Image.Format.Rgbaf, bytes);
-        RenderingServer.GlobalShaderParameterSet("ms2_lights", ImageTexture.CreateFromImage(img));
-        RenderingServer.GlobalShaderParameterSet("ms2_light_count", (float)n);
+        current = set;
+        data = new float[MaxLights * Rows * 4];
+        bytes = new byte[data.Length * 4];
+        image = null; texture = null;
+        for (int i = 0; i < n; i++) PutLight(i, set.Lights[i]);
+        Publish(n);
         return n;
+    }
+
+    /// <summary>Starts an effect light at a client-space place (CLightEffect, FieldLightSet.StartEffect); null when the field has
+    /// no free slot. One texture write, at the start.</summary>
+    public static FieldLight Start(EffectLightParam p, Ms2.Formats.Model.Vec3 position)
+    {
+        if (current == null) return null;
+        var l = current.StartEffect(p, position);
+        if (l != null) Refresh();
+        return l;
+    }
+
+    /// <summary>Ends an effect light: its slot goes dark and free. One texture write, at the end.</summary>
+    public static void End(FieldLight l)
+    {
+        if (current == null || l == null) return;
+        current.EndEffect(l);
+        Refresh();
+    }
+
+    /// <summary>Rewrites the effect columns and the count: the field's lights keep theirs.</summary>
+    static void Refresh()
+    {
+        int n = Math.Min(current.Lights.Count, MaxLights), top = n;
+        for (int i = 0; i < current.Effects.Length; i++)
+        {
+            var l = current.Effects[i];
+            if (l == null) { ClearLight(n + i); continue; }
+            PutLight(n + i, l);
+            top = n + i + 1;
+        }
+        Publish(top);
+    }
+
+    static void PutLight(int i, FieldLight l)
+    {
+        var pos = FieldBuilder.ToGodotPoint(l.Position);
+        var dir = FieldBuilder.ToGodotPoint(l.Direction).Normalized();
+        float dim = l.Dimmer;
+        bool ambient = l.Ambient[0] * dim != 0 || l.Ambient[1] * dim != 0 || l.Ambient[2] * dim != 0;
+        const int w = MaxLights;
+        Put(data, w, i, 0, pos.X, pos.Y, pos.Z, (l.Spot ? 1 : 0) + (ambient ? 2 : 0));
+        Put(data, w, i, 1, l.Diffuse[0] * dim, l.Diffuse[1] * dim, l.Diffuse[2] * dim, l.Constant);
+        Put(data, w, i, 2, l.Ambient[0] * dim, l.Ambient[1] * dim, l.Ambient[2] * dim, l.Linear);
+        Put(data, w, i, 3, l.Specular[0] * dim, l.Specular[1] * dim, l.Specular[2] * dim, l.Quadratic);
+        Put(data, w, i, 4, dir.X, dir.Y, dir.Z, l.OuterCos);
+        Put(data, w, i, 5, l.InnerCos, l.Exponent, 0, 0);
+    }
+
+    /// <summary>A free slot below the highest used one: no colour, so it adds nothing.</summary>
+    static void ClearLight(int i)
+    {
+        for (int row = 0; row < Rows; row++) Put(data, MaxLights, i, row, 0, 0, 0, 0);
+        Put(data, MaxLights, i, 1, 0, 0, 0, 1);
+    }
+
+    static void Publish(int count)
+    {
+        Buffer.BlockCopy(data, 0, bytes, 0, bytes.Length);
+        if (image == null)
+        {
+            image = Image.CreateFromData(MaxLights, Rows, false, Image.Format.Rgbaf, bytes);
+            texture = ImageTexture.CreateFromImage(image);
+            RenderingServer.GlobalShaderParameterSet("ms2_lights", texture);
+        }
+        else
+        {
+            image.SetData(MaxLights, Rows, false, Image.Format.Rgbaf, bytes);
+            texture.Update(image);
+        }
+        RenderingServer.GlobalShaderParameterSet("ms2_light_count", (float)count);
     }
 
     static void Put(float[] data, int w, int light, int row, float x, float y, float z, float a)

@@ -498,6 +498,12 @@ public partial class Field : Node3D
                 var v = args[i + 1].Split(',');
                 pos = new Vec3(double.Parse(v[0], CultureInfo.InvariantCulture), double.Parse(v[1], CultureInfo.InvariantCulture), double.Parse(v[2], CultureInfo.InvariantCulture));
             }
+        // --effect-light <effect xml>: starts the light parts of that effect at the spawn spot, for a before/after look at an effect light
+        for (int i = 0; i + 1 < args.Length; i++)
+            if (args[i] == "--effect-light")
+                foreach (var part in new EffectTable(packs).Get(args[i + 1]) ?? new List<EffectPart>())
+                    if (part.Light != null)
+                        GD.Print("MS2Godot effect light " + (FieldLights.Start(part.Light, new Vec3(pos.X + part.Translate[0], pos.Y + part.Translate[1], pos.Z + part.Translate[2])) != null ? "started" : "not started"));
         player.SpawnPoint = FieldBuilder.ToGodotPoint(pos) + new Vector3(0, 5, 0);
         // WorldService's world box: reset inverted (worldservice_1.cpp:10125-10126), then grown by every MS2Bounding entity's
         // position (worldservice_1.cpp:10394-10405); a field without one keeps the inverted box

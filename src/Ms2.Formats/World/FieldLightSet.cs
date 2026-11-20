@@ -7,6 +7,7 @@ public sealed class FieldLight
 {
     /// <summary>The light's bit in a receiver's mask (<see cref="FieldLightSet.Unlit"/>): its place in xblock order.</summary>
     public int Index;
+    /// <summary>The light entity; null for an effect light (<see cref="FieldLightSet.StartEffect"/>).</summary>
     public FieldEntity Entity;
     /// <summary>NiSpotLight (the entity contains SpotLight), else NiPointLight (LightService::CreateLight, LightService.cpp:465-472).</summary>
     public bool Spot;
@@ -78,6 +79,70 @@ public sealed class FieldLightSet
                 else if (l.Spot) spots++;
             return !(points <= 3 && spots <= 2 && DirectionalLights <= 3);
         }
+    }
+
+    /// <summary>The first <see cref="MaxDrawLights"/> lights of a draw count: NiStandardMaterialDescriptor.cpp:41-44 takes
+    /// STANDARD_PIPE_MAX_LIGHTS (NiStandardMaterial.h:324) lights and drops the rest.</summary>
+    public const int MaxDrawLights = 8;
+
+    /// <summary>
+    /// The effect lights (CLightEffect "EffectPointLight", lighteffectparam.cpp:361-381), the slots after the field's lights up to
+    /// <see cref="MaskBits"/>. Null: a free slot. <see cref="EffectVersion"/> changes when one starts or ends, which is the only time
+    /// the light data changes.
+    /// <para>Reach: the effect's entity enters the world after the field's relight; LightService::HandleEntityAddedMessage
+    /// (LightService.cpp:380-463) attaches a light of a field without automatic relighting to every scene graph, with no range
+    /// test and no priority or MaxPointLights limit, and CEffectService::AttachEntityLight (effectservice.cpp:1780-1815) puts it on
+    /// the effect root; removal detaches it from all (LightService.cpp:482-564) when CLightEffect::vfunc_7 destroys the entity. So
+    /// the light reaches every receiver, and its only limit is the draw's 8 lights: it is attached last, so a draw that already
+    /// holds 8 of the field's lights does not get it (<see cref="EffectUnlit"/>).
+    /// STILL-OPEN: a field with automatic relighting would relight by range and limit; an effect light that follows its parent node
+    /// moves (FUN_14144b0d0) and here it stays where it started.</para>
+    /// </summary>
+    public FieldLight[] Effects = Array.Empty<FieldLight>();
+    public int EffectVersion;
+    int staticCount = -1;
+
+    /// <summary>The slot bits the effect lights take in a mask.</summary>
+    public uint EffectBits
+    {
+        get
+        {
+            int n = Math.Min(Lights.Count, MaskBits);
+            return (((1u << MaskBits) - 1) >> n) << n;
+        }
+    }
+
+    /// <summary>The effect bits of a draw's mask: all set when the draw already holds <see cref="MaxDrawLights"/> field lights
+    /// (<paramref name="attached"/>), else none.</summary>
+    public uint EffectUnlit(int attached) => attached >= MaxDrawLights ? EffectBits : 0;
+
+    /// <summary>Starts an effect light at <paramref name="position"/> (client space). Null when no slot is free.</summary>
+    public FieldLight StartEffect(EffectLightParam p, Vec3 position)
+    {
+        if (staticCount != Lights.Count) { staticCount = Lights.Count; Effects = new FieldLight[Math.Max(0, MaskBits - Lights.Count)]; }
+        for (int i = 0; i < Effects.Length; i++)
+        {
+            if (Effects[i] != null) continue;
+            var l = new FieldLight
+            {
+                Index = Lights.Count + i, Position = position, Direction = new Vec3(1, 0, 0), Range = p.Range, Dimmer = p.Dimmer,
+                Diffuse = p.Diffuse, Ambient = new float[3], Specular = p.Specular,
+                Constant = p.Constant, Linear = p.Linear, Quadratic = p.Quadratic,
+            };
+            Effects[i] = l;
+            EffectVersion++;
+            return l;
+        }
+        return null;
+    }
+
+    /// <summary>Ends an effect light: its slot is free again.</summary>
+    public void EndEffect(FieldLight l)
+    {
+        int i = l.Index - Lights.Count;
+        if (i < 0 || i >= Effects.Length || Effects[i] != l) return;
+        Effects[i] = null;
+        EffectVersion++;
     }
 
     /// <summary>The point and spot light entities of <paramref name="entities"/>, in their order (the light list order).</summary>
@@ -158,11 +223,12 @@ public sealed class FieldLightSet
     /// </summary>
     public uint Unlit(FieldEntity receiver, Vec3 center, float radius)
     {
-        if (Lights.Count == 0 || !Receives(receiver)) return 0;
+        if (Lights.Count == 0) return 0;
+        if (!Receives(receiver)) return EffectUnlit(Lights.Count);
         uint attached = Pick(receiver, center, radius, spot: false, (uint)receiver.Number("MaxPointLights", 0))
                       | Pick(receiver, center, radius, spot: true, (uint)receiver.Number("MaxSpotLights", 0));
         uint all = Lights.Count >= MaskBits ? (1u << MaskBits) - 1 : (1u << Lights.Count) - 1;
-        return all & ~attached;
+        return (all & ~attached) | EffectUnlit(System.Numerics.BitOperations.PopCount(attached));
     }
 
     uint Pick(FieldEntity receiver, Vec3 center, float radius, bool spot, uint max)

@@ -109,6 +109,7 @@ void fragment() {
                 EffectSounds++;
                 continue;
             }
+            if (part.Type == "light" && part.Light != null) { QueueLight(part, at, yawRadians); continue; }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
             if (Particles && TryScene(part, at, yawRadians)) continue;
             var e = Effect(part.FilePath);
@@ -137,6 +138,24 @@ void fragment() {
             live.Add((holder, 0f, part.StartDelay, part.StartDelay + Mathf.Min(dur, 3f), mats));
             EffectsSpawned++;
         }
+    }
+
+    /// <summary>An effect light waiting for its start delay or running (CLightEffect: it adds its light when it starts and the
+    /// effect's end destroys it, FieldLightSet.StartEffect / EndEffect).</summary>
+    sealed class LiveLight
+    {
+        public EffectLightParam Param; public Ms2.Formats.Model.Vec3 Pos; public float Born, Start, End; public FieldLight Light;
+    }
+    readonly List<LiveLight> lights = new();
+    public int EffectLightsStarted;
+
+    void QueueLight(EffectPart part, Godot.Vector3 at, float yawRadians)
+    {
+        // the part's translate is in the effect's own space (Z up, turned by the effect's yaw), the light's place in client space
+        var off = new Godot.Vector3(part.Translate[0], part.Translate[2], -part.Translate[1]).Rotated(Godot.Vector3.Up, yawRadians);
+        var g = at + off;
+        float dur = part.Duration > 0 ? part.Duration : 0.6f;
+        lights.Add(new LiveLight { Param = part.Light, Pos = new Ms2.Formats.Model.Vec3(g.X, -g.Z, g.Y), Start = part.StartDelay, End = part.StartDelay + Mathf.Min(dur, 3f) });
     }
 
     EffectScene Scene(string nifPath)
@@ -170,6 +189,13 @@ void fragment() {
 
     public void Process(float dt)
     {
+        for (int i = lights.Count - 1; i >= 0; i--)   // only a start or an end touches the light data
+        {
+            var l = lights[i];
+            l.Born += dt;
+            if (l.Light == null && l.Born >= l.Start && l.Born < l.End) { l.Light = FieldLights.Start(l.Param, l.Pos); if (l.Light != null) EffectLightsStarted++; }
+            if (l.Born >= l.End) { FieldLights.End(l.Light); lights.RemoveAt(i); }
+        }
         for (int i = numbers.Count - 1; i >= 0; i--)
         {
             var (l, age) = numbers[i];
