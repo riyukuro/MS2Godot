@@ -80,4 +80,48 @@ public class ParticleForceTests
         v = ParticleForces.Drag(vel, new Vector3(7.5f, 0, 0), Vector3.Zero, Vector3.UnitX, 0.5f, 5, 10, 0.0333333f); // half range
         Assert.That(v.X, Is.EqualTo(7.5f).Within(1e-4));
     }
+    /// <summary>ApplyPlanarGravityForce / ApplySphericalGravityForce: the strength is Strength * 1.6 (NiPSForceHelpers.inl:770,
+    /// :878); planar pulls along the axis, fading as exp(-decay * |axis . (gravPos - pos)|); spherical pulls toward the
+    /// object, fading as exp(-decay * distance).</summary>
+    [Test]
+    public void GravityForceMath()
+    {
+        var v = ParticleForces.Gravity(Vector3.Zero, new Vector3(5, 0, 0), Vector3.Zero, -Vector3.UnitZ, 10, 0, 0, 0.5f);
+        Assert.That(v, Is.EqualTo(new Vector3(0, 0, -8)));                                       // 10 * 1.6 * 0.5
+        v = ParticleForces.Gravity(Vector3.One, new Vector3(0, 0, 3), Vector3.Zero, -Vector3.UnitZ, 10, 0.5f, 0, 1f);
+        Assert.That(v.Z, Is.EqualTo(1f - 16f * MathF.Exp(-1.5f)).Within(1e-5)); Assert.That(v.X, Is.EqualTo(1f));
+        v = ParticleForces.Gravity(Vector3.Zero, new Vector3(3, 4, 0), Vector3.Zero, Vector3.UnitZ, 10, 0, 1, 1f);
+        Assert.That(v.X, Is.EqualTo(-9.6f).Within(1e-5)); Assert.That(v.Y, Is.EqualTo(-12.8f).Within(1e-5));
+        v = ParticleForces.Gravity(Vector3.Zero, new Vector3(3, 4, 0), Vector3.Zero, Vector3.UnitZ, 10, 0.2f, 1, 1f);
+        Assert.That(v.Length(), Is.EqualTo(16f * MathF.Exp(-1f)).Within(1e-5));
+    }
+
+    /// <summary>The forces run in the list's order, each on the velocity the one before left
+    /// (NiPSSimulatorForcesKernel.cpp:232-236): gravity then drag is not drag then gravity.</summary>
+    [Test]
+    public void ForcesApplyInListOrder()
+    {
+        var g = new ParticleForces.Step { Kind = ForceKind.Gravity, Dir = -Vector3.UnitZ, Strength = 10 };
+        var d = new ParticleForces.Step { Kind = ForceKind.Drag, Dir = Vector3.UnitZ, Percentage = 0.5f, Range = float.MaxValue, Falloff = float.MaxValue };
+        const float dt = 0.0333333f;
+        var gd = ParticleForces.Apply(Vector3.Zero, Vector3.Zero, new() { g, d }, dt);
+        var dg = ParticleForces.Apply(Vector3.Zero, Vector3.Zero, new() { d, g }, dt);
+        Assert.That(dg.Z, Is.EqualTo(-16f * dt).Within(1e-5));                                 // drag on zero, then gravity
+        Assert.That(gd.Z, Is.EqualTo(-8f * dt).Within(1e-4));                                  // gravity, then half of it dragged
+    }
+
+    /// <summary>The field snow (eff_cam_snow_soft, 02000260's weather): its gravity, turned by Wind01, gives a flake at rest
+    /// Strength * 1.6 of downward speed per second; without the 1.6 the snow fell 1.6 times too slowly.</summary>
+    [Test]
+    public void SnowGravityGivesStrengthTimes1_6()
+    {
+        var sc = Load("bg/common/eff_cam_snow_soft.nif");
+        var gf = sc.Systems.Single().Forces.Single(f => f.Kind == ForceKind.Gravity);
+        var l = sc.Nodes[gf.Node].Local; var a = l.Apply(gf.Axis);
+        var dir = Vector3.Normalize(new Vector3((float)(a.X - l.T.X), (float)(a.Y - l.T.Y), (float)(a.Z - l.T.Z)));
+        var step = new ParticleForces.Step { Kind = ForceKind.Gravity, Dir = dir, Strength = (float)gf.Strength, Decay = (float)gf.Decay, ForceType = gf.ForceType };
+        Assert.That(gf.ForceType, Is.EqualTo(0)); Assert.That(gf.Decay, Is.EqualTo(0));
+        var v = ParticleForces.Apply(Vector3.Zero, Vector3.Zero, new() { step }, 1f);
+        Assert.That(v.Z, Is.EqualTo(-1.6f * (float)gf.Strength).Within(1e-3));
+    }
 }

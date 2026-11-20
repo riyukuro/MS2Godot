@@ -537,9 +537,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         mat.SetShaderParameter(clamp, (map.ClampS ? 1 : 0) | (map.ClampT ? 2 : 0));
     }
 
-    /// <summary>A bomb or drag force this step, in the effect's space (see Step).</summary>
-    struct ForceNow { public ForceDef Def; public System.Numerics.Vector3 Pos, Dir; public float DeltaV, Decay, Range, Falloff; }
-    readonly List<ForceNow> forcesNow = new();
+    /// <summary>The gravity, bomb and drag forces on this step, in the effect's space (see Step).</summary>
+    readonly List<ParticleForces.Step> forcesNow = new();
 
     void Step(PSys ps, float dt, Vector3 camLocal, Vector3 camRight, Vector3 camUp)
     {
@@ -554,36 +553,32 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         // object, or a drag with Percentage <= 0, it is left out (NiPSSimulatorForcesStep.cpp:186-226). The system's
         // space differs from the effect's by the system's transform, so distances there are the effect's over psScale:
         // the bomb's DeltaV and the drag and decay distances are scaled by psScale here.
-        // Gravity's axis is turned and unitized the same way, and gravity without an object is left out
-        // (NiPSGravityForce::Update, NiPSGravityForce.cpp:65-79).
-        // STILL-OPEN: gravity is applied before the others: its decay, force type and place in the list are not ported.
-        Vector3 accel = Vector3.Zero; forcesNow.Clear();
+        // Gravity's position and axis are taken the same way, and gravity without an object is left out
+        // (NiPSGravityForce::Update, NiPSGravityForce.cpp:65-79); its Strength is an acceleration (scaled by psScale) and
+        // its Decay is per system-space distance (divided by psScale). All three run in the list's order.
+        // STILL-OPEN: gravity turbulence (random, NiPSForceHelpers.inl:786-800) is not read or applied.
+        forcesNow.Clear();
         foreach (var f in d.Forces)
         {
             bool on = f.Active;
             if (f.On != null) on = f.On(f.OnCtl.Local(t)) > 0.5;
             if (!on) continue;
-            if (f.Kind == ForceKind.Gravity)
-            {
-                if (f.Node < 0) continue;
-                var gb = World(f.Node, t, camLocal).Basis.Orthonormalized();
-                accel += (gb * new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z)).Normalized() * (float)f.Strength;
-            }
-            else if (f.Kind == ForceKind.Drag || f.Kind == ForceKind.Bomb)
+            if (f.Kind == ForceKind.Drag || f.Kind == ForceKind.Bomb || f.Kind == ForceKind.Gravity)
             {
                 if (f.Node < 0 || (f.Kind == ForceKind.Drag && f.Percentage <= 0)) continue;
                 var w = World(f.Node, t, camLocal);
                 var dir = (w.Basis.Orthonormalized() * new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z)).Normalized();
-                forcesNow.Add(new ForceNow
+                forcesNow.Add(new ParticleForces.Step
                 {
-                    Def = f, Pos = new(w.Origin.X, w.Origin.Y, w.Origin.Z), Dir = new(dir.X, dir.Y, dir.Z),
-                    DeltaV = (float)f.DeltaV * psScale, Decay = (float)f.Decay * psScale,
+                    Kind = f.Kind, Pos = new(w.Origin.X, w.Origin.Y, w.Origin.Z), Dir = new(dir.X, dir.Y, dir.Z),
+                    DecayType = f.DecayType, SymmType = f.SymmType, ForceType = f.ForceType, Percentage = (float)f.Percentage,
+                    DeltaV = (float)f.DeltaV * psScale, Strength = (float)f.Strength * psScale,
+                    Decay = f.Kind == ForceKind.Gravity ? (psScale != 0 ? (float)f.Decay / psScale : 0) : (float)f.Decay * psScale,
                     Range = f.Range >= float.MaxValue ? float.MaxValue : (float)f.Range * psScale,
                     Falloff = f.RangeFalloff >= float.MaxValue ? float.MaxValue : (float)f.RangeFalloff * psScale,
                 });
             }
         }
-        accel *= psScale;
         // simulate: the forces in their order, each on the velocity the one before left, against the step's start
         // position (ParticleForces), then the move
         int nForces = forcesNow.Count;
@@ -591,19 +586,13 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         {
             ps.Age[i] += dt;
             if (ps.Age[i] >= ps.Life[i]) { Swap(ps, i, ps.Count - 1); ps.Count--; continue; }
-            var v = ps.Vel[i] + accel * dt;
+            var v = ps.Vel[i];
             if (nForces > 0)
             {
                 var p0 = ps.Pos[i];
                 var pn = new System.Numerics.Vector3(p0.X, p0.Y, p0.Z);
                 var vn = new System.Numerics.Vector3(v.X, v.Y, v.Z);
-                for (int fi = 0; fi < nForces; fi++)
-                {
-                    var f = forcesNow[fi];
-                    vn = f.Def.Kind == ForceKind.Bomb
-                        ? ParticleForces.Bomb(vn, pn, f.Pos, f.Dir, f.DeltaV, f.Decay, f.Def.DecayType, f.Def.SymmType, dt)
-                        : ParticleForces.Drag(vn, pn, f.Pos, f.Dir, (float)f.Def.Percentage, f.Range, f.Falloff, dt);
-                }
+                vn = ParticleForces.Apply(vn, pn, forcesNow, dt);
                 v = new Vector3(vn.X, vn.Y, vn.Z);
             }
             ps.Vel[i] = v;
