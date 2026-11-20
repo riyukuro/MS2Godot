@@ -168,10 +168,10 @@ public sealed class ForceDef
     public ForceKind Kind; public string Name, Type; public bool Active = true;
     public Vec3 Axis; public double Strength, Decay, DeltaV, Percentage; public int ForceType;
     /// <summary>NiPSBombForce: DecayType 0 none, 1 linear, 2 exponential; SymmType 0 spherical, 1 cylindrical, 2 planar
-    /// (NiPSForceDefinitions.h:93-133). Node is the force's object: the "Bomb Object" or the "Drag Object". A bomb or drag
-    /// without one does nothing: its Update returns false and the forces step leaves it out of the kernel's data
-    /// (NiPSBombForce.cpp:63-66, NiPSDragForce.cpp:61-64, NiPSSimulatorForcesStep.cpp:186-226). A drag with Percentage
-    /// &lt;= 0 is left out the same way.</summary>
+    /// (NiPSForceDefinitions.h:93-133). Node is the force's object: the "Gravity Object", the "Bomb Object" or the
+    /// "Drag Object". A force without one does nothing: its Update returns false and the forces step leaves it out of the
+    /// kernel's data (NiPSGravityForce.cpp:65-79, NiPSBombForce.cpp:63-66, NiPSDragForce.cpp:61-64,
+    /// NiPSSimulatorForcesStep.cpp:186-226). A drag with Percentage &lt;= 0 is left out the same way.</summary>
     public int DecayType, SymmType, Node = -1;
     /// <summary>NiPSDragForce range: full drag inside Range, fading linearly to none at RangeFalloff.</summary>
     public double Range = float.MaxValue, RangeFalloff = float.MaxValue;
@@ -483,7 +483,10 @@ public sealed class EffectScene
                             var fd = new ForceDef { Name = n.Name((int)fi), Type = f.Type, Active = f.IntOr("Active", 1) != 0 };
                             switch (f.Type)
                             {
-                                case "NiPSGravityForce": fd.Kind = ForceKind.Gravity; fd.Axis = V3(f.Struct("Gravity Axis")); fd.Strength = f.Float("Strength"); fd.ForceType = (int)f.Int("Force Type"); fd.Decay = f.Float("Decay"); break;
+                                case "NiPSGravityForce": fd.Kind = ForceKind.Gravity; fd.Axis = V3(f.Struct("Gravity Axis")); fd.Strength = f.Float("Strength"); fd.ForceType = (int)f.Int("Force Type"); fd.Decay = f.Float("Decay");
+                                    long gob = f.IntOr("Gravity Object", -1);
+                                    if (gob >= 0 && NodeOfBlock.TryGetValue((int)gob, out int gn)) fd.Node = gn;
+                                    break;
                                 case "NiPSDragForce":
                                     fd.Kind = ForceKind.Drag; fd.Axis = V3(f.Struct("Drag Axis")); fd.Percentage = f.Float("Percentage");
                                     fd.Range = f.Float("Range"); fd.RangeFalloff = f.Float("Range Falloff");

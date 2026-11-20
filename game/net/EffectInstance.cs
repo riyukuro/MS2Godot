@@ -554,15 +554,21 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         // object, or a drag with Percentage <= 0, it is left out (NiPSSimulatorForcesStep.cpp:186-226). The system's
         // space differs from the effect's by the system's transform, so distances there are the effect's over psScale:
         // the bomb's DeltaV and the drag and decay distances are scaled by psScale here.
-        // STILL-OPEN: gravity is still its raw axis times strength, applied before the others: its object frame, decay,
-        // force type and place in the list (NiPSGravityForce::Update, NiPSGravityForce.cpp:61-82) are not ported.
+        // Gravity's axis is turned and unitized the same way, and gravity without an object is left out
+        // (NiPSGravityForce::Update, NiPSGravityForce.cpp:65-79).
+        // STILL-OPEN: gravity is applied before the others: its decay, force type and place in the list are not ported.
         Vector3 accel = Vector3.Zero; forcesNow.Clear();
         foreach (var f in d.Forces)
         {
             bool on = f.Active;
             if (f.On != null) on = f.On(f.OnCtl.Local(t)) > 0.5;
             if (!on) continue;
-            if (f.Kind == ForceKind.Gravity) accel += new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z) * (float)f.Strength;
+            if (f.Kind == ForceKind.Gravity)
+            {
+                if (f.Node < 0) continue;
+                var gb = World(f.Node, t, camLocal).Basis.Orthonormalized();
+                accel += (gb * new Vector3((float)f.Axis.X, (float)f.Axis.Y, (float)f.Axis.Z)).Normalized() * (float)f.Strength;
+            }
             else if (f.Kind == ForceKind.Drag || f.Kind == ForceKind.Bomb)
             {
                 if (f.Node < 0 || (f.Kind == ForceKind.Drag && f.Percentage <= 0)) continue;
