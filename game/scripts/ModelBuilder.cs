@@ -326,7 +326,7 @@ public sealed class ModelBuilder
 
     /// <summary>A morph target's weight range: its key values, each Bezier segment's extremes between them, or its fixed
     /// weight.</summary>
-    static (float lo, float hi) MorphRange(MorphAnim a, int t)
+    internal static (float lo, float hi) MorphRange(MorphAnim a, int t)
     {
         if (a.Weights[t] is not { } k) return (a.Static[t], a.Static[t]);
         float lo = k.Values.Min(), hi = k.Values.Max();
@@ -364,26 +364,39 @@ public sealed class ModelBuilder
     /// <summary>A morphing mesh's bounds in its own space: each vertex moved by every target over its weight range.</summary>
     static Aabb MorphAabb(ModelMesh m)
     {
-        var a = m.Morph;
+        var w = MorphRanges(m.Morph);
         var lo = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
         var hi = -lo;
         for (int i = 0; i + 2 < m.Positions.Length; i += 3)
         {
-            var v = new Vector3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2]);
-            Vector3 vl = v, vh = v;
-            for (int t = 0; t < a.Deltas.Length; t++)
-            {
-                var d = new Vector3(a.Deltas[t][i], a.Deltas[t][i + 1], a.Deltas[t][i + 2]);
-                var (wl, wh) = MorphRange(a, t);
-                Vector3 p = d * wl, q = d * wh;
-                vl += p.Min(q);
-                vh += p.Max(q);
-            }
+            var (vl, vh) = MorphBox(m, w, i);
             if (!float.IsFinite(vl.X + vl.Y + vl.Z + vh.X + vh.Y + vh.Z)) continue;   // a NaN target vertex draws nothing
             lo = lo.Min(vl);
             hi = hi.Max(vh);
         }
         return lo.X > hi.X ? new Aabb() : new Aabb(lo, hi - lo);
+    }
+
+    static (float lo, float hi)[] MorphRanges(MorphAnim a)
+    {
+        var w = new (float lo, float hi)[a.Deltas.Length];
+        for (int t = 0; t < w.Length; t++) w[t] = MorphRange(a, t);
+        return w;
+    }
+
+    /// <summary>The box one vertex (at Positions[i]) moves in: its rest position plus every target's offset over that
+    /// target's weight range w.</summary>
+    static (Vector3 lo, Vector3 hi) MorphBox(ModelMesh m, (float lo, float hi)[] w, int i)
+    {
+        Vector3 vl = new(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2]), vh = vl;
+        for (int t = 0; t < w.Length; t++)
+        {
+            var d = new Vector3(m.Morph.Deltas[t][i], m.Morph.Deltas[t][i + 1], m.Morph.Deltas[t][i + 2]);
+            Vector3 p = d * w[t].lo, q = d * w[t].hi;
+            vl += p.Min(q);
+            vh += p.Max(q);
+        }
+        return (vl, vh);
     }
 
     /// <summary>A keyed morph (ModelMesh.Morph) for field_morph: the controller time, the fixed weights and each target's keys.</summary>
@@ -411,12 +424,26 @@ public sealed class ModelBuilder
 
     /// <summary>A billboard mesh's bounds in its own space: the sphere it sweeps as it turns about its billboard node's
     /// origin (field_billboard), so a turned billboard is not culled by its rest bounds.</summary>
-    static Aabb BillboardAabb(ModelMesh m)
+    internal static Aabb BillboardAabb(ModelMesh m)
     {
         var x = ToGodot(m.InBillboard);
         float r = 0;
-        for (int i = 0; i + 2 < m.Positions.Length; i += 3)
-            r = Mathf.Max(r, (x * new Vector3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2])).Length());
+        if (m.Morph != null)
+        {
+            // a morphed billboard turns its morphed vertices (field_lit morphs, then turns): the radius takes every corner
+            // of each vertex's morph box, which holds the vertex at any target weights
+            var w = MorphRanges(m.Morph);
+            for (int i = 0; i + 2 < m.Positions.Length; i += 3)
+            {
+                var (vl, vh) = MorphBox(m, w, i);
+                if (!float.IsFinite(vl.X + vl.Y + vl.Z + vh.X + vh.Y + vh.Z)) continue;
+                for (int k = 0; k < 8; k++)
+                    r = Mathf.Max(r, (x * new Vector3((k & 1) != 0 ? vh.X : vl.X, (k & 2) != 0 ? vh.Y : vl.Y, (k & 4) != 0 ? vh.Z : vl.Z)).Length());
+            }
+        }
+        else
+            for (int i = 0; i + 2 < m.Positions.Length; i += 3)
+                r = Mathf.Max(r, (x * new Vector3(m.Positions[i], m.Positions[i + 1], m.Positions[i + 2])).Length());
         var inv = x.AffineInverse();
         var c = inv.Origin;
         float e = r * inv.Basis.Scale.X;
