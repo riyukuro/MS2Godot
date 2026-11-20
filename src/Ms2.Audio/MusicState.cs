@@ -482,6 +482,7 @@ public sealed class MusicCrossfade
             SetGain(OutgoingSlot, 0f);
             return OutgoingSlot;
         }
+        // STILL-OPEN: exact FMOD Ex crossfade curve inside fmod_event64.dll is unknown; using linear ramp.
         float t = fadeElapsed / fadeDuration;
         SetGain(activeSlot, t);
         SetGain(OutgoingSlot, outgoingStartGain * (1f - t));

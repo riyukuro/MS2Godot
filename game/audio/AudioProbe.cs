@@ -29,9 +29,9 @@ public partial class AudioProbe : Node
         audio = new FieldAudio();
         AddChild(audio);
         if (!audio.Open(data, packs)) { GetTree().Quit(3); return; }
-        int cue = FieldAudio.FieldBgmCue(packs, field);
-        GD.Print($"audio probe: field {field} bgm cue {cue}");
-        bool ok = audio.PlayBgm(cue);
+        var bgm = FieldAudio.FieldBgm(packs, field);
+        GD.Print($"audio probe: field {field} bgm cue {bgm.BgmId} param {bgm.BgmParam}");
+        bool ok = audio.PlayFieldBgm(bgm);
         bool click = audio.PlayUi("button_click");
         audio.PlayUi("dialog_open");
         Field();

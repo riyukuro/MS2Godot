@@ -217,11 +217,11 @@ public sealed class SoundLibrary
         return null;
     }
 
-    static bool MatchesWaveName(string sampleName, string stem, string prefix)
+    public static bool MatchesWaveName(string sampleName, string stem, string prefix)
     {
-        if (string.IsNullOrEmpty(sampleName)) return true;
+        if (string.IsNullOrEmpty(sampleName) || string.IsNullOrEmpty(stem)) return false;
         if (string.Equals(sampleName, stem, StringComparison.OrdinalIgnoreCase)) return true;
-        if (prefix.Length > 0 && sampleName.Length == prefix.Length + stem.Length
+        if (!string.IsNullOrEmpty(prefix) && sampleName.Length == prefix.Length + stem.Length
             && sampleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
             && sampleName.EndsWith(stem, StringComparison.OrdinalIgnoreCase))
             return true;

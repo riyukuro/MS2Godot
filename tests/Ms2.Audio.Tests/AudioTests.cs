@@ -961,4 +961,14 @@ public class AudioTests
         MusicController.ResetShared();
         Assert.That(s2.CurrentCueId, Is.EqualTo(0));
     }
+
+    [Test]
+    public void MatchesWaveNameRejectsEmptySampleName()
+    {
+        Assert.That(SoundLibrary.MatchesWaveName("", "BGM_Tria_01", ""), Is.False);
+        Assert.That(SoundLibrary.MatchesWaveName(null, "BGM_Tria_01", ""), Is.False);
+        Assert.That(SoundLibrary.MatchesWaveName("BGM_Tria_01", "BGM_Tria_01", ""), Is.True);
+        Assert.That(SoundLibrary.MatchesWaveName("en_Male_Greet_01", "Male_Greet_01", "en_"), Is.True);
+        Assert.That(SoundLibrary.MatchesWaveName("jp_Male_Greet_01", "Male_Greet_01", "en_"), Is.False);
+    }
 }
