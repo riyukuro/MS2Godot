@@ -40,7 +40,7 @@ public partial class HudScene : Node, IUiStageHost
     string frameCase;                       // --frametime closed|open|scroll: frame times over 300 frames instead of a shot
     readonly List<double> frameDelta = new(), frameProcess = new(), frameMovie = new(), frameTick = new();
     long callsAtStart, interpAtStart;
-    float u; Vector2 stage;                 // UI scale and stage size in stage units (see UiScale)
+    float u;                                // the movies' draw scale (see UiScale)
     Player player; Control uiRoot;
     MovieDialog targetBar;                  // uiupperhpbar
     /// <summary>UIUpperHpBar's C++ side: the target HP bar at the top (Hit / Remove from combat, Process per frame).</summary>
@@ -212,7 +212,6 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>The HUD's dialogs as the client's one stage: drops from one dialog onto another, and main.gfx's drag callbacks.</summary>
     public UiStage UiStage { get; } = new();
 
-    CanvasLayer hudLayer; Node[] worldUi = System.Array.Empty<Node>();   // the HUD layer and the world-anchored UI layers
     PortraitView portrait;          // the game menu's face portrait, kept across relayouts
     bool relayoutQueued;
 
@@ -242,7 +241,7 @@ public partial class HudScene : Node, IUiStageHost
         relayoutQueued = false;
         if (!IsInsideTree()) return;     // queued before the scene left the tree
         var window = ScreenMode.PixelSize(GetWindow());
-        u = UiScale.For(window); stage = UiScale.MovieStage(window);
+        u = UiScale.For(window);
         resizing.Clear();
         CollectMovies(this, resizing);
         var before = new (double W, double H)[resizing.Count];
@@ -278,13 +277,13 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void BuildHud()
     {
-        var layer = hudLayer = new CanvasLayer { Layer = 10 };
+        var layer = new CanvasLayer { Layer = 10 };
         AddChild(layer);
         uiRoot = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         uiRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         layer.AddChild(uiRoot);
         var window = GetViewport().GetVisibleRect().Size;
-        u = UiScale.For(window); stage = UiScale.MovieStage(window);
+        u = UiScale.For(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
         var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
         AddChild(damageEffect = new DamageEffect(assets, constants, window));                             // UIDamageEffect
@@ -294,7 +293,6 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
         AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
-        worldUi = new Node[] { damageEffect, nameTag, playerBar, damageText };
 
         HudModel();
         ScreenMask();
@@ -520,32 +518,6 @@ public partial class HudScene : Node, IUiStageHost
         systemMenuMovie.Player.Click(b.X + b.W / 2, b.Y + b.H / 2);
         systemMenuMovie.Player.MouseMove(0, 0);       // the pointer leaves the menu, as after a hand click (no hover state in a shot)
     }
-
-    /// <summary>Places a movie at a position in stage units; <paramref name="factor"/> is a per-dialog size the client applies on top of the UI scale.</summary>
-    MovieClipNode Place(Control parent, string movie, float factor, Vector2 stagePos)
-    {
-        var m = new UiMovie(assets, movie);
-        float s = u * factor;
-        var root = m.BuildRoot(s);
-        root.Scale = new Vector2(s, s); root.Position = stagePos * u;
-        var holder = new Node2D(); holder.AddChild(root); parent.AddChild(holder);
-        return root;
-    }
-
-    /// <summary>
-    /// ASDisplayObject::vfunc_2(mode, dx, dy) on the dialog instance <paramref name="body"/> in a built root: the dialog's
-    /// registration point goes to the aligned spot, with <paramref name="size"/> its AS3 width and height (truncated).
-    /// </summary>
-    void AlignDialog(MovieClipNode root, MovieClipNode body, int mode, Vector2 size, float dx, float dy)
-    {
-        var reg = UiLayout.Align(mode, stage, new Vector2((int)size.X, (int)size.Y), dx, dy);
-        root.Position = (reg - body.Position) * u;
-    }
-
-    /// <summary>The dialog instance a HUD movie's root timeline places (its first clip).</summary>
-    static MovieClipNode DialogBody(MovieClipNode root) => root.Children.Select(c => c.Node).OfType<MovieClipNode>().FirstOrDefault();
-
-    static void Hide(MovieClipNode root, params string[] names) { foreach (var n in names) root.HideNamed(n); }
 
     // ---- top bar: uiupperhuddialog run by its own ActionScript, UIUpperHudDialog's C++ side as UpperHudController ------
 
