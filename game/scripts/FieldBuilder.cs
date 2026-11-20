@@ -73,8 +73,25 @@ public sealed class FieldBuilder
     /// </summary>
     public static bool IsFadeTarget(FieldEntity e) => e.HasMixin("MS2MapProperties") && e.Bool("Transparency");
 
+    /// <summary>
+    /// The instances (drawn and shadow-only) of every trigger mesh entity, for world/FieldTriggers: the server shows and hides
+    /// them by trigger id (TriggerObjectMesh::vfunc_2, triggeractioncli.cpp:643).
+    /// </summary>
+    public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> TriggerMeshDraws = new();
+
+    /// <summary>A trigger object of mesh kind (TriggerObject::Create, Ms2.Net.Packets.TriggerObjects.KindOf).</summary>
+    public static bool IsTriggerMesh(FieldEntity e) => Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Mesh;
+
+    void AddTriggerDraw(FieldEntity e, MultiMesh mm, int index)
+    {
+        if (!IsTriggerMesh(e)) return;
+        if (!TriggerMeshDraws.TryGetValue(e, out var list)) TriggerMeshDraws[e] = list = new List<(MultiMesh, int)>();
+        list.Add((mm, index));
+    }
+
     void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving)
     {
+        AddTriggerDraw(e, mm, index);
         if (!IsFadeTarget(e)) return;
         if (!FadeDraws.TryGetValue(e, out var list)) FadeDraws[e] = list = new List<FadeDraw>();
         list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
@@ -566,6 +583,7 @@ public sealed class FieldBuilder
             {
                 mm.SetInstanceTransform(i, ModelBuilder.ToGodot(list[i].Transform) * local);
                 mm.SetInstanceColor(i, InstanceColor(list[i]));
+                AddTriggerDraw(list[i], mm, i);
             }
             parent.AddChild(new MultiMeshInstance3D { Name = name + "_shadow", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.ShadowsOnly });
             ShadowCasters++;

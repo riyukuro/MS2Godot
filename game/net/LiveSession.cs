@@ -535,9 +535,33 @@ public partial class LiveSession : Node
         return m with { At = new Vec3(f.Position.X, f.Position.Y, f.Position.Z), RotZDeg = f.Rotation.Z, EntryPortal = f.Portal };
     }
 
+    Field triggerField;                                  // the field the Trigger packets apply to
+    readonly List<byte[]> pendingTriggers = new();       // Trigger packets that came before the field was built
+
+    /// <summary>
+    /// Trigger (RecvOp 0x4E): CSceneStateGame::OnTrigger (@0x141721270, scenestategame.cpp:3653) hands it to
+    /// CTriggerService::FUN_141861840; the object events of types 2 and 3 go to the field's trigger objects
+    /// (World.FieldTriggers). A packet before the field is built waits for it.
+    /// </summary>
+    void OnTrigger(byte[] body)
+    {
+        if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
+        else pendingTriggers.Add(body);
+    }
+
+    static void ApplyTrigger(Field field, byte[] body)
+    {
+        if (field.Triggers == null) return;
+        int n = field.Triggers.Apply(new Maple2.PacketLib.Tools.ByteReader(body));
+        if (n > 0) GD.Print($"live: Trigger applied {n} mesh event(s)");
+    }
+
     void OnFieldBuilt(Field field, ModelBuilder builder)
     {
         if (entry == null) return;
+        triggerField = field;
+        foreach (var body in pendingTriggers) ApplyTrigger(field, body);
+        pendingTriggers.Clear();
         regionSkills.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
@@ -703,7 +727,7 @@ public partial class LiveSession : Node
     {
         try
         {
-            if (game.Is(p, Inbound.RequestFieldEnter)) regionSkills.Clear();   // a new field: no region skill object survives it
+            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
@@ -754,6 +778,8 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.RequestFieldEnter))
                 OnRequestFieldEnter(RequestFieldEnter.Read(p.Reader()));
+            else if (game.Is(p, Inbound.Trigger))
+                OnTrigger(p.Body);
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());

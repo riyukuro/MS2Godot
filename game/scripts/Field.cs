@@ -38,6 +38,8 @@ public partial class Field : Node3D
     FieldData fieldData;
     /// <summary>The prop fade between the player and the camera (BGTransparencyMgr).</summary>
     public World.FieldFade Fade { get; private set; }
+    /// <summary>The field's trigger objects (CTriggerService), which the live session's Trigger packets drive.</summary>
+    public World.FieldTriggers Triggers { get; private set; }
     FieldCamera cam = new();
     float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
     float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57); a distance change goes back to the distance's own
@@ -136,6 +138,7 @@ public partial class Field : Node3D
         AddChild(new AlphaSort(fb.AlphaEntries, fieldWorld));   // the client's alpha key on the field's blended draws
         Fade = new World.FieldFade(fb.FadeDraws, () => player?.GlobalPosition, () => camera);   // BGTransparencyMgr
         AddChild(Fade);
+        Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
