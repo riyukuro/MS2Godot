@@ -14,50 +14,96 @@ public sealed class SoundClip
     public float MinDistance, MaxDistance;   // 3D events: attenuation range in world units (0 = not 3D)
 }
 
-/// <summary>What PlayMusic(cue) resolves to: the sounds in play order. Loop is the last one; intro (if any) plays once before it.</summary>
+/// <summary>
+/// Summary of a music cue resolved from the FEV segment graph:
+/// - OneShot = true: Loop holds the single segment (plays once, no outgoing links).
+/// - Intro != null: Intro plays first, then Loop repeats unconditionally.
+/// - Bridge != null: Loop and Bridge alternate via parameter 5 (MusicIntermission 0 &lt;-&gt; 10).
+/// - Otherwise: Loop repeats unconditionally.
+/// </summary>
 public sealed class MusicPlan
 {
     public int Cue;
     public SoundClip Intro;
     public SoundClip Loop;
+    public SoundClip Bridge;
+    public bool OneShot;
+    public int CrossfadeMs;
 }
 
 /// <summary>
-/// The client's Data/Sound folder: MS2Sound.fev plus its FSB banks. Resolves the music cue and event names the client
-/// uses (CSoundEventMgr::PlayMusic, getEvent) to mp3 payloads.
+/// The client's Data/Sound folder: MS2Sound.fev plus its FSB banks, for a chosen voice language (GetVoice():
+/// 0 KR, 1 JP, 2 EN, 3 CN; CSoundService @0x1417aea70, soundservice.cpp:418-433). Resolves music cues/segments,
+/// event paths (with full event group disambiguation) and voice programmer-sound tags to mp3 payloads.
 /// </summary>
 public sealed class SoundLibrary
 {
     public FevProject Fev { get; }
+    /// <summary>Client voice language id (0 KR, 1 JP, 2 EN, 3 CN; localepath.cpp:400).</summary>
+    public int VoiceLanguage { get; }
+    /// <summary>FMOD project language name passed to setLanguage ("Korea", "jp", "en", "cn").</summary>
+    public string LanguageName => FevProject.VoiceLanguageName(VoiceLanguage);
+
     readonly string dir;
     Dictionary<string, string> files;
     readonly Dictionary<string, Fsb5> banks = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, (Fsb5 Bank, FsbSample Sample)> voiceTags;
 
-    public SoundLibrary(string soundDir)
+    public SoundLibrary(string soundDir, int voiceLanguage = 0)
+        : this(soundDir, LoadSharedFev(soundDir), voiceLanguage) { }
+
+    SoundLibrary(string soundDir, FevProject fev, int voiceLanguage)
     {
         dir = soundDir;
-        Fev = FevProject.Load(Path.Combine(soundDir, "MS2Sound.fev"));
+        Fev = fev;
+        VoiceLanguage = voiceLanguage;
     }
 
-    static readonly Dictionary<string, SoundLibrary> shared = new(StringComparer.Ordinal);
+    static readonly Dictionary<string, FevProject> fevsByDir = new(StringComparer.Ordinal);
+    static readonly Dictionary<(string Dir, int Voice), SoundLibrary> shared = new();
+
+    static FevProject LoadSharedFev(string soundDir) =>
+        fevsByDir.TryGetValue(soundDir, out var f) ? f : fevsByDir[soundDir] = FevProject.Load(Path.Combine(soundDir, "MS2Sound.fev"));
 
     /// <summary>
-    /// The one library of a Data/Sound folder for the process. The client loads MS2Sound.fev once, at CSoundService init
-    /// (FUN_1417aee20, soundservice.cpp:515: m_bLoaded returns at once on a second call; the load at :561), and keeps it for
-    /// every field; the field teardown (WorldService FUN_141bbc580, worldservice_1.cpp:9963) only fades the environment
-    /// sounds out. The banks opened through it stay with it. Main thread only, as every caller of the library is.
+    /// The one library of a (Data/Sound folder, voice language) pair for the process. The client loads MS2Sound.fev once,
+    /// at CSoundService init (@0x1417aee20, soundservice.cpp:515-561) with EventSystem::setLanguage(szLanguage) (:550),
+    /// and keeps it for every field; banks opened through it stay with it. Main thread only, as every caller is.
     /// </summary>
-    public static SoundLibrary Shared(string soundDir) =>
-        shared.TryGetValue(soundDir, out var l) ? l : shared[soundDir] = new SoundLibrary(soundDir);
+    public static SoundLibrary Shared(string soundDir, int voiceLanguage = 0)
+    {
+        var key = (soundDir, voiceLanguage);
+        if (shared.TryGetValue(key, out var l)) return l;
+        return shared[key] = new SoundLibrary(soundDir, LoadSharedFev(soundDir), voiceLanguage);
+    }
 
-    /// <summary>The bank file of a bank name from the FEV: MS2Sound_X.fsb, or the language variant of the voice banks.</summary>
-    public Fsb5 Bank(string name)
+    Dictionary<string, string> Files() =>
+        files ??= Directory.GetFiles(dir, "*.fsb").ToDictionary(f => Path.GetFileName(f), f => f, StringComparer.OrdinalIgnoreCase);   // the data is Windows-cased
+
+    /// <summary>True when the FSB file for <paramref name="name"/> in <paramref name="voiceLanguage"/> exists on disk.</summary>
+    public bool HasBankForVoice(string name, int voiceLanguage) =>
+        Files().ContainsKey(Fev.BankFileNameForVoice(name, voiceLanguage));
+
+    /// <summary>
+    /// Opens the bank file for <paramref name="name"/> using the FEV LANG + bank suffix table for
+    /// <see cref="VoiceLanguage"/>. When <paramref name="allowFallback"/> is true and the requested language's bank is not
+    /// installed on disk, falls back to the FEV's default language suffix, then the unsuffixed bank name.
+    /// </summary>
+    public Fsb5 Bank(string name, bool allowFallback = true)
     {
         if (banks.TryGetValue(name, out var b)) return b;
-        files ??= Directory.GetFiles(dir, "*.fsb").ToDictionary(f => Path.GetFileName(f), f => f, StringComparer.OrdinalIgnoreCase);   // the data is Windows-cased
-        foreach (var suffix in new[] { "", "_Kor_def", "_en" })
-            if (files.TryGetValue(name + suffix + ".fsb", out var p)) return banks[name] = new Fsb5(p);
-        throw new FileNotFoundException("bank not found: " + name);
+        var map = Files();
+        string primary = Fev.BankFileNameForVoice(name, VoiceLanguage);
+        if (map.TryGetValue(primary, out var p)) return banks[name] = new Fsb5(p);
+        if (allowFallback)
+        {
+            string defName = Fev.BankFileName(name, null);
+            if (!defName.Equals(primary, StringComparison.OrdinalIgnoreCase) && map.TryGetValue(defName, out p))
+                return banks[name] = new Fsb5(p);
+            string bare = name + ".fsb";
+            if (map.TryGetValue(bare, out p)) return banks[name] = new Fsb5(p);
+        }
+        throw new FileNotFoundException($"bank not found: {primary} (for {name}, language {LanguageName})");
     }
 
     static SoundClip Clip(Fsb5 bank, FsbSample s, float vol) => new()
@@ -66,23 +112,54 @@ public sealed class SoundLibrary
         LoopStartSample = s.LoopStart, LoopEndSample = s.LoopEnd, Volume = vol,
     };
 
-    /// <summary>Music cue (the bgm id of table/fielddata.xml) to its sounds. Segments named bridge* are transitions and skipped.</summary>
+    /// <summary>Resolves one FEV music segment to its bank sample clip, or null if out of range.</summary>
+    public SoundClip ResolveSegment(MusicSegment seg)
+    {
+        if (seg == null) return null;
+        var bank = Bank(seg.Bank);
+        if (seg.Index < 0 || seg.Index >= bank.Samples.Count) return null;
+        return Clip(bank, bank.Samples[seg.Index], 1f);
+    }
+
+    /// <summary>
+    /// Resolves a music cue (the bgm id of table/fielddata.xml) using the FEV's real segment graph (theme start segment,
+    /// outgoing links and parameter 5 conditions) rather than sample-name heuristics.
+    /// </summary>
     public MusicPlan ResolveMusic(int cueId)
     {
         var cue = Fev.GetMusicCue(cueId);
         if (cue == null || cue.Segments.Count == 0) return null;
-        var clips = new List<SoundClip>();
-        foreach (var seg in cue.Segments)
+        var startSeg = Fev.GetMusicSegment(cue.StartSegmentId) ?? cue.Segments[0];
+        var startClip = ResolveSegment(startSeg);
+        if (startClip == null) return null;
+
+        var plan = new MusicPlan { Cue = cueId, Loop = startClip, CrossfadeMs = cue.CrossfadeMs };
+        if (startSeg.OutgoingLinks.Count == 0)
         {
-            var bank = Bank(seg.Bank);
-            if (seg.Index < 0 || seg.Index >= bank.Samples.Count) continue;
-            var s = bank.Samples[seg.Index];
-            if (s.Name != null && s.Name.StartsWith("bridge", StringComparison.OrdinalIgnoreCase)) continue;
-            clips.Add(Clip(bank, s, 1f));
+            plan.OneShot = true;
+            return plan;
         }
-        if (clips.Count == 0) return null;
-        var plan = new MusicPlan { Cue = cueId, Loop = clips[0] };
-        if (clips.Count > 1 && clips[0].Name.Contains("intro", StringComparison.OrdinalIgnoreCase)) { plan.Intro = clips[0]; plan.Loop = clips[1]; }
+        if (MusicController.IsUnconditionalSelfLoop(startSeg))
+            return plan;
+
+        // Follow the cue's first outgoing transition (e.g. start -> loop or start -> bridge).
+        var nextSeg = Fev.GetMusicSegment(startSeg.OutgoingLinks[0].TargetSegmentId);
+        var nextClip = ResolveSegment(nextSeg);
+        if (nextSeg == null || nextClip == null || nextSeg.Id == startSeg.Id)
+            return plan;
+
+        if (MusicController.IsUnconditionalSelfLoop(nextSeg))
+        {
+            // Intro (or silence lead-in) -> unconditionally looping main segment.
+            plan.Intro = startClip;
+            plan.Loop = nextClip;
+        }
+        else if (nextSeg.OutgoingLinks.Any(l => l.TargetSegmentId == startSeg.Id))
+        {
+            // Main segment <-> bridge/intermission alternating loop (param 5 toggled 0 <-> 10).
+            plan.Loop = startClip;
+            plan.Bridge = nextClip;
+        }
         return plan;
     }
 
@@ -92,11 +169,13 @@ public sealed class SoundLibrary
     /// </summary>
     public SoundClip ResolveEvent(string path, Random rng = null)
     {
+        if (string.IsNullOrEmpty(path)) return null;
+        path = path.Replace('\\', '/').Trim('/');
         int cut = path.LastIndexOf('/');
         string name = cut < 0 ? path : path[(cut + 1)..];
         string group = cut < 0 ? null : path[..cut];
         var ev = Fev.FindEvent(name, group);
-        if (ev == null) return null;
+        if (ev == null || ev.Defs.Count == 0) return null;
         rng ??= Random.Shared;
         var def = Fev.Defs[ev.Defs[0]];
         var waves = def.Entries.Where(e => e.Kind == 0).ToList();
@@ -109,27 +188,77 @@ public sealed class SoundLibrary
         return clip;
     }
 
-    /// <summary>A wave of a sound definition: found by its index and file name in the banks.</summary>
+    /// <summary>
+    /// A wave of a sound definition: resolved directly through its FEV bank index (DefEntry.Bank -> Fev.Banks) in the
+    /// configured <see cref="VoiceLanguage"/>. Handles language-prefixed sample names (e.g. "en_...") and falls back to
+    /// name lookup within that bank when a language FSB's sample order differs from the default bank (as MS2Sound_Voice8_en does).
+    /// </summary>
     public SoundClip FromWave(DefEntry w)
     {
         string stem = Path.GetFileNameWithoutExtension(w.Wave);
-        foreach (var name in Fev.Banks)
+        string prefix = FevProject.VoiceSamplePrefix(VoiceLanguage);
+        if (w.Bank >= 0 && w.Bank < Fev.Banks.Count)
         {
-            if (name.StartsWith("MS2Sound_Voice", StringComparison.OrdinalIgnoreCase)) continue;
             Fsb5 bank;
-            try { bank = Bank(name); } catch (FileNotFoundException) { continue; }
-            if (w.BankIndex >= 0 && w.BankIndex < bank.Samples.Count && string.Equals(bank.Samples[w.BankIndex].Name, stem, StringComparison.OrdinalIgnoreCase))
-                return Clip(bank, bank.Samples[w.BankIndex], 1f);
-        }
-        foreach (var name in Fev.Banks)
-        {
-            if (!name.StartsWith("MS2Sound_Voice", StringComparison.OrdinalIgnoreCase)) continue;
-            Fsb5 bank;
-            try { bank = Bank(name); } catch (FileNotFoundException) { continue; }
-            if (w.BankIndex >= 0 && w.BankIndex < bank.Samples.Count && string.Equals(bank.Samples[w.BankIndex].Name, stem, StringComparison.OrdinalIgnoreCase))
-                return Clip(bank, bank.Samples[w.BankIndex], 1f);
+            try { bank = Bank(Fev.Banks[w.Bank]); } catch (FileNotFoundException) { bank = null; }
+            if (bank != null)
+            {
+                if (w.BankIndex >= 0 && w.BankIndex < bank.Samples.Count)
+                {
+                    var s = bank.Samples[w.BankIndex];
+                    if (MatchesWaveName(s.Name, stem, prefix))
+                        return Clip(bank, s, 1f);
+                }
+                var byName = (prefix.Length > 0 ? bank.Find(prefix + stem) : null) ?? bank.Find(stem);
+                if (byName != null) return Clip(bank, byName, 1f);
+            }
         }
         return null;
+    }
+
+    static bool MatchesWaveName(string sampleName, string stem, string prefix)
+    {
+        if (string.IsNullOrEmpty(sampleName)) return true;
+        if (string.Equals(sampleName, stem, StringComparison.OrdinalIgnoreCase)) return true;
+        if (prefix.Length > 0 && sampleName.Length == prefix.Length + stem.Length
+            && sampleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+            && sampleName.EndsWith(stem, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Programmer-sound voice tag lookup over MS2Sound_Voice8 and MS2Sound_Voice9 for <see cref="VoiceLanguage"/>, ported
+    /// from CSoundService::OpenVoiceStreams (@0x1417aff20, soundservice.cpp:804-848), BuildTagTable (@0x1417afb50, :733-800)
+    /// and GetSubSound (@0x1417b0560, :880-903). Note: voice language 1 (JP) returns no streams in the client (:811-812, :755-757).
+    /// </summary>
+    public bool HasVoiceTag(string tag) => !string.IsNullOrEmpty(tag) && VoiceTags().ContainsKey(tag);
+
+    /// <summary>Resolves a trigger/programmer voice tag (e.g. from CEffectService::PlayTriggerVoice) in the current voice language.</summary>
+    public SoundClip ResolveVoiceTag(string tag) =>
+        !string.IsNullOrEmpty(tag) && VoiceTags().TryGetValue(tag, out var hit) ? Clip(hit.Bank, hit.Sample, 1f) : null;
+
+    Dictionary<string, (Fsb5 Bank, FsbSample Sample)> VoiceTags()
+    {
+        if (voiceTags != null) return voiceTags;
+        voiceTags = new Dictionary<string, (Fsb5, FsbSample)>(StringComparer.OrdinalIgnoreCase);
+        // CSoundService::OpenVoiceStreams (soundservice.cpp:809-833) & BuildTagTable (:753-764): case 1 (jp) returns early.
+        if (VoiceLanguage != 0 && VoiceLanguage != 2 && VoiceLanguage != 3) return voiceTags;
+        string prefix = FevProject.VoiceSamplePrefix(VoiceLanguage);
+        foreach (var bankName in new[] { "MS2Sound_Voice8", "MS2Sound_Voice9" })
+        {
+            if (!HasBankForVoice(bankName, VoiceLanguage)) continue;
+            var bank = Bank(bankName, allowFallback: false);
+            foreach (var s in bank.Samples)
+            {
+                if (string.IsNullOrEmpty(s.Name)) continue;
+                string key = prefix.Length > 0 && s.Name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                    ? s.Name[prefix.Length..]
+                    : s.Name;
+                voiceTags[key] = (bank, s);
+            }
+        }
+        return voiceTags;
     }
 
     /// <summary>A bank sample by its name in the bank, for sounds the client plays without an event.</summary>
