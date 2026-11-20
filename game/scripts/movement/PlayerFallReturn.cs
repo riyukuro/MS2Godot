@@ -68,7 +68,17 @@ public partial class Player
     SyncRecord current;                   // StatePcGuideObjectController m_spCurrent
     readonly System.Collections.Generic.List<SyncRecord> queued = new();   // m_records: the next packet's records
     double syncClock;
-    Vector3 moveDir;                      // GameObject m_pos98: the move direction (the state's GetMoveDirection), not the body's velocity
+    Vector3 moveDir;                      // GameObject m_pos98: the move buffer's input (x +1 left, y +1 forward, z 0), not a world direction
+
+    /// <summary>
+    /// Unk_PCMove::GetMoveDirection (@0x141683290, unit_141682f80.cpp:313-383): x +1 / -1 and y +1 (forward) / -1, or the mouse
+    /// move when no key is held. The receiver turns it by the sender's camera (PCBase::CalcMoveDirection, pcbase.cpp:2828-2840:
+    /// y times vfunc_67's camera forward plus x times its side, side = -(forward x UP), so +x is left; vfunc_67 builds them from
+    /// m_posBF4, pcbase.cpp:1310-1340). Our input has x to the right, so x flips.
+    /// STILL-OPEN: the reversed-controls flip (bFlipped, AdditionalCliList FUN_140970a40, unit_141682f80.cpp:342-381) and the
+    /// gamepad stick are not ported.
+    /// </summary>
+    static Vector3 MoveInputDir(Vector2 input) => new(-input.X, input.Y, 0f);
     Vector3 lastGround;                   // kms2525 FieldPlayer.LastGroundPosition: default (0, 0, 0) until a marked sync
     Vector3? portal;                      // the server's MoveByPortal, delivered at the next frame like a packet
     float portalRot;                      // its rotation z (degrees)
@@ -269,11 +279,11 @@ public partial class Player
     /// targetcameramode.cpp:302,872). It is refreshed with every record while CameraMgr::m_1b0 != 0, which is set at field camera setup (camera.cpp:803 via 1847) and cleared only at teardown (camera.cpp:855; mypc.cpp:2291, 1256),
     /// so it follows the camera; Unknown1 = m_n54 = CameraMgr::GetModeType() when the record is made (mypc.cpp:2331; ridee.cpp:947), 2 for the field's CTargetCameraMode (camera.cpp:780-783, 2020). 17 is CHomeCameraMode
     /// (homecameramode.h:57), housing only (camera.cpp:1938-1941); Unknown1 must become 17 while the player is in a home (CHomeCameraMode) once live housing exists, we always send 2 now. Sniff check (kms2-sniffs, builds 2493-2549): Unknown1 = 17 appears only on map 62000000 (housing, builds 2495-2511 incl. the 2525 era files), every other map carries 2. Rotation2 = m_f58 = GetTargetYaw, x10; Unknown3 = m_fTime x1000 (the record's age, ms).
-    /// The move direction is in game axes (x, -z godot, y godot).
+    /// m_vel3c is the move buffer's input (MoveInputDir), sent as it is: the receiver rotates it by the record's camera.
     /// </summary>
     Ms2.Net.Packets.StateSync LiveRecord(SyncRecord q)
     {
-        float vx = q.Dir.X, vy = -q.Dir.Z;
+        float vx = q.Dir.X, vy = q.Dir.Y;
         var rec = new Ms2.Net.Packets.StateSync
         {
             State = StateId(q.State), SubState = q.Sub,
