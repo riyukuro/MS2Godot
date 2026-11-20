@@ -10,7 +10,9 @@ namespace Ms2Godot;
 /// PhysX meshes (one-sided, as in the world). Fluids are left out, and entities with DisableCollision set count, which
 /// the world leaves out: a spawn point over a grating or an invisible box stands on it. No layer of the world is read,
 /// so the npc ground does not change with the world's collision layers. Built off the tree with the field; the space
-/// and its body exist while the node is in the tree.
+/// and its body exist while the node is in the tree. The client casts no npc ground of its own: OnFieldAddNpc
+/// (@0x141718cf0, scenestategame.cpp:3533-3584) and CNpc::ApplySyncBlock (npcactorandvibrate.cpp:913,965) place an npc
+/// at the packet's position + 4 z. STILL-OPEN: whether the server drops a trigger mesh the Trigger packet hides (kept here).
 /// </summary>
 public sealed partial class NpcGroundSpace : Node3D
 {

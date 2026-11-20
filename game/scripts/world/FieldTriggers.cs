@@ -24,8 +24,10 @@ namespace Ms2Godot.World;
 /// SetEntityCollisionGroup then runs WorldService::FUN_141bc8e00 (worldservice_1.cpp:4995-5009): each PC's
 /// controller gets ReportSceneChanged; NxController keeps no touched-shape state across moves for it to drop.
 /// STILL-OPEN: the fade over Fade tenths of a second (shown/hidden at once here); the model swap a shown mesh with a model
-/// name gets (property 0x770e5fc6 and skin scale 0x2d7cad2d); the npc ground (NpcGroundSpace, the server's collider)
-/// keeps a hidden mesh; the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
+/// name gets (property 0x770e5fc6 and skin scale 0x2d7cad2d); whether the server's npc ground drops a hidden mesh
+/// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
+/// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
+/// server decides); the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
 /// 0x6454a3bb) of a type 3 event; the other kinds' events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
