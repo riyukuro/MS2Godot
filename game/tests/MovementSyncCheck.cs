@@ -144,8 +144,24 @@ public partial class MovementSyncCheck : Node3D
         float perMove = bytes / (float)lap;
         bool ok = perMove <= 8f;
         GD.Print($"movement sync check: a walking body allocates {perMove:0.0} B per move (cap 8), {sw.Elapsed.TotalMilliseconds * 1000 / lap:0.0} us per move, feet at {b.GlobalPosition.Y:0.00}: {(ok ? "OK" : "FAIL")}");
+        // the same lap with groups left out of the sweeps (after a controller hit)
+        nx.IgnoreGroups = Movement.MoveConfig.ControllerHitIgnore;
+        bytes = 0;
+        sw.Reset();
+        for (int f = 0; f < lap; f++)
+        {
+            long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+            sw.Start();
+            nx.Move(dirs[f / 120 % 4]);
+            sw.Stop();
+            bytes += System.GC.GetAllocatedBytesForCurrentThread() - a0;
+        }
+        nx.IgnoreGroups = 0;
+        float perIgnored = bytes / (float)lap;
+        bool okIgnored = perIgnored <= 8f;
+        GD.Print($"movement sync check: with ignored groups {perIgnored:0.0} B per move (cap 8), {sw.Elapsed.TotalMilliseconds * 1000 / lap:0.0} us per move: {(okIgnored ? "OK" : "FAIL")}");
         b.QueueFree();
-        return ok;
+        return ok && okIgnored;
     }
 
     // Eight bodies drop onto a bumpy mesh terrain rising to a slope (1 m cells, two-sided, no floor under it) and walk and
@@ -202,6 +218,71 @@ public partial class MovementSyncCheck : Node3D
         return ok;
     }
 
+    // A one-sided mesh (as the field's, FieldBuilder) of triangles facing n: a triangle (a, b, c) faces (c - a) x (b - a)
+    // (the shape holds v0, v2, v1).
+    static ConcavePolygonShape3D OneSided(params (Vector3 centre, Vector3 n, float half)[] quads)
+    {
+        var faces = new Vector3[quads.Length * 6];
+        int k = 0;
+        foreach (var (o, n, r) in quads)
+        {
+            var u = (Mathf.Abs(n.Y) > 0.5f ? Vector3.Right : Vector3.Up) * r;
+            var v = n.Cross(u);
+            Vector3 p0 = o - u - v, p1 = o + u - v, p2 = o + u + v, p3 = o - u + v;
+            foreach (var (a, b0, c0) in new[] { (p0, p1, p2), (p0, p2, p3) })
+            {
+                var (b, c) = (c0 - a).Cross(b0 - a).Dot(n) > 0 ? (b0, c0) : (c0, b0);
+                faces[k++] = a; faces[k++] = b; faces[k++] = c;
+            }
+        }
+        return new ConcavePolygonShape3D { Data = faces, BackfaceCollision = false };
+    }
+
+    // One-sided meshes count from the front only, as the client's triangle sweeps cull back faces: a body falls through a
+    // platform facing down, walks out of a closed prop of outward faces, and jumps up through a platform facing up onto it.
+    bool OneSidedMeshes()
+    {
+        var at = new Vector3(-8000, 0, -8000);
+        var props = new StaticBody3D { Position = at };
+        props.AddChild(new CollisionShape3D { Shape = OneSided((new Vector3(0, 150, 0), Vector3.Down, 300)) });
+        props.AddChild(new CollisionShape3D { Shape = OneSided((new Vector3(1000, 150, 0), Vector3.Up, 300)) });
+        var box = new List<(Vector3, Vector3, float)>();
+        foreach (var n in new[] { Vector3.Up, Vector3.Down, Vector3.Left, Vector3.Right, Vector3.Forward, Vector3.Back })
+            box.Add((new Vector3(2000, 50, 0) + n * 50, n, 50));
+        props.AddChild(new CollisionShape3D { Shape = OneSided(box.ToArray()) });
+        AddChild(props);
+        var bodies = Bodies(3, 0);
+
+        // landing from above on the platform facing down: through it, onto the floor
+        var (b0, nx0) = bodies[0];
+        b0.GlobalPosition = at + new Vector3(0, 300, 0);
+        float vy = 0;
+        for (int f = 0; f < 120; f++) { vy -= 0.6f; if ((nx0.Move(new Vector3(0, vy, 0)) & Movement.NxController.Hit.Down) != 0) vy = 0; }
+        float down = b0.GlobalPosition.Y;
+        bool okDown = down > -1f && down < 5f;
+
+        // standing inside the closed prop and walking out of it
+        var (b1, nx1) = bodies[1];
+        b1.GlobalPosition = at + new Vector3(2000, 1, 0);
+        for (int f = 0; f < 60; f++) nx1.Move(new Vector3(4, -1, 0));
+        float outX = b1.GlobalPosition.X - (at.X + 2000);
+        bool okOut = outX > 200f;
+
+        // jumping up through the platform facing up: onto its top
+        var (b2, nx2) = bodies[2];
+        b2.GlobalPosition = at + new Vector3(1000, 1, 0);
+        vy = 20f;
+        for (int f = 0; f < 120; f++) { vy -= 0.6f; if ((nx2.Move(new Vector3(0, vy, 0)) & Movement.NxController.Hit.Down) != 0) vy = 0; }
+        float up = b2.GlobalPosition.Y;
+        bool okUp = up > 145f && up < 160f;
+
+        foreach (var (b, _) in bodies) b.QueueFree();
+        props.QueueFree();
+        bool ok = okDown && okOut && okUp;
+        GD.Print($"movement sync check: one-sided meshes, feet {down:0.0} under a platform facing down (on the floor), {outX:0.0} walked out of a closed prop, feet {up:0.0} after jumping up through a platform facing up at 150: {(ok ? "OK" : "FAIL")}");
+        return ok;
+    }
+
     void Run()
     {
         runner.CameraYaw = Mathf.Pi / 2;
@@ -214,7 +295,8 @@ public partial class MovementSyncCheck : Node3D
         bool land = Landings(floor);
         bool alloc = MoveAllocations();
         bool meshLand = MeshLandings();
-        bool ok = dir && land && alloc && meshLand;
+        bool oneSided = OneSidedMeshes();
+        bool ok = dir && land && alloc && meshLand && oneSided;
         GetTree().Quit(ok ? 0 : 1);
     }
 }

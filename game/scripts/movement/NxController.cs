@@ -56,8 +56,21 @@ public sealed class NxController
     /// as its body and the body's shape index.</summary>
     public System.Action<GodotObject, int> ShapeHit;
 
-    /// <summary>Groups (collision layer bits) left out of the sweep: GameObjectController m_nIgnoreGroups.</summary>
-    public uint IgnoreGroups;
+    /// <summary>Groups (collision layer bits) left out of the sweep: GameObjectController m_nIgnoreGroups. The sweeps'
+    /// motion test reads the body's own mask, so a change is applied to it here, once: setting a body's mask moves every
+    /// shape in the broadphase and wakes the body (GodotCollisionObject3D::_shape_changed), too slow to do per sweep.</summary>
+    public uint IgnoreGroups
+    {
+        get => ignoreGroups;
+        set
+        {
+            if (value == ignoreGroups) return;
+            if (ignoreGroups == 0) groups = body.CollisionMask;
+            ignoreGroups = value;
+            body.CollisionMask = groups & ~value;                               // move(disp, m_nGroups & ~m_nIgnoreGroups)
+        }
+    }
+    uint ignoreGroups, groups;
 
     /// <summary>onControllerHit (0x140cfaec0) in the last move: the side or down pass touched another controller (the up
     /// pass runs with the callbacks off, :1036).</summary>
@@ -274,8 +287,32 @@ public sealed class NxController
                collided && safeF <= 0 && motionResult.GetCollisionUnsafeFraction() <= 0;
     }
 
-    /// <summary>The body's shape at <paramref name="at"/> is inside some shape (SAT, the test's first step).</summary>
-    bool Inside(Vector3 at, Vector3 dir) => StartedInside(TestMotion(at, dir * ProbeMotion, CastMargin, false), dir * ProbeMotion);
+    /// <summary>The body's shape at <paramref name="at"/> is inside a shape the move along <paramref name="dir"/> could
+    /// not pass (SAT, the test's first step). The SAT test counts a one-sided mesh triangle from behind too; the client's
+    /// triangle sweeps cull back faces, so a contact on a one-sided mesh counts only on a triangle facing the move.</summary>
+    bool InsideSolid(Vector3 at, Vector3 dir)
+    {
+        var probe = dir * ProbeMotion;
+        if (!StartedInside(TestMotion(at, probe, CastMargin, true), probe) || motionResult.GetCollisionCount() == 0) return false;
+        var rid = motionResult.GetColliderRid(0);
+        int shapeIdx = motionResult.GetColliderShape(0);
+        var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
+        if (PhysicsServer3D.ShapeGetType(shape) != PhysicsServer3D.ShapeType.ConcavePolygon || TwoSided(shape)) return true;
+        var face = FaceNormal(rid, shapeIdx, motionResult.GetCollisionPoint(0), dir);
+        return face is { } n && n.Dot(dir) < 0;
+    }
+
+    readonly System.Collections.Generic.Dictionary<Rid, bool> twoSided = new();
+
+    bool TwoSided(Rid shape)
+    {
+        if (twoSided.TryGetValue(shape, out bool two)) return two;
+        // GodotConcavePolygonShape3D::get_data: { faces, backface_collision }
+        using var data = (Godot.Collections.Dictionary)PhysicsServer3D.ShapeGetData(shape);   // perf-ok: once per shape, cached in twoSided
+        two = (bool)data["backface_collision"];
+        twoSided[shape] = two;
+        return two;
+    }
 
     /// <summary>
     /// NxSweepCapsuleTriangles and the other shape sweeps: the distance along <paramref name="dir"/> to the first contact of
@@ -285,16 +322,15 @@ public sealed class NxController
     /// <see cref="SweepFromInside"/>.
     /// <para>The test's cast is GodotPhysics3D's: a GJK distance test on the shape plus its motion, then a bisection. Against
     /// a large box (thousands of cm) the GJK test reports separation for a motion that passes through the box in 1-3% of
-    /// casts, and the cast reports no hit: a body landing on such a floor fell through it. So the move is probed with the
-    /// SAT overlap test (the test's first step, which does not miss) every 1.8 capsule radii up to where the cast stopped;
-    /// a probe inside a shape brackets the missed contact, which is then bisected with the same probe. STILL-OPEN: a shape
-    /// thinner than the probe step, crossed between two probes and missed by the cast, is still passed through.</para>
+    /// casts, and the cast reports no hit: a body landing on such a floor fell through it. Every such miss found ends with
+    /// the shape overlapping the box (up to 14% of casts that end near rest on a 20000 cm box), so a cast with no hit has
+    /// its end tested with the SAT overlap test (the test's first step, which does not miss); an end inside a shape the
+    /// move could not pass is bisected with the same test. STILL-OPEN: a missed cast that ends past the shape (a thin
+    /// shape crossed whole) is still passed through; the end test takes the test's deepest contact only, so an end inside
+    /// both a one-sided triangle from behind and a solid shape counts only when the deepest is the solid one.</para>
     /// </summary>
     Contact? Sweep(Vector3 from, Vector3 dir, float length)
     {
-        uint mask = body.CollisionMask;
-        uint sweepMask = mask & ~IgnoreGroups;                                  // move(disp, m_nGroups & ~m_nIgnoreGroups)
-        if (sweepMask != mask) PhysicsServer3D.BodySetCollisionMask(body.GetRid(), sweepMask);
         if (motionExcluded != IgnoreBody)
         {
             motionExclude.Clear();
@@ -302,14 +338,7 @@ public sealed class NxController
             motion.ExcludeBodies = motionExclude;
             motionExcluded = IgnoreBody;
         }
-        try
-        {
-            return SweepTests(from, dir, length);
-        }
-        finally
-        {
-            if (sweepMask != mask) PhysicsServer3D.BodySetCollisionMask(body.GetRid(), mask);
-        }
+        return SweepTests(from, dir, length);
     }
 
     Contact? SweepTests(Vector3 from, Vector3 dir, float length)
@@ -336,25 +365,21 @@ public sealed class NxController
             }
         }
 
-        // the SAT probes over what the casts let through
-        float reach = hit ? safe : length, lo = 0;
-        float step = 1.8f * (shapeNode.Shape is CapsuleShape3D c0 ? c0.Radius : MoveConfig.Radius);
-        for (float t = Mathf.Min(step, reach); t > lo; t = Mathf.Min(t + step, reach))
+        // the cast's miss: a move it lets through but that ends inside a solid shape (the SAT test, which does not miss),
+        // bisected with the same test
+        if (!hit)
         {
-            if (!Inside(from + dir * t, dir)) { lo = t; continue; }
-            float hi = t;
+            if (length <= 1e-7f || !InsideSolid(from + dir * length, dir)) return null;
+            float lo = 0, hi = length;
             for (int i = 0; i < 16 && hi - lo > 1e-3f; i++)
             {
                 float mid = (lo + hi) * 0.5f;
-                if (Inside(from + dir * mid, dir)) hi = mid; else lo = mid;
+                if (InsideSolid(from + dir * mid, dir)) hi = mid; else lo = mid;
             }
             safe = lo;
             unsafeD = hi;
             hit = true;
-            have = false;
-            break;
         }
-        if (!hit) return null;
 
         // what is touched there, and the exact stop: the casts' collision test leaves up to ~1e-3 of the bracket, so the
         // capsule's own gap to the touched point, (segment end lowest along the contact normal) . n - radius, is closed
@@ -412,11 +437,16 @@ public sealed class NxController
     /// STILL-OPEN: this path keeps the GJK cast's miss on large boxes and allocates its results (a float[] and a
     /// Dictionary); the controller keeps one skin off what it touches, so a move starts inside a shape only after something
     /// moved into it.
+    /// STILL-OPEN, where the motion test differs from the shape query this controller used before: (1) on a one-sided mesh
+    /// the motion test's first step pushes the shape out of a triangle it is behind, so a move that starts behind one is
+    /// taken here, and the cast passes back faces as the client's triangle sweeps do, where the shape query's cast stopped
+    /// on them; (2) on a box sloped 30 degrees a walking body crossing the crest stood up to 9 cm higher than with the
+    /// shape query for 20 frames and lost its ground flag for one; which of the two the client matches is not known.
     /// </summary>
     Contact? SweepFromInside(Vector3 from, Vector3 dir, float length)
     {
         var space = body.GetWorld3D().DirectSpaceState;
-        var q = Query(body.CollisionMask & ~IgnoreGroups, true);
+        var q = Query(body.CollisionMask, true);                                // already m_nGroups & ~m_nIgnoreGroups
         var local = shapeNode.Transform;
         float safe = 0, unsafeD = length;
         bool hit = false;
