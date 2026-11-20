@@ -614,6 +614,48 @@ public class AudioTests
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
     }
 
+    [Test]
+    public void CueChangeDuringDecodeAndPredecodeWindowCannotAdvanceNewCue()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var mc = new MusicController(lib.Fev);
+        var guard = new MusicPlaybackGuard();
+
+        // Start Tria (cue 35, seg 84) and enter the last 2 s predecode window.
+        Assert.That(mc.PlayFieldBgm(new FieldBgmSpec(BgmId: 35, BgmParam: 5, BgmValue: 0f)), Is.True);
+        int genTria = guard.BeginCueChange();
+        Assert.That(guard.AcceptDecode(genTria), Is.True);
+        guard.OnSegmentPlaying(100.0, isSelfLoop: false);
+        mc.OnSegmentStarted();
+        Assert.That(guard.IsChained, Is.True);
+        Assert.That(guard.TryBeginPredecode(97.5), Is.False);
+        Assert.That(guard.TryBeginPredecode(98.5), Is.True, "enters last 2 s predecode window");
+        Assert.That(guard.TryBeginPredecode(99.0), Is.False, "predecode requested once");
+
+        // Cue changes to Boss01 (cue 23, seg 44) while Tria is in its last 2 s / predecode is in flight.
+        Assert.That(mc.PlayMusic(23, 0f, MusicController.DefaultPriority, false), Is.True);
+        Assert.That(mc.CurrentSegment.Id, Is.EqualTo(44));
+        int genBoss = guard.BeginCueChange();
+        Assert.That(guard.IsChained, Is.False, "old segment unchained before decoding new cue");
+        Assert.That(guard.IsSegmentActive, Is.False);
+
+        // Stale predecode from Tria (genTria) and stale Finished / _Process tick during Boss01's decode window are ignored.
+        Assert.That(guard.AcceptDecode(genTria), Is.False);
+        Assert.That(guard.TryBeginPredecode(99.5), Is.False);
+        Assert.That(guard.TryAdvanceOnFinished(), Is.False);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(23));
+        Assert.That(mc.CurrentSegment.Id, Is.EqualTo(44), "new cue segment must not be advanced by old segment Finished");
+
+        // Once Boss01's decode finishes (genBoss), playback arms and normal segment chaining resumes (44 -> 104).
+        Assert.That(guard.AcceptDecode(genBoss), Is.True);
+        guard.OnSegmentPlaying(10.0, isSelfLoop: false);
+        mc.OnSegmentStarted();
+        Assert.That(guard.TryAdvanceOnFinished(), Is.True);
+        var next = mc.AdvanceSegment();
+        Assert.That(next, Is.Not.Null);
+        Assert.That(next.Id, Is.EqualTo(104));
+    }
+
     // ---- LoginBgBgmTable (table/loginbgbgm.xml) ------------------------------------------------------------------
 
     [Test]

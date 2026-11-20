@@ -471,6 +471,94 @@ public sealed class MusicCrossfade
 }
 
 /// <summary>
+/// Tracks async decode generation, segment-end chaining, and the last-2 s predecode window for FieldAudio.
+/// On a cue change (<see cref="BeginCueChange"/>), immediately unchains and disarms the outgoing segment before the
+/// incoming cue finishes worker-thread decode, so neither the old segment's Finished callback nor the per-frame
+/// predecode check can mutate or advance the new cue's MusicController state. Zero per-frame allocations.
+/// </summary>
+public sealed class MusicPlaybackGuard
+{
+    public const double PredecodeLeadSeconds = 2.0;
+
+    int generation;
+    bool segmentActive;
+    bool selfLoop;
+    bool chained;
+    bool transitionRequested;
+    bool predecodeRequested;
+    double segmentSeconds;
+
+    public int Generation => generation;
+    public bool IsSegmentActive => segmentActive;
+    public bool IsChained => chained;
+    public bool PredecodeRequested => predecodeRequested;
+
+    /// <summary>Bumps generation and unchains/disarms the outgoing segment before decoding a new cue.</summary>
+    public int BeginCueChange()
+    {
+        generation++;
+        segmentActive = false;
+        selfLoop = false;
+        chained = false;
+        transitionRequested = true;
+        predecodeRequested = true;
+        segmentSeconds = 0.0;
+        return generation;
+    }
+
+    /// <summary>True when a worker-thread decode callback for <paramref name="gen"/> still matches the current cue.</summary>
+    public bool AcceptDecode(int gen) => gen == generation;
+
+    /// <summary>Arms chaining and predecode tracking once the decoded segment starts playing.</summary>
+    public void OnSegmentPlaying(double seconds, bool isSelfLoop)
+    {
+        segmentActive = true;
+        segmentSeconds = seconds;
+        selfLoop = isSelfLoop;
+        chained = !isSelfLoop;
+        transitionRequested = false;
+        predecodeRequested = false;
+    }
+
+    /// <summary>
+    /// Per-frame predecode trigger (zero allocations): true once when a live non-looping segment enters its last
+    /// <see cref="PredecodeLeadSeconds"/> seconds; always false during a pending cue-change decode.
+    /// </summary>
+    public bool TryBeginPredecode(double playbackPositionSeconds)
+    {
+        if (!segmentActive || selfLoop || transitionRequested || predecodeRequested || segmentSeconds <= 0.0)
+            return false;
+        if (playbackPositionSeconds < segmentSeconds - PredecodeLeadSeconds)
+            return false;
+        predecodeRequested = true;
+        return true;
+    }
+
+    /// <summary>
+    /// Guards the chained player's Finished callback: true only while that segment is still active and chained for
+    /// the current cue (never while a cue change is decoding).
+    /// </summary>
+    public bool TryAdvanceOnFinished()
+    {
+        if (!chained || transitionRequested) return false;
+        chained = false;
+        transitionRequested = true;
+        return true;
+    }
+
+    public void Stop()
+    {
+        generation++;
+        segmentActive = false;
+        selfLoop = false;
+        chained = false;
+        transitionRequested = false;
+        predecodeRequested = false;
+        segmentSeconds = 0.0;
+    }
+}
+
+/// <summary>
 /// Parameters of a SoundMusic effect (kEffectSoundMusic = 3, CSoundMusicEffectParam @0x14178fd20,
 /// vfunc_1 @0x14178fdb0, soundmusiceffectparam.cpp:69-84).
 /// </summary>
