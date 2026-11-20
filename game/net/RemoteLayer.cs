@@ -5,21 +5,24 @@ using Ms2.Formats.World;
 using Ms2.Net;
 using Ms2.Net.Packets;
 using Ms2.Net.Replay;
+using Ms2.Audio;
+using Ms2Godot.Movement;
 
 namespace Ms2Godot.Net;
 
 /// <summary>
-/// The other players and the npcs of a live field: FieldTracker events (from the game connection) become stand-in bodies that glide to
-/// the latest UserSync position, and NpcLayer instances. The own character is skipped (the walkable Player is already in the field).
-/// The user handling is the ReplayField's, without the recording's camera; the casts are RemoteLayer.Casts.cs.
+/// The other players and the npcs of a live field: FieldTracker events (from the game connection) become remote PCs and NpcLayer
+/// instances. The own character is skipped (the walkable Player is already in the field). Each remote PC replays its UserSync
+/// records through its own state machine and controller (<see cref="RemotePc"/>, Ms2.Net.Replay.RemotePcStates), as the
+/// client's PC::vfunc_114 does (scenestategame.cpp:2509-2517), so its states, animations, steps, landings and ground material
+/// are its own; the casts are RemoteLayer.Casts.cs.
 /// </summary>
 public sealed partial class RemoteLayer : Node3D
 {
     sealed class Remote
     {
-        public Node3D Root, Visual; public AnimationPlayer Anim;
-        public Vector3 Target; public float TargetYaw; public string Name, Current = "";
-        public Vector3 LastPos; public float Speed;
+        public RemotePc Pc; public Node3D Root, Visual;
+        public string Name;
         public int ObjectId; public long CharacterId; public string Picture = "";
         public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance (m_unk_160)
         public PcHpBar Bar;
@@ -43,7 +46,13 @@ public sealed partial class RemoteLayer : Node3D
     readonly LiveHpBars bars;
     readonly PackSet packs;
     readonly Dictionary<int, Remote> users = new();
-    readonly Dictionary<byte, (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run)> bodies = new();
+    /// <summary>Per gender: the body model, its action sequences and the animation library they are in, shared by the PCs
+    /// of that gender (the first one's player loads them).</summary>
+    readonly Dictionary<byte, (ModelData md, ActionAnims anims, AnimationLibrary lib)> bodies = new();
+    readonly float gravity;
+    GroundEffectTable groundTable;
+    World.GroundEffects groundFx;
+    readonly Random groundRng = new();
     readonly long selfCharacter;
     public readonly FieldTracker Tracker = new();
     public int UsersSpawned, NpcsAdded;
@@ -87,6 +96,9 @@ public sealed partial class RemoteLayer : Node3D
             InParty = id => LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(id) != null,
         });
         npcs.Bars = bars;
+        // GameObjectController::GetGravity: the field's scene gravity, as the field gives the local player
+        // STILL-OPEN: a field without the local player (none in a live field) falls back to the default scene gravity
+        gravity = field.GetNodeOrNull<Player>("Player")?.Gravity ?? MoveConfig.SceneGravity;
     }
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
@@ -128,10 +140,9 @@ public sealed partial class RemoteLayer : Node3D
     {
         foreach (var (id, r) in users)
         {
-            if (r.Root == null) continue;
-            var g = r.Root.GlobalPosition;
-            var p = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
-            into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.TargetYaw),
+            if (r.Pc == null) continue;
+            var p = r.Pc.Position;
+            into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
                 Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur });
         }
         npcs.HitCandidates(into);
@@ -140,30 +151,39 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>An effect xml played at a point (CombatLayer.PlayEffect), the own cast's motion effect.</summary>
     public void PlayEffect(string effect, Vector3 at, float yawRadians) => combat.PlayEffect(effect, at, yawRadians);
 
-    (ModelData md, Godot.Animation idle, Godot.Animation walk, Godot.Animation run) Body(byte gender)
-    {
-        if (bodies.TryGetValue(gender, out var b)) return b;
-        string dir = gender == 0 ? "male" : "female", nif = gender == 0 ? "m_body.nif" : "f_body.nif";
-        var md = builder.LoadModel($"{dir}/{nif}");
-        return bodies[gender] = (md, ModelBuilder.BuildAnimation(builder.LoadKf($"{dir}/idle_a.kf"), md), ModelBuilder.BuildAnimation(builder.LoadKf($"{dir}/walk_a.kf"), md),
-                                 ModelBuilder.BuildAnimation(builder.LoadKf($"{dir}/run_a.kf"), md));
-    }
+    static string BodyDir(byte gender) => gender == 0 ? "male" : "female";
 
     Remote Spawn(FieldAddUser u)
     {
-        var (md, idle, walk, run) = Body(u.User.Gender);
-        var visual = builder.Build(md, u.User.Gender == 0 ? "Male" : "Female");
-        equip.Apply(visual, md, u.User.Gender, u.Equips, u.Skin.Primary, u.Skin.Secondary);
+        byte gender = u.User.Gender;
+        string dir = BodyDir(gender);
+        bodies.TryGetValue(gender, out var body);
+        var md = body.md ??= builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
+        var visual = builder.Build(md, gender == 0 ? "Male" : "Female");
+        equip.Apply(visual, md, gender, u.Equips, u.Skin.Primary, u.Skin.Secondary);
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
-        var lib = anim.GetAnimationLibrary("");
-        lib.AddAnimation("idle", idle); lib.AddAnimation("walk", walk); lib.AddAnimation("run", run);
-        var root = new Node3D { Name = $"Pc{u.ObjectId}" };
-        root.AddChild(visual);
+        if (body.anims == null)
+        {
+            // the action sequences of table/pcactiondata.xml (PCBase::vfunc_123), loaded once per body
+            body.anims = ActionAnims.Load(packs, builder, md, anim, dir);
+            body.lib = anim.GetAnimationLibrary("");
+            bodies[gender] = body;
+        }
+        else
+        {
+            anim.RemoveAnimationLibrary("");
+            anim.AddAnimationLibrary("", body.lib);
+        }
+        var pc = RemotePc.Create($"Pc{u.ObjectId}", visual, anim, body.anims, gravity, SpawnPoint(G(u.Position)), u.Rotation.Z);
+        pc.JobGroup = u.User.JobCode;          // the user block's job group (CharacterInfo maps JobGroup from it)
+        pc.BattleStance = u.InBattle;
+        pc.Effects = PlayGroundEffects;
+        var root = pc.Body;
         AddChild(root);
         // the other player's CObjectShadow, of the PC row (PC::vfunc_49, pc.cpp:3028-3035; the same size as the player's)
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
-        var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
+        var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name };
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
@@ -171,14 +191,53 @@ public sealed partial class RemoteLayer : Node3D
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
-        root.Position = r.Target; r.LastPos = r.Target;
-        visual.Rotation = new Vector3(0, Mathf.DegToRad(r.TargetYaw), 0);
-        anim.Play("idle"); r.Current = "idle";
+        pc.Spawn();
         // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,
         // a change from the ctor's 0): either runs UpdateHpBar, so a member's bar is made active at once (not shown)
         if (r.HpCur != r.HpMax || r.InBattle) EnsureBar(r)?.Spawn(r.HpCur, r.HpMax, r.InBattle);
         return r;
     }
+
+    /// <summary>
+    /// OnAddUser's spawn point (scenestategame.cpp:11174-11181): RayCastFixedDirection down from the packet's position;
+    /// the hit raised by 25 when the capsule there overlaps nothing, else the packet's position.
+    /// </summary>
+    Vector3 SpawnPoint(Vector3 at)
+    {
+        var space = GetWorld3D().DirectSpaceState;
+        using var q = PhysicsRayQueryParameters3D.Create(at, at + Vector3.Down * MoveConfig.UnlimitedRay, MoveConfig.DownRayGroups);
+        q.HitBackFaces = false;
+        using var hit = space.IntersectRay(q);
+        if (hit.Count == 0) return at;
+        var p = (Vector3)hit[PhysicsKeys.Position] + Vector3.Up * 25f;
+        // CPhysXHelper::CheckCapsuleOverlap: the PC capsule at the point on 0x389
+        using var shape = new CapsuleShape3D { Radius = MoveConfig.Radius, Height = MoveConfig.Height };
+        using var sq = new PhysicsShapeQueryParameters3D { Shape = shape, CollisionMask = MoveConfig.DownRayGroups,
+            Transform = new Transform3D(Basis.Identity, p + Vector3.Up * (MoveConfig.Height / 2)) };
+        using var over = (Godot.Collections.Array)space.IntersectShape(sq, 1);
+        return over.Count == 0 ? p : at;
+    }
+
+    /// <summary>
+    /// CGroundEffectDataManager::PlayEffects past its tests (groundeffectdata.cpp:293-305): the ground's effect files for the
+    /// action (GetEffectFiles), each inserted at the PC (CEffectService::InsertEffect): the nif parts through GroundEffects, the
+    /// sound parts as positional events whose own distances attenuate them.
+    /// </summary>
+    void PlayGroundEffects(string action, string ground, Vector3 at, float yaw)
+    {
+        groundTable ??= new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
+        if (groundFx == null) AddChild(groundFx = new World.GroundEffects(packs, builder));
+        foreach (var f in groundTable.PickFiles(ground, action, groundRng))
+        {
+            groundFx.Play(f, at, yaw);
+            if (FieldAudio.Instance is { } audio)
+                foreach (var ev in groundTable.SoundsOf(f)) audio.PlayEventAt(ev, at);
+        }
+        GroundEffectsPlayed++;
+    }
+
+    /// <summary>The ground effect actions the remote PCs played (steps and landings).</summary>
+    public int GroundEffectsPlayed;
 
     /// <summary>PC::vfunc_80's gate: the party gauge option on (the status option the client reads at +0xc), in a party,
     /// and one of its members (MyPC::IsMemberByCharId).</summary>
@@ -198,20 +257,22 @@ public sealed partial class RemoteLayer : Node3D
             {
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
-                    if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); bars.Remove(old.Root); old.Root.QueueFree(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); bars.Remove(old.Root); old.Pc.Free(); }
                     users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++;
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
-                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Root.QueueFree();
+                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Pc.Free();
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;
                 case UserMovedEvent mv:
-                    if (!users.TryGetValue(mv.ObjectId, out var r)) break;
-                    r.Target = G(mv.Position); r.TargetYaw = mv.YawDegrees;
+                    // CSceneStateGame::OnUserSync -> FUN_1417127b0 -> PC::vfunc_114 (scenestategame.cpp:2509-2517): each record
+                    // goes to the PC's state queue; a RideSync record goes to the PC's ridee (OnRideSync), which is not here
+                    if (mv.Ride || !users.TryGetValue(mv.ObjectId, out var r)) break;
+                    r.Pc.States.Push(SyncRecord.From(mv.Record));
                     if (++movedSeen <= 3 || movedSeen % 100 == 0) GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}");
                     break;
                 case UserStatEvent st:
@@ -227,6 +288,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (!users.TryGetValue(bat.ObjectId, out var sb)) break;
                     if (sb.InBattle == (bat.Emotion != 0)) break;
                     sb.InBattle = bat.Emotion != 0;
+                    sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
                     break;
                 case SkillDamageEvent dmg:
@@ -279,20 +341,9 @@ public sealed partial class RemoteLayer : Node3D
     {
         float dt = (float)delta;
         Drain();
-        foreach (var a in users.Values)
-        {
-            var d = a.Target - a.Root.Position;
-            if (d.Length() > 400) a.Root.Position = a.Target;
-            else a.Root.Position += d * FrameRate.Ease(12f / FrameRate.Reference, dt);   // the share dt * 12 gave at 60 fps, per second at any rate
-            float cur = a.Visual.Rotation.Y;
-            a.Visual.Rotation = new Vector3(0, Mathf.LerpAngle(cur, Mathf.DegToRad(a.TargetYaw), FrameRate.Ease(14f / FrameRate.Reference, dt)), 0);
-            float sp = (a.Root.Position - a.LastPos).Length() / Mathf.Max(dt, 1e-4f);
-            a.Speed = Mathf.Lerp(a.Speed, sp, FrameRate.Ease(8f / FrameRate.Reference, dt));
-            a.LastPos = a.Root.Position;
-            if (CastHolds(a, dt)) continue;
-            string anim = a.Speed < 25 ? "idle" : a.Speed < 220 ? "walk" : "run";
-            if (anim != a.Current) { a.Anim.Play(anim, 0.15); a.Current = anim; }
-        }
+        // PCBase::vfunc_53 for each PC, once per drawn frame with that frame's time (the local player's step); a cast's
+        // motion holds the body's animation until it ends (CastHolds)
+        foreach (var a in users.Values) { CastHolds(a, dt); a.Pc.Tick(dt); }
         npcs.Process(dt);
         combat.Process(dt);
     }

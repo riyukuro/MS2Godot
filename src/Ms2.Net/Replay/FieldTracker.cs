@@ -10,7 +10,11 @@ public sealed record FieldEnterEvent(double Time, RequestFieldEnter Enter) : Rep
 public sealed record UserAddedEvent(double Time, FieldAddUser User, bool IsSelf) : ReplayEvent(Time);
 public sealed record UserRemovedEvent(double Time, int ObjectId) : ReplayEvent(Time);
 /// <summary>One movement record of a player. Position is in the packet's own units (MS2 file coordinates, Z up).</summary>
-public sealed record UserMovedEvent(double Time, int ObjectId, bool IsSelf, Vector3 Position, float YawDegrees, StateSync Record) : ReplayEvent(Time);
+public sealed record UserMovedEvent(double Time, int ObjectId, bool IsSelf, Vector3 Position, float YawDegrees, StateSync Record) : ReplayEvent(Time) {
+    /// <summary>The record came in RideSync (0x7A): CSceneStateGame::OnRideSync (scenestategame.cpp:2472-2482) gives it to the
+    /// PC's ridee (none: dropped), not to the PC's own states.</summary>
+    public bool Ride { get; init; }
+}
 
 public sealed record NpcAddedEvent(double Time, FieldAddNpc Npc) : ReplayEvent(Time);
 public sealed record NpcRemovedEvent(double Time, int ObjectId, bool Dead) : ReplayEvent(Time);
@@ -161,7 +165,8 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.UserSync:
             case Ms2.Net.Inbound.RideSync: {
                 var s = UserSyncIn.Read(p.Reader());
-                foreach (var r in s.Records) Moved(s.ObjectId, r, false);
+                bool ride = op == Ms2.Net.Inbound.RideSync;
+                foreach (var r in s.Records) Moved(s.ObjectId, r, false, ride);
                 break;
             }
         }
@@ -174,13 +179,13 @@ public sealed class FieldTracker {
         foreach (var (rec, _) in o.Records) Moved(SelfObjectId, rec, true);
     }
 
-    void Moved(int id, StateSync r, bool self) {
+    void Moved(int id, StateSync r, bool self, bool ride = false) {
         var pos = r.Position.ToVector3();
         float yaw = r.Rotation2 / 10f;
         lock (gate) {
             if (!actors.TryGetValue(id, out var a)) return;   // a sync for somebody we never saw added
             a.Position = pos; a.YawDegrees = yaw; a.Moves++;
         }
-        Events.Enqueue(new UserMovedEvent(Time, id, self, pos, yaw, r));
+        Events.Enqueue(new UserMovedEvent(Time, id, self, pos, yaw, r) { Ride = ride });
     }
 }

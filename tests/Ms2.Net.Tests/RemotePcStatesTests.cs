@@ -281,11 +281,11 @@ public class RemotePcStatesTests {
         Assert.That(GroundEffectGate.Allows(true, 10, false, "land", "water", false, false, true), Is.True);
         Assert.That(GroundEffectGate.Allows(true, 10, false, "land", "water", false, true, false), Is.True);
         // PCBase::TextKeyEvent: "run*" / "walk*" keys, not in state 0, not class 0x6200028
-        Assert.That(GroundEffectGate.StepKey("run0", 2, 0x6200050), Is.True);
-        Assert.That(GroundEffectGate.StepKey("walk", 2, 0x6200050), Is.True);
-        Assert.That(GroundEffectGate.StepKey("run1", 0, 0x6200050), Is.False);
+        Assert.That(GroundEffectGate.StepKey("run0", 2, 0x6200003), Is.True);
+        Assert.That(GroundEffectGate.StepKey("walk", 2, 0x6200003), Is.True);
+        Assert.That(GroundEffectGate.StepKey("run1", 0, 0x6200003), Is.False);
         Assert.That(GroundEffectGate.StepKey("run1", 2, 0x6200028), Is.False);
-        Assert.That(GroundEffectGate.StepKey("effect_x", 2, 0x6200050), Is.False);
+        Assert.That(GroundEffectGate.StepKey("effect_x", 2, 0x6200003), Is.False);
     }
 
     [Test] public void UpdateAllocatesNothingPerFrame() {
