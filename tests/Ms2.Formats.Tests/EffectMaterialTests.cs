@@ -164,4 +164,62 @@ public class EffectMaterialTests
         }
         Assert.That(sc.Meshes.Any(m => !m.LightingE), "meshes with LIGHTING_E_A_D");
     }
+
+    const string Flamethrower = "ch/skill/heavygunner/eff_heavygunner_flamethrower_loop_01_a.nif";
+
+    /// <summary>The flamethrower's smoke (PArray01, alpha blended): its quads take the material like a mesh. Its
+    /// NiVertexColorProperty is AMB_DIFF with E_A_D (flags 40), so the key colour is the ambient and diffuse, and the material's
+    /// emissive (about 0.31) is added to it: a late dark key colour still shades at least that. Before, the particles drew
+    /// texture times key colour alone, and the smoke went near-black.</summary>
+    [Test]
+    public void ParticleSmokeTakesItsMaterialEmissive()
+    {
+        var sc = Load(Flamethrower);
+        var smoke = sc.Systems.Single(s => s.Name == "PArray01");
+        var m = smoke.Material;
+        Assert.That(m.Mesh.VertexColorFlags, Is.EqualTo(40));
+        Assert.That(m.Mesh.Colors, Is.Not.Null, "the system has colours");
+        Assert.That(smoke.Additive, Is.False);
+        Assert.That(m.VertexColors, Is.EqualTo(new VertexColorUse(false, true, true, true)));
+        double[] lit = new double[3], amb = new double[3];
+        m.Shade(0, lit, amb);
+        Assert.That(lit, Is.EqualTo(m.Mesh.Emissive.Select(x => (double)x).ToArray()).Within(1e-6));
+        Assert.That(lit, Is.All.GreaterThan(0.3));
+        Assert.That(amb, Is.All.EqualTo(0.0));
+    }
+
+    /// <summary>A colour controller on a system's material reaches the system: the flamethrower's additive PArray05 animates
+    /// its ambient, diffuse and emissive (NiMaterialColorController targets 0, 1, 3), and the shaded emissive is the
+    /// controller's value, the diffuse and ambient left to the key colour.</summary>
+    [Test]
+    public void ParticleMaterialColourControllers()
+    {
+        var sc = Load(Flamethrower);
+        var fire = sc.Systems.Single(s => s.Name == "PArray05");
+        var m = fire.Material;
+        Assert.That(fire.Additive);
+        Assert.That(m.Colors.Select(c => c.Target), Is.EquivalentTo(new[] { 0, 1, 3 }));
+        var emi = m.Colors.Single(c => c.Target == 3);
+        double[] lit = new double[3], amb = new double[3];
+        for (double t = 0; t < 2; t += 0.25)
+        {
+            m.Shade(t, lit, amb);
+            Assert.That(lit, Is.EqualTo(emi.Curve(emi.Ctl != null ? emi.Ctl.Local(t) : t)).Within(1e-9), $"t {t}");
+            Assert.That(amb, Is.All.EqualTo(0.0));
+        }
+    }
+
+    /// <summary>A system without colours has no vertex colour stream, so its material terms are all it has; one whose
+    /// NiVertexColorProperty ignores the vertex colours (source 0) is the same.</summary>
+    [Test]
+    public void ParticleWithoutColoursKeepsTheMaterial()
+    {
+        var mat = new ModelMesh { Diffuse = new[] { 0.5f, 0.5f, 0.5f }, Emissive = new[] { 0.25f, 0.25f, 0.25f }, VertexColorFlags = 40 };
+        var e = new EffectMesh { Mesh = mat };
+        Assert.That(e.VertexColors.Any, Is.False);
+        mat.Colors = Array.Empty<float>();
+        Assert.That(e.VertexColors.Diffuse);
+        mat.VertexColorFlags = 8;
+        Assert.That(e.VertexColors.Any, Is.False);
+    }
 }

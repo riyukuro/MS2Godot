@@ -195,6 +195,14 @@ public sealed class ParticleSystemDef
     public int MaxParticles = 100; public bool WorldSpace;
     public bool PreRpi = true;                   // "Pre RPI": the emitters' direction method (EmitterDef.Direction)
     public int Colliders, Spawners;
+    /// <summary>The system's colour terms, read as an effect mesh's: its NiMaterialProperty and NiVertexColorProperty, and the
+    /// NiMaterialColorControllers on that material (Material.Colors). The client draws the particle quads through the same
+    /// NiStandardMaterial path as any mesh: the facing quad generator gives them a normal (camRight x camUp,
+    /// NiPSFacingQuadGenerator.cpp:340-364) and, when the system has colours, a COLOR index 0 stream (:191-207), so the key
+    /// colour stands in for the terms the vertex colour mode names (EffectMesh.VertexColors) and the material gives the rest
+    /// (EffectMesh.Shade). Material.Mesh.Colors is an empty array when the system has colours ("Has Colors",
+    /// NiPSParticleSystem::LoadBinary, NiPSParticleSystem.cpp:1227-1228), null without.</summary>
+    public EffectMesh Material;
 }
 
 /// <summary>
@@ -333,12 +341,14 @@ public sealed class EffectScene
             var em = new EffectMesh { Mesh = m, Node = node };
             sc.Meshes.Add(em); meshOf[m.Block] = em;
         }
-        // mesh blocks that reference a property block (texturing) so texture controllers can find their meshes
-        IEnumerable<EffectMesh> MeshesWithProperty(int prop) => sc.Meshes.Where(m => B[m.Mesh.Block].Ints("Properties").Contains(prop));
-
         var systems = new Dictionary<int, ParticleSystemDef>();
         foreach (var (blk, node) in sc.NodeOfBlock)
             if (B[blk].Type is "NiPSParticleSystem" or "NiPSMeshParticleSystem") systems[blk] = sc.ReadSystem(n, blk, node);
+
+        // mesh blocks that reference a property block (texturing) so texture controllers can find their meshes, and the
+        // particle systems' materials (ParticleSystemDef.Material), so a colour controller on a system's material reaches it
+        IEnumerable<EffectMesh> MeshesWithProperty(int prop) => sc.Meshes.Concat(systems.Values.Select(s => s.Material))
+            .Where(m => B[m.Mesh.Block].Ints("Properties").Contains(prop));
 
         // controllers
         for (int i = 0; i < B.Count; i++)
@@ -441,12 +451,21 @@ public sealed class EffectScene
     {
         var B = n.Blocks; var b = B[blk];
         var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
+        var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null };
+        d.Material = new EffectMesh { Mesh = mat, Node = node };
 
         foreach (var pi in b.Ints("Properties"))
         {
             if (pi < 0) continue;
             var p = B[(int)pi];
             if (p.Type == "NiAlphaProperty") d.AlphaFlags = (int)p.Int("Flags");
+            else if (p.Type == "NiVertexColorProperty") mat.VertexColorFlags = (int)p.Int("Flags");
+            else if (p.Type == "NiMaterialProperty")
+            {
+                float[] Rgb(string k) { var c = p.Struct(k); return new[] { c.Float("r"), c.Float("g"), c.Float("b") }; }
+                mat.Ambient = Rgb("Ambient Color"); mat.Diffuse = Rgb("Diffuse Color"); mat.Emissive = Rgb("Emissive Color");
+                mat.MaterialAlpha = p.Float("Alpha");
+            }
             else if (p.Type == "NiTexturingProperty")
             {
                 if (p.IntOr("Has Base Texture", 0) != 0 && p.Has("Base Texture") && p.Struct("Base Texture").Int("Source") is long s0 && s0 >= 0) d.Texture = n.StrField(B[(int)s0], "File Name");

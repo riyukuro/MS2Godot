@@ -42,6 +42,7 @@ public sealed partial class EffectInstance : Node3D
         public double[] Accum; public float[] Buf;
         public int Cap, LastCount;                                // the MultiMesh's instance count (live particles fit) and last frame's live count
         public Aabb Box; public bool HasBox;                      // the MultiMesh's CustomAabb: every quad drawn so far, grown only (Step)
+        public MeshState Shading;                                 // the system's material (ParticleSystemDef.Material) and its shader parameters
     }
 
     readonly EffectScene scene; readonly ModelBuilder mb;
@@ -136,6 +137,14 @@ render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
 uniform sampler2D tex : filter_linear;
 uniform bool has_tex = true;
 uniform vec2 frames = vec2(1.0, 1.0);
+uniform vec3 mat_ambient = vec3(0.0);
+global uniform vec3 ms2_ambient;
+uniform float alpha = 1.0;
+uniform vec4 tint = vec4(1.0);
+uniform bool vc_emi = false;
+uniform bool vc_dif = false;
+uniform bool vc_amb = false;
+uniform bool vc_opacity = false;
 varying float frame;
 FOGDECL
 void vertex() { frame = INSTANCE_CUSTOM.x; FOGVERT }
@@ -143,9 +152,15 @@ void fragment() {
     float fi = floor(frame + 0.5);
     vec2 cell = vec2(mod(fi, frames.x), floor(fi / frames.x));
     vec4 t = has_tex ? texture(tex, (UV + cell) / frames) : vec4(1.0);
+    // the mesh shader's colour terms (MeshCode, EffectMesh.Shade): the particle's key colour is its vertex colour
+    // (ParticleSystemDef.Material), so the material gives the terms the vertex colour mode leaves (AMB_DIFF: the emissive)
+    vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
+    if (vc_emi) coef += COLOR.rgb;
+    if (vc_dif) coef += COLOR.rgb;
+    if (vc_amb) coef += COLOR.rgb * ms2_ambient;
     FOG = vec4(ms2_fog_color, fog_share);
-    ALBEDO = ms2_fog_apply(t.rgb * COLOR.rgb, CAMERA_VISIBLE_LAYERS);
-    ALPHA = clamp(t.a * COLOR.a, 0.0, 1.0);
+    ALBEDO = ms2_fog_apply(clamp(t.rgb * coef, 0.0, 1.0), CAMERA_VISIBLE_LAYERS);
+    ALPHA = clamp(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0, 1.0);
 }";
     // The client's fog for an effect's meshes and particle systems. A NIF effect carries no NiFogProperty (none of the
     // effect pack's nifs has one), so its meshes take the default fog property ApplyEffect::SetFog sets for the field
@@ -307,6 +322,21 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
             mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
+            // The quads are drawn through SoftParticlesMaterial, an NiStandardMaterial that adds only the soft-depth opacity
+            // (softparticlesmaterial.cpp:210-279; ms2materiallibrary.cpp:481-482), so their colour is the standard material's,
+            // as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
+            // NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450). Nearly every
+            // system is AMB_DIFF with E_A_D (flags 40): the emissive is added to the key colour times the light, so a dark key
+            // colour over a dark texture still shows the emissive.
+            // STILL-OPEN: the soft-depth opacity (GetParticleOpacity, softparticlesmaterial.cpp:241-279) is not drawn.
+            ps.Shading = new MeshState { Def = d.Material, Mat = mat };
+            var vcu = d.Material.VertexColors;
+            if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
+            if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);
+            if (vcu.Ambient) mat.SetShaderParameter(FxParam.VcAmb, true);
+            if (vcu.Opacity) mat.SetShaderParameter(FxParam.VcOpacity, true);
+            Shade(ps.Shading, 0, true);
+            mat.SetShaderParameter(FxParam.Alpha, ps.Shading.LastAlpha = (float)d.Material.Opacity(0));
             // The quad's corners sit at +-(right +- up) times the particle size (initial size times the size multiplier):
             // NiPSFacingQuadGeneratorKernel.cpp:127-131, NiPSAlignedQuadGeneratorKernelVV.cpp:103-129. So the quad is 2 x 2
             // and the per-particle basis carries the size. STILL-OPEN: the aligned quads' velocity scale is
@@ -480,7 +510,13 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         }
 
         long q2 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
-        foreach (var ps in systems) Step(ps, dt, camLocal, camRight, camUp);
+        foreach (var ps in systems)
+        {
+            var sm = ps.Shading;
+            if (sm.Def.Colors.Count > 0) Shade(sm, t, false);
+            if (sm.Def.Alpha != null) { float a = (float)sm.Def.Opacity(t); if (a != sm.LastAlpha) sm.Mat.SetShaderParameter(FxParam.Alpha, sm.LastAlpha = a); }
+            Step(ps, dt, camLocal, camRight, camUp);
+        }
         if (ProbeOn) { long q3 = System.Diagnostics.Stopwatch.GetTimestamp(); seg[0] += q1 - q0; seg[1] += q2 - q1; seg[2] += q3 - q2; }
     }
     // the MS2_PERF_FX probe's segment counters (a measuring tool, printed by Probe; untouched when the probe is off):
