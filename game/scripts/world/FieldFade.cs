@@ -70,7 +70,9 @@ public partial class FieldFade : Node
     readonly Dictionary<int, List<Target>> groups = new();
     readonly Dictionary<FieldEntity, Target> byEntity = new();
     readonly Dictionary<Target, Element> fadeOut = new(), fadeIn = new();
-    readonly Dictionary<Mesh, Vector3[]> faces = new();
+    // each draw's MultiMesh (one mesh per MultiMesh) to its mesh's triangles, made once, keyed by the reference the draw
+    // holds (no engine call per lookup)
+    readonly Dictionary<MultiMesh, Vector3[]> faces = new(ReferenceEqualityComparer.Instance);
     readonly Func<Vector3?> feet;
     readonly Func<Camera3D> camera;
     ulong nextTest;
@@ -121,12 +123,15 @@ public partial class FieldFade : Node
         var eye = cam.GlobalPosition;
         var planes = cam.GetFrustum();
         using var planesOwner = (Godot.Collections.Array)planes;   // a tracked Array per call until disposed
+        // the planes read once into managed memory: each read of the Godot array is a call into the engine
+        int np = Math.Min(planes.Count, frustum.Length);
+        for (int i = 0; i < np; i++) frustum[i] = planes[i];
         var hit = new HashSet<Target>();
         Vector3 a = pos + Vector3.Up * RayLow, b = pos + Vector3.Up * RayHigh;
         Vector3 da = (eye - a).Normalized(), db = (eye - b).Normalized();
         foreach (var t in targets)
         {
-            if (!InFrustum(planes, t.Centre, t.Radius)) continue;
+            if (!InFrustum(frustum, np, t.Centre, t.Radius)) continue;
             // the second ray's test against the first hit only skips an insert the set already holds
             if (RayHits(t, a, da) || RayHits(t, b, db)) Add(hit, t);
         }
@@ -140,16 +145,34 @@ public partial class FieldFade : Node
             foreach (var m in g) hit.Add(m);
     }
 
-    static bool InFrustum(Godot.Collections.Array<Plane> planes, Vector3 c, float r)
+    readonly Plane[] frustum = new Plane[6];
+
+    static bool InFrustum(Plane[] planes, int n, Vector3 c, float r)
     {
-        for (int i = 0, n = planes.Count; i < n; i++)     // indexed: foreach boxes an enumerator per target
+        for (int i = 0; i < n; i++)
             if (planes[i].DistanceTo(c) > r) return false;
         return true;
+    }
+
+    /// <summary>
+    /// Whether the ray from <paramref name="o"/> along the unit <paramref name="dir"/> (ahead of the origin only) comes
+    /// within the target's bounding sphere: a ray that does not can hit none of its triangles (the sphere holds the box of
+    /// every draw's mesh at its place, made with the transforms RayHits uses), so the triangle loop is skipped. The radius
+    /// has a margin for float rounding, so a ray that grazes the sphere is still tested triangle by triangle.
+    /// </summary>
+    static bool NearSphere(Vector3 o, Vector3 dir, Vector3 c, float r)
+    {
+        var d = c - o;
+        float r2 = r * 1.001f + 0.01f; r2 *= r2;
+        float d2 = d.LengthSquared(), along = d.Dot(dir);
+        if (along < 0) return d2 <= r2;      // the centre is behind: only an origin inside the sphere can hit
+        return d2 - along * along <= r2;
     }
 
     /// <summary>PerformPick on the entity's meshes: any triangle, either side, ahead of the origin on the unbounded ray.</summary>
     bool RayHits(Target t, Vector3 from, Vector3 dir)
     {
+        if (!NearSphere(from, dir, t.Centre, t.Radius)) return false;
         foreach (var d in t.Draws)
         {
             var xf = d.Mm.GetInstanceTransform(d.Index);
@@ -157,7 +180,7 @@ public partial class FieldFade : Node
             var inv = (d.Parent.GlobalTransform * xf).AffineInverse();
             var o = inv * from;
             var v = inv.Basis * dir;
-            if (!faces.TryGetValue(d.Mm.Mesh, out var f)) faces[d.Mm.Mesh] = f = d.Mm.Mesh.GetFaces();
+            if (!faces.TryGetValue(d.Mm, out var f)) faces[d.Mm] = f = d.Mm.Mesh.GetFaces();
             for (int i = 0; i + 2 < f.Length; i += 3)
                 if (Triangle(o, v, f[i], f[i + 1], f[i + 2])) return true;
         }
