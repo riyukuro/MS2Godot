@@ -59,15 +59,9 @@ public partial class Player : CharacterBody3D
     /// stores the worn set option part's groundAttribute (setitemoptionpart.h:34) in m_str960 via FUN_141670e50, and
     /// FUN_141671480 (pcbase.cpp:2488) returns it instead of the touched ground when it is not empty, m_unk_9c4 != 8
     /// and, when vfunc_62() is true, vfunc_61() == 2.
-    /// STILL-OPEN: other players' steps and landings. In the client each remote PC runs the same states as this one: its
-    /// UserSync records go to PCBase::vfunc_114 (CSceneStateGame::FUN_1417127b0, scenestategame.cpp:2509-2517) and its state
-    /// controller replays them, so its StateLand / StateDash play "land", its "run"/"walk" text keys play steps
-    /// (PCBase::TextKeyEvent, pcbase.cpp:1001-1008: not in state 0, not class 0x6200028), and PC::vfunc_53 refreshes its own
-    /// m_str958 from its own controller's hit report. PlayEffects (groundeffectdata.cpp:278-291) skips "run*" for job group
-    /// 0x6e while vfunc_65() holds, skips an actor with m_unk_b0 set, and with COptimizer::IsUpdateEnabled off plays only for
-    /// MyPC (kind 0x6200004) or a ridee it rides (FUN_141b71120, util.cpp:1145); it has no distance test of its own, the
-    /// effect's sound carries the attenuation. The remote players here (Net.RemoteLayer) glide to the sync position with no
-    /// state machine and no controller, so none of this can run for them until the sync replay is ported.
+    /// Other players keep their own: each remote PC replays its UserSync records through its own states and controller
+    /// (Net.RemotePc, Ms2.Net.Replay.RemotePcStates; scenestategame.cpp:2509-2517), with PlayEffects' tests in
+    /// Ms2.Net.Replay.GroundEffectGate (groundeffectdata.cpp:278-291) and the step keys of PCBase::TextKeyEvent.
     /// </summary>
     public string GroundMaterial => ground.Material;
     /// <summary>The last controller move touched something below (NXCC_COLLISION_DOWN).</summary>
