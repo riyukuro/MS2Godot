@@ -225,6 +225,8 @@ public partial class As3View : Node2D
     /// <summary>
     /// The objects used as script masks are not drawn. The set is the masks of the objects synced (kept current every
     /// sync, see <see cref="Sync"/>); an object that became or stopped being a mask during the pass is set again here.
+    /// An object that is a script mask (<see cref="AsDisplayObject.MaskOwner"/>) is not drawn either, wherever the object it
+    /// masks is (see <see cref="Drawn"/>).
     /// </summary>
     void UpdateMasks()
     {
@@ -240,9 +242,20 @@ public partial class As3View : Node2D
     void Revisible(AsDisplayObject o, HashSet<AsDisplayObject> set)
     {
         if (o.Tag is not Entry e || !entries.Contains(e)) return;
-        bool visible = o.IsVisible && !set.Contains(o) && !e.ClipMask;
+        bool visible = Drawn(o) && !set.Contains(o) && !e.ClipMask;
         if (visible != e.Visible) { Checked(true, "mask visible", e); e.Holder.Visible = e.Visible = visible; }
     }
+
+    /// <summary>
+    /// Whether a visible object is drawn at its place in the display list: not when it is some object's script mask. The
+    /// client takes a mask's render node out of its parent's render tree as soon as it is set as a mask
+    /// (DisplayObject::SetMask @0x1425f4a10, sfr_gfx_06.cpp:1441, through SetIndirectTransform @0x1425f4800, :1407:
+    /// dl.RemoveFromRenderTree), whether or not the masked object is on the stage, and puts it back only when the mask is
+    /// cleared (RemoveIndirectTransform). The mask setter marks the old and the new mask object, so this is read again.
+    /// STILL-OPEN: SetIndirectTransform refuses a mask that is an ancestor of the masked object (no mask then); the
+    /// runtime's mask setter does not, so such an object is not drawn here.
+    /// </summary>
+    static bool Drawn(AsDisplayObject o) => o.IsVisible && o.MaskOwner == null;
 
     /// <summary>
     /// Puts the nodes of a container's children under <paramref name="into"/> in display order (after the container's own
@@ -385,7 +398,7 @@ public partial class As3View : Node2D
             if (xf != e.Xf) { Checked(true, "transform", e); e.Holder.Transform = e.Xf = xf; }
             // a timeline mask's own node is not drawn (SyncChildren clips the following depths to it)
             e.ClipMask = clipMask;
-            bool visible = o.IsVisible && !masks.Contains(o) && !clipMask;
+            bool visible = Drawn(o) && !masks.Contains(o) && !clipMask;
             if (visible != e.Visible) { Checked(true, "visible", e); e.Holder.Visible = e.Visible = visible; }
             // DragManager's drag canvas is CommonDepth's layer under the mouse cursor (DragManager.init: DEPTH_LAYER_MOUSECURSOR
             // - 1) on the one stage every dialog shares: the dragged sprite is drawn over the other movies too, not only its own

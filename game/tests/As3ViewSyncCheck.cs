@@ -13,9 +13,10 @@ namespace Ms2Godot.Tests;
 /// <summary>
 /// Headless check (res://tests/as3view_sync.tscn, needs the game data for the view's assets; run with MS2_PERF_SYNCCHECK=1):
 /// drives <see cref="As3View"/>'s marked sync over a small display list of Graphics sprites and checks the nodes it
-/// leaves. A mask out of the display list that moves is followed. Another movie's marks do not walk this view's
-/// script-masked objects again; its own do. After every sync the full check sync (MS2_PERF_SYNCCHECK) must find nothing
-/// left to change. Quits with 0 when all hold, else 1.
+/// leaves. A script mask object is not drawn, even when the object it masks is off the stage. A mask out of the display
+/// list that moves is followed. Another movie's marks do not walk this view's script-masked objects again; its own do.
+/// After every sync the full check sync (MS2_PERF_SYNCCHECK) must find nothing left to change. Quits with 0 when all
+/// hold, else 1.
 /// </summary>
 public partial class As3ViewSyncCheck : Node
 {
@@ -33,6 +34,17 @@ public partial class As3ViewSyncCheck : Node
         view = new As3View(player, assets) { AutoPlay = false };
         AddChild(view);
         var stage = player.Stage;
+
+        // a script mask whose masked object is not on the stage: the mask is not drawn (DisplayObject::SetMask takes its
+        // render node out of the render tree whatever the masked object's place)
+        var m1 = Box("m1", stage, 0, 0);
+        var loose = Box("loose", null, 0, 0);
+        loose.mask = m1;
+        view.Sync();
+        Is(Holder("m1") is { Visible: false }, "a mask whose masked object is off the stage is drawn");
+        loose.mask = null;
+        view.Sync();
+        Is(Holder("m1") is { Visible: true }, "a mask set back to no owner is not drawn again");
 
         // a mask out of the display list, under a sprite that moves: the masked object's polygons follow (the check sync
         // finds any it missed)
