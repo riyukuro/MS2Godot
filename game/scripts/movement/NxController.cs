@@ -8,8 +8,8 @@ namespace Ms2Godot.Movement;
 /// 0.01 m, slopeLimit cos 50 deg, stepOffset 0.3 m, CLIMB_EASY) and GameObjectController::Move calls it (@0x14123ff80:
 /// minDist 1e-6 m, sharpness 1). Controller::move runs SweepTest::MoveCharacter, an up / side / down sweep of the body's
 /// own shape, and when the down pass lands on a triangle steeper than the slope limit it runs the move again from the start
-/// as the "walk experiment". Godot's shape casts bracket the first contact by bisection (GodotPhysics3D cast_motion: 8
-/// steps), so each sweep is cast three times over the bracket to land on NxSweepCapsuleTriangles' analytic stop.
+/// as the "walk experiment". Godot's motion test brackets the first contact by bisection (GodotPhysics3D: 8 steps), and the
+/// capsule's gap to the touched point is then closed along the move to land on NxSweepCapsuleTriangles' analytic stop.
 /// </summary>
 public sealed class NxController
 {
@@ -19,7 +19,7 @@ public sealed class NxController
 
     const int MaxIter = 10;                     // MAX_ITER, mMaxIter (CharacterController.cpp:24, :645)
     const float MinDist = 1e-6f * 100f;         // GameObjectController::Move passes 1e-6 m
-    const int RefineStages = 3;
+    const int RefineStages = 3;                 // the start-overlap path's casts: each bracket cast again
 
     readonly CharacterBody3D body;
     readonly CollisionShape3D shapeNode;
@@ -242,14 +242,154 @@ public sealed class NxController
         public Contact(float d, Vector3 n, GodotObject c, bool mesh, Vector3 face, int shape = -1) { Distance = d; Normal = n; Collider = c; Mesh = mesh; FaceNormal = face; Shape = shape; }
     }
 
+    // The sweeps' queries: PhysicsServer3D.BodyTestMotion on the body itself, with one parameter and one result object
+    // reused. It is the one physics query whose result is not a new managed object (CastMotion returns a float[],
+    // GetRestInfo a Dictionary), and it sweeps the body's own shapes against its own mask. Its first step frees a body that
+    // starts inside something; the sweep reads that as a start overlap (see Sweep).
+    readonly PhysicsTestMotionParameters3D motion = new() { MaxCollisions = 1 };
+    readonly PhysicsTestMotionResult3D motionResult = new();
+    readonly Godot.Collections.Array<Rid> motionExclude = new();
+    Rid motionExcluded;
+
+    const float CastMargin = 1e-4f;             // test_body_motion's least margin (TEST_MOTION_MARGIN_MIN_VALUE)
+    const float ProbeMotion = 1e-4f;            // a probe's own motion: test_body_motion divides by the motion's length
+    const float OverlapTolerance = 1e-3f;       // a start or probe the test frees by more than this is inside a shape
+
+    bool TestMotion(Vector3 at, Vector3 move, float margin, bool restAtStart)
+    {
+        motion.From = new Transform3D(Basis.Identity, at);
+        motion.Motion = move;
+        motion.Margin = margin;
+        motion.RecoveryAsCollision = restAtStart;
+        return PhysicsServer3D.BodyTestMotion(body.GetRid(), motion, motionResult);
+    }
+
+    /// <summary>The last test started inside a shape: its first step moved the body out, or it could not and the cast is
+    /// stuck (safe and unsafe 0).</summary>
+    bool StartedInside(bool collided, Vector3 move)
+    {
+        float safeF = motionResult.GetCollisionSafeFraction();
+        var freed = motionResult.GetTravel() - move * safeF;
+        return freed.LengthSquared() > OverlapTolerance * OverlapTolerance ||
+               collided && safeF <= 0 && motionResult.GetCollisionUnsafeFraction() <= 0;
+    }
+
     /// <summary>
     /// NxSweepCapsuleTriangles and the other shape sweeps: the distance along <paramref name="dir"/> to the first contact of
-    /// the body's shape, within <paramref name="length"/>. The bracket of each cast is cast again, three stages in all.
+    /// the body's shape, within <paramref name="length"/>: one motion test (PhysicsServer3D.BodyTestMotion, with its
+    /// parameter and result objects kept, so a sweep allocates nothing), then the gap to the touched point is closed.
+    /// A sweep that starts inside a shape passes through it, as SweepCapsuleBox's d == 0 does (CharacterController.cpp:366-374):
+    /// <see cref="SweepFromInside"/>.
     /// </summary>
     Contact? Sweep(Vector3 from, Vector3 dir, float length)
     {
+        uint mask = body.CollisionMask;
+        uint sweepMask = mask & ~IgnoreGroups;                                  // move(disp, m_nGroups & ~m_nIgnoreGroups)
+        if (sweepMask != mask) PhysicsServer3D.BodySetCollisionMask(body.GetRid(), sweepMask);
+        if (motionExcluded != IgnoreBody)
+        {
+            motionExclude.Clear();
+            if (IgnoreBody.IsValid) motionExclude.Add(IgnoreBody);
+            motion.ExcludeBodies = motionExclude;
+            motionExcluded = IgnoreBody;
+        }
+        try
+        {
+            return SweepTests(from, dir, length);
+        }
+        finally
+        {
+            if (sweepMask != mask) PhysicsServer3D.BodySetCollisionMask(body.GetRid(), mask);
+        }
+    }
+
+    Contact? SweepTests(Vector3 from, Vector3 dir, float length)
+    {
+        float safe = 0, unsafeD = length;
+        bool hit = false, have = false;
+        Vector3 normal = default, point = default;
+        Rid rid = default;
+        int shapeIdx = -1;
+        ulong colliderId = 0;
+        if (length > 1e-7f)
+        {
+            var move = dir * length;
+            bool collided = TestMotion(from, move, CastMargin, false);
+            if (StartedInside(collided, move)) return SweepFromInside(from, dir, length);
+            float safeF = motionResult.GetCollisionSafeFraction();
+            if (collided && safeF < 1f)
+            {
+                hit = true;
+                unsafeD = motionResult.GetCollisionUnsafeFraction() * length;
+                safe = safeF * length;
+                have = motionResult.GetCollisionCount() > 0;                    // the test's rest contact at the unsafe point
+                if (have) ReadContact(out normal, out point, out rid, out shapeIdx, out colliderId);
+            }
+        }
+
+        if (!hit) return null;
+
+        // what is touched there, and the exact stop: the casts' collision test leaves up to ~1e-3 of the bracket, so the
+        // capsule's own gap to the touched point, (segment end lowest along the contact normal) . n - radius, is closed
+        // along the move (a plane closes at -dir . n per unit; an edge or vertex converges in a few steps). The rest test is
+        // the test's own: its last step, the deepest contact within the margin (GetRestInfo's callback).
+        var local = shapeNode.Transform;
+        float t1 = safe;
+        bool found = false;
+        for (int it = 0; it < 4; it++)
+        {
+            if (!have)
+            {
+                float margin = Mathf.Max(unsafeD - t1, 0) + 0.01f;
+                if (!TestMotion(from + dir * t1, dir * ProbeMotion, margin, true) || motionResult.GetCollisionCount() == 0) break;
+                ReadContact(out normal, out point, out rid, out shapeIdx, out colliderId);
+            }
+            have = false;
+            found = true;
+            if (shapeNode.Shape is not CapsuleShape3D cap) break;
+            var centre = from + dir * t1 + local.Origin;
+            var half = local.Basis.Y.Normalized() * (cap.Height / 2 - cap.Radius);
+            float gap = Mathf.Min((centre + half - point).Dot(normal), (centre - half - point).Dot(normal)) - cap.Radius;
+            float rate = -dir.Dot(normal);
+            if (rate < 0.05f) break;
+            float tn = Mathf.Clamp(t1 + gap / rate, 0, length);
+            bool done = Mathf.Abs(tn - t1) < 1e-6f;
+            t1 = tn;
+            if (done) break;
+        }
+        if (!found) return new Contact(safe, -dir, null, false, Vector3.Zero);
+        return Touched(t1, normal, point, rid, shapeIdx, colliderId, dir);
+    }
+
+    void ReadContact(out Vector3 normal, out Vector3 point, out Rid rid, out int shapeIdx, out ulong colliderId)
+    {
+        normal = motionResult.GetCollisionNormal(0);
+        point = motionResult.GetCollisionPoint(0);
+        rid = motionResult.GetColliderRid(0);
+        shapeIdx = motionResult.GetColliderShape(0);
+        colliderId = motionResult.GetColliderId(0);
+    }
+
+    Contact Touched(float distance, Vector3 normal, Vector3 point, Rid rid, int shapeIdx, ulong colliderId, Vector3 dir)
+    {
+        var collider = GodotObject.InstanceFromId(colliderId);
+        bool mesh = PhysicsServer3D.ShapeGetType(PhysicsServer3D.BodyGetShape(rid, shapeIdx)) == PhysicsServer3D.ShapeType.ConcavePolygon;
+        var face = mesh ? FaceNormal(rid, shapeIdx, point, dir) ?? normal : normal;
+        return new Contact(distance, normal, collider, mesh, face, shapeIdx);
+    }
+
+    /// <summary>
+    /// A sweep that starts inside a shape: the shape query's cast, which leaves out the shapes it starts inside (GodotPhysics3D
+    /// cast_motion skips a shape it overlaps at the start), as SweepCapsuleBox's d == 0 reports no hit. BodyTestMotion cannot
+    /// leave out one shape of a body, only the whole body.
+    /// STILL-OPEN: this path keeps the GJK cast's miss on large boxes and allocates its results (a float[] and a
+    /// Dictionary); the controller keeps one skin off what it touches, so a move starts inside a shape only after something
+    /// moved into it.
+    /// </summary>
+    Contact? SweepFromInside(Vector3 from, Vector3 dir, float length)
+    {
         var space = body.GetWorld3D().DirectSpaceState;
-        var q = Query(body.CollisionMask & ~IgnoreGroups, true);                // move(disp, m_nGroups & ~m_nIgnoreGroups)
+        var q = Query(body.CollisionMask & ~IgnoreGroups, true);
         var local = shapeNode.Transform;
         float safe = 0, unsafeD = length;
         bool hit = false;
@@ -258,21 +398,17 @@ public sealed class NxController
             float span = unsafeD - safe;
             q.Transform = new Transform3D(Basis.Identity, from + dir * safe) * local;
             q.Motion = dir * span;
-            var r = space.CastMotion(q);
+            var r = space.CastMotion(q);                                        // perf-ok: start-overlap path only
             if (r.Length < 2 || r[0] >= 1f)
             {
                 if (stage == 0) return null;
-                break;                                                          // the stage before already bracketed it
+                break;
             }
             hit = true;
             unsafeD = safe + r[1] * span;
             safe += r[0] * span;
         }
         if (!hit) return null;
-
-        // what is touched there, and the exact stop: the casts' collision test leaves up to ~1e-3 of the bracket, so the
-        // capsule's own gap to the touched point, (segment end lowest along the contact normal) . n - radius, is closed
-        // along the move (a plane closes at -dir . n per unit; an edge or vertex converges in a few steps)
         float t = safe;
         Godot.Collections.Dictionary info = null;
         for (int it = 0; it < 4; it++)
@@ -280,7 +416,7 @@ public sealed class NxController
             q.Transform = new Transform3D(Basis.Identity, from + dir * t) * local;
             q.Motion = Vector3.Zero;
             q.Margin = Mathf.Max(unsafeD - t, 0) + 0.01f;
-            var ri = space.GetRestInfo(q);
+            var ri = space.GetRestInfo(q);                                      // perf-ok: start-overlap path only
             if (ri.Count == 0) { ri.Dispose(); break; }
             info?.Dispose();
             info = ri;
@@ -298,16 +434,13 @@ public sealed class NxController
             if (done) break;
         }
         if (info == null) return new Contact(safe, -dir, null, false, Vector3.Zero);
-        safe = t;
         var normal = (Vector3)info[PhysicsKeys.Normal];
         var point = (Vector3)info[PhysicsKeys.Point];
         var rid = (Rid)info[PhysicsKeys.Rid];
         int shapeIdx = (int)info[PhysicsKeys.Shape];
-        var collider = GodotObject.InstanceFromId((ulong)info[PhysicsKeys.ColliderId]);
+        ulong id = (ulong)info[PhysicsKeys.ColliderId];
         info.Dispose();
-        bool mesh = PhysicsServer3D.ShapeGetType(PhysicsServer3D.BodyGetShape(rid, shapeIdx)) == PhysicsServer3D.ShapeType.ConcavePolygon;
-        var face = mesh ? FaceNormal(rid, shapeIdx, point, dir) ?? normal : normal;
-        return new Contact(safe, normal, collider, mesh, face, shapeIdx);
+        return Touched(t, normal, point, rid, shapeIdx, id, dir);
     }
 
     /// <summary>
