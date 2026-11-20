@@ -72,6 +72,8 @@ uniform bool has_glow = false;
 uniform float glow_scale = 1.0;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
+// clip above / below / equal to alpha_ref (SCM_DEF_ALPHA_TEST_FUNC, D3D11ShaderConstantMap.cpp:3630-3687)
+uniform vec3 alpha_clip = vec3(0.0, 1.0, 0.0);
 
 varying vec3 world_normal;
 varying vec3 world_pos;
@@ -100,7 +102,7 @@ float spec_term(vec3 l, vec3 n, vec3 v, vec3 ht, float hl) {
 
 void fragment() {
 	vec4 t = has_tex ? texture(base_tex, UV) : vec4(1.0);
-	if (alpha_test && t.a < alpha_ref) {
+	if (alpha_test && (alpha_clip.x > 0.5 && t.a > alpha_ref || alpha_clip.y > 0.5 && t.a < alpha_ref || alpha_clip.z > 0.5 && t.a == alpha_ref)) {
 		discard;
 	}
 	if (has_ctrl) {

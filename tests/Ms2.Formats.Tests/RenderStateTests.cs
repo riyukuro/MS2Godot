@@ -109,4 +109,35 @@ public class RenderStateTests
         Assert.That(lamp.Where(m => m.Cull == FaceCull.None).Select(m => m.FileName).OrderBy(n => n), Is.EqualTo(new[] { "Cone01", "Cone02" }));
         Assert.That(lamp.Count(m => m.Cull == FaceCull.Back), Is.EqualTo(1));
     }
+    /// <summary>The taxi booth's glass tests GREATER against threshold 0 (NiAlphaProperty flags 0x12ED): the D3D11 renderer passes
+    /// the reference as threshold / 255 (D3D11ShaderConstantMap.cpp:3690-3700) and clips at or below it for TEST_GREATER (:3660-3663),
+    /// so a faint pixel stays. A zero threshold used to fall back to a 0.5 reference, which cut the glass to its glare's centre.</summary>
+    [Test]
+    public void GlassTestsGreaterThanZero()
+    {
+        var (packs, spec) = NifEnv.Open();
+        var booth = ModelData.Load(NifFile.Load(spec, packs.Read("Resource/Model/Map",
+            packs.List("Resource/Model/Map").Single(n => n.EndsWith("/co_fi_struc_station_a01.nif", StringComparison.OrdinalIgnoreCase)))));
+        var glass = booth.Meshes.Single(m => m.Textures.GetValueOrDefault("base", "").Contains("glass_a01", StringComparison.OrdinalIgnoreCase));
+        Assert.That(glass.AlphaFlags, Is.EqualTo(0x12ED));
+        Assert.That(glass.AlphaTestFunc, Is.EqualTo(4));
+        Assert.That(glass.AlphaTestRef, Is.EqualTo(0f));
+        Assert.That(glass.AlphaTestKeeps(0.25f, glass.AlphaTestRef), Is.True);
+        Assert.That(glass.AlphaTestKeeps(0f, glass.AlphaTestRef), Is.False);
+    }
+
+    /// <summary>Each test function's clip sides, as SCM_DEF_ALPHA_TEST_FUNC fills them (D3D11ShaderConstantMap.cpp:3630-3687);
+    /// a mesh without the test flag clips below the reference.</summary>
+    [Test]
+    public void AlphaTestFunctionsClip()
+    {
+        bool[] Keeps(int func) => new[] { 0.25f, 0.5f, 0.75f }.Select(a => new ModelMesh { AlphaFlags = 0x200 | func << 10, AlphaThreshold = 0 }.AlphaTestKeeps(a, 0.5f)).ToArray();
+        Assert.That(Enumerable.Range(0, 8).Select(Keeps), Is.EqualTo(new[]
+        {
+            new[] { true, true, true }, new[] { true, false, false }, new[] { false, true, false }, new[] { true, true, false },
+            new[] { false, false, true }, new[] { true, false, true }, new[] { false, true, true }, new[] { false, false, false },
+        }));
+        var untested = new ModelMesh { AlphaFlags = 0x0ED };
+        Assert.That((untested.AlphaTestRef, untested.AlphaTestKeeps(0.25f, 0.5f), untested.AlphaTestKeeps(0.5f, 0.5f)), Is.EqualTo((0.5f, false, true)));
+    }
 }

@@ -74,6 +74,32 @@ public sealed class ModelMesh
     public bool AnimatesMaterial => AlphaAnim != null || FlipSlot is "base" or "dark" || UvAnims.Any(s => s.Slot is "base" or "dark" or "glow" or "decal0") || Morph != null;
     public bool AlphaBlendOn => AlphaFlags >= 0 && (AlphaFlags & 1) != 0;
     public bool AlphaTestOn => AlphaFlags >= 0 && (AlphaFlags & 0x200) != 0;
+    /// <summary>NiAlphaProperty test function, flag bits 10-12 (TEST_FUNC_MASK 0x1c00, NiAlphaProperty.h:116-118): 0 ALWAYS,
+    /// 1 LESS, 2 EQUAL, 3 LESSEQUAL, 4 GREATER, 5 NOTEQUAL, 6 GREATEREQUAL, 7 NEVER (NiAlphaProperty.h:49-56).</summary>
+    public int AlphaTestFunc => AlphaFlags >= 0 ? (AlphaFlags >> 10) & 7 : 0;
+    /// <summary>The alpha test reference the D3D11 renderer hands the pixel shader: the property's threshold / 255 while it
+    /// tests (SCM_DEF_ALPHA_TEST_REF, D3D11ShaderConstantMap.cpp:3690-3700), else the 0.5 cut-out the builders give a mesh
+    /// that tests without the property's flag.</summary>
+    public float AlphaTestRef => AlphaTestOn ? AlphaThreshold / 255f : 0.5f;
+    /// <summary>When the pixel shader clips, as SCM_DEF_ALPHA_TEST_FUNC fills it (D3D11ShaderConstantMap.cpp:3630-3687):
+    /// x clip above the reference, y below it, z equal to it. A mesh without the property's test flag clips below.</summary>
+    public (bool Above, bool Below, bool Equal) AlphaTestClip => !AlphaTestOn ? (false, true, false) : AlphaTestFunc switch
+    {
+        1 => (true, false, true),     // TEST_LESS
+        2 => (true, true, false),     // TEST_EQUAL
+        3 => (true, false, false),    // TEST_LESSEQUAL
+        4 => (false, true, true),     // TEST_GREATER
+        5 => (false, false, true),    // TEST_NOTEQUAL
+        6 => (false, true, false),    // TEST_GREATEREQUAL
+        7 => (true, true, true),      // TEST_NEVER
+        _ => (false, false, false),   // TEST_ALWAYS
+    };
+    /// <summary>The pixel survives the test with <see cref="AlphaTestClip"/> against <paramref name="reference"/>.</summary>
+    public bool AlphaTestKeeps(float alpha, float reference)
+    {
+        var (above, below, equal) = AlphaTestClip;
+        return !(above && alpha > reference || below && alpha < reference || equal && alpha == reference);
+    }
     /// <summary>Vertex colours replace the material's ambient and diffuse (NiVertexColorProperty source AMB_DIFF).</summary>
     public bool VertexColorsAmbDiff => Colors != null && VertexColorFlags >= 0 && ((VertexColorFlags >> 4) & 3) == 2;
     public Dictionary<string, string> Textures = new();   // base, normal, gloss, glow, dark, detail, decal0, shaderN

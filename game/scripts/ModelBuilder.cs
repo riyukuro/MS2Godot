@@ -657,6 +657,16 @@ public sealed class ModelBuilder
     /// own NiAlphaProperty blend (an additive one stays additive; a mesh without one gets a default property, source alpha /
     /// inverse source alpha) and the depth write on. The caller sets its alpha with <see cref="SetFade"/>.
     /// </summary>
+    /// <summary>The alpha test as the D3D11 renderer runs it: the reference is the property's threshold / 255, zero included
+    /// (SCM_DEF_ALPHA_TEST_REF, D3D11ShaderConstantMap.cpp:3690-3700), and the test function picks which side of it is clipped
+    /// (SCM_DEF_ALPHA_TEST_FUNC, :3630-3687). The taxi booth's glass tests GREATER 0 (flags 0x12ED), so every pixel with any
+    /// opacity stays; the old 0.5 fallback for a zero threshold cut its faces away to the centre of the sphere-map glare.</summary>
+    static void SetAlphaClip(ShaderMaterial sm, ModelMesh m)
+    {
+        var (above, below, equal) = m.AlphaTestClip;
+        sm.SetShaderParameter(ShaderParam.AlphaClip, new Vector3(above ? 1 : 0, below ? 1 : 0, equal ? 1 : 0));
+    }
+
     public static ShaderMaterial FadeMaterial(ShaderMaterial colour, ModelMesh m)
     {
         var fade = (ShaderMaterial)colour.Duplicate();
@@ -729,7 +739,8 @@ public sealed class ModelBuilder
             // alpha test as flagged; a material with an alpha property but neither flag keeps the old 0.5 cut-out
             bool test = m.AlphaTestOn || (m.AlphaTest && !m.AlphaBlendOn);
             sm.SetShaderParameter(ShaderParam.AlphaTest, test);
-            sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
+            sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
+            SetAlphaClip(sm, m);
             if (m.Emissive != null) sm.SetShaderParameter(ShaderParam.Emissive, new Vector3(m.Emissive[0], m.Emissive[1], m.Emissive[2]));
             if (m.Ambient != null) sm.SetShaderParameter(ShaderParam.MatAmbient, new Vector3(m.Ambient[0], m.Ambient[1], m.Ambient[2]));
             if (m.Diffuse != null) sm.SetShaderParameter(ShaderParam.MatDiffuse, new Vector3(m.Diffuse[0], m.Diffuse[1], m.Diffuse[2]));
@@ -822,7 +833,8 @@ public sealed class ModelBuilder
         }
         bool test = m.AlphaTestOn || m.AlphaTest;
         sm.SetShaderParameter(ShaderParam.AlphaTest, test);
-        sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestOn && m.AlphaThreshold > 0 ? m.AlphaThreshold / 255f : 0.5f);
+        sm.SetShaderParameter(ShaderParam.AlphaRef, m.AlphaTestRef);
+        SetAlphaClip(sm, m);
         return sm;
     }
 

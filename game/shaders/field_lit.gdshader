@@ -86,6 +86,8 @@ uniform bool has_vcolor = false;     // CUSTOM0 holds rgba vertex colours
 uniform bool vcolor_amb_diff = false;
 uniform bool alpha_test = false;
 uniform float alpha_ref = 0.5;
+// clip above / below / equal to alpha_ref (SCM_DEF_ALPHA_TEST_FUNC, D3D11ShaderConstantMap.cpp:3630-3687)
+uniform vec3 alpha_clip = vec3(0.0, 1.0, 0.0);
 // NiMaterialProperty alpha (1 without a material): the opacity unless AMB_DIFF vertex colours give it (see fragment())
 uniform float mat_alpha = 1.0;
 // An NiAlphaController on the NiMaterialProperty (NifModel.ReadAlphaController): up to 8 keys, linear (type 1) or
@@ -278,7 +280,7 @@ void fragment() {
 	if (glass) {
 		a = clamp(a + (spec.r + spec.g + spec.b) / 3.0, 0.0, 1.0);
 	}
-	if (alpha_test && a < alpha_ref) {
+	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
 	vec3 amb = vcolor_amb_diff ? vcolor.rgb : COLOR.a > 0.5 ? COLOR.rgb : mat_ambient;
