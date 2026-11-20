@@ -70,8 +70,8 @@ public sealed class ModelMesh
     /// <summary>NiStencilProperty draw mode of the nearest one (bits 10-11, NiStencilProperty.h:121-122): 0 DRAW_CCW_OR_BOTH
     /// (the default property's, NiStencilProperty.inl:27), 1 DRAW_CCW, 2 DRAW_CW, 3 DRAW_BOTH (no culling).</summary>
     public int DrawMode;
-    /// <summary>The faces the renderer culls for <see cref="DrawMode"/>, as the D3D11 renderer maps the draw mode
-    /// (D3D11RenderStateManager::ApplyStencilProperty, D3D11RenderStateManager.cpp:448-462): DRAW_BOTH none, DRAW_CW the front faces, DRAW_CCW and DRAW_CCW_OR_BOTH the
+    /// <summary>The faces the renderer culls for <see cref="DrawMode"/>, as NiDX9RenderState maps the draw mode with left-handed
+    /// culling off (NiDX9RenderState::ApplyStencil, NiDX9RenderState.cpp:592, mapping :380-389): DRAW_BOTH none, DRAW_CW the front faces, DRAW_CCW and DRAW_CCW_OR_BOTH the
     /// back faces (front = the winding the model builders emit).</summary>
     public FaceCull Cull => DrawMode switch { 3 => FaceCull.None, 2 => FaceCull.Front, _ => FaceCull.Back };
     /// <summary>Under an NiSortAdjustNode whose mode is SORTING_OFF: the renderer draws the mesh unsorted, in scene order, after
@@ -153,7 +153,7 @@ public sealed class ModelMesh
     public int BlendDst => AlphaFlags >= 0 ? (AlphaFlags >> 5) & 15 : 7;
 
     /// <summary>How the mesh's colour meets the target, from the NiAlphaProperty blend bit and factors, which the renderer hands
-    /// the D3D blend state as they are (D3D11RenderStateManager::ApplyAlphaProperty, D3D11RenderStateManager.cpp:381-401): none (opaque),
+    /// the D3D blend state as they are (NiDX9RenderState::ApplyAlpha, NiDX9RenderState.cpp:450-464): none (opaque),
     /// SRCALPHA / INVSRCALPHA (Mix: src * a + dst * (1 - a)), any source over ONE weighted by the source alpha (Add:
     /// dst + src * a), and ONE / ONE (AddUnweighted: dst + src, the opacity does not scale it). Every blended character and
     /// map mesh is one of these (probe over the Npc, Item and Map NIFs).</summary>

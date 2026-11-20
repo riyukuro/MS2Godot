@@ -211,8 +211,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     /// <summary>A mesh's render modes from its NiZBufferProperty and NiStencilProperty (the nearest up the graph, ModelMesh.ZFlags
     /// / DrawMode). Z write on = depth_draw_always (the portals' outer shells are 15, their glow shells 13: test, no write); z test
     /// off = depth_test_disabled. The test function is TEST_LESSEQUAL in every one checked (the default, NiZBufferProperty.inl:22),
-    /// which is Godot's own test. The draw mode maps to D3D culling as D3D11RenderStateManager::ApplyStencilProperty
-    /// does (D3D11RenderStateManager.cpp:448-462, FrontCounterClockwise on): CCW_OR_BOTH and CCW cull the back faces as the field meshes do (field_lit's
+    /// which is Godot's own test. The draw mode maps to D3D culling as NiDX9RenderState does for the right-handed
+    /// camera (NiDX9RenderState::ApplyStencil, NiDX9RenderState.cpp:592, mapping :380-388): CCW_OR_BOTH and CCW cull the back faces as the field meshes do (field_lit's
     /// cull_back), CW the front, BOTH none (the portals' NiStencilProperty 19840 is DRAW_BOTH with the stencil test off).
     /// The stencil test itself is not drawn: no effect NIF sets the stencil enable bit (RenderStateTests.NoEffectEnablesStencil).
     /// The field meshes cull the same way (ModelBuilder.CullDefine).
