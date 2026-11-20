@@ -177,9 +177,10 @@ public class GroupMessengerTests
         b.Process();
         long process = GC.GetAllocatedBytesForCurrentThread() - start;
         Assert.That(process, Is.LessThanOrEqualTo(colour + 256), $"Process {process} B, per-line work {colour} B");
+        var noBytes = Is.Zero;                                           // made before the window (see TextureTransformTests)
         start = GC.GetAllocatedBytesForCurrentThread();
         b.Process();                                                   // an empty queue
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - start, Is.Zero);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - start, noBytes);
     }
 
     [Test]

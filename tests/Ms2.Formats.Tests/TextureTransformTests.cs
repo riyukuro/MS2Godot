@@ -87,8 +87,11 @@ public class TextureTransformTests
             }
         }
         for (int i = 0; i < 100; i++) Frame(i / 60.0);      // warm up (JIT, lazy curve state)
+        // the constraint is made before the window: a Release build keeps "read - before" on the evaluation stack while
+        // Is.EqualTo boxes its 0, and the JIT emits that box (24 bytes) before the pending counter read
+        var noBytes = Is.EqualTo(0);
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 600; i++) Frame(i / 60.0);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, noBytes);
     }
 }
