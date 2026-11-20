@@ -3,6 +3,7 @@
 // The controllers' time. A static entity (Bakeable IsStatic) is updated once, at the game time it is added
 // (SceneGraphService.cpp:2380 SetIsDynamic(!IsStatic), :1255-1262 AddToUpdateOnce), so its controllers hold that value:
 // frozen_time is that time. -1: the entity is dynamic and its controllers run on the scene time.
+// STILL-OPEN: TIME wraps at its default 3600 s rollover and does not follow the game's pause or a reload's phase.
 uniform float frozen_time = -1.0;
 
 float anim_time() {
@@ -31,36 +32,38 @@ float key_segment(int type, float u, float p, float q, float dp, float dq) {
 	return mix(p, q, u);
 }
 
-// Per drawn map (0 base, 1 dark, 2 glow, 3 decal0) its NiTextureTransform (NifModel TexTransform): uv_tt[7 m ..] =
-// translate u, v, scale u, v, rotate, centre u, v; uv_tt_method[m] = TransformMethod + 1, 0 for a map without one.
-uniform float uv_tt[28];
+// Per drawn map (0 base, 1 dark, 2 glow, 3 decal0) its NiTextureTransform (NifModel TexTransform): uv_tt[2 m] =
+// translate u, v, scale u, v; uv_tt[2 m + 1] = rotate, centre u, v, 0; uv_tt_method[m] = TransformMethod + 1, 0 for a
+// map without one. The arrays are vec4: a std140 array element takes 16 bytes whatever its type.
+uniform vec4 uv_tt[8];
 uniform ivec4 uv_tt_method;
 // Up to 4 NiTextureTransformControllers (NifModel UvAnim): uv_ctl_target = map * 8 + operation (0 translate U,
-// 1 translate V, 2 rotate, 3 scale U, 4 scale V); uv_ctl_keys = key count (1-4) * 4 + key type; uv_ctl_time[4 c ..] =
-// start, stop, frequency, phase; uv_ctl_t / _v / _in / _out[4 c + k] = key k's time, value and tangents.
+// 1 translate V, 2 rotate, 3 scale U, 4 scale V); uv_ctl_keys = key count (1-4) * 4 + key type; uv_ctl_time[c] =
+// start, stop, frequency, phase; uv_ctl_t / _v / _in / _out[c][k] = key k's time, value and tangents.
 uniform int uv_ctl_count = 0;
 uniform ivec4 uv_ctl_target;
 uniform ivec4 uv_ctl_keys;
-uniform float uv_ctl_time[16];
-uniform float uv_ctl_t[16];
-uniform float uv_ctl_v[16];
-uniform float uv_ctl_in[16];
-uniform float uv_ctl_out[16];
+uniform vec4 uv_ctl_time[4];
+uniform vec4 uv_ctl_t[4];
+uniform vec4 uv_ctl_v[4];
+uniform vec4 uv_ctl_in[4];
+uniform vec4 uv_ctl_out[4];
 
 float uv_ctl_value(int c) {
-	float t = loop_time(vec4(uv_ctl_time[4 * c], uv_ctl_time[4 * c + 1], uv_ctl_time[4 * c + 2], uv_ctl_time[4 * c + 3]));
-	int n = uv_ctl_keys[c] / 4, type = uv_ctl_keys[c] % 4, b = 4 * c;
-	if (t <= uv_ctl_t[b]) {
-		return uv_ctl_v[b];
+	float t = loop_time(uv_ctl_time[c]);
+	int n = uv_ctl_keys[c] / 4, type = uv_ctl_keys[c] % 4;
+	vec4 kt = uv_ctl_t[c], kv = uv_ctl_v[c];
+	if (t <= kt.x) {
+		return kv.x;
 	}
-	float r = uv_ctl_v[b + n - 1];
+	float r = kv[n - 1];
 	for (int i = 0; i < 3; i++) {
 		if (i + 1 >= n) {
 			break;
 		}
-		float t0 = uv_ctl_t[b + i], t1 = uv_ctl_t[b + i + 1];
+		float t0 = kt[i], t1 = kt[i + 1];
 		if (t <= t1) {
-			r = key_segment(type, (t - t0) / max(t1 - t0, 1e-6), uv_ctl_v[b + i], uv_ctl_v[b + i + 1], uv_ctl_out[b + i], uv_ctl_in[b + i + 1]);
+			r = key_segment(type, (t - t0) / max(t1 - t0, 1e-6), kv[i], kv[i + 1], uv_ctl_out[c][i], uv_ctl_in[c][i + 1]);
 			break;
 		}
 	}
@@ -76,8 +79,8 @@ vec2 map_uv(int m, vec2 uv) {
 	if (method < 0) {
 		return uv;
 	}
-	int o = 7 * m;
-	float tx = uv_tt[o], ty = uv_tt[o + 1], sx = uv_tt[o + 2], sy = uv_tt[o + 3], rot = uv_tt[o + 4], cx = uv_tt[o + 5], cy = uv_tt[o + 6];
+	vec4 a = uv_tt[2 * m], b = uv_tt[2 * m + 1];
+	float tx = a.x, ty = a.y, sx = a.z, sy = a.w, rot = b.x, cx = b.y, cy = b.z;
 	for (int c = 0; c < 4; c++) {
 		if (c >= uv_ctl_count) {
 			break;

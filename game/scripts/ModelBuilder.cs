@@ -438,16 +438,16 @@ public sealed class ModelBuilder
     /// running uv controllers over it. A map a controller moves but that has no transform gets the controller's default
     /// one (NiTextureTransformController.cpp:146-151, TexTransform.ControllerDefault). A CLAMP controller (ModelMesh.UvHolds)
     /// holds its last key in the static transform: the field's app time is past its stop. STILL-OPEN: the shader takes at
-    /// most 4 controllers of up to 4 keys each; others keep the static value (field scan: one 5-key translate on a base
-    /// and one on a glow map, 4 entities).
+    /// most 4 controllers of up to 4 keys each; others keep the static value (field scan: a 5-key translate, on a base map
+    /// in one model and a glow map in another: 2 models, 5 entities).
     /// </summary>
     static void SetUvTransforms(ShaderMaterial sm, ModelMesh m)
     {
-        var tt = new float[28];
+        var tt = new Vector4[8];
         var method = Vector4I.Zero;
         var target = Vector4I.Zero;
         var keys = Vector4I.Zero;
-        float[] time = new float[16], kt = new float[16], kv = new float[16], kin = new float[16], kout = new float[16];
+        Vector4[] time = new Vector4[4], kt = new Vector4[4], kv = new Vector4[4], kin = new Vector4[4], kout = new Vector4[4];
         int n = 0;
         bool any = false;
         for (int map = 0; map < UvMaps.Length; map++)
@@ -460,12 +460,12 @@ public sealed class ModelBuilder
                 moved = true;
                 target[n] = map * 8 + ua.Operation;
                 keys[n] = ua.Times.Length * 4 + ua.KeyType;
-                time[4 * n] = ua.Start; time[4 * n + 1] = ua.Stop; time[4 * n + 2] = ua.Frequency; time[4 * n + 3] = ua.Phase;
+                time[n] = new Vector4(ua.Start, ua.Stop, ua.Frequency, ua.Phase);
                 for (int k = 0; k < ua.Times.Length; k++)
                 {
-                    kt[4 * n + k] = ua.Times[k];
-                    kv[4 * n + k] = ua.Values[k];
-                    if (ua.InTans != null) { kin[4 * n + k] = ua.InTans[k]; kout[4 * n + k] = ua.OutTans[k]; }
+                    kt[n][k] = ua.Times[k];
+                    kv[n][k] = ua.Values[k];
+                    if (ua.InTans != null) { kin[n][k] = ua.InTans[k]; kout[n][k] = ua.OutTans[k]; }
                 }
                 n++;
             }
@@ -480,8 +480,8 @@ public sealed class ModelBuilder
             }
             any = true;
             method[map] = t.Method + 1;
-            tt[7 * map] = t.TU; tt[7 * map + 1] = t.TV; tt[7 * map + 2] = t.SU; tt[7 * map + 3] = t.SV;
-            tt[7 * map + 4] = t.Rotate; tt[7 * map + 5] = t.CU; tt[7 * map + 6] = t.CV;
+            tt[2 * map] = new Vector4(t.TU, t.TV, t.SU, t.SV);
+            tt[2 * map + 1] = new Vector4(t.Rotate, t.CU, t.CV, 0f);
         }
         if (!any) return;
         sm.SetShaderParameter(ShaderParam.UvTt, tt);
