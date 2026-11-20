@@ -967,4 +967,20 @@ public class ShopTests
         Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
         Assert.That(notices, Is.Empty);
     }
+
+    [Test]
+    public void HudSceneDispatchesShopProcessOnlyOncePerFrame()
+    {
+        // Walk up to repo root and check HudScene._Process calls ShopController.Process / ShopTick only once
+        var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MS2Godot.sln"))) dir = dir.Parent;
+        Assert.That(dir, Is.Not.Null);
+        string srcText = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"));
+        int start = srcText.IndexOf("public override void _Process(", StringComparison.Ordinal);
+        int end = srcText.IndexOf("public override void _Input(", start, StringComparison.Ordinal);
+        if (end < 0) end = Math.Min(srcText.Length, start + 4000);
+        string body = srcText[start..end];
+        int calls = System.Text.RegularExpressions.Regex.Matches(body, @"\b(shop\?\.Process|shop\.Process|ShopTick)\s*\(").Count;
+        Assert.That(calls, Is.EqualTo(1), "UIShopDialog::vfunc_72 must run once per frame in HudScene._Process");
+    }
 }

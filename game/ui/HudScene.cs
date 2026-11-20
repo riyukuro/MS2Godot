@@ -2963,7 +2963,6 @@ public partial class HudScene : Node, IUiStageHost
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
-        shop?.Process();                                                        // UIShopDialog::vfunc_72
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
