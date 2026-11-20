@@ -456,7 +456,7 @@ public sealed class ModelData
         return o;
     }
 
-    static Dictionary<string, string> TexturesOf(NifFile nif, int mi)
+    internal static Dictionary<string, string> TexturesOf(NifFile nif, int mi)
     {
         var B = nif.Blocks;
         var o = new Dictionary<string, string>();
@@ -484,7 +484,7 @@ public sealed class ModelData
     }
 
     /// <summary>The maps of the mesh's NiTexturingProperty, keyed as TexturesOf: file, uv set, clamp mode, static transform.</summary>
-    static Dictionary<string, TexMap> MapsOf(NifFile nif, int mi)
+    internal static Dictionary<string, TexMap> MapsOf(NifFile nif, int mi)
     {
         var B = nif.Blocks;
         var o = new Dictionary<string, TexMap>();

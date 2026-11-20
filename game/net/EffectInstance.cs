@@ -142,9 +142,22 @@ void fragment() {
 }";
     static readonly string PartCode = @"shader_type spatial;
 render_mode unshaded, cull_disabled, depth_draw_never, BLEND;
-uniform sampler2D tex : filter_linear;
+uniform sampler2D tex : repeat_enable, filter_linear;
 uniform bool has_tex = true;
 uniform vec2 frames = vec2(1.0, 1.0);
+uniform vec3 base_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 base_r1 = vec3(0.0, 1.0, 0.0);
+uniform int base_clamp = 0;
+uniform sampler2D detail_tex : repeat_enable, filter_linear;
+uniform bool has_detail = false;
+uniform vec3 detail_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 detail_r1 = vec3(0.0, 1.0, 0.0);
+uniform int detail_clamp = 0;
+uniform sampler2D glow_tex : repeat_enable, filter_linear;
+uniform bool has_glow = false;
+uniform vec3 glow_r0 = vec3(1.0, 0.0, 0.0);
+uniform vec3 glow_r1 = vec3(0.0, 1.0, 0.0);
+uniform int glow_clamp = 0;
 uniform vec3 mat_ambient = vec3(0.0);
 global uniform vec3 ms2_ambient;
 uniform float alpha = 1.0;
@@ -156,10 +169,22 @@ uniform bool vc_opacity = false;
 varying float frame;
 FOGDECL
 void vertex() { frame = INSTANCE_CUSTOM.x; FOGVERT }
+vec2 map_uv(vec2 uv, vec3 r0, vec3 r1, int cl, ivec2 size) {
+    vec2 o = vec2(dot(r0, vec3(uv, 1.0)), dot(r1, vec3(uv, 1.0)));
+    vec2 h = 0.5 / vec2(max(size, ivec2(1)));
+    if ((cl & 1) != 0) o.x = clamp(o.x, h.x, 1.0 - h.x);
+    if ((cl & 2) != 0) o.y = clamp(o.y, h.y, 1.0 - h.y);
+    return o;
+}
 void fragment() {
     float fi = floor(frame + 0.5);
     vec2 cell = vec2(mod(fi, frames.x), floor(fi / frames.x));
-    vec4 t = has_tex ? texture(tex, (UV + cell) / frames) : vec4(1.0);
+    // the quad's texture coordinate (the flipbook cell's), then each map's own transform and clamp mode as the mesh
+    // shader's map_uv; the detail map multiplies the colour by twice its colour (NiStandardMaterial::HandleDetailMap,
+    // NiStandardMaterial.cpp:4765-4774: RGB only, the opacity stays the base map's)
+    vec2 uv = (UV + cell) / frames;
+    vec4 t = has_tex ? texture(tex, map_uv(uv, base_r0, base_r1, base_clamp, textureSize(tex, 0))) : vec4(1.0);
+    if (has_detail) t.rgb *= texture(detail_tex, map_uv(uv, detail_r0, detail_r1, detail_clamp, textureSize(detail_tex, 0))).rgb * 2.0;
     // the mesh shader's colour terms (MeshCode, EffectMesh.Shade): the particle's key colour is its vertex colour
     // (ParticleSystemDef.Material), so the material gives the terms the vertex colour mode leaves (AMB_DIFF: the emissive)
     vec3 coef = tint.rgb + mat_ambient * ms2_ambient;
@@ -169,8 +194,12 @@ void fragment() {
     // neither the colour nor the opacity is saturated, as in the mesh shader (MeshCode): the quads draw through
     // SoftParticlesMaterial, a standard material whose outputs go to the FP16 target as they are
     // (CompositeFinalRGBAColor, NiStandardMaterialNodeLibrary.cpp:3057-3106; postprocessingservice.cpp:1750-1751)
+    vec3 col = t.rgb * coef;
+    // the glow map adds its colour after the lighting (NiStandardMaterial::HandlePostLightTextureApplication,
+    // NiStandardMaterial.cpp:5617-5700, HandleGlowMap :4816-4824), as the mesh shader's
+    if (has_glow) col += texture(glow_tex, map_uv(uv, glow_r0, glow_r1, glow_clamp, textureSize(glow_tex, 0))).rgb;
     FOG = vec4(ms2_fog_color, fog_share);
-    ALBEDO = ms2_fog_apply(t.rgb * coef, CAMERA_VISIBLE_LAYERS);
+    ALBEDO = ms2_fog_apply(col, CAMERA_VISIBLE_LAYERS);
     ALPHA = max(t.a * tint.a * (vc_opacity ? COLOR.a : alpha), 0.0);
 }";
     // The client's fog for an effect's meshes and particle systems. A NIF effect carries no NiFogProperty (none of the
@@ -333,14 +362,31 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             if (tex != null) mat.SetShaderParameter(FxParam.Tex, tex);
             mat.SetShaderParameter(FxParam.Frames, new Vector2(d.FramesAcross, d.FramesDown));
             ps.Mat = mat;
+            // the base and detail maps' transforms and clamp modes (ParticleSystemDef.Material's Maps; ReadSystem)
+            var pm = d.Material.Mesh;
+            var baseMap = pm.Maps.GetValueOrDefault("base") ?? pm.Maps.Values.Where(x => x.ShaderIndex >= 0 && x.File == d.Texture).OrderBy(x => x.ShaderIndex).FirstOrDefault();
+            var detailMap = pm.Maps.GetValueOrDefault("detail");
+            var glowMap = pm.Maps.GetValueOrDefault("glow");
+            var gtex = glowMap?.File != null ? mb.Texture(glowMap.File) : null;
+            if (gtex == null) glowMap = null;
+            else { mat.SetShaderParameter(FxParam.HasGlow, true); mat.SetShaderParameter(FxParam.GlowTex, gtex); mat.SetShaderParameter(FxParam.GlowClamp, (glowMap.ClampS ? 1 : 0) | (glowMap.ClampT ? 2 : 0)); }
+            var dtex = detailMap?.File != null ? mb.Texture(detailMap.File) : null;
+            if (dtex == null) detailMap = null;
+            else { mat.SetShaderParameter(FxParam.HasDetail, true); mat.SetShaderParameter(FxParam.DetailTex, dtex); }
+            if (baseMap != null) mat.SetShaderParameter(FxParam.BaseClamp, (baseMap.ClampS ? 1 : 0) | (baseMap.ClampT ? 2 : 0));
+            if (detailMap != null) mat.SetShaderParameter(FxParam.DetailClamp, (detailMap.ClampS ? 1 : 0) | (detailMap.ClampT ? 2 : 0));
             // The quads are drawn through SoftParticlesMaterial, an NiStandardMaterial that adds only the soft-depth opacity
             // (softparticlesmaterial.cpp:210-279; ms2materiallibrary.cpp:481-482), so their colour is the standard material's,
             // as a mesh's: the key colour stands in for the terms of the NiVertexColorProperty mode (EffectMesh.VertexColors;
             // NiStandardMaterial::HandleInitialSpecAmbDiffEmissiveColor, NiStandardMaterial.cpp:4377-4450). Nearly every
             // system is AMB_DIFF with E_A_D (flags 40): the emissive is added to the key colour times the light, so a dark key
             // colour over a dark texture still shows the emissive.
-            // STILL-OPEN: the soft-depth opacity (GetParticleOpacity, softparticlesmaterial.cpp:241-279) is not drawn.
-            ps.Shading = new MeshState { Def = d.Material, Mat = mat };
+            // STILL-OPEN: the soft-depth opacity (GetParticleOpacity, softparticlesmaterial.cpp:241-279) is not drawn; the
+            // dark and decal maps and texture transform controllers on a system's maps are not either.
+            ps.Shading = new MeshState { Def = d.Material, Mat = mat, BaseMap = baseMap, GlowMap = glowMap, DetailMap = detailMap };
+            SetRows(ps.Shading, baseMap?.Transform, 0, true);
+            SetRows(ps.Shading, glowMap?.Transform, 1, true);
+            SetRows(ps.Shading, detailMap?.Transform, 2, true);
             var vcu = d.Material.VertexColors;
             if (vcu.Emissive) mat.SetShaderParameter(FxParam.VcEmi, true);
             if (vcu.Diffuse) mat.SetShaderParameter(FxParam.VcDif, true);

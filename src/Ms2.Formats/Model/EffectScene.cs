@@ -431,7 +431,12 @@ public sealed class EffectScene
     {
         var B = n.Blocks; var b = B[blk];
         var d = new ParticleSystemDef { Node = node, Name = n.Name(blk), MaxParticles = (int)Math.Clamp(b.IntOr("Max Num Particles", 100), 1, 2000), WorldSpace = b.IntOr("World Space", 0) != 0, PreRpi = b.IntOr("Pre RPI", 1) != 0, Spawners = (int)b.IntOr("Num Spawners", 0) };
-        var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null };
+        // The quads are drawn through an NiStandardMaterial (SoftParticlesMaterial, softparticlesmaterial.cpp:241-251), whose
+        // HandlePreLightTextureApplication applies the base map and then the detail map at twice its colour
+        // (NiStandardMaterial::HandleBaseMap / HandleDetailMap, NiStandardMaterial.cpp:4500-4527, 4765-4774, called at
+        // :5517-5541), each through its own texture transform (GetTextureTransformMappingFromEnum, :364-430): so the system keeps its maps as a mesh does (ModelMesh.Maps).
+        var mat = new ModelMesh { Block = blk, Name = d.Name, Colors = b.IntOr("Has Colors", 0) != 0 ? Array.Empty<float>() : null,
+                                  Textures = ModelData.TexturesOf(n, blk), Maps = ModelData.MapsOf(n, blk) };
         d.Material = new EffectMesh { Mesh = mat, Node = node };
 
         foreach (var pi in b.Ints("Properties"))
