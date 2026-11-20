@@ -131,6 +131,7 @@ public enum Outbound : ushort {
     CharacterManagement = 0x09,
     ResponseHeartbeat = 0x0A,
     ItemEquip = 0x16,
+    Revival = 0x1F,             // SendOp::Revival (commonfiles/opcodes.h:336): the revive dialog's buttons
     RequestItemInventory = 0x17,
     RequestItemEnchant = 0x5E,   // SendOp::RequestItemEnchant (opcodes.h:399): UIItemEnchantDialog (uiitemenchantdialog.cpp)
     RequestItemLock = 0x87,   // SendOp::RequestItemLock: CItemLockManager (unnamed/unit_1406125d0_itemlockmanager.cpp)

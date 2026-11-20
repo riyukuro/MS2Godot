@@ -3267,6 +3267,7 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         StoreTick();                         // UIStoreDialog::vfunc_15
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
+        RevivalTick();                       // UIRevivalDialog::vfunc_72 and its open on the own death
         BlackMarketTick();                   // UIBlackMarketDialog::vfunc_15
         ShopTick();                          // UIShopDialog::vfunc_72
         learningQuest?.Update();             // UILearningQuestDialog::vfunc_72: the new learning quest after MarkDirty

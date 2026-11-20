@@ -294,6 +294,9 @@ public partial class LiveSession : Node
     public Func<bool> MailListOpen = () => false;
     /// <summary>The mail dialogs' sends (Mail 0x2D).</summary>
     public void SendMail(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+
+    /// <summary>The revive dialog's sends (Revival 0x1F, RequestMoveField): fire and forget like the client's.</summary>
+    public void SendRevival(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>CBuddyManager: the friends, requests and blocks from the Buddy packets (0x61, CSceneStateGame::OnBuddy); live
     /// only. Its sends (Buddy 0x30) go out while the game connection is up.</summary>
     public Ms2.Ui.BuddyBook Buddies => buddies ??= new Ms2.Ui.BuddyBook { Send = SendBuddy };
