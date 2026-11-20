@@ -27,8 +27,21 @@ public static class Precompiled
     /// <summary>What <see cref="Preload"/> did, for the log (it runs before the log is up).</summary>
     public static string Summary => summary ??= ExportSummary(exportSummaryDir);
 
+    static bool WantExportCount()
+    {
+        if (!string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF"))) return true;
+        // OS.IsStdOutVerbose() calls into Godot's native callbacks; skip it when no Godot host initialized them (probes/tests).
+        var nf = typeof(OS).Assembly.GetType("Godot.NativeInterop.NativeFuncs");
+        var init = nf?.GetField("initialized", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
+        if (init != null && !Equals(init.GetValue(null), true)) return false;
+        return OS.IsStdOutVerbose();
+    }
+
     static string ExportSummary(string dir)
     {
+        // A normal start skips scanning the ~200 self-contained runtime DLL headers (16-80 ms); count them only when
+        // --verbose (OS.IsStdOutVerbose()) or MS2_PERF asks for the detail.
+        if (!WantExportCount()) return $"precompiled in place from {dir}";
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int r2r = 0;
         foreach (var file in Directory.GetFiles(dir, "*.dll"))
@@ -97,7 +110,8 @@ public static class Precompiled
             if (string.IsNullOrEmpty(loc)) { summary = "no build folder"; return; }
             AssemblyDir = Path.GetDirectoryName(loc);
             if (AssemblyDir == null || !Directory.Exists(AssemblyDir)) { AssemblyDir = null; summary = "no build folder"; return; }
-            // Defer scanning the self-contained export's DLL headers until Summary is read for the log, so module init pays no I/O.
+            // No PE scan at module init: Summary reports "precompiled in place from {dir}" on a normal start and
+            // counts ReadyToRun headers only when --verbose (OS.IsStdOutVerbose()) or MS2_PERF asks for it.
             exportSummaryDir = AssemblyDir;
             summary = null;
             return;

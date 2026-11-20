@@ -49,8 +49,18 @@ internal static class StartupHook
         if (!string.Equals(asmDir, expectedDir, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"AssemblyDir '{asmDir}' != '{expectedDir}'");
         var summary = (string)precompiled.GetProperty("Summary")!.GetValue(null) ?? "";
-        if (!summary.Contains(" precompiled in place from ", StringComparison.Ordinal) || !summary.EndsWith(" ms", StringComparison.Ordinal))
-            throw new InvalidOperationException($"unexpected Summary '{summary}'");
+        var expectCount = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("MS2_PERF"));
+        if (expectCount)
+        {
+            var mid = $" precompiled in place from {expectedDir} in ";
+            int i = summary.IndexOf(mid, StringComparison.Ordinal);
+            if (i <= 0 || !int.TryParse(summary.AsSpan(0, i), out _) || !summary.EndsWith(" ms", StringComparison.Ordinal))
+                throw new InvalidOperationException($"unexpected counted Summary '{summary}'");
+        }
+        else if (!string.Equals(summary, $"precompiled in place from {expectedDir}", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException($"unexpected normal Summary '{summary}'");
+        }
         var formats = alc.LoadFromAssemblyName(new AssemblyName("Ms2.Formats"));
         var cacheStore = formats.GetType("Ms2.Formats.Cache.CacheStore") ?? throw new InvalidOperationException("missing CacheStore");
         if (cacheStore.GetField("Of")!.GetValue(null) == null)
