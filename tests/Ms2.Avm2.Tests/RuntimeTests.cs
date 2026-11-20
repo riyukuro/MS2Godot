@@ -616,6 +616,61 @@ public class RuntimeTests
         Assert.That(seen, Is.EqualTo(new[] { "rightMouseDown", "mouseDown" }), "the right press only as rightMouseDown, the left as mouseDown");
     }
 
+    static void MouseSprite(Runtime rt, Player p, double x, string tag, List<string> seen)
+    {
+        var s = (AsSprite)rt.GetClass("flash.display.Sprite").Construct();
+        s.graphics.beginFill(0xffffff); s.graphics.drawRect(0, 0, 40, 40);
+        s.x = x; s.doubleClickEnabled = true;
+        p.Stage.addChild(s);
+        foreach (var type in new[] { "click", "doubleClick" })
+            p.Call(s, "addEventListener", new object[] { type, new AsPlainFunction(rt, new NativeMethod(type, (_, a) => { seen.Add(tag + " " + type); return Rt.Undef; })) });
+    }
+
+    [Test]
+    public void TheDoubleClickWindowIsWallTimeNotTheMovieTimer()
+    {
+        // GenerateMouseEvents reads the time as Timer::GetTicks()/1000 (sfr_as3_17.cpp:7131), the wall clock: the movie's
+        // timer falls behind it when frames are dropped, and a slow second click must not become a double click
+        var (rt, p) = Empty();
+        double now = 1000;
+        p.Clock = () => now;
+        var seen = new List<string>();
+        MouseSprite(rt, p, 0, "A", seen);
+        void Click() { p.MouseMove(10, 10); p.MouseButton(true); p.MouseButton(false); }
+
+        Click();
+        now += 420; rt.TimerMs += 280;      // the movie ran 280 ms of frames in 420 ms
+        Click();
+        Assert.That(seen, Is.EqualTo(new[] { "A click", "A click" }), "420 ms apart on the wall clock: two clicks");
+
+        now += 1000; rt.TimerMs += 1000;
+        Click();
+        now += 200; rt.TimerMs += 400;      // and the other way round
+        Click();
+        Assert.That(seen, Is.EqualTo(new[] { "A click", "A click", "A click", "A doubleClick" }), "200 ms apart: a double click");
+    }
+
+    [Test]
+    public void AReleaseAwayFromThePressStillStartsADoubleClick()
+    {
+        // IsMouseInsideEntityLast stays set over a drag from A to B (the drag block clears it, the entity change sets it
+        // again, sfr_as3_17.cpp:7060-7068, :7246), so the release over B notes the click time though it clicks nothing (B
+        // was not pressed, :7151); a click on B at the same pixel within 300 ms is then a double click on B
+        var (rt, p) = Empty();
+        double now = 1000;
+        p.Clock = () => now;
+        var seen = new List<string>();
+        MouseSprite(rt, p, 0, "A", seen);
+        MouseSprite(rt, p, 100, "B", seen);
+
+        p.MouseMove(10, 10); p.MouseButton(true);
+        p.MouseMove(110, 10); p.MouseButton(false);
+        Assert.That(seen, Is.Empty, "a release away from the press clicks nothing");
+        now += 100;
+        p.MouseButton(true); p.MouseButton(false);
+        Assert.That(seen, Is.EqualTo(new[] { "B doubleClick" }));
+    }
+
     [Test]
     public void ZSetterMakesTheNode3DEvenAtTheDefault()
     {

@@ -1313,6 +1313,9 @@ namespace Ms2.Avm2.Flash
         }
 
         AsInteractiveObject over;
+        /// <summary>MouseState::IsMouseInsideEntityLast (sfr_as3_17.cpp:7038-7069, :7246, :7271): whether a release notes the
+        /// click time (and may click or double click).</summary>
+        bool mouseInsideEntityLast;
 
         AsClass mouseEventClass, mouseEventExClass;
         bool mouseEventExLooked;
@@ -1380,8 +1383,11 @@ namespace Ms2.Avm2.Flash
         /// rollOver down to the new one.</summary>
         void Hover(AsInteractiveObject t)
         {
+            // a change of the top-most entity sets IsMouseInsideEntityLast (sfr_as3_17.cpp:7246), after the drag block cleared
+            // it for the change (:7060-7068): only a release in the same call sees it cleared (MouseButton)
             if (t != over)
             {
+                mouseInsideEntityLast = true;
                 var old = over; over = t;
                 if (old != null) { MouseEv(old, "mouseOut", t); for (var o = (AsDisplayObject)old; o != null && !Contains(o, t); o = o.Parent) if (o is AsInteractiveObject io) MouseEv(io, "rollOut", t); }
                 if (t != null)
@@ -1402,7 +1408,14 @@ namespace Ms2.Avm2.Flash
 
         readonly AsInteractiveObject[] pressedBy = new AsInteractiveObject[3];     // GetMouseButtonDownEntity(buttonIdx)
         // MouseState::DblClick[buttonIdx] (GetDoubleClickInfo): the last click's time (ms, 0 = none) and stage pixel
-        readonly (double Time, int X, int Y)[] lastClick = new (double, int, int)[3];
+        readonly (uint Time, int X, int Y)[] lastClick = new (uint, int, int)[3];
+
+        static readonly System.Diagnostics.Stopwatch wallClock = System.Diagnostics.Stopwatch.StartNew();
+
+        /// <summary>The double click's clock in ms: GenerateMouseEvents reads Timer::GetTicks()/1000 as a UInt32
+        /// (sfr_as3_17.cpp:7131), the wall clock, not the movie's frame timer, which falls behind when frames are dropped.
+        /// Tests set their own.</summary>
+        public Func<double> Clock = () => wallClock.Elapsed.TotalMilliseconds;
 
         /// <summary>GenerateMouseEvents' double-click window: a second release within this many ms of the last click, at the
         /// same stage pixel (sfr_as3_17.cpp:7140, GFX_DOUBLE_CLICK_TIME_MS).</summary>
@@ -1417,7 +1430,8 @@ namespace Ms2.Avm2.Flash
         /// sfr_as3_09.cpp:1708). A second release soon after a click at the same pixel is a doubleClick instead of a click
         /// when the target has doubleClickEnabled (<see cref="DoubleClickMs"/>): the client hands a WM_LBUTTONDBLCLK to the
         /// movie as a plain mouse down (GFxMovieEventHandler @0x1422da5a0), so the press after a double click is no different
-        /// here. main.gfx's stage listeners turn the right button's events into the right* events
+        /// here. The double click runs for every button: the game's movies turn the extensions on (CLIK.initialize sets
+        /// Extensions.enabled), so GenerateMouseEvents checks 16 buttons, not 1 (checkCount, :7032). main.gfx's stage listeners turn the right button's events into the right* events
         /// (<see cref="ListenForRightButton"/>).
         /// </summary>
         public void MouseButton(bool down, int button = LeftButton)
@@ -1428,6 +1442,7 @@ namespace Ms2.Avm2.Flash
             if (down)
             {
                 pressedBy[button] = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
+                mouseInsideEntityLast = true;       // :7271
                 var f = t;
                 if (button == LeftButton)
                     for (var o = (AsDisplayObject)t; o != null; o = o.Parent) if (o is AsInteractiveObject io && (io is AsTextField { type: "input" } || io.tabEnabled)) { f = io; break; }
@@ -1439,18 +1454,24 @@ namespace Ms2.Avm2.Flash
                 var pressed = pressedBy[button];
                 var top = t ?? (AsInteractiveObject)Stage;
                 MouseEv(top, "mouseUp", button: button);
-                if (top == pressed)     // IsMouseInsideEntityLast: the release is over the entity the press went to
+                // the drag block (sfr_as3_17.cpp:7038-7069): with the left button held, a release whose top-most entity is
+                // not the active one (the mouse's last entity) clears IsMouseInsideEntityLast for this release
+                bool inside = mouseInsideEntityLast;
+                if (pressedBy[LeftButton] != null && t != over) inside = false;
+                if (pressed != null && inside)      // the button was down (GetPrevButtonsState() & buttonMask)
                 {
-                    // sfr_as3_17.cpp:7133-7163: a release within 300 ms of the last click at the same pixel is a double click;
-                    // the topmost entity gets doubleClick when its doubleClickEnabled is set, and click otherwise
-                    double tm = RT.TimerMs;
+                    // sfr_as3_17.cpp:7128-7158: a release within 300 ms of the last click at the same pixel is a double click.
+                    // The top-most entity gets doubleClick when its doubleClickEnabled is set; a click needs the release over
+                    // the entity the press went to. The last click is noted on every such release, also one away from the press.
+                    uint tm = (uint)Clock();
                     int ax = (int)MouseX, ay = (int)MouseY;
                     ref var dci = ref lastClick[button];
-                    bool dblClick = dci.Time != 0 && tm <= dci.Time + DoubleClickMs && dci.X == ax && dci.Y == ay;
+                    bool dblClick = dci.Time != 0 && tm <= unchecked(dci.Time + (uint)DoubleClickMs) && dci.X == ax && dci.Y == ay;
                     if (dblClick && top.doubleClickEnabled) MouseEv(top, "doubleClick", button: button);
-                    else MouseEv(pressed, "click", button: button);
-                    dci = (dblClick ? 0 : Math.Max(tm, double.Epsilon), ax, ay);
+                    else if (top == pressed) MouseEv(top, "click", button: button);
+                    dci = (dblClick ? 0 : tm, ax, ay);
                 }
+                if (t != over) mouseInsideEntityLast = true;    // :7246, the top-most entity changed in this call
                 pressedBy[button] = null;
             }
         }

@@ -76,6 +76,7 @@ public class CharacterListTests
         var started = new List<string>();
         c.GameStart += started.Add;
         var p = h.Player;
+        p.Clock = () => p.RT.TimerMs;   // the double click's wall clock, kept with the frames here
         var r = h.Invoke(h.Entity, "getCharacterRenderer", 1) as AsDisplayObject;
         Assert.That(r, Is.Not.Null, "row 1's renderer");
         var b = r.GetBounds(null);
