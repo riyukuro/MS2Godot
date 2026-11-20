@@ -54,4 +54,17 @@ public class WiringGuardTests
         Assert.That(set, Is.GreaterThan(find), "and the answer, a miss included, is stored");
         Assert.That(s, Does.Contain("memos.GetValue(model"), "one memo per model");
     }
+
+    [Test]
+    public void FieldProcessUpdatesBackdropWithoutALocalPlayer()
+    {
+        var s = Source("game/scripts/Field.cs");
+        int proc = s.IndexOf("public override void _Process(double delta)", StringComparison.Ordinal);
+        Assert.That(proc, Is.GreaterThan(-1));
+        string body = s.Substring(proc);
+        int upd = body.IndexOf("backdrop?.Update(camera, player);", StringComparison.Ordinal);
+        int ret = body.IndexOf("if (player == null) return;", StringComparison.Ordinal);
+        Assert.That(upd, Is.GreaterThan(-1), "Field._Process must update the backdrop");
+        Assert.That(ret, Is.GreaterThan(upd), "backdrop.Update must run before the null-player early return (GFxMovieBackground::vfunc_8)");
+    }
 }

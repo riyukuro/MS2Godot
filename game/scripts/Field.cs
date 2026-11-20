@@ -887,18 +887,22 @@ public partial class Field : Node3D
     public override void _Process(double delta)
     {
         Ui.PerfLog.Frame("field");                 // MS2_PERF: frame time and draw calls also without the HUD
-        if (player == null) return;
-        if (Ms2.Ui.FieldMoveCover.TakesInput && Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
+        if (player != null)
         {
-            float step = (float)Math.Min(delta, 1.0 / 15);
-            if (Input.IsKeyPressed(Key.Left)) camYaw += step;
-            if (Input.IsKeyPressed(Key.Right)) camYaw -= step;
-            float pitch0 = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * Mathf.Min((camDist - MinCameraDistance) / Math.Max(cam.Distance - MinCameraDistance, 1f), 1f));
-            if (Input.IsKeyPressed(Key.Up)) camPitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
-            if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
+            if (Ms2.Ui.FieldMoveCover.TakesInput && Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
+            {
+                float step = (float)Math.Min(delta, 1.0 / 15);
+                if (Input.IsKeyPressed(Key.Left)) camYaw += step;
+                if (Input.IsKeyPressed(Key.Right)) camYaw -= step;
+                float pitch0 = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * Mathf.Min((camDist - MinCameraDistance) / Math.Max(cam.Distance - MinCameraDistance, 1f), 1f));
+                if (Input.IsKeyPressed(Key.Up)) camPitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
+                if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
+            }
+            UpdateCamera(delta);
         }
-        UpdateCamera(delta);
+        // GFxMovieBackground::vfunc_8 (gfxmoviebackground.cpp:486-513): resize and setCameraDistance run without a local player too
         backdrop?.Update(camera, player);
+        if (player == null) return;
         if (shotSettle > 0 && --shotSettle == 0)
         {
             var (_, _, _, shot) = script.Dequeue();
