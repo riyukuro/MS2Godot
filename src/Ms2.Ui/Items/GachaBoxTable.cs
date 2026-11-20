@@ -42,8 +42,9 @@ public sealed class GachaBoxTable
     public bool IsCoinItem(int itemId) => Boxes().Values.Any(b => b.CoinItemId == itemId);
     /// <summary>GetRandomBoxIdByCoinItem (:234): the first box (by id) with that coin, else 0.</summary>
     public int RandomBoxIdByCoinItem(int itemId) => Boxes().Values.FirstOrDefault(b => b.CoinItemId == itemId)?.Id ?? 0;
-    /// <summary>GetCoinItemIdByShopId (itemgachaboxtable.cpp:155): the first box (by id) for that shop, else 0.</summary>
-    public int CoinItemIdByShopId(int shopId) => shopId != 0 ? Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.CoinItemId ?? 0 : 0;
+    /// <summary>ItemGachaBoxTable::GetCoinItemIdByShopId (called at uishopdialog.cpp:635, :844, :866; its body is not in the
+    /// restored source): the first box (by id) for that shop, else 0.</summary>
+    public int CoinItemIdByShopId(int shopId) => Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.CoinItemId ?? 0;
     /// <summary>GetBox != null.</summary>
     public bool HasBox(int boxId) => Boxes().ContainsKey(boxId);
     /// <summary>IsSeasonNumberOnIcon (:297).</summary>

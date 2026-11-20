@@ -128,7 +128,7 @@ public partial class HudScene
     {
         if (!ShopOpen) return false;
         if (k.Keycode == Key.Escape) { shop.CloseShop(); return true; }
-        if (k.Keycode is Key.Enter or Key.KpEnter) return shop.OnEnterKey();
+        if (k.Keycode == Key.Enter) return shop.OnEnterKey();
         return false;
     }
 

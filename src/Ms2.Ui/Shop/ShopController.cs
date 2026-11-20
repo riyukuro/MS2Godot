@@ -784,7 +784,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
 
     /// <summary>
     /// SetTab (@0x141afd380): the tabs of the shown group rebuilt for <paramref name="g"/>'s products (the header's tab shop
-    /// for group 0; group 2's is not read yet) and, when shown, sent as the category list. (The client builds into the shown
+    /// for group 0, the new-items packet's tab shop for group 2) and, when shown, sent as the category list. (The client builds into the shown
     /// group's tab list, m_tabs[m_nGroup], with the given group's products.)
     /// </summary>
     void SetTab(int g, bool show)
@@ -1238,6 +1238,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                     float x = (float)Rt.ToNumber(Arg(args, 1)), y = (float)Rt.ToNumber(Arg(args, 2));
                     if (Model?.Tables.Items.Get(itemId) is { MaidId: > 0 } data)
                     {
+                        // STILL-OPEN: the maid recipe dialog (0x4ecb) is not in this HUD; OpenDialog only logs it.
                         OpenMaidRecipe?.Invoke(data.MaidId, x, y);
                         OpenDialog?.Invoke(0x4ecb);
                     }
@@ -1257,6 +1258,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                             x = (float)Rt.ToNumber(Host.Get(shop, "x")) + (float)Math.Ceiling(Rt.ToNumber(Host.Get(shop, "width")));
                             y = (float)Rt.ToNumber(Host.Get(shop, "y"));
                         }
+                        // STILL-OPEN: UIInteriorPreviewDialog (0x4ee3) is not in this HUD; OpenDialog only logs it.
                         OpenInteriorPreview?.Invoke(itemId, x, y);
                         OpenDialog?.Invoke(0x4ee3);
                     }
@@ -1300,6 +1302,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         if (productType == 1) { Request?.Invoke("previewMerat", new object[] { serial }); return; }
         var p = FindCurrentProduct(serial);
         if (p?.Item == null) return;
+        // STILL-OPEN: ItemPreviewMgr::OpenPreview is not ported, so the live HUD leaves PreviewItem and IsPreviewHudOn unset
+        // (no preview window opens and the HUD-preview redirects never fire).
         if (IsPreviewHudOn() || force) PreviewItem?.Invoke(p.Item);
     }
 
