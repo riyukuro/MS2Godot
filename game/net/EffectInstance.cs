@@ -630,7 +630,9 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             }
         }
         // simulate: the forces in their order, each on the velocity the one before left, against the step's start
-        // position (ParticleForces), then the move
+        // position (ParticleForces), then the move. The forces take the step's dt, where the kernel takes each particle's
+        // time since its last update (NiPSSimulatorForcesKernel.cpp:33, NiPSForceHelpers.inl). Every live particle is
+        // updated every step here and a new one starts at the step's time, so the two are the same.
         int nForces = forcesNow.Count;
         for (int i = ps.Count - 1; i >= 0; i--)
         {

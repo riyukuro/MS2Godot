@@ -19,7 +19,8 @@ public static class GraphicGates
 
     /// <summary>IsOuterGlowEnabled @0x14125e160 (gameoptionstruct.cpp:2049-2055): with a field loaded whose +0x1fc flag is off,
     /// false; otherwise the outer-glow option. ApplyEffect::ApplyOuterGlowOption (applyeffect.cpp:343-345) passes it to
-    /// SetOuterGlowEnabled @0x1409a4e70. The field flag is only set by the dev dialog, so this is false in every field.</summary>
+    /// SetOuterGlowEnabled @0x1409a4e70. The field flag is only set by the dev dialog, so this is false in every field.
+    /// Nothing outside the tests calls it yet: the outer-glow pass (SetOuterGlowEnabled) is not ported.</summary>
     public static bool IsOuterGlowEnabled(FieldData field, GameOption.Graphic g)
     {
         if (field != null && !field.OuterGlow) return false;
