@@ -5,6 +5,31 @@ A MapleStory 2 client written in Godot 4 (C#). The parity target is the restored
 The project ships no game data. You bring your own MapleStory 2 client; MS2Godot reads its `.m2d` packs at
 run time.
 
+## Progress
+
+![MS2Godot progress](assets/progress.png)
+
+The picture counts what MS2Godot has followed of the restored client. Every rule is mechanical, so it is redrawn
+from the code after each merge with no hand marks.
+
+- Client code (left): the client's functions, without exception-handling funclets and the Nexon Messenger stubs,
+  in the decomp's progress groups. A function is *ported* when MS2Godot's code or comments cite it: by address
+  (`@0x14…`, `FUN_14…`; an address inside a function counts for that function), by `file.cpp:LINE` (the function
+  of the restored source whose body holds that line), or by a `Class::Method` name that matches exactly one client
+  function. A cite means the function was followed, not that it is finished. *Same file*: a game function that is
+  not cited, in a source file where another function is. The engine, middleware, runtime and library groups
+  (Gamebryo, Scaleform, CRI, CEF, PhysX, the C runtime, Lua and the others) are *replaced*: Godot and MS2Godot's
+  own runtime stand in for them, and a function there that is cited still shows as ported. The headline is ported
+  game functions over all game functions. The footer gives the cites of each kind and how many did not resolve.
+- UI movies: every movie in the client's `Gfx.m2d`. A movie's callbacks are the `ExternalInterface.call` names its
+  own classes raise (the shared library classes, the ones the small `uihpbar` movie also defines, such as the window base, are left out). *Done*: the movie's
+  name is a string in MS2Godot's code, and those files (with the controller base) name every callback, compared
+  without case as the client compares them. *Partial*: named, but not every callback is. *Missing*: never named.
+- Packets: the opcodes the client receives and sends (its `RecvOp` and `SendOp` uses), matched by value to
+  `Ms2.Net`'s `Inbound` and `Outbound` tables. Received: *done* when MS2Godot dispatches on it, *partial* when the
+  table has it and nothing dispatches on it. Sent: *done* when MS2Godot sends it, *partial* when only the table has
+  it. *Missing*: not in the table.
+
 Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_tria`, by default) and places
 the player character at the field's player spawn point, dressed in a new character's starter look. It walks,
 runs and climbs steps over the field's collision.
