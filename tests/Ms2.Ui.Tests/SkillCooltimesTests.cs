@@ -143,11 +143,12 @@ public class SkillCooltimesTests
         int ended = 0;
         c.Ended += _ => ended++;
         c.SetDuration(0, 103, 1f);
-        c.SetDuration(0, 100, 100f);
+        c.SetDuration(0, 100, 1000f);
         c.Update(1); c.Update(2);
         long before = GC.GetAllocatedBytesForCurrentThread();
-        for (uint i = 0; i < 1000; i++) c.Update(10 + i);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        for (uint i = 0; i < 100000; i++) c.Update(10 + i);
+        // a Release run takes a one-off 24 B while the loop tiers up; per call nothing
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 updates");
         Assert.That(ended, Is.EqualTo(1), "103 ended inside the loop");
     }
 }
