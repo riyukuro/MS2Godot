@@ -113,10 +113,22 @@ public partial class FieldAudio : Node
     }
 
     /// <summary>The full &lt;bgm&gt; spec of a field's fielddata entry (default environment; CFieldDataCli::vfunc_1 @0x140a55500, fielddatacli.cpp:240-249).</summary>
-    public static FieldBgmSpec FieldBgm(PackSet packs, string xblockName)
+    public static FieldBgmSpec FieldBgm(PackSet packs, string xblockName) =>
+        ParseBgmElement(FieldData.DefaultEnvironment(FieldData.EntryByXBlock(packs, xblockName))?.Element("bgm"));
+
+    /// <summary>The full &lt;bgm&gt; spec of a field by numeric id (including map 1 which may lack an xblock).</summary>
+    public static FieldBgmSpec FieldBgmById(PackSet packs, int fieldId)
     {
-        var fd = FieldData.EntryByXBlock(packs, xblockName);
-        var bgm = FieldData.DefaultEnvironment(fd)?.Element("bgm");
+        var root = FieldData.Document(packs)?.Root;
+        if (root == null) return default;
+        System.Xml.Linq.XElement match = null;
+        foreach (var fd in root.Elements("fieldData"))
+            if ((int?)fd.Attribute("id") == fieldId) match = fd;
+        return ParseBgmElement(FieldData.DefaultEnvironment(match)?.Element("bgm"));
+    }
+
+    static FieldBgmSpec ParseBgmElement(System.Xml.Linq.XElement bgm)
+    {
         if (bgm == null) return default;
         return new FieldBgmSpec(
             BgmId: ParseInt(bgm, "id"),
@@ -165,6 +177,21 @@ public partial class FieldAudio : Node
         if (!string.IsNullOrEmpty(spec.EnterSystemSound))
             PlayUi(spec.EnterSystemSound);
         return PlayBgm(spec.BgmId, spec.BgmParam, spec.BgmValue, MusicController.DefaultPriority, force);
+    }
+
+    /// <summary>
+    /// Starts the login screen BGM per WorldService::FUN_141bc7b80 (@0x141bc7b80, worldservice_1.cpp:4856-4872):
+    /// uses LoginBgBgmTable::GetBgm() when CueId != 0, otherwise falls back to map 1's FieldBgmSpec.
+    /// </summary>
+    public bool PlayLoginBgm(LoginBgBgmTable table, FieldBgmSpec map1Fallback, Func<int, int> pick = null, bool force = false)
+    {
+        if (table != null)
+        {
+            var bgm = table.GetBgm(pick);
+            if (bgm.CueId != 0)
+                return PlayBgm(bgm.CueId, bgm.ParamId, map1Fallback.BgmValue, MusicController.DefaultPriority, force);
+        }
+        return PlayFieldBgm(map1Fallback, force);
     }
 
     /// <summary>Sets a live FMOD music parameter (CSoundEventMgr::SetMusicParameter @0x14177c420).</summary>

@@ -89,7 +89,9 @@ public partial class LoginScene : Control
     /// </summary>
     void AddBackground(Vector2 window, bool forShots)
     {
-        var url = LoginBackground.Select(assets.Table("table/loginbgbgm.xml"), DateTime.Now.Month, n => forShots ? 0 : (int)(GD.Randi() % (uint)n));
+        var url = Flow.GameFlow.SelectedLoginBgDay;
+        if (string.IsNullOrEmpty(url))
+            url = LoginBackground.Select(assets.Table("table/loginbgbgm.xml"), DateTime.Now.Month, n => forShots ? 0 : (int)(GD.Randi() % (uint)n));
         if (string.IsNullOrEmpty(url)) return;
         MovieClipNode bg;
         try { bg = new UiMovie(assets, LoginBackground.MovieName(url)).BuildRoot(); }

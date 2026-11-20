@@ -13,25 +13,15 @@ namespace Ms2Godot.Ui;
 public static class LoginBackground
 {
     /// <summary>
-    /// LoginBgBgmTable::SelectCurrent: the rows of table/loginbgbgm.xml for <paramref name="month"/> (1..12) with the
-    /// highest priority, one of them at random. <paramref name="pick"/> chooses among them (the client: a random index).
-    /// Null when the month has no row.
+    /// LoginBgBgmTable::SelectCurrent (@0x140a729e0, commonfiles/loginbgbgmdata.cpp:161-199): the rows of
+    /// table/loginbgbgm.xml for <paramref name="month"/> (1..12) with the highest priority, one of them at random.
+    /// <paramref name="pick"/> chooses among them (the client: a random index). Null when the month has no row.
     /// </summary>
     public static string Select(XDocument table, int month, System.Func<int, int> pick)
     {
         if (table?.Root == null || month < 1 || month > 12) return null;
-        var rows = new List<(string Bg, uint Priority)>();
-        foreach (var e in table.Root.Elements("login"))
-        {
-            var months = ((string)e.Attribute("month") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (!months.Contains(month.ToString())) continue;
-            uint.TryParse((string)e.Attribute("priority"), out var p);
-            rows.Add(((string)e.Attribute("clientPropertyBgDay") ?? "", p));
-        }
-        if (rows.Count == 0) return null;
-        uint top = rows.Max(r => r.Priority);
-        var candidates = rows.Where(r => r.Priority == top).ToList();
-        return candidates[Math.Clamp(pick(candidates.Count), 0, candidates.Count - 1)].Bg;
+        var parsed = Ms2.Audio.LoginBgBgmTable.Parse(table);
+        return parsed.SelectCurrent(month, pick) ? parsed.GetBgDay() : null;
     }
 
     /// <summary>The Gfx.m2d movie a loadBG url names: "BG_Henesys_Login.swf" is bg_henesys_login.gfx.</summary>

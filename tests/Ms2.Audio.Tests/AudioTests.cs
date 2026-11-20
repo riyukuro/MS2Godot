@@ -583,4 +583,84 @@ public class AudioTests
             _ = mc.PeekNextSegment();
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
     }
+
+    // ---- LoginBgBgmTable (table/loginbgbgm.xml) ------------------------------------------------------------------
+
+    [Test]
+    public void LoginBgBgmTableSelectionPriorityPaddingAndFallbackMatchClient()
+    {
+        // loginbgbgmdata.cpp:91-224: skips empty month/bg/bgmID, skips month > 12, pads short bgmParam with 5,
+        // selects highest priority rows for the month and picks among ties + multiple bgm pairs.
+        const string xml = """
+            <ms2>
+              <login clientPropertyBgDay="BG_Low.swf" month="1,2" bgmID="15" bgmParam="5" priority="1" />
+              <login clientPropertyBgDay="BG_HighA.swf" month="1" bgmID="192,224" bgmParam="3" priority="10" />
+              <login clientPropertyBgDay="BG_HighB.swf" month="1" bgmID="244" bgmParam="0" priority="10" />
+              <login clientPropertyBgDay="BG_BadMonth.swf" month="13" bgmID="15" bgmParam="5" priority="99" />
+              <login clientPropertyBgDay="BG_NoBgm.swf" month="4" bgmID="" bgmParam="5" priority="99" />
+              <login clientPropertyBgDay="" month="4" bgmID="15" bgmParam="5" priority="99" />
+            </ms2>
+            """;
+        var table = LoginBgBgmTable.Parse(xml);
+
+        // Month 1: only priority-10 rows (HighA, HighB) compete; HighA has 2 cues with second param padded to 5.
+        Assert.That(table.SelectCurrent(1, _ => 0), Is.True);
+        Assert.That(table.GetBgDay(), Is.EqualTo("BG_HighA.swf"));
+        Assert.That(table.GetBgm(_ => 0), Is.EqualTo((192, 3)));
+        Assert.That(table.GetBgm(_ => 1), Is.EqualTo((224, 5)), "short bgmParam list padded with 5 (loginbgbgmdata.cpp:133-134)");
+
+        Assert.That(table.SelectCurrent(1, _ => 1), Is.True);
+        Assert.That(table.GetBgDay(), Is.EqualTo("BG_HighB.swf"));
+        Assert.That(table.GetBgm(_ => 0), Is.EqualTo((244, 0)));
+
+        // Month 2: only priority-1 row exists.
+        Assert.That(table.SelectCurrent(2, _ => 0), Is.True);
+        Assert.That(table.GetBgDay(), Is.EqualTo("BG_Low.swf"));
+        Assert.That(table.GetBgm(_ => 0), Is.EqualTo((15, 5)));
+
+        // Month 4 (rows skipped for missing bgmID/bgDay) and invalid months (0, 13): no selection -> empty / (0, 0).
+        Assert.That(table.SelectCurrent(4, _ => 0), Is.False);
+        Assert.That(table.GetBgDay(), Is.EqualTo(""));
+        Assert.That(table.GetBgm(_ => 0), Is.EqualTo((0, 0)));
+        Assert.That(table.SelectCurrent(13, _ => 0), Is.False);
+        Assert.That(table.SelectCurrent(0, _ => 0), Is.False);
+
+        // WorldService::FUN_141bc7b80 (@0x141bc7b80, worldservice_1.cpp:4856-4872): fallback to map 1 <bgm> when GetBgm().CueId == 0.
+        var map1 = new FieldBgmSpec(BgmId: 192, BgmParam: 5, BgmValue: 2.5f);
+        Assert.That(table.ResolveLoginBgm(map1, _ => 0), Is.EqualTo((192, 5, 2.5f)));
+        Assert.That(table.SelectCurrent(1, _ => 1), Is.True);
+        Assert.That(table.ResolveLoginBgm(map1, _ => 0), Is.EqualTo((244, 0, 2.5f)), "uses map 1 BgmValue with table's cue/param");
+    }
+
+    [Test]
+    public void LoginBgBgmTableLoadsRealXmlAndPlaysThroughMusicController()
+    {
+        var lib = SoundLibrary.Shared(SoundDir());
+        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
+        var table = LoginBgBgmTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/loginbgbgm.xml")));
+
+        // Every calendar month 1..12 has at least one row with a non-empty background and non-zero BGM cue.
+        for (int month = 1; month <= 12; month++)
+        {
+            Assert.That(table.SelectCurrent(month, _ => 0), Is.True, $"month {month}");
+            Assert.That(table.GetBgDay(), Is.Not.Empty, $"month {month} bgDay");
+            Assert.That(table.GetBgm(_ => 0).CueId, Is.GreaterThan(0), $"month {month} cueId");
+        }
+
+        // Month 1 first candidate: BG_winter2020_Login.swf -> cue 15, param 5 -> BGM_Login_Reminisce_Start_01.
+        Assert.That(table.SelectCurrent(1, _ => 0), Is.True);
+        Assert.That(table.GetBgDay(), Is.EqualTo("BG_winter2020_Login.swf"));
+        Assert.That(table.GetBgm(_ => 0), Is.EqualTo((15, 5)));
+
+        var mc = new MusicController(lib.Fev);
+        var map1Fallback = new FieldBgmSpec(BgmId: 192, BgmParam: 5, BgmValue: 0f);
+        Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(15));
+        Assert.That(lib.ResolveSegment(mc.CurrentSegment).Name, Is.EqualTo("BGM_Login_Reminisce_Start_01"));
+
+        // When no login row is selected (GetBgm == (0, 0)), falls back to map 1's own <bgm id="192" param="5"/>.
+        table.SelectCurrent(0);
+        Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
+        Assert.That(mc.CurrentCueId, Is.EqualTo(192));
+    }
 }

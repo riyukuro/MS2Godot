@@ -1,4 +1,5 @@
 using Godot;
+using Ms2.Audio;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
@@ -27,6 +28,13 @@ public partial class GameFlow : Node
 
     static GameFlow instance;
     public State Current { get; private set; } = State.Login;
+    /// <summary>
+    /// The login backdrop movie picked by LoginBgBgmTable::SelectCurrent when entering Login (WorldService::LoadMap(1),
+    /// worldservice_1.cpp:3309-3313), shared with LoginScene so the backdrop and BGM come from the same row.
+    /// </summary>
+    public static string SelectedLoginBgDay { get; private set; }
+    LoginBgBgmTable loginBgBgm;
+    FieldAudio loginAudio;
     int loadingFrames = -1;
     string shotDir;
     bool boxScript;
@@ -75,6 +83,8 @@ public partial class GameFlow : Node
 
     public override void _ExitTree()
     {
+        StopLoginAudio();
+        SelectedLoginBgDay = null;
         DisplayNative.RestoreDisplayMode();
         NifCache.Clear();   // CNifLoadingService::OnShutdown: ClearTextureCache, ClearNifCache (@0x141555e90)
         UiBridge.ToHost -= OnHost;
@@ -90,10 +100,14 @@ public partial class GameFlow : Node
     {
         GD.Print($"flow: {Current} -> {next}");
         if (Current == State.Game && next != State.Game) ModelBuilder.DropUi();   // logout or character select: the kept look is of this character
+        if (next != State.Login) StopLoginAudio();
         Current = next;
         switch (next)
         {
-            case State.Login: Change(LoginScene); break;
+            case State.Login:
+                StartLoginBgBgm();
+                Change(LoginScene);
+                break;
             case State.Lobby:
                 Ui.HudScene.ChatLog.Clear();                 // CSceneStateMulti::OnEnter -> FUN_141275500 (scenestatemulti.cpp:345)
                 if (GetTree().CurrentScene is Ui.LoginScene login) EnterLobbyFrom(login);
@@ -102,6 +116,53 @@ public partial class GameFlow : Node
             case State.Create: CharacterCreateScene.Enter(GetTree()); break;
             case State.Loading: BeginLoading(); break;
         }
+    }
+
+    /// <summary>
+    /// Selects the monthly LoginBgBgmTable row and starts the login screen BGM as the client does on CSceneStateLogin::OnEnter
+    /// -> WorldService::LoadMap(1) (scenestatelogin.cpp:92, worldservice_1.cpp:3309-3313) and WorldService::FUN_141bc7b80
+    /// (worldservice_1.cpp:4856-4872). Lobby/select maps (2..10) inherit Field and start their own FieldAudio.
+    /// </summary>
+    void StartLoginBgBgm()
+    {
+        var data = Settings.DataDir;
+        if (string.IsNullOrEmpty(data)) return;
+        try
+        {
+            var packs = PackSet.Shared(data);
+            if (loginBgBgm == null && packs.Exists("Xml", "table/loginbgbgm.xml"))
+                loginBgBgm = LoginBgBgmTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/loginbgbgm.xml")));
+            Func<int, int> pick = shotDir != null ? _ => 0 : n => (int)(GD.Randi() % (uint)n);
+            if (loginBgBgm != null)
+            {
+                loginBgBgm.SelectCurrent(DateTime.Now.Month, pick);
+                SelectedLoginBgDay = loginBgBgm.GetBgDay();
+            }
+            if (loginAudio == null || !IsInstanceValid(loginAudio))
+            {
+                loginAudio = new FieldAudio { Name = "LoginAudio" };
+                AddChild(loginAudio);
+                if (!loginAudio.Open(data, packs))
+                {
+                    loginAudio.QueueFree();
+                    loginAudio = null;
+                    return;
+                }
+            }
+            loginAudio.PlayLoginBgm(loginBgBgm, FieldAudio.FieldBgmById(packs, 1), pick);
+        }
+        catch (Exception ex) { GD.PushWarning("flow login bgm: " + ex.Message); }
+    }
+
+    void StopLoginAudio()
+    {
+        if (loginAudio == null) return;
+        if (IsInstanceValid(loginAudio))
+        {
+            loginAudio.StopMusic();
+            loginAudio.QueueFree();
+        }
+        loginAudio = null;
     }
 
     /// <summary>From the login screen: its background is kept for the select scene to crossfade from (CharacterListScene.EnterFrom).</summary>

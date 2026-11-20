@@ -260,6 +260,26 @@ public sealed class MusicController
     }
 
     /// <summary>
+    /// WorldService::FUN_141bc7b80 (@0x141bc7b80, worldservice_1.cpp:4856-4872) for map 1 (login screen):
+    /// queries LoginBgBgmTable::GetBgm(); if CueId != 0 plays it with map 1's BgmValue and returns without falling
+    /// through; when CueId == 0 falls back to map 1's own FieldBgmSpec.
+    /// </summary>
+    public bool PlayLoginBgm(LoginBgBgmTable table, FieldBgmSpec map1Fallback, Func<int, int> pick = null, bool force = false)
+    {
+        if (table != null)
+        {
+            var bgm = table.GetBgm(pick);
+            if (bgm.CueId != 0)
+            {
+                if (!PlayMusic(bgm.CueId, 0f, DefaultPriority, force)) return false;
+                SetMusicParameter(bgm.ParamId, map1Fallback.BgmValue, DefaultPriority, force);
+                return true;
+            }
+        }
+        return PlayFieldBgm(map1Fallback, force);
+    }
+
+    /// <summary>
     /// WorldService::StartCombatBgm (@0x141bc7d40, worldservice_1.cpp:4887-4894): PlayMusic(m_combatBgmId, 0, 0x80, 0)
     /// then SetMusicParameter(m_combatBgmParam, m_combatBgmValue, 0x80, 0).
     /// </summary>
