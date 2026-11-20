@@ -95,8 +95,8 @@ void fragment() {
         return m;
     }
 
-    /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; other part kinds are ignored.</summary>
-    public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians)
+    /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; soundMusic parts follow CSoundMusicEffect's caster-kind gate (m_unk_18 &lt;= 1, default rejected for unknown/remote casters).</summary>
+    public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
     {
         if (!ShowEffects || string.IsNullOrEmpty(xmlPath)) return;
         var parts = effects.Get(xmlPath);
@@ -112,7 +112,7 @@ void fragment() {
             if (part.Type == "light" && part.Light != null) { QueueLight(part, at, yawRadians); continue; }
             if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
             {
-                FieldAudio.Instance?.PlayEffectSoundMusic(part);
+                FieldAudio.Instance?.PlayEffectSoundMusic(part, casterKind);
                 EffectSounds++;
                 continue;
             }

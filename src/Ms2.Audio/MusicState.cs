@@ -605,6 +605,11 @@ public readonly record struct SoundMusicEffectParam(
 /// </summary>
 public sealed class SoundMusicEffectState
 {
+    /// <summary>Unk_EffectTarget::m_nKind values (effectservice.cpp:255,304,360,2169; soundmusiceffectparam.cpp:139-140).</summary>
+    public const int CasterSystem = 0;
+    public const int CasterMyPc = 1;
+    public const int CasterOther = 2;
+
     bool active;
     double startTime;
     float duration;
@@ -619,14 +624,19 @@ public sealed class SoundMusicEffectState
     public float TargetVolume => targetVolume;
     public float DeltaVolume => deltaVolume;
 
-    /// <summary>CSoundMusicEffect::vfunc_3 (@0x1417900e0, soundmusiceffectparam.cpp:133-156).</summary>
+    /// <summary>
+    /// CSoundMusicEffect::vfunc_3 (@0x1417900e0, soundmusiceffectparam.cpp:133-156).
+    /// Defaults <paramref name="casterKind"/> to <see cref="CasterOther"/> (rejected, m_unk_18 &gt; 1) so callers
+    /// that do not know the caster cannot hijack local music state; pass <see cref="CasterSystem"/> (0) or
+    /// <see cref="CasterMyPc"/> (1) when the effect originates from the system or local player.
+    /// </summary>
     public (bool CueChanged, bool ParamApplied, bool FadeStarted) Apply(
         MusicController music,
         in SoundMusicEffectParam param,
         double nowSeconds,
         float currentMusicVolume,
         float categoryMusicVolume,
-        int casterKind = 0)
+        int casterKind = CasterOther)
     {
         // soundmusiceffectparam.cpp:139-140: m_unk_18 > 1 returns false (only system=0 / local player=1 apply).
         if (casterKind > 1) return (false, false, false);

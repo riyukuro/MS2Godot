@@ -214,8 +214,11 @@ public partial class FieldAudio : Node
     /// <summary>
     /// Executes a SoundMusic effect part (effect type 3, CSoundMusicEffect::vfunc_3 @0x1417900e0,
     /// soundmusiceffectparam.cpp:133-156): PlayMusic + SetMusicParameter + linear volume fade with restore.
+    /// Defaults <paramref name="casterKind"/> to <see cref="SoundMusicEffectState.CasterOther"/> (rejected at
+    /// m_unk_18 &gt; 1) unless the caller passes <see cref="SoundMusicEffectState.CasterSystem"/> (0) or
+    /// <see cref="SoundMusicEffectState.CasterMyPc"/> (1).
     /// </summary>
-    public bool PlaySoundMusicEffect(in SoundMusicEffectParam param, int casterKind = 0)
+    public bool PlaySoundMusicEffect(in SoundMusicEffectParam param, int casterKind = SoundMusicEffectState.CasterOther)
     {
         if (MusicState == null) return false;
         if (param.StartDelay > 0f)
@@ -228,7 +231,7 @@ public partial class FieldAudio : Node
     }
 
     /// <summary>Plays a parsed <see cref="EffectPart"/> of type <c>soundMusic</c>.</summary>
-    public bool PlayEffectSoundMusic(EffectPart part, int casterKind = 0)
+    public bool PlayEffectSoundMusic(EffectPart part, int casterKind = SoundMusicEffectState.CasterOther)
     {
         if (part == null) return false;
         var param = new SoundMusicEffectParam(
