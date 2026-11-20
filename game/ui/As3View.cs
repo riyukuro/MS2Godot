@@ -332,6 +332,14 @@ public partial class As3View : Node2D
     /// Syncs one display object's holder and content (when it or an ancestor's context is marked) and walks into its
     /// marked children; the object's marks are cleared.
     /// </summary>
+    /// <summary>One StringName per distinct holder name: assigning a string to Name makes a tracked wrapper each time, and a view makes holders all through its life.</summary>
+    static readonly Dictionary<string, StringName> holderNames = new();
+    static StringName HolderName(string name)
+    {
+        if (!holderNames.TryGetValue(name, out var sn)) holderNames[name] = sn = new StringName(name);
+        return sn;
+    }
+
     Entry SyncObject(AsDisplayObject o, NineCtx nine, Material blend, bool clipMask, bool deep)
     {
         bool fresh = o.Tag is not Entry e;
@@ -342,7 +350,7 @@ public partial class As3View : Node2D
         if (fresh)
         {
             Checked(true, "unsynced object", o);
-            e = new Entry { Obj = o, Holder = new Node2D { Name = string.IsNullOrEmpty(o.InstanceName) ? o.Class?.LocalName ?? "obj" : o.InstanceName } };
+            e = new Entry { Obj = o, Holder = new Node2D { Name = HolderName(string.IsNullOrEmpty(o.InstanceName) ? o.Class?.LocalName ?? "obj" : o.InstanceName) } };
             o.Tag = e; entries.Add(e); byNode[e.Holder] = e;
         }
         else e = (Entry)o.Tag;
