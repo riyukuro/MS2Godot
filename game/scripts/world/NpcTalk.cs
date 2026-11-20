@@ -502,10 +502,15 @@ public sealed partial class NpcTalk : Node
                     liveTalking = npc;
                     if (script == null || page >= script.Contents.Count)
                     {
-                        // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui (OpenTalkUi: a shop,
-                        // a storage ...), and closing that ui ends the talk with SendNpcTalkMode0. STILL-OPEN: those talk uis are not
-                        // ported (searched: no OpenTalkUi / GetTalkUiId port in game/ or src/Ms2.Ui), so the talk ends at once, as
-                        // if the ui were closed, rather than leaving the server's talk open.
+                        // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui
+                        // (CNpc::GetTalkUiId, unit_14108e1e0_npcactorandvibrate.cpp:1327: kind 1 -> 0x4e3b shop). Closing
+                        // the shop sends SendNpcTalkMode0 (uishopdialog.cpp:711).
+                        if (npc.Row.Kind == 1)
+                        {
+                            GD.Print($"talk: npc {npc.Row.Id} opens shop talk ui 0x4e3b");
+                            live.RaiseTalkUiOpen(Ms2.Ui.Shop.ShopController.UiId);
+                            return;
+                        }
                         GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported), NpcTalk 0 sent");
                         liveTalking = null;
                         live.SendTalk(new NpcTalkEndRequest());
@@ -525,6 +530,7 @@ public sealed partial class NpcTalk : Node
                 LivePage(r.Flags, null, r.ScriptId, r.Page, r.ButtonSet);
                 return;
             case NpcTalkMessage.Close:
+                if (liveTalking?.Row.Kind == 1) live.RaiseTalkUiClose(Ms2.Ui.Shop.ShopController.UiId);
                 liveRequested = null; liveTalking = null;
                 side?.OnServerEnd();
                 return;

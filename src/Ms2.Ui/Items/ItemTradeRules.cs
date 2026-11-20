@@ -89,4 +89,17 @@ public static class ItemTradeRules
     /// stackable and not locked.</summary>
     public static bool AsksCount(Item item, long now) =>
         !item.Data.IsEquip && item.Count != 1 && item.Data.IsStackable && !IsLocked(item, now);
+
+    /// <summary>CItemSocket::CheckGemsShopSellable (itemsocket.cpp:783 -> FUN_140622020 :690 -> IsGemShopSellable :738):
+    /// any socketed non-empty gem (m_nGemId != 0 with item data) returns false; otherwise true.</summary>
+    public static bool GemsShopSellable(ItemSocket s, Func<int, ItemData> data, long now) =>
+        AllGemsPass(s, data, (g, d) => g.GemId == 0 && !GemLocked(g, now) && d.ShopSell);
+
+    /// <summary>FUN_140633840 (itemsocketsystemutil.cpp:2323): CItemTransfer::IsSellable (shopSell and not locked) and
+    /// CheckGemsShopSellable.</summary>
+    public static bool CanSellToShop(Item item, Func<int, ItemData> data, long now) =>
+        item?.Data != null && item.Data.ShopSell && !IsLocked(item, now) && GemsShopSellable(item.Record?.Socket, data, now);
+
+    /// <summary>CItem::FUN_140525c60 (item.cpp:1965 -> FUN_140528910 :308): m_80 &gt; 0 (the item has an expiry time).</summary>
+    public static bool HasPeriod(Item item) => item != null && item.ExpiryTime > 0;
 }

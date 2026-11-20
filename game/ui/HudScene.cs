@@ -158,6 +158,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchTrades = null;
         unwatchBlackMarket?.Invoke();
         unwatchBlackMarket = null;
+        unwatchShop?.Invoke();
+        unwatchShop = null;
         unwatchPcInfo?.Invoke();
         unwatchPcInfo = null;
         unwatchBuddies?.Invoke();
@@ -1362,6 +1364,7 @@ public partial class HudScene : Node, IUiStageHost
         if (MailKeys(k)) return true;
         if (TradeKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
+        if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
         if (CommunityKeys(k)) return true;
         if (GuildKeys(k)) return true;
@@ -2130,6 +2133,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchMails();
         WatchTrades();
         WatchBlackMarket();
+        WatchShop();
         c.MenuAction += def => { if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest(); };
         WatchBuddies();
         WatchGuild();
@@ -2492,7 +2496,11 @@ public partial class HudScene : Node, IUiStageHost
         // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
         Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
         Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
+        Func<long, int, bool> sellValid = (uid, n) => inventory?.IsSellCountValid(uid, n) ?? true;
+        Action<long, int> sellItem = (uid, n) => inventory?.SellCountStep(uid, n);
+        Action<long, int> sellConfirm = (uid, n) => inventory?.SellConfirmStep(uid, n);
         boxes.RequestTradeAnswer = tradeAnswer; boxes.TradeIn = tradeIn;
+        boxes.SellCountValid = sellValid; boxes.SellItem = sellItem; boxes.SellConfirm = sellConfirm;
         boundBoxes = boxes;
         unbindBoxAnswers = () =>
         {
@@ -2501,6 +2509,9 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
             if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
             if (boxes.TradeIn == tradeIn) boxes.TradeIn = null;
+            if (boxes.SellCountValid == sellValid) boxes.SellCountValid = null;
+            if (boxes.SellItem == sellItem) boxes.SellItem = null;
+            if (boxes.SellConfirm == sellConfirm) boxes.SellConfirm = null;
             boundBoxes = null;
         };
     }
@@ -2548,7 +2559,8 @@ public partial class HudScene : Node, IUiStageHost
         c.SystemNotice += SystemNotice;
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : 0;
+        c.Shop = () => ShopOpen ? shop : null;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : 0;
         c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
         c.NoticeText += SystemNoticeText;
         BindBoxAnswers();
@@ -2697,59 +2709,7 @@ public partial class HudScene : Node, IUiStageHost
 
     // ---- skill window: uiskillbooktreedialog run by its own ActionScript, UISkillBookTreeDialog's C++ side as SkillBookTreeController --
 
-    // ---- npc shop: uishopdialog run by its own ActionScript, UIShopDialog's C++ side as ShopController ----------------
-
-    MovieDialog shopMovie;
-    Ms2.Ui.Shop.ShopController shop;
-    string shopShot;                            // --shop all|weapons|armor|buyback: the fixture gear shop on that filter or tab
-
-    /// <summary>
-    /// Opens the npc shop over the fixture gear shop (<see cref="UiFixture.GearShop"/>, in the shop packet's shape): the
-    /// header before the movie loads, the products after, as the server's commands 0 and 1 arrive. Buy, sell and restock
-    /// requests are only logged.
-    /// </summary>
-    void OpenShop()
-    {
-        if (GuideRefusesOpen("ShopDialog")) return;
-        if (shopMovie != null) { shopMovie.Host.Unload(); shopMovie.QueueFree(); shopMovie = null; }
-        long Now() => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        var (info, products) = UiFixture.GearShop(Now());
-        var c = new Ms2.Ui.Shop.ShopController
-        {
-            Categories = new Ms2.Ui.Shop.ShopCategoryTable(assets.Packs),
-            Npcs = World.FieldContents.Npcs(assets.Packs),
-            ServerTime = Now,
-            ShopSeedResetTime = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("ShopSeedResetTime", 0),
-            ItemUseError = itemUse.Error,
-        };
-        c.Request += (name, _) => GD.Print($"shop: {name} is not sent (display only)");
-        c.OpenDialog += id => GD.Print($"shop: dialog 0x{id:x} is not in this HUD");
-        c.ReadShopInfo(info);
-        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        c.ReadProducts(products);
-        // the movie goes when the close tween ends (OnEndClose -> Unload), as the other dialogs' movies do
-        c.Unloaded += () =>
-        {
-            m.Host.Unload();
-            m.QueueFree();
-            if (shopMovie == m) shopMovie = null;
-        };
-        shop = c; shopMovie = m;
-        uiRoot.AddChild(m);
-    }
-
-    /// <summary>The shot's filter or tab, picked through the movie's own list and tab bar (their change events call back).</summary>
-    void PickShopView(string view)
-    {
-        if (shopMovie == null || shop?.ShopView == null) return;
-        var h = shopMovie.Host;
-        if (view == "buyback") { h.Set(h.Get(shop.ShopView, "m_tab"), "selectedIndex", 1); return; }
-        // shopcategory.xml category 5: the Weapons and Armor tabs' name ids
-        int nameId = view switch { "weapons" => 2017, "armor" => 2018, _ => 0 };
-        if (nameId == 0) return;
-        int row = shop.Tabs(0).ToList().FindIndex(r => r.Tab.NameId == nameId);
-        if (row >= 0) h.Set(h.Get(shop.ShopView, "m_categoryList"), "selectedIndex", row);
-    }
+    // ---- npc shop lives in HudScene.Shop.cs ----
 
     MovieDialog skillBookMovie;                 // from open until OnEndClose
     Ms2.Ui.Hud.SkillBookTreeController skillBook;
@@ -3032,6 +2992,7 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
         BlackMarketTick();                   // UIBlackMarketDialog::vfunc_15
+        ShopTick();                          // UIShopDialog::vfunc_72
         learningQuest?.Update();             // UILearningQuestDialog::vfunc_72: the new learning quest after MarkDirty
         CommunityTick();                     // UICommunityDialog::vfunc_72
         characterAbility?.Process(Time.GetTicksMsec());     // UICharacterAbilityDialog::vfunc_72: the reset button's time

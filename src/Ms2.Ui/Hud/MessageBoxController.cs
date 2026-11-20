@@ -245,6 +245,17 @@ public sealed class MessageBoxController : UiController
     /// the count typed (_wtoi of the tag's second token). The handler does the count check (FUN_141a002b0) and the add.</summary>
     public Action<long, int> TradeIn;
 
+    /// <summary>FUN_141a002b0 (uimessagebox.cpp:2031, :2077): validates the item count for sell/sellconfirm; when unset, true.</summary>
+    public Func<long, int, bool> SellCountValid;
+
+    /// <summary>HandleSellButton @0x1419fe830 (uimessagebox.cpp:2024), the sell quantity box's yes (after closing the box):
+    /// the item uid and count to pass to SellItem (:670).</summary>
+    public Action<long, int> SellItem;
+
+    /// <summary>HandleSellConfirmButton @0x1419fea00 (uimessagebox.cpp:2070), the sell confirmation box's yes: the item uid
+    /// and count to pass to RequestSellItem.</summary>
+    public Action<long, int> SellConfirm;
+
     /// <summary>A tag this port has no handler for (HandlePlainTag / FUN_1419fa910's other tags).</summary>
     public event Action<int, string> UnportedTag;
 
@@ -451,17 +462,21 @@ public sealed class MessageBoxController : UiController
             return HandlePartyinviteButton(button);
         if (tag == "requestTradeEx")
             return HandleRequestTradeExButton(button);
+        if (tag == "sell")
+            return HandleSellButton(button, 1);
         if (tag.IndexOf(',') < 0 && data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
 
     /// <summary>FUN_1419fa910 (uimessagebox.cpp:1092): a tag of exactly two tokens split by "," (FUN_14028cb70(tag, tokens,
-    /// L",", 2)); 0 otherwise. Of its tags "tradein" is ported; the others are reported as unported.</summary>
+    /// L",", 2)); 0 otherwise. Of its tags "tradein", "sell" and "sellconfirm" are ported; the others are reported as unported.</summary>
     bool HandleArgTag(int button, string tag)
     {
         var tokens = tag.Split(',');
         if (tokens.Length != 2) return false;
         if (tokens[0] == "tradein") return HandleTradeInButton(button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == "sell") return HandleSellButton(button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -493,6 +508,36 @@ public sealed class MessageBoxController : UiController
     {
         if (data == null) return true;
         if (button == 0) TradeIn?.Invoke(data.ItemUid, count);
+        return true;
+    }
+
+    /// <summary>HandleSellButton @0x1419fe830 (uimessagebox.cpp:2024): no record, 1; on button 0, validates count
+    /// (FUN_141a002b0), closes this box (FUN_14151f200) so a follow-up sellconfirm box replaces cleanly, then invokes
+    /// <see cref="SellItem"/>; 1.</summary>
+    bool HandleSellButton(int button, int count)
+    {
+        if (data == null) return true;
+        if (button == 0)
+        {
+            long uid = data.ItemUid;
+            if (SellCountValid != null && !SellCountValid(uid, count)) return true;
+            MessageBoxQueue.Next();
+            SellItem?.Invoke(uid, count);
+        }
+        return true;
+    }
+
+    /// <summary>HandleSellConfirmButton @0x1419fea00 (uimessagebox.cpp:2070): no record, 1; on button 0, validates count
+    /// (FUN_141a002b0), then invokes <see cref="SellConfirm"/> (RequestSellItem); 1.</summary>
+    bool HandleSellConfirmButton(int button, int count)
+    {
+        if (data == null) return true;
+        if (button == 0)
+        {
+            long uid = data.ItemUid;
+            if (SellCountValid != null && !SellCountValid(uid, count)) return true;
+            SellConfirm?.Invoke(uid, count);
+        }
         return true;
     }
 

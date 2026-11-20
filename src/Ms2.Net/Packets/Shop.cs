@@ -1,7 +1,11 @@
 // Layout from the restored client's UIShopDialog::OnShopPacket (uishopdialog.cpp; the handler of RecvOp 0x51 its ctor registers),
-// ReadShopInfo (0x141af88d0), ReadProducts (0x141af90f0) and CNpcShopProductCli::ReadPacket mode 1 (npcshopproductbase.cpp,
-// 0x140db61a0).
+// ReadShopInfo (0x141af88d0), ReadProducts (0x141af90f0), ReadProductUpdate (0x141af98d0), ReadResetResult (0x141af9ad0),
+// ReadRepurchaseStart/Add/Removal (0x141af9ce0..0x141afa130), ReadPurchaseResult (0x141afa2f0), ReadNewStart/Products
+// (0x141af9390..0x141af94e0), ReadShopError (0x141afa640), CNpcShopProductCli::ReadPacket modes 1 and 7
+// (npcshopproductbase.cpp:139), CNpcShopItemNew::Read (npcshopdata.cpp:821), and the SendOp::Shop (0x28) writers
+// (uishopdialog.cpp:750, 762, 2270, 2550, 2826, 2846; itemugcmesh.cpp:1097).
 using Maple2.PacketLib.Tools;
+using Ms2.Net.Wire;
 
 namespace Ms2.Net.Packets;
 
@@ -78,14 +82,39 @@ public sealed record ShopBuyPeriod {
     /// <summary>(start, end) seconds of the day.</summary>
     public List<(int Start, int End)> PartTimes = new();
     public List<int> Days = new();
+
+    public static ShopBuyPeriod Read(ByteReader r) {
+        var period = new ShopBuyPeriod();
+        if (period.HasTime = r.ReadBool()) { period.Start = r.ReadLong(); period.End = r.ReadLong(); }
+        if (period.HasPart = r.ReadBool()) {
+            int n = r.ReadByte();
+            for (int i = 0; i < n; i++) period.PartTimes.Add((r.ReadInt(), r.ReadInt()));
+            int days = r.ReadByte();
+            for (int i = 0; i < days; i++) period.Days.Add(r.ReadByte());
+        }
+        return period;
+    }
+
+    public void Write(ByteWriter w) {
+        w.WriteBool(HasTime);
+        if (HasTime) { w.WriteLong(Start); w.WriteLong(End); }
+        w.WriteBool(HasPart);
+        if (HasPart) {
+            w.WriteByte((byte) PartTimes.Count);
+            foreach (var (s, e) in PartTimes) { w.WriteInt(s); w.WriteInt(e); }
+            w.WriteByte((byte) Days.Count);
+            foreach (var d in Days) w.WriteByte((byte) d);
+        }
+    }
 }
 
 /// <summary>NpcShopItemLife::Read (commonstruct_wa.cpp:508): u8 type; types 1, 3, 4 an i32 value, type 2 an i64 time.</summary>
 public readonly record struct ShopItemLife(int Type, int Value, long Time);
 
 /// <summary>
-/// One product, CNpcShopProductCli::ReadPacket mode 1, in packet order (the client's member in each comment). The item is
-/// CItem::FUN_140523c40(item id, rarity, count) and CItem::ReadFromStream, then SetCount(bundle).
+/// One product, CNpcShopProductCli::ReadPacket mode 1 or mode 7 (repurchase), in packet order (the client's member in
+/// each comment). Mode 1 reads CItem::FUN_140523c40(item id, rarity, count) and CItem::ReadFromStream, then SetCount(bundle).
+/// Mode 7 (npcshopproductbase.cpp:191-202) reads serial, itemId, rarity, i64 price, and the item stream.
 /// </summary>
 public sealed record ShopProduct {
     public int Serial;            // m_18
@@ -94,8 +123,8 @@ public sealed record ShopProduct {
                                   // PopulateProduct; 0xd star points: CheckStarPointEvent)
     public int CurrencyItemId;    // m_8c
     public int CurrencyItemTag;   // m_90: paid with any item of this tag (GetMaxAffordableCount counts by tag)
-    public int Price;             // m_a0: the sale price
-    public int OriginalPrice;     // m_a8
+    public long Price;            // m_a0: the sale price (u32 in mode 1, i64 in mode 7)
+    public long OriginalPrice;    // m_a8
     public int Rarity;
     public int Count;
     public int Limit;             // m_5c: how many one may buy (0: no limit)
@@ -123,28 +152,21 @@ public sealed record ShopProduct {
     public int BuyCount => Bundle > 1 ? Bought / Bundle : Bought;
     /// <summary>m_54 (UpdateRemainingCount): max(limit - purchases, 0).</summary>
     public int Remaining => Math.Max(0, Limit - BuyCount);
+    /// <summary>GetRemainingItemCount (npcshopproductbase.cpp:236): remaining purchases times bundle when bundle &gt; 1.</summary>
+    public int RemainingItemCount => Bundle > 1 ? Remaining * Bundle : Remaining;
     /// <summary>IsSoldOut: a limit and none left.</summary>
     public bool SoldOut => Limit > 0 && Remaining <= 0;
 
     public static ShopProduct Read(ByteReader r) {
         var p = new ShopProduct();
         p.Serial = r.ReadInt(); p.ItemId = r.ReadInt(); p.Currency = r.ReadByte(); p.CurrencyItemId = r.ReadInt(); p.CurrencyItemTag = r.ReadInt();
-        p.Price = r.ReadInt(); p.OriginalPrice = r.ReadInt(); p.Rarity = r.ReadByte(); p.Count = r.ReadInt(); p.Limit = r.ReadInt();
+        p.Price = (uint) r.ReadInt(); p.OriginalPrice = (uint) r.ReadInt(); p.Rarity = r.ReadByte(); p.Count = r.ReadInt(); p.Limit = r.ReadInt();
         p.Bought = r.ReadInt(); p.GuildTrophy = r.ReadInt(); p.Categories = r.ReadString(); p.Achieve = r.ReadInt(); p.AchieveGrade = r.ReadInt();
         p.ChampionshipRank = r.ReadByte(); p.ChampionshipScore = (ushort) r.ReadShort(); p.GuildNpc = r.ReadByte(); p.GuildNpcLevel = (ushort) r.ReadShort();
         p.PremiumSlot = r.ReadBool(); p.Bundle = (ushort) r.ReadShort(); p.Label = r.ReadByte(); p.SaleTag = r.ReadByte();
         p.IconTag = r.ReadString(); p.Alliance = (ushort) r.ReadShort(); p.FameGrade = r.ReadInt();
         p.MainItem = r.ReadBool();
-        if (r.ReadBool()) {
-            var period = p.Period = new ShopBuyPeriod();
-            if (period.HasTime = r.ReadBool()) { period.Start = r.ReadLong(); period.End = r.ReadLong(); }
-            if (period.HasPart = r.ReadBool()) {
-                int n = r.ReadByte();
-                for (int i = 0; i < n; i++) period.PartTimes.Add((r.ReadInt(), r.ReadInt()));
-                int days = r.ReadByte();
-                for (int i = 0; i < days; i++) period.Days.Add(r.ReadByte());
-            }
-        }
+        if (r.ReadBool()) p.Period = ShopBuyPeriod.Read(r);
         if (r.ReadBool()) {
             int type = r.ReadByte();
             p.Life = type switch {
@@ -157,26 +179,30 @@ public sealed record ShopProduct {
         return p;
     }
 
+    /// <summary>CNpcShopProductCli::ReadPacket mode 7 (npcshopproductbase.cpp:191-202): i32 serial, i32 itemId, u8 rarity,
+    /// i64 price, then the item stream (m_54 = item.GetCount(), m_a0 = price).</summary>
+    public static ShopProduct ReadRepurchase(ByteReader r) {
+        var p = new ShopProduct {
+            Serial = r.ReadInt(),
+            ItemId = r.ReadInt(),
+            Rarity = r.ReadByte(),
+            Price = r.ReadLong(),
+        };
+        p.Item = ItemReader.ReadItem(r, p.ItemId, p.Rarity);
+        p.Count = p.Item?.Amount ?? 0;
+        return p;
+    }
+
     /// <summary>Writes this product with an item body of default blocks and <see cref="Count"/> as the amount (fixtures).</summary>
     public void Write(ByteWriter w) {
         w.WriteInt(Serial); w.WriteInt(ItemId); w.WriteByte((byte) Currency); w.WriteInt(CurrencyItemId); w.WriteInt(CurrencyItemTag);
-        w.WriteInt(Price); w.WriteInt(OriginalPrice); w.WriteByte((byte) Rarity); w.WriteInt(Count); w.WriteInt(Limit); w.WriteInt(Bought);
+        w.WriteInt((int) Price); w.WriteInt((int) OriginalPrice); w.WriteByte((byte) Rarity); w.WriteInt(Count); w.WriteInt(Limit); w.WriteInt(Bought);
         w.WriteInt(GuildTrophy); w.WriteString(Categories); w.WriteInt(Achieve); w.WriteInt(AchieveGrade);
         w.WriteByte((byte) ChampionshipRank); w.WriteShort((short) ChampionshipScore); w.WriteByte((byte) GuildNpc); w.WriteShort((short) GuildNpcLevel);
         w.WriteBool(PremiumSlot); w.WriteShort((short) Bundle); w.WriteByte((byte) Label); w.WriteByte((byte) SaleTag);
         w.WriteString(IconTag); w.WriteShort((short) Alliance); w.WriteInt(FameGrade); w.WriteBool(MainItem);
         w.WriteBool(Period != null);
-        if (Period != null) {
-            w.WriteBool(Period.HasTime);
-            if (Period.HasTime) { w.WriteLong(Period.Start); w.WriteLong(Period.End); }
-            w.WriteBool(Period.HasPart);
-            if (Period.HasPart) {
-                w.WriteByte((byte) Period.PartTimes.Count);
-                foreach (var (s, e) in Period.PartTimes) { w.WriteInt(s); w.WriteInt(e); }
-                w.WriteByte((byte) Period.Days.Count);
-                foreach (var d in Period.Days) w.WriteByte((byte) d);
-            }
-        }
+        Period?.Write(w);
         w.WriteBool(Life != null);
         if (Life is { } life) {
             w.WriteByte((byte) life.Type);
@@ -185,17 +211,83 @@ public sealed record ShopProduct {
         }
         ItemReader.WriteEmptyBody(w, Count);
     }
+
+    /// <summary>Writes a mode 7 repurchase product with an empty item body of <see cref="Count"/> (tests and fixtures).</summary>
+    public void WriteRepurchase(ByteWriter w) {
+        w.WriteInt(Serial); w.WriteInt(ItemId); w.WriteByte((byte) Rarity); w.WriteLong(Price);
+        ItemReader.WriteEmptyBody(w, Count);
+    }
 }
 
+/// <summary>Inbound 0x51 command 2 (UIShopDialog::ReadProductUpdate, uishopdialog.cpp:1740): i32 serial, i32 buyCount.</summary>
+public sealed record ShopProductUpdate(int Serial, int BuyCount);
+
+/// <summary>Inbound 0x51 command 4 (UIShopDialog::ReadPurchaseResult, uishopdialog.cpp:1834): u32 itemId, i32 count,
+/// u32 price, u8 rank, bool guildStorage.</summary>
+public sealed record ShopPurchaseResult(int ItemId, int Count, uint Price, byte Rank, bool GuildStorage);
+
+/// <summary>Inbound 0x51 command 9 (UIShopDialog::ReadResetResult, uishopdialog.cpp:1756): bool success; when true, u32
+/// refundItemId and u32 refundCount.</summary>
+public sealed record ShopResetResult(bool Success, int RefundItemId, int RefundCount);
+
+/// <summary>Inbound 0x51 command 13 (UIShopDialog::ReadNewStart, uishopdialog.cpp:1664): i32 npcId, i32 shopId, i32
+/// tabShopId, u16 totalCount.</summary>
+public sealed record ShopNewStart(int NpcId, int ShopId, int TabShopId, int TotalCount);
+
+/// <summary>CNpcShopItemNew::Read (npcshopdata.cpp:821): i32 itemId, bool flag, u8 rarity, string categories, u8 productType,
+/// u8 productKind, bool hasPeriod (+ CNpcShopBuyPeriod).</summary>
+public sealed record ShopNewProduct {
+    public int ItemId;
+    public bool Flag;
+    public byte Rarity;
+    public string Categories = "";
+    public byte ProductType;
+    public byte ProductKind;
+    public ShopBuyPeriod Period;
+
+    public static ShopNewProduct Read(ByteReader r) {
+        var p = new ShopNewProduct {
+            ItemId = r.ReadInt(),
+            Flag = r.ReadBool(),
+            Rarity = r.ReadByte(),
+            Categories = r.ReadString(),
+            ProductType = r.ReadByte(),
+            ProductKind = r.ReadByte(),
+        };
+        if (r.ReadBool()) p.Period = ShopBuyPeriod.Read(r);
+        return p;
+    }
+
+    public void Write(ByteWriter w) {
+        w.WriteInt(ItemId); w.WriteBool(Flag); w.WriteByte(Rarity); w.WriteString(Categories);
+        w.WriteByte(ProductType); w.WriteByte(ProductKind);
+        w.WriteBool(Period != null);
+        Period?.Write(w);
+    }
+}
+
+/// <summary>Inbound 0x51 command 15 (UIShopDialog::ReadShopError, uishopdialog.cpp:1858): i32 error, u8 cmd, i32 value.</summary>
+public sealed record ShopError(int Error, byte Command, int Value);
+
 /// <summary>
-/// Inbound 0x51 (Shop): u8 command. 0 the shop header (<see cref="ShopInfo"/>), 1 a batch of products (u8 count of
-/// <see cref="ShopProduct"/>). The other commands (2 product update, 4 purchase result, 6-8 repurchase, 9 reset, 11-12 star
-/// items, 13-14 new items, 15 error) are not read yet: <see cref="Command"/> alone is set.
+/// Inbound 0x51 (Shop): u8 command (UIShopDialog::OnShopPacket @0x141af8710, uishopdialog.cpp:1524).
+/// 0 header, 1 normal products, 2 product buy-count update, 4 purchase result, 6 repurchase start, 7 repurchase add,
+/// 8 repurchase removal, 9 reset result, 11 merat start, 13 new start, 14 new products, 15 shop error.
+/// STILL-OPEN: command 12 (merat items, CNpcShopMeratItemBase::vfunc_2 / premium market product block) leaves only Command set.
 /// </summary>
 public sealed class ShopPacket {
     public int Command { get; private init; }
     public ShopInfo Info { get; private init; }
     public IReadOnlyList<ShopProduct> Products { get; private init; }
+    public ShopProductUpdate ProductUpdate { get; private init; }
+    public ShopPurchaseResult PurchaseResult { get; private init; }
+    public int RepurchaseCount { get; private init; }
+    public int RemoveSerial { get; private init; }
+    public ShopResetResult ResetResult { get; private init; }
+    public int MeratCount { get; private init; }
+    public ShopNewStart NewStart { get; private init; }
+    public IReadOnlyList<ShopNewProduct> NewProducts { get; private init; }
+    public ShopError Error { get; private init; }
 
     public static ShopPacket Read(ByteReader r) {
         int cmd = r.ReadByte();
@@ -207,6 +299,31 @@ public sealed class ShopPacket {
                 for (int i = 0; i < n; i++) list.Add(ShopProduct.Read(r));
                 return new ShopPacket { Command = cmd, Products = list };
             }
+            case 2: return new ShopPacket { Command = cmd, ProductUpdate = new ShopProductUpdate(r.ReadInt(), r.ReadInt()) };
+            case 4: return new ShopPacket { Command = cmd, PurchaseResult = new ShopPurchaseResult(r.ReadInt(), r.ReadInt(), (uint) r.ReadInt(), r.ReadByte(), r.ReadBool()) };
+            case 6: return new ShopPacket { Command = cmd, RepurchaseCount = (ushort) r.ReadShort() };
+            case 7: {
+                int n = (ushort) r.ReadShort();
+                var list = new List<ShopProduct>(n);
+                for (int i = 0; i < n; i++) list.Add(ShopProduct.ReadRepurchase(r));
+                return new ShopPacket { Command = cmd, Products = list };
+            }
+            case 8: return new ShopPacket { Command = cmd, RemoveSerial = r.ReadInt() };
+            case 9: {
+                bool ok = r.ReadBool();
+                int itemId = ok ? r.ReadInt() : 0;
+                int count = ok ? r.ReadInt() : 0;
+                return new ShopPacket { Command = cmd, ResetResult = new ShopResetResult(ok, itemId, count) };
+            }
+            case 11: return new ShopPacket { Command = cmd, MeratCount = (ushort) r.ReadShort() };
+            case 13: return new ShopPacket { Command = cmd, NewStart = new ShopNewStart(r.ReadInt(), r.ReadInt(), r.ReadInt(), (ushort) r.ReadShort()) };
+            case 14: {
+                int n = r.ReadByte();
+                var list = new List<ShopNewProduct>(n);
+                for (int i = 0; i < n; i++) list.Add(ShopNewProduct.Read(r));
+                return new ShopPacket { Command = cmd, NewProducts = list };
+            }
+            case 15: return new ShopPacket { Command = cmd, Error = new ShopError(r.ReadInt(), r.ReadByte(), r.ReadInt()) };
             default: return new ShopPacket { Command = cmd };
         }
     }
@@ -224,4 +341,97 @@ public sealed class ShopPacket {
         foreach (var p in products) p.Write(w);
         return Bytes(w);
     }
+
+    /// <summary>A command 2 body (tests).</summary>
+    public static byte[] WriteProductUpdate(int serial, int buyCount) {
+        var w = new ByteWriter(); w.WriteByte(2); w.WriteInt(serial); w.WriteInt(buyCount); return Bytes(w);
+    }
+
+    /// <summary>A command 4 body (tests).</summary>
+    public static byte[] WritePurchaseResult(ShopPurchaseResult r) {
+        var w = new ByteWriter(); w.WriteByte(4); w.WriteInt(r.ItemId); w.WriteInt(r.Count); w.WriteInt((int) r.Price);
+        w.WriteByte(r.Rank); w.WriteBool(r.GuildStorage); return Bytes(w);
+    }
+
+    /// <summary>A command 6 body (tests).</summary>
+    public static byte[] WriteRepurchaseStart(int count) {
+        var w = new ByteWriter(); w.WriteByte(6); w.WriteShort((short) count); return Bytes(w);
+    }
+
+    /// <summary>A command 7 body (tests).</summary>
+    public static byte[] WriteRepurchaseAdd(IReadOnlyList<ShopProduct> products) {
+        var w = new ByteWriter(); w.WriteByte(7); w.WriteShort((short) products.Count);
+        foreach (var p in products) p.WriteRepurchase(w);
+        return Bytes(w);
+    }
+
+    /// <summary>A command 8 body (tests).</summary>
+    public static byte[] WriteRepurchaseRemoval(int serial) {
+        var w = new ByteWriter(); w.WriteByte(8); w.WriteInt(serial); return Bytes(w);
+    }
+
+    /// <summary>A command 9 body (tests).</summary>
+    public static byte[] WriteResetResult(ShopResetResult r) {
+        var w = new ByteWriter(); w.WriteByte(9); w.WriteBool(r.Success);
+        if (r.Success) { w.WriteInt(r.RefundItemId); w.WriteInt(r.RefundCount); }
+        return Bytes(w);
+    }
+
+    /// <summary>A command 13 body (tests).</summary>
+    public static byte[] WriteNewStart(ShopNewStart s) {
+        var w = new ByteWriter(); w.WriteByte(13); w.WriteInt(s.NpcId); w.WriteInt(s.ShopId);
+        w.WriteInt(s.TabShopId); w.WriteShort((short) s.TotalCount); return Bytes(w);
+    }
+
+    /// <summary>A command 14 body (tests).</summary>
+    public static byte[] WriteNewProducts(IReadOnlyList<ShopNewProduct> products) {
+        var w = new ByteWriter(); w.WriteByte(14); w.WriteByte((byte) products.Count);
+        foreach (var p in products) p.Write(w);
+        return Bytes(w);
+    }
+
+    /// <summary>A command 15 body (tests).</summary>
+    public static byte[] WriteError(ShopError e) {
+        var w = new ByteWriter(); w.WriteByte(15); w.WriteInt(e.Error); w.WriteByte(e.Command); w.WriteInt(e.Value); return Bytes(w);
+    }
+}
+
+// ---- Outbound 0x28 (SendOp::Shop) ----------------------------------------------------------------------------------
+
+/// <summary>Outbound 0x28 mode 3 (UIShopDialog::RequestRepurchase @0x141affeb0, uishopdialog.cpp:2826): u8 3, i32 serial.</summary>
+public sealed record ShopRepurchaseRequest(int Serial) : IOutPacket {
+    public Outbound Op => Outbound.Shop;
+    public void Write(ByteWriter w) { w.WriteByte(3); w.WriteInt(Serial); }
+}
+
+/// <summary>Outbound 0x28 mode 4 (UIShopDialog::SendPurchase @0x141b00060, uishopdialog.cpp:2846): u8 4, i32 serial, i32 quantity, i32 shopId.</summary>
+public sealed record ShopBuyRequest(int Serial, int Quantity, int ShopId) : IOutPacket {
+    public Outbound Op => Outbound.Shop;
+    public void Write(ByteWriter w) { w.WriteByte(4); w.WriteInt(Serial); w.WriteInt(Quantity); w.WriteInt(ShopId); }
+}
+
+/// <summary>Outbound 0x28 mode 5 (RequestSellItem @0x141425fc0, itemugcmesh.cpp:1097): u8 5, i64 itemUid, i32 count.</summary>
+public sealed record ShopSellRequest(long ItemUid, int Count) : IOutPacket {
+    public Outbound Op => Outbound.Shop;
+    public void Write(ByteWriter w) { w.WriteByte(5); w.WriteLong(ItemUid); w.WriteInt(Count); }
+}
+
+/// <summary>Outbound 0x28 mode 9 (UIShopDialog::ResetList @0x141afe8b0, uishopdialog.cpp:2550): u8 9, i32 resetPrice.</summary>
+public sealed record ShopResetListRequest(int ResetPrice) : IOutPacket {
+    public Outbound Op => Outbound.Shop;
+    public void Write(ByteWriter w) { w.WriteByte(9); w.WriteInt(ResetPrice); }
+}
+
+/// <summary>Outbound 0x28 mode 10 (UIShopDialog::vfunc_72 @0x141af3460, uishopdialog.cpp:750, :762): u8 10. Request the
+/// product list after the reset timer expires or the day rolls over.</summary>
+public sealed record ShopRequestListRequest : IOutPacket {
+    public Outbound Op => Outbound.Shop;
+    public void Write(ByteWriter w) { w.WriteByte(10); }
+}
+
+/// <summary>Outbound 0x28 mode 13 (UIShopDialog::FillNewProducts @0x141afc9d0, uishopdialog.cpp:2270): u8 13. Request the
+/// new-items tab list.</summary>
+public sealed record ShopRequestNewItemsRequest : IOutPacket {
+    public Outbound Op => Outbound.Shop;
+    public void Write(ByteWriter w) { w.WriteByte(13); }
 }

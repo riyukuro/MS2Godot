@@ -87,7 +87,8 @@ public sealed class MessageBoxData
     /// <summary>The common string table by key (set by the host; empty text until it is).</summary>
     public static Func<string, string> CommonByKey = _ => "";
 
-    public static string Common(int id) => CommonKeys.TryGetValue(id, out var k) ? CommonByKey(k) ?? "" : "";
+    public static string Common(int id) =>
+        CommonKeys.TryGetValue(id, out var k) || (k = Ms2.Formats.Text.CommonStringIds.Key(id)) != null ? CommonByKey(k) ?? "" : "";
 
     /// <summary>CMsgBoxData(type) @0x141a00db0: a new id, then the type's buttons and sound.</summary>
     public MessageBoxData(int type)

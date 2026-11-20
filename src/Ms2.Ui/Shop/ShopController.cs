@@ -8,13 +8,14 @@ namespace Ms2.Ui.Shop;
 /// <summary>
 /// UIShopDialog (client/ms2/uishopdialog.cpp; UI id 0x4e3b), the C++ side of the npc shop movie uishopdialog. Its root
 /// (ShopDialogProxy) makes the shop's own dialog by the shop type (initShop), which the movie's ShopDialog code then runs:
-/// the tab bar, the category list, the product list and the restock bar. This feeds it the shop header and the products of
-/// Inbound 0x51 (commands 0 and 1), the tabs and category tree (CShopCategoryTable), and the product rows.
-/// <para>Not ported (the shop's other commands, raised or left out): buying, selling and buying back, the instant restock,
-/// the new-items group, the star / gacha / merat items, the item preview, the search's ban-word check and the give-point
-/// event. A buy, sell or restock request is raised as <see cref="Request"/> and sends nothing.</para>
+/// the tab bar, the category list, the product list and the restock bar. This feeds it Inbound 0x51 (commands 0, 1, 2, 4,
+/// 9, 15), the tabs and category tree (CShopCategoryTable), the product rows, and the buy, sell and restock flows over
+/// Outbound 0x28 (<see cref="Send"/>).
+/// <para>STILL-OPEN: buyback UI (commands 6-8), new-items group (commands 13-14), star / gacha / merat items (commands
+/// 11-12), the item preview, the search's ban-word check, guild / achieve / championship / fame buy gates and the
+/// give-point event.</para>
 /// </summary>
-public sealed class ShopController : UiController
+public sealed class ShopController : UiController, Hud.IMessageBoxListener
 {
     public override string Movie => "uishopdialog";
     protected override string EntityMethod => "initShop";
@@ -43,12 +44,58 @@ public sealed class ShopController : UiController
     public Func<Item, int> ItemUseError;
 
     /// <summary>A request whose client path sends a packet or opens a part not here: "buy" (serial, quantity), "sell"
-    /// (slot key), "reset", "repurchase".</summary>
+    /// (slot key), "reset", "list", "repurchase".</summary>
     public event Action<string, object[]> Request;
     /// <summary>CUIService::OpenDialog of another window: the token pocket 0x4ece when the header asks for it.</summary>
     public event Action<int> OpenDialog;
     /// <summary>vfunc_66 with the inventory closed: the "openWindowPos" message to the inventory (0x4e2d) with this id.</summary>
     public event Action<int> InventoryWindowPos;
+
+    /// <summary>FUN_140710590: sends Outbound 0x28 (<see cref="Ms2.Net.Outbound.Shop"/>) packets.</summary>
+    public Action<Ms2.Net.Wire.IOutPacket> Send;
+    /// <summary>UITalkManager::SendNpcTalkMode0 (vfunc_67, uishopdialog.cpp:711).</summary>
+    public Action SendNpcTalkEnd;
+    /// <summary>CNetworkService::SendSystemShop(sortKind, 0) (vfunc_67, uishopdialog.cpp:712-713).</summary>
+    public Action<int, int> SendSystemShop;
+    /// <summary>Unk_Inventory::FUN_140a5f180(itemId, rank): owned count of an item currency.</summary>
+    public Func<int, int, long> ItemCount = (_, _) => 0;
+    /// <summary>Unk_Inventory::FUN_140a5f7b0(tag, 0): owned count of items matching a currency tag.</summary>
+    public Func<int, long> ItemTagCount = _ => 0;
+    /// <summary>Unk_Inventory::GetEmptySlotCount(tab): empty inventory slots for cube-mesh max buy count.</summary>
+    public Func<int, int> EmptySlotCount = _ => 1;
+    /// <summary>CGuildManager::m_info.GetFund() (uicommon.cpp:999, :1050).</summary>
+    public Func<long> GuildFund = () => 0;
+    /// <summary>Resolves a slot binding name ("InventoryDialog.&lt;i&gt;") for OnSell (uishopdialog.cpp:2533).</summary>
+    public Func<string, Item> FindInventorySlotItem;
+    /// <summary>InvenSlot::FUN_14140be60(pItem): sells an inventory slot item through the inventory's sell dialog flow.</summary>
+    public Action<Item> SellInventoryItem;
+    /// <summary>PCBase::FUN_141676b00(uid) (itemugcmesh.cpp:1091): true if the pet item is currently summoned.</summary>
+    public Func<long, bool> IsSummonedPet = _ => false;
+    /// <summary>FUN_140c8dab0(GetInstrumentManager()) (uishopdialog.cpp:2100): uid of the score currently playing.</summary>
+    public Func<long> PlayingScoreUid = () => 0;
+    /// <summary>CContentShutdown::Get(10) (uishopdialog.cpp:2080): shop content shutdown flag.</summary>
+    public bool ShopShutdown;
+    /// <summary>CGameEventValueSaleItemsRestricted (uishopdialog.cpp:2109): item restricted from selling.</summary>
+    public Func<int, bool> IsSaleRestricted = _ => false;
+    /// <summary>ShowSystemNotice(text, 1, 1) (uishopdialog.cpp:1767, :1864, :2085).</summary>
+    public Action<string> SystemNotice;
+    /// <summary>FUN_1412751b0(text, type) (uishopdialog.cpp:1850): guild storage purchase notice (type 0x14).</summary>
+    public Action<string, int> NoticeWithType;
+    /// <summary>FUN_140d73c60 / ShowMessageBox: shows a message box (defaults to <see cref="Hud.MessageBoxQueue.Show"/>).</summary>
+    public Action<Hud.MessageBoxData> ShowBox = Hud.MessageBoxQueue.Show;
+    /// <summary>FUN_14151f200: closes the current modal message box (defaults to <see cref="Hud.MessageBoxQueue.Next"/>).</summary>
+    public Action CloseBox = Hud.MessageBoxQueue.Next;
+    /// <summary>PlaySystemSound (shop_itembuy, shop_reset, system_notice_error_warningBag).</summary>
+    public Action<string> Sound;
+
+    /// <summary>UIShopDialog::Selection (uishopdialog.cpp:551): tracks the pending request's serial, list index and command.</summary>
+    struct PendingSelection
+    {
+        public int Kind, Index, Secondary;
+        public void Reset() { Kind = 0; Index = -1; Secondary = -1; }
+        public void ResetIf(int cmd) { if (Secondary == cmd) Reset(); }
+        public void Set(int kind, int index, int secondary) { Kind = kind; Index = index; Secondary = secondary; }
+    }
 
     /// <summary>A product as the dialog keeps it (CNpcShopProductCli): the packet's record and the item made from it.</summary>
     public sealed class Product
@@ -72,6 +119,7 @@ public sealed class ShopController : UiController
     readonly List<TabRow>[] tabs = { new(), new(), new() };                         // m_tabs
     int group;              // m_nGroup
     int category;           // m_nCategory
+    int sortKind;           // m_nSortKind
     bool checkEnableItems = true;   // m_bCheckEnableItems (ctor 1)
     bool headerRead;        // m_188
     bool resetPending;      // m_18b
@@ -80,26 +128,131 @@ public sealed class ShopController : UiController
     int resetPrice;         // m_nResetPrice
     string search = "";     // m_strSearch
     object shop;            // m_spShop
+    PendingSelection selection = new() { Index = -1, Secondary = -1 };
+    bool shopEnabled = true;
 
     public ShopInfo Info => info;
     /// <summary>The shop's own dialog initShop made (m_spShop).</summary>
     public object ShopView => shop;
     public int Group => group;
     public int Category => category;
+    public int SortKind { get => sortKind; set => sortKind = value; }
     public bool CheckEnableItems => checkEnableItems;
+    public bool ShopEnabled => shopEnabled;
     public IReadOnlyList<TabRow> Tabs(int g) => tabs[g];
     public IReadOnlyDictionary<int, Product> Products(int g) => products[g];
 
     string Common(string key, params object[] args) => Ms2.Quest.ClientFormat.Format(Model.Tables.Common(key) ?? "", args);
+    string Common(int id, params object[] args) => Ms2.Quest.ClientFormat.Format(Model.Tables.Common(id) ?? "", args);
     static string Number(long n) => n.ToString("N0", CultureInfo.InvariantCulture);    // FUN_1409404f0
 
     // ---- packets ---------------------------------------------------------------------------------------------------
 
-    /// <summary>OnShopPacket (@0x141af8710): commands 0 and 1; the others are not read yet.</summary>
+    /// <summary>OnShopPacket (@0x141af8710, uishopdialog.cpp:1524): dispatches Inbound 0x51 sub-commands and clears
+    /// matching pending selection state.</summary>
     public void OnShopPacket(ShopPacket p)
     {
-        if (p.Command == 0) ReadShopInfo(p.Info);
-        else if (p.Command == 1) ReadProducts(p.Products);
+        if (p == null) return;
+        switch (p.Command)
+        {
+            case 0: ReadShopInfo(p.Info); break;
+            case 1: ReadProducts(p.Products); break;
+            case 2: ReadProductUpdate(p.ProductUpdate); break;
+            case 4: ReadPurchaseResult(p.PurchaseResult); break;
+            case 9: ReadResetResult(p.ResetResult); break;
+            case 15: ReadShopError(p.Error); break;
+        }
+        selection.ResetIf(p.Command);
+    }
+
+    /// <summary>ReadProductUpdate (@0x141af98d0, uishopdialog.cpp:1740): re-enables shop, updates product buy count and
+    /// redraws the selected row via updateItem.</summary>
+    public void ReadProductUpdate(ShopProductUpdate u)
+    {
+        if (u == null) return;
+        EnableShop(true);
+        if (products[0].TryGetValue(u.Serial, out var p))
+        {
+            p.Record.Bought = u.BuyCount;
+            UpdateProduct(p);
+        }
+    }
+
+    /// <summary>UpdateProduct (@0x141afaeb0, uishopdialog.cpp:1956): rewrites the selected row of group 0.</summary>
+    void UpdateProduct(Product p)
+    {
+        if (shop == null || p == null || group != 0) return;
+        if (PopulateProduct(p) is { } row)
+            Host.Invoke(shop, "updateItem", selection.Index, row);
+    }
+
+    /// <summary>ReadPurchaseResult (@0x141afa2f0, uishopdialog.cpp:1834): re-enables shop; posts guild-storage notice when
+    /// <see cref="ShopPurchaseResult.GuildStorage"/> is set.</summary>
+    public void ReadPurchaseResult(ShopPurchaseResult r)
+    {
+        if (r == null) return;
+        EnableShop(true);
+        if (r.GuildStorage && Model != null)
+        {
+            uint color = Model.Tables.Items.TextColor(r.Rank);
+            string name = $"<FONT color='#{color:x}'>{Model.Tables.ItemName(r.ItemId) ?? ""}</FONT>";
+            string text = r.Count > 1
+                ? Common("s_msg_take_item_count_to_guild_storage", name, r.Count)
+                : Common("s_msg_take_item_to_guild_storage", name);
+            NoticeWithType?.Invoke(text, 0x14);
+        }
+    }
+
+    /// <summary>ReadResetResult (@0x141af9ad0, uishopdialog.cpp:1756): refund notice if an item was refunded, reset sound,
+    /// clears group 0 products and invokes requestItemList.</summary>
+    public void ReadResetResult(ShopResetResult r)
+    {
+        if (r == null) return;
+        if (r.Success && r.RefundItemId > 0 && r.RefundCount > 0 && Model != null)
+        {
+            string text = Common("s_shop_reset_refund_item", Model.Tables.ItemName(r.RefundItemId) ?? "", (uint)r.RefundCount);
+            if (text.Length > 0) SystemNotice?.Invoke(text);
+        }
+        Sound?.Invoke("shop_reset");
+        ResetProducts(0);
+        if (shop != null) Host.Invoke(shop, "requestItemList");
+    }
+
+    /// <summary>ReadShopError (@0x141afa640, uishopdialog.cpp:1858): re-enables shop and shows the client's error notice or
+    /// message box for the server refusal code.</summary>
+    public void ReadShopError(ShopError e)
+    {
+        if (e == null) return;
+        EnableShop(true);
+        switch (e.Error)
+        {
+            case 8: case 9: case 29: break;
+            case 2: case 13: SystemNotice?.Invoke(Common(0x49)); break;
+            case 11: ShowLackCurrency(e.Value, 0, 0); break;
+            case 12: SystemNotice?.Invoke(Common(0x35)); break;
+            case 16: SystemNotice?.Invoke(Common(0x5b)); break;
+            case 20: SystemNotice?.Invoke(Common("s_err_lack_guild_require_date")); break;
+            case 4: case 5: case 6: SystemNotice?.Invoke(Common(0x4b)); break;
+            case 7: SystemNotice?.Invoke(Common(0x4a)); break;
+            case 15:
+                SystemNotice?.Invoke(Common(0x43));
+                Sound?.Invoke("system_notice_error_warningBag");
+                break;
+            case 10: SystemNotice?.Invoke(Common(0x2d2)); break;
+            case 18: SystemNotice?.Invoke(Common(0x38, (uint)e.Value)); break;
+            case 23: SystemNotice?.Invoke(Common(0xc07)); break;
+            case 24: SystemNotice?.Invoke(Common("s_msg_cant_sell_to_only_sell_shop")); break;
+            case 25: SystemNotice?.Invoke(Common(0x688, Model?.Tables.PropertyProtectionTime ?? 0, Common(0x5a3))); break;
+            case 26: SystemNotice?.Invoke(Common("s_guild_err_buy_no_master")); break;
+            case 27: ShowLackCurrency(7, 0, 0); break;
+            case 28: SystemNotice?.Invoke(Common("s_err_invalid_item_cannot_buy_by_period")); break;
+            case 30: ShowSimpleBox(Common("s_shop_no_star_point_event")); break;
+            case 31: SystemNotice?.Invoke(Common("s_shop_err_change_reset_price")); break;
+            case 32: SystemNotice?.Invoke(Common("s_meratmarket_error_country_limit")); break;
+            case 33: SystemNotice?.Invoke(Common("s_err_cannot_sell_petitem_summon")); break;
+            default: SystemNotice?.Invoke(Common(0xcd, e.Error)); break;
+        }
+        selection.ResetIf(e.Command);
     }
 
     /// <summary>
@@ -240,8 +393,9 @@ public sealed class ShopController : UiController
     }
 
     /// <summary>
-    /// vfunc_67 (@0x141af2e90): UIDialog's, then the shop forgotten: "usable items only" back on, the groups and the
-    /// header cleared, the ready flag off.
+    /// vfunc_67 (@0x141af2e90, uishopdialog.cpp:661): UIDialog's, then the shop forgotten: "usable items only" back on,
+    /// the groups and the header cleared, the ready flag off, SendNpcTalkMode0, and SendSystemShop(m_nSortKind, 0) when
+    /// m_nSortKind &gt; 0.
     /// </summary>
     public override void Close()
     {
@@ -252,11 +406,16 @@ public sealed class ShopController : UiController
         ready = false;
         category = 0;
         group = 0;
+        selection.Reset();
         for (int i = 0; i < 3; i++) ResetProducts(i);
         search = "";
         info = new ShopInfo { ResetEnable = false, HideReset = true };
         resetPrice = 0;
         shop = null;
+        shopEnabled = true;
+        SendNpcTalkEnd?.Invoke();
+        if (sortKind > 0) SendSystemShop?.Invoke(sortKind, 0);
+        sortKind = 0;
     }
 
     /// <summary>
@@ -276,8 +435,9 @@ public sealed class ShopController : UiController
     }
 
     /// <summary>
-    /// vfunc_72 (@0x141af3460), per frame: once the reset time has passed, the movie's endTime and the group 0 products
-    /// cleared (the client then asks the server for the list, Shop 10, not sent here).
+    /// vfunc_72 (@0x141af3460, uishopdialog.cpp:726), per frame: once the reset time has passed, invokes endTime, clears
+    /// group 0 products and sends Shop mode 10; on a limited-reset shop when the local day rolls over (IsEarlierDay),
+    /// clears group 0 and sends Shop mode 10. Zero heap allocations per frame.
     /// </summary>
     public void Process()
     {
@@ -289,10 +449,22 @@ public sealed class ShopController : UiController
         {
             Host.Invoke(shop, "endTime");
             ResetProducts(0);
+            Send?.Invoke(new ShopRequestListRequest());
             Request?.Invoke("list", Array.Empty<object>());
             resetPending = false;
         }
+        else if (info.ResetEnable && info.ResetLimited && IsEarlierDay(resetCheckTime, now))
+        {
+            resetCheckTime = now;
+            ResetProducts(0);
+            Send?.Invoke(new ShopRequestListRequest());
+            Request?.Invoke("list", Array.Empty<object>());
+        }
     }
+
+    static bool IsEarlierDay(long earlierUnix, long laterUnix) =>
+        DateTimeOffset.FromUnixTimeSeconds(earlierUnix).LocalDateTime.Date
+        < DateTimeOffset.FromUnixTimeSeconds(laterUnix).LocalDateTime.Date;
 
     /// <summary>ResetProducts (@0x141afef10).</summary>
     void ResetProducts(int g)
@@ -305,6 +477,7 @@ public sealed class ShopController : UiController
     /// <summary>FUN_1412761e0 (@0x1412761e0): the shop's mouseChildren and mouseEnabled.</summary>
     void EnableShop(bool on)
     {
+        shopEnabled = on;
         if (shop == null) return;
         Host.Set(shop, "mouseChildren", on);
         Host.Set(shop, "mouseEnabled", on);
@@ -670,16 +843,418 @@ public sealed class ShopController : UiController
                 Search(Arg(args, 0) as string ?? Convert.ToString(Arg(args, 0), CultureInfo.InvariantCulture) ?? "");
                 return true;
             case "onbuyitem":
-                Request?.Invoke("buy", new[] { Host.Get(Arg(args, 0), "serialID"), Arg(args, 1) });
+            {
+                var row = Arg(args, 0);
+                int serial = ToInt(Host.Get(row, "serialID"));
+                int productType = ToInt(Host.Get(row, "productType"));
+                int index = ToInt(Arg(args, 1));
+                if (productType != 1) BuyProduct(serial, index);
+                else Request?.Invoke("buyMerat", new object[] { serial, index });
                 return true;
+            }
             case "onsell":
-                Request?.Invoke("sell", new[] { Arg(args, 0) });
+                SellItem(Arg(args, 0) as string ?? "");
                 return true;
             case "onresetlist":
-                Request?.Invoke("reset", new object[] { resetPrice });
+                ResetList();
                 return true;
         }
         return false;
+    }
+
+    // ---- currency, buy, sell and reset flows -----------------------------------------------------------------------
+
+    void ShowSimpleBox(string text) => ShowBox?.Invoke(Hud.MessageBoxQueue.Create(0, text ?? "", null, ""));
+
+    /// <summary>UIShopDialog::HasStarEvent (@0x141aff180, uishopdialog.cpp:2690): star shop requires active event.</summary>
+    public bool HasStarEvent() => !(info.ShopType == 2 && !Pc.StarPointEvent);
+
+    /// <summary>HasEnoughCurrency (@0x1418ff1f0, uicommon.cpp:971) over <see cref="UiModel.Player"/> and inventory/guild hooks.</summary>
+    public bool HasEnoughCurrency(int currency, long amount, int itemId)
+    {
+        if (Model == null) return false;
+        switch (currency)
+        {
+            case 1: return Pc.Mesos >= amount;
+            case 2: return ItemCount(itemId, 0) >= amount;
+            case 3: return MeratTotal() >= amount;
+            case 4: case 5: case 6: case 7:
+            case 0xc: case 0xd: case 0xe: case 0xf: case 0x10:
+                return Pc.Tokens.TryGetValue(currency, out long tok) && tok >= amount;
+            case 9: return Pc.RedMerat >= amount;
+            case 10: return Pc.RedMerat >= amount || MeratTotal() >= amount;
+            case 0xb: return Math.Max(0, GuildFund()) >= amount;
+            default: return false;
+        }
+    }
+
+    /// <summary>GetCurrencyAmount (@0x1418ff5a0, uicommon.cpp:1020).</summary>
+    public long GetCurrencyAmount(int currency, long amount, int itemId)
+    {
+        if (Model == null) return 0;
+        switch (currency)
+        {
+            case 1: return Pc.Mesos;
+            case 2: return ItemCount(itemId, 0);
+            case 3: return MeratTotal();
+            case 4: case 5: case 6: case 7:
+            case 0xc: case 0xd: case 0xe: case 0xf: case 0x10:
+                return Pc.Tokens.TryGetValue(currency, out long tok) ? tok : 0;
+            case 9: return Pc.RedMerat;
+            case 10: return Pc.RedMerat < amount ? MeratTotal() : Pc.RedMerat;
+            case 0xb: return GuildFund();
+            default: return 0;
+        }
+    }
+
+    long MeratTotal()
+    {
+        long sum = 0;
+        if (Pc.MeratWallet != null) foreach (var m in Pc.MeratWallet) sum += m;
+        return sum > 0 ? sum : Pc.Merats;
+    }
+
+    /// <summary>ShowLackCurrencyMessage (@0x1418ff710, uicommon.cpp:1068) via FUN_14134a120 (unit_141347b10.cpp:594).</summary>
+    public void ShowLackCurrency(int shopKind, int itemId, long amount)
+    {
+        int currency = CurrencyOf(shopKind);
+        switch (currency)
+        {
+            case 1: SystemNotice?.Invoke(Common(0x34)); break;
+            case 2: SystemNotice?.Invoke(Common(0x38, (uint)itemId)); break;
+            case 4: SystemNotice?.Invoke(Common(0x39)); break;
+            case 5: SystemNotice?.Invoke(Common(0x3a)); break;
+            case 6: SystemNotice?.Invoke(Common(0x3b)); break;
+            case 7: SystemNotice?.Invoke(Common(0x3c)); break;
+            case 9: SystemNotice?.Invoke(Common("s_err_lack_redmerat")); break;
+            case 0xb: SystemNotice?.Invoke(Common("s_guild_err_not_enough_guild_fund")); break;
+            case 0xc: SystemNotice?.Invoke(Common("s_err_lack_reverse_coin")); break;
+            case 0xd: SystemNotice?.Invoke(Common("s_err_lack_mentor_token")); break;
+            case 0xe: SystemNotice?.Invoke(Common("s_err_lack_mentee_token")); break;
+            case 0xf: SystemNotice?.Invoke(Common("s_err_lack_star_point")); break;
+            case 0x10: SystemNotice?.Invoke(Common(0x41)); break;
+            case 3: case 10: SystemNotice?.Invoke(Common("s_err_lack_merat")); break;
+        }
+    }
+
+    /// <summary>CNpcShopProductCli::FUN_140db8580 (npcshopproductbase.cpp:492): checks CanPayCurrency; on failure posts
+    /// FUN_14134a120 notice and returns false.</summary>
+    public bool CanPayProduct(Product p, int count)
+    {
+        if (p == null) return false;
+        long total = p.Record.Price * count;
+        if (!HasEnoughCurrency(CurrencyOf(p.Record.Currency), total, p.Record.CurrencyItemId))
+        {
+            ShowLackCurrency(p.Record.Currency, p.Record.CurrencyItemId, total);
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>CNpcShopProductCli::CheckStarPointEvent (npcshopproductbase.cpp:504): currency 0xd requires star event.</summary>
+    public bool CheckStarPointEvent(Product p)
+    {
+        if (p != null && p.Record.Currency == 0xd && !Pc.StarPointEvent)
+        {
+            ShowSimpleBox(Common("s_shop_no_star_point_event"));
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>CNpcShopProductCli::CheckBuyPeriod (npcshopproductbase.cpp:295-415): checks period window and life expiry.</summary>
+    public bool CheckBuyPeriod(Product p, out string error)
+    {
+        error = "";
+        if (p == null) return false;
+        long now = ServerTime();
+        if (p.Record.Period is { } per && now > 0)
+        {
+            if (per.HasTime && ((per.Start > 0 && now < per.Start) || (per.End > 0 && now > per.End)))
+            {
+                error = Common("s_err_invalid_item_cannot_buy_by_period");
+                return false;
+            }
+            if (per.HasPart)
+            {
+                var local = DateTimeOffset.FromUnixTimeSeconds(now).LocalDateTime;
+                if (per.Days.Count > 0 && !per.Days.Contains((int)local.DayOfWeek))
+                {
+                    error = Common("s_err_invalid_item_cannot_buy_by_period");
+                    return false;
+                }
+                if (per.PartTimes.Count > 0)
+                {
+                    int sec = local.Hour * 3600 + local.Minute * 60 + local.Second;
+                    bool inPart = false;
+                    foreach (var (s, e) in per.PartTimes)
+                        if (sec >= s && sec <= e) { inPart = true; break; }
+                    if (!inPart)
+                    {
+                        error = Common("s_err_invalid_item_cannot_buy_by_period");
+                        return false;
+                    }
+                }
+            }
+        }
+        if (p.Record.Life is { Type: 2, Time: > 0 } life && now > 0 && now >= life.Time)
+        {
+            error = Common("s_blackmarket_error_buy_expired");
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>CNpcShopProductCli::FUN_140db8210 (npcshopproductbase.cpp:438): max purchases allowed in one bill.</summary>
+    public int MaxBuyCount(Product p)
+    {
+        if (p?.Item?.Data is not { } d) return 0;
+        if (d.HasCubeTextureMesh && d.SlotMax == 1) return Math.Max(0, EmptySlotCount(0));
+        if (d.IsStackable)
+        {
+            int slotMax = (int)Math.Max(1u, d.SlotMax);
+            int buy = p.Record.Limit > 0 ? Math.Min(p.Record.RemainingItemCount, slotMax) : slotMax;
+            if (p.Record.Bundle > 1) buy /= p.Record.Bundle;
+            return buy;
+        }
+        return 1;
+    }
+
+    /// <summary>CNpcShopProductCli::GetMaxAffordableCount (npcshopproductbase.cpp:465): capped by owned currency and MaxBuyCount.</summary>
+    public int MaxAffordableCount(Product p)
+    {
+        if (p == null) return 0;
+        long price = p.Record.Price;
+        if (price <= 0) return 1;
+        int maxBuy = MaxBuyCount(p);
+        long have = p.Record.Currency == 1
+            ? (p.Record.CurrencyItemTag != 0 ? ItemTagCount(p.Record.CurrencyItemTag) : ItemCount(p.Record.CurrencyItemId, p.Item?.Data?.Rank ?? 0))
+            : GetCurrencyAmount(CurrencyOf(p.Record.Currency), price, p.Record.CurrencyItemId);
+        long afford = have / price;
+        return (int)(afford < maxBuy ? afford : maxBuy);
+    }
+
+    Product FindCurrentProduct(int serial) =>
+        group >= 0 && group < 3 && products[group].TryGetValue(serial, out var p) ? p : null;
+
+    /// <summary>
+    /// UIShopDialog::BuyProduct (@0x141afd8e0, uishopdialog.cpp:2423): checks star event, buy period, star point currency,
+    /// affordability for 1 unit and sold-out status before opening the purchase bill (group 0) or requesting repurchase
+    /// (group 1).
+    /// STILL-OPEN: guild trophy / guild master / achieve / fame / championship / guild npc requirement checks.
+    /// </summary>
+    public void BuyProduct(int serial, int rowIndex)
+    {
+        if (!HasStarEvent()) { ShowSimpleBox(Common("s_shop_no_star_point_event")); return; }
+        var p = FindCurrentProduct(serial);
+        if (p == null) return;
+        if (group != 1)
+        {
+            if (!CheckBuyPeriod(p, out string periodError)) { ShowSimpleBox(periodError); return; }
+            if (!CheckStarPointEvent(p)) return;
+            if (!CanPayProduct(p, 1)) return;
+            if (p.Record.SoldOut) { ShowSimpleBox(Common(0x49)); return; }
+            ShowPurchaseBill(p, rowIndex);
+        }
+        else
+        {
+            if (RequestRepurchase(serial))
+            {
+                EnableShop(false);
+                selection.Set(serial, rowIndex, 3);
+            }
+        }
+    }
+
+    /// <summary>
+    /// UIShopDialog::ShowPurchaseBill (@0x141b02770, uishopdialog.cpp:3136): stackable (MaxBuyCount &gt; 1) opens box 0x12
+    /// ("shopTrade") with OnPriceChanged callback and tag "buyItem,{serial}"; single item confirms via box 0x11
+    /// ("itemNotify") with tag "buyItem,{serial},1" when currency != 0 or price &gt;= ShopBuyConfirmPrice, else sends
+    /// immediately and disables the shop until the server answers.
+    /// </summary>
+    void ShowPurchaseBill(Product p, int rowIndex)
+    {
+        if (p?.Item == null || Model == null) return;
+        int serial = p.Record.Serial;
+        int max = MaxBuyCount(p);
+        if (max > 1)
+        {
+            var box = Hud.MessageBoxQueue.Create(0x12, Common(0x295), this, "");
+            selection.Set(serial, rowIndex, 4);
+            box.Title = Common(0x45f);
+            box.SetButtonLabelIds(0x47d, 0x476, 0);
+            box.SetItemEntry(p.Item, ItemName(p.Item), 1, 1, MaxAffordableCount(p), (int)p.Record.Price,
+                Math.Max(1, p.Record.Bundle), Model.Tables.Items.TextColor);
+            Func<object[], object> onPrice = OnPriceChanged;
+            box.Values["shopTradeChangePriceFuntion"] = onPrice;
+            box.Values["shopSerialID"] = serial;
+            box.Extra = $"buyItem,{serial}";
+            box.EnterAllowed = false;
+            ShowBox?.Invoke(box);
+        }
+        else
+        {
+            bool confirm = p.Record.Currency != 0 || p.Record.Price >= Model.Tables.ShopBuyConfirmPrice;
+            if (confirm)
+            {
+                selection.Set(serial, rowIndex, 4);
+                var box = Hud.MessageBoxQueue.Create(0x11, Common(0x28d), this, $"buyItem,{serial},1");
+                box.SetItemEntry(p.Item, ItemName(p.Item), 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+                box.SetButtonPreset(1);
+                box.EnterAllowed = false;
+                ShowBox?.Invoke(box);
+            }
+            else if (SendPurchase(serial, 1))
+            {
+                EnableShop(false);
+                selection.Set(serial, rowIndex, 4);
+            }
+        }
+    }
+
+    /// <summary>UIShopDialog::OnPriceChanged (@0x141b03240, uishopdialog.cpp:3217): updates the shopTrade box's price HTML text.</summary>
+    object OnPriceChanged(object[] args)
+    {
+        if (shop == null || args == null || args.Length < 3) return null;
+        int serial = ToInt(args[0]);
+        var field = args[1];
+        long amount = (uint)ToInt(args[2]);
+        var p = FindCurrentProduct(serial);
+        if (p == null || field == null) return null;
+        Host?.Set(field, "htmlText", PriceText(p.Record.Currency, p.Record.CurrencyItemId, amount, p.Record.IconTag));
+        return null;
+    }
+
+    /// <summary>UIShopDialog::OnMessage (@0x141af5020, uishopdialog.cpp:949): answers the "buyItem,{serial},{count}" box.</summary>
+    public bool OnMessageBox(Hud.MessageBoxController sender, int button, string tag)
+    {
+        if (button != 0) { CloseBox?.Invoke(); return false; }
+        if (tag != null && tag.Contains("buyItem", StringComparison.Ordinal))
+        {
+            var parts = tag.Split(',');
+            if (parts.Length != 3) return false;
+            if (parts[1].Length > 0 && parts[2].Length > 0)
+            {
+                int serial = Hud.MessageBoxData.WToI(parts[1]);
+                int count = Hud.MessageBoxData.WToI(parts[2]);
+                var p = FindCurrentProduct(serial);
+                if (p?.Item == null) return false;
+                if (SendPurchase(serial, count))
+                {
+                    EnableShop(false);
+                    CloseBox?.Invoke();
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>UIShopDialog::SendPurchase (@0x141b00060, uishopdialog.cpp:2837): checks quantity &gt; 0, product existence
+    /// and currency, then sends Outbound 0x28 mode 4 (serial, quantity, shopId) and plays shop_itembuy.</summary>
+    public bool SendPurchase(int serial, int quantity)
+    {
+        if (quantity <= 0) return false;
+        var p = FindCurrentProduct(serial);
+        if (p == null) return false;
+        if (!CanPayProduct(p, quantity)) return false;
+        Send?.Invoke(new ShopBuyRequest(serial, quantity, info.ShopId));
+        Sound?.Invoke("shop_itembuy");
+        Request?.Invoke("buy", new object[] { serial, quantity });
+        return true;
+    }
+
+    /// <summary>UIShopDialog::RequestRepurchase (@0x141affeb0, uishopdialog.cpp:2816): checks player mesos &gt;= price
+    /// (notice 0x34 on fail), then sends Outbound 0x28 mode 3 (serial) and plays shop_itembuy.</summary>
+    public bool RequestRepurchase(int serial)
+    {
+        var p = FindCurrentProduct(serial);
+        if (p == null) return false;
+        if (Pc.Mesos < p.Record.Price)
+        {
+            SystemNotice?.Invoke(Common(0x34));
+            return false;
+        }
+        Send?.Invoke(new ShopRepurchaseRequest(serial));
+        Sound?.Invoke("shop_itembuy");
+        Request?.Invoke("repurchase", new object[] { serial });
+        return true;
+    }
+
+    /// <summary>
+    /// UIShopDialog::CanSellItem (@0x141afb780, uishopdialog.cpp:2076): checks open shop, shop shutdown (0x2f7), sell-only
+    /// flag, star event, item lock (box 0x22), socketed gems, playing score, sellable flag (0xec) and restricted list (0x30b).
+    /// </summary>
+    public bool CanSellItem(Item item)
+    {
+        if (shop == null || item?.Data == null || Model == null) return false;
+        if (ShopShutdown) { SystemNotice?.Invoke(Common(0x2f7)); return false; }
+        if (info.SellOnly) { SystemNotice?.Invoke(Common("s_msg_cant_sell_to_only_sell_shop")); return false; }
+        if (!HasStarEvent()) { ShowSimpleBox(Common("s_shop_no_star_point_event")); return false; }
+        long now = ServerTime();
+        if (!ItemTradeRules.NotLocked(item, now, out int lockReason))
+        {
+            var box = Hud.MessageBoxQueue.Create(0x22, "", null, "");
+            if (lockReason == 2) box.Values["confirmMsg"] = "$s_itemlock_msgbox_lock_gemstone_notice";
+            ShowBox?.Invoke(box);
+            return false;
+        }
+        if (!ItemTradeRules.GemsShopSellable(item.Record?.Socket, Model.Tables.Items.Get, now))
+        {
+            ShowSimpleBox(Common("s_itembreak_usedgemstone_item"));
+            return false;
+        }
+        if (item.Data.IsScoreItem && PlayingScoreUid() == item.Uid)
+        {
+            ShowSimpleBox(Common("s_play_instrument_cant_destory_score"));
+            return false;
+        }
+        if (!ItemTradeRules.CanSellToShop(item, Model.Tables.Items.Get, now))
+        {
+            SystemNotice?.Invoke(Common(0xec));
+            return false;
+        }
+        if (IsSaleRestricted(item.ItemId))
+        {
+            SystemNotice?.Invoke(Common(0x30b));
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>UIShopDialog::SellItem (@0x141afe7f0, uishopdialog.cpp:2533): resolves the dragged inventory slot key and
+    /// routes to <see cref="SellInventoryItem"/> (InvenSlot::FUN_14140be60).</summary>
+    public void SellItem(string slotKey)
+    {
+        if (shop == null) return;
+        Request?.Invoke("sell", new object[] { slotKey });
+        var item = FindInventorySlotItem?.Invoke(slotKey);
+        if (item == null) return;
+        if (SellInventoryItem != null) SellInventoryItem(item);
+        else if (CanSellItem(item)) RequestSellItem(item, (int)item.Count);
+    }
+
+    /// <summary>RequestSellItem (@0x141425fc0, itemugcmesh.cpp:1084): checks count &gt; 0 and summoned pet (notice
+    /// s_err_cannot_sell_petitem_summon), then sends Outbound 0x28 mode 5 (itemUid, count).</summary>
+    public bool RequestSellItem(Item item, int count)
+    {
+        if (item == null || count <= 0) return false;
+        if (IsSummonedPet(item.Uid))
+        {
+            SystemNotice?.Invoke(Common("s_err_cannot_sell_petitem_summon"));
+            return false;
+        }
+        Send?.Invoke(new ShopSellRequest(item.Uid, count));
+        return true;
+    }
+
+    /// <summary>UIShopDialog::ResetList (@0x141afe8b0, uishopdialog.cpp:2548): sends Outbound 0x28 mode 9 (resetPrice) and
+    /// disables the shop until the server responds.</summary>
+    public void ResetList()
+    {
+        Send?.Invoke(new ShopResetListRequest(resetPrice));
+        Request?.Invoke("reset", new object[] { resetPrice });
+        EnableShop(false);
     }
 
     static object Arg(object[] a, int i) => a != null && i < a.Length ? a[i] : null;

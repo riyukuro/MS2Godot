@@ -98,6 +98,8 @@ public sealed class GameTables
         ClubNameLengthMin = (int)k.Float("ClubNameLengthMin", ClubNameLengthMin);
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
         GuildCreatePrice = (int)k.Float("GuildCreatePrice", GuildCreatePrice);
+        ShopBuyConfirmPrice = (uint)k.Float("ShopBuyConfirmPrice", ShopBuyConfirmPrice);
+        ShopSellConfirmPrice = (uint)k.Float("ShopSellConfirmPrice", ShopSellConfirmPrice);
         GuildCreateMinLevel = (int)k.Float("GuildCreateMinLevel", GuildCreateMinLevel);
         PropertyProtectionTime = (int)k.Float("PropertyProtectionTime", PropertyProtectionTime);
         // Value<__int64> BlackMarketSellMinPrice / BlackMarketSellMaxPrice (read whole: an integer text), min clamped to 0 and
@@ -368,6 +370,10 @@ public sealed class GameTables
     /// <summary>Client::Constants PropertyProtectionTime (+0x6aa8, Define default 0: unit_1402ab440_constantsblocks.cpp:1040),
     /// shown by the black market's result 37 (CBlackMarketMan::FUN_140a21ca0).</summary>
     public int PropertyProtectionTime = 0;
+    /// <summary>Client::Constants ShopBuyConfirmPrice (+0xc188) and ShopSellConfirmPrice (+0xc130, Define defaults 0u:
+    /// unit_1402ab440_constantsblocks.cpp:1451-1452), the meso thresholds that pop a confirmation box in
+    /// UIShopDialog::ShowPurchaseBill (uishopdialog.cpp:3175) and SellItem (uimessagebox.cpp:680).</summary>
+    public uint ShopBuyConfirmPrice = 0, ShopSellConfirmPrice = 0;
     /// <summary>Client::Constants BlackMarketSellMinPrice / BlackMarketSellMaxPrice (Define defaults 10 and 9900000000, the
     /// min at least 0 and the max at least the min: unit_1402ab440_constantsblocks.cpp:942-945), the register price limits
     /// (BlackMarketPageItemRegister::OnClickRegister), and BlackMarketSellEndDay (7: :1002), the sale days its texts show.</summary>

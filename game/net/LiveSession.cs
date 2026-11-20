@@ -281,6 +281,14 @@ public partial class LiveSession : Node
     public event Action<NpcTalkMessage> NpcTalkReceived;
     /// <summary>The talk window's NpcTalk (0x22) and Quest (0x29) sends.</summary>
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>The Shop packets (0x51, UIShopDialog::OnShopPacket) for the npc shop; live only.</summary>
+    public event Action<ShopPacket> ShopReceived;
+    /// <summary>The npc shop's sends (Shop 0x28).</summary>
+    public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
+    /// <summary>CNpc::OpenTalkUi / CloseTalkUi (unit_14108e1e0_npcactorandvibrate.cpp:1350): talk UI dialog id (0x4e3b shop).</summary>
+    public event Action<int> TalkUiOpen, TalkUiClose;
+    public void RaiseTalkUiOpen(int dialogId) => TalkUiOpen?.Invoke(dialogId);
+    public void RaiseTalkUiClose(int dialogId) => TalkUiClose?.Invoke(dialogId);
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
 
@@ -793,6 +801,12 @@ public partial class LiveSession : Node
                 var t = NpcTalkMessage.Read(p.Reader());   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
                 GD.Print($"live: npc talk {t}");
                 NpcTalkReceived?.Invoke(t);
+            }
+            else if (game.Is(p, Inbound.Shop))
+            {
+                var sp = ShopPacket.Read(p.Reader());   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
+                GD.Print($"live: shop cmd {sp.Command}");
+                ShopReceived?.Invoke(sp);
             }
             else if (game.Is(p, Inbound.Quest))
             {

@@ -430,6 +430,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         View.ClearNew(e.Uid);
         int mode = UseMode(item, false);
         if (mode == 1) { TryAddToTrade(item); return; }
+        if (mode == 2) { TrySellItem(item); return; }
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
@@ -608,8 +609,11 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
 
     /// <summary>The trade dialog (0x4e83, Unk_InvGetDialogById&lt;UITradeDialogEx&gt;): its book while it is open, else null.</summary>
     public Func<TradeBook> Trade = () => null;
+    /// <summary>The npc shop dialog (0x4e3b, Unk_BreakDialog&lt;UIShopDialog&gt;): its controller while it is open, else null.</summary>
+    public Func<Shop.ShopController> Shop = () => null;
     /// <summary>The id of the dialog at the head of DAT_143af2258 (the open dialogs that take a right-clicked item), 0
-    /// with none. The host gives <see cref="TradeBook.DialogId"/> while the trade dialog is open.</summary>
+    /// with none. The host gives <see cref="TradeBook.DialogId"/> while the trade dialog is open, or
+    /// <see cref="Shop.ShopController.UiId"/> while the shop is open.</summary>
     public Func<int> DialogHead = () => 0;
     /// <summary>FUN_140c8dab0(GetInstrumentManager()): the uid of the score being played, 0 with none.</summary>
     public Func<long> PlayingScoreUid = () => 0;
@@ -707,6 +711,128 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (slot < 0) return;
         book.SendAddItem(uid, count, slot);
         if (FindItem(uid) is { } sounded) ItemSound?.Invoke(sounded);
+    }
+
+    // ---- npc shop sell (InvenSlot::FUN_14140be60, invenslot.cpp:1756, :1882; UIMessageBox SellItem, uimessagebox.cpp:670) ----
+
+    /// <summary>The sell boxes' tags (invenslot.cpp:348, uimessagebox.cpp:84-85), answered by UIMessageBox::HandlePlainTag / HandleArgTag.</summary>
+    public const string SellBox = "sell", SellConfirmBox = "sellconfirm";
+
+    /// <summary>CItem::GetSellPrice (item.cpp:1235 -> ItemProperty::GetSellPrice * equipmentSellPrice factor when equip).</summary>
+    public long SellPriceOf(Item item)
+    {
+        if (item?.Data == null || Model == null) return 0;
+        long price = item.Data.PropertySellPrice(item.Rarity);
+        if (item.Data.Type == 1) price = (long)(price * Model.Tables.EquipmentSellRate(item.Rarity));
+        return price;
+    }
+
+    /// <summary>Resolves an inventory slot binding name ("InventoryDialog.&lt;i&gt;") to its item, or null.</summary>
+    public Item FindSlotItem(string slotKey)
+    {
+        if (SlotIndexOf(slotKey) is int i and >= 0 && View?.ItemAt(View.Tab, i) is { } e && Model != null)
+            return ToItem(e, Model.Tables.Items);
+        return null;
+    }
+
+    /// <summary>
+    /// InvenSlot::FUN_14140be60 (@0x14140be60, invenslot.cpp:1756): checks the open shop's CanSellItem (FUN_14140e3f0 :2132);
+    /// with Shift held or an expiry item (CItem::FUN_140525c60) calls RequestSellItem immediately for the whole stack;
+    /// else opens the sell quantity / confirmation flow (<see cref="ShowSellDialog"/>).
+    /// </summary>
+    public int TrySellItem(Item item)
+    {
+        if (item == null || Model == null) return 0;
+        var shop = Shop();
+        if (shop == null || !shop.CanSellItem(item)) return 0;
+        if (ShiftHeld() || ItemTradeRules.HasPeriod(item))
+        {
+            shop.RequestSellItem(item, (int)item.Count);
+            return 1;
+        }
+        ShowSellDialog(item);
+        return 1;
+    }
+
+    /// <summary>
+    /// FUN_14140cb90 (@0x14140cb90, invenslot.cpp:1882): for a stack of more than 1, opens box 0x12 ("shopTrade") with
+    /// tag "sell", title 0x460, buttons 0x47e/0x476 and the item entry; for a single item, proceeds to
+    /// <see cref="SellItemConfirmedStep"/> (uimessagebox.cpp:670).
+    /// STILL-OPEN: CQuestManager::IsItemUsedByQuest (quest item sell warning s_msg_quest_item_sell / s_msg_quest_item_sell_stack).
+    /// </summary>
+    void ShowSellDialog(Item item)
+    {
+        int count = (int)item.Count;
+        if (count > 1)
+        {
+            var box = MessageBoxQueue.Create(0x12, Model.Tables.Common("s_msg_item_sell") ?? "", null, SellBox);
+            box.ItemUid = item.Uid;
+            box.Title = Model.Tables.Common(0x460);
+            box.SetButtonLabelIds(0x47e, 0x476, 0);
+            box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item), 1, count, count, (int)SellPriceOf(item), 1, Model.Tables.Items.TextColor);
+            ShowBox(box);
+        }
+        else
+        {
+            SellItemConfirmedStep(item, count);
+        }
+    }
+
+    /// <summary>
+    /// SellItem (@0x1419f8920, uimessagebox.cpp:670): asks once more (box 0x11, tag "sellconfirm,&lt;count&gt;", message 0x28c,
+    /// buttons 0x47e/0x476) when rarity &gt; 3, skin item, or sellPrice * count &gt;= ShopSellConfirmPrice; otherwise calls
+    /// RequestSellItem directly.
+    /// </summary>
+    void SellItemConfirmedStep(Item item, int count)
+    {
+        if (item == null || Model == null) return;
+        long total = SellPriceOf(item) * count;
+        bool ask = item.Rarity > 3 || item.Data.HasSkinType || total >= Model.Tables.ShopSellConfirmPrice;
+        if (ask)
+        {
+            var box = MessageBoxQueue.Create(0x11, Model.Tables.Common(0x28c), null, $"{SellConfirmBox},{count}");
+            box.ItemUid = item.Uid;
+            var copy = Item.Create(Model.Tables.Items, item.ItemId, item.Rarity);
+            if (copy != null)
+            {
+                copy.Rarity = item.Rarity;
+                copy.Count = (uint)Math.Max(count, 0);
+                copy.Uid = item.Uid;
+                copy.Record = item.Record;
+                box.SetItemEntry(copy, new ItemTooltip(Model, 0).Name(copy), 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+            }
+            box.SetButtonLabelIds(0x47e, 0x476, 0);
+            ShowBox(box);
+        }
+        else
+        {
+            Shop()?.RequestSellItem(item, count);
+        }
+    }
+
+    /// <summary>FUN_141a002b0 (uimessagebox.cpp:2031, :2077, :2390): uid 0 passes; otherwise 1 &lt;= count &lt;= item.Count,
+    /// else notice 0xee formatted with (1, have) and returns false.</summary>
+    public bool IsSellCountValid(long uid, int count)
+    {
+        if (Model == null) return false;
+        if (uid != 0 && FindItem(uid) is { } item && (count <= 0 || count > (int)item.Count))
+        {
+            NoticeText?.Invoke(Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0xee), 1, item.Count));
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>UIMessageBox::HandleSellButton (@0x1419fe830, uimessagebox.cpp:2024): after validation, calls SellItem.</summary>
+    public void SellCountStep(long uid, int count)
+    {
+        if (FindItem(uid) is { } item) SellItemConfirmedStep(item, count);
+    }
+
+    /// <summary>UIMessageBox::HandleSellConfirmButton (@0x1419fea00, uimessagebox.cpp:2070): after validation, sends sell.</summary>
+    public void SellConfirmStep(long uid, int count)
+    {
+        if (FindItem(uid) is { } item) Shop()?.RequestSellItem(item, count);
     }
 
     /// <summary>The common string ids the equip checks show (commonstringtable.cpp:1841).</summary>
@@ -931,8 +1057,11 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// </summary>
     int UseMode(Item item, bool hint)
     {
-        if (DialogHead() == TradeBook.DialogId)
+        int head = DialogHead();
+        if (head == TradeBook.DialogId)
             return CanTradeItem(item, out _) ? 1 : hint ? 0 : 1;
+        if (head == Ms2.Ui.Shop.ShopController.UiId)
+            return ItemTradeRules.CanSellToShop(item, GemData, Now) ? 2 : hint ? 0 : 2;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;
@@ -954,6 +1083,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         {
             case 1:
                 return Model.Tables.Common(0x74f);
+            case 2:
+                return Model.Tables.Common(0x755);
             case 6:
                 if (Feature(0x8e) && item.Data.HasSkinType)
                 {

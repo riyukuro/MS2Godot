@@ -2,6 +2,8 @@ using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
+using Ms2.Ui.Hud;
 using Ms2.Ui.Shop;
 using Ms2.Ui.Items;
 using NUnit.Framework;
@@ -217,5 +219,359 @@ public class ShopTests
         Assert.That(ShopController.CurrencyOf(0), Is.EqualTo(1));
         Assert.That(ShopController.CurrencyIcon(1, 0), Is.EqualTo(("export_common_icon_meso_h21", -6)));
         Assert.That(ShopController.CurrencyIcon(0, 0), Is.EqualTo(("export_common_icon_cash_r", -4)));
+    }
+
+    static ShopProduct StackableProduct() => new()
+    {
+        Serial = 200, ItemId = 20000028, Rarity = 1, Price = 100, OriginalPrice = 100, Count = 1, Bundle = 1, Categories = "CP",
+    };
+
+    [Test]
+    public void BuySingleItemBelowConfirmPriceSendsImmediatelyWithoutLocalMutation()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 10_000;
+        model.Tables.ShopBuyConfirmPrice = 5_000;
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+
+        var row = h.Obj(("serialID", 1), ("productType", 0));
+        Assert.That(c.OnCallback("OnBuyItem", new object[] { row, 0 }), Is.True);
+        Assert.That(boxes, Is.Empty, "below ShopBuyConfirmPrice sends directly");
+        Assert.That(sent, Has.Count.EqualTo(1));
+        Assert.That(sent[0], Is.EqualTo(new ShopBuyRequest(1, 1, 106)));
+        Assert.That(c.ShopEnabled, Is.False, "shop disabled until server answers");
+        Assert.That(model.Player.Mesos, Is.EqualTo(10_000), "mesos never mutated before server answer");
+        Assert.That(c.Products(0)[1].Record.Bought, Is.EqualTo(0), "bought count never mutated before server answer");
+
+        // Server answers with cmd 2 (product update) and cmd 4 (purchase result)
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteProductUpdate(1, 1))));
+        Assert.That(c.ShopEnabled, Is.True);
+        Assert.That(c.Products(0)[1].Record.Bought, Is.EqualTo(1));
+
+        var notices = new List<(string Text, int Type)>();
+        c.NoticeWithType = (t, ty) => notices.Add((t, ty));
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(
+            ShopPacket.WritePurchaseResult(new ShopPurchaseResult(11300001, 1, 1830, 1, true)))));
+        Assert.That(notices, Has.Count.EqualTo(1));
+        Assert.That(notices[0].Type, Is.EqualTo(0x14));
+    }
+
+    [Test]
+    public void BuyAtOrAboveConfirmPriceAndNonMesoRequireConfirmation()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 10_000;
+        model.Tables.ShopBuyConfirmPrice = 1_500;
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        bool closed = false;
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.CloseBox = () => closed = true;
+
+        var row = h.Obj(("serialID", 1), ("productType", 0));
+        c.OnCallback("OnBuyItem", new object[] { row, 0 });
+        Assert.That(sent, Is.Empty, "confirmation required before sending");
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That(boxes[0].Type, Is.EqualTo(0x11));
+        Assert.That(boxes[0].Extra, Is.EqualTo("buyItem,1,1"));
+        Assert.That(boxes[0].Listener, Is.SameAs(c));
+
+        // Cancel sends nothing and mutates nothing
+        c.OnMessageBox(null, 1, "buyItem,1,1");
+        Assert.That(sent, Is.Empty);
+        Assert.That(closed, Is.True);
+
+        // Confirm sends ShopBuyRequest(1, 1, 106)
+        closed = false;
+        Assert.That(c.OnMessageBox(null, 0, "buyItem,1,1"), Is.True);
+        Assert.That(sent, Has.Count.EqualTo(1));
+        Assert.That(sent[0], Is.EqualTo(new ShopBuyRequest(1, 1, 106)));
+        Assert.That(c.ShopEnabled, Is.False);
+        Assert.That(closed, Is.True);
+    }
+
+    [Test]
+    public void BuyStackableItemOpensQuantityBoxAndUpdatesPrice()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 550; // affords 5 at 100 each
+        var c = new ShopController { Categories = new ShopCategoryTable(Packs()), Npcs = new Ms2.Formats.World.NpcTable(Packs()) };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var h = new UiHost(p, c, model);
+        var header = Header() with { ProductCount = 1 };
+        c.ReadShopInfo(header);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        c.ReadProducts(new[] { StackableProduct() });
+        for (int i = 0; i < 5; i++) p.Tick();
+
+        var sent = new List<IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.CloseBox = () => { };
+
+        var row = h.Obj(("serialID", 200), ("productType", 0));
+        c.OnCallback("OnBuyItem", new object[] { row, 0 });
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That(boxes[0].Type, Is.EqualTo(0x12));
+        Assert.That(boxes[0].Extra, Is.EqualTo("buyItem,200"));
+        Assert.That(boxes[0].ItemEntry.Max, Is.EqualTo(5));
+        Assert.That(boxes[0].Values["shopSerialID"], Is.EqualTo(200));
+        Assert.That(boxes[0].Values["shopTradeChangePriceFuntion"], Is.InstanceOf<Func<object[], object>>());
+
+        // OnPriceChanged updates htmlText on the supplied text field
+        var field = h.Obj(("htmlText", ""));
+        ((Func<object[], object>)boxes[0].Values["shopTradeChangePriceFuntion"])(new object[] { 200, field, 300 });
+        Assert.That(Rt.ToString(h.Get(field, "htmlText")), Does.Contain("300"));
+
+        // Confirming quantity 3 sends mode 4 (200, 3, 106)
+        Assert.That(c.OnMessageBox(null, 0, "buyItem,200,3"), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(200, 3, 106) }));
+    }
+
+    [Test]
+    public void BuyRejectedCasesSendNothingAndMutateNothing()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 100; // too poor for 1830
+        model.Tables.ShopBuyConfirmPrice = 10_000;
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var notices = new List<string>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = sent.Add;
+        c.SystemNotice = notices.Add;
+        c.ShowBox = boxes.Add;
+        c.ServerTime = () => 1_000;
+
+        // 1. Not enough mesos
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.Empty);
+        Assert.That(notices, Has.Count.EqualTo(1));
+        Assert.That(model.Player.Mesos, Is.EqualTo(100));
+        Assert.That(c.ShopEnabled, Is.True);
+
+        // 2. Sold out
+        model.Player.Mesos = 100_000;
+        c.Products(0)[1].Record.Limit = 1;
+        c.Products(0)[1].Record.Bought = 1;
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        c.Products(0)[1].Record.Limit = 0;
+        c.Products(0)[1].Record.Bought = 0;
+
+        // 3. Outside buy period
+        c.Products(0)[1].Record.Period = new ShopBuyPeriod { HasTime = true, Start = 2_000, End = 3_000 };
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(2));
+        c.Products(0)[1].Record.Period = null;
+
+        // 4. Expired item life (type 2)
+        c.Products(0)[1].Record.Life = new ShopItemLife(2, 0, 500);
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(3));
+        c.Products(0)[1].Record.Life = null;
+
+        // 5. Star point currency without event
+        c.Products(0)[1].Record.Currency = 0xd;
+        model.Player.StarPointEvent = false;
+        c.BuyProduct(1, 0);
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(4));
+        c.Products(0)[1].Record.Currency = 0;
+
+        // 6. Zero / negative quantity
+        Assert.That(c.SendPurchase(1, 0), Is.False);
+        Assert.That(c.SendPurchase(1, -2), Is.False);
+        Assert.That(sent, Is.Empty);
+    }
+
+    [Test]
+    public void SellRejectedAndAcceptedFlowsMatchClientRules()
+    {
+        Packs();
+        var model = NewModel();
+        model.Tables.ShopSellConfirmPrice = 10_000;
+        var (_, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var notices = new List<string>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = sent.Add;
+        c.SystemNotice = notices.Add;
+        c.ShowBox = boxes.Add;
+        c.ServerTime = () => 1_000;
+
+        var sellable = Item.Create(model.Tables.Items, 11300001, 1);
+        sellable.Uid = 5001; sellable.Count = 1; sellable.Data.ShopSell = true; sellable.Data.SellPrices = new List<long> { 500 };
+
+        // Rejected: shop shutdown
+        c.ShopShutdown = true;
+        Assert.That(c.CanSellItem(sellable), Is.False);
+        Assert.That(sent, Is.Empty);
+        c.ShopShutdown = false;
+
+        // Rejected: sell-only shop
+        c.Info.SellOnly = true;
+        Assert.That(c.CanSellItem(sellable), Is.False);
+        Assert.That(sent, Is.Empty);
+        c.Info.SellOnly = false;
+
+        // Rejected: locked item (shows box 0x22)
+        sellable.LockState = 1;
+        Assert.That(c.CanSellItem(sellable), Is.False);
+        Assert.That(boxes.Last().Type, Is.EqualTo(0x22));
+        Assert.That(sent, Is.Empty);
+        sellable.LockState = 0;
+
+        // Rejected: unsellable item (ShopSell == false)
+        sellable.Data.ShopSell = false;
+        Assert.That(c.CanSellItem(sellable), Is.False);
+        Assert.That(sent, Is.Empty);
+        sellable.Data.ShopSell = true;
+
+        // Rejected: socketed gemstone
+        sellable.Record = new EquipItem { Id = sellable.ItemId, Rarity = 1, Amount = 1, Socket = new ItemSocket { MaxSlot = 1 } };
+        sellable.Record.Socket.Gems.Add(new SocketGem { GemId = 11300001 });
+        Assert.That(c.CanSellItem(sellable), Is.False);
+        Assert.That(sent, Is.Empty);
+        sellable.Record.Socket.Gems.Clear();
+
+        // Rejected: restricted sale item
+        c.IsSaleRestricted = id => id == sellable.ItemId;
+        Assert.That(c.CanSellItem(sellable), Is.False);
+        Assert.That(sent, Is.Empty);
+        c.IsSaleRestricted = _ => false;
+
+        // Rejected: summoned pet
+        c.IsSummonedPet = uid => uid == 5001;
+        Assert.That(c.RequestSellItem(sellable, 1), Is.False);
+        Assert.That(sent, Is.Empty);
+        c.IsSummonedPet = _ => false;
+
+        // InventoryController sell flow: single cheap item sends immediately; rare item asks sellconfirm; stack asks sell qty
+        var book = new ItemBook { TabOf = _ => 0, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(0, new List<EquipItem> {
+            new() { Uid = 5001, Id = 11300001, Rarity = 1, Amount = 1, InventorySlot = 0 },
+            new() { Uid = 5002, Id = 11300001, Rarity = 4, Amount = 1, InventorySlot = 1 },
+            new() { Uid = 5003, Id = 20000028, Rarity = 1, Amount = 5, InventorySlot = 2 },
+        }));
+        var inv = new InventoryController
+        {
+            View = new InventoryView(book) { ServerTime = () => 1_000 },
+            Shop = () => c,
+            DialogHead = () => ShopController.UiId,
+            ShowBox = boxes.Add,
+        };
+        var (_, invPlayer) = src.Open(inv.Movie, r => r.Budget = 20_000_000);
+        invPlayer.StageW = 1280; invPlayer.StageH = 720;
+        var invHost = new UiHost(invPlayer, inv, model);
+        Assert.That(invHost.Load(), Is.True);
+
+        // 1. Cheap rarity-1 item -> sends mode 5 immediately
+        var cheap = inv.FindItem(5001);
+        cheap.Data.ShopSell = true; cheap.Data.SellPrices = new List<long> { 500 };
+        Assert.That(inv.TrySellItem(cheap), Is.EqualTo(1));
+        Assert.That(sent, Is.EqualTo(new[] { new ShopSellRequest(5001, 1) }));
+        sent.Clear();
+
+        // 2. Rarity-4 item -> opens sellconfirm box, sends nothing until SellConfirmStep
+        boxes.Clear();
+        var rare = inv.FindItem(5002);
+        rare.Data.ShopSell = true; rare.Data.SellPrices = new List<long> { 500 };
+        Assert.That(inv.TrySellItem(rare), Is.EqualTo(1));
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That((boxes[0].Type, boxes[0].Extra, boxes[0].ItemUid), Is.EqualTo((0x11, "sellconfirm,1", 5002L)));
+        inv.SellConfirmStep(5002, 1);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopSellRequest(5002, 1) }));
+        sent.Clear();
+
+        // 3. Stack of 5 -> opens box 0x12 "sell", sends nothing until confirmed
+        boxes.Clear();
+        var stack = inv.FindItem(5003);
+        stack.Data.ShopSell = true; stack.Data.SellPrices = new List<long> { 10 };
+        Assert.That(inv.TrySellItem(stack), Is.EqualTo(1));
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That((boxes[0].Type, boxes[0].Extra, boxes[0].ItemUid), Is.EqualTo((0x12, "sell", 5003L)));
+        Assert.That(inv.IsSellCountValid(5003, 0), Is.False);
+        Assert.That(inv.IsSellCountValid(5003, 6), Is.False);
+        Assert.That(inv.IsSellCountValid(5003, 3), Is.True);
+        inv.SellCountStep(5003, 3);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopSellRequest(5003, 3) }));
+    }
+
+    [Test]
+    public void ResetErrorTimerRolloverAndCloseSendExpectedPackets()
+    {
+        Packs();
+        var model = NewModel();
+        var (_, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var sounds = new List<string>();
+        var notices = new List<string>();
+        var boxes = new List<MessageBoxData>();
+        bool talkEnded = false;
+        (int Kind, int State)? sysClose = null;
+        c.Send = sent.Add;
+        c.Sound = sounds.Add;
+        c.SystemNotice = notices.Add;
+        c.ShowBox = boxes.Add;
+        c.SendNpcTalkEnd = () => talkEnded = true;
+        c.SendSystemShop = (k, s) => sysClose = (k, s);
+
+        // OnResetList sends mode 9 with resetPrice and disables shop
+        c.OnCallback("OnResetList", Array.Empty<object>());
+        Assert.That(sent, Is.EqualTo(new[] { new ShopResetListRequest(1000) }));
+        Assert.That(c.ShopEnabled, Is.False);
+
+        // Cmd 15 (ShopError 15) re-enables shop, posts notice and plays warning sound
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteError(new ShopError(15, 9, 0)))));
+        Assert.That(c.ShopEnabled, Is.True);
+        Assert.That(notices, Has.Count.EqualTo(1));
+        Assert.That(sounds, Does.Contain("system_notice_error_warningBag"));
+
+        // Cmd 9 (ShopResetResult) clears group 0 products and plays shop_reset
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(
+            ShopPacket.WriteResetResult(new ShopResetResult(true, 30000001, 2)))));
+        Assert.That(c.Products(0), Is.Empty);
+        Assert.That(sounds, Does.Contain("shop_reset"));
+
+        // Process() past ResetTime sends mode 10; steady-state Process() allocates 0 bytes
+        long now = 500;
+        c.ServerTime = () => now;
+        c.ReadShopInfo(Header() with { ResetTime = 1_000, ResetEnable = true, ResetLimited = true });
+        for (int i = 0; i < 50; i++) c.Process(); // warm up past tiered JIT & timezone cache
+        var noBytes = Is.Zero; // made before the window (see TextureTransformTests)
+        long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++) c.Process();
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - allocBefore, noBytes, "Process() must allocate 0 bytes per frame");
+
+        sent.Clear();
+        now = 1_500;
+        c.Process();
+        Assert.That(sent, Is.EqualTo(new[] { new ShopRequestListRequest() }));
+
+        // Close() sends NpcTalk mode 0 and SystemShop close when SortKind > 0
+        c.SortKind = 8;
+        c.Close();
+        Assert.That(talkEnded, Is.True);
+        Assert.That(sysClose, Is.EqualTo((8, 0)));
     }
 }

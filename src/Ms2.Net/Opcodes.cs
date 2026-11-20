@@ -116,6 +116,7 @@ public enum Outbound : ushort {
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
     NpcTalk = 0x22,
+    Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
     Quest = 0x29,
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,
