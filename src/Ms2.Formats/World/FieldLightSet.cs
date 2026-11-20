@@ -148,6 +148,10 @@ public sealed class FieldLightSet
     /// <summary>The entity is a receiver of the relight (OnRenderedEntityAdded's model tests, LightService.cpp:1906-1909).</summary>
     public static bool Receives(FieldEntity e) => e.HasMixin("Lightable") && !e.HasMixin("ExceptLightService");
 
+    /// <summary>The mask is a float instance uniform in the shader, whose mantissa holds 24 bits exactly: lights past the 24th
+    /// (the game's FieldLights.MaxLights) are not in it.</summary>
+    public const int MaskBits = 24;
+
     /// <summary>
     /// The lights that do not light <paramref name="receiver"/>, one bit per <see cref="FieldLight.Index"/>, for a receiver whose
     /// world bound is (<paramref name="center"/>, <paramref name="radius"/>) in client space. 0: every light.
@@ -157,7 +161,7 @@ public sealed class FieldLightSet
         if (Lights.Count == 0 || !Receives(receiver)) return 0;
         uint attached = Pick(receiver, center, radius, spot: false, (uint)receiver.Number("MaxPointLights", 0))
                       | Pick(receiver, center, radius, spot: true, (uint)receiver.Number("MaxSpotLights", 0));
-        uint all = Lights.Count >= 32 ? uint.MaxValue : (1u << Lights.Count) - 1;
+        uint all = Lights.Count >= MaskBits ? (1u << MaskBits) - 1 : (1u << Lights.Count) - 1;
         return all & ~attached;
     }
 

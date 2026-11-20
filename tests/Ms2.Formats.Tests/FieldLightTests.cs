@@ -117,6 +117,16 @@ public class FieldLightTests
     }
 
     [Test]
+    public void TheMaskStaysWithinTheFloatMantissa()
+    {
+        // 30 lights far from the receiver: all unlit, but only the first 24 bits (a float holds them exactly)
+        var set = FieldLightSet.Read(Enumerable.Range(0, 30).Select(i => Point(("Position", "0, 0, 0"), ("Range", "10"))).ToArray());
+        uint mask = set.Unlit(Lightable(), new Vec3(5000, 0, 0), 1);
+        Assert.That(mask, Is.EqualTo(0xFFFFFFu));
+        Assert.That((uint)(float)mask, Is.EqualTo(mask));
+    }
+
+    [Test]
     public void LimitsPerTypeByPriority()
     {
         var spots = Enumerable.Range(0, 3).Select(i => Spot(("Position", $"{i * 1000}, 0, 0"))).ToArray();

@@ -162,7 +162,7 @@ public sealed class FieldBuilder
     void MaskLights(GeometryInstance3D node, uint lightOff)
     {
         if (lightOff == 0) return;
-        node.SetInstanceShaderParameter(LightOffParam, (float)lightOff);
+        node.SetInstanceShaderParameter(LightOffParam, (float)(lightOff & ((1u << FieldLightSet.MaskBits) - 1)));
         LightMaskedDraws++;
     }
 
