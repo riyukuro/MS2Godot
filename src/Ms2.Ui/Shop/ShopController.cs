@@ -9,11 +9,10 @@ namespace Ms2.Ui.Shop;
 /// UIShopDialog (client/ms2/uishopdialog.cpp; UI id 0x4e3b), the C++ side of the npc shop movie uishopdialog. Its root
 /// (ShopDialogProxy) makes the shop's own dialog by the shop type (initShop), which the movie's ShopDialog code then runs:
 /// the tab bar, the category list, the product list and the restock bar. This feeds it Inbound 0x51 (commands 0, 1, 2, 4,
-/// 9, 15), the tabs and category tree (CShopCategoryTable), the product rows, and the buy, sell and restock flows over
-/// Outbound 0x28 (<see cref="Send"/>).
-/// <para>STILL-OPEN: buyback UI (commands 6-8), new-items group (commands 13-14), star / gacha / merat items (commands
-/// 11-12), the item preview, the search's ban-word check, guild / achieve / championship / fame buy gates and the
-/// give-point event.</para>
+/// 6, 7, 8, 9, 13, 14, 15), the tabs and category tree (CShopCategoryTable), the product rows, tooltips (vfunc_49),
+/// vfunc_28 callbacks, and the buy, buyback, sell, restock and new-items flows over Outbound 0x28 (<see cref="Send"/>).
+/// <para>STILL-OPEN: star / merat items (commands 11-12, UIMarketBillDialog 0x4f17), 3D preview avatar render target,
+/// search ban-word check (vfunc_80), guild / achieve / championship / fame buy gates and give-point event.</para>
 /// </summary>
 public sealed class ShopController : UiController, Hud.IMessageBoxListener
 {
@@ -85,8 +84,42 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public Action<Hud.MessageBoxData> ShowBox = Hud.MessageBoxQueue.Show;
     /// <summary>FUN_14151f200: closes the current modal message box (defaults to <see cref="Hud.MessageBoxQueue.Next"/>).</summary>
     public Action CloseBox = Hud.MessageBoxQueue.Next;
+    /// <summary>FUN_14151f820: the current modal message box (defaults to <see cref="Hud.MessageBoxQueue.Current"/>).</summary>
+    public Func<Hud.MessageBoxData> CurrentBox = Hud.MessageBoxQueue.Current;
     /// <summary>PlaySystemSound (shop_itembuy, shop_reset, system_notice_error_warningBag).</summary>
     public Action<string> Sound;
+    /// <summary>The local player's equipment record (MyPC) for compare tooltips (vfunc_49, uishopdialog.cpp:1303).</summary>
+    public Func<PcInfo> Wearer;
+    /// <summary>Shift key held (compare tooltip secondary slot).</summary>
+    public Func<bool> ShiftHeld = () => false;
+    /// <summary>ItemPreviewMgr::IsHudOn (uishopdialog.cpp:1042, :1056, :2599).</summary>
+    public Func<bool> IsPreviewHudOn = () => false;
+    /// <summary>FUN_140d2d230 (uishopdialog.cpp:2569): link a normal shop product (itemId, rarity, shopId, serial) into chat.</summary>
+    public Action<int, int, int, int> LinkShopItem;
+    /// <summary>FUN_140d2d150 (uishopdialog.cpp:2571): link a new-tab item (itemId, rarity) into chat.</summary>
+    public Action<int, int> LinkPlainItem;
+    /// <summary>ItemPreviewMgr::OpenPreview(item, 1) (uishopdialog.cpp:2603).</summary>
+    public Action<Item> PreviewItem;
+    /// <summary>Gacha shop preview (uishopdialog.cpp:3448): try an item on the preview avatar.</summary>
+    public Action<Item> PreviewGachaItemRequested;
+    /// <summary>Gacha shop main items for the active category (RefreshCategories, uishopdialog.cpp:2700).</summary>
+    public Action<IReadOnlyList<Item>> PreviewMainItems;
+    /// <summary>onClickUnequipAll (uishopdialog.cpp:3489).</summary>
+    public Action PreviewUnequipAll;
+    /// <summary>onClickShowMyEquip (uishopdialog.cpp:3479).</summary>
+    public Action PreviewShowMyEquip;
+    /// <summary>OnUnEquip (uishopdialog.cpp:3507): equip slot index and item uid.</summary>
+    public Action<int, ulong> PreviewUnequipSlot;
+    /// <summary>onClickRecipe (uishopdialog.cpp:1135): maid id, x, y for UIMaidRecipeListDialog (0x4ecb).</summary>
+    public Action<int, float, float> OpenMaidRecipe;
+    /// <summary>onClickPreview (uishopdialog.cpp:1165): item id, x, y for UIInteriorPreviewDialog (0x4ee3).</summary>
+    public Action<int, float, float> OpenInteriorPreview;
+    /// <summary>FUN_1418ffba0 (uishopdialog.cpp:974): true when buying a UGCMapPackage requires the 0x1f confirm box.</summary>
+    public Func<ItemData, bool> CanBuyUgcPackage = _ => false;
+    /// <summary>CAchieveManager::IsBeforeStartGrade (uishopdialog.cpp:1295, :3599): true when player meets achieve.</summary>
+    public Func<int, int, bool> HasAchieve = (_, _) => true;
+    /// <summary>GetRequireAchieveText (uishopdialog.cpp:1298): text of a missing achievement requirement.</summary>
+    public Func<int, int, string> RequireAchieveText = (_, _) => "";
 
     /// <summary>UIShopDialog::Selection (uishopdialog.cpp:551): tracks the pending request's serial, list index and command.</summary>
     struct PendingSelection
@@ -97,11 +130,14 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         public void Set(int kind, int index, int secondary) { Kind = kind; Index = index; Secondary = secondary; }
     }
 
-    /// <summary>A product as the dialog keeps it (CNpcShopProductCli): the packet's record and the item made from it.</summary>
+    /// <summary>A product as the dialog keeps it (CNpcShopProductCli / CNpcShopProductNewCli): the packet's record,
+    /// its item and its kind (m_1c: 0 normal/repurchase, 2 new-tab).</summary>
     public sealed class Product
     {
         public ShopProduct Record;
         public Item Item;
+        /// <summary>m_1c: 0 for CNpcShopProductCli, 2 for CNpcShopProductNewCli.</summary>
+        public int ProductKind;
         /// <summary>m_20: the category tag split at ','.</summary>
         public string[] Categories = Array.Empty<string>();
     }
@@ -126,6 +162,11 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     bool ready;             // m_bReady
     long resetCheckTime;    // m_1a0
     int resetPrice;         // m_nResetPrice
+    int repurchaseCount;    // m_2c8
+    bool repurchaseEmpty;   // m_bRepurchaseEmpty
+    int newTabShopId;       // m_288
+    int newTotal;           // m_nNewTotal
+    bool newComplete;       // m_bNewComplete
     string search = "";     // m_strSearch
     object shop;            // m_spShop
     PendingSelection selection = new() { Index = -1, Secondary = -1 };
@@ -159,10 +200,109 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             case 1: ReadProducts(p.Products); break;
             case 2: ReadProductUpdate(p.ProductUpdate); break;
             case 4: ReadPurchaseResult(p.PurchaseResult); break;
+            case 6: ReadRepurchaseStart(p.RepurchaseCount); break;
+            case 7: ReadRepurchaseAdd(p.Products); break;
+            case 8: ReadRepurchaseRemoval(p.RemoveSerial); break;
             case 9: ReadResetResult(p.ResetResult); break;
+            case 13: ReadNewStart(p.NewStart); break;
+            case 14: ReadNewProducts(p.NewProducts); break;
             case 15: ReadShopError(p.Error); break;
         }
         selection.ResetIf(p.Command);
+    }
+
+    /// <summary>ReadRepurchaseStart (@0x141af9ce0, uishopdialog.cpp:1778): clears group 1 and records expected count.</summary>
+    public void ReadRepurchaseStart(int count)
+    {
+        ResetProducts(1);
+        repurchaseCount = count;
+        repurchaseEmpty = count == 0;
+    }
+
+    /// <summary>ReadRepurchaseAdd (@0x141af9d70, uishopdialog.cpp:1788): adds sold items into group 1, invokes addItem and
+    /// setNew(1, true) for live additions, and refreshes when the announced count arrives.</summary>
+    public void ReadRepurchaseAdd(IReadOnlyList<ShopProduct> list)
+    {
+        if (list == null) return;
+        for (int i = 0; i < list.Count; i++)
+        {
+            var r = list[i];
+            var item = Item.Create(Model.Tables.Items, r.ItemId, r.Rarity);
+            if (item != null)
+            {
+                item.Count = (uint)Math.Max(r.Count, 0);
+                item.Slot = products[1].Count;
+                item.Record = r.Item;
+                if (r.Item != null) { item.EnchantLevel = r.Item.Enchant.Level; item.UnlimitedEnchantLevel = r.Item.LimitBreak.Level; }
+            }
+            var p = new Product { Record = r, Item = item, Categories = Array.Empty<string>() };
+            products[1].TryAdd(r.Serial, p);
+            if (repurchaseEmpty) RepurchaseAdded(p);
+        }
+        if (repurchaseEmpty) SetNew(1, true);
+        if (repurchaseCount == products[1].Count)
+        {
+            EnableShop(true);
+            if (group == 1 && ready) RefreshItems("");
+            repurchaseEmpty = true;
+        }
+    }
+
+    /// <summary>RepurchaseAdded (@0x141afb320, uishopdialog.cpp:2004): appends a newly sold item to the buyback view.</summary>
+    void RepurchaseAdded(Product p)
+    {
+        if (group == 1 && shop != null && PopulateProduct(p) is { } row)
+            Host.Invoke(shop, "addItem", row);
+    }
+
+    /// <summary>ReadRepurchaseRemoval (@0x141afa130, uishopdialog.cpp:1819): re-enables shop, removes product from group 1,
+    /// and invokes removeItem(serial, index).</summary>
+    public void ReadRepurchaseRemoval(int serial)
+    {
+        EnableShop(true);
+        if (!products[1].Remove(serial, out _)) return;
+        if (group == 1 && shop != null)
+        {
+            int idx = selection.Secondary == 8 ? selection.Index : -1;
+            Host.Invoke(shop, "removeItem", serial, idx);
+        }
+    }
+
+    /// <summary>ReadNewStart (@0x141af9390, uishopdialog.cpp:1664): starts group 2 when npc and shop ids match.</summary>
+    public void ReadNewStart(ShopNewStart s)
+    {
+        if (info.ShopId == 0 || s == null || s.NpcId != info.NpcId || s.ShopId != info.ShopId) return;
+        ResetProducts(2);
+        newComplete = false;
+        newTabShopId = s.TabShopId;
+        newTotal = s.TotalCount;
+    }
+
+    /// <summary>ReadNewProducts (@0x141af94e0, uishopdialog.cpp:1683): adds CNpcShopProductNewCli entries to group 2 and
+    /// rebuilds tabs once all announced items arrive.</summary>
+    public void ReadNewProducts(IReadOnlyList<ShopNewProduct> list)
+    {
+        if (info.ShopId == 0 || list == null) return;
+        int first = products[2].Count;
+        for (int i = 0; i < list.Count; i++)
+        {
+            var np = list[i];
+            int serial = first + i;
+            var item = Item.Create(Model.Tables.Items, np.ItemId, np.Rarity);
+            if (item != null) item.Count = 1;
+            var rec = new ShopProduct
+            {
+                Serial = serial, ItemId = np.ItemId, Rarity = np.Rarity, Categories = np.Categories,
+                Label = np.ProductType, SaleTag = np.ProductKind, Period = np.Period,
+            };
+            products[2].TryAdd(serial, new Product { Record = rec, Item = item, ProductKind = 2, Categories = Split(np.Categories) });
+        }
+        if (products[2].Count >= newTotal)
+        {
+            newComplete = true;
+            EnableShop(true);
+            UpdateProductList(2);
+        }
     }
 
     /// <summary>ReadProductUpdate (@0x141af98d0, uishopdialog.cpp:1740): re-enables shop, updates product buy count and
@@ -406,6 +546,11 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         ready = false;
         category = 0;
         group = 0;
+        repurchaseCount = 0;
+        repurchaseEmpty = false;
+        newTabShopId = 0;
+        newTotal = 0;
+        newComplete = false;
         selection.Reset();
         for (int i = 0; i < 3; i++) ResetProducts(i);
         search = "";
@@ -416,6 +561,35 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         SendNpcTalkEnd?.Invoke();
         if (sortKind > 0) SendSystemShop?.Invoke(sortKind, 0);
         sortKind = 0;
+    }
+
+    /// <summary>UIShopDialog::CloseShop (@0x141aff000, uishopdialog.cpp:2641): closes any active shop trade / buyItem
+    /// message box, then closes the shop dialog.</summary>
+    public void CloseShop()
+    {
+        if (CurrentBox?.Invoke() is { } box && (box.Type == 0x12 || box.Extra.StartsWith("buyItem,", StringComparison.Ordinal)))
+            CloseBox?.Invoke();
+        Close();
+    }
+
+    /// <summary>UIShopDialog::ArrangeInventory (@0x141b03620, uishopdialog.cpp:3262; called by vfunc_18 :1356): re-places
+    /// the open inventory beside the shop.</summary>
+    public void ArrangeInventory(UiController inventory, bool inventoryOpen)
+    {
+        if (Host?.Entity == null || !inventoryOpen || inventory == null) return;
+        PlaceSideBySide(this, OpenPosition(), inventory);
+    }
+
+    /// <summary>UIShopDialog::vfunc_13 (@0x141af7b00, uishopdialog.cpp:1336): Enter while m_inputSearch has focus starts a search.</summary>
+    public bool OnEnterKey()
+    {
+        if (IsClosed || shop == null) return false;
+        var input = Host.Child("m_inputSearch", shop);
+        if (input == null) return false;
+        if (!Rt.ToBoolean(Host.Get(input, "focused"))) return false;
+        string text = Rt.ToString(Host.Get(input, "text")) ?? "";
+        Search(text);
+        return true;
     }
 
     /// <summary>
@@ -517,7 +691,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     {
         if (g < 0 || g >= 3) return;
         var list = tabs[group];
-        int tabShop = g == 0 ? info.TabShopId : 0;
+        int tabShop = g == 0 ? info.TabShopId : g == 2 ? newTabShopId : 0;
         BuildTabsForProducts(tabShop, list, products[g]);
         if (show) BuildCategoryList(list);
     }
@@ -635,10 +809,78 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             }
         }
         else if (group == 1)
+        {
             foreach (var p in products[1].Values)
                 if (PopulateProduct(p) is { } row) rows.Add(row);
+        }
+        else if (info.HasNewTab && group == 2)
+        {
+            FillNewProducts(rows, text);
+        }
         if (shop != null) Host.Invoke(shop, "buildShopList", DataProvider(rows), info.Shuffle);
         search = text;
+    }
+
+    /// <summary>FillNewProducts (@0x141afc9d0, uishopdialog.cpp:2264): requests group 2 via Outbound 0x28 mode 13 until
+    /// complete, then populates new-tab rows (PopulateNewProduct :3039).</summary>
+    void FillNewProducts(List<object> rows, string text)
+    {
+        if (!info.HasNewTab) return;
+        if (!newComplete)
+        {
+            EnableShop(false);
+            Send?.Invoke(new ShopRequestNewItemsRequest());
+            return;
+        }
+        bool searching = text.Length > 0;
+        var list = tabs[2];
+        IEnumerable<Product> source = category >= 0 && category < list.Count ? list[category].Products
+            : newTabShopId == 0 ? products[2].Values : Array.Empty<Product>();
+        foreach (var p in source)
+        {
+            if (p == null) continue;
+            if (searching && (p.Item == null || ItemName(p.Item).IndexOf(text, StringComparison.Ordinal) < 0)) continue;
+            if (PopulateNewProduct(p) is { } row) rows.Add(row);
+        }
+    }
+
+    /// <summary>PopulateNewProduct (@0x141b01e90, uishopdialog.cpp:3039): row for CNpcShopProductNewCli (productType 2).</summary>
+    AsObject PopulateNewProduct(Product p)
+    {
+        if (p?.Item?.Data == null) return null;
+        var item = p.Item;
+        var data = item.Data;
+        var r = p.Record;
+        var slot = new List<(string, object)>();
+        if (!ItemSlot.Build(slot, item, Model.HasLocalPlayer, SlotFlags, Model, Model.ItemSlotSources)) return Host.Obj(slot.ToArray());
+        slot.Add(("serialID", r.Serial));
+        int at = slot.FindIndex(m => m.Item1 == "itemCount");
+        if (at >= 0) slot[at] = ("itemCount", ""); else slot.Add(("itemCount", ""));
+        uint color = Model.Tables.Items.TextColor(item.Rarity);
+        slot.Add(("label", $"<FONT color='#{color:x}'>{Model.Tables.ItemName(item.ItemId) ?? ""}</FONT>"));
+        slot.Add(("productType", 2));
+        slot.Add(("saleTag", r.SaleTag));
+        slot.Add(("showRecipe", data.MaidId > 0));
+        slot.Add(("showPreview", data.FunctionName == "UGCMapPackage"));
+        slot.Add(("bgFrame", BackgroundFrame(r.Label)));
+        return Host.Obj(slot.ToArray());
+    }
+
+    /// <summary>RefreshCategories (@0x141aff1c0, uishopdialog.cpp:2700): for gacha shops, collects MainItem entries in the
+    /// active category and invokes visibleMainItem(hasAny).</summary>
+    void RefreshCategories()
+    {
+        if (info.ShopType != 4) return;
+        var main = new List<Item>();
+        if (group == 0 && category >= 0 && category < tabs[0].Count)
+        {
+            var items = tabs[0][category].Products;
+            if (info.Shuffle) Shuffle(items);
+            foreach (var p in items)
+                if (p?.Item != null && p.Record.MainItem) main.Add(p.Item);
+        }
+        PreviewMainItems?.Invoke(main);
+        if (shop != null) Host.Invoke(shop, "visibleMainItem", main.Count > 0);
     }
 
     static readonly Random shuffleRandom = new();
@@ -834,6 +1076,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             case "onchangecategory":
                 category = ToInt(Arg(args, 0));
                 RefreshItems("");
+                RefreshCategories();
                 return true;
             case "oncheckenableitems":
                 checkEnableItems = Rt.ToBoolean(Arg(args, 0));
@@ -848,8 +1091,15 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                 int serial = ToInt(Host.Get(row, "serialID"));
                 int productType = ToInt(Host.Get(row, "productType"));
                 int index = ToInt(Arg(args, 1));
-                if (productType != 1) BuyProduct(serial, index);
+                if (info.ShopType != 4 && IsPreviewHudOn()) PreviewProduct(serial, productType, false);
+                else if (productType != 1) BuyProduct(serial, index);
                 else Request?.Invoke("buyMerat", new object[] { serial, index });
+                return true;
+            }
+            case "onrightclick":
+            {
+                if (IsPreviewHudOn() && Arg(args, 0) is { } row && row is not Undefined)
+                    PreviewProduct(ToInt(Host.Get(row, "serialID")), ToInt(Host.Get(row, "productType")), false);
                 return true;
             }
             case "onsell":
@@ -858,8 +1108,113 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             case "onresetlist":
                 ResetList();
                 return true;
+            case "onuselink":
+            {
+                if (Arg(args, 0) is { } row && row is not Undefined)
+                {
+                    int serial = ToInt(Host.Get(row, "serialID"));
+                    int productType = ToInt(Host.Get(row, "productType"));
+                    if (productType == 1) Request?.Invoke("linkMerat", new object[] { serial });
+                    else LinkProduct(serial);
+                }
+                return true;
+            }
+            case "onusepreview":
+            {
+                if (Arg(args, 0) is { } row && row is not Undefined)
+                {
+                    int serial = ToInt(Host.Get(row, "serialID"));
+                    int productType = ToInt(Host.Get(row, "productType"));
+                    if (info.ShopType == 4) PreviewGachaItem(serial);
+                    else PreviewProduct(serial, productType, true);
+                }
+                return true;
+            }
+            case "onclickrecipe":
+            {
+                if (Arg(args, 0) is { } row && row is not Undefined)
+                {
+                    int itemId = (int)(uint)ToInt(Host.Get(row, "itemID"));
+                    float x = (float)Rt.ToNumber(Arg(args, 1)), y = (float)Rt.ToNumber(Arg(args, 2));
+                    if (Model?.Tables.Items.Get(itemId) is { MaidId: > 0 } data)
+                    {
+                        OpenMaidRecipe?.Invoke(data.MaidId, x, y);
+                        OpenDialog?.Invoke(0x4ecb);
+                    }
+                }
+                return true;
+            }
+            case "onclickpreview":
+            {
+                if (Arg(args, 0) is { } row && row is not Undefined)
+                {
+                    int itemId = (int)(uint)ToInt(Host.Get(row, "itemID"));
+                    if (Model?.Tables.Items.Get(itemId) is { FunctionName: "UGCMapPackage" })
+                    {
+                        float x = 0f, y = 0f;
+                        if (shop != null)
+                        {
+                            x = (float)Rt.ToNumber(Host.Get(shop, "x")) + (float)Math.Ceiling(Rt.ToNumber(Host.Get(shop, "width")));
+                            y = (float)Rt.ToNumber(Host.Get(shop, "y"));
+                        }
+                        OpenInteriorPreview?.Invoke(itemId, x, y);
+                        OpenDialog?.Invoke(0x4ee3);
+                    }
+                }
+                return true;
+            }
+            case "onclickunequipall":
+                PreviewUnequipAll?.Invoke();
+                return true;
+            case "onclickshowmyequip":
+                PreviewShowMyEquip?.Invoke();
+                return true;
+            case "onclickshowmainitems":
+                RefreshCategories();
+                return true;
+            case "onunequip":
+            {
+                int slot = Hud.MessageBoxData.WToI(Rt.ToString(Arg(args, 0)) ?? "");
+                ulong uid = 0;
+                if (Arg(args, 1) is { } row && row is not Undefined)
+                    ulong.TryParse(Rt.ToString(Host.Get(row, "itemGUID")) ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out uid);
+                PreviewUnequipSlot?.Invoke(slot, uid);
+                return true;
+            }
         }
         return false;
+    }
+
+    /// <summary>LinkProduct (@0x141afe960, uishopdialog.cpp:2560): kind 0 links shop product (shopId, serial), kind 2 links plain item.</summary>
+    void LinkProduct(int serial)
+    {
+        var p = FindCurrentProduct(serial);
+        if (p?.Item == null) return;
+        if (p.ProductKind == 0) LinkShopItem?.Invoke(p.Item.ItemId, p.Item.Rarity, info.ShopId, serial);
+        else if (p.ProductKind == 2) LinkPlainItem?.Invoke(p.Item.ItemId, p.Item.Rarity);
+    }
+
+    /// <summary>PreviewProduct (@0x141afee80, uishopdialog.cpp:2630) / PreviewNormalItem (:2592).</summary>
+    void PreviewProduct(int serial, int productType, bool force)
+    {
+        if (productType == 1) { Request?.Invoke("previewMerat", new object[] { serial }); return; }
+        var p = FindCurrentProduct(serial);
+        if (p?.Item == null) return;
+        if (IsPreviewHudOn() || force) PreviewItem?.Invoke(p.Item);
+    }
+
+    /// <summary>CanPreviewItem (@0x141b03f70, uishopdialog.cpp:3434): local player gender allowed and item previewable.</summary>
+    public bool CanPreviewItem(Item item) =>
+        Model != null && Model.HasLocalPlayer && item?.Data != null
+        && item.Data.IsGenderAllowed(Pc.Gender) && item.Data.DoNotPreview == 0 && item.Data.IsEquip;
+
+    /// <summary>PreviewGachaItem (@0x141b04050, uishopdialog.cpp:3448): validates previewability (notice 0xf9 on fail).</summary>
+    void PreviewGachaItem(int serial)
+    {
+        var p = FindCurrentProduct(serial);
+        if (p?.Item == null) return;
+        if (!CanPreviewItem(p.Item)) { SystemNotice?.Invoke(Common(0xf9)); return; }
+        PreviewGachaItemRequested?.Invoke(p.Item);
     }
 
     // ---- currency, buy, sell and reset flows -----------------------------------------------------------------------
@@ -1139,7 +1494,19 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                 int count = Hud.MessageBoxData.WToI(parts[2]);
                 var p = FindCurrentProduct(serial);
                 if (p?.Item == null) return false;
-                if (SendPurchase(serial, count))
+                if (p.Item.Data.FunctionName == "UGCMapPackage" && CanBuyUgcPackage(p.Item.Data))
+                {
+                    CloseBox?.Invoke();
+                    var box = Hud.MessageBoxQueue.CreateWithCallback(Common(0x6ec), 0x1f, ConfirmUgcPurchase);
+                    box.Append(serial);
+                    box.Append(count);
+                    box.SetButtonPreset(2);
+                    box.SetCheckbox0(Common(0x9d1), false);
+                    box.SetAgreement(false);
+                    box.SetSize(0x1c0, 400);
+                    ShowBox?.Invoke(box);
+                }
+                else if (SendPurchase(serial, count))
                 {
                     EnableShop(false);
                     CloseBox?.Invoke();
@@ -1148,6 +1515,23 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             return true;
         }
         return false;
+    }
+
+    /// <summary>ConfirmUgcPurchase (@0x141af8660, uishopdialog.cpp:1506): sends purchase of a UGCMapPackage after the 0x1f
+    /// terms confirmation box.</summary>
+    bool ConfirmUgcPurchase(int button, Hud.MessageBoxData box)
+    {
+        if (button == 0)
+        {
+            int serial = box.ArgInt(0, 0);
+            int quantity = (short)box.ArgInt(1, 0);
+            if (SendPurchase(serial, quantity))
+            {
+                EnableShop(false);
+                CloseBox?.Invoke();
+            }
+        }
+        return true;
     }
 
     /// <summary>UIShopDialog::SendPurchase (@0x141b00060, uishopdialog.cpp:2837): checks quantity &gt; 0, product existence
@@ -1315,15 +1699,43 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             tip?.SetTooltipAlign(4);
             return tip;
         }
-        if (name == "m_coinInfo") return null;
+        if (name == "m_coinInfo")
+        {
+            int coinId = Model.Tables.GachaBoxes.CoinItemIdByShopId(info.ShopId);
+            int boxId = coinId != 0 ? Model.Tables.GachaBoxes.RandomBoxIdByCoinItem(coinId) : 0;
+            if (boxId == 0 || !Model.Tables.GachaBoxes.HasBox(boxId)) return null;
+            var tip = AsTooltip.Text(Model.Tables.ItemName(coinId) ?? "");
+            tip?.SetTooltipAlign(4);
+            return tip;
+        }
         var row = Arg(args, 1);
         if (row == null || row is Undefined) return null;
         int serial = ToInt(Host.Get(row, "serialID"));
         int type = ToInt(Host.Get(row, "productType"));
         if (type != 0 && type != 2) return null;
         if (group < 0 || group >= 3 || !products[group].TryGetValue(serial, out var p) || p.Item == null) return null;
-        var t = new ItemTooltip(Model, 4);
-        return t.Fill(p.Item) ? t.Data : null;
+        // vfunc_49 (uishopdialog.cpp:1288-1311): flags 4, plus 0x4800 when equipment & (ComparesItems || type == 2)
+        int rhsFlags = 4;
+        if (p.Item.Data.Type == 1 && (info.ComparesItems || type == 2)) rhsFlags |= 0x4800;
+        var record = Wearer?.Invoke();
+        var equipment = WornEquipment.Of(record, Model.Tables.Items);
+        var worn = (rhsFlags & 0x4800) != 0 ? equipment?.ForCompare(p.Item, Model.Tables.ItemModels, ShiftHeld()) : null;
+        var t = new ItemTooltip(Model, rhsFlags)
+        {
+            Owner = record != null ? (record.CharacterId, record.Name) : null,
+            OwnerWearsUid = uid => equipment?.Wears(uid) == true,
+            OwnerEquipment = equipment,
+            ShiftHeld = ShiftHeld,
+        };
+        if (!t.FillCompare(worn, p.Item)) return null;
+        t.SetEnablePreviewBoth(null, p.Item);
+        if (type == 0 && p.Record.Achieve != 0 && !HasAchieve(p.Record.Achieve, p.Record.AchieveGrade))
+        {
+            string req = RequireAchieveText(p.Record.Achieve, p.Record.AchieveGrade);
+            if (!string.IsNullOrEmpty(req))
+                t.Data["requireAchieve"] = Common("s_shop_tooltip_require_achieve", req);
+        }
+        return t.Data;
     }
 
     /// <summary>The common string keys of the reset countdown ids.</summary>

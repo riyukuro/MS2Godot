@@ -9,7 +9,7 @@ namespace Ms2.Ui.Items;
 /// </summary>
 public sealed class GachaBoxTable
 {
-    sealed record Box(int Id, int Season, int CoinItemId, bool SeasonNumberOnIcon);
+    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon);
 
     readonly PackSet packs;
     SortedDictionary<int, Box> boxes;
@@ -30,9 +30,10 @@ public sealed class GachaBoxTable
             // m_nSeason[DAT_143ab0248]: the locale index, 0 = KR (CreateClientPlatform, ms2clientplatform.cpp:29)
             int season = ItemData.Atoi((string)e.Attribute("randomBoxSeason" + LobbyFeatures.LocaleName) ?? "");
             int coin = ItemData.Atoi((string)e.Attribute("coinItemID") ?? "");
+            int shopId = ItemData.Atoi((string)e.Attribute("shopID") ?? "");
             string onIcon = (string)e.Attribute("seasonNumberOnIcon") ?? "";
             bool shows = onIcon.Equals("true", StringComparison.OrdinalIgnoreCase) || onIcon.Equals("yes", StringComparison.OrdinalIgnoreCase) || onIcon == "1";
-            boxes[id] = new Box(id, season, coin, shows);                       // m_map[nKey] = spBox
+            boxes[id] = new Box(id, season, coin, shopId, shows);               // m_map[nKey] = spBox
         }
         return boxes;
     }
@@ -41,6 +42,10 @@ public sealed class GachaBoxTable
     public bool IsCoinItem(int itemId) => Boxes().Values.Any(b => b.CoinItemId == itemId);
     /// <summary>GetRandomBoxIdByCoinItem (:234): the first box (by id) with that coin, else 0.</summary>
     public int RandomBoxIdByCoinItem(int itemId) => Boxes().Values.FirstOrDefault(b => b.CoinItemId == itemId)?.Id ?? 0;
+    /// <summary>GetCoinItemIdByShopId (itemgachaboxtable.cpp:155): the first box (by id) for that shop, else 0.</summary>
+    public int CoinItemIdByShopId(int shopId) => shopId != 0 ? Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.CoinItemId ?? 0 : 0;
+    /// <summary>GetBox != null.</summary>
+    public bool HasBox(int boxId) => Boxes().ContainsKey(boxId);
     /// <summary>IsSeasonNumberOnIcon (:297).</summary>
     public bool IsSeasonNumberOnIcon(int boxId) => Boxes().TryGetValue(boxId, out var b) && b.SeasonNumberOnIcon;
 

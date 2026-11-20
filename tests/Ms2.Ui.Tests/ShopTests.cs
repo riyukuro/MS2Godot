@@ -574,4 +574,202 @@ public class ShopTests
         Assert.That(talkEnded, Is.True);
         Assert.That(sysClose, Is.EqualTo((8, 0)));
     }
+
+    [Test]
+    public void BuybackTabReceivesAddsRepurchasesAndRemovesProducts()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 500;
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var notices = new List<string>();
+        c.Send = sent.Add;
+        c.SystemNotice = notices.Add;
+
+        // Cmd 6 (RepurchaseStart, 1 item) + Cmd 7 (RepurchaseAdd, price 1200)
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteRepurchaseStart(1))));
+        var sold = new ShopProduct { Serial = 77, ItemId = 11300001, Rarity = 2, Price = 1200, Count = 1 };
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteRepurchaseAdd(new[] { sold }))));
+        Assert.That(c.Products(1).ContainsKey(77), Is.True);
+        Assert.That(c.Products(1)[77].Record.Price, Is.EqualTo(1200));
+
+        // Switch to buyback tab (group 1)
+        Assert.That(c.OnCallback("OnChangeTab", new object[] { 1 }), Is.True);
+        var dp = h.Get(h.Get(c.ShopView, "m_list"), "dataProvider");
+        Assert.That(Rt.ToNumber(h.Get(dp, "length")), Is.EqualTo(1));
+
+        // Repurchase rejected when player lacks mesos -> notice 0x34, sends NOTHING, mutates NOTHING
+        var row = h.Obj(("serialID", 77), ("productType", 0));
+        Assert.That(c.OnCallback("OnBuyItem", new object[] { row, 0 }), Is.True);
+        Assert.That(sent, Is.Empty);
+        Assert.That(notices, Has.Count.EqualTo(1));
+        Assert.That(c.ShopEnabled, Is.True);
+        Assert.That(model.Player.Mesos, Is.EqualTo(500));
+
+        // With enough mesos -> sends ShopRepurchaseRequest(77) (mode 3) and disables shop
+        model.Player.Mesos = 2_000;
+        Assert.That(c.OnCallback("OnBuyItem", new object[] { row, 0 }), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopRepurchaseRequest(77) }));
+        Assert.That(c.ShopEnabled, Is.False);
+        Assert.That(model.Player.Mesos, Is.EqualTo(2_000), "mesos unchanged until server answers");
+
+        // Cmd 8 (RepurchaseRemoval) removes serial 77 and re-enables shop
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(ShopPacket.WriteRepurchaseRemoval(77))));
+        Assert.That(c.ShopEnabled, Is.True);
+        Assert.That(c.Products(1), Is.Empty);
+    }
+
+    [Test]
+    public void NewItemsTabRequestsListReceivesNewProductsAndPopulatesRows()
+    {
+        Packs();
+        var model = NewModel();
+        var c = new ShopController { Categories = new ShopCategoryTable(Packs()), Npcs = new Ms2.Formats.World.NpcTable(Packs()) };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => k.TrimStart('$');
+        var h = new UiHost(p, c, model);
+        c.ReadShopInfo(Header() with { HasNewTab = true });
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        c.ReadProducts(Products());
+        for (int i = 0; i < 5; i++) p.Tick();
+
+        var sent = new List<IOutPacket>();
+        c.Send = sent.Add;
+
+        // Switching to group 2 before new products arrive sends mode 13 and disables shop
+        Assert.That(c.OnCallback("OnChangeTab", new object[] { 2 }), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopRequestNewItemsRequest() }));
+        Assert.That(c.ShopEnabled, Is.False);
+
+        // Cmd 13 with mismatched shopId is ignored
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(
+            ShopPacket.WriteNewStart(new ShopNewStart(11000004, 999, 0, 1)))));
+        Assert.That(c.ShopEnabled, Is.False);
+
+        // Matching Cmd 13 + Cmd 14 populates group 2 with productType == 2
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(
+            ShopPacket.WriteNewStart(new ShopNewStart(11000004, 106, 0, 1)))));
+        c.OnShopPacket(ShopPacket.Read(new Maple2.PacketLib.Tools.ByteReader(
+            ShopPacket.WriteNewProducts(new[] { new ShopNewProduct { ItemId = 11300001, Rarity = 2, Categories = "CP", ProductType = 4, ProductKind = 1 } }))));
+        Assert.That(c.ShopEnabled, Is.True);
+        Assert.That(c.Products(2), Has.Count.EqualTo(1));
+        Assert.That(c.Products(2)[0].ProductKind, Is.EqualTo(2));
+        var dp = h.Get(h.Get(c.ShopView, "m_list"), "dataProvider");
+        Assert.That(Rt.ToNumber(h.Get(dp, "length")), Is.EqualTo(1));
+        Assert.That(Rt.ToNumber(h.Get(h.Get(dp, "0"), "productType")), Is.EqualTo(2));
+    }
+
+    [Test]
+    public void RemainingCallbacksAnswerLinkPreviewRecipeEquipUgcConfirmAndCloseShop()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 100_000;
+        var (h, c) = Load(model);
+        var sent = new List<IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        var openedDialogs = new List<int>();
+        var linkedShop = new List<(int ItemId, int Rarity, int ShopId, int Serial)>();
+        var previewed = new List<Item>();
+        bool unequipAll = false, showMyEquip = false, boxClosed = false;
+        (int Slot, ulong Uid)? unequipped = null;
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.CloseBox = () => boxClosed = true;
+        c.OpenDialog += openedDialogs.Add;
+        c.LinkShopItem = (id, r, sid, ser) => linkedShop.Add((id, r, sid, ser));
+        c.PreviewItem = previewed.Add;
+        c.PreviewUnequipAll = () => unequipAll = true;
+        c.PreviewShowMyEquip = () => showMyEquip = true;
+        c.PreviewUnequipSlot = (slot, uid) => unequipped = (slot, uid);
+
+        var row = h.Obj(("serialID", 1), ("productType", 0), ("itemID", 11300001));
+
+        // OnUseLink links shop item (kind 0)
+        Assert.That(c.OnCallback("OnUseLink", new object[] { row }), Is.True);
+        Assert.That(linkedShop, Is.EqualTo(new[] { (11300001, 2, 106, 1) }));
+
+        // OnRightClick does nothing when preview HUD is off, previews when on
+        Assert.That(c.OnCallback("OnRightClick", new object[] { row }), Is.True);
+        Assert.That(previewed, Is.Empty);
+        c.IsPreviewHudOn = () => true;
+        Assert.That(c.OnCallback("OnRightClick", new object[] { row }), Is.True);
+        Assert.That(previewed, Has.Count.EqualTo(1));
+        c.IsPreviewHudOn = () => false;
+
+        // OnUsePreview forces preview even when preview HUD is off
+        Assert.That(c.OnCallback("OnUsePreview", new object[] { row }), Is.True);
+        Assert.That(previewed, Has.Count.EqualTo(2));
+
+        // onClickUnequipAll / onClickShowMyEquip / onClickShowMainItems / OnUnEquip
+        Assert.That(c.OnCallback("onClickUnequipAll", Array.Empty<object>()), Is.True);
+        Assert.That(c.OnCallback("onClickShowMyEquip", Array.Empty<object>()), Is.True);
+        Assert.That(c.OnCallback("onClickShowMainItems", Array.Empty<object>()), Is.True);
+        Assert.That(c.OnCallback("OnUnEquip", new object[] { "5", h.Obj(("itemGUID", "987654321")) }), Is.True);
+        Assert.That((unequipAll, showMyEquip, unequipped), Is.EqualTo((true, true, (5, 987654321UL))));
+
+        // onClickRecipe & onClickPreview
+        int maidArg = 0;
+        int interiorArg = 0;
+        c.OpenMaidRecipe = (m, _, _) => maidArg = m;
+        c.OpenInteriorPreview = (id, _, _) => interiorArg = id;
+        var itemData = model.Tables.Items.Get(11300001);
+        itemData.Type = 6; itemData.Subtype = 7; itemData.Param2 = 42;
+        Assert.That(c.OnCallback("onClickRecipe", new object[] { row, 10.0, 20.0 }), Is.True);
+        Assert.That(maidArg, Is.EqualTo(42));
+        Assert.That(openedDialogs, Does.Contain(0x4ecb));
+        itemData.FunctionName = "UGCMapPackage";
+        Assert.That(c.OnCallback("onClickPreview", new object[] { row }), Is.True);
+        Assert.That(interiorArg, Is.EqualTo(11300001));
+        Assert.That(openedDialogs, Does.Contain(0x4ee3));
+
+        // UGCMapPackage double confirm (0x1f box) in OnMessageBox -> ConfirmUgcPurchase sends mode 4
+        c.CanBuyUgcPackage = _ => true;
+        Assert.That(c.OnMessageBox(null, 0, "buyItem,1,1"), Is.True);
+        Assert.That(sent, Is.Empty, "UGCMapPackage asks 0x1f confirmation before sending");
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That(boxes[0].Type, Is.EqualTo(0x1f));
+        boxes[0].InvokeCallback(0, null);
+        Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
+
+        // CloseShop closes active buyItem message box
+        boxClosed = false;
+        c.CurrentBox = () => MessageBoxQueue.Create(0x11, "", c, "buyItem,1,1");
+        c.CloseShop();
+        Assert.That(boxClosed, Is.True);
+
+        // OnEnterKey (vfunc_13) returns false when closed or unfocused, runs search when m_inputSearch is focused
+        var (h2, c2) = Load(NewModel());
+        Assert.That(c2.OnEnterKey(), Is.False);
+        var input = h2.Child("m_inputSearch", c2.ShopView);
+        Assert.That(input, Is.Not.Null);
+        h2.Set(input, "focused", true);
+        h2.Set(input, "text", "___no_match___");
+        Assert.That(c2.OnEnterKey(), Is.True);
+        var listDp = h2.Get(h2.Get(c2.ShopView, "m_list"), "dataProvider");
+        Assert.That(Rt.ToNumber(h2.Get(listDp, "length")), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ShopTooltipsIncludeCompareRowsAchieveRequirementAndGachaCoin()
+    {
+        Packs();
+        var model = NewModel();
+        var (h, c) = Load(model);
+        c.Info.ComparesItems = true;
+        c.Products(0)[1].Record.Achieve = 1001;
+        c.Products(0)[1].Record.AchieveGrade = 2;
+        c.HasAchieve = (_, _) => false;
+        c.RequireAchieveText = (_, _) => "Test Trophy";
+        c.Wearer = () => new PcInfo { Equips = new List<EquipItem> { new() { Id = 11300001, Uid = 999, Rarity = 1 } } };
+
+        var row = h.Obj(("serialID", 1), ("productType", 0));
+        var tip = c.GetTooltip(new object[] { "", row });
+        Assert.That(tip, Is.Not.Null);
+        Assert.That(tip.ContainsKey("requireAchieve"), Is.True);
+        Assert.That(tip["requireAchieve"]?.ToString(), Does.Contain("Test Trophy"));
+        Assert.That(c.GetTooltip(new object[] { "m_coinInfo" }), Is.Null, "non-gacha shop has no coin tooltip");
+    }
 }

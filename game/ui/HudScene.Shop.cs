@@ -38,6 +38,16 @@ public partial class HudScene
             EmptySlotCount = tab => live?.Inventory?.Cells(tab).Count(cell => cell.Empty) ?? 0,
             FindInventorySlotItem = key => inventory?.FindSlotItem(key),
             SellInventoryItem = item => inventory?.TrySellItem(item),
+            Wearer = () => live != null ? live.Me.ToPcInfo(Now()) : (offlineMe ??= UiFixture.Character()).ToPcInfo(Now()),
+            ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
+            LinkShopItem = (itemId, rarity, _, _) =>
+            {
+                if (Ms2.Ui.Items.Item.Create(hudModel.Tables.Items, itemId, rarity) is { } it) ChatLog.LinkItem(it);
+            },
+            LinkPlainItem = (itemId, rarity) =>
+            {
+                if (Ms2.Ui.Items.Item.Create(hudModel.Tables.Items, itemId, rarity) is { } it) ChatLog.LinkItem(it);
+            },
             SystemNotice = SystemNoticeText,
             NoticeWithType = (text, _) => SystemNoticeText(text),
             Sound = key => FieldAudio.Instance?.PlayUi(key),
@@ -112,12 +122,13 @@ public partial class HudScene
     /// <summary>UIShopDialog::vfunc_72 each frame (timer rollover, zero allocations).</summary>
     void ShopTick() { if (ShopOpen) shop.Process(); }
 
-    /// <summary>UIShopDialog's Escape close.</summary>
+    /// <summary>UIShopDialog's keys: Escape closes (CloseShop), Enter searches when m_inputSearch is focused (vfunc_13).</summary>
     bool ShopKeys(InputEventKey k)
     {
-        if (!ShopOpen || k.Keycode != Key.Escape) return false;
-        shop.Close();
-        return true;
+        if (!ShopOpen) return false;
+        if (k.Keycode == Key.Escape) { shop.CloseShop(); return true; }
+        if (k.Keycode is Key.Enter or Key.KpEnter) return shop.OnEnterKey();
+        return false;
     }
 
     /// <summary>
