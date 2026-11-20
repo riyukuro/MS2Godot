@@ -537,6 +537,19 @@ public class AudioTests
         Assert.That(xf.ActiveGain, Is.EqualTo(1f));
         Assert.That(xf.OutgoingGain, Is.EqualTo(0f));
 
+        // Mid-fade interrupt at t = 0 (incoming slot still silent at gain 0): reuses silent slot 1 and keeps audible
+        // slot 0 fading out smoothly from 1.0 instead of cutting slot 0 and jumping silent slot 1 to 1.0.
+        xf.StopAll();
+        xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: false);
+        xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);   // slot 0 = 1.0 (outgoing), slot 1 = 0.0 (incoming)
+        var atZero = xf.BeginTransition(crossfadeMs: 1000, hasActiveAudio: true);
+        Assert.That(atZero, Is.EqualTo((1, 1, true)));
+        Assert.That(xf.Gain(0), Is.EqualTo(1f).Within(1e-5f));
+        Assert.That(xf.Gain(1), Is.EqualTo(0f).Within(1e-5f));
+        Assert.That(xf.Step(0.5f), Is.EqualTo(-1));
+        Assert.That(xf.Gain(0), Is.EqualTo(0.5f).Within(1e-5f));
+        Assert.That(xf.Gain(1), Is.EqualTo(0.5f).Within(1e-5f));
+
         // EndOfSegment links (TransitionType = 4, all 311 links in MS2Sound.fev) chain with 0 ms overlap.
         var endLink = new MusicLink { TransitionType = MusicLink.TransitionEndOfSegment };
         Assert.That(MusicCrossfade.LinkCrossfadeMs(endLink, 2000), Is.EqualTo(0));

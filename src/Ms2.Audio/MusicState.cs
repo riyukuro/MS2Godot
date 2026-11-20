@@ -388,16 +388,37 @@ public sealed class MusicCrossfade
     public float OutgoingGain => Gain(OutgoingSlot);
 
     /// <summary>
-    /// Begins a transition into a new cue or segment using <paramref name="crossfadeMs"/> (MusicTheme.CrossfadeMs).
-    /// When <paramref name="hasActiveAudio"/> is true and <paramref name="crossfadeMs"/> &gt; 0, flips to the other slot
-    /// so the outgoing player fades out while the incoming player fades in from 0 to 1. If a previous crossfade was still
-    /// running, returns its old outgoing slot in <c>OutgoingSlotToStop</c> and fades the interrupted active slot from its
-    /// current gain to avoid a volume pop.
+    /// Begins a transition into a new cue using <paramref name="crossfadeMs"/> (MusicTheme.CrossfadeMs).
+    /// When <paramref name="hasActiveAudio"/> is true and <paramref name="crossfadeMs"/> &gt; 0, flips to the other
+    /// slot so the outgoing player fades out while the incoming player fades in from 0 to 1.
+    /// When a 3rd cue interrupts mid-fade:
+    /// - If the incoming slot is still silent (gain &lt;= 1e-4, e.g. interrupted at t = 0), reuse that silent slot for
+    ///   the 3rd cue and keep the audible outgoing slot fading out smoothly from its current gain (no cut or pop).
+    /// - Otherwise, with a fixed two-player pool (SlotCount == 2), there is no 3rd voice to keep fading the older
+    ///   outgoing slot; that older fading-out slot is stopped immediately so it can host the 3rd cue while the newer
+    ///   active slot fades out smoothly from its current gain.
     /// </summary>
     public (int IncomingSlot, int OutgoingSlotToStop, bool Crossfading) BeginTransition(int crossfadeMs, bool hasActiveAudio)
     {
         if (hasActiveAudio && crossfadeMs > 0)
         {
+            if (fading && ActiveGain <= 1e-4f && OutgoingGain > 1e-4f)
+            {
+                // The 2nd cue has not faded in yet: stop and reuse its silent slot, keeping the audible 1st cue fading out.
+                int stopSilent = activeSlot;
+                float keepOutgoing = OutgoingGain;
+                activePlaying = true;
+                fading = true;
+                fadeElapsed = 0f;
+                fadeDuration = crossfadeMs * 0.001f;
+                outgoingStartGain = keepOutgoing;
+                SetGain(activeSlot, 0f);
+                SetGain(OutgoingSlot, outgoingStartGain);
+                return (activeSlot, stopSilent, true);
+            }
+
+            // Two-player pool (SlotCount == 2): reuse the older fading-out slot (stopNow) for the incoming 3rd cue,
+            // and fade out the previously-active slot from its current gain.
             int stopNow = fading ? OutgoingSlot : -1;
             float prevActiveGain = ActiveGain;
             activeSlot = 1 - activeSlot;
