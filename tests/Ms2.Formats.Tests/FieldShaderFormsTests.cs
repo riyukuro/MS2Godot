@@ -107,6 +107,20 @@ public class FieldShaderFormsTests
         }
     }
 
+    /// <summary>Godot gives instance uniforms their index by declaration order per shader, and one name must have one index in
+    /// every material of an instance (a fluid mesh draws the shell form with a blend colour pass as next_pass): the uniforms
+    /// shared by several forms come first, in the same order.</summary>
+    [Test]
+    public void InstanceUniformsKeepTheirIndexInEveryForm()
+    {
+        var src = ShaderSource();
+        var decls = Forms.Select(f => Resolve(src, f.defines)
+            .Where(l => l.StartsWith("instance uniform ")).Select(l => l.Split(' ')[3].TrimEnd(';', '=')).ToList()).ToList();
+        foreach (var d in decls) Assert.That(d[0], Is.EqualTo("ms2_light_off"));
+        // ms2_receive exists only in the lit forms, after ms2_light_off
+        foreach (var d in decls.Where(d => d.Count > 1)) Assert.That(d, Is.EqualTo(new[] { "ms2_light_off", "ms2_receive" }));
+    }
+
     /// <summary>The cull mode each cull define (ModelBuilder.CullDefine) gives, in the colour shader and the glow shader alike:
     /// the glow click swaps the material only (postprocessingservice.cpp:2830-2836), so the draw mode culls the glow too.</summary>
     [TestCase("field_lit.gdshader")]
