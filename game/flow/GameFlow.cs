@@ -13,7 +13,8 @@ namespace Ms2Godot.Flow;
 /// <summary>
 /// The client's scene states offline (CStateService: Logo, Login, Multi = lobby, Game, Loading, Move), as a small state machine
 /// that lives beside the current scene and switches scenes:
-///   Login (login.tscn) -> Lobby (charselect.tscn; an empty slot goes to Create, charcreate.tscn) -> Loading (the field's
+///   Launcher (launcher.tscn; MS2Godot's own page, before the client's Logo/Login states) -> Login (login.tscn) ->
+///   Lobby (charselect.tscn; an empty slot goes to Create, charcreate.tscn) -> Loading (the field's
 ///   loading screen over the scene change) -> Game (hud.tscn: the field, the player in the chosen character's look, the HUD).
 /// In Game, Esc toggles the client's system menu (Ui.HudScene, uisystemmenudialog): character select goes back to Lobby, exit asks and quits.
 /// The login accepts any id; the character list is the stub list. Args after `--`: --flow-shots DIR runs the whole
@@ -21,13 +22,13 @@ namespace Ms2Godot.Flow;
 /// </summary>
 public partial class GameFlow : Node
 {
-    public enum State { Login, Lobby, Create, Loading, Game }
+    public enum State { Launcher, Login, Lobby, Create, Loading, Game }
 
-    public const string LoginScene = "res://ui/login.tscn", LobbyScene = "res://ui/charselect.tscn",
-        CreateScene = "res://ui/charcreate.tscn", GameScene = "res://ui/hud.tscn";
+    public const string LauncherScene = "res://ui/launcher.tscn", LoginScene = "res://ui/login.tscn",
+        LobbyScene = "res://ui/charselect.tscn", CreateScene = "res://ui/charcreate.tscn", GameScene = "res://ui/hud.tscn";
 
     static GameFlow instance;
-    public State Current { get; private set; } = State.Login;
+    public State Current { get; private set; } = State.Launcher;
     /// <summary>
     /// The login backdrop movie picked by LoginBgBgmTable::SelectCurrent when entering Login (WorldService::LoadMap(1),
     /// worldservice_1.cpp:3309-3313), shared with LoginScene so the backdrop and BGM come from the same row.
@@ -60,6 +61,7 @@ public partial class GameFlow : Node
         UiBridge.ToHost += OnHost;
         CharacterCreateScene.CharacterCreated += OnCreated;
         CharacterCreateScene.Cancelled += OnCreateCancelled;
+        Ui.LauncherScene.SinglePlayer += OnLauncherSinglePlayer;
 
 
         // the system menu's entries that leave the field (Ui.HudScene, uisystemmenudialog): OnSelectCharacter sends RequestQuit, whose answer
@@ -70,7 +72,11 @@ public partial class GameFlow : Node
         Ui.MessageBoxLayer.GameExit += () => GetTree().Quit(0);
 
         Net.LiveSession.Attach(this);
-        Go(State.Login);
+        // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
+        // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
+        bool liveStart = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"));
+        bool flowScene = GetTree().CurrentScene?.SceneFilePath == "res://flow/flow.tscn";
+        Go(liveStart || !flowScene || shotDir != null ? State.Login : State.Launcher);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }
     }
@@ -91,6 +97,7 @@ public partial class GameFlow : Node
         UiBridge.ToHost -= OnHost;
         CharacterCreateScene.CharacterCreated -= OnCreated;
         CharacterCreateScene.Cancelled -= OnCreateCancelled;
+        Ui.LauncherScene.SinglePlayer -= OnLauncherSinglePlayer;
         Session.GameScene = null;
         if (instance == this) instance = null;
     }
@@ -105,6 +112,7 @@ public partial class GameFlow : Node
         Current = next;
         switch (next)
         {
+            case State.Launcher: Change(LauncherScene); break;
             case State.Login:
                 StartLoginBgBgm();
                 Change(LoginScene);
@@ -180,6 +188,13 @@ public partial class GameFlow : Node
     void Change(string path)
     {
         GetTree().ChangeSceneToFile(path);
+    }
+
+    /// <summary>The launcher's Single player: the offline flow, with no live session attached.</summary>
+    void OnLauncherSinglePlayer()
+    {
+        if (Current != State.Launcher) return;
+        Go(State.Login);
     }
 
     void OnHost(string movie, string method, object[] a)
