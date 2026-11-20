@@ -214,6 +214,17 @@ public sealed class LoginBgBgmTable
         return list;
     }
 
+    /// <summary>
+    /// Computes the calendar month (1..12) from server time and timezone, matching LoginBgBgmTable::SelectCurrent
+    /// (@0x140a729e0, commonfiles/loginbgbgmdata.cpp:164-177): when CMsTime::IsTimeZoneSet() is true, uses
+    /// CMsTime::GetLocalTm(GetServerTime()) (unixSeconds - calcZoneOffset in UTC); otherwise uses local time of
+    /// GetServerTime().
+    /// </summary>
+    public static int MonthForServerTime(long serverUnixSeconds, bool timeZoneSet, long calcZoneOffset) =>
+        timeZoneSet
+            ? DateTimeOffset.FromUnixTimeSeconds(serverUnixSeconds - calcZoneOffset).UtcDateTime.Month
+            : DateTimeOffset.FromUnixTimeSeconds(serverUnixSeconds).ToLocalTime().Month;
+
     /// <summary>LoginBgBgmTable::SelectCurrent (@0x140a729e0, loginbgbgmdata.cpp:161-199).</summary>
     public bool SelectCurrent(int month, Func<int, int> pick = null)
     {

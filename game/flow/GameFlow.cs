@@ -135,7 +135,9 @@ public partial class GameFlow : Node
             Func<int, int> pick = shotDir != null ? _ => 0 : n => (int)(GD.Randi() % (uint)n);
             if (loginBgBgm != null)
             {
-                loginBgBgm.SelectCurrent(DateTime.Now.Month, pick);
+                long serverTime = Net.LiveSession.Instance?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                int month = LoginBgBgmTable.MonthForServerTime(serverTime, Ms2.Net.MsTime.ZoneSet, Ms2.Net.MsTime.CalcZoneOffset);
+                loginBgBgm.SelectCurrent(month, pick);
                 SelectedLoginBgDay = loginBgBgm.GetBgDay();
             }
             if (loginAudio == null || !IsInstanceValid(loginAudio))

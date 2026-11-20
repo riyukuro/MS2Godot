@@ -49,6 +49,8 @@ public partial class LiveSession : Node
     public Func<bool> PartyWindowOpen = () => false;
     /// <summary>The game server session (its time sync), null before the field enter.</summary>
     public ClientSession GameSession => game?.Session;
+    /// <summary>CMainSystem::GetServerTime (mainsystem.cpp:390): game or login session server clock, else UTC now.</summary>
+    public long ServerTime => (game?.Session ?? login?.Session)?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
     /// <summary>The entered character's id (DAT_143ab2828), 0 before the field enter.</summary>
     public long CharacterId => entry?.Enter?.CharacterId ?? 0;
     /// <summary>The field the server sent the character to (RequestFieldEnter), null before the field enter.</summary>

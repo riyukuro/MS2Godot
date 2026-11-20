@@ -715,6 +715,13 @@ public class AudioTests
         Assert.That(table.ResolveLoginBgm(map1, _ => 0), Is.EqualTo((192, 5, 2.5f)));
         Assert.That(table.SelectCurrent(1, _ => 1), Is.True);
         Assert.That(table.ResolveLoginBgm(map1, _ => 0), Is.EqualTo((244, 0, 2.5f)), "uses map 1 BgmValue with table's cue/param");
+
+        // LoginBgBgmTable::SelectCurrent (loginbgbgmdata.cpp:164-177): server time + CMsTime zone determines month.
+        // 2025-02-28 20:00:00 UTC: month 2 in UTC (offset 0), month 3 in KST (ZoneSeconds = -32400 -> 2025-03-01 05:00).
+        long feb28Utc20 = new DateTimeOffset(2025, 2, 28, 20, 0, 0, TimeSpan.Zero).ToUnixTimeSeconds();
+        Assert.That(LoginBgBgmTable.MonthForServerTime(feb28Utc20, timeZoneSet: true, calcZoneOffset: 0), Is.EqualTo(2));
+        Assert.That(LoginBgBgmTable.MonthForServerTime(feb28Utc20, timeZoneSet: true, calcZoneOffset: -32400), Is.EqualTo(3));
+        Assert.That(LoginBgBgmTable.MonthForServerTime(feb28Utc20, timeZoneSet: true, calcZoneOffset: 28800), Is.EqualTo(2));
     }
 
     [Test]
