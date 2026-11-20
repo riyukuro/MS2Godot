@@ -101,7 +101,7 @@ public partial class AlphaSort : Node
     }
 
     /// <summary>NiBound::Merge (NiBound_Win32.cpp): this = (c, r), pBound = (bc, br).</summary>
-    static (Vector3, float) Merge(Vector3 c, float r, Vector3 bc, float br)
+    internal static (Vector3, float) Merge(Vector3 c, float r, Vector3 bc, float br)
     {
         var diff = c - bc;
         float lengthSqr = diff.Dot(diff);

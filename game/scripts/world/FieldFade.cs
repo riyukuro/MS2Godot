@@ -37,6 +37,7 @@ public partial class FieldFade : Node
     const ulong TestPeriodMs = 300, FadeMs = 300;
     const float RayLow = 20f, RayHigh = 100f;
     static readonly StringName ReceiveParam = "ms2_receive";
+    static readonly StringName LightOffParam = "ms2_light_off";
 
     sealed class Target
     {
@@ -213,6 +214,7 @@ public partial class FieldFade : Node
                 one.SetInstanceColor(0, d.Mm.GetInstanceColor(d.Index));
                 var node = new MultiMeshInstance3D { Name = "fade", Multimesh = one, MaterialOverride = mat, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 if (d.NotReceiving) node.SetInstanceShaderParameter(ReceiveParam, 0f);   // the copy's own draw takes no shadow (FieldBuilder)
+                if (d.LightOff != 0) node.SetInstanceShaderParameter(LightOffParam, (float)d.LightOff);   // nor the lights its draw does not take
                 d.Parent.AddChild(node);
                 d.Mm.SetInstanceTransform(d.Index, new Transform3D(new Basis(Vector3.Zero, Vector3.Zero, Vector3.Zero), xf.Origin));
                 var part = new Part { draw = d, xf = xf, node = node, mat = mat, TestRef = d.Mesh.AlphaThreshold };

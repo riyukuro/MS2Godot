@@ -116,6 +116,7 @@ public partial class Field : Node3D
         fb.DrawsInstance = contents.Props.TakesModel;
         fb.Lease = models;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
+        fb.Lights = FieldLightSet.Read(map.Entities);       // before the build: each draw takes the lights that reach it
         abandon = () =>   // what a stopped load holds off the tree
         {
             fb.Abandon();
@@ -141,6 +142,7 @@ public partial class Field : Node3D
         Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
+        foreach (var (e, off) in fb.LightOffElsewhere) contents.Props.LightOff[e] = off;
         AddChild(World.FieldEffects.Build(packs, builder, fb.EffectEntities));
         AddChild(World.FieldEffects.BuildParticles(builder, fb.ParticleEntities, fb.StaticParticleModels));
         if (World.FieldWeather.Create(packs, builder, fd?.MapEffectId) is { } weather) AddChild(weather);
@@ -154,7 +156,7 @@ public partial class Field : Node3D
 
         BuildEnvironment(map, fieldName);
         await Budget();
-        GD.Print($"MS2Godot lights: {FieldLights.Add(FieldLightSet.Read(map.Entities))}");
+        GD.Print($"MS2Godot lights: {FieldLights.Add(fb.Lights)}, {fb.LightMaskedDraws} draws masked");
         await Budget();
         Movement.MoveProof.Effects = (packs, builder);   // the scripted run's fx step
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);

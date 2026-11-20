@@ -20,6 +20,9 @@ public sealed class FieldProps
     public readonly List<FieldEntity> Entities = new();
     /// <summary>The entities that receive no sun shadow (FieldBuilder.NotReceivingElsewhere).</summary>
     public readonly HashSet<FieldEntity> NotReceiving = new();
+    /// <summary>The field lights that do not reach an entity, by entity (FieldBuilder.LightOffElsewhere); absent: all reach it.</summary>
+    public readonly Dictionary<FieldEntity, uint> LightOff = new();
+    static readonly StringName LightOffParam = "ms2_light_off";
     static readonly StringName ReceiveParam = "ms2_receive";
     public int Built, Animated, Frozen;
     float freezeAt;
@@ -52,7 +55,8 @@ public sealed class FieldProps
             var col = c != null && c.Length >= 3 ? new Color((float)c[0], (float)c[1], (float)c[2])
                                                  : new Color(DefaultMaterialColor, DefaultMaterialColor, DefaultMaterialColor);
             bool frozen = FieldBuilder.IsStatic(e);
-            var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e), frozen);
+            var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e), frozen,
+                                LightOff.TryGetValue(e, out var off) ? off : 0);
             node.Transform = ModelBuilder.ToGodot(e.Transform);
             root.AddChild(node);
             Built++;
@@ -76,7 +80,8 @@ public sealed class FieldProps
     /// worldservice_1.cpp:3637-3638), whose SetShadowCaster also skips "NoShadow"-tagged subtrees (ModelMesh.NoShadow).</param>
     /// <param name="receives">The entity takes the sun's shadow (ShadowReceivers); else every mesh's ms2_receive is 0, as in
     /// FieldBuilder.</param>
-    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives, bool frozen)
+    /// <param name="lightOff">The field lights that do not reach the entity (FieldLightSet.Unlit), as each mesh's ms2_light_off.</param>
+    Node3D BuildOne(ModelData md, KfAnimation kf, Color col, string name, bool casts, bool receives, bool frozen, uint lightOff)
     {
         var root = new Node3D { Name = name.ValidateNodeName() };
         var model = new Node3D { Name = "Model", Transform = ModelBuilder.ToGodot(md.RootLocal) };
@@ -92,6 +97,7 @@ public sealed class FieldProps
             var inst = new MeshInstance3D { Name = $"m{mi}", Mesh = Mesh(md, mi, col, frozen) };
             if (!casts || m.NoShadow) inst.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
             if (!receives) inst.SetInstanceShaderParameter(ReceiveParam, 0f);
+            if (lightOff != 0) inst.SetInstanceShaderParameter(LightOffParam, (float)lightOff);
             var skin = m.Skinned ? ModelBuilder.SkinOf(md, m) : null;
             if (m.Skinned)
             {

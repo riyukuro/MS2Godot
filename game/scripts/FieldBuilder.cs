@@ -56,6 +56,13 @@ public sealed class FieldBuilder
     public readonly List<FieldEntity> DrawnElsewhere = new();
     /// <summary>The <see cref="DrawnElsewhere"/> entities that receive no sun shadow (ShadowReceivers), for world/FieldProps.</summary>
     public readonly HashSet<FieldEntity> NotReceivingElsewhere = new();
+    /// <summary>The field's point and spot lights (FieldLights); null or empty: no light masks.</summary>
+    public FieldLightSet Lights { get; set; }
+    /// <summary>The <see cref="DrawnElsewhere"/> entities that some field lights do not reach, with those lights' bits
+    /// (<see cref="FieldLightSet.Unlit"/>), for world/FieldProps.</summary>
+    public readonly Dictionary<FieldEntity, uint> LightOffElsewhere = new();
+    /// <summary>Draws given a light mask (ms2_light_off != 0).</summary>
+    public int LightMaskedDraws;
     /// <summary>Visible EffectMesh entities (portals, fountains' effect models): playing effects, drawn by world/FieldEffects.</summary>
     public readonly List<(FieldEntity entity, string archive, string entry)> EffectEntities = new();
     /// <summary>Visible dynamic Mesh entities whose model holds particle systems, with the model's particles-only effect
@@ -66,7 +73,7 @@ public sealed class FieldBuilder
     /// <summary>Optional: the field load's entity count, bumped as each entity of the set is placed (see <see cref="World.LoadCount"/>).</summary>
     public World.LoadCount Load;
     /// <summary>One drawn copy of a mesh of an entity: instance <see cref="Index"/> of <see cref="Mm"/>.</summary>
-    public sealed class FadeDraw { public MultiMesh Mm; public int Index; public ModelMesh Mesh; public Node3D Parent; public bool NotReceiving; }
+    public sealed class FadeDraw { public MultiMesh Mm; public int Index; public ModelMesh Mesh; public Node3D Parent; public bool NotReceiving; public uint LightOff; }
     /// <summary>The draws of every entity BGTransparencyMgr can fade (<see cref="IsFadeTarget"/>), for world/FieldFade.</summary>
     public readonly Dictionary<FieldEntity, List<FadeDraw>> FadeDraws = new();
 
@@ -94,12 +101,12 @@ public sealed class FieldBuilder
         list.Add((mm, index));
     }
 
-    void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving)
+    void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving, uint lightOff)
     {
         AddTriggerDraw(e, mm, index);
         if (!IsFadeTarget(e)) return;
         if (!FadeDraws.TryGetValue(e, out var list)) FadeDraws[e] = list = new List<FadeDraw>();
-        list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
+        list.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving, LightOff = lightOff });
     }
 
     /// <summary>The blended draws with the client's alpha key, for <see cref="AlphaSort"/>.</summary>
@@ -115,6 +122,48 @@ public sealed class FieldBuilder
         public bool Elsewhere;           // DrawsInstance took it (per field)
         public bool AnimatesMaterial;    // a mesh has a shader-run controller (alpha, flipbook, uv scroll, morph): IsStatic splits the batch
         public EffectScene Particles;    // the model's emitting particle systems (ModelAsset.Particles); null: none
+        public Vector3 SphereCenter;     // the model's NiBound in model space (ModelSphere)
+        public float SphereRadius;
+    }
+
+    /// <summary>
+    /// The entity scene graph's model bound: each mesh's stored model bound (NiMesh "Bounding Sphere") moved to model space,
+    /// merged as NiNode::UpdateWorldBound does (NiNode.cpp:330-352: the first bound of non-zero radius, then NiBound::Merge).
+    /// The client merges level by level down the node tree; here the meshes are merged in model order, flat, which gives the
+    /// same sphere when the model has one mesh and a slightly different one otherwise (Merge is not associative).
+    /// A similarity transform moves the merged sphere as it moves each part, so the world bound is this one moved by the
+    /// entity's placement (c' = s R c + T, r' = s r: NiBound::Update).
+    /// </summary>
+    static (Vector3 center, float radius) ModelSphere(List<(ModelMesh mesh, Transform3D local)> meshes)
+    {
+        Vector3 c = default; float r = 0;
+        foreach (var (m, local) in meshes)
+        {
+            if (m.Bound == null) continue;
+            var bc = local * new Vector3(m.Bound[0], m.Bound[1], m.Bound[2]);
+            float br = local.Basis.Scale.X * m.Bound[3];
+            if (r == 0) { c = bc; r = br; }
+            else (c, r) = AlphaSort.Merge(c, r, bc, br);
+        }
+        return (c, r);
+    }
+
+    /// <summary>The lights that do not reach entity <paramref name="e"/> drawn with model <paramref name="me"/>
+    /// (<see cref="FieldLightSet.Unlit"/>, on its world bound in field units); 0 for all.</summary>
+    uint LightOff(FieldEntity e, ModelEntry me)
+    {
+        if (Lights == null || Lights.Lights.Count == 0) return 0;
+        var c = ModelBuilder.ToGodot(e.Transform) * me.SphereCenter;   // Z-up field space, as the entity transform
+        return Lights.Unlit(e, new Vec3(c.X, c.Y, c.Z), (float)e.Scale * me.SphereRadius);
+    }
+
+    static readonly StringName LightOffParam = "ms2_light_off";
+
+    void MaskLights(GeometryInstance3D node, uint lightOff)
+    {
+        if (lightOff == 0) return;
+        node.SetInstanceShaderParameter(LightOffParam, (float)lightOff);
+        LightMaskedDraws++;
     }
 
     readonly Dictionary<string, ModelEntry> models = new(StringComparer.OrdinalIgnoreCase);
@@ -147,6 +196,7 @@ public sealed class FieldBuilder
                 me = new ModelEntry { Data = asset.Data, Meshes = asset.Meshes, Bounds = asset.Bounds, Collision = asset.Collision,
                                       Overlap = asset.Overlap, Elsewhere = DrawsInstance?.Invoke(llid, asset.Data, asset.Controllers) == true,
                                       AnimatesMaterial = asset.Data.Meshes.Any(m => m.AnimatesMaterial), Particles = asset.Particles };
+                (me.SphereCenter, me.SphereRadius) = ModelSphere(asset.Meshes);
             }
         }
         if (me == null) Missing++;
@@ -407,11 +457,17 @@ public sealed class FieldBuilder
                 {
                     DrawnElsewhere.Add(e);
                     if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(e);
+                    if (LightOff(e, me) is var off and not 0) LightOffElsewhere[e] = off;
                 }
                 else if (e.Bool("IsVisible", true))
                 {
+                    // copies reached by different field lights draw apart, each with its light mask (the client's instancing
+                    // batches split on their nearby-light list the same way, Unk_MeshInstancingConfig::Equals)
+                    uint off = LightOff(e, me);
                     var key = BatchKey(llid, e) + (notReceiving.Contains(e) ? NotReceivingKey : "")
+                              + (off != 0 ? LightKey + off : "")
                               + (me.AnimatesMaterial && IsStatic(e) ? FrozenKey : "");
+                    if (off != 0) groupLightOff[key] = off;
                     if (!groups.TryGetValue(key, out var list)) groups[key] = list = new List<FieldEntity>();
                     list.Add(e);
                     grouped = true;            // counted when its group is placed
@@ -480,6 +536,7 @@ public sealed class FieldBuilder
         {
             var me = models[key.Split('\n')[0]];
             bool noRecv = key.Contains(NotReceivingKey, StringComparison.Ordinal);
+            uint lightOff = groupLightOff.TryGetValue(key, out var lo) ? lo : 0;
             bool frozen = key.EndsWith(FrozenKey, StringComparison.Ordinal);
             int mi = 0;
             // shells (FUN_1413fa4c0): the shared group draws through ModelBuilder.MakeFluidShell; an own group draws each
@@ -510,10 +567,11 @@ public sealed class FieldBuilder
                         {
                             om.SetInstanceTransform(i, ModelBuilder.ToGodot(obj[i].Transform) * local);
                             om.SetInstanceColor(i, InstanceColor(obj[i]));
-                            AddFadeDraw(obj[i], om, i, mesh, visuals, noRecv);
+                            AddFadeDraw(obj[i], om, i, mesh, visuals, noRecv, lightOff);
                         }
                         var on = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi}_o{k}", Multimesh = om, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                         if (noRecv) { on.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; NotReceivingBlended++; }
+                        MaskLights(on, lightOff);
                         visuals.AddChild(on);
                         SortAsObject(on, mesh, obj, local);
                         if (glow != null)
@@ -550,7 +608,7 @@ public sealed class FieldBuilder
                 {
                     mm.SetInstanceTransform(i, ModelBuilder.ToGodot(ents[i].Transform) * local);
                     mm.SetInstanceColor(i, InstanceColor(ents[i]));
-                    AddFadeDraw(ents[i], mm, i, mesh, visuals, noRecv);
+                    AddFadeDraw(ents[i], mm, i, mesh, visuals, noRecv, lightOff);
                 }
                 // the sun's shadow: a MultiMesh is culled as a whole, and its box spans the field, so as one caster every copy is drawn
                 // again in every shadow cascade. The shadow casters are per-cell twins (tight boxes, culled per cascade); the visible
@@ -559,6 +617,7 @@ public sealed class FieldBuilder
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 if (noRecv) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; if (mesh.AlphaBlendOn) NotReceivingBlended++; }
+                MaskLights(node, lightOff);
                 visuals.AddChild(node);
                 if (!mesh.AlphaBlendOn && !mesh.NoShadow && CastsShadows) AddShadowCells(visuals, ents[0].ModelName, mm.Mesh, ents.Where(e => e.CastsShadow).ToList(), local);
                 if (mesh.AlphaBlendOn) SortBlended(node, mesh, shell, ents, local);
@@ -685,6 +744,10 @@ public sealed class FieldBuilder
 
     enum Shell { None, Shared, Own }
 
+    /// <summary>The group key suffix of copies some field lights do not reach, followed by their light bits.</summary>
+    const string LightKey = "\nlightoff";
+    readonly Dictionary<string, uint> groupLightOff = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The group key suffix of copies that receive no sun shadow (after BatchKey; '\n' never ends one).</summary>
     const string NotReceivingKey = "\nnorecv";
     static readonly StringName ReceiveParam = "ms2_receive";
@@ -724,7 +787,7 @@ public sealed class FieldBuilder
     /// The draw group of a placed entity: its llid, split by shell group; an own-group shell further by the instancing batch.
     /// Unk_MeshInstancingConfig::Equals matches a shell batch (UseShellRender) on the asset, IsCastingShadow,
     /// IsReceivingShadow and MaterialColor, and not on the instancing cell. Its nearby-light list (FUN_1413d7160) splits
-    /// batches too; that is not modelled here.
+    /// batches too; the light-mask suffix of the group key (LightOff) does that where the lit sets differ.
     /// </summary>
     static string BatchKey(string llid, FieldEntity e) => ShellOf(e) switch
     {
