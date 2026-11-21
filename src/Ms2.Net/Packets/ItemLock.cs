@@ -172,6 +172,7 @@ public sealed class ItemLockBook {
                 if (x.Code == 1) Notice?.Invoke(NoticeLocked, 0);
                 else if (x.Code == 3) Notice?.Invoke(NoticeResult3, 0);
                 else Notice?.Invoke(NoticeLocked, x.Code);
+                BagChanged?.Invoke(); // the result refreshes the bag and the lock buttons
                 break;
         }
     }

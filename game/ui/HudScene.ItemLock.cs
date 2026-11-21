@@ -8,8 +8,9 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The item lock: CItemLockManager (the session's <see cref="ItemLockBook"/>, the ItemLock packets 0xDB) and its dialog
 /// UIItemLockDialog (0x4f08) with its C++ side as <see cref="ItemLockDialogController"/>. Live only: the inventory's lock
-/// button opens it. STILL-OPEN: the inventory slot redraw on the lock packets, the dialog's tab control, the sell path's
-/// CanUseItem (the shop is not in this scene).
+/// button opens it. STILL-OPEN: the inventory slot redraw on the lock packets, the dialog's tab control, the black
+/// market's CanUseItem test (invenslot.cpp:1357/1410; no black market in this client). The shop sell and the trade add run
+/// CanUseItem already (ItemTradeRules.NotLocked in ShopController.CanSellItem and InventoryController.TryAddToTrade).
 /// </summary>
 public partial class HudScene
 {

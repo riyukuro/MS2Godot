@@ -141,7 +141,8 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
                 AskConfirm();
                 return true;
             case "onchangetab":
-                ChangeTab(args.Length > 0 ? (int)Rt.ToUint32(args[0]) : 0);
+                if (args.Length == 0) return false; // the client reads the tab from its args and does nothing without them
+                ChangeTab((int)Rt.ToUint32(args[0]));
                 return true;
         }
         return false;
@@ -167,7 +168,8 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
         }
     }
 
-    /// <summary>OnChangeTab: with an item in the bag the bag is dropped (mode 0 send), then SetTab(tab).</summary>
+    /// <summary>OnChangeTab: with an item in the bag the bag is dropped (mode 0 send), then SetTab(tab). The client stores the
+    /// tab as given; the use mode only knows two tabs here, so any tab other than 1 (unlock) is the lock tab.</summary>
     public void ChangeTab(int tab)
     {
         if (Book.HasLockedItem) { Book.SendReset(); BindItemBag(); }

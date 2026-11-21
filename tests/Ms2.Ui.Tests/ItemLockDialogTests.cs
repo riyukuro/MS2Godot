@@ -117,6 +117,19 @@ public class ItemLockDialogTests
     }
 
     [Test]
+    public void AResultRefreshesTheBagAndOnChangeTabWithoutArgsDoesNothing()
+    {
+        var r = new Rig();
+        int n = 0;
+        r.Book.BagChanged += () => n++;
+        r.Book.Apply(new ItemLockMessage.Result(3));
+        Assert.That(n, Is.EqualTo(1));
+        r.Sent.Clear();
+        Assert.That(r.C.OnCallback("OnChangeTab", Array.Empty<object>()), Is.False);
+        Assert.That(r.Sent, Is.Empty);
+    }
+
+    [Test]
     public void TheConfirmBoxSendsModeThreeOnlyOnYes()
     {
         var r = new Rig();
