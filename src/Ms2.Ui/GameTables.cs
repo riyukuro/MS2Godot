@@ -125,6 +125,7 @@ public sealed class GameTables
         StoreExpandPrice1Row = (int)whole("StoreExpandPrice1Row", StoreExpandPrice1Row);
         StoreDepositMax = (int)whole("StoreDepositMax", StoreDepositMax);
         StoreWithdrawMax = (int)whole("StoreWithdrawMax", StoreWithdrawMax);
+        ItemUnLockTime = (uint)whole("ItemUnLockTime", ItemUnLockTime);
         // SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every ./Data/Xml/SkillData/*.xml (FindSkillFiles
         // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
@@ -438,6 +439,8 @@ public sealed class GameTables
     /// StoreWithdrawMax (+0x45b0), all Define default 0 (unit_1402ab440_constantsblocks.cpp:929-932): the bank's most extra slots,
     /// the price of an expansion and the most mesos one deposit / withdrawal moves.</summary>
     public int StoreExpandMaxSlotCount, StoreExpandPrice1Row, StoreDepositMax, StoreWithdrawMax;
+    /// <summary>Client::Constants ItemUnLockTime (Define default 259200, constantsblocks.cpp:1027): seconds an unlock request waits; the lock dialog shows it in hours.</summary>
+    public uint ItemUnLockTime = 259200;
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>

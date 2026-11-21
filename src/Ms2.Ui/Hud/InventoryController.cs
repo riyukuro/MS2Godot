@@ -343,6 +343,12 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         {
             if (equips.WornSlot(source) is { } worn) WornDroppedOnBag(worn.Item, worn.Slot, worn.Kind, to, equips);
         }
+        else if (sourceOwner is IItemLockSlotOwner lk && lk.LockSlotUid(source) is long old and not 0 && LockSlotDropped != null)
+        {
+            Item mine = View?.ItemAt(View.Tab, to) is { } e && Model != null ? ToItem(e, Model.Tables.Items) : null;
+            LockSlotDropped(old, mine);
+            sourceOwner.RefreshSlot(source);
+        }
         else Button?.Invoke("notifySlotDragEnd");
     }
 
@@ -432,6 +438,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (mode == 1) { TryAddToTrade(item); return; }
         if (mode == 2) { TrySellItem(item); return; }
         if (mode == 3 && BankDeposit != null) { BankDeposit(item); return; }
+        if (mode == 10 && LockSelect != null) { LockSelect(item); return; }       // case 10: the open lock dialog selects it
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
@@ -620,6 +627,10 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     public Func<Item, bool> BankAllowed = _ => true;
     /// <summary>InvenSlot::vfunc_14 case 3: the right-clicked item goes to the bank. Null: raised, not sent.</summary>
     public Action<Item> BankDeposit;
+    /// <summary>InvenSlot::vfunc_14 case 10 (the item lock dialog at the head): the item goes to the lock bag when it is open. Null: raised, not sent.</summary>
+    public Action<Item> LockSelect;
+    /// <summary>InvenSlot::vfunc_18 with an ItemLockSlot as the source (invenslot.cpp:1245): the slot's item uid and this slot's item (null for an empty cell).</summary>
+    public Action<long, Item> LockSlotDropped;
     /// <summary>FUN_140c8dab0(GetInstrumentManager()): the uid of the score being played, 0 with none.</summary>
     public Func<long> PlayingScoreUid = () => 0;
     /// <summary>PlayItemSoundByUid: the item's sound.</summary>
@@ -1069,6 +1080,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return ItemTradeRules.CanSellToShop(item, GemData, Now) ? 2 : hint ? 0 : 2;
         if (head == StoreDialogController.UiId)
             return BankAllowed(item) ? 3 : hint ? 0 : 3;
+        if (DialogHead() == ItemLockDialogController.UiId) return 10;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;

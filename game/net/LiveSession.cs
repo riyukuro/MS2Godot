@@ -77,6 +77,12 @@ public partial class LiveSession : Node
     {
         if (game != null) Send(packet);
     }
+    /// <summary>The item lock (CItemLockManager): the ItemLock packets (0xDB) and the RequestItemLock sends (0x87).</summary>
+    public readonly ItemLockBook LockBook = new();
+    public void SendLock(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
     /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
@@ -918,6 +924,18 @@ public partial class LiveSession : Node
             {
                 ApplyItems(p);
                 GD.Print($"live: item packet ({Items.All.Count} items)");
+            }
+            else if (game.Is(p, Inbound.ItemLock))
+            {
+                try
+                {
+                    LockBook.Find = Items.Get;
+                    LockBook.StoreItem = i => Items.Apply(new ItemMessage.Update(i.Uid, i));
+                    var m = ItemLockMessage.Read(p.Reader(), Items.Get);   // CItemLockManager::OnItemLock (itemlockmanager.cpp)
+                    LockBook.Apply(m);
+                    GD.Print($"live: item lock {m.GetType().Name}");
+                }
+                catch (Exception e) { GD.PushWarning($"live: item lock packet: {e.Message}"); }
             }
             else if (game.Is(p, Inbound.StorageInventory))
             {

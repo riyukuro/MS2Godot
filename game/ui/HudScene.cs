@@ -1418,6 +1418,7 @@ public partial class HudScene : Node, IUiStageHost
         if (MailKeys(k)) return true;
         if (TradeKeys(k)) return true;
         if (StoreKeys(k)) return true;
+        if (ItemLockKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
@@ -2634,15 +2635,21 @@ public partial class HudScene : Node, IUiStageHost
             SlotWorld = QuickSlotWorld,
             LinkItem = ChatLog.LinkItem,                  // InvenSlot::vfunc_15: Shift+click links the item into the chat input
         };
-        c.ToggleDialog += id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
+        c.ToggleDialog += id =>
+        {
+            if (id == ItemLockDialogController.UiId) ToggleItemLock();
+            else GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
+        };
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
         c.SystemNotice += SystemNotice;
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;
         c.Shop = () => ShopOpen ? shop : null;
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : 0;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : 0;
         c.BankAllowed = item => store?.Storable(item) ?? true;       // the open bank heads the right-click dialogs (0x4e47)
         c.BankDeposit = item => store?.DepositFromInventory(item);
+        c.LockSelect = item => itemLock?.SelectFromInventory(item);
+        c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
         c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
         c.NoticeText += SystemNoticeText;
         BindBoxAnswers();
