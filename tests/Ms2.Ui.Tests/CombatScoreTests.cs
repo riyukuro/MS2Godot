@@ -43,6 +43,15 @@ public class CombatScoreTests
     }
 
     [Test]
+    public void ZeroCriticalEvasionGivesTheClientsIntMinValue()
+    {
+        // 1325 / (a[6] * 2) is a Lua float divide: 0 gives inf, the score -inf, and the wrapper's (int) cast of it is 0x80000000
+        var d = new double[] { 20, 5000, 900, 300, 200, 120, 0, 0.1, 0.05, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.1, 0, 0, 10, 0 };
+        Assert.That(CombatScore.Defense(d), Is.EqualTo(double.NegativeInfinity));
+        Assert.That(CombatScore.Result(CombatScore.Defense(d)), Is.EqualTo(int.MinValue));
+    }
+
+    [Test]
     public void ArgsFollowTheWrappers()
     {
         var stats0 = new long[0x23];
