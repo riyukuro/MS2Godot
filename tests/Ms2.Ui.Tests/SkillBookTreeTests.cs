@@ -352,7 +352,12 @@ public class SkillBookTreeTests
         Assert.That(Rt.ToBoolean(bh.Invoke(dm, "inDrag")), Is.False, "dropped");
         Assert.That(p.DrawnOnTop, Is.Null);
         Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 10500001, 0, 0, 3) }));
-        Assert.That(keys.Entry(0, 3), Is.EqualTo(new QuickSlotEntry(10500001, 0, 0)));
+        // the BookSlot branch of SkillSlot::vfunc_18 (skillslot.cpp:547-557) sets the slot's own entry once the send is made and
+        // never writes the key table page: the page fills only from the server's mode 7
+        Assert.That(bar.ShownEntry(3), Is.EqualTo(new QuickSlotEntry(10500001, 0, 0)));
+        Assert.That(keys.Entry(0, 3).IsEmpty, Is.True, "a book drop writes only the slot");
+        var slot3 = (AsObject)h.ToAs(bar.GetBinding(MainPlayerInfoController.SlotBag + ".3"));
+        Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(bh.Model.Tables.Skills.GetSkillData(10500001).Icon));
         Assert.That(bh.RT.Errors.Skip(before).Count(e => !e.Contains("#1023")), Is.Zero, string.Join("; ", bh.RT.Errors.Skip(before)));
     }
 
