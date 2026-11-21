@@ -28,9 +28,9 @@
       "worst": 10596
     },
     "field.install.jit_methods": {
-      "min": 6385,
-      "max": 6425,
-      "limit": 6594
+      "min": 6575,
+      "max": 6615,
+      "limit": 6784
     },
     "field.install.jit_ms": {
       "median": 756.43,
@@ -78,9 +78,9 @@
       "worst": 10885
     },
     "field.session.jit_methods": {
-      "min": 6385,
-      "max": 6420,
-      "limit": 6584
+      "min": 6575,
+      "max": 6610,
+      "limit": 6774
     },
     "field.session.jit_ms": {
       "median": 739.479,
