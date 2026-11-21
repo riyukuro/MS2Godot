@@ -398,10 +398,11 @@ public sealed partial class NpcEmoticons : CanvasLayer
     /// PC (an npc caster).</summary>
     public int WornGemId(int objectId, int type) => pcs.TryGetValue(objectId, out var x) ? x.Gems.WornGemId(type) : 0;
 
-    /// <summary>PC::vfunc_66(n) (pc.cpp:1236-1259): going into battle (n == 1) with a usable type 2 gem loads its font.</summary>
-    void OnBattleStance(int objectId, bool on)
+    /// <summary>PC::vfunc_66(n) (pc.cpp:1236-1259): the emotion 1 (<see cref="Ms2.Ui.Hud.DamageFonts.StanceLoadsFont"/>) with a
+    /// usable type 2 gem loads its font.</summary>
+    void OnBattleStance(int objectId, int emotion)
     {
-        if (on && WornGemId(objectId, 2) is var gem and not 0) DamageFontAsked?.Invoke(gem);
+        if (Ms2.Ui.Hud.DamageFonts.StanceLoadsFont(emotion) && WornGemId(objectId, 2) is var gem and not 0) DamageFontAsked?.Invoke(gem);
     }
 
     public override void _EnterTree()

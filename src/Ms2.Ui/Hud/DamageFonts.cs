@@ -32,6 +32,10 @@ public sealed class DamageFonts
 
     public bool Loaded(int id) => id != 0 && stamps.ContainsKey(id);
 
+    /// <summary>PC::vfunc_66(n) (pc.cpp:1253-1258): only the emotion 1 asks for the type 2 gem's font, not any other battle
+    /// emotion.</summary>
+    public static bool StanceLoadsFont(int emotion) => emotion == 1;
+
     public int Count => stamps.Count;
 
     /// <summary>

@@ -123,8 +123,9 @@ public partial class LiveSession : Node
     /// <summary>OnBadgeEquip modes 0 and 1, for any PC of the field (the own one included): a gem put on or taken off.</summary>
     public event Action<BadgeEquipMessage> BadgeEquipped;
     /// <summary>A PC's battle stance changed (OnUserBattle, scenestategame.cpp:3269-3288, on a change: PC::vfunc_66), the own one
-    /// included: the object id and the new stance.</summary>
-    public event Action<int, bool> BattleStanceChanged;
+    /// included: the object id and the new emotion (m_unk_160; nonzero is the stance).</summary>
+    public event Action<int, int> BattleStanceChanged;
+    int selfEmotion;
     /// <summary>A PC's battle stance (PCBase::vfunc_65): the own one's or a shown remote one's.</summary>
     public bool InBattle(int objectId) => objectId == selfObject ? SelfInBattle : remote?.InBattle(objectId) ?? false;
     /// <summary>OnTaxi, after its ids joined the found-taxi list (<see cref="StubHudData.FoundTaxis"/>).</summary>
@@ -979,7 +980,7 @@ public partial class LiveSession : Node
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
                 if (self)
                 {
-                    selfObject = u.ObjectId; SelfInBattle = u.InBattle; Me.Apply(u); player?.SetBattleStance(u.InBattle);
+                    selfObject = u.ObjectId; SelfInBattle = u.InBattle; selfEmotion = u.InBattle ? 1 : 0; Me.Apply(u); player?.SetBattleStance(u.InBattle);
                     // a new MyPC, then its cube mode (PC::vfunc_135, scenestategame.cpp:11189-11192) before its model is in (vfunc_12)
                     CubeCraft.NewPc(); CubeCraft.Set(u.CubeMode, u.CraftMode, u.CubeItem, Me.Dead);
                     bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
@@ -1001,10 +1002,11 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject)
             {
                 // CSceneStateGame::OnUserBattle (@0x141717580, scenestategame.cpp:3269-3288): SetEmotion(nEmotion)
-                bool was = SelfInBattle;
-                SelfInBattle = p.Body[4] != 0;
+                int was = selfEmotion;
+                selfEmotion = p.Body[4];
+                SelfInBattle = selfEmotion != 0;
                 player?.SetBattleStance(SelfInBattle);
-                if (was != SelfInBattle) BattleStanceChanged?.Invoke(selfObject, SelfInBattle);   // SetEmotion's change guard (pcbase.cpp:1268)
+                if (was != selfEmotion) BattleStanceChanged?.Invoke(selfObject, selfEmotion);   // SetEmotion's change guard (pcbase.cpp:1268)
             }
             else if (game.Is(p, Inbound.Buff))
             {

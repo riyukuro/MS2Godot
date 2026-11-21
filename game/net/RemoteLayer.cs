@@ -24,7 +24,7 @@ public sealed partial class RemoteLayer : Node3D
         public RemotePc Pc; public Node3D Root, Visual;
         public string Name;
         public int ObjectId; public long CharacterId; public string Picture = "";
-        public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance (m_unk_160)
+        public long HpCur, HpMax; public bool InBattle; public int Emotion;         // PCBase's stat pair and battle stance (m_unk_160)
         public EquipApplier.WeaponRig Weapons;
         public PcHpBar Bar;
         public byte Gender;
@@ -186,7 +186,7 @@ public sealed partial class RemoteLayer : Node3D
     /// not an npc) and the other player hit (null when the target is not one).</summary>
     public Action<Ms2.Ui.Hud.DamageNumber, World.FieldNpcs.Placed, Ui.DamageTarget> Numbered;
     /// <summary>A PC's battle stance changed (OnUserBattle -> PC::vfunc_66, after SetEmotion's change guard).</summary>
-    public Action<int, bool> BattleStanceChanged;
+    public Action<int, int> BattleStanceChanged;
 
     /// <summary>The PC's battle stance (vfunc_65, m_unk_160); false for an object not shown.</summary>
     public bool InBattle(int objectId) => users.TryGetValue(objectId, out var r) && r.InBattle;
@@ -330,7 +330,7 @@ public sealed partial class RemoteLayer : Node3D
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
-        r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;
+        r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle; r.Emotion = u.InBattle ? 1 : 0;
         // OnAddUser (scenestategame.cpp:11185-11186): no current health after the stats -> FUN_14166ce50(1), the dead flag
         if (r.HpCur == 0) pc.States.SetDead(true);
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
@@ -438,12 +438,13 @@ public sealed partial class RemoteLayer : Node3D
                     // the state 0xe skip (scenestategame.cpp:3269) is not ported (no remote state here). STILL-OPEN: the
                     // ridee's and the own target's emotion (spRidee / FUN_141bd3620) need ridees and pets.
                     if (!users.TryGetValue(bat.ObjectId, out var sb)) break;
-                    if (sb.InBattle == (bat.Emotion != 0)) break;
+                    if (sb.Emotion == bat.Emotion) break;
+                    sb.Emotion = bat.Emotion;
                     sb.InBattle = bat.Emotion != 0;
                     sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test
                     RefreshWeapons(sb);
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
-                    BattleStanceChanged?.Invoke(bat.ObjectId, sb.InBattle);
+                    BattleStanceChanged?.Invoke(bat.ObjectId, sb.Emotion);
                     break;
                 case UserStateEvent us:
                     // OnUserState (scenestategame.cpp:5759-5771): vfunc_59(state) twice, or vfunc_137 after state 12

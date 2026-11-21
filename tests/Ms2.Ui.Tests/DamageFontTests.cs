@@ -10,6 +10,14 @@ namespace Ms2.Ui.Tests;
 public class DamageFontTests
 {
     [Test]
+    public void OnlyTheFirstBattleEmotionLoadsTheGemFont()
+    {
+        Assert.That(DamageFonts.StanceLoadsFont(1), Is.True);
+        Assert.That(DamageFonts.StanceLoadsFont(0), Is.False, "out of battle");
+        Assert.That(DamageFonts.StanceLoadsFont(2), Is.False, "PC::vfunc_66 tests n == 1, not n != 0");
+    }
+
+    [Test]
     public void AGemFontTakesTheMonsterNormalAndCriticalArrays()
     {
         var nor = DamageLook.For("120", "Monster", "Normal", "", "7", myDamage: true, gemLoaded: true);
