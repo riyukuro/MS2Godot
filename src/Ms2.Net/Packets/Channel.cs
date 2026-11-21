@@ -6,7 +6,7 @@ namespace Ms2.Net.Packets;
 /// <summary>
 /// Outbound Channel (0x3B): the request to change to another channel, WorldService::FUN_141bc80c0 @0x141bc80c0
 /// (worldservice_1.cpp:4936) and the message box answer OnMessage @0x141BC8230 (worldservice_1.cpp:10620). The payload is
-/// one i16 written by FUN_1401fcc00 (unit_1401f9eb0_packetpayloadserializers.cpp:892, WriteInt16 of the channel).
+/// one i16 written by FUN_1401fcc00 (unit_1401f9eb0_packetpayloadserializers.cpp:893, WriteInt16 of the channel).
 /// </summary>
 public sealed record ChannelRequest(short Channel) : IOutPacket {
     public Outbound Op => Outbound.Channel;

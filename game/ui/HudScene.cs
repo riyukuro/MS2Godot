@@ -396,18 +396,17 @@ public partial class HudScene : Node, IUiStageHost
         menuGroup = fd != null && channelGroupNames.TryGetValue(fd.ChannelGroupId.ToString(), out var g) ? g : "";
     }
 
-    /// <summary>
-    /// UISystemMenuDialog::vfunc_65 (OpenDialog, FUN_141924680): CloseAllDialogs, then the movie loads (LoadSwf) and the
-    /// controller's OnLoadInit / OnLoadComplete fill it. Offline the server has one channel, the current one (1).
-    /// </summary>
     /// <summary>GetCurrentChannel: the live session's, else the offline server's one channel (1).</summary>
     static int LiveChannel() => Ms2Godot.Net.LiveSession.Instance is { } l && l.CurrentChannel != 0 ? l.CurrentChannel : 1;
 
     /// <summary>The current server's channels (DynamicChannel kind 1), else just the current one.</summary>
-    static ChannelRow[] LiveChannels() =>
-        Ms2Godot.Net.LiveSession.Instance is { } l && l.ChannelTabs.Count > 0
-            ? l.ChannelTabs.Select(t => new ChannelRow(t)).ToArray()
-            : new[] { new ChannelRow(LiveChannel()) };
+    static ChannelRow[] LiveChannels()
+    {
+        if (Ms2Godot.Net.LiveSession.Instance is not { } l || l.ChannelTabs.Count == 0) return new[] { new ChannelRow(LiveChannel()) };
+        var rows = new ChannelRow[l.ChannelTabs.Count];
+        for (int i = 0; i < rows.Length; i++) rows[i] = new ChannelRow(l.ChannelTabs[i]);
+        return rows;
+    }
 
     /// <summary>WorldService::FUN_141bc80c0 for the dialogs' OnChangeChannel: false offline (there is no server to ask).</summary>
     static bool ChangeChannel(int channel) => Ms2Godot.Net.LiveSession.Instance?.RequestChannel(channel) ?? false;
@@ -423,6 +422,10 @@ public partial class HudScene : Node, IUiStageHost
         else SystemNoticeText(text);
     }
 
+    /// <summary>
+    /// UISystemMenuDialog::vfunc_65 (OpenDialog, FUN_141924680): CloseAllDialogs, then the movie loads (LoadSwf) and the
+    /// controller's OnLoadInit / OnLoadComplete fill it. Offline the server has one channel, the current one (1).
+    /// </summary>
     void OpenSystemMenu()
     {
         CloseAllDialogs();
@@ -933,7 +936,10 @@ public partial class HudScene : Node, IUiStageHost
         // PC::GetMastery(1): the user block's mastery list, index 1 = fishing
         if (data.Player.Mastery is { Length: > 1 } mastery) model.Player.FishingMastery = (uint)mastery[1];
         model.Field.Channel = LiveChannel() is int and > 0 and var chNow ? chNow : (int)data.Player.Channel;
-        model.Field.Channels = LiveChannels().Select(r => r.Id).ToArray() is { Length: > 0 } chList ? chList : new[] { model.Field.Channel };
+        var chRows = LiveChannels();
+        var chList = new int[chRows.Length];
+        for (int i = 0; i < chList.Length; i++) chList[i] = chRows[i].Id;
+        model.Field.Channels = chList.Length > 0 ? chList : new[] { model.Field.Channel };
         var live = Ms2Godot.Net.LiveSession.Instance;
         long selfId = live?.CharacterId ?? 0;
         var c = minimapSide = new Ms2.Ui.Hud.MinimapController

@@ -11,10 +11,10 @@ namespace Ms2Godot.Net;
 /// </summary>
 public partial class LiveSession
 {
-    /// <summary>DAT_1439f4a7c: the channel of the last ServerEnter (0 = none announced).</summary>
-    int serverChannel;
+    /// <summary>DAT_1439f4a7c: the channel of the last ServerEnter (starts at 1 as the client's initializer does, data_data_1439ed000.cpp:2072; 0 = the last ServerEnter announced none).</summary>
+    int serverChannel = 1;
     /// <summary>DAT_1439f4a80: GetCurrentChannel's value while <see cref="serverChannel"/> is 0.</summary>
-    int fallbackChannel;
+    int fallbackChannel = 1;
     ushort[] channelTabs = Array.Empty<ushort>();
     ushort[] classTable = new ushort[8];
 
@@ -29,6 +29,9 @@ public partial class LiveSession
     public IReadOnlyList<ushort> ClassTable => classTable;
 
     /// <summary>The channel list or the table changed (UIServerEventDispatcher vfunc_1 after a DynamicChannel).</summary>
+    /// <summary>Raised after each DynamicChannel. STILL-OPEN: the client refreshes the open dialogs after it
+    /// (UIServerEventDispatcher vfunc_1); the system menu and minimap read the list when they open, nothing here refreshes an open one,
+    /// and UIServerListDialog's own set at EnterGame (uiserverlistdialog.cpp:618/633) is not ported.</summary>
     public event Action ChannelsChanged;
 
     /// <summary>A notice by common string id and its {0} argument (-1: none), shown by the HUD (FUN_141275260 /
@@ -66,7 +69,7 @@ public partial class LiveSession
     /// </summary>
     public bool RequestChannel(int channel)
     {
-        if (game == null || Migrating) return false;
+        if (game == null || Migrating) return false;   // Migrating has no client counterpart: there the old socket is gone, as is the sender's connection
         var s = new Ms2.Ui.ChannelChangeState
         {
             HasPlayer = Me.User != null && selfObject >= 0,
