@@ -184,6 +184,27 @@ public static class QuickSlotEdit
     /// </summary>
     public static bool UseSkill(SlotWorld w, uint skillId) => w.Jobs != null && w.Jobs.IsLearned(skillId);
 
+    /// <summary>
+    /// MyPC::vfunc_104 @0x1415219d0 (client/ms2/mypc.cpp:1687-1700), a key's quick slot item: a non-zero
+    /// <paramref name="itemUid"/> (CKeyTable::GetQuickSlotItemUidByKey) is looked up in the bag (FindItemByUid); a found item the
+    /// player cannot use (MyPC::CanUseItem, <see cref="SlotWorld.CanUse"/>) or whose data has a function (CItemData::HasFunction)
+    /// refuses the press (<paramref name="refused"/>, the request returns 0); else its data's skill. 0 when no item is found, so the
+    /// caller falls through to the key's skill (GetSkillIdByKey, :1701).
+    /// </summary>
+    public static int KeyItemSkill(SlotWorld w, long itemUid, out bool refused)
+    {
+        refused = false;
+        var item = itemUid != 0 ? FindItem(w, i => i.Uid == itemUid) : null;
+        if (item == null) return 0;
+        var d = w.ItemData(item.Id);
+        if (!w.CanUse(item) || d == null || d.HasFunction)
+        {
+            refused = true;
+            return 0;
+        }
+        return d.SkillId;
+    }
+
     /// <summary>The first bag item that matches (Unk_Inventory's lookups walk the bag; the first match is kept).</summary>
     static EquipItem FindItem(SlotWorld w, Func<EquipItem, bool> match)
     {

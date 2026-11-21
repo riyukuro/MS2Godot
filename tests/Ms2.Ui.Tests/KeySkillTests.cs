@@ -79,11 +79,14 @@ public class KeySkillTests
     [Test] public void TheItemUidComesFromAnyPriorityOrThePairKey()
     {
         var t = Keys(new KeyBinding(Key1, 1, Slot0, 0, 0), new KeyBinding(KeyQ, 1, Slot1, 0, 2), new KeyBinding(LShift, 1, Slot1, 0, 1));
-        var s = Slots(0);
+        // CKeyTable::GetQuickSlotItemUidByKey (keytable.cpp:1546): the uid of the item the shown SkillSlot finds (vfunc_25), which
+        // for slot 1 is another bag item than the page entry's uid 55 (the slot finds the first usable item of the id)
+        Func<int, long> shown = i => i == 1 ? 66L : 0L;
         Assert.That(t.FindQuickSlotIndexByKey(KeyQ), Is.EqualTo(1), "priority 2");
-        Assert.That(t.GetQuickSlotItemUidByKey(KeyQ, s), Is.EqualTo(55L));
-        Assert.That(t.GetQuickSlotItemUidByKey(RShift, s), Is.EqualTo(55L), "the pair key");
-        Assert.That(t.GetQuickSlotItemUidByKey(Key1, s), Is.EqualTo(0L), "a skill slot");
+        Assert.That(t.GetQuickSlotItemUidByKey(KeyQ, shown), Is.EqualTo(66L));
+        Assert.That(t.GetQuickSlotItemUidByKey(RShift, shown), Is.EqualTo(66L), "the pair key");
+        Assert.That(t.GetQuickSlotItemUidByKey(Key1, shown), Is.EqualTo(0L), "a skill slot");
+        Assert.That(t.GetQuickSlotItemUidByKey(KeyQ, null), Is.EqualTo(0L), "no main player info");
         Assert.That(t.FindQuickSlotIndexByKey(KeyZ), Is.EqualTo(-1));
     }
 

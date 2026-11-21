@@ -199,14 +199,15 @@ public sealed class KeyTable : IKeyTable
 
     /// <summary>
     /// GetQuickSlotItemUidByKey @0x14142ded0 (:1546): the item uid of the quick slot the key is bound to (FindQuickSlotIndexByKey,
-    /// then the main player info's slot's item, SkillSlot::vfunc_25); 0 when the key is no quick slot key or the slot has none.
-    /// The slot's item is its current page entry's item uid here (the slot object finds the item by that uid).
+    /// then the main player info's slot's item, SkillSlot::vfunc_25); 0 when the key is no quick slot key, there is no main player
+    /// info (<paramref name="slotItemUid"/> null) or the slot finds no item. <paramref name="slotItemUid"/> gives the uid of the
+    /// item the shown slot of an index finds (vfunc_25 by its uid, item id or skill), not the page entry's uid.
     /// </summary>
-    public long GetQuickSlotItemUidByKey(int key, ServerKeyTable slots)
+    public long GetQuickSlotItemUidByKey(int key, Func<int, long> slotItemUid)
     {
         int index = FindQuickSlotIndexByKey(key);
-        if (index < 0 || slots == null) return 0;
-        return slots.Entry(slots.CurrentPage, index).ItemUid;
+        if (index < 0 || slotItemUid == null) return 0;
+        return slotItemUid(index);
     }
 
     /// <summary>GetKeyName (:1339): the key's name; "" for no key. (Game pad keys build an icon string with feature 0xb5;

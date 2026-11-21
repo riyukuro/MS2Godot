@@ -28,8 +28,8 @@ public partial class HudScene
     /// (CKeyTable::GetQuickSlotItemUidByKey), else CKeyTable::GetSkillIdByKey (keytable.cpp:1452): the attack key's normal
     /// attack, or the skill of the quick slot the key is bound to on the current page (GetKeySkillId). A non-zero skill goes to
     /// the request (<see cref="CastOwn"/>). True when the key gave a skill.
-    /// STILL-OPEN: a quick slot holding an item (CanUseItem, HasFunction, the item's skill) does not cast; the held item key
-    /// (0x493e2) has no held item here; the skill expansion keys are not read.
+    /// STILL-OPEN: the held item key (0x493e2) has no held item here; the skill expansion keys are not read; the item's own
+    /// request fields (the item uid on the skill request) are not carried.
     /// </summary>
     bool CastKeys(InputEvent e)
     {
@@ -42,18 +42,22 @@ public partial class HudScene
         return false;
     }
 
-    /// <summary>One key of <see cref="CastKeys"/>: false when its quick slot holds an item (the press stops), null when the key
-    /// gives no skill, true when it went to <see cref="CastOwn"/>.</summary>
+    /// <summary>One key of <see cref="CastKeys"/> (MyPC::vfunc_104, mypc.cpp:1687-1701): the item the key's shown quick slot finds
+    /// (<see cref="QuickSlotEdit.KeyItemSkill"/>) refuses the press (false) or gives its skill; with none the key's skill. Null when
+    /// the key gives no skill, true when it went to <see cref="CastOwn"/>.</summary>
     bool? CastKey(int dik)
     {
         if (hudModel?.Keys is not { } keys) return null;
         var slots = hudModel.ServerKeys;
-        if (keys.GetQuickSlotItemUidByKey(dik, slots) != 0) return false;
         castKeyWorld = QuickSlotWorld();
+        castSlotItemUid ??= i => playerInfo?.SlotItemUid(i) ?? 0;
+        // mypc.cpp:1689-1700: the key's quick slot item; a found item refuses or gives its skill
+        int id = QuickSlotEdit.KeyItemSkill(castKeyWorld, keys.GetQuickSlotItemUidByKey(dik, playerInfo != null ? castSlotItemUid : null), out bool refused);
+        if (refused) return false;
         castKeyHeld = castKeyWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
         // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
         castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
-        int id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
+        if (id == 0) id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
         if (id == 0) return null;
         CastOwn(castKeyWorld, (uint)id, castKeyHeld);
         return true;
@@ -77,6 +81,7 @@ public partial class HudScene
     SlotWorld castKeyWorld;
     WeaponAction castKeyHeld;
     Func<int> castAttackSkill;
+    Func<int, long> castSlotItemUid;
 
     /// <summary>
     /// CSkillSystem::FUN_141764e30 for the own player (<see cref="SkillCast.Request"/>) at MyPC::GetSkillLevel, then

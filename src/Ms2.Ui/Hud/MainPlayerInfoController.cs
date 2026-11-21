@@ -366,6 +366,21 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         for (int i = 0; i < SlotCount; i++) Host.Push(SlotBag + "." + i);
     }
 
+    /// <summary>
+    /// SkillSlot::vfunc_25 @0x14175fbf0 of slot <paramref name="i"/> (<see cref="Skills.SkillSlotState.Item"/>): the uid of the item
+    /// the shown slot finds (by its uid, item id or skill), 0 when none; CKeyTable::GetQuickSlotItemUidByKey (keytable.cpp:1546)
+    /// reads it through the main player info's GetSlot.
+    /// </summary>
+    public long SlotItemUid(int i)
+    {
+        if (i < 0 || i >= SlotCount) return 0;
+        var e = Shown(i);
+        return new Skills.SkillSlotState(World(), (uint)e.SkillId, e.ItemId, e.ItemUid).Item()?.Uid ?? 0;
+    }
+
+    /// <summary>The skill, item id and item uid slot <paramref name="i"/> shows (SkillSlot m_nSkillId, m_nItemId, m_nItemUid).</summary>
+    Ms2.Net.Packets.QuickSlotEntry Shown(int i) => Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+
     /// <summary>GetHotkey(0) (skillslot.cpp:1235); GetHotkeyText (:1229) is its key name.</summary>
     int Hotkey(int slot)
     {

@@ -48,6 +48,20 @@ public class QuickSlotEditTests
     }
 
     [Test]
+    public void AKeyItemTheBagLacksFallsThroughAndAFoundOneGivesItsSkill()
+    {
+        // MyPC::vfunc_104 (mypc.cpp:1687-1701): FindItemByUid of the key's item uid; none found = the key's own skill (0 here),
+        // a found item: CanUseItem, then HasFunction refuse, else the item data's skill
+        var w = World(new EquipItem { Id = 20000002, Uid = 5 }, new EquipItem { Id = 29000002, Uid = 6 });
+        Assert.That((QuickSlotEdit.KeyItemSkill(w, 0, out var r0), r0), Is.EqualTo((0, false)));
+        Assert.That((QuickSlotEdit.KeyItemSkill(w, 99, out var r1), r1), Is.EqualTo((0, false)), "not in the bag: falls through");
+        Assert.That((QuickSlotEdit.KeyItemSkill(w, 5, out var r2), r2), Is.EqualTo((100, false)));
+        Assert.That((QuickSlotEdit.KeyItemSkill(w, 6, out var r3), r3), Is.EqualTo((0, true)), "HasFunction");
+        w.CanUseItem = _ => false;
+        Assert.That((QuickSlotEdit.KeyItemSkill(w, 5, out var r4), r4), Is.EqualTo((0, true)), "CanUseItem");
+    }
+
+    [Test]
     public void AnActiveSkillIsSentAsMode3WithThePageAndSlot()
     {
         var sent = new List<IOutPacket>();
