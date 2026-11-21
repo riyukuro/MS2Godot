@@ -592,16 +592,36 @@ public partial class Field : Node3D
         GD.Print($"spawn {sp?.Name} ms2 {pos} -> godot {player.SpawnPoint}");
     }
 
+    Movement.MouseMove mouseMove;
+
+    /// <summary>CMouseController::SetEnabled (gameoptionstruct.cpp:1321-1328): toggles click-to-move on the active field.</summary>
+    public void SetMouseControl(bool enabled)
+    {
+        if (player == null || camera == null) return;
+        if (enabled)
+        {
+            if (mouseMove != null && IsInstanceValid(mouseMove)) return;
+            AddChild(mouseMove = new Movement.MouseMove(player, camera) { Name = "MouseMove" });
+        }
+        else if (mouseMove != null && IsInstanceValid(mouseMove))
+        {
+            player.MouseInput = Vector2.Zero;
+            mouseMove.QueueFree();
+            mouseMove = null;
+        }
+    }
+
     /// <summary>
     /// Command line movement options, all off by default as in the client: --mouse-move (interface/EnableMouseControl),
     /// --gamepad (gamepad/bGamePadUse), --ride RIDING_ID (get on a mount, as a RideOnAction would).
     /// </summary>
     void AttachMovementOptions(ModelBuilder builder)
     {
+        bool enableMouse = GameOptions.MouseControl.Value;
         var args = OS.GetCmdlineUserArgs();
         for (int i = 0; i < args.Length; i++)
         {
-            if (args[i] == "--mouse-move") AddChild(new Movement.MouseMove(player, camera) { Name = "MouseMove" });
+            if (args[i] == "--mouse-move") enableMouse = true;
             if (args[i] == "--gamepad") Movement.MoveInput.GamePad = true;
             if (args[i] == "--ride" && i + 1 < args.Length && int.TryParse(args[i + 1], out int ride))
             {
@@ -609,6 +629,7 @@ public partial class Field : Node3D
                 catch (Exception ex) { GD.PushWarning($"ride {ride}: {ex.Message}"); }
             }
         }
+        if (enableMouse) SetMouseControl(true);
     }
 
     /// <summary>The cull mask bit of a camera that draws the client's depth and height fog (ms2_fog.gdshaderinc FOG_LAYER):

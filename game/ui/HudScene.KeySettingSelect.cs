@@ -31,12 +31,15 @@ public partial class HudScene
             keySettingSelectMovie = null;
         }
         var c = keySettingSelect = new KeySettingSelectController();
-        // FUN_140c58690 (uikeysettingselectdialog.cpp:96-122): store EnableMouseControl, save character settings,
-        // update upper HUD indicator, reopen active game-option tab, and refresh quick slots.
+        // FUN_140c58690 (uikeysettingselectdialog.cpp:101-123): store EnableMouseControl, save character settings,
+        // apply CMouseController::SetEnabled (gameoptionstruct.cpp:1321-1328), update upper HUD indicator, reopen
+        // active game-option tab, and refresh quick slots. STILL-OPEN: NotifyChangeGameOptionInput 9..13
+        // (uikeysettingselectdialog.cpp:121, gameoptioninputdefault.cpp:851-855) has no NotifySystem port.
         c.ModeSelected += mouseControl =>
         {
             GameOptions.MouseControl.Value = mouseControl;
             GameOptions.SaveCharacterSettings();
+            (field ?? FindField(this))?.SetMouseControl(mouseControl);
             upperHudSide?.SetMouseMode(mouseControl);
             if (optionHost?.IsClosed == false) optionDialog?.ReopenCurrentTab();
             playerInfo?.RebindSlots();
