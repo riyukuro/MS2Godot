@@ -49,10 +49,10 @@ public static class PlayerLook
                 var palettes = new ColorPalettes(packs);
                 var live = Live();
                 var (items, skin) = live ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
-                if (live == null)
+                if (!LiveSession.Active)
                 {
                     // the offline character's worn items, which the equipment window shows too (HudScene.OfflineMe)
-                    for (int i = 0; i < items.Count; i++) items[i].Uid = 2001 + i;
+                    for (int i = 0; i < items.Count; i++) if (items[i].Uid == 0) items[i].Uid = 2001 + i;
                     OfflineWorn = items; OfflineGender = gender; OfflineJob = job;
                 }
                 var equip = new EquipApplier(packs, builder) { Palettes = palettes };
@@ -73,7 +73,8 @@ public static class PlayerLook
     /// </summary>
     static (IReadOnlyList<EquipItem> items, SkinColor? skin)? Live()
     {
-        if (!LiveSession.Active) return null;
+        if (!LiveSession.Active)    // offline: the chosen character's own items (stub list or a lobby-created one), else the starter look
+            return Flow.Session.Chosen is { User: { } o } own && own.Equips.Count > 0 ? (own.Equips, o.Skin) : null;
         if (LiveSession.Instance.Me is { User: { } u, Equips: { } worn }) return (worn, u.Skin);
         if (Flow.Session.Chosen is { User: { } c } chosen) return (chosen.Equips, c.Skin);
         return null;
