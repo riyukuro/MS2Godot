@@ -45,11 +45,11 @@ public sealed class RemotePc : IRemotePc
     // the sequence the states asked for
     int currentAct = -1; string currentName; double lastPos = -1;
 
-    RemotePc(CharacterBody3D body, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity)
+    RemotePc(CharacterBody3D body, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity, NxController.FaceGrids faces)
     {
         Body = body; Visual = visual; Anim = anim; Anims = anims; this.gravity = gravity;
         var collision = body.GetNode<CollisionShape3D>("Collision");
-        nx = new NxController(body, collision) { ShapeHit = NoteHit };
+        nx = new NxController(body, collision, faces) { ShapeHit = NoteHit };
         States = new RemotePcStates(this, (int)body.GetInstanceId());
         anim.AnimationFinished += OnAnimationFinished;
     }
@@ -57,9 +57,10 @@ public sealed class RemotePc : IRemotePc
     /// <summary>
     /// A remote PC at <paramref name="feet"/> (Godot axes). PC::vfunc_10 (pc.cpp:804-805): collision group 2 and the 0x399
     /// sweep, the capsule of GameObjectController::CreateController (the local player's, Player.Create); then the pending
-    /// StateFall (pcbase.cpp:792, :924).
+    /// StateFall (pcbase.cpp:792, :924). <paramref name="faces"/> is the field's mesh face cache (Field.FaceGrids), shared
+    /// with the player's and the other remote PCs' controllers.
     /// </summary>
-    public static RemotePc Create(string name, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity, Vector3 feet, float rotZ)
+    public static RemotePc Create(string name, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces)
     {
         var body = new CharacterBody3D { Name = name, CollisionLayer = MoveConfig.PcLayer, CollisionMask = MoveConfig.PcGroups };
         body.AddChild(new CollisionShape3D
@@ -70,7 +71,7 @@ public sealed class RemotePc : IRemotePc
         });
         body.AddChild(visual);
         body.Position = feet;
-        var pc = new RemotePc(body, visual, anim, anims, gravity) { RotationZ = rotZ };
+        var pc = new RemotePc(body, visual, anim, anims, gravity, faces) { RotationZ = rotZ };
         pc.States.TargetYaw = rotZ;
         return pc;
     }

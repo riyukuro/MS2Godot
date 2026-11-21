@@ -92,11 +92,14 @@ public sealed partial class RemoteLayer : Node3D
     public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
         r.PremiumTime, r.PcBangGrade, r.WeddingState));
 
+    readonly NxController.FaceGrids faceGrids;   // the field's, shared with the player's controller
+
     public RemoteLayer(Field field, ModelBuilder mb, long selfCharacterId)
     {
         Name = "RemoteLayer";
         selfCharacter = selfCharacterId;
         field.AddChild(this);
+        faceGrids = field.FaceGrids;
         builder = mb;
         // the field build searched map textures only; the character bodies need the character pack's own textures too
         if (!mb.TextureArchives.Contains(ModelBuilder.ModelArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
@@ -203,7 +206,7 @@ public sealed partial class RemoteLayer : Node3D
             anim.RemoveAnimationLibrary("");
             anim.AddAnimationLibrary("", body.lib);
         }
-        var pc = RemotePc.Create($"Pc{u.ObjectId}", visual, anim, body.anims, gravity, SpawnPoint(G(u.Position)), u.Rotation.Z);
+        var pc = RemotePc.Create($"Pc{u.ObjectId}", visual, anim, body.anims, gravity, SpawnPoint(G(u.Position)), u.Rotation.Z, faceGrids);
         pc.JobGroup = u.User.JobCode;          // the user block's job group (CharacterInfo maps JobGroup from it)
         pc.BattleStance = u.InBattle;
         pc.Effects = PlayGroundEffects;

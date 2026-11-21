@@ -17,6 +17,7 @@ namespace Ms2Godot.Tests;
 /// </summary>
 public partial class MovementSyncCheck : Node3D
 {
+    readonly Movement.NxController.FaceGrids faceGrids = new();   // the scene is the field: one mesh face cache for its bodies (Field.FaceGrids)
     int frames;
     Player runner;
     readonly List<Ms2.Net.Packets.StateSync> sent = new();
@@ -29,7 +30,7 @@ public partial class MovementSyncCheck : Node3D
         var visual = new Node3D();
         var anim = new AnimationPlayer();
         visual.AddChild(anim);
-        runner = Player.Create(visual, anim);
+        runner = Player.Create(visual, anim, faceGrids);
         AddChild(runner);
         runner.SetProcess(false);
         runner.SetPhysicsProcess(false);
@@ -77,7 +78,7 @@ public partial class MovementSyncCheck : Node3D
             b.AddChild(cs);
             AddChild(b);
             b.GlobalPosition = new Vector3(x0 + i * 300, 25, 0);
-            bodies.Add((b, new Movement.NxController(b, cs)));
+            bodies.Add((b, new Movement.NxController(b, cs, faceGrids)));
         }
         return bodies;
     }

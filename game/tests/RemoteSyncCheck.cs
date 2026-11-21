@@ -21,6 +21,7 @@ namespace Ms2Godot.Tests;
 /// </summary>
 public partial class RemoteSyncCheck : Node3D
 {
+    readonly NxController.FaceGrids faceGrids = new();   // the scene is the field: one mesh face cache for its bodies (Field.FaceGrids)
     readonly List<string> fails = new();
     RemotePc stone, wet;
     readonly List<(string a, string g)> stoneFx = new(), wetFx = new();
@@ -43,7 +44,7 @@ public partial class RemoteSyncCheck : Node3D
             var visual = builder.Build(md, "Female");
             var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
             var anims = ActionAnims.Load(packs, builder, md, anim, "female");
-            var pc = RemotePc.Create(name, visual, anim, anims, MoveConfig.SceneGravity, at, 0);
+            var pc = RemotePc.Create(name, visual, anim, anims, MoveConfig.SceneGravity, at, 0, faceGrids);
             pc.Effects = (a, g, p, y) => fx.Add((a, g));
             AddChild(pc.Body);
             return pc;

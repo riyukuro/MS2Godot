@@ -323,6 +323,7 @@ public partial class Field : Node3D
         FieldLights.Clear(lightSet);
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();
+        FaceGrids.Clear();  // a freed body's RID may be reused by the next field's
         models.Dispose();   // the models stay cached for the next field until the sweep finds them unused (NifCache)
         // the root viewport outlives the field: a size change during the scene change (the HUD scene restoring the window's
         // content scale mode as it leaves) must not reach a field that is no longer in the tree
@@ -332,6 +333,9 @@ public partial class Field : Node3D
     FieldLightSet lightSet;         // this field's lights (FieldLights.Add), dropped when it leaves
     Viewport rasterSource;          // the viewport whose size_changed moves the projection window, while connected
     readonly NifCache.Lease models = new();   // the field's hold on the cached models it built from (NifCache)
+    /// <summary>The world-space faces and grids of this field's mesh shapes, shared by the player's and every remote PC's
+    /// controller (NxController.FaceGrids), dropped when the field leaves the tree.</summary>
+    public readonly Movement.NxController.FaceGrids FaceGrids = new();
 
     bool began, restored;
     void Restore()
@@ -537,7 +541,7 @@ public partial class Field : Node3D
     {
         var (visual, anim, md, bodyDir) = Look.PlayerLook.Build(builder, packs);
 
-        player = Player.Create(visual, anim);
+        player = Player.Create(visual, anim, FaceGrids);
         player.Gender = bodyDir == "male" ? 0 : 1;
         player.RootName = md.RootName;
         BlobShadow.Load(packs);

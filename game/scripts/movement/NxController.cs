@@ -80,10 +80,13 @@ public sealed class NxController
     bool validateCallback, walkExperiment, normalizeResponse, hitNonWalkable, validTri;
     Vector3 touchedNormal;
 
-    public NxController(CharacterBody3D body, CollisionShape3D shape)
+    /// <param name="faces">the field's mesh face cache (<see cref="FaceGrids"/>), shared by every controller in the field;
+    /// null gives this controller a cache of its own (a test's single body)</param>
+    public NxController(CharacterBody3D body, CollisionShape3D shape, FaceGrids faces = null)
     {
         this.body = body;
         shapeNode = shape;
+        faceGrids = faces ?? new FaceGrids();
     }
 
     /// <summary>Controller::move (CharacterController.cpp:1205-1336): the body is moved by <paramref name="disp"/>.</summary>
@@ -773,7 +776,7 @@ public sealed class NxController
     /// triangles whose box grown by <see cref="FaceEps"/> meets it, so a contact point reads one cell and a capsule box the
     /// cells it meets instead of every face.
     /// </summary>
-    sealed class FaceGrid
+    internal sealed class FaceGrid
     {
         public Vector3[] Faces, Normals;        // three corners per triangle as the shape holds them (v0, v2, v1); its unit normal or zero
         public int[] CellStart, Tris;
@@ -864,23 +867,36 @@ public sealed class NxController
         }
     }
 
-    // Per controller, and a controller is per field (Player.Create in Field.SpawnPlayer, a new scene per field).
-    // STILL-OPEN: the faces are cached in world space at the first touch, so they would go stale on a mesh body that
-    // moves; no field mesh body moves (FieldBuilder's are static, the ride box is a box).
-    readonly System.Collections.Generic.Dictionary<(Rid, int), FaceGrid> faceCache = new();
+    readonly FaceGrids faceGrids;
+    FaceGrid Faces(Rid rid, int shapeIdx) => faceGrids.Get(rid, shapeIdx);
 
-    FaceGrid Faces(Rid rid, int shapeIdx)
+    /// <summary>
+    /// The world-space faces of the field's mesh shapes and their grids (<see cref="FaceGrid"/>), built at a shape's first
+    /// touch by any controller and kept by (body, shape): one per field (Field.FaceGrids), passed to the player's and every
+    /// remote PC's controller, so N bodies on one large mesh build its grid once. The field clears it when it leaves the
+    /// tree (a freed body's RID may be reused).
+    /// STILL-OPEN: the faces and their grid are cached in world space at the first touch, so they would go stale on a mesh
+    /// body that moves; no field mesh body moves (FieldBuilder's are static, the ride box is a box).
+    /// </summary>
+    public sealed class FaceGrids
     {
-        if (faceCache.TryGetValue((rid, shapeIdx), out var g)) return g;
-        var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
-        // GodotConcavePolygonShape3D::get_data: { faces, backface_collision }
-        var faces = (Vector3[])((Godot.Collections.Dictionary)PhysicsServer3D.ShapeGetData(shape))["faces"];   // perf-ok: once per shape, cached in faceCache
-        var xf = ((Transform3D)PhysicsServer3D.BodyGetState(rid, PhysicsServer3D.BodyState.Transform)) * PhysicsServer3D.BodyGetShapeTransform(rid, shapeIdx);
-        var w = new Vector3[faces.Length];
-        for (int i = 0; i < faces.Length; i++) w[i] = xf * faces[i];
-        g = new FaceGrid(w);
-        faceCache[(rid, shapeIdx)] = g;
-        return g;
+        readonly System.Collections.Generic.Dictionary<(Rid, int), FaceGrid> grids = new();
+
+        public void Clear() => grids.Clear();
+
+        internal FaceGrid Get(Rid rid, int shapeIdx)
+        {
+            if (grids.TryGetValue((rid, shapeIdx), out var g)) return g;
+            var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
+            // GodotConcavePolygonShape3D::get_data: { faces, backface_collision }
+            var faces = (Vector3[])((Godot.Collections.Dictionary)PhysicsServer3D.ShapeGetData(shape))["faces"];   // perf-ok: once per shape, cached here
+            var xf = ((Transform3D)PhysicsServer3D.BodyGetState(rid, PhysicsServer3D.BodyState.Transform)) * PhysicsServer3D.BodyGetShapeTransform(rid, shapeIdx);
+            var w = new Vector3[faces.Length];
+            for (int i = 0; i < faces.Length; i++) w[i] = xf * faces[i];
+            g = new FaceGrid(w);
+            grids[(rid, shapeIdx)] = g;
+            return g;
+        }
     }
 
     static Vector3 ClosestOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)

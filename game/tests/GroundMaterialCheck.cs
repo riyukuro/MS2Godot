@@ -24,6 +24,7 @@ namespace Ms2Godot.Tests;
 /// </summary>
 public partial class GroundMaterialCheck : Node3D
 {
+    readonly NxController.FaceGrids faceGrids = new();   // the scene is the field: one mesh face cache for its bodies (Field.FaceGrids)
     int frames;
     CharacterBody3D body;
     Player player, runner;
@@ -38,14 +39,14 @@ public partial class GroundMaterialCheck : Node3D
         ((Node)water.GetChild(0)).SetMeta(FieldBuilder.KindMeta, MoveConfig.WaterGroup);
         body = new CharacterBody3D();
         AddChild(body);
-        player = Player.Create(new Node3D(), null);
+        player = Player.Create(new Node3D(), null, faceGrids);
         AddChild(player);
         player.SetProcess(false);
         player.SetPhysicsProcess(false);
         Cube(new Vector3(1200, 0, 0), "");                      // a stone floor and a water floor at the same height
         var pool = Cube(new Vector3(1350, 0, 0), "water");
         ((Node)pool.GetChild(0)).SetMeta(FieldBuilder.KindMeta, MoveConfig.WaterGroup);
-        runner = Player.Create(new Node3D(), null);
+        runner = Player.Create(new Node3D(), null, faceGrids);
         AddChild(runner);
         runner.SetProcess(false);
         runner.SetPhysicsProcess(false);

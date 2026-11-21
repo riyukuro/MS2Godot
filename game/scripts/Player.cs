@@ -108,7 +108,8 @@ public partial class Player : CharacterBody3D
     float lt, ldur;
     bool lthree;                          // lerp through the middle point
 
-    public static Player Create(Node3D visual, AnimationPlayer anim)
+    /// <param name="faces">the field's mesh face cache (Field.FaceGrids)</param>
+    public static Player Create(Node3D visual, AnimationPlayer anim, Movement.NxController.FaceGrids faces)
     {
         // PC::vfunc_10 (pc.cpp:804-805): SetCollisionGroup(2), the controller's own group, and SetGroups(0x399), the
         // groups its moves collide with
@@ -122,7 +123,7 @@ public partial class Player : CharacterBody3D
             Position = new Vector3(0, MoveConfig.Height / 2, 0),
         };
         p.AddChild(collision);
-        p.nx = new NxController(p, collision) { ShapeHit = p.NoteHit };
+        p.nx = new NxController(p, collision, faces) { ShapeHit = p.NoteHit };
         p.AddChild(visual);
         return p;
     }

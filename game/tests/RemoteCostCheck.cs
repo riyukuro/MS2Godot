@@ -20,6 +20,7 @@ namespace Ms2Godot.Tests;
 /// </summary>
 public partial class RemoteCostCheck : Node3D
 {
+    readonly NxController.FaceGrids faceGrids = new();   // the scene is the field: one mesh face cache for its bodies (Field.FaceGrids)
     readonly List<RemotePc> pcs = new();
     readonly List<(Node3D root, Node3D visual, AnimationPlayer anim)> glides = new();
     int n, frame;
@@ -46,7 +47,7 @@ public partial class RemoteCostCheck : Node3D
             var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
             if (anims == null) { anims = ActionAnims.Load(packs, builder, md, anim, "female"); lib = anim.GetAnimationLibrary(""); }
             else { anim.RemoveAnimationLibrary(""); anim.AddAnimationLibrary("", lib); }
-            var pc = RemotePc.Create($"Pc{i}", visual, anim, anims, MoveConfig.SceneGravity, new Vector3(i * 300, 25, 0), 0);
+            var pc = RemotePc.Create($"Pc{i}", visual, anim, anims, MoveConfig.SceneGravity, new Vector3(i * 300, 25, 0), 0, faceGrids);
             AddChild(pc.Body);
             pcs.Add(pc);
         }
