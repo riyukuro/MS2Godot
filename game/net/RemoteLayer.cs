@@ -357,6 +357,7 @@ public sealed partial class RemoteLayer : Node3D
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
         r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
         r.Death.BuffsDisableRevival = () => r.Buffs.IsDisableRevivalHere;
+        r.Death.Revival.Apply(u);   // OnAddUser (scenestategame.cpp:11280-11281): the confirm end tick and count, the flag
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
         r.Weapons = EquipApplier.RigOf(visual);
         r.Pc.States.WeaponKeyChanged = () => RefreshWeapons(r);
@@ -512,20 +513,20 @@ public sealed partial class RemoteLayer : Node3D
                     // OnDeadUser (scenestategame.cpp:6533-6544): a set flag is FUN_141661ba0(1), then vfunc_137, which sets
                     // m_n10f0 when it ran with a confirm count (pc.cpp:4598)
                     if (!users.TryGetValue(ud.ObjectId, out var du)) break;
-                    if (ud.Flag) du.Death.RevivalFlag = true;
-                    if (du.Pc.States.Die(du.HpCur) && du.Death.RevivalCount > 0) du.Death.RevivalFlag = true;
+                    if (ud.Flag) du.Death.Revival.Flag = true;
+                    if (du.Pc.States.Die(du.HpCur)) du.Death.Revival.Died();
                     break;
                 case UserRevivalEvent rv:
                     // OnRevival (scenestategame.cpp:7387-7409): FUN_141661ba0(flag), FUN_14166ce50(0); the 0x18 state is the own
                     // player's only; then any revived PC's FUN_141661370(1, UserRevivalInvincibleTick, 100000004)
                     if (!users.TryGetValue(rv.ObjectId, out var vu)) break;
-                    vu.Death.RevivalFlag = rv.Flag != 0;
+                    vu.Death.Revival.Flag = rv.Flag != 0;
                     vu.Pc.States.SetDead(false);
                     StartInvincible(vu);
                     break;
                 case UserRevivalConfirmEvent rc:
-                    // OnRevivalConfirm (scenestategame.cpp:7356): m_n10ec for any PC; the effect is MyPC's. STILL-OPEN: m_n10e8 (FUN_141661ac0 clears both once the server tick passes it)
-                    if (users.TryGetValue(rc.ObjectId, out var cu)) cu.Death.RevivalCount = rc.Count;
+                    // OnRevivalConfirm (scenestategame.cpp:7356): m_n10ec and m_n10e8 for any PC (expired in _Process); the effect is MyPC's
+                    if (users.TryGetValue(rc.ObjectId, out var cu)) cu.Death.Revival.Confirm(rc.EndTick, rc.Count);
                     break;
                 case UserTombstoneEvent tb:
                     // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300 (pc.cpp:3464): the tomb's hit or break
@@ -581,16 +582,50 @@ public sealed partial class RemoteLayer : Node3D
 
     int movedSeen;
 
+    /// <summary>The own tag areas for the other players' tombs (WorldService m_3f0, <see cref="Ms2.Ui.Hud.TombTagPass"/>).</summary>
+    public readonly Ms2.Ui.Hud.TombTagPass TombTags = new();
+    Ms2.Ui.Hud.TombTarget[] tombTargets = new Ms2.Ui.Hud.TombTarget[8];
+    readonly List<Ms2.Ui.Hud.TombHit> tombHits = new();
+
+    /// <summary>
+    /// WorldService::FUN_141bc3560's tomb loop (worldservice_1.cpp:9319-9375), run from the world tick only while an area is
+    /// registered: every other PC's standing tomb, at its node's place in client space (z up, unrotated: PC::FUN_14165cac0 places
+    /// it at the PC); each hit sends the Tombstone request (0x2A). The local player owns none of these (its own tomb is not here).
+    /// STILL-OPEN: PlayHitSound of the tomb's SoundMaterial.
+    /// </summary>
+    void RunTombTags()
+    {
+        int n = 0;
+        foreach (var (id, r) in users)
+        {
+            var tomb = r.Death.Tomb;
+            if (tomb == null || !IsInstanceValid(tomb) || !tomb.IsInsideTree() || tomb.State == null) continue;
+            if (n == tombTargets.Length) Array.Resize(ref tombTargets, n * 2);
+            var g = tomb.GlobalPosition;
+            tombTargets[n++] = new Ms2.Ui.Hud.TombTarget(id, false, tomb.State, new System.Numerics.Vector3(g.X, -g.Z, g.Y), System.Numerics.Vector3.Zero);
+        }
+        int hits = TombTags.Run(new ReadOnlySpan<Ms2.Ui.Hud.TombTarget>(tombTargets, 0, n), tombHits);
+        Array.Clear(tombTargets, 0, n);
+        if (hits == 0) return;
+        foreach (var h in tombHits) LiveSession.Instance?.SendRevival(h.Request);
+    }
+
     public override void _Process(double delta)
     {
         float dt = (float)delta;
         Drain();
         // PCBase::vfunc_53 for each PC, once per drawn frame with that frame's time (the local player's step)
-        foreach (var a in users.Values) a.Pc.Tick(dt);
-        // PC's update runs FUN_1416615f0 for each PC (pc.cpp:4468): the invincible blink and end
+        // and PC's update for each (pc.cpp:4468-4470): FUN_1416615f0, the invincible blink and end, then FUN_141661ac0, the
+        // confirm count expiring at its end tick
         uint now = (uint)Time.GetTicksMsec();
+        uint tick = (uint)(LiveSession.Instance?.ServerTick ?? 0);
         foreach (var a in users.Values)
+        {
+            a.Pc.Tick(dt);
             if (a.Invincible.Blink.Active) a.Invincible.Tick(now, a.Visual, RegionFx);
+            a.Death.Revival.Expire(tick);
+        }
+        if (TombTags.Count > 0) RunTombTags();
         CodiTick(dt);
         npcs.Process(dt);
         combat.Process(dt);

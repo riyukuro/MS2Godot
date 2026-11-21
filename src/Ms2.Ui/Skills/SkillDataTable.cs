@@ -163,12 +163,15 @@ public sealed class SkillAttackData
     public int Direction = 3;
     /// <summary>"attackMethodType" (an enum read as a number): 1 keeps the range at the caster (no rangeOffset).</summary>
     public int AttackMethodType;
+    /// <summary>"brokenOffence" (m_nBrokenOffence, +0x40, skillattackdata.cpp:584): non-zero lets the attack's tag area hit
+    /// tombs (WorldService::FUN_141bc3470).</summary>
+    public int BrokenOffence;
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
     internal static SkillAttackData Load(XElement e)
     {
-        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType") };
+        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
         a.Range.LoadElement(e);
         a.Arrow.Load(e);

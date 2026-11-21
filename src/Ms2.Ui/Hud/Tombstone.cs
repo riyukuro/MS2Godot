@@ -31,6 +31,48 @@ public sealed class Tombstone
     readonly Func<int, int> pick;
     long timerEnd = -1;
 
+    static long nextEntity;
+
+    /// <summary>The entity's id (GetEntityIDValue): one per tomb built; a tag area keeps the ids it hit.</summary>
+    public ulong EntityId { get; } = (ulong)Interlocked.Increment(ref nextEntity);
+    /// <summary>m_bHittable: "Enabled" (0x2683e9ec), cleared when the size is zero (FUN_140adf9d0, breakableobject.cpp:586-590).</summary>
+    public bool Hittable { get; private set; }
+    /// <summary>"ShapeDimensions" (0x9dc22aea, m_ptSize): the box (width, depth, height).</summary>
+    public System.Numerics.Vector3 Size { get; private set; }
+    /// <summary>m_bC1: "reactionArrow" (0x54adb2fd), read by FUN_140adf310: a tag area may hit it.</summary>
+    public bool ReactionArrow { get; private set; }
+    /// <summary>m_nHitSound: "SoundMaterial" (0x8843d885), the material PlayHitSound plays.</summary>
+    public int HitSound { get; private set; }
+
+    /// <summary>
+    /// FUN_140adf9d0's reads (breakableobject.cpp:584) of the flat's properties: Enabled, ShapeDimensions, reactionArrow,
+    /// SoundMaterial. A zero size is not hittable.
+    /// </summary>
+    public void Breakable(bool enabled, System.Numerics.Vector3 size, bool reactionArrow, int hitSound)
+    {
+        Size = size; Hittable = enabled && size != System.Numerics.Vector3.Zero; ReactionArrow = reactionArrow; HitSound = hitSound;
+    }
+
+    /// <summary>A flat's "x, y, z" value (ShapeDimensions); zero when it is missing or malformed.</summary>
+    public static System.Numerics.Vector3 ParseVector(string s)
+    {
+        var p = (s ?? "").Split(',');
+        var ci = System.Globalization.CultureInfo.InvariantCulture;
+        return p.Length == 3 && float.TryParse(p[0], System.Globalization.NumberStyles.Float, ci, out var x)
+            && float.TryParse(p[1], System.Globalization.NumberStyles.Float, ci, out var y)
+            && float.TryParse(p[2], System.Globalization.NumberStyles.Float, ci, out var z) ? new(x, y, z) : System.Numerics.Vector3.Zero;
+    }
+
+    /// <summary>FUN_140addea0 (breakableobject.cpp:205) for a tomb (IsTombStone: the hit timer is not read): hittable and idle.</summary>
+    public bool CanBeHit => Hittable && State == Idle;
+
+    /// <summary>
+    /// GetBox (breakableobject.cpp:225): the CBoxCollision FUN_140adf9d0 builds (:624-631), size (width, depth / 2, height) and
+    /// offset (0, depth / 2, 0), placed at the tomb's position and rotation (Euler degrees).
+    /// </summary>
+    public Ms2.Ui.Skills.HitBox Box(System.Numerics.Vector3 pos, System.Numerics.Vector3 rotDegrees) =>
+        Ms2.Ui.Skills.HitBox.Pose(new(Size.X, Size.Y * 0.5f, Size.Z), new(0, Size.Y * 0.5f, 0), pos, rotDegrees);
+
     /// <summary>m_nState.</summary>
     public int State { get; private set; } = Idle;
     /// <summary>m_n184: the break's timer expired; the PC drops the tomb.</summary>

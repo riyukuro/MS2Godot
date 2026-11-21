@@ -57,6 +57,9 @@ public sealed partial class PlayerTombstone : Node3D
                 Name = "Tombstone", pc = pc, inDeath = inDeath, packs = packs, builder = builder, kfm = kfm, md = md, archive = archive, folder = folder,
                 State = new Tombstone(P("SpawnAnimation"), P("HitAnimation"), P("InitialSequence"), P("reactionSequenceName")),
             };
+            // FUN_140adf9d0 (breakableobject.cpp:584): the box and the flags a tag area reads (TombTagPass)
+            t.State.Breakable(P("Enabled") == "True", Tombstone.ParseVector(P("ShapeDimensions")), P("reactionArrow") == "True",
+                int.TryParse(P("SoundMaterial"), out int sound) ? sound : 0);
             var body = builder.Build(md, "Body");
             t.AddChild(body);
             t.player = body.GetNodeOrNull<AnimationPlayer>("Model/AnimationPlayer");

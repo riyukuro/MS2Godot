@@ -144,6 +144,21 @@ public struct SkillHitShape
     }
 
     /// <summary>
+    /// CBaseCollision::Intersect @0x1409ff0d0 (basecollision.cpp:671) of this area against a box: box and box by the separating
+    /// axis test, a cylinder by the squared distance from its centre to the box (the box centre at the cylinder's height) within
+    /// the radius and the z spans overlapping. STILL-OPEN: hole_cylinder (4) against a box.
+    /// </summary>
+    public readonly bool Intersects(in HitBox box)
+    {
+        if (Shape == 1) return HitBox.Intersect(Box, box);
+        if (Shape != 2) return false;
+        var c = box.Center;
+        c.Z = CylinderCenter.Z;
+        return box.PointSqrDist(CylinderCenter, c) <= Radius * Radius
+            && CylinderCenter.Z + Height > box.MinZ && CylinderCenter.Z - AddZ < box.MaxZ;
+    }
+
+    /// <summary>
     /// CBaseCollision::TestShape @0x1409fe460 (basecollision.cpp:518) for the box and cylinder shapes against a body box, with the
     /// sort metric: box hits keep the front plane distance (y) and side plane distance (x, absolute in modes 3 and 4) of the body
     /// centre; cylinder hits keep the squared distance (z).

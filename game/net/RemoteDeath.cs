@@ -11,13 +11,13 @@ namespace Ms2Godot.Net;
 /// </summary>
 public sealed class RemoteDeath
 {
-    /// <summary>PC m_n10f0 (FUN_141661ba0: DeadUser's flag, Revival's flag, vfunc_137 with a confirm count) and m_n10ec
-    /// (FUN_141661a60: RevivalConfirm's count).</summary>
-    public bool RevivalFlag; public int RevivalCount;
+    /// <summary>PC m_n10e8, m_n10ec and m_n10f0: the confirm end tick and count (FieldAddUser, RevivalConfirm, expired by
+    /// PC::FUN_141661ac0) and the revival flag (FieldAddUser, DeadUser, Revival, vfunc_137 with a confirm count).</summary>
+    public readonly Ms2.Net.Packets.PcRevival Revival = new();
     /// <summary>The buffs' IsDisableRevivalHere (the PC's AdditionalCliList).</summary>
     public Func<bool> BuffsDisableRevival = () => false;
     /// <summary>PC::IsRevivalBlocked (pc.cpp:2009): a confirm count, the revival flag or the buffs' IsDisableRevivalHere.</summary>
-    public bool RevivalBlocked => RevivalCount > 0 || RevivalFlag || BuffsDisableRevival();
+    public bool RevivalBlocked => Revival.Blocked || BuffsDisableRevival();
     /// <summary>The tomb while it stands, else null or a freed node.</summary>
     public PlayerTombstone Tomb { get; private set; }
     public Ui.TombGaugeBar Bar { get; private set; }
