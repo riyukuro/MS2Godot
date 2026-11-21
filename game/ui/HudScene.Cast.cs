@@ -39,12 +39,15 @@ public partial class HudScene
     /// (CKeyTable::GetQuickSlotItemUidByKey), else CKeyTable::GetSkillIdByKey (keytable.cpp:1452): the attack key's normal
     /// attack, or the skill of the quick slot the key is bound to on the current page (GetKeySkillId). A non-zero skill goes to
     /// the request (<see cref="CastOwn"/>). True when the key gave a skill.
+    /// The key is read through Unk_PCMove::WasKeyPressed (@0x1416830b0, from MyPC::FUN_141526730), which gives nothing while
+    /// Unk_PCMove::FUN_141683ef0 (@0x141683ef0) says no: it asks CInputKeyHandler::FUN_14116d7a0(0xf), so a focused text field
+    /// of a movie (CUIService::IsTextFieldFocused) or the loading screen keeps the casts off (<see cref="Ms2.Ui.InputBlock"/>).
     /// STILL-OPEN: the held item key (0x493e2) has no held item here; the skill expansion keys are not read; the item's own
     /// request fields (the item uid on the skill request) are not carried.
     /// </summary>
     bool CastKeys(InputEvent e)
     {
-        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || hudModel?.Keys == null) return false;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k || Ms2.Ui.InputBlock.Active || hudModel?.Keys == null) return false;
         for (int dik = 1; dik < 0xd4; dik++)
         {
             if (GodotKeyOfDik(dik) != k.PhysicalKeycode) continue;

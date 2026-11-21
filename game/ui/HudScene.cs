@@ -1488,12 +1488,14 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// The drops' pickup key as held state: a press or release of a key bound to the "get" action sets it, so the drop layer asks a
-    /// bool each frame instead of walking the key table. A key typed into a text field does not count.
+    /// bool each frame instead of walking the key table. The client reads it through Unk_PCMove::IsActionKeyDown (@0x141682fe0),
+    /// which gives nothing while Unk_PCMove::FUN_141683ef0 (@0x141683ef0) asks CInputKeyHandler::FUN_14116d7a0(0xf) and it holds:
+    /// a key typed into a text field, an engine one or a movie's, does not count.
     /// </summary>
     void TrackPickupKey(InputEvent e)
     {
         if (e is not InputEventKey { Echo: false } k) return;
-        if (k.Pressed && UiFocus.IsTyping) return;
+        if (k.Pressed && Ms2.Ui.InputBlock.Active) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         foreach (int dik in hudModel.Keys.KeysOfAction(PickupAction))
             if (GodotKeyOfDik(dik) is { } g && g == k.PhysicalKeycode) { live.PickupKeyHeld = k.Pressed; return; }
@@ -1557,19 +1559,23 @@ public partial class HudScene : Node, IUiStageHost
     /// in table/default/defaultkey.xml) through CKeyTable::FUN_14142b300, which toggles the dialog (keytable.cpp: case 400007,
     /// ToggleDialog(0x4e3e); case 400001, ToggleDialog(0x4e2d)).
     /// UIDialog::vfunc_13: Escape closes an open dialog (vfunc_69 -> vfunc_67).
+    /// ExecuteActionKey (keytable.cpp:729) runs an action only when CKeyTable::FUN_141431fc0 (@0x141431fc0, :2620) lets it:
+    /// not while FUN_14116d7a0(0xf) holds input back, so a focused text field of a movie (CUIService::IsTextFieldFocused)
+    /// keeps the toggles off and its letters go to the field. A dialog's own Enter and Escape (its vfunc_13) do not ask it.
     /// </summary>
     bool DialogKeys(InputEvent e)
     {
         if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
         if (SkillCompactKeys(k)) return true;
-        if (k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }       // a DirectInput key code is a physical key
-        if (k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }      // action 400006, DIK 50 (keytable.cpp:744)
+        bool actions = !Ms2.Ui.InputBlock.Active;   // FUN_141431fc0 (m_nMode taken as on)
+        if (actions && k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }   // a DirectInput key code is a physical key
+        if (actions && k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }  // action 400006, DIK 50 (keytable.cpp:744)
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
         if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
         if (gameDictionary?.IsClosed == false && k.Keycode == Key.Enter && gameDictionary.EnterKey()) return true;
-        if (k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
-        if (k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
-        if (k.PhysicalKeycode == Key.K) { ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
+        if (actions && k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
+        if (actions && k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
+        if (actions && k.PhysicalKeycode == Key.K) { ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
