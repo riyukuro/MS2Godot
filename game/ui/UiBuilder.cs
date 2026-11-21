@@ -712,7 +712,7 @@ public partial class TextNode : Node2D
         float dist = UiBuilder.F(shadow["distance"], 0) * scale, angle = UiBuilder.F(shadow["angle"], 0);
         var color = UiBuilder.ParseColor((string)shadow["color"], Colors.Black);
         var offset = new Vector2(MathF.Cos(angle), MathF.Sin(angle)) * dist / RasterScale;
-        var ls = (LabelSettings)Label.LabelSettings.Duplicate();
+        var ls = Label.LabelSettings;       // the label's own (made with it, never shared): set in place
         ls.ShadowSize = 0;
         Shadow?.QueueFree();
         Shadow = null;
@@ -728,7 +728,6 @@ public partial class TextNode : Node2D
             ls.ShadowColor = color;
             ls.ShadowOffset = offset;
         }
-        Label.LabelSettings = ls;
     }
 
     /// <summary>The field's blurred shadow, if it has one.</summary>

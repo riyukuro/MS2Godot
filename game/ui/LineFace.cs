@@ -18,7 +18,9 @@ public partial class LineFace : Node2D
 {
     readonly TextNode text;
 
-    public LineFace(TextNode text) { this.text = text; Name = "LineFace"; }
+    public LineFace(TextNode text) { this.text = text; Name = NodeName; }
+
+    static readonly StringName NodeName = "LineFace";
 
     public LineFace() { }
 

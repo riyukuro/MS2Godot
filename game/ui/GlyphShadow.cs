@@ -26,11 +26,13 @@ public partial class GlyphShadow : Node2D
     public GlyphShadow(TextNode text, Color color, float blur, float strength, Vector2 offset)
     {
         this.text = text; this.color = color; this.blur = blur; this.strength = strength; this.offset = offset;
-        Name = "GlyphShadow";
+        Name = NodeName;
         ShowBehindParent = true;
     }
 
     public GlyphShadow() { }
+
+    static readonly StringName NodeName = "GlyphShadow";
 
     public override void _EnterTree() => text.Label.Draw += QueueRedraw;     // the label redraws: its text, settings or layout changed
 
@@ -43,29 +45,76 @@ public partial class GlyphShadow : Node2D
         var ls = label.LabelSettings;
         if (ls?.Font == null || string.IsNullOrEmpty(label.Text) || color.A <= 0) return;
         var font = ls.Font;
-        foreach (var line in text.ShownLines())
+        var lines = text.ShownLines();
+        bool placed = false;
+        try
         {
+            foreach (var line in lines)
+            {
+                foreach (var g in line.Shaped)
+                {
+                    if (text.Hidden(g) || g.Glyph == 0) continue;
+                    var (frid, shift, ramp, rb) = Raster(font, g);
+                    float k = g.Size / ramp;
+                    var key = Key(frid, ramp, g.Glyph, rb, strength);
+                    if (!cache.TryGetValue(key, out var e))
+                    {
+                        // the draw's first glyph not cached yet: every glyph it draws is put in its font atlas first, so each
+                        // atlas image is read once for the whole draw (Rasterize) and holds every one of them
+                        if (!placed) Place(font, lines);
+                        placed = true;
+                        e = Get(key);
+                    }
+                    if (e.Texture == null) continue;
+                    float pen = line.LabelX + g.Pen + line.Dx;
+                    for (int r = 0; r < g.Repeat; r++)
+                    {
+                        var at = new Vector2(pen + r * g.Advance + g.Offset.X, MathF.Floor(line.Baseline + g.Offset.Y)) + shift + e.Origin * k + offset;
+                        DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
+                    }
+                    drawn.Add(e.Texture);
+                }
+            }
+        }
+        finally
+        {
+            foreach (var a in atlases.Values) a.Dispose();
+            atlases.Clear();
+        }
+    }
+
+    /// <summary>Puts the glyphs of <paramref name="lines"/> that have no cached raster in their font atlas.</summary>
+    void Place(Font font, System.Collections.Generic.List<TextNode.LayoutLine> lines)
+    {
+        var ts = TextServerManager.GetPrimaryInterface();
+        foreach (var line in lines)
             foreach (var g in line.Shaped)
             {
                 if (text.Hidden(g) || g.Glyph == 0) continue;
-                // the glyph's run size on the screen, its shadow ramp, the raster blur in shadow pixels and label pixels per shadow pixel
-                float screen = g.Size * text.RasterScale;
-                int ramp = (int)TextNode.ShadowRampSize(screen);
-                float rb = blur * ramp / screen, k = g.Size / ramp;
-                var style = text.StyleAt(g.Index);
-                var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Size, text.DescentRatio * g.Size);
-                var e = Get(frid, ramp, g.Glyph, rb, strength);
-                if (e.Texture == null) continue;
-                float pen = line.LabelX + g.Pen + line.Dx;
-                for (int r = 0; r < g.Repeat; r++)
-                {
-                    var at = new Vector2(pen + r * g.Advance + g.Offset.X, MathF.Floor(line.Baseline + g.Offset.Y)) + shift + e.Origin * k + offset;
-                    DrawTextureRect(e.Texture, new Rect2(at, e.Size * k), false, color);
-                }
-                drawn.Add(e.Texture);
+                var (frid, _, ramp, rb) = Raster(font, g);
+                if (!cache.ContainsKey(Key(frid, ramp, g.Glyph, rb, strength))) ts.FontGetGlyphTextureIdx(frid, new Vector2I(ramp, 0), g.Glyph);
             }
-        }
     }
+
+    /// <summary>
+    /// A glyph's raster font and its faux style shift, its shadow ramp (from the run size on the screen) and the raster blur
+    /// in shadow pixels.
+    /// </summary>
+    (Rid Font, Vector2 Shift, int Ramp, float Blur) Raster(Font font, in TextNode.PlacedGlyph g)
+    {
+        float screen = g.Size * text.RasterScale;
+        int ramp = (int)TextNode.ShadowRampSize(screen);
+        var style = text.StyleAt(g.Index);
+        var (frid, shift) = FauxStyle.Font(font, g.Font, style.Bold, style.Italic, g.Size, text.DescentRatio * g.Size);
+        return (frid, shift, ramp, blur * ramp / screen);
+    }
+
+    /// <summary>
+    /// The font atlas images read in the current draw, by (font, size, texture index): the atlas is copied once per draw
+    /// instead of once per glyph. A draw puts its new glyphs in the atlas before it reads any (_Draw), and a glyph once there
+    /// keeps its place, so the image read holds every glyph the draw rasterizes.
+    /// </summary>
+    static readonly System.Collections.Generic.Dictionary<(ulong, int, long), Image> atlases = new();
 
     readonly struct Entry
     {
@@ -85,17 +134,19 @@ public partial class GlyphShadow : Node2D
     /// its new glyphs' rasters, about two engine objects each: myinfo's first open adds 67 (of its 143 kept objects), the world
     /// map's names 765 (of 1,978).
     /// </summary>
-    static readonly System.Collections.Generic.Dictionary<(ulong, int, long, float, float), Entry> cache = new();
+    static readonly System.Collections.Generic.Dictionary<(Rid, int, long, float, float), Entry> cache = new();
+    static Image scratch;
     const int CacheLimit = 4096;
     const int SlotPadding = 2;              // GlyphCacheParams::SlotPadding
 
-    static Entry Get(Rid font, int ramp, long glyph, float rb, float strength)
+    static (Rid, int, long, float, float) Key(Rid font, int ramp, long glyph, float rb, float strength) =>
+        (font, ramp, glyph, MathF.Round(rb, 3), MathF.Round(strength, 3));
+
+    static Entry Get((Rid, int, long, float, float) key)
     {
-        rb = MathF.Round(rb, 3); strength = MathF.Round(strength, 3);
-        var key = (font.Id, ramp, glyph, rb, strength);
         if (cache.TryGetValue(key, out var e)) return e;
         if (cache.Count >= CacheLimit) cache.Clear();
-        return cache[key] = Rasterize(font, ramp, glyph, rb, strength);
+        return cache[key] = Rasterize(key.Item1, key.Item2, key.Item3, key.Item4, key.Item5);
     }
 
     static Entry Rasterize(Rid font, int ramp, long glyph, float rb, float strength)
@@ -106,8 +157,12 @@ public partial class GlyphShadow : Node2D
         if (ti < 0) return default;
         var uv = ts.FontGetGlyphUVRect(font, size, glyph);
         var gofs = ts.FontGetGlyphOffset(font, size, glyph);
-        var img = ts.FontGetTextureImage(font, size, ti);
-        if (img == null) return default;
+        if (!atlases.TryGetValue((font.Id, ramp, ti), out var atlas))
+        {
+            atlas = ts.FontGetTextureImage(font, size, ti);
+            if (atlas == null) return default;
+            atlases[(font.Id, ramp, ti)] = atlas;
+        }
         int x0 = (int)uv.Position.X, y0 = (int)uv.Position.Y, w = (int)uv.Size.X, h = (int)uv.Size.Y;
         if (w <= 0 || h <= 0) return default;
 
@@ -117,7 +172,7 @@ public partial class GlyphShadow : Node2D
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
-                byte a = (byte)Math.Clamp((int)MathF.Round(img.GetPixel(x0 + x, y0 + y).A * 255), 0, 255);
+                byte a = (byte)Math.Clamp((int)MathF.Round(atlas.GetPixel(x0 + x, y0 + y).A * 255), 0, 255);
                 cov[y * w + x] = a;
                 if (a == 0) continue;
                 bx0 = Math.Min(bx0, x); bx1 = Math.Max(bx1, x); by0 = Math.Min(by0, y); by1 = Math.Max(by1, y);
@@ -159,7 +214,10 @@ public partial class GlyphShadow : Node2D
             data[2 * p] = 255;
             data[2 * p + 1] = (byte)Math.Clamp(v, 0, 255);
         }
-        var tex = ImageTexture.CreateFromImage(Image.CreateFromData(W, H, false, Image.Format.La8, data));
+        // one scratch image for every raster: the texture copies its data
+        scratch ??= new Image();
+        scratch.SetData(W, H, false, Image.Format.La8, data);
+        var tex = ImageTexture.CreateFromImage(scratch);
         return new Entry(tex, gofs + new Vector2(bx0 - pad, by0 - pad), new Vector2(W, H));
     }
 }
