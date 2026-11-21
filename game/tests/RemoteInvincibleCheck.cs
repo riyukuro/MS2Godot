@@ -58,8 +58,8 @@ public partial class RemoteInvincibleCheck : Node3D
         layer._Process(0);
         var inv = layer.InvincibleOf(5);
         Check(inv != null && !inv.Blink.Active, "the added remote has no idle invincible");
-        layer.Tracker.Events.Enqueue(new UserRevivalEvent(0, 5));
-        layer.Tracker.Events.Enqueue(new UserRevivalEvent(0, 6));
+        layer.Tracker.Events.Enqueue(new UserRevivalEvent(0, 5, 0));
+        layer.Tracker.Events.Enqueue(new UserRevivalEvent(0, 6, 0));
         layer._Process(0);
         Check(inv != null && inv.Blink.Active && inv.Blink.TimerId == InvincibleBlink.RevivalTimer,
             $"the revival did not start the remote's invincible (active {inv?.Blink.Active}, timer {inv?.Blink.TimerId})");
