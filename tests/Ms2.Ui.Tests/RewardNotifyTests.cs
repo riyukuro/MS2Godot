@@ -24,10 +24,11 @@ public class RewardNotifyTests
         return packs;
     }
 
-    static (UiHost Host, RewardNotifyController C, Player P) Load(int subScene = 0)
+    static (UiHost Host, RewardNotifyController C, Player P) Load(int subScene = 0, bool? bookOpenBeforeLoad = null)
     {
         var model = new UiModel(new GameTables(Packs(), "en")) { HasLocalPlayer = true };
         var c = new RewardNotifyController { SubSceneId = () => subScene };
+        if (bookOpenBeforeLoad is bool b) c.NotifySkillBookDialog(b);
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;
         p.Translate = k => k;
@@ -143,6 +144,26 @@ public class RewardNotifyTests
         Assert.That(c.Pending, Is.EqualTo(0));
         foreach (int kind in new[] { 3, 4, 5, 6, 9, 10, 11, 12, 13 }) c.NotifyChangedTokenMoney(kind, 12);
         Assert.That(c.Pending, Is.EqualTo(9));
+    }
+
+    [Test]
+    public void SkillBookOpenedBeforeTheMovieLoadsReachesItOnLoad()
+    {
+        // the HUD builds this movie on its first use, so the book can open first (OnLoadInit, uiskillbookautodistributedialog.cpp:538)
+        var (h, _, _) = Load(bookOpenBeforeLoad: true);
+        Assert.That(Rt.ToBoolean(h.Get(h.Entity, "m_openSkillBook")), Is.True);
+        var (h2, _, _) = Load(bookOpenBeforeLoad: false);
+        Assert.That(Rt.ToBoolean(h2.Get(h2.Entity, "m_openSkillBook")), Is.False);
+    }
+
+    [Test]
+    public void IdleUpdateDoesNotLookAtTheHoldConditions()
+    {
+        var (_, c, _) = Load();      // loaded, so Held reaches the sub scene lookup
+        int asked = 0;
+        c.SubSceneId = () => { asked++; return 0; };
+        c.Update();
+        Assert.That(asked, Is.EqualTo(0));
     }
 
     [Test]

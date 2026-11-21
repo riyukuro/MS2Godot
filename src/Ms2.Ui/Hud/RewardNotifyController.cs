@@ -50,7 +50,7 @@ public sealed class RewardNotifyController : UiController
     /// <summary>vfunc_15 (@0x141abe740), each frame: hand over what was kept back once nothing holds it.</summary>
     public void Update()
     {
-        if (Held || queue.Count == 0) return;
+        if (queue.Count == 0 || Held) return;
         var q = queue.ToArray();
         queue.Clear();
         foreach (var r in q) AppendReward(r);
@@ -141,7 +141,21 @@ public sealed class RewardNotifyController : UiController
         AppendReward(Host.Obj(("msg", msg), ("type", "stamp"), ("isSpecial", special), ("eventTag", tag)));
 
     /// <summary>NotifySkillBookDialog (@0x141ac18e0): OnSkillBookDialog(open) on the entity when it is loaded.</summary>
-    public void NotifySkillBookDialog(bool open) { if (Host?.Entity != null) Host.Invoke("OnSkillBookDialog", open); }
+    /// <remarks>The client's notify exists from the start, so a book opened before this movie's load still reaches it;
+    /// here the movie loads on its first use, so the last state is kept and handed over by <see cref="OnLoadComplete"/>.</remarks>
+    public void NotifySkillBookDialog(bool open)
+    {
+        skillBookOpen = open;
+        if (Host?.Entity != null) Host.Invoke("OnSkillBookDialog", open);
+    }
+
+    bool skillBookOpen;
+
+    public override void OnLoadComplete()
+    {
+        base.OnLoadComplete();
+        if (skillBookOpen && Host?.Entity != null) Host.Invoke("OnSkillBookDialog", true);
+    }
 
     /// <summary>FUN_141ac1950 (@0x141ac1950): skill points; kind 2 uses the sub-1 text and the second icon.</summary>
     public void ShowSkillPoint(int points, int kind) =>

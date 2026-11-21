@@ -3296,7 +3296,7 @@ public partial class HudScene : Node, IUiStageHost
         skillBook = c; skillBookMovie = m;
         uiRoot.AddChild(m);
         // UISkillBookTreeDialog::OnLoadInit (uiskillbookautodistributedialog.cpp:538) tells a loaded reward notify it opened, vfunc_67 (:514) that it closed
-        rewardNotify?.NotifySkillBookDialog(true);
+        EnsureRewardNotify().NotifySkillBookDialog(true);
         c.Unloaded += () => rewardNotify?.NotifySkillBookDialog(false);
     }
 
