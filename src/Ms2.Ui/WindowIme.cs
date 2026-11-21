@@ -7,13 +7,15 @@ namespace Ms2.Ui;
 /// sfr_as3_20.cpp:395: EnableIME when the new focus is a text field). Godot's window IME is also where its X11 display
 /// server composes dead keys (a circumflex or an accent key, then a space or a vowel): while it is off the dead key
 /// comes as a key without a character and the composed one never comes. In the client Windows composes them for every
-/// focused field (WM_DEADCHAR, then the composed WM_CHAR into the Scaleform field), with the IME on or off, so here the
-/// window's IME is on while any input field has the focus, a password field too.
+/// focused field (WM_DEADCHAR, then the composed WM_CHAR into the Scaleform field), with the IME on or off. HandleFocus
+/// enables the IME only for a field the IME may write into (TextField::IsIMEEnabled, gfx_textfield.h:275: not
+/// IME-disabled, not read-only, not a password field), so here the window's IME is on while such a field has the focus
+/// (<see cref="WantsIme"/>); a password field still takes the keys (<see cref="TakesText"/>).
 /// On X11 the engine's IME takes the keys through a child window that holds the input focus; the engine gives the focus
 /// back to the main window on a mouse press and once shortly after it first maps that child, so the window is asked
 /// again after a switch on and after each mouse press (asking while it holds the focus changes nothing).
-/// STILL-OPEN: there the client's EnableIME(false) also keeps a Hangul IME out of a password or IME-disabled field;
-/// here an IME can compose into one. The composition string is not drawn in the field (the client's candidate list
+/// STILL-OPEN: with the window's IME off a password or IME-disabled field gets no dead-key composition on X11 (the
+/// client's Windows composes it with the IME off). The composition string is not drawn in the field (the client's candidate list
 /// and inline composition), only its committed characters arrive.
 /// </summary>
 public sealed class WindowIme
@@ -31,6 +33,10 @@ public sealed class WindowIme
 
     /// <summary>Whether a movie's focus takes typed text: an input field still on its stage.</summary>
     public static bool TakesText(object focus) => focus is AsTextField { type: "input" } tf && tf.OnStage;
+
+    /// <summary>Whether a movie's focus takes the window's IME: an input field the IME may write into, not a password
+    /// or IME-disabled one (IMEManager::HandleFocus's EnableIME(IsIMEEnabled()), sfr_as3_20.cpp:444).</summary>
+    public static bool WantsIme(object focus) => focus is AsTextField { displayAsPassword: false, ImeDisabled: false } && TakesText(focus);
 
     /// <summary>
     /// Once a frame: switches the window's IME when <paramref name="want"/> changed. It is not switched off while

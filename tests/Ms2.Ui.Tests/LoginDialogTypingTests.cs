@@ -51,7 +51,7 @@ public class LoginDialogTypingTests
         Type(p, Specials);
         c.TabKey();
         for (int i = 0; i < 3; i++) p.Tick();
-        Assert.That(WindowIme.TakesText(p.Focus), Is.True, "the password field takes the window's IME too (dead keys)");
+        Assert.That(WindowIme.TakesText(p.Focus), Is.True, "m_inputPW takes the window's IME too (its field has no password flag here)");
         Type(p, Specials[..16]);
         Assert.That(c.Id, Is.EqualTo(Specials[..32]), "maxChars 32");
         Assert.That(c.Password, Is.EqualTo(Specials[..16]), "maxChars 16");

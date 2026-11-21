@@ -778,7 +778,7 @@ public partial class As3View : Node2D
 
     static readonly HashSet<As3View> inTree = new();
 
-    // the window's IME (Ms2.Ui.WindowIme): on while a shown view's focus is an input field, synced once a frame by one
+    // the window's IME (Ms2.Ui.WindowIme): on while a shown view's focus is an input field the IME may write into, synced once a frame by one
     // view in the tree
     static readonly Ms2.Ui.WindowIme ime = new(on => DisplayServer.WindowSetImeActive(on));
     static As3View imeOwner;
@@ -790,7 +790,20 @@ public partial class As3View : Node2D
         var b = Input.GetMouseButtonMask();
         bool pressed = (b & ~imeButtons) != 0;
         imeButtons = b;
-        ime.Sync(InputFieldFocused, Typing, pressed);
+        ime.Sync(ImeFieldFocused, Typing, pressed);
+    }
+
+    /// <summary>Whether a shown view that takes keys has a field focused that takes the window's IME (no password field).</summary>
+    static bool ImeFieldFocused
+    {
+        get
+        {
+            foreach (var v in inTree)
+                if (Ms2.Ui.WindowIme.WantsIme(v.Player?.Focus) && v.TakesKeys?.Invoke() != false
+                    && v.IsVisibleInTree() && v.IsProcessingUnhandledInput())
+                    return true;
+            return false;
+        }
     }
 
     /// <summary>Whether a shown view that takes keys has an input field focused (a C# test first: the engine is asked

@@ -35,6 +35,26 @@ public class UiStageTests
     }
 
     [Test]
+    public void TheWindowImeGoesOnOnlyForAFieldTheImeMayWriteInto()
+    {
+        // IMEManager::HandleFocus: EnableIME(new focus is a TextField && IsIMEEnabled()) (sfr_as3_20.cpp:444); a password
+        // or IME-disabled input field still takes the keys
+        var (b, _, _) = Movie();
+        var tf = (AsTextField)b.RT.GetClass("flash.text.TextField").Construct();
+        b.Stage.addChild(tf);
+        tf.type = "input";
+        Assert.That((WindowIme.TakesText(tf), WindowIme.WantsIme(tf)), Is.EqualTo((true, true)), "an input field");
+        tf.displayAsPassword = true;
+        Assert.That((WindowIme.TakesText(tf), WindowIme.WantsIme(tf)), Is.EqualTo((true, false)), "a password field");
+        tf.displayAsPassword = false;
+        b.RT.Natives["scaleform.gfx.TextFieldEx/setIMEEnabled"].Invoke(null, new object[] { tf, false });
+        Assert.That((WindowIme.TakesText(tf), WindowIme.WantsIme(tf)), Is.EqualTo((true, false)), "TextFieldEx.setIMEEnabled(false)");
+        b.RT.Natives["scaleform.gfx.TextFieldEx/setIMEEnabled"].Invoke(null, new object[] { tf, true });
+        tf.type = "dynamic";
+        Assert.That((WindowIme.TakesText(tf), WindowIme.WantsIme(tf)), Is.EqualTo((false, false)), "a dynamic field");
+    }
+
+    [Test]
     public void AFocusedInputFieldOfAShownMovieIsTheTextFieldFocus()
     {
         // CUIService::IsTextFieldFocused -> IMEManager::IsTextFieldFocused (sfr_as3_20.cpp:335): the stage's focus is a
