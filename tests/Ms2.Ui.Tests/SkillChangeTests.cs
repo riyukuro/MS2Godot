@@ -20,7 +20,8 @@ public class SkillChangeTests
     const string Swapping = "<skill id=\"20\"><basic mainType=\"1\">"
         + "<changeSkill changeSkillCheckEffectID=\"900,901\" changeSkillCheckEffectLevel=\"0,3\" changeSkillCheckEffectOverlapCount=\"2,1\""
         + " changeSkillID=\"21,22\" changeSkillCheckEffectCompareFunc=\"5\"/></basic><level value=\"1\" sp=\"500\"/></skill>";
-    const string Cheap21 = "<skill id=\"21\"><basic mainType=\"1\"/><level value=\"1\"/></skill>";
+    // 21 has a sequence, 20 has none
+    const string Cheap21 = "<skill id=\"21\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"Attack_01_A\"/></level></skill>";
     const string Cheap22 = "<skill id=\"22\"><basic mainType=\"1\"/><level value=\"1\"/></skill>";
     // the levels list is one short: the whole block is dropped
     const string Broken = "<skill id=\"23\"><basic mainType=\"1\">"
@@ -107,6 +108,25 @@ public class SkillChangeTests
         buffs.Add(Buff(3, 900, 1, 2));
         Assert.That(Change(20), Is.EqualTo((21u, (ushort)1, true)), "the first check that passes wins");
         Assert.That(Change(23), Is.EqualTo((23u, (ushort)1, false)), "a dropped block swaps nothing");
+    }
+
+    [Test]
+    public void TheOwnRequestTakesTheSequenceFlagOfTheSkillItSwapsTo()
+    {
+        uint id = 20;
+        ushort level = 1;
+        Assert.That(SkillCast.OwnSkill(w, ref id, ref level, out bool seq), Is.False);
+        Assert.That((id, seq), Is.EqualTo((20u, false)), "20 has no sequence");
+        buffs.Add(Buff(3, 900, 1, 2));
+        Assert.That(SkillCast.OwnSkill(w, ref id, ref level, out seq), Is.True);
+        Assert.That((id, seq), Is.EqualTo((21u, true)), "swapped to 21: its sequence, not 20's");
+        var c = new CastWorld();
+        var req = new CastRequest(id, level, 1, 0) { HasSequence = seq };
+        Assert.That(SkillCast.Check(w, c, t.GetSkillData(21).GetLevelData(1), req), Is.Not.EqualTo(1),
+            "the sequence flag agrees with 21's level: no reason 1");
+        id = 99;
+        Assert.That(SkillCast.OwnSkill(w, ref id, ref level, out seq), Is.False);
+        Assert.That(seq, Is.True, "no row: the request's default");
     }
 
     [Test]

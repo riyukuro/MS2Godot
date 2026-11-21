@@ -145,6 +145,10 @@ public static class SkillCast
     /// charging skill and has a combo output, Unk_SkillBlockA4::FUN_140803040) the first change skill the running skill's combo
     /// turns into another (GetOutputSkill) is taken; else the first change skill whose effect check is on
     /// (<see cref="SlotWorld.HasEffect"/> with the check's compare sign). True when the id or level was set.
+    /// Ported callers: the own press (MyPC::vfunc_104, mypc.cpp:1728, <see cref="OwnSkill"/>) and the compact pick
+    /// (skillslot.cpp:2488). STILL-OPEN, callers not ported: MyPC::FUN_141526730 (mypc.cpp:1827), FUN_141525480
+    /// (mypc.cpp:2382), StateSkill::FUN_1417f0570 (stateskill.cpp:2188, the auto change), StateSkill::FUN_1417ef4a0
+    /// (stateskill.cpp:3162) and Unk_Inventory::FUN_140a635f0 (inventory.cpp:1390, the item skill).
     /// </summary>
     public static bool ChangeSkill(SlotWorld w, ref uint skillId, ref ushort level)
     {
@@ -174,6 +178,19 @@ public static class SkillCast
             return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// The own press's skill (mypc.cpp:1728-1729): <see cref="ChangeSkill"/>, then the request's m_b38 from the skill and
+    /// level it lands on. The client's request keeps the ctor's true (Unk_InventorySkillRequest @0x141763fa0,
+    /// skillslot.cpp:2894); the port takes the landed level's HasSequenceName (true when there is no row), which is the
+    /// same for every sequence skill, so a swap from a skill with no sequence to one with a sequence casts.
+    /// </summary>
+    public static bool OwnSkill(SlotWorld w, ref uint skillId, ref ushort level, out bool hasSequence)
+    {
+        bool changed = ChangeSkill(w, ref skillId, ref level);
+        hasSequence = w.Tables.Skills.GetSkillLevelData(skillId, level)?.HasSequenceName ?? true;
+        return changed;
     }
 
     /// <summary>The result of a request: the record, or the reason (0 with no record: a refusal the client shows no code for).</summary>

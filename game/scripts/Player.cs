@@ -193,6 +193,16 @@ public partial class Player : CharacterBody3D
         Enter(MoveState.Idle);
     }
 
+    /// <summary>
+    /// PCBase::SetTargetYaw (pcbase.cpp:1431): only the yaw to turn to (m_f934); <see cref="TurnTowardTargetYaw"/> turns the
+    /// facing there over the next frames. <see cref="Face"/> snaps.
+    /// </summary>
+    public void TurnTo(Vector3 dir)
+    {
+        if (dir.LengthSquared() < 1e-6f) return;
+        targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
+    }
+
     public void Face(Vector3 dir)
     {
         if (dir.LengthSquared() < 1e-6f) return;

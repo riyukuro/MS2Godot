@@ -142,13 +142,13 @@ public partial class HudScene
         if (lv != null && heldKeys.HeldTooLong(d, key, (uint)Net.LiveSession.CastTick(),
                 (uint)slotConstants.Int("KeyIsDownSkill_MaxDurationTick", 30000))) return null;
         // mypc.cpp:1728: MyPC::FUN_141526c80, the changeSkill swap, before CSkillSystem::FUN_141764e30
-        if (SkillCast.ChangeSkill(w, ref skillId, ref level))
+        if (SkillCast.OwnSkill(w, ref skillId, ref level, out bool hasSequence))
             GD.Print($"cast: skill {d.Id} level {lv.Level} changed to skill {skillId} level {level}");
         var g = me.GlobalPosition;
         float rotZ = me.FacingRotZ, rad = Mathf.DegToRad(rotZ);
         var req = new CastRequest(skillId, level, Net.LiveSession.NewCastId(), Net.LiveSession.CastTick())
         {
-            HasSequence = lv?.HasSequenceName ?? true,
+            HasSequence = hasSequence,
             Position = new System.Numerics.Vector3(g.X, -g.Z, g.Y),
             Direction = new System.Numerics.Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0),
             RotZ = rotZ,
@@ -159,7 +159,8 @@ public partial class HudScene
         castWorld.Rising = sp.Y > 0;
         castWorld.Falling = me.State == Player.MoveState.Fall;
         castWorld.GameTime = Time.GetTicksMsec() / 1000.0;
-        castWorld.Aim = ownAutoTarget ??= rec => AutoTargetOwn(rec, true);   // vfunc_100(rec, 1), skillslot.cpp:2178
+        // vfunc_100(rec, 1), skillslot.cpp:2178: the same-skill keep (pcbase.cpp:2575-2591), then the auto target from it
+        castWorld.Aim = ownAutoTarget ??= rec => AimOwn(rec, true);
         var res = SkillCast.Request(w, castWorld, req, _ => SkillCast.NormalAttackSkillId(held, weaponActions, 0));
         if (res.Record is not { } r)
         {
@@ -376,8 +377,9 @@ public partial class HudScene
 
     /// <summary>
     /// PCBase::vfunc_101 (pcbase.cpp:2598-2599) for the own player: <see cref="SkillCast.AutoTarget"/> over the live
-    /// candidates and the owner (<see cref="FillHitObjects"/>); with <paramref name="turn"/> (vfunc_100's n, SetTargetYaw
-    /// :2681) a pick turns the player to it.
+    /// candidates and the owner (<see cref="FillHitObjects"/>); with <paramref name="turn"/> (vfunc_100's n) a pick sets the
+    /// player's target yaw (SetTargetYaw, :2684-2685; PCBase::SetTargetYaw @pcbase.cpp:1431), which the player turns to over
+    /// the next frames (<see cref="Player.TurnTo"/>); the loop end snaps to the record's rotation (<see cref="OwnLoopEnd"/>).
     /// </summary>
     void AutoTargetOwn(CastRecord r, bool turn)
     {
@@ -387,7 +389,7 @@ public partial class HudScene
         if (!SkillCast.AutoTarget(r, pos, me.FacingRotZ, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects),
                 hitQueried, hitIds, (slotField?.PkMode ?? 0) != 0, out float yaw) || !turn) return;
         float rad = Mathf.DegToRad(yaw);   // MS2 forward (sin z, -cos z) is godot (sin z, 0, cos z)
-        me.Face(new Vector3(Mathf.Sin(rad), 0, Mathf.Cos(rad)));
+        me.TurnTo(new Vector3(Mathf.Sin(rad), 0, Mathf.Cos(rad)));
     }
 
     /// <summary>The objects an own area pick tests: the live candidates and the owner last; the owner's MS2 position.</summary>
