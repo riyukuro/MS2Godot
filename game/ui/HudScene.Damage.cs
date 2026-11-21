@@ -24,10 +24,15 @@ public partial class HudScene
         {
             if (damageText == null) return;
             bool casterMe = n.CasterId == live.SelfObjectId;
-            if (n.TargetId == live.SelfObjectId) damageText.OnPlayer(n.Value, n.Grade);
-            else if (npc != null) damageText.OnNpc(npc, n.Value, n.Grade, casterMe);
-            else if (pc != null) damageText.OnPc(pc, n.Value, n.Grade, casterMe);
+            bool targetMe = n.TargetId == live.SelfObjectId;
+            // bGem (uidamagetext.cpp:354, :399-407): a PC caster's usable type 2 gem (FUN_141270740(2)) for a damage grade
+            // on another target; the font shows only once loaded (DamageText.Spawn)
+            int gem = DamageTextNames.GemShows(n.Grade, targetMe) ? World.NpcEmoticons.Live?.WornGemId(n.CasterId, 2) ?? 0 : 0;
+            if (targetMe) damageText.OnPlayer(n.Value, n.Grade);
+            else if (npc != null) damageText.OnNpc(npc, n.Value, n.Grade, casterMe, gem);
+            else if (pc != null) damageText.OnPc(pc, n.Value, n.Grade, casterMe, gem);
         };
+        Action<int> font = id => damageText?.LoadDamageFont(id);
         Action<long, int> exp = (v, type) => damageText?.OnExp(v, type);
         Action<FieldNpcs.Placed, long> npcExp = (npc, v) => damageText?.OnNpcExp(npc, v);
         Action<DamageTarget, long> meso = (pc, v) => damageText?.OnMeso(pc, v);
@@ -37,6 +42,7 @@ public partial class HudScene
         live.NpcExpShown += npcExp;
         live.MesoGained += meso;
         live.ItemGained += item;
-        unwatchDamage = () => { live.DamageNumbered -= on; live.ExpGained -= exp; live.NpcExpShown -= npcExp; live.MesoGained -= meso; live.ItemGained -= item; };
+        World.NpcEmoticons.DamageFontAsked += font;
+        unwatchDamage = () => { World.NpcEmoticons.DamageFontAsked -= font; live.DamageNumbered -= on; live.ExpGained -= exp; live.NpcExpShown -= npcExp; live.MesoGained -= meso; live.ItemGained -= item; };
     }
 }

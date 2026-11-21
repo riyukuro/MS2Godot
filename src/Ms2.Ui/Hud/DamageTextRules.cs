@@ -16,6 +16,10 @@ public static class DamageTextNames
     /// <summary>IsDamageGrade (@0x1419144f0): grades 0 to 3 (the recover grades are <see cref="DamageNumbers.IsRecover"/>).</summary>
     public static bool IsDamageGrade(int grade) => grade is >= 0 and <= 3;
 
+    /// <summary>bGem's grade and target part (uidamagetext.cpp:354): FUN_141914530 (:809, grades 5 / 6 / 7) is 0 and the
+    /// target is not the own PC; the caster being a PC is the caller's (a gem only a PC wears).</summary>
+    public static bool GemShows(int grade, bool targetMe) => grade is not (5 or 6 or 7) && !targetMe;
+
     /// <summary>GetGradeName (@0x141914570): 0, 2, 3 Normal; 1 Critical; 5, 6, 7 Recover; else empty.</summary>
     public static string GradeName(int grade) => grade switch
     {
@@ -35,6 +39,38 @@ public static class DamageTextNames
         3 => Block,
         _ => "",
     };
+
+    /// <summary>
+    /// <see cref="ValueText"/> written into <paramref name="dst"/> (at least 21 chars), with no string made per hit: the
+    /// length, 0 for an empty text.
+    /// </summary>
+    public static int ValueChars(long value, int grade, Span<char> dst)
+    {
+        switch (grade)
+        {
+            case 0 or 1: return Digits(value, dst);
+            case 5: dst[0] = '+'; return 1 + Digits(value, dst[1..]);
+            case 2: Miss.AsSpan().CopyTo(dst); return Miss.Length;
+            case 3: Block.AsSpan().CopyTo(dst); return Block.Length;
+            default: return 0;
+        }
+    }
+
+    /// <summary>What <see cref="DamageLook.For"/> reads of a value (only DamageTextCommon.isNumber): Miss, Block, else "".</summary>
+    public static string ValueKind(int grade) => grade switch { 2 => Miss, 3 => Block, _ => "" };
+
+    /// <summary><see cref="GainValueText"/> written into <paramref name="dst"/> (at least 12 chars): the length.</summary>
+    public static int GainValueChars(int value, int type, Span<char> dst)
+    {
+        switch (type)
+        {
+            case 0 or 1: return Digits(value, dst);
+            case 2: dst[0] = '+'; return 1 + Digits(value, dst[1..]);
+            default: return 0;
+        }
+    }
+
+    static int Digits(long v, Span<char> dst) => v.TryFormat(dst, out int n, default, System.Globalization.CultureInfo.InvariantCulture) ? n : 0;
 
     /// <summary>GetTargetKind (@0x1419142a0): 0 for a PC (class 0x6200004, 0x6200003 or 0x6200011), else 1.</summary>
     public static int TargetKind(bool pc) => pc ? 0 : 1;
@@ -109,27 +145,44 @@ public sealed record DamageLook(string Glyphs, int SignSpacing, int NumberSpacin
     public const int ListNormal = 0, ListCritical = 1, MyNormal = 2, MyCritical = 3;
 
     /// <summary>
+    /// The gem font whose arrays the glyphs and the critical text come from (its id as text, the uidamagefont_&lt;id&gt; movie);
+    /// null for the damage text movie's own.
+    /// </summary>
+    public string Font { get; init; }
+
+    /// <summary>
     /// DamageTextFactory.damageText: <paramref name="caster"/> is dropped when the number is not <paramref name="myDamage"/>.
     /// getDamageNumberArray: DamageTextCommon[caster + target + grade + gem], else without the gem. getDamageMovie:
     /// grade + "Movie", else NormalMovie. getDamageAni / getCriticalTxt / getExEff by their keys; getContainer(grade, myDamage).
-    /// The client always sends an empty caster (FUN_141911e90). The gem keys name the arrays a loaded gem font adds
-    /// (DamageTextCommon.loadDamageFont, GFxMovieDamage::LoadDamageFont); without one the lookup falls back to the plain array.
+    /// The client always sends an empty caster (FUN_141911e90).
+    /// <para>
+    /// The gem keys are the ones DamageTextCommon.loadDamageFont(id) adds once the font movie is loaded
+    /// (<paramref name="gemLoaded"/>; GFxMovieDamage::LoadDamageFont, gfxmoviedamage.cpp:210, then UIDamageText::LoadFont on its
+    /// loadComplete, :170): MonsterNormal&lt;id&gt; (Nor0_&lt;id&gt; .. Nor9_&lt;id&gt;, Miss_&lt;id&gt;, Block_&lt;id&gt;),
+    /// MonsterCritical&lt;id&gt; (Cri0_&lt;id&gt; .. Cri9_&lt;id&gt;) and MonsterCriticalTxt&lt;id&gt; (dmg_mc_monstercri_&lt;id&gt;).
+    /// So only a Monster target's Normal (Miss and Block too) and Critical take the font; without it loaded the lookup
+    /// falls back to the plain array.
+    /// </para>
     /// </summary>
-    public static DamageLook For(string value, string target, string grade, string caster = "", string gem = "", bool myDamage = false)
+    public static DamageLook For(string value, string target, string grade, string caster = "", string gem = "", bool myDamage = false, bool gemLoaded = false)
     {
         if (!myDamage) caster = "";
-        string glyphs = Array(caster + target + grade + gem) ?? Array(caster + target + grade);
+        string font = null;
+        string glyphs = null;
+        if (gemLoaded && !string.IsNullOrEmpty(gem) && GemArray(caster + target + grade) is { } g) { glyphs = g; font = gem; }
+        glyphs ??= Array(caster + target + grade);
         var (sign, number) = Spacing(grade);
         var ani = DamageAni.For(value, target, grade);
         string crit = null;
         if (ani.HasCritText)
         {
-            crit = CritTxt(caster + target + grade + "Txt" + gem) ?? CritTxt(caster + target + grade + "Txt");
+            // MonsterCriticalTxt<id> is set with MonsterCritical<id>: a font's glyphs and its critical text go together
+            crit = font != null && caster + target + grade + "Txt" == "MonsterCriticalTxt" ? "dmg_mc_monstercri_" + font : CritTxt(caster + target + grade + "Txt");
             if (crit == null) glyphs = null;      // getCriticalTxt news a null constructor: the call fails
         }
         string ex = ani.HasExEffect ? ExEff(IsNumber(value) ? target + grade + "Eff" : value + target + "Eff") : null;
         int container = (myDamage ? MyNormal : ListNormal) + (grade == DamageTextNames.Critical ? 1 : 0);
-        return new DamageLook(glyphs, sign, number, ani, crit, ex, container);
+        return new DamageLook(glyphs, sign, number, ani, crit, ex, container) { Font = font };
     }
 
     /// <summary>The itemIcon call: the same picks, always in the own player's containers, no scale or alpha.</summary>
@@ -150,6 +203,14 @@ public sealed record DamageLook(string Glyphs, int SignSpacing, int NumberSpacin
         "UserRecoverCritical" => "RecoverCri",
         "UserMeso" => "Meso",
         "MonsterExp" or "UserExp" => "Exp",
+        _ => null,
+    };
+
+    /// <summary>loadDamageFont's arrays: the digit class prefix of MonsterNormal&lt;id&gt; and MonsterCritical&lt;id&gt;.</summary>
+    static string GemArray(string key) => key switch
+    {
+        "MonsterNormal" => "Nor",
+        "MonsterCritical" => "Cri",
         _ => null,
     };
 
@@ -194,6 +255,60 @@ public sealed record DamageLook(string Glyphs, int SignSpacing, int NumberSpacin
     };
 
     static readonly string[] Digits = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+
+    /// <summary>The glyph keys past the digits 0 to 9 (<see cref="GlyphIndex"/>, <see cref="Glyph"/>).</summary>
+    public const int PlusKey = 10, MinusKey = 11, MissKey = 12, BlockKey = 13, ExpKey = 14, MesoKey = 15;
+    static readonly string[] KeyNames = [.. Digits, "Plus", "Minus", DamageTextNames.Miss, DamageTextNames.Block, DamageTextNames.Exp, DamageTextNames.Meso];
+
+    /// <summary><see cref="GlyphKey"/> as an index: 0 to 9 the digits, <see cref="PlusKey"/>, <see cref="MinusKey"/>; -1 for any other.</summary>
+    public static int GlyphIndex(char c) => c switch
+    {
+        >= '0' and <= '9' => c - '0',
+        '+' => PlusKey,
+        '-' => MinusKey,
+        _ => -1,
+    };
+
+    string[] names;
+
+    /// <summary>
+    /// The class of the array's glyph for a key (the array's value at that key), made once per look: the array prefix and
+    /// the key; in a gem font Nor / Cri, the digit and "_" id for a digit, Miss_&lt;id&gt; and Block_&lt;id&gt;, and none for
+    /// the keys loadDamageFont does not set (Plus, Minus, Exp, Meso). Null without the array or for a key out of range.
+    /// </summary>
+    public string Glyph(int key)
+    {
+        if (Glyphs == null || (uint)key >= (uint)KeyNames.Length) return null;
+        names ??= new string[KeyNames.Length];
+        return names[key] ??= Font == null ? Glyphs + KeyNames[key]
+            : key < 10 ? Glyphs + KeyNames[key] + "_" + Font
+            : key is MissKey or BlockKey ? KeyNames[key] + "_" + Font : null;
+    }
+}
+
+/// <summary>
+/// The looks a damage text has used, by what <see cref="DamageLook.For"/> reads (the value only through isNumber), so a
+/// hit after the first of its kind makes no look and no key strings.
+/// </summary>
+public sealed class DamageLookCache
+{
+    readonly Dictionary<(string Kind, string Target, string Grade, string Gem, bool Mine, bool Item), DamageLook> looks = new();
+
+    /// <summary>
+    /// <see cref="DamageLook.For"/> (<see cref="DamageLook.ForItem"/> when <paramref name="item"/>) with
+    /// <paramref name="kind"/> from <see cref="DamageTextNames.ValueKind"/>; <paramref name="gem"/> the loaded gem font's
+    /// id text, null or "" for none.
+    /// </summary>
+    public DamageLook Get(string kind, string target, string grade, string gem, bool mine, bool item = false)
+    {
+        gem ??= "";
+        var key = (kind, target, grade, gem, mine, item);
+        if (!looks.TryGetValue(key, out var look))
+            looks[key] = look = item ? DamageLook.ForItem(kind, target, grade) : DamageLook.For(kind, target, grade, "", gem, mine, gem.Length > 0);
+        return look;
+    }
+
+    public int Count => looks.Count;
 }
 
 /// <summary>
@@ -250,6 +365,16 @@ public class DamageInfo
     public float Scale = 1;
     public uint Start, Elapsed;
 
+    /// <summary>Back to a new DamageInfo's fields, for an info reused from a pool.</summary>
+    public void Reset()
+    {
+        Type = Grade = Index = State = 0;
+        Owner = null;
+        Mine = false; CanJump = true;
+        Scale = 1;
+        Start = Elapsed = 0;
+    }
+
     /// <summary>FUN_141910e60 (@0x141910e60): the time since the first update (0 before it; a clock that went back restarts it).</summary>
     public void Tick(uint now)
     {
@@ -283,6 +408,9 @@ public sealed class DamageList<T> where T : DamageInfo
 
     readonly LinkedList<T> list = new();
     readonly Dictionary<object, Counter> counters = new();
+    // the list's nodes and the counters reused, so a number in and out of the list allocates nothing once warm
+    readonly Stack<LinkedListNode<T>> freeNodes = new();
+    readonly Stack<Counter> freeCounters = new();
     LinkedListNode<T> last;
     readonly int maxIndex;
 
@@ -315,40 +443,47 @@ public sealed class DamageList<T> where T : DamageInfo
         {
             if (last != null)
             {
-                list.AddFirst(info);
+                list.AddFirst(Node(info));
                 if (over)
                 {
                     var node = last;
                     last = node.Previous;
                     removed = node.Value;
                     list.Remove(node);
+                    Free(node);
                     Decrement(removed.Owner, 1);
                 }
             }
-            else last = list.AddFirst(info);
+            else list.AddFirst(last = Node(info));
         }
         else
         {
             if (last != null)
             {
-                list.AddAfter(last, info);
+                list.AddAfter(last, Node(info));
                 if (over)
                 {
                     var tail = list.Last;
                     if (tail == last) last = tail.Previous;
                     removed = tail.Value;
                     list.RemoveLast();
+                    Free(tail);
                     Decrement(info.Owner, 1);
                 }
             }
-            else list.AddFirst(info);
+            else list.AddFirst(Node(info));
         }
         if (counters.TryGetValue(info.Owner, out var c))
         {
             c.Count++;
             if (++c.Index >= maxIndex) c.Index = 0;
         }
-        else counters[info.Owner] = c = new Counter();
+        else
+        {
+            if (freeCounters.TryPop(out c)) { c.Count = 1; c.Index = 0; }
+            else c = new Counter();
+            counters[info.Owner] = c;
+        }
         info.Index = c.Index;
         return removed;
     }
@@ -359,22 +494,40 @@ public sealed class DamageList<T> where T : DamageInfo
         if (list.Count == 0) return;
         if (node == last) last = node.Previous;
         list.Remove(node);
+        Free(node);
+    }
+
+    LinkedListNode<T> Node(T info)
+    {
+        if (!freeNodes.TryPop(out var n)) return new LinkedListNode<T>(info);
+        n.Value = info;
+        return n;
+    }
+
+    void Free(LinkedListNode<T> node)
+    {
+        node.Value = null;
+        freeNodes.Push(node);
     }
 
     /// <summary>DecrementCounter (@0x141915150): -1 drops the owner's counter; else its count goes down, and the counter at 0.</summary>
     public void Decrement(object owner, int n)
     {
         if (counters.Count == 0 || owner == null) return;
-        if (n == -1) { counters.Remove(owner); return; }
-        if (counters.TryGetValue(owner, out var c) && (c.Count -= n) <= 0) counters.Remove(owner);
+        if (n == -1) { if (counters.Remove(owner, out var gone)) freeCounters.Push(gone); return; }
+        if (counters.TryGetValue(owner, out var c) && (c.Count -= n) <= 0) { counters.Remove(owner); freeCounters.Push(c); }
     }
 
-    public void ClearCounters() => counters.Clear();
+    public void ClearCounters()
+    {
+        foreach (var c in counters.Values) freeCounters.Push(c);
+        counters.Clear();
+    }
 
     public void Clear()
     {
-        list.Clear();
-        counters.Clear();
+        while (list.First is { } n) { list.RemoveFirst(); Free(n); }
+        ClearCounters();
         last = null;
     }
 }

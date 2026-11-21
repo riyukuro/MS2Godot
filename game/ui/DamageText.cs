@@ -34,6 +34,13 @@ public sealed class DamageTarget(Node3D root, Func<Vector3> point, bool pc, Func
 /// the critical text in "cridmy" (and a duplicate in "cridmy1"), the extra effect in "exeff" (hidden without one); the
 /// ani is raised by half the number's height. The wrapper goes to its container: the other numbers' normal and critical
 /// lists, then the own normal and critical, in that draw order.</item>
+/// <item>Gem fonts (bGem, uidamagetext.cpp:354, :399-407): a PC caster's usable type 2 gem names its font for a damage
+/// grade on another target; once GFxMovieDamage::LoadDamageFont (gfxmoviedamage.cpp:210, <see cref="DamageFonts"/>) has
+/// loaded uidamagefont_&lt;gem id&gt;, the monster numbers take its Nor / Cri / Miss / Block glyphs and dmg_mc_monstercri
+/// text (loadDamageFont). The loads come from <see cref="NpcEmoticons.DamageFontAsked"/>; a field move (ClearAll) unloads
+/// the fonts not asked for in the last 60 s (UnloadExpiredFonts, :249).</item>
+/// <item>Pooling: the ani sets, glyph nodes, numbers, clips and entries are reused (no per-hit allocation); a clip's
+/// generation keeps a stale entry from touching its next use.</item>
 /// <item>Text: glyphs left to right, each advancing by its right edge plus the grade's movie spacing, a leading "+" on
 /// top; Miss and Block are one image glyph. The number is centred on its own bounds.</item>
 /// <item>Spawn: the target's Eff_Damage point, stored once (a hit point is not sent here). A number is not created when
@@ -50,36 +57,73 @@ public sealed class DamageTarget(Node3D root, Func<Vector3> point, bool pc, Func
 /// reads its x of null, the init throws and an exp gain shows nothing), the Meso glyph after them (moved to child 0), the item's icon
 /// (the ItemMovie's "icon" with the item image fitted to its width) before them; the ani's mesoeff at child 0.</item>
 /// </list>
-/// STILL-OPEN: the caster's gem font (bGem, GFxMovieDamage::LoadDamageFont), a summon's numbers as the own (bMySummon),
+/// STILL-OPEN: a summon's numbers as the own (bMySummon),
 /// observer mode, PC::vfunc_122's pvp and pk rules and the caster's forceApplyTarget bit 2 (another PC is always User
 /// here), m_nRepeat (a dev repeat, 1).
 /// </summary>
 public sealed partial class DamageText : CanvasLayer
 {
+    /// <summary>An ani of one class with its slots, built once and reused.</summary>
+    sealed class AniSet
+    {
+        public MovieClipNode Ani;
+        public string Class;
+        public MovieClipNode Dummy, Dummy1, Cridmy, Cridmy1, ExNode;
+        public Node2D Mesoeff;
+        public MovieClipNode.Child ExSlot, MesoSlot;
+        public int Epoch;
+    }
+
+    /// <summary>A DamageMovie (m_dmg): the holder and the glyphs in it, each with the movie and class it came from.</summary>
+    sealed class Num
+    {
+        public readonly Node2D Node = new() { Name = "DamageMovie" };
+        public readonly List<Part> Parts = new();
+        public MovieClipNode Icon;     // the item icon: from pickups, not pooled
+    }
+
+    readonly struct Part(UiMovie m, string cls, MovieClipNode n)
+    {
+        public readonly UiMovie Movie = m;
+        public readonly string Class = cls;
+        public readonly MovieClipNode Node = n;
+    }
+
     sealed class Clip
     {
-        public Node2D Wrap;
+        public readonly Node2D Wrap = new() { Name = "wrapper", Visible = false };
+        public AniSet Set;
         public MovieClipNode Ani;
         public int[] Remove;
         public double Frame;          // the ani's playhead, at the movie's frame rate
         public double Age;            // frames since creation: the looping clips added to its slots
         public MovieClipNode Loop1, Loop2, Loop3;
+        public Num Number, Copy;
+        public readonly List<Part> Parts = new();    // the critical texts and the extra effect
+        public int Container = -1;
+        public int Epoch;
+        public int Gen;               // bumped on release: an entry holding an older generation sees its clip gone
         public bool Gone;
     }
 
     sealed class Entry : DamageInfo
     {
         public Clip Clip;
+        public int Gen;
         public Vector3 Pos;            // the stored world point (normals)
         public DamageTarget Target => (DamageTarget)Owner;
+        /// <summary>The clip is still this entry's and not removed.</summary>
+        public bool Live => Clip.Gen == Gen && !Clip.Gone;
     }
 
     readonly UiMovie movie;
     float u = 1;
+    int epoch;                         // the scale the pooled nodes were built at: bumped on a resize
     readonly DamageTextLayout layout;
     readonly DamageList<Entry> normals, followers;
     readonly List<Clip> clips = new();
     readonly Dictionary<Node3D, DamageTarget> targets = new();
+    readonly List<Node3D> goneTargets = new();
     readonly Node2D[] containers = new Node2D[4];
     readonly Ms2.Formats.Pack.PackSet packs;
     readonly UiAssets assets;
@@ -92,6 +136,21 @@ public sealed partial class DamageText : CanvasLayer
     Player player;
     DamageTarget self;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
+
+    // per-hit cost: the looks, the nodes, the clips and the entries are reused, so a hit allocates nothing once warm
+    readonly DamageLookCache looks = new();
+    readonly char[] text = new char[24];
+    readonly Dictionary<(UiMovie, string), Stack<MovieClipNode>> nodePool = new();
+    readonly HashSet<(UiMovie, string)> missing = new();
+    readonly Dictionary<string, Stack<AniSet>> aniPool = new();
+    readonly Stack<Num> numPool = new();
+    readonly Stack<Clip> clipPool = new();
+    readonly Stack<Entry> entryPool = new();
+
+    // GFxMovieDamage's gem fonts (m_90): the font movies by id text
+    readonly DamageFonts fonts = new();
+    readonly Dictionary<string, UiMovie> fontMovies = new();
+    readonly List<int> expired = new();
 
     public DamageText(UiAssets ui, ClientConstants constants, Vector2 window)
     {
@@ -118,7 +177,16 @@ public sealed partial class DamageText : CanvasLayer
     /// gfxmovie.cpp:146), kept alive with its state. STILL-OPEN: the clips already built keep the glyphs they were built
     /// with at the old scale and are only scaled; the client's Scaleform draws them again at the new viewport scale.
     /// </summary>
-    public void Resize(Vector2 window) => u = UiScale.For(window);
+    public void Resize(Vector2 window)
+    {
+        float nu = UiScale.For(window);
+        if (nu == u) return;
+        u = nu;
+        // the pooled nodes were built at the old scale: dropped, and the shown ones are freed when they are released
+        epoch++;
+        foreach (var st in nodePool.Values) while (st.TryPop(out var n)) n.Free();
+        foreach (var st in aniPool.Values) while (st.TryPop(out var set)) set.Ani.Free();
+    }
 
     /// <summary>
     /// UIDamageText::ClearAll (@0x1419135c0, uidamagetext.cpp:523), which a field move runs from GFxMovieDamage::
@@ -126,28 +194,71 @@ public sealed partial class DamageText : CanvasLayer
     /// uiservice.cpp:1316): the normal and follower lists and their counters are emptied (m_normals, m_ownerFollowers,
     /// m_counter, m_ownerFollowerCounter, their positions and m_queue) and ClearContainer removes every shown number. The
     /// old field's camera and player are dropped with them and found again in the new field. There is no spawn queue
-    /// is emptied too; there is no m_bClearing here. UnloadExpiredFonts' other part, the
-    /// movie font library's expiry (fonts unused for 60 s), has no counterpart: this movie has no loaded font library.
+    /// is emptied too; there is no m_bClearing here. Then UnloadExpiredFonts' expiry: every gem font not asked for in the
+    /// last 60 s of server time is unloaded (<see cref="DamageFonts.Expire"/>), its movie and its pooled glyphs dropped.
     /// </summary>
     public void ClearAll()
     {
+        ReturnEntries(normals);
+        ReturnEntries(followers);
         normals.Clear();
         followers.Clear();
-        foreach (var c in clips) Kill(c);       // ClearContainer
+        foreach (var c in clips) { Kill(c); Release(c); }       // ClearContainer
         clips.Clear();
         targets.Clear();
         queue.Clear();
         camera = null; field = null; player = null; self = null;
+        expired.Clear();
+        fonts.Expire(ServerTime(), expired);
+        foreach (int id in expired) UnloadFont(fonts.Name(id));
+    }
+
+    void ReturnEntries(DamageList<Entry> list)
+    {
+        for (var n = list.First; n != null; n = n.Next) Free(n.Value);
+    }
+
+    static long ServerTime() => Ms2Godot.Net.LiveSession.Instance?.ServerTime ?? 0;
+
+    /// <summary>
+    /// GFxMovieDamage::LoadDamageFont (@0x140b61900, gfxmoviedamage.cpp:210) for a gem's font id (CUIService
+    /// FUN_141ad9c40, uiservice.cpp:608): nothing without the damage text movie or for id 0; a font already loaded is
+    /// restamped; a new one loads its uidamagefont_&lt;id&gt; movie (UIDamageText::LoadFont, DamageTextCommon.loadDamageFont).
+    /// The client loads the swf and preloads queued ids one a frame (vfunc_8); here the movie is read at once.
+    /// </summary>
+    public void LoadDamageFont(int id)
+    {
+        if (movie == null) return;
+        var r = fonts.Load(id, ServerTime());
+        if (r != DamageFonts.LoadResult.Loaded) return;
+        string name = fonts.Name(id);
+        try { fontMovies[name] = new UiMovie(assets, "uidamagefont_" + name); }
+        catch (Exception e) { GD.PushWarning("damage font " + name + ": " + e.Message); }
+    }
+
+    /// <summary>The gem font is loaded and its movie read: a number may use it.</summary>
+    public bool FontLoaded(int id) => fonts.Loaded(id) && fontMovies.ContainsKey(fonts.Name(id));
+
+    /// <summary>UIDamageText::UnloadFont / unloadDamageFont: the font's movie and the glyphs pooled from it go.</summary>
+    void UnloadFont(string name)
+    {
+        if (!fontMovies.Remove(name, out var m)) return;
+        List<(UiMovie, string)> keys = null;
+        foreach (var k in nodePool.Keys) if (k.Item1 == m) (keys ??= new()).Add(k);
+        if (keys != null)
+            foreach (var k in keys) { foreach (var n in nodePool[k]) n.Free(); nodePool.Remove(k); }
+        missing.RemoveWhere(k => k.Item1 == m);
     }
 
     /// <summary>The numbers in the lists and the clips shown, for checks.</summary>
     public int Count => normals.Count + followers.Count + clips.Count;
 
     /// <summary>A number on an npc; <paramref name="casterMe"/> when the local player dealt it.</summary>
-    public void OnNpc(FieldNpcs.Placed n, long value, int grade, bool casterMe = true)
+    /// <para><paramref name="gem"/> the caster's gem font id when it shows (<see cref="DamageTextNames.GemShows"/>), 0 for none.</para>
+    public void OnNpc(FieldNpcs.Placed n, long value, int grade, bool casterMe = true, int gem = 0)
     {
         if (!Ready() || n?.Root == null) return;
-        Spawn(NpcTarget(n), value, grade, casterMe);
+        Spawn(NpcTarget(n), value, grade, casterMe, gem);
     }
 
     /// <summary>CNpc::FlushDamageText (@0x141093910): an npc's exp at the end of its death sequence, FUN_141912a80 type 0 on
@@ -167,18 +278,18 @@ public sealed partial class DamageText : CanvasLayer
     }
 
     /// <summary>A number on another player (RemoteLayer's target for it); <paramref name="casterMe"/> when the local player dealt it.</summary>
-    public void OnPc(DamageTarget pc, long value, int grade, bool casterMe)
+    public void OnPc(DamageTarget pc, long value, int grade, bool casterMe, int gem = 0)
     {
         if (!Ready() || pc == null || pc.Gone) return;
         if (!targets.TryGetValue(pc.Root, out var t) || t.Gone) targets[pc.Root] = t = pc;
-        Spawn(t, value, grade, casterMe);
+        Spawn(t, value, grade, casterMe, gem);
     }
 
     /// <summary>A number on the own PC.</summary>
     public void OnPlayer(long value, int grade)
     {
         if (!Ready() || self == null) return;
-        Spawn(self, value, grade, false);
+        Spawn(self, value, grade, false, 0);
     }
 
     /// <summary>
@@ -236,7 +347,7 @@ public sealed partial class DamageText : CanvasLayer
     /// (@0x1419175c0): recover grades go to the followers, the others to the normals, the own numbers appended
     /// (bAppend = myDamage), the clip hidden until its first placement.
     /// </summary>
-    void Spawn(DamageTarget t, long value, int grade, bool casterMe)
+    void Spawn(DamageTarget t, long value, int grade, bool casterMe, int gem)
     {
         if (!WithinShowDistance(t)) return;
         var pos = t.Point();
@@ -244,18 +355,36 @@ public sealed partial class DamageText : CanvasLayer
         bool targetMe = t == self;
         bool mine = targetMe || casterMe;
         string target = DamageTextNames.TargetKindName(DamageTextNames.TargetKind(t.Pc), true);
-        string text = DamageTextNames.ValueText(value, grade);
-        var look = DamageLook.For(text, target, DamageTextNames.GradeName(grade), "", "", mine);
+        int len = DamageTextNames.ValueChars(value, grade, text);
+        string kind = DamageTextNames.ValueKind(grade);
+        // obj.gem: the id's text, which the factory finds only once the font is loaded (DamageTextCommon[key + gem])
+        string gemName = gem != 0 && FontLoaded(gem) ? fonts.Name(gem) : null;
+        var look = looks.Get(kind, target, DamageTextNames.GradeName(grade), gemName, mine);
         var o = GameOptions.Current;
         float scale = (o?.InterfaceOption?.DamageTextScaleStep ?? 100) / 100f, alpha = -1;
         int form = (o?.BattleOption ?? defaultBattle).OtherDamageForm;
         if (!mine && (form & 1) != 0) scale *= layout.OtherScale;    // diffScale
         if (!mine && (form & 2) != 0) alpha = layout.OtherAlpha;     // diffAlpha
-        var clip = Build(look, text, "", null, scale, alpha);
+        var clip = Build(look, text.AsSpan(0, len), DamageLook.IsNumber(kind), "", null, scale, alpha);
         if (clip == null) return;
-        var e = new Entry { Type = 0, Grade = grade, Owner = t, Mine = mine, Pos = pos, Clip = clip };
+        var e = NewEntry(clip, t, pos);
+        e.Type = 0; e.Grade = grade; e.Mine = mine;
         var list = DamageNumbers.IsRecover(grade) ? followers : normals;
         if (list.Insert(mine, e, layout.MaxList) is { } old) Drop(old);
+    }
+
+    Entry NewEntry(Clip clip, DamageTarget t, Vector3 pos)
+    {
+        if (entryPool.TryPop(out var e)) e.Reset();
+        else e = new Entry();
+        e.Clip = clip; e.Gen = clip.Gen; e.Owner = t; e.Pos = pos;
+        return e;
+    }
+
+    void Free(Entry e)
+    {
+        e.Clip = null; e.Owner = null;
+        entryPool.Push(e);
     }
 
     /// <summary>
@@ -268,15 +397,16 @@ public sealed partial class DamageText : CanvasLayer
         if (!DamageTextNames.GainShows(type, b.DisplayGetMeso, b.DisplayGetExp) || !WithinShowDistance(t)) return;
         var pos = type == 0 ? t.Body() : t.Point();
         if (camera.IsPositionBehind(pos)) return;
-        string text = DamageTextNames.GainValueText(value, type);
+        int len = DamageTextNames.GainValueChars(value, type, text);
         string target = DamageTextNames.TargetKindName(DamageTextNames.TargetKind(t.Pc), true);
         string grade = DamageTextNames.GainGradeName(type);
-        var look = type == 2 ? DamageLook.ForItem(text, target, grade) : DamageLook.For(text, target, grade);
-        var clip = Build(look, text, grade, iconPath, 1, -1);
+        var look = looks.Get("", target, grade, null, false, type == 2);
+        var clip = Build(look, text.AsSpan(0, len), true, grade, iconPath, 1, -1);
         // FUN_1419175c0 (@0x1419175c0) inserts only when the Invoke gave an object: a thrown DamageMovie init (no Exp glyph)
         // returns none, so no DamageInfo takes a list slot or lifts the others
         if (clip == null) return;
-        var e = new Entry { Type = 1, Grade = 1, Owner = t, Mine = t == self, Pos = pos, Clip = clip };
+        var e = NewEntry(clip, t, pos);
+        e.Type = 1; e.Grade = 1; e.Mine = t == self;
         if (normals.Insert(true, e, layout.MaxList) is { } old) Drop(old);
     }
 
@@ -285,59 +415,76 @@ public sealed partial class DamageText : CanvasLayer
         player != null && !t.Gone && (t == self || t.Root.GlobalPosition.DistanceTo(player.GlobalPosition) <= layout.ShowDistance);
 
     /// <summary>DamageTextFactory.damageText: the number (DamageMovie) and the ani with its slots filled.</summary>
-    Clip Build(DamageLook look, string text, string grade, string iconPath, float scale, float alpha)
+    Clip Build(DamageLook look, ReadOnlySpan<char> value, bool isNumber, string grade, string iconPath, float scale, float alpha)
     {
         if (look.Glyphs == null) return null;
-        var number = Number(look, text, grade, iconPath, out float h);     // the DamageMovie, made before the ani
+        // a gem font's arrays come from its movie (DamageTextCommon[key + gem]); the ani and the extra effect from this one
+        UiMovie glyphs = movie;
+        if (look.Font != null && !fontMovies.TryGetValue(look.Font, out glyphs)) return null;
+        var number = Number(look, glyphs, value, isNumber, grade, iconPath, out float h);     // the DamageMovie, made before the ani
         if (number == null) return null;
-        var a = movie.BuildClass(look.Ani.Class, u);
-        if (a == null) { number.Free(); return null; }
-        var clip = new Clip { Ani = a, Remove = look.Ani.Remove };
-        if (a.Direct("dummy1")?.Node is MovieClipNode copySlot)
+        var set = TakeAni(look.Ani.Class);
+        if (set == null) { FreeNum(number, epoch); return null; }
+        var clip = clipPool.TryPop(out var pooled) ? pooled : new Clip();
+        clip.Gone = false; clip.Frame = 0; clip.Age = 0; clip.Epoch = epoch;
+        clip.Set = set; clip.Ani = set.Ani; clip.Remove = look.Ani.Remove;
+        clip.Number = number;
+        if (set.Dummy1 != null)
         {
             // DamageMovie.copyFrom: the same glyphs at the same places
-            if (Number(look, text, grade, null, out _) is { } copy)
+            if (Number(look, glyphs, value, isNumber, grade, null, out _) is { } copy)
             {
-                if (alpha >= 0) copy.Modulate = new Color(1, 1, 1, alpha);
-                Fill(copySlot, copy);
+                copy.Node.Modulate = alpha >= 0 ? new Color(1, 1, 1, alpha) : Colors.White;
+                Fill(set.Dummy1, copy.Node);
+                clip.Copy = copy;
             }
         }
-        if (a.Direct("cridmy")?.Node is MovieClipNode critSlot)
+        if (set.Cridmy != null)
         {
-            if (look.CritText == null || movie.BuildClass(look.CritText, u) is not { } crit) { number.Free(); a.Free(); return null; }
-            critSlot.AddChild(crit);
+            if (look.CritText == null || Take(glyphs, look.CritText) is not { } crit) { Release(clip); return null; }
+            set.Cridmy.AddChild(crit);
+            clip.Parts.Add(new Part(glyphs, look.CritText, crit));
             clip.Loop1 = crit;
-            if (a.Direct("cridmy1")?.Node is MovieClipNode critSlot2 && movie.BuildClass(look.CritText, u) is { } crit2)
+            if (set.Cridmy1 != null && Take(glyphs, look.CritText) is { } crit2)
             {
-                critSlot2.AddChild(crit2);
+                set.Cridmy1.AddChild(crit2);
+                clip.Parts.Add(new Part(glyphs, look.CritText, crit2));
                 clip.Loop2 = crit2;
             }
         }
-        if (a.Direct("exeff") is { } exSlot)
+        if (set.ExSlot != null)
         {
-            if (look.ExEffect != null && exSlot.Node is MovieClipNode exNode && movie.BuildClass(look.ExEffect, u) is { } ex)
+            if (look.ExEffect != null && set.ExNode != null && Take(movie, look.ExEffect) is { } ex)
             {
-                exNode.AddChild(ex);
+                set.ExNode.AddChild(ex);
+                clip.Parts.Add(new Part(movie, look.ExEffect, ex));
                 clip.Loop3 = ex;
+                set.ExSlot.Hidden = false;
             }
-            else exSlot.Hidden = true;
+            else set.ExSlot.Hidden = true;
         }
-        if (a.Direct("mesoeff")?.Node is Node2D mesoeff && number.GetChildCount() > 0 && number.GetChild(0) is Node2D first)
+        if (set.MesoSlot != null)
         {
-            // damageText: mesoeff.x = (m_dmg.x + child 0's x) x 0.8, y = m_dmg.y + child 0's y
-            a.Direct("mesoeff").Override = new Transform2D(mesoeff.Rotation, mesoeff.Scale, mesoeff.Skew,
-                new Vector2((number.Position.X + first.Position.X) * 0.8f, number.Position.Y + first.Position.Y));
+            set.MesoSlot.Override = null;
+            if (set.Mesoeff != null && number.Parts.Count > 0 && number.Node.GetChildCount() > 0 && number.Node.GetChild(0) is Node2D first)
+            {
+                // damageText: mesoeff.x = (m_dmg.x + child 0's x) x 0.8, y = m_dmg.y + child 0's y
+                var me = set.Mesoeff;
+                set.MesoSlot.Override = new Transform2D(me.Rotation, me.Scale, me.Skew,
+                    new Vector2((number.Node.Position.X + first.Position.X) * 0.8f, number.Node.Position.Y + first.Position.Y));
+            }
         }
-        if (a.Direct("dummy")?.Node is MovieClipNode dummy) Fill(dummy, number);
-        else number.Free();
+        if (set.Dummy != null) Fill(set.Dummy, number.Node);
+        var a = set.Ani;
         a.Position = new Vector2(0, -h / 2);
         a.Scale = new Vector2(scale, scale);
-        if (alpha >= 0) a.Modulate = new Color(1, 1, 1, alpha);
-        var wrap = new Node2D { Name = "wrapper", Visible = false };   // created hidden, shown on its first placement
+        a.Modulate = alpha >= 0 ? new Color(1, 1, 1, alpha) : Colors.White;
+        var wrap = clip.Wrap;
+        wrap.Visible = false;              // hidden until its first placement
         wrap.AddChild(a);
         containers[look.Container].AddChild(wrap);
+        clip.Container = look.Container;
         a.GotoFrame(0);
-        clip.Wrap = wrap;
         clips.Add(clip);
         return clip;
     }
@@ -350,6 +497,88 @@ public sealed partial class DamageText : CanvasLayer
         slot.AddChild(number);
     }
 
+    /// <summary>A class of a movie at the current scale: one released before, else built. Null for a class not in it.</summary>
+    MovieClipNode Take(UiMovie m, string cls)
+    {
+        var key = (m, cls);
+        if (nodePool.TryGetValue(key, out var st) && st.TryPop(out var n))
+        {
+            n.GotoFrame(0);
+            return n;
+        }
+        if (missing.Contains(key)) return null;
+        n = m.BuildClass(cls, u);
+        if (n == null) missing.Add(key);
+        return n;
+    }
+
+    void Give(in Part p, int builtAt)
+    {
+        var n = p.Node;
+        n.GetParent()?.RemoveChild(n);
+        if (builtAt != epoch || (p.Movie != movie && !fontMovies.ContainsValue(p.Movie))) { n.Free(); return; }
+        n.Position = Vector2.Zero;
+        var key = (p.Movie, p.Class);
+        if (!nodePool.TryGetValue(key, out var st)) nodePool[key] = st = new Stack<MovieClipNode>();
+        st.Push(n);
+    }
+
+    AniSet TakeAni(string cls)
+    {
+        if (aniPool.TryGetValue(cls, out var st) && st.TryPop(out var set)) return set;
+        if (movie.BuildClass(cls, u) is not { } a) return null;
+        set = new AniSet { Ani = a, Class = cls, Epoch = epoch };
+        set.Dummy = a.Direct("dummy")?.Node as MovieClipNode;
+        set.Dummy1 = a.Direct("dummy1")?.Node as MovieClipNode;
+        set.Cridmy = a.Direct("cridmy")?.Node as MovieClipNode;
+        set.Cridmy1 = a.Direct("cridmy1")?.Node as MovieClipNode;
+        set.ExSlot = a.Direct("exeff");
+        set.ExNode = set.ExSlot?.Node as MovieClipNode;
+        set.MesoSlot = a.Direct("mesoeff");
+        set.Mesoeff = set.MesoSlot?.Node;
+        return set;
+    }
+
+    /// <summary>
+    /// The clip's nodes back to their pools (or freed when built at an old scale): its numbers, critical texts and extra
+    /// effect out of their slots, the ani out of its wrapper and the wrapper out of its container. Run once a killed clip
+    /// leaves the clip list, so a clip is never released twice.
+    /// </summary>
+    void Release(Clip c)
+    {
+        foreach (var p in c.Parts) Give(p, c.Epoch);
+        c.Parts.Clear();
+        if (c.Number != null) { FreeNum(c.Number, c.Epoch); c.Number = null; }
+        if (c.Copy != null) { FreeNum(c.Copy, c.Epoch); c.Copy = null; }
+        c.Loop1 = c.Loop2 = c.Loop3 = null;
+        if (c.Set != null)
+        {
+            var set = c.Set;
+            if (set.Ani.GetParent() == c.Wrap) c.Wrap.RemoveChild(set.Ani);
+            if (set.Epoch != epoch) set.Ani.Free();
+            else
+            {
+                if (!aniPool.TryGetValue(set.Class, out var st)) aniPool[set.Class] = st = new Stack<AniSet>();
+                st.Push(set);
+            }
+            c.Set = null; c.Ani = null;
+        }
+        if (c.Container >= 0) { containers[c.Container].RemoveChild(c.Wrap); c.Container = -1; }
+        c.Wrap.Visible = false;
+        c.Gen++;
+        clipPool.Push(c);
+    }
+
+    void FreeNum(Num n, int builtAt)
+    {
+        foreach (var p in n.Parts) Give(p, builtAt);
+        n.Parts.Clear();
+        if (n.Icon != null) { n.Icon.Free(); n.Icon = null; }
+        n.Node.GetParent()?.RemoveChild(n.Node);
+        n.Node.Modulate = Colors.White;
+        numPool.Push(n);
+    }
+
     /// <summary>
     /// DamageMovie.init: numberText for a number, else the one image glyph (Miss, Block); centred on its bounds. numberText
     /// starts at getStartPosX / getStartPosY (the Item icon's width - 10 and (height - 24) x 0.5), puts preGradeText's Exp
@@ -358,21 +587,24 @@ public sealed partial class DamageText : CanvasLayer
     /// "+" (child 0) is moved to the text's length - 1. The pcBang glyphs are never made (FUN_141914490 returns 0).
     /// Null when an exp number's Exp glyph is not in the movie (the init throws).
     /// </summary>
-    Node2D Number(DamageLook look, string text, string grade, string iconPath, out float h)
+    Num Number(DamageLook look, UiMovie m, ReadOnlySpan<char> value, bool isNumber, string grade, string iconPath, out float h)
     {
-        var number = new Node2D { Name = "m_dmg" };
+        var num = numPool.TryPop(out var pooled) ? pooled : new Num();
+        var number = num.Node;
         float x = 0, y = 0;
         h = 0;
         MovieClipNode icon = grade == DamageTextNames.Item ? ItemIcon(iconPath) : null;
+        num.Icon = icon;
         if (icon != null)
         {
             float iw = icon.Bounds.Size.X * icon.Scale.X, ih = icon.Bounds.Size.Y * icon.Scale.Y;
             x = iw - 10;
             y = (ih - 24) * 0.5f;
         }
-        if (!DamageLook.IsNumber(text))
+        if (!isNumber)
         {
-            if (movie.BuildClass(look.Glyphs + text, u) is { } g) { number.AddChild(g); h = g.Bounds.End.Y; }
+            int key = value.SequenceEqual(DamageTextNames.Miss.AsSpan()) ? DamageLook.MissKey : DamageLook.BlockKey;
+            if (Add(num, m, look.Glyph(key)) is { } g) h = g.Bounds.End.Y;
         }
         else
         {
@@ -380,37 +612,43 @@ public sealed partial class DamageText : CanvasLayer
             {
                 // preGradeText reads the Exp glyph's x and width without a test: initImageText's ExpExp class is in
                 // neither the KR Live nor the restore movie, so the DamageMovie's init throws and damageText adds nothing
-                if (movie.BuildClass(look.Glyphs + DamageTextNames.Exp, u) is not { } exp) { number.Free(); return null; }
+                if (Add(num, m, look.Glyph(DamageLook.ExpKey)) is not { } exp) { FreeNum(num, epoch); return null; }
                 exp.Position = new Vector2(x, 0);
-                number.AddChild(exp);
                 x = exp.Position.X + exp.Bounds.Size.X - 2;
                 h = Math.Max(h, exp.Bounds.End.Y);
             }
-            foreach (char ch in text)
+            foreach (char ch in value)
             {
-                string key = DamageLook.GlyphKey(ch);
-                if (key == null || movie.BuildClass(look.Glyphs + key, u) is not { } g) continue;
+                int key = DamageLook.GlyphIndex(ch);
+                if (key < 0 || Add(num, m, look.Glyph(key)) is not { } g) continue;
                 g.Position = new Vector2(x, y);
-                number.AddChild(g);
-                x += g.Bounds.End.X + (char.IsDigit(ch) ? look.NumberSpacing : look.SignSpacing);
+                x += g.Bounds.End.X + (key < 10 ? look.NumberSpacing : look.SignSpacing);
                 h = Math.Max(h, y + g.Bounds.End.Y);
             }
-            if (grade == DamageTextNames.Meso && movie.BuildClass(look.Glyphs + DamageTextNames.Meso, u) is { } meso)
+            if (grade == DamageTextNames.Meso && Add(num, m, look.Glyph(DamageLook.MesoKey)) is { } meso)
             {
                 meso.Position = new Vector2(x - look.NumberSpacing - 2, 0);
-                number.AddChild(meso);
                 number.MoveChild(meso, 0);
                 h = Math.Max(h, meso.Bounds.End.Y);
             }
             if (icon != null) { number.AddChild(icon); h = Math.Max(h, icon.Position.Y + icon.Bounds.End.Y * icon.Scale.Y); }
-            if (text.Length > 0 && text[0] == '+' && number.GetChildCount() > 0)
-                number.MoveChild(number.GetChild(0), Math.Min(text.Length - 1, number.GetChildCount() - 1));
+            if (value.Length > 0 && value[0] == '+' && number.GetChildCount() > 0)
+                number.MoveChild(number.GetChild(0), Math.Min(value.Length - 1, number.GetChildCount() - 1));
         }
         float w = 0;
-        for (int i = 0; i < number.GetChildCount(); i++)      // by index: GetChildren() is a tracked array per call
-            if (number.GetChild(i) is MovieClipNode g) w = Math.Max(w, g.Position.X + g.Bounds.End.X * g.Scale.X);
+        foreach (var p in num.Parts) { var g = p.Node; w = Math.Max(w, g.Position.X + g.Bounds.End.X * g.Scale.X); }
+        if (icon != null) w = Math.Max(w, icon.Position.X + icon.Bounds.End.X * icon.Scale.X);
         number.Position = new Vector2(-w / 2, -h / 2);
-        return number;
+        return num;
+    }
+
+    /// <summary>A glyph of the class added to the number (and tracked), null when the class is not in the movie.</summary>
+    MovieClipNode Add(Num num, UiMovie m, string cls)
+    {
+        if (cls == null || Take(m, cls) is not { } g) return null;
+        num.Node.AddChild(g);
+        num.Parts.Add(new Part(m, cls, g));
+        return g;
     }
 
     /// <summary>
@@ -449,14 +687,16 @@ public sealed partial class DamageText : CanvasLayer
     /// <summary>A number leaves its list: the DamageInfo dtor stops a number not jumped and removes its clip.</summary>
     void Drop(Entry e)
     {
-        if (e.RemovesClipOnDrop) Kill(e.Clip);
+        if (e.RemovesClipOnDrop && e.Live) Kill(e.Clip);
+        Free(e);
     }
 
-    void Kill(Clip c)
+    /// <summary>The clip removed from the stage: hidden now, its nodes released when it leaves the clip list.</summary>
+    static void Kill(Clip c)
     {
         if (c.Gone) return;
         c.Gone = true;
-        c.Wrap.QueueFree();
+        c.Wrap.Visible = false;
     }
 
     public override void _Process(double delta)
@@ -485,6 +725,7 @@ public sealed partial class DamageText : CanvasLayer
                 }
             }
             if (!c.Gone) clips[kept++] = c;
+            else Release(c);
         }
         if (kept < clips.Count) clips.RemoveRange(kept, clips.Count - kept);
         // FUN_141916340 before the updates: one queued gain each 200 ms; a target gone drops it without a new wait
@@ -496,7 +737,16 @@ public sealed partial class DamageText : CanvasLayer
         uint now = (uint)clock + 1;     // 0 is DamageInfo's "not started"
         UpdateFollowers(now);
         UpdateNormals(now);
-        if (normals.Count == 0 && followers.Count == 0 && targets.Count > 0) targets.Clear();
+        if (normals.Count == 0 && followers.Count == 0 && targets.Count > 0) PruneTargets();
+    }
+
+    /// <summary>The targets whose root is gone leave the map; the others keep their anchors for the next hit.</summary>
+    void PruneTargets()
+    {
+        foreach (var (root, t) in targets) if (t.Gone) goneTargets.Add(root);
+        if (goneTargets.Count == 0) return;
+        foreach (var r in goneTargets) targets.Remove(r);
+        goneTargets.Clear();
     }
 
     static void Loop(MovieClipNode m, double age)
@@ -534,13 +784,13 @@ public sealed partial class DamageText : CanvasLayer
                         stage.Y -= lift * u;
                         if (jump) Jump(e);
                         stage.Y += PitchShift(e.Pos) * u;
-                        Show(e.Clip, stage, DistanceScale(e.Pos));
+                        if (e.Live) Show(e.Clip, stage, DistanceScale(e.Pos));
                     }
                 }
                 else if (e.State == 0)
                 {
                     e.State = 3;
-                    if (!e.Clip.Gone) e.Clip.Wrap.Visible = false;
+                    if (e.Live) e.Clip.Wrap.Visible = false;
                     e.CanJump = false;
                 }
             }
@@ -572,19 +822,19 @@ public sealed partial class DamageText : CanvasLayer
                     e.Begin(now);
                     if (!WithinShowDistance(t))
                     {
-                        if (!e.Clip.Gone) e.Clip.Wrap.Visible = false;
+                        if (e.Live) e.Clip.Wrap.Visible = false;
                         remove = true;
                     }
                     else
                     {
                         var p = t.Point();
-                        if (camera.IsPositionBehind(p)) { if (!e.Clip.Gone) e.Clip.Wrap.Visible = false; }
+                        if (camera.IsPositionBehind(p)) { if (e.Live) e.Clip.Wrap.Visible = false; }
                         else
                         {
                             var stage = camera.UnprojectPosition(p);
                             if (followers.TryCounter(e.Owner, out var c) && c.Index - e.Index > 0 && e.MayJump) Jump(e);
                             stage.Y += PitchShift(p) * u;            // GetHeightOffset; + PCBase::m_f178 = OffsetPcDamagenumber, 0
-                            Show(e.Clip, stage, t == self ? 1 : DistanceScale(t.Root.GlobalPosition));
+                            if (e.Live) Show(e.Clip, stage, t == self ? 1 : DistanceScale(t.Root.GlobalPosition));
                         }
                     }
                 }
@@ -606,7 +856,7 @@ public sealed partial class DamageText : CanvasLayer
     /// <summary>gotoAndPlay("_next") on the ani (a no-op on an ani without that label: the clip plays on), state 1, no more jumping.</summary>
     void Jump(Entry e)
     {
-        if (!e.Clip.Gone && e.Clip.Ani.Labels.TryGetValue("_next", out int f)) e.Clip.Frame = f;
+        if (e.Live && e.Clip.Ani.Labels.TryGetValue("_next", out int f)) e.Clip.Frame = f;
         e.State = 1;
         e.CanJump = false;
     }

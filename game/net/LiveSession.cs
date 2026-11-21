@@ -122,6 +122,11 @@ public partial class LiveSession : Node
     public event Action<short> GemEquipError;
     /// <summary>OnBadgeEquip modes 0 and 1, for any PC of the field (the own one included): a gem put on or taken off.</summary>
     public event Action<BadgeEquipMessage> BadgeEquipped;
+    /// <summary>A PC's battle stance changed (OnUserBattle, scenestategame.cpp:3269-3288, on a change: PC::vfunc_66), the own one
+    /// included: the object id and the new stance.</summary>
+    public event Action<int, bool> BattleStanceChanged;
+    /// <summary>A PC's battle stance (PCBase::vfunc_65): the own one's or a shown remote one's.</summary>
+    public bool InBattle(int objectId) => objectId == selfObject ? SelfInBattle : remote?.InBattle(objectId) ?? false;
     /// <summary>OnTaxi, after its ids joined the found-taxi list (<see cref="StubHudData.FoundTaxis"/>).</summary>
     public event Action<Ms2.Net.Packets.TaxiFound> TaxiFound;
     /// <summary>OnNotice (0x71, scenestategame.cpp:9216): a system notice, routed by <see cref="Ms2.Ui.Hud.NoticeController"/>.</summary>
@@ -771,6 +776,7 @@ public partial class LiveSession : Node
         remote.Tracker.Profile = game.Profile;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
+        remote.BattleStanceChanged = (id, on) => BattleStanceChanged?.Invoke(id, on);
         var kinds = Kinds();
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
@@ -995,8 +1001,10 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject)
             {
                 // CSceneStateGame::OnUserBattle (@0x141717580, scenestategame.cpp:3269-3288): SetEmotion(nEmotion)
+                bool was = SelfInBattle;
                 SelfInBattle = p.Body[4] != 0;
                 player?.SetBattleStance(SelfInBattle);
+                if (was != SelfInBattle) BattleStanceChanged?.Invoke(selfObject, SelfInBattle);   // SetEmotion's change guard (pcbase.cpp:1268)
             }
             else if (game.Is(p, Inbound.Buff))
             {

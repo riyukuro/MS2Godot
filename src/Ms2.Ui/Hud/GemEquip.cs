@@ -91,6 +91,9 @@ public sealed class GemEquip
     /// <summary>FUN_141270740(type) != 0: a gem of the type is worn and usable.</summary>
     public bool Worn(int type) => items.TryGetValue(type, out var g) && CanUse(g);
 
+    /// <summary>FUN_141270740(type)'s gem id (CGemBase::GetGemId): 0 when no gem of the type is worn and usable.</summary>
+    public int WornGemId(int type) => items.TryGetValue(type, out var g) && CanUse(g) ? g.GemId : 0;
+
     /// <summary>FUN_1412712e0: applied when usable and the field has the gem system.</summary>
     void ApplySlot(int type)
     {

@@ -347,6 +347,8 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 // PCGemEquip::ReadFromStream of the PC's packet, then FUN_141270610 at its model's load (PC::vfunc_12)
                 x.Gems.Set((v.Gems ?? Array.Empty<Ms2.Net.Packets.EquipItem>()).Select(g => ((int)g.GemType, new GemEquip.Gem(g.Id, g.GemId) { Record = g })));  // perf-ok: once per PC balloon made, not per frame
                 x.Gems.ApplyAll();
+                // MyPC::vfunc_12 (mypc.cpp:1013-1024): the own model's load loads its type 2 gem's damage font
+                if (v.Me && x.Gems.WornGemId(2) is var gem and not 0) DamageFontAsked?.Invoke(gem);
             }
             x.Name = v.Name; x.Root = v.Root; x.Anchor = v.Anchor;
             x.Balloon.ProfileImage = Ms2Godot.Net.ProfileImageService.Images.Path(v.Char, v.Picture, true);
@@ -374,14 +376,38 @@ public sealed partial class NpcEmoticons : CanvasLayer
     {
         SyncPcs();
         if (!pcs.TryGetValue(b.ObjectId, out var x)) return;
-        if (b.Mode == 0 && b.Item is { GemType: not 0 } it) x.Gems.Equip(it.GemType, new GemEquip.Gem(it.Id, it.GemId) { Record = it });
+        if (b.Mode == 0 && b.Item is { GemType: not 0 } it)
+        {
+            x.Gems.Equip(it.GemType, new GemEquip.Gem(it.Id, it.GemId) { Record = it });
+            // scenestategame.cpp:11031-11039: a type 2 gem (vfunc_1() == 2) of a PC in battle or of the own one loads its
+            // damage font (GFxMovieDamage::LoadDamageFont), with no CanUse test
+            if (it.GemType == 2 && (x.Balloon.IsMyPc || (Ms2Godot.Net.LiveSession.Instance?.InBattle(b.ObjectId) ?? false)))
+                DamageFontAsked?.Invoke(it.GemId);
+        }
         else if (b.Mode == 1) x.Gems.Remove(b.GemType);
+    }
+
+    /// <summary>
+    /// GFxMovieDamage::LoadDamageFont's callers outside the damage text, with the gem font id: the own PC's model load
+    /// (MyPC::vfunc_12, mypc.cpp:1013-1024), a type 2 gem put on (OnBadgeEquip) and a PC going into battle (PC::vfunc_66,
+    /// pc.cpp:1236-1259), the last two for any PC of the field.
+    /// </summary>
+    public static event Action<int> DamageFontAsked;
+
+    /// <summary>FUN_141270740(type)'s gem id of a PC of the field (<see cref="GemEquip.WornGemId"/>); 0 for no gem or no such
+    /// PC (an npc caster).</summary>
+    public int WornGemId(int objectId, int type) => pcs.TryGetValue(objectId, out var x) ? x.Gems.WornGemId(type) : 0;
+
+    /// <summary>PC::vfunc_66(n) (pc.cpp:1236-1259): going into battle (n == 1) with a usable type 2 gem loads its font.</summary>
+    void OnBattleStance(int objectId, bool on)
+    {
+        if (on && WornGemId(objectId, 2) is var gem and not 0) DamageFontAsked?.Invoke(gem);
     }
 
     public override void _EnterTree()
     {
         if (talk != null) { talk.NpcNameTag += OnNameTag; talk.TalkPageShown += OnTalkPage; talk.SpecialNpcBalloon += OnSpecialNpcBalloon; }
-        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) ls.BadgeEquipped += OnBadgeEquip;
+        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) { ls.BadgeEquipped += OnBadgeEquip; ls.BattleStanceChanged += OnBattleStance; }
         if (live) Live = this;
         sizeSource = GetViewport();
         sizeSource.SizeChanged += Relayout;
@@ -391,7 +417,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
     public override void _ExitTree()
     {
         if (talk != null) { talk.NpcNameTag -= OnNameTag; talk.TalkPageShown -= OnTalkPage; talk.SpecialNpcBalloon -= OnSpecialNpcBalloon; }
-        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) ls.BadgeEquipped -= OnBadgeEquip;
+        if (live && Ms2Godot.Net.LiveSession.Instance is { } ls) { ls.BadgeEquipped -= OnBadgeEquip; ls.BattleStanceChanged -= OnBattleStance; }
         if (sizeSource != null) { sizeSource.SizeChanged -= Relayout; sizeSource = null; }
         if (Live == this) Live = null;
     }

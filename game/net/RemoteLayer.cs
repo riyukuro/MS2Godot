@@ -185,6 +185,11 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>A damage number to show (UIDamageText::FUN_141911e90): the number, the npc hit (null when the target is
     /// not an npc) and the other player hit (null when the target is not one).</summary>
     public Action<Ms2.Ui.Hud.DamageNumber, World.FieldNpcs.Placed, Ui.DamageTarget> Numbered;
+    /// <summary>A PC's battle stance changed (OnUserBattle -> PC::vfunc_66, after SetEmotion's change guard).</summary>
+    public Action<int, bool> BattleStanceChanged;
+
+    /// <summary>The PC's battle stance (vfunc_65, m_unk_160); false for an object not shown.</summary>
+    public bool InBattle(int objectId) => users.TryGetValue(objectId, out var r) && r.InBattle;
     readonly List<Ms2.Ui.Hud.DamageNumber> numbers = new();
     Func<int, int> pcMask;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
@@ -438,6 +443,7 @@ public sealed partial class RemoteLayer : Node3D
                     sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test
                     RefreshWeapons(sb);
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
+                    BattleStanceChanged?.Invoke(bat.ObjectId, sb.InBattle);
                     break;
                 case UserStateEvent us:
                     // OnUserState (scenestategame.cpp:5759-5771): vfunc_59(state) twice, or vfunc_137 after state 12
