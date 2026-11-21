@@ -59,3 +59,17 @@ static class MailIds {
         foreach (var id in ids) w.WriteLong(id);
     }
 }
+
+/// <summary>UIMailSendDialog::OnSend (@0x1419ed1c0, uimaillistdialog.cpp:1569): the mail send (u8 1, then the receiver, the
+/// title and the content as UnicodeStrings, FUN_1401fc2a0). The receiver is sent trimmed. The server reads at most 24, 100
+/// and 2000 characters (FUN_1401fc330).</summary>
+public sealed record MailSendRequest(string Receiver, string Title, string Content) : IOutPacket {
+    public const int TitleMax = 100, ContentMax = 2000;
+    public Outbound Op => Outbound.Mail;
+    public void Write(ByteWriter w) {
+        w.WriteByte(1);
+        w.WriteUnicodeString((Receiver ?? "").Trim());
+        w.WriteUnicodeString(Title ?? "");
+        w.WriteUnicodeString(Content ?? "");
+    }
+}

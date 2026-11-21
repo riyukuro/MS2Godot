@@ -10,7 +10,7 @@ namespace Ms2Godot.Ui;
 /// The mail list: UIMailListDialog (0x4e49, movie uimaillistdialog) over CUserMail's mails. Live, the book is the session's
 /// (the Mail packets, 0x54) and its sends go out (Mail 0x2D: the list, read, take and delete requests). Offline, an empty book,
 /// and the sends are logged. The C++ side is kept between opens, as the client keeps the dialog (its page and check marks are
-/// reset at each load). The send dialog (0x4e4a), the sender popup (0x4e39) and the ad bill (0x4f17) are not in this HUD:
+/// reset at each load). The sender popup (0x4e39) and the ad bill (0x4f17) are not in this HUD:
 /// their requests are logged (STILL-OPEN).
 /// </summary>
 public partial class HudScene
@@ -84,7 +84,8 @@ public partial class HudScene
         void Read(long id) { if (MailOpen) mail.OnReadMail(id); }
         void Refresh() { if (MailOpen) mail.RequestRefresh(); }
         void Count() => gameMenu?.UpdateNotifyCount(0x4e49);
-        void Sent() => GD.Print("mail: sent (the send dialog 0x4e4a is not in this HUD)");
+        void Sent() { if (MailSendOpen) mailSend.Close(); }
+        void SendError(int code) { if (MailSendOpen) mailSend.OnMailError(code); }
         void Gift(Ms2.Net.Packets.MailMessage.Gift g) => GD.Print($"mail: gift from {g.Sender} (the gift dialog 0x4e5e is not in this HUD)");
         book.Notice += Notice;
         book.ChatLine += Chat;
@@ -94,11 +95,12 @@ public partial class HudScene
         book.RefreshRequested += Refresh;
         book.MenuCount += Count;
         book.Sent += Sent;
+        book.ErrorCode += SendError;
         book.GiftReceived += Gift;
         unwatchMails = () =>
         {
             book.Notice -= Notice; book.ChatLine -= Chat; book.Box -= Box; book.Sound -= Sound; book.ReadMail -= Read;
-            book.RefreshRequested -= Refresh; book.MenuCount -= Count; book.Sent -= Sent; book.GiftReceived -= Gift;
+            book.RefreshRequested -= Refresh; book.MenuCount -= Count; book.Sent -= Sent; book.ErrorCode -= SendError; book.GiftReceived -= Gift;
             live.MailListOpen = () => false;
             mailsWatched = false;
         };
@@ -149,8 +151,8 @@ public partial class HudScene
                 },
             };
             c.SystemNotice += text => SystemNoticeText(text);
-            c.SendRequested += () => GD.Print("mail: the send dialog (0x4e4a) is not in this HUD");
-            c.ReplyRequested += m => GD.Print($"mail: reply to {m.Sender} (the send dialog 0x4e4a is not in this HUD)");
+            c.SendRequested += () => { if (!MailSendOpen) OpenMailSend(null); };
+            c.ReplyRequested += m => ToggleMailSend(m);
             c.SenderMenuRequested += (name, x, y) => GD.Print($"mail: sender menu for {name} (0x4e39 is not in this HUD)");
             c.BuyAdRequested += m => GD.Print($"mail: buy ad {m.Id} (the bill 0x4f17 is not in this HUD)");
             c.Unloaded += () => { mailMovie?.Host.Unload(); mailMovie?.QueueFree(); mailMovie = null; };

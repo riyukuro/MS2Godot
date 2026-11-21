@@ -22,6 +22,18 @@ public class MailPacketTests {
         Assert.That(Bytes(new MailCollectListRequest(Array.Empty<long>())), Is.EqualTo(new byte[] { 0x13, 0, 0, 0, 0 }));
     }
 
+    [Test]
+    public void TheSendWritesModeOneAndThreeUnicodeStrings() {
+        var p = new MailSendRequest("  Ann ", "Hi", "Body");
+        Assert.That(p.Op, Is.EqualTo(Outbound.Mail));
+        // u8 1, then each string as an i16 length and UTF-16LE (the receiver trimmed)
+        Assert.That(Bytes(p), Is.EqualTo(new byte[] {
+            1, 3, 0, (byte)'A', 0, (byte)'n', 0, (byte)'n', 0, 2, 0, (byte)'H', 0, (byte)'i', 0, 4, 0, (byte)'B', 0, (byte)'o', 0, (byte)'d', 0, (byte)'y', 0 }));
+        Assert.That(Bytes(new MailSendRequest("", "", "")), Is.EqualTo(new byte[] { 1, 0, 0, 0, 0, 0, 0 }));
+        Assert.That(MailSendRequest.TitleMax, Is.EqualTo(100));
+        Assert.That(MailSendRequest.ContentMax, Is.EqualTo(2000));
+    }
+
     static void WriteMail(ByteWriter w, byte kind, long id, string sender, string title) {
         w.WriteByte(kind); w.WriteLong(id); w.WriteLong(77);
         w.WriteUnicodeString(sender); w.WriteUnicodeString(title); w.WriteUnicodeString("body");

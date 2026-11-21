@@ -293,6 +293,11 @@ public sealed class BanTextChecker
     public int CheckGuildName(string name, int min, int max, out string message) =>
         Check(name, (Checks)0xd9, new Limit(min, max, true, false, false, false, true), out message);
 
+    /// <summary>CBanTextChecker::CheckMailTitleText (@0x140225c90) and CheckContentText (@0x140225de0): CheckTypes(0xd8, true),
+    /// the same tables as the club name; the mail send dialog's checks.</summary>
+    public int CheckMailTitleText(string title, out string message) => Check(title, (Checks)0xd8, default, out message);
+    public int CheckContentText(string content, out string message) => Check(content, (Checks)0xd8, default, out message);
+
     /// <summary>CBanTextChecker::CheckBuddyMemo (@0x140226220, commonstringtable.cpp:964): CheckTypes(0xd8, true), the same
     /// tables as the club name; the friend dialogs' block memo.</summary>
     public int CheckBuddyMemo(string memo, out string message) => Check(memo, (Checks)0xd8, default, out message);

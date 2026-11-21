@@ -56,6 +56,8 @@ public sealed class MailBook
     public event Action RefreshRequested;
     /// <summary>Mode 1 (the mail was sent): the draft reset and the send dialog's close (STILL-OPEN, no send dialog).</summary>
     public event Action Sent;
+    /// <summary>Mode 0x14's error code, before its notice: the send dialog's selectRecvName test (UIMailSendDialog::vfunc_79).</summary>
+    public event Action<int> ErrorCode;
     /// <summary>Mode 0x16 with no tutorial, after the notice: the gift dialog (0x4e5e, STILL-OPEN).</summary>
     public event Action<MailMessage.Gift> GiftReceived;
     /// <summary>The game menu's FUN_141937e40(mode) at the end of OnMail: FUN_141938ae0(0x4e49, 0).</summary>
@@ -210,6 +212,7 @@ public sealed class MailBook
                 }
                 break;
             case MailMessage.Error e:
+                ErrorCode?.Invoke(e.Code);
                 OnError(e.Type, e.Code);
                 break;
         }

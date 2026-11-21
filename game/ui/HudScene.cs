@@ -524,7 +524,7 @@ public partial class HudScene : Node, IUiStageHost
     /// dialogs, the quest log.</summary>
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false
-                                    || AchieveOpen || MailOpen || PcInfoOpen
+                                    || AchieveOpen || MailOpen || MailSendOpen || PcInfoOpen
                                     || CommunityOpen || CommunityQueryOpen || KeySettingSelectOpen;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
@@ -537,6 +537,7 @@ public partial class HudScene : Node, IUiStageHost
         if (myInfo?.IsClosed == false) myInfo.Close();
         if (AchieveOpen) achieve.Close();
         if (MailOpen) mail.Close();
+        if (MailSendOpen) mailSend.Close();
         if (PcInfoOpen) pcInfo.Close();
         if (CommunityQueryOpen) communityQuery.Close();
         if (CommunityOpen) community.Close();
@@ -1487,6 +1488,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
+        if (MailSendKeys(k)) return true;
         if (MailKeys(k)) return true;
         if (TradeKeys(k)) return true;
         if (StoreKeys(k)) return true;
@@ -3273,6 +3275,7 @@ public partial class HudScene : Node, IUiStageHost
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
         StoreTick();                         // UIStoreDialog::vfunc_15
+        MailSendTick();
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
         RevivalTick();                       // UIRevivalDialog::vfunc_72 and its open on the own death
         BlackMarketTick();                   // UIBlackMarketDialog::vfunc_15
@@ -3287,6 +3290,7 @@ public partial class HudScene : Node, IUiStageHost
         if (questShot != null && frames == 230 && questShot.Length > 2) ClickQuest(questShot[2]);
         if (sysmenuShot >= 0 && frames == 200) Escape();
         if (worldMapShot >= 0 && frames == 200) ToggleWorldMap();
+        if (openShot == "mailsend" && frames == 200) OpenMailSendShot();
         if (openShot == "inventory" && frames == 200) ToggleInventory();
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
