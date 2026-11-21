@@ -62,7 +62,8 @@ public class PackReadTests
                 byte[] want;
                 try { want = reader.GetBytes(entry); }
                 catch (Exception) { skip++; continue; }   // the package cannot read it either (no baseline to compare)
-                if (!packs.Read(archive, name).AsSpan().SequenceEqual(want)) { failures.Add($"{archive}: {name}"); break; }
+                var got = packs.Read(archive, name);
+                if (got == null || !got.AsSpan().SequenceEqual(want)) { failures.Add($"{archive}: {name}"); break; }
                 done++;
             }
             Interlocked.Add(ref total, done);

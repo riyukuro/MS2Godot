@@ -45,6 +45,14 @@ public class As3EquivalenceTests
     [OneTimeSetUp]
     public void Build()
     {
+        // the translated bodies are registered for every movie: no parallel fixture may open one until they are removed again
+        Ms2Godot.Tests.ExclusiveFixturesAttribute.Hold();
+        try { Build1(); }
+        catch { Ms2Godot.Tests.ExclusiveFixturesAttribute.Unhold(); throw; }
+    }
+
+    void Build1()
+    {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
         packs = new PackSet(d);
@@ -75,6 +83,7 @@ public class As3EquivalenceTests
         NativeMethod.Observer = null; Interp.OnCall = null; Interp.UseOracle = false;
         build = null; tables = null; src = null; packs = null;
         GC.Collect();
+        Ms2Godot.Tests.ExclusiveFixturesAttribute.Unhold();
     }
 
     // ---- the trace ---------------------------------------------------------------------------------------------

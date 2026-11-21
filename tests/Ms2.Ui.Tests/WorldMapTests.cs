@@ -10,6 +10,7 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>The world map: WorldMapManager's tile order (synthetic tiles) and uiworldmapdialog run by its own ActionScript
 /// with UIWorldMapDialog's C++ side (needs MS2_DATA).</summary>
+[NonParallelizable]   // sets UiHost.Tooltips, which every UiHost movie reads
 public class WorldMapTests
 {
     static WorldMapTable.Tile T(int type, int x, int y, int z, int size = 1) => new() { TileType = type, X = x, Y = y, Z = z, Size = size };
