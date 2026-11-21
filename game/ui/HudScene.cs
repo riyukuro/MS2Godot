@@ -2218,11 +2218,26 @@ public partial class HudScene : Node, IUiStageHost
         feed.OnCurrencyToken(new Ms2.Net.Packets.CurrencyTokenUpdate(5, 1990, 150, 0, 40));
     }
 
-    /// <summary>OnSmartPush (:7335): a mode other than 1 without a position shows its string as a centre notice (FUN_141275260);
-    /// the marker and list modes need the smart push UI, which is not ported.</summary>
+    SmartPushNotices smartPushNotices;
+
+    SmartPushNotices SmartPushNotices => smartPushNotices ??= new SmartPushNotices(
+        hudModel.Tables.SmartPush, key => hudModel.Tables.Common(key) ?? "",
+        (id, level) => hudModel.Tables.AdditionalDescription((uint)id, level, "name") ?? "")
+    {
+        SystemNotice = SystemNoticeText,
+        ShowBox = MessageBoxQueue.Show,
+        ChargeFeature = () => hudModel?.IsFeatureEnabled(0xc2) == true,
+        SendAnswer = (id, n1c, accept) => Ms2Godot.Net.LiveSession.Instance?.SendTalk(new Ms2.Net.Packets.SmartPushAnswer(id, n1c, accept)),
+        // STILL-OPEN: the charge page (a web page) is not drawn
+        ChargeRequested = _ => { },
+    };
+
+    /// <summary>OnSmartPush (:7335): a position (id, value) goes to the push with that id (FUN_140dd86a0, vfunc_4); mode 1 asks
+    /// about the lack of merat (ShowLackMeratAsk); another mode shows its string as a centre notice (FUN_141275260).</summary>
     void OnSmartPush(Ms2.Net.Packets.SmartPushMessage m)
     {
-        if (m.Positional || m.Mode == 1) return;
+        if (m.Positional) { SmartPushNotices.OnPositional(m.X, m.Y); return; }
+        if (m.Mode == 1) { SmartPushNotices.ShowLackMeratAsk(); return; }
         string text = hudModel.Tables.Common(m.StringId);
         if (!string.IsNullOrEmpty(text)) SystemNoticeText(text);
     }

@@ -769,6 +769,10 @@ public sealed class GameTables
     /// <summary>CTitleTable's tags (Table/titleTag.xml), read on first use.</summary>
     public TitleTags TitleTags => titleTags ??= packs == null ? TitleTags.Empty
         : new TitleTags(Xml("table/titletag.xml"), e => FeatureElements.IsAvailable(packs, e));
+    Hud.SmartPushTable smartPush;
+    /// <summary>CSmartPushTable (Table/smartPush.xml), read on first use.</summary>
+    public Hud.SmartPushTable SmartPush => smartPush ??= packs == null ? Hud.SmartPushTable.Empty
+        : new Hud.SmartPushTable(Xml("table/smartpush.xml"), e => FeatureElements.IsAvailable(packs, e));
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>
