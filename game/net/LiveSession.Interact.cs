@@ -76,14 +76,14 @@ public partial class LiveSession
             GD.Print($"live: InteractObject mode {m.Mode} name '{m.Name}' kind {m.Kind} state {m.State} result {m.Result}");
     }
 
-    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), mode 0x12 (:10176-10192): error 0 lets the
-    /// pc's held item go (FindPCById, then PC::FUN_14165f1f0(0, 0)). STILL-OPEN: the other modes, and the build notice
-    /// (ShowBuildNotice) an error shows to its character.</summary>
+    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>).
+    /// STILL-OPEN: the other modes; the build notice (ShowBuildNotice) an error shows to its character; the cube map's
+    /// weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     void OnResponseCube(ResponseCubeHeldItem m)
     {
         if (m == null) return;
-        if (m.Error == 0 && m.Id == selfObject) HeldItem.Release();
-        GD.Print($"live: ResponseCube 0x12 error {m.Error} id {m.Id}");
+        HeldItem.ResponseCube(m, selfObject, null, ItemExists?.Invoke(m.ItemId) ?? true);
+        GD.Print($"live: ResponseCube 0x{m.Mode:x} error {m.Error} id {m.Id}");
     }
 
     /// <summary>GameEvent 0xB2 (GameEventManagerCli::Dispatch, gameeventmanagercli.cpp:77): the shutdown events are applied.

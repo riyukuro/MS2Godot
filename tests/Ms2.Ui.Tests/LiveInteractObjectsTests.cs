@@ -742,6 +742,75 @@ public class HeldItemTests
         Assert.That(nh.Casts, Is.EqualTo(1));
         Assert.That(held.Held, Is.False);
     }
+
+    [TestCase(HeldItemState.Ride)]
+    [TestCase(HeldItemState.Rope)]
+    [TestCase(HeldItemState.Climb)]
+    [TestCase(HeldItemState.Ladder)]
+    [TestCase(HeldItemState.Dead)]
+    [TestCase(HeldItemState.Glide)]
+    [TestCase(HeldItemState.Emotion)]
+    [TestCase(HeldItemState.TriggerEmotion)]
+    public void EnteringAStateThatSendsRequestCubeLetsTheHeldItemGo(HeldItemState state)
+    {
+        // each state's vfunc_4 calls PC::SendRequestCube (StateRide statemanager.cpp:1095, StateRope :1239, StateClimb
+        // state.cpp:1041, StateLadder stateladder.cpp:164, StateDead statedead.cpp:152, StateGlide stateglide.cpp:140,
+        // StateEmotion / StateTriggerEmotion stateemotionidle.cpp:215/391)
+        var held = new HeldItem();
+        var sent = new List<IOutPacket>();
+        held.Hold(15000001, true);
+        Assert.That(held.EnterState(state, sent.Add), Is.True);
+        Assert.That(sent.Single(), Is.InstanceOf<HeldItemReleaseRequest>());
+        Assert.That(held.Held, Is.False);
+        Assert.That(held.EnterState(state, sent.Add), Is.False);
+        Assert.That(sent, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void OtherStatesKeepTheHeldItem()
+    {
+        var held = new HeldItem();
+        var sent = new List<IOutPacket>();
+        held.Hold(15000001, true);
+        Assert.That(held.EnterState(HeldItemState.Other, sent.Add), Is.False);
+        Assert.That(sent, Is.Empty);
+        Assert.That(held.Held, Is.True);
+    }
+
+    [Test]
+    public void AddUserHoldsItsObjectWhenNothingIsHeld()
+    {
+        // PC::vfunc_12 (pc.cpp:853-855): the AddUser i32 (scenestategame.cpp:11218) is held when nonzero and nothing is held
+        var held = new HeldItem();
+        Assert.That(held.AddUser(0, true), Is.False);
+        Assert.That(held.Held, Is.False);
+        Assert.That(held.AddUser(15000002, false), Is.False);
+        Assert.That(held.Held, Is.False);
+        Assert.That(held.AddUser(15000001, true), Is.True);
+        Assert.That(held.ItemId, Is.EqualTo(15000001));
+        Assert.That(held.AddUser(15000003, true), Is.False);
+        Assert.That(held.ItemId, Is.EqualTo(15000001));
+    }
+
+    [Test]
+    public void ResponseCubeHoldNeedsTheLocalPcAndACubeWithAWeapon()
+    {
+        // OnResponseCube 0x11 error 0 (scenestategame.cpp:10149-10165): GetCubeByKey; a cube with a weapon -> hold;
+        // 0x12 error 0 (:10179-10186): let go
+        const int self = 77;
+        var held = new HeldItem();
+        var hold = new ResponseCubeHeldItem(ResponseCubeHeldItem.ModeHold, 0, self, 5, 15000001, 3);
+        Assert.That(held.ResponseCube(hold, self, null, true), Is.False);
+        Assert.That(held.ResponseCube(hold, self, _ => false, true), Is.False);
+        Assert.That(held.ResponseCube(hold with { Id = 78 }, self, _ => true, true), Is.False);
+        Assert.That(held.ResponseCube(hold with { Error = 1 }, self, _ => true, true), Is.False);
+        Assert.That(held.Held, Is.False);
+        Assert.That(held.ResponseCube(hold, self, k => k == 5, true), Is.True);
+        Assert.That(held.ItemId, Is.EqualTo(15000001));
+        var release = new ResponseCubeHeldItem(ResponseCubeHeldItem.ModeRelease, 0, self);
+        Assert.That(held.ResponseCube(release, self, null, true), Is.True);
+        Assert.That(held.Held, Is.False);
+    }
 }
 
 public class ActionKeyPollTests

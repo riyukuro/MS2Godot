@@ -374,6 +374,11 @@ public partial class Player : CharacterBody3D
         // StateLadder::vfunc_4 (stateladder.cpp:143), StateRope::vfunc_4 (statemanager.cpp:1225), StateClimb::vfunc_4
         // (state.cpp:1054), StateDash::vfunc_4 (state.cpp:1789)
         if (s is MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Dash) StopJump();
+        // StateLadder::vfunc_4 (stateladder.cpp:163-164), StateRope::vfunc_4 (statemanager.cpp:1238-1239), StateClimb::vfunc_4
+        // (state.cpp:1040-1041): the held item goes, with RequestCube 0x12
+        if (s == MoveState.Ladder) HeldStateEntered?.Invoke(Ms2.Ui.HeldItemState.Ladder);
+        else if (s == MoveState.Rope) HeldStateEntered?.Invoke(Ms2.Ui.HeldItemState.Rope);
+        else if (s == MoveState.Climb) HeldStateEntered?.Invoke(Ms2.Ui.HeldItemState.Climb);
         if (s == MoveState.Swim) swimRideTick = syncClock;                   // StateSwim::vfunc_4: m_nMode = the server tick
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();

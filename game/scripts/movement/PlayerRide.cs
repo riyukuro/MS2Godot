@@ -115,6 +115,7 @@ public partial class Player
         if (Mount != null) RideOff();
         if (State is MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Dash) ResetMotion();
         Mount = m;
+        HeldStateEntered?.Invoke(Ms2.Ui.HeldItemState.Ride);   // StateRide::vfunc_4 (statemanager.cpp:1095): PC::SendRequestCube
         AddChild(m.Visual);
         m.Visual.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
         // Ridee::vfunc_10: the mount is placed at the rider's position raised by 25 (a rider on a breakable's marker goes to

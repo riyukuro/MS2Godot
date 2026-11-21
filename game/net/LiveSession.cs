@@ -771,6 +771,7 @@ public partial class LiveSession : Node
             var l = records[^1].Record;
             GD.Print($"live: UserSync sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
         };
+        player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
         player.StateChangeOut += (mode, arg, pos) =>
         {
             if (game == null) return;
@@ -809,7 +810,13 @@ public partial class LiveSession : Node
             {
                 var u = FieldAddUser.Read(p.Reader());
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
-                if (self) { selfObject = u.ObjectId; Me.Apply(u); bindPending = true; TryBindPlayer(); }   // OnAddUser builds the MyPC
+                if (self)
+                {
+                    selfObject = u.ObjectId; Me.Apply(u); bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
+                    // a new MyPC holds nothing; PC::vfunc_12 (pc.cpp:853-855) holds the AddUser i32 (scenestategame.cpp:11218)
+                    HeldItem.Release();
+                    HeldItem.AddUser(u.HeldObject, ItemExists?.Invoke(u.HeldObject) ?? true);
+                }
                 if (self)
                 {
                     OwnBuff(null);
@@ -957,7 +964,10 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserState))
             {
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
-                if (Me.ApplyUserState(u.ObjectId, u.State))
+                bool died = Me.ApplyUserState(u.ObjectId, u.State);
+                // state 12 runs MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
+                if (u.State == 12 && u.ObjectId == selfObject && Me.Dead) HeldItem.EnterState(HeldItemState.Dead, Send);
+                if (died)
                 {
                     GD.Print($"live: own player dead (state {u.State})");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1350)
@@ -967,6 +977,8 @@ public partial class LiveSession : Node
             {
                 var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
                 if (Me.Die(d.ObjectId)) GD.Print("live: own player dead");
+                // MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
+                if (d.ObjectId == selfObject && Me.Dead) HeldItem.EnterState(HeldItemState.Dead, Send);
             }
             else if (game.Is(p, Inbound.Revival))
             {

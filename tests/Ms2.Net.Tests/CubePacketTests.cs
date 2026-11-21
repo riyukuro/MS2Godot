@@ -37,9 +37,20 @@ public class CubePacketTests
     {
         // OnResponseCube (scenestategame.cpp:9876) u8 mode; case 0x12 (:10176-10192): u8 error, i32 id
         var ok = ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x12); w.WriteByte(0); w.WriteInt(1234); }));
-        Assert.That(ok, Is.EqualTo(new ResponseCubeHeldItem(0, 1234)));
+        Assert.That(ok, Is.EqualTo(new ResponseCubeHeldItem(0x12, 0, 1234)));
         var err = ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x12); w.WriteByte(3); w.WriteInt(77); }));
-        Assert.That(err, Is.EqualTo(new ResponseCubeHeldItem(3, 77)));
-        Assert.That(ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x11); w.WriteByte(0); w.WriteInt(1); })), Is.Null);
+        Assert.That(err, Is.EqualTo(new ResponseCubeHeldItem(0x12, 3, 77)));
+        Assert.That(ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x10); w.WriteByte(0); w.WriteInt(1); })), Is.Null);
+    }
+
+    [Test]
+    public void ResponseCubeMode11ReadsFourIntsOnSuccessAndTheCharacterOnError()
+    {
+        // case 0x11 (scenestategame.cpp:10145-10167): u8 error; error 0: i32 id, i32 cube key, i32 item id, i32 value;
+        // else i32 the character id
+        var ok = ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x11); w.WriteByte(0); w.WriteInt(5); w.WriteInt(9); w.WriteInt(30000001); w.WriteInt(-2); }));
+        Assert.That(ok, Is.EqualTo(new ResponseCubeHeldItem(0x11, 0, 5, 9, 30000001, -2)));
+        var err = ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x11); w.WriteByte(4); w.WriteInt(77); }));
+        Assert.That(err, Is.EqualTo(new ResponseCubeHeldItem(0x11, 4, 77)));
     }
 }

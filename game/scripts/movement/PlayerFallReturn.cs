@@ -92,6 +92,8 @@ public partial class Player
     public Func<int> ServerTick;
     /// <summary>MyPC::SendStateChange (mypc.cpp:3655-3666): mode, argument and the feet position in field units (live only).</summary>
     public event Action<byte, byte, Vector3> StateChangeOut;
+    /// <summary>A state whose vfunc_4 starts with PC::SendRequestCube was entered (<see cref="Ms2.Ui.HeldItem.EnterState"/>).</summary>
+    public event Action<Ms2.Ui.HeldItemState> HeldStateEntered;
 
     /// <summary>The client's state id (gostate.h) of a move state, for the sync record's first byte.</summary>
     static byte StateId(MoveState s) => s switch
