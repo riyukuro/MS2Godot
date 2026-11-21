@@ -224,11 +224,11 @@ public sealed class RemotePc : IRemotePc
 
     /// <summary>The nearest hit straight down from <paramref name="from"/> on groups 0x389 (CPhysXHelper's default down
     /// groups), <paramref name="len"/> 0 = unlimited: its point, collider and shape.</summary>
-    (Vector3 pos, GodotObject col, int shape)? Ray(Vector3 from, float len) => Ray(from, Vector3.Down, len);
+    (Vector3 pos, ulong colId, int shape)? Ray(Vector3 from, float len) => Ray(from, Vector3.Down, len);
 
     /// <summary>The nearest hit from <paramref name="from"/> along the unit <paramref name="dir"/> on groups 0x389
     /// (CPhysXHelper::RayCastFromPoint's default groups), <paramref name="len"/> 0 = unlimited.</summary>
-    (Vector3 pos, GodotObject col, int shape)? Ray(Vector3 from, Vector3 dir, float len)
+    (Vector3 pos, ulong colId, int shape)? Ray(Vector3 from, Vector3 dir, float len)
     {
         var q = rayQ.Set(from, from + dir * (len > 0 ? len : MoveConfig.UnlimitedRay), Body.GetRid());
         var exclude = rayQ.Ex;
@@ -237,9 +237,8 @@ public sealed class RemotePc : IRemotePc
         {
             using var hit = space.IntersectRay(q);
             if (hit.Count == 0) return null;
-            var col = hit[PhysicsKeys.Collider].AsGodotObject();
-            int group = col is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
-            if ((MoveConfig.DownRayGroups & (1u << group)) != 0) return ((Vector3)hit[PhysicsKeys.Position], col, (int)hit[PhysicsKeys.Shape]);
+            ulong colId = (ulong)hit[PhysicsKeys.ColliderId];
+            if ((MoveConfig.DownRayGroups & (1u << GroupOf(colId))) != 0) return ((Vector3)hit[PhysicsKeys.Position], colId, (int)hit[PhysicsKeys.Shape]);
             exclude.Add((Rid)hit[PhysicsKeys.Rid]);
             q.Exclude = exclude;
         }
@@ -274,6 +273,17 @@ public sealed class RemotePc : IRemotePc
         return Ray(end, len) == null;
     }
 
+    /// <summary>A collider's group by its instance id: the id is never reused in a session and the group is set when the
+    /// field is built, so each collider is read once; an object Variant (the "collider" key) costs 116 B a ray.</summary>
+    static int GroupOf(ulong colId)
+    {
+        if (groupById.TryGetValue(colId, out int g)) return g;
+        g = GodotObject.InstanceFromId(colId) is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
+        groupById[colId] = g;
+        return g;
+    }
+    static readonly Dictionary<ulong, int> groupById = new();
+
     /// <summary>onShapeHit (0x140cfade0): a touched shape's entity goes into the report (another controller's touch goes to
     /// onControllerHit and leaves it).</summary>
     void NoteHit(GodotObject collider, int shape)
@@ -300,8 +310,9 @@ public sealed class RemotePc : IRemotePc
     /// entity other than the report's goes into the report; then vfunc_93(true).</summary>
     public void LandRefresh()
     {
-        if (Ray(Body.GlobalPosition + Vector3.Up * 30f, 50f) is var (_, col, shape))
+        if (Ray(Body.GlobalPosition + Vector3.Up * 30f, 50f) is var (_, colId, shape))
         {
+            var col = GodotObject.InstanceFromId(colId);
             var owner = col is CollisionObject3D co && shape >= 0 ? co.ShapeOwnerGetOwner(co.ShapeFindOwner(shape)) as Node : null;
             if (owner != null && owner.HasMeta(FieldBuilder.GroundMeta)) SetHitEntity(col, shape);
         }
