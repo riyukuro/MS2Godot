@@ -94,6 +94,10 @@ public sealed class FieldData
     /// <summary>m_nRequireQuest: &lt;property requireQuest&gt; (fielddata.cpp:703), the quest a portal into the field needs rewarded
     /// (PortalAction FUN_140956370, actionkeyobject.cpp:1117).</summary>
     public int RequireQuest;
+    /// <summary>m_nTutorialType: &lt;property tutorialType&gt; (fielddata.cpp:702, XmlGetTutorialType @0x140375ad0 reads a plain int, 0 when absent);
+    /// CFieldData::HasTutorialType (fielddata.cpp:790) is m_nTutorialType != 0, behind WorldService::HasTutorial (worldservice_1.cpp:5448).</summary>
+    public int TutorialType;
+    public bool HasTutorialType => TutorialType != 0;
 
     /// <summary>The map properties of the death state (CFieldData ctor/load, fielddata.cpp:544-556, :665-699, :729): revivalreturnid
     /// (the field's own id when 0 or missing), deathPenalty (1), autoRevivalType and autoRevivalTime (0), doNotRevivalHere (0),
@@ -195,7 +199,7 @@ public sealed class FieldData
         if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
         if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
         if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
-        o.PkMode = Int(prop, "pkMode"); o.ContinentCode = Int(prop, "continentCode"); o.RequireQuest = Int(prop, "requireQuest");
+        o.PkMode = Int(prop, "pkMode"); o.ContinentCode = Int(prop, "continentCode"); o.RequireQuest = Int(prop, "requireQuest"); o.TutorialType = Int(prop, "tutorialType");
         if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
         o.RecallOtherUserProhibit = Flag(env.Element("cashCall"), "RecallOtherUserProhibit");
         o.GlobalSplit = Flag(env.Element("split"), "globalSplit");

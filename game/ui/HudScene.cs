@@ -575,6 +575,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a) };
             optionHost.AgreementReminder += SetAgreementReminder;
+            optionHost.HasTutorial = FieldHasTutorial;
             if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
             optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
         }
@@ -986,6 +987,13 @@ public partial class HudScene : Node, IUiStageHost
     /// minimap image and camera (mapxblock/&lt;xblock&gt;.xml &lt;minimap&gt;), the marks BuildEntities sends (uiminimapentity.cpp:2900:
     /// the npcs, then the portals, the taxi, the named interact objects and the map objects), and the local player.
     /// </summary>
+    /// <summary>WorldService::HasTutorial (worldservice_1.cpp:5448): the field's tutorialType is not 0.</summary>
+    bool FieldHasTutorial()
+    {
+        try { return FieldData.FindByXBlock(assets.Packs, xblock)?.HasTutorialType ?? false; }
+        catch (Exception e) { GD.PushWarning("field data: " + e.Message); return false; }
+    }
+
     void OpenMinimap(World.FieldContents fc)
     {
         MinimapInfo info = null;

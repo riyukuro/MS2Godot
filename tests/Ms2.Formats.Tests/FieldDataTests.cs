@@ -25,6 +25,24 @@ public class FieldDataTests
         Assert.That(b.Id, Is.EqualTo(c.Id));
         Assert.That(FieldData.XBlockOf(packs, b.Id), Is.EqualTo(b.XBlock));
     }
+    /// <summary>tutorialType (fielddata.cpp:702) is a plain int, 0 when absent; HasTutorialType is m_nTutorialType != 0 (:790).</summary>
+    [Test]
+    public void TutorialTypeFollowsTheProperty()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        var doc = FieldData.Document(packs);
+        var tut = doc.Descendants("property").FirstOrDefault(p => (string)p.Attribute("tutorialType") is { } v && v != "0");
+        if (tut == null) Assert.Ignore("no field has a tutorialType in this data");
+        int type = int.Parse((string)tut.Attribute("tutorialType"));
+        var fd = tut.Ancestors().First(e => e.Attribute("id") != null);
+        var xb = FieldData.XBlockOf(packs, int.Parse((string)fd.Attribute("id")));
+        var got = FieldData.FindByXBlock(packs, xb);
+        Assert.That(got.TutorialType, Is.EqualTo(type));
+        Assert.That(got.HasTutorialType, Is.True);
+        Assert.That(FieldData.FindByXBlock(packs, "02000001_tw_tria").HasTutorialType, Is.False);
+    }
     /// <summary>gemSystem (fielddata.cpp:706) follows the property's attribute and is true when absent (:557).</summary>
     [Test]
     public void GemSystemFollowsTheProperty()

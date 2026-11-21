@@ -7,7 +7,7 @@ namespace Ms2.Net.Packets;
 /// Outbound 0xC0 (SendOp::PersonalInfoAgreement, commonfiles/opcodes.h:493): i32 group, i32 flags. CPersonalInfoAgreement::SendAgreement
 /// (@0x141261dd0, gameoptionstruct.cpp:3445-3452) writes the group it was asked for (the option page passes the mode 2 or 4,
 /// gameoptionpersonalinfoagreement.cpp:161,205) and then the whole flag word.
-/// STILL-OPEN: MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same packet for the house visit answer and has no Godot caller.
+/// STILL-OPEN: MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same packet for the house visit answer after a RequestCube 0x18 packet that is not here yet.
 /// </summary>
 public sealed record PersonalInfoAgreement(int Group, int Flags) : IOutPacket {
     public Outbound Op => Outbound.PersonalInfoAgreement;

@@ -147,9 +147,13 @@ public sealed class GameOptionHost : IGameOptionDialogHost
 
     /// <summary>CPersonalInfoAgreement::FUN_141262090 (@0x141262090): with feature 0x117 on, the game menu's option entry, the
     /// system menu's option entry and the options dialog's agreement tab show a red circle while group 0 is not agreed.
-    /// STILL-OPEN: WorldService::HasTutorial (the first check) has no state in this HUD.</summary>
+    /// Returns first while WorldService::HasTutorial (the field has a tutorialType; HudScene sets it from the field table).
+    /// The only caller the client has that is reached on the Korean service is the dialog's (gameoptionpersonalinfoagreement.cpp:163, :179);
+    /// the scene-entry caller SetFlagsAndRefresh (scenestategame.cpp:11161-11168) needs DAT_143ab0248 == 3 (China), so it is not called here.</summary>
+    public Func<bool> HasTutorial = () => false;
     public void RefreshAgreementReminders()
     {
+        if (HasTutorial()) return;
         if (!IsFeatureEnabled(0x117)) return;
         bool show = !Agreement.HasGroupAgreement(0);
         AgreementReminder?.Invoke(show);
