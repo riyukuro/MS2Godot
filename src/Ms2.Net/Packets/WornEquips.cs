@@ -1,3 +1,5 @@
+using Maple2.PacketLib.Tools;
+
 namespace Ms2.Net.Packets;
 
 /// <summary>
@@ -50,12 +52,18 @@ public static class WornEquips
     public static bool IsWorn(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit2, long uid) =>
         (equips ?? Array.Empty<EquipItem>()).Concat(outfit2 ?? Array.Empty<EquipItem>()).Any(e => e.Uid == uid);
 
-    /// <summary>The look's items in order: gear, then outfits, so the last one of a slot is the one shown.
-    /// STILL-OPEN: the client shows layer 2 only while the layer switch is on (FUN_1411ef780, equipment.cpp:1655 returns 0
-    /// for layer 2 when m_spLayerInfo exists and is not active, GetTopLayerItem then falls back to layers 1 and 0); the
-    /// switch is not read from FieldAddUser here, so a player's outfit2 always shows.</summary>
-    public static IEnumerable<EquipItem> Look(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit2) =>
-        (equips ?? Array.Empty<EquipItem>()).Concat(outfit2 ?? Array.Empty<EquipItem>());
+    /// <summary>The look's items in order: gear, then outfits, so the last one of a slot is the one shown. Layer 2 (the
+    /// outfits) is left out while the layer switch is off (<see cref="OutfitShown"/>): the client's top-layer lookup then
+    /// falls back to layers 1 and 0 (FUN_1411ef780, equipment.cpp:1655).</summary>
+    public static IEnumerable<EquipItem> Look(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit2, bool outfitShown = true) =>
+        outfitShown ? (equips ?? Array.Empty<EquipItem>()).Concat(outfit2 ?? Array.Empty<EquipItem>()) : (equips ?? Array.Empty<EquipItem>());
+
+    /// <summary>CEquipmentSlotLayerInfo::IsActive after SetLayerPeriod (FUN_1411df910, equipment.cpp:401-459): the layer is
+    /// off when feature 0x8e is on (FUN_1411df7d0) and the period never started (start 0) or has ended (end above 0 and the
+    /// server time reached it) - FUN_1411df700. The period is read from FieldAddUser (scenestategame.cpp:11245-11248) and
+    /// changed by <see cref="CodiTab"/>.</summary>
+    public static bool OutfitShown(bool feature8e, long start, long end, long serverTime) =>
+        !(feature8e && (start == 0 || (end > 0 && serverTime >= end)));
 
     /// <summary>What a slot's model was built from: a change in any of these rebuilds the slot (an item update that
     /// reads the body again goes through the forced path, the same object being edited in place).</summary>
@@ -86,4 +94,11 @@ public static class WornEquips
     /// slot: the name itself, or the name and "_" (CL replaces CL_Skin and CL_Bra, FA replaces FA, FA_Skin and FA_EA).</summary>
     public static bool Replaces(string slotName, string node) =>
         node.StartsWith(slotName, StringComparison.OrdinalIgnoreCase) && (node.Length == slotName.Length || node[slotName.Length] == '_');
+}
+
+/// <summary>ItemUse mode 5, OnActiveCodiTab (scenestategame.cpp:8663): an outfit tab was activated for a player; the
+/// layer period goes to that player's equipment (SetLayerPeriod). The record is FUN_1407a8250's read.</summary>
+public sealed record CodiTab(int ActorId, long Start, long End, long Expire, bool Silent)
+{
+    public static CodiTab Read(ByteReader r) => new(r.ReadInt(), r.ReadLong(), r.ReadLong(), r.ReadLong(), r.ReadBool());
 }

@@ -204,6 +204,16 @@ public partial class LiveSession : Node
         fishingFeature = on;
         return on;
     }
+    bool? codiFeature;
+    /// <summary>Feature 0x8e (the outfit tab's period, FUN_1411df7d0), as UiModel.IsFeatureEnabled reads it.</summary>
+    bool CodiFeature()
+    {
+        if (codiFeature is { } on) return on;
+        try { on = Ms2.Ui.LobbyFeatures.IsEnabledByName(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), Ms2.Ui.FeatureTable.Names[0x8e - 1]); }
+        catch (Exception e) { GD.Print($"live: feature table unavailable ({e.Message})"); on = false; }
+        codiFeature = on;
+        return on;
+    }
     bool? missionFeature;
     /// <summary>Feature 0xfb (the adventure missions), as UiModel.IsFeatureEnabled reads it.</summary>
     bool MissionFeature()
@@ -745,7 +755,7 @@ public partial class LiveSession : Node
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();
-        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
+        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime };
         remote.Tracker.Profile = game.Profile;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);

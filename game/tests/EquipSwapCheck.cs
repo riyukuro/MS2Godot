@@ -57,9 +57,10 @@ public partial class EquipSwapCheck : Node
         var hat = It(cap[0], 9, EquipSlot.CP);
 
         var v = mb.Build(md, "Male"); AddChild(v);
+        var body = BodyMeshes(v);
         applier.Apply(v, md, 0, new[] { A(), hat }, Skin1, Skin2);
         await Settle();
-        if (!SkinReached(v)) fails.Add("no skin-material mesh of the body has the skin colour after Apply");
+        if (!SkinReached(v, body)) fails.Add("no skin-material mesh of the body has the skin colour after Apply");
         int hung0 = applier.HungNodes(v);
         if (hung0 == 0) fails.Add("the first look hung no nodes (item data missing?)");
 
@@ -110,7 +111,6 @@ public partial class EquipSwapCheck : Node
 
     static int Count(Node n) { int c = 1; foreach (var ch in n.GetChildren()) c += Count(ch); return c; }
 
-    /// <summary>The model nodes under the skeleton (without the unique-name suffix Godot adds) and their visibility, sorted.</summary>
     /// <summary>The shader parameters a mesh's colouring sets: whether it is a skin material and its three colours.</summary>
     static string Material(MeshInstance3D m)
     {
@@ -118,16 +118,24 @@ public partial class EquipSwapCheck : Node
         return $"[skin={sm.GetShaderParameter(ShaderParam.Skin).AsBool()} {sm.GetShaderParameter(ShaderParam.Color0)} {sm.GetShaderParameter(ShaderParam.Color1)} {sm.GetShaderParameter(ShaderParam.Color2)}]";
     }
 
-    /// <summary>A body mesh drawn with the skin material shows Skin1 (the colour Apply was given).</summary>
-    static bool SkinReached(Node3D v)
+    /// <summary>The meshes of the built body, before any item is applied (the item meshes come later).</summary>
+    static HashSet<string> BodyMeshes(Node3D v) =>
+        v.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName).FindChildren("*", "MeshInstance3D", true, false)
+            .Select(m => System.Text.RegularExpressions.Regex.Replace(m.Name.ToString(), "@.*", "")).ToHashSet();
+
+    /// <summary>A body mesh drawn with the skin material shows Skin1 (the colour Apply was given). Only the body's own
+    /// meshes count: the skin-material meshes of the clothes get the colour through another path.</summary>
+    static bool SkinReached(Node3D v, HashSet<string> body)
     {
         var want = new Vector3(Skin1.R / 255f, Skin1.G / 255f, Skin1.B / 255f);
         var skel = v.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
         return skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>()
+            .Where(m => body.Contains(System.Text.RegularExpressions.Regex.Replace(m.Name.ToString(), "@.*", "")))
             .Any(m => m.GetActiveMaterial(0) is ShaderMaterial sm && sm.GetShaderParameter(ShaderParam.Skin).AsBool()
                       && sm.GetShaderParameter(ShaderParam.Color0).AsVector3().IsEqualApprox(want));
     }
 
+    /// <summary>The model nodes under the skeleton (without the unique-name suffix Godot adds) and their visibility, sorted.</summary>
     static string Describe(Node3D v)
     {
         var skel = v.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);

@@ -38,6 +38,8 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>FieldAddUser's worn equips (the items ItemUpdate reads again).</summary>
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Equips = Array.Empty<Ms2.Net.Packets.EquipItem>();
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Outfit2 = Array.Empty<Ms2.Net.Packets.EquipItem>();
+        /// <summary>The equipment's layer period (SetLayerPeriod: FieldAddUser's, then ItemUse mode 5's).</summary>
+        public long CodiStart, CodiEnd;
         /// <summary>FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220) and the user block's PC bang
         /// grade (m_nFF8, scenestategame.cpp:11151), the PC::CanUseItem inputs of the balloon gem.</summary>
         public long PremiumTime; public short WeddingState; public byte PcBangGrade;
@@ -115,7 +117,7 @@ public sealed partial class RemoteLayer : Node3D
         var equips = r.Equips; var outfit = r.Outfit2;
         if (!Ms2.Net.Packets.WornEquips.PutOn(ref equips, ref outfit, p, wornLayer)) return false;
         r.Equips = equips; r.Outfit2 = outfit;
-        equip.Reapply(r.Visual, Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2));
+        equip.Reapply(r.Visual, LookOf(r));
         return true;
     }
 
@@ -127,7 +129,7 @@ public sealed partial class RemoteLayer : Node3D
         var equips = r.Equips; var outfit = r.Outfit2;
         if (Ms2.Net.Packets.WornEquips.PutOff(ref equips, ref outfit, p.ItemUid, wornLayer) == null) return false;
         r.Equips = equips; r.Outfit2 = outfit;
-        equip.Reapply(r.Visual, Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2));
+        equip.Reapply(r.Visual, LookOf(r));
         return true;
     }
 
@@ -136,7 +138,7 @@ public sealed partial class RemoteLayer : Node3D
     public void ItemUpdated(int objectId, Ms2.Net.Packets.EquipItem item)
     {
         if (item == null || !users.TryGetValue(objectId, out var r)) return;
-        equip.Reapply(r.Visual, Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2), item.Slot);
+        equip.Reapply(r.Visual, LookOf(r), item.Slot);
     }
 
     /// <summary>The other players shown now (the own PC is not among them).</summary>
@@ -233,6 +235,23 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>An effect xml played at a point (CombatLayer.PlayEffect), the own cast's motion effect.</summary>
     public void PlayEffect(string effect, Vector3 at, float yawRadians) => combat.PlayEffect(effect, at, yawRadians);
 
+    /// <summary>Feature 0x8e and the server clock, which the layer switch (WornEquips.OutfitShown) reads.</summary>
+    public Func<bool> Feature8e = () => false;
+    public Func<long> ServerNow = () => 0;
+    bool OutfitShown(long start, long end) => Ms2.Net.Packets.WornEquips.OutfitShown(Feature8e(), start, end, ServerNow());
+    System.Collections.Generic.IEnumerable<Ms2.Net.Packets.EquipItem> LookOf(Remote r) =>
+        Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2, OutfitShown(r.CodiStart, r.CodiEnd));
+
+    /// <summary>ItemUse mode 5, OnActiveCodiTab (scenestategame.cpp:8663) for another player: SetLayerPeriod, then the
+    /// model follows the layer switch. False when the player is not here.</summary>
+    public bool ActiveCodiTab(Ms2.Net.Packets.CodiTab t)
+    {
+        if (!users.TryGetValue(t.ActorId, out var r)) return false;
+        r.CodiStart = t.Start; r.CodiEnd = t.End;
+        equip.Reapply(r.Visual, LookOf(r));
+        return true;
+    }
+
     static string BodyDir(byte gender) => gender == 0 ? "male" : "female";
 
 
@@ -253,7 +272,7 @@ public sealed partial class RemoteLayer : Node3D
         bodies.TryGetValue(gender, out var body);
         var md = body.md ??= builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
         var visual = builder.Build(md, gender == 0 ? "Male" : "Female");
-        equip.Apply(visual, md, gender, Ms2.Net.Packets.WornEquips.Look(u.Equips, u.Outfit2), u.Skin.Primary, u.Skin.Secondary);
+        equip.Apply(visual, md, gender, Ms2.Net.Packets.WornEquips.Look(u.Equips, u.Outfit2, OutfitShown(u.SkinTabStart, u.SkinTabEnd)), u.Skin.Primary, u.Skin.Secondary);
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         if (body.anims == null)
         {
@@ -278,7 +297,7 @@ public sealed partial class RemoteLayer : Node3D
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name };
-        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2;
+        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;
