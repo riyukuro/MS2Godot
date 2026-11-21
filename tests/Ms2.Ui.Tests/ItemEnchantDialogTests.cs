@@ -315,6 +315,26 @@ public class ItemEnchantDialogTests
     }
 
     [Test]
+    public void TheProtectorUseWarnTakesTheColouredNameAndTheTablesCount()
+    {
+        var r = new Rig();
+        r.Add(5); var prot = r.Add(9);
+        r.C.ProtectorCount = id => id == prot.ItemId ? 7 : 0;
+        r.Select(5, r.Info(5, rates: new EnchantRates(40, 0, 25, 5, 2), p0: 9));
+        r.C.OnCallback("onEnchant", new object[0]);
+        var box = r.Boxes.Single();
+        Assert.That(box.Type, Is.EqualTo(ItemEnchantDialogController.ProtectorBoxType));
+        box.Check0Selected = true;
+        r.Boxes.Clear();
+        box.Callback(0, box);
+        var warn = r.Boxes.Single().Msg;
+        string raw = r.Model.Tables.Common("s_itemenchant_protector_use_warn");
+        string expect = Ms2.Quest.ClientFormat.Format(raw,
+            $"<FONT color='#{r.Model.Tables.Items.TextColor(prot.Rarity):x}'>{r.Model.Tables.ItemName(prot.ItemId)}</FONT>", 7);
+        Assert.That(warn, Is.EqualTo(expect));
+    }
+
+    [Test]
     public void TheBindingBoxIsFormattedWithThePlayersName()
     {
         var r = new Rig(2);

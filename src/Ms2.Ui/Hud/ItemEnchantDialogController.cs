@@ -14,7 +14,7 @@ namespace Ms2.Ui.Hud;
 /// <para>STILL-OPEN: GetEnchantableItemUids' limit and lock tests (FUN_14058e230, FUN_140525c60), the sale-rate text (saleDesc),
 /// the event bonus of the rate text, GetEnchantRatio (the "before" stat is the unscaled base), the exp divisor and the fail stack limit,
 /// failDesc (the failure type is not in the Result event), the failure reward page (inventory 0x4e40), sounds, the protector
-/// rank / count warnings, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
+/// rank warning, the EnchantScroll table behind ProtectorCount, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
 /// </summary>
 public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 {
@@ -51,6 +51,8 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
     public Func<Item, int> ExpDivisor = _ => 0;
     /// <summary>The fail stack limit; 0 = no limit known.</summary>
     public Func<int> FailStackLimit = () => 0;
+    /// <summary>GetProtectorCount (FUN_1419c8830): the protector count of an item id, from the EnchantScroll table (not loaded here: 1).</summary>
+    public Func<int, int> ProtectorCount = _ => 1;
     /// <summary>The NPC talk branch a finished result reports (state 1 success, 2 failure).</summary>
     public event Action<int> TalkBranch;
 
@@ -373,8 +375,8 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 
     void UpdateEnchantInfo()
     {
-        // only the two exp modes fill, and an item that is not found leaves the movie's info as it is
-        if (Selected != null && Book.ExpMode is ItemEnchantBook.ExpOphelia or ItemEnchantBook.ExpPeachy)
+        // an item that is not found leaves the movie's info as it is
+        if (Selected != null)
             Host.Invoke(Ani, "setEnchantInfo", BuildInfo());
         Host.Invoke(Ani, "playEnchant");
     }
@@ -535,10 +537,10 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
             bool use = bx.Check0Selected;
             string key = !use ? "s_itemenchant_protector_dont_use_warn"
                 : v == 2 ? "s_itemenchant_super_protector_use_warn" : "s_itemenchant_protector_use_warn";
-            string pName = pItem != null ? Model.Tables.ItemName(pItem.ItemId) : "";
+            string pName = pItem != null ? Colored(pItem.ItemId, pItem.Rarity) : "";
             if (!use) Confirm(key, () => Step(Book.ConfirmProtector(0)));
             else if (v == 2) Confirm(key, () => Step(Book.ConfirmProtector(v)), pName);
-            else Confirm(key, () => Step(Book.ConfirmProtector(v)), pName, pItem?.Count ?? 0);
+            else Confirm(key, () => Step(Book.ConfirmProtector(v)), pName, pItem != null ? ProtectorCount(pItem.ItemId) : 0);
             return true;
         };
         ShowData(box);

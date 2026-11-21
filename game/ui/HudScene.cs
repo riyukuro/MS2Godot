@@ -123,7 +123,6 @@ public partial class HudScene : Node, IUiStageHost
         // the portal and interact actions' notices & casting bar, the channel notices
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
-            livePortals.TalkDialogOpen -= OnTalkDialogOpen;
             livePortals.SystemNoticeSink = SystemNoticeText;
             livePortals.ChannelNoticeSink = ChannelNotice;
             livePortals.CastingBar = CastingBar;
