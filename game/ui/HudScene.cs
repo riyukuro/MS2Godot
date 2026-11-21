@@ -478,6 +478,7 @@ public partial class HudScene : Node, IUiStageHost
             CurrentChannel = LiveChannel(),
             Channels = LiveChannels(),
             ChangeChannel = ChangeChannel,
+            RedCircle = agreementReminder,   // m_198, kept by SetRedCircle (the dialog is made on each open here)
         };
         c.SelectCharacter += () => SystemMenuSelectCharacter?.Invoke();
         c.GameExit += () => ShowGameExitBox(commonStrings);
@@ -557,12 +558,23 @@ public partial class HudScene : Node, IUiStageHost
     /// SetTab): SetTab, then CUIService::OpenDialog(0x4ef3) = FUN_141924680, which opens only a closed dialog (vfunc_65
     /// @0x141924a10 checks vfunc_55).
     /// </summary>
+    bool agreementReminder;             // the agreement red circle on the menu icons (CPersonalInfoAgreement::FUN_141262090)
+
+    /// <summary>FUN_141262090's menu icons: UIGameMenuDialog::SetNotifyRedCircle7Flag and UISystemMenuDialog::SetRedCircle.</summary>
+    void SetAgreementReminder(bool show)
+    {
+        agreementReminder = show;
+        gameMenu?.SetNotifyRedCircle7Flag(show);
+        if (systemMenu != null) systemMenu.RedCircle = show;
+    }
+
     void OpenGameOption(int page)
     {
         if (GuideRefusesOpen("GameOptionDialog")) return;
         if (optionDialog == null)
         {
             optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a) };
+            optionHost.AgreementReminder += SetAgreementReminder;
             if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
             optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
         }
@@ -2323,6 +2335,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
         var c = gameMenu = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable, NotifyCount = CommunityNotifyCount };
+        c.SetNotifyRedCircle7Flag(agreementReminder);
         c.ToggleDialog += GameMenuToggle;
         WatchAchieves();
         WatchMails();

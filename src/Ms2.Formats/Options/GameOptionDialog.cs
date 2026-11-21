@@ -1220,8 +1220,9 @@ public sealed class AgreementOptionPage : OptionPage
     /// agreement takes the page copy and the answer goes to the server. The stored word is filled from the server only for
     /// region 3 (scenestategame.cpp:11161-11168, SetFlagsAndRefresh); on the Korean service nothing fills it, so it stays 0,
     /// group 0 is never agreed and every Save sends mode 2 (agree) or 4 (deny), as the client does.
-    /// STILL-OPEN: CPersonalInfoAgreement::FUN_141262090 (@0x141262090, gameoptionstruct.cpp:3503-3518, the reminders) and
-    /// OpenLink (:3597, the detail page) are not ported; the host members are empty. MyPC::SendHouseSetting (mypc.cpp:4385-4396)
+    /// FUN_141262090 (@0x141262090, gameoptionstruct.cpp:3503-3518) is the host's RefreshAgreementReminders (the menu icons'
+    /// red circles included). STILL-OPEN: its HasTutorial check, the call at scene entry (SetFlagsAndRefresh), and OpenLink
+    /// (:3597, the detail page) are not ported; the host's detail member is empty. MyPC::SendHouseSetting (mypc.cpp:4385-4396)
     /// sends the same 0xC0 and is not ported either.</summary>
     public override void Save()
     {

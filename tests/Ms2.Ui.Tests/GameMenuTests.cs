@@ -114,6 +114,29 @@ public class GameMenuTests
         return Rt.ToBoolean(h.Get(h.Get(button, "m_notifyUp"), "visible"));
     }
 
+    /// <summary>Entry 7's (option) m_notifyRedCircle on its top entry's button.</summary>
+    static bool OptionRedCircle(UiHost h, GameMenuController c)
+    {
+        string top = c.Table.Find(c.Table.FindTopId(7)).Name;
+        var button = h.Invoke(h.Invoke(h.Child("m_menus"), "getChildByName", top), "getChildByName", "m_button");
+        return Rt.ToBoolean(h.Get(h.Get(button, "m_notifyRedCircle"), "visible"));
+    }
+
+    [Test]
+    public void TheAgreementReminderRaisesTheOptionEntrysRedCircle()
+    {
+        var (h, c) = Load();
+        Assert.That(OptionRedCircle(h, c), Is.False, "built without the reminder");
+        c.SetNotifyRedCircle7Flag(true);
+        for (int i = 0; i < 5; i++) h.Player.Tick();
+        Assert.That(OptionRedCircle(h, c), Is.True);
+        c.RefreshMenu();
+        for (int i = 0; i < 5; i++) h.Player.Tick();
+        Assert.That(OptionRedCircle(h, c), Is.True, "RefreshMenu sends the kept flag again");
+        c.SetNotifyRedCircle7Flag(false);
+        Assert.That(OptionRedCircle(h, c), Is.False);
+    }
+
     static UiModel LevelSixty()
     {
         var m = NewModel();

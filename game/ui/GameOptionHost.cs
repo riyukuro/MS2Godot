@@ -141,12 +141,19 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) => GameOptions.SetGamepadEnabled(stored, use, notify);
 
     public void SendAgreement(int group) => Net.LiveSession.Instance?.SendPersonalInfoAgreement(group, (int)Agreement.Flags);
-    /// <summary>CPersonalInfoAgreement::FUN_141262090 (@0x141262090): with feature 0x117 on, the options dialog's red circle
-    /// shows while group 0 is not agreed (the menu icons are not ported here).</summary>
+    /// <summary>The reminder the game menu's option entry and the system menu's option entry show (SetNotifyRedCircle7Flag,
+    /// UISystemMenuDialog::SetRedCircle).</summary>
+    public event Action<bool> AgreementReminder;
+
+    /// <summary>CPersonalInfoAgreement::FUN_141262090 (@0x141262090): with feature 0x117 on, the game menu's option entry, the
+    /// system menu's option entry and the options dialog's agreement tab show a red circle while group 0 is not agreed.
+    /// STILL-OPEN: WorldService::HasTutorial (the first check) has no state in this HUD.</summary>
     public void RefreshAgreementReminders()
     {
         if (!IsFeatureEnabled(0x117)) return;
-        Dialog?.SetAgreementRedCircle(!Agreement.HasGroupAgreement(0));
+        bool show = !Agreement.HasGroupAgreement(0);
+        AgreementReminder?.Invoke(show);
+        Dialog?.SetAgreementRedCircle(show);
     }
     public void OpenAgreementDetail() => GD.Print("options: the agreement detail page is not available");
 
