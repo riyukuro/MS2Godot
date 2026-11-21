@@ -1618,6 +1618,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemEnchantKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
+        if (ItemPreviewKeys(k)) return true;
         if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
@@ -3524,6 +3525,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "chatemoticon" && frames == 200) OpenChatEmoticon();    // with --chatemoticon-fixture: every pack owned
         if (openShot == "inventory" && frames == 200) ToggleInventory();
         if (openShot is "selectitembox" or "multiopenbox" && frames == 200) OpenSelectItemBoxShot(openShot == "multiopenbox");
+        if (openShot == "itempreview" && frames == 200) OpenItemPreview(Ms2.Ui.Items.Item.Create(hudModel.Tables.Items, 11300001, 1), 1);
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
         if (openShot == "learningquest" && frames == 200) OpenLearningQuest();

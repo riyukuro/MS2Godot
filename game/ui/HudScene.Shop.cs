@@ -51,6 +51,7 @@ public partial class HudScene
                 if (Ms2.Ui.Items.Item.Create(hudModel.Tables.Items, itemId, rarity) is { } it) ChatLog.LinkItem(it);
             },
             SystemNotice = SystemNoticeText,
+            PreviewItem = item => OpenItemPreview(item, 1),    // ItemPreviewMgr::OpenPreview(item, 1) (uishopdialog.cpp:2603)
             NoticeWithType = (text, _) => SystemNoticeText(text),
             Sound = key => FieldAudio.Instance?.PlayUi(key),
         };
