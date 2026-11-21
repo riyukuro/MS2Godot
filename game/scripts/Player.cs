@@ -259,8 +259,9 @@ public partial class Player : CharacterBody3D
             WalkMode = k.Walk;
             JumpHeld = k.Jump;
             // Offline attack key (defaultkey.xml keyAttack = X): StateSkill::vfunc_4 (@0x1417e5350, stateskill.cpp:432)
-            // enters battle stance for UserBattleDurationTick (5 s)
-            bool attackKey = !Live && !Ms2.Ui.FieldMoveCover.Up && Input.IsPhysicalKeyPressed(Key.X);
+            // enters battle stance for UserBattleDurationTick (5 s); the key is read as MyPC reads it, not while
+            // Unk_PCMove::FUN_141683ef0 holds input back (Ms2.Ui.InputBlock: a focused text field, the loading screen)
+            bool attackKey = !Live && !Ms2.Ui.InputBlock.Active && Input.IsPhysicalKeyPressed(Key.X);
             if (attackKey && !prevAttackKey && GetViewport()?.GuiGetFocusOwner() == null)
                 SetBattleStance(true, DefaultBattleStanceSeconds);
             prevAttackKey = attackKey;

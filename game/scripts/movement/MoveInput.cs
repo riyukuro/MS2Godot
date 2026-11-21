@@ -9,9 +9,13 @@ namespace Ms2Godot.Movement;
 /// </summary>
 public static class MoveInput
 {
-    /// <summary>While a text field has focus (chat), or under a field move's loading screen (Ms2.Ui.FieldMoveCover),
-    /// movement and jump keys are ignored.</summary>
-    public static Func<bool> Blocked = () => Ui.UiFocus.IsTyping || Ms2.Ui.FieldMoveCover.Up;
+    /// <summary>
+    /// Unk_PCMove reads the own player's keys (IsKeyDown @0x141682f80, IsActionKeyDown @0x141682fe0) through
+    /// FUN_141683ef0 (@0x141683ef0), which gives nothing while CInputKeyHandler::FUN_14116d7a0(0xf) holds: while a text
+    /// field has the focus (a movie's or an engine control's) or under a field move's loading screen
+    /// (<see cref="Ms2.Ui.InputBlock"/>) the movement and jump keys are ignored.
+    /// </summary>
+    public static Func<bool> Blocked = () => Ui.UiFocus.IsTyping || Ms2.Ui.InputBlock.Active;
 
     public struct State
     {

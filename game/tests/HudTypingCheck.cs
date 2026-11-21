@@ -14,7 +14,9 @@ namespace Ms2Godot.Tests;
 /// screen mask among them, must pass them on). It opens the HUD (res://ui/hud.tscn) offline, opens the game dictionary,
 /// clicks into its search field (m_inputSearch) and types
 /// m, p, l, i, k and 1 (the world map, my info, the quest log, the inventory, the skill book and the first quick slot) as
-/// the window's keys. Quits with 0 when the field holds "mplik1" and none of those dialogs opened, else 1.
+/// the window's keys, then holds Up and X there: the own player neither moves nor takes the battle stance (Unk_PCMove
+/// reads no key while the mask holds). Quits with 0 when the field holds "mplik1x", none of those dialogs opened and
+/// the player stayed, else 1.
 /// </summary>
 public partial class HudTypingCheck : Node
 {
@@ -95,8 +97,27 @@ public partial class HudTypingDriver : Node
                 if (Shown(Get(hud, "questLogSide"))) opened.Add("quest log");
                 if (Shown(Get(hud, "inventory"))) opened.Add("inventory");
                 if (Shown(Get(hud, "skillBook"))) opened.Add("skill book");
-                bool ok = field.Text == Typed && opened.Count == 0;
-                Finish(ok, $"field \"{field.Text}\", opened: {(opened.Count == 0 ? "none" : string.Join(", ", opened))}");
+                if (field.Text != Typed || opened.Count != 0)
+                {
+                    Finish(false, $"field \"{field.Text}\", opened: {(opened.Count == 0 ? "none" : string.Join(", ", opened))}");
+                    return;
+                }
+                // the own player's keys, held with the field still focused: an arrow (movement) and X (the offline attack)
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.Up, PhysicalKeycode = Key.Up, Pressed = true });
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.X, PhysicalKeycode = Key.X, Unicode = 'x', Pressed = true });
+                wait = 0; stage = 100;
+                return;
+            }
+            case 100:
+            {
+                if (++wait < 10) return;
+                var move = Movement.MoveInput.Read().Move;
+                var me = GetTree().GetFirstNodeInGroup(Player.Group) as Player;
+                bool battle = me?.InBattle == true;
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.Up, PhysicalKeycode = Key.Up, Pressed = false });
+                Input.ParseInputEvent(new InputEventKey { Keycode = Key.X, PhysicalKeycode = Key.X, Pressed = false });
+                bool ok = me != null && move == Vector2.Zero && !battle && field.Text == Typed + "x";
+                Finish(ok, $"field \"{field.Text}\", none opened; held Up: move {move}; held X: battle stance {battle} (player {(me != null ? "found" : "missing")})");
                 return;
             }
         }
