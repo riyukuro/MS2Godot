@@ -42,7 +42,7 @@ public static class NativeUi
     public static string Str(string s) => Assets == null || string.IsNullOrEmpty(s) ? s ?? "" : Assets.Str(s);
 
     /// <summary>Regular.easeOut of fl.transitions (quadratic).</summary>
-    public static Tween EaseOut(Node owner) => owner.CreateTween().SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
+    public static Tween EaseOut(Node owner) => owner.CreateTween().SetIgnoreTimeScale().SetTrans(Tween.TransitionType.Quad).SetEase(Tween.EaseType.Out);
 
     /// <summary>A Label formatted as a movie text field (font class, size, colour, alignment, wrap, glow/shadow filters).</summary>
     public static Label MakeLabel(JsonNode def, JsonNode filters = null)

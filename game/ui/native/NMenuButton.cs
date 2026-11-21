@@ -130,7 +130,7 @@ public partial class NMenuButton : Control
         list.Position = at + new Vector2(0, 50);
         list.Modulate = new Color(1, 1, 1, 0);
         SetLayer(Items[^1].Name);                                    // setData: layerName = the last row's name
-        fade = list.CreateTween().SetTrans(Tween.TransitionType.Back).SetEase(Tween.EaseType.Out).SetParallel();
+        fade = list.CreateTween().SetIgnoreTimeScale().SetTrans(Tween.TransitionType.Back).SetEase(Tween.EaseType.Out).SetParallel();
         fade.TweenProperty(list, "modulate:a", 1f, 0.2);
         fade.TweenProperty(list, "position:y", at.Y, 0.2);
     }

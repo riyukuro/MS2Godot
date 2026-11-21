@@ -13,6 +13,9 @@ namespace Ms2Godot.Tests;
 ///   each reset the scale to 1 at once;
 /// - a scale of 0 keeps the engine at <see cref="GameClock.MinEngineScale"/>, and <see cref="GameClock.Real"/> gives the real
 ///   delta back, so the UI does not freeze;
+/// - in the frame of a change the real delta divides by the scale the frame's delta was scaled by (the one in force at the
+///   frame's start), so 1 -> 0 gives no 16 s spike, and the next frame divides by the new one;
+/// - a HUD tween (NativeUi.EaseOut, the NWindow open and close) runs on the real clock under scale 0;
 /// - a one-time effect's remove drops the logged adds of its id and is not logged itself.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -20,7 +23,7 @@ public partial class TimeScaleExitCheck : Node
 {
     const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
 
-    public override void _Ready()
+    public override async void _Ready()
     {
         var fails = new System.Collections.Generic.List<string>();
         void Check(bool ok, string what) { if (!ok) fails.Add(what); }
@@ -65,11 +68,33 @@ public partial class TimeScaleExitCheck : Node
         Check(!ls.TimeScaleRamp.Running && Engine.TimeScale == 1.0, $"leaving the tree left scale {Engine.TimeScale}");
         ls.Free();
 
+        bool Near(double got) => System.Math.Abs(got - 0.016) < 1e-6;
+        var tree = GetTree();
+        await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        GameClock.SetScale(1);
+        await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
         GameClock.SetScale(0);
         Check(Engine.TimeScale == GameClock.MinEngineScale, $"scale 0 set the engine to {Engine.TimeScale}");
-        Check(System.Math.Abs(GameClock.Real(0.016 * Engine.TimeScale) - 0.016) < 1e-9, "the real delta under scale 0 is not the frame's");
+        Check(Near(GameClock.Real(0.016)), $"the frame of 1 -> 0 gives a real delta of {GameClock.Real(0.016)} s for a 0.016 s frame");
+        GameClock.SetScale(0.5f);
+        GameClock.SetScale(0);
+        Check(Near(GameClock.Real(0.016)), "a second change in the frame moved the frame's scale");
+        await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        Check(Near(GameClock.Real(0.016 * Engine.TimeScale)), "the real delta under scale 0 is not the frame's");
+        GameClock.SetScale(1);
+        Check(Near(GameClock.Real(0.016 * GameClock.MinEngineScale)), $"the frame of 0 -> 1 gives a real delta of {GameClock.Real(0.016 * GameClock.MinEngineScale)} s");
+        await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        Check(Near(GameClock.Real(0.016)), "the frame after 0 -> 1 is not divided by 1");
         GameClock.SetScale(-2);
         Check(Engine.TimeScale == GameClock.MinEngineScale, $"scale -2 set the engine to {Engine.TimeScale}");
+
+        // a HUD tween under the floor scale: 0.05 s of real time, not 50 s
+        var box = new Godot.Control();
+        AddChild(box);
+        Ms2Godot.Ui.Native.NativeUi.EaseOut(box).TweenProperty(box, "modulate:a", 0f, 0.05);
+        ulong t0 = Time.GetTicksMsec();
+        while (Time.GetTicksMsec() - t0 < 300) await ToSignal(tree, SceneTree.SignalName.ProcessFrame);
+        Check(box.Modulate.A == 0f, $"the eased tween under scale 0 reached alpha {box.Modulate.A} after 0.3 s");
         GameClock.SetScale(1);
 
         GD.Print($"time scale exit: {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");

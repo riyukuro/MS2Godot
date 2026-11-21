@@ -59,7 +59,7 @@ public partial class NativeHudScene : Node
             var track = NativeUi.Art.Track(movie, sym, $"__id{4 + i}_", 1, 15);
             if (track.Count == 0) continue;
             var slot = slots[i];
-            var tw = slot.CreateTween();
+            var tw = slot.CreateTween().SetIgnoreTimeScale();
             foreach (var (xf, a) in track)
             {
                 var k = (xf.Origin, a);
