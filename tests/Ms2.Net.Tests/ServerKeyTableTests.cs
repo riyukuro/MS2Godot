@@ -89,6 +89,8 @@ public class ServerKeyTableTests {
         Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000001, 56), Is.EqualTo(-1));
         t.SetEntry(0, 2, new QuickSlotEntry(0, 20000009, 9));             // another page than the current one
         Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000009, 9), Is.EqualTo(-1));
+    }
+
     [Test] public void Mode7IgnoredWhileLocked() {
         var t = new ServerKeyTable(); t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
         t.Locked = true;
