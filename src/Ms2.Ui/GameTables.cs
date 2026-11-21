@@ -770,7 +770,7 @@ public sealed class GameTables
     /// <summary>The beauty coupon table (Table/shop_beautyCoupon.xml), read on first use.</summary>
     public BeautyCouponTable BeautyCoupons => beautyCoupons ??= packs == null || !packs.Exists("Xml", "table/shop_beautycoupon.xml")
         ? BeautyCouponTable.Empty
-        : new BeautyCouponTable(Xml("table/shop_beautycoupon.xml"), e => FeatureElements.IsAvailable(packs, e), id => Items.Get(id) != null);
+        : new BeautyCouponTable(Xml("table/shop_beautycoupon.xml"), e => FeatureElements.IsAvailable(packs, e), id => Items.Get((int) id) != null);
     BlackMarketTable blackMarket;
     /// <summary>CBlackMarketTable (Table/blackMarketTable.xml), read on first use.</summary>
     public BlackMarketTable BlackMarket => blackMarket ??= packs == null || !packs.Exists("Xml", "table/blackmarkettable.xml")

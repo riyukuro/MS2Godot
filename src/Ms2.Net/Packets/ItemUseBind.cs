@@ -53,10 +53,3 @@ public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, Cod
 public sealed record BeautyReq(int Type, long Uid) {
     public static BeautyReq Read(ByteReader r) => new(r.ReadInt(), r.ReadLong());
 }
-
-/// <summary>Outbound SendOp::Beauty, CSceneStateGame::SendBeauty (scenestategame.cpp:8692 @0x14173c630): u8 0x17, i64 the request's uid
-/// (FUN_140710590 then only hands the packet to the client's send queue).</summary>
-public sealed record BeautyOpenRequest(long Uid) : IOutPacket {
-    public Outbound Op => Outbound.Beauty;
-    public void Write(ByteWriter w) { w.WriteByte(0x17); w.WriteLong(Uid); }
-}

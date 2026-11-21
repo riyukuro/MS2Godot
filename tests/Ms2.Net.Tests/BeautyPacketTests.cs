@@ -20,7 +20,7 @@ public class BeautyPacketTests
         for (int i = 0; i < 2; i++) { w.WriteInt(10200000 + i); w.WriteByte(1); w.WriteShort(10); w.WriteInt(0); w.WriteByte(0); Payment(w, 1, 0, 500 + i, "x"); }
         var p = BeautyShopPacket.Read(new ByteReader(w.Buffer[..w.Length]));
         Assert.That((p.Mode, p.Kind, p.SlotCount, p.SavedStyles, p.Context), Is.EqualTo((0, 2, 7, 3, 99L)));
-        Assert.That((p.Shop.ShopId, p.Shop.Category, p.Shop.DisplayCouponId, p.Shop.Flag24, p.Shop.ReturnCouponId, p.Shop.Value2C, p.Shop.Flag30),
+        Assert.That((p.Shop.ShopId, p.Shop.Category, p.Shop.DisplayCouponId, p.Shop.ReservedFlag, p.Shop.ReturnCouponId, p.Shop.SaleCouponTag, p.Shop.WornItemCheck),
             Is.EqualTo((11, 3, 20300001, true, 20300002, 5, true)));
         Assert.That((p.Shop.Payment.Amount, p.Shop.Payment.IconTag, p.Shop.RecolorPayment.Type), Is.EqualTo((1000L, "mesos", 4)));
         Assert.That(p.Items.Length, Is.EqualTo(2));
@@ -44,6 +44,12 @@ public class BeautyPacketTests
     }
 
     static byte[] Bytes(BeautyRequest r) { var w = new ByteWriter(); r.Write(w); return w.Buffer[..w.Length]; }
+
+    [Test] public void EnterRequestIsSentOnlyForANonZeroShopMode() {
+        Assert.That(BeautyEnterRequest.Create(3, 0), Is.Null);
+        Assert.That(Bytes(BeautyEnterRequest.Create(3, 2)), Is.EqualTo(new byte[] { 0, 3, 0, 0, 0, 2 }));
+        Assert.That(Bytes(new BeautyOpenRequest(5)), Is.EqualTo(new byte[] { 0x17, 5, 0, 0, 0, 0, 0, 0, 0 }));
+    }
 
     [Test] public void RequestsWriteTheirModeAndBody() {
         Assert.That(Bytes(new BeautyEnterRequest(3, 2)), Is.EqualTo(new byte[] { 0, 3, 0, 0, 0, 2 }));

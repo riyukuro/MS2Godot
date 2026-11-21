@@ -13,9 +13,9 @@ public sealed class BeautyCouponTable
 {
     public static readonly BeautyCouponTable Empty = new(null, _ => true, _ => true);
 
-    readonly Dictionary<uint, int[]> coupons = new();
+    readonly Dictionary<uint, uint[]> coupons = new();
 
-    public BeautyCouponTable(XDocument doc, Func<XElement, bool> available, Func<int, bool> itemExists)
+    public BeautyCouponTable(XDocument doc, Func<XElement, bool> available, Func<uint, bool> itemExists)
     {
         var root = doc?.Root;
         if (root == null || root.Name != "ms2") return;
@@ -23,11 +23,11 @@ public sealed class BeautyCouponTable
         {
             if (!available(shop)) continue;
             if (!uint.TryParse((string)shop.Attribute("shopID"), out uint shopId) || shopId == 0) continue;
-            var items = new List<int>();
+            var items = new List<uint>();
             foreach (var item in shop.Elements("item"))
             {
                 if (!available(item)) continue;
-                if (!int.TryParse((string)item.Attribute("id"), out int id) || id == 0) continue;
+                if (!uint.TryParse((string)item.Attribute("id"), out uint id) || id == 0) continue;
                 if (itemExists(id)) items.Add(id);
             }
             coupons[shopId] = items.ToArray();
@@ -35,5 +35,5 @@ public sealed class BeautyCouponTable
     }
 
     /// <summary>The coupon item ids of a shop; empty when the shop has none.</summary>
-    public int[] CouponsOf(uint shopId) => coupons.TryGetValue(shopId, out var c) ? c : Array.Empty<int>();
+    public uint[] CouponsOf(uint shopId) => coupons.TryGetValue(shopId, out var c) ? c : Array.Empty<uint>();
 }

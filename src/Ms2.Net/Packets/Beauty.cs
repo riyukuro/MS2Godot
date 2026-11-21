@@ -18,10 +18,12 @@ public sealed record BeautyShopItem(int ItemId, int SaleTag, int RequireLevel, i
 }
 
 /// <summary>
-/// CBeautyShopDataCli::Read: shop id, category, display coupon id, a flag (byte == 1), return coupon id, an i32 the client
-/// keeps at +0x2c, a bool, the price, the recolor price.
+/// CBeautyShopDataCli::Read: shop id, category, display coupon id, a reserved flag (byte == 1; no reader in the restored
+/// client, m_b24), return coupon id, the sale coupon's item tag (m_n2c, UIBeautyShopDialog::IsCouponSaleActive: the coupon
+/// sale is on while the player holds an item with this tag), the worn-item check flag (m_b30, FUN_1418cbd30: with no list
+/// entry picked, an item counts only when it differs from the worn one), the price, the recolor price.
 /// </summary>
-public sealed record BeautyShopData(int ShopId, int Category, int DisplayCouponId, bool Flag24, int ReturnCouponId, int Value2C, bool Flag30,
+public sealed record BeautyShopData(int ShopId, int Category, int DisplayCouponId, bool ReservedFlag, int ReturnCouponId, int SaleCouponTag, bool WornItemCheck,
     BeautyPayment Payment, BeautyPayment RecolorPayment) {
     public static BeautyShopData Read(ByteReader r) =>
         new(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadByte() == 1, r.ReadInt(), r.ReadInt(), r.ReadBool(), BeautyPayment.Read(r), BeautyPayment.Read(r));
@@ -32,7 +34,8 @@ public sealed record BeautyShopData(int ShopId, int Category, int DisplayCouponI
 /// 0: the shop (kind byte at +0x290, <see cref="BeautyShopData"/>, slot count byte, saved style count byte, i64 sale context, i16 count, the item rows);
 /// 8: a result code (i32); 9: item id (i32) and count (i32), a notice when both are positive;
 /// 0xb: old and new item id (i32 each); 0xc: coupon id (i32), mailed byte (1: sent by mail); 0x10 and 0x11 carry nothing.
-/// Other modes read nothing.
+/// Other modes read nothing. Modes 0 and 9 act before the dialog's gate (vfunc_55 returning true ends the handler); modes
+/// 8, 0xb, 0xc, 0x10 and 0x11 act only after it, and each of them first resets m_2d8 (the buy-pending flag) to 0.
 /// </summary>
 public sealed record BeautyShopPacket(int Mode) {
     public int Kind, SlotCount, SavedStyles; public long Context;
@@ -40,7 +43,7 @@ public sealed record BeautyShopPacket(int Mode) {
     public int Result, ItemId, Count, OldItemId, NewItemId, CouponId; public bool Mailed;
 
     /// <summary>Mode 9 shows its notice (string 0x996 with the item's name) only for an item and a positive count.</summary>
-    public bool ShowsItemNotice => Mode == 9 && ItemId != 0 && Count > 0;
+    public bool ShowsItemNotice => Mode == 9 && ItemId != 0 && (uint) Count > 0;
 
     public static BeautyShopPacket Read(ByteReader r) {
         var p = new BeautyShopPacket(r.ReadByte());
@@ -63,9 +66,9 @@ public sealed record BeautyShopPacket(int Mode) {
     }
 }
 
-/// <summary>Mode 8 result codes OnBeautyShopPacket tells apart (every other non-zero code shows the generic error box, common string 0x272).</summary>
+/// <summary>Mode 8 result codes OnBeautyShopPacket tells apart (MessageBoxOk = 7 shows the common string 0x273 box; every other non-zero code shows the error box, common string 0x272).</summary>
 public static class BeautyResult {
-    public const int Ok = 0, NotEnough = 2, GenericOk = 7, ColorError = 0xc, SlotMax = 0x13, Silent = 0x12, Unavailable = 0x14;
+    public const int Ok = 0, NotEnough = 2, MessageBoxOk = 7, ColorError = 0xc, SlotMax = 0x13, Silent = 0x12, Unavailable = 0x14;
 }
 
 /// <summary>Base of the outbound SendOp::Beauty requests: the mode byte then the body.</summary>
@@ -75,9 +78,17 @@ public abstract record BeautyRequest(byte Mode) : IOutPacket {
     protected abstract void WriteBody(ByteWriter w);
 }
 
-/// <summary>Mode 0 (UITalkCinematic, @opening the shop by the npc talk): npc object id (i32), shop mode (byte, only sent when non-zero).</summary>
+/// <summary>Mode 0 (UITalkCinematic, uitalkcinematic.cpp:1388-1394): npc object id (i32), shop mode (byte). The client sends the
+/// packet only when the shop mode is non-zero, so <see cref="Create"/> returns null for 0; the byte is then always written.</summary>
 public sealed record BeautyEnterRequest(int NpcId, byte ShopMode) : BeautyRequest(0) {
+    public static BeautyEnterRequest Create(int npcId, byte shopMode) => shopMode != 0 ? new BeautyEnterRequest(npcId, shopMode) : null;
     protected override void WriteBody(ByteWriter w) { w.WriteInt(NpcId); w.WriteByte(ShopMode); }
+}
+
+/// <summary>Mode 0x17, CSceneStateGame::SendBeauty (scenestategame.cpp:8692 @0x14173c630, mode byte at :8710): item uid (i64),
+/// sent from the ItemUse mode 6 request (<see cref="BeautyReq"/>); FUN_140710590 then only hands the packet to the send queue.</summary>
+public sealed record BeautyOpenRequest(long Uid) : BeautyRequest(0x17) {
+    protected override void WriteBody(ByteWriter w) => w.WriteLong(Uid);
 }
 
 /// <summary>Mode 3, Customize::Equipment::SendAdded: shop id, free-try byte, item id, sale context (i64), the item's extra body (<paramref name="WriteItemBody"/>, CItem::WriteItemBody).</summary>
@@ -105,7 +116,7 @@ public sealed record BeautyBuyRequest(int SaleEventId, bool CouponSale, long Con
     protected override void WriteBody(ByteWriter w) { w.WriteInt(SaleEventId); w.WriteByte((byte) (CouponSale ? 1 : 0)); w.WriteLong(Context); }
 }
 
-/// <summary>Mode 10 (0xa), UIBeautyListDialog / UIGameMenuDialog: the list kind (i16: 1 hair, 3 face, 5 colouring).</summary>
+/// <summary>Mode 10 (0xa), UIBeautyListDialog / UIGameMenuDialog: the list kind (i16; the kinds seen are inferred from the callers, not from a table).</summary>
 public sealed record BeautyListRequest(short Kind) : BeautyRequest(10) {
     protected override void WriteBody(ByteWriter w) => w.WriteShort(Kind);
 }
