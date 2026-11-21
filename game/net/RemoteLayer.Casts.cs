@@ -64,7 +64,10 @@ public sealed partial class RemoteLayer
 
     /// <summary>
     /// FUN_141673b40 -> StateSkill::PlayCastStartEffect for a user: a motion with a sequence the body has enters StateSkill
-    /// (RemotePc.PlaySkill) at the record's position <paramref name="pos"/> (MS2 axes) and rotation <paramref name="rotZ"/>.
+    /// (RemotePc.PlaySkill) at the record's position <paramref name="pos"/> (MS2 axes) and rotation <paramref name="rotZ"/>,
+    /// with the motion index and the level's motion count that decide whether the sequence end leaves the state.
+    /// STILL-OPEN: PlayCastStartEffect returns at once for a dead owner (stateskill.cpp:1822, PCBase::IsDead); a remote
+    /// PC's death is not tracked here, so a dead PC's cast still plays.
     /// </summary>
     void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ,
         int holdId = 0, string holdNode = "")
@@ -78,7 +81,8 @@ public sealed partial class RemoteLayer
             at = r.Root; yaw = r.Visual.Rotation.Y;
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
-                r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode);
+                r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
+                    motionIndex, skillMotions.MotionCount(skillId, level));
                 CastsPlayed++;
             }
         }

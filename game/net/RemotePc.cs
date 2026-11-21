@@ -314,13 +314,14 @@ public sealed class RemotePc : IRemotePc
     /// <summary>
     /// A cast's motion sequence outside the action table (RemoteLayer.Casts.cs): the PC enters StateSkill
     /// (<see cref="RemotePcStates.Cast"/>, which first flushes the queued records), then StateSkill::vfunc_4 plays the
-    /// sequence at the record's speed. Its end (<see cref="OnAnimationFinished"/>) leaves the state; the next state plays its
-    /// own action with the default transition from the cast.
+    /// sequence at the record's speed. Its end (<see cref="OnAnimationFinished"/>) is StateSkill::EndOfSequence
+    /// (<see cref="RemotePcStates.CastSequenceEnded"/>): the last motion (<paramref name="motion"/> + 1 &gt;= <paramref name="motionCount"/>)
+    /// leaves the state, an earlier one waits in it; the next state plays its own action with the default transition from the cast.
     /// </summary>
     public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ,
-        int holdId = 0, string holdNode = "")
+        int holdId = 0, string holdNode = "", int motion = 0, int motionCount = 1)
     {
-        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode);
+        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode, motion, motionCount);
         bool again = name == currentName;
         Anim.Play(name, 0.05, speed);
         if (again) Anim.Seek(0, true);           // the same sequence again (a forced re-entry): Play alone would go on
@@ -380,12 +381,12 @@ public sealed class RemotePc : IRemotePc
     // ---- animation events ----------------------------------------------------------------------------------------------
 
     /// <summary>NiActorManager's end of a sequence that does not loop: the state's EndOfSequence (a cast's sequence, played
-    /// outside the action table, ends StateSkill).</summary>
+    /// outside the action table, is StateSkill::EndOfSequence).</summary>
     void OnAnimationFinished(StringName name)
     {
         if (name != currentName) return;
         if (currentAct >= 0) States.SequenceEnded(currentAct);
-        else if (States.Cur == RemotePcStates.StateSkill) States.EndSkill();
+        else if (States.Cur == RemotePcStates.StateSkill) States.CastSequenceEnded();
     }
 
     /// <summary>

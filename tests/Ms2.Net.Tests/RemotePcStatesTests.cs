@@ -505,7 +505,7 @@ public class RemotePcStatesTests {
     }
 
     [Test] public void TheSkillStateEndsInIdleAndTheNextStatePlaysItsSequence() {
-        // a cast again in StateSkill re-enters it (forced); its end (EndOfSequence -> FUN_1417f0070) or a cancel
+        // a cast again in StateSkill re-enters it (forced); its last motion's end (EndOfSequence -> FUN_1417f0070) or a cancel
         // (State::vfunc_7(1)) enters StateIdle; a PC in the air then falls with the fall sequence
         var b = new Body();
         var sm = new RemotePcStates(b);
@@ -516,12 +516,39 @@ public class RemotePcStatesTests {
         sm.Cast(10200001, false, new Vector3(0, 0, 400), 0f);
         Assert.That(states, Is.EqualTo(new[] { RemotePcStates.StateSkill, RemotePcStates.StateSkill }));
         b.Played.Clear();
-        sm.EndSkill();
-        sm.EndSkill();
+        sm.CastSequenceEnded();
+        sm.CastSequenceEnded();
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
         Run(sm, 0.3f);
         Assert.That(states, Is.EqualTo(new[] { RemotePcStates.StateSkill, RemotePcStates.StateSkill, RemotePcStates.StateIdle, RemotePcStates.StateFall }));
         Assert.That(b.Played, Does.Contain(RemotePcStates.ActJumpFall));
+    }
+
+    [Test] public void AnEarlierMotionsEndWaitsInTheSkillStateForTheNextMotionOrFiveSeconds() {
+        // FUN_1417ee120: EndOfSequence ends the state only on the level's last motion (CSkillRecord::FUN_141759e40,
+        // m_nMotion + 1 >= GetMotionCount); after motion 0 of 2 the PC stays in StateSkill, dropping the walk records,
+        // until the next motion's cast or 5 s after the sequence end (m_fStartTime + 5 < GetGameTime)
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, new Vector3(40, 0, 0), 0f, motion: 0, motionCount: 2);
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        sm.Push(Rec(2, 0x18, new Vector3(300, 0, 0), new Vector2(0, 1), 0f));
+        Run(sm, 4.8f);
+        Assert.That((sm.Cur, b.Position), Is.EqualTo((RemotePcStates.StateSkill, new Vector3(40, 0, 0))));
+        Run(sm, 0.3f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+
+        // the next motion's cast (motion 1 of 2) re-enters the state and clears the wait; its end is the last motion's
+        sm.Cast(10200001, false, Vector3.Zero, 0f, motion: 0, motionCount: 2);
+        sm.CastSequenceEnded();
+        Run(sm, 4f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, motion: 1, motionCount: 2);
+        Run(sm, 2f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
     }
 
     // an npc's node at (100, 200, 300), turned 30 degrees about MS2 Z: m[0] = (cos, -sin, 0) for R_z(30)
@@ -537,7 +564,7 @@ public class RemotePcStatesTests {
         var sm = new RemotePcStates(b);
         sm.Spawn(); Run(sm, 0.5f);
         sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "Bip01 Spine");
-        sm.EndSkill();
+        sm.CastSequenceEnded();
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHold));
         Assert.That(sm.HoldTargetId, Is.EqualTo(4242)); Assert.That(sm.HoldNode, Is.EqualTo("Bip01 Spine"));
         Run(sm, 0.5f);
@@ -560,7 +587,7 @@ public class RemotePcStatesTests {
         sm.Spawn(); Run(sm, 0.5f);
         b.RotationZ = 12f;
         sm.Cast(10200001, false, Vector3.Zero, 12f, 4242, "n");
-        sm.EndSkill();
+        sm.CastSequenceEnded();
         Run(sm, 0.1f);
         Assert.That(b.RotationZ, Is.EqualTo(12f).Within(1e-4));
         Assert.That(b.Position, Is.EqualTo(new Vector3(100, 200, 300)));
@@ -573,7 +600,7 @@ public class RemotePcStatesTests {
             var sm = new RemotePcStates(b);
             sm.Spawn(); Run(sm, 0.5f);
             sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "n");
-            sm.EndSkill();
+            sm.CastSequenceEnded();
             var seen = new List<(int, int)>();
             sm.StateChanged = st => seen.Add((st, sm.Sub));
             sm.Update(1 / 60f);
@@ -602,7 +629,7 @@ public class RemotePcStatesTests {
             sm.Spawn(); Run(sm, 0.5f);
             b.RotationZ = 45f;
             sm.Cast(10200001, false, Vector3.Zero, 45f, 4242, "n");
-            sm.EndSkill();
+            sm.CastSequenceEnded();
             Run(sm, 0.2f);
             Assert.That(b.Sequences, Is.EqualTo(new[] { seq }));
             Assert.That(b.RotationZ, Is.EqualTo(30f).Within(1e-3));
@@ -627,7 +654,7 @@ public class RemotePcStatesTests {
         var sm = new RemotePcStates(b);
         sm.Spawn(); Run(sm, 0.5f);
         sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "n");
-        sm.EndSkill();
+        sm.CastSequenceEnded();
         for (int i = 0; i < 60; i++) sm.Update(1 / 60f);
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 600; i++) sm.Update(1 / 60f);

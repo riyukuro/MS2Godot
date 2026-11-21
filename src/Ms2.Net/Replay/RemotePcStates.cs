@@ -118,7 +118,7 @@ public struct HoldTarget
 /// and the transitions the PC takes by itself: a fall, a landing, the end of the landing). The input states' vfunc_8
 /// runs for MyPC only (mypc.cpp:2966), so a remote PC changes state by its records and by its own vfunc_9 tests.
 /// Ported states: StateIdle (1), StateWalk (2), StateLand (4), StateFall (5), StateJump (6), StateSwim (0x1b), and StateSkill
-/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="EndSkill"/>), and StateHold (0x20, on
+/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="CastSequenceEnded"/>, <see cref="EndSkill"/>), and StateHold (0x20, on
 /// the held actor's node: <see cref="Hold"/>).
 /// STILL-OPEN: every other registered state (pc.cpp:668-721: crawl, ladder, rope, emotion, dash, climb, glide, swim
 /// dash, ...) changes the id here and runs no update of its own; the records still place the PC (FUN_1417dbd00 snaps for
@@ -197,6 +197,9 @@ public sealed class RemotePcStates
     Vector3 castPos; float castRotZ;
     // the cast record's m_nB0 / m_strB8 (the SkillUse packet's extra): the actor it holds after the cast
     int castHoldId; string castHoldNode = "";
+    // the record's m_nMotion and its level's motion count (CSkillRecord::FUN_141759e40), and the time since
+    // EndOfSequence marked an earlier motion's end (m_b48, m_fStartTime), -1 while it has not
+    int castMotion, castMotionCount = 1; float castEndAge = -1f;
 
     /// <summary>StateHold's StateHoldData (m_spHold): m_nTargetId and m_strTargetName, the held actor and its node.</summary>
     public int HoldTargetId { get; private set; }
@@ -349,8 +352,13 @@ public sealed class RemotePcStates
     /// </summary>
     /// <paramref name="holdId"/> and <paramref name="holdNode"/> are the record's m_nB0 / m_strB8 (OnSkillUse,
     /// scenestategame.cpp:3333-3340, from the packet's extra): the actor and node the cast's end holds.
-    public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "")
+    /// <paramref name="motion"/> and <paramref name="motionCount"/> are the record's m_nMotion and its level's
+    /// GetMotionCount, which <see cref="CastSequenceEnded"/> compares.
+    public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "",
+        int motion = 0, int motionCount = 1)
     {
+        castMotion = motion;
+        castMotionCount = motionCount;
         SkillId = skillId;
         ChargingSkill = chargingSkill;
         castPos = pos;
@@ -361,11 +369,26 @@ public sealed class RemotePcStates
     }
 
     /// <summary>
-    /// StateSkill's end at the end of its sequence (StateSkill::EndOfSequence @0x1417e9130, stateskill.cpp:1054-1072,
-    /// marks it; for a PC that is neither MyPC nor an npc, FUN_1417ee120 calls FUN_1417f0070 @0x1417f0070,
-    /// stateskill.cpp:2810-2822): a record holding an actor (m_nB0) enters StateHold (0x20) with a StateHoldData of
-    /// m_nB0 and m_strB8, any other StateIdle. Nothing when the PC has left StateSkill already.
+    /// The cast's sequence ended: StateSkill::EndOfSequence (@0x1417e9130, stateskill.cpp:1054-1072) sets m_b48 and
+    /// m_fStartTime, and the next StateSkill::vfunc_3 runs FUN_1417ee120 (@0x1417ee120, stateskill.cpp:2885-2994). For a
+    /// PC that is neither MyPC nor an npc, it ends the state (<see cref="EndSkill"/>) only when CSkillRecord::FUN_141759e40
+    /// (skillrecord.cpp:315-323, m_nAttack 1) holds: the motion is the level's last (m_nMotion + 1 &gt;= GetMotionCount).
+    /// After an earlier motion the PC stays in StateSkill, dropping the walk records (<see cref="Apply"/>), until the next
+    /// motion's cast enters it again or, 5 s after the sequence end (m_fStartTime + 5 &lt; GetGameTime), EndSkill.
+    /// Nothing when the PC has left StateSkill already.
     /// STILL-OPEN: EndOfSequence's waits for a charging or repeating cast (m_bCharging, m_nRepeat) are not ported.
+    /// </summary>
+    public void CastSequenceEnded()
+    {
+        if (Cur != StateSkill) return;
+        if (castMotion + 1 >= castMotionCount) EndSkill();
+        else castEndAge = 0f;
+    }
+
+    /// <summary>
+    /// StateSkill's end, FUN_1417f0070 (@0x1417f0070, stateskill.cpp:2810-2822): a record holding an actor (m_nB0) enters
+    /// StateHold (0x20) with a StateHoldData of m_nB0 and m_strB8, any other StateIdle. Nothing when the PC has left
+    /// StateSkill already.
     /// </summary>
     public void EndSkill()
     {
@@ -533,7 +556,9 @@ public sealed class RemotePcStates
         {
             case StateSkill:
                 // StateSkill::vfunc_4 (stateskill.cpp:390-500): vfunc_22(ZERO), vfunc_19(m_ptPos), and, for a PC whose
-                // FUN_141489940 is not 10, SetTargetYaw(m_ptRot.z) and vfunc_21(m_ptRot)
+                // FUN_141489940 is not 10, SetTargetYaw(m_ptRot.z) and vfunc_21(m_ptRot); the motion's start
+                // (FUN_1417f0940, stateskill.cpp:2206-2212) clears m_b48
+                castEndAge = -1f;
                 MoveInput = Vector2.Zero;
                 pc.Position = castPos;
                 TargetYaw = castRotZ;
@@ -660,7 +685,11 @@ public sealed class RemotePcStates
             case StateSkill:
                 // STILL-OPEN: StateSkill::vfunc_3's motion controller (FUN_1417edc20, CLinearMotionController and the
                 // others, stateskill.cpp:605-631); the PC keeps its place under vfunc_68 with a zero move
+                // STILL-OPEN: vfunc_3's exit when FUN_141675ed0 reports the PC stopped (stateskill.cpp:610-614: SendSkillMode4,
+                // vfunc_7(0x1b)) and the npc-node follow of FUN_1417efbe0 (feature 0xae, m_nB0) are not ported.
                 MoveBy(Vector3.Zero, dt);
+                // FUN_1417ee120's tail: 5 s after an earlier motion's sequence end the state ends
+                if (castEndAge >= 0f && (castEndAge += dt) > 5f) EndSkill();
                 break;
         }
     }

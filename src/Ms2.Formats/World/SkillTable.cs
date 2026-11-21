@@ -72,11 +72,21 @@ public sealed class SkillTable
     /// <summary>The motion a cast plays: the level's row (the nearest level at or below, else the first) and the motion index from the packet.</summary>
     public SkillMotion Motion(int skillId, int level, int motionIndex)
     {
+        var row = Row(skillId, level);
+        if (row == null) return null;
+        return row.Motions[Math.Clamp(motionIndex, 0, row.Motions.Count - 1)];
+    }
+
+    /// <summary>The motion count of the row <see cref="Motion"/> takes (SkillLevelData::GetMotionCount, which
+    /// CSkillRecord::FUN_141759e40 @0x141759e40, skillrecord.cpp:315-323, compares the motion index with); 0 without a row.</summary>
+    public int MotionCount(int skillId, int level) => Row(skillId, level)?.Motions.Count ?? 0;
+
+    SkillLevelRow Row(int skillId, int level)
+    {
         if (!skills.TryGetValue(skillId, out var levels) || levels.Count == 0) return null;
         var row = levels.Where(r => r.Level <= level).OrderByDescending(r => r.Level).FirstOrDefault() ?? levels[0];
         if (row.Motions.Count == 0) row = levels.FirstOrDefault(r => r.Motions.Count > 0);
-        if (row == null) return null;
-        return row.Motions[Math.Clamp(motionIndex, 0, row.Motions.Count - 1)];
+        return row;
     }
 
     public bool Has(int skillId) => skills.ContainsKey(skillId);
