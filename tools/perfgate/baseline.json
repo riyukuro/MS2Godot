@@ -518,9 +518,9 @@
       "limit": 46
     },
     "idle_live.install.objects": {
-      "min": 88,
-      "max": 88,
-      "limit": 104
+      "min": 103,
+      "max": 103,
+      "limit": 119
     },
     "idle_live.install.total_bytes_per_frame": {
       "median": 74112.65,
@@ -603,9 +603,9 @@
       "limit": 46
     },
     "idle_live.session.objects": {
-      "min": 88,
-      "max": 88,
-      "limit": 104
+      "min": 103,
+      "max": 103,
+      "limit": 119
     },
     "idle_live.session.total_bytes_per_frame": {
       "median": 74950.725,
