@@ -1074,6 +1074,8 @@ public class ShopTests
         Assert.That((opened, boxes.Count), Is.EqualTo((0, 0)));
         Assert.That(SystemShopFlow.OnSystemShop(new SystemShopPacket(8, false), c, Key, () => opened++, boxes.Add), Is.False);
         Assert.That((opened, boxes.Count), Is.EqualTo((0, 1)));
+        // the key is a row of the string data (a missing key would give "" or the key, and equal itself)
+        Assert.That(Key("s_shop_no_star_point_event"), Is.Not.Empty.And.Not.EqualTo("s_shop_no_star_point_event"));
         Assert.That(boxes[0].Msg, Is.EqualTo(Key("s_shop_no_star_point_event")));
         // ok: the shop opens and SortKind is the type
         Assert.That(SystemShopFlow.OnSystemShop(new SystemShopPacket(5, true), c, Key, () => opened++, boxes.Add), Is.True);
