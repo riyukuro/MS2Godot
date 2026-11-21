@@ -904,6 +904,18 @@ public partial class LiveSession : Node
         GD.Print("live: remote layer ready");
     }
 
+    /// <summary>SetMyPC(0) of a field change (RequestFieldEnter in game, GameToGame): the own PC's running invincible ends with
+    /// it (<see cref="DropOwnPcInvincible"/>), the old field's player stops sending and the own object is unknown until the
+    /// new field's FieldAddUser.</summary>
+    void DropOwnPc()
+    {
+        DropOwnPcInvincible();
+        if (player != null && IsInstanceValid(player)) player.Live = false;
+        player = null;
+        selfObject = -1;
+        bindPending = false;
+    }
+
     /// <summary>
     /// RequestFieldEnter in game (CSceneStateGame::OnRequestFieldEnter @0x14170f930, scenestategame.cpp:2335), the same
     /// packet the login's entry ends with. An error shows GetFieldMoveErrorMessage's box and changes nothing. Error 0:
@@ -943,10 +955,7 @@ public partial class LiveSession : Node
             return;
         }
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
-        if (player != null && IsInstanceValid(player)) player.Live = false;
-        player = null;
-        selfObject = -1;
-        bindPending = false;
+        DropOwnPc();
         moveClock.Restart();
         NewFieldPortals(f.MapId);
         NewFieldInteractObjects(f.MapId);
@@ -1778,11 +1787,11 @@ public partial class LiveSession : Node
         System.Threading.Tasks.Task flushed = System.Threading.Tasks.Task.CompletedTask;
         SendGuideStates();
         var active = game ?? login;
+        StopCombatEffects();   // before the player goes, so the blink's end restores its alpha (as OnGameToLogin)
         if (player != null && IsInstanceValid(player)) player.Live = false;
         player = null;
         var g = game; game = null;
         var l = login; login = null;
-        StopCombatEffects();
         // The client queues the packet and marks the socket to disconnect (networkservice.cpp:507-512): the send is not awaited here;
         // the connection closes once the packet is written.
         if (active != null && !active.IsClosed)

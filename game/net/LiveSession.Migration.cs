@@ -44,10 +44,7 @@ public partial class LiveSession
         GD.Print($"live: GameToGame to {m.Address}:{m.Port} field {m.FieldId} kind {m.Kind}");
         // FUN_141bbc580: SetMyPC(0), the field's objects go; no input reaches the old field from now
         Ms2.Ui.FieldMoveCover.Raise();
-        if (player != null && IsInstanceValid(player)) player.Live = false;
-        player = null;
-        selfObject = -1;
-        bindPending = false;
+        DropOwnPc();
         PortalAction.Current = null;
         moveClock.Restart();
         var old = game;

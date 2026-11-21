@@ -127,6 +127,17 @@ public partial class LiveSession
         if (IsInstanceValid(player)) NodeFade.Set(player, 1f, true);
     }
 
+    /// <summary>The own PC goes with its field (SetMyPC(0) on a field change or GameToGame, <see cref="DropOwnPc"/>): ~PC
+    /// removes the kept effect and the new field's MyPC starts with m_n105c 0, so a running invincible ends here without its
+    /// blink carrying over to the new PC. The custom buff icon is not removed: ~PC leaves it, and it goes at its own end tick.</summary>
+    void DropOwnPcInvincible()
+    {
+        if (!Invincible.Active) return;
+        Invincible.Stop();
+        InvincibleChanged?.Invoke(false);
+        if (IsInstanceValid(player)) NodeFade.Set(player, 1f, true);
+    }
+
     /// <summary>The game went (the link lost, back to the login server, the quit, the session's end): a running time scale
     /// change ends with it, as the game scene state's WorldService does, and so does a running invincible with its blink (the
     /// own PC goes with the field, so its icon and dimmed alpha must not outlive it).</summary>

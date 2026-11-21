@@ -18,7 +18,7 @@ namespace Ms2Godot.Tests;
 /// - a hidden mesh is skipped unless forced, a shown mesh under a hidden node is not; 1 forced restores every mesh, hidden ones
 ///   too;
 /// - the blink's 0.9 frame reaches the own player's meshes, a mesh shown mid-blink takes it on the next frame, and the end
-///   restores them.
+///   restores them; the game going, a field change (the icon kept) and the quit end it with the alpha restored.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NodeFadeCheck : Node
@@ -144,6 +144,29 @@ public partial class NodeFadeCheck : Node
         Check(!ls.Invincible.Active && lastOld == InvincibleBlink.PortalTimer && lastNew == 0 && lastEnd == 0 && lastOn == false,
             $"GameToLogin left the invincible (active {ls.Invincible.Active}, icon {lastOld}->{lastNew}, effect {lastOn})");
         Check(Param(o) == 1f && o.MaterialOverride == null, $"GameToLogin left node_alpha {Param(o)}");
+        // a field change (RequestFieldEnter in game, GameToGame) drops the own PC: the invincible and its effect end, the
+        // icon is left to its own end tick (~PC does not remove it), the old PC's alpha comes back
+        typeof(LiveSession).GetField("player", Private).SetValue(ls, player);
+        lastOld = lastNew = lastEnd = -1; lastOn = null;
+        ls.Invincible.Start(10000, InvincibleBlink.PortalTimer, (uint)Time.GetTicksMsec());
+        typeof(LiveSession).GetMethod("StartInvincible", Private).Invoke(ls, [InvincibleBlink.PortalTimer]);
+        int buffEnd = ls.InvincibleBuffEnd;
+        lastOld = lastNew = lastEnd = -1; lastOn = null;
+        tick.Invoke(ls, null);
+        var drop = typeof(LiveSession).GetMethod("DropOwnPc", Private);
+        Check(drop != null, "no DropOwnPc (the field change's SetMyPC(0))");
+        drop?.Invoke(ls, null);
+        Check(!ls.Invincible.Active && ls.Invincible.TimerId == 0 && lastOn == false,
+            $"the field change left the invincible (active {ls.Invincible.Active}, timer {ls.Invincible.TimerId}, effect {lastOn})");
+        Check(lastOld == -1 && lastNew == -1 && ls.InvincibleBuffEnd == buffEnd, $"the field change touched the icon ({lastOld}->{lastNew}, end {ls.InvincibleBuffEnd})");
+        Check(Param(o) == 1f && o.MaterialOverride == null, $"the field change left node_alpha {Param(o)}");
+        Check(typeof(LiveSession).GetField("player", Private).GetValue(ls) == null && !player.Live, "the field change kept the own player");
+        // the quit: the blink's end still reaches the player
+        typeof(LiveSession).GetField("player", Private).SetValue(ls, player);
+        ls.Invincible.Start(10000, InvincibleBlink.PortalTimer, (uint)Time.GetTicksMsec());
+        tick.Invoke(ls, null);
+        ls.SendRequestQuitAndDisconnect();
+        Check(!ls.Invincible.Active && Param(o) == 1f && o.MaterialOverride == null, $"the quit left node_alpha {Param(o)}");
         typeof(LiveSession).GetField("player", Private).SetValue(ls, null);
         player.Free();
 
