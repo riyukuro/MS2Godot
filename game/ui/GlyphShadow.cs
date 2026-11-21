@@ -110,9 +110,10 @@ public partial class GlyphShadow : Node2D
     }
 
     /// <summary>
-    /// The font atlas images read in the current draw, by (font, size, texture index): the atlas is copied once per draw
-    /// instead of once per glyph. A draw puts its new glyphs in the atlas before it reads any (_Draw), and a glyph once there
-    /// keeps its place, so the image read holds every glyph the draw rasterizes.
+    /// The font atlas images read in the current draw, by (font, size, texture index). FontGetTextureImage hands back the
+    /// font's own atlas Image (TextServerAdvanced returns its reference, no copy), so this saves one call and one C#
+    /// wrapper per glyph, not a copy of the atlas. A draw puts its new glyphs in the atlas before it reads any (_Draw), and
+    /// a glyph once there keeps its place, so the image read holds every glyph the draw rasterizes.
     /// </summary>
     static readonly System.Collections.Generic.Dictionary<(ulong, int, long), Image> atlases = new();
 
@@ -214,7 +215,9 @@ public partial class GlyphShadow : Node2D
             data[2 * p] = 255;
             data[2 * p + 1] = (byte)Math.Clamp(v, 0, 255);
         }
-        // one scratch image for every raster: the texture copies its data
+        // one scratch image for every raster. Safe on the RenderingDevice renderers (Forward+, Mobile), whose
+        // texture_2d_create copies the image's data at once. Not under GL Compatibility with a separate render thread:
+        // there the create is queued with a reference to this Image, and the next SetData would change it first.
         scratch ??= new Image();
         scratch.SetData(W, H, false, Image.Format.La8, data);
         var tex = ImageTexture.CreateFromImage(scratch);
