@@ -966,7 +966,8 @@ public partial class LiveSession : Node
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
                 bool died = Me.ApplyUserState(u.ObjectId, u.State);
                 // state 12 runs MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
-                if (u.State == 12 && u.ObjectId == selfObject && Me.Dead) HeldItem.EnterState(HeldItemState.Dead, Send);
+                // every state goes through vfunc_59, so ride, rope, climb and ladder from the server let go of the held item too
+                if (u.ObjectId == selfObject) HeldItem.UserState(u.State, Me.Dead, Send);
                 if (died)
                 {
                     GD.Print($"live: own player dead (state {u.State})");

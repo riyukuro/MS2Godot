@@ -692,6 +692,33 @@ public class HeldItemTests
     }
 
     [Test]
+    public void ServerStatesThatStartWithSendRequestCubeLetTheItemGo()
+    {
+        // OnUserState (scenestategame.cpp:5759-5771) passes every state to vfunc_59; the PC ctor (pc.cpp:675-697)
+        // registers ladder 8, rope 9, dead 0xc, climb 0x1d, ride 0x21
+        foreach (var state in new[] { 8, 9, 0x1d, 0x21 })
+        {
+            var held = new HeldItem();
+            var sent = new List<IOutPacket>();
+            held.Hold(15000001, true);
+            Assert.That(held.UserState(state, false, sent.Add), Is.True, $"state {state}");
+            Assert.That(held.Held, Is.False);
+            Assert.That(sent.Count, Is.EqualTo(1));
+        }
+        var h = new HeldItem();
+        var s = new List<IOutPacket>();
+        h.Hold(15000001, true);
+        // walk (2) and taxi call (0x25) do not let go; dead (0xc) needs the pc dead
+        Assert.That(h.UserState(2, false, s.Add), Is.False);
+        Assert.That(h.UserState(0x25, false, s.Add), Is.False);
+        Assert.That(h.UserState(0xc, false, s.Add), Is.False);
+        Assert.That(h.Held, Is.True);
+        Assert.That(s, Is.Empty);
+        Assert.That(h.UserState(0xc, true, s.Add), Is.True);
+        Assert.That(s.Count, Is.EqualTo(1));
+    }
+
+    [Test]
     public void SendRequestCubeNeedsAHeldItemAndLetsItGoFirst()
     {
         // PC::SendRequestCube (pc.cpp:1929-1937): nothing held returns; else FUN_14165f1f0(0, 0), then RequestCube 0x12

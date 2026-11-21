@@ -60,6 +60,28 @@ public sealed class HeldItem
         _ => false,
     };
 
+    /// <summary>The PC state ids (PC ctor, pc.cpp:675-697) whose state is in <see cref="HeldItemState"/>: 8 ladder, 9 rope,
+    /// 0xc dead, 0x1d climb, 0x21 ride. STILL-OPEN: 0xb emotion and 0x1e glide map to Other until those states are
+    /// ported (their vfunc_4 also calls SendRequestCube); TriggerEmotion's id is not registered in that ctor.</summary>
+    public static HeldItemState ForStateId(int state) => state switch
+    {
+        8 => HeldItemState.Ladder,
+        9 => HeldItemState.Rope,
+        0xc => HeldItemState.Dead,
+        0x1d => HeldItemState.Climb,
+        0x21 => HeldItemState.Ride,
+        _ => HeldItemState.Other,
+    };
+
+    /// <summary>OnUserState (@0x141721940, scenestategame.cpp:5759-5771) for the local pc: vfunc_59(state) enters the
+    /// state, so its vfunc_4 runs (<see cref="EnterState"/>). State 12 also needs the pc dead (MyPC::vfunc_137,
+    /// mypc.cpp:1346-1348). Returns whether 0x12 was sent.</summary>
+    public bool UserState(int state, bool dead, Action<IOutPacket> send)
+    {
+        if (state == 0xc && !dead) return false;
+        return EnterState(ForStateId(state), send);
+    }
+
     /// <summary>
     /// OnResponseCube's held-item modes for the local pc (<paramref name="selfObject"/>; FindPCById of another pc is not
     /// tracked):
