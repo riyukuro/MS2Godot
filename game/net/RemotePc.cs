@@ -230,19 +230,8 @@ public sealed class RemotePc : IRemotePc
     /// (CPhysXHelper::RayCastFromPoint's default groups), <paramref name="len"/> 0 = unlimited.</summary>
     (Vector3 pos, ulong colId, int shape)? Ray(Vector3 from, Vector3 dir, float len)
     {
-        var q = rayQ.Set(from, from + dir * (len > 0 ? len : MoveConfig.UnlimitedRay), Body.GetRid());
-        var exclude = rayQ.Ex;
-        var space = Body.GetWorld3D().DirectSpaceState;
-        for (int i = 0; i < 16; i++)
-        {
-            using var hit = space.IntersectRay(q);
-            if (hit.Count == 0) return null;
-            ulong colId = (ulong)hit[PhysicsKeys.ColliderId];
-            if ((MoveConfig.DownRayGroups & (1u << GroupOf(colId))) != 0) return ((Vector3)hit[PhysicsKeys.Position], colId, (int)hit[PhysicsKeys.Shape]);
-            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
-            q.Exclude = exclude;
-        }
-        return null;
+        var h = rayQ.Nearest(Body.GetWorld3D().DirectSpaceState, from, from + dir * (len > 0 ? len : MoveConfig.UnlimitedRay), Body.GetRid(), MoveConfig.DownRayGroups);
+        return h is { } hit ? (hit.Position, hit.ColliderId, hit.Shape) : null;
     }
 
     /// <summary>
@@ -272,17 +261,6 @@ public sealed class RemotePc : IRemotePc
         end += G(new System.Numerics.Vector3(0.1f, 0.05f, 0f));
         return Ray(end, len) == null;
     }
-
-    /// <summary>A collider's group by its instance id: the id is never reused in a session and the group is set when the
-    /// field is built, so each collider is read once; an object Variant (the "collider" key) costs 116 B a ray.</summary>
-    static int GroupOf(ulong colId)
-    {
-        if (groupById.TryGetValue(colId, out int g)) return g;
-        g = GodotObject.InstanceFromId(colId) is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
-        groupById[colId] = g;
-        return g;
-    }
-    static readonly Dictionary<ulong, int> groupById = new();
 
     /// <summary>onShapeHit (0x140cfade0): a touched shape's entity goes into the report (another controller's touch goes to
     /// onControllerHit and leaves it).</summary>

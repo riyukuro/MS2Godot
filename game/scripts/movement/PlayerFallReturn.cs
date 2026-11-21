@@ -305,21 +305,8 @@ public partial class Player
     int GroundFallReturnEntity()
     {
         var from = GlobalPosition;
-        var q = rayQ.Set(from, from + Vector3.Down * MoveConfig.UnlimitedRay, GetRid());
-        var exclude = rayQ.Ex;
-        var space = GetWorld3D().DirectSpaceState;
-        for (int i = 0; i < 16; i++)
-        {
-            using var hit = space.IntersectRay(q);
-            if (hit.Count == 0) return -1;
-            using var colV = hit[PhysicsKeys.Collider];   // an object Variant carries a finalizable disposer
-            var col = colV.AsGodotObject();
-            int group = col is Node n && n.HasMeta(FieldBuilder.GroupMeta) ? (int)n.GetMeta(FieldBuilder.GroupMeta) : 0;
-            if ((GroundGroups & (1u << group)) != 0) return FallReturnEntity(col, (int)hit[PhysicsKeys.Shape]);
-            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
-            q.Exclude = exclude;
-        }
-        return -1;
+        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + Vector3.Down * MoveConfig.UnlimitedRay, GetRid(), GroundGroups) is { } hit
+            ? FallReturnEntity(GodotObject.InstanceFromId(hit.ColliderId), hit.Shape) : -1;
     }
 
     static int FallReturnEntity(GodotObject collider, int shape)

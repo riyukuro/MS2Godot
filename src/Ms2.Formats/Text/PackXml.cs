@@ -8,7 +8,7 @@ namespace Ms2.Formats.Text;
 /// The one reader for an XML entry of a pack (a table in Xml.m2d, a model's companion .xml). The client reads these through
 /// TinyXML (TiXmlDocument::Parse, TIXML_ENCODING_UNKNOWN): it skips a leading UTF-8 byte-order mark, takes the bytes as UTF-8
 /// whatever an encoding declaration says, and has no UTF-16 reader. The same here, so a file the client loads loads here:
-/// a UTF-8 mark (KMS2 Character/female/female.xml has one) is dropped, not left for XDocument.Parse to reject with "Data at
+/// a UTF-8 mark (KMS2_DEV Character/male/male.xml and female/female.xml have one) is dropped, not left for XDocument.Parse to reject with "Data at
 /// the root level is invalid. Line 1, position 1". A UTF-16 mark is decoded as UTF-16 (the client would fail that file; we
 /// read it rather than stop a field).
 /// </summary>

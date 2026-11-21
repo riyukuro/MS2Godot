@@ -95,43 +95,15 @@ public partial class Player
 
     (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups)
     {
-        // the Exclude getter hands back a copy: grow our own array and set it again after each skipped body
-        var q = rayQ.Set(from, from + dir.Normalized() * len, GetRid());
-        var exclude = rayQ.Ex;
-        var space = GetWorld3D().DirectSpaceState;
-        for (int i = 0; i < 16; i++)
-        {
-            using var hit = space.IntersectRay(q);
-            if (hit.Count == 0) return null;
-            using var colV = hit[PhysicsKeys.Collider];   // an object Variant carries a finalizable disposer
-            var col = colV.AsGodotObject() as Node;
-            int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
-            if ((groups & (1u << group)) != 0) return ((Vector3)hit[PhysicsKeys.Position], (Vector3)hit[PhysicsKeys.Normal]);
-            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
-            q.Exclude = exclude;
-        }
-        return null;
+        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + dir.Normalized() * len, GetRid(), groups) is { } hit
+            ? (hit.Position, hit.Normal) : null;
     }
 
     /// <summary><see cref="Ray"/>'s nearest hit as the collider and its shape index (Unk_RayCastInfo's entity comes from it).</summary>
     (GodotObject collider, int shape)? RayHit(Vector3 from, Vector3 dir, float len, uint groups)
     {
-        var q = rayQ.Set(from, from + dir.Normalized() * len, GetRid());
-        var exclude = rayQ.Ex;
-        var space = GetWorld3D().DirectSpaceState;
-        for (int i = 0; i < 16; i++)
-        {
-            using var hit = space.IntersectRay(q);
-            if (hit.Count == 0) return null;
-            using var colV = hit[PhysicsKeys.Collider];
-            var obj = colV.AsGodotObject();
-            var col = obj as Node;
-            int group = col != null && col.HasMeta(FieldBuilder.GroupMeta) ? (int)col.GetMeta(FieldBuilder.GroupMeta) : 0;
-            if ((groups & (1u << group)) != 0) return (obj, (int)hit[PhysicsKeys.Shape]);
-            exclude.Add((Rid)hit[PhysicsKeys.Rid]);
-            q.Exclude = exclude;
-        }
-        return null;
+        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + dir.Normalized() * len, GetRid(), groups) is { } hit
+            ? (GodotObject.InstanceFromId(hit.ColliderId), hit.Shape) : null;
     }
 
     bool IsCubeRay(Vector3 from, Vector3 dir, float len) =>

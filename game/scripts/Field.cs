@@ -339,6 +339,7 @@ public partial class Field : Node3D
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();
         FaceGrids.Clear();  // a freed body's RID may be reused by the next field's
+        ColliderGroups.Clear();   // one field's colliders at a time
         models.Dispose();   // the models stay cached for the next field until the sweep finds them unused (NifCache)
         // the root viewport outlives the field: a size change during the scene change (the HUD scene restoring the window's
         // content scale mode as it leaves) must not reach a field that is no longer in the tree
