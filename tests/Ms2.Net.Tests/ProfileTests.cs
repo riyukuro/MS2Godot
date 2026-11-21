@@ -74,6 +74,19 @@ public class ProfileTests {
         Assert.That(Enum.GetValues<Outbound>().Where(o => o != Outbound.PersonalInfoAgreement && !TryNumber(p, o)).Select(o => "Outbound." + o), Is.Empty, "no GMS2 number for");
     }
 
+    [Test]
+    public void Gms2NumbersAreUniquePerDirection() {
+        var p = ProtocolProfile.Gms2;
+        // a number on two members means one row was copied from the KMS value or mistyped; the right numbers are upstream's
+        // Maple2.Server.Core/Constants/SendOp.cs (Inbound, server to client) and RecvOp.cs (Outbound, client to server)
+        var inDup = Enum.GetValues<Inbound>().Where(o => TryNumber(p, o)).GroupBy(o => p.Number(o)).Where(g => g.Count() > 1)
+            .Select(g => $"0x{g.Key:X2}: {string.Join(", ", g)}");
+        var outDup = Enum.GetValues<Outbound>().Where(o => TryNumber(p, o)).GroupBy(o => p.Number(o)).Where(g => g.Count() > 1)
+            .Select(g => $"0x{g.Key:X2}: {string.Join(", ", g)}");
+        Assert.That(inDup, Is.Empty, "Inbound numbers on two members (check SendOp.cs)");
+        Assert.That(outDup, Is.Empty, "Outbound numbers on two members (check RecvOp.cs)");
+    }
+
     static bool TryNumber(ProtocolProfile p, Inbound o) { try { p.Number(o); return true; } catch (KeyNotFoundException) { return false; } }
     static bool TryNumber(ProtocolProfile p, Outbound o) { try { p.Number(o); return true; } catch (KeyNotFoundException) { return false; } }
 }
