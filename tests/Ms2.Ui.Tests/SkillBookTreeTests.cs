@@ -170,4 +170,49 @@ public class SkillBookTreeTests
         var slot3 = (AsObject)h.ToAs(bar.GetBinding(MainPlayerInfoController.SlotBag + ".3"));
         Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(m.Tables.Skills.GetSkillData((uint)skill).Icon));
     }
+    /// <summary>A press, move and release on a learnt skill's slot (the user's drag out of the book). SkillSlot.handleMousePress
+    /// re-dispatches a bubbling MOUSE_DOWN on its own m_slot, which bubbles back to the skill slot's MOUSE_DOWN listeners and
+    /// so runs handleMousePress again: the movie recurses until the VM refuses the 129th call frame (VM::AddFrame,
+    /// as3_callframe.h: Error #1023), and the listener that threw is output and ignored by the dispatch
+    /// (EventDispatcher::DispatchSingleEvent, sfr_as3_09.cpp), so the press returns and the drag still starts.</summary>
+    [Test]
+    public void DraggingALearntSkillOutRecursesToTheFrameLimitAndStillStartsTheDrag()
+    {
+        var (h, c, _) = Load();
+        c.OnSkillBookTree(NoTabs());
+        var p = h.Player;
+        var tree = h.Child("m_treeSkills");
+        int n = (int)Rt.ToNumber(h.Get(tree, "numChildren"));
+        var skill = Enumerable.Range(0, n).Select(i => h.Invoke(tree, "getChildAt", i)).Single(s => (uint)Rt.ToNumber(h.Get(s, "m_skillID")) == 10500001);
+        var slot = (AsDisplayObject)h.Get(h.Get(skill, "m_skillSlot"), "m_slot");
+        var b = slot.GetBounds(null);
+        double x = b.X + b.W / 2, y = b.Y + b.H / 2;
+        int before = h.RT.Errors.Count;
+        int presses = 0;
+        void Count(string m) { if (m.Contains("SkillSlot") && m.EndsWith("handleMousePress", StringComparison.Ordinal)) presses++; }
+        Interp.OnCall += Count;
+        try
+        {
+            p.MouseMove(x, y);
+            p.MouseButton(true);
+        }
+        finally { Interp.OnCall -= Count; }
+        var errors = h.RT.Errors.Skip(before).ToList();
+        foreach (var e in errors) TestContext.WriteLine("  press error: " + e);
+        TestContext.WriteLine($"SkillSlot.handleMousePress calls: {presses}");
+        Assert.That(errors.Count(e => e.Contains("#1023")), Is.EqualTo(1), "one stack overflow error, output and ignored");
+        Assert.That(errors, Has.Count.EqualTo(1));
+        Assert.That(presses, Is.InRange(120, 128), "the recursion stops at the 128 frame limit");
+
+        // SkillSlot.handleMouseDown armed the stage's MOUSE_MOVE: a move off the slot dispatches DRAG_START on m_slot
+        // (SkillSlot.handleMouseMove), which bubbles to the stage, where the host hears it (UiStage.OnDragStart)
+        var drags = new List<object>();
+        p.Call(p.Stage, "addEventListener", new object[] { "dragStart",
+            new AsPlainFunction(h.RT, new NativeMethod("dragStart", (_, a) => { drags.Add(h.Get(a[0], "dragTarget")); return Rt.Undef; })) });
+        p.MouseMove(b.X + b.W + 20, y);
+        Assert.That(drags, Is.Not.Empty.And.All.SameAs(slot), "the drag starts from the skill's slot");
+        p.MouseMove(b.X + b.W + 300, y);
+        p.MouseButton(false);
+        Assert.That(h.RT.Errors.Skip(before + 1), Is.Empty);
+    }
 }

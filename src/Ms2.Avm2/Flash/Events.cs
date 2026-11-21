@@ -81,14 +81,16 @@ public class AsEventDispatcher : AsObject
         if (n > 0) { int k = 0; for (var p = ((AsDisplayObject)this).Parent; p != null; p = p.Parent) path[k++] = p; }
         try
         {
-            // capture: from the top down
+            // capture: from the top down; a listener that threw ends the dispatch (EventDispatcher::Dispatch,
+            // sfr_as3_09.cpp: each phase stops when DispatchSingleEvent returns false)
+            bool ok = true;
             e.Phase = 1;
-            for (int i = n - 1; i >= 0 && !e.Stopped; i--) path[i].Fire(e, true);
-            if (!e.Stopped) { e.Phase = 2; Fire(e, false); }
-            if (e.bubbles)
+            for (int i = n - 1; i >= 0 && ok && !e.Stopped; i--) ok = path[i].Fire(e, true);
+            if (ok && !e.Stopped) { e.Phase = 2; ok = Fire(e, false); }
+            if (ok && e.bubbles)
             {
                 e.Phase = 3;
-                for (int i = 0; i < n; i++) { if (e.Stopped) break; path[i].Fire(e, false); }
+                for (int i = 0; i < n && ok; i++) { if (e.Stopped) break; ok = path[i].Fire(e, false); }
             }
         }
         finally { if (n > 0) { Array.Clear(path, 0, n); System.Buffers.ArrayPool<AsEventDispatcher>.Shared.Return(path); } }
@@ -97,10 +99,13 @@ public class AsEventDispatcher : AsObject
         return !e.Prevented;
     }
 
-    internal void Fire(AsEvent e, bool useCapture)
+    /// <summary>Calls this object's listeners of <paramref name="e"/>'s type. An AS3 exception from a listener is output and
+    /// ignored and the rest of the listeners are skipped (EventDispatcher::DispatchSingleEvent, sfr_as3_09.cpp:
+    /// OutputAndIgnoreException, rv = false, break); false then, and the dispatch stops. dispatchEvent itself does not throw it.</summary>
+    internal bool Fire(AsEvent e, bool useCapture)
     {
         var map = useCapture ? capture : bubble;
-        if (map == null || !map.TryGetValue(e.type, out var l) || l.Count == 0) return;
+        if (map == null || !map.TryGetValue(e.type, out var l) || l.Count == 0) return true;
         e.CurrentTarget = target ?? this;
         // the listeners as they are now, in a pooled copy (one added or removed by a listener does not change this dispatch)
         int n = l.Count;
@@ -111,10 +116,12 @@ public class AsEventDispatcher : AsObject
             for (int i = 0; i < n; i++)
             {
                 if (e.StoppedNow) break;
-                ls[i].F.Call(null, new object[] { e });
+                try { ls[i].F.Call(null, new object[] { e }); }
+                catch (AsThrow t) { RT.OutputError("listener", e.type, t); return false; }
             }
         }
         finally { Array.Clear(ls, 0, n); System.Buffers.ArrayPool<Listener>.Shared.Return(ls); }
+        return true;
     }
 
     /// <summary>Makes and dispatches a plain event of a native class (Event, MouseEvent ...).</summary>

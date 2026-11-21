@@ -374,12 +374,17 @@ public sealed partial class Runtime
         if (guardDepth == 0) budgetLeft = Budget;
         guardDepth++;
         try { a(state); return true; }
-        catch (AsThrow t) { Errors.Add(Label(what, detail) + ": " + Rt.Describe(t.Value) + (t.AsStack.Length > 0 ? "   [in " + t.AsStack + "]" : "")); return false; }
+        catch (AsThrow t) { OutputError(what, detail, t); return false; }
         catch (BudgetExceeded) when (guardDepth == 1) { Errors.Add(Label(what, detail) + ": instruction budget exceeded"); return false; }
         catch (Exception e) when (e is not OutOfMemoryException) { Errors.Add(Label(what, detail) + ": internal " + e.GetType().Name + ": " + e.Message + " @ " + e.StackTrace?.Split('\n').FirstOrDefault(l => l.Contains("Ms2.Avm2"))?.Trim()); return false; }
         finally { guardDepth--; Current = prev ?? this; }
     }
     static string Label(string what, string detail) => detail == null ? what : what + " " + detail;
+
+    /// <summary>Records an AS3 exception the caller ignores and goes on from (VM::OutputAndIgnoreException, sfr_as3_09.cpp:
+    /// the error is output and cleared).</summary>
+    public void OutputError(string what, string detail, AsThrow t) =>
+        Errors.Add(Label(what, detail) + ": " + Rt.Describe(t.Value) + (t.AsStack.Length > 0 ? "   [in " + t.AsStack + "]" : ""));
     int guardDepth;
 }
 
