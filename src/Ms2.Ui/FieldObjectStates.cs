@@ -165,8 +165,9 @@ public sealed class BreakableObjects
 /// quest masks and flag; SetAt replaces a lift of that name.</para>
 /// <para>A lift goes from the list when its entity is removed (worldservice_1.cpp:3526-3533). DestroyLiftByName
 /// (:4451-4456) removes the entity of the named lift.</para>
-/// STILL-OPEN: the field's lifts (model 0x32767dd, kind prop 0x3773e9e0) are not attached: the model's name is not proven;
-/// the host adds them with <see cref="AddFieldLift"/>.
+/// <para>The field's lifts (<see cref="AttachField"/>): the field load (worldservice_1.cpp:6771-6786) makes a CLiftableObject
+/// for every entity of model 0x32767dd (net hash of "MS2Liftable") with kind = property 0x3773e9e0 ("ItemStackCount").
+/// Updates that come before the field's lifts are attached wait for them (<see cref="Holding"/>).</para>
 /// STILL-OPEN: DestroyLiftByName on a lift without an entity (CMainSystem::DestroyEntity(0)) is not followed: such a lift is
 /// left in the list.
 /// STILL-OPEN: the quest masks (ParseQuestMask, liftableobject.cpp:105), UpdateConditions (:356), the collision groups and
@@ -192,10 +193,19 @@ public sealed class LiftableObjects
         public string QuestB { get; internal set; }
         public string QuestC { get; internal set; }
         public string QuestD { get; internal set; }
-        /// <summary>m_bC2 (FUN_141447aa0).</summary>
-        public bool Flag { get; internal set; }
+        /// <summary>m_bC2 (FUN_141447aa0); the ctor sets it (liftableobject.cpp:121).</summary>
+        public bool Flag { get; internal set; } = true;
         /// <summary>A field lift has an entity; a mode 3 lift has none.</summary>
         public bool HasEntity { get; internal set; }
+        /// <summary>The field entity (m_ent); null for a mode 3 lift and for one added by name.</summary>
+        public FieldEntity Entity { get; internal set; }
+        /// <summary>m_fRange (GetRange @0x141447ac0): 150 from the ctor (liftableobject.cpp:127), else property 0xf39fa2a1
+        /// ("ActionDistance") when the entity has it (BindEntity, :192-194).</summary>
+        public float Range { get; internal set; } = 150f;
+        /// <summary>m_vC4 (GetPosition, liftableobject.cpp:324): property 0xfd95ca52 ("Position") (:196).</summary>
+        public Vec3 Position { get; internal set; }
+        /// <summary>m_nA8: property 0x2e687f77 ("ItemID") for a field lift (:198-201).</summary>
+        public int ItemId { get; internal set; }
 
         internal void SetState(int state)
         {
@@ -214,6 +224,12 @@ public sealed class LiftableObjects
     public Action<string> Removed;
 
     public int Count => lifts.Count;
+    public const string Model = "MS2Liftable";
+
+    /// <summary>True from <see cref="FieldLeft"/> (a field change) until <see cref="AttachField"/>: updates wait in arrival
+    /// order.</summary>
+    public bool Holding { get; private set; }
+    readonly List<LiftableUpdate> held = new();
     public Lift Find(string name) => name != null && lifts.TryGetValue(name, out var l) ? l : null;
 
     /// <summary>A field lift: Init(entity, false, kind) with the entity's lowercased DataFileID as its name.</summary>
@@ -229,10 +245,39 @@ public sealed class LiftableObjects
 
     public void Clear() => lifts.Clear();
 
+    /// <summary>The field load's lifts (worldservice_1.cpp:6771-6786): each MS2Liftable entity with a DataFileID becomes
+    /// Init(entity, false, kind) (liftableobject.cpp:167-210) and SetAt replaces a lift of its name; then the held updates
+    /// run. Returns the field's lift count.
+    /// STILL-OPEN: the shadow flag (0xd89e9b12), the rotation, the quest conditions (UpdateConditions) and NotifyAddLiftable
+    /// have no port.</summary>
+    public int AttachField(IReadOnlyList<FieldEntity> entities)
+    {
+        int n = 0;
+        for (int i = 0; entities != null && i < entities.Count; i++)
+        {
+            var e = entities[i];
+            if (!e.HasMixin(Model)) continue;
+            string id = e.Raw?.Id;
+            if (string.IsNullOrEmpty(id)) continue;
+            var l = AddFieldLift(id, (int)e.Number("ItemStackCount"));
+            l.Entity = e;
+            l.Range = (float)e.Number("ActionDistance", 150);
+            l.Position = e.Position;
+            l.ItemId = (int)(uint)e.Number("ItemID");
+            n++;
+        }
+        Holding = false;
+        for (int i = 0; i < held.Count; i++) Apply(held[i]);
+        held.Clear();
+        return n;
+    }
+
     /// <summary>The field is left: its entities go, and with each its lift (worldservice_1.cpp:3526-3533). A lift without an
     /// entity stays.</summary>
     public void FieldLeft()
     {
+        Holding = true;
+        held.Clear();
         gone.Clear();
         foreach (var (name, l) in lifts)
             if (l.HasEntity) gone.Add(name);
@@ -242,6 +287,7 @@ public sealed class LiftableObjects
     public void Apply(LiftableUpdate u)
     {
         if (u == null) return;
+        if (Holding) { held.Add(u); return; }
         switch (u.Mode)
         {
             case LiftableUpdate.ModeList:

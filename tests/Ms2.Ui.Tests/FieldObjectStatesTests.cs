@@ -118,6 +118,50 @@ public class FieldObjectStatesTests
     static LiftableUpdate List(params LiftableEntry[] e) => new(LiftableUpdate.ModeList, e);
 
     [Test]
+    public void TheFieldsLiftsAreAttachedWithTheirKindRangeAndPosition()
+    {
+        // worldservice_1.cpp:6771-6786: every entity of model "MS2Liftable" (0x32767dd), kind = "ItemStackCount" (0x3773e9e0);
+        // BindEntity (liftableobject.cpp:180-210): the lowercased DataFileID, range "ActionDistance" (0xf39fa2a1) else 150,
+        // position, item id "ItemID" (0x2e687f77); the ctor's m_bC2 is true (:121)
+        var map = Field("02000041_bf");
+        var want = map.Entities.Where(e => e.HasMixin("MS2Liftable")).ToList();
+        Assert.That(want, Is.Not.Empty);
+        var l = new LiftableObjects();
+        Assert.That(l.AttachField(map.Entities), Is.EqualTo(want.Count));
+        Assert.That(l.Count, Is.EqualTo(want.Select(e => e.Raw.Id.ToLowerInvariant()).Distinct().Count()));
+        foreach (var e in want)
+        {
+            var lift = l.Find(e.Raw.Id.ToLowerInvariant());
+            Assert.That(lift, Is.Not.Null);
+            Assert.That((lift.Kind, lift.Enabled, lift.State, lift.Flag, lift.HasEntity),
+                Is.EqualTo(((int)e.Number("ItemStackCount"), false, 0, true, true)));
+            Assert.That(lift.Range, Is.EqualTo(e.Has("ActionDistance") ? (float)e.Number("ActionDistance") : 150f));
+            Assert.That(lift.Range, Is.GreaterThan(0f));
+            Assert.That(lift.Position, Is.EqualTo(e.Position));
+            Assert.That(lift.ItemId, Is.EqualTo((int)e.Number("ItemID")));
+            Assert.That(lift.ItemId, Is.Not.Zero);
+        }
+        Assert.That(l.Find(map.Entities.First(e => !e.HasMixin("MS2Liftable") && e.Raw?.Id != null).Raw.Id.ToLowerInvariant()), Is.Null);
+    }
+
+    [Test]
+    public void LiftUpdatesAfterAFieldEnterWaitForTheFieldsLifts()
+    {
+        // OnLiftable's list (scenestategame.cpp:11941-11991) runs on the lifts the field load made; read before them it would
+        // set nothing and the attached lifts would stay disabled
+        var map = Field("02000041_bf");
+        var l = new LiftableObjects();
+        l.FieldLeft();
+        string name = map.Entities.First(e => e.HasMixin("MS2Liftable")).Raw.Id.ToLowerInvariant();
+        l.Apply(List(new LiftableEntry(name, true, 3, 0)));
+        Assert.That((l.Holding, l.Count), Is.EqualTo((true, 0)));
+        l.AttachField(map.Entities);
+        var lift = l.Find(name);
+        Assert.That((l.Holding, lift.Enabled, lift.Kind, lift.State), Is.EqualTo((false, true, 3, 0)));
+        Assert.That(l.Count, Is.EqualTo(1), "the list removes the field lifts it does not name");
+    }
+
+    [Test]
     public void FieldLiftIsDisabledAtStateZeroUnderItsLowercasedId()
     {
         // Init(entity, false, kind) (liftableobject.cpp:167-175), BindEntity's ToLower (:186-191); SetState(0) runs before
