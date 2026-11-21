@@ -160,6 +160,7 @@ public class HudTests
     [Test]
     public void KeyTableSyncsBindingsAndLoadsMousePreset()
     {
+        Model(); // loads the shared packs (or ignores the test without MS2_DATA); the test must not rely on another test having run first
         var kt = new KeyTable(packs, "en");
         var sentSingle = new List<KeyBinding>();
         var sentAll = new List<IReadOnlyList<KeyBinding>>();
