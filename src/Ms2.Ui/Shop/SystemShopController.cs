@@ -44,7 +44,9 @@ public static class SystemShopFlow
     /// ToggleShopTab (@0x1413499b0, unit_141347b10.cpp:468): toggles or switches a system shop tab (Outbound 0x65).
     /// When the shop is already open on <paramref name="tab"/>, closes the shop (whose Close sends state 0) and
     /// inventory and returns 0; otherwise closes any open different shop/inventory, sends SystemShop(tab, 1) and
-    /// plays <see cref="OpenSound"/>, returning 1.
+    /// plays <see cref="OpenSound"/>, returning 1. The first guard is CUIService::FUN_141adc7f0(0x4e3b) = UIDialog::vfunc_73
+    /// (uidialog.cpp:666: dialog limited on the map, a tutorial in the way, its own vfunc_75): <paramref name="canOpen"/>
+    /// false returns 0 with nothing sent. STILL-OPEN: the HUD has none of that state, so it passes null (= may open).
     /// </summary>
     public static int ToggleShopTab(
         int tab,
@@ -53,8 +55,10 @@ public static class SystemShopFlow
         Action closeShop,
         Action closeInventory,
         Action<Ms2.Net.Wire.IOutPacket> send,
-        Action<string> sound = null)
+        Action<string> sound = null,
+        Func<bool> canOpen = null)
     {
+        if (canOpen != null && !canOpen()) return 0;
         if (shop == null) return 0;
         bool open = true;
         if (shopOpen)

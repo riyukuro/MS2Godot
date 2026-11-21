@@ -1102,5 +1102,9 @@ public class ShopTests
         Assert.That(SystemShopFlow.ToggleShopTab(5, c, true, () => closedShop++, () => closedInv++, sent.Add), Is.EqualTo(1));
         Assert.That(sent, Is.EqualTo(new IOutPacket[] { new SystemShopRequest(5, 1) }));
         Assert.That((closedShop, closedInv), Is.EqualTo((2, 2)));
+        // the first guard (FUN_141adc7f0 / vfunc_73) refuses: 0, nothing sent, nothing closed
+        sent.Clear(); sounds.Clear();
+        Assert.That(SystemShopFlow.ToggleShopTab(6, c, true, () => closedShop++, () => closedInv++, sent.Add, sounds.Add, () => false), Is.EqualTo(0));
+        Assert.That((sent.Count, sounds.Count, closedShop, closedInv), Is.EqualTo((0, 0, 2, 2)));
     }
 }
