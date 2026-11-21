@@ -1093,7 +1093,7 @@ public partial class LiveSession : Node
             if (own) { }
             else if (game.Is(p, Inbound.FieldAddUser))
             {
-                var u = FieldAddUser.Read(p.Reader());
+                var u = FieldAddUser.Read(p.Reader(), game.Profile);
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
                 if (self)
                 {

@@ -47,7 +47,7 @@ public class Gms2CharacterListLayoutTests {
         for (int i = 0; i < 14; i++) a.WriteFloat(i + 1);
     }
 
-    static void WriteEquip(ByteWriter w, int id, long uid, string slot, int rarity, Action<ByteWriter> body = null) {
+    internal static void WriteEquip(ByteWriter w, int id, long uid, string slot, int rarity, Action<ByteWriter> body = null) {
         w.WriteInt(id); w.WriteLong(uid); w.WriteUnicodeString(slot); w.WriteInt(rarity);
         (body ?? (b => WriteBody(b, appearance: slot == "HR" ? Hair : null)))(w);
     }
@@ -113,7 +113,7 @@ public class Gms2CharacterListLayoutTests {
         Assert.That(it.LimitBreak.Special[4], Is.EqualTo(12)); Assert.That(it.LimitBreak.SpecialRate[4], Is.EqualTo(0.375f));
     }
 
-    static void WriteBadge(ByteWriter w, byte type, int id, Action<ByteWriter> block) {
+    internal static void WriteBadge(ByteWriter w, byte type, int id, Action<ByteWriter> block) {
         w.WriteByte(type); w.WriteInt(id); w.WriteLong(9); w.WriteInt(1);     // upstream WriteBadge: BadgeType, id, uid, rarity
         WriteBody(w, extra: x => { x.WriteByte(1); x.WriteByte(type); x.WriteUnicodeString(id.ToString()); block?.Invoke(x); });
     }
@@ -149,7 +149,7 @@ public class Gms2CharacterListLayoutTests {
     }
 
     // upstream WriteCharacter, all ints and longs zero but the identifying ones
-    static void WriteCharacter(ByteWriter w) {
+    internal static void WriteCharacter(ByteWriter w) {
         w.WriteLong(1); w.WriteLong(2); w.WriteUnicodeString("Hero"); w.WriteByte(1); w.WriteByte(1); w.WriteLong(0); w.WriteInt(0);
         w.WriteInt(02000001); w.WriteInt(1); w.WriteInt(0); w.WriteShort(50); w.WriteShort(3);
         w.WriteInt(10); w.WriteInt(10); w.WriteInt(0); w.WriteInt(0); w.WriteShort(0); w.WriteLong(0); w.WriteLong(0); w.WriteLong(0);

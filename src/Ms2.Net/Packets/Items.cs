@@ -188,9 +188,12 @@ public static class ItemReader {
     public static Func<int> UgcMode;
 
     /// <summary>A pet item as FieldAddUser carries it: i32 id, i64 uid, i32 rarity, then the item body with a pet block.</summary>
-    public static EquipItem ReadPetItem(ByteReader r) {
+    public static EquipItem ReadPetItem(ByteReader r) => ReadPetItem(r, ProtocolProfile.Kms2525);
+
+    /// <summary><see cref="ReadPetItem(ByteReader)"/> for a profile; GMS2 reads the item body in its layout (upstream Item.WriteTo).</summary>
+    public static EquipItem ReadPetItem(ByteReader r, ProtocolProfile profile) {
         var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt(), Slot = EquipSlot.Unknown };
-        ReadBody(r, it, EquipSlot.Unknown, forceExtra: ItemExtra.Pet);
+        ReadBody(r, it, EquipSlot.Unknown, forceExtra: ItemExtra.Pet, gms2: profile.IsGms2);
         return it;
     }
 

@@ -191,10 +191,14 @@ public sealed class ProxyGameObj {
 
 /// <summary>RideOnAction (ReadRideOnAction, commonfiles/rideonaction.cpp): u8 type, i32, i32, bool; type 1 adds i32 item id, i64 uid, a ugc look; type 2 adds i32, i16.</summary>
 public sealed record RideOnAction(byte Type, int RideId, int ObjectId, bool Flag, int ItemId, long ItemUid, int Extra, short ExtraShort) {
-    public static RideOnAction Read(ByteReader r) {
+    public static RideOnAction Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>The ride action for a profile. GMS2 (upstream RideOnAction.WriteTo): type, ride id, object id, then the subclass fields, without
+    /// the flag byte the KMS2 client reads after the object id.</summary>
+    public static RideOnAction Read(ByteReader r, ProtocolProfile profile) {
         byte type = r.ReadByte();
         if (type > 3) throw new PacketLayoutException($"ride action type {type}");
-        int rideId = r.ReadInt(), obj = r.ReadInt(); bool flag = r.ReadBool();
+        int rideId = r.ReadInt(), obj = r.ReadInt(); bool flag = !profile.IsGms2 && r.ReadBool();
         int itemId = 0; long uid = 0; int extra = 0; short es = 0;
         if (type == 1) { itemId = r.ReadInt(); uid = r.ReadLong(); ItemReader.ReadUgcLook(r); }
         else if (type == 2) { extra = r.ReadInt(); es = r.ReadShort(); }
@@ -247,9 +251,18 @@ public sealed class FieldAddUser {
     /// i32 that month's count (m_n1148), i32 the score (m_n114c).</summary>
     public int HeldObject; public long HomeCommendMonth; public int HomeCommendMonthly, HomeCommendPoint;
 
-    public static FieldAddUser Read(ByteReader r, string locale = "KR") {
-        var f = new FieldAddUser { ObjectId = r.ReadInt(), User = UserBlock.Read(r, locale) };
-        f.Book = SkillBook.Read(r);     // the job system block JobSystem::vfunc_7 reads (the Job packet's layout)
+    public static FieldAddUser Read(ByteReader r, string locale = "KR") => Read(r, locale, ProtocolProfile.Kms2525);
+
+    public static FieldAddUser Read(ByteReader r, ProtocolProfile profile) => Read(r, "KR", profile);
+
+    /// <summary>The packet for a profile. GMS2 (upstream FieldPacket.AddPlayer): the user block with locale "NA", the skill block in its per-type
+    /// layout (<see cref="SkillBook.Read(ByteReader, ProtocolProfile)"/>), the ride action without the KMS flag byte, equips, badges and the pet
+    /// in the GMS2 item layout, and two more i32 before the wedding state. The rest is the same as KMS2. STILL-OPEN: what the client does with the
+    /// two extra tail values.</summary>
+    public static FieldAddUser Read(ByteReader r, string locale, ProtocolProfile profile) {
+        bool gms = profile.IsGms2;
+        var f = new FieldAddUser { ObjectId = r.ReadInt(), User = UserBlock.Read(r, gms ? "NA" : locale) };
+        f.Book = SkillBook.Read(r, profile);     // the job system block JobSystem::vfunc_7 reads (the Job packet's layout)
         f.SkillRank = f.Book.Rank; f.SkillJobCode = f.Book.JobGroup;
         foreach (var sk in f.Book.Skills) f.Skills.Add((sk.SkillId, sk.Level, sk.Changed, sk.Learned));
         f.Position = r.ReadVec3(); f.Rotation = r.ReadVec3();
@@ -263,7 +276,7 @@ public sealed class FieldAddUser {
         f.Skin = new SkinColor(r.ReadRgba(), r.ReadRgba());
         f.Picture = r.ReadUnicodeString();
         if (r.ReadBool()) {
-            f.Ride = RideOnAction.Read(r);
+            f.Ride = RideOnAction.Read(r, profile);
             f.Passengers = new (int, byte)[r.ReadByte()];
             for (int i = 0; i < f.Passengers.Length; i++) f.Passengers[i] = (r.ReadInt(), r.ReadByte());
         }
@@ -271,17 +284,17 @@ public sealed class FieldAddUser {
 
         using (var b = r.ReadDeflated()) {
             int n = b.ReadByte();
-            for (int i = 0; i < n; i++) f.Equips.Add(ItemReader.ReadEquip(b));
+            for (int i = 0; i < n; i++) f.Equips.Add(ItemReader.ReadEquip(b, profile));
             b.ReadBool();
             f.SkinTabStart = b.ReadLong(); f.SkinTabEnd = b.ReadLong();
             n = b.ReadByte();
-            for (int i = 0; i < n; i++) f.Outfit2.Add(ItemReader.ReadEquip(b));
+            for (int i = 0; i < n; i++) f.Outfit2.Add(ItemReader.ReadEquip(b, profile));
             b.ExpectEnd("FieldAddUser equips");
         }
         using (var b = r.ReadDeflated()) { b.ReadByte(); b.ExpectEnd("FieldAddUser unknown block"); }
         using (var b = r.ReadDeflated()) {
             int n = b.ReadByte();
-            for (int i = 0; i < n; i++) f.Badges.Add(ItemReader.ReadBadge(b));
+            for (int i = 0; i < n; i++) f.Badges.Add(ItemReader.ReadBadge(b, profile));
             b.ExpectEnd("FieldAddUser badges");
         }
         f.BuffCount = r.ReadShort();
@@ -291,8 +304,9 @@ public sealed class FieldAddUser {
         f.Title = r.ReadInt(); f.Insignia = r.ReadShort(); f.InsigniaShown = r.ReadBool();
         r.ReadInt();
         f.HasPet = r.ReadBool();
-        if (f.HasPet) f.Pet = ItemReader.ReadPetItem(r);
+        if (f.HasPet) f.Pet = ItemReader.ReadPetItem(r, profile);
         f.PremiumTime = r.ReadLong(); r.ReadInt(); r.ReadByte();
+        if (gms) { r.ReadInt(); r.ReadInt(); }
         f.WeddingState = r.ReadShort();
         r.ExpectEnd("FieldAddUser");
         return f;

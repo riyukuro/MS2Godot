@@ -109,7 +109,7 @@ public sealed class FieldTracker {
                 break;
             }
             case Ms2.Net.Inbound.FieldAddUser: {
-                var u = FieldAddUser.Read(p.Reader());
+                var u = FieldAddUser.Read(p.Reader(), Profile);
                 bool self = u.ObjectId == SelfObjectId;
                 lock (gate) actors[u.ObjectId] = new Actor { ObjectId = u.ObjectId, Name = u.User.Name, Gender = u.User.Gender, IsSelf = self, Position = u.Position, YawDegrees = u.Rotation.Z, Add = u };
                 Events.Enqueue(new UserAddedEvent(Time, u, self));
