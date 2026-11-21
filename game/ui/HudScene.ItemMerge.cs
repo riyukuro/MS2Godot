@@ -32,7 +32,8 @@ public partial class HudScene
         var c = new ItemMergeOptionDialogController
         {
             Send = p => live.SendItemMerge(p),
-            Find = uid => ItemOf(Raw(uid)),
+            Find = uid => ItemOf(Raw(uid)),                              // FUN_1419be700: inventory or equipped
+            FindBag = uid => ItemOf(live.Items.Get(uid)),                // Unk_Inventory::FindItemByUid: the inventory only
             BagItems = () => live.Items.All.Where(e => live.Items.TabOf?.Invoke(e.Id) == 0).Select(ItemOf).Where(i => i != null),
             EquippedItems = () => (live.Me.Equips ?? Array.Empty<EquipItem>()).Select(ItemOf).Where(i => i != null),
             Meso = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0,
@@ -44,20 +45,8 @@ public partial class HudScene
             Text = key => tables.Common(key) ?? key,
             ItemName = id => tables.ItemName(id) ?? "",
         };
-        void OnPacket(ItemMergePacket p, Maple2.PacketLib.Tools.ByteReader r)
-        {
-            if (p.Mode == 5)
-            {
-                if (p.Error != 0) { c.ShowMergeError(p.Error); return; }
-                if (Raw(p.Uid) is { } e) { ItemReader.ReadBodyInto(r, e); c.ShowMergeResult(ItemOf(e)); }
-            }
-            else if (p.Mode == 6) { if (Raw(p.Uid) is { } e) ItemReader.ReadBodyInto(r, e); }
-            else c.OnPacket(p);
-        }
-        live.ItemMergeReceived += OnPacket;
         c.Unloaded += () =>
         {
-            live.ItemMergeReceived -= OnPacket;
             itemMergeMovie?.Host.Unload(); itemMergeMovie?.QueueFree(); itemMergeMovie = null;
         };
         itemMerge = c;
@@ -65,6 +54,42 @@ public partial class HudScene
         itemMergeMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"item merge: load={itemMergeMovie.Loaded}");
         uiRoot.AddChild(itemMergeMovie);
+    }
+
+    Action unwatchItemMerge;
+
+    /// <summary>
+    /// CSceneStateGame::OnItemFusion (scenestategame.cpp:5906), for the session: the packets are applied whether or not a dialog is
+    /// open. Modes 0, 1, 2 and 4 go to the open merge dialog; mode 5 reads the item body into the inventory or equipped item and
+    /// shows the result (or the error); mode 6 reads it into the inventory item and tells the revert dialog.
+    /// STILL-OPEN: the equipment refresh (FUN_1411e7660) after a mode 5 on an equipped item.
+    /// </summary>
+    void WatchItemMerge()
+    {
+        if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        void On(ItemMergePacket p, Maple2.PacketLib.Tools.ByteReader r)
+        {
+            var items = hudModel.Tables.Items;
+            switch (p.Mode)
+            {
+                case 5:
+                    if (p.Error != 0) { if (ItemMergeOpen) itemMerge.ShowMergeError(p.Error); return; }
+                    if ((live.Items.Get(p.Uid) ?? live.Me.Equips?.FirstOrDefault(x => x.Uid == p.Uid)) is { } e)
+                    {
+                        ItemReader.ReadBodyInto(r, e);
+                        if (ItemMergeOpen) itemMerge.ShowMergeResult(InventoryController.ToItem(e, items));
+                    }
+                    return;
+                case 6:
+                    if (live.Items.Get(p.Uid) is { } inv) ItemReader.ReadBodyInto(r, inv);
+                    return;
+                default:
+                    if (ItemMergeOpen) itemMerge.OnPacket(p);
+                    return;
+            }
+        }
+        live.ItemMergeReceived += On;
+        unwatchItemMerge = () => live.ItemMergeReceived -= On;
     }
 
     /// <summary>UIItemMergeOptionDialog::vfunc_13: Escape closes it except while it waits for the answer or merges.</summary>

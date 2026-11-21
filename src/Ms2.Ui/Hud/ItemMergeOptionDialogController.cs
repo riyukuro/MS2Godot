@@ -45,6 +45,8 @@ public sealed class ItemMergeOptionDialogController : UiController
     public Action<IOutPacket> Send = _ => { };
     /// <summary>FindMergeItem / Unk_Inventory::FindItemByUid: an inventory or equipped item by uid.</summary>
     public Func<long, Item> Find = _ => null;
+    /// <summary>Unk_Inventory::FindItemByUid: the inventory only (CheckMerge's material). Null: Find.</summary>
+    public Func<long, Item> FindBag;
     /// <summary>The inventory's category 0 items (the merge candidates).</summary>
     public Func<IEnumerable<Item>> BagItems = () => Array.Empty<Item>();
     /// <summary>The equipped items shown on layer 0.</summary>
@@ -193,11 +195,12 @@ public sealed class ItemMergeOptionDialogController : UiController
     /// <summary>FUN_1419d1490 (mode 4 and the previous-option path): the old option text next to the new one, then onMerge; phase 4.</summary>
     void OnOptionChoice(int normal, int special, int value)
     {
+        var item = Find(ItemUid);
+        if (item == null) return;                         // FindMergeItem(m_nItemUid) == 0: back before the phase
         if (Host?.Entity != null)
         {
-            string oldText = CurrentOptionText(Find(ItemUid));
-            string newText = special != 0 ? SpecialOptionText(special, value) : StatOptionText(normal, value);
-            var item = Find(ItemUid);
+            string oldText = CurrentOptionText(item);
+            string newText = normal != -1 ? StatOptionText(normal, value) : special != 0 ? SpecialOptionText(special, value) : "";
             Host.Invoke(Host.Entity, "selectOption", Host.Obj(
                 ("oldOption", ClientFormat.Format(T("s_item_merge_option_old_option"), oldText)),
                 ("newOption", ClientFormat.Format(T("s_item_merge_option_new_option"), newText)),
@@ -280,7 +283,7 @@ public sealed class ItemMergeOptionDialogController : UiController
     {
         if (Phase == 0) return;
         ItemUid = uid;
-        Special = HasMergedOptions(Find(uid));
+        if (Find(uid) is { } found) Special = HasMergedOptions(found);     // not found: m_bSpecial is kept
         SetPhase(2);
         Send(ItemMergeRequest.Selection(uid));
     }
@@ -298,7 +301,7 @@ public sealed class ItemMergeOptionDialogController : UiController
     public int CheckMerge()
     {
         if (Find(ItemUid) == null) return CheckNoItem;
-        if (Find(MaterialUid) == null) return CheckNoMaterial;
+        if ((FindBag ?? Find)(MaterialUid) == null) return CheckNoMaterial;
         if (Meso() < Proxy.Meso) return CheckLackMeso;
         foreach (var ing in Proxy.Ingredients)
             if (Have(ing) < ing.C) return CheckLackMaterial;

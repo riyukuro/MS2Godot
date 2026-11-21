@@ -228,6 +228,44 @@ public class ItemMergeOptionDialogTests
     }
 
     [Test]
+    public void MaterialLookupIsInventoryOnly()
+    {
+        var r = new Rig();
+        r.Add(1); r.Add(2);
+        r.C.OnPacket(new ItemMergePacket(0) { Sub = 0 });
+        r.C.FindBag = u => r.Bag.FirstOrDefault(i => i.Uid == u);
+        r.C.SelectItem(1);
+        r.Bag.RemoveAll(i => i.Uid == 2);                  // only equipped now
+        r.C.SelectMaterial(2);
+        Assert.That(r.C.CheckMerge(), Is.EqualTo(ItemMergeOptionDialogController.CheckNoMaterial));
+    }
+
+    [Test]
+    public void OptionChoiceWithAMissingItemKeepsThePhase()
+    {
+        var r = new Rig();
+        r.Add(1); r.Add(2);
+        r.C.OnPacket(new ItemMergePacket(0) { Sub = 0 });
+        r.Picked(1, 2);
+        r.Inv.Remove(1);
+        int phase = r.C.Phase;
+        r.C.OnPacket(new ItemMergePacket(4) { Normal = 4, Value = 10 });
+        Assert.That(r.C.Phase, Is.EqualTo(phase));
+    }
+
+    [Test]
+    public void SelectingAMissingItemKeepsSpecial()
+    {
+        var r = new Rig();
+        r.Add(1, merged: true);
+        r.C.OnPacket(new ItemMergePacket(0) { Sub = 0 });
+        r.C.SelectItem(1);
+        Assert.That(r.C.Special, Is.True);
+        r.C.SelectItem(99);
+        Assert.That(r.C.Special, Is.True);
+    }
+
+    [Test]
     public void OptionChoiceAnswerIsPhaseFourAndTheChoiceIsSent()
     {
         var r = new Rig();

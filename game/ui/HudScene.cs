@@ -119,6 +119,7 @@ public partial class HudScene : Node, IUiStageHost
         BuildHud();
         WatchParty();
         WatchPcInfo();
+        WatchItemMerge();
         // the portal and interact actions' notices & casting bar, the channel notices
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
@@ -208,6 +209,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchNewItems = null;
         unwatchLearningQuest?.Invoke();
         unwatchLearningQuest = null;
+        unwatchItemMerge?.Invoke();
+        unwatchItemMerge = null;
         unwatchPrestige?.Invoke();
         unwatchPrestige = null;
         unwatchCharacterAbility?.Invoke();
