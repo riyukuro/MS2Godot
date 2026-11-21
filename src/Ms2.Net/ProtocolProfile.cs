@@ -28,6 +28,15 @@ public sealed class ProtocolProfile {
     /// <summary>GMS2 (the server hello carries version 12): the numbers of the Maple2 upstream server's SendOp / RecvOp tables, see <see cref="Gms2Opcodes"/>.</summary>
     public static readonly ProtocolProfile Gms2 = new("GMS2 12", 12, Gms2Opcodes.InboundNumbers, Gms2Opcodes.OutboundNumbers);
 
+    /// <summary>
+    /// The profile of a server hello's version: 2525 is KMS2 (the one version CNetworkService::OnRequestVersion @0x14153ad10, networkservice.cpp:835, accepts: 0x9dd, else its message box), 12 is GMS2.
+    /// Null for any other version, which the caller refuses.
+    /// </summary>
+    public static ProtocolProfile ForVersion(uint version) => version == Kms2525.Version ? Kms2525 : version == Gms2.Version ? Gms2 : null;
+
+    /// <summary>The versions <see cref="ForVersion"/> knows, for messages.</summary>
+    public static string KnownVersions => $"{Kms2525.Name}, {Gms2.Name}";
+
     /// <summary>The profile new channels use until the hello is read.</summary>
     public static ProtocolProfile Default => Kms2525;
 

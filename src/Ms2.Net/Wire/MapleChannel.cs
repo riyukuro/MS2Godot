@@ -38,6 +38,8 @@ public sealed class MapleChannel {
             if (Handshake.TryParse(buf.AsSpan(0, have), out var hs, out int used, Profile)) {
                 Consume(used);
                 Hello = hs;
+                if (!profilePinned) profile = ProtocolProfile.ForVersion(hs.Version)
+                    ?? throw new InvalidDataException($"server version {hs.Version} is not supported (known: {ProtocolProfile.KnownVersions})");
                 (enc, dec) = hs.CreateCiphers();
                 return hs;
             }
@@ -85,8 +87,14 @@ public sealed class MapleChannel {
 
     void Consume(int n) { Buffer.BlockCopy(buf, n, buf, 0, have - n); have -= n; }
 
-    /// <summary>The opcode numbers this channel speaks.</summary>
-    public ProtocolProfile Profile { get; set; } = ProtocolProfile.Default;
+    ProtocolProfile profile = ProtocolProfile.Default;
+    bool profilePinned;
+
+    /// <summary>
+    /// The opcode numbers this channel speaks. Until the hello is read it is the default; ReadHandshakeAsync then takes the profile of the
+    /// hello's version (a version no profile knows is refused). Setting it pins the profile: the hello no longer changes it.
+    /// </summary>
+    public ProtocolProfile Profile { get => profile; set { profile = value; profilePinned = true; } }
 
     /// <summary>Encrypts and sends one packet. Callable from several threads: the iv advances per frame, so encrypt and write stay in order.</summary>
     public async Task SendAsync(Outbound op, Action<ByteWriter> body = null, CancellationToken ct = default) {
