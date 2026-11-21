@@ -237,4 +237,18 @@ public class ShopPacketTests {
         var open = new SystemShopRequest(8, 1);
         Assert.That((open.Op, WriteOut(open)), Is.EqualTo((Outbound.SystemShop, new byte[] { 8, 1 })));
     }
+
+    [Test] public void SystemShopPacketReadsTypeAndOk() {
+        // CSceneStateGame::OnSystemShop (scenestategame.cpp:7928): u8 type, bool ok
+        var p = SystemShopPacket.Read(new ByteReader(new byte[] { 8, 1 }));
+        Assert.That(p, Is.EqualTo(new SystemShopPacket(8, true)));
+        Assert.That(SystemShopPacket.Read(new ByteReader(new byte[] { 3, 0 })).Ok, Is.False);
+        Assert.That(new SystemShopPacket(5, true).WriteBytes(), Is.EqualTo(new byte[] { 5, 1 }));
+    }
+
+    [Test] public void SystemShopCoinRequestWritesTenOneItemId() {
+        // invenslot.cpp:862: u8 10, u8 1, i32 itemId
+        var r = new SystemShopCoinRequest(0x01020304);
+        Assert.That((r.Op, WriteOut(r)), Is.EqualTo((Outbound.SystemShop, new byte[] { 10, 1, 4, 3, 2, 1 })));
+    }
 }

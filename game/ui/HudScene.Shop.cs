@@ -89,12 +89,16 @@ public partial class HudScene
         {
             if (id == ShopController.UiId && ShopOpen) shop.Close();
         }
+        void OnSystemShop(SystemShopPacket p) => SystemShopFlow.OnSystemShop(p, liveShop, key => hudModel.Tables.Common(key),
+            () => { if (!ShopOpen) OpenLiveShop(); }, MessageBoxQueue.Show);
         live.ShopReceived += OnPacket;
+        live.SystemShopReceived += OnSystemShop;
         live.TalkUiOpen += OnOpen;
         live.TalkUiClose += OnClose;
         unwatchShop = () =>
         {
             live.ShopReceived -= OnPacket;
+            live.SystemShopReceived -= OnSystemShop;
             live.TalkUiOpen -= OnOpen;
             live.TalkUiClose -= OnClose;
             shopWatched = false;

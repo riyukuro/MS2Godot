@@ -882,6 +882,10 @@ public class ShopTests
         string allianceName = model.Tables.Common("s_quest_alliance_darkwind");
         Assert.That(allianceName, Is.Not.Empty);
         Assert.That(notices[0], Does.Contain(allianceName));
+        string gradeName = model.Tables.Common("s_fame_grade_2");
+        Assert.That(gradeName, Is.Not.Empty);
+        // the client strips the grade's tags (uishopdialog.cpp:3628)
+        Assert.That(notices[0], Does.Contain(System.Text.RegularExpressions.Regex.Replace(gradeName, "<[^>]*>", "")));
         c.FameGradeOf = _ => 2;
 
         // 5. Championship gate: rank and member score
@@ -1052,5 +1056,49 @@ public class ShopTests
         c.Close();
         Assert.That(talkEnd, Is.EqualTo(2));
         Assert.That(sent, Is.Empty);
+    }
+
+    [Test]
+    public void SystemShopPacketOpensShopAndSetsSortKindLikeClient()
+    {
+        Packs();
+        var model = NewModel();
+        var (h, c) = Load(model);
+        int opened = 0;
+        var boxes = new List<MessageBoxData>();
+        string Key(string k) => model.Tables.Common(k);
+        // type 0 is ignored
+        Assert.That(SystemShopFlow.OnSystemShop(new SystemShopPacket(0, true), c, Key, () => opened++, boxes.Add), Is.False);
+        // not ok: a box only for type 8 (s_shop_no_star_point_event), no dialog
+        Assert.That(SystemShopFlow.OnSystemShop(new SystemShopPacket(3, false), c, Key, () => opened++, boxes.Add), Is.False);
+        Assert.That((opened, boxes.Count), Is.EqualTo((0, 0)));
+        Assert.That(SystemShopFlow.OnSystemShop(new SystemShopPacket(8, false), c, Key, () => opened++, boxes.Add), Is.False);
+        Assert.That((opened, boxes.Count), Is.EqualTo((0, 1)));
+        Assert.That(boxes[0].Msg, Is.EqualTo(Key("s_shop_no_star_point_event")));
+        // ok: the shop opens and SortKind is the type
+        Assert.That(SystemShopFlow.OnSystemShop(new SystemShopPacket(5, true), c, Key, () => opened++, boxes.Add), Is.True);
+        Assert.That((opened, c.SortKind), Is.EqualTo((1, 5)));
+    }
+
+    [Test]
+    public void ToggleShopTabSendsOpenOrClosesLikeClient()
+    {
+        Packs();
+        var (h, c) = Load(NewModel());
+        var sent = new List<IOutPacket>();
+        int closedShop = 0, closedInv = 0;
+        var sounds = new List<string>();
+        // shop closed: SystemShop(tab, 1) and the open sound
+        Assert.That(SystemShopFlow.ToggleShopTab(4, c, false, () => closedShop++, () => closedInv++, sent.Add, sounds.Add), Is.EqualTo(1));
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new SystemShopRequest(4, 1) }));
+        Assert.That(sounds, Is.EqualTo(new[] { SystemShopFlow.OpenSound }));
+        // open on the same tab: closes, nothing sent
+        c.SortKind = 4; sent.Clear();
+        Assert.That(SystemShopFlow.ToggleShopTab(4, c, true, () => closedShop++, () => closedInv++, sent.Add), Is.EqualTo(0));
+        Assert.That((sent.Count, closedShop, closedInv), Is.EqualTo((0, 1, 1)));
+        // open on another tab: closes both, then opens the new tab
+        Assert.That(SystemShopFlow.ToggleShopTab(5, c, true, () => closedShop++, () => closedInv++, sent.Add), Is.EqualTo(1));
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new SystemShopRequest(5, 1) }));
+        Assert.That((closedShop, closedInv), Is.EqualTo((2, 2)));
     }
 }

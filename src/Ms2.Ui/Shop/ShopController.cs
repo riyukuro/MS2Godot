@@ -169,12 +169,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public Func<int?> GuildMemberChampionshipScore = () => null;
     /// <summary>CGuildManager::GetNpcLevel(npcId) (uishopdialog.cpp:3685; STILL-OPEN: defaults 0).</summary>
     public Func<int, int> GuildNpcLevel = _ => 0;
-    /// <summary>Fame alliance grade (alliance != 0) or general fame grade (alliance == 0) (uishopdialog.cpp:3619-3622; STILL-OPEN: defaults 0).</summary>
+    /// <summary>Fame alliance grade (alliance != 0) or general fame grade (alliance == 0) (uishopdialog.cpp:3619-3622; STILL-OPEN: the session keeps no fame points, so the default 0 stands and every fame-gated product is refused).</summary>
     public Func<int, int> FameGradeOf = _ => 0;
-    /// <summary>GetAllianceName(alliance) (uishopdialog.cpp:3626, questmasktable.cpp:556).</summary>
-    public Func<int, string> AllianceName;
-    /// <summary>Fame grade title (uishopdialog.cpp:3627, questmasktable.cpp:571).</summary>
-    public Func<int, int, string> FameGradeName;
 
     /// <summary>Unk_Inventory::FUN_140a5f7b0 (inventory.cpp:835): sums item counts across <paramref name="items"/>
     /// matching string tag <paramref name="tag"/> that the player can use.</summary>
@@ -1565,8 +1561,9 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         if (FameGradeOf(alliance) >= grade) return true;
         if (notify)
         {
-            string allianceText = AllianceName?.Invoke(alliance) ?? Common($"s_quest_alliance_{FameTable.AllianceName(alliance)}");   // GetAllianceName (questmasktable.cpp:556-558)
-            string gradeText = StripTags(FameGradeName?.Invoke(alliance, grade) ?? Common($"s_fame_grade_{grade}"));
+            // GetAllianceName (questmasktable.cpp:556-558) and FUN_140762f50 (:571, GetStringByKey s_fame_grade_<n>)
+            string allianceText = Common($"s_quest_alliance_{FameTable.AllianceName(alliance)}");
+            string gradeText = StripTags(Common($"s_fame_grade_{grade}"));
             SystemNotice?.Invoke(Common("s_err_lack_fame_alliance", allianceText, gradeText));
         }
         return false;

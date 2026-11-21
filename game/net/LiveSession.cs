@@ -306,6 +306,8 @@ public partial class LiveSession : Node
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The Shop packets (0x51, UIShopDialog::OnShopPacket) for the npc shop; live only.</summary>
     public event Action<ShopPacket> ShopReceived;
+    /// <summary>The system shop open result (0xA1, CSceneStateGame::OnSystemShop); live only.</summary>
+    public event Action<SystemShopPacket> SystemShopReceived;
     /// <summary>The npc shop's sends (Shop 0x28).</summary>
     public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>CInstrumentManager's currently playing score uid (FUN_140c8dab0, petmanager.cpp:141; STILL-OPEN:
@@ -862,6 +864,12 @@ public partial class LiveSession : Node
                 var sp = ShopPacket.Read(p.Reader());   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
                 GD.Print($"live: shop cmd {sp.Command}");
                 ShopReceived?.Invoke(sp);
+            }
+            else if (game.Is(p, Inbound.SystemShop))
+            {
+                var ss = SystemShopPacket.Read(p.Reader());   // CSceneStateGame::OnSystemShop (scenestategame.cpp:7928)
+                GD.Print($"live: system shop type {ss.Type} ok {ss.Ok}");
+                SystemShopReceived?.Invoke(ss);
             }
             else if (game.Is(p, Inbound.Quest))
             {
