@@ -55,24 +55,41 @@ public partial class HudScene
 
     /// <summary>One key of <see cref="CastKeys"/> (MyPC::vfunc_104, mypc.cpp:1687-1701): the item the key's shown quick slot finds
     /// (<see cref="QuickSlotEdit.KeyItemSkill"/>) refuses the press (false) or gives its skill; with none the key's skill. Null when
-    /// the key gives no skill, true when it went to <see cref="CastOwn"/>.</summary>
+    /// the key gives no skill, true when it went to the request (<see cref="RequestOwn"/>, then <see cref="RouteOwn"/>).</summary>
     bool? CastKey(int dik)
     {
-        if (hudModel?.Keys is not { } keys) return null;
+        int k = KeyRequest(dik, out var r);
+        if (k == 0) return null;
+        if (k == 1) return false;
+        framePress = r;                                  // FUN_141526730 takes the key just pressed first (mypc.cpp:1794-1808)
+        framePressFrame = Engine.GetProcessFrames();
+        if (r != null) RouteOwn(r);
+        return true;
+    }
+
+    /// <summary>MyPC::vfunc_104 (mypc.cpp:1687-1729) for a key: 0 when it gives no skill, 1 when its quick slot item refuses,
+    /// else 2 with the request's record in <paramref name="r"/> (null when the request refused).</summary>
+    int KeyRequest(int dik, out CastRecord r)
+    {
+        r = null;
+        if (hudModel?.Keys is not { } keys) return 0;
         var slots = hudModel.ServerKeys;
         castKeyWorld = QuickSlotWorld();
         castSlotItemUid ??= i => playerInfo?.SlotItemUid(i) ?? 0;
         // mypc.cpp:1689-1700: the key's quick slot item; a found item refuses or gives its skill
         int id = QuickSlotEdit.KeyItemSkill(castKeyWorld, keys.GetQuickSlotItemUidByKey(dik, playerInfo != null ? castSlotItemUid : null), out bool refused);
-        if (refused) return false;
+        if (refused) return 1;
         castKeyHeld = castKeyWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
-        // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
-        castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
-        if (id == 0) id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
-        if (id == 0) return null;
-        CastOwn(castKeyWorld, (uint)id, castKeyHeld, dik);
-        return true;
+        if (id == 0) id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, CastAttackSkill, null, slots);
+        if (id == 0) return 0;
+        r = RequestOwn(castKeyWorld, (uint)id, castKeyHeld, dik);
+        return 2;
     }
+
+    // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
+    Func<int> CastAttackSkill => castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
+    CastRecord framePress;                         // this frame's key press record (CastKey), for the state's end
+    ulong framePressFrame = ulong.MaxValue;
 
     /// <summary>
     /// A clicked quick slot (SkillSlot::vfunc_13): its key, which WorldService::FUN_141bc9fd0 (worldservice_1.cpp:724) queues as
@@ -108,10 +125,20 @@ public partial class HudScene
     /// </summary>
     void CastOwn(SlotWorld w, uint skillId, WeaponAction held, int key)
     {
-        if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return;
+        if (RequestOwn(w, skillId, held, key) is { } r) RouteOwn(r);
+    }
+
+    /// <summary>The request part of <see cref="CastOwn"/>: the key-down skill's hold limit (<see cref="HeldKeyPoll.HeldTooLong"/>,
+    /// mypc.cpp:1711-1726, a silent refusal), then CSkillSystem::FUN_141764e30; the record, or null when refused.</summary>
+    CastRecord RequestOwn(SlotWorld w, uint skillId, WeaponAction held, int key)
+    {
+        if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return null;
         var level = w.Jobs?.SkillLevel(skillId) ?? 1;
         var d = w.Tables.GetSkillData(skillId);
         var lv = d?.GetLevelData(level);
+        slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
+        if (lv != null && heldKeys.HeldTooLong(d, key, (uint)Net.LiveSession.CastTick(),
+                (uint)slotConstants.Int("KeyIsDownSkill_MaxDurationTick", 30000))) return null;
         var g = me.GlobalPosition;
         float rotZ = me.FacingRotZ, rad = Mathf.DegToRad(rotZ);
         var req = new CastRequest(skillId, level, Net.LiveSession.NewCastId(), Net.LiveSession.CastTick())
@@ -131,11 +158,25 @@ public partial class HudScene
         if (res.Record is not { } r)
         {
             GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
+            return null;
+        }
+        return r;
+    }
+
+    /// <summary>
+    /// Where a requested record goes: while the own skill state's sequence runs, StateSkill::FUN_1417eeb10
+    /// (stateskill.cpp:2996-3016) makes it the state's next cast (<see cref="OwnPress"/>); after the sequence's end, while the
+    /// state holds on, FUN_1417ee120 takes it at its next step (m_spNext); else MyPC::vfunc_102 (<see cref="UseOwnRecord"/>).
+    /// </summary>
+    void RouteOwn(CastRecord r)
+    {
+        if (OwnSkillStateRuns())
+        {
+            if (ownEnded) ownNext = r;
+            else OwnPress(r);
             return;
         }
-        // StateSkill::FUN_1417eeb10 (stateskill.cpp:2996-3016): a press while the own skill state runs is the state's next cast
-        if (OwnSkillStateRuns()) { OwnPress(r); return; }
-        UseOwnRecord(me, r);
+        if (GetTree().GetFirstNodeInGroup(Player.Group) is Player me) UseOwnRecord(me, r);
     }
 
     /// <summary>
@@ -148,18 +189,100 @@ public partial class HudScene
     /// skill's held key in MyPC::FUN_141526730) are not ported; a record a motion other than the last would chain is kept
     /// until the state ends (the next motion, FUN_1417ee120 :2930-2980, is not ported).
     /// </summary>
-    void OwnPress(CastRecord r)
+    bool OwnPress(CastRecord r)
+    {
+        var w = OwnPressWindow();
+        if (!SkillFollow.MayFollow(ownCast, r.Skill, w, hudModel.IsFeatureEnabled(0xca), ref ownChainType))
+        {
+            GD.Print($"cast: skill {r.Skill.Id} pressed while skill {ownCast.Skill.Id} runs, dropped");
+            return false;
+        }
+        ownNext = r;
+        if (ownChainType != 0) TryChainOwn(ownCast);
+        return true;
+    }
+
+    /// <summary>The combo flags with the running key held (IsKeyDown, :3043) and m_fChargeTime 0 (:3041), as MayFollow reads them.</summary>
+    SkillFollow.Window OwnPressWindow()
     {
         var w = ownWindow;
         w.KeyHeld = CastKeyDown(ownCast.Key);
         w.ChargeTimeZero = MathF.Abs(ownLoop.ChargeTime) < 1e-06f;
-        if (!SkillFollow.MayFollow(ownCast, r.Skill, w, hudModel.IsFeatureEnabled(0xca), ref ownChainType))
+        return w;
+    }
+
+    /// <summary>
+    /// StateSkill::vfunc_8 @0x1417e6990 (stateskill.cpp:633-641) each frame while the own sequence runs: FUN_1417eeb10 polls
+    /// MyPC::vfunc_104 with bAuto (mypc.cpp:1668), so a key held down (<see cref="PollOwnKey"/>) gives a record each frame as
+    /// a press would (<see cref="OwnPress"/>): holding the attack key queues the basic attack again at each window, and it
+    /// chains at "selfcombo" or the end. A press this frame went its way already (<see cref="CastKeys"/>). The same key and
+    /// skill as the queued next cast, or one refused in the same window, is not asked again, so a held key costs 0 B/frame
+    /// (the client makes a record per frame; the outcome is the same).
+    /// </summary>
+    void PollOwnPress()
+    {
+        int dik = PollOwnKey(out bool pressed);
+        if (dik == 0 || pressed) return;
+        var s = OwnKeySkill(dik);
+        if (s == null) return;
+        if (ownNext != null && ownNext.Key == dik && (object)ownNext.Skill == s) return;
+        var w = OwnPressWindow();
+        if (PollRefused(dik, s, w)) return;
+        KeyRequest(dik, out var r);
+        if (r == null || !OwnSkillStateRuns() || !OwnPress(r)) RefusePoll(dik, s, w);
+    }
+
+    readonly HeldKeyPoll heldKeys = new();          // MyPC m_map17c0, m_n15ec / m_n15f0
+    readonly System.Collections.Generic.List<int> boundKeys = new();
+    Func<int, bool> pollKeyDown, pollNoPress;
+    Func<int, SkillData> pollKeySkill;
+    SlotWorld ownPollWorld;                         // the poll's world for the keys' skills, taken once per state
+    WeaponAction ownPollHeld;
+    // the last polled key the request or MayFollow refused, with the state and window it was refused in
+    int pollRefusedKey;
+    SkillData pollRefusedSkill;
+    CastRecord pollRefusedIn;
+    SkillFollow.Window pollRefusedWindow;
+
+    bool PollRefused(int dik, SkillData s, in SkillFollow.Window w) =>
+        pollRefusedKey == dik && (object)pollRefusedSkill == s && (object)pollRefusedIn == ownCast && pollRefusedWindow.Same(w);
+
+    void RefusePoll(int dik, SkillData s, in SkillFollow.Window w)
+    {
+        pollRefusedKey = dik; pollRefusedSkill = s; pollRefusedIn = ownCast; pollRefusedWindow = w;
+    }
+
+    /// <summary>
+    /// MyPC::FUN_141526730 @0x141526730 (mypc.cpp:1767-1859) with bAuto over the bound keys (CKeyTable::GetBoundKeys): the
+    /// key <see cref="HeldKeyPoll.Pick"/> takes, 0 for none. The pressed keys come as events (<see cref="CastKeys"/>), so the
+    /// poll reads only the keys down; <paramref name="pressed"/> is true in a frame a press went its way. 0 B.
+    /// </summary>
+    int PollOwnKey(out bool pressed)
+    {
+        pressed = framePressFrame == Engine.GetProcessFrames();
+        if (hudModel?.Keys is not { } keys || UiFocus.IsTyping) return 0;
+        keys.GetBoundKeys(boundKeys, hudModel.ServerKeys);
+        if (ownPollWorld == null)
         {
-            GD.Print($"cast: skill {r.Skill.Id} pressed while skill {ownCast.Skill.Id} runs, dropped");
-            return;
+            ownPollWorld = QuickSlotWorld();
+            ownPollHeld = ownPollWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
         }
-        ownNext = r;
-        if (ownChainType != 0) TryChainOwn(ownCast);
+        castKeyWorld = ownPollWorld;
+        castKeyHeld = ownPollHeld;
+        pollKeyDown ??= CastKeyDown;
+        pollNoPress ??= _ => false;
+        pollKeySkill ??= OwnKeySkill;
+        return heldKeys.Pick(boundKeys, true, pollKeyDown, pollNoPress, pollKeySkill, true, (uint)Time.GetTicksMsec());
+    }
+
+    /// <summary>GetSkillIdByKey and the skill table's row (FUN_141526730 :1820-1829), null for none.</summary>
+    SkillData OwnKeySkill(int dik)
+    {
+        if (hudModel?.Keys is not { } keys || ownPollWorld == null) return null;
+        castKeyWorld = ownPollWorld;
+        castKeyHeld = ownPollHeld;
+        int id = keys.GetSkillIdByKey(dik, ownPollWorld.HasPc, CastAttackSkill, null, hudModel.ServerKeys);
+        return id == 0 ? null : ownPollWorld.Tables.GetSkillData((uint)id);
     }
 
     /// <summary>
@@ -176,16 +299,96 @@ public partial class HudScene
         UseOwnRecord(player, r);
     }
 
+    /// <summary>
+    /// The own sequence reached its end (<see cref="Player.SkillSequenceEnding"/>, before any movement frame): the text keys
+    /// left up to the end, EndOfSequence @0x1417e9130 (stateskill.cpp:1062-1070: m_b48, m_b49, m_b112, m_b116, m_fStartTime),
+    /// then FUN_1417ee120's end step (<see cref="OwnEndStep"/>) while still in the skill state. True when the state goes on.
+    /// STILL-OPEN: EndOfSequence's hold while charging or with a repeat left (<see cref="SkillLoop.HoldsEnd"/>) ends here.
+    /// </summary>
+    bool OwnSequenceEnding()
+    {
+        if (ownCast == null || ownEnded || player == null || (object)player.SkillSequence != ownSequence) return false;
+        if (!OwnKeys(Math.Max(ownKeyPos, ownSequenceLength))) return ownCast != null;
+        ownWindow.EndOfSequence();
+        ownEnded = true;
+        ownEndMs = Time.GetTicksMsec();
+        if (OwnEndStep()) return true;
+        EndOwnState();
+        return false;
+    }
+
+    /// <summary>
+    /// FUN_1417ee120 @0x1417ee120 (stateskill.cpp:2893-2928) after the end, at the end and each frame after while the state
+    /// holds on: in the last motion the next cast (m_spNext), else the key polled then (vfunc_104(1, 1, 1): this frame's
+    /// press, else <see cref="PollOwnKey"/>), goes through vfunc_102 (<see cref="UseOwnRecord"/>) with the running state's
+    /// elapsed time, unless <see cref="SkillFollow.CastsAtEnd"/> sends it to idle; m_spNext is cleared. A queued cooling cast
+    /// or a cast without a sequence keeps the state (the body holds the last frame), so the next step polls again. False =
+    /// idle (FUN_1417f0070).
+    /// STILL-OPEN: the next motion of a record not in its last one (:2930-2980) and the auto change (FUN_1417f0570(2),
+    /// :2905-2909) are not ported.
+    /// </summary>
+    bool OwnEndStep()
+    {
+        var running = ownCast;
+        if (running == null || !SkillFollow.IsLastMotion(running)) { ownNext = null; return false; }
+        var next = ownNext ?? OwnEndPoll();
+        ownNext = null;
+        if (next == null) return false;
+        if (next == ownQueued) { player.HoldSkillSequence(); return true; }   // the same cooling press again: still queued
+        if (!SkillFollow.CastsAtEnd(running, next.Skill, false)) return false;
+        next.HasSequence = next.Level.HasSequenceName;
+        if (!UseOwnRecord(player, next)) return false;
+        if (ownCast == running) player.HoldSkillSequence();
+        return true;
+    }
+
+    /// <summary>vfunc_104(1, 1, 1) at the end step: this frame's press, else the key held (<see cref="PollOwnKey"/>); the queued
+    /// cooling record for its own key and skill; null for none or a key refused before in this state.</summary>
+    CastRecord OwnEndPoll()
+    {
+        int dik = PollOwnKey(out bool pressed);
+        if (pressed) return framePress;
+        if (dik == 0) return null;
+        var s = OwnKeySkill(dik);
+        if (s == null) return null;
+        if (ownQueued != null && ownQueued.Key == dik && (object)ownQueued.Skill == s) return ownQueued;
+        if (PollRefused(dik, s, ownWindow)) return null;
+        KeyRequest(dik, out var r);
+        if (r == null) RefusePoll(dik, s, ownWindow);
+        return r;
+    }
+
+    /// <summary>Each frame after the end while the state holds on: 5 s after EndOfSequence (stateskill.cpp:2985-2991) or a step
+    /// with nothing to cast goes to idle.</summary>
+    void TickOwnEnded()
+    {
+        if (!player.SkillSequenceHeld) { EndOwnState(); return; }
+        var running = ownCast;
+        if (Time.GetTicksMsec() - ownEndMs > 5000 || (!OwnEndStep() && ownCast == running)) { player.CancelSkillSequence(); EndOwnState(); }
+    }
+
+    void EndOwnState()
+    {
+        ownCast = null;
+        ownNext = null;
+        ownEnded = false;
+    }
+
+    bool ownEnded;                                 // StateSkill m_b48: EndOfSequence came, the state holds on
+    ulong ownEndMs;                                // m_fStartTime from EndOfSequence (stateskill.cpp:1068)
+    double ownSequenceLength;                      // the own sequence's kf duration
+    Func<bool> ownEndingStep;
+
     int ownChainType;                              // StateSkill m_nChainType, 0 from the enter (stateskill.cpp:412)
     CastRecord ownNext;                            // StateSkill m_spNext: the accepted press waiting for its chain
     SkillFollow.Window ownWindow;                  // the combo flags the sequence's text keys set (m_b4a, m_b49, m_b114-m_b116)
-    SkillFollow.ComboKeys ownComboKeys = SkillFollow.ComboKeys.None;
+    readonly SkillFollow.ComboKeys ownComboKeys = new();
 
     /// <summary>
     /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146) from the cooldown gate on, for a new request or the press queued behind the
-    /// running skill (<see cref="TickOwnQueued"/>).
+    /// running skill (<see cref="TickOwnQueued"/>). True when it went (cast or queued), as vfunc_102's return.
     /// </summary>
-    void UseOwnRecord(Player me, CastRecord r)
+    bool UseOwnRecord(Player me, CastRecord r)
     {
         var g = me.GlobalPosition;
         var live = Net.LiveSession.Instance;
@@ -201,7 +404,7 @@ public partial class HudScene
             if (gate != CoolGate.Cast)
             {
                 GD.Print($"cast: skill {r.Skill.Id} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
-                return;
+                return gate == CoolGate.Queued;
             }
         }
         // :1197-1203: the running skill state's elapsed time (StateSkill m_nElapsed, FUN_14028d280: ms to seconds)
@@ -231,6 +434,7 @@ public partial class HudScene
         castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
         if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { } fx) live?.PlayFieldEffect(fx, g, me.Visual?.Rotation.Y ?? 0);
         GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
+        return true;
     }
 
     /// <summary>
@@ -272,15 +476,13 @@ public partial class HudScene
         ownNext = null;                            // the enter clears m_spNext and the combo flags (:403-412)
         ownWindow = default;
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
-        ownComboKeys = new SkillFollow.ComboKeys
-        {
-            InputCombo = me.Anims?.TextKey(me.SkillSequence, "inputcombo") ?? -1,
-            EndInputCombo = me.Anims?.TextKey(me.SkillSequence, "endInputCombo") ?? -1,
-            SelfInput = string.IsNullOrEmpty(motion?.SelfInputCombo) ? -1 : me.Anims?.TextKey(me.SkillSequence, motion.SelfInputCombo) ?? -1,
-            EndSelfInput = me.Anims?.TextKey(me.SkillSequence, "endSelfInputcombo") ?? -1,
-            Combo = me.Anims?.TextKey(me.SkillSequence, "combo") ?? -1,
-            SelfCombo = me.Anims?.TextKey(me.SkillSequence, "selfcombo") ?? -1,
-        };
+        Ms2.Formats.Model.KfAnimation kf = null;
+        if (me.SkillSequence != null) me.Anims?.Kf.TryGetValue(me.SkillSequence, out kf);
+        ownComboKeys.Set(kf?.TextKeys, motion?.SelfInputCombo);
+        ownSequenceLength = kf?.Duration ?? 0;
+        ownEnded = false;
+        ownPollWorld = null;
+        me.SkillSequenceEnding = ownEndingStep ??= OwnSequenceEnding;
         ownSync.Reset(new System.Numerics.Vector3(0, 0, me.FacingRotZ));   // vfunc_4 (:484-487): the owner's rotation
         ownAttack = 0;
         ownSequence = me.SkillSequence;
@@ -310,61 +512,80 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// Each frame: StateSkill::TextKeyEvent (stateskill.cpp:844-980) for the text keys the own sequence passed since the last
-    /// frame (a key at a time after the last read one and not after now): "loopstart" (<see cref="SkillLoop.OnLoopStart"/>),
-    /// "charging_combo" (<see cref="SkillLoop.OnChargingCombo"/>), the current attack's point (the charging skill's m_bLoop,
-    /// <see cref="SkillLoop.OnAttackPoint"/>, then FireAttacksAtPoint, <see cref="FireOwnPoint"/>), "charging_attack"
-    /// (<see cref="SkillLoop.OnChargingAttack"/>), then "loopend" (<see cref="OwnLoopEnd"/>), in time order
-    /// (<see cref="SkillLoop.NextTextKey"/>; keys at one time in the order above); a loopend that seeks to the next round ends
-    /// the frame's keys. 0 B/frame until a point fires.
-    /// STILL-OPEN: the sequence's other text keys (move0-3, combo, inputcombo) are not read.
+    /// Each frame while the own skill state runs (StateSkill::vfunc_8 @0x1417e6990): the key-down poll
+    /// (<see cref="PollOwnPress"/>, FUN_1417eeb10 :638-639), the text keys passed since the last frame (<see cref="OwnKeys"/>),
+    /// then FUN_1417ee120's per-frame FUN_1417ef4a0 (:2889-2891) for an accepted press. After the sequence's end the state's
+    /// end step each frame (<see cref="TickOwnEnded"/>). The hold of a key-down skill's key ends with the key let go outside
+    /// the state (<see cref="HeldKeyPoll.Release"/>). 0 B/frame until a point fires or a key goes to a request.
     /// </summary>
     void TickOwnAttacks()
     {
+        pollKeyDown ??= CastKeyDown;
+        heldKeys.Release(pollKeyDown, OwnSkillStateRuns());
         if (ownCast == null) return;
-        if (player == null || (object)player.SkillSequence != ownSequence)
-        {
-            // EndOfSequence (stateskill.cpp:1062-1070), then FUN_1417ef4a0 for the press waiting for its chain
-            var ended = ownCast;
-            ownCast = null;
-            if (ownNext != null) { ownWindow.EndOfSequence(); TryChainOwn(ended); }
-            if (ownCast == null) ownNext = null;
-            return;
-        }
-        double pos = player.SkillSequencePosition, prev = ownKeyPos;
+        if (player == null || (object)player.SkillSequence != ownSequence) { EndOwnState(); return; }   // cancelled
+        if (ownEnded) { TickOwnEnded(); return; }
+        double pos = player.SkillSequencePosition;
         if (pos < 0) return;
+        PollOwnPress();
+        if (!OwnSkillStateRuns() || ownEnded) return;
+        if (!OwnKeys(pos)) return;
+        if (ownNext != null) TryChainOwn(ownCast);
+    }
+
+    /// <summary>
+    /// StateSkill::TextKeyEvent (stateskill.cpp:844-1030) for the text keys the own sequence passed since the last read up to
+    /// <paramref name="pos"/> (a key after the last read time and not after <paramref name="pos"/>), in time order: "loopstart"
+    /// (<see cref="SkillLoop.OnLoopStart"/>), "charging_combo" (<see cref="SkillLoop.OnChargingCombo"/>), the current attack's
+    /// point (the charging skill's m_bLoop, <see cref="SkillLoop.OnAttackPoint"/>, then FireAttacksAtPoint,
+    /// <see cref="FireOwnPoint"/>), "charging_attack" (<see cref="SkillLoop.OnChargingAttack"/>), "loopend"
+    /// (<see cref="OwnLoopEnd"/>), then the combo keys (<see cref="SkillFollow.ComboKeys.Advance"/>; CanChainCombo :1725: not
+    /// for m_b111, the charging skill flag :766, with m_b112 or repeats left) with the accepted press's chain at "combo" and
+    /// "selfcombo" (FUN_1417ef4a0, :1004, :1027), so an attack point before the key fires (and sends) first. False when the
+    /// state stopped reading on: a point ended it, a chain took over, or a loopend sought the next round.
+    /// STILL-OPEN: the sequence's move0-3 keys are not read; charging_combo's m_b112 (:952) is not kept in the window.
+    /// </summary>
+    bool OwnKeys(double pos)
+    {
+        double prev = ownKeyPos;
         ownKeyPos = pos;
-        // TextKeyEvent's combo keys (:999-1027; CanChainCombo :1725: not for m_b111, the charging skill flag :766, with
-        // m_b112 or repeats left), then FUN_1417ee120's per-frame FUN_1417ef4a0 (:2889-2891) for an accepted press.
-        // STILL-OPEN: charging_combo's m_b112 (:952) is not kept in the window.
-        ownComboKeys.Advance(ref ownWindow, prev, pos, !(ownCast.Skill.ChargingSkill && (ownWindow.Ended || ownLoop.Repeat != 0)));
-        if (ownNext != null)
-        {
-            TryChainOwn(ownCast);
-            if ((object)player.SkillSequence != ownSequence) return;   // the chained cast's state took over
-        }
         uint now = (uint)Time.GetTicksMsec();   // GetTickCountMs2
         bool charging = ownCast.Skill.ChargingSkill;
-        // the keys in time order: the earliest key after the last handled time, all kinds at that time, then on from it
-        double t;
-        while ((t = SkillLoop.NextTextKey(prev, pos, ownLoopStartKey, ownChargingComboKey, ownPointTime, ownChargingAttackKey,
-                    ownLoopEndKey)) >= 0)
+        while (true)
         {
-            if (ownLoopStartKey == t) ownLoop.OnLoopStart(ownLoopStartKey, now);
-            if (ownChargingComboKey == t) ownLoop.OnChargingCombo(charging, CastKeyDown(ownCast.Key), now, ownChargingComboTick);
-            while (ownPointTime == t)
+            double tk = SkillLoop.NextTextKey(prev, pos, ownLoopStartKey, ownChargingComboKey, ownPointTime, ownChargingAttackKey,
+                ownLoopEndKey);
+            double tc = ownComboKeys.Next(prev, pos);
+            double t = tk < 0 ? tc : tc < 0 ? tk : Math.Min(tk, tc);
+            if (t < 0) return true;
+            if (tk == t)
             {
-                int attack = ownAttack;
-                ownLoop.OnAttackPoint(charging);
-                FireOwnPoint(player);
-                if (ownCast == null) return;
-                if (ownPointTime == t && ownAttack == attack) break;
+                if (ownLoopStartKey == t) ownLoop.OnLoopStart(ownLoopStartKey, now);
+                if (ownChargingComboKey == t) ownLoop.OnChargingCombo(charging, CastKeyDown(ownCast.Key), now, ownChargingComboTick);
+                while (ownPointTime == t)
+                {
+                    int attack = ownAttack;
+                    ownLoop.OnAttackPoint(charging);
+                    FireOwnPoint(player);
+                    if (ownCast == null) return false;
+                    if (ownPointTime == t && ownAttack == attack) break;
+                }
+                if (ownChargingAttackKey == t) ownLoop.OnChargingAttack(charging);
+                if (ownLoopEndKey == t)
+                {
+                    OwnLoopEnd(player, now);
+                    if (ownKeyPos != pos) return false;   // the next round's seek: the keys read on from there next frame
+                }
             }
-            if (ownChargingAttackKey == t) ownLoop.OnChargingAttack(charging);
-            if (ownLoopEndKey == t)
+            if (tc == t)
             {
-                OwnLoopEnd(player, now);
-                if (ownKeyPos != pos) return;   // the next round's seek: the keys read on from there next frame
+                var running = ownCast;
+                bool canChain = !(running.Skill.ChargingSkill && (ownWindow.Ended || ownLoop.Repeat != 0));
+                if (ownComboKeys.Advance(ref ownWindow, prev, t, canChain) && ownNext != null)
+                {
+                    TryChainOwn(running);
+                    if (ownCast != running) return false;   // the chained cast's state took over
+                }
             }
             prev = t;
         }

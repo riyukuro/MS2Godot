@@ -322,14 +322,42 @@ public sealed class KeyTable : IKeyTable
     /// </summary>
     public bool IsKeyOfSkill(int key, int skillId, ServerKeyTable slots)
     {
-        if (!byId.TryGetValue(key, out var k) || k.Type == 0 || k.Code == 0) return false;
+        if (!byId.TryGetValue(key, out var k) || !IsKeyEntryValid(k, slots)) return false;
+        return GetKeySkillId(key, slots) == skillId;
+    }
+
+    /// <summary>IsKeyEntryValid @0x14142cf60 (keytable.cpp:1292-1314): a type and a code, a quick slot action's slot not empty
+    /// on the current page, a type 1 key's slot not 0.</summary>
+    bool IsKeyEntryValid(Key k, ServerKeyTable slots)
+    {
+        if (k.Type == 0 || k.Code == 0) return false;
         if (IsQuickSlotAction(k.Code))
         {
             int index = FindQuickSlotActionIndex(k.Code);
-            if (index < 0 || slots == null || slots.Entry(slots.CurrentPage, index).IsEmpty) return false;
+            return index >= 0 && slots != null && !slots.Entry(slots.CurrentPage, index).IsEmpty;
         }
-        else if (k.Type == 1 && k.Slot == 0) return false;
-        return GetKeySkillId(key, slots) == skillId;
+        return k.Type != 1 || k.Slot != 0;
+    }
+
+    int[] boundIds = Array.Empty<int>();   // m_keys' keys and entries in order, copied once (the keys are made at load only)
+    Key[] boundKeys = Array.Empty<Key>();
+
+    /// <summary>
+    /// CKeyTable::GetBoundKeys @0x14142c5d0 (keytable.cpp:1109-1121): the keys whose entry is valid and has a type, in the
+    /// table's order, into <paramref name="into"/> (cleared first). 0 B once <paramref name="into"/> has grown.
+    /// </summary>
+    public void GetBoundKeys(List<int> into, ServerKeyTable slots)
+    {
+        into.Clear();
+        if (boundIds.Length != keys.Count)
+        {
+            boundIds = new int[keys.Count];
+            boundKeys = new Key[keys.Count];
+            keys.Keys.CopyTo(boundIds, 0);
+            keys.Values.CopyTo(boundKeys, 0);
+        }
+        for (int i = 0; i < boundIds.Length; i++)
+            if (IsKeyEntryValid(boundKeys[i], slots)) into.Add(boundIds[i]);
     }
 
     /// <summary>The held item action (CKeyTable::GetSkillIdByKey, keytable.cpp:1466).</summary>

@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Ms2.Ui.Skills;
 
 /// <summary>
@@ -7,8 +10,8 @@ namespace Ms2.Ui.Skills;
 /// FUN_1417ef4a0 (:3091) starts it once the combo keys allow (<see cref="ChainsNow"/>); a press it refuses is dropped (the
 /// pressed key is read once, WasKeyPressed in MyPC::FUN_141526730, mypc.cpp:1770). So the basic attack (a key-down skill
 /// whose motion has a selfInputCombo key) pressed again takes the press only after its selfInputCombo key and starts it
-/// again at "selfcombo" or the sequence's end, never earlier; the state's end (FUN_1417ee120, :2885) casts the key held or
-/// pressed then.
+/// again at "selfcombo" or the sequence's end, never earlier; the state's end (FUN_1417ee120, :2885) casts the next cast or
+/// the key held or pressed then (<see cref="CastsAtEnd"/>).
 /// </summary>
 public static class SkillFollow
 {
@@ -34,38 +37,100 @@ public static class SkillFollow
 
         /// <summary>EndOfSequence @0x1417e9130 (stateskill.cpp:1062-1070) for the target sequence: m_b116, m_b49, m_b112.</summary>
         public void EndOfSequence() { SelfCombo = true; Combo = true; Ended = true; }
+
+        /// <summary>The same flags (no boxing, 0 B).</summary>
+        public readonly bool Same(in Window o) =>
+            InputCombo == o.InputCombo && SelfInputCombo == o.SelfInputCombo && EndSelfInput == o.EndSelfInput && KeyHeld == o.KeyHeld
+            && ChargeTimeZero == o.ChargeTimeZero && Combo == o.Combo && SelfCombo == o.SelfCombo && Ended == o.Ended;
     }
 
+    /// <summary>A combo text key of the skill state (StateSkill::TextKeyEvent, stateskill.cpp:999-1027).</summary>
+    public enum ComboKey : byte { Combo, InputCombo, EndInputCombo, SelfInput, EndSelfInput, SelfCombo }
+
     /// <summary>
-    /// The running motion's combo text key times in its sequence (-1 for a key the sequence lacks): "inputcombo",
+    /// The running motion's combo text keys in its sequence, in time order, every key of each name: "combo", "inputcombo",
     /// "endInputCombo", the motion data's selfInputCombo key (SkillMotionData::Load, skillleveldata.cpp:1165),
-    /// "endSelfInputcombo", "combo" and "selfcombo" (StateSkill::TextKeyEvent, stateskill.cpp:999-1027).
+    /// "endSelfInputcombo" and "selfcombo" (StateSkill::TextKeyEvent, stateskill.cpp:999-1027). Filled once per cast
+    /// (<see cref="Set"/>); the list is reused, so a refill and every per-frame call allocate 0 B once it has grown.
     /// </summary>
-    public struct ComboKeys
+    public sealed class ComboKeys
     {
-        public float InputCombo, EndInputCombo, SelfInput, EndSelfInput, Combo, SelfCombo;
+        readonly List<float> times = new();
+        readonly List<ComboKey> kinds = new();
 
-        /// <summary>No keys.</summary>
-        public static ComboKeys None => new() { InputCombo = -1, EndInputCombo = -1, SelfInput = -1, EndSelfInput = -1, Combo = -1, SelfCombo = -1 };
-
-        static bool Crossed(float t, double prev, double pos) => t >= 0 && t > (float)prev && t <= (float)pos;   // in float, as the keys: a frame at the key time crosses it
+        public int Count => times.Count;
 
         /// <summary>
-        /// TextKeyEvent for the keys the sequence passed from <paramref name="prev"/> (exclusive) to <paramref name="pos"/>: the
-        /// flags they set stay set for the state (the enter clears them, :406-410). Of inputcombo and endInputCombo passed in
-        /// one frame the later one wins (the callbacks come in time order). <paramref name="canChainCombo"/>:
-        /// StateSkill::CanChainCombo @0x1417f5060 (:1725) at the "combo" key. 0 B.
+        /// TextKeyEvent's test of one key (stateskill.cpp:999-1027), in its order: "combo", "inputcombo" and "selfcombo" by
+        /// exact compare (CString ==), "endInputCombo" and "endSelfInputcombo" by EqualsNoCase, the motion's
+        /// <paramref name="selfInput"/> (null or empty = none) exactly; null for any other key.
         /// </summary>
-        public readonly void Advance(ref Window w, double prev, double pos, bool canChainCombo)
+        public static ComboKey? Classify(string text, string selfInput)
         {
-            bool inC = Crossed(InputCombo, prev, pos), endC = Crossed(EndInputCombo, prev, pos);
-            if (inC && endC) w.InputCombo = InputCombo > EndInputCombo;
-            else if (inC) w.InputCombo = true;
-            else if (endC) w.InputCombo = false;
-            if (Crossed(SelfInput, prev, pos)) w.SelfInputCombo = true;
-            if (Crossed(EndSelfInput, prev, pos)) w.EndSelfInput = true;
-            if (Crossed(Combo, prev, pos) && canChainCombo) w.Combo = true;
-            if (Crossed(SelfCombo, prev, pos)) w.SelfCombo = true;
+            if (text == null) return null;
+            if (text == "combo") return ComboKey.Combo;
+            if (text == "inputcombo") return ComboKey.InputCombo;
+            if (string.Equals(text, "endInputCombo", StringComparison.OrdinalIgnoreCase)) return ComboKey.EndInputCombo;
+            if (!string.IsNullOrEmpty(selfInput) && text == selfInput) return ComboKey.SelfInput;
+            if (string.Equals(text, "endSelfInputcombo", StringComparison.OrdinalIgnoreCase)) return ComboKey.EndSelfInput;
+            if (text == "selfcombo") return ComboKey.SelfCombo;
+            return null;
+        }
+
+        public void Clear() { times.Clear(); kinds.Clear(); }
+
+        /// <summary>The combo keys of a sequence's text keys (<paramref name="textKeys"/> may be null = none).</summary>
+        public void Set(IReadOnlyList<(double time, string text)> textKeys, string selfInput)
+        {
+            Clear();
+            if (textKeys == null) return;
+            for (int i = 0; i < textKeys.Count; i++)
+                if (Classify(textKeys[i].text, selfInput) is { } k) Add((float)textKeys[i].time, k);
+        }
+
+        /// <summary>A key at <paramref name="t"/>, after the keys at the same time (the callbacks come in time order).</summary>
+        public void Add(float t, ComboKey k)
+        {
+            int i = times.Count;
+            while (i > 0 && times[i - 1] > t) i--;
+            times.Insert(i, t);
+            kinds.Insert(i, k);
+        }
+
+        static bool Crossed(float t, double prev, double pos) => t > (float)prev && t <= (float)pos;   // in float, as the keys: a frame at the key time crosses it
+
+        /// <summary>
+        /// TextKeyEvent for each key the sequence passed from <paramref name="prev"/> (exclusive) to <paramref name="pos"/>, in
+        /// time order, so of two keys passed in one frame the later one wins: the flags they set stay set for the state (the
+        /// enter clears them, :406-410). <paramref name="canChainCombo"/>: StateSkill::CanChainCombo @0x1417f5060 (:1725) at
+        /// the "combo" key. True when a key that calls FUN_1417ef4a0 passed (an accepted "combo", :1006, or "selfcombo",
+        /// :1027). 0 B.
+        /// </summary>
+        public bool Advance(ref Window w, double prev, double pos, bool canChainCombo)
+        {
+            bool chain = false;
+            for (int i = 0; i < times.Count; i++)
+            {
+                if (!Crossed(times[i], prev, pos)) continue;
+                switch (kinds[i])
+                {
+                    case ComboKey.Combo: if (canChainCombo) { w.Combo = true; chain = true; } break;
+                    case ComboKey.InputCombo: w.InputCombo = true; break;
+                    case ComboKey.EndInputCombo: w.InputCombo = false; break;
+                    case ComboKey.SelfInput: w.SelfInputCombo = true; break;
+                    case ComboKey.EndSelfInput: w.EndSelfInput = true; break;
+                    case ComboKey.SelfCombo: w.SelfCombo = true; chain = true; break;
+                }
+            }
+            return chain;
+        }
+
+        /// <summary>The earliest key time after <paramref name="prev"/> and not after <paramref name="pos"/>, or -1. 0 B.</summary>
+        public double Next(double prev, double pos)
+        {
+            for (int i = 0; i < times.Count; i++)
+                if (Crossed(times[i], prev, pos)) return times[i];
+            return -1;
         }
     }
 
@@ -132,6 +197,15 @@ public static class SkillFollow
         if (w.EndSelfInput && (next.Id == cur.Id || IsOutputSkill(cur, next.Id))) return false;
         return true;
     }
+
+    /// <summary>
+    /// FUN_1417ee120 @0x1417ee120 (stateskill.cpp:2911-2928) at the end of the last motion: the next cast (m_spNext, else the
+    /// key polled then) goes through vfunc_102 without FUN_1417ef4a0's combo tests; only the hold attack flag
+    /// (<paramref name="holdAttack"/>, m_b111) sends the running skill's combo output to the idle state (FUN_1417f0070).
+    /// STILL-OPEN: m_b111 is not kept by the port (the callers pass false).
+    /// </summary>
+    public static bool CastsAtEnd(CastRecord running, SkillData next, bool holdAttack) =>
+        !(holdAttack && IsOutputSkill(running.Skill, next.Id));
 
     /// <summary>CSkillRecord::IsLastMotion @0x141759f20 (skillrecord.cpp:337): m_nMotion + 1 &gt;= the level's motion count.</summary>
     public static bool IsLastMotion(CastRecord r) => r.Motion + 1 >= r.Level.Motions.Count;

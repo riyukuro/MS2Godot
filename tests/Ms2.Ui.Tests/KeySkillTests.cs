@@ -51,6 +51,20 @@ public class KeySkillTests
         Assert.That(Skill(t, Key1, Slots(0), player: false), Is.EqualTo(0), "no local player");
     }
 
+    [Test] public void TheBoundKeysAreTheValidEntries()
+    {
+        // CKeyTable::GetBoundKeys (keytable.cpp:1109-1121): IsKeyEntryValid and a type, in the table's order
+        var t = Keys(new KeyBinding(KeyQ, 1, 0x49401, 0, 0), new KeyBinding(Key1, 1, Slot0, 0, 0), new KeyBinding(Key2, 1, Slot2, 0, 0),
+                     new KeyBinding(KeyE, 3, 0x49401, 10200001, 0), new KeyBinding(KeyR, 0, 0x49401, 10200001, 0));
+        var into = new List<int> { 99 };
+        t.GetBoundKeys(into, Slots(0));
+        Assert.That(into, Is.EqualTo(new[] { Key1, KeyE }), "an empty slot, a type 1 key without a slot and type 0 are left out");
+        t.GetBoundKeys(into, null);
+        Assert.That(into, Is.EqualTo(new[] { KeyE }), "no quick slot pages");
+        var s = Slots(0);
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) t.GetBoundKeys(into, s); }), Is.LessThan(512));
+    }
+
     [Test] public void TheKeysOfASkillNeedAValidEntryAndTheSkill()
     {
         // CKeyTable::FUN_14142c6c0 (keytable.cpp:1125-1138) over IsKeyEntryValid (:1292-1314)

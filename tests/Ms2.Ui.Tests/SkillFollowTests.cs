@@ -33,10 +33,15 @@ public class SkillFollowTests
     }
 
     /// <summary>Attack_01_A's combo keys in the body xml (inputcombo 0.2, combo 0.3, selfinputcombo 0.4, selfcombo 0.6).</summary>
-    static readonly SkillFollow.ComboKeys Attack01 = new()
+    static readonly SkillFollow.ComboKeys Attack01 = Keys((0.2f, SkillFollow.ComboKey.InputCombo), (0.3f, SkillFollow.ComboKey.Combo),
+        (0.4f, SkillFollow.ComboKey.SelfInput), (0.6f, SkillFollow.ComboKey.SelfCombo));
+
+    static SkillFollow.ComboKeys Keys(params (float t, SkillFollow.ComboKey k)[] keys)
     {
-        InputCombo = 0.2f, EndInputCombo = -1, SelfInput = 0.4f, EndSelfInput = -1, Combo = 0.3f, SelfCombo = 0.6f,
-    };
+        var c = new SkillFollow.ComboKeys();
+        foreach (var (t, k) in keys) c.Add(t, k);
+        return c;
+    }
 
     static SkillFollow.Window At(double pos)
     {
@@ -88,9 +93,9 @@ public class SkillFollowTests
         var other = Skill(2);
         int chain = 0;
         Assert.That(SkillFollow.MayFollow(r, other, At(0.1), false, ref chain), Is.False, "no window yet");
-        Assert.That(SkillFollow.MayFollow(r, other, At(0.25), false, ref chain), Is.True, "m_b4a: before m_b114 only the same skill is refused");
+        Assert.That(SkillFollow.MayFollow(r, other, At(0.25), false, ref chain), Is.True, "in the input window, before the self input key, only the same skill is refused");
         var w = At(0.45);
-        Assert.That(SkillFollow.MayFollow(r, other, w, false, ref chain), Is.True, "m_b4a and m_b114");
+        Assert.That(SkillFollow.MayFollow(r, other, w, false, ref chain), Is.True, "the input window and the self input key");
         var selfOnly = new SkillFollow.Window { SelfInputCombo = true, InputCombo = true, SelfCombo = true };
         Assert.That(SkillFollow.ChainsNow(r, other, 0, selfOnly, false), Is.False);
         Assert.That(SkillFollow.ChainsNow(r, r.Skill, 0, selfOnly, false), Is.True);
@@ -104,7 +109,7 @@ public class SkillFollowTests
         var w = new SkillFollow.Window { InputCombo = true, SelfInputCombo = true, Combo = true, SelfCombo = true, Ended = true };
         int chain = 5;
         Assert.That(SkillFollow.MayFollow(r, r.Skill, w, false, ref chain), Is.False);
-        Assert.That(chain, Is.EqualTo(5), "m_nChainType is not written");
+        Assert.That(chain, Is.EqualTo(5), "the chain type is not written");
     }
 
     [Test]
@@ -168,7 +173,8 @@ public class SkillFollowTests
     public void TheComboKeysLatchInTimeOrder()
     {
         // TextKeyEvent (:1009-1012): inputcombo sets m_b4a, endInputCombo clears it; the later key of one frame wins
-        var k = new SkillFollow.ComboKeys { InputCombo = 0.2f, EndInputCombo = 0.5f, SelfInput = -1, EndSelfInput = 0.7f, Combo = 0.3f, SelfCombo = -1 };
+        var k = Keys((0.5f, SkillFollow.ComboKey.EndInputCombo), (0.2f, SkillFollow.ComboKey.InputCombo), (0.7f, SkillFollow.ComboKey.EndSelfInput),
+            (0.3f, SkillFollow.ComboKey.Combo));
         var w = default(SkillFollow.Window);
         k.Advance(ref w, -1, 0.25, true);
         Assert.That((w.InputCombo, w.Combo), Is.EqualTo((true, false)));
@@ -215,6 +221,7 @@ public class SkillFollowTests
             {
                 var w = default(SkillFollow.Window);
                 Attack01.Advance(ref w, -1, i * 0.001, true);
+                Attack01.Next(-1, i * 0.001);
                 SkillFollow.MayFollow(r, r.Skill, w, false, ref chain);
                 SkillFollow.ChainsNow(r, r.Skill, chain, w, false);
             }
@@ -240,20 +247,126 @@ public class SkillFollowTests
         Assert.That(SkillFollow.HoldsMove(s), Is.True);
         var x = Ms2.Formats.Text.PackXml.Read(packs, "Resource/Model/Character", "female/female.xml");   // KMS2_DEV has a BOM
         var seq = x.Root!.Elements().First(e => string.Equals(e.Name.LocalName, m.SequenceName, StringComparison.OrdinalIgnoreCase));
-        float Key(string text) => seq.Elements("key").Where(k => string.Equals((string)k.Attribute("text"), text, StringComparison.OrdinalIgnoreCase))
+        var keys = new SkillFollow.ComboKeys();
+        keys.Set(TextKeys(seq), m.SelfInputCombo);
+        float selfInput = seq.Elements("key").Where(k => (string)k.Attribute("text") == m.SelfInputCombo)
             .Select(k => float.Parse((string)k.Attribute("time")!, System.Globalization.CultureInfo.InvariantCulture)).DefaultIfEmpty(-1).First();
-        var keys = new SkillFollow.ComboKeys
-        {
-            InputCombo = Key("inputcombo"), EndInputCombo = Key("endInputCombo"), SelfInput = Key(m.SelfInputCombo),
-            EndSelfInput = Key("endSelfInputcombo"), Combo = Key("combo"), SelfCombo = Key("selfcombo"),
-        };
-        Assert.That(keys.SelfInput, Is.GreaterThan(0));
+        Assert.That(selfInput, Is.GreaterThan(0));
         var r = new CastRecord { Skill = s, Level = lv, Motion = 0 };
         var w = default(SkillFollow.Window);
-        keys.Advance(ref w, -1, keys.SelfInput * 0.5, true);
+        keys.Advance(ref w, -1, selfInput * 0.5, true);
         int chain = 0;
         Assert.That(SkillFollow.MayFollow(r, s, w, false, ref chain), Is.False, "a press early in the attack");
-        keys.Advance(ref w, keys.SelfInput * 0.5, keys.SelfInput, true);
+        keys.Advance(ref w, selfInput * 0.5, selfInput, true);
         Assert.That(SkillFollow.MayFollow(r, s, w, false, ref chain), Is.True, "a press after the selfInputCombo key");
+    }
+
+    static List<(double time, string text)> TextKeys(XElement seq) => seq.Elements("key")
+        .Select(k => ((double)float.Parse((string)k.Attribute("time")!, System.Globalization.CultureInfo.InvariantCulture), (string)k.Attribute("text")))
+        .ToList();
+
+    [Test]
+    public void TheComboKeysTestTheirNamesAsTheClientDoes()
+    {
+        // TextKeyEvent (:999-1027): combo, inputcombo, selfcombo and the motion's key exactly; the two end keys in any case
+        Assert.That(SkillFollow.ComboKeys.Classify("combo", null), Is.EqualTo(SkillFollow.ComboKey.Combo));
+        Assert.That(SkillFollow.ComboKeys.Classify("Combo", null), Is.Null);
+        Assert.That(SkillFollow.ComboKeys.Classify("InputCombo", null), Is.Null);
+        Assert.That(SkillFollow.ComboKeys.Classify("endinputcombo", null), Is.EqualTo(SkillFollow.ComboKey.EndInputCombo));
+        Assert.That(SkillFollow.ComboKeys.Classify("ENDSELFINPUTCOMBO", null), Is.EqualTo(SkillFollow.ComboKey.EndSelfInput));
+        Assert.That(SkillFollow.ComboKeys.Classify("SelfCombo", null), Is.Null);
+        Assert.That(SkillFollow.ComboKeys.Classify("myKey", "myKey"), Is.EqualTo(SkillFollow.ComboKey.SelfInput));
+        Assert.That(SkillFollow.ComboKeys.Classify("mykey", "myKey"), Is.Null);
+        Assert.That(SkillFollow.ComboKeys.Classify("", ""), Is.Null);
+    }
+
+    [Test]
+    public void EveryKeyOfANameCountsSoASecondWindowReopens()
+    {
+        // each text key is its own event: a second inputcombo after endInputCombo opens the window again
+        var k = new SkillFollow.ComboKeys();
+        k.Set(new List<(double, string)> { (0.3, "inputcombo"), (0.1, "inputcombo"), (0.2, "endInputCombo"), (0.5, "move0") }, null);
+        Assert.That(k.Count, Is.EqualTo(3));
+        var w = default(SkillFollow.Window);
+        k.Advance(ref w, -1, 0.25, true);
+        Assert.That(w.InputCombo, Is.False, "closed at 0.2");
+        k.Advance(ref w, 0.25, 0.35, true);
+        Assert.That(w.InputCombo, Is.True, "the second window");
+        var one = default(SkillFollow.Window);
+        k.Advance(ref one, -1, 0.4, true);
+        Assert.That(one.InputCombo, Is.True, "one frame over all three: the latest key wins");
+    }
+
+    [Test]
+    public void TheComboKeysComeInTimeOrderAndTellTheChainKeys()
+    {
+        // the HUD reads the keys one time at a time (Next), so a point before a chain key fires first; Advance is true at an
+        // accepted combo or a selfcombo, where TextKeyEvent calls FUN_1417ef4a0 (:1004, :1027)
+        var k = Keys((0.6f, SkillFollow.ComboKey.SelfCombo), (0.2f, SkillFollow.ComboKey.InputCombo), (0.3f, SkillFollow.ComboKey.Combo));
+        Assert.That(k.Next(-1, 1), Is.EqualTo(0.2f));
+        Assert.That(k.Next(0.2f, 1), Is.EqualTo(0.3f));
+        Assert.That(k.Next(0.3f, 0.5), Is.EqualTo(-1));
+        var w = default(SkillFollow.Window);
+        Assert.That(k.Advance(ref w, -1, 0.2f, true), Is.False);
+        Assert.That(k.Advance(ref w, 0.2f, 0.3f, false), Is.False, "a combo key CanChainCombo refuses");
+        Assert.That(k.Advance(ref w, -1, 0.3f, true), Is.True, "an accepted combo key");
+        Assert.That(k.Advance(ref w, 0.3f, 0.6f, true), Is.True, "selfcombo");
+    }
+
+    [Test]
+    public void TheEndCastsTheNextWithoutTheSelfInputVeto()
+    {
+        // FUN_1417ee120 (:2911-2928) at the end of the last motion: vfunc_102 directly, not FUN_1417ef4a0 (whose
+        // endSelfInputcombo test, :3150, refuses the same skill); only the hold attack flag sends the combo output to idle
+        var r = Running(combo: "inputSkill=\"1\" outputSkill=\"7\"");
+        var w = At(0.45);
+        w.EndSelfInput = true;
+        w.EndOfSequence();
+        Assert.That(SkillFollow.ChainsNow(r, r.Skill, 0, w, false), Is.False);
+        Assert.That(SkillFollow.CastsAtEnd(r, r.Skill, false), Is.True);
+        Assert.That(SkillFollow.CastsAtEnd(r, Skill(7), false), Is.True);
+        Assert.That(SkillFollow.CastsAtEnd(r, Skill(7), true), Is.False, "the combo output with the hold attack flag");
+        Assert.That(SkillFollow.CastsAtEnd(r, Skill(8), true), Is.True);
+    }
+
+    [Test]
+    public void TheWindowFlagsCompareWithoutBoxing()
+    {
+        var a = At(0.45);
+        var b = At(0.45);
+        Assert.That(a.Same(b), Is.True);
+        b.KeyHeld = true;
+        Assert.That(a.Same(b), Is.False);
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) a.Same(b); }), Is.LessThan(512));
+    }
+
+    [Test]
+    public void TheBodyXmlComboWindowsAllLoad()
+    {
+        // the data's sequences with a combo key name twice (two windows): every key loads, so each window opens and closes
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        int twice = 0, withKeys = 0;
+        foreach (var file in new[] { "female/female.xml", "male/male.xml" })
+        {
+            var x = Ms2.Formats.Text.PackXml.Read(packs, "Resource/Model/Character", file);
+            foreach (var seq in x.Root!.Elements())
+            {
+                var keys = TextKeys(seq);
+                var k = new SkillFollow.ComboKeys();
+                k.Set(keys, null);
+                int n = keys.Count(t => SkillFollow.ComboKeys.Classify(t.text, null) != null);
+                Assert.That(k.Count, Is.EqualTo(n), seq.Name.LocalName);
+                if (n != 0) withKeys++;
+                if (keys.Where(t => SkillFollow.ComboKeys.Classify(t.text, null) != null).GroupBy(t => t.text).Any(g => g.Count() > 1))
+                {
+                    twice++;
+                    TestContext.Progress.WriteLine($"{file} {seq.Name.LocalName}: " + string.Join(" ", keys.Select(t => $"{t.text}@{t.time:0.###}")));
+                }
+            }
+        }
+        TestContext.Progress.WriteLine($"sequences with a combo key twice: {twice} of {withKeys}");
+        Assert.That(withKeys, Is.GreaterThan(0));
     }
 }
