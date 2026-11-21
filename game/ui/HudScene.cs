@@ -3375,6 +3375,7 @@ public partial class HudScene : Node, IUiStageHost
         if (sysmenuShot >= 0 && frames == 200) Escape();
         if (worldMapShot >= 0 && frames == 200) ToggleWorldMap();
         if (openShot == "mailsend" && frames == 200) OpenMailSendShot();
+        if (openShot == "chatemoticon" && frames == 200) OpenChatEmoticon();    // with --chatemoticon-fixture: every pack owned
         if (openShot == "inventory" && frames == 200) ToggleInventory();
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
