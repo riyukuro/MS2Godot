@@ -15,6 +15,8 @@ public enum CastSyncResult
 /// One actor's current cast as the skill packets test it: PCBase::vfunc_103's record (its m_nSkillUid and m_nMotion) and
 /// whether the actor is in the skill state (GetCurStateId() == 0x10). OnSkillUse @0x141717b40 (scenestategame.cpp:3297),
 /// OnSkillSync @0x141718150 (:3361) and OnSkillCancel @0x141718680 (:3409) in their order.
+/// The caller sets <see cref="InSkillState"/> from the PC's state machine (RemotePcStates.Cur) before each test: the state
+/// also ends by itself (the end of the cast's sequence) and by records.
 /// STILL-OPEN: the record is kept after the state ends in the client (vfunc_103 still gives it); here only its uid and motion are.
 /// </summary>
 public struct ActorCast
@@ -58,7 +60,4 @@ public struct ActorCast
         InSkillState = false;
         return true;
     }
-
-    /// <summary>The skill state ended on its own (its motion finished).</summary>
-    public void End() => InSkillState = false;
 }

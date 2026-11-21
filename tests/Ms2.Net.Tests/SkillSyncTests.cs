@@ -53,7 +53,7 @@ public class SkillSyncTests {
         Assert.That((c.Charging, c.ChargeStart), Is.EqualTo((true, true)), "FUN_1417ec630(A, B)");
         Assert.That(c.Sync(Sync(5, 2)), Is.EqualTo(CastSyncResult.NewCast), "another motion");
         Assert.That(c.Sync(Sync(6, 2)), Is.EqualTo(CastSyncResult.NewCast), "another uid");
-        c.End();
+        c.InSkillState = false;   // the state ended (its sequence or a record)
         Assert.That(c.Sync(Sync(6, 2)), Is.EqualTo(CastSyncResult.NewCast), "out of the skill state");
     }
 

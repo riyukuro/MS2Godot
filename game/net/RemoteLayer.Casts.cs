@@ -24,7 +24,7 @@ public sealed partial class RemoteLayer
     void OnSkillUse(SkillUse u)
     {
         if (users.TryGetValue(u.ActorId, out var r)) r.Cast.Use(u.CastUid, u.Motion);
-        PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed);
+        PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed, new System.Numerics.Vector3(u.Position.X, u.Position.Y, u.Position.Z), u.Rotation.Z);
     }
 
     /// <summary>
@@ -38,21 +38,32 @@ public sealed partial class RemoteLayer
         CastsSynced++;
         if (users.TryGetValue(s.ActorId, out var r))
         {
+            InSkill(r);
             if (r.Cast.Sync(s) == CastSyncResult.Update) return;
         }
         else if (npcs.Info(s.ActorId) == null) return;
-        PlayCast(s.ActorId, s.SkillId, s.Level, s.Motion, s.Speed);
+        PlayCast(s.ActorId, s.SkillId, s.Level, s.Motion, s.Speed, new System.Numerics.Vector3(s.Position.X, s.Position.Y, s.Position.Z), s.Rotation.Z);
     }
 
-    /// <summary>OnSkillCancel @0x141718680 (:3409): the cast of the uid in the skill state leaves it; the movement animations take the body back.</summary>
+    /// <summary>OnSkillCancel @0x141718680 (:3409): the cast of the uid in the skill state leaves it for StateIdle
+    /// (State::vfunc_7(1)), whose sequence takes the body back.</summary>
     void OnSkillCancel(SkillCancelledEvent c)
     {
-        if (!users.TryGetValue(c.ActorId, out var r) || !r.Cast.Cancel(c.CastUid)) return;
-        r.CastLeft = 0; r.Pc.Release();
+        if (!users.TryGetValue(c.ActorId, out var r)) return;
+        InSkill(r);
+        if (!r.Cast.Cancel(c.CastUid)) return;
+        r.Pc.States.EndSkill();
         CastsCancelled++;
     }
 
-    void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed)
+    /// <summary>The packets' GetCurStateId() == 0x10: the remote's state machine, which leaves StateSkill by itself too.</summary>
+    static void InSkill(Remote r) => r.Cast.InSkillState = r.Pc.States.Cur == RemotePcStates.StateSkill;
+
+    /// <summary>
+    /// FUN_141673b40 -> StateSkill::PlayCastStartEffect for a user: a motion with a sequence the body has enters StateSkill
+    /// (RemotePc.PlaySkill) at the record's position <paramref name="pos"/> (MS2 axes) and rotation <paramref name="rotZ"/>.
+    /// </summary>
+    void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ)
     {
         skillMotions ??= new Ms2.Formats.World.SkillTable(packs);
         var motion = skillMotions.Motion(skillId, level, motionIndex);
@@ -63,9 +74,7 @@ public sealed partial class RemoteLayer
             at = r.Root; yaw = r.Visual.Rotation.Y;
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
-                float sp = Math.Max(speed, 0.1f);
-                r.Pc.Hold(sk.name, sp);
-                r.CastLeft = (float)(sk.an.Length / sp);
+                r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ);
                 CastsPlayed++;
             }
         }
@@ -100,17 +109,5 @@ public sealed partial class RemoteLayer
         }
         catch (Exception ex) { GD.PushWarning($"skill kf {entry}: {ex.Message}"); }
         return skillAnims[(gender, seq)] = sk;
-    }
-
-    /// <summary>Per frame: true while the remote's cast motion still plays (the movement animations wait, RemotePc.Hold);
-    /// its end leaves the skill state and releases the body.</summary>
-    static bool CastHolds(Remote a, float dt)
-    {
-        if (!a.Cast.InSkillState) return false;
-        a.CastLeft -= dt;
-        if (a.CastLeft > 0) return true;
-        a.Cast.End();
-        a.Pc.Release();
-        return false;
     }
 }

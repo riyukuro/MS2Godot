@@ -308,28 +308,27 @@ public sealed class RemotePc : IRemotePc
         prefix ??= "";
         if (prefix == WeaponPrefix) return;
         WeaponPrefix = prefix;
-        if (!held && currentAct >= 0) PlayAction(currentAct, (float)Anim.SpeedScale, false);
+        if (currentAct >= 0) PlayAction(currentAct, (float)Anim.SpeedScale, false);
     }
-
-    bool held;
 
     /// <summary>
-    /// A cast's motion sequence outside the action table (StateSkill::PlayCastStartEffect, RemoteLayer.Casts.cs): the states'
-    /// PlayAction waits until <see cref="Release"/>, then plays its action with the default transition from the cast.
+    /// A cast's motion sequence outside the action table (RemoteLayer.Casts.cs): the PC enters StateSkill
+    /// (<see cref="RemotePcStates.Cast"/>, which first flushes the queued records), then StateSkill::vfunc_4 plays the
+    /// sequence at the record's speed. Its end (<see cref="OnAnimationFinished"/>) leaves the state; the next state plays its
+    /// own action with the default transition from the cast.
     /// </summary>
-    public void Hold(string name, float speed)
+    public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ)
     {
+        States.Cast(skillId, chargingSkill, pos, rotZ);
+        bool again = name == currentName;
         Anim.Play(name, 0.05, speed);
+        if (again) Anim.Seek(0, true);           // the same sequence again (a forced re-entry): Play alone would go on
         Anim.SpeedScale = 1f;
-        currentAct = -1; currentName = name; lastPos = -1; held = true;
+        currentAct = -1; currentName = name; lastPos = -1;
     }
-
-    /// <summary>The cast's motion ended or was cancelled: the movement states take the body back.</summary>
-    public void Release() => held = false;
 
     public bool PlayAction(int action, float rate, bool restart)
     {
-        if (held) return true;
         var name = Anims?.Name((Act)action, WeaponPrefix);
         if (name == null) return false;
         if (name == currentName && !restart && Anim.IsPlaying()) { Anim.SpeedScale = rate; currentAct = action; return true; }
@@ -358,10 +357,13 @@ public sealed class RemotePc : IRemotePc
 
     // ---- animation events ----------------------------------------------------------------------------------------------
 
-    /// <summary>NiActorManager's end of a sequence that does not loop: the state's EndOfSequence.</summary>
+    /// <summary>NiActorManager's end of a sequence that does not loop: the state's EndOfSequence (a cast's sequence, played
+    /// outside the action table, ends StateSkill).</summary>
     void OnAnimationFinished(StringName name)
     {
-        if (currentAct >= 0 && name == currentName) States.SequenceEnded(currentAct);
+        if (name != currentName) return;
+        if (currentAct >= 0) States.SequenceEnded(currentAct);
+        else if (States.Cur == RemotePcStates.StateSkill) States.EndSkill();
     }
 
     /// <summary>

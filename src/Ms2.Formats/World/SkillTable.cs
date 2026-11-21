@@ -31,6 +31,7 @@ public sealed class SkillLevelRow
 public sealed class SkillTable
 {
     readonly Dictionary<int, List<SkillLevelRow>> skills = new();
+    readonly HashSet<int> charging = new();
     public int Count => skills.Count;
 
     public SkillTable(PackSet packs)
@@ -42,6 +43,8 @@ public sealed class SkillTable
             foreach (var s in x.Descendants("skill"))
             {
                 if (!int.TryParse((string)s.Attribute("id"), out int id)) continue;
+                if (s.Descendants("basic").Elements("combo").FirstOrDefault() is { } combo && Flag(combo, "chargingSkill")) charging.Add(id);
+                else charging.Remove(id);
                 var levels = new List<SkillLevelRow>();
                 foreach (var l in s.Elements("level"))
                 {
@@ -77,6 +80,10 @@ public sealed class SkillTable
     }
 
     public bool Has(int skillId) => skills.ContainsKey(skillId);
+
+    /// <summary>&lt;basic&gt;&lt;combo chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0, skillleveldata.cpp:493): SkillData
+    /// +0xad, m_blockA4.m_bChargingSkill, which CStateManager::FUN_1417db550 tests for a record in StateSkill.</summary>
+    public bool ChargingSkill(int skillId) => charging.Contains(skillId);
 
     /// <summary>XmlQuery of a bool (tinyxmlhelper.cpp, @0x1408736d0): TiXmlElement::QueryBoolAttribute (tinyxml.cpp:620-645) sets
     /// true when the value starts with "true", "yes" or "1" (StringEqual, case-insensitive prefix); else the flag stays false.</summary>

@@ -29,7 +29,7 @@ public sealed partial class RemoteLayer : Node3D
         public PcHpBar Bar;
         public byte Gender;
         /// <summary>The actor's cast record and skill state (RemoteLayer.Casts.cs), and the seconds its motion still plays.</summary>
-        public ActorCast Cast; public float CastLeft;
+        public ActorCast Cast;
         public Func<Vector3> Anchor;
         /// <summary>The player as a damage number's target (its Eff_Damage point, UIDamageText m_strDamageNode).</summary>
         public Ui.DamageTarget Damage;
@@ -403,9 +403,8 @@ public sealed partial class RemoteLayer : Node3D
     {
         float dt = (float)delta;
         Drain();
-        // PCBase::vfunc_53 for each PC, once per drawn frame with that frame's time (the local player's step); a cast's
-        // motion holds the body's animation until it ends (CastHolds)
-        foreach (var a in users.Values) { CastHolds(a, dt); a.Pc.Tick(dt); }
+        // PCBase::vfunc_53 for each PC, once per drawn frame with that frame's time (the local player's step)
+        foreach (var a in users.Values) a.Pc.Tick(dt);
         npcs.Process(dt);
         combat.Process(dt);
     }

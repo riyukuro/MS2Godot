@@ -79,8 +79,9 @@ public interface IRemotePc
 /// and, per frame, Update (statemanager.cpp:220-276) running the current state's vfunc_3 (move) and vfunc_9 (animation
 /// and the transitions the PC takes by itself: a fall, a landing, the end of the landing). The input states' vfunc_8
 /// runs for MyPC only (mypc.cpp:2966), so a remote PC changes state by its records and by its own vfunc_9 tests.
-/// Ported states: StateIdle (1), StateWalk (2), StateLand (4), StateFall (5), StateJump (6), StateSwim (0x1b).
-/// STILL-OPEN: every other registered state (pc.cpp:668-721: crawl, ladder, rope, emotion, skill, dash, climb, glide, swim
+/// Ported states: StateIdle (1), StateWalk (2), StateLand (4), StateFall (5), StateJump (6), StateSwim (0x1b), and StateSkill
+/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="EndSkill"/>).
+/// STILL-OPEN: every other registered state (pc.cpp:668-721: crawl, ladder, rope, emotion, dash, climb, glide, swim
 /// dash, ...) changes the id here and runs no update of its own; the records still place the PC (FUN_1417dbd00 snaps for
 /// those states at once). A record's StateData (FUN_1417dc9a0 / vfunc_27, read by its vfunc_2) is not read. The push
 /// control (m_pushControl, statemanager.cpp:591), the marker the sender stood on (m_str88, FUN_1417dc4c0
@@ -150,6 +151,11 @@ public sealed class RemotePcStates
     }
     /// <summary>The queued records (for tests).</summary>
     public int Queued => requests.Count;
+    /// <summary>The cast's record (PCBase::vfunc_103, the CSkillRecord): its skill id (GetSkillId) and its skill's
+    /// m_blockA4.m_bChargingSkill, which <see cref="Apply"/> tests in StateSkill.</summary>
+    public int SkillId { get; private set; }
+    public bool ChargingSkill { get; private set; }
+    Vector3 castPos; float castRotZ;
 
     // StateWalk (statewalk.h:29-33: m_fSpeed1/m_fSpeed2 store vfunc_96/vfunc_97; m_n50 is only set by MyPC's vfunc_8)
     float walkSpeed1, walkSpeed2; int walkRun = 1; readonly int walkChanged = 0;
@@ -268,15 +274,52 @@ public sealed class RemotePcStates
     /// CStateManager::FUN_1417db550 (@0x1417db550, statemanager.cpp:390-436), the PC branch: the move direction, the
     /// camera rotation and mode, m_f92c = 1, then the record is applied unless the PC or the record is in StateSkill
     /// (0x10) or the record is StateLand (4): the remote PC's landing is its own.
-    /// STILL-OPEN: the StateSkill branch (statemanager.cpp:403-421: a different skill id or a charging skill) needs the
-    /// skill states; this queue never enters 0x10.
+    /// In StateSkill (statemanager.cpp:403-421) the record is applied only when it names another skill (m_n64 not 0 and
+    /// not the cast's id) or when it is not a skill record and the cast's skill is a charging skill; else it is dropped.
     /// </summary>
     void Apply(SyncRecord r)
     {
         MoveInput = r.Move;                          // vfunc_22(m_vel3c)
         CameraEuler = r.CameraEuler;                 // FUN_141678160(m_pos48)
         CameraMode = r.CameraMode;                   // FUN_1416781a0(m_n54)
-        if (Cur != StateSkill && r.State != StateSkill && r.State != StateLand) ApplyPc(r);
+        bool apply = Cur != StateSkill && r.State != StateSkill && r.State != StateLand;
+        if (!apply && Cur == StateSkill)
+        {
+            if (r.SkillId != 0 && r.SkillId != SkillId) apply = true;
+            if (r.State != StateSkill && ChargingSkill) apply = true;
+        }
+        if (apply) ApplyPc(r);
+    }
+
+    // ---- the skill state ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A cast with a sequence: OnSkillUse's record (CSkillRecord::Init, PCBase::vfunc_100 makes it vfunc_103's) then
+    /// StateSkill::PlayCastStartEffect (@0x1417ea750, stateskill.cpp:1820-1828) enters StateSkill forced
+    /// (vfunc_59(0x10, NULL, 0, 1)): ChangeState flushes the queue (its records tested against the new record when the PC
+    /// is already in StateSkill), and a cast in the state leaves and enters it again. <paramref name="pos"/> (MS2 axes)
+    /// and <paramref name="rotZ"/> (degrees) are the record's m_ptPos and m_ptRot.z, which StateSkill::vfunc_4 takes.
+    /// </summary>
+    public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ)
+    {
+        SkillId = skillId;
+        ChargingSkill = chargingSkill;
+        castPos = pos;
+        castRotZ = rotZ;
+        ChangeState(StateSkill, 0, true);
+    }
+
+    /// <summary>
+    /// StateSkill leaves for StateIdle: at the end of its sequence (StateSkill::EndOfSequence @0x1417e9130,
+    /// stateskill.cpp:1054-1072, marks it; for a PC that is neither MyPC nor an npc, FUN_1417f0070 @0x1417f0070,
+    /// stateskill.cpp:2810-2822, then enters StateIdle) and on OnSkillCancel (State::vfunc_7(1) -> StateSkill::vfunc_7,
+    /// stateskill.cpp:576-592: vfunc_59(1)). Nothing when the PC has left StateSkill already.
+    /// STILL-OPEN: FUN_1417f0070's StateHold (0x20) for a record holding a target (m_nB0), and EndOfSequence's waits for a
+    /// charging or repeating cast (m_bCharging, m_nRepeat), are not ported.
+    /// </summary>
+    public void EndSkill()
+    {
+        if (Cur == StateSkill) ChangeState(StateIdle);
     }
 
     /// <summary>
@@ -357,6 +400,14 @@ public sealed class RemotePcStates
     {
         switch (s)
         {
+            case StateSkill:
+                // StateSkill::vfunc_4 (stateskill.cpp:390-500): vfunc_22(ZERO), vfunc_19(m_ptPos), and, for a PC whose
+                // FUN_141489940 is not 10, SetTargetYaw(m_ptRot.z) and vfunc_21(m_ptRot)
+                MoveInput = Vector2.Zero;
+                pc.Position = castPos;
+                TargetYaw = castRotZ;
+                pc.RotationZ = castRotZ;
+                break;
             case StateIdle:
                 // StateIdle::vfunc_4 (stateidle.cpp:167-191): State::vfunc_4 -> State::vfunc_10 sets m_f938 = 1f;
                 // sub 1 (0xc riding a stunt), 7 on water
@@ -462,6 +513,11 @@ public sealed class RemotePcStates
             }
             case StateJump:
                 JumpMove(dt);
+                break;
+            case StateSkill:
+                // STILL-OPEN: StateSkill::vfunc_3's motion controller (FUN_1417edc20, CLinearMotionController and the
+                // others, stateskill.cpp:605-631); the PC keeps its place under vfunc_68 with a zero move
+                MoveBy(Vector3.Zero, dt);
                 break;
         }
     }

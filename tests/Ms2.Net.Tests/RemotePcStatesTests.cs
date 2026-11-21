@@ -83,11 +83,12 @@ public class RemotePcStatesTests {
     // the default field camera's Euler rotation (CameraMathTests: hangle 45, vangle 30), its flat view direction (1, 1)/sqrt 2
     static readonly Vector3 Cam = new(90, 45, -40);
 
-    static SyncRecord Rec(int state, int sub, Vector3 pos, Vector2 move, float timeS, float yaw = 0, Vector3? cam = null) {
+    static SyncRecord Rec(int state, int sub, Vector3 pos, Vector2 move, float timeS, float yaw = 0, Vector3? cam = null, int skill = 0) {
         var s = new StateSync {
             State = (byte) state, SubState = (byte) sub, Position = new Vector3S((short) pos.X, (short) pos.Y, (short) pos.Z),
             Rotation = (short) (yaw * 10), Rotation2 = (short) (yaw * 10), Unknown1 = 2, Unknown3 = (short) (timeS * 1000), SyncNumber = 0x7fffffff,
         };
+        if (skill != 0) { s.Flags |= StateSync.Flag.Flag1; s.Flag1Value = skill; }   // m_n64, optional bit 0
         var c = cam ?? Cam;
         s.Speed = new Vector3S((short) c.X, (short) c.Y, (short) c.Z);
         int ax = move.X == -1 ? 0 : move.X == 0 ? 1 : move.X == 1 ? 2 : -1, ay = move.Y == -1 ? 0 : move.Y == 0 ? 1 : move.Y == 1 ? 2 : -1;
@@ -452,6 +453,69 @@ public class RemotePcStatesTests {
         Assert.That(GroundEffectGate.StepKey("run1", 0, 0x6200003), Is.False);
         Assert.That(GroundEffectGate.StepKey("run1", 2, 0x6200028), Is.False);
         Assert.That(GroundEffectGate.StepKey("effect_x", 2, 0x6200003), Is.False);
+    }
+
+    [Test] public void CastFlushesTheQueueAndKeepsTheSkillState() {
+        // PlayCastStartEffect's vfunc_59(0x10, .., 1): ChangeState(0x10) applies every queued record first (FlushRequests),
+        // then StateSkill::vfunc_4 puts the PC on the record's position and rotation
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        var states = new List<int>();
+        sm.StateChanged = states.Add;
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0.05f));
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0.05f));
+        sm.Cast(10200001, false, new Vector3(40, 0, 0), 90f);
+        Assert.That(sm.Queued, Is.Zero);
+        Assert.That(states, Is.EqualTo(new[] { RemotePcStates.StateWalk, RemotePcStates.StateSkill }));
+        Assert.That((sm.Cur, sm.SkillId, b.Position, b.RotationZ, sm.TargetYaw), Is.EqualTo((RemotePcStates.StateSkill, 10200001, new Vector3(40, 0, 0), 90f, 90f)));
+        // FUN_1417db550 in StateSkill: a record without a skill id, or the same skill's, is dropped (not even placed)
+        sm.Push(Rec(2, 0x18, new Vector3(300, 0, 0), new Vector2(0, 1), 0f));
+        Run(sm, 0.1f);
+        sm.Push(Rec(RemotePcStates.StateSkill, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, skill: 10200001));
+        Run(sm, 0.1f);
+        Assert.That((sm.Cur, b.Position), Is.EqualTo((RemotePcStates.StateSkill, new Vector3(40, 0, 0))));
+        // another skill's record is applied
+        sm.Push(Rec(2, 0x18, new Vector3(300, 0, 0), new Vector2(0, 1), 0f, skill: 10200011));
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateWalk));
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActRun));
+    }
+
+    [Test] public void ChargingSkillTakesTheOtherStatesRecords() {
+        // m_blockA4.m_bChargingSkill: a record not in StateSkill is applied (a landing record too); a StateSkill record
+        // of the same skill is not
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, true, Vector3.Zero, 0f);
+        sm.Push(Rec(RemotePcStates.StateSkill, 0, Vector3.Zero, Vector2.Zero, 0f, skill: 10200001));
+        Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        sm.Push(Rec(RemotePcStates.StateJump, 0x21, Vector3.Zero, Vector2.Zero, 0f));
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateJump));
+        Assert.That(b.Played, Does.Contain(RemotePcStates.ActJumpUp));
+    }
+
+    [Test] public void TheSkillStateEndsInIdleAndTheNextStatePlaysItsSequence() {
+        // a cast again in StateSkill re-enters it (forced); its end (EndOfSequence -> FUN_1417f0070) or a cancel
+        // (State::vfunc_7(1)) enters StateIdle; a PC in the air then falls with the fall sequence
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        var states = new List<int>();
+        sm.StateChanged = states.Add;
+        sm.Cast(10200001, false, Vector3.Zero, 0f);
+        sm.Cast(10200001, false, new Vector3(0, 0, 400), 0f);
+        Assert.That(states, Is.EqualTo(new[] { RemotePcStates.StateSkill, RemotePcStates.StateSkill }));
+        b.Played.Clear();
+        sm.EndSkill();
+        sm.EndSkill();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        Run(sm, 0.3f);
+        Assert.That(states, Is.EqualTo(new[] { RemotePcStates.StateSkill, RemotePcStates.StateSkill, RemotePcStates.StateIdle, RemotePcStates.StateFall }));
+        Assert.That(b.Played, Does.Contain(RemotePcStates.ActJumpFall));
     }
 
     [Test] public void UpdateAllocatesNothingPerFrame() {
