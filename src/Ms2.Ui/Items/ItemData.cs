@@ -75,6 +75,12 @@ public sealed class ItemData
     /// <summary>ItemInstallData::Load (itemdatastruct.cpp:1289): &lt;install objCode&gt; and space (bit 1 outdoors, bits 2 / 4
     /// indoors too, as the tooltip's FUN_1409de630 reads them).</summary>
     public int InstallObjCode, InstallSpace;
+    /// <summary>ItemInstallData attachable (itemdatastruct.cpp:1299, read as an int): ConfirmPlacement takes the attach
+    /// path for a lifted cube when it is nonzero (cubecraft_2.cpp:971).</summary>
+    public int InstallAttachable;
+    /// <summary>ItemInstallData staticAngle (itemdatastruct.cpp:1306, QueryFloatAttribute): added to the construction
+    /// guide's yaw in cube mode 1 (cubecraft_2.cpp:984, 1014).</summary>
+    public float InstallStaticAngle;
     /// <summary>ItemLimit exceptEnchant (itemdatastruct.cpp:581): the item takes no enchant (CItemEnchantLimitTable::CanEnchant).</summary>
     public bool ExceptEnchant;
     /// <summary>CItemData::Load (itemdata.cpp:366): &lt;option constantID randomID&gt;, the option table ids.</summary>
@@ -151,6 +157,8 @@ public sealed class ItemData
         {
             Int(inst, "objCode", ref d.InstallObjCode);
             Int(inst, "space", ref d.InstallSpace);
+            Int(inst, "attachable", ref d.InstallAttachable);
+            Guide.GuideXml.Float(inst, "staticAngle", ref d.InstallStaticAngle);
         }
         if (env.Element("fusion") is { } fu) Int(fu, "fusionable", ref d.Fusionable);
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
