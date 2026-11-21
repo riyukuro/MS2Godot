@@ -141,7 +141,7 @@ public class ShopTests
         var (h, c) = Load(model);
         var bundle = new PremiumProduct
         {
-            Id = 7001, Type = 1, ItemId = 11300001, Grade = 2, Currency = 1, Price = 1000, SalePrice = 800, SaleTag = 3, FieldB0 = 5,
+            Id = 7001, Type = 1, ItemId = 11300001, Grade = 2, Currency = 1, Price = 1000, SalePrice = 800, SaleTag = 3, ItemCount = 5,
             BuyLimit = 1, BuyLimitMax = 2, BuyCount = 2,
         };
         var plain = new PremiumProduct { Id = 7002, Type = 2, ItemId = 11400003, Grade = 1, Currency = 0, Price = 500, SalePrice = 500, SaleTag = 0 };
@@ -193,7 +193,7 @@ public class ShopTests
         var sent = new List<MeretMarketBuy>();
         var boxes = new List<(string, string)>();
         c.SystemNotice = notices.Add;
-        c.Purchases.Send = sent.Add;
+        c.Purchases.Send = b => { sent.Add(b); return true; };
         c.Purchases.ShowResult = (cap, msg, _) => boxes.Add((cap, msg));
         c.Purchases.Text = id => "{0}|{1}|{2}";
         MarketBillParam bill = null;
@@ -226,6 +226,128 @@ public class ShopTests
         Assert.That(c.FindMeratItem(7101).Product.BuyCount, Is.EqualTo(1));
         Assert.That(c.Purchases.Running, Is.False);
         Assert.That(boxes.Count, Is.EqualTo(1));
+    }
+
+    /// <summary>Shop with one star product (Id 7201, price 500, sale 400) and the bill opened for it; the queue's sends are collected.</summary>
+    (ShopController c, UiHost h, UiModel model, MarketBillParam bill, List<MeretMarketBuy> sent, List<string> notices, List<(string, string)> boxes)
+        MeratBill(PremiumProduct prem = null, Action<ShopController> setup = null)
+    {
+        Packs();
+        var model = NewModel();
+        var (h, c) = Load(model);
+        prem ??= new PremiumProduct { Id = 7201, Type = 2, ItemId = 11400003, Grade = 1, Currency = 1, Price = 500, SalePrice = 400 };
+        c.ReadMeratStart(1);
+        c.ReadMeratItems(new[] { new ShopMeratItem { Product = prem, DisplayOrder = 1 } });
+        c.RefreshPremium();
+        var notices = new List<string>();
+        var sent = new List<MeretMarketBuy>();
+        var boxes = new List<(string, string)>();
+        c.SystemNotice = notices.Add;
+        c.Purchases.Send = b => { sent.Add(b); return true; };
+        c.Purchases.ShowResult = (cap, msg, _) => boxes.Add((cap, msg));
+        c.Purchases.Text = id => "{0}|{1}|{2}";
+        setup?.Invoke(c);
+        model.Player.Merats = 100000;
+        MarketBillParam bill = null;
+        c.OpenMarketBill += b => bill = b;
+        Assert.That(c.BuyMeratItem(prem.Id), Is.True);
+        return (c, h, model, bill, sent, notices, boxes);
+    }
+
+    [Test]
+    public void MeratBillPriceFollowsTheSaleEvent()
+    {
+        // GetSalePrice (:685): a type 2 merat product takes the best running event covering id 0: 400 less 10% = ceil(400 * 9000 / 10000)
+        var events = new ShopSaleEvents();
+        events.Add(new PremiumMarketSaleEvent(1, 1000, new[] { 0 }, 100000));
+        var (c, _, _, bill, sent, _, _) = MeratBill(setup: s => s.SaleEvents = events);
+        Assert.That(bill.Rows[0].Price, Is.EqualTo(360L));
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(sent[0].Price, Is.EqualTo(360L));
+    }
+
+    [Test]
+    public void MeratType8ProductIsCutByItsPercent()
+    {
+        var prem = new PremiumProduct { Id = 7202, Type = 8, ItemId = 11400003, Grade = 1, Currency = 1, Price = 500, SalePrice = 400, RandomSaleRate = 25 };
+        Assert.That(new ShopSaleEvents().SalePrice(prem), Is.EqualTo(300L));
+        Assert.That(new ShopSaleEvents().SalePrice(new PremiumProduct { Type = 8, SalePrice = 400 }), Is.EqualTo(0L), "a rate of 0 gives 0");
+        Assert.That(new ShopSaleEvents().SalePrice(new PremiumProduct { Type = 3, SalePrice = 400, RandomSaleRate = 50 }), Is.EqualTo(400L));
+    }
+
+    [Test]
+    public void MeratConfirmRefusesWhatTheClientRefuses()
+    {
+        // payable (FUN_140ebc590): the bill is opened with enough merat, then the purse is emptied before the confirm
+        var (c, _, model, bill, sent, notices, boxes) = MeratBill();
+        model.Player.Merats = 0;
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(sent, Is.Empty);
+        Assert.That(notices.Count, Is.EqualTo(1));
+        Assert.That(c.Purchases.Running, Is.False);
+
+        // bag room (FUN_140ebcc20): a tab short of slots shows 0xa01 and sends nothing
+        (c, _, model, bill, sent, notices, boxes) = MeratBill(setup: s => { s.ItemTab = _ => 2; s.EmptySlotCount = _ => 0; });
+        var shown = new List<object>();
+        c.ShowBox = shown.Add;
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(sent, Is.Empty);
+        Assert.That(shown.Count, Is.EqualTo(1));
+
+        // CanBuyPremiumProduct: a level limit, an achievement not reached, a product at its buy limit
+        foreach (var limited in new[]
+        {
+            new PremiumProduct { Id = 7301, Type = 2, ItemId = 11400003, Currency = 1, Price = 500, SalePrice = 400, MinLevel = 90 },
+            new PremiumProduct { Id = 7302, Type = 2, ItemId = 11400003, Currency = 1, Price = 500, SalePrice = 400, AchieveId = 12345, AchieveGrade = 1 },
+            new PremiumProduct { Id = 7303, Type = 2, ItemId = 11400003, Currency = 1, Price = 500, SalePrice = 400, JobMask = 3 },
+        })
+        {
+            (c, _, model, bill, sent, notices, boxes) = MeratBill(limited, s => s.HasAchieve = (_, _) => false);
+            model.Player.Level = 10;
+            bill.Buy(bill, new Dictionary<int, long>());
+            Assert.That(sent, Is.Empty, $"product {limited.Id}");
+            Assert.That(c.Purchases.Running, Is.False);
+        }
+    }
+
+    [Test]
+    public void MeratQueueEndsWhenTheSendFailsTheLinkDropsOrTheDialogCloses()
+    {
+        // a failed send (no game link) finishes the run
+        var (c, _, _, bill, sent, notices, boxes) = MeratBill();
+        c.Purchases.Send = _ => false;
+        c.Purchases.Notice = notices.Add;
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(c.Purchases.Running, Is.False);
+        Assert.That(notices.Count + boxes.Count, Is.GreaterThan(0));
+
+        // the link drops mid run
+        (c, _, _, bill, sent, notices, boxes) = MeratBill();
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(c.Purchases.Running, Is.True);
+        c.Purchases.Cancel();
+        Assert.That(c.Purchases.Running, Is.False);
+
+        // the shop closes mid run (OnDialogClosed: Finish(1))
+        (c, _, _, bill, sent, notices, boxes) = MeratBill();
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(c.Purchases.Running, Is.True);
+        c.Close();
+        Assert.That(c.Purchases.Running, Is.False);
+    }
+
+    [Test]
+    public void MeratAnswerOfAnotherRowIsIgnoredAndAnOutOfRangeIndexFinishes()
+    {
+        var (c, _, _, bill, sent, _, boxes) = MeratBill();
+        bill.Buy(bill, new Dictionary<int, long>());
+        var good = MeretMarketPacket.Read(new Maple2.PacketLib.Tools.ByteReader(MeretMarketPacket.WriteSucceeded(sent[0], 1, 0, 0, 0)));
+        var other = new MeretMarketBuy { Kind = 4, PremiumId = 9999, Quantity = 1, Index = 0, Total = 1 };
+        c.OnMeretMarket(MeretMarketPacket.Read(new Maple2.PacketLib.Tools.ByteReader(MeretMarketPacket.WriteSucceeded(other, 1, 0, 0, 0))));
+        Assert.That(c.Purchases.Running, Is.True, "an answer for another product is ignored");
+        var far = new MeretMarketBuy { Kind = 4, PremiumId = sent[0].PremiumId, Quantity = 1, Index = 5, Total = 6 };
+        c.OnMeretMarket(MeretMarketPacket.Read(new Maple2.PacketLib.Tools.ByteReader(MeretMarketPacket.WriteSucceeded(far, 1, 0, 0, 0))));
+        Assert.That(c.Purchases.Running, Is.False, "an index past the queue ends the run");
     }
 
     /// <summary>The product row's slot member for the serial (the list's data provider rows).</summary>

@@ -24,8 +24,8 @@ public sealed class MeratPurchaseQueue
         public int State;           // m_nState
     }
 
-    /// <summary>The packet is sent (CMeratMarketBuy::vfunc_4).</summary>
-    public Action<MeretMarketBuy> Send = _ => { };
+    /// <summary>The packet is sent (CMeratMarketBuy::vfunc_4); false when nothing could be sent (no game connection).</summary>
+    public Func<MeretMarketBuy, bool> Send = _ => true;
     /// <summary>ShowSystemNotice(text, 1, 1).</summary>
     public Action<string> Notice = _ => { };
     /// <summary>GetStringCommon(id) and GetStringCommonByKey(key).</summary>
@@ -43,6 +43,7 @@ public sealed class MeratPurchaseQueue
     readonly List<Pending> pending = new();   // m_pending
     bool running;                             // m_n2a0
     int buyType;                              // m_n2a8
+    int sentIndex = -1;                       // the row last sent, whose answer is awaited
 
     public bool Running => running;
     public int Count => pending.Count;
@@ -72,8 +73,17 @@ public sealed class MeratPurchaseQueue
             running = true;
             int total = pending.Count;
             for (int i = 0; i < total; i++) pending[i].Buy.Total = total;
-            Send(pending[0].Buy);
+            SendRow(0);
         }
+    }
+
+    /// <summary>Sends row i and awaits its answer; a packet that cannot be sent ends the run with the error notice, the rest forgotten.</summary>
+    void SendRow(int i)
+    {
+        sentIndex = i;
+        if (Send(pending[i].Buy)) return;
+        Notice(TextKey("s_meratmarket_error_buying"));
+        Finish(true);
     }
 
     /// <summary>The 0x6C answer of a buy (modes 0x1e and 0x1f): OnPendingPurchaseResult(success, error, index).</summary>
@@ -83,19 +93,22 @@ public sealed class MeratPurchaseQueue
         Answered?.Invoke(p);
         if (!running) return;
         int index = p.Buy.Index;
-        if (index < 0 || index >= pending.Count) return;
+        if (index < 0 || index >= pending.Count) { Finish(true); return; }                     // not a row of this run: it ends
+        if (index != sentIndex || p.Buy.PremiumId != pending[index].Buy.PremiumId) return;   // a repeat or a late answer of another row
         pending[index].State = p.Succeeded ? 0 : p.Error;
-        if (index + 1 < pending.Count) Send(pending[index + 1].Buy);
+        if (index + 1 < pending.Count) SendRow(index + 1);
         else Finish(false);
     }
 
-    /// <summary>OnDialogClosed (0x4ec1, or the shop 0x4e3b while a shop buy runs): FinishPendingPurchases(1).</summary>
-    public void Cancel() => Finish(true);
+    /// <summary>OnDialogClosed (0x4ec1, or the shop 0x4e3b while a shop buy runs): FinishPendingPurchases(1); also the link
+    /// lost. Without a run (the bill closed after the finish already ran) it does nothing.</summary>
+    public void Cancel() { if (running) Finish(true); }
 
     /// <summary>FinishPendingPurchases: the running flag off, the bill dialog closed; a cancel forgets the queue, else the box.</summary>
     void Finish(bool cancel)
     {
         running = false;
+        sentIndex = -1;
         CloseBill();
         if (cancel) { Clear(); return; }
         if (pending.Count == 0) return;

@@ -402,8 +402,10 @@ public partial class LiveSession : Node
     public event Action<SystemShopPacket> SystemShopReceived;
     /// <summary>A merat market buy answer (0x6C modes 0x1e / 0x1f, CMeratMarketMan::OnBuySucceeded / OnBuyFailed); live only.</summary>
     public event Action<MeretMarketPacket> MeretMarketReceived;
+    /// <summary>The game connection closed: a run waiting for an answer cannot get it.</summary>
+    public event Action GameLinkLost;
     /// <summary>SendMeretMarketMode30 (0x39, sub-mode 0x1e): one queued merat market purchase.</summary>
-    public void SendMeretMarketBuy(MeretMarketBuy buy) { if (game != null) Send(new MeretMarketBuyRequest(buy)); }
+    public bool SendMeretMarketBuy(MeretMarketBuy buy) { if (game == null) return false; Send(new MeretMarketBuyRequest(buy)); return true; }
     /// <summary>An item merge packet (0x74, CSceneStateGame::OnItemFusion); the item body of modes 5/6 is left in the reader.</summary>
     public event Action<ItemMergePacket, Maple2.PacketLib.Tools.ByteReader> ItemMergeReceived;
     /// <summary>An item dismantle packet (0x96, CItemBreakManager::OnItemDismantlePacket).</summary>
@@ -686,6 +688,7 @@ public partial class LiveSession : Node
         // a new game scene: the old one's OnLeave ran GameEventManagerCli::Clear (scenestategame.cpp:1314)
         InteractShutdowns.Clear();
         HotTimes.Clear();
+        SaleEvents.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
         {
@@ -942,7 +945,7 @@ public partial class LiveSession : Node
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (bindPending) TryBindPlayer();
         Portals?.Tick((uint)game.Session.ServerTick);
-        if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
+        if (game.IsClosed) { GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
 
     /// <summary>One game server packet: the read loop's, and at the entry the ones that came before the field enter

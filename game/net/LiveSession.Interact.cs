@@ -39,6 +39,8 @@ public partial class LiveSession
     public readonly InteractObjectShutdowns InteractShutdowns = new();
     /// <summary>The game event list's special ability hot times (GameEventSAHotTime / PCBangSAHotTime into CGameRule's
     /// sums); kept across fields, cleared with a new game scene.</summary>
+    /// <summary>The running premium market sale events (CShopEventManager), for the shop's prices.</summary>
+    public readonly Ms2.Ui.Shop.ShopSaleEvents SaleEvents = new();
     public readonly SpecialAbilityHotTimes HotTimes = new(PerMilleAbility);
     static Func<int, bool> perMilleAbility;
     static bool PerMilleAbility(int type)
@@ -107,6 +109,7 @@ public partial class LiveSession
     {
         InteractShutdowns.Apply(m);
         HotTimes.Apply(m);
+        SaleEvents.Apply(m);
         GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
     }
 

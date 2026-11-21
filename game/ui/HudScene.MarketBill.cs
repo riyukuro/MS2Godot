@@ -36,6 +36,7 @@ public partial class HudScene
             MessageBoxQueue.Show(d);
         };
         shopController.OpenMarketBill += OpenMarketBill;
+        live.GameLinkLost += q.Cancel;
     }
 
     void OpenMarketBill(MarketBillParam param)
@@ -53,6 +54,7 @@ public partial class HudScene
         c.SetParam(param);
         c.Unloaded += () =>
         {
+            liveShop?.Purchases.Cancel();                                  // OnDialogClosed: a run in progress ends
             marketBillMovie?.Host.Unload(); marketBillMovie?.QueueFree(); marketBillMovie = null;
         };
         marketBill = c;

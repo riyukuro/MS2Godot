@@ -63,6 +63,10 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public Func<int, long> ItemTagCount = _ => 0;
     /// <summary>Unk_Inventory::GetEmptySlotCount(tab): empty inventory slots for cube-mesh max buy count.</summary>
     public Func<int, int> EmptySlotCount = _ => 1;
+
+    /// <summary>The inventory tab of an item id (FUN_140ec2ac0 over the inventory) and the tab's name (GetInventoryTabName); -1 without an inventory.</summary>
+    public Func<int, int> ItemTab = _ => -1;
+    public Func<int, string> InventoryTabName = _ => "";
     /// <summary>CGuildManager::m_info.GetFund() (uicommon.cpp:999, :1050).</summary>
     public Func<long> GuildFund = () => 0;
     /// <summary>Resolves a slot binding name ("InventoryDialog.&lt;i&gt;") for OnSell (uishopdialog.cpp:2533).</summary>
@@ -695,6 +699,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public override void Close()
     {
         base.Close();
+        Purchases.Cancel();                                                              // OnDialogClosed: Finish(1)
         headerRead = false;
         checkEnableItems = true;
         resetPending = false;
@@ -1116,20 +1121,18 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     static bool MeratHasLimit(PremiumProduct p) => p.Type switch
     {
         1 or 7 or 8 => p.BuyLimit != 0,
-        3 or 6 => p.Field0C4 != 0 || p.BuyLimit != 0,
+        3 or 6 => p.LimitFlag != 0 || p.BuyLimit != 0,
         _ => false,
     };
 
     /// <summary>CMeratMarketPremiumProduct::IsBuyLimitReached (:983).</summary>
     static bool MeratBuyLimitReached(PremiumProduct p) => MeratHasLimit(p) && p.BuyLimit != 0 && p.BuyCount >= p.BuyLimitMax;
 
-    /// <summary>CDBPremiumProduct::GetSalePrice (:685) without the running sale events (not ported): types 3, 6 and 7 are the
-    /// sale price, type 8 takes the percent in +0x1b0 off it, else the sale price.</summary>
-    static long MeratSalePrice(PremiumProduct p) => p.Type switch
-    {
-        8 => p.Field1B0 == 0 || p.SalePrice == 0 ? 0 : p.SalePrice * (100 - Math.Min((uint)p.Field1B0, 100u)) / 100,
-        _ => p.SalePrice,
-    };
+    /// <summary>The running premium market sale events (CShopEventManager), shared with the live session.</summary>
+    public ShopSaleEvents SaleEvents { get; set; } = new();
+
+    /// <summary>CDBPremiumProduct::GetSalePrice (:685) with the running sale events (<see cref="ShopSaleEvents.SalePrice"/>).</summary>
+    long MeratSalePrice(PremiumProduct p) => SaleEvents.SalePrice(p);
 
     /// <summary>CDBPremiumProduct::FUN_1406a0230 (:861): the product's currency as the ui currency (0 meso, 1 and 3 merat, 2
     /// red merat), FUN_14069c3e0 (:217).</summary>
@@ -1196,13 +1199,36 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         Purchases.OnAnswer(p);
     }
 
+    /// <summary>
+    /// The confirm callback of the bill (FUN_140ebded0 / FUN_140ebef60, uimeratmarketcommon.cpp:543 / :685): the payment map must be
+    /// payable (FUN_140ebc590: a lack notice per currency, nothing sent), a buy (not a gift) needs the bag room per tab (FUN_140ebcc20,
+    /// message 0xa01) and each product CanBuyPremiumProduct (meratmarketman.cpp:1745: level, achievement, sold out; a product with a
+    /// job limit or a PC bang level is refused as STILL-OPEN data, the premium product's selling and event period likewise when set).
+    /// Nothing is queued unless every check passes.
+    /// </summary>
     void QueueMeratBuys(MarketBillParam pa, bool gift, string name, string message)
     {
+        if (info.ShopId == 0 || pa == null || pa.Rows.Count == 0) return;
+        var rows = new List<MarketBillRow>();
         foreach (var r in pa.Rows)
         {
             if (gift && !r.Checked) continue;
+            if (r.Premium != null) rows.Add(r);
+        }
+        if (rows.Count == 0) return;
+        var pay = new Dictionary<int, long>();
+        foreach (var r in rows) pay[r.PayType] = pay.GetValueOrDefault(r.PayType) + r.Price;
+        foreach (var kv in pay)
+        {
+            if (kv.Value == 0 || HasEnoughCurrency(kv.Key, kv.Value, 0)) continue;
+            SystemNotice?.Invoke(Common(kv.Key == 9 ? "s_err_lack_redmerat" : "s_err_lack_merat"));
+            return;
+        }
+        if (!gift && !HasBagRoom(rows)) return;
+        foreach (var r in rows) if (!CanBuyMerat(r.Premium)) return;
+        foreach (var r in rows)
+        {
             var prem = r.Premium;
-            if (prem == null) continue;
             var buy = new Ms2.Net.Packets.MeretMarketBuy
             {
                 Kind = pa.SourceKind, PremiumId = prem.Id, Quantity = 1, Option = r.Option, ShopId = pa.ShopId,
@@ -1212,6 +1238,57 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             Purchases.Queue(new MeratPurchaseQueue.Pending { Buy = buy, Name = r.Name, PayType = r.PayType }, pa.SourceKind);
         }
         Purchases.Start(pa.SourceKind);
+    }
+
+    /// <summary>FUN_140ebcc20: the items of the rows counted per inventory tab against the empty slots; the first tab short shows 0xa01.</summary>
+    bool HasBagRoom(List<MarketBillRow> rows)
+    {
+        var need = new Dictionary<int, int>();
+        foreach (var r in rows)
+        {
+            if (r.ItemId == 0) continue;
+            int tab = ItemTab(r.ItemId);
+            if (tab >= 0 && tab < 15) need[tab] = need.GetValueOrDefault(tab) + 1;
+        }
+        for (int tab = 0; tab < 15; tab++)
+        {
+            if (!need.TryGetValue(tab, out int n) || n <= 0 || EmptySlotCount(tab) >= n) continue;
+            ShowSimpleBox(Common(0xa01, InventoryTabName(tab), n));
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>CMeratMarketMan::CanBuyPremiumProduct (:1745) with its notices; false for what the client data here cannot decide.</summary>
+    bool CanBuyMerat(PremiumProduct p)
+    {
+        if (p.JobMask != 0 || p.PcBangLevel != 0) return false;                         // IsJobAllowed / PC bang level: STILL-OPEN
+        if (p.StartDate != 0 || p.EndDate != 0 || p.EventStart != 0 || p.EventEnd != 0) return false;   // IsSelling / IsEventPeriod: STILL-OPEN
+        int level = Pc.Level;
+        if (level != 0 && ((ushort)p.MinLevel != 0 || (ushort)p.MaxLevel != 0))             // IsLevelAllowed (:830)
+        {
+            int min = (ushort)p.MinLevel == 0 ? 1 : (ushort)p.MinLevel, max = (ushort)p.MaxLevel;
+            if (level < min || (max != 0 && max < level))
+            {
+                string key = "s_meratmarket_error_buy_limit_";
+                SystemNotice?.Invoke((ushort)p.MinLevel > 0 && max > 0
+                    ? (min == max ? Common(key + "level_only", min) : Common(key + "level_range", min, max))
+                    : (ushort)p.MinLevel > 0 ? Common(key + "level_min", min) : Common(key + "level_max", max));
+                return false;
+            }
+        }
+        if (p.AchieveId != 0 && !HasAchieve(p.AchieveId, p.AchieveGrade))                // FUN_140ebfb90
+        {
+            SystemNotice?.Invoke(Common(0x5c, TaggedAchieveTitle(p.AchieveId, p.AchieveGrade, Common(0x308))));
+            return false;
+        }
+        if (MeratBuyLimitReached(p) || (p.Type == 3 && p.LimitCount != 0 && p.SoldCount >= p.LimitCount)
+            || (p.Type == 6 && p.LimitCount != 0 && p.HomeSoldCount >= p.LimitCount))
+        {
+            SystemNotice?.Invoke(Common(0xa17));
+            return false;
+        }
+        return true;
     }
 
     /// <summary>GetStarPointText (uimeratmarketcommon.cpp:1047): with the star point event and a point price, the product's
@@ -1244,7 +1321,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         }
         var slot = new List<(string, object)>();
         if (!ItemSlot.Build(slot, preview, Model.HasLocalPlayer, SlotFlags, Model, Model.ItemSlotSources)) return Host.Obj(slot.ToArray());
-        int count = data.IsStackable ? prem.FieldB0 : 0;                                  // GetB0(0)
+        int count = data.IsStackable ? prem.ItemCount : 0;                                  // GetB0(0)
         int at = slot.FindIndex(x => x.Item1 == "itemCount");
         if (at >= 0) slot[at] = ("itemCount", count); else slot.Add(("itemCount", count));
         uint color = Model.Tables.Items.TextColor(prem.Grade);
