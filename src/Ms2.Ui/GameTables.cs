@@ -537,6 +537,40 @@ public sealed class GameTables
 
     /// <summary>CStringTable::FUN_141811980(4, id): the skill's name (string table 4 "skillName"); "" when unknown.</summary>
     public string SkillName(uint id) => Lazy(ref skillNames, "skillname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+
+    /// <summary>
+    /// CDynamicActionData::Find (@0x140347050, dynamicactiondata.cpp) for the skill: the row's "reserved" action paths,
+    /// each "/" + one part of the attribute split at "|" (FUN_14025a680, CStringW::Tokenize: empty parts skipped);
+    /// null when no row has the skill. The rows are CDynamicActionData::Load's (@0x140347180): korDynamicAction.xml of
+    /// the string folder (FUN_14071ae20), the &lt;key&gt; children of &lt;ms2&gt; picked by FUN_14028faa0(root, "key",
+    /// "skillID"), and Find takes the first row in that order. With several string languages, the first language whose
+    /// file loads is used (the client loads one language's file).
+    /// </summary>
+    public IReadOnlyList<string> DynamicActionReserved(uint skillId)
+    {
+        if (dynamicActions == null)
+        {
+            dynamicActions = new Dictionary<uint, string[]>();
+            foreach (var lang in strings?.Languages ?? Array.Empty<string>())
+            {
+                string entry = $"string/{lang}/kordynamicaction.xml";
+                if (!packs.Exists("Xml", entry)) continue;
+                var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+                if (root == null || root.Name.LocalName != "ms2") break;      // no <ms2>: Load returns with no rows
+                foreach (var e in FeatureElements.Collect(packs, root, "key", "skillID"))
+                {
+                    uint id = unchecked((uint)ReservedWords.Atoi((string)e.Attribute("skillID") ?? ""));
+                    if (dynamicActions.ContainsKey(id)) continue;      // Find: the first row with the id
+                    string[] parts = ((string)e.Attribute("reserved") ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries);
+                    for (int i = 0; i < parts.Length; i++) parts[i] = "/" + parts[i];
+                    dynamicActions[id] = parts;
+                }
+                break;
+            }
+        }
+        return dynamicActions.TryGetValue(skillId, out var r) ? r : null;
+    }
+    Dictionary<uint, string[]> dynamicActions;
     /// <summary>CStringTable::FUN_141811980(7, id): string table 7 "popupMenu" (a popup menu item's label); "" when unknown.</summary>
     /// <summary>CStringTable::FUN_141811980(0x2f, id): stringMasteryReceipeName, empty when none.</summary>
     public string MasteryRecipeName(int id) => Lazy(ref masteryRecipeNames, "stringmasteryreceipename", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
