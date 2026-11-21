@@ -55,7 +55,6 @@ public sealed class EquipApplier
     Dictionary<int, Dictionary<int, XElement>> docs => shared.Models;
     Dictionary<int, Dictionary<int, int>> presets => shared.Presets;
     Dictionary<int, string> characterIdle => shared.CharacterIdle;
-    readonly HashSet<string> itemNodes = new(StringComparer.Ordinal);    // node names of the models hung on the character
     Ms2.Formats.World.EffectTable effects;
     public int IdleEffects, IdleEffectsOpen;
 
@@ -139,101 +138,227 @@ public sealed class EquipApplier
 
     public Look.ColorPalettes Palettes;   // optional: default dye of items whose record has no colour
 
+    /// <summary>One worn item's part of a character: the nodes it hung on the skeleton, what it hides on the body.</summary>
+    sealed class Part
+    {
+        public EquipItem Item;
+        public readonly List<MeshInstance3D> Meshes = new();
+        public readonly List<string> Replaces = new();     // body mesh groups it takes the place of (replace="1" slot names)
+        public readonly List<string> Cuts = new();         // meshes it hides by name (itemmodel cutting)
+        public readonly List<string> NodeNames = new();
+        public readonly List<WeaponBinding> Bindings = new();   // its weapon hooks (a weapon's rig)
+        public int Subtype;                                 // the weapon subtype of an RH / LH item
+        public bool LinksLh;                                // an RH item whose model also has an LH group (bows, cannons, knuckles)    // node names of its models (a parent node of an idle effect can be one of these)
+    }
+
+    /// <summary>What a built character keeps so one slot can change without rebuilding the body.</summary>
+    sealed class BuiltLook
+    {
+        public Skeleton3D Skel; public ModelData Body; public int Gender;
+        public Rgba? Skin, Shade;
+        public List<MeshInstance3D> BodyNodes; public Dictionary<MeshInstance3D, bool> BodyShown;
+        public readonly Dictionary<EquipSlot, Part> Parts = new();
+        public Dictionary<EquipSlot, WornEquips.SlotKey> Keys = new();
+    }
+    readonly System.Runtime.CompilerServices.ConditionalWeakTable<Node3D, BuiltLook> looks = new();
+
+    /// <summary>Models hung on a character (and their idle effects) that the last Apply / Reapply left: for the leak checks.</summary>
+    public int HungNodes(Node3D visual) => looks.TryGetValue(visual, out var l) ? l.Parts.Values.Sum(p => p.Meshes.Count) : 0;
+
     public void Apply(Node3D visual, ModelData body, int gender, IEnumerable<EquipItem> items, Rgba? skinColor = null, Rgba? skinShade = null)
     {
         var skel = visual.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
         var bodyNodes = skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>().ToList();
-        var cut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var added = new List<MeshInstance3D>();
-        itemNodes.Clear();
-
-        var visible = Visible(items);
-        var weaponBindings = new List<WeaponBinding>();
-        int rhSubtype = 0, lhSubtype = 0;
-        bool linkedLh = false;
-
-        foreach (var item in visible)
-        {
-            if (item.Slot == EquipSlot.SK || item.Slot == EquipSlot.FD) continue;     // skin (the body) and face decals
-            var im = FindItem(item.Id);
-            int subtype = WeaponSubtype(item.Id);
-            if (item.Slot == EquipSlot.RH) rhSubtype = subtype;
-            else if (item.Slot == EquipSlot.LH) { lhSubtype = subtype; linkedLh = false; }
-            if (im == null) { NoModelEntry++; MissingIds.Add(item.Id); continue; }
-            foreach (var slot in im.Element("slots")?.Elements("slot") ?? Enumerable.Empty<XElement>())
-            {
-                var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
-                if (asset == null) { NoAsset++; continue; }
-                // ModelPart::Load (itemdatastruct.cpp:287-303): a name not ending in ".nif" is a kfm asset, a CKfmModel
-                bool isNif = ((string)asset.Attribute("name") ?? "").TrimEnd().EndsWith(".nif", StringComparison.Ordinal);
-                ModelData md = null;
-                if (isNif)
-                {
-                    try { md = Nif((string)asset.Attribute("name")); }
-                    catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id}: {ex.Message}"); continue; }
-                    if (md == null) { NoAsset++; MissingIds.Add(item.Id); continue; }
-                    Loaded++;
-                }
-                string slotName = (string)slot.Attribute("name");
-                // CEquipment::FUN_1411ec190 (@0x1411ec190, equipment.cpp:2181-2201): an RH item whose ItemModel also
-                // defines a <slot name="LH"> group (bows, cannons, knuckles) links into LH too when LH is empty
-                if (item.Slot == EquipSlot.RH && lhSubtype == 0 && string.Equals(slotName, "LH", StringComparison.OrdinalIgnoreCase))
-                {
-                    lhSubtype = subtype;
-                    linkedLh = true;
-                }
-                if ((string)asset.Attribute("replace") == "1")
-                    foreach (var n in bodyNodes)
-                        if (n.Name.ToString().StartsWith(slotName, StringComparison.OrdinalIgnoreCase) && (n.Name.ToString().Length == slotName.Length || n.Name.ToString()[slotName.Length] == '_'))
-                            n.Visible = false;
-                foreach (var c in im.Element("cutting")?.Elements("mesh") ?? Enumerable.Empty<XElement>())
-                {
-                    var g = (string)c.Attribute("gender");
-                    if (g == null || g == gender.ToString()) cut.Add((string)c.Attribute("name"));
-                }
-                // FUN_141200ca0 (equipmodel.cpp:714-720) hangs a replace="1" part through vfunc_13 and every other part through
-                // vfunc_12, which returns before CreateAttachNode when the part name is empty (CNifModel, nifmodel.cpp:232-238;
-                // CKfmModel, kfmmodel.cpp:518-524). The part name is the asset's targetnode (CEquipModel::GetPartName,
-                // equipmodel.cpp:1084-1101, ModelPart +0x10). Such a model loads, but nothing of it is hung on the character.
-                // The 10 CP assets with no targetnode and no selfnode (11301083 penguin, 11300895 Angel Pinkbean, ...) show
-                // their creature through the item's characterIdle effect instead (itemdata <effect characterIdle>).
-                if (string.IsNullOrEmpty((string)asset.Attribute("targetnode")) && (string)asset.Attribute("replace") != "1") NotAttached++;
-                else
-                {
-                    List<WeaponHook> hooks = null;
-                    var made = isNif ? Attach(skel, body, md, asset, item, gender, subtype, out hooks) : AttachKfm(skel, body, asset, item, gender, -1);
-                    if (made == null) { MissingIds.Add(item.Id); continue; }
-                    if (hooks != null) AddWeaponBindings(weaponBindings, skel, body, asset, slotName, item, gender, subtype, hooks);
-                    if (md != null) NoteNodes(md);
-                    if (DyeOf(item, im) is { } dye)
-                        foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
-                    added.AddRange(made);
-                }
-                int ponyIndex = 0;
-                foreach (var pony in slot.Elements("asset").Where(a => a != asset && (string)a.Attribute("pony") == "1"
-                             && ((string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString())))
-                {
-                    var p = AttachKfm(skel, body, pony, item, gender, ponyIndex++);
-                    if (p == null) continue;
-                    if (DyeOf(item, im) is { } pd)
-                        foreach (var n in p) SetColors(n, false, pd.Primary, pd.Secondary, pd.Tertiary);
-                    added.AddRange(p);
-                }
-            }
-        }
-        foreach (var n in bodyNodes) if (cut.Contains(BaseName(n.Name))) n.Visible = false;
-        foreach (var n in added) if (cut.Contains((string)n.GetMeta("mesh"))) n.Visible = false;
-        if (skinColor is { } sc)
-            foreach (var n in bodyNodes.Concat(added))
-                SetColors(n, true, sc, null, skinShade ?? sc);
-        SaveWeaponRig(visual, weaponBindings, rhSubtype, lhSubtype, linkedLh);
-        PlayIdleEffects(visual, skel, body, items);
+        var look = new BuiltLook { Skel = skel, Body = body, Gender = gender, Skin = skinColor, Shade = skinShade, BodyNodes = bodyNodes,
+            BodyShown = bodyNodes.ToDictionary(n => n, n => n.Visible) };
+        looks.AddOrUpdate(visual, look);
+        Skin(look, bodyNodes);       // the body takes the skin colour pair too (every mesh drawn with the skin material)
+        var list = Visible(items);
+        foreach (var item in list) AddPart(look, item);
+        Hide(look);
+        look.Keys = WornEquips.Shown(list);
+        SaveRig(visual, look);
+        PlayIdleEffects(visual, look, items);
     }
 
-    void NoteNodes(ModelData md)
+    /// <summary>
+    /// The per-slot path for a put-on / put-off of an applied character: only the slots whose item changed are rebuilt
+    /// (CEquipment::FUN_1411e36e0 resets and re-stores the slot's items, FUN_1411e3bd0 clears them, then RefreshModel
+    /// rebuilds the merged model; here the other slots keep their nodes). The old nodes are freed (QueueFree), the body
+    /// is not rebuilt, and the hidden body and item meshes are worked out again from the parts that remain.
+    /// Returns the number of slots rebuilt; false when the character was not applied by this applier.
+    /// </summary>
+    public bool Reapply(Node3D visual, IEnumerable<EquipItem> items, EquipSlot? force = null)
     {
-        foreach (var b in md.Bones) itemNodes.Add(b.FileName ?? b.Name);
-        foreach (var m in md.Meshes) itemNodes.Add(m.FileName ?? m.Name);
+        if (!looks.TryGetValue(visual, out var look) || !GodotObject.IsInstanceValid(visual)) return false;
+        var list = Visible(items);
+        var now = WornEquips.Shown(list);
+        var slots = WornEquips.Changed(look.Keys, now);
+        if (force is { } f && WornEquips.DrawsModel(f) && !slots.Contains(f)) slots.Add(f);
+        if (slots.Count == 0) return true;
+        var model = visual.GetNodeOrNull<Node3D>("Model");
+        var namesBefore = NodeNamesOf(look);
+        foreach (var slot in slots)
+        {
+            if (look.Parts.Remove(slot, out var old)) FreeNodes(look, old);
+            // the effects go by the id the slot was built from: an item with no model entry has no Part but may have an idle effect
+            if (model != null && look.Keys.TryGetValue(slot, out var was)) FreeEffects(model, was.Id);
+            var item = list.FirstOrDefault(i => i.Slot == slot);
+            if (item != null) AddPart(look, item);
+        }
+        Hide(look);
+        // the effects after every changed slot is built, against this character's nodes only (as a fresh Apply)
+        if (model != null)
+        {
+            var names = NodeNamesOf(look);
+            if (!names.SetEquals(namesBefore)) PlayIdleEffects(visual, look, list);     // an unchanged item's parentNode may have come or gone
+            else foreach (var slot in slots)
+                if (list.FirstOrDefault(i => i.Slot == slot) is { } it) IdleEffectsOf(model, look.Skel, it, names);
+        }
+        SaveRig(visual, look);
+        look.Keys = now;
+        return true;
+    }
+
+    /// <summary>The weapon rig of the parts that are worn: the RH / LH subtypes, the LH link of a two-handed RH model (FUN_1411ec190), every part's hooks.</summary>
+    void SaveRig(Node3D visual, BuiltLook look)
+    {
+        look.Parts.TryGetValue(EquipSlot.RH, out var rh);
+        look.Parts.TryGetValue(EquipSlot.LH, out var lh);
+        int rhSubtype = rh?.Subtype ?? 0, lhSubtype = lh?.Subtype ?? 0;
+        bool linkedLh = false;
+        if (lhSubtype == 0 && rh != null && rh.LinksLh) { lhSubtype = rhSubtype; linkedLh = true; }
+        var bindings = new List<WeaponBinding>();
+        foreach (var part in look.Parts.Values) bindings.AddRange(part.Bindings);
+        SaveWeaponRig(visual, bindings, rhSubtype, lhSubtype, linkedLh);
+    }
+
+    /// <summary>The nodes under the skeleton a part's meshes belong to (a skinned mesh itself, a rigid one's attach node, a kfm's).</summary>
+    static void FreeNodes(BuiltLook look, Part part)
+    {
+        foreach (var mi in part.Meshes)
+        {
+            if (!GodotObject.IsInstanceValid(mi)) continue;
+            Node top = mi;
+            while (top.GetParent() is { } p && p != look.Skel) top = p;
+            if (top.IsQueuedForDeletion()) continue;
+            top.Name = "old_" + top.Name;        // a rebuilt model of the same item keeps its name
+            top.QueueFree();
+        }
+    }
+
+    static void FreeEffects(Node3D model, int itemId)
+    {
+        foreach (var fx in model.FindChildren($"itemfx_{itemId}_*", "", true, false)) { fx.Name = "old_" + fx.Name; fx.QueueFree(); }
+    }
+
+    /// <summary>Builds one worn item's models and records what it hides; false when the item draws nothing.</summary>
+    void AddPart(BuiltLook look, EquipItem item)
+    {
+        var skel = look.Skel; var body = look.Body; int gender = look.Gender;
+        if (item.Slot == EquipSlot.SK || item.Slot == EquipSlot.FD) return;     // skin (the body) and face decals
+        var im = FindItem(item.Id);
+        var part = new Part { Item = item, Subtype = WeaponSubtype(item.Id) };
+        look.Parts[item.Slot] = part;
+        if (im == null) { NoModelEntry++; MissingIds.Add(item.Id); return; }
+        int subtype = part.Subtype;
+        foreach (var slot in im.Element("slots")?.Elements("slot") ?? Enumerable.Empty<XElement>())
+        {
+            var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
+            if (asset == null) { NoAsset++; continue; }
+            // ModelPart::Load (itemdatastruct.cpp:287-303): a name not ending in ".nif" is a kfm asset, a CKfmModel
+            bool isNif = ((string)asset.Attribute("name") ?? "").TrimEnd().EndsWith(".nif", StringComparison.Ordinal);
+            ModelData md = null;
+            if (isNif)
+            {
+                try { md = Nif((string)asset.Attribute("name")); }
+                catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id}: {ex.Message}"); continue; }
+                if (md == null) { NoAsset++; MissingIds.Add(item.Id); continue; }
+                Loaded++;
+            }
+            string slotName = (string)slot.Attribute("name");
+            // CEquipment::FUN_1411ec190 (@0x1411ec190, equipment.cpp:2181-2201): an RH item whose ItemModel also
+            // defines a <slot name="LH"> group (bows, cannons, knuckles) links into LH too when LH is empty
+            if (item.Slot == EquipSlot.RH && string.Equals(slotName, "LH", StringComparison.OrdinalIgnoreCase)) part.LinksLh = true;
+            if ((string)asset.Attribute("replace") == "1") part.Replaces.Add(slotName);
+            foreach (var c in im.Element("cutting")?.Elements("mesh") ?? Enumerable.Empty<XElement>())
+            {
+                var g = (string)c.Attribute("gender");
+                if (g == null || g == gender.ToString()) part.Cuts.Add((string)c.Attribute("name"));
+            }
+            // FUN_141200ca0 (equipmodel.cpp:714-720) hangs a replace="1" part through vfunc_13 and every other part through
+            // vfunc_12, which returns before CreateAttachNode when the part name is empty (CNifModel, nifmodel.cpp:232-238;
+            // CKfmModel, kfmmodel.cpp:518-524). The part name is the asset's targetnode (CEquipModel::GetPartName,
+            // equipmodel.cpp:1084-1101, ModelPart +0x10). Such a model loads, but nothing of it is hung on the character.
+            // The 10 CP assets with no targetnode and no selfnode (11301083 penguin, 11300895 Angel Pinkbean, ...) show
+            // their creature through the item's characterIdle effect instead (itemdata <effect characterIdle>).
+            if (string.IsNullOrEmpty((string)asset.Attribute("targetnode")) && (string)asset.Attribute("replace") != "1") NotAttached++;
+            else
+            {
+                List<WeaponHook> hooks = null;
+                var made = isNif ? Attach(skel, body, md, asset, item, gender, subtype, out hooks) : AttachKfm(part, skel, body, asset, item, gender, -1);
+                if (made == null) { MissingIds.Add(item.Id); continue; }
+                if (hooks != null) AddWeaponBindings(part.Bindings, skel, body, asset, slotName, item, gender, subtype, hooks);
+                if (md != null) NoteNodes(part, md);
+                if (DyeOf(item, im) is { } dye)
+                    foreach (var n in made) SetColors(n, false, dye.Primary, dye.Secondary, dye.Tertiary);
+                Skin(look, made);
+                part.Meshes.AddRange(made);
+            }
+            int ponyIndex = 0;
+            foreach (var pony in slot.Elements("asset").Where(a => a != asset && (string)a.Attribute("pony") == "1"
+                         && ((string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString())))
+            {
+                var p = AttachKfm(part, skel, body, pony, item, gender, ponyIndex++);
+                if (p == null) continue;
+                if (DyeOf(item, im) is { } pd)
+                    foreach (var n in p) SetColors(n, false, pd.Primary, pd.Secondary, pd.Tertiary);
+                Skin(look, p);
+                part.Meshes.AddRange(p);
+            }
+        }
+    }
+
+    /// <summary>The skin colour pair goes to every mesh drawn with the skin material (the client walks the whole character for it).</summary>
+    static void Skin(BuiltLook look, IEnumerable<MeshInstance3D> nodes)
+    {
+        if (look.Skin is not { } sc) return;
+        foreach (var n in nodes) SetColors(n, true, sc, null, look.Shade ?? sc);
+    }
+
+    /// <summary>Which body and item meshes show, from the parts that are on: the body as built, minus what a replace asset
+    /// takes the place of and what an item cuts by name.</summary>
+    static void Hide(BuiltLook look)
+    {
+        var cut = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in look.Parts.Values) foreach (var c in part.Cuts) cut.Add(c);
+        foreach (var n in look.BodyNodes)
+        {
+            bool shown = look.BodyShown[n];
+            string name = n.Name.ToString();
+            if (shown)
+                foreach (var part in look.Parts.Values)
+                    foreach (var r in part.Replaces)
+                        if (WornEquips.Replaces(r, name)) { shown = false; break; }
+            if (shown && cut.Contains(BaseName(n.Name))) shown = false;
+            n.Visible = shown;
+        }
+        foreach (var part in look.Parts.Values)
+            foreach (var n in part.Meshes)
+                if (GodotObject.IsInstanceValid(n)) n.Visible = !cut.Contains((string)n.GetMeta("mesh"));
+    }
+
+    static void NoteNodes(Part part, ModelData md)
+    {
+        foreach (var b in md.Bones) part.NodeNames.Add(b.FileName ?? b.Name);
+        foreach (var m in md.Meshes) part.NodeNames.Add(m.FileName ?? m.Name);
+    }
+
+    static HashSet<string> NodeNamesOf(BuiltLook look)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var part in look.Parts.Values) foreach (var n in part.NodeNames) set.Add(n);
+        return set;
     }
 
     /// <summary>
@@ -251,15 +376,22 @@ public sealed class EquipApplier
     /// - parent nodes that only an item model has (wings, kfm bodies): counted in IdleEffectsOpen;
     /// - attachType "Mesh" and attach type 0, applyNodeTransform="false", and the non-nif kinds (swoosh, sound).
     /// </summary>
-    void PlayIdleEffects(Node3D visual, Skeleton3D skel, ModelData body, IEnumerable<EquipItem> items)
+    void PlayIdleEffects(Node3D visual, BuiltLook look, IEnumerable<EquipItem> items)
     {
         var model = visual.GetNodeOrNull<Node3D>("Model");
         if (model == null) return;
-        foreach (var old in model.FindChildren("itemfx_*", "", true, false)) old.QueueFree();
+        foreach (var old in model.FindChildren("itemfx_*", "", true, false)) { old.Name = "old_" + old.Name; old.QueueFree(); }
         effects ??= new Ms2.Formats.World.EffectTable(packs);
-        foreach (var item in Visible(items))
+        var names = NodeNamesOf(look);
+        foreach (var item in Visible(items)) IdleEffectsOf(model, look.Skel, item, names);
+    }
+
+    /// <summary>One item's idle effects (PlayIdleEffects).</summary>
+    void IdleEffectsOf(Node3D model, Skeleton3D skel, EquipItem item, HashSet<string> itemNodes)
+    {
         {
-            if (!characterIdle.TryGetValue(item.Id, out var xml) && (FindItem(item.Id) == null || !characterIdle.TryGetValue(item.Id, out xml))) continue;
+            if (!characterIdle.TryGetValue(item.Id, out var xml) && (FindItem(item.Id) == null || !characterIdle.TryGetValue(item.Id, out xml))) return;
+            effects ??= new Ms2.Formats.World.EffectTable(packs);
             foreach (var part in effects.Get(xml) ?? new List<Ms2.Formats.World.EffectPart>())
             {
                 if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) continue;
@@ -638,7 +770,7 @@ public sealed class EquipApplier
     /// Not done: PhysX swing (the NiPhysX joints in the nif), Attack_Idle_A in battle stance (vfunc_32), and the
     /// replace path to Bip01 Head (vfunc_13).
     /// </summary>
-    List<MeshInstance3D> AttachKfm(Skeleton3D skel, ModelData body, XElement asset, EquipItem item, int gender, int index)
+    List<MeshInstance3D> AttachKfm(Part part, Skeleton3D skel, ModelData body, XElement asset, EquipItem item, int gender, int index)
     {
         string name = ((string)asset.Attribute("name") ?? "").Replace("urn:gamebryo-animation:", "").Replace("urn:", "");
         string kfmEntry = packs.FindByFileName(ItemArchive, name.ToLowerInvariant() + ".kfm");
@@ -654,7 +786,7 @@ public sealed class EquipApplier
         catch (Exception ex) { Failed++; GD.PushWarning($"item {item.Id} kfm: {ex.Message}"); return null; }
         if (md == null) { NoAsset++; return null; }
         Loaded++;
-        NoteNodes(md);
+        NoteNodes(part, md);
         bool pony = index >= 0;
         double[] pos = null, rot = null; double scale = 1;
         var a = item.Appearance;
