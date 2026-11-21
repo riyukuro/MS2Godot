@@ -1351,10 +1351,26 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>Unk_MsgKeys::FUN_14116d7a0, a key held now, for the DIK codes the chat asks about (Tab).</summary>
     static bool DikHeld(int dik) => dik == MessengerController.DikTab && Input.IsPhysicalKeyPressed(Key.Tab);
 
+    const int PickupAction = 0x493e3;   // the "get" action (MyPC::FUN_141530db0's IsActionKeyDown)
+
+    /// <summary>
+    /// The drops' pickup key as held state: a press or release of a key bound to the "get" action sets it, so the drop layer asks a
+    /// bool each frame instead of walking the key table. A key typed into a text field does not count.
+    /// </summary>
+    void TrackPickupKey(InputEvent e)
+    {
+        if (e is not InputEventKey { Echo: false } k) return;
+        if (k.Pressed && UiFocus.IsTyping) return;
+        if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        foreach (int dik in hudModel.Keys.KeysOfAction(PickupAction))
+            if (GodotKeyOfDik(dik) is { } g && g == k.PhysicalKeycode) { live.PickupKeyHeld = k.Pressed; return; }
+    }
+
     /// <summary>The scene's keys: the chat windows first, then the dialogs, then the own casts.</summary>
     public override void _Input(InputEvent e)
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
+        TrackPickupKey(e);
         // under a field move's loading screen no hotkey opens a dialog (Ms2.Ui.FieldMoveCover); the message box's keys are
         // its own layer's (MessageBoxLayer), which saw them first
         if (Ms2.Ui.FieldMoveCover.Up)

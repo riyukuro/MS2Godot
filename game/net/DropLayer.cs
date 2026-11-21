@@ -21,6 +21,8 @@ public sealed partial class DropLayer : Node3D
         public Node3D Root;
         public DropMotion Motion;
         public FieldAddItem Packet;
+        public uint LastRequest;     // CDropItem m_nTick (FUN_141191030)
+        public int PickerId;         // CDropItem m_n188
     }
 
     readonly PackSet packs;
@@ -36,6 +38,21 @@ public sealed partial class DropLayer : Node3D
     readonly Func<System.Numerics.Vector3, float?> ground;
     readonly List<Drop> gone = new();
     PhysicsRayQueryParameters3D ray;
+    readonly List<int> mesoIds = new();
+    uint globalUntil;                 // s_kPickTimer: the 10 ms it starts with, 150 ms after each pickup
+    bool keyWasDown;
+
+    /// <summary>The local player's position in client coordinates; null without one.</summary>
+    public Func<System.Numerics.Vector3?> PlayerPosition = () => null;
+    /// <summary>An actor's position by object id (the picker a drop flies to); null when it is gone.</summary>
+    public Func<int, System.Numerics.Vector3?> ActorPosition = _ => null;
+    public Action<Ms2.Net.Wire.IOutPacket> Send = _ => { };
+    /// <summary>The "get" action key is held.</summary>
+    public Func<bool> GetKeyDown = () => false;
+    public Func<int, int> TabOf = _ => 7;
+    public Func<int, bool> HasEmptyCell = _ => true;
+    public Func<FieldAddItem, bool> CanStack = _ => false;
+    public Func<uint> Clock = () => (uint)Time.GetTicksMsec();
     public int Count => drops.Count;
     /// <summary>FieldAddItems the client would not make a drop of (not the owner, no item data, no style, no model).</summary>
     public int Skipped, NoModel;
@@ -86,7 +103,32 @@ public sealed partial class DropLayer : Node3D
         drops[d.ObjectId] = new Drop { Root = root, Motion = motion, Packet = d };
     }
 
-    /// <summary>OnFieldRemoveItem: the object leaves the world.</summary>
+    /// <summary>OnFieldRemoveItem (scenestategame.cpp:2402): a drop being picked up is kept, any other leaves.</summary>
+    public void OnRemovePacket(int objectId)
+    {
+        if (drops.TryGetValue(objectId, out var d) && DropPickup.KeepsOnRemove(d.PickerId, d.Motion.State)) return;
+        Remove(objectId);
+    }
+
+    /// <summary>What OnFieldPickupItem reads the packet by: whether the field has the drop, and its kind.</summary>
+    public (bool Known, bool IsMeso, bool IsEp) Describe(int objectId) =>
+        drops.TryGetValue(objectId, out var d) ? (true, d.Packet.IsMeso, d.Packet.ItemId == FieldPickupItem.EpItemId) : (false, false, false);
+
+    /// <summary>
+    /// OnFieldPickupItem (scenestategame.cpp:2420) as far as it moves the drop: a pickup sends a resting drop to its picker
+    /// (CDropItem::OnPickedUp, which also starts the shared pick timer); a refusal changes nothing the drop shows.
+    /// </summary>
+    public void OnPickupPacket(FieldPickupItem p)
+    {
+        if (!p.DropKnown || !p.Picked || !drops.TryGetValue(p.ObjectId, out var d)) return;
+        if (d.Motion.State != DropMotion.Rest) return;
+        d.PickerId = p.PickerId;
+        globalUntil = Clock() + DropPickup.AfterPickupMs;
+        var at = ActorPosition(p.PickerId) ?? d.Motion.Position;
+        d.Motion.PickedUp(at, (uint)Random.Shared.NextInt64(0, uint.MaxValue));
+    }
+
+    /// <summary>OnFieldRemoveItem (also the internal removal): the object leaves the world.</summary>
     public void Remove(int objectId)
     {
         if (!drops.Remove(objectId, out var drop)) return;
@@ -122,7 +164,7 @@ public sealed partial class DropLayer : Node3D
     static MeshInstance3D Find(Node n)
     {
         if (n is MeshInstance3D m && m.Name.ToString().StartsWith("Item_Icon", StringComparison.OrdinalIgnoreCase)) return m;
-        foreach (var c in n.GetChildren()) if (Find(c) is { } f) return f;
+        for (int i = 0, count = n.GetChildCount(); i < count; i++) if (Find(n.GetChild(i)) is { } f) return f;
         return null;
     }
 
@@ -150,14 +192,56 @@ public sealed partial class DropLayer : Node3D
         float dt = (float)delta;
         foreach (var d in drops.Values)
         {
-            d.Motion.Advance(dt, null);
+            System.Numerics.Vector3? picker = d.PickerId != 0 && d.Motion.State is DropMotion.FlyToPicker or DropMotion.Hover or DropMotion.Sink
+                ? ActorPosition(d.PickerId) : null;
+            d.Motion.Advance(dt, picker);
             if (d.Motion.Done) { gone.Add(d); continue; }
             d.Root.Position = G(d.Motion.Position);
             var s = d.Motion.Spin;
             d.Root.Rotation = new Vector3(Mathf.DegToRad(s.X), Mathf.DegToRad(s.Z), Mathf.DegToRad(-s.Y));
         }
+        bool down = GetKeyDown();
+        if (down && drops.Count > 0) TryPickup(!keyWasDown);
+        keyWasDown = down;
         if (gone.Count == 0) return;
         foreach (var d in gone) Remove(d.Packet.ObjectId);
         gone.Clear();
+    }
+
+    /// <summary>
+    /// MyPC::FUN_141530db0 with the "get" key down (mypc.cpp:4740): every meso in range goes in one RequestMesoPickup, then the nearest
+    /// drop in item range is requested when the bag takes it (or the key was just pressed). Auto loot (the option-driven flagging) is not ported.
+    /// </summary>
+    void TryPickup(bool pressed)
+    {
+        if (PlayerPosition() is not { } me) return;
+        uint now = Clock();
+        mesoIds.Clear();
+        Drop nearest = null;
+        float best = float.MaxValue;
+        foreach (var d in drops.Values)
+        {
+            float dist = (me - d.Motion.Position).Length();
+            bool owner = d.Packet.IsPickupAllowed(ownCharacterId);
+            if (d.Packet.IsMeso && mesoIds.Count < RequestMesoPickup.MaxCount
+                && DropPickup.Eligible(d.Motion.State, now, globalUntil, d.LastRequest, 0, dist, constants.MoneyMaxLength, owner))
+                mesoIds.Add(d.Packet.ObjectId);
+            if (dist < best && DropPickup.Eligible(d.Motion.State, now, globalUntil, d.LastRequest, 0, dist, constants.MaxLength, owner))
+            { best = dist; nearest = d; }
+        }
+        if (mesoIds.Count > 0)
+        {
+            foreach (int id in mesoIds) drops[id].LastRequest = now;
+            Send(new RequestMesoPickup(mesoIds.ToArray()));
+        }
+        if (nearest != null && DropPickup.BagAllows(HasEmptyCell(0), CanStack(nearest.Packet), pressed)) Request(nearest, now);
+    }
+
+    /// <summary>CDropItem::FUN_141190900 (dropitem.cpp:950): the request, the drop hopping back when the bag cannot take it.</summary>
+    void Request(Drop d, uint now)
+    {
+        d.LastRequest = now;
+        if (!d.Packet.IsMeso && !HasEmptyCell(TabOf(d.Packet.ItemId)) && !CanStack(d.Packet)) d.Motion.PickFailed();
+        Send(new RequestItemPickup(d.Packet.ObjectId, 0));
     }
 }

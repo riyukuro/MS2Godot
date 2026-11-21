@@ -65,6 +65,11 @@ public sealed partial class RemoteLayer : Node3D
     /// PC::CanUseItem state of its balloon gem (premium time, PC bang grade, wedding state).</summary>
     public readonly record struct Pc(int ObjectId, long CharacterId, string Name, string Picture, Node3D Root, Func<Vector3> Anchor,
         IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems, long PremiumTime, byte PcBangGrade, short WeddingState);
+    /// <summary>A shown player's position in the client's z-up coordinates (WorldService::FindPCById then vfunc_18); null when it is not here.</summary>
+    public System.Numerics.Vector3? PositionOf(int objectId) =>
+        users.TryGetValue(objectId, out var r) && r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
+            ? new System.Numerics.Vector3(r.Root.GlobalPosition.X, -r.Root.GlobalPosition.Z, r.Root.GlobalPosition.Y) : null;
+
     /// <summary>The other players shown now (the own PC is not among them).</summary>
     public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
         r.PremiumTime, r.PcBangGrade, r.WeddingState));

@@ -55,3 +55,57 @@ public sealed class FieldAddItem {
 public readonly record struct FieldRemoveItem(int ObjectId) {
     public static FieldRemoveItem Read(ByteReader r) => new(r.ReadInt());
 }
+
+/// <summary>
+/// Outbound 0x1C, CDropItem::SendRequestItemPickup (dropitem.cpp:936): i32 object id, bool "a picker is named", then i32 the picker's
+/// object id when it is (a pet picks up for its owner; the player's own pickup sends 0 and so a single false).
+/// </summary>
+public sealed record RequestItemPickup(int ObjectId, int PickerId) : Ms2.Net.Wire.IOutPacket {
+    public Outbound Op => Outbound.RequestItemPickup;
+    public void Write(ByteWriter w) {
+        w.WriteInt(ObjectId);
+        w.WriteBool(PickerId != 0);
+        if (PickerId != 0) w.WriteInt(PickerId);
+    }
+}
+
+/// <summary>
+/// Outbound 0x1D, MyPC::FUN_1415310e0 (mypc.cpp:4796): u8 count, then that many i32 object ids of the meso drops; at most
+/// <see cref="MaxCount"/> (0x80) go in one packet, the client stops adding at that count.
+/// </summary>
+public sealed record RequestMesoPickup(IReadOnlyList<int> ObjectIds) : Ms2.Net.Wire.IOutPacket {
+    public const int MaxCount = 0x80;
+    public Outbound Op => Outbound.RequestMesoPickup;
+    public void Write(ByteWriter w) {
+        int n = Math.Min(ObjectIds.Count, MaxCount);
+        w.WriteByte((byte)n);
+        for (int i = 0; i < n; i++) w.WriteInt(ObjectIds[i]);
+    }
+}
+
+/// <summary>
+/// Inbound 0x2D, CSceneStateGame::OnFieldPickupItem (scenestategame.cpp:2420): u8 picked, i32 object id. A drop the client does not
+/// have ends the read there. Picked: i32 the picker's object id, then i64 the meso value when the drop is a meso, then u32 the EP
+/// gained when the drop is the EP ball (item 0x55d4a8a). Not picked: i32 mode (1 clears the drop's request flag).
+/// </summary>
+public sealed class FieldPickupItem {
+    public bool Picked, DropKnown;
+    public int ObjectId, PickerId, Mode;
+    public long Meso;
+    public uint Ep;
+    public const int EpItemId = 0x55d4a8a;
+
+    /// <param name="find">Whether the field has the drop <c>ObjectId</c> and if so its kind: (is meso, is the EP ball).</param>
+    public static FieldPickupItem Read(ByteReader r, Func<int, (bool Known, bool IsMeso, bool IsEp)> find) {
+        var d = new FieldPickupItem { Picked = r.ReadBool(), ObjectId = r.ReadInt() };
+        var (known, meso, ep) = find(d.ObjectId);
+        d.DropKnown = known;
+        if (!known) return d;
+        if (d.Picked) {
+            d.PickerId = r.ReadInt();
+            if (meso) d.Meso = r.ReadLong();
+            if (ep) d.Ep = (uint)r.ReadInt();
+        } else d.Mode = r.ReadInt();
+        return d;
+    }
+}

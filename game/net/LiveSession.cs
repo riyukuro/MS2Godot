@@ -48,6 +48,8 @@ public partial class LiveSession : Node
     Player player;           // the own player, once the field is built
     RemoteLayer remote;      // the other players and npcs, once the field is built
     DropLayer drops;         // the dropped items and meso, once the field is built
+    /// <summary>The "get" action key is held (set by the HUD's key tracking); the drop layer asks it each frame.</summary>
+    public bool PickupKeyHeld;
     readonly FieldEntry fieldEntry = new();   // RequestFieldEnter: the current entry and its one ResponseFieldEnter
     public bool Busy { get; private set; }
     /// <summary>The last create the server refused (null after a create that went through).</summary>
@@ -664,6 +666,21 @@ public partial class LiveSession : Node
         if (n > 0) GD.Print($"live: Trigger applied {n} mesh event(s)");
     }
 
+    /// <summary>A node's position in the client's z-up coordinates (the inverse of the field's G); null without a live node.</summary>
+    static System.Numerics.Vector3? ClientPositionOf(Node3D n) =>
+        n != null && IsInstanceValid(n) && n.IsInsideTree() ? new System.Numerics.Vector3(n.GlobalPosition.X, -n.GlobalPosition.Z, n.GlobalPosition.Y) : null;
+
+    /// <summary>CDropItem::CanStackIntoInventory (@0x1411906a0, dropitem.cpp): a bag stack of the item's id with room for the drop's amount.</summary>
+    bool DropCanStack(FieldAddItem d)
+    {
+        if (Items == null || d.Item == null) return false;
+        uint max = Items.MaxStackOf?.Invoke(d.ItemId) ?? 1u;
+        if (max <= 1) return false;
+        foreach (var have in Items.All)
+            if (have.Id == d.ItemId && (long)max >= (long)have.Amount + d.Amount) return true;
+        return false;
+    }
+
     void OnFieldBuilt(Field field, ModelBuilder builder)
     {
         if (entry == null) return;
@@ -677,7 +694,14 @@ public partial class LiveSession : Node
         var kinds = Kinds();
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
-        field.TreeExiting += () => { if (drops == dropLayer) drops = null; };
+        dropLayer.Send = Send;
+        dropLayer.GetKeyDown = () => PickupKeyHeld;
+        dropLayer.PlayerPosition = () => ClientPositionOf(player);
+        dropLayer.ActorPosition = id => id == selfObject ? ClientPositionOf(player) : remote?.PositionOf(id);
+        dropLayer.TabOf = id => Inventory?.TabOfItem(id) ?? 7;
+        dropLayer.HasEmptyCell = tab => Inventory?.HasEmptyCell(tab) ?? true;
+        dropLayer.CanStack = DropCanStack;
+        field.TreeExiting += () => { if (drops == dropLayer) { drops = null; PickupKeyHeld = false; } };
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
         field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); };
@@ -867,7 +891,8 @@ public partial class LiveSession : Node
                 GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
             }
             else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader()); drops?.Add(item); }
-            else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.Remove(FieldRemoveItem.Read(p.Reader()).ObjectId);
+            else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.OnRemovePacket(FieldRemoveItem.Read(p.Reader()).ObjectId);
+            else if (game.Is(p, Inbound.FieldPickupItem) && drops != null) drops.OnPickupPacket(FieldPickupItem.Read(p.Reader(), drops.Describe));
             else if (game.Is(p, Inbound.Buff))
             {
                 var b = BuffPacket.Read(p.Reader());
