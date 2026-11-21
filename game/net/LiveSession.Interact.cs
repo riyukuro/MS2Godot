@@ -34,6 +34,9 @@ public partial class LiveSession
     /// <summary>The local pc's held item (PC::m_spItem1040): set by InteractObject mode 15, let go by SendRequestCube and
     /// ResponseCube 0x12. A new field makes a new pc, so it starts empty.</summary>
     public readonly HeldItem HeldItem = new();
+    /// <summary>The game event list's interact object shutdowns (GameEvent 0xB2, CGameEventValueManager
+    /// ShutdownInteractObjectId); kept across fields, cleared with a new game scene.</summary>
+    public readonly InteractObjectShutdowns InteractShutdowns = new();
 
     void NewFieldInteractObjects(int mapId)
     {
@@ -78,6 +81,14 @@ public partial class LiveSession
         if (m == null) return;
         if (m.Error == 0 && m.Id == selfObject) HeldItem.Release();
         GD.Print($"live: ResponseCube 0x12 error {m.Error} id {m.Id}");
+    }
+
+    /// <summary>GameEvent 0xB2 (GameEventManagerCli::Dispatch, gameeventmanagercli.cpp:77): the shutdown events are applied.
+    /// STILL-OPEN: the other event types are not read (the reader looks past them for the next shutdown entry).</summary>
+    void OnGameEvent(GameEventMessage m)
+    {
+        InteractShutdowns.Apply(m);
+        GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.RemovedIds.Count} removed{(m.Truncated ? ", other types passed over" : "")}");
     }
 
     void OnInteractNpc(InteractNpcMessage m)
@@ -218,9 +229,7 @@ public partial class LiveSession
 
         public int PlayerStateId => s.InteractPlayerStateId();
 
-        // STILL-OPEN: the game event list (GameEvent 0xB2, GameEventShutdownInteractObjectId) is not read, so no object is
-        // known to be shut down
-        public bool IsInteractObjectShutdown(int fieldId, int rowId) => false;
+        public bool IsInteractObjectShutdown(int fieldId, int rowId) => s.InteractShutdowns.IsShutdown(fieldId, rowId);
 
         // STILL-OPEN: MyPC::FUN_14152e0c0's state controller update has no counterpart; the move sync runs on its own
         public void FlushPlayerState() { }

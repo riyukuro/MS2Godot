@@ -574,6 +574,8 @@ public partial class LiveSession : Node
     void TakeEntry()
     {
         if (entry.Enter != null) NoteServerEnter(entry.Enter.Channel);
+        // a new game scene: the old one's OnLeave ran GameEventManagerCli::Clear (scenestategame.cpp:1314)
+        InteractShutdowns.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
         {
@@ -1149,6 +1151,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.FieldPortal)) OnFieldPortal(FieldPortalMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.InteractObject)) OnInteractObject(InteractObjectMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.InteractNpc)) OnInteractNpc(InteractNpcMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.GameEvent)) OnGameEvent(GameEventMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(ResponseCubeHeldItem.Read(p.Reader()));
             else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
