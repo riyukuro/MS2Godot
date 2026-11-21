@@ -1532,16 +1532,14 @@ namespace Ms2.Avm2.Flash
             {
                 pressedBy[button] = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
                 mouseInsideEntityLast = true;       // :7271
-                var f = t;
-                if (button == LeftButton)
-                    for (var o = (AsDisplayObject)t; o != null; o = o.Parent) if (o is AsInteractiveObject io && (io is AsTextField { type: "input" } || io.tabEnabled)) { f = io; break; }
                 MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown", button: button);     // activeEntitySafe, sfr_as3_17.cpp:7265
-                // a left press moves the focus to the top-most entity (MovieImpl's mouse handling, sfr_gfx_01i.cpp:3673), and
-                // QueueSetFocusTo (:2672) takes NULL for one that is not focus enabled (IsFocusEnabled by mouse), so a press
-                // on nothing focusable, or on nothing, clears the focus; the change event names the entity pressed
+                // a left press moves the focus to the top-most entity (MovieImpl's mouse handling, sfr_gfx_01i.cpp:3673; no
+                // ancestor of it is asked), and QueueSetFocusTo (:2672) takes NULL for one that is not focus enabled
+                // (IsFocusEnabled by mouse), so a press on nothing focusable, or on nothing, clears the focus; the change
+                // event names the entity pressed
                 if (button == LeftButton)
                 {
-                    if (f is AsTextField { type: "input" } || f?.tabEnabled == true) SetFocus(f, "mouse");
+                    if (t != null && MouseFocusEnabled(t)) SetFocus(t, "mouse");
                     else SetFocus(null, "mouse", t);
                 }
             }
@@ -1667,6 +1665,31 @@ namespace Ms2.Avm2.Flash
         }
 
         public void TypeText(string s) { if (Focus is AsTextField tf) TypeInto(tf, s); }
+
+        /// <summary>IsFocusEnabled(GFx_FocusMovedByMouse): any text field (AvmTextField, as3_avm.h:651: only the keyboard
+        /// tests read-only) and any SimpleButton (AvmButton, as3_avm.h:595) always; a sprite in button mode or tabable
+        /// (AvmSprite::IsFocusEnabled @0x1425142a0, sfr_as3_18.cpp:1132, Flag_ButtonMode before IsTabable); the stage and
+        /// another container never (Stage @0x142514310, AvmDisplayObjContainer @0x142514290).</summary>
+        static bool MouseFocusEnabled(AsInteractiveObject io) => io switch
+        {
+            AsTextField or AsSimpleButton => true,
+            AsSprite sp => sp.buttonMode || SpriteTabable(sp),
+            _ => false,
+        };
+
+        /// <summary>AvmSprite::IsTabable (@0x142514fc0, sfr_as3_18.cpp:1147): visible, and tabEnabled when set (true only
+        /// if no ancestor has tabChildren off), else a positive tabIndex, else buttonMode.</summary>
+        static bool SpriteTabable(AsSprite sp)
+        {
+            if (!sp.visible) return false;
+            if (sp.TabEnabledSet is bool te)
+            {
+                if (!te) return false;
+                for (var p = sp.Parent; p != null; p = p.Parent) if (p is AsContainer { tabChildren: false }) return false;
+                return true;
+            }
+            return sp.tabIndex > 0 || sp.buttonMode;
+        }
 
         public void ClearFocusSilently() => Focus = null;
 

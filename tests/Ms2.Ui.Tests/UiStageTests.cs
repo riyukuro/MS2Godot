@@ -132,6 +132,72 @@ public class UiStageTests
     }
 
     [Test]
+    public void ALeftPressOnAButtonModeSpriteFocusesItWithTabEnabledOff()
+    {
+        // AvmSprite::IsFocusEnabled by mouse (@0x1425142a0) is true for Flag_ButtonMode before it asks IsTabable, so a CLIK
+        // button (buttonMode on, tabEnabled off when it is not focusable) takes the focus from the field on a press
+        var (p, slot, _) = Movie();
+        var tf = (AsTextField)p.RT.GetClass("flash.text.TextField").Construct();
+        tf.type = "input";
+        p.Stage.addChild(tf);
+        var box = Box(p, slot, 300);
+        box.buttonMode = true;
+        box.tabEnabled = false;
+        void Press(double x, double y) { p.MouseMove(x, y); p.MouseButton(true); p.MouseButton(false); }
+
+        p.Stage.focus = tf;
+        Press(310, 10);
+        Assert.That(p.Focus, Is.SameAs(box), "buttonMode with tabEnabled off");
+
+        box.buttonMode = false;
+        p.Stage.focus = tf;
+        Press(310, 10);
+        Assert.That(p.Focus, Is.Null, "neither buttonMode nor tabEnabled");
+        Assert.That(p.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ALeftPressAsksOnlyTheTopMostEntityAndAnyTextFieldOrSimpleButtonTakesTheFocus()
+    {
+        // MovieImpl's mouse handling (sfr_gfx_01i.cpp:3673) passes the top-most entity alone to QueueSetFocusTo, so a plain
+        // sprite inside a tab-enabled one clears the focus; AvmTextField (as3_avm.h:651) and AvmButton (:595) are focus
+        // enabled by mouse whatever their type or tabEnabled
+        var (p, slot, _) = Movie();
+        var tf = (AsTextField)p.RT.GetClass("flash.text.TextField").Construct();
+        tf.type = "input";
+        p.Stage.addChild(tf);
+        void Press(double x, double y) { p.MouseMove(x, y); p.MouseButton(true); p.MouseButton(false); }
+
+        var outer = Box(p, slot, 300);
+        outer.tabEnabled = true;
+        var inner = (AsSprite)p.RT.GetClass("flash.display.Sprite").Construct();
+        inner.graphics.beginFill(0xffffff); inner.graphics.drawRect(0, 0, 40, 40);
+        outer.addChild(inner);
+        p.Stage.focus = tf;
+        Press(310, 10);
+        Assert.That(p.Focus, Is.Null, "a plain sprite in a tab-enabled one");
+
+        var label = (AsTextField)p.RT.GetClass("flash.text.TextField").Construct();
+        label.x = 400; label.width = 40; label.height = 40;
+        p.Stage.addChild(label);
+        p.Stage.focus = tf;
+        Press(410, 10);
+        Assert.That(p.Focus, Is.SameAs(label), "a selectable dynamic text field");
+
+        var hit = (AsSprite)p.RT.GetClass("flash.display.Sprite").Construct();
+        hit.graphics.beginFill(0xffffff); hit.graphics.drawRect(0, 0, 40, 40);
+        var button = (AsSimpleButton)p.RT.GetClass("flash.display.SimpleButton").Construct();
+        button.upState = hit; button.hitTestState = hit;
+        button.x = 500;
+        button.tabEnabled = false;
+        p.Stage.addChild(button);
+        p.Stage.focus = tf;
+        Press(510, 10);
+        Assert.That(p.Focus, Is.SameAs(button), "a SimpleButton with tabEnabled off");
+        Assert.That(p.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ADropOnAnotherMoviesSlotReachesItThroughAProxy()
     {
         var (a, aSlot, aDrops) = Movie();
