@@ -338,12 +338,13 @@ public partial class LiveSession : Node
     public event Action<ShopPacket> ShopReceived;
     /// <summary>The system shop open result (0xA1, CSceneStateGame::OnSystemShop); live only.</summary>
     public event Action<SystemShopPacket> SystemShopReceived;
-    /// <summary>The npc shop's sends (Shop 0x28).</summary>
     /// <summary>An item merge packet (0x74, CSceneStateGame::OnItemFusion); the item body of modes 5/6 is left in the reader.</summary>
     public event Action<ItemMergePacket, Maple2.PacketLib.Tools.ByteReader> ItemMergeReceived;
     /// <summary>An item dismantle packet (0x96, CItemBreakManager::OnItemDismantlePacket).</summary>
     public event Action<ItemDismantlePacket> ItemDismantleReceived;
+    /// <summary>The merge dialogs' sends (ItemMerge 0x3F, UIItemMergeOptionDialog / UIItemMergeRevertDialog); live only.</summary>
     public void SendItemMerge(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
+    /// <summary>The npc shop's sends (Shop 0x28).</summary>
     public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>CInstrumentManager's currently playing score uid (FUN_140c8dab0, petmanager.cpp:141; STILL-OPEN:
     /// instrument play packets are not ported yet, so 0).</summary>
