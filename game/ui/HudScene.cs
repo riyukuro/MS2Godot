@@ -1617,6 +1617,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemMergeKeys(k)) return true;
         if (ItemEnchantKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
+        if (SelectItemBoxKeys(k)) return true;
         if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
@@ -2947,6 +2948,9 @@ public partial class HudScene : Node, IUiStageHost
         c.RevertCheck = item => itemRevert?.CheckItem(item) ?? 0;
         c.RevertSelect = item => itemRevert?.UseFromInventory(item);
         c.RevertOpen = OpenItemRevert;
+        c.OpenSelectBox = OpenSelectItemBox;
+        c.SelectBoxOpen = () => SelectItemBoxOpen;
+        c.OpenMultiBox = OpenItemMultiOpen;
         c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
         c.BreakCanBreak = item => itemBreak?.Mgr?.CanBreakItem(item) ?? false;
         c.BreakAdd = item => itemBreak?.AddFromInventory(item);
@@ -3468,6 +3472,7 @@ public partial class HudScene : Node, IUiStageHost
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
         if (ChatEmoticonOpen) chatEmoticon.Process();          // UIChatEmoticonDialog::vfunc_15
+        if (ItemMultiOpenOpen) itemMultiOpen.Tick();                          // UIItemMultiOpenBoxDialog::vfunc_15
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
         TickPartyDps();                                                      // UIPartyDPSDialog::vfunc_72

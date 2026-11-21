@@ -33,6 +33,8 @@ public sealed partial class InventoryController
     public event Action<string> WarningSound;
 
     /// <summary>Bag count of an item id (FUN_140a5f180(id, 0)).</summary>
+    public int BagCountOf(int itemId) => BagCount(itemId);
+
     int BagCount(int itemId)
     {
         int n = 0;
@@ -105,7 +107,7 @@ public sealed partial class InventoryController
     /// <summary>OpenItemBoxContents @0x140d1d3f0: nMultiOpen = arg 4 (default 1); the count of the same id and rarity clamped
     /// to 0..<see cref="ItemBoxMultiOpenLimit"/>; with nMultiOpen 1 and more than one, box 0x29 asks how many (OnOpenItemBoxMulti);
     /// else the plain use with the arguments.</summary>
-    internal void OpenItemBoxContents(Item item, string strArgs)
+    public void OpenItemBoxContents(Item item, string strArgs)
     {
         int multi = item.Data.FunctionArgInt(4, 1);
         int count = Math.Clamp(BagCountSameRarity(item), 0, ItemBoxMultiOpenLimit);
