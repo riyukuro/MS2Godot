@@ -119,18 +119,20 @@ public class StoreDialogTests
     }
 
     [Test]
-    public void TheCloseMessageClosesTheDialog()
+    public void BuyingSlotsExtendsThenPlaysTheExpandEffectAndKeepsTheDialogOpen()
     {
-        Packs();
-        var book = NewBook();
-        var c = new StoreDialogController { Book = book };
-        int closed = 0;
-        c.Closed += () => closed++;
-        Load(c, NewModel());
-        book.Apply(new StorageMessage.Close());
-        Assert.That(closed, Is.EqualTo(1));
-        book.Apply(new StorageMessage.Close());
-        Assert.That(closed, Is.EqualTo(1), "unsubscribed on close");
+        var w = Rig();
+        Load(w.C, w.Model);
+        int closed = 0, effects = 0;
+        w.C.Closed += () => closed++;
+        w.C.ExpandEffect += () => effects++;
+        w.Sent.Clear();
+        w.Book.Apply(new StorageMessage.Extend(6));      // OnExtend: only the size changes, no dialog event
+        Assert.That(effects, Is.EqualTo(0));
+        w.Book.Apply(new StorageMessage.Close());        // type 7: the expand effect, not a close
+        Assert.That(effects, Is.EqualTo(1));
+        Assert.That(closed, Is.EqualTo(0), "the server's slot-purchase confirmation does not close the bank");
+        Assert.That(w.Sent, Is.Empty, "and sends nothing (no sort)");
     }
 
     [Test]
@@ -206,7 +208,7 @@ public class StoreDialogTests
         Assert.That(w.Sent.Single(), Is.InstanceOf<StorageCloseRequest>(), "the sort button is CStore::RequestClose");
         w.Sent.Clear();
         w.C.Close();
-        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageSortRequest>(), "vfunc_67: RequestSort");
+        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageSortRequest>(), "closing the dialog asks the server to sort the bank");
     }
 
     [Test]

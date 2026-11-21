@@ -94,8 +94,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         Book.ListLoaded += OnList;
         Book.BecameReady += OnList;
         Book.MesoChanged += OnMeso;
-        Book.Expanded += OnExpanded;
-        Book.CloseReceived += OnCloseReceived;
+        Book.CloseReceived += OnExpandNotice;     // type 7 (OnClose) is the expand notice; type 0xd (OnExtend) raises no dialog event
         Host.Invoke("initData", new object[] { Bag, Group(Book.Meso) });
         if (!Book.Ready) Sender?.RequestLoad();     // OnLoadInit (@0x141b0f430): a store not ready is asked for
     }
@@ -109,8 +108,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         Book.ListLoaded -= OnList;
         Book.BecameReady -= OnList;
         Book.MesoChanged -= OnMeso;
-        Book.Expanded -= OnExpanded;
-        Book.CloseReceived -= OnCloseReceived;
+        Book.CloseReceived -= OnExpandNotice;
     }
 
     /// <summary>vfunc_9 / vfunc_10 (an item added / removed or changed): the slot pushed again and m_198 |= 2.</summary>
@@ -130,7 +128,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     }
 
     /// <summary>FUN_141b109a0: shown, m_198 = 6 and "m_expandEff" plays; the expand sound.</summary>
-    void OnExpanded()
+    void OnExpandNotice()
     {
         if (Host?.Entity == null) return;
         pending = PendingText | PendingBag;
@@ -142,8 +140,6 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         }
         ExpandEffect?.Invoke();
     }
-
-    void OnCloseReceived() => Close();
 
     /// <summary>
     /// vfunc_15, once per frame: while open and m_198 is set, bit 4 rebuilds the bag (FUN_141b110e0: Invoke("updateBag"))
