@@ -23,13 +23,13 @@ public sealed record MergeOptionProxy(long Meso, MergeIngredient[] Ingredients, 
         long meso = r.ReadLong();
         var ing = new MergeIngredient[r.ReadByte()];
         for (int i = 0; i < ing.Length; i++) ing[i] = MergeIngredient.Read(r);
-        var values = new int[(uint)r.ReadInt()];
+        var values = new int[(int)Math.Min((uint)r.ReadInt(), (uint)(r.Available / 4))];
         for (int i = 0; i < values.Length; i++) values[i] = r.ReadInt();
         return new(meso, ing, values, Ranges(r), Ranges(r));
     }
 
     static MergeOptionRange[] Ranges(ByteReader r) {
-        var a = new MergeOptionRange[(uint)r.ReadInt()];
+        var a = new MergeOptionRange[(int)Math.Min((uint)r.ReadInt(), (uint)(r.Available / 10))];
         for (int i = 0; i < a.Length; i++) a[i] = new((ushort)r.ReadShort(), r.ReadInt(), r.ReadInt());
         return a;
     }
@@ -64,7 +64,7 @@ public sealed record ItemMergePacket(byte Mode) {
                 if (sub == 2) return p with { Sub = sub, ItemId = id };
                 return p with { Sub = sub, ItemId = id, Uid = r.ReadLong(), Normal = r.ReadInt(), Special = r.ReadInt(), Value = r.ReadInt() };
             case 1:
-                var m = new long[(uint)r.ReadInt()];
+                var m = new long[(int)Math.Min((uint)r.ReadInt(), (uint)(r.Available / 8))];
                 for (int i = 0; i < m.Length; i++) m[i] = r.ReadLong();
                 return p with { Materials = m };
             case 2: return p with { Proxy = MergeOptionProxy.Read(r) };

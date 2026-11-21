@@ -11,7 +11,9 @@ public readonly record struct DismantleSlot(ushort Index, long Uid, int Amount);
 
 /// <summary>
 /// Inbound 0x96 (OnItemDismantlePacket): u8 mode, then
-/// 1: i64 uid, u16 index, u32 count (one slot set); 2: i64 uid (the slot cleared); 3: u8 type (the list reset);
+/// 1: i64 uid, u16 index, u32 count (one slot set); 2: i64 uid (the slot cleared); 3: u8 type, then for type 1 the packet goes
+/// on to UIItemBreakDialog::vfunc_84 (uiinventorydialog.cpp:2720): u32 count and per entry i32 item id, i32 amount (the
+/// donation dialog's vfunc_84, :3000, reads nothing, so type 2 ends after the type);
 /// 4: u32 result (the dismantle's outcome notice); 5: the preview list (UIItemBreakDialog::FUN_1419a44d0): u32 count and per
 /// entry u32 item id, u32 low, u32 high; 6: u32 count and per slot u16 index, i64 uid, u32 amount.
 /// </summary>
@@ -21,6 +23,11 @@ public sealed record ItemDismantlePacket(byte Mode) {
     public byte Type { get; init; }
     public int Result { get; init; }
     public DismantlePreview[] Previews { get; init; }
+    /// <summary>Mode 3, type 1: the reward rows (item id, amount) of the finished break; rows with amount 0 are kept here and skipped by the dialog.</summary>
+    public DismantleReward[] Rewards { get; init; }
+
+    /// <summary>A u32 count bounded by the bytes left (each entry takes at least <paramref name="entryBytes"/>), so a bad count cannot allocate.</summary>
+    static int ReadCount(ByteReader r, int entryBytes) => (int)Math.Min((uint)r.ReadInt(), (uint)(r.Available / entryBytes));
 
     public static ItemDismantlePacket Read(ByteReader r) {
         byte mode = r.ReadByte();
@@ -30,20 +37,28 @@ public sealed record ItemDismantlePacket(byte Mode) {
                 long uid = r.ReadLong(); ushort idx = (ushort)r.ReadShort(); int count = r.ReadInt();
                 return p with { Uid = uid, Slots = new[] { new DismantleSlot(idx, uid, count) } };
             case 2: return p with { Uid = r.ReadLong() };
-            case 3: return p with { Type = r.ReadByte() };
+            case 3:
+                byte type = r.ReadByte();
+                if (type != 1) return p with { Type = type };
+                var rw = new DismantleReward[ReadCount(r, 8)];
+                for (int i = 0; i < rw.Length; i++) rw[i] = new(r.ReadInt(), r.ReadInt());
+                return p with { Type = type, Rewards = rw };
             case 4: return p with { Result = r.ReadInt() };
             case 5:
-                var pv = new DismantlePreview[(uint)r.ReadInt()];
+                var pv = new DismantlePreview[ReadCount(r, 12)];
                 for (int i = 0; i < pv.Length; i++) pv[i] = new(r.ReadInt(), r.ReadInt(), r.ReadInt());
                 return p with { Previews = pv };
             case 6:
-                var s = new DismantleSlot[(uint)r.ReadInt()];
+                var s = new DismantleSlot[ReadCount(r, 14)];
                 for (int i = 0; i < s.Length; i++) s[i] = new((ushort)r.ReadShort(), r.ReadLong(), r.ReadInt());
                 return p with { Slots = s };
             default: return p;
         }
     }
 }
+
+/// <summary>One reward row of a finished break (UIItemBreakDialog::vfunc_84): the item id and the amount.</summary>
+public readonly record struct DismantleReward(int ItemId, int Amount);
 
 /// <summary>One preview row (BreakPreview::FUN_140530920): the item id, then low and high amounts.</summary>
 public readonly record struct DismantlePreview(int ItemId, int Low, int High);

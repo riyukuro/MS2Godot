@@ -87,8 +87,17 @@ public class ItemMergeDismantleTests {
         Assert.That((p.Slots[0], r.Available), Is.EqualTo((new DismantleSlot(4, 900, 3), 0)));
         w = new ByteWriter(); w.WriteByte(2); w.WriteLong(900);
         Assert.That(ItemDismantlePacket.Read(Reader(w)).Uid, Is.EqualTo(900L));
-        w = new ByteWriter(); w.WriteByte(3); w.WriteByte(2);
-        Assert.That(ItemDismantlePacket.Read(Reader(w)).Type, Is.EqualTo((byte)2));
+        w = new ByteWriter(); w.WriteByte(3); w.WriteByte(2); w.WriteInt(77);
+        var r2 = Reader(w);
+        Assert.That((ItemDismantlePacket.Read(r2).Type, r2.Available), Is.EqualTo(((byte)2, 4)), "type 2 reads nothing after the type (:3000)");
+        // type 1: vfunc_84 reads u32 count then (i32 id, i32 amount) pairs (uiinventorydialog.cpp:2720), amount 0 rows included
+        w = new ByteWriter(); w.WriteByte(3); w.WriteByte(1); w.WriteInt(2);
+        w.WriteInt(20000001); w.WriteInt(5); w.WriteInt(20000002); w.WriteInt(0); w.WriteInt(999);
+        r2 = Reader(w); var d = ItemDismantlePacket.Read(r2);
+        Assert.That((d.Type, d.Rewards, r2.Available), Is.EqualTo(((byte)1, new[] { new DismantleReward(20000001, 5), new DismantleReward(20000002, 0) }, 4)));
+        // a count past the bytes left is bounded
+        w = new ByteWriter(); w.WriteByte(3); w.WriteByte(1); w.WriteInt(int.MaxValue); w.WriteInt(1); w.WriteInt(2);
+        Assert.That(ItemDismantlePacket.Read(Reader(w)).Rewards, Has.Length.EqualTo(1));
         w = new ByteWriter(); w.WriteByte(4); w.WriteInt(1);
         Assert.That(ItemDismantlePacket.Read(Reader(w)).Result, Is.EqualTo(1));
     }
