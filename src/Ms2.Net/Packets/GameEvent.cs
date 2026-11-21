@@ -251,9 +251,9 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (uint i = 0; i < n; i++) { r.ReadInt(); r.ReadInt(); }
                 return true;
             }
-            case "ConstructShowItem":   // :3754: id, I, W, u16 n x I
+            case "ConstructShowItem":   // :3754-3766: id, I (m_d0), W (m_d8), i16 (m_e0), u16 n x I
             {
-                r.ReadInt(); r.ReadInt(); W(r);
+                r.ReadInt(); r.ReadInt(); W(r); r.ReadShort();
                 int n = (ushort)r.ReadShort();
                 for (int i = 0; i < n; i++) r.ReadInt();
                 return true;
@@ -311,6 +311,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                     for (int j = 0; j < m; j++) Item(r);
                 }
                 r.ReadLong();
+                W(r);                   // :5075: m_e0, after the context
                 return true;
             }
             case "Rps":                 // :5210, RpsContext::Read

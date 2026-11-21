@@ -117,6 +117,42 @@ public class GameEventPacketTests
     }
 
     [Test]
+    public void ConstructShowItemReadsItsShortBeforeTheCount()
+    {
+        // GameEventConstructShowItem::vfunc_4 (gameevent.cpp:3754-3766): id, i32, unicode, i16, i16 count, count x i32
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(0); w.WriteInt(2);
+            w.WriteUnicodeString("ConstructShowItem"); w.WriteInt(13);
+            w.WriteInt(1); w.WriteUnicodeString(""); w.WriteShort(1); w.WriteShort(3);
+            w.WriteInt(50000001); w.WriteInt(50000002); w.WriteInt(50000003);
+            Shutdown(w, 7, (2000005, 4));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 7 }));
+        Assert.That(m.Shutdowns[0].Objects, Is.EqualTo(new[] { (2000005u, 4) }));
+    }
+
+    [Test]
+    public void SnowmanReadsItsStringAfterTheContext()
+    {
+        // GameEventSnowman::vfunc_4 (gameevent.cpp:5068-5075): id, SnowmanContext::Read (gameeventcontext.cpp:1160-1185:
+        // i32, unicode, u16 count of i32 x3 + two u16-counted item lists, i64), then a unicode string
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(0); w.WriteInt(2);
+            w.WriteUnicodeString("Snowman"); w.WriteInt(14);
+            w.WriteInt(14); w.WriteUnicodeString("t"); w.WriteShort(1);
+            w.WriteInt(1); w.WriteInt(2); w.WriteInt(3); w.WriteShort(1); Item(w, 20000006); w.WriteShort(0);
+            w.WriteLong(0); w.WriteUnicodeString("tail");
+            Shutdown(w, 8, (2000006, 5));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 8 }));
+        Assert.That(m.Shutdowns[0].Objects, Is.EqualTo(new[] { (2000006u, 5) }));
+    }
+
+    [Test]
     public void ReadingStopsAtANameNoClassIsRegisteredUnder()
     {
         // Create fails: the client asserts and returns, the rest unread (gameeventmanagercli.cpp:144-147)
