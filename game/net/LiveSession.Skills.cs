@@ -53,6 +53,9 @@ public partial class LiveSession
     /// </summary>
     public event System.Action<long, int> OwnStateCancelled;
 
+    /// <summary>OnSkillSync @0x141718150 (scenestategame.cpp:3361) for the own player: the HUD tests it against the own cast.</summary>
+    public event System.Action<Ms2.Net.Packets.SkillSync> OwnSkillSync;
+
     /// <summary>The own player's skill packets; false when the packet is not one of them.</summary>
     bool HandleOwnSkill(Ms2.Net.Wire.RawPacket p)
     {
@@ -84,6 +87,21 @@ public partial class LiveSession
             // players' go through the field tracker, the own one here
             var c = Ms2.Net.Packets.SkillCancel.Read(p.Reader());
             if (c.ActorId == selfObject) OwnStateCancelled?.Invoke(c.CastUid, 0x10);
+            return false;
+        }
+        else if (game.Is(p, Ms2.Net.Inbound.SkillSync))
+        {
+            // the other actors' syncs go through the field tracker, the own one to the HUD's cast
+            var s = Ms2.Net.Packets.SkillSync.Read(p.Reader());
+            if (selfObject >= 0 && s.ActorId == selfObject) OwnSkillSync?.Invoke(s);
+            return false;
+        }
+        else if (game.Is(p, Ms2.Net.Inbound.StateSkill))
+        {
+            // OnStateSkill @0x141718b80 (:3476): type 6 calls the PC's current state's vfunc_33(true), which only StateHit
+            // overrides (statehit.cpp:350, its m_bC8). STILL-OPEN: no player here has a hit state, so it is logged only.
+            var st = Ms2.Net.Packets.StateSkill.Read(p.Reader());
+            if (st.Type == 6 && selfObject >= 0 && st.ActorId == selfObject) GD.Print($"live: state skill 6, skill {st.SkillId} level {st.Level}");
             return false;
         }
         else return false;

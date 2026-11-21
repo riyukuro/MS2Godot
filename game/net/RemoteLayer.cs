@@ -11,7 +11,7 @@ namespace Ms2Godot.Net;
 /// <summary>
 /// The other players and the npcs of a live field: FieldTracker events (from the game connection) become stand-in bodies that glide to
 /// the latest UserSync position, and NpcLayer instances. The own character is skipped (the walkable Player is already in the field).
-/// The user handling is the ReplayField's, without skills or the recording's camera.
+/// The user handling is the ReplayField's, without the recording's camera; the casts are RemoteLayer.Casts.cs.
 /// </summary>
 public sealed partial class RemoteLayer : Node3D
 {
@@ -23,6 +23,9 @@ public sealed partial class RemoteLayer : Node3D
         public int ObjectId; public long CharacterId; public string Picture = "";
         public long HpCur, HpMax; public bool InBattle;         // PCBase's stat pair and battle stance (m_unk_160)
         public PcHpBar Bar;
+        public byte Gender;
+        /// <summary>The actor's cast record and skill state (RemoteLayer.Casts.cs), and the seconds its motion still plays.</summary>
+        public ActorCast Cast; public float CastLeft;
         public Func<Vector3> Anchor;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems = Array.Empty<Ms2.Net.Packets.EquipItem>();
@@ -156,7 +159,7 @@ public sealed partial class RemoteLayer : Node3D
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Root = root, Visual = visual, Anim = anim, Name = u.User.Name, Target = G(u.Position), TargetYaw = u.Rotation.Z };
-        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
+        r.ObjectId = u.ObjectId; r.Gender = u.User.Gender; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
@@ -234,6 +237,9 @@ public sealed partial class RemoteLayer : Node3D
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);
                     break;
+                case SkillUsedEvent used: OnSkillUse(used.Use); break;
+                case SkillSyncedEvent ss: OnSkillSync(ss.Sync); break;
+                case SkillCancelledEvent sc: OnSkillCancel(sc); break;
                 case NpcHpEvent hp: npcs.SetHp(hp.ObjectId, hp.Current, hp.Max); break;
                 case NpcStanceEvent st: npcs.Stance(st.ObjectId, st.Battle); break;
                 case NpcAddedEvent na: npcs.Add(na); NpcsAdded++; break;
@@ -259,6 +265,7 @@ public sealed partial class RemoteLayer : Node3D
             float sp = (a.Root.Position - a.LastPos).Length() / Mathf.Max(dt, 1e-4f);
             a.Speed = Mathf.Lerp(a.Speed, sp, FrameRate.Ease(8f / FrameRate.Reference, dt));
             a.LastPos = a.Root.Position;
+            if (CastHolds(a, dt)) continue;
             string anim = a.Speed < 25 ? "idle" : a.Speed < 220 ? "walk" : "run";
             if (anim != a.Current) { a.Anim.Play(anim, 0.15); a.Current = anim; }
         }

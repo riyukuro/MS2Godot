@@ -19,6 +19,8 @@ public sealed record NpcMovedEvent(double Time, NpcSync Sync) : ReplayEvent(Time
 
 public sealed record SkillUsedEvent(double Time, SkillUse Use) : ReplayEvent(Time);
 public sealed record SkillCancelledEvent(double Time, int ActorId, long CastUid) : ReplayEvent(Time);
+/// <summary>OnSkillSync (0x3E, scenestategame.cpp:3361): an actor's cast started or updated (<see cref="ActorCast.Sync"/>).</summary>
+public sealed record SkillSyncedEvent(double Time, SkillSync Sync) : ReplayEvent(Time);
 public sealed record SkillDamageEvent(double Time, SkillDamage Damage) : ReplayEvent(Time);
 /// <summary>An npc's health from a Stat packet: current and maximum.</summary>
 public sealed record NpcHpEvent(double Time, int ObjectId, long Current, long Max) : ReplayEvent(Time);
@@ -124,6 +126,7 @@ public sealed class FieldTracker {
                 break;
             }
             case Ms2.Net.Inbound.SkillUse: Events.Enqueue(new SkillUsedEvent(Time, SkillUse.Read(p.Reader()))); break;
+            case Ms2.Net.Inbound.SkillSync: Events.Enqueue(new SkillSyncedEvent(Time, SkillSync.Read(p.Reader()))); break;
             case Ms2.Net.Inbound.SkillCancel: { var c = SkillCancel.Read(p.Reader()); Events.Enqueue(new SkillCancelledEvent(Time, c.ActorId, c.CastUid)); break; }
             case Ms2.Net.Inbound.SkillDamage: {
                 var d = SkillDamage.Read(p.Reader());

@@ -164,8 +164,32 @@ public partial class HudScene
             player.CancelSkillSequence();
             ownCast = null;
         };
+        Action<Ms2.Net.Packets.SkillSync> sync = OwnSkillSync;
         live.OwnStateCancelled += on;
-        unwatchOwnSkill = () => live.OwnStateCancelled -= on;
+        live.OwnSkillSync += sync;
+        unwatchOwnSkill = () => { live.OwnStateCancelled -= on; live.OwnSkillSync -= sync; };
+    }
+
+    /// <summary>
+    /// OnSkillSync @0x141718150 (scenestategame.cpp:3378) for the own player: another cast than the own running one (no record,
+    /// another uid or motion, or the sequence no longer playing) starts the packet's: its motion sequence at the packet's speed
+    /// and its motion effect.
+    /// STILL-OPEN: that cast has no CSkillRecord here (CSkillRecord::Init of the request), so its attacks do not fire; the running
+    /// cast's update (m_kRot, vfunc_22(move), StateSkill::FUN_1417ec630's charge flags) is not ported.
+    /// </summary>
+    void OwnSkillSync(Ms2.Net.Packets.SkillSync s)
+    {
+        if (player == null) return;
+        bool running = ownCast != null && (object)player.SkillSequence == ownSequence;
+        if (running && ownCast.CastId == s.CastUid && ownCast.Motion == s.Motion) return;
+        ownCast = null;
+        castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
+        var motion = castMotions.Motion(s.SkillId, s.Level, s.Motion);
+        if (motion == null) return;
+        if (!string.IsNullOrEmpty(motion.SequenceName)) player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f));
+        var g = player.GlobalPosition;
+        if (!string.IsNullOrEmpty(motion.MotionEffect)) Net.LiveSession.Instance?.PlayFieldEffect(motion.MotionEffect, g, player.Visual?.Rotation.Y ?? 0);
+        GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");
     }
 
     /// <summary>Each frame: CSkillSystem::Update's cooldown part at the server tick (0 B/frame).</summary>
