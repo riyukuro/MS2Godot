@@ -124,6 +124,7 @@ static class Gms2Opcodes {
         [Inbound.Mastery] = 0xCF,
         [Inbound.HomeCommand] = 0xB9,
         [Inbound.Ugc] = 0x6D,
+        [Inbound.Gvg] = 0x6F,
         [Inbound.CharacterInfo] = 0x7A,
         [Inbound.Trade] = 0x84,
         [Inbound.GuideRecord] = 0x8B,
