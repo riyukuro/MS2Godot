@@ -120,6 +120,7 @@ public enum Inbound : ushort {
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery
     HomeCommand = 0xB7,
     Ugc = 0x6B,
+    MeretMarket = 0x6C,         // RecvOp MeretMarket (commonfiles/opcodes.h:116): CMeratMarketMan::OnBuySucceeded / OnBuyFailed (sub-modes 0x1e, 0x1f)
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
     GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates
@@ -167,6 +168,7 @@ public enum Outbound : ushort {
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
     NpcTalk = 0x22,
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
+    MeretMarket = 0x39,     // SendOp::MeretMarket (commonfiles/opcodes.h:362): CMeratMarketMan::SendMeretMarketMode30 (sub-mode 0x1e)
     ItemMerge = 0x3F,       // SendOp::ItemMerge (commonfiles/opcodes.h:368): UIItemMergeOptionDialog::Request*
     ItemDismantle = 0x5A,   // SendOp::ItemDismantle (commonfiles/opcodes.h:395): CItemBreakManager::SendItemDismantleMode*
     SystemShop = 0x65,      // SendOp::SystemShop (commonfiles/opcodes.h:406): CNetworkService::SendSystemShop / coin shop open
