@@ -100,6 +100,8 @@ public sealed class GameTables
         GuildCreatePrice = (int)k.Float("GuildCreatePrice", GuildCreatePrice);
         ShopBuyConfirmPrice = (uint)k.Float("ShopBuyConfirmPrice", ShopBuyConfirmPrice);
         ShopSellConfirmPrice = (uint)k.Float("ShopSellConfirmPrice", ShopSellConfirmPrice);
+        ExtendAutoFishMaxCount = (uint)k.Float("extendAutoFishMaxCount", ExtendAutoFishMaxCount);
+        ExtendAutoPlayInstrumentMaxCount = (uint)k.Float("extendAutoPlayInstrumentMaxCount", ExtendAutoPlayInstrumentMaxCount);
         GuildCreateMinLevel = (int)k.Float("GuildCreateMinLevel", GuildCreateMinLevel);
         PropertyProtectionTime = (int)k.Float("PropertyProtectionTime", PropertyProtectionTime);
         // Value<__int64> BlackMarketSellMinPrice / BlackMarketSellMaxPrice (read whole: an integer text), min clamped to 0 and
@@ -374,6 +376,9 @@ public sealed class GameTables
     /// unit_1402ab440_constantsblocks.cpp:1451-1452), the meso thresholds that pop a confirmation box in
     /// UIShopDialog::ShowPurchaseBill (uishopdialog.cpp:3175) and SellItem (uimessagebox.cpp:680).</summary>
     public uint ShopBuyConfirmPrice = 0, ShopSellConfirmPrice = 0;
+    /// <summary>Client::Constants extendAutoFishMaxCount (+0xdd20) and extendAutoPlayInstrumentMaxCount (+0xdd78, Define
+    /// defaults 8u: unit_1402ab440_constantsblocks.cpp:1531-1532; uisystemshopdialog.cpp:280/:332).</summary>
+    public uint ExtendAutoFishMaxCount = 8, ExtendAutoPlayInstrumentMaxCount = 8;
     /// <summary>Client::Constants BlackMarketSellMinPrice / BlackMarketSellMaxPrice (Define defaults 10 and 9900000000, the
     /// min at least 0 and the max at least the min: unit_1402ab440_constantsblocks.cpp:942-945), the register price limits
     /// (BlackMarketPageItemRegister::OnClickRegister), and BlackMarketSellEndDay (7: :1002), the sale days its texts show.</summary>
