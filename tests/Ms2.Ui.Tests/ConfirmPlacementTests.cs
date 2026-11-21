@@ -97,6 +97,41 @@ public class ConfirmPlacementTests
     }
 
     [Test]
+    public void CraftModeZeroAsksTheLockCheckOnceTheUnlockIsKnown()
+    {
+        var c = Craft(2, 0, new Owner());
+        c.ConstructionUnlocked = false;
+        Assert.That(Confirm(c, out _), Is.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen), "no lock check yet");
+        c.ConstructionUnlocked = null;
+        c.Locks = new CubeLock
+        {
+            Housing = new Ms2.Formats.World.HousingTable(System.Xml.Linq.XDocument.Parse($"<ms2><housing id=\"{ItemId}\" interiorLevel=\"3\"/></ms2>")),
+            IsFeatureEnabled = id => id == CubeLock.HousingLevelFeature,
+        };
+        Assert.That(Confirm(c, out _), Is.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen), "no unlock yet");
+        c.ConstructionUnlocked = false;
+        Assert.That(Confirm(c, out var s), Is.EqualTo(CubeCraftState.PlacementStop.Locked));
+        Assert.That(s, Is.Null);
+        Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.Locked), Is.EqualTo(0x58));
+        c.ConstructionUnlocked = true;
+        Assert.That(Confirm(c, out _), Is.Not.EqualTo(CubeCraftState.PlacementStop.Locked));
+        Assert.That(Confirm(c, out _), Is.Not.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen));
+    }
+
+    [Test]
+    public void CraftModeTwoSkipsTheLockCheck()
+    {
+        var c = Craft(2, 2, new Owner());
+        c.ConstructionUnlocked = false;
+        c.Locks = new CubeLock
+        {
+            Housing = new Ms2.Formats.World.HousingTable(System.Xml.Linq.XDocument.Parse($"<ms2><housing id=\"{ItemId}\" interiorLevel=\"3\"/></ms2>")),
+            IsFeatureEnabled = _ => true,
+        };
+        Assert.That(Confirm(c, out _), Is.Not.EqualTo(CubeCraftState.PlacementStop.Locked));
+    }
+
+    [Test]
     public void ATextureCubeNeedsTheUploadedLook()
     {
         var mesh = new ItemData { UccMesh = "m" };

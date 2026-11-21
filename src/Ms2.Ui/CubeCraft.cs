@@ -174,9 +174,13 @@ public sealed class CubeCraftState
         NoGuide,
         /// <summary>FUN_14053f870 (the item data table) has no row for the craft's item.</summary>
         NoItemData,
-        /// <summary>A craft mode other than 2: MyPC::FUN_1415302e0 (cubecraft_2.cpp:955-959) decides build notice 0x58
-        /// before the send. STILL-OPEN: it is not ported, so nothing is sent.</summary>
+        /// <summary>A craft mode other than 2 while the pc's construction unlock (MyPC m_b15d4, an input of the lock check
+        /// <see cref="CubeLock"/>) is unknown: <see cref="ConstructionUnlocked"/> null or no <see cref="Locks"/>.
+        /// STILL-OPEN: m_b15d4's setter (mypc.cpp:1365-1395) is not ported, so nothing is sent.</summary>
         InventoryCheckOpen,
+        /// <summary>A craft mode other than 2 and MyPC::FUN_1415302e0 says the item is locked (cubecraft_2.cpp:955-959):
+        /// build notice <see cref="CubeLock.LockedNotice"/>.</summary>
+        Locked,
         /// <summary>The item has a cube texture mesh and the craft's CubeItemInfo has no uploaded look: build notice
         /// <see cref="TextureNotice"/> (:961-968).</summary>
         NoTextureLook,
@@ -193,6 +197,12 @@ public sealed class CubeCraftState
         Send,
     }
 
+    /// <summary>MyPC m_b15d4, the pc's construction unlock the lock check reads; null while unknown (its setter,
+    /// mypc.cpp:1365-1395, is not ported).</summary>
+    public bool? ConstructionUnlocked;
+    /// <summary>MyPC::FUN_1415302e0 with its tables and housing state.</summary>
+    public CubeLock Locks;
+
     /// <summary>The build notice ConfirmPlacement gives in craft mode 1 (ShowBuildNotice(0x39), cubecraft_2.cpp:945).</summary>
     public const int ModeOneNotice = 0x39;
     /// <summary>The build notice for a texture cube without its look (ShowBuildNotice(0x62), cubecraft_2.cpp:966).</summary>
@@ -203,6 +213,7 @@ public sealed class CubeCraftState
     {
         PlacementStop.BuildNotice => ModeOneNotice,
         PlacementStop.NoTextureLook => TextureNotice,
+        PlacementStop.Locked => CubeLock.LockedNotice,
         _ => 0,
     };
 
@@ -210,7 +221,8 @@ public sealed class CubeCraftState
     /// PutDownLiftableAction::vfunc_2 (@0x14095ad50, actionkeyobject.cpp) through GetActiveCubeCraft, then
     /// Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:936-1063), in its order: in cube mode 1 it returns
     /// without the pc's construction guide; in craft mode 1 it shows build notice 0x39; it returns without its guide cube
-    /// or the item's data; outside craft mode 2 the inventory check comes next (STILL-OPEN); a texture-mesh item needs
+    /// or the item's data; outside craft mode 2 the lock check comes next (build notice 0x58; it needs the pc's construction unlock, STILL-OPEN until
+    /// its setter is ported); a texture-mesh item needs
     /// the craft's uploaded look (notice 0x62); craft mode 2 with an attachable item takes the attach path (STILL-OPEN);
     /// a cube in the cell takes the 0xf / same-item branch (STILL-OPEN). With the cell free it gives RequestCube 10 with
     /// the cell's key, a copy of the craft's item and <see cref="PlacementYaw"/> of the guide's yaw in
@@ -231,7 +243,11 @@ public sealed class CubeCraftState
         var item = craft.Item;
         var data = item == null ? null : itemData?.Invoke(item.ItemId);
         if (data == null) return PlacementStop.NoItemData;
-        if (craft.Mode != 2) return PlacementStop.InventoryCheckOpen;
+        if (craft.Mode != 2)
+        {
+            if (ConstructionUnlocked is not { } unlocked || Locks == null) return PlacementStop.InventoryCheckOpen;
+            if (Locks.IsLocked(item.ItemId, hasItemData: true, unlocked)) return PlacementStop.Locked;
+        }
         if (data.HasCubeTextureMesh && !item.HasUploadedLook) return PlacementStop.NoTextureLook;
         if (data.InstallAttachable != 0) return PlacementStop.AttachableOpen;
         var cubes = Owner?.Cubes;

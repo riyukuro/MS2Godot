@@ -175,11 +175,36 @@ public partial class LiveSession
     /// goes out when it gets that far.</summary>
     public Ms2.Ui.CubeCraftState.PlacementStop ConfirmPlacement()
     {
+        // the lock check only runs once the pc's construction unlock is known (STILL-OPEN until its setter is ported)
+        if (CubeCraft.ConstructionUnlocked != null) CubeCraft.Locks ??= CubeLocks();
         var stop = CubeCraft.ConfirmPlacement(Me.Dead, ItemDataOf, out var send);
         if (send != null) Send(send);
         int notice = Ms2.Ui.CubeCraftState.NoticeOf(stop);
         if (notice != 0) ShowBuildNotice(notice);
         return stop;
+    }
+
+    bool? housingLevelFeature;
+    /// <summary>MyPC::FUN_1415302e0's inputs: the housing and interior tables, the housing state, feature 0xdb and the own
+    /// trophies. The ignored construction lock list stays empty (STILL-OPEN: the event's ids are not kept).</summary>
+    Ms2.Ui.CubeLock CubeLocks()
+    {
+        var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
+        var l = new Ms2.Ui.CubeLock { State = Housing, IsGradeCleared = Achieves.IsGradeCleared, IsFeatureEnabled = HousingFeature };
+        try { l.Housing = new Ms2.Formats.World.HousingTable(packs); l.Interiors = new Ms2.Formats.World.CubeInteriorTable(packs); }
+        catch (Exception e) { GD.Print($"live: housing tables unavailable ({e.Message})"); }
+        return l;
+    }
+
+    bool HousingFeature(int id)
+    {
+        if (id != Ms2.Ui.CubeLock.HousingLevelFeature) return false;
+        if (housingLevelFeature is { } known) return known;
+        bool on = false;
+        try { on = Ms2.Ui.LobbyFeatures.IsEnabled(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), Ms2.Ui.FeatureTable.Names[id - 1]); }
+        catch (Exception e) { GD.Print($"live: feature table unavailable ({e.Message})"); }
+        housingLevelFeature = on;
+        return on;
     }
 
     /// <summary>Unk_MyPCHousingSvc::ShowBuildNotice (<see cref="BuildNotice.Show"/>): the sound through the field audio's
