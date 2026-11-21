@@ -9,7 +9,8 @@ namespace Ms2Godot.Tests;
 ///   unit_141682f80.cpp:313-335: x +1 left, y +1 forward), packed by FUN_140836250 (statesyncobject.cpp:202-220). The
 ///   receiver turns it by the sender's camera (PCBase::CalcMoveDirection, pcbase.cpp:2828-2840). With the camera turned a
 ///   quarter, the right key must still send x -1, y 0 (flags 0 + 8) and the forward key x 0, y +1 (flags 1 + 12).
-/// - The controller (NxController, MyPC's and the remotes' body): a walking body's sweeps allocate at most 8 B per move;
+/// - The controller (NxController, MyPC's and the remotes' body): a walking body's sweeps, and resting and landing
+///   bodies' (whose sweeps end in the end test), allocate at most 8 B per move;
 ///   bodies jumping on a 200 m floor box and on a mesh terrain never fall through, nor bodies crossing one-sided walls from
 ///   behind on that box.
 /// Quits with 0 when all hold, else 1.
@@ -116,6 +117,66 @@ public partial class MovementSyncCheck : Node3D
         }
         bool ok = falls == 0;
         GD.Print($"movement sync check: jump landings on a 200 m floor box, {falls} of {bodies.Count} bodies fell through (first at frame {firstFrame}): {(ok ? "OK" : "FAIL")}");
+        return ok;
+    }
+
+    // Eight bodies resting on the 200 m floor box under gravity, and eight landing on it again and again (dropped from 1 to
+    // 3 m, falling until they rest): managed bytes and time per move, after a warm-up. Each move's sweep ends overlapping the
+    // box often, so the end test runs on most of them; it must decide from the probe's own result objects. A walking body's
+    // free steps never reach it, so MoveAllocations cannot see this.
+    bool RestingAllocations()
+    {
+        var bodies = Bodies(8, -6000);
+        var vy = new float[bodies.Count];
+        var rest = new int[bodies.Count];
+        for (int i = 0; i < bodies.Count; i++) bodies[i].b.GlobalPosition = new Vector3(-6000 + i * 300, 1, -3000);
+        long restBytes = 0, landBytes = 0;
+        int restMoves = 0, landMoves = 0;
+        var swRest = new System.Diagnostics.Stopwatch();
+        var swLand = new System.Diagnostics.Stopwatch();
+        const int warm = 120, frames = 720;
+        for (int f = 0; f < warm + frames; f++)
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                var (_, nx) = bodies[i];
+                vy[i] -= 0.6f;
+                long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+                if (f >= warm) swRest.Start();
+                if ((nx.Move(new Vector3(0, vy[i], 0)) & Movement.NxController.Hit.Down) != 0) vy[i] = 0;
+                swRest.Stop();
+                if (f >= warm) { restBytes += System.GC.GetAllocatedBytesForCurrentThread() - a0; restMoves++; }
+            }
+        float lowRest = float.MaxValue;
+        foreach (var (b, _) in bodies) { lowRest = Mathf.Min(lowRest, b.GlobalPosition.Y); b.QueueFree(); }
+        bodies = Bodies(8, -6000);
+        for (int i = 0; i < bodies.Count; i++) { bodies[i].b.GlobalPosition = new Vector3(-6000 + i * 300, 100 + i * 25, -2000); vy[i] = 0; rest[i] = 0; }
+        int landings = 0;
+        float lowLand = float.MaxValue;
+        for (int f = 0; f < warm + frames; f++)
+            for (int i = 0; i < bodies.Count; i++)
+            {
+                var (b, nx) = bodies[i];
+                vy[i] -= 0.6f;
+                long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+                if (f >= warm) swLand.Start();
+                var hit = nx.Move(new Vector3(0, vy[i], 0));
+                swLand.Stop();
+                if (f >= warm) { landBytes += System.GC.GetAllocatedBytesForCurrentThread() - a0; landMoves++; }
+                lowLand = Mathf.Min(lowLand, b.GlobalPosition.Y);
+                if ((hit & Movement.NxController.Hit.Down) != 0) { vy[i] = 0; rest[i]++; }
+                if (rest[i] >= 10)
+                {
+                    landings++;
+                    rest[i] = 0;
+                    b.GlobalPosition = new Vector3(b.GlobalPosition.X, 100 + (f * 7 + i * 31) % 200, b.GlobalPosition.Z);
+                }
+            }
+        foreach (var (b, _) in bodies) b.QueueFree();
+        float perRest = restBytes / (float)restMoves, perLand = landBytes / (float)landMoves;
+        bool ok = perRest <= 8f && perLand <= 8f && lowRest > -1f && lowLand > -1f;
+        GD.Print($"movement sync check: resting bodies allocate {perRest:0.0} B per move (cap 8), {swRest.Elapsed.TotalMilliseconds * 1000 / restMoves:0.0} us per move; " +
+                 $"landing bodies ({landings} landings) {perLand:0.0} B per move (cap 8), {swLand.Elapsed.TotalMilliseconds * 1000 / landMoves:0.0} us per move; " +
+                 $"lowest feet {Mathf.Min(lowRest, lowLand):0.00}: {(ok ? "OK" : "FAIL")}");
         return ok;
     }
 
@@ -299,6 +360,9 @@ public partial class MovementSyncCheck : Node3D
         var rng = new System.Random(11);
         var line = new System.Text.StringBuilder();
         bool ok = true;
+        long wallBytes = 0;
+        int wallMoves = 0;
+        var swWall = new System.Diagnostics.Stopwatch();
         foreach (var (name, dx, jumps) in new[] { ("on a wall", 0f, false), ("between walls", 100f, false), ("on a wall with jumps", 0f, true) })
         {
             var bodies = Bodies(8, 0);
@@ -313,7 +377,13 @@ public partial class MovementSyncCheck : Node3D
                 {
                     if (jumps && f % 150 == 75) vy = 10f + (float)rng.NextDouble() * 10f;
                     vy -= 0.6f;
-                    if ((nx.Move(new Vector3(sp, vy, 0)) & Movement.NxController.Hit.Down) != 0) vy = 0;
+                    long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+                    swWall.Start();
+                    var hit = nx.Move(new Vector3(sp, vy, 0));
+                    swWall.Stop();
+                    wallBytes += System.GC.GetAllocatedBytesForCurrentThread() - a0;
+                    wallMoves++;
+                    if ((hit & Movement.NxController.Hit.Down) != 0) vy = 0;
                     if (b.GlobalPosition.Y < -1f)
                     {
                         falls++;
@@ -352,7 +422,7 @@ public partial class MovementSyncCheck : Node3D
         walls.QueueFree();
         bool ok4 = sunk == 0;
         ok &= ok4;
-        GD.Print($"movement sync check: one-sided walls crossed from behind on a 200 m floor box, {line}standing in a wall, gravity only, {sunk} of 8 fell, lowest feet {low:0.0}: {(ok ? "OK" : "FAIL")}");
+        GD.Print($"movement sync check: one-sided walls crossed from behind on a 200 m floor box, {line}standing in a wall, gravity only, {sunk} of 8 fell, lowest feet {low:0.0}; walking {wallBytes / (float)wallMoves:0.0} B per move, {swWall.Elapsed.TotalMilliseconds * 1000 / wallMoves:0.0} us per move: {(ok ? "OK" : "FAIL")}");
         return ok;
     }
 
@@ -443,10 +513,11 @@ public partial class MovementSyncCheck : Node3D
         bool spawn = SpawnCubeStands();
         bool land = Landings(floor);
         bool alloc = MoveAllocations();
+        bool restAlloc = RestingAllocations();
         bool meshLand = MeshLandings();
         bool oneSided = OneSidedMeshes();
         bool walls = OneSidedWalls(floor);
-        bool ok = dir && spawn && land && alloc && meshLand && oneSided && walls;
+        bool ok = dir && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
         GetTree().Quit(ok ? 0 : 1);
     }
 }

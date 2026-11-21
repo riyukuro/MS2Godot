@@ -260,8 +260,9 @@ public sealed class NxController
     // GetRestInfo a Dictionary), and it sweeps the body's own shapes against its own mask. Its first step frees a body that
     // starts inside something; the sweep reads that as a start overlap (see Sweep).
     readonly PhysicsTestMotionParameters3D motion = new() { MaxCollisions = 1 };
-    // the end test's probe: all its contacts are read (an end inside a one-sided triangle from behind and a solid shape
-    // reports either one deepest)
+    // the end test's probe (InsideSolid): up to 8 contacts, all read, so an end inside both a one-sided triangle from
+    // behind and a solid shape is not decided by whichever is deepest
+    readonly PhysicsTestMotionParameters3D endMotion = new() { MaxCollisions = 8 };
     readonly PhysicsTestMotionResult3D motionResult = new();
     readonly Godot.Collections.Array<Rid> motionExclude = new();
     Rid motionExcluded;
@@ -291,15 +292,33 @@ public sealed class NxController
 
     /// <summary>The body's shape at <paramref name="at"/> is inside a shape the move from <paramref name="from"/> along
     /// <paramref name="dir"/> could not pass. The SAT test (the motion test's first step, which does not miss) tells whether it
-    /// overlaps anything; what it overlaps is then read from the shape query (<see cref="EndSolid"/>, all the shapes there),
-    /// not from the test's contacts: the first step frees the shape from all it overlaps at once, so a shape deep in a
-    /// one-sided wall is pushed out of it and down out of the floor box under it, and the contacts are the ones at the freed
-    /// point. The SAT test counts a one-sided mesh triangle from behind too; the client's triangle sweeps cull back faces, so
-    /// a mesh counts only by a triangle facing the move.</summary>
+    /// overlaps anything, and its contacts what: a shape that is not a mesh, a two-sided mesh, or a one-sided mesh triangle
+    /// facing the move counts (the client's triangle sweeps cull back faces). This
+    /// reads the probe's own result objects, so it allocates nothing. Where a contact is a one-sided triangle's back face
+    /// the contacts cannot be used and the shape query decides (<see cref="EndSolid"/>, all the shapes there): the first
+    /// step frees the shape from all it overlaps at once, so a shape in a one-sided wall from behind is pushed out of it,
+    /// and down into the floor box it rests on, and the floor's contact is the one at that freed point, not at
+    /// <paramref name="at"/>. The same when the test frees the shape but reports no contact (a capsule 0.02 into a mesh
+    /// cube's top face, in SpawnCubeStands' bisection).</summary>
     bool InsideSolid(Vector3 from, Vector3 at, Vector3 dir)
     {
         var probe = dir * ProbeMotion;
-        return StartedInside(TestMotion(at, probe, CastMargin, true), probe) && EndSolid(from, at, dir, out _, out _);
+        endMotion.From = new Transform3D(Basis.Identity, at);
+        endMotion.Motion = probe;
+        endMotion.Margin = CastMargin;
+        endMotion.RecoveryAsCollision = true;
+        if (!StartedInside(PhysicsServer3D.BodyTestMotion(body.GetRid(), endMotion, motionResult), probe)) return false;
+        int n = motionResult.GetCollisionCount();
+        for (int i = 0; i < n; i++)
+        {
+            var rid = motionResult.GetColliderRid(i);
+            int shapeIdx = motionResult.GetColliderShape(i);
+            var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
+            if (PhysicsServer3D.ShapeGetType(shape) == PhysicsServer3D.ShapeType.ConcavePolygon && !TwoSided(shape) &&
+                !(FaceNormal(rid, shapeIdx, motionResult.GetCollisionPoint(i), dir) is { } f && f.Dot(dir) < 0))
+                return EndSolid(from, at, dir, out _, out _);                   // a back face: the contacts are the freed point's
+        }
+        return n > 0 || EndSolid(from, at, dir, out _, out _);
     }
 
     readonly System.Collections.Generic.Dictionary<Rid, bool> twoSided = new();
@@ -337,6 +356,7 @@ public sealed class NxController
             motionExclude.Clear();
             if (IgnoreBody.IsValid) motionExclude.Add(IgnoreBody);
             motion.ExcludeBodies = motionExclude;
+            endMotion.ExcludeBodies = motionExclude;
             motionExcluded = IgnoreBody;
         }
         return SweepTests(from, dir, length);
@@ -562,7 +582,10 @@ public sealed class NxController
     {
         var q = Query(body.CollisionMask, true);
         q.Transform = new Transform3D(Basis.Identity, at) * shapeNode.Transform;
-        var found = body.GetWorld3D().DirectSpaceState.IntersectShape(q, OverlapResults);   // perf-ok: start-overlap path only
+        // a new Array of Dictionaries per call: only on the start-overlap path (EndInside) and in InsideSolid when a probe
+        // contact is a one-sided triangle's back face, or the probe frees the shape without a contact
+        var found = body.GetWorld3D().DirectSpaceState.IntersectShape(q, OverlapResults);   // perf-ok: see above
+        using var tracked = (Godot.Collections.Array)found;                    // the underlying Array is tracked
         int n = System.Math.Min(found.Count, OverlapResults);
         for (int i = 0; i < n; i++)
         {
