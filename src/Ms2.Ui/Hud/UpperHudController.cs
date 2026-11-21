@@ -86,7 +86,7 @@ public sealed class UpperHudController : UiController
     /// <summary>OnInputModeClick (@0x141356e20, uiupperhuddialog.cpp:519-522): CUIService::ToggleDialog(0x4f65), UIKeySettingSelectDialog.</summary>
     public event Action ToggleKeySettingSelect;
 
-    /// <summary>Updates the visible keyboard/mouse mode indicator (uiupperhuddialog.cpp:287-296, FUN_14125bd20).</summary>
+    /// <summary>UIUpperHudDialog::SetInputMode (uiupperhuddialog.cpp:641-647, called from FUN_14125bd20): updates the visible keyboard/mouse mode indicator.</summary>
     public void SetMouseMode(bool mouseMode)
     {
         MouseMode = mouseMode;

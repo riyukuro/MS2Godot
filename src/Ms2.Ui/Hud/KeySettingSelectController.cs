@@ -12,16 +12,16 @@ public sealed class KeySettingSelectController : UiController
 
     public override string Movie => "uikeysettingselectdialog";
     protected override string EntityMethod => "alignment";
-    public override string TypeName => "KeySettingSelectDialog";   // GetTypeName (uikeysettingselectdialog.cpp:39)
-    protected override bool TweenEnabled => true;                  // SetTweenEnabled(1) (:21)
+    public override string TypeName => "KeySettingSelectDialog";   // GetTypeName (uikeysettingselectdialog.cpp:71)
+    protected override bool TweenEnabled => true;                  // SetTweenEnabled(1) (:58)
 
     object keyboardButton, mouseButton;
 
     /// <summary>Raised after the player picks keyboard (false) or mouse (true) mode and the preset XML has been applied
-    /// to <see cref="UiModel.Keys"/> (FUN_140c58690, uikeysettingselectdialog.cpp:89-123).</summary>
+    /// to <see cref="UiModel.Keys"/> (FUN_140c58690, uikeysettingselectdialog.cpp:101-123).</summary>
     public event Action<bool> ModeSelected;
 
-    /// <summary>OnLoadComplete (uikeysettingselectdialog.cpp:54-79): binds m_button1 (keyboard) and m_button2 (mouse)
+    /// <summary>OnLoadComplete (uikeysettingselectdialog.cpp:84-98): binds m_button1 (keyboard) and m_button2 (mouse)
     /// and enables both iff CKeyTable::GetLocked() == 0.</summary>
     public override void OnLoadComplete()
     {
@@ -41,12 +41,11 @@ public sealed class KeySettingSelectController : UiController
         }
     }
 
-    /// <summary>FUN_140c58690 (uikeysettingselectdialog.cpp:89-123): loads DefaultKey.xml (keyboard) or
+    /// <summary>FUN_140c58690 (uikeysettingselectdialog.cpp:101-123): loads DefaultKey.xml (keyboard) or
     /// DefaultMouseControlKey.xml (mouse) with send-to-server, notifies the host for mouse-control state / option
     /// refresh / quick-slot refresh, and closes.</summary>
     void SelectMode(bool mouseControl)
     {
-        if (Model.Keys?.Locked == true || Model.ServerKeys?.Locked == true) return;
         Model.Keys?.LoadDefaultKeys(
             mouseControl ? KeyTable.DefaultMouseControlKeyPath : KeyTable.DefaultKeyPath,
             sendToServer: true);
