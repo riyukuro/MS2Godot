@@ -345,9 +345,13 @@ public class FieldObjectStatesTests
         var l = new LiftableObjects();
         for (int i = 0; i < 20; i++) Liftable(l, "l" + i, i * 400);
         var at = new Vec3(4000, 0, 0);
-        l.Poll(at); l.Poll(new Vec3(0, 0, 0));
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) { l.Poll(at); l.Poll(new Vec3(0, 0, 0)); }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        long bytes = 0;
+        for (int round = 0; round < 2; round++)          // measured on the second round: the first pays the JIT tiering
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++) { l.Poll(at); l.Poll(new Vec3(0, 0, 0)); }
+            bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        Assert.That(bytes, Is.EqualTo(0));
     }
 }
