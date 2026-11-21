@@ -11,18 +11,21 @@ public partial class HudScene
 
     /// <summary>
     /// PCBase::vfunc_111 (@0x141674c60, pcbase.cpp:2844) finds UIDamageText (0x4e32) and calls FUN_141911e90 with the
-    /// target: an npc's number goes to <see cref="DamageText.OnNpc"/>, the own player's to <see cref="DamageText.OnPlayer"/>.
+    /// target: an npc's number goes to <see cref="DamageText.OnNpc"/>, another player's to <see cref="DamageText.OnPc"/>,
+    /// the own player's to <see cref="DamageText.OnPlayer"/>; the caster is the local player when it is the own object.
     /// STILL-OPEN: vfunc_111's DPS log (UIDPSDialog::AddDamage) is not ported.
     /// </summary>
     void WatchDamageNumbers()
     {
         unwatchDamage?.Invoke();
         if (Net.LiveSession.Instance is not { } live) return;
-        Action<DamageNumber, FieldNpcs.Placed> on = (n, npc) =>
+        Action<DamageNumber, FieldNpcs.Placed, DamageTarget> on = (n, npc, pc) =>
         {
             if (damageText == null) return;
+            bool casterMe = n.CasterId == live.SelfObjectId;
             if (n.TargetId == live.SelfObjectId) damageText.OnPlayer(n.Value, n.Grade);
-            else if (npc != null) damageText.OnNpc(npc, n.Value, n.Grade);
+            else if (npc != null) damageText.OnNpc(npc, n.Value, n.Grade, casterMe);
+            else if (pc != null) damageText.OnPc(pc, n.Value, n.Grade, casterMe);
         };
         live.DamageNumbered += on;
         unwatchDamage = () => live.DamageNumbered -= on;

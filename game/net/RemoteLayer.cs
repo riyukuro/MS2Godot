@@ -31,6 +31,8 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>The actor's cast record and skill state (RemoteLayer.Casts.cs), and the seconds its motion still plays.</summary>
         public ActorCast Cast; public float CastLeft;
         public Func<Vector3> Anchor;
+        /// <summary>The player as a damage number's target (its Eff_Damage point, UIDamageText m_strDamageNode).</summary>
+        public Ui.DamageTarget Damage;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems = Array.Empty<Ms2.Net.Packets.EquipItem>();
         /// <summary>FieldAddUser's worn equips (the items ItemUpdate reads again).</summary>
@@ -130,9 +132,9 @@ public sealed partial class RemoteLayer : Node3D
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
 
-    /// <summary>A damage number to show (UIDamageText::FUN_141911e90): the number and the npc hit, null when the target is
-    /// not an npc.</summary>
-    public Action<Ms2.Ui.Hud.DamageNumber, World.FieldNpcs.Placed> Numbered;
+    /// <summary>A damage number to show (UIDamageText::FUN_141911e90): the number, the npc hit (null when the target is
+    /// not an npc) and the other player hit (null when the target is not one).</summary>
+    public Action<Ms2.Ui.Hud.DamageNumber, World.FieldNpcs.Placed, Ui.DamageTarget> Numbered;
     readonly List<Ms2.Ui.Hud.DamageNumber> numbers = new();
     Func<int, int> pcMask;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
@@ -140,7 +142,6 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>
     /// PCBase::FUN_141671c20's vfunc_111 per hit (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
     /// show test (FUN_141913bd0) with the battle options; the party mask is IsMemberByCharId on a player's character.
-    /// STILL-OPEN: a number on another player (DamageText has no remote-PC target yet) is dropped.
     /// </summary>
     void ShowNumbers(SkillDamage d)
     {
@@ -150,7 +151,7 @@ public sealed partial class RemoteLayer : Node3D
         var o = GameOptions.Current?.BattleOption ?? defaultBattle;
         foreach (var n in numbers)
             if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask))
-                Numbered(n, npcs.Placed(n.TargetId));
+                Numbered(n, npcs.Placed(n.TargetId), users.TryGetValue(n.TargetId, out var r) ? r.Damage : null);
     }
 
     int PcMask(int id) => !users.TryGetValue(id, out var r) ? 0
@@ -241,6 +242,7 @@ public sealed partial class RemoteLayer : Node3D
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
+        r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);
         pc.Spawn();
         // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,
         // a change from the ctor's 0): either runs UpdateHpBar, so a member's bar is made active at once (not shown)

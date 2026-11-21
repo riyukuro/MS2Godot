@@ -236,7 +236,7 @@ public partial class LiveSession : Node
     public event Action<long> SelfDamaged;
     /// <summary>A damage number the field's skill damage records show (RemoteLayer, UIDamageText's show test passed): the
     /// number and the npc it is on (null when the target is not an npc).</summary>
-    public event Action<Ms2.Ui.Hud.DamageNumber, FieldNpcs.Placed> DamageNumbered;
+    public event Action<Ms2.Ui.Hud.DamageNumber, FieldNpcs.Placed, Ui.DamageTarget> DamageNumbered;
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
     readonly HashSet<int> regionSkills = new();
@@ -716,7 +716,7 @@ public partial class LiveSession : Node
         regionSkills.Clear(); RegionSkillLog.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
-        remote.Numbered = (n, npc) => DamageNumbered?.Invoke(n, npc);
+        remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         var kinds = Kinds();
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
