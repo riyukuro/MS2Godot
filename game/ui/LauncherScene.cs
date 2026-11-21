@@ -55,6 +55,8 @@ public partial class LauncherScene : Control
 
     string shotDir;
     int generation;
+    // owned by the scene: cancelled when it leaves the tree, so a pending probe stops and writes nothing to freed controls
+    readonly CancellationTokenSource life = new();
 
     public override void _Ready()
     {
@@ -296,9 +298,15 @@ public partial class LauncherScene : Control
         var tasks = new List<Task>(rows.Count);
         for (int i = 0; i < rows.Count; i++) tasks.Add(Probe(i, gen));
         await Task.WhenAll(tasks);
-        if (gen != generation) return;
+        if (gen != generation || !IsInstanceValid(refresh) || !IsInstanceValid(summary)) return;
         refresh.Disabled = false;
         summary.Text = rows.Count == 0 ? "" : $"{rows.Count} server{(rows.Count == 1 ? "" : "s")} saved.";
+    }
+
+    public override void _ExitTree()
+    {
+        generation++;
+        life.Cancel();
     }
 
     async Task Probe(int index, int gen)
@@ -309,7 +317,8 @@ public partial class LauncherScene : Control
         bool reachable = false;
         try
         {
-            using var cancel = new CancellationTokenSource(ProbeMilliseconds);
+            using var cancel = CancellationTokenSource.CreateLinkedTokenSource(life.Token);
+            cancel.CancelAfter(ProbeMilliseconds);
             using var client = new System.Net.Sockets.TcpClient();
             await client.ConnectAsync(entry.Host, entry.Port, cancel.Token).ConfigureAwait(true);
             reachable = client.Connected;
