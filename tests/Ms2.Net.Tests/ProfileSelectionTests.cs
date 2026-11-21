@@ -66,6 +66,9 @@ public class ProfileSelectionTests {
         using (r) {
             Assert.That((ushort) r.ReadShort(), Is.EqualTo(ProtocolProfile.Gms2.Number(Outbound.ResponseVersion)));
             Assert.That(r.ReadUInt(), Is.EqualTo(12u));
+            Assert.That(r.ReadUShort(), Is.EqualTo(47));   // upstream ResponseVersionHandler: 47, then the locale byte NA
+            Assert.That(r.ReadByte(), Is.EqualTo(2));
+            Assert.That(r.Length - r.Position, Is.EqualTo(0));
         }
     }
 }

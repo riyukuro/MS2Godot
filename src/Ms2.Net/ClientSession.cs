@@ -68,7 +68,7 @@ public sealed class ClientSession {
     public async Task RunAsync(CancellationToken ct = default, ResponseVersion hello = null) {
         await channel.ReadHandshakeAsync(ct);
         ReceivedCount = 1;
-        await channel.SendAsync(hello ?? new ResponseVersion(Handshake.ClientVersion(channel.Profile)), ct);
+        await channel.SendAsync(hello ?? ResponseVersion.For(channel.Profile), ct);
         while (!ct.IsCancellationRequested) {
             var p = await channel.ReadPacketAsync(ct);
             ReceivedCount++;

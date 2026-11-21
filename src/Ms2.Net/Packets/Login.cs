@@ -6,16 +6,40 @@ namespace Ms2.Net.Packets;
 
 // ---- outbound ----
 
-/// <summary>Outbound 0x01: u32 version, u16 feature level, u16 region (CNetworkService::SendResponseVersion; region KR 0, JP 1, NA 2, CN 3).</summary>
-public sealed record ResponseVersion(uint Version = 2525, ushort FeatureLevel = 1, ushort Region = 0) : IOutPacket {
+/// <summary>
+/// Outbound 0x01: u32 version, u16 feature level, u16 region (CNetworkService::SendResponseVersion; region KR 0, JP 1, NA 2, CN 3).
+/// GMS2 (upstream ResponseVersionHandler.cs:11-13): u32 version, i16 47, and the locale as one byte, NA 2.
+/// </summary>
+public sealed record ResponseVersion(uint Version = 2525, ushort FeatureLevel = 1, ushort Region = 0) : IProfileOutPacket {
     public Outbound Op => Outbound.ResponseVersion;
+    /// <summary>The answer a client of this profile gives the hello: KMS2 2525 / 1 / KR, GMS2 12 / 47 / NA.</summary>
+    public static ResponseVersion For(ProtocolProfile profile) => profile.IsGms2 ? new ResponseVersion(profile.Version, 47, 2) : new ResponseVersion(profile.Version);
     public void Write(ByteWriter w) { w.WriteInt((int) Version); w.WriteShort((short) FeatureLevel); w.WriteShort((short) Region); }
+    public void Write(ByteWriter w, ProtocolProfile profile) {
+        if (!profile.IsGms2) { Write(w); return; }
+        w.WriteInt((int) Version); w.WriteShort((short) FeatureLevel); w.WriteByte((byte) Region);
+    }
     public static ResponseVersion Read(ByteReader r) { var p = new ResponseVersion(r.ReadUInt(), r.ReadUShort(), r.ReadUShort()); r.ExpectEnd("ResponseVersion"); return p; }
+    public static ResponseVersion Read(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return Read(r);
+        var p = new ResponseVersion(r.ReadUInt(), r.ReadUShort(), r.ReadByte()); r.ExpectEnd("ResponseVersion"); return p;
+    }
 }
 
 /// <summary>Outbound 0x03, variant A (WriteLoginA), sent by the in-game login dialogs (UILoginDialog, UIServerListDialog) with the typed id and password and a region string: the variant for a private server. u8 type (1 server list, 2 char list), unicode user, unicode password, i16 login type, 16 byte machine id, i32, i32, narrow language.</summary>
-public sealed record ResponseLogin(byte Type, string User, string Password, short LoginType, byte[] MachineId, int MachineValue, int ClientValue, string Language) : IOutPacket {
+public sealed record ResponseLogin(byte Type, string User, string Password, short LoginType, byte[] MachineId, int MachineValue, int ClientValue, string Language) : IProfileOutPacket {
     public Outbound Op => Outbound.ResponseLogin;
+    /// <summary>GMS2 (upstream LoginHandler.cs:28-34): u8 command, unicode user, unicode password, i16 (1), 16 byte machine id; nothing after it.</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile) {
+        if (!profile.IsGms2) { Write(w); return; }
+        if (MachineId.Length != 16) throw new ArgumentException("machine id must be 16 bytes");
+        w.WriteByte(Type); w.WriteUnicodeString(User); w.WriteUnicodeString(Password); w.WriteShort(LoginType); w.WriteBytes(MachineId);
+    }
+    public static ResponseLogin Read(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return Read(r);
+        var p = new ResponseLogin(r.ReadByte(), r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadShort(), r.ReadBytes(16), 0, 0, null);
+        r.ExpectEnd("ResponseLogin"); return p;
+    }
     public void Write(ByteWriter w) {
         w.WriteByte(Type); w.WriteUnicodeString(User); w.WriteUnicodeString(Password); w.WriteShort(LoginType);
         if (MachineId.Length != 16) throw new ArgumentException("machine id must be 16 bytes");
@@ -81,7 +105,7 @@ public sealed record RequestQuit(byte Mode) : IOutPacket {
 
 // ---- inbound ----
 
-/// <summary>Inbound 0x0A. The first fields are common to every outcome; the tail differs (restricted accounts carry ban times) and is kept raw.</summary>
+/// <summary>Inbound 0x0A. GMS2 sends the same head (upstream LoginResultPacket.cs:9-24: u8 state, i32, string, i64 account, i64 sync time, i32 time base, u8 zone, u8 block type), so one read serves both. The first fields are common to every outcome; the tail differs (restricted accounts carry ban times) and is kept raw.</summary>
 public sealed record LoginResult(byte State, int Const1, string Message, long AccountId, long SyncTime, int TimeBase, byte TimeZone, byte BlockType, byte[] Tail) {
     public bool Success => State == 0;
     public static LoginResult Read(ByteReader r) {
@@ -186,6 +210,25 @@ public sealed record ServerList(string EnvName, List<ServerListChannelEntry> Ser
     /// (state 0x620000d); at 0 it logs and shows message box 0x20e. So an empty list is a refusal.
     /// </summary>
     public bool Usable => Servers.Count > 0;
+    /// <summary>
+    /// GMS2 (upstream ServerListPacket.cs:20-40): u8 command (0 error, 1 load), then for load i32 server id, unicode name, u8 4, u16 n x
+    /// (unicode address, u16 port), i32 100, u16 n x u16 channel. One server, no type name. An error command is an empty list.
+    /// </summary>
+    public static ServerList Read(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return Read(r);
+        byte command = r.ReadByte();
+        if (command == 0) { r.ExpectEnd("ServerList"); return new ServerList("", new List<ServerListChannelEntry>()); }
+        if (command != 1) throw new InvalidDataException($"ServerList command {command}");
+        int id = r.ReadInt(); string name = r.ReadUnicodeString(); r.ReadByte();
+        var addr = new (string, ushort)[r.ReadUShort()];
+        for (int j = 0; j < addr.Length; j++) addr[j] = (r.ReadUnicodeString(), r.ReadUShort());
+        int traffic = r.ReadInt();
+        var ch = new ushort[r.ReadUShort()];
+        for (int j = 0; j < ch.Length; j++) ch[j] = r.ReadUShort();
+        r.ExpectEnd("ServerList");
+        return new ServerList("", new List<ServerListChannelEntry> { new(id, name, 0, addr, traffic, ch) });
+    }
+
     public static ServerList Read(ByteReader r) {
         string env = r.ReadString(); int n = r.ReadByte();
         var list = new List<ServerListChannelEntry>();

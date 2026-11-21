@@ -34,6 +34,9 @@ public sealed class ProtocolProfile {
     /// </summary>
     public static ProtocolProfile ForVersion(uint version) => version == Kms2525.Version ? Kms2525 : version == Gms2.Version ? Gms2 : null;
 
+    /// <summary>True for the GMS2 profile: the packets whose layout differs from KMS2 branch on this (the upstream Maple2 server's layouts).</summary>
+    public bool IsGms2 => this == Gms2;
+
     /// <summary>The versions <see cref="ForVersion"/> knows, for messages.</summary>
     public static string KnownVersions => $"{Kms2525.Name}, {Gms2.Name}";
 

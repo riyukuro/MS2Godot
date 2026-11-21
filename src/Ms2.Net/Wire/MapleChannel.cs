@@ -14,6 +14,11 @@ public interface IOutPacket {
     void Write(ByteWriter w);
 }
 
+/// <summary>An outbound packet whose layout depends on the protocol profile; the channel writes it with its own profile.</summary>
+public interface IProfileOutPacket : IOutPacket {
+    void Write(ByteWriter w, ProtocolProfile profile);
+}
+
 /// <summary>
 /// Frames and ciphers over any Stream (a socket stream in the game, a memory pipe in tests). It never opens a connection.
 /// Frame = u16 seqbase + i32 len + len encrypted bytes; the opcode is inside the encrypted part.
@@ -109,5 +114,6 @@ public sealed class MapleChannel {
         } finally { sendLock.Release(); }
     }
 
-    public Task SendAsync(IOutPacket packet, CancellationToken ct = default) => SendAsync(packet.Op, packet.Write, ct);
+    public Task SendAsync(IOutPacket packet, CancellationToken ct = default) =>
+        packet is IProfileOutPacket pp ? SendAsync(packet.Op, w => pp.Write(w, Profile), ct) : SendAsync(packet.Op, packet.Write, ct);
 }
