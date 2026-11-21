@@ -238,7 +238,7 @@ public class SkillFollowTests
         var m = lv.Motions[0];
         Assert.That(s.KeyIsDown && !string.IsNullOrEmpty(m.SelfInputCombo), Is.True);
         Assert.That(SkillFollow.HoldsMove(s), Is.True);
-        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Resource/Model/Character", "female/female.xml")));
+        var x = Ms2.Formats.Text.PackXml.Read(packs, "Resource/Model/Character", "female/female.xml");   // KMS2_DEV has a BOM
         var seq = x.Root!.Elements().First(e => string.Equals(e.Name.LocalName, m.SequenceName, StringComparison.OrdinalIgnoreCase));
         float Key(string text) => seq.Elements("key").Where(k => string.Equals((string)k.Attribute("text"), text, StringComparison.OrdinalIgnoreCase))
             .Select(k => float.Parse((string)k.Attribute("time")!, System.Globalization.CultureInfo.InvariantCulture)).DefaultIfEmpty(-1).First();
