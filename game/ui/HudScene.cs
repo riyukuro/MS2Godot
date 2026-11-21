@@ -1485,6 +1485,7 @@ public partial class HudScene : Node, IUiStageHost
         if (TradeKeys(k)) return true;
         if (StoreKeys(k)) return true;
         if (ItemLockKeys(k)) return true;
+        if (ItemBreakKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
@@ -2712,6 +2713,7 @@ public partial class HudScene : Node, IUiStageHost
         c.ToggleDialog += id =>
         {
             if (id == ItemLockDialogController.UiId) ToggleItemLock();
+            else if (id == ItemBreakDialogController.UiId) ToggleItemBreak(false);
             else GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         };
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
@@ -2719,11 +2721,14 @@ public partial class HudScene : Node, IUiStageHost
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;
         c.Shop = () => ShopOpen ? shop : null;
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : 0;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : 0;
         c.BankAllowed = item => store?.Storable(item) ?? true;       // the open bank heads the right-click dialogs (0x4e47)
         c.BankDeposit = item => store?.DepositFromInventory(item);
         c.LockSelect = item => itemLock?.SelectFromInventory(item);
         c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
+        c.BreakCanBreak = item => itemBreak?.Mgr?.CanBreakItem(item) ?? false;
+        c.BreakAdd = item => itemBreak?.AddFromInventory(item);
+        c.BreakSlotDropped = (uid, mine) => itemBreak?.DroppedOnInventory(uid, mine);
         c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
         c.NoticeText += SystemNoticeText;
         BindBoxAnswers();
@@ -3188,6 +3193,7 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
+        if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72

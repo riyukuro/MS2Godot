@@ -85,6 +85,8 @@ public partial class LiveSession : Node
     }
     /// <summary>The item lock (CItemLockManager): the ItemLock packets (0xDB) and the RequestItemLock sends (0x87).</summary>
     public readonly ItemLockBook LockBook = new();
+    /// <summary>CItemBreakManager: the dismantle list and its sends; the HUD wires its delegates when the dialog opens.</summary>
+    public readonly Ms2.Ui.Items.ItemBreakManager BreakManager = new();
     public void SendLock(Ms2.Net.Wire.IOutPacket packet)
     {
         if (game != null) Send(packet);
