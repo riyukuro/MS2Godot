@@ -181,6 +181,13 @@ public partial class LiveSession
         if (send != null) Send(send);
         int notice = Ms2.Ui.CubeCraftState.NoticeOf(stop);
         if (notice != 0) ShowBuildNotice(notice);
+        if (stop == Ms2.Ui.CubeCraftState.PlacementStop.SameItemHeld)
+        {
+            // FUN_141275260(0x6c9, 1, 1), then PlaySystemSound(DAT_143acf6b8, "") (cubecraft_2.cpp:1041-1042)
+            string text = MessageBoxData.Common(Ms2.Ui.CubeCraftState.SameItemHeldText);
+            if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text);
+            FieldAudio.Instance?.PlayUi(BuildNotice.NoBuild);
+        }
         return stop;
     }
 

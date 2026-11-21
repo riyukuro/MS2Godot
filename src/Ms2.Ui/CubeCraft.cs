@@ -187,13 +187,20 @@ public sealed class CubeCraftState
         /// <summary>Craft mode 2 and an attachable item (install attachable, :971-974): FUN_1410aded0. STILL-OPEN: not
         /// ported, nothing is sent.</summary>
         AttachableOpen,
-        /// <summary>A cube is in the cell (GetCubeAtPoint, :970): RequestCube 0xf when its item differs (:1011-1038), else
-        /// the held-lift sound or build notice 0x35 (:1040-1055). STILL-OPEN: the cube map keeps no cube items, so
-        /// neither is decided and nothing is sent.</summary>
+        /// <summary>A cube is in the cell but the cube map does not know its item (<see cref="ICubeCells.TryCubeItemAtKey"/>
+        /// false), so the 0xf / same-item branch (:1007-1049) is not decided and nothing is sent.</summary>
         CubeInCellOpen,
+        /// <summary>The cell's cube holds the same item (Cube::GetItemId and CubeItemInfo::IsSameItem, :1007) and the pc's
+        /// craft is in mode 2 (PC::FUN_141659690, pc.cpp:1854): common notice <see cref="SameItemHeldText"/>
+        /// (FUN_141275260(0x6c9, 1, 1)) then the NoBuild sound (PlaySystemSound(DAT_143acf6b8), :1039-1043).</summary>
+        SameItemHeld,
+        /// <summary>The cell's cube holds the same item outside craft mode 2: build notice <see cref="SameItemNotice"/>
+        /// (:1044-1047).</summary>
+        SameItem,
         /// <summary>The owner has no cube map to look the cell up in (ours: the client always has its service).</summary>
         NoCubeMap,
-        /// <summary>RequestCube 10 (<see cref="CubePlaceRequest"/>) is to be sent.</summary>
+        /// <summary>RequestCube 10, or 0xf for a cell holding another item (<see cref="CubePlaceRequest"/>), is to be
+        /// sent.</summary>
         Send,
     }
 
@@ -207,6 +214,12 @@ public sealed class CubeCraftState
     public const int ModeOneNotice = 0x39;
     /// <summary>The build notice for a texture cube without its look (ShowBuildNotice(0x62), cubecraft_2.cpp:966).</summary>
     public const int TextureNotice = 0x62;
+    /// <summary>The build notice for the same item in the cell outside craft mode 2 (ShowBuildNotice(0x35),
+    /// cubecraft_2.cpp:1046).</summary>
+    public const int SameItemNotice = 0x35;
+    /// <summary>The common string of the same-item notice in craft mode 2 (FUN_141275260(0x6c9, 1, 1),
+    /// cubecraft_2.cpp:1041).</summary>
+    public const int SameItemHeldText = 0x6c9;
 
     /// <summary>The build notice (<see cref="BuildNotice.Show"/>) ConfirmPlacement gives at a stop, 0 for none.</summary>
     public static int NoticeOf(PlacementStop stop) => stop switch
@@ -214,6 +227,7 @@ public sealed class CubeCraftState
         PlacementStop.BuildNotice => ModeOneNotice,
         PlacementStop.NoTextureLook => TextureNotice,
         PlacementStop.Locked => CubeLock.LockedNotice,
+        PlacementStop.SameItem => SameItemNotice,
         _ => 0,
     };
 
@@ -223,10 +237,12 @@ public sealed class CubeCraftState
     /// without the pc's construction guide; in craft mode 1 it shows build notice 0x39; it returns without its guide cube
     /// or the item's data; outside craft mode 2 the lock check comes next (build notice 0x58; it needs the pc's construction unlock, STILL-OPEN until
     /// its setter is ported); a texture-mesh item needs
-    /// the craft's uploaded look (notice 0x62); craft mode 2 with an attachable item takes the attach path (STILL-OPEN);
-    /// a cube in the cell takes the 0xf / same-item branch (STILL-OPEN). With the cell free it gives RequestCube 10 with
-    /// the cell's key, a copy of the craft's item and <see cref="PlacementYaw"/> of the guide's yaw in
-    /// <paramref name="send"/>; every other stop leaves it null and sends nothing.
+    /// the craft's uploaded look (notice 0x62); craft mode 2 with an attachable item takes the attach path (STILL-OPEN).
+    /// With the cell free it gives RequestCube 10 with the cell's key, a copy of the craft's item and
+    /// <see cref="PlacementYaw"/> of the guide's yaw in <paramref name="send"/>. A cube in the cell holding another item
+    /// (another item id, or not CubeItemInfo::IsSameItem) gives RequestCube 0xf with the same key, the copy and
+    /// <see cref="SnappedYaw"/> (this branch does not normalize, :1021-1030); the same item gives <see cref="PlacementStop.SameItemHeld"/>
+    /// in craft mode 2, else build notice 0x35. Every other stop leaves <paramref name="send"/> null and sends nothing.
     /// <para>Cube mode 1 never gets past the first check: its construction guide (the pc's guide slot 0) is not ported.
     /// That guide's own yaw plus the item's staticAngle (:981-985) is the other source of the rotation.</para>
     /// The caller shows a notice stop's build notice (<see cref="NoticeOf"/>, ShowBuildNotice).
@@ -253,11 +269,21 @@ public sealed class CubeCraftState
         var cubes = Owner?.Cubes;
         if (cubes == null) return PlacementStop.NoCubeMap;
         int key = CubeCell.Key(craft.Cell);
-        if (cubes.HasCubeAtKey(key)) return PlacementStop.CubeInCellOpen;
-        var copy = new CubeItemInfo { ItemId = item.ItemId, InstanceId = item.InstanceId, Count = item.Count, Look = item.Look };
-        send = new CubePlaceRequest(key, copy, PlacementYaw(craft.GuideYaw));
+        if (cubes.HasCubeAtKey(key))
+        {
+            if (!cubes.TryCubeItemAtKey(key, out var inCell) || inCell == null) return PlacementStop.CubeInCellOpen;
+            if (inCell.ItemId == item.ItemId && inCell.IsSameItem(item))
+                return craft.Mode == 2 ? PlacementStop.SameItemHeld : PlacementStop.SameItem;
+            send = new CubePlaceRequest(key, CopyOf(item), SnappedYaw(craft.GuideYaw), CubePlaceRequest.ReplaceMode);
+            return PlacementStop.Send;
+        }
+        send = new CubePlaceRequest(key, CopyOf(item), PlacementYaw(craft.GuideYaw));
         return PlacementStop.Send;
     }
+
+    /// <summary>CubeItemInfo's copy ctor (kInfo(*m_spItem), :996 and :1025).</summary>
+    static CubeItemInfo CopyOf(CubeItemInfo item) =>
+        new() { ItemId = item.ItemId, InstanceId = item.InstanceId, Count = item.Count, Look = item.Look };
 
     /// <summary>
     /// The yaw ConfirmPlacement sends outside cube mode 1 (cubecraft_2.cpp:987-997): the guide's rotation (set by
@@ -266,13 +292,17 @@ public sealed class CubeCraftState
     /// sign (the compare in double) and NormalizeDegrees. The owner's x and y angles are taken as 0 (the pc only turns
     /// about z), so the matrix is MakeZRotation(yaw * -0.017453292) alone; efd's atan2 is taken as the exact one.
     /// </summary>
-    public static float PlacementYaw(float guideYaw)
+    public static float PlacementYaw(float guideYaw) => NormalizeDegrees(SnappedYaw(guideYaw));
+
+    /// <summary>The guide's yaw read back and snapped to 90 degrees away from 0 (<see cref="PlacementYaw"/> without
+    /// NormalizeDegrees): what RequestCube 0xf sends (cubecraft_2.cpp:1017-1024).</summary>
+    public static float SnappedYaw(float guideYaw)
     {
         float a = guideYaw * -0.017453292f;
         float z = MathF.Atan2(MathF.Sin(a), MathF.Cos(a)) * -57.295776f;
         if ((double)z < 0.0) z = (float)(int)((z - 89f) / 90f) * 90f;
         else z = (float)(int)((z + 89f) / 90f) * 90f;
-        return NormalizeDegrees(z);
+        return z;
     }
 
     /// <summary>NormalizeDegrees (@0x140291b70, commonfiles/commonutil.cpp:1518-1525): truncated to an int, % 360, a

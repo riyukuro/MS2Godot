@@ -120,6 +120,23 @@ public class CubePacketTests
     }
 
     [Test]
+    public void IsSameItemComparesTheItemIdThenTheUploadedLook()
+    {
+        // CubeItemInfo::IsSameItem (@0x1408b38c0, ugcmapoptions.cpp:142-166)
+        static CubeItemInfo I(int id, long uid = 0) => new() { ItemId = id, Look = uid == 0 ? null : new UgcLook { Uid = uid } };
+        Assert.That(I(7).IsSameItem(null), Is.False);
+        Assert.That(I(7).IsSameItem(I(7)), Is.True);
+        Assert.That(I(7).IsSameItem(I(8)), Is.False);
+        Assert.That(new CubeItemInfo().IsSameItem(new CubeItemInfo()), Is.True, "two cleared items");
+        Assert.That(I(7).IsSameItem(I(7, 5)), Is.False, "only the other has a look");
+        Assert.That(I(7, 5).IsSameItem(I(7)), Is.False, "only this one has a look");
+        Assert.That(I(7, 5).IsSameItem(I(7, 5)), Is.True);
+        Assert.That(I(7, 5).IsSameItem(I(7, 6)), Is.False);
+        Assert.That(I(7, 5).IsSameItem(I(8, 5)), Is.False);
+        Assert.That(I(7).IsSameItem(new CubeItemInfo { ItemId = 7, Look = new UgcLook() }), Is.True, "a look with uid 0 is no uploaded look");
+    }
+
+    [Test]
     public void ALookInState1WritesAnEmptyUrl()
     {
         // CUgcItemLook::Write (ugcdef.cpp:1532-1538): m_n60 == 1 writes "" for the url

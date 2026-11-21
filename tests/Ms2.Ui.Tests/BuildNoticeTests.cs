@@ -132,9 +132,10 @@ public class BuildNoticeTests
         Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.BuildNotice), Is.EqualTo(0x39));
         Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.NoTextureLook), Is.EqualTo(0x62));
         Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.Locked), Is.EqualTo(0x58));
+        Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.SameItem), Is.EqualTo(0x35));
         foreach (CubeCraftState.PlacementStop s in System.Enum.GetValues(typeof(CubeCraftState.PlacementStop)))
             if (s is not (CubeCraftState.PlacementStop.BuildNotice or CubeCraftState.PlacementStop.NoTextureLook
-                or CubeCraftState.PlacementStop.Locked))
+                or CubeCraftState.PlacementStop.Locked or CubeCraftState.PlacementStop.SameItem))
                 Assert.That(CubeCraftState.NoticeOf(s), Is.Zero, s.ToString());
     }
 }

@@ -64,6 +64,17 @@ public sealed class CubeGrid : global::Ms2.Ui.ICubeCells
     /// STILL-OPEN: the cubes whose removal timer runs (f1f8) count as none there; cubes placed live are not added.</summary>
     public bool HasCubeAtKey(int key) => keys.Contains(key);
 
+    /// <summary>A map cube's item: FUN_1410cf160 (cubemapinformationservice_3.cpp:4045) makes it with no CubeItemInfo, so
+    /// FUN_1410c1330's CopyFrom(0) leaves it cleared (item id 0, no look; ugcmapoptions.cpp:103-127, CopyFrom and Clear). Shared, read only.</summary>
+    static readonly global::Ms2.Net.Packets.CubeItemInfo MapCubeItem = new();
+
+    /// <summary>GetCubeByKey's item for a map cube (<see cref="MapCubeItem"/>).</summary>
+    public bool TryCubeItemAtKey(int key, out global::Ms2.Net.Packets.CubeItemInfo item)
+    {
+        item = keys.Contains(key) ? MapCubeItem : null;
+        return item != null;
+    }
+
     /// <summary>The cube's entity position (MS2 axes).</summary>
     public Vector3 Position((int, int, int) key) => cubes[key];
 }

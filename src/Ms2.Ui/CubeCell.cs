@@ -53,6 +53,14 @@ public static class CubeCell
 public interface ICubeCells
 {
     bool HasCubeAtKey(int key);
+
+    /// <summary>GetCubeByKey (@0x1410b8b00, cubemapinformationservice_3.cpp:617-624)->item: the item of the cube at the key.
+    /// False when the map does not know it (the caller's branch on it stays STILL-OPEN).</summary>
+    bool TryCubeItemAtKey(int key, out Ms2.Net.Packets.CubeItemInfo item)
+    {
+        item = null;
+        return false;
+    }
 }
 
 /// <summary>PutDownLiftableAction (key 0xc, actionkeyobject.cpp:1970-2015), in the cube-mode action map.</summary>

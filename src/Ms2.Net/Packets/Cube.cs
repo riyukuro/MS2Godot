@@ -11,11 +11,14 @@ public sealed record HeldItemReleaseRequest : IOutPacket
     public void Write(ByteWriter w) => w.WriteByte(0x12);
 }
 
-/// <summary>Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:1000-1007), no cube in the cell: RequestCube
-/// (0x37) with u8 10, the cell key (FUN_1408a13d0), the craft's CubeItemInfo (FUN_1408b39c0) and the yaw as a float.</summary>
-public sealed record CubePlaceRequest(int CellKey, CubeItemInfo Item, float Yaw) : IOutPacket
+/// <summary>Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:936-1063): RequestCube (0x37) with the u8
+/// mode, the cell key, the craft's CubeItemInfo (FUN_1408b39c0) and the yaw as a float. Mode <see cref="PlaceMode"/> for a
+/// free cell (:996-1002, the key FUN_1408a13d0), <see cref="ReplaceMode"/> for a cell holding another item (:1025-1030,
+/// the key FUN_1408a03c0(FUN_1408a1430), the same key).</summary>
+public sealed record CubePlaceRequest(int CellKey, CubeItemInfo Item, float Yaw, byte Mode = CubePlaceRequest.PlaceMode) : IOutPacket
 {
-    public const byte Mode = 10;
+    public const byte PlaceMode = 10;
+    public const byte ReplaceMode = 0xf;
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w)
     {
@@ -123,6 +126,23 @@ public sealed class CubeItemInfo
     /// <summary>CubeItemInfo::FUN_1408b3860 (@0x1408b3860, ugcmapoptions.cpp:132-137): an item id, a look and the look's
     /// uid (CUgcItemLook m_n18) all nonzero.</summary>
     public bool HasUploadedLook => ItemId != 0 && Look != null && Look.Uid != 0;
+
+    /// <summary>CubeItemInfo::IsSameItem (@0x1408b38c0, ugcmapoptions.cpp:142-166): false for null; without an uploaded look
+    /// the other must have none and the same item id; with one the other must have one too, the same item id and the same
+    /// look uid.</summary>
+    public bool IsSameItem(CubeItemInfo other)
+    {
+        if (other == null) return false;
+        if (!HasUploadedLook)
+        {
+            if (other.HasUploadedLook) return false;
+            return other.ItemId == ItemId;
+        }
+        if (!other.HasUploadedLook) return false;
+        if (ItemId != other.ItemId) return false;
+        if (Look == null) return false;
+        return Look.Uid == other.Look.Uid;
+    }
 
     /// <summary>CubeItemInfo::FUN_1408b3aa0 (@0x1408b3aa0, ugcmapoptions.cpp:181): i32 item id, i64 instance id, i64 count,
     /// u8 has look, then the look (CUgcItemLook::Read).</summary>

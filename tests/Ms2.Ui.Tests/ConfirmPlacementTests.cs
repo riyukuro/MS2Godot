@@ -17,6 +17,8 @@ public class ConfirmPlacementTests
     {
         public readonly HashSet<int> Keys = new();
         public bool HasCubeAtKey(int key) => Keys.Contains(key);
+        public readonly Dictionary<int, CubeItemInfo> Items = new();
+        public bool TryCubeItemAtKey(int key, out CubeItemInfo item) => Items.TryGetValue(key, out item);
     }
 
     sealed class Owner : ICubeCraftOwner
@@ -164,7 +166,7 @@ public class ConfirmPlacementTests
     }
 
     [Test]
-    public void ACubeInTheCellTakesTheOpenBranch()
+    public void ACubeWhoseItemTheMapDoesNotKnowTakesTheOpenBranch()
     {
         var o = new Owner();
         var c = Craft(2, 2, o);
@@ -172,6 +174,82 @@ public class ConfirmPlacementTests
         Assert.That(Confirm(c, out var s), Is.EqualTo(CubeCraftState.PlacementStop.CubeInCellOpen));
         Assert.That(s, Is.Null);
         Assert.That(Confirm(Craft(2, 2, new Owner { NoMap = true }), out _), Is.EqualTo(CubeCraftState.PlacementStop.NoCubeMap));
+    }
+
+    static (CubeCraftState c, int key) WithCubeInCell(int craftMode, CubeItemInfo inCell, CubeItemInfo held = null, float target = 0f)
+    {
+        var o = new Owner { TargetYaw = target };
+        var c = Craft(2, craftMode, o, held);
+        c.ConstructionUnlocked = true;
+        c.Locks = new CubeLock();
+        int key = CubeCell.Key(c.Current.Cell);
+        o.Cells.Keys.Add(key);
+        o.Cells.Items[key] = inCell;
+        return (c, key);
+    }
+
+    [Test]
+    public void AnotherItemInTheCellSendsRequestCube0xfWithTheSnappedYawNotNormalized()
+    {
+        // cubecraft_2.cpp:1007-1031: a map cube (item id 0) under the held item; target -100 snaps to -90, not 270
+        var held = new CubeItemInfo { ItemId = ItemId, InstanceId = 0x1122334455L, Count = 3 };
+        var (c, key) = WithCubeInCell(2, new CubeItemInfo(), held, -100f);
+        Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That((send.Mode, send.CellKey, send.Yaw), Is.EqualTo((CubePlaceRequest.ReplaceMode, key, -90f)));
+        Assert.That(send.Item, Is.Not.SameAs(held));
+
+        var w = new ByteWriter();
+        send.Write(w);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        Assert.That(r.ReadByte(), Is.EqualTo(0xf));
+        Assert.That(r.ReadInt(), Is.EqualTo(key));
+        Assert.That(r.ReadInt(), Is.EqualTo(ItemId));
+        Assert.That(r.ReadLong(), Is.EqualTo(0x1122334455L));
+        Assert.That(r.ReadLong(), Is.EqualTo(3L));
+        Assert.That(r.ReadByte(), Is.EqualTo(0));
+        Assert.That(r.ReadFloat(), Is.EqualTo(-90f));
+        Assert.That(r.Available, Is.Zero);
+    }
+
+    [Test]
+    public void TheSameItemIdWithAnotherLookIsReplaced()
+    {
+        var held = new CubeItemInfo { ItemId = ItemId, Count = 1, Look = new UgcLook { Uid = 5 } };
+        var (c, _) = WithCubeInCell(2, new CubeItemInfo { ItemId = ItemId, Count = 1, Look = new UgcLook { Uid = 6 } }, held);
+        Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That(send.Mode, Is.EqualTo(CubePlaceRequest.ReplaceMode));
+    }
+
+    [Test]
+    public void TheSameItemInCraftModeTwoStopsWithTheHeldNotice()
+    {
+        var (c, _) = WithCubeInCell(2, new CubeItemInfo { ItemId = ItemId, InstanceId = 9, Count = 1 });
+        Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.SameItemHeld));
+        Assert.That(send, Is.Null);
+        Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.SameItemHeld), Is.Zero);
+    }
+
+    [Test]
+    public void TheSameItemOutsideCraftModeTwoStopsWithNotice0x35()
+    {
+        var look = new UgcLook { Uid = 5 };
+        var (c, _) = WithCubeInCell(0, new CubeItemInfo { ItemId = ItemId, Count = 1, Look = look },
+            new CubeItemInfo { ItemId = ItemId, Count = 1, Look = new UgcLook { Uid = 5 } });
+        Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.SameItem));
+        Assert.That(send, Is.Null);
+        Assert.That(CubeCraftState.NoticeOf(CubeCraftState.PlacementStop.SameItem), Is.EqualTo(0x35));
+    }
+
+    [TestCase(-90f, -90f)]
+    [TestCase(270f, -90f)]
+    [TestCase(-135f, -180f)]
+    [TestCase(135f, 180f)]
+    [TestCase(45f, 90f)]
+    [TestCase(-45f, -90f)]
+    [TestCase(0f, 0f)]
+    public void TheSnappedYawKeepsItsSign(float guide, float sent)
+    {
+        Assert.That(CubeCraftState.SnappedYaw(guide), Is.EqualTo(sent));
     }
 
     [Test]
@@ -184,6 +262,7 @@ public class ConfirmPlacementTests
         Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.Send));
         Assert.That(send.CellKey, Is.EqualTo(CubeCell.Key(c.Current.Cell)));
         Assert.That(send.Yaw, Is.EqualTo(180f));
+        Assert.That(send.Mode, Is.EqualTo(CubePlaceRequest.PlaceMode));
         Assert.That(send.Item, Is.Not.SameAs(item));
         Assert.That((send.Item.ItemId, send.Item.InstanceId, send.Item.Count), Is.EqualTo((item.ItemId, item.InstanceId, item.Count)));
 
