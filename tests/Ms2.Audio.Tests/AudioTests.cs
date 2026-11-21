@@ -151,6 +151,20 @@ public class AudioTests
     }
 
     [Test]
+    public void SystemShopOpenSoundKeyResolvesToAnEvent()
+    {
+        // ToggleShopTab plays s_strBuildOpenShop through PlaySystemSound (unit_141347b10.cpp:98, :491); the key is a row of
+        // table/systemsound.xml, the table FieldAudio.PlayUi resolves against.
+        SoundDir(); // skips without game data
+        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
+        var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
+        var path = table.Resolve("System_BuildOpenShop");
+        Assert.That(path, Is.Not.Null, "System_BuildOpenShop has no row (or no sound id) in systemsound.xml");
+        Assert.That(new SoundLibrary(SoundDir()).ResolveEvent(path), Is.Not.Null);
+        TestContext.WriteLine("System_BuildOpenShop -> " + path);
+    }
+
+    [Test]
     public void FootstepsResolveToCharacterEvents()
     {
         SoundDir(); // skips without game data
