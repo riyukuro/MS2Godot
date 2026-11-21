@@ -3,6 +3,10 @@ namespace Ms2.Ui.Hud;
 /// <summary>
 /// UIAutoReviveCountDownDialog (ms2/client/ms2/uiautorevivecountdowndialog.cpp; UI id 0x4ea2, movie
 /// uiautorevivecountdowndialog), the countdown to the automatic revive the AutoRevive packet (Inbound 0xA2) starts.
+/// The ctor (@0x141284ac0) sets only flag 1, not closable: Esc and CloseAllDialogs pass it by (CUIService::IsDialogClosable,
+/// uiservice.cpp:1009), so the HUD's closable list leaves it out, and it is not always on, so the guide's dialog gate counts
+/// it. The dtor (@0x141284b30) is empty; vfunc_67 (@0x141284d50) is UIDialog's close, <see cref="UiController.Close"/>;
+/// vfunc_48 (@0x141284df0) is the UI id 0x4ea2.
 /// </summary>
 public sealed class AutoReviveCountDownController : UiController
 {
