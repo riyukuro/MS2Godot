@@ -142,6 +142,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.ItemExists = id => hudModel?.Tables?.Items is not { } items || items.Get(id) != null;
             livePortals.CommonBoxSink = id => MessageBoxQueue.ShowCommon(id, 0, null, "");
             livePortals.TaxiKey = TaxiKey;
+            livePortals.ReactorRewardSink = (id, grade) => EnsureRewardNotify()?.ShowItemReward(id, grade);
         }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;

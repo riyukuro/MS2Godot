@@ -17,6 +17,8 @@ public enum ActionKeyTarget
     BillBoard,
     /// <summary>PutDownLiftableAction (0xc), in the cube-mode map only (actionkeyobject.cpp:534).</summary>
     PutDownLiftable,
+    /// <summary>ReactorAction (0x1a, actionkeyobject.cpp:2860-2990), in the normal map only.</summary>
+    Reactor,
 }
 
 /// <summary>
@@ -46,13 +48,14 @@ public struct ActionKeyPoll
     }
 
     /// <summary>The first action that applies, by key: interact (4 / 0x11 / 0x12), portal (0x13), talk (0x14), lift (0x15),
-    /// billboard (0x18).</summary>
-    public static ActionKeyTarget Pick(bool interact, bool portal, bool talk, bool lift, bool billBoard) =>
+    /// billboard (0x18), reactor (0x1a).</summary>
+    public static ActionKeyTarget Pick(bool interact, bool portal, bool talk, bool lift, bool billBoard, bool reactor = false) =>
         interact ? ActionKeyTarget.Interact
         : portal ? ActionKeyTarget.Portal
         : talk ? ActionKeyTarget.Talk
         : lift ? ActionKeyTarget.Lift
         : billBoard ? ActionKeyTarget.BillBoard
+        : reactor ? ActionKeyTarget.Reactor
         : ActionKeyTarget.None;
 
     /// <summary>The cube-mode map (m_actionsCubeMode, actionkeyobject.cpp:531-534), used while the local pc is in cube mode

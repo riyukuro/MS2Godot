@@ -85,6 +85,17 @@ public sealed class RewardNotifyController : UiController
         AppendReward(Host.Obj(("type", "icon"), ("msg", Fmt(0x687, textColor, name)), ("icon", icon), ("grade", grade),
             ("itemPiece", piece), ("key", (uint)itemId)));
 
+    /// <summary>The item data of an id (CItemDataTable::GetItemData); null uses the model's table.</summary>
+    public Func<int, Ms2.Ui.Items.ItemData> ItemOf;
+
+    /// <summary>FUN_141abf6e0 (uirewardnotify.cpp), the reactor reward (OnReactor mode 4): nothing without the item's data;
+    /// else msg 0x687 with GetTextColor(grade) and the item name, the item's GetIconPath, the grade, IsPieceItem and the id.</summary>
+    public void ShowItemReward(int itemId, int grade)
+    {
+        if ((ItemOf ?? Model.Tables.Items.Get)(itemId) is not { } d) return;
+        ShowItem(itemId, grade, Model.Tables.Items.TextColor(grade), Model.Tables.ItemName(itemId), d.IconPath, d.IsPieceItem);
+    }
+
     /// <summary>FUN_141abfdc0 (@0x141abfdc0): the achievement toast; emblem when the achievement's type is 9.</summary>
     public void ShowAchieve(string name, string icon, int achieveType) =>
         AppendReward(Host.Obj(("type", "achieve"), ("msg", name), ("icon", icon), ("emblem", achieveType == 9)));

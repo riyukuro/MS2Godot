@@ -213,4 +213,11 @@ public class FieldReactorsTests
         rule.Clear();
         Assert.That(rule.Current, Is.Null);
     }
+
+    [Test]
+    public void ReactorActionComesAfterBillBoard()
+    {
+        Assert.That(ActionKeyPoll.Pick(false, false, false, false, false, reactor: true), Is.EqualTo(ActionKeyTarget.Reactor));
+        Assert.That(ActionKeyPoll.Pick(false, false, false, false, true, reactor: true), Is.EqualTo(ActionKeyTarget.BillBoard));
+    }
 }

@@ -833,6 +833,7 @@ public partial class LiveSession : Node
         HotTimes.Clear();
         SaleEvents.Clear();
         BeautySales.Clear();
+        ReactorRules.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
         {
@@ -848,6 +849,7 @@ public partial class LiveSession : Node
         Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, false, Breakables, Liftables, LiftTargets);   // the login's field: its breakables and lifts wait for its entities
         NewFieldPortals(entry.Field.MapId);
         NewFieldInteractObjects(entry.Field.MapId);
+        NewFieldReactors();
         syncNumber = entry.Sync?.Number ?? 0;
         var f = entry.Field;
         if (chosen != null) chosen.User.MapA = f.MapId;
@@ -995,6 +997,7 @@ public partial class LiveSession : Node
         moveClock.Restart();
         NewFieldPortals(f.MapId);
         NewFieldInteractObjects(f.MapId);
+        NewFieldReactors();
         guide?.QueueOccurrence(GuideOccurrence.FieldId, f.MapId);   // OnRequestFieldEnter after LoadMap (scenestategame.cpp:2353)
         GD.Print($"live: RequestFieldEnter in game: map {f.MapId} type {f.FieldType} instance {f.InstanceType}/{f.InstanceId} dungeon {f.DungeonId} pos {f.Position} portal {f.Portal}");
         FieldMoveStarted?.Invoke(f);
@@ -1687,7 +1690,13 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.FieldPortal)) OnFieldPortal(FieldPortalMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.InteractObject)) OnInteractObject(InteractObjectMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.InteractNpc)) OnInteractNpc(InteractNpcMessage.Read(p.Reader()));
-            else if (game.Is(p, Inbound.GameEvent)) OnGameEvent(GameEventMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.GameEvent))
+            {
+                var ge = GameEventMessage.Read(p.Reader());
+                OnGameEvent(ge);
+                ReactorRules.Apply(ge);   // GameEventManagerCli's reactor context (CGameRule)
+            }
+            else if (game.Is(p, Inbound.Reactor)) OnReactor(ReactorMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(p);
             else if (game.Is(p, Inbound.LoadCubes)) OnLoadCubes(p);
             else if (game.Is(p, Inbound.SetCraftMode)) OnSetCraftMode(SetCraftMode.Read(p.Reader()));

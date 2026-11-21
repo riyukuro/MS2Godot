@@ -201,4 +201,16 @@ public class RewardNotifyTests
         c.OnLearnEmotion(7);
         Assert.That(c.Pending, Is.EqualTo(1));
     }
+
+    [Test]
+    public void ItemRewardNeedsTheItemData()
+    {
+        var (_, c, _) = Load();
+        c.ItemOf = id => id == 5 ? new Ms2.Ui.Items.ItemData { Id = 5 } : null;
+        c.Block = true;
+        c.ShowItemReward(4, 2);
+        Assert.That(c.Pending, Is.EqualTo(0), "FUN_141abf6e0: no item data, no toast");
+        c.ShowItemReward(5, 2);
+        Assert.That(c.Pending, Is.EqualTo(1));
+    }
 }
