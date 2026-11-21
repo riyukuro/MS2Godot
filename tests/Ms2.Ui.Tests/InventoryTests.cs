@@ -713,4 +713,76 @@ public class InventoryTests
         public void RefreshSlot(string name) { }
         public void SlotDropUnresolved(string name) { }
     }
+
+    [Test]
+    public void AnOpenItemBoxAsksThenOpensOnlyOnTheServerAnswer()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var d = model.Tables.Items.Get(20300327);
+        var saved = d.FunctionArgs.ToList();
+        try
+        {
+            d.FunctionArgs.Clear(); d.FunctionArgs.AddRange(new[] { "0", "0", "0", "0", "1" });
+            var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+            book.Apply(new ItemMessage.LoadTab(2, new[]
+            {
+                new EquipItem { Id = 20300327, Uid = 30, InventorySlot = 0, Amount = 5, Rarity = 1 },
+            }));
+            var (h, c, _) = Load(model, book);
+            var record = new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+            c.Wearer = () => record;
+            var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+            var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+            var multi = new List<(int, int, string, int)>(); c.OpenMultiBox = (id, r, a, n) => multi.Add((id, r, a, n));
+            var item = c.FindItem(30);
+
+            Assert.That(c.UseItem(item, true), Is.True);
+            Assert.That((boxes.Count, boxes[0].Type, sent.Count), Is.EqualTo((1, 0x1a, 0)), "the confirm box, nothing sent yet");
+            Assert.That(boxes[0].ItemUid, Is.EqualTo(30L));
+            boxes[0].Callback(1, boxes[0]);
+            Assert.That((boxes.Count, sent.Count), Is.EqualTo((1, 0)), "the other button does nothing");
+            boxes[0].Callback(0, boxes[0]);
+            Assert.That((boxes.Count, boxes[1].Type, sent.Count), Is.EqualTo((2, 0x29, 0)), "five in the bag: the count box, still nothing sent");
+            boxes[1].ClickedTag = "x,1";
+            boxes[1].Callback(0, boxes[1]);
+            Assert.That(sent, Is.EqualTo(new[] { (30L, "") }), "a count of 1 is the plain use");
+            boxes[1].ClickedTag = "x,3";
+            boxes[1].Callback(0, boxes[1]);
+            Assert.That((multi, sent.Count), Is.EqualTo((new[] { (20300327, 1, "", 3) }, 1)), "more than one: the multi open window, no send");
+            boxes[1].ClickedTag = "x,5000";
+            boxes[1].Callback(0, boxes[1]);
+            Assert.That(multi.Last().Item4, Is.EqualTo(InventoryController.ItemBoxMultiOpenLimit), "the count is clamped to the limit");
+            boxes[1].ClickedTag = "3";
+            boxes[1].Callback(0, boxes[1]);
+            Assert.That(multi.Count, Is.EqualTo(2), "a tag of one field is ignored");
+
+            d.FunctionArgs.Clear(); d.FunctionArgs.AddRange(new[] { "0", "0", "0", "0", "9" });
+            int before = boxes.Count;
+            Assert.That(c.UseItem(item, true), Is.False);
+            Assert.That((boxes.Count, boxes.Last().Type, sent.Count), Is.EqualTo((before + 1, 0, 1)), "more than the bag holds: a notice box, nothing sent");
+        }
+        finally { d.FunctionArgs.Clear(); d.FunctionArgs.AddRange(saved); }
+    }
+
+    [Test]
+    public void ASelectItemBoxOpensItsDialogOnce()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        int id = Enumerable.Range(20300000, 3000).FirstOrDefault(i => model.Tables.Items.Get(i)?.FunctionName == "SelectItemBox");
+        if (id == 0) Assert.Ignore("no SelectItemBox item in this data");
+        book.Apply(new ItemMessage.LoadTab(2, new[] { new EquipItem { Id = id, Uid = 31, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+        var (h, c, _) = Load(model, book);
+        var opened = new List<long>(); bool open = false;
+        c.OpenSelectBox = i => { opened.Add(i.Uid); open = true; };
+        c.SelectBoxOpen = () => open;
+        var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+        c.UseItem(c.FindItem(31), true);
+        c.UseItem(c.FindItem(31), true);
+        Assert.That((opened, sent.Count), Is.EqualTo((new[] { 31L }, 0)), "opened once, nothing sent by the open");
+    }
 }

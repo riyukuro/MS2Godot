@@ -29,7 +29,7 @@ public interface IInvenSlotOwner : IDragSlotOwner
 /// <para>Nothing here sends a packet: the sort, the slot expansion, the bank call and item use are raised as
 /// <see cref="Button"/> / <see cref="ToggleDialog"/> for the host to leave unsent.</para>
 /// </summary>
-public sealed class InventoryController : UiController, IInventoryBinding, IInvenSlotOwner
+public sealed partial class InventoryController : UiController, IInventoryBinding, IInvenSlotOwner
 {
     public override string Movie => "uiinventorydialog";
     protected override string EntityMethod => "changeMoney";
@@ -562,7 +562,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// STILL-OPEN: the function shutdown list (CGameEventValueManager::ShutdownFunctionItem()->IsShutdown of the item id,
     /// notice 0x2f7) and the item sound.
     /// </summary>
-    bool UseItem(Item item, bool confirmed)
+    internal bool UseItem(Item item, bool confirmed)
     {
         if (!CanUseItem(item)) return false;
         var d = item.Data;
@@ -572,6 +572,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return true;
         }
         if (item.Data.FunctionName == "ItemMergeRevert" && RevertOpen != null) { RevertOpen(item); return true; }   // ItemMergeRevert @0x140d21480
+        if (item.Data.FunctionName == "OpenItemBox" && OpenMultiBox != null) return OpenItemBox(item);                // @0x140d259d0
+        if (item.Data.FunctionName == "SelectItemBox" && OpenSelectBox != null) return SelectItemBox(item);          // @0x140d22430
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;
