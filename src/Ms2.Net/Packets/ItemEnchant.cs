@@ -172,6 +172,18 @@ public sealed record ItemEnchantTalkRequest(bool Talking, int NpcId, int Constan
     }
 }
 
+/// <summary>UIItemEnchantDialog::vfunc_85(type) (@0x1419bfca0): with a talk active u8 6, i32 npc id, i32 the client constant (m_69a0),
+/// i16 type; else the base's (@0x1419bee80) u8 4, i16 type. The step reports after a send (2), the completion (3) and a retry (4).
+/// Sent on 0x22 (NpcTalk).</summary>
+public sealed record ItemEnchantStepRequest(bool Talking, int NpcId, int Constant, short Type) : IOutPacket {
+    public Outbound Op => Outbound.NpcTalk;
+    public void Write(ByteWriter w) {
+        if (Talking) { w.WriteByte(6); w.WriteInt(NpcId); w.WriteInt(Constant); }
+        else w.WriteByte(4);
+        w.WriteShort(Type);
+    }
+}
+
 /// <summary>Mode 9 (SendRequestItemEnchant @0x1419028d0, uicommon.cpp:1993): the player confirmed the enchant experience refund.</summary>
 public sealed record ItemEnchantRefundRequest(long Uid) : IOutPacket {
     public Outbound Op => Outbound.RequestItemEnchant;

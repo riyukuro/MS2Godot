@@ -123,6 +123,7 @@ public partial class HudScene : Node, IUiStageHost
         // the portal and interact actions' notices & casting bar, the channel notices
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
+            livePortals.TalkDialogOpen -= OnTalkDialogOpen;
             livePortals.SystemNoticeSink = SystemNoticeText;
             livePortals.ChannelNoticeSink = ChannelNotice;
             livePortals.CastingBar = CastingBar;
@@ -888,6 +889,8 @@ public partial class HudScene : Node, IUiStageHost
         // UIItemEnchantDialog's model: the UI item of a uid and the limit table's CanEnchant (needed by the 0x97 results).
         live.EnchantBook.Find = uid => live.Items.Get(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
         live.EnchantBook.CanEnchantItem = hudModel.Tables.ItemOptions.CanEnchant;
+        live.TalkDialogOpen -= OnTalkDialogOpen;
+        live.TalkDialogOpen += OnTalkDialogOpen;
         ChatLog.CommandHooks.ChatLine = ChatLog.AddSystemLine;
         ChatLog.CommandHooks.GmLevel = ChatLog.GmLevel;
         ChatLog.CommandHooks.Unported = (name, args) =>
@@ -1490,6 +1493,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemLockKeys(k)) return true;
         if (ItemBreakKeys(k)) return true;
         if (ItemMergeKeys(k)) return true;
+        if (ItemEnchantKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
@@ -2721,6 +2725,7 @@ public partial class HudScene : Node, IUiStageHost
             if (id == ItemLockDialogController.UiId) ToggleItemLock();
             else if (id == ItemBreakDialogController.UiId) ToggleItemBreak(false);
             else if (id == ItemMergeOptionDialogController.UiId) ToggleItemMerge();
+            else if (id == ItemEnchantDialogController.UiId) OpenItemEnchant();
             else GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         };
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
@@ -2728,7 +2733,7 @@ public partial class HudScene : Node, IUiStageHost
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;
         c.Shop = () => ShopOpen ? shop : null;
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : 0;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : ItemEnchantOpen ? Ms2.Ui.Hud.ItemEnchantDialogController.UiId : 0;
         c.BankAllowed = item => store?.Storable(item) ?? true;       // the open bank heads the right-click dialogs (0x4e47)
         c.BankDeposit = item => store?.DepositFromInventory(item);
         c.LockSelect = item => itemLock?.SelectFromInventory(item);
@@ -3266,6 +3271,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "mail" && frames == 200) ToggleMail();
         if (openShot == "community" && frames == 200) ToggleCommunity();
         if (openShot == "guild" && frames == 200) ToggleGuild();
+        if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (guideShot != null && frames == 200)
         {
             // --uigen-guide kind:textId: the pane shows the guide text as its summary, text tip or tutorial balloon

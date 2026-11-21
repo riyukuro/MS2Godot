@@ -510,6 +510,7 @@ public sealed partial class NpcTalk : Node
                     questId = (flags & 4) != 0 && talkQuests.Count > 0 ? talkQuests[0] : 0;
                     script = FindTalkScript(npc, o.ScriptId);
                     liveTalking = npc;
+                    live.TalkNpcId = o.ObjectId;
                     if (script == null || page >= script.Contents.Count)
                     {
                         // FUN_141b1ff80 (uitalkcinematic.cpp:1456-1477) without a script opens the npc's talk ui
@@ -541,8 +542,12 @@ public sealed partial class NpcTalk : Node
                 return;
             case NpcTalkMessage.Close:
                 if (liveTalking?.Row.Kind == 1) live.RaiseTalkUiClose(Ms2.Ui.Shop.ShopController.UiId);
-                liveRequested = null; liveTalking = null;
+                liveRequested = null; liveTalking = null; live.TalkNpcId = 0;
                 side?.OnServerEnd();
+                return;
+            case NpcTalkMessage.OpenDialog d:
+                // FUN_141b1eb90: the dialog by its type name, its argument first (SetModeByName for the enchant dialog)
+                live.RaiseTalkDialogOpen(d.Dialog, d.Argument);
                 return;
             case NpcTalkMessage.NameTag t:
                 // GetTalkNpc: the npc of the talk's object id (m_nNpcId, set by mode 1)

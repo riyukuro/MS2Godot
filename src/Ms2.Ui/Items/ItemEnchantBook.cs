@@ -90,7 +90,25 @@ public sealed class ItemEnchantBook
     /// <summary>The failure reward page (FUN_1419c90b0): item id, count, meso.</summary>
     public event Action<int, int, long> Reward;
 
+    /// <summary>Every applied message, after the model changed: the dialog redraws the part that message feeds.</summary>
+    public event Action<ItemEnchantMessage> Applied;
+    /// <summary>The charge before the last <see cref="ItemEnchantMessage.ChargeChanged"/> (FUN_1419c3950's oldLevel).</summary>
+    public int PrevCharge { get; private set; }
+
     void Out(IOutPacket p) => Send?.Invoke(p);
+
+    /// <summary>vfunc_85(type) (@0x1419bfca0): the NpcTalk step report.</summary>
+    public void Step(short type)
+    {
+        var (talking, npc) = Talk();
+        Out(new ItemEnchantStepRequest(talking, npc, TalkConstant, type));
+    }
+
+    /// <summary>onRetry (@0x1419c11e0): the result is dropped (FUN_1419c77a0) and step 4 reported.</summary>
+    public void Retry() => Step(4);
+
+    /// <summary>onComplete (@0x1419c10e0): step 3, then RestoreItem. The caller plays the sound for <see cref="State"/>.</summary>
+    public void Complete() { Step(3); Restore(); }
 
     /// <summary>FUN_141902660: a charge of an older version asks the refund first.</summary>
     static bool NeedsRefund(Item i) => i.Record?.Enchant is { } e && e.Version != ChargeVersion && e.Charge != 0;
@@ -163,6 +181,7 @@ public sealed class ItemEnchantBook
         {
             if (NeedsBindingBox(item)) return EnchantStep.AskBindingCharacter;
             Out(new ItemEnchantExpRequest(item.Uid));
+            Step(2);
             return EnchantStep.Sent;
         }
         if (Rates.Protect != 0) return EnchantStep.AskProtector;
@@ -172,7 +191,7 @@ public sealed class ItemEnchantBook
     }
 
     /// <summary>The binding box's Yes: mode 6 (SendRequestItemEnchantMode6 @0x1419c0c70 sends only for an existing item).</summary>
-    public void ConfirmBinding() { if (Find(SelectedUid) != null) Out(new ItemEnchantExpRequest(SelectedUid)); }
+    public void ConfirmBinding() { if (Find(SelectedUid) != null) { Out(new ItemEnchantExpRequest(SelectedUid)); Step(2); } }
 
     long paybackProtector;
     /// <summary>FUN_1419c7a30(uid, v) (@0x1419c7a30): no item, nothing; a charge above 0 asks the payback box first
@@ -184,17 +203,24 @@ public sealed class ItemEnchantBook
         paybackProtector = v == 1 ? Protector0 : v == 2 ? Protector1 : 0;
         if (item.Record?.Enchant?.Charge > 0) return EnchantStep.AskPayback;
         Out(new ItemEnchantRequest(item.Uid, paybackProtector));
+        Step(2);
         return EnchantStep.Sent;
     }
 
     /// <summary>The payback box's Yes (OnConfirmEnchantMode4MsgBox): SendRequestItemEnchantMode4 (@0x1419c7ce0).</summary>
     public void ConfirmPayback()
     {
-        if (Find(SelectedUid) is { } item) Out(new ItemEnchantRequest(item.Uid, paybackProtector));
+        if (Find(SelectedUid) is { } item) { Out(new ItemEnchantRequest(item.Uid, paybackProtector)); Step(2); }
     }
 
     /// <summary>OnItemEnchant's modes (scenestategame.cpp:6101).</summary>
     public void Apply(ItemEnchantMessage m)
+    {
+        Dispatch(m);
+        Applied?.Invoke(m);
+    }
+
+    void Dispatch(ItemEnchantMessage m)
     {
         switch (m)
         {
@@ -209,6 +235,7 @@ public sealed class ItemEnchantBook
             case ItemEnchantMessage.ChargeChanged x:
                 if (Find(x.Uid)?.Record?.Enchant is not { } e) break;
                 FailStackUids = Array.Empty<long>(); FailStackCount = 0;
+                PrevCharge = e.Charge;
                 e.Charge = x.Charge;
                 Changed?.Invoke();
                 break;

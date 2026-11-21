@@ -382,6 +382,11 @@ public partial class LiveSession : Node
     public event Action<int> TalkUiOpen, TalkUiClose;
     public void RaiseTalkUiOpen(int dialogId) => TalkUiOpen?.Invoke(dialogId);
     public void RaiseTalkUiClose(int dialogId) => TalkUiClose?.Invoke(dialogId);
+    /// <summary>NpcTalk mode 3 sub 4 (FUN_141b1eb90): open the named dialog with its argument.</summary>
+    public event Action<string, string> TalkDialogOpen;
+    /// <summary>The object id of the npc the open talk is with (0 when none): the enchant dialog's step reports carry it.</summary>
+    public int TalkNpcId;
+    public void RaiseTalkDialogOpen(string dialog, string argument) => TalkDialogOpen?.Invoke(dialog, argument);
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
 

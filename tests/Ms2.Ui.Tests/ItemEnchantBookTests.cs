@@ -73,15 +73,15 @@ public class ItemEnchantBookTests {
     [Test] public void OpheliaEnchantAsksProtectorOnlyWithAProtectionRate() {
         var t = Selected(1, out _);
         Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.Sent));
-        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantRequest(5, 0) }));
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantRequest(5, 0), new ItemEnchantStepRequest(false, 0, 0, 2) }));
         t.Sent.Clear();
         t.B.Apply(new ItemEnchantMessage.FailStackInfo(0, 0, new long[0], new EnchantRates(40, 0, 25, 0, 0)));
         Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.AskProtector)); Assert.That(t.Sent, Is.Empty);
         Assert.That(t.B.ConfirmProtector(2), Is.EqualTo(EnchantStep.Sent));
         Assert.That(t.Sent[0], Is.EqualTo(new ItemEnchantRequest(5, 32)));
         t.B.ConfirmProtector(1);
-        Assert.That(t.Sent[1], Is.EqualTo(new ItemEnchantRequest(5, 31)));
-        t.Inv.Remove(5); Assert.That(t.B.ConfirmProtector(1), Is.EqualTo(EnchantStep.NoItem)); Assert.That(t.Sent, Has.Count.EqualTo(2));
+        Assert.That(t.Sent[2], Is.EqualTo(new ItemEnchantRequest(5, 31)));
+        t.Inv.Remove(5); Assert.That(t.B.ConfirmProtector(1), Is.EqualTo(EnchantStep.NoItem)); Assert.That(t.Sent, Has.Count.EqualTo(4));
     }
 
     [Test] public void AChargeAsksThePaybackBoxBeforeMode4() {
@@ -89,16 +89,36 @@ public class ItemEnchantBookTests {
         Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.AskPayback));
         Assert.That(t.Sent, Is.Empty);
         t.B.ConfirmPayback();
-        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantRequest(5, 0) }));
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantRequest(5, 0), new ItemEnchantStepRequest(false, 0, 0, 2) }));
+    }
+
+    [Test] public void StepRetryAndCompleteReportToTheTalk() {
+        var t = Selected(1, out _);
+        t.B.Talk = () => (true, 77); t.B.TalkConstant = 9;
+        t.B.Retry();
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantStepRequest(true, 77, 9, 4) }));
+        t.Sent.Clear(); t.B.Complete();
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantStepRequest(true, 77, 9, 3) }));
+        t.Sent.Clear(); t.B.Talk = () => (false, 0); t.B.Step(2);
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantStepRequest(false, 0, 9, 2) }));
+    }
+
+    [Test] public void AppliedRaisesAfterTheModelChangedAndChargeKeepsThePreviousValue() {
+        var t = Selected(2, out var it); it.Record.Enchant.Charge = 10;
+        ItemEnchantMessage seen = null; int prev = -1;
+        t.B.Applied += m => { seen = m; prev = t.B.PrevCharge; };
+        var msg = new ItemEnchantMessage.ChargeChanged(5, 30);
+        t.B.Apply(msg);
+        Assert.That(seen, Is.SameAs(msg)); Assert.That(prev, Is.EqualTo(10)); Assert.That(it.Record.Enchant.Charge, Is.EqualTo(30));
     }
 
     [Test] public void PeachyEnchantSendsModeSixAfterItsBindingBox() {
         var t = Selected(2, out _);
         Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.Sent));
-        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantExpRequest(5) }));
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantExpRequest(5), new ItemEnchantStepRequest(false, 0, 0, 2) }));
         t.Sent.Clear(); t.B.NeedsBindingBox = _ => true;
         Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.AskBindingCharacter)); Assert.That(t.Sent, Is.Empty);
-        t.B.ConfirmBinding(); Assert.That(t.Sent, Has.Count.EqualTo(1));
+        t.B.ConfirmBinding(); Assert.That(t.Sent, Has.Count.EqualTo(2));
     }
 
     [Test] public void EnchantRefusesAMissingItemAndAnOldCharge() {

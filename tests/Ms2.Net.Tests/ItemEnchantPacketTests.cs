@@ -54,6 +54,14 @@ public class ItemEnchantPacketTests {
         Assert.That(new ItemEnchantTalkRequest(true, 0, 0, 0).Op, Is.EqualTo(Outbound.NpcTalk));
     }
 
+    [Test] public void TheStepReportHasTwoShapes() {
+        var w = new ByteWriter(); w.WriteByte(6); w.WriteInt(11); w.WriteInt(22); w.WriteShort(3);
+        Assert.That(Bytes(new ItemEnchantStepRequest(true, 11, 22, 3)), Is.EqualTo(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        w = new ByteWriter(); w.WriteByte(4); w.WriteShort(4);
+        Assert.That(Bytes(new ItemEnchantStepRequest(false, 11, 22, 4)), Is.EqualTo(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(new ItemEnchantStepRequest(true, 0, 0, 0).Op, Is.EqualTo(Outbound.NpcTalk));
+    }
+
     [Test] public void Mode5ReadsTheOphelia() {
         var m = (ItemEnchantMessage.Info) Read(w => {
             w.WriteByte(5); w.WriteShort(1); w.WriteLong(77);
