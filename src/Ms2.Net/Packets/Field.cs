@@ -185,6 +185,8 @@ public sealed class FieldAddUser {
     public List<EquipItem> Equips = new(); public List<EquipItem> Outfit2 = new(); public List<EquipItem> Badges = new();
     public long SkinTabStart, SkinTabEnd;
     public short BuffCount;
+    /// <summary>The revival end tick, revival count and revival flag after the buffs (scenestategame.cpp:11280-11281).</summary>
+    public uint RevivalEndTick; public int RevivalCount; public bool RevivalFlag;
     public int Title; public short Insignia; public bool InsigniaShown;
     /// <summary>The pet block was read (PC::ReadPetItem, scenestategame.cpp:11286).</summary>
     public bool HasPet;
@@ -240,7 +242,7 @@ public sealed class FieldAddUser {
         }
         f.BuffCount = r.ReadShort();
         for (int i = 0; i < (ushort) f.BuffCount; i++) f.Buffs.Add(Buff.Read(r));
-        r.ReadInt(); r.ReadInt(); r.ReadByte();
+        f.RevivalEndTick = (uint)r.ReadInt(); f.RevivalCount = r.ReadInt(); f.RevivalFlag = r.ReadByte() != 0;   // PC::FUN_141661b20, FUN_141661ba0 (scenestategame.cpp:11280-11281)
         r.ReadInt(); r.ReadByte(); r.ReadByte();
         f.Title = r.ReadInt(); f.Insignia = r.ReadShort(); f.InsigniaShown = r.ReadBool();
         r.ReadInt();

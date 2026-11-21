@@ -1187,7 +1187,11 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.DeadUser))
             {
                 var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
-                if (Me.Die(d.ObjectId, d.Flag)) GD.Print("live: own player dead");
+                if (Me.Die(d.ObjectId, d.Flag))
+                {
+                    GD.Print("live: own player dead");
+                    guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1349)
+                }
                 // MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
                 if (d.ObjectId == selfObject && Me.Dead) HeldItem.EnterState(HeldItemState.Dead, Send);
             }

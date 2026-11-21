@@ -243,6 +243,7 @@ public sealed class MyCharacter {
         Pet = u.HasPet ? u.Pet : null;
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
         State = 0;
+        RevivalEndTick = u.RevivalEndTick; RevivalConfirmCount = u.RevivalCount; RevivalFlag = u.RevivalFlag;   // scenestategame.cpp:11280-11281
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
     }
@@ -307,11 +308,19 @@ public sealed class MyCharacter {
         if (objectId != ObjectId || User == null) return false;
         if (flag) RevivalFlag = true;      // OnDeadUser's flag: FUN_14028d780 -> PC::FUN_141661ba0(1)
         bool changed = false;
-        if (State != 0xc && Stats2[PlayerStat.Health] == 0 && !Dead) { Dead = true; changed = true; }
+        if (State != 0xc && Stats2[PlayerStat.Health] == 0 && !Dead)
+        {
+            Dead = true; changed = true;
+            if (RevivalConfirmCount > 0) RevivalFlag = true;      // PC::vfunc_137 (pc.cpp:4598-4599): m_n10f0 = 1 when m_n10ec > 0
+        }
         if (Dead) EnterState(0xc);
-        if (changed) Changed?.Invoke();
+        if (changed) { Died?.Invoke(); Changed?.Invoke(); }
         return changed;
     }
+
+    /// <summary>Raised when the own player enters the death state (MyPC::vfunc_137's dead branch, mypc.cpp:1347): once per death,
+    /// from DeadUser and from user state 12, not from a FieldAddUser of a dead player.</summary>
+    public Action Died;
 
     /// <summary>The revival end tick (PC m_n10e8, FUN_1416619d0) and the revival count (m_n10ec, FUN_141661a60) of RevivalConfirm,
     /// and the revival flag (m_n10f0, FUN_141661ba0) of Revival and DeadUser.</summary>

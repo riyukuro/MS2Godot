@@ -178,6 +178,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel && liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null;
+        RevivalUnwatch();
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
         unwatchQuickSlotState = null;

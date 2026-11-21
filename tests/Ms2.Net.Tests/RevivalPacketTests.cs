@@ -63,7 +63,7 @@ public class RevivalPacketTests {
         me.Apply(u);
         me.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
         Assert.That(me.Die(9, flag: true), Is.True);
-        Assert.That(me.RevivalBlocked, Is.True, "DeadUser's flag: PC::FUN_141661ba0(1)");
+        Assert.That(me.RevivalBlocked, Is.True, "DeadUser's flag: the flag byte of DeadUser");
         Assert.That(me.Revive(9, 0), Is.True);
         Assert.That(me.RevivalBlocked, Is.False, "Revival's flag byte 0");
         me.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
@@ -110,5 +110,42 @@ public class RevivalPacketTests {
         Assert.That((me.TombstoneKind, me.TombstoneValue, me.TombstoneHitter, me.TombstoneHidden), Is.EqualTo(((byte)2, (byte)3, 7, false)));
         me.Apply(new TombstoneUpdate(9, 0, 0, 0, false));
         Assert.That(me.TombstoneHidden, Is.True);
+    }
+
+    static MyCharacter Living() {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[1].Health = 400; u.Stats[2].Health = 480;
+        me.Apply(u);
+        return me;
+    }
+    static void ZeroHealth(MyCharacter me) =>
+        me.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
+
+    [Test]
+    public void DiedIsRaisedOncePerDeathAndNotForADeadFieldAddUser() {
+        var me = Living();
+        int died = 0; me.Died += () => died++;
+        ZeroHealth(me);
+        Assert.That(me.Die(9), Is.True);
+        Assert.That(me.Die(9), Is.False, "already dead");
+        Assert.That(died, Is.EqualTo(1));
+        var again = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };   // no health: dead on arrival
+        me.Apply(again);
+        Assert.That((me.Dead, died), Is.EqualTo((true, 1)), "a dead FieldAddUser raises nothing");
+    }
+
+    [Test]
+    public void ACountAboveZeroAtDeathSetsTheFlagAndFieldAddUserCarriesTheRevivalState() {
+        var me = Living();
+        me.ApplyRevivalConfirm(new RevivalConfirm(9, 5000, 2));
+        ZeroHealth(me);
+        me.Die(9);
+        me.ExpireRevival(6000);
+        Assert.That(me.RevivalBlocked, Is.True, "PC::vfunc_137 sets the flag when the count is above 0 at death");
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" }, RevivalEndTick = 9000, RevivalCount = 3, RevivalFlag = true };
+        u.Stats[2].Health = 5;
+        me.Apply(u);
+        Assert.That((me.RevivalEndTick, me.RevivalConfirmCount, me.RevivalFlag), Is.EqualTo((9000u, 3, true)));
     }
 }
