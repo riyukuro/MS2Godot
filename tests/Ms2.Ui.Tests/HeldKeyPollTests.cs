@@ -60,7 +60,7 @@ public class HeldKeyPollTests
         down.Add(KeyS);
         Assert.That(Pick(p, 100), Is.EqualTo(KeyS));
         down.Add(KeyD);
-        Assert.That(Pick(p, 200), Is.EqualTo(KeyD), "the key that went down last (m_map17c0's largest tick)");
+        Assert.That(Pick(p, 200), Is.EqualTo(KeyD), "the key that went down last (the largest first-down tick)");   // m_map17c0
         Assert.That(Pick(p, 300), Is.EqualTo(KeyD), "the map keeps each key's first tick");
         down.Add(KeyA); pressed.Add(KeyA);
         Assert.That(Pick(p, 400), Is.EqualTo(KeyA), "a key just pressed first (:1794-1808)");
