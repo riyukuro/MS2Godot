@@ -89,6 +89,43 @@ public class FieldMoveTests {
         l.Stop();
     }
 
+    /// <summary>CSceneStateGame::vfunc_1 (scenestategame.cpp:1991-2011): at the end of each field load RequestLoadUgcMap
+    /// (the entry's portal) then Ugc 0x12 (the map id) go out, once per load and before ResponseFieldEnter, on every field.</summary>
+    [Test] public async Task EachFieldLoadAsksForItsUgcMapAndBannersOnceBeforeTheAnswer() {
+        var (s, l, srv, e, game) = await Enter();
+        using (game) {
+            var entry = new FieldEntry(e.Field);
+            async Task Loaded() {   // LiveSession.FieldLoaded's order, reported twice
+                foreach (var _ in new[] { 1, 2 }) {
+                    if (entry.Loaded() is { } sends) { await game.SendAsync(sends.LoadUgcMap); await game.SendAsync(sends.Banners); }
+                    var a = entry.Answer(); if (a != null) await game.SendAsync(a);
+                }
+                await game.SendAsync(new GlobalFactorRequest());      // a marker after the load's sends
+            }
+            async Task Expect(int portal, int map) {
+                var (op, body) = await ReadFrame(s, srv);
+                Assert.That(op, Is.EqualTo((ushort) Outbound.RequestLoadUgcMap));
+                Assert.That(body, Is.EqualTo(BitConverter.GetBytes(portal)));
+                (op, body) = await ReadFrame(s, srv);
+                Assert.That(op, Is.EqualTo((ushort) Outbound.Ugc));
+                Assert.That(body, Is.EqualTo(new byte[] { 0x12 }.Concat(BitConverter.GetBytes(map)).ToArray()));
+                (op, body) = await ReadFrame(s, srv);
+                Assert.That(op, Is.EqualTo((ushort) Outbound.ResponseFieldEnter));
+                Assert.That(ResponseFieldEnter.Read(new ByteReader(body)).Portal, Is.EqualTo(portal));
+                (op, _) = await ReadFrame(s, srv);
+                Assert.That(op, Is.EqualTo((ushort) Outbound.GlobalFactor), "a field load's sends went out more than once");
+            }
+            await Loaded();
+            await Expect(55, 2000001);
+
+            await s.WriteAsync(srv.Frame(Inbound.RequestFieldEnter, FieldEnter(2000062, 77)));
+            Assert.That(Route(game, await Dequeue(game), entry), Is.True);
+            await Loaded();
+            await Expect(77, 2000062);
+        }
+        l.Stop();
+    }
+
     [Test] public async Task InGameFieldEnterErrorKeepsTheField() {
         var (s, l, srv, e, game) = await Enter();
         using (game) {

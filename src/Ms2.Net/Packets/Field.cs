@@ -21,6 +21,17 @@ public sealed record RequestFieldEnter(byte Error, int MapId, byte FieldType, by
 }
 
 /// <summary>
+/// Outbound RequestLoadUgcMap (0x0F), CSceneStateGame::vfunc_1 @0x14170d9f0 (scenestategame.cpp:1995-1997): i32 the entry's
+/// portal (WorldService FUN_141bd98d0 = LoadMap's nPortal, the same value ResponseFieldEnter carries). The server answers
+/// with LoadUgcMap and the field's plots and cubes (LoadCubes).
+/// </summary>
+public sealed record RequestLoadUgcMap(int Portal) : IOutPacket {
+    public Outbound Op => Outbound.RequestLoadUgcMap;
+    public void Write(ByteWriter w) => w.WriteInt(Portal);
+    public static RequestLoadUgcMap Read(ByteReader r) { var p = new RequestLoadUgcMap(r.ReadInt()); r.ExpectEnd("RequestLoadUgcMap"); return p; }
+}
+
+/// <summary>
 /// Outbound 0x10 (scenestategame.cpp:2284, OnLoadUgcMap; also CubeMapInformationService, cubemapinformationservice_3.cpp:5703):
 /// the portal of the entry (WorldService FUN_141bd98d0 @0x141bd98d0 = LoadMap's nPortal), sent once the map has loaded.
 /// </summary>

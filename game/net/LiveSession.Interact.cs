@@ -153,8 +153,8 @@ public partial class LiveSession
 
     /// <summary>LoadCubes (RecvOp 0x6A), CSceneStateGame::OnLoadCubes (@0x141728110, scenestategame.cpp:10857): mode 0's
     /// house cubes go into the player's cube map through the 0xa place path (<see cref="Ms2.Ui.CubeCellMap.Load"/>).
-    /// STILL-OPEN: modes 1-3 (the plot states, owners and expiries, :10902-10944); the client asks for the house with
-    /// RequestLoadUgcMap (CSceneStateGame::vfunc_1 @0x14170d9f0, :1995), which ours does not send yet.</summary>
+    /// They answer RequestLoadUgcMap (<see cref="Ms2.Net.FieldEntry.Loaded"/>). STILL-OPEN: modes 1-3 (the plot states,
+    /// owners and expiries, :10902-10944).</summary>
     void OnLoadCubes(Ms2.Net.Wire.RawPacket p)
     {
         var m = LoadCubes.Read(p.Reader());

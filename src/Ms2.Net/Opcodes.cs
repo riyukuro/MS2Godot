@@ -173,6 +173,7 @@ public enum Outbound : ushort {
     ResponseClientTickSync = 0x0C,
     RequestQuit = 0x0D,         // SendOp::RequestQuit (commonfiles/opcodes.h:319): CNetworkService::SendRequestQuit / SendRequestQuitAndDisconnect
     PersonalInfoAgreement = 0xC0, // SendOp::PersonalInfoAgreement (commonfiles/opcodes.h:493): CPersonalInfoAgreement::SendAgreement
+    RequestLoadUgcMap = 0x0F,   // SendOp::RequestLoadUgcMap (commonfiles/opcodes.h:321): CSceneStateGame::vfunc_1, the field entered
     ResponseFieldEnter = 0x10,
     RequestMoveField = 0x6C,    // SendOp::RequestMoveField (commonfiles/opcodes.h): MyPC::SendRequestMoveFieldMode0/3
     UserSync = 0x12,

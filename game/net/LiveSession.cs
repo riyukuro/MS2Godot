@@ -989,6 +989,8 @@ public partial class LiveSession : Node
     public void FieldLoaded()
     {
         if (entry == null) return;
+        // CSceneStateGame::vfunc_1 (scenestategame.cpp:1995-2001), the end of the field load: RequestLoadUgcMap, then Ugc 0x12
+        if (fieldEntry.Loaded() is { } loaded) { Send(loaded.LoadUgcMap); Send(loaded.Banners); }
         var answer = fieldEntry.Answer();
         if (answer == null) return;
         Send(answer);

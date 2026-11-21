@@ -56,3 +56,11 @@ public sealed record UgcUploadFailedRequest : IOutPacket {
     public Outbound Op => Outbound.Ugc;
     public void Write(ByteWriter w) { w.WriteByte(0); }
 }
+
+/// <summary>CSceneStateGame::vfunc_1 @0x14170d9f0 (scenestategame.cpp:1999-2001): the field's banners (u8 0x12, i32 the map
+/// id the field-entered callback gets, WorldService m_284).</summary>
+public sealed record UgcLoadBannersRequest(int MapId) : IOutPacket {
+    public const byte Mode = 0x12;
+    public Outbound Op => Outbound.Ugc;
+    public void Write(ByteWriter w) { w.WriteByte(Mode); w.WriteInt(MapId); }
+}

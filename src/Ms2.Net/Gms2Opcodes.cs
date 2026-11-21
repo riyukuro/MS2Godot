@@ -176,6 +176,7 @@ static class Gms2Opcodes {
         [Outbound.RequestTimeSync] = 0x0B,
         [Outbound.ResponseClientTickSync] = 0x0C,
         [Outbound.RequestQuit] = 0x0D,
+        [Outbound.RequestLoadUgcMap] = 0x0F,
         [Outbound.ResponseFieldEnter] = 0x10,
         [Outbound.RequestMoveField] = 0x6D,
         [Outbound.UserSync] = 0x12,
