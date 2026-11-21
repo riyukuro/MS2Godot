@@ -663,7 +663,7 @@ public partial class HudScene : Node, IUiStageHost
         model.Features.Clear();
         foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat,
             Ms2.Ui.Feature.PvPRankingDuelMode, Ms2.Ui.Feature.ItemSocketSystem, Ms2.Ui.Feature.HabiToken, Ms2.Ui.Feature.ReverseRaid01,
-            Ms2.Ui.Feature.Mentoring, Ms2.Ui.Feature.MesoMarketToken, Ms2.Ui.Feature.RedMerat })
+            Ms2.Ui.Feature.Mentoring, Ms2.Ui.Feature.MesoMarketToken, Ms2.Ui.Feature.RedMerat, Ms2.Ui.Feature.MeratMessage })
             if (id <= Ms2.Ui.FeatureTable.Names.Length && Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[id - 1])
                 && !data.FeaturesOff.Contains(Ms2.Ui.FeatureTable.Names[id - 1]))
                 model.Features.Add(id);
@@ -2149,6 +2149,16 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     Action unwatchMeso;
+    Ms2.Ui.Hud.CurrencyFeed currencyFeed;
+
+    /// <summary>OnSmartPush (:7335): a mode other than 1 without a position shows its string as a centre notice (FUN_141275260);
+    /// the marker and list modes need the smart push UI, which is not ported.</summary>
+    void OnSmartPush(Ms2.Net.Packets.SmartPushMessage m)
+    {
+        if (m.Positional || m.Mode == 1) return;
+        string text = hudModel.Tables.Common(m.StringId);
+        if (!string.IsNullOrEmpty(text)) SystemNoticeText(text);
+    }
 
     /// <summary>The Meso packets' chat line (OnMeso, scenestategame.cpp:7019); the balance reaches the HUD through the live
     /// player (status event 8).</summary>
@@ -2160,7 +2170,24 @@ public partial class HudScene : Node, IUiStageHost
         live.MesoChanged += onMeso;
         Action<Ms2.Net.Packets.ItemDropNotice> onDrop = n => ChatLog.AddItemDropNotice(n.Name, n.ItemId, n.Grade, n.Uid);
         live.ItemDropNoticed += onDrop;
-        unwatchMeso = () => { live.MesoChanged -= onMeso; live.ItemDropNoticed -= onDrop; };
+        currencyFeed = new Ms2.Ui.Hud.CurrencyFeed(hudModel)
+        {
+            Sound = key => FieldAudio.Instance?.PlayUi(key),
+            Line = (text, kind) => ChatLog.AddSystemLine(text, kind),
+        };
+        Action<Ms2.Net.Packets.MeretUpdate> onMeret = currencyFeed.OnMeret;
+        Action<Ms2.Net.Packets.MeretUseUpdate> onMeretUse = currencyFeed.OnMeretUse;
+        Action<Ms2.Net.Packets.CurrencyTokenUpdate> onToken = currencyFeed.OnCurrencyToken;
+        Action<Ms2.Net.Packets.SystemSound> onSound = m => { if (m.Key.Length > 0) FieldAudio.Instance?.PlayUi(m.Key); };
+        Action<Ms2.Net.Packets.SmartPushMessage> onPush = OnSmartPush;
+        live.MeretReceived += onMeret; live.MeretUseReceived += onMeretUse; live.CurrencyTokenReceived += onToken;
+        live.SystemSoundReceived += onSound; live.SmartPushReceived += onPush;
+        unwatchMeso = () =>
+        {
+            live.MesoChanged -= onMeso; live.ItemDropNoticed -= onDrop;
+            live.MeretReceived -= onMeret; live.MeretUseReceived -= onMeretUse; live.CurrencyTokenReceived -= onToken;
+            live.SystemSoundReceived -= onSound; live.SmartPushReceived -= onPush;
+        };
     }
 
     /// <summary>

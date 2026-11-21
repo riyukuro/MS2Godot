@@ -209,6 +209,20 @@ public sealed partial class RemoteLayer : Node3D
                 Numbered(n, npcs.Placed(n.TargetId), users.TryGetValue(n.TargetId, out var r) ? r.Damage : null);
     }
 
+    /// <summary>One number on an actor of the field (CSceneStateGame::FUN_141731190's vfunc_111 call), through the same show
+    /// test as a damage record's numbers; false when the id is no npc or player of the field.</summary>
+    public bool ShowNumber(Ms2.Ui.Hud.DamageNumber n)
+    {
+        if (Numbered == null) return false;
+        var npc = npcs.Placed(n.TargetId);
+        users.TryGetValue(n.TargetId, out var r);
+        if (npc == null && r == null) return false;
+        pcMask ??= PcMask;
+        var o = GameOptions.Current?.BattleOption ?? defaultBattle;
+        if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask)) Numbered(n, npc, r?.Damage);
+        return true;
+    }
+
     int PcMask(int id) => !users.TryGetValue(id, out var r) ? 0
         : LiveSession.Instance?.Party is { PartyId: not 0 } p && p.Find(r.CharacterId) != null ? 2 : 4;
 

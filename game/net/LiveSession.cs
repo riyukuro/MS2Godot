@@ -196,6 +196,20 @@ public partial class LiveSession : Node
     /// reaches the HUD through <see cref="MyCharacter.Changed"/> (status event 8, :7020).
     /// </summary>
     public event Action<long, int> MesoChanged;
+    /// <summary>The Meret packet (0x3A, OnMeret :7025) after <see cref="Me"/>'s balances were left to the HUD: the wallet and delta.</summary>
+    public event Action<MeretUpdate> MeretReceived;
+    /// <summary>The MeretUse packet (0x117, OnMeretUse :7053): the red balance and its delta.</summary>
+    public event Action<MeretUseUpdate> MeretUseReceived;
+    /// <summary>The CurrencyToken packet (0x3B, OnCurrencyToken :7094).</summary>
+    public event Action<CurrencyTokenUpdate> CurrencyTokenReceived;
+    /// <summary>PlaySystemSound (0xC3, :4389): the sound key.</summary>
+    public event Action<SystemSound> SystemSoundReceived;
+    /// <summary>SmartPush (0xD7, :7335).</summary>
+    public event Action<SmartPushMessage> SmartPushReceived;
+    /// <summary>NoticeDialog (0xCF, UINoticeDialog::OnNoticeDialog).</summary>
+    public event Action<NoticeDialogMessage> NoticeDialogReceived;
+    /// <summary>NewsNotification (0x9F, :3789).</summary>
+    public event Action<NewsNotification> NewsNotificationReceived;
     /// <summary>OnItemDropNotice: a drop notice for the chat log.</summary>
     public event Action<ItemDropNotice> ItemDropNoticed;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
@@ -1058,6 +1072,23 @@ public partial class LiveSession : Node
                 long delta = Me.Apply(m);
                 GD.Print($"live: meso {m.Balance} ({delta:+#;-#;0}, kind {m.Kind})");
                 MesoChanged?.Invoke(delta, m.Kind);
+            }
+            else if (game.Is(p, Inbound.Meret)) MeretReceived?.Invoke(MeretUpdate.Read(p.Reader()));
+            else if (game.Is(p, Inbound.MeretUse)) MeretUseReceived?.Invoke(MeretUseUpdate.Read(p.Reader()));
+            else if (game.Is(p, Inbound.CurrencyToken)) CurrencyTokenReceived?.Invoke(CurrencyTokenUpdate.Read(p.Reader()));
+            else if (game.Is(p, Inbound.PlaySystemSound)) SystemSoundReceived?.Invoke(SystemSound.Read(p.Reader()));
+            else if (game.Is(p, Inbound.SmartPush)) SmartPushReceived?.Invoke(SmartPushMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.NoticeDialog)) NoticeDialogReceived?.Invoke(NoticeDialogMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.NewsNotification)) NewsNotificationReceived?.Invoke(NewsNotification.Read(p.Reader()));
+            else if (game.Is(p, Inbound.UiText))
+            {
+                var t = UiText.Read(p.Reader());   // CSceneStateGame::FUN_141731190 (:7878): a recover number on the actor
+                if (t.Grade >= 0)
+                {
+                    var n = new Ms2.Ui.Hud.DamageNumber(t.ObjectId, t.Value, t.Grade, t.ObjectId);
+                    if (t.ObjectId == SelfObjectId) DamageNumbered?.Invoke(n, null, null);
+                    else remote?.ShowNumber(n);
+                }
             }
             else if (game.Is(p, Inbound.LevelUp))
             {
