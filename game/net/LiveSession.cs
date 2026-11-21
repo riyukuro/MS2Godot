@@ -1465,6 +1465,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(ResponseCubeHeldItem.Read(p.Reader()));
             else if (game.Is(p, Inbound.SetCraftMode)) OnSetCraftMode(SetCraftMode.Read(p.Reader()));
             else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.ChatStamp)) OnChatStamp(ChatStampMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToLogin)) OnGameToLogin(GameToLogin.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
             else if (game.Is(p, Inbound.DynamicChannel)) OnDynamicChannel(DynamicChannelMessage.Read(p.Reader()));
