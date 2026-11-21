@@ -167,7 +167,7 @@ public sealed record ResponseCubePlace(byte Mode, byte Error, int CharacterId, i
 /// cubes of i32 the packed cell (FUN_1408a0400), i64 owner, the CubeItemInfo (CubeItemInfo(CInPacket), ugcmapoptions.cpp:91),
 /// i32 group and i32 floor (Cube field50 / field54), u8 liftable (field4c), f32 rotation, i32 house (fieldD8), u8 notice flag;
 /// flag 1: the notice's text and u8 type (NoticeCubeInfo::Set). Null for another mode (1-3 are the plot states, owners and
-/// expiries, not read here). The client reads the cubes only without the launch option IsSkipLoadingUgcCube, which ours
+/// sale states, <see cref="LoadCubesPlots"/>). The client reads the cubes only without the launch option IsSkipLoadingUgcCube, which ours
 /// does not have.
 /// </summary>
 public sealed record LoadCubes(byte FloorState, IReadOnlyList<ResponseCubePlace> Cubes)
@@ -269,5 +269,45 @@ public sealed record SetCraftMode(int Id, byte CubeMode, CubeItemInfo Item, int 
         int craft = r.ReadInt();
         r.ExpectEnd("SetCraftMode");
         return new SetCraftMode(id, mode, item, craft);
+    }
+}
+
+/// <summary>
+/// Inbound LoadCubes modes 1-3, CSceneStateGame::OnLoadCubes (@0x141728110, scenestategame.cpp:10902-10944): u8 mode,
+/// i32 n, then n entries:
+/// <list type="bullet">
+/// <item>mode 1 (:10902-10911): i32 plot, u8 state (FUN_1410bbc00 takes the state and does not use it);</item>
+/// <item>mode 2 (:10912-10928): i32 plot, i32 block, unicode the owner's name, i64 the owner's id (SetCubeOwner);</item>
+/// <item>mode 3 (:10929-10941): i32 plot, i32 block, u8 state, i64 value (SetSaleState).</item>
+/// </list>
+/// Null for mode 0 (<see cref="LoadCubes"/>) and for a mode the client does not handle (the switch has no default).
+/// </summary>
+public sealed record LoadCubesPlots(byte Mode, IReadOnlyList<(int Plot, byte State)> States,
+    IReadOnlyList<LoadCubesPlots.PlotOwner> Owners, IReadOnlyList<LoadCubesPlots.PlotSale> Sales)
+{
+    public const byte ModeStates = 1, ModeOwners = 2, ModeSales = 3;
+
+    public sealed record PlotOwner(int Plot, int Block, string Name, long OwnerId);
+    public sealed record PlotSale(int Plot, int Block, byte State, long Value);
+
+    public static LoadCubesPlots Read(ByteReader r)
+    {
+        byte mode = r.ReadByte();
+        if (mode < ModeStates || mode > ModeSales) return null;
+        int n = r.ReadInt();
+        int cap = Math.Max(0, Math.Min(n, 4096));
+        var states = new List<(int, byte)>(mode == ModeStates ? cap : 0);
+        var owners = new List<PlotOwner>(mode == ModeOwners ? cap : 0);
+        var sales = new List<PlotSale>(mode == ModeSales ? cap : 0);
+        for (int i = 0; i < n; i++)
+        {
+            int plot = r.ReadInt();
+            if (mode == ModeStates) { states.Add((plot, r.ReadByte())); continue; }
+            int block = r.ReadInt();
+            if (mode == ModeOwners) { string name = r.ReadUnicodeString(); owners.Add(new PlotOwner(plot, block, name, r.ReadLong())); }
+            else { byte state = r.ReadByte(); sales.Add(new PlotSale(plot, block, state, r.ReadLong())); }
+        }
+        r.ExpectEnd("LoadCubes");
+        return new LoadCubesPlots(mode, states, owners, sales);
     }
 }

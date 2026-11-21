@@ -155,12 +155,17 @@ public partial class LiveSession
 
     /// <summary>LoadCubes (RecvOp 0x6A), CSceneStateGame::OnLoadCubes (@0x141728110, scenestategame.cpp:10857): mode 0's
     /// house cubes go into the player's cube map through the 0xa place path (<see cref="Ms2.Ui.CubeCellMap.Load"/>).
-    /// They answer RequestLoadUgcMap (<see cref="Ms2.Net.FieldEntry.Loaded"/>). STILL-OPEN: modes 1-3 (the plot states,
-    /// owners and expiries, :10902-10944).</summary>
+    /// They answer RequestLoadUgcMap (<see cref="Ms2.Net.FieldEntry.Loaded"/>). Modes 1-3 (:10902-10944) fill the plot
+    /// states, owners and sale states (<see cref="Ms2.Ui.CubePlots.Apply"/>).</summary>
     void OnLoadCubes(Ms2.Net.Wire.RawPacket p)
     {
         var m = LoadCubes.Read(p.Reader());
-        if (m == null) return;
+        if (m == null)
+        {
+            var plots = LoadCubesPlots.Read(p.Reader());
+            if (plots != null && player != null && IsInstanceValid(player)) player.Cubes.Cells.Plots.Apply(plots);
+            return;
+        }
         int added = player != null && IsInstanceValid(player) ? player.Cubes.Cells.Load(m, id => ItemExists?.Invoke(id) ?? true) : 0;
         GD.Print($"live: LoadCubes {m.Cubes.Count} cube(s), {added} added");
     }

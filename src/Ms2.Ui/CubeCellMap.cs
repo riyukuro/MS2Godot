@@ -29,6 +29,9 @@ public sealed class CubeCellMap : ICubeCells
     // 0xc8, which unpacks to -56), so the cube leaves with the entity it was added with, not one found from the key
     readonly Dictionary<int, (int X, int Y, int Z)> entityCells = new();
 
+    /// <summary>The plot tables LoadCubes modes 1-3 fill, kept with the field's cubes.</summary>
+    public readonly CubePlots Plots = new();
+
     public int Count => cubes.Count;
 
     /// <summary>The cubes with an entity position (the climb lookups' cubes).</summary>

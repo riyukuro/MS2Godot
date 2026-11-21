@@ -265,4 +265,34 @@ public class CubePacketTests
         Assert.That((b.Cell, b.Item.ItemId, b.NoticeText != null, b.NoticeType), Is.EqualTo((3, 50100002, true, (byte)6)));
         Assert.That(LoadCubes.Read(Reader(w => { w.WriteByte(1); w.WriteInt(0); })), Is.Null);
     }
+
+    [Test]
+    public void LoadCubesModesOneToThreeReadThePlotStatesOwnersAndSaleStates()
+    {
+        // OnLoadCubes (scenestategame.cpp:10902-10944): i32 n, then mode 1: i32 plot, u8 state; mode 2: i32 plot,
+        // i32 block, unicode name, i64 owner id; mode 3: i32 plot, i32 block, u8 state, i64 value
+        var m1 = LoadCubesPlots.Read(Reader(w => { w.WriteByte(1); w.WriteInt(2); w.WriteInt(7); w.WriteByte(1); w.WriteInt(-3); w.WriteByte(0); }));
+        Assert.That((m1.Mode, m1.States.Count, m1.Owners.Count, m1.Sales.Count), Is.EqualTo(((byte)1, 2, 0, 0)));
+        Assert.That(m1.States, Is.EqualTo(new[] { (7, (byte)1), (-3, (byte)0) }));
+
+        var m2 = LoadCubesPlots.Read(Reader(w =>
+        {
+            w.WriteByte(2); w.WriteInt(1);
+            w.WriteInt(4); w.WriteInt(101); w.WriteUnicodeString("o"); w.WriteLong(0x1_0000_0002);
+        }));
+        Assert.That((m2.Mode, m2.States.Count, m2.Owners.Count, m2.Sales.Count), Is.EqualTo(((byte)2, 0, 1, 0)));
+        Assert.That(m2.Owners[0], Is.EqualTo(new LoadCubesPlots.PlotOwner(4, 101, "o", 0x1_0000_0002)));
+
+        var m3 = LoadCubesPlots.Read(Reader(w =>
+        {
+            w.WriteByte(3); w.WriteInt(1);
+            w.WriteInt(5); w.WriteInt(102); w.WriteByte(2); w.WriteLong(-9);
+        }));
+        Assert.That((m3.Mode, m3.States.Count, m3.Owners.Count, m3.Sales.Count), Is.EqualTo(((byte)3, 0, 0, 1)));
+        Assert.That(m3.Sales[0], Is.EqualTo(new LoadCubesPlots.PlotSale(5, 102, 2, -9)));
+
+        // mode 0 is LoadCubes', and the switch has no default (:10944): neither is read here
+        Assert.That(LoadCubesPlots.Read(Reader(w => { w.WriteByte(0); w.WriteByte(0); w.WriteInt(0); })), Is.Null);
+        Assert.That(LoadCubesPlots.Read(Reader(w => { w.WriteByte(4); w.WriteInt(0); })), Is.Null);
+    }
 }
