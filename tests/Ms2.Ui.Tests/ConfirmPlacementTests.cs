@@ -154,6 +154,16 @@ public class ConfirmPlacementTests
     }
 
     [Test]
+    public void OutsideCraftModeTwoAnAttachableItemIsPlacedLikeAnyOther()
+    {
+        var c = Craft(2, 0, new Owner());
+        c.ConstructionUnlocked = true;
+        c.Locks = new CubeLock();
+        Assert.That(Confirm(c, out var s, new ItemData { InstallAttachable = 1 }), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That(s, Is.Not.Null);
+    }
+
+    [Test]
     public void ACubeInTheCellTakesTheOpenBranch()
     {
         var o = new Owner();

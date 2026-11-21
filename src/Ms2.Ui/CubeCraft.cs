@@ -249,7 +249,7 @@ public sealed class CubeCraftState
             if (Locks.IsLocked(item.ItemId, hasItemData: true, unlocked)) return PlacementStop.Locked;
         }
         if (data.HasCubeTextureMesh && !item.HasUploadedLook) return PlacementStop.NoTextureLook;
-        if (data.InstallAttachable != 0) return PlacementStop.AttachableOpen;
+        if (craft.Mode == 2 && data.InstallAttachable != 0) return PlacementStop.AttachableOpen;
         var cubes = Owner?.Cubes;
         if (cubes == null) return PlacementStop.NoCubeMap;
         int key = CubeCell.Key(craft.Cell);
