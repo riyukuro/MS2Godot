@@ -56,6 +56,8 @@ public class ProfileTests {
         Assert.That(p.Number(Outbound.RequestMoveField), Is.EqualTo((ushort) 0x6D));
         Assert.That(p.Number(Inbound.MeretMarket), Is.EqualTo((ushort) 0x6E));
         Assert.That(p.Number(Outbound.MeretMarket), Is.EqualTo((ushort) 0x3A));
+        Assert.That(p.Number(Inbound.Reactor), Is.EqualTo((ushort) 0x117));
+        Assert.That(p.Number(Outbound.StateReact), Is.EqualTo((ushort) 0xAA));
         Assert.That(p.TryInbound(0x60, out var op) && op == Inbound.UserMoveByPortal);
         Assert.That(p.Number(Inbound.Meret), Is.EqualTo((ushort) 0x3B));
         Assert.That(p.Number(Inbound.CurrencyToken), Is.EqualTo((ushort) 0x3C));
