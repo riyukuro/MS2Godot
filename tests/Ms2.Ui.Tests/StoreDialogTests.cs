@@ -212,6 +212,34 @@ public class StoreDialogTests
     }
 
     [Test]
+    public void ClosingAnNpcOpenedBankEndsTheTalkBeforeTheSort()
+    {
+        var w = Rig();
+        var order = new List<string>();
+        w.C.IsTalking = () => true;
+        w.C.EndTalk = () => order.Add("talk0");
+        w.Sender.Send = p => order.Add(p.GetType().Name);
+        Load(w.C, w.Model);
+        w.Sent.Clear();
+        w.C.Close();
+        Assert.That(order, Is.EqualTo(new[] { "talk0", nameof(StorageSortRequest) }));
+    }
+
+    [Test]
+    public void ClosingABankOpenedWithoutATalkSendsNoTalkEnd()
+    {
+        var w = Rig();
+        int ends = 0;
+        w.C.IsTalking = () => false;
+        w.C.EndTalk = () => ends++;
+        Load(w.C, w.Model);
+        w.Sent.Clear();
+        w.C.Close();
+        Assert.That(ends, Is.EqualTo(0));
+        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageSortRequest>());
+    }
+
+    [Test]
     public void ARealStoreIsNotAskedForAgain()
     {
         var w = Rig();
@@ -255,10 +283,13 @@ public class StoreDialogTests
     {
         var w = Rig(meso: 500);
         w.Sender.PlayerAlive = () => false;
+        var shown = new List<StorageErrorText>();
+        w.Sender.Notify = shown.Add;
         Load(w.C, w.Model);
         w.C.OnCallback("onClickDeposit", new object[0]);
         w.C.OnCallback("onClickWithDraw", new object[0]);
         Assert.That(w.Boxes, Is.Empty);
+        Assert.That(shown, Is.EqualTo(new[] { new StorageErrorText(StorageErrorKind.Notice, 0x42, null), new StorageErrorText(StorageErrorKind.Notice, 0x42, null) }));
     }
 
     [Test]

@@ -16,8 +16,7 @@ namespace Ms2.Ui.Hud;
 /// right-clicks. Nothing changes here before the server answers.</para>
 /// <para>STILL-OPEN: SendNpcTalkMode0 on close; the count boxes (ShowUseStoreCountInput / ShowSwapStoreCountInput) of a
 /// stack the client asks about: such an item is not sent; StoreSlot::vfunc_26's binding boxes and CItem::FUN_14052a580
-/// (the right-click withdraw and its bag slot search FUN_140a612b0): the withdraw path is not sent; FUN_141275260(0x42)
-/// when the meso buttons are refused.</para>
+/// (the right-click withdraw and its bag slot search FUN_140a612b0): the withdraw path is not sent; FUN_141275260(0x42).</para>
 /// <para>STILL-OPEN: vfunc_il13 (m_198 = 6) is mapped to the ready event; the platform dictionary check (vfunc_37) that
 /// gates the search is taken as 1; the open / close sounds; the search candidate list (UpdateSearchCandidates).</para>
 /// </summary>
@@ -58,6 +57,9 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     public event Action<int> InventoryWindowPos;
     /// <summary>FUN_141b109a0 on an expansion: s_strExpandBankSlot.</summary>
     public event Action ExpandEffect;
+    /// <summary>UITalkManager::GetTalking() != 0, and SendNpcTalkMode0.</summary>
+    public Func<bool> IsTalking;
+    public Action EndTalk;
     /// <summary>ShowMessageBox(text, type, 0, "").</summary>
     public Action<string, int> ShowBox = (t, type) => MessageBoxQueue.ShowMessageBox(t, type, null, "");
 
@@ -176,12 +178,13 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     }
 
     /// <summary>vfunc_67 (@0x141b0f0c0): the listeners dropped and UIDialog's close; m_198 = 0, the search text cleared.
-    /// CStore::RequestSort is sent (vfunc_67 :543). STILL-OPEN: SendNpcTalkMode0.</summary>
+    /// SendNpcTalkMode0 first when a talk is open (:541), then CStore::RequestSort (:543).</summary>
     public override void Close()
     {
         if (closing) return;
         closing = true;
         Unsubscribe();
+        if (IsTalking?.Invoke() == true) EndTalk?.Invoke();   // vfunc_67 :541: SendNpcTalkMode0 while a talk is open, before the sort
         Sender?.RequestSort();
         base.Close();
         pending = 0;
@@ -226,10 +229,11 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
 
     /// <summary>onClickDeposit / onClickWithDraw (vfunc_28 :675): with FUN_141b11490 true (store id 0, the player alive) an
     /// input box (type 7; Common 0x2a9 / 0x2aa; tag "deposit" / "withdraw") of as many characters as the grouped maximum
-    /// has; its answer is <see cref="OnMesoAnswer"/>. Refused: FUN_141275260(0x42) is STILL-OPEN, nothing is shown.</summary>
+    /// has; its answer is <see cref="OnMesoAnswer"/>. Refused: the notice Common 0x42.</summary>
     void AskMesos(bool deposit)
     {
-        if (Sender == null || Model == null || !Sender.CanStartMeso()) return;
+        if (Sender == null || Model == null) return;
+        if (!Sender.CanStartMeso()) { Sender.Notify?.Invoke(new StorageErrorText(StorageErrorKind.Notice, 0x42, null)); return; }   // FUN_141275260(0x42, 1, 1)
         var box = MessageBoxQueue.Create(7, Model.Tables.Common(deposit ? 0x2a9 : 0x2aa), null, deposit ? "deposit" : "withdraw");
         long max = deposit ? Sender.DepositMax : Sender.WithdrawMax;
         box.SetInput(1, "", Group(max).Length, 0, 0);
