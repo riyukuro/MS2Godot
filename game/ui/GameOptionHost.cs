@@ -239,7 +239,12 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         MessageBoxQueue.ShowMessageBox(Common(stringId), 1, new Listener(listener.OnMessage, false), tag);
 
     public void ApplyCamera(GameOption.Camera camera) => GD.Print("options: camera option stored (CameraMgr and BGTransparencyMgr are not ported)");
-    public void ApplyInterface(GameOption.Interface state) => GD.Print("options: interface stored (the damage meters and the damage effect are not hosted)");
+    /// <summary>The HUD's UIDamageEffect::SetAlpha, null without a HUD.</summary>
+    public Action<int> DamageEffectAlpha;
+
+    /// <summary>CGameOptionInterface::vfunc_10's hosted part (gameoptionstruct.cpp:388): the damage effect's SetAlpha with
+    /// the option's damageEffectAlpha. STILL-OPEN: the damage meters (0x4f22 / 0x4f23) are not hosted.</summary>
+    public void ApplyInterface(GameOption.Interface state) => DamageEffectAlpha?.Invoke(state.DamageEffectAlpha);
     public void SetMouseControl(bool on) => GD.Print($"options: mouse control {(on ? "on" : "off")} (CMouseController is not ported)");
     public void ResetUiLayout() => GD.Print("options: UI layout reset (UISwfEntityManager::ResetLayout is not ported)");
     public void UiScaleChanged(float scale) { }   // the UI scale is read from the option at layout (UiScale)

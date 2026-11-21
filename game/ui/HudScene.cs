@@ -333,7 +333,7 @@ public partial class HudScene : Node, IUiStageHost
         u = UiScale.For(window);
         layer.Offset = UiScale.MovieOrigin;                                  // the movies' viewport (GFxMovie::vfunc_7)
         var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
-        AddChild(damageEffect = new DamageEffect(assets, constants, window));                             // UIDamageEffect
+        AddChild(damageEffect = new DamageEffect(assets, constants, window, GameOptions.Current.InterfaceOption.DamageEffectAlpha));                             // UIDamageEffect
         damageEffect.Hp(data.Player.HpCurrent, data.Player.HpMax);
         var nameTag = playerNameTag = new PlayerNameTag(assets, constants, data.Player.Name, window);     // the own PC's UINameTag
         AddChild(nameTag);
@@ -557,7 +557,7 @@ public partial class HudScene : Node, IUiStageHost
         if (GuideRefusesOpen("GameOptionDialog")) return;
         if (optionDialog == null)
         {
-            optionHost = new GameOptionHost(this, assets.Packs, commonStrings);
+            optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a) };
             if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
             optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
         }
