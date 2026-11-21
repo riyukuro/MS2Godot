@@ -52,14 +52,9 @@ public partial class HudScene
         if (revivalMovie != null) { revivalMovie.Host.Unload(); revivalMovie.QueueFree(); revivalMovie = null; }
         var c = new RevivalDialogController();
         var e = c.Env;
-        e.HasPlayer = () => live.Me.ObjectId >= 0;
-        e.IsDead = () => live.Me.Dead;
-        e.Level = () => live.Me.User?.Level ?? 1;
-        e.Meso = () => live.Me.Meso;
-        e.RevivalBlocked = () => live.Me.RevivalBlocked;
-        e.RoomRevivalsUsed = () => live.Me.DungeonRevivalsUsed;
-        e.Send = live.SendRevival;
-        e.Notice = text => SystemNoticeText(text);
+        var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
+        RevivalWiring.Connect(e, live.Me, () => live.FieldId, id => { try { return Ms2.Formats.World.FieldData.FindById(packs, id); } catch { return null; } },
+            live.SendRevival, text => SystemNoticeText(text), id => hudModel.Tables.Common(id));
         c.Unloaded += () => { revivalMovie?.Host.Unload(); revivalMovie?.QueueFree(); revivalMovie = null; };
         revival = c;
         revivalMovie = new MovieDialog(assets, revival, hudModel, ScreenMode.PixelSize(GetWindow()));

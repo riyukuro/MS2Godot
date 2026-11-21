@@ -94,6 +94,15 @@ public sealed class FieldData
     /// (PortalAction FUN_140956370, actionkeyobject.cpp:1117).</summary>
     public int RequireQuest;
 
+    /// <summary>The map properties of the death state (CFieldData ctor/load, fielddata.cpp:544-556, :665-699, :729): revivalreturnid
+    /// (the field's own id when 0 or missing), deathPenalty (1), autoRevivalType and autoRevivalTime (0), doNotRevivalHere (0),
+    /// infinityMeratRevival (1).</summary>
+    public int RevivalReturnId, DeathPenalty = 1, AutoRevivalType, AutoRevivalTime;
+    public bool DoNotRevivalHere, InfiniteMeratRevival = true;
+    /// <summary>CFieldData::HasAutoRevivalType1 / 2 (fielddata.cpp:827, :830): the type with a time above 0.</summary>
+    public bool HasAutoRevivalType1 => AutoRevivalType == 1 && AutoRevivalTime > 0;
+    public bool HasAutoRevivalType2 => AutoRevivalType == 2 && AutoRevivalTime > 0;
+
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
     /// <summary>The parsed table, once per pack set: a pack entry never changes, the callers only read the tree, and FieldData results are built fresh from it.</summary>
@@ -191,6 +200,11 @@ public sealed class FieldData
         o.GlobalSplit = Flag(env.Element("split"), "globalSplit");
         o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
         o.MinimapPing = BoolAttr(prop, "minimapPing", false);
+        o.RevivalReturnId = Int(prop, "revivalreturnid"); if (o.RevivalReturnId == 0) o.RevivalReturnId = o.Id;
+        o.DeathPenalty = prop?.Attribute("deathPenalty") != null ? Int(prop, "deathPenalty") : 1;
+        o.AutoRevivalType = Int(prop, "autoRevivalType"); o.AutoRevivalTime = Int(prop, "autoRevivalTime");
+        o.DoNotRevivalHere = Flag(prop, "doNotRevivalHere");
+        o.InfiniteMeratRevival = prop?.Attribute("infinityMeratRevival") == null || Flag(prop, "infinityMeratRevival");
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
         o.GemSystem = BoolAttr(prop, "gemSystem", true);
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;

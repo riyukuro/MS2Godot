@@ -73,6 +73,36 @@ public class FieldDataTests
         TestContext.WriteLine($"minimapPing on {on}, off {off}");
     }
 
+    /// <summary>The death-state map properties (fielddata.cpp:665-699, :729) follow the property's attributes with the client's defaults.</summary>
+    [Test]
+    public void RevivalPropertiesFollowTheProperty()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        int withReturn = 0, withAuto = 0, noPenalty = 0;
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+        {
+            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+            if (env?.Element("xblock")?.Attribute("name") == null) continue;
+            var prop = env.Element("property") ?? fd.Element("property");
+            int I(string a, int d) => int.TryParse((string)prop?.Attribute(a), out var n) ? n : d;
+            var f = FieldData.FindById(packs, (int)fd.Attribute("id"));
+            if (f == null || f.Id != (int)fd.Attribute("id")) continue;
+            int ret = I("revivalreturnid", 0);
+            Assert.That(f.RevivalReturnId, Is.EqualTo(ret == 0 ? f.Id : ret), "return " + f.Id);
+            Assert.That(f.DeathPenalty, Is.EqualTo(I("deathPenalty", 1)), "penalty " + f.Id);
+            Assert.That((f.AutoRevivalType, f.AutoRevivalTime), Is.EqualTo((I("autoRevivalType", 0), I("autoRevivalTime", 0))), "auto " + f.Id);
+            Assert.That(f.DoNotRevivalHere, Is.EqualTo(I("doNotRevivalHere", 0) != 0), "no revive " + f.Id);
+            Assert.That(f.InfiniteMeratRevival, Is.EqualTo(prop?.Attribute("infinityMeratRevival") == null || I("infinityMeratRevival", 0) != 0), "infinite " + f.Id);
+            if (ret != 0 && ret != f.Id) withReturn++;
+            if (f.HasAutoRevivalType1 || f.HasAutoRevivalType2) withAuto++;
+            if (f.DeathPenalty == 0) noPenalty++;
+        }
+        TestContext.WriteLine($"other return field {withReturn}, auto revival {withAuto}, no penalty {noPenalty}");
+        Assert.That(withReturn, Is.GreaterThan(0));
+    }
+
     /// <summary>The index gives what a scan of the table gives: by id the last entry of an id that has a default xblock
     /// (CFieldData::LoadFieldData, fielddata.cpp:591 SetAt), by xblock the first entry of a name.</summary>
     [Test]

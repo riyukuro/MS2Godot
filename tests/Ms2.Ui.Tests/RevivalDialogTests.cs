@@ -154,6 +154,57 @@ public class RevivalDialogTests
         Assert.That(r.Sent, Is.EqualTo(new[] { "Revival:00" }));
         Assert.That(r.C.OnCallback("other", Array.Empty<object>()), Is.False);
     }
+    static Ms2.Net.Packets.MyCharacter DeadPlayer()
+    {
+        var me = new Ms2.Net.Packets.MyCharacter();
+        var u = new Ms2.Net.Packets.FieldAddUser { ObjectId = 9, User = new Ms2.Net.Packets.UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[1].Health = 400; u.Stats[2].Health = 480;
+        me.Apply(u);
+        me.Apply(new Ms2.Net.Packets.PlayerStat(9, new Dictionary<byte, long[]> { [Ms2.Net.Packets.PlayerStat.Health] = new long[] { 500, 400, 0 } }));
+        me.Die(9);
+        return me;
+    }
+    /// <summary>The wiring the game scene uses: the field data feeds Field and FieldId, so the free button sends; the paid ones send nothing.</summary>
+    [Test]
+    public void TheGameWiringSendsTheFreeReviveFromTheFieldData()
+    {
+        var me = DeadPlayer();
+        Assert.That(me.Dead, Is.True);
+        var sent = new List<string>(); var notices = new List<string>();
+        var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
+        c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
+        RevivalWiring.Connect(c.Env, me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id },
+            p => sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), notices.Add, id => $"notice {id:x}");
+        c.Refresh();
+        c.OnRevival(1);
+        Assert.That(sent, Is.EqualTo(new[] { "Revival:00" }));
+        sent.Clear();
+        c.OnRevival(2);
+        Assert.That(sent, Is.Empty, "the paid revive needs inputs the game does not have yet");
+    }
+
+    [Test]
+    public void TheGameWiringSendsNothingWithoutFieldData()
+    {
+        var me = DeadPlayer();
+        var sent = new List<string>();
+        var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
+        RevivalWiring.Connect(c.Env, me, () => 100, _ => null, p => sent.Add(p.Op.ToString()), _ => { }, id => "");
+        c.Refresh();
+        c.OnRevival(1);
+        Assert.That(sent, Is.Empty);
+    }
+
+    [Test]
+    public void TheGameWiringNoticesTheCommonStringById()
+    {
+        var me = DeadPlayer();
+        var notices = new List<string>();
+        var c = new RevivalDialogController();
+        RevivalWiring.Connect(c.Env, me, () => 100, _ => null, _ => { }, notices.Add, id => $"notice {id:x}");
+        c.Env.NoticeById(0x281);
+        Assert.That(notices, Is.EqualTo(new[] { "notice 281" }));
+    }
 }
 
 /// <summary>UIAutoReviveCountDownDialog's countdown (vfunc_72, FUN_141284d70).</summary>

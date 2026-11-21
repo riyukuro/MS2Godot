@@ -39,6 +39,9 @@ public sealed class RevivalEnvironment
     public Func<int> MesoRevivalRemaining = () => 0;
     /// <summary>CGameRule::FUN_140477d10(FUN_141658f30()) (RefreshMesoButton, :776): 1 = the meso revive is a flat rule.</summary>
     public Func<int> MesoRevivalRule = () => 0;
+    /// <summary>False when an input of a paid revive's send is not available (the buffs' disable check, the meso revivals left, the
+    /// platform's merat check): the paid buttons then send nothing. A host that wires all three sets it true; the default is true.</summary>
+    public Func<bool> PaidRevivalWired = () => true;
 
     // ---- the world, the field and the dungeon ----
     public Func<int> FieldId = () => 0;
@@ -258,7 +261,7 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener
     /// <summary>FUN_141abbb20 (@0x141abbb20): the merat button.</summary>
     void MeratRevive()
     {
-        if (!Env.HasPlayer()) return;
+        if (!Env.HasPlayer() || !Env.PaidRevivalWired()) return;
         var field = Env.Field();
         if (field == null || !CanReviveHere(field)) return;
         RefreshMeratButton();
@@ -276,7 +279,7 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener
     /// <summary>FUN_141abc080 (@0x141abc080): the meso button.</summary>
     void MesoRevive()
     {
-        if (!Env.HasPlayer()) return;
+        if (!Env.HasPlayer() || !Env.PaidRevivalWired()) return;
         var field = Env.Field();
         if (field == null || !CanReviveHere(field)) return;
         RefreshMesoButton();
