@@ -3523,6 +3523,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "mailsend" && frames == 200) OpenMailSendShot();
         if (openShot == "chatemoticon" && frames == 200) OpenChatEmoticon();    // with --chatemoticon-fixture: every pack owned
         if (openShot == "inventory" && frames == 200) ToggleInventory();
+        if (openShot is "selectitembox" or "multiopenbox" && frames == 200) OpenSelectItemBoxShot(openShot == "multiopenbox");
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
         if (openShot == "levelupguide" && frames == 200) ToggleLevelUpGuide();
         if (openShot == "learningquest" && frames == 200) OpenLearningQuest();

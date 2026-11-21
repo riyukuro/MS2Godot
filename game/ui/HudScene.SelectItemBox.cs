@@ -27,13 +27,12 @@ public partial class HudScene
     void OpenSelectItemBox(Item item)
     {
         if (SelectItemBoxOpen) return;
-        if (Ms2Godot.Net.LiveSession.Instance is not { } live) { GD.Print("select item box: needs the live session"); return; }
         if (selectItemBoxMovie != null) { selectItemBoxMovie.Host.Unload(); selectItemBoxMovie.QueueFree(); selectItemBoxMovie = null; }
         var tables = hudModel.Tables;
         var c = new SelectItemBoxController
         {
             ItemUid = item.Uid,
-            FindItem = uid => live.Items.Get(uid) is { } e ? InventoryController.ToItem(e, tables.Items) : null,
+            FindItem = uid => uid == item.Uid ? item : inventory?.FindItem(uid),
             HaveCount = id => inventory?.BagCountOf(id) ?? 0,
             OpenContents = (box, indices) => inventory?.OpenItemBoxContents(box, indices),
             GetBoxItems = boxId =>
@@ -56,21 +55,21 @@ public partial class HudScene
     void OpenItemMultiOpen(int itemId, int rarity, string args, int count)
     {
         if (ItemMultiOpenOpen) return;
-        if (Ms2Godot.Net.LiveSession.Instance is not { } live) { GD.Print("item multi open: needs the live session"); return; }
+        var live = Ms2Godot.Net.LiveSession.Instance;
         if (itemMultiOpenMovie != null) { itemMultiOpenMovie.Host.Unload(); itemMultiOpenMovie.QueueFree(); itemMultiOpenMovie = null; }
         var c = new ItemMultiOpenBoxController(InventoryController.ItemBoxMultiOpenLimit)
         {
             NowMs = () => (long)Time.GetTicksMsec(),
             InBag = id => inventory?.BagCountOf(id) > 0,
-            Send = live.SendItemBox,
+            Send = request => live?.SendItemBox(request),
             ShowNotice = text => MessageBoxQueue.Show(MessageBoxQueue.Create(0, text, null, "")),
         };
         c.State.Open(itemId, (short)rarity, args, count);
         itemBoxAnswer = c.OnItemBox;
-        live.ItemBoxResulted += itemBoxAnswer;
+        if (live != null) live.ItemBoxResulted += itemBoxAnswer;
         c.Unloaded += () =>
         {
-            live.ItemBoxResulted -= itemBoxAnswer;
+            if (live != null) live.ItemBoxResulted -= itemBoxAnswer;
             itemMultiOpenMovie?.Host.Unload(); itemMultiOpenMovie?.QueueFree(); itemMultiOpenMovie = null;
         };
         itemMultiOpen = c;
@@ -86,5 +85,24 @@ public partial class HudScene
         if (!SelectItemBoxOpen || k.Keycode != Key.Escape) return false;
         selectItemBox.Close();
         return true;
+    }
+
+    /// <summary>--uigen-open selectitembox|multiopenbox: the dialog over a fixture item (no live session; the shot never sends).</summary>
+    void OpenSelectItemBoxShot(bool multi)
+    {
+        var tables = hudModel.Tables;
+        if (multi) { OpenItemMultiOpen(20300327, 1, "", 7); return; }
+        for (int id = 20300000; id < 20400000; id++)
+        {
+            if (tables.Items.Get(id) is not { FunctionName: "SelectItemBox" } d || d.FunctionArgInt(1, 0) == 0) continue;
+            var list = new List<ItemDropEntry>();
+            tables.IndividualDrops.GetBoxItems(tables.Items, d.FunctionArgInt(1, 0), 1, 0, true, list);
+            if (list.Count == 0) continue;
+            var item = Item.Create(tables.Items, id, 1);
+            item.Uid = 1;
+            OpenSelectItemBox(item);
+            return;
+        }
+        GD.Print("select item box shot: no SelectItemBox item with a drop box");
     }
 }
