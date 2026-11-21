@@ -166,17 +166,6 @@ public class ChatEmoticonTests
         Assert.That(boxes, Has.Count.EqualTo(5));                 // codes 0-4 each show a box, 5 none
     }
 
-    [Test]
-    public void AFavoriteRequestNeedsAUsableEmoticon()
-    {
-        var t = Table();
-        var e = t.Emoticons.First();
-        var s = State();
-        Assert.That(s.FavoriteRequest(e.Id, true), Is.Null);
-        s.AddGroup(e.GroupId, 5000);
-        Assert.That(s.FavoriteRequest(e.Id, true), Is.EqualTo(new ChatStickerFavoriteRequest((int)e.Id, true)));
-    }
-
     // ---- the dialog ----
 
     ChatEmoticonDialogController Dialog(ChatEmoticonState s, out List<(string, uint)> picks, out List<ChatStickerListRequest> lists)
@@ -268,7 +257,8 @@ public class ChatEmoticonTests
         UiFixture.Apply(m);
         m.HasLocalPlayer = true;
         var l = log = new MessengerBrowser { Model = m, ChatEmoticons = s };
-        l.SendChatSticker = sent.Add;
+        l.SendSticker = sent.Add;
+        l.IsEmoticonUsable = id => id > 0 && s.IsEmoticonUsable((uint)id);
         var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true, l);
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1920; p.StageH = 1080;
@@ -290,7 +280,7 @@ public class ChatEmoticonTests
         Assert.That(sent, Is.Empty);
         s.AddGroup(e.GroupId, 5000);
         Assert.That(c.SendEmoticon((int)e.Id), Is.True);
-        var req = (ChatStickerSendRequest)sent.Single();
+        var req = (ChatStickerRequest)sent.Single();
         Assert.That(req.EmoticonId, Is.EqualTo((int)e.Id));
         Assert.That(req.Window, Is.EqualTo(c.Name));
     }
@@ -305,7 +295,7 @@ public class ChatEmoticonTests
         Assert.That(sent, Is.Empty);
         s.AddGroup(e.GroupId, 5000);
         Assert.That(c.SetEmoticonFavorite((int)e.Id, false), Is.True);
-        Assert.That(sent.Single(), Is.EqualTo(new ChatStickerFavoriteRequest((int)e.Id, false)));
+        Assert.That(sent.Single(), Is.EqualTo(ChatStickerRequest.SetFavorite((int)e.Id, false)));
     }
 
     [Test]
@@ -315,13 +305,13 @@ public class ChatEmoticonTests
         var s = State();
         s.AddGroup(e.GroupId, 5000);
         var c = Messenger(s, out var log);
-        int toggles = 0; log.ToggleChatEmoticon = () => toggles++;
+        int toggles = 0; log.ToggleEmoticonDialog = () => toggles++;
         Assert.That(c.OnCallback("eventChatEmoticonOpen", Array.Empty<object>()), Is.False);
         Assert.That(toggles, Is.EqualTo(1));
         c.OnCallback("eventChatEmoticonPush", new object[] { e.Id });
-        Assert.That(sent.OfType<ChatStickerSendRequest>().Count(), Is.EqualTo(1));
+        Assert.That(sent.OfType<ChatStickerRequest>().Count(r => r.Mode == ChatStickerRequest.Use), Is.EqualTo(1));
         c.OnCallback("eventChatEmoticonFavorite", new object[] { e.Id, true });
-        Assert.That(sent.OfType<ChatStickerFavoriteRequest>().Count(), Is.EqualTo(1));
+        Assert.That(sent.OfType<ChatStickerRequest>().Count(r => r.Mode == ChatStickerRequest.Favorite), Is.EqualTo(1));
     }
 
     [Test]
