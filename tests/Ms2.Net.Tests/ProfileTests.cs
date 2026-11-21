@@ -65,6 +65,8 @@ public class ProfileTests {
         Assert.That(p.Number(Inbound.PlaySystemSound), Is.EqualTo((ushort) 0xC5));
         Assert.That(p.Number(Inbound.NoticeDialog), Is.EqualTo((ushort) 0xD1));
         Assert.That(p.Number(Inbound.SmartPush), Is.EqualTo((ushort) 0xD9));
+        Assert.That(p.Number(Outbound.NewsNotification), Is.EqualTo((ushort) 0x64));
+        Assert.That(p.Number(Outbound.SmartPush), Is.EqualTo((ushort) 0x84));
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
         Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));

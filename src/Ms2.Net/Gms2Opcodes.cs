@@ -151,6 +151,8 @@ static class Gms2Opcodes {
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
         [Outbound.SkillMacro] = 0x7C,
+        [Outbound.NewsNotification] = 0x64,   // upstream RecvOp NewsNotification
+        [Outbound.SmartPush] = 0x84,          // upstream RecvOp SmartPush
         [Outbound.ChatSticker] = 0xB9,
         [Outbound.Breakable] = 0x27,
         [Outbound.Liftable] = 0x3D,
