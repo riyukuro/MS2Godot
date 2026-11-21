@@ -28,6 +28,7 @@ public sealed class NpcLayer
         public int NpcId, Life, Moves;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public bool Placeholder, Dead;
+        public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
         public float Height = 150;
         public long HpCur, HpMax;                 // the npc's stat pair (FieldAddNpc, then the Stat packets)
         public ShaderMaterial HpMat;                 // a replay's stand-in quad
@@ -48,6 +49,22 @@ public sealed class NpcLayer
     /// <summary>The live field's head bars (the uihpbar movie); null in a replay, whose bars stay the stand-in quads.</summary>
     public LiveHpBars Bars;
     public int Deaths, NoDeathSequence;
+    /// <summary>
+    /// StateDeadNPC::EndOfSequence (@0x1417c3140, statedead.cpp:291): the death sequence of an npc that holds exp
+    /// (FUN_141094e20 > 0) ended; MyPC::FUN_1415294f0 (mypc.cpp:2858) sets the npc's exp and FlushDamageText (@0x141093910)
+    /// shows it on the npc (FUN_141912a80 type 0) and zeroes it. The npc and its exp.
+    /// STILL-OPEN: FUN_1415294f0's CGetExp::AddEffect and CDPSMeterSystem::AddExp are not ported.
+    /// </summary>
+    public Action<World.FieldNpcs.Placed, long> ExpShown;
+
+    /// <summary>OnExpUp with this npc's object id: CNpc::FUN_141094df0 (@0x141094df0) adds the gain to the npc, dead or
+    /// not; false when there is no npc of the id (WorldService::FindNpcById null), and the own PC shows it.</summary>
+    public bool AddExp(int id, long exp)
+    {
+        if (!inst.TryGetValue(id, out var i)) return false;
+        i.Exp += exp;
+        return true;
+    }
 
     // kfm name (lower case) -> its entry in the Npc pack; the folder layout differs by id range (NN/NN/NNNNNNNN or NN/NNNNNNNN)
     readonly Dictionary<string, string> kfmEntries = new();
@@ -299,6 +316,18 @@ public sealed class NpcLayer
             if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
             i.Player.Play(name, 0.1);
             i.Playing = name; i.Sequence = seq.Id;
+            // EndOfSequence of the death sequence, once (m_bFinished); a body without a death sequence never gets there
+            var player = i.Player;
+            void Ended(StringName ended)
+            {
+                if (ended != name) return;
+                player.AnimationFinished -= Ended;
+                if (i.Exp <= 0) return;
+                long exp = i.Exp;
+                i.Exp = 0;
+                ExpShown?.Invoke(i.Talk, exp);
+            }
+            player.AnimationFinished += Ended;
         }
     }
 

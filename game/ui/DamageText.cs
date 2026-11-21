@@ -147,9 +147,23 @@ public sealed partial class DamageText : CanvasLayer
     public void OnNpc(FieldNpcs.Placed n, long value, int grade, bool casterMe = true)
     {
         if (!Ready() || n?.Root == null) return;
+        Spawn(NpcTarget(n), value, grade, casterMe);
+    }
+
+    /// <summary>CNpc::FlushDamageText (@0x141093910): an npc's exp at the end of its death sequence, FUN_141912a80 type 0 on
+    /// the npc (its Eff_Body). With no Exp glyph in the movie it shows nothing, as the own PC's exp.</summary>
+    public void OnNpcExp(FieldNpcs.Placed n, long exp)
+    {
+        if (!Ready() || n?.Root == null || exp <= 0) return;
+        Gain(NpcTarget(n), (int)exp, 0, null);
+    }
+
+    DamageTarget NpcTarget(FieldNpcs.Placed n)
+    {
         if (!targets.TryGetValue(n.Root, out var t) || t.Gone)
-            targets[n.Root] = t = new DamageTarget(n.Root, () => NpcPresence.Dummy(n, "Eff_Damage") ?? n.Root.GlobalPosition, false);
-        Spawn(t, value, grade, casterMe);
+            targets[n.Root] = t = new DamageTarget(n.Root, () => NpcPresence.Dummy(n, "Eff_Damage") ?? n.Root.GlobalPosition, false,
+                () => NpcPresence.Dummy(n, "Eff_Body") ?? n.Root.GlobalPosition);
+        return t;
     }
 
     /// <summary>A number on another player (RemoteLayer's target for it); <paramref name="casterMe"/> when the local player dealt it.</summary>
@@ -259,6 +273,8 @@ public sealed partial class DamageText : CanvasLayer
         string grade = DamageTextNames.GainGradeName(type);
         var look = type == 2 ? DamageLook.ForItem(text, target, grade) : DamageLook.For(text, target, grade);
         var clip = Build(look, text, grade, iconPath, 1, -1);
+        // FUN_1419175c0 (@0x1419175c0) inserts only when the Invoke gave an object: a thrown DamageMovie init (no Exp glyph)
+        // returns none, so no DamageInfo takes a list slot or lifts the others
         if (clip == null) return;
         var e = new Entry { Type = 1, Grade = 1, Owner = t, Mine = t == self, Pos = pos, Clip = clip };
         if (normals.Insert(true, e, layout.MaxList) is { } old) Drop(old);

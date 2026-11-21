@@ -238,8 +238,10 @@ public partial class LiveSession : Node
     /// number and the npc it is on (null when the target is not an npc).</summary>
     public event Action<Ms2.Ui.Hud.DamageNumber, FieldNpcs.Placed, Ui.DamageTarget> DamageNumbered;
     /// <summary>OnExpUp's number for the own PC (scenestategame.cpp:4152): mode 0, a gain, no npc of the packet's npc id
-    /// (STILL-OPEN: CNpc::FUN_141094df0, the gain of an npc, is not ported); the gain and its exp type.</summary>
+    /// (an npc of the id keeps the gain: <see cref="NpcExpShown"/>); the gain and its exp type.</summary>
     public event Action<long, int> ExpGained;
+    /// <summary>An npc's exp gain shown when its death sequence ended (<see cref="NpcLayer.ExpShown"/>): the npc and the exp.</summary>
+    public event Action<FieldNpcs.Placed, long> NpcExpShown;
     /// <summary>A drop reached a player who picked it (CDropItem::SetState(3), dropitem.cpp:671-695): the player (null for the
     /// own PC), then the meso, or the count and icon path of a type 3 item; nothing for another picker or item.</summary>
     public event Action<Ui.DamageTarget, long> MesoGained;
@@ -737,6 +739,7 @@ public partial class LiveSession : Node
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId);
         remote.Tracker.Profile = game.Profile;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
+        remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         var kinds = Kinds();
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
@@ -966,7 +969,8 @@ public partial class LiveSession : Node
             {
                 var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
                 Me.Apply(e);
-                if (e.Mode == 0 && e.Gained > 0 && remote?.HasNpc(e.NpcId) != true) ExpGained?.Invoke(e.Gained, e.Type);
+                // scenestategame.cpp:4145: an npc of the packet's id keeps the gain (CNpc::FUN_141094df0), else the own PC shows it
+                if (e.Mode == 0 && e.Gained > 0 && remote?.AddNpcExp(e.NpcId, e.Gained) != true) ExpGained?.Invoke(e.Gained, e.Type);
                 GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
             }
             else if (game.Is(p, Inbound.ItemDrop)) { }   // CSceneStateGame::FUN_141717560 (scenestategame.cpp:3262) has an empty body: the client does nothing with it

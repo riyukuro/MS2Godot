@@ -87,6 +87,12 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>WorldService::FindNpcById: whether an npc of the object id is here.</summary>
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
 
+    /// <summary>OnExpUp's gain of an npc (<see cref="NpcLayer.AddExp"/>); false when there is no npc of the id.</summary>
+    public bool AddNpcExp(int objectId, long exp) => npcs.AddExp(objectId, exp);
+
+    /// <summary>An npc's exp shown at the end of its death sequence (<see cref="NpcLayer.ExpShown"/>).</summary>
+    public Action<World.FieldNpcs.Placed, long> NpcExpShown { set => npcs.ExpShown = value; }
+
     /// <summary>WorldService::FindPCById then GetEquipByUid (OnItemUpdate): whether the player is here, and its worn equip of the uid (null when none).</summary>
     public (bool PcKnown, Ms2.Net.Packets.EquipItem Equip) EquipOf(int objectId, long uid)
     {
