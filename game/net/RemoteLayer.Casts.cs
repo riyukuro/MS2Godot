@@ -74,7 +74,7 @@ public sealed partial class RemoteLayer
     /// the motion controller reads (<see cref="CastMove"/>: the motion's move data, the skill's stateAttr and magicControl,
     /// and the packet's direction <paramref name="dir"/>, the record's m_kStart).
     /// PlayCastStartEffect returns at once for a dead owner (stateskill.cpp:1821-1822, PCBase::IsDead: the user's
-    /// <see cref="RemotePcStates.Dead"/>); an npc's death is not tracked here (STILL-OPEN).
+    /// <see cref="RemotePcStates.Dead"/>, the npc's <see cref="NpcLayer.IsDead"/>, set by CNpc::vfunc_125).
     /// </summary>
     void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ,
         System.Numerics.Vector3 dir, int holdId = 0, string holdNode = "")
@@ -99,6 +99,7 @@ public sealed partial class RemoteLayer
         }
         else if (npcs.Info(actorId) is { } n)
         {
+            if (npcs.IsDead(actorId)) return;
             at = n.root; yaw = n.yaw;
             if (!string.IsNullOrEmpty(motion.SequenceName)) npcs.PlaySequence(actorId, motion.SequenceName);
         }

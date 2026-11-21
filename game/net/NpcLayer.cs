@@ -184,13 +184,17 @@ public sealed class NpcLayer
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
         Spawned++;
+        if (n.Hidden) Die(n.ObjectId, false);      // OnFieldAddNpc (scenestategame.cpp:3556-3558): vfunc_125(0)
     }
 
     static readonly NodePath ModelPath = "Model";
 
+    /// <summary>OnFieldRemoveNpc drops the npc; OnFieldDeadNpc (<paramref name="dead"/>, @0x1417197c0) is
+    /// <see cref="Die"/>(1), the body stays until it is removed.</summary>
     public void Remove(int id, bool dead)
     {
-        if (dead || !inst.Remove(id, out var i)) return;      // a dead npc stays until it is removed
+        if (dead) { Die(id, true); return; }
+        if (!inst.Remove(id, out var i)) return;
         Tags?.Remove(i.Root);
         Bars?.Remove(i.Root);
         i.Root.QueueFree();
@@ -293,42 +297,56 @@ public sealed class NpcLayer
         if (i.Bar != null) i.Bar.Stat(cur, max);
         else if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
         i.HpMat?.SetShaderParameter(ShaderParam.Fill, Mathf.Clamp((float)cur / max, 0f, 1f));
-        if (cur <= 0 && !i.Dead)
+        // STILL-OPEN: the client's OnStat only fills the bar; its npc dies on FieldDeadNpc or the add packet's flag
+        // (Die). The hp 0 death stays for the captures without the dead packet.
+        if (cur <= 0) Die(id, true);
+    }
+
+    /// <summary>Whether the npc of the object id is dead (PCBase::IsDead, m_unk_15c); false when there is none.</summary>
+    public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
+
+    /// <summary>
+    /// CNpc::vfunc_125 (@0x141091210): the npc dies (m_unk_15c = 1) and enters StateDeadNPC (0xc), which plays its
+    /// death sequence; <paramref name="show"/> (OnFieldDeadNpc passes 1, OnFieldAddNpc's dead flag 0,
+    /// scenestategame.cpp:3556-3558/3610) plays its dead sound (m_strSoundDead) too.
+    /// STILL-OPEN: FUN_141099ab0, FUN_141098fb0, the corpse box (m_corpse) and the boss bgm tracker are not ported.
+    /// </summary>
+    public void Die(int id, bool show)
+    {
+        if (!inst.TryGetValue(id, out var i) || i.Dead) return;
+        i.Dead = true; Deaths++;
+        Tags?.Died(i.Root);
+        if (i.Bar != null) { i.Bar.Dead = true; Bars?.Remove(i.Root); }      // vfunc_8: a dead npc's bar drops for good; its entry and clip go back to the pool
+        var dead = show ? table.Find(i.NpcId)?.SoundDead : null;
+        if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
+        if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
+        if (i.Model == null) return;
+        KfmFile.Sequence seq = null; Godot.Animation a = null;
+        foreach (var cand in new[] { "Dead_A", "Dead_B" }.Select(n => i.Model.Kfm.ByName(n)).Concat(i.Model.Kfm.Sequences.Where(q => q.Name.StartsWith("Dead", StringComparison.OrdinalIgnoreCase))))
         {
-            i.Dead = true; Deaths++;
-            Tags?.Died(i.Root);
-            if (i.Bar != null) { i.Bar.Dead = true; Bars?.Remove(i.Root); }      // vfunc_8: a dead npc's bar drops for good; its entry and clip go back to the pool
-            var dead = table.Find(i.NpcId)?.SoundDead;
-            if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
-            if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
-            if (i.Model == null) return;
-            KfmFile.Sequence seq = null; Godot.Animation a = null;
-            foreach (var cand in new[] { "Dead_A", "Dead_B" }.Select(n => i.Model.Kfm.ByName(n)).Concat(i.Model.Kfm.Sequences.Where(q => q.Name.StartsWith("Dead", StringComparison.OrdinalIgnoreCase))))
-            {
-                if (cand == null) continue;
-                a = Anim(i.Model, cand.Id);
-                if (a != null) { seq = cand; break; }
-            }
-            if (a == null) { NoDeathSequence++; return; }
-            a.LoopMode = Godot.Animation.LoopModeEnum.None;
-            string name = $"s{seq.Id}";
-            var lib = i.Player.GetAnimationLibrary("");
-            if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
-            i.Player.Play(name, 0.1);
-            i.Playing = name; i.Sequence = seq.Id;
-            // EndOfSequence of the death sequence, once (m_bFinished); a body without a death sequence never gets there
-            var player = i.Player;
-            void Ended(StringName ended)
-            {
-                if (ended != name) return;
-                player.AnimationFinished -= Ended;
-                if (i.Exp <= 0) return;
-                long exp = i.Exp;
-                i.Exp = 0;
-                ExpShown?.Invoke(i.Talk, exp);
-            }
-            player.AnimationFinished += Ended;
+            if (cand == null) continue;
+            a = Anim(i.Model, cand.Id);
+            if (a != null) { seq = cand; break; }
         }
+        if (a == null) { NoDeathSequence++; return; }
+        a.LoopMode = Godot.Animation.LoopModeEnum.None;
+        string name = $"s{seq.Id}";
+        var lib = i.Player.GetAnimationLibrary("");
+        if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
+        i.Player.Play(name, 0.1);
+        i.Playing = name; i.Sequence = seq.Id;
+        // EndOfSequence of the death sequence, once (m_bFinished); a body without a death sequence never gets there
+        var player = i.Player;
+        void Ended(StringName ended)
+        {
+            if (ended != name) return;
+            player.AnimationFinished -= Ended;
+            if (i.Exp <= 0) return;
+            long exp = i.Exp;
+            i.Exp = 0;
+            ExpShown?.Invoke(i.Talk, exp);
+        }
+        player.AnimationFinished += Ended;
     }
 
     public void Move(Ms2.Net.Replay.NpcMovedEvent e)
