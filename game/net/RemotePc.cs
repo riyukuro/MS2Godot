@@ -297,8 +297,25 @@ public sealed class RemotePc : IRemotePc
     /// on the player (a string to StringName conversion each call).</summary>
     public bool HasAction(int action) => Anims?.Name((Act)action) != null;
 
+    bool held;
+
+    /// <summary>
+    /// A cast's motion sequence outside the action table (StateSkill::PlayCastStartEffect, RemoteLayer.Casts.cs): the states'
+    /// PlayAction waits until <see cref="Release"/>, then plays its action with the default transition from the cast.
+    /// </summary>
+    public void Hold(string name, float speed)
+    {
+        Anim.Play(name, 0.05, speed);
+        Anim.SpeedScale = 1f;
+        currentAct = -1; currentName = name; lastPos = -1; held = true;
+    }
+
+    /// <summary>The cast's motion ended or was cancelled: the movement states take the body back.</summary>
+    public void Release() => held = false;
+
     public bool PlayAction(int action, float rate, bool restart)
     {
+        if (held) return true;
         var name = Anims?.Name((Act)action);
         if (name == null) return false;
         if (name == currentName && !restart && Anim.IsPlaying()) { Anim.SpeedScale = rate; currentAct = action; return true; }

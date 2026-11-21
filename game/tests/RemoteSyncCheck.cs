@@ -15,6 +15,8 @@ namespace Ms2Godot.Tests;
 ///   (loaded from female/female.xml as NiTextKeyExtraData::LoadBinary does) play steps on stone (PCBase::TextKeyEvent).
 /// - A jump record jumps it; it lands by itself with one more "land" on stone.
 /// - Spawned above the water, a remote PC lands with "land" on water and goes to the water idle (StateLand::vfunc_4).
+/// - A cast's motion (RemotePc.Hold, RemoteLayer.Casts.cs) keeps the body's sequence while the water idle state asks for its
+///   own each frame; after Release the state's sequence plays again.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemoteSyncCheck : Node3D
@@ -26,6 +28,7 @@ public partial class RemoteSyncCheck : Node3D
     const float Dt = 1f / 60f;
     Vector3 walkStart;
     int jumpStates;
+    string held;
 
     public override void _Ready()
     {
@@ -88,6 +91,8 @@ public partial class RemoteSyncCheck : Node3D
                 if (!wetFx.SequenceEqual(new[] { ("land", "water") })) fails.Add($"water spawn landing {Fx(wetFx)}");
                 if (wet.States.Cur != RemotePcStates.StateIdle || wet.States.Sub != 7) fails.Add($"water: state {wet.States.Cur} sub {wet.States.Sub}");
                 if (wet.Anim.CurrentAnimation != wet.Anims.Name(ActionAnims.Act.WaterIdle)) fails.Add($"water idle sequence {wet.Anim.CurrentAnimation}");
+                held = wet.Anims.Name(ActionAnims.Act.Run);
+                wet.Hold(held, 1f);
                 walkStart = stone.Body.GlobalPosition;
                 stoneFx.Clear();
                 stone.States.Push(Rec(2, 0x18, stone, new System.Numerics.Vector2(0, 1)));
@@ -100,6 +105,8 @@ public partial class RemoteSyncCheck : Node3D
                 if (stone.Anim.CurrentAnimation != stone.Anims.Name(ActionAnims.Act.Run)) fails.Add($"run sequence {stone.Anim.CurrentAnimation}");
                 if (stoneFx.Count == 0) fails.Add("no step effects on stone");
                 if (stoneFx.Any(f => f.g != "stone" || !f.a.StartsWith("run", StringComparison.Ordinal))) fails.Add($"steps {Fx(stoneFx)}");
+                if (wet.Anim.CurrentAnimation != held) fails.Add($"held cast sequence {wet.Anim.CurrentAnimation}, not {held}");
+                wet.Release();
                 GD.Print($"remote sync: walk moved {moved:0.0} in 1 s, {stoneFx.Count} step effects {Fx(stoneFx)}");
                 stoneFx.Clear();
                 stone.States.StateChanged = s => { if (s == RemotePcStates.StateJump || s == RemotePcStates.StateLand) jumpStates = jumpStates * 10 + s; };
@@ -110,6 +117,7 @@ public partial class RemoteSyncCheck : Node3D
             {
                 if (jumpStates != 64) fails.Add($"jump states {jumpStates}");
                 if (!stoneFx.SequenceEqual(new[] { ("land", "stone") })) fails.Add($"jump landing {Fx(stoneFx)}");
+                if (wet.Anim.CurrentAnimation != wet.Anims.Name(ActionAnims.Act.WaterIdle)) fails.Add($"released sequence {wet.Anim.CurrentAnimation}");
                 bool ok = fails.Count == 0;
                 GD.Print($"remote sync: {(ok ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
                 GetTree().Quit(ok ? 0 : 1);

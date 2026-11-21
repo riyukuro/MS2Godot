@@ -13,7 +13,7 @@ namespace Ms2Godot.Net;
 public sealed partial class RemoteLayer
 {
     Ms2.Formats.World.SkillTable skillMotions;
-    readonly Dictionary<(byte, string), Godot.Animation> skillAnims = new();
+    readonly Dictionary<(byte, string), (Godot.Animation an, string name)> skillAnims = new();
     public int CastsPlayed, CastsSynced, CastsCancelled;
 
     /// <summary>
@@ -48,7 +48,7 @@ public sealed partial class RemoteLayer
     void OnSkillCancel(SkillCancelledEvent c)
     {
         if (!users.TryGetValue(c.ActorId, out var r) || !r.Cast.Cancel(c.CastUid)) return;
-        r.CastLeft = 0; r.Current = "";
+        r.CastLeft = 0; r.Pc.Release();
         CastsCancelled++;
     }
 
@@ -61,14 +61,11 @@ public sealed partial class RemoteLayer
         if (users.TryGetValue(actorId, out var r))
         {
             at = r.Root; yaw = r.Visual.Rotation.Y;
-            if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { } an)
+            if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
-                var lib = r.Anim.GetAnimationLibrary("");
-                if (lib.HasAnimation("skill")) lib.RemoveAnimation("skill");
-                lib.AddAnimation("skill", an);
                 float sp = Math.Max(speed, 0.1f);
-                r.Anim.Play("skill", 0.05, sp);
-                r.Current = "skill"; r.CastLeft = (float)(an.Length / sp);
+                r.Pc.Hold(sk.name, sp);
+                r.CastLeft = (float)(sk.an.Length / sp);
                 CastsPlayed++;
             }
         }
@@ -81,31 +78,39 @@ public sealed partial class RemoteLayer
         if (!string.IsNullOrEmpty(motion.MotionEffect)) combat.PlayEffect(motion.MotionEffect, at.Position, yaw);
     }
 
-    /// <summary>The body's &lt;sequence&gt;.kf as a one-shot animation (the replay's SkillAnim), cached per gender and name.</summary>
-    Godot.Animation SkillAnim(byte gender, string seq)
+    /// <summary>
+    /// The body's &lt;sequence&gt;.kf as a one-shot animation (the replay's SkillAnim), cached per gender and name and added
+    /// once, under its own name, to the body's library that every PC of the gender shares.
+    /// </summary>
+    (Godot.Animation an, string name) SkillAnim(byte gender, string seq)
     {
-        if (skillAnims.TryGetValue((gender, seq), out var an)) return an;
-        an = null;
-        string entry = $"{(gender == 0 ? "male" : "female")}/{seq.ToLowerInvariant()}.kf";
+        if (skillAnims.TryGetValue((gender, seq), out var sk)) return sk;
+        sk = default;
+        string low = seq.ToLowerInvariant(), entry = $"{BodyDir(gender)}/{low}.kf";
         try
         {
-            if (packs.Exists(ModelBuilder.ModelArchive, entry))
+            if (bodies.TryGetValue(gender, out var body) && packs.Exists(ModelBuilder.ModelArchive, entry))
             {
-                an = ModelBuilder.BuildAnimation(builder.LoadKf(entry), Body(gender).md);
+                var an = ModelBuilder.BuildAnimation(builder.LoadKf(entry), body.md);
                 an.LoopMode = Godot.Animation.LoopModeEnum.None;
+                string name = "cast_" + low;
+                if (!body.lib.HasAnimation(name)) body.lib.AddAnimation(name, an);
+                sk = (an, name);
             }
         }
         catch (Exception ex) { GD.PushWarning($"skill kf {entry}: {ex.Message}"); }
-        return skillAnims[(gender, seq)] = an;
+        return skillAnims[(gender, seq)] = sk;
     }
 
-    /// <summary>Per frame: true while the remote's cast motion still plays (the movement animations wait); its end leaves the skill state.</summary>
+    /// <summary>Per frame: true while the remote's cast motion still plays (the movement animations wait, RemotePc.Hold);
+    /// its end leaves the skill state and releases the body.</summary>
     static bool CastHolds(Remote a, float dt)
     {
         if (!a.Cast.InSkillState) return false;
         a.CastLeft -= dt;
         if (a.CastLeft > 0) return true;
         a.Cast.End();
+        a.Pc.Release();
         return false;
     }
 }
