@@ -1197,6 +1197,12 @@ public partial class LiveSession : Node
                     Ms2.Ui.Hud.PartyInviteBox.OnInvite(invite, GameOptions.AccountCommunity.DisablePartyRequest, false, AnswerPartyInvite);
                 GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
             }
+            else if (game.Is(p, Inbound.PartySearch))
+            {
+                var m = PartySearchMessage.Read(p.Reader());   // CPartyManager::OnMatchParty: the listing's register, remove, results and errors
+                Party.Apply(m);
+                GD.Print($"live: party search {m.GetType().Name}");
+            }
             else if (game.Is(p, Inbound.GroupChat))
             {
                 var m = GroupChatMessage.Read(p.Reader());   // CGroupChatManager::OnGroupChat (@0x14137f2f0, groupchatmanager.cpp:577)

@@ -125,6 +125,7 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(fieldScene = GD.Load<PackedScene>("res://field.tscn").Instantiate());      // the field scene, untouched
         BuildHud();
         WatchParty();
+        WatchPartySearch();
         WatchPcInfo();
         WatchItemMerge();
         // the portal and interact actions' notices & casting bar, the channel notices
@@ -189,6 +190,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchQuickSlotState = null;
         unwatchParty?.Invoke();
         unwatchParty = null;
+        unwatchPartySearch?.Invoke();
+        unwatchPartySearch = null;
         unwatchAchieves?.Invoke();
         unwatchAchieves = null;
         unwatchMails?.Invoke();
@@ -1599,6 +1602,7 @@ public partial class HudScene : Node, IUiStageHost
         if (GroupInviteKeys(k)) return true;
         if (CommunityKeys(k)) return true;
         if (GuildKeys(k)) return true;
+        if (PartySearchKeys(k)) return true;
         return false;
     }
 
@@ -2462,6 +2466,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4e49) ToggleMail();
         else if (id == 0x4e4d) ToggleCommunity();
         else if (id == GuildDialogController.UiId) ToggleGuild();
+        else if (id == PartySearchDialogController.UiId) TogglePartySearch();   // entry 25 "partysearch"
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
         else if (id == 0x4ef6) ToggleSkillCompact();    // entry 27 "compactkey" (gameeventmanagercli.cpp:692)
@@ -3413,6 +3418,7 @@ public partial class HudScene : Node, IUiStageHost
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
         if (ChatEmoticonOpen) chatEmoticon.Process();          // UIChatEmoticonDialog::vfunc_15
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
+        TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
@@ -3488,6 +3494,8 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "achieve" && frames == 200) ToggleAchieve();
         if (openShot == "mail" && frames == 200) ToggleMail();
         if (openShot == "community" && frames == 200) ToggleCommunity();
+        if (openShot is "partysearch" or "partysearchregister" && frames == 200) OpenPartySearchShot();
+        if (openShot == "partysearchregister" && frames == 230) OpenPartySearchRegister();
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (guideShot != null && frames == 200)

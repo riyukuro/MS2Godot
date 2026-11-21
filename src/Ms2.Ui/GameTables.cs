@@ -105,6 +105,8 @@ public sealed class GameTables
         ExtendAutoPlayInstrumentMaxCount = (uint)k.Float("extendAutoPlayInstrumentMaxCount", ExtendAutoPlayInstrumentMaxCount);
         GuildCreateMinLevel = (int)k.Float("GuildCreateMinLevel", GuildCreateMinLevel);
         PropertyProtectionTime = (int)k.Float("PropertyProtectionTime", PropertyProtectionTime);
+        // std::vector<int> PartySearchRegisterComboValues (clientconstants.h:831, +0xe770): XmlSplit on "," (constantsblocks.cpp:1565)
+        PartySearchRegisterComboValues = IntList(k.String("PartySearchRegisterComboValues"));
         // Value<__int64> BlackMarketSellMinPrice / BlackMarketSellMaxPrice (read whole: an integer text), min clamped to 0 and
         // max raised to min (unit_1402ab440_constantsblocks.cpp:942-945); Value<int> BlackMarketSellEndDay (:1002)
         (BlackMarketSellMinPrice, BlackMarketSellMaxPrice) = BlackMarketPrices(k.String, BlackMarketSellMinPrice, BlackMarketSellMaxPrice);
@@ -387,6 +389,14 @@ public sealed class GameTables
     /// <summary>Client::Constants PropertyProtectionTime (+0x6aa8, Define default 0: unit_1402ab440_constantsblocks.cpp:1040),
     /// shown by the black market's result 37 (CBlackMarketMan::FUN_140a21ca0).</summary>
     public int PropertyProtectionTime = 0;
+    /// <summary>Constants PartySearchRegisterComboValues: the party search listing's member counts, the register dialog's combo rows
+    /// (UIPartySearchRegisterDialog m_e770 reads); empty when the constant is missing.</summary>
+    public IReadOnlyList<int> PartySearchRegisterComboValues { get; private set; } = Array.Empty<int>();
+
+    /// <summary>XmlSplit(s, out, ","): the comma-split ints; parts that do not parse are skipped.</summary>
+    internal static IReadOnlyList<int> IntList(string s) =>
+        string.IsNullOrWhiteSpace(s) ? Array.Empty<int>()
+        : s.Split(',').Select(x => int.TryParse(x.Trim(), out var v) ? (int?)v : null).Where(v => v.HasValue).Select(v => v.Value).ToArray();
     /// <summary>Client::Constants ShopBuyConfirmPrice (+0xc188) and ShopSellConfirmPrice (+0xc130, Define defaults 0u:
     /// unit_1402ab440_constantsblocks.cpp:1451-1452), the meso thresholds that pop a confirmation box in
     /// UIShopDialog::ShowPurchaseBill (uishopdialog.cpp:3175) and SellItem (uimessagebox.cpp:680).</summary>

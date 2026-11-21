@@ -323,6 +323,20 @@ public sealed class BanTextChecker
     /// message.</summary>
     public int CheckInviteMessage(string text, out string message) => Check(text, (Checks)0xd8, default, out message);
 
+    /// <summary>CBanTextChecker::FUN_1402262e0 (commonstringtable.cpp:981): CheckTypes(0xd8, true); the party search listing's
+    /// title (UIPartySearchRegisterDialog::ValidateAndSendRegistration).</summary>
+    public int CheckPartyRecruitTitle(string title, out string message) => Check(title, (Checks)0xd8, default, out message);
+
+    /// <summary>CBanTextChecker::CheckPartySearchText (@0x140226320, commonstringtable.cpp:1010): an empty text passes, else
+    /// CheckTextWithLimit with the options (0xdf, true) and the limit (1, 200, spaces allowed, trim checked, the character check
+    /// on, a wide character counting once, no punctuation); the party search's text (UIPartySearchDialog::ValidateSearchText).</summary>
+    public int CheckPartySearchText(string text, out string message)
+    {
+        message = null;
+        if (string.IsNullOrEmpty(text)) return 0;
+        return Check(text, (Checks)0xdf, new Limit(1, 200, true, false, false, false, false), out message);
+    }
+
     /// <summary>A common string by key (stringcommon.xml), or null.</summary>
     public string CommonString(string key) => commonString?.Invoke(key);
 
