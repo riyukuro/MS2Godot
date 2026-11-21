@@ -32,11 +32,15 @@ public partial class HudScene
     static readonly DateTime GateClock = new(2026, 1, 1, 12, 0, 0);
 
     /// <summary>
-    /// The HUD entity timers' clock in a gate session (null outside one): the frames run so far at the gate's fixed 60 fps.
-    /// The wall clock would end a chat balloon's 5 s (and its close animation, which rebuilds its text every frame) in
-    /// whichever window the session's load time puts it.
+    /// The HUD entity timers' and the NIF cache's clock in a gate session (null outside one), in ms: 0 while the field
+    /// loads, then <see cref="GateLoadSkipMs"/> plus the gate's frames at its fixed 60 fps. The wall clock, or a count of
+    /// every frame, would end a chat balloon's 5 s (and its close animation, which rebuilds its text every frame) in
+    /// whichever window the load's length puts it; this one ends every timer started during the load at gate frame 0,
+    /// in the settle, and every later one at the same gate frame each session.
     /// </summary>
-    public static readonly Func<long> GateTickMs = GatePath == null ? null : () => (long)(Engine.GetProcessFrames() * 1000 / 60);
+    public static readonly Func<long> GateTickMs = GatePath == null ? null : () => gateClockMs;
+    static long gateClockMs;
+    const long GateLoadSkipMs = 10000;      // past the longest load-started timer: a chat balloon's ChatBalloonDuration (5 s)
 
     int gateFrame = -1;
     readonly JsonObject gateOut = new();
@@ -115,6 +119,7 @@ public partial class HudScene
     void GateStep()
     {
         gateFrame++;
+        gateClockMs = GateLoadSkipMs + gateFrame * 1000L / 60;
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (gateIdleName != null && gateLastTick != 0) gateFrameMs.Add(GateMark.Ms(gateLastTick, now));
         gateLastTick = now;
@@ -143,6 +148,9 @@ public partial class HudScene
             if (!GatePregrowTrackers()) { GD.PushError("perf gate: the DisposablesTracker pre-grow failed"); GetTree().Quit(2); }
             return;
         }
+        // the NIF cache's sweep (its minute timer is off in a gate session): once, here in the settle, so its one-time
+        // cost (the first pass compiles it) and what it frees land outside every window, whatever the branch adds before
+        if (gateFrame == 1) NifCache.Sweep(NifCache.Clock());
         int t = gateFrame - GateSettle;
         if (t == -GateQuiet) GateCollect();
         if (t < 0) return;

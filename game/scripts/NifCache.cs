@@ -52,9 +52,15 @@ public static class NifCache
 
     /// <summary>
     /// The game time in seconds (CMainSystem::GetGameTime); a check may set its own clock. A perf gate session counts its
-    /// frames instead, so the first sweep lands in the same frame every session, not in whichever window load time puts it.
+    /// frames (HudScene.GateTickMs), so the entries' last uses are the same every session.
     /// </summary>
     public static Func<double> Clock = Ui.HudScene.GateTickMs is { } gateTickMs ? () => gateTickMs() / 1000.0 : () => Time.GetTicksMsec() / 1000.0;
+
+    /// <summary>
+    /// Whether <see cref="Tick"/> sweeps once a minute: not in a perf gate session, which runs its one sweep at a fixed gate
+    /// step (HudScene.GateStep), outside every measured window.
+    /// </summary>
+    public static bool TimerSweeps = Ui.HudScene.GateTickMs == null;
 
     /// <summary>The fields' hold on the models they use; disposing it lets the sweep drop them.</summary>
     public sealed class Lease : IDisposable
@@ -113,6 +119,7 @@ public static class NifCache
     /// <summary>OnTick: the sweep, once its minute has passed.</summary>
     public static void Tick()
     {
+        if (!TimerSweeps) return;
         double now = Clock();
         if (double.IsNaN(lastSweep)) { lastSweep = now; return; }
         if (now - lastSweep < SweepIntervalSec) return;

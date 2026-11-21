@@ -413,6 +413,9 @@ public sealed partial class NpcEmoticons : CanvasLayer
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (live && (syncIn -= delta) <= 0) { syncIn = 0.25; Sync(); }
         var eye = Viewer != null && IsInstanceValid(Viewer) ? Viewer.GlobalPosition : camera.GlobalPosition;
+        // the perf gate: the monologue's time starts with the gate's clock (0 until gate frame 0), so its balloons open and
+        // close in the same gate frames whatever the load took, not shifted into another measured window
+        float monologueDelta = HudScene.GateTickMs is { } gateTickMs && gateTickMs() == 0 ? 0f : (float)delta;
         foreach (var n in npcs.Values)
         {
             if (!IsInstanceValid(n.Placed.Root)) continue;
@@ -429,7 +432,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
                 n.Spawned = true;
             }
             controller.NpcTick(a, n.Quest);
-            if (monologue != null && n.Monologue != null) monologue.Update(n.Monologue, (float)delta);    // CNpc::vfunc_53
+            if (monologue != null && n.Monologue != null) monologue.Update(n.Monologue, monologueDelta);    // CNpc::vfunc_53
         }
         // GameObject m_unk_bc of the PCs: from the focus (the local player)
         foreach (var x in pcs.Values) if (IsInstanceValid(x.Root)) x.Balloon.Distance = eye.DistanceTo(x.Root.GlobalPosition);
