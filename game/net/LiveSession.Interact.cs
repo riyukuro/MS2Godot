@@ -107,13 +107,15 @@ public partial class LiveSession
         GD.Print($"live: SetCraftMode mode {m.CubeMode} craft {m.CraftMode} item {m.Item?.ItemId ?? 0}");
     }
 
-    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>).
-    /// STILL-OPEN: the other modes; the build notice (ShowBuildNotice) an error shows to its character; the cube map's
-    /// weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
+    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>)
+    /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>).
+    /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     void OnResponseCube(ResponseCubeHeldItem m)
     {
         if (m == null) return;
         HeldItem.ResponseCube(m, selfObject, null, ItemExists?.Invoke(m.ItemId) ?? true);
+        int notice = BuildNotice.OfHeldItemResponse(m, selfObject);
+        if (notice != 0) ShowBuildNotice(notice);
         GD.Print($"live: ResponseCube 0x{m.Mode:x} error {m.Error} id {m.Id}");
     }
 
@@ -163,7 +165,17 @@ public partial class LiveSession
     {
         var stop = CubeCraft.ConfirmPlacement(Me.Dead, ItemDataOf, out var send);
         if (send != null) Send(send);
+        int notice = Ms2.Ui.CubeCraftState.NoticeOf(stop);
+        if (notice != 0) ShowBuildNotice(notice);
         return stop;
+    }
+
+    /// <summary>Unk_MyPCHousingSvc::ShowBuildNotice (<see cref="BuildNotice.Show"/>): the sound through the field audio's
+    /// system sounds, the common string's text through <see cref="SystemNoticeSink"/> (ShowSystemNotice(text, 1, 1)).</summary>
+    public void ShowBuildNotice(int message)
+    {
+        var shown = BuildNotice.Show(message, key => FieldAudio.Instance?.PlayUi(key), MessageBoxData.CommonByKey, SystemNoticeSink);
+        if (shown == BuildNotice.Outcome.LackMeratOpen) GD.Print("live: STILL-OPEN the lack-merat box (build notice 0x22); nothing shown");
     }
 
     /// <summary>PutDownLiftableAction::vfunc_1 (@0x14095aa70) from the pc's (or ridee's) point and facing.</summary>

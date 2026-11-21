@@ -198,6 +198,14 @@ public sealed class CubeCraftState
     /// <summary>The build notice for a texture cube without its look (ShowBuildNotice(0x62), cubecraft_2.cpp:966).</summary>
     public const int TextureNotice = 0x62;
 
+    /// <summary>The build notice (<see cref="BuildNotice.Show"/>) ConfirmPlacement gives at a stop, 0 for none.</summary>
+    public static int NoticeOf(PlacementStop stop) => stop switch
+    {
+        PlacementStop.BuildNotice => ModeOneNotice,
+        PlacementStop.NoTextureLook => TextureNotice,
+        _ => 0,
+    };
+
     /// <summary>
     /// PutDownLiftableAction::vfunc_2 (@0x14095ad50, actionkeyobject.cpp) through GetActiveCubeCraft, then
     /// Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:936-1063), in its order: in cube mode 1 it returns
@@ -209,8 +217,7 @@ public sealed class CubeCraftState
     /// <paramref name="send"/>; every other stop leaves it null and sends nothing.
     /// <para>Cube mode 1 never gets past the first check: its construction guide (the pc's guide slot 0) is not ported.
     /// That guide's own yaw plus the item's staticAngle (:981-985) is the other source of the rotation.</para>
-    /// STILL-OPEN: ShowBuildNotice (@0x1410d6590, cubemapinformationservice_head.cpp:306: the notice sound and text) is
-    /// not ported, so the caller shows nothing for a notice stop.
+    /// The caller shows a notice stop's build notice (<see cref="NoticeOf"/>, ShowBuildNotice).
     /// </summary>
     public PlacementStop ConfirmPlacement(bool dead, Func<int, ItemData> itemData, out CubePlaceRequest send)
     {
