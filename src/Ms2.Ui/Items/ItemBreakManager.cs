@@ -30,6 +30,9 @@ public sealed class ItemBreakManager
 
     // ---- the host -----------------------------------------------------------------------------------------------------
     public Func<long, Item> Find { get; set; } = _ => null;
+    /// <summary>The inventory holds the uid, without building an Item (the per-frame RemoveMissingItems asks it). Null: Find is used.</summary>
+    public Func<long, bool> Exists { get; set; }
+    bool InInventory(long uid) => Exists != null ? Exists(uid) : Find(uid) != null;
     public Action<IOutPacket> Send { get; set; }
     /// <summary>The string by key (a "$s_" key or the plain name).</summary>
     public Func<string, string> Text { get; set; } = k => k;
@@ -87,7 +90,7 @@ public sealed class ItemBreakManager
     /// <summary>HasBreakItems: a slot holds an item that is still in the inventory.</summary>
     public bool HasBreakItems
     {
-        get { for (int i = 0; i < Slots; i++) if (uids[i] != 0 && Find(uids[i]) != null) return true; return false; }
+        get { for (int i = 0; i < Slots; i++) if (uids[i] != 0 && InInventory(uids[i])) return true; return false; }
     }
 
     /// <summary>GetMaxItemRarity: the highest rarity of the listed items found in the inventory.</summary>
@@ -133,7 +136,7 @@ public sealed class ItemBreakManager
         if (GachaBox(it)) return true;
         long summon = SummonedPetUid();
         if (summon != 0 && summon == it.Uid) return false;
-        if (!TransferCanBreak(it) || !GemsBreakable(it)) return false;
+        if (!TransferCanBreak(it)) return false;
         return HasBreakReward(it);
     }
 
@@ -183,12 +186,10 @@ public sealed class ItemBreakManager
         }
         if (Type == 2)
         {
-            if (!TransferCanBreak(it) || !HasBreakReward(it)) { NoticeId?.Invoke(NoticeDonation, int.MinValue); return 0; }
+            if (!CanBreakItem(it)) { NoticeId?.Invoke(NoticeDonation, int.MinValue); return 0; }
+            if (!it.Data.IsEquip && !it.Data.HasSkinType) { NoticeId?.Invoke(NoticeDonation, int.MinValue); return 0; }   // FUN_14053cbc0 || HasSkin
         }
-        else if (Type == 1)
-        {
-            if (!TransferCanBreak(it)) { NoticeId?.Invoke(NoticeBreak, int.MinValue); return 0; }
-        }
+        else if (!CanBreakItem(it)) { NoticeId?.Invoke(NoticeBreak, int.MinValue); return 0; }
         AddItemWithConfirm(it, arg);
         return 1;
     }
@@ -260,7 +261,7 @@ public sealed class ItemBreakManager
         for (int i = 0; i < Slots; i++)
         {
             long uid = uids[i];
-            if (uid == 0 || Find(uid) != null || pending.Contains(uid)) continue;
+            if (uid == 0 || InInventory(uid) || pending.Contains(uid)) continue;
             Send?.Invoke(ItemDismantleRequest.RemoveItem(uid));
             pending.Add(uid);
         }
@@ -280,7 +281,7 @@ public sealed class ItemBreakManager
                 foreach (var s in p.Slots ?? Array.Empty<DismantleSlot>())
                 {
                     if (s.Index >= Slots) return;
-                    if (Find(s.Uid) != null)
+                    if (InInventory(s.Uid))
                     {
                         uids[s.Index] = s.Uid;
                         counts[s.Index] = (uint)s.Amount;

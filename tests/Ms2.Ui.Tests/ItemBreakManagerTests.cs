@@ -113,7 +113,7 @@ public class ItemBreakManagerTests
     {
         var it = Make(1);
         m.GemsBreakable = _ => false;
-        Assert.That(m.CanBreakItem(it), Is.False);
+        Assert.That(m.CanBreakItem(it), Is.True, "CanBreakItem (@0x140531270) does not look at the gems; TryAddItem does");
         Assert.That(m.TryAddItem(it, 3), Is.EqualTo(0));
         Assert.That((boxes.Count, boxes[0].Type, sent.Count), Is.EqualTo((1, 0, 0)));
     }
@@ -231,6 +231,38 @@ public class ItemBreakManagerTests
         sent.Clear();
         Assert.That(m.SendMode3(), Is.True);
         Assert.That(Bytes(sent.Single()), Is.EqualTo("03"));
+    }
+
+    [Test]
+    public void TryAddUsesCanBreakItemForBothTypes()
+    {
+        var locked = Make(1); locked.LockState = 1;
+        Assert.That(m.TryAddItem(locked, 0), Is.EqualTo(0));
+        Assert.That(noticeIds[^1], Is.EqualTo((0x8f6, int.MinValue)), "type 1: a locked item");
+        m.SendMode0(2);
+        Assert.That(m.TryAddItem(locked, 0), Is.EqualTo(0));
+        Assert.That(noticeIds[^1], Is.EqualTo((0x8f7, int.MinValue)), "type 2: a locked item");
+        sent.Clear();
+        var plain = Make(3);           // not an equipment item, no skin: FUN_14053cbc0 || HasSkin fails
+        Assert.That(m.TryAddItem(plain, 0), Is.EqualTo(0));
+        Assert.That(noticeIds[^1], Is.EqualTo((0x8f7, int.MinValue)), "type 2: neither equipment nor skin");
+        Assert.That(sent, Is.Empty);
+        plain.Data.Type = 1;
+        Assert.That(m.TryAddItem(plain, 0), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void TheFrameCheckAsksExistsNotFind()
+    {
+        Make(1); Make(2);
+        m.OnPacket(new ItemDismantlePacket(6) { Slots = new[] { new DismantleSlot(0, 1, 1), new DismantleSlot(1, 2, 1) } });
+        int finds = 0, exists = 0;
+        m.Find = u => { finds++; return inv.GetValueOrDefault(u); };
+        m.Exists = u => { exists++; return inv.ContainsKey(u); };
+        for (int i = 0; i < 5; i++) m.RemoveMissingItems();
+        _ = m.HasBreakItems;
+        Assert.That(finds, Is.EqualTo(0), "Find builds an Item: not per frame");
+        Assert.That(exists, Is.GreaterThan(0));
     }
 
     [Test]

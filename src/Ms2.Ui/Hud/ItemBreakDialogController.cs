@@ -463,6 +463,6 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     /// <summary>vfunc_15 per frame: not hidden, so the items the inventory no longer has are removed.</summary>
     public void Tick()
     {
-        if (!closing && Mgr != null && Mgr.DialogOpen) Mgr.RemoveMissingItems();
+        if (!closing && !IsClosed && Mgr != null && Mgr.DialogOpen) Mgr.RemoveMissingItems();   // vfunc_15: vfunc_55 (closed) returns first
     }
 }

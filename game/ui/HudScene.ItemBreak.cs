@@ -29,6 +29,7 @@ public partial class HudScene
         if (itemBreakMovie != null) { itemBreakMovie.Host.Unload(); itemBreakMovie.QueueFree(); itemBreakMovie = null; }
         var mgr = live.BreakManager;
         mgr.Find = uid => live.Items.Get(uid) is { } e ? InventoryController.ToItem(e, hudModel.Tables.Items) : null;
+        mgr.Exists = uid => live.Items.Get(uid) != null;      // RemoveMissingItems runs per frame: no Item built
         mgr.Send = p => live.SendItemDismantle(p);
         mgr.Text = key => hudModel.Tables.Common(key) ?? key;
         mgr.Common = id => hudModel.Tables.Common(id) ?? "";
