@@ -334,7 +334,9 @@ public sealed class MyCharacter {
 
     /// <summary>OnRevivalConfirm (scenestategame.cpp:7356) for the local player: the end tick, then the count. Returns the client's
     /// follow-up: <c>Effect</c> when the count was set and falls to 0 (the revival effect of the common resource), <c>Guide</c> when
-    /// the new count is not 0 (guide trigger RevivalPanelty). Other objects: nothing.</summary>
+    /// the new count is not 0 (guide trigger RevivalPanelty). Other objects: nothing.
+    /// STILL-OPEN: pc.cpp:2019-2031 also adds (end tick above 0) or removes the custom buff 0x5f5e103 on the player-info UI 0x4e5f,
+    /// here and in ExpireRevival; the buff list of that UI is not ported.</summary>
     public (bool Effect, bool Guide) ApplyRevivalConfirm(RevivalConfirm c) {
         if (c.ObjectId != ObjectId || User == null) return (false, false);
         bool effect = RevivalConfirmCount != 0 && c.Count == 0;
