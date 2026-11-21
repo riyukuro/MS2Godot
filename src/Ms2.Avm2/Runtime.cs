@@ -30,6 +30,8 @@ public sealed partial class Runtime
     public readonly Dictionary<string, int> Missing = new();
     public readonly List<string> Errors = new();
     public Action<string> Trace = s => { };
+    /// <summary>The shared objects getLocal handed out, by name (the client has one VM, so this is its scope).</summary>
+    internal readonly Dictionary<string, Flash.AsSharedObject> SharedObjects = new();
     /// <summary>The runtime running on this thread (static natives use it).</summary>
     [ThreadStatic] public static Runtime Current;
     /// <summary>Instruction budget per top-level call (guards against endless loops in a scan); 0 = none.</summary>

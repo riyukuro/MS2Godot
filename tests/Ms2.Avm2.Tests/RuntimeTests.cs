@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Text.Json.Nodes;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
@@ -13,6 +14,25 @@ public class RuntimeTests
         var rt = new Runtime();
         var layout = new JsonObject { ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 }, ["symbols"] = new JsonObject(), ["root"] = new JsonObject() };
         return (rt, new Player(rt, layout));
+    }
+
+    [Test]
+    public void SharedObjectsBelongToTheirRuntime()
+    {
+        var got = new AsSharedObject[4];
+        void Run(int i)
+        {
+            var (rt, _) = Empty();
+            Runtime.Current = rt;
+            got[i * 2] = AsSharedObject.getLocal("settings");
+            got[i * 2 + 1] = AsSharedObject.getLocal("settings");
+        }
+        var a = new Thread(() => Run(0)); var b = new Thread(() => Run(1));
+        a.Start(); b.Start(); a.Join(); b.Join();
+        Assert.That(got[0], Is.Not.Null.And.SameAs(got[1]), "one runtime gets the same object again");
+        Assert.That(got[2], Is.Not.Null.And.SameAs(got[3]));
+        Assert.That(got[0], Is.Not.SameAs(got[2]), "two runtimes do not share one");
+        Assert.That(got[0].Class.Runtime, Is.Not.SameAs(got[2].Class.Runtime));
     }
 
     [Test]

@@ -231,12 +231,12 @@ public class AsURLLoader : AsEventDispatcher
 [AsClass("flash.net.SharedObject", "flash.events.EventDispatcher")]
 public class AsSharedObject : AsEventDispatcher
 {
-    static readonly Dictionary<string, AsSharedObject> all = new();
     [As] public AsObject data { get; set; }
     [As] public static AsSharedObject getLocal(string name, string path = null, bool secure = false)
     {
         var rt = Runtime.Current;
-        if (!all.TryGetValue(name, out var so) || so.Class.Runtime != rt)
+        var all = rt.SharedObjects;
+        if (!all.TryGetValue(name, out var so))
         {
             so = (AsSharedObject)rt.GetClass("flash.net.SharedObject").Construct();
             so.data = new AsObject(rt.ObjectClass);
