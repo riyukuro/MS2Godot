@@ -53,6 +53,17 @@ public sealed class FieldEntry
         return (new RequestLoadUgcMap(Current.Portal), new UgcLoadBannersRequest(Current.MapId));
     }
 
+    /// <summary>What the client sends when the field has loaded, in its order, through <paramref name="send"/>: the
+    /// field-entered sends (<see cref="Loaded"/>, vfunc_1 :1995-2001), then the answer (<see cref="Answer"/>). Each goes out
+    /// once per entry. Returns the answer when it went out now, else null.</summary>
+    public ResponseFieldEnter FieldLoaded(Action<Wire.IOutPacket> send)
+    {
+        if (Loaded() is { } loaded) { send(loaded.LoadUgcMap); send(loaded.Banners); }
+        var answer = Answer();
+        if (answer != null) send(answer);
+        return answer;
+    }
+
     /// <summary>The answer of the loaded entry: ResponseFieldEnter(portal) the first time, null after that (or with no entry).</summary>
     public ResponseFieldEnter Answer()
     {

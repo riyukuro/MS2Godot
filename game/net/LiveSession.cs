@@ -1025,11 +1025,10 @@ public partial class LiveSession : Node
     public void FieldLoaded()
     {
         if (entry == null) return;
-        // CSceneStateGame::vfunc_1 (scenestategame.cpp:1995-2001), the end of the field load: RequestLoadUgcMap, then Ugc 0x12
-        if (fieldEntry.Loaded() is { } loaded) { Send(loaded.LoadUgcMap); Send(loaded.Banners); }
-        var answer = fieldEntry.Answer();
+        // CSceneStateGame::vfunc_1 (scenestategame.cpp:1995-2001), the end of the field load: RequestLoadUgcMap, then Ugc 0x12,
+        // then the answer
+        var answer = fieldEntry.FieldLoaded(Send);
         if (answer == null) return;
-        Send(answer);
         // MyPC::FUN_1415302e0's tables, loaded with the field rather than at the first placement, after the answer so the
         // field entry does not wait on them; a failed load stays null (ConfirmPlacement stops at InventoryCheckOpen) and is
         // tried again at the next field

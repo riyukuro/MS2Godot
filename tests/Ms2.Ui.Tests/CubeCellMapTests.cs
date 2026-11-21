@@ -206,4 +206,27 @@ public class CubeCellMapTests
         Assert.That(m.CubeAt(new Vector3(0, -30000, 10)), Is.Null);
         Assert.That(m.EntityCount, Is.Zero);
     }
+
+    [Test]
+    public void AMapPropWhoseKeyIsTakenKeepsItsEntityThroughACreateAndARemoveAtItsCell()
+    {
+        // (200, 0, 0) and (-56, 0, 0) share key 0xc8: f98 keeps the first (FUN_1410c1330), the second prop still has its
+        // entity. CreateCube's entity at the key's cell (-56, 0, 0) is another entity, and removing it leaves the prop's
+        var m = new CubeCellMap();
+        Assert.That(m.AddMapCube((200, 0, 0), new Vector3(30000, 0, 0)), Is.True);
+        Assert.That(m.AddMapCube((-56, 0, 0), new Vector3(-8400, 0, 0)), Is.True);
+        Assert.That((m.Count, m.EntityCount), Is.EqualTo((1, 2)));
+        int key = CubeCell.Key(200, 0, 0);
+        Assert.That(key, Is.EqualTo(CubeCell.Key(-56, 0, 0)));
+
+        Assert.That(m.Replace(key, Item(Known), Exists), Is.True);      // the (200, 0, 0) prop leaves, a cube is made at (-56, 0, 0)
+        Assert.That((m.Count, m.EntityCount), Is.EqualTo((1, 2)));
+        Assert.That(m.CubeAt(new Vector3(30000, 0, 10)), Is.Null);
+        Assert.That(m.EntityPosition((-56, 0, 0)), Is.EqualTo(new Vector3(-8400, 0, 0)));
+
+        Assert.That(m.Replace(key, Item(Unknown), Exists), Is.False);   // the created cube leaves; nothing new is made
+        Assert.That((m.Count, m.EntityCount), Is.EqualTo((0, 1)));
+        Assert.That(m.CubeAt(new Vector3(-8400, 0, 10)), Is.EqualTo(((int, int, int)?)(-56, 0, 0)));
+        Assert.That(m.EntityPosition((-56, 0, 0)), Is.EqualTo(new Vector3(-8400, 0, 0)));
+    }
 }

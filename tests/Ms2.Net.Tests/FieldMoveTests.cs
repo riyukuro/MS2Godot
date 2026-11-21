@@ -95,11 +95,10 @@ public class FieldMoveTests {
         var (s, l, srv, e, game) = await Enter();
         using (game) {
             var entry = new FieldEntry(e.Field);
-            async Task Loaded() {   // LiveSession.FieldLoaded's order, reported twice
-                foreach (var _ in new[] { 1, 2 }) {
-                    if (entry.Loaded() is { } sends) { await game.SendAsync(sends.LoadUgcMap); await game.SendAsync(sends.Banners); }
-                    var a = entry.Answer(); if (a != null) await game.SendAsync(a);
-                }
+            async Task Loaded() {   // LiveSession.FieldLoaded's sends (FieldEntry.FieldLoaded), reported twice
+                var sent = new List<IOutPacket>();
+                foreach (var _ in new[] { 1, 2 }) entry.FieldLoaded(sent.Add);
+                foreach (var p in sent) await game.SendAsync(p);
                 await game.SendAsync(new GlobalFactorRequest());      // a marker after the load's sends
             }
             async Task Expect(int portal, int map) {

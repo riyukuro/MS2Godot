@@ -24,10 +24,14 @@ public sealed class CubeCellMap : ICubeCells
     /// CopyFrom(0) leaves it cleared (item id 0, no look; ugcmapoptions.cpp:103-127, CopyFrom and Clear). Shared, read only.</summary>
     static readonly CubeItemInfo MapCubeItem = new();
 
-    readonly Dictionary<(int X, int Y, int Z), Vector3> entities = new();   // cell -> entity position (MS2 axes)
-    // key -> its entity's cell, beside f98: a map cube's cell can lie past the key's signed byte (a cube at x 200 has key
-    // 0xc8, which unpacks to -56), so the cube leaves with the entity it was added with, not one found from the key
-    readonly Dictionary<int, (int X, int Y, int Z)> entityCells = new();
+    // cell -> entity position (MS2 axes). The map's MS2CubeProp entities and the entities CreateCube makes are separate
+    // entities in the client, so a created cube never replaces a map prop's entity at its cell, and removing it leaves the prop's
+    readonly Dictionary<(int X, int Y, int Z), Vector3> mapEntities = new();
+    readonly Dictionary<(int X, int Y, int Z), Vector3> cubeEntities = new();
+    // key -> its entity's cell and table, beside f98: a map cube's cell can lie past the key's signed byte (a cube at x 200
+    // has key 0xc8, which unpacks to -56), so the cube leaves with the entity it was added with, not one found from the key.
+    // A map prop whose key f98 already holds has no row: it keeps its entity
+    readonly Dictionary<int, ((int X, int Y, int Z) Cell, bool Map)> entityCells = new();
 
     /// <summary>The plot tables LoadCubes modes 1-3 fill, kept with the field's cubes.</summary>
     public readonly CubePlots Plots = new();
@@ -35,8 +39,8 @@ public sealed class CubeCellMap : ICubeCells
     public int Count => cubes.Count;
 
     /// <summary>The cubes with an entity position (the climb lookups' cubes).</summary>
-    public int EntityCount => entities.Count;
-    public IEnumerable<KeyValuePair<(int X, int Y, int Z), Vector3>> Entities => entities;
+    public int EntityCount => mapEntities.Count + cubeEntities.Count;
+    public IEnumerable<KeyValuePair<(int X, int Y, int Z), Vector3>> Entities => mapEntities.Concat(cubeEntities);
 
     /// <summary>FUN_1410c1330: a map cube at the key; a key already held refuses it (false).</summary>
     public bool AddMapCube(int key) => cubes.TryAdd(key, MapCubeItem);
@@ -45,9 +49,9 @@ public sealed class CubeCellMap : ICubeCells
     /// first cube of a cell is kept, a later one refused (false).</summary>
     public bool AddMapCube((int X, int Y, int Z) cell, Vector3 position)
     {
-        if (!entities.TryAdd(cell, position)) return false;
+        if (!mapEntities.TryAdd(cell, position)) return false;
         int key = CubeCell.Key(cell.X, cell.Y, cell.Z);
-        if (AddMapCube(key)) entityCells[key] = cell;
+        if (AddMapCube(key)) entityCells[key] = (cell, true);
         return true;
     }
 
@@ -63,22 +67,25 @@ public sealed class CubeCellMap : ICubeCells
         for (int dz = -1; dz <= 1; dz++)
         {
             var cell = (k.X + dx, k.Y + dy, k.Z + dz);
-            if (!entities.TryGetValue(cell, out var c)) continue;
-            if (MathF.Abs(ms2Point.X - c.X) <= h && MathF.Abs(ms2Point.Y - c.Y) <= h && ms2Point.Z >= c.Z && ms2Point.Z <= c.Z + CubeCell.Size)
-                return cell;
+            if (mapEntities.TryGetValue(cell, out var c) && Holds(c, ms2Point, h)) return cell;
+            if (cubeEntities.TryGetValue(cell, out c) && Holds(c, ms2Point, h)) return cell;
         }
         return null;
     }
+
+    static bool Holds(Vector3 c, Vector3 p, float h)
+        => MathF.Abs(p.X - c.X) <= h && MathF.Abs(p.Y - c.Y) <= h && p.Z >= c.Z && p.Z <= c.Z + CubeCell.Size;
 
     /// <summary>FUN_1410b9080: the cube at a cell offset (x, y, z signed bytes) from another, or null.</summary>
     public (int X, int Y, int Z)? Neighbour((int X, int Y, int Z) cell, int dx, int dy, int dz)
     {
         var n = (cell.X + dx, cell.Y + dy, cell.Z + dz);
-        return entities.ContainsKey(n) ? n : null;
+        return mapEntities.ContainsKey(n) || cubeEntities.ContainsKey(n) ? n : null;
     }
 
-    /// <summary>The cube's entity position (MS2 axes).</summary>
-    public Vector3 EntityPosition((int X, int Y, int Z) cell) => entities[cell];
+    /// <summary>The cube's entity position (MS2 axes). STILL-OPEN: a cell with both a map prop and a created cube gives the
+    /// map prop's (the client's ray hits one entity; the lookups here go by cell).</summary>
+    public Vector3 EntityPosition((int X, int Y, int Z) cell) => mapEntities.TryGetValue(cell, out var p) ? p : cubeEntities[cell];
 
     /// <summary>HasCubeAtKey (@0x1410b7ed0, :480-487): a cube is at the key.</summary>
     public bool HasCubeAtKey(int key) => cubes.ContainsKey(key);
@@ -154,7 +161,7 @@ public sealed class CubeCellMap : ICubeCells
     void Remove(int key)
     {
         cubes.Remove(key);
-        if (entityCells.Remove(key, out var cell)) entities.Remove(cell);
+        if (entityCells.Remove(key, out var e)) (e.Map ? mapEntities : cubeEntities).Remove(e.Cell);
     }
 
     /// <summary>CreateCube's checks (:2604-2617), then the cube with its item (spCube->item->CopyFrom(pInfo)) and its entity
@@ -165,8 +172,8 @@ public sealed class CubeCellMap : ICubeCells
         if (!itemExists(item.ItemId)) return false;
         cubes[key] = item;
         var cell = CubeCell.Unpack(key);
-        entities[cell] = new Vector3(cell.X * CubeCell.Size, cell.Y * CubeCell.Size, cell.Z * CubeCell.Size);
-        entityCells[key] = cell;
+        cubeEntities[cell] = new Vector3(cell.X * CubeCell.Size, cell.Y * CubeCell.Size, cell.Z * CubeCell.Size);
+        entityCells[key] = (cell, false);
         return true;
     }
 }
