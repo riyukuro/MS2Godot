@@ -116,10 +116,14 @@ public partial class HudTypingDriver : Node
                 bool battle = me?.InBattle == true;
                 // the charging skill's release reads its cast key as StateSkill does (IsKeyDown(m_nA4)): X (DIK 0x2d) held
                 bool castKey = hud.GetType().GetMethod("CastKeyDown", Private)?.Invoke(hud, new object[] { 0x2d }) is true;
+                // the held-key poll over the bound keys (MyPC::FUN_141526730 with bAuto) reads the same keys: no key taken
+                var pollArgs = new object[] { false };
+                object polled = hud.GetType().GetMethod("PollOwnKey", Private)?.Invoke(hud, pollArgs);
+                int pollKey = polled is int pk ? pk : -1;
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.Up, PhysicalKeycode = Key.Up, Pressed = false });
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.X, PhysicalKeycode = Key.X, Pressed = false });
-                bool ok = me != null && move == Vector2.Zero && !battle && !castKey && field.Text == Typed + "x";
-                Finish(ok, $"field \"{field.Text}\", none opened; held Up: move {move}; held X: battle stance {battle}, cast key down {castKey} (player {(me != null ? "found" : "missing")})");
+                bool ok = me != null && move == Vector2.Zero && !battle && !castKey && pollKey == 0 && field.Text == Typed + "x";
+                Finish(ok, $"field \"{field.Text}\", none opened; held Up: move {move}; held X: battle stance {battle}, cast key down {castKey}, poll key {pollKey} (player {(me != null ? "found" : "missing")})");
                 return;
             }
         }

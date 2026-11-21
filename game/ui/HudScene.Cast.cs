@@ -282,7 +282,7 @@ public partial class HudScene
     int PollOwnKey(out bool pressed)
     {
         pressed = framePressFrame == Engine.GetProcessFrames();
-        if (hudModel?.Keys is not { } keys || UiFocus.IsTyping) return 0;
+        if (hudModel?.Keys is not { } keys || Ms2.Ui.InputBlock.Active) return 0;   // the keys read nothing then (OwnKeyDown)
         keys.GetBoundKeys(boundKeys, hudModel.ServerKeys);
         if (ownPollWorld == null)
         {
