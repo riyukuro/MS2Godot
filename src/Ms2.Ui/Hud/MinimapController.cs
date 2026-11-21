@@ -81,7 +81,7 @@ public sealed class MinimapController : UiController
         int selected = 0;
         foreach (var id in f.Channels)
         {
-            string label = (chPrefix.Length > 0 ? chPrefix + " " : "") + id;
+            string label = $"{chPrefix} {id}";   // StringFormat("{0} {1}", GetStringCommon(0x579), id)
             if (id == f.Channel) selected = rows.Count;
             rows.Add(new Dictionary<string, object> { ["id"] = id, ["label"] = label, ["labelDropdown"] = label });
         }
@@ -239,7 +239,7 @@ public sealed class MinimapController : UiController
         foreach (var id in f.Channels)
         {
             // BuildChannelList (uiserverlistdialog.cpp): "{0} {1}" of the channel word and the id
-            string label = (chPrefix.Length > 0 ? chPrefix + " " : "") + id;
+            string label = $"{chPrefix} {id}";   // StringFormat("{0} {1}", GetStringCommon(0x579), id)
             if (id == f.Channel) selected = channels.Count;
             channels.Add(new Dictionary<string, object> { ["id"] = id, ["label"] = label, ["labelDropdown"] = label });
         }
