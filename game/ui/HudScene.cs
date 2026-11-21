@@ -3198,6 +3198,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.Frame(perfState);
         TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
+        TickOwnSync();                                        // StateSkill::SendChargeState: the mode 2 sync
         TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15

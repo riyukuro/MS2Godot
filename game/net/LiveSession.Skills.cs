@@ -25,6 +25,14 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>The mode 2 sync of the own skill state (StateSkill::SendChargeState, stateskill.cpp:1271). False offline.</summary>
+    public bool SendSync(Ms2.Net.Packets.SkillSyncRequest req)
+    {
+        if (game == null) return false;
+        Send(req);
+        return true;
+    }
+
     /// <summary>The field's other players and npcs an own attack can hit (cleared first); empty before the field is built.</summary>
     public void HitCandidates(System.Collections.Generic.List<HitCandidate> into)
     {

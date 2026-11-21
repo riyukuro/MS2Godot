@@ -87,4 +87,21 @@ public class SkillRequestTests
         var p = new SkillDamageRequest(7, 0, Vector3.Zero, Vector3.UnitX, 0, []);
         Assert.That(Bytes(p).Length, Is.EqualTo(1 + 1 + 8 + 1 + 12 + 12 + 1 + 4));
     }
+
+    [Test]
+    public void TheSkillStateSyncWritesModeTwo()
+    {
+        // StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1282-1294)
+        var p = new SkillSyncRequest(0x1122334455667788, 10000001, 3, 2, new Vector3(1, 2, 3), new Vector3(0, 1, 0), new Vector3(0, 0, 90),
+            new Vector3(4, 5, 6), true, false, 0.25f);
+        Assert.That(p.Op, Is.EqualTo(Outbound.Skill));
+        Assert.That(Bytes(p), Is.EqualTo(Expect(w =>
+        {
+            w.WriteByte(2);
+            w.WriteLong(0x1122334455667788); w.WriteInt(10000001); w.WriteShort(3); w.WriteByte(2);
+            foreach (var f in new float[] { 1, 2, 3, 0, 1, 0, 0, 0, 90, 4, 5, 6 }) w.WriteFloat(f);
+            w.WriteBool(true); w.WriteBool(false); w.WriteFloat(0.25f);
+        })));
+        Assert.That(Bytes(p).Length, Is.EqualTo(1 + 8 + 4 + 2 + 1 + 48 + 1 + 1 + 4));
+    }
 }

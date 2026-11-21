@@ -126,4 +126,32 @@ public class SkillCastTests
         w.Jobs = null;
         Assert.That(SkillCast.Request(w, new CastWorld(), Req(100), _ => 100), Is.EqualTo(new SkillCast.Result(null, 0, "s_err_not_learn_skill")));
     }
+
+    [Test]
+    public void TheSkillStateSyncGoesOnItsFirstUpdateThenOnlyWhenSomethingChanged()
+    {
+        var w = World(Skills(Attack, JumpAttack));
+        var c = new CastWorld { Aim = r => { r.Position = new Vector3(1, 2, 3); r.Direction = new Vector3(0, 1, 0); r.Rotation = new Vector3(0, 0, 90); } };
+        var r = SkillCast.Request(w, c, Req(100), _ => 100).Record;
+        r.TargetDistance = 4.5f;
+        var sent = new ChargeSync();
+        // StateSkill::vfunc_4 (stateskill.cpp:484-487): the owner's rotation, a zero position: the first update sends (:1275)
+        sent.Reset(new Vector3(0, 0, 90));
+        var at = new Vector3(1, 2, 3);
+        Assert.That(SkillCast.SyncIfChanged(sent, r, at, false, false), Is.EqualTo(new SkillSyncRequest(77, 100, 1, 0,
+            new Vector3(1, 2, 3), new Vector3(0, 1, 0), new Vector3(0, 0, 90), at, false, false, 4.5f)));
+        Assert.That(SkillCast.SyncIfChanged(sent, r, at, false, false), Is.Null, "nothing changed");
+        Assert.That(SkillCast.SyncIfChanged(sent, r, at + Vector3.UnitX, false, false)?.OwnerPosition, Is.EqualTo(at + Vector3.UnitX), "the owner moved");
+        Assert.That(SkillCast.SyncIfChanged(sent, r, at + Vector3.UnitX, true, false)?.Charging, Is.True, "charging");
+        Assert.That(SkillCast.SyncIfChanged(sent, r, at + Vector3.UnitX, true, true)?.Loop, Is.True, "the loop");
+        r.Rotation = new Vector3(0, 0, 45);
+        Assert.That(SkillCast.SyncIfChanged(sent, r, at + Vector3.UnitX, true, true)?.Rotation, Is.EqualTo(r.Rotation), "the record turned");
+        sent.Reset(new Vector3(0, 0, 45));
+        Assert.That(SkillCast.SyncIfChanged(sent, new CastRecord { Skill = r.Skill, Level = r.Level, Rotation = r.Rotation }, Vector3.Zero, false, false),
+            Is.Null, "an owner at the origin with the same rotation: the first update sends nothing");
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100000; i++) SkillCast.SyncIfChanged(sent, r, Vector3.Zero, false, false);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 unchanged updates");
+    }
 }

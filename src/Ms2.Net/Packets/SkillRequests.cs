@@ -63,6 +63,27 @@ public sealed record SkillCastRequest(long CastId, int ServerTick, int SkillId, 
 }
 
 /// <summary>
+/// Skill mode 2, the skill state's sync: StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1271) writes u8 2, i64 cast
+/// id, i32 skill id, i16 level, u8 motion, four float vectors (the record's position, direction and rotation, then the
+/// owner's position now), bool charging (m_bCharging), bool loop (m_bLoop) and float the record's +0x74.
+/// </summary>
+public sealed record SkillSyncRequest(long CastId, int SkillId, short Level, byte Motion, Vector3 Position, Vector3 Direction,
+    Vector3 Rotation, Vector3 OwnerPosition, bool Charging, bool Loop, float TargetDistance) : IOutPacket
+{
+    public Outbound Op => Outbound.Skill;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(2);
+        w.WriteLong(CastId); w.WriteInt(SkillId); w.WriteShort(Level); w.WriteByte(Motion);
+        WritePoint(w, Position); WritePoint(w, Direction); WritePoint(w, Rotation); WritePoint(w, OwnerPosition);
+        w.WriteBool(Charging); w.WriteBool(Loop); w.WriteFloat(TargetDistance);
+    }
+
+    static void WritePoint(ByteWriter w, Vector3 v) { w.WriteFloat(v.X); w.WriteFloat(v.Y); w.WriteFloat(v.Z); }
+}
+
+/// <summary>
 /// One link of a bounce chain in the damage send: the next SkillTargetRecord after a hit (the record's m_spLinked, made by
 /// StateSkill::FUN_1417f3e80 @0x1417f3e80, stateskill.cpp:2779): its serial (m_nTagSub, GenerateSerialId), the object it
 /// hits (m_nCasterId), the bounce number (m_n80, bounceCount - bounces left + 1) and the hit index (m_n84, 0 on a bounce).

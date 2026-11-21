@@ -13,6 +13,7 @@ public partial class HudScene
     CastRecord ownCast;
     int ownAttack;
     string ownSequence;
+    readonly ChargeSync ownSync = new();          // StateSkill's last sent mode 2 sync
     CastRecord ownQueued;                          // StateSkill's m_spCharge: the cooling press queued behind the running skill
     ulong ownStateStartMs;                         // when the own skill state began (StateSkill's m_nElapsed counts from it)
     double ownPointTime = -1;
@@ -179,7 +180,7 @@ public partial class HudScene
     /// Each frame while the own skill state runs: StateSkill::FUN_1417f11d0 @0x1417f11d0 (stateskill.cpp:1578, from vfunc_3
     /// :623): the queued press, once <see cref="SkillCast.QueuedReady"/>, takes the player's position (:1611), its m_bAD from
     /// its level's sequence (:1612) and goes through MyPC::vfunc_102 (<see cref="UseOwnRecord"/>); the state's enter and exit
-    /// (vfunc_4 :340, vfunc_5 :416) drop it. 0 B/frame until it goes.
+    /// (the enter, vfunc_4 :416; the ctor :340) and the state's end here drop it. 0 B/frame until it goes.
     /// STILL-OPEN: a queued charging release (m_n98, the charge path :1589-1607) is not ported; no record here is one.
     /// </summary>
     void TickOwnQueued()
@@ -200,7 +201,8 @@ public partial class HudScene
     void StartOwnAttacks(Player me, CastRecord r)
     {
         ownCast = r;
-        ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:340)
+        ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:416)
+        ownSync.Reset(new System.Numerics.Vector3(0, 0, me.FacingRotZ));   // vfunc_4 (:484-487): the owner's rotation
         ownAttack = 0;
         ownSequence = me.SkillSequence;
         ownStateStartMs = Time.GetTicksMsec();
@@ -228,6 +230,23 @@ public partial class HudScene
         if (player == null || (object)player.SkillSequence != ownSequence) { ownCast = null; return; }
         if (ownPointTime < 0 || player.SkillSequencePosition < ownPointTime) return;
         FireOwnPoint(player);
+    }
+
+    /// <summary>
+    /// Each frame while the own skill state runs: StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1271, from vfunc_8
+    /// :724), the mode 2 sync once the state starts and whenever the owner moves (<see cref="SkillCast.SyncIfChanged"/>).
+    /// 0 B/frame while nothing changed.
+    /// STILL-OPEN: charging and loop are always false (the continue skill's held key, vfunc_8 :648-694, and the charging
+    /// skill's loop are not ported), and the record's rotation does not turn during the state (FUN_1417edc20).
+    /// </summary>
+    void TickOwnSync()
+    {
+        if (!OwnSkillStateRuns()) return;
+        var live = Net.LiveSession.Instance;
+        if (live == null) return;
+        var g = player.GlobalPosition;
+        var req = SkillCast.SyncIfChanged(ownSync, ownCast, new System.Numerics.Vector3(g.X, -g.Z, g.Y), false, false);
+        if (req != null) live.SendSync(req);
     }
 
     /// <summary>

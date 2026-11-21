@@ -290,7 +290,40 @@ public static class SkillCast
         return new SkillCastRequest(r.CastId, serverTick, (int)r.Skill.Id, (short)r.Level.Level, r.Motion, r.Position, r.Direction,
             r.Rotation, r.TargetDistance, elapsed, r.Flag, r.ItemUid, (long)r.CooldownKey, holdAttackFeature);
     }
+
+    /// <summary>
+    /// StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1271), from the skill state's update (vfunc_8 :724): the mode 2
+    /// sync when the record's rotation, the owner's position, the charging or the loop flag differs from the last one sent
+    /// (<see cref="ChargeSync"/>, which takes the new values); null otherwise.
+    /// </summary>
+    public static SkillSyncRequest SyncIfChanged(ChargeSync sent, CastRecord r, Vector3 ownerPosition, bool charging, bool loop)
+    {
+        if (!sent.Take(r.Rotation, ownerPosition, charging, loop)) return null;
+        return new SkillSyncRequest(r.CastId, (int)r.Skill.Id, (short)r.Level.Level, r.Motion, r.Position, r.Direction, r.Rotation,
+            ownerPosition, charging, loop, r.TargetDistance);
+    }
 }
 
 /// <summary>The outcome of <see cref="SkillCast.CooldownGate"/>: cast, queued in the skill state (vfunc_102 returns true), refused.</summary>
 public enum CoolGate { Cast, Queued, Refused }
+
+/// <summary>StateSkill's last sent sync: m_ptSentRot, m_ptSentPos, m_bSentCharging, m_bSentLoop.</summary>
+public sealed class ChargeSync
+{
+    Vector3 rot, pos;
+    bool charging, loop;
+
+    /// <summary>
+    /// The state's enter (StateSkill::vfunc_2, stateskill.cpp:484-487): the owner's rotation, a zero position and both flags
+    /// off, so the first update sends unless the owner stands at the origin.
+    /// </summary>
+    public void Reset(Vector3 ownerRotation) { rot = ownerRotation; pos = Vector3.Zero; charging = false; loop = false; }
+
+    /// <summary>SendChargeState's test (:1275-1281): true when any value differs, and then the values are kept as sent.</summary>
+    public bool Take(Vector3 recordRotation, Vector3 ownerPosition, bool charging, bool loop)
+    {
+        if (rot == recordRotation && pos == ownerPosition && this.charging == charging && this.loop == loop) return false;
+        rot = recordRotation; pos = ownerPosition; this.charging = charging; this.loop = loop;
+        return true;
+    }
+}
