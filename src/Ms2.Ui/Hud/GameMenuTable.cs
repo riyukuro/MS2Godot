@@ -12,6 +12,15 @@ namespace Ms2.Ui.Hud;
 public sealed record GameMenuDef(int Id, string Name, string Label, string Tooltip, string DisabledTooltip, int KeyBind, int UiId,
     int Feature, string Action = null, string EnabledBy = null, string NewBy = null);
 
+/// <summary>The <see cref="GameMenuDef.Action"/> names the HUD answers itself (the rest are only logged).</summary>
+public static class GameMenuActions
+{
+    /// <summary>The pssbshop entry's handler, ToggleShopTab(9) (@0x14193d5c0, uigamemenudialog.cpp:2209).</summary>
+    public const string ToggleSystemShop = "FUN_14193d5c0";
+    /// <summary>The learning entry's handler.</summary>
+    public const string OpenLearningQuest = "OpenLearningQuestDialog";
+}
+
 /// <summary>One CGameMenuItem: a table/gamemenu.xml menu or child, with its filter.</summary>
 public sealed class GameMenuItem
 {
@@ -60,7 +69,7 @@ public sealed class GameMenuTable
         new(23, "vip", "$s_gamemenu_btn_vip", "s_tooltip_gamemenu_vip", "", 400026, 0x4f1b, 74, Action: "FUN_14193bda0"),
         new(24, "mastery", "$s_gamemenu_btn_mastery", "s_tooltip_gamemenu_mastery", "", 400029, 0x4f1e, 0),
         new(25, "partysearch", "$s_gamemenu_btn_partysearch", "s_tooltip_gamemenu_partysearch", "", 400027, 0x4eda, 0),
-        new(26, "learning", "$s_gamemenu_btn_learning", "s_tooltip_gamemenu_learning_quest", "", 400030, 0x4f18, 0, Action: "OpenLearningQuestDialog"),
+        new(26, "learning", "$s_gamemenu_btn_learning", "s_tooltip_gamemenu_learning_quest", "", 400030, 0x4f18, 0, Action: GameMenuActions.OpenLearningQuest),
         new(27, "compactkey", "$s_gamemenu_btn_compactkey", "s_tooltip_gamemenu_compactkey", "", 400031, 0x4ef6, 0),
         new(28, "dictionary", "$s_gamemenu_btn_dictionary", "s_tooltip_gamemenu_dictionary", "", 400032, 0x4f0b, 0),
         new(29, "ranking", "$s_gamemenu_btn_ranking", "s_tooltip_gamemenu_ranking", "", 400033, 0x4f24, 0),
@@ -90,7 +99,7 @@ public sealed class GameMenuTable
         new(54, "jobchange", "$s_gamemenu_popup_changejob", "s_tooltip_gamemenu_changejob", "", 0, 0, 0, Action: "FUN_14193d590", EnabledBy: "UIChangeJobDialog::CanChangeJob"),
         new(55, "lapenshard", "$s_gamemenu_btn_lapenshard", "s_tooltip_gamemenu_lapenshard", "", 0, 0x4f6d, 211),
         new(57, "coupledance", "$s_gamemenu_popup_coupledance", "s_tooltip_gamemenu_coupledance", "", 0, 0x4f71, 0, Action: "FUN_14193d320"),
-        new(59, "pssbshop", "$s_gamemenu_btn_pssbshop", "s_tooltip_gamemenu_pssbshop", "", 0, 0, 0, Action: "FUN_14193d5c0"),
+        new(59, "pssbshop", "$s_gamemenu_btn_pssbshop", "s_tooltip_gamemenu_pssbshop", "", 0, 0, 0, Action: GameMenuActions.ToggleSystemShop),
         new(60, "collectitemgroupevent", "$s_gamemenu_btn_collectitemgroupevent", "s_tooltip_gamemenu_collectitemgroupevent", "", 0, 0x4f81, 0),
         new(61, "bingoevent", "$s_gamemenu_btn_bingoevent", "s_tooltip_gamemenu_bingoevent", "", 0, 0x4f83, 0),
         new(62, "payback", "$s_gamemenu_btn_payback", "s_tooltip_gamemenu_payback", "", 0, 0x4f93, 0, Action: "FUN_14193d700", EnabledBy: "UIPaybackDialog::IsPaybackAvailable"),

@@ -2231,8 +2231,8 @@ public partial class HudScene : Node, IUiStageHost
         WatchShop();
         c.MenuAction += def =>
         {
-            if (def.Action == "OpenLearningQuestDialog") OpenLearningQuest();
-            else if (def.Action == "FUN_14193d5c0") ToggleShopTab(9);   // uigamemenudialog.cpp:2209
+            if (def.Action == GameMenuActions.OpenLearningQuest) OpenLearningQuest();
+            else if (def.Action == GameMenuActions.ToggleSystemShop) ToggleShopTab(9);   // uigamemenudialog.cpp:2209
         };
         WatchBuddies();
         WatchGuild();
