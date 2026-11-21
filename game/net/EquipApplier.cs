@@ -53,7 +53,6 @@ public sealed class EquipApplier
     readonly ItemTables shared;
     Dictionary<int, Dictionary<int, XElement>> docs => shared.Models;
     Dictionary<int, Dictionary<int, int>> presets => shared.Presets;
-    Dictionary<int, int> subtypes => shared.Subtypes;
     Dictionary<int, string> characterIdle => shared.CharacterIdle;
     readonly HashSet<string> itemNodes = new(StringComparer.Ordinal);    // node names of the models hung on the character
     Ms2.Formats.World.EffectTable effects;
@@ -80,7 +79,7 @@ public sealed class EquipApplier
                         byItem[i] = p;
                     var prop = e.Descendants("property").FirstOrDefault();
                     if ((string)prop?.Attribute("type") == "1" && int.TryParse((string)prop.Attribute("subtype"), out int st))
-                        subtypes[i] = st;
+                        shared.Subtypes[i] = st;
                     // ItemEffect::Load (itemdatastruct.cpp:1609-1625): <effect characterIdle> of the item itself
                     if ((string)e.Descendants("effect").FirstOrDefault()?.Attribute("characterIdle") is { Length: > 0 } fx)
                         characterIdle[i] = fx;
@@ -93,7 +92,7 @@ public sealed class EquipApplier
 
     int WeaponSubtype(int id)
     {
-        if (!subtypes.TryGetValue(id, out int st)) { FindItem(id); subtypes.TryGetValue(id, out st); }
+        if (!shared.Subtypes.TryGetValue(id, out int st)) { FindItem(id); shared.Subtypes.TryGetValue(id, out st); }
         return st;
     }
 
@@ -550,9 +549,9 @@ public sealed class EquipApplier
         readonly int rhSubtype, lhSubtype;
         public readonly string Prefix;
         public readonly int RightHand;
-        public bool InBattle { get; private set; }
-        public bool StateAllowsWeapons { get; private set; } = true;
-        public bool WeaponsHeld { get; private set; }
+        // fields, not properties: the game assembly runs under the JIT (it is not precompiled), and each accessor is a
+        // method compiled on the first walk. Only SetState writes them.
+        public bool InBattle, WeaponsHeld, StateAllowsWeapons = true;
 
         internal WeaponRig(WeaponBinding[] bindings, Ms2.Ui.Skills.WeaponActionTable table, Ms2.Ui.Skills.WeaponAction action, int rhSubtype, int lhSubtype)
         {
