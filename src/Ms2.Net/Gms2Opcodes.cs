@@ -59,6 +59,7 @@ static class Gms2Opcodes {
         [Inbound.ItemPutOff] = 0x26,
         [Inbound.Stat] = 0x2F,
         [Inbound.UserBattle] = 0x30,
+        [Inbound.Beauty] = 0x32,
         [Inbound.RevivalConfirm] = 0x34,
         [Inbound.Revival] = 0x35,
         [Inbound.RevivalCount] = 0x36,
