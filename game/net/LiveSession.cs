@@ -1364,6 +1364,12 @@ public partial class LiveSession : Node
         GameToLoginReceived?.Invoke(m);
     }
 
+    /// <summary>CPersonalInfoAgreement::SendAgreement (@0x141261dd0, gameoptionstruct.cpp:3445-3452).</summary>
+    public void SendPersonalInfoAgreement(int group, int flags)
+    {
+        if (game != null) Send(new PersonalInfoAgreement(group, flags));
+    }
+
     /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
     public void SendRequestQuit()
     {

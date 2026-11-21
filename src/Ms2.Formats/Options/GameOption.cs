@@ -697,6 +697,62 @@ public sealed class GameOption
         }
     }
 
+    /// <summary>GamePad (Unk_GpState, 0x10 bytes; the character file's "gamepad" section): reset FUN_14125f2c0
+    /// gameoptionstruct.cpp:2525-2532, load :2537-2565 (the sensitivities clamp to 0.01..0.5; vibration with feature 0xc3 and the
+    /// left stick with 0xd6, that one clamped to 0..100), save :2571-2582. <see cref="LStickDefault"/> is the client constant
+    /// read at reset (clientconstants +0xe5b0), which the tables here do not carry.</summary>
+    public sealed class GamePad
+    {
+        public static int LStickDefault;
+        public bool Use, ShowSkillName = true, Vibration;
+        public float SensitivityH = 0.25f, SensitivityV = 0.25f;
+        public int LStick = LStickDefault;
+
+        public void Reset()
+        {
+            Use = false; ShowSkillName = true; Vibration = false;
+            SensitivityH = 0.25f; SensitivityV = 0.25f; LStick = LStickDefault;
+        }
+
+        public void Load(XDocument d, bool vibration, bool lstick)
+        {
+            Xml.ReadBool(d, "gamepad", "bGamePadUse", ref Use);
+            Xml.ReadBool(d, "gamepad", "bShowSkillName", ref ShowSkillName);
+            Xml.ReadFloat(d, "gamepad", "sensitivityH", ref SensitivityH);
+            Xml.ReadFloat(d, "gamepad", "sensitivityV", ref SensitivityV);
+            SensitivityH = Math.Clamp(SensitivityH, 0.01f, 0.5f);
+            SensitivityV = Math.Clamp(SensitivityV, 0.01f, 0.5f);
+            if (vibration) Xml.ReadBool(d, "gamepad", "bVibration", ref Vibration);
+            if (lstick)
+            {
+                Xml.ReadInt(d, "gamepad", "gamePadLStickMoveSensitivity", ref LStick);
+                LStick = Math.Clamp(LStick, 0, 100);
+            }
+        }
+
+        public void Save(XDocument d, bool vibration, bool lstick)
+        {
+            Xml.WriteBool(d, "gamepad", "bGamePadUse", Use);
+            Xml.WriteBool(d, "gamepad", "bShowSkillName", ShowSkillName);
+            Xml.WriteFloat(d, "gamepad", "sensitivityH", SensitivityH);
+            Xml.WriteFloat(d, "gamepad", "sensitivityV", SensitivityV);
+            if (vibration) Xml.WriteBool(d, "gamepad", "bVibration", Vibration);
+            if (lstick) Xml.WriteInt(d, "gamepad", "gamePadLStickMoveSensitivity", LStick);
+        }
+
+        /// <summary>FUN_14125f640, the 0x10-byte copy.</summary>
+        public void CopyFrom(GamePad o)
+        {
+            Use = o.Use; ShowSkillName = o.ShowSkillName; Vibration = o.Vibration;
+            SensitivityH = o.SensitivityH; SensitivityV = o.SensitivityV; LStick = o.LStick;
+        }
+
+        /// <summary>The memcmp of CGameOptionGamePad::vfunc_14 (@0x140a57db0).</summary>
+        public bool SameAs(GamePad o) => Use == o.Use && ShowSkillName == o.ShowSkillName && Vibration == o.Vibration
+            && BitConverter.SingleToInt32Bits(SensitivityH) == BitConverter.SingleToInt32Bits(o.SensitivityH)
+            && BitConverter.SingleToInt32Bits(SensitivityV) == BitConverter.SingleToInt32Bits(o.SensitivityV) && LStick == o.LStick;
+    }
+
     /// <summary>The client's option-file helpers (gameoptionstruct.cpp:3719-4046) over TinyXML (commonfiles/tinyxml.cpp).</summary>
     internal static class Xml
     {

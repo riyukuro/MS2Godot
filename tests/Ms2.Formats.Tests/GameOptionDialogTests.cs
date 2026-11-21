@@ -81,6 +81,12 @@ public class GameOptionDialogTests
         public void SendBuddyMode20() => Log.Add("buddy");
         public void OpenSecondaryPassword() => Log.Add("password");
         public bool AgreementRedCircle => false;
+        public GameOption.GamePad GamePad { get; } = new();
+        public PersonalInfoAgreement Agreement { get; } = new();
+        public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) { stored.Use = use; Log.Add($"gamepad {use} {notify}"); }
+        public void SendAgreement(int group) => Log.Add($"agreement {group} {Agreement.Flags}");
+        public void RefreshAgreementReminders() => Log.Add("reminders");
+        public void OpenAgreementDetail() => Log.Add("detail");
         public GameOption Options => Opt;
         public ScreenModes Modes => M;
         public string AdapterName => "GPU";
@@ -497,5 +503,165 @@ public class GameOptionDialogTests
         Assert.That(keys.Backups, Is.EqualTo(1), "only page 9 calls BackupKeys");
         d.DropAllChanges();
         Assert.That(keys.Restores, Is.EqualTo(1), "only page 9 calls RestoreKeysFromBackup");
+    }
+
+    // ---- the gamepad and agreement pages (gameoptiongamepad.cpp, gameoptionpersonalinfoagreement.cpp) ----
+
+    static GamePadOptionPage ShowGamePad(FakeHost h, out GameOptionDialog d)
+    {
+        h.Features.Add(0xb5);
+        (d, _) = Open(h);
+        var p = (GamePadOptionPage)d.Page(8);
+        p.OnTabInit();
+        return p;
+    }
+
+    [Test]
+    public void GamePadPageFillsTheControlsFromTheStoredBlock()
+    {
+        var h = new FakeHost();
+        h.GamePad.Use = true; h.GamePad.ShowSkillName = false; h.GamePad.Vibration = true;
+        h.GamePad.SensitivityH = 0.3f; h.GamePad.SensitivityV = 0.5f; h.GamePad.LStick = 40;
+        ShowGamePad(h, out _);
+        Assert.That(h.T.Selected["m_bGamePadUse"], Is.True);
+        Assert.That(h.T.Selected["m_bShowSkillName"], Is.False);
+        Assert.That(h.T.Selected["m_bVibration"], Is.True);
+        Assert.That(h.T.Values["m_sensitivityH"], Is.EqualTo(30f).Within(0.001f), "shown x100");
+        Assert.That(h.T.Values["m_sensitivityV"], Is.EqualTo(50f).Within(0.001f));
+        Assert.That(h.T.Values["m_gamePadLStickMoveSensitivity"], Is.EqualTo(40f));
+    }
+
+    [Test]
+    public void GamePadPageReadsGatedAndFlooredValuesAndAppliesOnSave()
+    {
+        var h = new FakeHost();
+        var p = ShowGamePad(h, out _);
+        h.T.Selected["m_bGamePadUse"] = true;
+        h.T.Selected["m_bVibration"] = true;
+        h.T.Values["m_gamePadLStickMoveSensitivity"] = 70;
+        h.T.Values["m_sensitivityH"] = 0;
+        h.T.Values["m_sensitivityV"] = 60;
+        p.ReadControls();
+        Assert.That(p.State.Vibration, Is.False, "feature 0xc3 off");
+        Assert.That(p.State.LStick, Is.EqualTo(0), "feature 0xd6 off");
+        Assert.That(p.State.SensitivityH, Is.EqualTo(0.01f), "floor");
+        Assert.That(p.State.SensitivityV, Is.EqualTo(0.6f).Within(0.0001f));
+        Assert.That(p.HasChanges(), Is.EqualTo(1));
+        p.Save();
+        Assert.That(h.GamePad.Use, Is.True);
+        Assert.That(h.GamePad.SensitivityV, Is.EqualTo(0.6f).Within(0.0001f));
+        Assert.That(h.Log, Does.Contain("gamepad True True"));
+        Assert.That(p.HasChanges(), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void GamePadFeaturesLetVibrationAndStickThrough()
+    {
+        var h = new FakeHost();
+        h.Features.Add(0xc3); h.Features.Add(0xd6);
+        var p = ShowGamePad(h, out _);
+        h.T.Selected["m_bVibration"] = true;
+        h.T.Values["m_gamePadLStickMoveSensitivity"] = 70;
+        p.ReadControls();
+        Assert.That(p.State.Vibration, Is.True);
+        Assert.That(p.State.LStick, Is.EqualTo(70));
+    }
+
+    [Test]
+    public void GamePadResetTakesTheDefaultDocumentsSection()
+    {
+        var h = new FakeHost { Defaults = XDocument.Parse("<ms2><gamepad bGamePadUse=\"true\" sensitivityH=\"0.9\" /></ms2>") };
+        var p = ShowGamePad(h, out _);
+        p.State.ShowSkillName = false;
+        p.ResetToDefaults();
+        Assert.That(p.State.Use, Is.True);
+        Assert.That(p.State.ShowSkillName, Is.True, "the reset value");
+        Assert.That(p.State.SensitivityH, Is.EqualTo(0.5f), "clamped on load");
+        Assert.That(h.T.Selected["m_bGamePadUse"], Is.True, "the controls follow");
+    }
+
+    [Test]
+    public void GamePadBlockRoundTripsThroughTheCharacterFile()
+    {
+        var doc = XDocument.Parse("<ms2/>");
+        var g = new GameOption.GamePad { Use = true, ShowSkillName = false, Vibration = true, SensitivityH = 0.4f, SensitivityV = 0.02f, LStick = 55 };
+        g.Save(doc, true, true);
+        var back = new GameOption.GamePad();
+        back.Load(doc, true, true);
+        Assert.That(back.SameAs(g), Is.True);
+        var gated = new GameOption.GamePad();
+        gated.Load(doc, false, false);
+        Assert.That(gated.Vibration, Is.False, "not read without the feature");
+        Assert.That(gated.LStick, Is.EqualTo(GameOption.GamePad.LStickDefault));
+        var short_ = XDocument.Parse("<ms2/>");
+        g.Save(short_, false, false);
+        Assert.That(short_.Root.Element("gamepad").Attribute("bVibration"), Is.Null, "not written without the feature");
+    }
+
+    static AgreementOptionPage ShowAgreement(FakeHost h)
+    {
+        h.Features.Add(0x117);
+        var (d, _) = Open(h);
+        var p = (AgreementOptionPage)d.Page(15);
+        p.OnTabInit();
+        return p;
+    }
+
+    [Test]
+    public void AgreementPageShowsTheStoredAnswer()
+    {
+        var h = new FakeHost();
+        h.Agreement.Flags = 2; h.Agreement.RefreshAgree();
+        ShowAgreement(h);
+        Assert.That(h.T.Selected["m_sendLogAgree"], Is.True);
+        Assert.That(h.T.Selected["m_sendLogDeny"], Is.False);
+    }
+
+    [Test]
+    public void AgreementAnswerIsSentOnSave()
+    {
+        var h = new FakeHost();
+        var p = ShowAgreement(h);
+        Assert.That(h.T.Selected["m_sendLogDeny"], Is.True, "nothing agreed shows deny");
+        h.T.Selected["m_sendLogAgree"] = true; h.T.Selected["m_sendLogDeny"] = false;
+        p.ReadControls();
+        Assert.That(p.State.Flags, Is.EqualTo(2u));
+        Assert.That(p.HasChanges(), Is.EqualTo(1));
+        p.Save();
+        Assert.That(h.Agreement.Flags, Is.EqualTo(2u));
+        Assert.That(h.Agreement.Agree, Is.True);
+        Assert.That(h.Log, Does.Contain("agreement 2 2"), "mode 2 for agree, the flag word");
+        Assert.That(p.HasChanges(), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void AgreementDenySendsMode4AndAnUnchangedAnswerSendsNothing()
+    {
+        var h = new FakeHost();
+        var p = ShowAgreement(h);
+        h.T.Selected["m_sendLogDeny"] = true; h.T.Selected["m_sendLogAgree"] = false;
+        p.ReadControls();
+        p.Save();
+        Assert.That(h.Log, Does.Contain("agreement 4 4"));
+        h.Log.Clear();
+        p.Save();
+        Assert.That(h.Log.Any(l => l.StartsWith("agreement")), Is.False, "same answer, group 0 already agreed");
+    }
+
+    [Test]
+    public void AgreementDetailAndGroupBits()
+    {
+        var h = new FakeHost();
+        var p = ShowAgreement(h);
+        p.OnMovieCall("OnDetail", new object[0]);
+        Assert.That(h.Log, Does.Contain("detail"));
+        var a = new PersonalInfoAgreement { Flags = 0x8 | 4 };
+        Assert.That(a.HasGroupAgreement(0), Is.True);
+        Assert.That(a.HasGroupAgreement(1), Is.True);
+        a.ClearGroupFlags(0);
+        Assert.That(a.Flags, Is.EqualTo(8u));
+        a.SetGroup(0, 2);
+        Assert.That(a.Flags, Is.EqualTo(10u));
+        Assert.That(a.Agree, Is.True);
     }
 }

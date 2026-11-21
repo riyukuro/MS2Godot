@@ -121,6 +121,20 @@ public interface IGameOptionDialogHost
     /// <summary>The page id of m_bF1d0, the agreement tab's red circle (FUN_141943940).</summary>
     bool AgreementRedCircle { get; }
 
+    /// <summary>CGameOption +0x1a0, the stored gamepad block (GetGamepadState @0x140a58500).</summary>
+    GameOption.GamePad GamePad { get; }
+    /// <summary>SetGamepadEnabled (@0x14125f670): the block's Use, the input service, the player info's skill slots, the upper
+    /// hud's gamepad mode, then SaveCharacterSettings. <paramref name="stored"/> is the block whose Use is set.</summary>
+    void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify);
+    /// <summary>CGameOption +0x1b4, the stored agreement (GetPersonalInfoAgreement @0x140a46860).</summary>
+    PersonalInfoAgreement Agreement { get; }
+    /// <summary>CPersonalInfoAgreement::SendAgreement (@0x141261dd0): SendOp 0xC0 with the group and the stored flags.</summary>
+    void SendAgreement(int group);
+    /// <summary>CPersonalInfoAgreement::FUN_141262090 (@0x141262090): the reminders follow whether group 0 is agreed.</summary>
+    void RefreshAgreementReminders();
+    /// <summary>CPersonalInfoAgreement::OpenLink (@0x141262650) of the detail page.</summary>
+    void OpenAgreementDetail();
+
     // Graphic page applies (FUN_14124ce20 @0x14124ce20, vfunc_10 @0x14124d6a0)
     GameOption Options { get; }
     ScreenModes Modes { get; }
@@ -355,7 +369,7 @@ public sealed class GameOptionDialog
         Add(7, (k, t) => new SoundOptionPage(k, t));
         bool gamePad = host.IsFeatureEnabled(0xb5);
         OptionPage Input(int k, int t) => new InputOptionPage(k, t);
-        if (gamePad) Add(8, Plain);                      // CGameOptionGamePad
+        if (gamePad) Add(8, (k, t) => new GamePadOptionPage(k, t)); // CGameOptionGamePad
         Add(9, Input);                                   // CGameOptionInputDefault x5
         Add(10, Input);
         Add(11, Input);
@@ -363,7 +377,7 @@ public sealed class GameOptionDialog
         Add(13, Input);
         Add(14, (k, t) => new LanguageOptionPage(k, t)); // CGameOptionLanguage
         Add(16, Plain);                                  // CGameOptionAccount
-        if (host.IsFeatureEnabled(0x117)) Add(15, Plain); // CGameOptionPersonalInfoAgreement
+        if (host.IsFeatureEnabled(0x117)) Add(15, (k, t) => new AgreementOptionPage(k, t)); // CGameOptionPersonalInfoAgreement
     }
 
     /// <summary>SetTab @0x141b15670 (inline in uisystemmenudialog.cpp): m_nTab, the page the next open shows.</summary>
@@ -1061,6 +1075,130 @@ public sealed class InputOptionPage : OptionPage
     {
         "onFocusInPrimary", "onFocusInSecondary", "onFocusInThirdly", "onFocusOutPrimary", "onFocusOutSecondary", "onFocusOutThirdly",
     };
+}
+
+/// <summary>CGameOptionGamePad (gameoptiongamepad.cpp): two check boxes and the vibration box, three sliders; the state is a
+/// copy of CGameOption's gamepad block.</summary>
+public sealed class GamePadOptionPage : OptionPage
+{
+    public readonly GameOption.GamePad State = new();
+    public GamePadOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x140a57240: n 0 copies the stored block.</summary>
+    public override void Open(int n)
+    {
+        if (n == 0) State.CopyFrom(Host.GamePad);
+        base.Open(n);
+    }
+
+    /// <summary>@0x140a572e0; the sensitivities show x100.</summary>
+    public override void FillControls()
+    {
+        Tab.SetSelected("m_bGamePadUse", State.Use);
+        Tab.SetSelected("m_bShowSkillName", State.ShowSkillName);
+        Tab.SetValue("m_gamePadLStickMoveSensitivity", State.LStick);
+        Tab.SetSelected("m_bVibration", State.Vibration);
+        Tab.SetValue("m_sensitivityH", State.SensitivityH * 100f);
+        Tab.SetValue("m_sensitivityV", State.SensitivityV * 100f);
+    }
+
+    /// <summary>@0x140a57730: the left stick (feature 0xd6) and vibration (0xc3) read as 0 / false without their feature; the
+    /// sensitivities have a floor of 0.01.</summary>
+    public override void ReadControls()
+    {
+        if (Tab.IsSelected("m_bGamePadUse") is bool use) State.Use = use;
+        if (Tab.IsSelected("m_bShowSkillName") is bool skill) State.ShowSkillName = skill;
+        if (Tab.GetValue("m_gamePadLStickMoveSensitivity") is float stick) State.LStick = Host.IsFeatureEnabled(0xd6) ? (int)stick : 0;
+        if (Tab.IsSelected("m_bVibration") is bool vibration) State.Vibration = Host.IsFeatureEnabled(0xc3) && vibration;
+        if (Tab.GetValue("m_sensitivityH") is float h) State.SensitivityH = Math.Max(h / 100f, 0.01f);
+        if (Tab.GetValue("m_sensitivityV") is float v) State.SensitivityV = Math.Max(v / 100f, 0.01f);
+    }
+
+    /// <summary>@0x140a57c20: the stored block takes the state, then SetGamepadEnabled(state.Use, notify). The client also
+    /// unlocks the mouse cursor and resets its type when the input service is in cursor mode; not ported.</summary>
+    public override void Save()
+    {
+        base.Save();
+        Host.GamePad.CopyFrom(State);
+        Host.SetGamepadEnabled(Host.GamePad, State.Use, true);
+    }
+
+    /// <summary>@0x140a57d00: the defaults, then the default game document's gamepad section (FUN_1412442a0).</summary>
+    public override void ResetToDefaults()
+    {
+        State.Reset();
+        var d = Host.DefaultGameDocument;
+        if (d != null) State.Load(d, Host.IsFeatureEnabled(0xc3), Host.IsFeatureEnabled(0xd6));
+        FillControls();
+    }
+
+    /// <summary>@0x140a57db0 (a memcmp).</summary>
+    public override int HasChanges() => State.SameAs(Host.GamePad) ? 0 : 1;
+}
+
+/// <summary>CGameOptionPersonalInfoAgreement (gameoptionpersonalinfoagreement.cpp): the agree / deny radio buttons of the log
+/// sending question.</summary>
+public sealed class AgreementOptionPage : OptionPage
+{
+    public readonly PersonalInfoAgreement State = new();
+    public AgreementOptionPage(int id, int type) : base(id, type) { }
+
+    /// <summary>@0x140a45dd0: n 0 copies the stored agreement.</summary>
+    public override void Open(int n)
+    {
+        if (n == 0) State.CopyFrom(Host.Agreement);
+        base.Open(n);
+    }
+
+    /// <summary>@0x140a45e50: the detail button.</summary>
+    public override int OnMovieCall(string method, object[] args)
+    {
+        if (string.Equals(method, "OnDetail", StringComparison.OrdinalIgnoreCase)) Host.OpenAgreementDetail();
+        return 0;
+    }
+
+    /// <summary>@0x140a45ed0.</summary>
+    public override void FillControls()
+    {
+        Tab.SetSelected("m_sendLogAgree", State.Agree);
+        Tab.SetSelected("m_sendLogDeny", !State.Agree);
+    }
+
+    /// <summary>@0x140a46040: agree and deny each only set their answer when selected, then group 0 takes mode 2 (agree) or 4 on
+    /// the page copy, and the reminders refresh.</summary>
+    public override void ReadControls()
+    {
+        if (Tab.IsSelected("m_sendLogAgree") == true) State.Agree = true;
+        if (Tab.IsSelected("m_sendLogDeny") == true) State.Agree = false;
+        State.SetGroup(0, State.Agree ? 2u : 4u);
+        Host.RefreshAgreementReminders();
+    }
+
+    /// <summary>@0x140a461f0: when the answer or group 0's agreement differs from the stored one, the stored agreement takes
+    /// the page copy and the answer goes to the server.</summary>
+    public override void Save()
+    {
+        base.Save();
+        var stored = Host.Agreement;
+        if (State.Agree != stored.Agree || !stored.HasGroupAgreement(0))
+        {
+            int mode = State.Agree ? 2 : 4;
+            stored.CopyFrom(State);
+            Host.SendAgreement(mode);
+            Host.RefreshAgreementReminders();
+        }
+    }
+
+    /// <summary>@0x140a462f0: the page copy's answer is cleared and re-derived from its flags.</summary>
+    public override void ResetToDefaults()
+    {
+        State.Agree = false;
+        State.RefreshAgree();
+        FillControls();
+    }
+
+    /// <summary>@0x140a46390.</summary>
+    public override int HasChanges() => State.Agree != Host.Agreement.Agree ? 1 : 0;
 }
 
 /// <summary>CGameOptionLanguage (gameoptionlanguage.cpp): the language, region and voice dropdowns, filled from

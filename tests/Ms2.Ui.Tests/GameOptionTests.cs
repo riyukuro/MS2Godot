@@ -48,6 +48,12 @@ public class GameOptionTests
         public void SendBuddyMode20() { }
         public void OpenSecondaryPassword() { }
         public bool AgreementRedCircle => false;
+        public GameOption.GamePad GamePad { get; } = new();
+        public PersonalInfoAgreement Agreement { get; } = new();
+        public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) { stored.Use = use; Log.Add($"gamepad {use} {notify}"); }
+        public void SendAgreement(int group) => Log.Add($"agreement {group} {Agreement.Flags}");
+        public void RefreshAgreementReminders() => Log.Add("reminders");
+        public void OpenAgreementDetail() => Log.Add("detail");
         public GameOption Options => Opt;
         public ScreenModes Modes { get; } = new(new[] { new DisplayMode(1920, 1080, 32), new DisplayMode(1280, 720, 32), new DisplayMode(1024, 768, 32) });
         public string AdapterName => "Test GPU";
