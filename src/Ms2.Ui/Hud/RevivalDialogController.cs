@@ -105,6 +105,10 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener,
     protected override string EntityMethod => "alignment";                  // the movie's game entity, as UIRevivalDialog::vfunc_43 finds it
     public override string TypeName => "RevivalDialog";                     // GetTypeName (uirevivaldialog.cpp:172)
 
+    /// <summary>The ctor's SetFlag(0, 1) (uirevivaldialog.cpp:163): an always-on dialog (vfunc_56), so it never counts as a
+    /// shown dialog in the guide's gate and is not closable (CUIService::IsDialogClosable).</summary>
+    public override bool AlwaysOn => true;
+
     public RevivalEnvironment Env { get; } = new();
 
     /// <summary>vfunc_43 (@0x141abab30, uirevivaldialog.cpp:250-254): UIDialog's is not called; only the entity's vfunc_25

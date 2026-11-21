@@ -740,4 +740,38 @@ public class GuideEventTests
         public override bool Hidden => false;
         public override GuideNode Root => root;
     }
+
+    [Test]
+    public void TheOpenRevivalDialogLeavesTheWorldArrowAndTheCountdownBlocksIt()
+    {
+        // UIRevivalDialog's ctor sets flag 0, always on (uirevivaldialog.cpp:163), so FUN_141adcbb0's walk skips it;
+        // UIAutoReviveCountDownDialog's sets only flag 1 (not closable), so it counts as a shown dialog
+        Model();
+        UiController Open(UiController c)
+        {
+            var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+            p.StageW = 1280; p.StageH = 720;
+            var host = new UiHost(p, c, Model());
+            Assert.That(host.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+            for (int i = 0; i < 10; i++) p.Tick();
+            Assert.That(c.IsClosed, Is.False, c.Movie + " is shown");
+            return c;
+        }
+        var revival = new Ms2.Ui.Hud.RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
+        var e = revival.Env;
+        e.Field = () => new Ms2.Ui.Hud.RevivalField(0, 1, false, false);
+        e.FieldId = () => 100;
+        e.Send = _ => { };
+        e.NoticeById = _ => { };
+        e.Notice = _ => { };
+        e.ShowBox = _ => { };
+        e.ReplaceBox = _ => { };
+        e.Level = () => 30;
+        e.Meso = () => 0;
+        Open(revival);
+        Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(new UiController[] { revival }), Is.False, "the revival dialog does not block");
+        var countdown = new Ms2.Ui.Hud.AutoReviveCountDownController();
+        Open(countdown);
+        Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(new UiController[] { revival, countdown }), Is.True, "the countdown blocks");
+    }
 }
