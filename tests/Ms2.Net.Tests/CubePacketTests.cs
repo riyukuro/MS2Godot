@@ -189,4 +189,53 @@ public class CubePacketTests
         Assert.That(m.Trophies, Is.EqualTo(new[] { (2300, 1), (2301, 3) }));
         Assert.That(ResponseCubeOwnerTrophies.Read(Reader(w => { w.WriteShort(1); w.WriteInt(0); })).Trophies, Is.Empty);
     }
+
+    static void WriteItem(ByteWriter w, int id, long uid) { w.WriteInt(id); w.WriteLong(uid); w.WriteLong(1); w.WriteByte(0); }
+
+    static void WritePlaced(ByteWriter w, byte mode, int cell, byte noticeFlag)
+    {
+        w.WriteByte(mode); w.WriteByte(0); w.WriteInt(3); w.WriteInt(1234);
+        if (mode == ResponseCubePlace.ModePlace) { w.WriteInt(5); w.WriteInt(2); }
+        w.WriteInt(cell); w.WriteLong(99); WriteItem(w, 50100001, 7); w.WriteByte(1); w.WriteFloat(90f); w.WriteInt(11);
+        if (mode != ResponseCubePlace.ModePlace) return;
+        w.WriteByte(noticeFlag);
+        if (noticeFlag == 1) { w.WriteUnicodeString("n"); w.WriteByte(4); }
+    }
+
+    [Test]
+    public void APlaceAnswerReadsItsCubeAndOnlyAFlagOfOneHasANotice()
+    {
+        // CSceneStateGame::OnResponseCube 0xa (scenestategame.cpp:9984-10011): i32, i32 pc id, i32 group, i32 floor, i32 cell,
+        // i64, CubeItemInfo, u8, f32, i32, u8 flag; only 1 is followed by a string and a u8
+        var m = ResponseCubePlace.Read(Reader(w => WritePlaced(w, 0xa, 0x00fe0103, 1)));
+        Assert.That((m.Mode, m.Error, m.CharacterId, m.Group, m.Floor, m.Cell, m.Owner), Is.EqualTo(((byte)0xa, (byte)0, 1234, 5, 2, 0x00fe0103, 99L)));
+        Assert.That((m.Item.ItemId, m.Item.InstanceId, m.Liftable, m.Rotation, m.House), Is.EqualTo((50100001, 7L, true, 90f, 11)));
+        Assert.That((m.NoticeText != null, m.NoticeType), Is.EqualTo((true, (byte)4)));
+        foreach (byte flag in new byte[] { 0, 2 })
+        {
+            var plain = ResponseCubePlace.Read(Reader(w => WritePlaced(w, 0xa, 1, flag)));
+            Assert.That((plain.NoticeText, plain.NoticeType), Is.EqualTo(((string)null, (byte)0)), $"flag {flag}");
+        }
+        Assert.That(() => ResponseCubePlace.Read(Reader(w => { WritePlaced(w, 0xa, 1, 0); w.WriteByte(0); })), Throws.Exception);   // ExpectEnd
+    }
+
+    [Test]
+    public void AReplaceAnswerHasNoGroupFloorOrNotice()
+    {
+        // 0xf (:10102-10121): i32, i32 pc id, i32 cell, i64, CubeItemInfo, u8, f32, i32
+        var m = ResponseCubePlace.Read(Reader(w => WritePlaced(w, 0xf, 0x020001, 0)));
+        Assert.That((m.Mode, m.CharacterId, m.Cell, m.Item.ItemId, m.House, m.Group, m.Floor), Is.EqualTo(((byte)0xf, 1234, 0x020001, 50100001, 11, 0, 0)));
+    }
+
+    [Test]
+    public void APlaceErrorIsTwoIntsAndOtherModesAreNotPlaceAnswers()
+    {
+        // :10012-10014 and :10122-10124: an error answer is i32, i32 pc id
+        foreach (byte mode in new byte[] { 0xa, 0xf })
+        {
+            var m = ResponseCubePlace.Read(Reader(w => { w.WriteByte(mode); w.WriteByte(6); w.WriteInt(0); w.WriteInt(77); }));
+            Assert.That(m, Is.EqualTo(new ResponseCubePlace(mode, 6, 77)));
+        }
+        Assert.That(ResponseCubePlace.Read(Reader(w => { w.WriteByte(0x11); w.WriteByte(0); })), Is.Null);
+    }
 }

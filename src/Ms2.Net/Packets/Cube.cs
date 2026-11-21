@@ -114,6 +114,53 @@ public sealed record ResponseCubeOwnerTrophies(ushort OwnerGrade, (int Id, int L
     }
 }
 
+/// <summary>
+/// ResponseCube 0xa and 0xf, the place answers (CSceneStateGame::OnResponseCube, scenestategame.cpp:9984-10034 and
+/// :10102-10140): u8 error, i32, i32 character id, and with error 0 the cube.
+/// <list type="bullet">
+/// <item>0xa (:9984-10011): i32 (passed on unused), i32 character id, i32 group and i32 floor (Cube field50 / field54),
+/// i32 the packed cell (FUN_1408a0400), i64 owner (Cube field18), the CubeItemInfo, u8 liftable (Cube field4c), f32
+/// rotation, i32 house (Cube fieldD8), u8 notice flag; flag 1: the notice's text and u8 type (NoticeCubeInfo::Set).</item>
+/// <item>0xf (:10102-10121): i32 (unused), i32 character id, i32 the packed cell, i64 owner, the CubeItemInfo, u8
+/// liftable, f32 rotation, i32 house; group and floor are the replaced cube's.</item>
+/// <item>An error (:10012-10016, :10123-10127): i32, i32 character id.</item>
+/// </list>
+/// </summary>
+public sealed record ResponseCubePlace(byte Mode, byte Error, int CharacterId, int Cell = 0, long Owner = 0, CubeItemInfo Item = null,
+    bool Liftable = false, float Rotation = 0, int House = 0, int Group = 0, int Floor = 0, string NoticeText = null, byte NoticeType = 0)
+{
+    public const byte ModePlace = 0xa;
+    public const byte ModeReplace = 0xf;
+
+    public static ResponseCubePlace Read(ByteReader r)
+    {
+        byte mode = r.ReadByte();
+        if (mode is not (ModePlace or ModeReplace)) return null;
+        byte error = r.ReadByte();
+        r.ReadInt();
+        int character = r.ReadInt();
+        if (error != 0)
+        {
+            r.ExpectEnd("ResponseCube place");
+            return new ResponseCubePlace(mode, error, character);
+        }
+        int group = 0, floor = 0;
+        if (mode == ModePlace) { group = r.ReadInt(); floor = r.ReadInt(); }
+        int cell = r.ReadInt();
+        long owner = r.ReadLong();
+        var item = CubeItemInfo.Read(r);
+        bool liftable = r.ReadByte() != 0;
+        float rotation = r.ReadFloat();
+        int house = r.ReadInt();
+        string text = null;
+        byte type = 0;
+        // :10003-10010: only a flag of 1 has a notice
+        if (mode == ModePlace && r.ReadByte() == 1) { text = r.ReadUnicodeString(); type = r.ReadByte(); }
+        r.ExpectEnd("ResponseCube place");
+        return new ResponseCubePlace(mode, error, character, cell, owner, item, liftable, rotation, house, group, floor, text, type);
+    }
+}
+
 /// <summary>CubeItemInfo (ugcmapoptions.cpp): a cube's item id, instance id, count and its optional UGC look.</summary>
 public sealed class CubeItemInfo
 {
