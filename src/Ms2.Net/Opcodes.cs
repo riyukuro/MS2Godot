@@ -130,6 +130,7 @@ public enum Inbound : ushort {
     Fishing = 0xC4,         // RecvOp Fishing (commonfiles/opcodes.h:203): CFishingManager::FUN_140cd9840 (scenestategame.cpp:1805)
     Breakable = 0x4F,       // RecvOp Breakable (commonfiles/opcodes.h:87): CSceneStateGame::OnBreakable
     Liftable = 0x73,        // RecvOp Liftable (commonfiles/opcodes.h:123): CSceneStateGame::OnLiftable
+    Reactor = 0x115,        // RecvOp::Reactor (commonfiles/opcodes.h:276): CSceneStateGame::OnReactor @0x14173c870
     MinimapPing = 0x121,    // RecvOp MinimapPing (commonfiles/opcodes.h:288): CSceneStateGame::OnMinimapPing
     CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
     UserEnv = 0xA8,
@@ -161,6 +162,7 @@ public enum Outbound : ushort {
     Breakable = 0x27,           // SendOp::Breakable (commonfiles/opcodes.h:344): WorldService::FUN_141bc3560, WriteBreakableInfo
     Tombstone = 0x2A,           // SendOp::Tombstone (commonfiles/opcodes.h:347): WorldService::FUN_141bc3560
     Liftable = 0x3C,            // SendOp::Liftable (commonfiles/opcodes.h:365): LiftCubeAction::vfunc_2, the action key on a liftable cube
+    StateReact = 0xA9,          // SendOp::StateReact (commonfiles/opcodes.h:472): CReactor::SendStateReact @0x140b799a0
     StateFallDamage = 0x34,     // SendOp::StateFallDamage (commonfiles/opcodes.h:357): PCBase::SendFallDamage
     Revival = 0x1F,             // SendOp::Revival (commonfiles/opcodes.h:336): the revive dialog's buttons
     RequestItemInventory = 0x17,
