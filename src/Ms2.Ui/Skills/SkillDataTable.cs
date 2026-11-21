@@ -50,6 +50,9 @@ public sealed class SkillMotionData
     public int MoveType;
     /// <summary>"loopCount" (:1196), m_nLoopCount (+0xc8); the ctor (:1011) leaves it 0.</summary>
     public int LoopCount;
+    /// <summary>"selfInputCombo" (SkillMotionData::Load @0x140808350, :1165), m_strSelfInputCombo: the text key that opens the
+    /// motion's self combo (<see cref="SkillFollow.MayFollow"/>).</summary>
+    public string SelfInputCombo = "";
 
     /// <summary>GetMoveKey @0x140808040 (:1124): (u64)((float)(u64)(movetype &lt;&lt; 10) + sequenceSpeed * 100).</summary>
     public ulong MoveKey => (ulong)((float)(ulong)((long)MoveType << 10) + SequenceSpeed * 100f);
@@ -226,6 +229,9 @@ public sealed class SkillData
     public uint Jump;
     /// <summary>&lt;kinds continue&gt; (:842), m_bContinue.</summary>
     public bool Continue;
+    /// <summary>&lt;kinds immediateActive&gt; (:845), m_eImmediateActive read as a number (XmlValue): the chain type a press
+    /// of this skill takes in a running skill state (<see cref="SkillFollow.MayFollow"/>).</summary>
+    public int ImmediateActive;
     /// <summary>&lt;kinds groupIDs&gt; (m_nGroupIDs, skilloverlapcompare.cpp:850): the skill group the table indexes it under
     /// (SkillDataTable::GetGroupSkills @0x1407ee3b0, :1313).</summary>
     public uint GroupIds;
@@ -273,6 +279,7 @@ public sealed class SkillData
             s.Element = Xml.Int(kinds, "element");
             s.Jump = Xml.UInt(kinds, "jump");
             s.Continue = Xml.Bool(kinds, "continue");
+            s.ImmediateActive = Xml.Int(kinds, "immediateActive");
             s.GroupIds = Xml.UInt(kinds, "groupIDs");
         }
         if (basic.Element("combo") is { } combo)
@@ -341,7 +348,7 @@ public sealed class SkillData
             };
             foreach (var m in l.Elements("motion"))
             {
-                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype"), LoopCount = Xml.Int(m, "loopCount") };
+                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype"), LoopCount = Xml.Int(m, "loopCount"), SelfInputCombo = (string)m.Attribute("selfInputCombo") ?? "" };
                 if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
                 foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a));
                 lv.Motions.Add(md);

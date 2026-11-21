@@ -133,8 +133,53 @@ public partial class HudScene
             GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
             return;
         }
+        // StateSkill::FUN_1417eeb10 (stateskill.cpp:2996-3016): a press while the own skill state runs is the state's next cast
+        if (OwnSkillStateRuns()) { OwnPress(r); return; }
         UseOwnRecord(me, r);
     }
+
+    /// <summary>
+    /// StateSkill::FUN_1417eeb10 @0x1417eeb10 (stateskill.cpp:2996-3016) for a press while the own skill state runs: a record
+    /// <see cref="SkillFollow.MayFollow"/> (FUN_1417eed70) lets follow becomes the state's next cast (m_spNext, a later
+    /// accepted press replacing it), started by <see cref="TryChainOwn"/> (FUN_1417ef4a0) now for a chain type, else at the
+    /// combo keys or the sequence's end; any other press is dropped, so the running motion is not restarted by its own key.
+    /// STILL-OPEN: the auto change fallback (FUN_1417f0570(0), :3009), the skill system's queued record for a record with
+    /// m_nB0 (FUN_1417f0230, :3003) and the state's end casting the key held then (FUN_1417ee120 :2905-2909, the key-down
+    /// skill's held key in MyPC::FUN_141526730) are not ported; a record a motion other than the last would chain is kept
+    /// until the state ends (the next motion, FUN_1417ee120 :2930-2980, is not ported).
+    /// </summary>
+    void OwnPress(CastRecord r)
+    {
+        var w = ownWindow;
+        w.KeyHeld = CastKeyDown(ownCast.Key);
+        w.ChargeTimeZero = MathF.Abs(ownLoop.ChargeTime) < 1e-06f;
+        if (!SkillFollow.MayFollow(ownCast, r.Skill, w, hudModel.IsFeatureEnabled(0xca), ref ownChainType))
+        {
+            GD.Print($"cast: skill {r.Skill.Id} pressed while skill {ownCast.Skill.Id} runs, dropped");
+            return;
+        }
+        ownNext = r;
+        if (ownChainType != 0) TryChainOwn(ownCast);
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417ef4a0 @0x1417ef4a0 (stateskill.cpp:3091-3184): the next cast goes through MyPC::vfunc_102
+    /// (<see cref="UseOwnRecord"/>) once <see cref="SkillFollow.ChainsNow"/> lets it; m_spNext is cleared then (:3181).
+    /// </summary>
+    void TryChainOwn(CastRecord running)
+    {
+        if (ownNext == null || player == null) return;
+        if (!SkillFollow.ChainsNow(running, ownNext.Skill, ownChainType, ownWindow, hudModel.IsFeatureEnabled(0xca))) return;
+        var r = ownNext;
+        ownNext = null;
+        r.HasSequence = r.Level.HasSequenceName;   // :3172-3174, m_bAD from its level
+        UseOwnRecord(player, r);
+    }
+
+    int ownChainType;                              // StateSkill m_nChainType, 0 from the enter (stateskill.cpp:412)
+    CastRecord ownNext;                            // StateSkill m_spNext: the accepted press waiting for its chain
+    SkillFollow.Window ownWindow;                  // the combo flags the sequence's text keys set (m_b4a, m_b49, m_b114-m_b116)
+    SkillFollow.ComboKeys ownComboKeys = SkillFollow.ComboKeys.None;
 
     /// <summary>
     /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146) from the cooldown gate on, for a new request or the press queued behind the
@@ -175,7 +220,7 @@ public partial class HudScene
         if (r.Level.HasSequenceName)
         {
             // :1213-1216: a level with a sequence enters the skill state; the cooldown counts the old state's time off
-            if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed))
+            if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed, SkillFollow.HoldsMove(r.Skill)))
                 StartOwnAttacks(me, r);
             delay = elapsed;
         }
@@ -223,6 +268,19 @@ public partial class HudScene
     {
         ownCast = r;
         ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:416)
+        ownChainType = 0;                          // :412
+        ownNext = null;                            // the enter clears m_spNext and the combo flags (:403-412)
+        ownWindow = default;
+        var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
+        ownComboKeys = new SkillFollow.ComboKeys
+        {
+            InputCombo = me.Anims?.TextKey(me.SkillSequence, "inputcombo") ?? -1,
+            EndInputCombo = me.Anims?.TextKey(me.SkillSequence, "endInputCombo") ?? -1,
+            SelfInput = string.IsNullOrEmpty(motion?.SelfInputCombo) ? -1 : me.Anims?.TextKey(me.SkillSequence, motion.SelfInputCombo) ?? -1,
+            EndSelfInput = me.Anims?.TextKey(me.SkillSequence, "endSelfInputcombo") ?? -1,
+            Combo = me.Anims?.TextKey(me.SkillSequence, "combo") ?? -1,
+            SelfCombo = me.Anims?.TextKey(me.SkillSequence, "selfcombo") ?? -1,
+        };
         ownSync.Reset(new System.Numerics.Vector3(0, 0, me.FacingRotZ));   // vfunc_4 (:484-487): the owner's rotation
         ownAttack = 0;
         ownSequence = me.SkillSequence;
@@ -264,10 +322,27 @@ public partial class HudScene
     void TickOwnAttacks()
     {
         if (ownCast == null) return;
-        if (player == null || (object)player.SkillSequence != ownSequence) { ownCast = null; return; }
+        if (player == null || (object)player.SkillSequence != ownSequence)
+        {
+            // EndOfSequence (stateskill.cpp:1062-1070), then FUN_1417ef4a0 for the press waiting for its chain
+            var ended = ownCast;
+            ownCast = null;
+            if (ownNext != null) { ownWindow.EndOfSequence(); TryChainOwn(ended); }
+            if (ownCast == null) ownNext = null;
+            return;
+        }
         double pos = player.SkillSequencePosition, prev = ownKeyPos;
         if (pos < 0) return;
         ownKeyPos = pos;
+        // TextKeyEvent's combo keys (:999-1027; CanChainCombo :1725: not for m_b111, the charging skill flag :766, with
+        // m_b112 or repeats left), then FUN_1417ee120's per-frame FUN_1417ef4a0 (:2889-2891) for an accepted press.
+        // STILL-OPEN: charging_combo's m_b112 (:952) is not kept in the window.
+        ownComboKeys.Advance(ref ownWindow, prev, pos, !(ownCast.Skill.ChargingSkill && (ownWindow.Ended || ownLoop.Repeat != 0)));
+        if (ownNext != null)
+        {
+            TryChainOwn(ownCast);
+            if ((object)player.SkillSequence != ownSequence) return;   // the chained cast's state took over
+        }
         uint now = (uint)Time.GetTicksMsec();   // GetTickCountMs2
         bool charging = ownCast.Skill.ChargingSkill;
         // the keys in time order: the earliest key after the last handled time, all kinds at that time, then on from it
@@ -378,13 +453,15 @@ public partial class HudScene
             bool castable = held && !charging && CastGate.CanCast(OwnHoldWorld(), ownCast.Skill.Id);
             ownLoop.Hold(held, ownLoopStartKey >= 0 && ownLoopEndKey >= 0, charging, castable);
         }
-        // FUN_141b6fe90 without the key: the sequence's length
-        float chargingAttack = ownChargingAttackKey >= 0 ? ownChargingAttackKey : (float)(player.Anim?.CurrentAnimationLength ?? 0);
-        if (ownLoop.Release(ownCast.Skill.ChargingSkill, CastKeyDown(ownCast.Key), ownCast.Skill.DisableChargingAttackSkipFrame,
-                chargingAttack, out bool seek))
+        if (ownCast.Skill.ChargingSkill && !ownLoop.Loop)   // the release's own first test, before the key and length reads
         {
-            if (seek) SeekOwnRelease(chargingAttack);
-            return;
+            // FUN_141b6fe90 without the key: the sequence's length
+            float chargingAttack = ownChargingAttackKey >= 0 ? ownChargingAttackKey : (float)(player.Anim?.CurrentAnimationLength ?? 0);
+            if (ownLoop.Release(true, CastKeyDown(ownCast.Key), ownCast.Skill.DisableChargingAttackSkipFrame, chargingAttack, out bool seek))
+            {
+                if (seek) SeekOwnRelease(chargingAttack);
+                return;
+            }
         }
         var live = Net.LiveSession.Instance;
         if (live == null) return;
@@ -510,7 +587,8 @@ public partial class HudScene
         castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
         var motion = castMotions.Motion(s.SkillId, s.Level, s.Motion);
         if (motion == null) return;
-        if (!string.IsNullOrEmpty(motion.SequenceName)) player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f));
+        if (!string.IsNullOrEmpty(motion.SequenceName))
+            player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f), SkillFollow.HoldsMove(QuickSlotWorld().Tables.GetSkillData((uint)s.SkillId)));
         var g = player.GlobalPosition;
         if (!string.IsNullOrEmpty(motion.MotionEffect)) Net.LiveSession.Instance?.PlayFieldEffect(motion.MotionEffect, g, player.Visual?.Rotation.Y ?? 0);
         GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");

@@ -258,6 +258,7 @@ public partial class Player : CharacterBody3D
         }
         // under a field move's loading screen the client's MyPC is gone (Ms2.Ui.FieldMoveCover): no key, click or script moves it
         if (Ms2.Ui.FieldMoveCover.Up) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
+        if (SkillHoldsMove()) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
         var rawInput = Input2 != Vector2.Zero ? Input2 : MouseInput;
         var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;
