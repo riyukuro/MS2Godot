@@ -2711,7 +2711,8 @@ public partial class HudScene : Node, IUiStageHost
     /// The live events that change what the quick slots show. The client queues a gray refresh on a bag item added or
     /// removed (UIMainPlayerInfo::vfunc_21 / vfunc_22, uimainplayerinfo.cpp:839), after UpdateSlotForItem rebinds the item's
     /// slot (:1357); here a bag change queues the gray state and item count of every slot. The skill book (the own
-    /// FieldAddUser's, which arrives after the HUD is built, or a Job packet) and a key table packet rebind every slot.
+    /// FieldAddUser's, which arrives after the HUD is built, or a Job packet) and a key table packet rebind every slot; a key
+    /// table mode 0 / 7 first reloads the slots' own entries from the page (OnShortkeyPageNotify).
     /// </summary>
     void WatchQuickSlotState()
     {
@@ -2719,7 +2720,12 @@ public partial class HudScene : Node, IUiStageHost
         if (live == null) return;
         Action<int> onBook = _ => playerInfo.RebindSlots();
         Action<long> onBag = _ => playerInfo.QueueSlotRefresh(Ms2.Ui.Hud.MainPlayerInfoController.RefreshGray | Ms2.Ui.Hud.MainPlayerInfoController.RefreshItemCount);
-        Action<int> onKeys = _ => playerInfo.RebindSlots();
+        // OnKeyTable mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage (keytable.cpp:2547): the slots reload their page
+        Action<int> onKeys = mode =>
+        {
+            if ((mode == 0 || mode == 7) && hudModel.ServerKeys is { } t) playerInfo.OnShortkeyPageNotify(playerInfo.SlotFieldsPage, t.CurrentPage);
+            playerInfo.RebindSlots();
+        };
         live.SkillBookChanged += onBook;
         live.Items.Changed += onBag;
         live.KeyTableChanged += onKeys;
@@ -3179,6 +3185,7 @@ public partial class HudScene : Node, IUiStageHost
                     keys.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(0, true, null, 0,
                         new[] { new[] { (0, new Ms2.Net.Packets.QuickSlotEntry(10900031, 0, 0)) } })));
                     hudModel.ServerKeys = keys;
+                    playerInfo.OnShortkeyPageNotify(-1, keys.CurrentPage);
                     playerInfo.RebindSlots();
                 }
             }

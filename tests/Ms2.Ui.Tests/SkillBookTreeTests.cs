@@ -166,7 +166,8 @@ public class SkillBookTreeTests
         bar.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".3", from, book);
         Assert.That(sent.Select(s => s.Op), Is.EqualTo(new[] { Ms2.Net.Outbound.KeyTable }));
         Assert.That(sent[0], Is.EqualTo(new KeyTableSetQuickSlotRequest(0, skill, 0, 0, 3)));
-        Assert.That(t.Entry(0, 3), Is.EqualTo(new QuickSlotEntry(skill, 0, 0)));
+        Assert.That(bar.ShownEntry(3), Is.EqualTo(new QuickSlotEntry(skill, 0, 0)));
+        Assert.That(t.Entry(0, 3).IsEmpty, Is.True, "a book drop writes only the slot (skillslot.cpp, the BookSlot branch)");
         var slot3 = (AsObject)h.ToAs(bar.GetBinding(MainPlayerInfoController.SlotBag + ".3"));
         Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(m.Tables.Skills.GetSkillData((uint)skill).Icon));
     }

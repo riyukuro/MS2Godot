@@ -45,7 +45,7 @@ public class ServerKeyTableTests {
         Assert.That(t.Entry(0, 0).SkillId, Is.EqualTo(10000002)); Assert.That(t.Bindings, Is.EqualTo(Keys));
     }
     [Test] public void SetEntryPutsAndEmptiesASlotOfAPage() {
-        // the SkillSlot setters (skillslot.cpp:343, :355, :367) and vfunc_11 (:492) on the CKeyTable page
+        // CKeyTable::SetQuickSlotEntryOnPage (keytable.cpp:1629), the SetAt the skill set's edits do
         var t = new ServerKeyTable(); t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
         t.SetEntry(1, 7, new QuickSlotEntry(10000003, 0, 0));
         Assert.That(t.Entry(1, 7).SkillId, Is.EqualTo(10000003));
@@ -54,5 +54,17 @@ public class ServerKeyTableTests {
         Assert.That(t.FindQuickSlotBySkillAndItemUid(10000003, 0), Is.EqualTo(7));
         t.SetEntry(5, 0, new QuickSlotEntry(1, 0, 0));                   // no such page: ignored
         Assert.That(t.PageCount, Is.EqualTo(2));
+    }
+
+    [Test] public void FindBySkillAndItemMatchesAllThreeOfTheCurrentPage() {
+        // CKeyTable::FindQuickSlotBySkillAndItem @0x14142e150 (keytable.cpp:1600): skill, item id and item uid of the current
+        // page; -1 when none matches
+        var t = new ServerKeyTable(); t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
+        t.SetEntry(1, 6, new QuickSlotEntry(0, 20000001, 55));
+        Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000001, 55), Is.EqualTo(6));
+        Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000002, 55), Is.EqualTo(-1));
+        Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000001, 56), Is.EqualTo(-1));
+        t.SetEntry(0, 2, new QuickSlotEntry(0, 20000009, 9));             // another page than the current one
+        Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000009, 9), Is.EqualTo(-1));
     }
 }

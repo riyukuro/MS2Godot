@@ -37,9 +37,9 @@ public sealed class ServerKeyTable {
         page >= 0 && page < pages.Count && pages[page].TryGetValue(slot, out var e) ? e : default;
 
     /// <summary>
-    /// SkillSlot::SetSkillId / SetItemId / SetItemUid (skillslot.cpp:343, :367, :355) after a quick slot edit: the client keeps
-    /// the slot's own copy in the SkillSlot, which Godot keeps in the page the slots read. A page that does not exist takes none;
-    /// an all-zero entry empties the slot (SkillSlot::vfunc_11, :492).
+    /// CKeyTable::SetQuickSlotEntryOnPage (keytable.cpp:1629, a SetAt on the page): the skill set's quick slot edits
+    /// (skillslot.cpp:470-545, :590-604) and FUN_14142f470's job item put-back write the page; outside a skill set the shown slots
+    /// keep their own copy. A page that does not exist takes none; an all-zero entry empties the slot.
     /// </summary>
     public void SetEntry(int page, int slot, QuickSlotEntry e) {
         if (page < 0 || page >= pages.Count) return;
@@ -53,6 +53,15 @@ public sealed class ServerKeyTable {
         if (CurrentPage < 0 || CurrentPage >= pages.Count) return 0;
         foreach (var (slot, e) in pages[CurrentPage].OrderBy(kv => kv.Key))
             if (e.SkillId == skillId && e.ItemUid == itemUid) return slot;
+        return -1;
+    }
+
+    /// <summary>CKeyTable::FindQuickSlotBySkillAndItem @0x14142e150 (client/ms2/keytable.cpp:1600): the slot of the current page
+    /// that holds the skill, item id and item uid, -1 when none does, 0 when the page does not exist.</summary>
+    public int FindQuickSlotBySkillAndItem(int skillId, int itemId, long itemUid) {
+        if (CurrentPage < 0 || CurrentPage >= pages.Count) return 0;
+        foreach (var (slot, e) in pages[CurrentPage].OrderBy(kv => kv.Key))
+            if (e.SkillId == skillId && e.ItemId == itemId && e.ItemUid == itemUid) return slot;
         return -1;
     }
 

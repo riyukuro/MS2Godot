@@ -208,7 +208,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         if (!name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
             || !int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) || i >= SlotCount)
             return null;
-        var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+        var e = Shown(i);
         var w = World();
         var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
         int hotkey = Hotkey(i);
@@ -276,7 +276,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
 
     AsTooltip SlotTooltip(int i)
     {
-        var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+        var e = Shown(i);
         var w = World();
         var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
         var item = s.Item();
@@ -342,11 +342,10 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         int flags = pendingRefresh;
         if (flags == 0) return;
         pendingRefresh = 0;
-        if (Model.ServerKeys is not { } t) return;
         var w = World();
         for (int i = 0; i < SlotCount; i++)
         {
-            var e = t.Entry(t.CurrentPage, i);
+            var e = Shown(i);
             var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
             var was = shown[i];
             bool changed = ((flags & RefreshGray) != 0 && s.IsDisabled(Hotkey(i)) != was.Gray)
@@ -378,8 +377,53 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         return new Skills.SkillSlotState(World(), (uint)e.SkillId, e.ItemId, e.ItemUid).Item()?.Uid ?? 0;
     }
 
-    /// <summary>The skill, item id and item uid slot <paramref name="i"/> shows (SkillSlot m_nSkillId, m_nItemId, m_nItemUid).</summary>
-    Ms2.Net.Packets.QuickSlotEntry Shown(int i) => Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+    /// <summary>
+    /// The skill, item id and item uid each slot shows (SkillSlot m_nSkillId, m_nItemId, m_nItemUid): the slot's own copy, which
+    /// SkillSlotBag::vfunc_16 (skillslot.cpp:1635) builds from the current page (GetQuickSlotEntry) and
+    /// <see cref="OnShortkeyPageNotify"/> reloads; a quick slot edit outside a skill set changes only this copy.
+    /// </summary>
+    readonly Ms2.Net.Packets.QuickSlotEntry[] slotFields = new Ms2.Net.Packets.QuickSlotEntry[SlotCount];
+    /// <summary>The page <see cref="slotFields"/> came from; -1 until the bag is built from a key table.</summary>
+    public int SlotFieldsPage { get; private set; } = -1;
+
+    /// <summary>Slot <paramref name="i"/>'s own entry (<see cref="slotFields"/>); the first read builds them from the current
+    /// page (vfunc_16).</summary>
+    public Ms2.Net.Packets.QuickSlotEntry ShownEntry(int i) => i >= 0 && i < SlotCount ? Shown(i) : default;
+
+    Ms2.Net.Packets.QuickSlotEntry Shown(int i)
+    {
+        if (SlotFieldsPage < 0 && Model.ServerKeys is { } t)
+        {
+            SlotFieldsPage = t.CurrentPage;
+            for (int k = 0; k < SlotCount; k++) slotFields[k] = t.Entry(t.CurrentPage, k);
+        }
+        return slotFields[i];
+    }
+
+    static readonly int[] UpdateOrder = { 4, 5, 6, 7, 0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 };
+
+    /// <summary>
+    /// UIMainPlayerInfo::OnShortkeyPageNotify (uimainplayerinfo.cpp:997), which CKeyTable::SetQuickSlotPage (keytable.cpp:2547)
+    /// posts from OnKeyTable mode 0 and 7 (keytable.cpp:285-370): setShortkeyPageNumber(cur + 1), then
+    /// UpdateQuickSlots @0x1419f2560 (:1209) forced when the page changed. It walks the slots in the order 4..7, 0..3, 8..24: a
+    /// slot whose page entry is empty empties (vfunc_11) and is pushed (vfunc_10); a slot whose entry equals its own is skipped
+    /// unless forced; else it takes the entry and is pushed. STILL-OPEN: mode 7's GetLocked early return.
+    /// </summary>
+    public void OnShortkeyPageNotify(int prev, int cur)
+    {
+        ShortkeyPage = cur + 1;
+        Host.Invoke("setShortkeyPageNumber", ShortkeyPage);
+        if (Model.ServerKeys is not { } t) return;
+        bool force = prev != cur || SlotFieldsPage < 0;
+        SlotFieldsPage = t.CurrentPage;
+        foreach (int i in UpdateOrder)
+        {
+            var e = t.Entry(t.CurrentPage, i);
+            if (!e.IsEmpty && !force && e.Equals(slotFields[i])) continue;
+            slotFields[i] = e;
+            Host.Push(SlotBag + "." + i);
+        }
+    }
 
     /// <summary>GetHotkey(0) (skillslot.cpp:1235); GetHotkeyText (:1229) is its key name.</summary>
     int Hotkey(int slot)
@@ -414,11 +458,12 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>
     /// SkillSlot::vfunc_18 @0x14175d530 (skillslot.cpp:507). A fixed or key bound slot only pushes both again. Else by the source:
     /// - another quick slot: <see cref="Skills.QuickSlotEdit.Add"/> of the source's entry on this slot; when taken the two
-    ///   entries swap (the skill set's SetQuickSlotEntry pair is the same page here);
+    ///   slots swap their own entries, and with a skill set (FUN_140930d70) SetQuickSlotEntry writes both to the page;
     /// - a book slot (<see cref="SkillBookTreeController.BookSkillId"/>, BookSlot::FUN_140a366a0): Add of the skill alone; when
-    ///   taken this slot holds it;
+    ///   taken this slot holds it (the page is not written);
     /// - a bag slot (InvenSlot, <see cref="IInvenSlotOwner.InvenSlotUid"/>): <see cref="Skills.QuickSlotEdit.AddFromInventory"/>;
-    ///   when taken this slot holds its entry.
+    ///   when taken this slot holds its entry, written to the page only with a skill set.
+    /// Outside a skill set the page changes only by the server's KeyTable mode 0 / 7 (<see cref="OnShortkeyPageNotify"/>).
     /// Then the source and this slot are pushed again (vfunc_10).
     /// STILL-OPEN: a lapenshard ItemSlot source.
     /// </summary>
@@ -428,26 +473,35 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         if (i >= 0 && !IsFixedOrBound(i) && Model.ServerKeys is { } t)
         {
             int page = t.CurrentPage;                                           // CKeyTable::FUN_140a700b0
+            var w = World();
             if (sourceOwner == this && SlotIndex(source) is var j and >= 0)
             {
-                var from = t.Entry(page, j);
-                var to = t.Entry(page, i);
-                if (Skills.QuickSlotEdit.Add(World(), Model.IsFeatureEnabled, Send, Notice, from.SkillId, from.ItemId, from.ItemUid, page, i))
+                var from = Shown(j);
+                var to = Shown(i);
+                if (Skills.QuickSlotEdit.Add(w, Model.IsFeatureEnabled, Send, Notice, from.SkillId, from.ItemId, from.ItemUid, page, i))
                 {
-                    t.SetEntry(page, j, to);
-                    t.SetEntry(page, i, from);
+                    slotFields[j] = to;                                         // skillslot.cpp:516-530
+                    slotFields[i] = from;
+                    if (w.SkillSetActive)                                       // :531-545
+                    {
+                        t.SetEntry(t.CurrentPage, i, from);
+                        t.SetEntry(t.CurrentPage, j, to);
+                    }
                 }
             }
             else if (sourceOwner is SkillBookTreeController book)
             {
                 int skill = (int)book.BookSkillId(source);
-                if (Skills.QuickSlotEdit.Add(World(), Model.IsFeatureEnabled, Send, Notice, skill, 0, 0, page, i))
-                    t.SetEntry(page, i, new Ms2.Net.Packets.QuickSlotEntry(skill, 0, 0));
+                if (Skills.QuickSlotEdit.Add(w, Model.IsFeatureEnabled, Send, Notice, skill, 0, 0, page, i))
+                    slotFields[i] = new Ms2.Net.Packets.QuickSlotEntry(skill, 0, 0);
             }
             else if (sourceOwner is IInvenSlotOwner bag && bag.InvenSlotUid(source) is long uid)
             {
-                if (Skills.QuickSlotEdit.AddFromInventory(World(), Model.IsFeatureEnabled, Send, Notice, NoticeBox, uid, page, i) is { } e)
-                    t.SetEntry(page, i, e);
+                if (Skills.QuickSlotEdit.AddFromInventory(w, Model.IsFeatureEnabled, Send, Notice, NoticeBox, uid, page, i) is { } e)
+                {
+                    slotFields[i] = e;                                          // skillslot.cpp:590-604
+                    if (w.SkillSetActive) t.SetEntry(t.CurrentPage, i, e);
+                }
             }
             // STILL-OPEN: the lapenshard ItemSlot source (skillslot.cpp:612-640, FUN_140a6fef0) has no owner here.
         }
@@ -461,25 +515,32 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
 
     /// <summary>
     /// SkillSlot::vfunc_14 @0x14175d260 (skillslot.cpp:454) then vfunc_17 @0x14175d2b0 (:463), the right click: a fixed or key
-    /// bound slot does nothing; else <see cref="Skills.QuickSlotEdit.Remove"/> of its entry; refused, the slot is pushed again
-    /// (vfunc_12); else it empties (vfunc_11) and is pushed. After the mode 5 send, CKeyTable::FUN_14142f470
-    /// (<see cref="Skills.QuickSlotEdit.PutBackJobItem"/>) may put the bag's job item of slot 8 or 9 back on the page; it reads
-    /// the shown slots before the slot empties. The client's page keeps that item while vfunc_11 still empties the shown slot
-    /// until the next refresh; here the slot shows the page, so it shows the item.
+    /// bound slot does nothing; else <see cref="Skills.QuickSlotEdit.Remove"/> of its own entry; refused, the slot is pushed again
+    /// (vfunc_12); with a skill set the page slot FindQuickSlotBySkillAndItem @0x14142e150 finds is emptied; then the slot empties
+    /// (vfunc_11) and is pushed. After the mode 5 send, CKeyTable::FUN_14142f470 (<see cref="Skills.QuickSlotEdit.PutBackJobItem"/>)
+    /// may put the bag's job item of slot 8 or 9 back on the page (and on the slot when the page is the current one); it reads
+    /// the shown slots before the slot empties, and vfunc_11 still empties the shown slot until the next page notify.
     /// STILL-OPEN: FUN_14175f200's tween (InvokeSelf) before it.
     /// </summary>
     public void RemoveSlot(int i)
     {
         if (i < 0 || i >= SlotCount || IsFixedOrBound(i) || Model.ServerKeys is not { } t) return;
         int page = t.CurrentPage;
-        var e = t.Entry(page, i);
+        var e = Shown(i);
         var w = World();
-        bool putBack = false;
-        if (Skills.QuickSlotEdit.Remove(w, Send, e.SkillId, e.ItemId, e.ItemUid, page, i,
-                () => putBack = Skills.QuickSlotEdit.PutBackJobItem(w, Model.IsFeatureEnabled, Send, Notice,
-                    k => t.Entry(t.CurrentPage, k), (slot, entry) => t.SetEntry(page, slot, entry), page, i))
-            && !putBack)
-            t.SetEntry(page, i, default);
+        if (!Skills.QuickSlotEdit.Remove(w, Send, e.SkillId, e.ItemId, e.ItemUid, page, i,
+                () => Skills.QuickSlotEdit.PutBackJobItem(w, Model.IsFeatureEnabled, Send, Notice, Shown,
+                    (slot, entry) => { t.SetEntry(page, slot, entry); if (page == t.CurrentPage) slotFields[slot] = entry; }, page, i)))
+        {
+            Host.Push(SlotBag + "." + i);                                       // vfunc_12
+            return;
+        }
+        if (w.SkillSetActive)                                                   // skillslot.cpp:470-480
+        {
+            int found = t.FindQuickSlotBySkillAndItem(e.SkillId, e.ItemId, e.ItemUid);
+            if (found != -1) t.SetEntry(t.CurrentPage, found, default);
+        }
+        slotFields[i] = default;                                                // vfunc_11
         Host.Push(SlotBag + "." + i);
     }
 
@@ -499,7 +560,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     public void UseSlot(int i)
     {
         if (i < 0 || i >= SlotCount) return;
-        var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+        var e = Shown(i);
         var click = new Skills.SkillSlotState(World(), (uint)e.SkillId, e.ItemId, e.ItemUid).Click(Hotkey(i));
         switch (click.Kind)
         {

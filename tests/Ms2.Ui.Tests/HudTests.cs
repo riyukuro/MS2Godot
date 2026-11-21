@@ -204,7 +204,9 @@ public class HudTests
 
         c.SlotDroppedOn(s5, s3, c);
         Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 10500001, 0, 0, 5) }));
-        Assert.That((t.Entry(0, 3), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+        Assert.That((c.ShownEntry(3), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+        // outside a skill set the page is not written (the server's KeyTable mode 0 / 7 reloads it)
+        Assert.That((t.Entry(0, 3), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500001, 0, 0), new QuickSlotEntry(10500002, 0, 0))));
 
         // button 0 (vfunc_13): the slot's key is pressed (FUN_141bc9fd0), else its skill used; with shift held, nothing
         var pressed = new List<int>();
@@ -222,11 +224,53 @@ public class HudTests
         Assert.That(sent, Has.Count.EqualTo(1), "a click sends no edit");
         Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 1.0 }), Is.True);
         Assert.That(sent[1], Is.EqualTo(new KeyTableRemoveQuickSlotRequest(0, 10500002, 0)));
-        Assert.That(t.Entry(0, 3), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(c.ShownEntry(3), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(t.Entry(0, 3), Is.EqualTo(new QuickSlotEntry(10500001, 0, 0)), "no skill set: the page is not written");
         Assert.That(Rt.ToString(h.Get((AsObject)h.ToAs(c.GetBinding(s3)), "iconPath")), Is.EqualTo(""));
         c.OnCallback("notifySlotUse", new object[] { s3, 1.0 });                         // empty now: no send
         c.OnCallback("notifySlotUse", new object[] { MainPlayerInfoController.SlotBag + ".22", 1.0 });   // key bound: no send
         Assert.That(sent, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void ASkillSetSwapWritesThePageAndThePageNotifyReloadsTheSlots()
+    {
+        // SkillSlot::vfunc_18 (skillslot.cpp:516-545): the swap writes the page (SetQuickSlotEntry) only with a skill set
+        // (FUN_140930d70); UIMainPlayerInfo::OnShortkeyPageNotify (uimainplayerinfo.cpp:997, UpdateQuickSlots :1209) after
+        // OnKeyTable mode 7 (keytable.cpp:285-370) reloads the slots from the new page
+        var m = Model();
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] {
+                new[] { (3, new QuickSlotEntry(10500001, 0, 0)), (5, new QuickSlotEntry(10500002, 0, 0)) },
+                new[] { (3, new QuickSlotEntry(10500003, 0, 0)) } })));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        bool skillSet = true;
+        var c = new MainPlayerInfoController { SlotWorld = () => new Ms2.Ui.Skills.SlotWorld { Tables = m.Tables.Skills, HasPc = true, SkillSetActive = skillSet } };
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        Load(c, m);
+        string s3 = MainPlayerInfoController.SlotBag + ".3", s5 = MainPlayerInfoController.SlotBag + ".5";
+
+        c.SlotDroppedOn(s5, s3, c);
+        Assert.That(sent, Is.Empty, "a skill set sends no mode 3");
+        Assert.That((t.Entry(0, 3), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+        Assert.That((c.ShownEntry(3), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+
+        skillSet = false;
+        c.SlotDroppedOn(s3, s5, c);                                           // slot 5 (10500001) back on slot 3
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 10500001, 0, 0, 3) }));
+        Assert.That((c.ShownEntry(3), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500001, 0, 0), new QuickSlotEntry(10500002, 0, 0))));
+        Assert.That((t.Entry(0, 3), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+
+        c.OnShortkeyPageNotify(0, 0);                                         // the same page: the slots take the page again
+        Assert.That((c.ShownEntry(3), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(7, false, null, 1,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>(), new[] { (3, new QuickSlotEntry(10500003, 0, 0)) } })));
+        c.OnShortkeyPageNotify(0, t.CurrentPage);
+        Assert.That(c.ShortkeyPage, Is.EqualTo(2));
+        Assert.That((c.ShownEntry(3), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500003, 0, 0), default(QuickSlotEntry))));
     }
 
     sealed class Bag(Dictionary<string, long> cells) : IInvenSlotOwner
@@ -269,7 +313,8 @@ public class HudTests
         Assert.That(sent, Is.Empty);
         c.SlotDroppedOn(s4, "InventoryDialog.0", bag);
         Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 0, 20000001, 55, 4) }));
-        Assert.That(t.Entry(0, 4), Is.EqualTo(new QuickSlotEntry(0, 20000001, 55)));
+        Assert.That(c.ShownEntry(4), Is.EqualTo(new QuickSlotEntry(0, 20000001, 55)));
+        Assert.That(t.Entry(0, 4).IsEmpty, Is.True, "no skill set: the page is not written");
         Assert.That(bag.Refreshed, Is.EqualTo(new[] { "InventoryDialog.1", "InventoryDialog.0" }));
     }
 
@@ -309,24 +354,33 @@ public class HudTests
         Assert.That(sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new KeyTableRemoveQuickSlotRequest(0, 0, 55),
             new KeyTableSetQuickSlotRequest(0, 0, 20000028, 77, 8) }));
         Assert.That(t.Entry(0, 8), Is.EqualTo(new QuickSlotEntry(0, 20000028, 77)), "the page keeps the job item");
+        Assert.That(c.ShownEntry(8), Is.EqualTo(default(QuickSlotEntry)), "vfunc_11 empties the shown slot after the put back");
+        c.RemoveSlot(8);                                                      // nothing shown: no send
+        Assert.That(sent, Has.Count.EqualTo(2));
 
-        sent.Clear();                                                         // the job item itself: the shown slot still holds it
+        sent.Clear();                                                         // the page notify reloads it; then the job item
+        c.OnShortkeyPageNotify(0, 0);                                         // itself: the shown slot still holds it
+        Assert.That(c.ShownEntry(8), Is.EqualTo(new QuickSlotEntry(0, 20000028, 77)));
         c.RemoveSlot(8);
         Assert.That(sent, Is.EqualTo(new[] { new KeyTableRemoveQuickSlotRequest(0, 0, 77) }));
-        Assert.That(t.Entry(0, 8), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(c.ShownEntry(8), Is.EqualTo(default(QuickSlotEntry)));
 
         sent.Clear();                                                         // another slot than the job slot: none
         t = Table((5, new QuickSlotEntry(0, 20000001, 55)));
+        c.OnShortkeyPageNotify(0, 0);
         c.RemoveSlot(5);
         Assert.That(sent, Is.EqualTo(new[] { new KeyTableRemoveQuickSlotRequest(0, 0, 55) }));
-        Assert.That(t.Entry(0, 5), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(c.ShownEntry(5), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(t.Entry(0, 5), Is.EqualTo(new QuickSlotEntry(0, 20000001, 55)), "no skill set: the page is not written");
 
-        sent.Clear();                                                         // a skill set: no send, so no put back
-        skillSet = true;
+        sent.Clear();                                                         // a skill set: no send, so no put back; the page
+        skillSet = true;                                                      // entry FindQuickSlotBySkillAndItem finds empties
         t = Table((8, new QuickSlotEntry(0, 20000001, 55)));
+        c.OnShortkeyPageNotify(0, 0);
         c.RemoveSlot(8);
         Assert.That(sent, Is.Empty);
         Assert.That(t.Entry(0, 8), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(c.ShownEntry(8), Is.EqualTo(default(QuickSlotEntry)));
     }
 
     [Test]
