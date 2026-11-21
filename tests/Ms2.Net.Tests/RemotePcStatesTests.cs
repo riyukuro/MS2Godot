@@ -610,6 +610,25 @@ public class RemotePcStatesTests {
         Assert.That((b.Position, sm.CastDuration, sm.CastElapsed), Is.EqualTo((Vector3.Zero, 0f, 0f)));
     }
 
+    [Test] public void ATiltedMoveAsksTheLedgeTestWithTheUnitTiltedDirection() {
+        // moveangle != 0: FUN_1416725c0 takes the unit tilted direction and the step distance; its flat ray's direction
+        // is normalized by CPhysXHelper::CastRay (physxhelper.cpp:207) with the same m_maxDist, as RemotePc.LedgeAhead casts it
+        var b = new Body();
+        b.CastKeys["move0"] = 0.2f; b.CastKeys["move1"] = 0.7f;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 90f, move: new CastMove(0, 0, 300f, 30f, 0, false, false, default));
+        sm.CastTextKey("move0", 0.2f);
+        b.LedgeAsked.Clear();
+        Run(sm, 0.1f);
+        Assert.That(b.LedgeAsked, Is.Not.Empty);
+        var (dir, dist, height, up) = b.LedgeAsked[0];
+        Assert.That(dir.Length(), Is.EqualTo(1f).Within(1e-4f));
+        Assert.That(MathF.Abs(dir.Z), Is.EqualTo(0.5f).Within(1e-3f));   // sin 30
+        Assert.That((height, up), Is.EqualTo((750f, 0f)));
+        Assert.That(dist, Is.GreaterThan(0f));
+    }
+
     [Test] public void MagicControlKeepsThePlaceUnlessTheCastHoldsAnActor() {
         // vfunc_4: m_n10 = 0x3c for magicControl without m_nB0, and FUN_1417edc20 returns at once; with m_nB0 it is 0x3b
         var b = new Body();

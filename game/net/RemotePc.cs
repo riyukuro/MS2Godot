@@ -108,6 +108,8 @@ public sealed class RemotePc : IRemotePc
     /// <summary>GameObjectController::IsOnGround (gameobjectcontrollerphysxhelpers.cpp:487-490): the last move touched down
     /// and the controller is not jumping (no lift here).</summary>
     public bool OnGround => (nxHit & NxController.Hit.Down) != 0 && !jumping;
+    /// <summary>The swim exit's water test of FUN_141675ed0 for the PC's own ground hit.
+    /// STILL-OPEN: its ridee branch (a mounted PC tests its ride's ground) is not modelled.</summary>
     public bool OnWater => hitGroup == MoveConfig.WaterGroup;
     /// <summary>PCBase::vfunc_99 as the local player has it: the fall timer past the delay, more than 0.3 m above the ground
     /// (the down ray) and not touching down.</summary>
@@ -248,7 +250,10 @@ public sealed class RemotePc : IRemotePc
     /// PCBase::FUN_1416725c0 (@0x1416725c0, pcbase.cpp:4006-4033) for the skill controllers: no hit along the direction
     /// nor along its flat part (RayCastFromPoint, groups 0x389), and no ground (GetGroundDistance, a down ray of
     /// 10 + height + 1) under the end point raised by 10, nor under it moved by (0.1, 0.05): the move ends over a ledge.
-    /// The flat direction is made unit length here (the PhysX ray takes a unit direction); a vertical move casts no flat ray.
+    /// The flat direction (length cos tilt) is made unit length here with the same distance, as CPhysXHelper::CastRay
+    /// normalizes the ray's direction and keeps m_maxDist (physxhelper.cpp:198-207); a vertical move casts no flat ray
+    /// (CastRay returns on a zero direction).
+    /// STILL-OPEN: each IntersectRay returns a Godot Dictionary (up to 4 per moving remote PC per frame, as Ray does).
     /// </summary>
     public bool LedgeAhead(System.Numerics.Vector3 dir, float dist, float height, float up)
     {
@@ -358,6 +363,7 @@ public sealed class RemotePc : IRemotePc
         Anim.SpeedScale = 1f;
         currentAct = -1; currentName = name; castSpeed = speed;
         lastPos = FromStart;                     // an activated sequence throws its keys from 0 (m_bNeedFirstTextKey)
+                                                 // STILL-OPEN: not checked against NiControllerSequence
     }
 
     // the cast's play speed (SeekCast plays it again at it) and the "from the sequence start" mark of lastPos: the next

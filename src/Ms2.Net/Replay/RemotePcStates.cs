@@ -212,7 +212,8 @@ public sealed class RemotePcStates
     /// <summary>The queued records (for tests).</summary>
     public int Queued => requests.Count;
     /// <summary>The cast's record (PCBase::vfunc_103, the CSkillRecord): its skill id (GetSkillId) and its skill's
-    /// m_blockA4.m_bChargingSkill, which <see cref="Apply"/> tests in StateSkill.</summary>
+    /// m_blockA4.m_bChargingSkill, which <see cref="Apply"/> tests in StateSkill. StateSkill's m_b111 is the same flag
+    /// (stateskill.cpp:766, m_spSkill->m_blockA4): it belongs to the skill, not to a level, as the table's flag does.
     public int SkillId { get; private set; }
     public bool ChargingSkill { get; private set; }
     Vector3 castPos; float castRotZ;
@@ -541,7 +542,9 @@ public sealed class RemotePcStates
             CalcSkillDuration(pc.CastKeyTime("move2"), pc.CastKeyTime("move3"));
             return;
         }
-        // GetAttackDataAt(m_nAttack): null past the last attack
+        // GetAttackDataAt(m_nAttack): null past the last attack. TextKeyEvent takes it before the key tests (:790), this
+        // after the loopend reset above; the two differ only for an attack whose point is "loopend" (or "loopstart"),
+        // and no skill of the client data has one (0 of the KMS2 and KMS2_DEV skills).
         string point = castAttack < castPoints.Count ? castPoints[castAttack] : null;
         if (point != null && key == point)
         {
