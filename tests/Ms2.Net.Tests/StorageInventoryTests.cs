@@ -111,8 +111,6 @@ public class StorageInventoryTests {
         Assert.That(StorageBook.ErrorText(0x13), Is.EqualTo(new StorageErrorText(StorageErrorKind.Notice, 0x2b2, null)));
         Assert.That(StorageBook.ErrorText(0xe, 60), Is.EqualTo(new StorageErrorText(StorageErrorKind.BoxWithNumber, 0x2b0, 60)));
         Assert.That(StorageBook.ErrorText(0x14), Is.EqualTo(new StorageErrorText(StorageErrorKind.Notice, 0x2b3, 2000000000)), "a centre notice with the number, not a box");
-        Assert.That(StorageBook.ErrorText(0xc).Flag, Is.False);
-        Assert.That(StorageBook.ErrorText(0xd).Flag, Is.True);
         Assert.That(StorageBook.ErrorText(0x99), Is.EqualTo(new StorageErrorText(StorageErrorKind.Notice, 0x2af, 0x99)));
     }
 

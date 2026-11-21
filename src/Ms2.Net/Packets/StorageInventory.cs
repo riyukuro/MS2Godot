@@ -95,7 +95,7 @@ public abstract record StorageMessage {
 }
 
 /// <summary>What CStore::OnError (@0x140de4360) shows for a code: a string-table id and the way to show it.</summary>
-public readonly record struct StorageErrorText(StorageErrorKind Kind, int StringId, long? Number, bool Flag = true);
+public readonly record struct StorageErrorText(StorageErrorKind Kind, int StringId, long? Number);
 
 public enum StorageErrorKind {
     /// <summary>FUN_140d73bc0(id): the message-box table entry.</summary>
@@ -285,7 +285,7 @@ public sealed class StorageBook {
     /// <summary>The text CStore::OnError (@0x140de4360) shows for a code; <paramref name="capacity"/> is CurrentCapacity (code 0xe).</summary>
     public static StorageErrorText ErrorText(int code, int capacity = 0) => code switch {
         10 => new(StorageErrorKind.Box, 0xeb, null),
-        0xc => new(StorageErrorKind.Notice, 0xf1, null, false),   // FUN_141275260(0xf1, 1, 0): the third argument is 0 here only
+        0xc => new(StorageErrorKind.Notice, 0xf1, null),   // FUN_141275260(0xf1, 1, 0): the only notice whose third argument is 0 (its meaning is not in the restored source)
         0xd => new(StorageErrorKind.Notice, 0xf2, null),
         0xe => new(StorageErrorKind.BoxWithNumber, 0x2b0, capacity),
         0xf => new(StorageErrorKind.Service, 0, null),
