@@ -201,6 +201,13 @@ public sealed record QuestProgressRequest(int QuestId) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x12); w.WriteInt(QuestId); }
 }
 
+/// <summary>Outbound 0x44 ResolvePenalty (CPaneltyResolveCinematicComponent::vfunc_2 @0x141080d00, cinematiccomponent.cpp:1082-1083):
+/// i32 the talk npc's object id (UITalkManager::GetNpcId). Sent on the penalty-resolve talk page's next, before NpcTalk mode 2.</summary>
+public sealed record ResolvePenaltyRequest(int NpcObjectId) : IOutPacket {
+    public Outbound Op => Outbound.ResolvePenalty;
+    public void Write(ByteWriter w) { w.WriteInt(NpcObjectId); }
+}
+
 /// <summary>Outbound 0x45 TakeBoat (CTakeBoatCinematicComponent::vfunc_2 @0x1410812c0, cinematiccomponent.cpp:1159-1161): i32 the talk
 /// npc's object id (UITalkManager::GetNpcId), no mode byte. Sent on the take-boat talk page's next, after NpcTalk mode 2.</summary>
 public sealed record TakeBoatRequest(int NpcObjectId) : IOutPacket {

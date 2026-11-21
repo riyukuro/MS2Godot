@@ -198,6 +198,7 @@ public enum Outbound : ushort {
     RequestCube = 0x37,         // SendOp::RequestCube (commonfiles/opcodes.h)
     RequestHome = 0x51,         // SendOp::RequestHome (commonfiles/opcodes.h)
     // SendOp: the trophy dialog's sends
+    ResolvePenalty = 0x44,  // SendOp ResolvePenalty (commonfiles/opcodes.h:373): CPaneltyResolveCinematicComponent's send
     TakeBoat = 0x45,        // SendOp TakeBoat (commonfiles/opcodes.h:374): CTakeBoatCinematicComponent's send
     RequestTaxi = 0x48,     // SendOp RequestTaxi (commonfiles/opcodes.h:377): TaxiStationAction's station register
     Achieve = 0x46,

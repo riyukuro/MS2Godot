@@ -151,6 +151,23 @@ public sealed class TalkCinematicController : UiController
     /// (UITalkManager::GetNpcId), after the page's mode 2.
     /// </summary>
     public event Action<int> SendTakeBoat;
+    /// <summary>
+    /// CPaneltyResolveCinematicComponent::vfunc_2 (cinematiccomponent.cpp:1081-1083): the ResolvePenalty packet with the talk npc
+    /// (UITalkManager::GetNpcId), sent before the page's mode 2.
+    /// </summary>
+    public event Action<int> SendResolvePenalty;
+    /// <summary>FUN_141275260(id, 1, 1): the common string <c>id</c> as a system notice (cinematiccomponent.cpp:1080, :1088).</summary>
+    public event Action<int> SystemNotice;
+    /// <summary>PlaySystemSound(name, ""): the ResolvePenalty send's "PC_cure_deadPanelty" (cinematiccomponent.cpp:1085, s_deadPanelty :47).</summary>
+    public event Action<string> PlaySystemSound;
+    /// <summary>PC::FUN_141661aa0, m_n10ec: the RevivalConfirm count, the deaths whose penalty is still on.</summary>
+    public Func<int> RevivalConfirmCount = () => 0;
+    /// <summary>The local player's PCBase vfunc_78, its level.</summary>
+    public Func<int> PlayerLevel = () => 0;
+    /// <summary>DAT_143ab2898, the meso balance.</summary>
+    public Func<long> Meso = () => 0;
+    /// <summary>CFieldData::GetShadowContinent (fielddata.cpp:817): the field continent's shadowContinent value.</summary>
+    public Func<int> ShadowContinent = () => 0;
     /// <summary>ResetTalk (:1507): the talk ended; the npc's PlayEndSound and CloseTalkUi are the host's.</summary>
     public event Action TalkReset;
     /// <summary>ShowPage (:430): CEffectService::PlayVoiceAt(voice, the talk npc's position).</summary>
@@ -406,7 +423,7 @@ public sealed class TalkCinematicController : UiController
 
     /// <summary>
     /// CreateComponent (:700): 6 CQuestAccept, 7 CQuestComplete, 8 CQuestProgress, 4 CNext, 3 CClose, 9
-    /// CSelectableDistractor, 5 CSelectableTalk, 14 CTakeBoat (uitalkcinematic.cpp:718) here; any other set (job, beauty, ugc sign, roulette ...) is not ported,
+    /// CSelectableDistractor, 5 CSelectableTalk, 13 CPaneltyResolve (uitalkcinematic.cpp:716), 14 CTakeBoat (:718) here; any other set (job, beauty, ugc sign, roulette ...) is not ported,
     /// and an unknown one ends the talk (SendNpcTalkMode0).
     /// </summary>
     Component CreateComponent(int set)
@@ -421,6 +438,7 @@ public sealed class TalkCinematicController : UiController
             case 9: return new Component(this, Component.Kind.SelectableDistractor);
             case 5: return new Component(this, Component.Kind.SelectableTalk);
             case 14: return new Component(this, Component.Kind.TakeBoat);
+            case 13: return new Component(this, Component.Kind.ResolvePenalty);
         }
         EndTalk();
         return null;
@@ -598,12 +616,29 @@ public sealed class TalkCinematicController : UiController
         0x5db => "s_quest_state_completeAble", 0x5dc => "s_quest_state_complete", _ => "",
     };
 
+    /// <summary>
+    /// CLua::CalcResolvePaneltyPrice (luautil.cpp:686): the lua calcResolvePaneltyPrice(level, count, shadow) of
+    /// Data/lua/Precompiled.m2d (the same in both data sets), (int) of its first result. The count is not read; shadow 0 is
+    /// floor(p + 0.5), shadow 1 floor(p * 1.1 + 0.5), p = 2.7296 * level ^ 2 + -12.841 * level + 262.03; any other shadow
+    /// returns nothing, which reads as 0.
+    /// </summary>
+    public static int ResolvePenaltyPrice(int level, int shadow)
+    {
+        double p = 2.7296 * Math.Pow(level, 2) + -12.841 * level + 262.03;
+        return shadow switch
+        {
+            0 => (int)Math.Floor(p + 0.5),
+            1 => (int)Math.Floor(p * 1.1 + 0.5),
+            _ => 0,
+        };
+    }
+
     /// <summary>FUN_14107dfa0 (:418): the common string with its key names (GameStrings.Common replaces $key:N$).</summary>
     string Button(string key) => Model.Tables.Common(key) ?? "";
 
     sealed class Component
     {
-        public enum Kind { Next, Close, SelectableDistractor, SelectableTalk, QuestAccept, QuestComplete, QuestProgress, TakeBoat }
+        public enum Kind { Next, Close, SelectableDistractor, SelectableTalk, QuestAccept, QuestComplete, QuestProgress, TakeBoat, ResolvePenalty }
         readonly TalkCinematicController owner;
         readonly Kind kind;
         bool started;            // m_nStarted
@@ -641,6 +676,9 @@ public sealed class TalkCinematicController : UiController
                     break;
                 case Kind.TakeBoat:             // :1170, 0x669 s_take_boat_accept
                     h.Set(page, "button", owner.Button("s_take_boat_accept"));
+                    break;
+                case Kind.ResolvePenalty:       // :1100, 0x66a s_resolve_panelty_accept
+                    h.Set(page, "button", owner.Button("s_resolve_panelty_accept"));
                     break;
                 case Kind.QuestAccept:          // :557, 0x5d3
                     h.Set(page, "button", owner.Button("s_quest_talk_accept"));
@@ -718,6 +756,23 @@ public sealed class TalkCinematicController : UiController
                     // (m_nPending) but the TakeBoat packet goes either way, once per page (m_nStarted).
                     owner.RequestNext(0);
                     owner.SendTakeBoat?.Invoke(owner.TalkNpcId);
+                    break;
+                case Kind.ResolvePenalty:
+                    // CPaneltyResolveCinematicComponent::vfunc_2 (:1068-1092), after the base: with a RevivalConfirm count, too
+                    // little meso for the price shows 0x34 s_err_lack_meso, else ResolvePenalty goes with the sound; no count
+                    // shows 0x79 s_err_job_no_penalty. Mode 2 follows in every case.
+                    if (owner.RevivalConfirmCount() != 0)
+                    {
+                        if (owner.Meso() < ResolvePenaltyPrice((ushort)owner.PlayerLevel(), owner.ShadowContinent()))
+                            owner.SystemNotice?.Invoke(0x34);
+                        else
+                        {
+                            owner.SendResolvePenalty?.Invoke(owner.TalkNpcId);
+                            owner.PlaySystemSound?.Invoke("PC_cure_deadPanelty");
+                        }
+                    }
+                    else owner.SystemNotice?.Invoke(0x79);
+                    owner.RequestNext(0);
                     break;
                 default:
                     owner.RequestNext(0);                   // CNext (:437)

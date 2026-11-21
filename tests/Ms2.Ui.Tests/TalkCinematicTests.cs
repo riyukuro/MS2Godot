@@ -220,6 +220,69 @@ public class TalkCinematicTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// Button set 13 is CPaneltyResolveCinematicComponent (uitalkcinematic.cpp:716): its button is 0x66a (:1100). A next with a
+    /// RevivalConfirm count and the meso for the price sends ResolvePenalty with the talk npc and the sound, then NpcTalk
+    /// mode 2 with 0 (cinematiccomponent.cpp:1076-1090), once per page.
+    /// </summary>
+    [Test]
+    public void TheResolvePenaltyPageSendsResolvePenaltyWithTheMeso()
+    {
+        var (h, c, _, rt) = Load(new() { Script = "Lift the penalty?" }, 13);
+        var sends = new List<int>(); var notices = new List<int>(); var sounds = new List<string>(); int next = -1;
+        c.SendResolvePenalty += sends.Add;
+        c.SystemNotice += notices.Add;
+        c.PlaySystemSound += sounds.Add;
+        c.SendNext += i => next = i;
+        c.RevivalConfirmCount = () => 2;
+        c.PlayerLevel = () => 30;
+        c.Meso = () => TalkCinematicController.ResolvePenaltyPrice(30, 0);
+        Assert.That(c.Talking, Is.True, "set 13 is a component, not the unknown-set end");
+        string accept = new GameTables(Packs(), "en").Common(0x66a);
+        Assert.That(accept, Is.Not.Empty, "0x66a has a text");
+        var buttons = h.Get(Script(h), "m_buttons");
+        Assert.That(Rt.ToString(h.Get(h.Get(buttons, "m_next"), "label")), Is.EqualTo(accept.Split('|')[0]), "s_resolve_panelty_accept (0x66a)");
+        c.Key(TalkCinematicController.TalkKey.Next);
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(sends, Is.EqualTo(new[] { Guard }), "one ResolvePenalty with the talk npc");
+        Assert.That(sounds, Is.EqualTo(new[] { "PC_cure_deadPanelty" }));
+        Assert.That(notices, Is.Empty);
+        Assert.That(next, Is.EqualTo(0), "NpcTalk mode 2 with 0");
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    /// <summary>cinematiccomponent.cpp:1076-1088: meso under the price shows 0x34, no RevivalConfirm count 0x79; neither sends
+    /// ResolvePenalty, and both still request mode 2.</summary>
+    [TestCase(2, 0x34)]
+    [TestCase(0, 0x79)]
+    public void TheResolvePenaltyPageRefuses(int count, int notice)
+    {
+        var (_, c, _, rt) = Load(new() { Script = "Lift the penalty?" }, 13);
+        var sends = new List<int>(); var notices = new List<int>(); int next = -1;
+        c.SendResolvePenalty += sends.Add;
+        c.SystemNotice += notices.Add;
+        c.SendNext += i => next = i;
+        c.RevivalConfirmCount = () => count;
+        c.PlayerLevel = () => 30;
+        c.Meso = () => TalkCinematicController.ResolvePenaltyPrice(30, 0) - 1;
+        c.Key(TalkCinematicController.TalkKey.Next);
+        Assert.That(sends, Is.Empty);
+        Assert.That(notices, Is.EqualTo(new[] { notice }));
+        Assert.That(next, Is.EqualTo(0));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    /// <summary>The lua calcResolvePaneltyPrice: floor(2.7296 lv^2 - 12.841 lv + 262.03 + 0.5), x1.1 on shadow 1, nothing (0)
+    /// for another shadow value.</summary>
+    [Test]
+    public void TheResolvePenaltyPriceIsTheLuaFormula()
+    {
+        Assert.That(TalkCinematicController.ResolvePenaltyPrice(1, 0), Is.EqualTo(252));      // 251.9186
+        Assert.That(TalkCinematicController.ResolvePenaltyPrice(50, 0), Is.EqualTo(6444));    // 6443.98
+        Assert.That(TalkCinematicController.ResolvePenaltyPrice(50, 1), Is.EqualTo(7088));    // 7088.378
+        Assert.That(TalkCinematicController.ResolvePenaltyPrice(50, 2), Is.EqualTo(0));
+    }
+
     [Test]
     public void AnUnrequireGroupQuestAsksBeforeTheAccept()
     {

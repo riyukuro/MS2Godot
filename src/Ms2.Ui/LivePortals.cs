@@ -579,14 +579,26 @@ public sealed class PortalAction
     public static HashSet<int> ShadowContinents(PackSet packs)
     {
         var set = new HashSet<int>();
+        foreach (var (id, s) in ContinentShadows(packs))
+            if (s != 0) set.Add(id);
+        return set;
+    }
+
+    /// <summary>
+    /// MapContinentTable.xml (table/kr first): each continent id's shadowContinent (CContinentRegionTable m_nShadowContinent,
+    /// what CFieldData::GetShadowContinent returns for the field's continentCode, fielddata.cpp:817).
+    /// </summary>
+    public static Dictionary<int, int> ContinentShadows(PackSet packs)
+    {
+        var map = new Dictionary<int, int>();
         foreach (var p in new[] { "table/kr/mapcontinenttable.xml", "table/mapcontinenttable.xml" })
         {
             if (!packs.Exists("Xml", p)) continue;
             foreach (var c in GameStrings.Parse(packs.Read("Xml", p))?.Root?.Elements("continent") ?? Enumerable.Empty<XElement>())
-                if (int.TryParse((string)c.Attribute("id"), out int id) && int.TryParse((string)c.Attribute("shadowContinent"), out int s) && s != 0)
-                    set.Add(id);
+                if (int.TryParse((string)c.Attribute("id"), out int id))
+                    map[id] = int.TryParse((string)c.Attribute("shadowContinent"), out int s) ? s : 0;
             break;
         }
-        return set;
+        return map;
     }
 }

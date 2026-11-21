@@ -57,6 +57,20 @@ public sealed partial class NpcTalk : Node
     FieldNpcs.Placed liveTalking;          // the server opened a talk with this npc (m_nTalking)
     static NpcScriptTable scripts;
     static GameTables tables;
+    static System.Collections.Generic.Dictionary<int, int> continentShadows;
+
+    /// <summary>CFieldData::GetShadowContinent (fielddata.cpp:817) for the field <paramref name="mapId"/>: its continent's
+    /// shadowContinent, 0 without a row.</summary>
+    int ShadowContinentOf(int mapId)
+    {
+        try
+        {
+            continentShadows ??= PortalAction.ContinentShadows(packs);
+            int code = FieldData.FindById(packs, mapId)?.ContinentCode ?? 0;
+            return continentShadows.TryGetValue(code, out int v) ? v : 0;
+        }
+        catch { return 0; }
+    }
     static QuestTable questTable;
     static QuestScriptTable questScripts;
     static SandboxQuests sandboxQuests;
@@ -410,6 +424,13 @@ public sealed partial class NpcTalk : Node
             side.SendQuestRedirect += (q, kind) => live.SendTalk(new NpcTalkQuestRedirectRequest(q, kind));
             side.SendQuestProgress += q => live.SendTalk(new QuestProgressRequest(q));
             side.SendTakeBoat += _ => live.SendTalk(new TakeBoatRequest(obj));
+            // CPaneltyResolveCinematicComponent::vfunc_2's reads: the RevivalConfirm count, level, meso and the field's shadow continent
+            side.SendResolvePenalty += _ => live.SendTalk(new ResolvePenaltyRequest(obj));
+            side.RevivalConfirmCount = () => live.Me.RevivalConfirmCount;
+            side.PlayerLevel = () => live.Me.User?.Level ?? 0;
+            side.Meso = () => live.Me.Meso;
+            side.ShadowContinent = () => ShadowContinentOf(live.FieldId ?? 0);
+            side.SystemNotice += id => live.SystemNoticeSink?.Invoke(tables.Common(id));
         }
         else
         {
@@ -426,11 +447,14 @@ public sealed partial class NpcTalk : Node
             side.SendQuestProgress += q => GD.Print($"talk: quest {q} progress (Quest mode 0x12; the Maple2 server does not handle it)");
             side.SendEnd += () => { };                      // NpcTalk mode 0: nothing to tell offline
             side.SendTakeBoat += _ => GD.Print("talk: TakeBoat not sent (offline)");
+            side.SendResolvePenalty += _ => GD.Print("talk: ResolvePenalty not sent (offline)");
+            side.SystemNotice += id => GD.Print($"talk: system notice {tables.Common(id)}");
         }
         side.SendNext += _ => subMode = 0;              // SendNpcTalkMode2 (uitalkcinematic.cpp:1675)
         side.PageShown += () => { if (talking != null) TalkPageShown?.Invoke(talking, subMode); };
         side.TalkReset += () => Sound(talking?.Row.SoundEnd, talking?.Position ?? Vector3.Zero);
         side.PlayVoice += v => Sound(v, talking?.Position ?? Vector3.Zero);
+        side.PlaySystemSound += key => FieldAudio.Instance?.PlayUi(key);
         side.CloseComplete += () => CallDeferred(nameof(Teardown));
         layer = new CanvasLayer { Layer = 20, Name = "TalkCinematic" };
         AddChild(layer);

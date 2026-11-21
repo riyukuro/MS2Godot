@@ -196,6 +196,7 @@ static class Gms2Opcodes {
         [Outbound.KeyTable] = 0x3B,
         [Outbound.RequestCube] = 0x37,
         [Outbound.RequestHome] = 0x52,
+        [Outbound.ResolvePenalty] = 0x45,
         [Outbound.TakeBoat] = 0x46,
         [Outbound.RequestTaxi] = 0x49,
         [Outbound.Achieve] = 0x47,
