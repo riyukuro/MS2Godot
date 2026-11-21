@@ -130,6 +130,7 @@ static class Gms2Opcodes {
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
         [Outbound.SkillMacro] = 0x7C,
+        [Outbound.ChatSticker] = 0xB9,
         [Outbound.ResponseLogin] = 0x03,
         [Outbound.ResponseKey] = 0x04,
         [Outbound.Reconnect] = 0x05,

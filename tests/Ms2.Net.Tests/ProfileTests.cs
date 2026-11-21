@@ -52,6 +52,7 @@ public class ProfileTests {
         Assert.That(p.Number(Outbound.KeyTable), Is.EqualTo((ushort) 0x3B));
         Assert.That(p.Number(Inbound.SkillMacro), Is.EqualTo((ushort) 0xD3));
         Assert.That(p.Number(Outbound.SkillMacro), Is.EqualTo((ushort) 0x7C));
+        Assert.That(p.Number(Outbound.ChatSticker), Is.EqualTo((ushort) 0xB9));
         Assert.That(p.Number(Outbound.RequestMoveField), Is.EqualTo((ushort) 0x6D));
         Assert.That(p.TryInbound(0x60, out var op) && op == Inbound.UserMoveByPortal);
         // rows upstream lacks stay unmapped
