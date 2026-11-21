@@ -216,7 +216,7 @@ public sealed class MyCharacter {
     public long PremiumTime; public short WeddingState;
     /// <summary>The own FieldAddUser's equips, layer-2 outfits and gems (PCGemEquip::ReadFromStream, gemslot_2.cpp:92).</summary>
     public IReadOnlyList<EquipItem> Equips, Outfit2, Gems;
-    /// <summary>The summoned pet from FieldAddUser (PC::ReadPetItem, scenestategame.cpp:11284; STILL-OPEN: post-enter
+    /// <summary>The summoned pet from FieldAddUser (PC::ReadPetItem, scenestategame.cpp:11286; STILL-OPEN: post-enter
     /// pet summon/unsummon packets).</summary>
     public EquipItem Pet;
     public readonly StatPointBook StatPoints = new();

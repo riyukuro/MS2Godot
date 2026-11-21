@@ -186,7 +186,7 @@ public sealed class FieldAddUser {
     public long SkinTabStart, SkinTabEnd;
     public short BuffCount;
     public int Title; public short Insignia; public bool InsigniaShown;
-    /// <summary>The pet block was read (PC::ReadPetItem, scenestategame.cpp:11284).</summary>
+    /// <summary>The pet block was read (PC::ReadPetItem, scenestategame.cpp:11286).</summary>
     public bool HasPet;
     /// <summary>The premium club time i64 (PC::FUN_141662d60 = m_n1190, scenestategame.cpp:11287): IsVip (pc.cpp:2209) is true
     /// while it is in the future. STILL-OPEN: OnPremiumClub (scenestategame.cpp:8427) refreshes it mid-session; not parsed.</summary>
