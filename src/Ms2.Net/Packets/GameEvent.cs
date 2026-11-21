@@ -11,6 +11,10 @@ public sealed record ShutdownInteractObjectEvent(int Id, IReadOnlyList<(uint Fie
 /// (m_68) and values (m_70) vfunc_2 parses.</summary>
 public sealed record SpecialAbilityHotTimeEvent(int Id, bool PcBang, string Ids, string Values);
 
+/// <summary>One GameEventPremiumMarketSale (commonfiles/gameevent.cpp:1415-1438): the event id, the discount rate in 1/10000
+/// (m_d0), the covered ids (m_d8; 0 covers everything) and the currency item id (m_e8) the context holds (OnStart :1439).</summary>
+public sealed record PremiumMarketSaleEvent(int Id, int Rate, IReadOnlyList<int> Ids, int Currency);
+
 /// <summary>
 /// Inbound GameEvent (RecvOp 0xB2, commonfiles/opcodes.h:185), GameEventManagerCli::Dispatch (@0x140ceab50,
 /// gameeventmanagercli.cpp:77): a u8 kind, then
@@ -31,12 +35,16 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// <summary>The SAHotTime and PCBangSAHotTime events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<SpecialAbilityHotTimeEvent> HotTimes { get; init; } = Array.Empty<SpecialAbilityHotTimeEvent>();
 
+    /// <summary>The PremiumMarketSale events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<PremiumMarketSaleEvent> SaleEvents { get; init; } = Array.Empty<PremiumMarketSaleEvent>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
         var shutdowns = new List<ShutdownInteractObjectEvent>();
         var removed = new List<int>();
         var hotTimes = new List<SpecialAbilityHotTimeEvent>();
+        var saleEvents = new List<PremiumMarketSaleEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -48,7 +56,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -64,7 +72,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             }
         }
         if (!truncated) r.ExpectEnd("GameEvent");
-        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes };
+        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents };
     }
 
     /// <summary>
@@ -74,7 +82,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// Returns false for a name no class is registered under.
     /// </summary>
     internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns,
-                                  List<SpecialAbilityHotTimeEvent> hotTimes = null)
+                                  List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null)
     {
         switch (name)
         {
@@ -192,8 +200,14 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadLong();
                 return true;
             case "PremiumMarketSale":   // :1415: id, I, i32 n x I, I
-                r.ReadInt(); r.ReadInt(); Ints(r); r.ReadInt();
+            {
+                int id = r.ReadInt(), rate = r.ReadInt();
+                int n = r.ReadInt();
+                var ids = new List<int>(Math.Max(0, Math.Min(n, 4096)));
+                for (int i = 0; i < n; i++) ids.Add(r.ReadInt());
+                saleEvents?.Add(new PremiumMarketSaleEvent(id, rate, ids, r.ReadInt()));
                 return true;
+            }
             case "GameMenuPopup":       // :1482: id, i16, W
                 r.ReadInt(); r.ReadShort(); W(r);
                 return true;

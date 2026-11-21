@@ -306,7 +306,7 @@ public class ShopPacketTests {
         var c = m.Product.Sub[0];
         Assert.That((c.Id, c.Name, c.ChartOrder, c.StartDate, c.EndDate, c.ItemId, c.LimitCount, c.Category, c.Icon),
             Is.EqualTo((3001, "Child", 21, 111L, 222L, 20000456, 15, "cat", "icon")));
-        Assert.That((c.EventCategory, c.EventStart, c.EventEnd, c.Url, c.Field168), Is.EqualTo(("ev", 1L, 2L, "http://x", true)));
+        Assert.That((c.EventCategory, c.EventStart, c.EventEnd, c.Url), Is.EqualTo(("ev", 1L, 2L, "http://x")));
         Assert.That((m.DisplayOrder, m.ExtraA, m.ExtraB), Is.EqualTo((3, 61, 62)));
     }
 

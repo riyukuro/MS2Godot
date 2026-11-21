@@ -191,4 +191,21 @@ public class GameEventPacketTests
         }));
         Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 4 }));
     }
+
+    [Test]
+    public void PremiumMarketSaleEventsKeepRateIdsAndCurrency()
+    {
+        // GameEventPremiumMarketSale (gameevent.cpp:1415-1439): id, rate (1/10000), n x covered id, currency item id
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(1);
+            w.WriteUnicodeString("PremiumMarketSale"); w.WriteInt(21); w.WriteInt(1500);
+            w.WriteInt(2); w.WriteInt(0); w.WriteInt(10); w.WriteInt(100000);
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.SaleEvents.Count, Is.EqualTo(1));
+        var e = m.SaleEvents[0];
+        Assert.That((e.Id, e.Rate, e.Currency), Is.EqualTo((21, 1500, 100000)));
+        Assert.That(e.Ids, Is.EqualTo(new[] { 0, 10 }));
+    }
 }
