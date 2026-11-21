@@ -300,6 +300,8 @@ public partial class LiveSession : Node
 
     /// <summary>Raised after ItemUse mode 6 sent the Beauty request.</summary>
     public event Action<BeautyReq> BeautyRequested;
+    /// <summary>CSceneStateGame::OnItemBox (@0x141739e40): the box result; the consumer checks the item's function (OpenItemBox / SelectItemBox) as the client does.</summary>
+    public event Action<ItemBoxResult> ItemBoxResulted;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
@@ -1203,6 +1205,12 @@ public partial class LiveSession : Node
                 if (n.Codi is { } codi) ActiveCodiTab(codi);
                 if (n.Beauty is { Type: not 0 } bq) { Send(new BeautyOpenRequest(bq.Uid)); BeautyRequested?.Invoke(bq); }   // SendBeauty (:8692); the beauty dialog 0x4eee itself is STILL-OPEN
                 GD.Print($"live: item use mode {n.Mode}{(n.ItemId != 0 ? " item " + n.ItemId : "")}");
+            }
+            else if (game.Is(p, Inbound.ItemBox))
+            {
+                var n = ItemBoxResult.Read(p.Reader());   // CSceneStateGame::OnItemBox (scenestategame.cpp:8407)
+                ItemBoxResulted?.Invoke(n);
+                GD.Print($"live: item box {n.ItemId} opened {n.Opened} result {n.Result}");
             }
             else if (game.Is(p, Inbound.ItemDropNotice))
             {
