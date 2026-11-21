@@ -70,9 +70,11 @@ public partial class FieldFade : Node
     readonly Dictionary<int, List<Target>> groups = new();
     readonly Dictionary<FieldEntity, Target> byEntity = new();
     readonly Dictionary<Target, Element> fadeOut = new(), fadeIn = new();
-    // each draw's MultiMesh (one mesh per MultiMesh) to its mesh's triangles, made once, keyed by the reference the draw
-    // holds (no engine call per lookup)
-    readonly Dictionary<MultiMesh, Vector3[]> faces = new(ReferenceEqualityComparer.Instance);
+    // each mesh to its triangles, made once. Keyed by the mesh: the split alpha path makes several MultiMeshes over one mesh,
+    // which share one copy
+    readonly Dictionary<Mesh, Vector3[]> faces = new(ReferenceEqualityComparer.Instance);
+    /// <summary>How many times a mesh's triangles were copied out of the engine (GetFaces).</summary>
+    public int FacesBuilt { get; private set; }
     readonly Func<Vector3?> feet;
     readonly Func<Camera3D> camera;
     ulong nextTest;
@@ -180,7 +182,8 @@ public partial class FieldFade : Node
             var inv = (d.Parent.GlobalTransform * xf).AffineInverse();
             var o = inv * from;
             var v = inv.Basis * dir;
-            if (!faces.TryGetValue(d.Mm, out var f)) faces[d.Mm] = f = d.Mm.Mesh.GetFaces();
+            var mesh = d.Mm.Mesh;
+            if (!faces.TryGetValue(mesh, out var f)) { faces[mesh] = f = mesh.GetFaces(); FacesBuilt++; }
             for (int i = 0; i + 2 < f.Length; i += 3)
                 if (Triangle(o, v, f[i], f[i + 1], f[i + 2])) return true;
         }
