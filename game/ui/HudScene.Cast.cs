@@ -159,6 +159,7 @@ public partial class HudScene
         castWorld.Rising = sp.Y > 0;
         castWorld.Falling = me.State == Player.MoveState.Fall;
         castWorld.GameTime = Time.GetTicksMsec() / 1000.0;
+        castWorld.Aim = ownAutoTarget ??= rec => AutoTargetOwn(rec, true);   // vfunc_100(rec, 1), skillslot.cpp:2178
         var res = SkillCast.Request(w, castWorld, req, _ => SkillCast.NormalAttackSkillId(held, weaponActions, 0));
         if (res.Record is not { } r)
         {
@@ -311,7 +312,7 @@ public partial class HudScene
         if (!SkillFollow.ChainsNow(running, ownNext.Skill, ownChainType, ownWindow, hudModel.IsFeatureEnabled(0xca))) return;
         var r = ownNext;
         ownNext = null;
-        AimOwn(r);                                 // :3170 vfunc_100(m_spNext, 0)
+        AimOwn(r, false);                          // :3170 vfunc_100(m_spNext, 0)
         r.HasSequence = r.Level.HasSequenceName;   // :3172-3174, m_bAD from its level
         UseOwnRecord(player, r);
     }
@@ -354,7 +355,7 @@ public partial class HudScene
         if (next == null) return false;
         if (next == ownQueued) { player.HoldSkillSequence(); return true; }   // the same cooling press again: still queued
         if (!SkillFollow.CastsAtEnd(running, next.Skill, false)) return false;
-        AimOwn(next);                              // :2939 vfunc_100(m_spNext, 0)
+        AimOwn(next, false);                       // :2939 vfunc_100(m_spNext, 0)
         next.HasSequence = next.Level.HasSequenceName;
         if (!UseOwnRecord(player, next)) return false;
         if (ownCast == running) player.HoldSkillSequence();
@@ -362,11 +363,46 @@ public partial class HudScene
     }
 
     /// <summary>PCBase::vfunc_100 (pcbase.cpp:2561) on a next cast in the skill state: <see cref="SkillCast.Aim"/> from where
-    /// the player is and faces now, not where it was at the press (a continue skill again keeps the running record's aim).</summary>
-    void AimOwn(CastRecord r)
+    /// the player is and faces now, not where it was at the press (a continue skill again keeps the running record's aim), then
+    /// the auto target (<see cref="AutoTargetOwn"/>); <paramref name="turn"/> is vfunc_100's n.</summary>
+    void AimOwn(CastRecord r, bool turn)
     {
         var g = player.GlobalPosition;
         SkillCast.Aim(r, new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ, ownCast, hudModel.IsFeatureEnabled(0xca));
+        AutoTargetOwn(r, turn);
+    }
+
+    Action<CastRecord> ownAutoTarget;
+
+    /// <summary>
+    /// PCBase::vfunc_101 (pcbase.cpp:2598-2599) for the own player: <see cref="SkillCast.AutoTarget"/> over the live
+    /// candidates and the owner (<see cref="FillHitObjects"/>); with <paramref name="turn"/> (vfunc_100's n, SetTargetYaw
+    /// :2681) a pick turns the player to it.
+    /// </summary>
+    void AutoTargetOwn(CastRecord r, bool turn)
+    {
+        if (r?.Skill == null || r.Skill.AutoTargeting == 0) return;
+        if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return;
+        var pos = FillHitObjects(me);
+        if (!SkillCast.AutoTarget(r, pos, me.FacingRotZ, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects),
+                hitQueried, hitIds, (slotField?.PkMode ?? 0) != 0, out float yaw) || !turn) return;
+        float rad = Mathf.DegToRad(yaw);   // MS2 forward (sin z, -cos z) is godot (sin z, 0, cos z)
+        me.Face(new Vector3(Mathf.Sin(rad), 0, Mathf.Cos(rad)));
+    }
+
+    /// <summary>The objects an own area pick tests: the live candidates and the owner last; the owner's MS2 position.</summary>
+    System.Numerics.Vector3 FillHitObjects(Player me)
+    {
+        var live = Net.LiveSession.Instance;
+        live?.HitCandidates(hitObjects);
+        if (live == null) hitObjects.Clear();
+        var g = me.GlobalPosition;
+        var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+        hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, me.FacingRotZ), IsOwner = true,
+            Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0,
+            PvpOnOff = ownBuffs?.IsPvpOnOff ?? false,
+            ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0, Hidden = ownBuffs?.IsHidden ?? false });
+        return pos;
     }
 
     /// <summary>vfunc_104(1, 1, 1) at the end step: this frame's press, else the key held (<see cref="PollOwnKey"/>); the queued
@@ -641,7 +677,7 @@ public partial class HudScene
     {
         // fEventTime: the key's own time here (only its being non-zero is read, by the hold check)
         if (!ownLoop.OnLoopEnd(ownLoopEndKey, ownLoopEndKey, SkillCast.MotionSpeedScale(ownCast), now)) return;
-        AimOwn(ownCast);
+        AimOwn(ownCast, true);
         float rad = Mathf.DegToRad(ownCast.Rotation.Z);   // MS2 forward (sin z, -cos z) is godot (sin z, 0, cos z)
         me.Face(new Vector3(Mathf.Sin(rad), 0, Mathf.Cos(rad)));
         ownAttack = 0;
@@ -791,15 +827,8 @@ public partial class HudScene
         int n = SkillAttackFire.AttacksAtPoint(ownCast, ownAttack);
         if (n > 0)
         {
-            live?.HitCandidates(hitObjects);
-            if (live == null) hitObjects.Clear();
-            var g = me.GlobalPosition;
-            var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+            var pos = FillHitObjects(me);
             float rotZ = me.FacingRotZ;
-            hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, rotZ), IsOwner = true,
-                Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0,
-                PvpOnOff = ownBuffs?.IsPvpOnOff ?? false,
-                ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0, Hidden = ownBuffs?.IsHidden ?? false });
             nextSerial ??= () => serialIds.Next(Net.LiveSession.Instance?.SelfObjectId ?? 0);
             for (int i = 0; i < n; i++)
             {

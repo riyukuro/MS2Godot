@@ -254,7 +254,7 @@ public static class SkillCast
     /// In the skill state (:2575-2591), a continue skill (kinds continue, +0x34) cast again under the running record
     /// <paramref name="running"/> of the same skill keeps that record's direction and rotation instead, with stateAttr
     /// moveType (+0x88) 0, or 2 with feature 0xca (<paramref name="feature0xca"/>); the position is still the owner's now.
-    /// STILL-OPEN: the auto target (vfunc_101, :2598-2599) is not ported.
+    /// The auto target (vfunc_101, :2598-2599) is <see cref="AutoTarget"/>, which the caller runs after this.
     /// </summary>
     public static void Aim(CastRecord r, Vector3 position, float rotZ, CastRecord running, bool feature0xca)
     {
@@ -270,6 +270,105 @@ public static class SkillCast
         float rad = rotZ * (MathF.PI / 180f);
         r.Direction = new Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0);
         r.Rotation = new Vector3(0, 0, rotZ);
+    }
+
+    static readonly Func<int> NoRand = () => 0;
+
+    /// <summary>
+    /// PCBase::vfunc_101 @0x141672de0 (pcbase.cpp:2609-2690), which vfunc_100 runs for a skill with autoTargeting (+0x74)
+    /// outside the camera modes 9 and 10 (:2598, the port has neither): with the record's current attack
+    /// (<see cref="SkillAttackFire.AttackAt"/> at its motion and attack index) a cylinder of radius autoTargetingMaxDistance
+    /// (+0x164; about 0: the attack range's distance, endWidth for a hole cylinder, SkillLevelData::GetAttackRangeValue) and
+    /// height 150 (autoTargetingMaxHeight +0x168 when set, the owner's z lowered by half of it) picks the objects of the
+    /// range's applyTarget kind (no npc ranks, no caster, sort 3) around the owner position plus the range offset turned
+    /// with the owner's facing <paramref name="ownerRotZ"/> (not for attackMethodType 1), turned by the facing plus
+    /// rangeZRotateDegree (<see cref="SkillHit.AreaPose"/>; DetectWithEulerRotation poses the cylinder at that centre).
+    /// Of the hits inside autoTargetingMaxDegree (+0x160) around the record's rotation, autoTargetingType (+0x78) picks
+    /// (FUN_141679800 / FUN_141679ad0, :3747 / :3808): 0 the most ahead, 3 the least ahead, 1 the nearest, 2 the farthest; a
+    /// dead PC only when no living hit is left. The record's rotation turns to the pick: (0, 0, z) with z the yaw of the
+    /// direction to it (forward (sin z, -cos z)), cut to a whole degree in [0, 360) (FUN_140291bc0, NormalizeDegrees casts to
+    /// int). With autoTargetUseMove (+0x16c) the target distance (+0x74) is the distance to it, less 100 above 100.
+    /// Returns whether a target was picked; <paramref name="yaw"/> is then the new facing, which the caller sets with n = 1
+    /// (SetTargetYaw, :2681: the press, stateskill.cpp:881) and not with n = 0 (the later casts, :2939 / :3170).
+    /// GameObject::vfunc_30 (the nearest anchor box centre) is the object's position here: the port has no anchor boxes.
+    /// 0 B per call: <paramref name="queried"/> and <paramref name="hits"/> are the caller's.
+    /// </summary>
+    public static bool AutoTarget(CastRecord r, Vector3 ownerPos, float ownerRotZ, ReadOnlySpan<HitCandidate> objects,
+        List<HitCandidate> queried, List<int> hits, bool pkMode, out float yaw)
+    {
+        yaw = 0;
+        var d = r?.Skill;
+        if (d == null || d.AutoTargeting == 0) return false;
+        var a = SkillAttackFire.AttackAt(r, r.AttackIndex);
+        if (a == null) return false;
+        float radius = d.AutoTargetingMaxDistance;
+        if (MathF.Abs(radius) < 1e-06f) radius = a.Range.Shape == 4 ? a.Range.EndWidth : a.Range.Distance;
+        var pos = ownerPos;
+        float height = 150f;
+        if (MathF.Abs(d.AutoTargetingMaxHeight) >= 1e-06f)
+        {
+            height = d.AutoTargetingMaxHeight;
+            pos.Z -= height * 0.5f;
+        }
+        SkillHit.AreaPose(a, pos, new Vector3(0, 0, ownerRotZ), out var center, out var rot);
+        var shape = new SkillHitShape { Shape = 2, CylinderCenter = center, Radius = radius, Height = height };
+        SkillHit.Query(objects, a.Range.ApplyTarget, 0, queried, pkMode);
+        var span = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried);
+        SkillHit.Detect(shape, center, rot, 3, false, false, span, NoRand, hits);
+        if (hits.Count == 0) return false;
+        uint mode = d.AutoTargetingType;
+        if (mode > 3) return false;
+        SkillHit.Axes(r.Rotation.Z, out var aim, out _);   // GameObject::RotationToDirection
+        float cone = MathF.Cos(d.AutoTargetingMaxDegree / 2f * 3.1415927f / 180f);
+        bool byDot = mode == 0 || mode == 3;
+        int best = -1, bestDead = -1;
+        float fBest = -1f, fBestDead = -1f;
+        for (int i = 0; i < hits.Count; i++)
+        {
+            int k = IndexOf(span, hits[i]);
+            if (k < 0) continue;
+            ref readonly var o = ref span[k];
+            var to = o.Position - ownerPos;
+            to.Z = 0;
+            float len = to.Length();
+            to = len > 1e-06f ? to / len : Vector3.Zero;
+            float dot = Vector3.Dot(aim, to);
+            if (dot < cone) continue;
+            float v = byDot ? dot : Vector3.Distance(o.Position, ownerPos);
+            bool dead = o.Kind == HitKind.Pc && o.Dead;
+            ref float f = ref dead ? ref fBestDead : ref fBest;
+            // 0 and 2 keep the largest, 3 and 1 the smallest (the first, or while the best is still about -1)
+            bool pick = mode == 0 || mode == 2 ? f < v : f > v || MathF.Abs(f + 1f) < 1e-06f;
+            if (!pick) continue;
+            f = v;
+            if (dead) bestDead = k; else best = k;
+        }
+        if (best < 0) best = bestDead;
+        if (best < 0) return false;
+        var target = span[best].Position;
+        var t = target - ownerPos;
+        t.Z = 0;
+        float tl = t.Length();
+        t = tl > 1e-06f ? t / tl : Vector3.Zero;
+        // the matrix (right, front, Z) of look = -t: right = (-t.y, t.x), front = (t.x, t.y); ToEulerAnglesXYZ z = atan2(m01, m00)
+        float z = MathF.Atan2(t.X, -t.Y) * 180f / 3.1415927f;
+        int deg = (int)z % 360;
+        if (deg < 0) deg += 360;
+        yaw = deg;
+        r.Rotation = new Vector3(0, 0, deg);
+        if (d.AutoTargetUseMove != 0)
+        {
+            float dist = Vector3.Distance(target, ownerPos);
+            r.TargetDistance = dist > 100f ? dist - 100f : dist;
+        }
+        return true;
+    }
+
+    static int IndexOf(ReadOnlySpan<HitCandidate> objects, int id)
+    {
+        for (int i = 0; i < objects.Length; i++)
+            if (objects[i].Id == id) return i;
+        return -1;
     }
 
     /// <summary>FUN_14176b7c0 (skillslot.cpp:3343): the skill's highest level row at or below <paramref name="level"/>.</summary>

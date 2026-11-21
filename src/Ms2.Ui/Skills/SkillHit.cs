@@ -211,6 +211,9 @@ public struct HitCandidate
     /// <summary>PCBase::FUN_1416749a0()-&gt;GetForceApplyTarget (<see cref="AdditionalBuffList.ForceApplyTarget"/>): read off the
     /// caster, its bits join the filter flags.</summary>
     public int ForceApplyTarget;
+    /// <summary>PCBase::IsDead on a PC (the auto target's pick keeps dead PCs apart, <see cref="SkillCast.AutoTarget"/>); the
+    /// candidates here hold no other PCs yet, so nothing sets it in the game.</summary>
+    public bool Dead;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>
