@@ -17,6 +17,15 @@ public sealed class SkillMotion
     /// GetAttackDataAt(i)'s text key.</summary>
     public List<string> AttackPoints = new();
     /// <summary>
+    /// The motion's move, as SkillMotionData::Load (skillleveldata.cpp:1189-1194) reads it from the &lt;motion&gt; itself:
+    /// "movetype" (m_eMoveType: 0 linear, 1 arc, 2 blink, 3 move, the motion controller StateSkill::vfunc_4 picks), "keyMove"
+    /// (m_fAC) and "movedistance" (m_fB8), the units CSkillRecord::FUN_141759b60 spreads over a move phase, "moveangle"
+    /// (m_fMoveAngle, degrees) and "ignoreCollisionGroups" (m_nIgnoreCollisionGroups).
+    /// </summary>
+    public int MoveType;
+    public float KeyMove, MoveDistance, MoveAngle;
+    public uint IgnoreCollisionGroups;
+    /// <summary>
     /// The motion's other effect files and flags, as SkillMotionData::Load (@0x140808350, skillleveldata.cpp:1163-1175)
     /// reads them; its launch-option gate (Unk_LaunchOptions::FUN_1406af020, launchoptions.cpp:78-81) is always true.
     /// The region skill object (CRegionSkillObject) uses them: SplashInvokeEffect (+0x30) on a hit, LoopEffect (+0x38) as its
@@ -27,6 +36,13 @@ public sealed class SkillMotion
     public string LoopEffect, SplashInvokeEffect, SplashEndEffect, SplashDurationCastEffect;
     public bool IgnoreOptimalHideCastEffect, SplashCastEffectStartDelay;
 }
+
+/// <summary>
+/// What StateSkill reads of a skill's &lt;basic&gt;: &lt;stateAttr moveType movingInMovekey&gt; (SkillData::Load,
+/// skilloverlapcompare.cpp:860, :870: m_nMoveType, m_bMovingInMovekey) and whether &lt;magicControl enable&gt; is set
+/// (Unk_SkillBlock150::Load @0x140803860, skillleveldata.cpp:653-665: m_block150.m_eEnable != 0).
+/// </summary>
+public readonly record struct SkillStateMove(int MoveType, bool MovingInMovekey, bool MagicControl);
 
 public sealed class SkillLevelRow
 {
@@ -39,6 +55,7 @@ public sealed class SkillTable
 {
     readonly Dictionary<int, List<SkillLevelRow>> skills = new();
     readonly HashSet<int> charging = new();
+    readonly Dictionary<int, SkillStateMove> stateMoves = new();
     public int Count => skills.Count;
 
     public SkillTable(PackSet packs)
@@ -52,6 +69,12 @@ public sealed class SkillTable
                 if (!int.TryParse((string)s.Attribute("id"), out int id)) continue;
                 if (s.Descendants("basic").Elements("combo").FirstOrDefault() is { } combo && Flag(combo, "chargingSkill")) charging.Add(id);
                 else charging.Remove(id);
+                var basic = s.Element("basic");
+                var stateAttr = basic?.Element("stateAttr");
+                var move = new SkillStateMove(Int(stateAttr, "moveType"), stateAttr != null && Flag(stateAttr, "movingInMovekey"),
+                    Int(basic?.Element("magicControl"), "enable") != 0);
+                if (move != default) stateMoves[id] = move;
+                else stateMoves.Remove(id);
                 var levels = new List<SkillLevelRow>();
                 foreach (var l in s.Elements("level"))
                 {
@@ -66,6 +89,11 @@ public sealed class SkillTable
                             IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
                         };
                         if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
+                        mo.MoveType = Int(m, "movetype");
+                        mo.KeyMove = Float(m, "keyMove");
+                        mo.MoveDistance = Float(m, "movedistance");
+                        mo.MoveAngle = Float(m, "moveangle");
+                        if (uint.TryParse((string)m.Attribute("ignoreCollisionGroups"), out uint ignore)) mo.IgnoreCollisionGroups = ignore;
                         foreach (var a in m.Elements("attack")) mo.AttackPoints.Add((string)a.Attribute("point") ?? "");
                         foreach (var d in m.Descendants("damage"))
                             if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);
@@ -103,6 +131,13 @@ public sealed class SkillTable
     /// <summary>&lt;basic&gt;&lt;combo chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0, skillleveldata.cpp:493): SkillData
     /// +0xad, m_blockA4.m_bChargingSkill, which CStateManager::FUN_1417db550 tests for a record in StateSkill.</summary>
     public bool ChargingSkill(int skillId) => charging.Contains(skillId);
+
+    /// <summary>The skill's <see cref="SkillStateMove"/>; all zero without the elements.</summary>
+    public SkillStateMove StateMove(int skillId) => stateMoves.TryGetValue(skillId, out var m) ? m : default;
+
+    static int Int(XElement e, string name) => e != null && int.TryParse((string)e.Attribute(name), out int v) ? v : 0;
+    static float Float(XElement e, string name) =>
+        e != null && float.TryParse((string)e.Attribute(name), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : 0f;
 
     /// <summary>XmlQuery of a bool (tinyxmlhelper.cpp, @0x1408736d0): TiXmlElement::QueryBoolAttribute (tinyxml.cpp:620-645) sets
     /// true when the value starts with "true", "yes" or "1" (StringEqual, case-insensitive prefix); else the flag stays false.</summary>

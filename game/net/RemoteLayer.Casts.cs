@@ -27,7 +27,7 @@ public sealed partial class RemoteLayer
     {
         if (users.TryGetValue(u.ActorId, out var r)) r.Cast.Use(u.CastUid, u.Motion);
         PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed, new System.Numerics.Vector3(u.Position.X, u.Position.Y, u.Position.Z), u.Rotation.Z,
-            u.HasExtra ? u.Extra : 0, u.HasExtra ? u.ExtraText ?? "" : "");
+            new System.Numerics.Vector3(u.Direction.X, u.Direction.Y, u.Direction.Z), u.HasExtra ? u.Extra : 0, u.HasExtra ? u.ExtraText ?? "" : "");
     }
 
     /// <summary>
@@ -49,7 +49,8 @@ public sealed partial class RemoteLayer
             }
         }
         else if (npcs.Info(s.ActorId) == null) return;
-        PlayCast(s.ActorId, s.SkillId, s.Level, s.Motion, s.Speed, new System.Numerics.Vector3(s.Position.X, s.Position.Y, s.Position.Z), s.Rotation.Z);
+        PlayCast(s.ActorId, s.SkillId, s.Level, s.Motion, s.Speed, new System.Numerics.Vector3(s.Position.X, s.Position.Y, s.Position.Z), s.Rotation.Z,
+            new System.Numerics.Vector3(s.Direction.X, s.Direction.Y, s.Direction.Z));
     }
 
     /// <summary>OnSkillCancel @0x141718680 (:3409): the cast of the uid in the skill state leaves it for StateIdle
@@ -69,12 +70,14 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// FUN_141673b40 -> StateSkill::PlayCastStartEffect for a user: a motion with a sequence the body has enters StateSkill
     /// (RemotePc.PlaySkill) at the record's position <paramref name="pos"/> (MS2 axes) and rotation <paramref name="rotZ"/>,
-    /// with the motion index and the level's motion count that decide whether the sequence end leaves the state.
+    /// with the motion index and the level's motion count that decide whether the sequence end leaves the state, and what
+    /// the motion controller reads (<see cref="CastMove"/>: the motion's move data, the skill's stateAttr and magicControl,
+    /// and the packet's direction <paramref name="dir"/>, the record's m_kStart).
     /// STILL-OPEN: PlayCastStartEffect returns at once for a dead owner (stateskill.cpp:1822, PCBase::IsDead); a remote
     /// PC's death is not tracked here, so a dead PC's cast still plays.
     /// </summary>
     void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ,
-        int holdId = 0, string holdNode = "")
+        System.Numerics.Vector3 dir, int holdId = 0, string holdNode = "")
     {
         skillMotions ??= new Ms2.Formats.World.SkillTable(packs);
         var motion = skillMotions.Motion(skillId, level, motionIndex);
@@ -85,8 +88,11 @@ public sealed partial class RemoteLayer
             at = r.Root; yaw = r.Visual.Rotation.Y;
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
+                var st = skillMotions.StateMove(skillId);
+                var move = new CastMove(motion.MoveType, motion.KeyMove, motion.MoveDistance, motion.MoveAngle,
+                    st.MoveType, st.MovingInMovekey, st.MagicControl, dir);
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
-                    motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints);
+                    motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints, move);
                 CastsPlayed++;
             }
         }

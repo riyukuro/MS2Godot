@@ -87,6 +87,9 @@ public class RemotePcStatesTests {
         public float CastKeyTime(string key) => CastKeys.TryGetValue(key, out float t) ? t : -1f;
         public readonly List<float> Seeks = new();
         public void SeekCast(float time) => Seeks.Add(time);
+        public bool Ledge;
+        public readonly List<(Vector3 dir, float dist, float height, float up)> LedgeAsked = new();
+        public bool LedgeAhead(Vector3 dir, float dist, float height, float up) { LedgeAsked.Add((dir, dist, height, up)); return Ledge; }
     }
 
     // the default field camera's Euler rotation (CameraMathTests: hangle 45, vangle 30), its flat view direction (1, 1)/sqrt 2
@@ -553,6 +556,136 @@ public class RemotePcStatesTests {
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
         sm.CastSequenceEnded();
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    static CastMove Linear(float dist, float keyMove = 0, Vector3 dir = default, int skillMoveType = 0, bool moveKey = false, bool magic = false)
+        => new(0, keyMove, dist, 0f, skillMoveType, moveKey, magic, dir);
+
+    [Test] public void LinearMotionMovesItsDistanceBetweenTheMoveKeys() {
+        // CLinearMotionController: nothing before "move0" (the record has no m_fDuration); the key gives it
+        // (move1 - move0) / speed = 0.5 s and the move covers movedistance (300) along the rotation's forward (90: +x)
+        var b = new Body();
+        b.CastKeys["move0"] = 0.2f; b.CastKeys["move1"] = 0.7f;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, new Vector3(40, 0, 0), 90f, move: Linear(300f));
+        Run(sm, 0.2f);
+        Assert.That(b.Position, Is.EqualTo(new Vector3(40, 0, 0)));
+        sm.CastTextKey("move0", 0.2f);
+        Assert.That(sm.CastDuration, Is.EqualTo(0.5f).Within(1e-6f));
+        Run(sm, 1f);
+        Assert.That(b.Position.X, Is.EqualTo(340f).Within(0.01f));
+        Assert.That(MathF.Abs(b.Position.Y), Is.LessThan(0.01f));
+        Assert.That(b.LedgeAsked[0].dist, Is.EqualTo(300f / 30f).Within(1e-3f));   // speed * 100 of a 1/60 s step
+        Assert.That((b.LedgeAsked[0].height, b.LedgeAsked[0].up), Is.EqualTo((750f, 0f)));
+        // the key is armed once per entry (m_bMove0): a second "move0" starts no new move
+        sm.CastTextKey("move0", 0.2f);
+        Run(sm, 1f);
+        Assert.That(b.Position.X, Is.EqualTo(340f).Within(0.01f));
+    }
+
+    [Test] public void LinearMotionWithoutADistanceTakesKeyMoveAlongThePacketDirection() {
+        // CMotionController::vfunc_5: movedistance 0 -> the record's m_kStart direction and the motion's keyMove;
+        // a movingInMovekey skill's duration is 0.05 s longer
+        var b = new Body();
+        b.CastKeys["move2"] = 0.1f; b.CastKeys["move3"] = 0.3f;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, speed: 2f, move: Linear(0f, keyMove: 120f, dir: new Vector3(0, 2, 0), moveKey: true));
+        sm.CastTextKey("move2", 0.1f);
+        Assert.That(sm.CastDuration, Is.EqualTo(0.15f).Within(1e-6f));
+        Run(sm, 0.5f);
+        Assert.That(b.Position.Y, Is.EqualTo(120f).Within(0.01f));
+    }
+
+    [Test] public void ALedgeAheadStopsTheLinearMoveAndClearsItsTime() {
+        // FUN_1416725c0 != 0: the record's m_fPad7c, m_fDuration and m_fDistance are cleared, no move
+        var b = new Body { Ledge = true };
+        b.CastKeys["move0"] = 0.2f; b.CastKeys["move1"] = 0.7f;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 90f, move: Linear(300f));
+        sm.CastTextKey("move0", 0.2f);
+        Run(sm, 0.1f);
+        Assert.That((b.Position, sm.CastDuration, sm.CastElapsed), Is.EqualTo((Vector3.Zero, 0f, 0f)));
+    }
+
+    [Test] public void MagicControlKeepsThePlaceUnlessTheCastHoldsAnActor() {
+        // vfunc_4: m_n10 = 0x3c for magicControl without m_nB0, and FUN_1417edc20 returns at once; with m_nB0 it is 0x3b
+        var b = new Body();
+        b.CastKeys["move0"] = 0.2f; b.CastKeys["move1"] = 0.7f;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 90f, move: Linear(300f, magic: true));
+        sm.CastTextKey("move0", 0.2f);
+        Run(sm, 1f);
+        Assert.That(b.Position, Is.EqualTo(Vector3.Zero));
+        sm.Cast(10200001, false, Vector3.Zero, 90f, 4242, "n", move: Linear(300f, magic: true));
+        sm.CastTextKey("move0", 0.2f);
+        Run(sm, 1f);
+        Assert.That(b.Position.X, Is.EqualTo(300f).Within(0.01f));
+    }
+
+    [Test] public void MoveTypeTwoSkillsWalkByTheInputUnlessAMoveKeySkillRanOut() {
+        // FUN_1417edc20: stateAttr moveType 2 / 3 adds CalcMoveDirectionNoYaw * vfunc_95 * dt (the sync's move input);
+        // movingInMovekey without time left on the record (GetRemainingDuration 0) does not
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, move: new CastMove(2, 0, 0, 0, 2, false, false, default));
+        sm.SkillSync(0f, new Vector2(0, 1), false, false);
+        var dir = sm.MoveDirection();
+        Assert.That(dir, Is.Not.EqualTo(Vector3.Zero));
+        Run(sm, 1f);
+        Assert.That(Vector3.Distance(b.Position, dir * sm.Speed), Is.LessThan(0.5f));
+        b.Position = Vector3.Zero;
+        sm.Cast(10200001, false, Vector3.Zero, 0f, move: new CastMove(2, 0, 0, 0, 2, true, false, default));
+        sm.SkillSync(0f, new Vector2(0, 1), false, false);
+        Run(sm, 1f);
+        Assert.That(b.Position, Is.EqualTo(Vector3.Zero));
+    }
+
+    [Test] public void ArcMotionReachesItsDistanceInFourTenthsOfASecond() {
+        // CArcMotionController: a bezier from the entry place to movedistance along the forward, its control point
+        // halfway and 100 higher, walked by elapsed / 0.4
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 90f, move: new CastMove(1, 0, 200f, 0, 0, false, false, default));
+        Run(sm, 0.2f);
+        Assert.That(b.Position.X, Is.EqualTo(100f).Within(6f));     // halfway along x at t 0.5 (its lift is spent on gravity)
+        Run(sm, 0.4f);
+        Assert.That(b.Position.X, Is.EqualTo(200f).Within(0.5f));
+        Assert.That(MathF.Abs(b.Position.Y), Is.LessThan(0.01f));
+    }
+
+    [Test] public void TheLoopRestartArmsTheMovePhaseThatSpansTheLoop() {
+        // FUN_1417f1a90 after the "loopend" restart: move0 inside the loop is armed again and, spanning the loop exactly,
+        // takes its duration at once
+        var b = new Body();
+        foreach (var (k, t) in new[] { ("loopstart", 0.2f), ("loopend", 0.7f), ("move0", 0.2f), ("move1", 0.7f) }) b.CastKeys[k] = t;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 90f, loopCount: 1, move: Linear(100f));
+        sm.CastTextKey("loopstart", 0.2f);
+        sm.CastTextKey("move0", 0.2f);
+        Run(sm, 0.6f);
+        Assert.That(b.Position.X, Is.EqualTo(100f).Within(0.01f));
+        sm.CastTextKey("loopend", 0.7f);
+        Assert.That((sm.CastDuration, sm.CastElapsed), Is.EqualTo((0.5f, 0f)));
+        Run(sm, 0.6f);
+        Assert.That(b.Position.X, Is.EqualTo(200f).Within(0.01f));
+    }
+
+    [Test] public void ACastOnWaterGivesWayToTheSwim() {
+        // StateSkill::vfunc_3: FUN_141675ed0 (the hit report's entity is water) -> vfunc_7(0x1b)
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, new Vector3(40, 0, 0), 0f);
+        b.WaterFromX = 0f;
+        Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSwim));
     }
 
     [Test] public void RepeatedMotionLoopsBetweenItsKeysThenEnds() {

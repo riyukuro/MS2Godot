@@ -222,9 +222,13 @@ public sealed class RemotePc : IRemotePc
 
     /// <summary>The nearest hit straight down from <paramref name="from"/> on groups 0x389 (CPhysXHelper's default down
     /// groups), <paramref name="len"/> 0 = unlimited: its point, collider and shape.</summary>
-    (Vector3 pos, GodotObject col, int shape)? Ray(Vector3 from, float len)
+    (Vector3 pos, GodotObject col, int shape)? Ray(Vector3 from, float len) => Ray(from, Vector3.Down, len);
+
+    /// <summary>The nearest hit from <paramref name="from"/> along the unit <paramref name="dir"/> on groups 0x389
+    /// (CPhysXHelper::RayCastFromPoint's default groups), <paramref name="len"/> 0 = unlimited.</summary>
+    (Vector3 pos, GodotObject col, int shape)? Ray(Vector3 from, Vector3 dir, float len)
     {
-        var q = rayQ.Set(from, from + Vector3.Down * (len > 0 ? len : MoveConfig.UnlimitedRay), Body.GetRid());
+        var q = rayQ.Set(from, from + dir * (len > 0 ? len : MoveConfig.UnlimitedRay), Body.GetRid());
         var exclude = rayQ.Ex;
         var space = Body.GetWorld3D().DirectSpaceState;
         for (int i = 0; i < 16; i++)
@@ -238,6 +242,31 @@ public sealed class RemotePc : IRemotePc
             q.Exclude = exclude;
         }
         return null;
+    }
+
+    /// <summary>
+    /// PCBase::FUN_1416725c0 (@0x1416725c0, pcbase.cpp:4006-4033) for the skill controllers: no hit along the direction
+    /// nor along its flat part (RayCastFromPoint, groups 0x389), and no ground (GetGroundDistance, a down ray of
+    /// 10 + height + 1) under the end point raised by 10, nor under it moved by (0.1, 0.05): the move ends over a ledge.
+    /// The flat direction is made unit length here (the PhysX ray takes a unit direction); a vertical move casts no flat ray.
+    /// </summary>
+    public bool LedgeAhead(System.Numerics.Vector3 dir, float dist, float height, float up)
+    {
+        float l = dir.Length();
+        if (l <= 1e-6f) return false;
+        dir /= l;
+        if (dist < 0f) { dir = -dir; dist = -dist; }
+        var from = Body.GlobalPosition + Vector3.Up * up;
+        var d = G(dir);
+        if (Ray(from, d, dist) != null) return false;
+        var flat = new Vector3(d.X, 0f, d.Z);
+        float fl = flat.Length();
+        if (fl > 1e-6f && Ray(from, flat / fl, dist) != null) return false;
+        var end = from + d * dist + Vector3.Up * 10f;
+        float len = 10f + height + 1f;
+        if (Ray(end, len) != null) return false;
+        end += G(new System.Numerics.Vector3(0.1f, 0.05f, 0f));
+        return Ray(end, len) == null;
     }
 
     /// <summary>onShapeHit (0x140cfade0): a touched shape's entity goes into the report (another controller's touch goes to
@@ -320,9 +349,9 @@ public sealed class RemotePc : IRemotePc
     /// </summary>
     public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ,
         int holdId = 0, string holdNode = "", int motion = 0, int motionCount = 1, int loopCount = 0,
-        IReadOnlyList<string> attackPoints = null)
+        IReadOnlyList<string> attackPoints = null, CastMove move = default)
     {
-        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode, motion, motionCount, speed, loopCount, attackPoints);
+        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode, motion, motionCount, speed, loopCount, attackPoints, move);
         bool again = name == currentName;
         Anim.Play(name, 0.05, speed);
         if (again) Anim.Seek(0, true);           // the same sequence again (a forced re-entry): Play alone would go on

@@ -83,7 +83,22 @@ public interface IRemotePc
     /// SetOffset: the cast's sequence again from <paramref name="time"/> (s); the next frame throws its text keys from 0
     /// to the new time.</summary>
     void SeekCast(float time);
+    /// <summary>
+    /// PCBase::FUN_1416725c0 (pcbase.cpp): true when a skill move of <paramref name="dist"/> units along
+    /// <paramref name="dir"/> (MS2 axes) from the feet raised by <paramref name="up"/> ends over a ledge: no hit along
+    /// the direction or its flat part, and no ground within 10 + <paramref name="height"/> + 1 under the end point
+    /// (raised by 10) nor under it moved by (0.1, 0.05). False for a zero direction.
+    /// </summary>
+    bool LedgeAhead(Vector3 dir, float dist, float height, float up);
 }
+
+/// <summary>
+/// What the motion controller of a cast reads: the motion's SkillMotionData (movetype m_eMoveType, keyMove m_fAC,
+/// movedistance m_fB8, moveangle), the skill's stateAttr moveType (m_nMoveType) and movingInMovekey, magicControl's
+/// enable != 0, and the record's m_kStart (the SkillUse / SkillSync packet's direction, MS2 axes).
+/// </summary>
+public readonly record struct CastMove(int MotionMoveType, float KeyMove, float MoveDistance, float MoveAngle,
+    int SkillMoveType, bool MovingInMovekey, bool MagicControl, Vector3 Direction);
 
 /// <summary>The held actor's class as StateHold tests it (GetClassID).</summary>
 public enum HoldKind
@@ -211,6 +226,12 @@ public sealed class RemotePcStates
     int castRepeat, castAttack, castLoopCount; bool castCharging, castLoop, castLoopEnded;
     float castLoopStart, castSpeed = 1f; double castLoopMs;
     IReadOnlyList<string> castPoints = System.Array.Empty<string>();
+    // the record's motion data, m_fDuration and m_fElapsed (m_fPad7c), StateSkill m_bMove0 / m_bMove2, m_n10 == 0x3c
+    // (magicControl without a held actor), and the motion controller's m_kDir, m_fSpeed (m) and m_kMove (units)
+    CastMove castMove; float castDuration, castElapsed; bool castMove0, castMove2, castNoMove;
+    Vector3 motionDir, motionMove; float motionSpeed;
+    // CArcMotionController: m_dElapsed, m_kStartPos, m_kCtrlPos, m_kEndPos, m_kMove (the last point), m_kHeading
+    float arcElapsed; Vector3 arcStart, arcCtrl, arcEnd, arcLast, arcHeading;
     /// <summary>StateSkill::m_nRepeat (for tests): the loops left before the "loopend" key stops repeating.</summary>
     public int CastRepeat => castRepeat;
 
@@ -369,9 +390,14 @@ public sealed class RemotePcStates
     /// GetMotionCount, which <see cref="CastSequenceEnded"/> compares.
     /// <paramref name="speed"/> is GetMotionSpeedScale (the record's speed, StateSkill::m_fSpeed); <paramref name="loopCount"/>
     /// and <paramref name="attackPoints"/> are the motion's SkillMotionData::m_nLoopCount and its attacks' m_strPoint.
+    /// <paramref name="move"/> is what the motion controller reads (<see cref="CastMove"/>); the new record
+    /// (CSkillRecord's constructor, skillrecord.cpp:164) starts at m_fDuration = m_fElapsed = 0.
     public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "",
-        int motion = 0, int motionCount = 1, float speed = 1f, int loopCount = 0, IReadOnlyList<string> attackPoints = null)
+        int motion = 0, int motionCount = 1, float speed = 1f, int loopCount = 0, IReadOnlyList<string> attackPoints = null,
+        CastMove move = default)
     {
+        castMove = move;
+        castDuration = castElapsed = 0f;
         castSpeed = speed;
         castLoopCount = loopCount;
         castPoints = attackPoints ?? System.Array.Empty<string>();
@@ -417,7 +443,7 @@ public sealed class RemotePcStates
     /// charging skill's loop once no loop is left (m_bLoop), the point also takes the attacks of that point
     /// (FireAttacksAtPoint, @0x1417f0f10, stateskill.cpp:2272-2292, m_nAttack). Nothing outside StateSkill.
     /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effects (m_mapTagEffects), FireCurrentAttack's
-    /// hits and the weapon sync (FUN_141663be0, FUN_1417f1a90) are not ported.
+    /// hits and the weapon sync (FUN_141663be0) are not ported.
     /// </summary>
     public void CastTextKey(string key, float time)
     {
@@ -444,7 +470,24 @@ public sealed class RemotePcStates
                 if (loopMs - 5u < tick) tick = loopMs - 5u;
                 // m_n9c == 0: SetTargetAnimation(m_nLoopSequenceId, m_fSpeed, true), SetOffset(m_fLoopStart + tick * 0.001f)
                 pc.SeekCast(castLoopStart + tick * 0.001f);
+                ArmMovePhases();
             }
+        }
+        // :958-977: the move phases' keys start the record's move time (m_fElapsed, m_fDuration, m_f80 cleared, then
+        // CalcSkillDuration from the key to its end key)
+        if (castMove0 && key == "move0")
+        {
+            castMove0 = false;
+            castElapsed = castDuration = 0f;
+            CalcSkillDuration(pc.CastKeyTime("move0"), pc.CastKeyTime("move1"));
+            return;
+        }
+        if (castMove2 && key == "move2")
+        {
+            castMove2 = false;
+            castElapsed = castDuration = 0f;
+            CalcSkillDuration(pc.CastKeyTime("move2"), pc.CastKeyTime("move3"));
+            return;
         }
         // GetAttackDataAt(m_nAttack): null past the last attack
         string point = castAttack < castPoints.Count ? castPoints[castAttack] : null;
@@ -464,6 +507,39 @@ public sealed class RemotePcStates
         if (key == "charging_attack" && ChargingSkill && !castLoop && castRepeat == 0) castLoop = true;
     }
 
+    /// <summary>StateSkill::CalcSkillDuration (@0x1417ec210, stateskill.cpp:1259-1267): with both key times, the record's
+    /// m_fDuration is their span at m_fSpeed, 0.05 s longer for a movingInMovekey skill. A missing key here is -1
+    /// (<see cref="IRemotePc.CastKeyTime"/>), the client's -FLT_MAX.</summary>
+    void CalcSkillDuration(float start, float end)
+    {
+        if (start < 0f || end < 0f) return;
+        castDuration = (end - start) / castSpeed;
+        if (castMove.MovingInMovekey) castDuration += 0.05f;
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417f1a90 (@0x1417f1a90, stateskill.cpp:2316-2354), after each restart of the loop: a "move0" or
+    /// "move2" key inside the loop (loopstart..loopend) arms its phase again and clears the record's move time; the phase
+    /// ("move0".."move1" when move0 is armed, else "move2".."move3") that spans exactly the loop takes its duration at once.
+    /// </summary>
+    void ArmMovePhases()
+    {
+        float m0 = pc.CastKeyTime("move0"), m2 = pc.CastKeyTime("move2");
+        if (m0 < 0f && m2 < 0f) return;
+        float ls = pc.CastKeyTime("loopstart"), le = pc.CastKeyTime("loopend");
+        if (ls < 0f || le < 0f) return;
+        bool any = false;
+        if (m0 >= 0f && ls <= m0 && m0 <= le) { any = true; castMove0 = true; }
+        if (m2 >= 0f && ls <= m2 && m2 <= le) { any = true; castMove2 = true; }
+        if (!any) return;
+        castDuration = castElapsed = 0f;
+        float start = castMove0 ? m0 : m2, end = pc.CastKeyTime(castMove0 ? "move1" : "move3");
+        if (NearlyEqual(start, ls) && NearlyEqual(end, le)) CalcSkillDuration(start, end);
+    }
+
+    /// <summary>IsNearlyEqual (@0x14028d470, commonutil.cpp): |a - b| &lt; 1e-6.</summary>
+    static bool NearlyEqual(float a, float b) => MathF.Abs(a - b) < 1e-6f;
+
     /// <summary>ClampedElapsedAfter16ms (stateskill.cpp): the time <paramref name="now"/> is past <paramref name="start"/>,
     /// less 16 ms and at most 50 ms; 0 within 16 ms.</summary>
     static uint ClampedElapsedAfter16ms(uint now, uint start)
@@ -479,7 +555,7 @@ public sealed class RemotePcStates
     /// charging after a "loopend" (m_fChargeTime != 0) turns the PC to the rotation and plays the sequence again from the
     /// loop start; not charging, <paramref name="start"/> outside the loop plays it from its "charging_attack" key and
     /// ends the loop (m_bLoop, m_nRepeat = 0, m_fLoopStart at that key).
-    /// STILL-OPEN: the weapon sync (FUN_1417f1a90, FUN_141663be0) is not ported.
+    /// STILL-OPEN: the weapon sync (FUN_141663be0) is not ported.
     /// </summary>
     public void SkillSync(float rotZ, Vector2 move, bool charge, bool start)
     {
@@ -496,6 +572,7 @@ public sealed class RemotePcStates
             castLoopEnded = false;
             castCharging = false;
             pc.SeekCast(castLoopStart);
+            ArmMovePhases();
         }
         else if (!castLoop && start)
         {
@@ -692,6 +769,13 @@ public sealed class RemotePcStates
                 pc.Position = castPos;
                 TargetYaw = castRotZ;
                 pc.RotationZ = castRotZ;
+                // vfunc_4 (stateskill.cpp): m_bMove0 = m_bMove2 = true; the controller by the motion's m_eMoveType and its
+                // vfunc_2 (CMotionController::vfunc_2 clears m_kDir and m_fSpeed); m_n10 = 0x3b with a held actor (m_nB0),
+                // else 0x3c when magicControl is enabled
+                castMove0 = castMove2 = true;
+                motionDir = motionMove = Vector3.Zero; motionSpeed = 0f;
+                castNoMove = castHoldId == 0 && castMove.MagicControl;
+                if (castMove.MotionMoveType == 1) ArcStart();
                 break;
             case StateHold:
                 HoldEnter();
@@ -812,16 +896,169 @@ public sealed class RemotePcStates
                 HoldMove();
                 break;
             case StateSkill:
-                // STILL-OPEN: StateSkill::vfunc_3's motion controller (FUN_1417edc20, CLinearMotionController and the
-                // others, stateskill.cpp:605-631); the PC keeps its place under vfunc_68 with a zero move
-                // STILL-OPEN: vfunc_3's exit when FUN_141675ed0 reports the PC stopped (stateskill.cpp:610-614: SendSkillMode4,
-                // vfunc_7(0x1b)) and the npc-node follow of FUN_1417efbe0 (feature 0xae, m_nB0) are not ported.
-                MoveBy(Vector3.Zero, dt);
+                // StateSkill::vfunc_3 (@0x1417e6820, stateskill.cpp:605-631): on water (FUN_141675ed0) the cast gives way
+                // to StateSwim (vfunc_7(0x1b)); else FUN_1417edc20 moves the PC
+                // STILL-OPEN: SendSkillMode4 before the swim (a remote PC sends nothing here), and the npc-node follow
+                // of FUN_1417efbe0 (feature 0xae, m_nB0) that skips FUN_1417edc20, are not ported.
+                if (pc.OnWater) { ChangeState(StateSwim); break; }
+                SkillMotion(dt);
                 castLoopMs += dt * 1000.0;
                 // FUN_1417ee120's tail: 5 s after an earlier motion's sequence end the state ends
                 if (castEndAge >= 0f && (castEndAge += dt) > 5f) EndSkill();
                 break;
         }
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417edc20 (@0x1417edc20, stateskill.cpp:2844-2878): nothing while m_n10 is 0x3c (magicControl
+    /// without a held actor); else the motion controller's step (vfunc_5) and its displacement through vfunc_68, then for
+    /// a skill of stateAttr moveType 2 or 3 the move input at the PC's speed through vfunc_68 again, unless a
+    /// movingInMovekey skill's record has no time left. The controller's displacement is in meters (PhysX units); here
+    /// in units (x100), as the walk moves.
+    /// STILL-OPEN: the hit pause (feature 0xca: m_f80 grows and nothing moves), the motion's ignoreCollisionGroups and
+    /// vfunc_6 flags for vfunc_68, and the lift test of the linear and move controllers are not ported.
+    /// </summary>
+    void SkillMotion(float dt)
+    {
+        if (castNoMove) return;
+        bool input = !(castMove.MovingInMovekey && NearlyEqual(RemainingDuration, 0f));
+        MotionStep(dt);
+        MoveBy(motionMove, dt);
+        if ((castMove.SkillMoveType == 2 || castMove.SkillMoveType == 3) && input)
+            MoveBy(MoveDirection() * (EffectiveSpeed * dt), dt);
+    }
+
+    /// <summary>CSkillRecord::GetRemainingDuration: 0 without a duration or past it, else the time left.</summary>
+    float RemainingDuration => NearlyEqual(castDuration, 0f) || castDuration <= castElapsed ? 0f : castDuration - castElapsed;
+
+    /// <summary>The cast's move time (m_fDuration, m_fElapsed) and the motion's displacement (for tests).</summary>
+    public float CastDuration => castDuration;
+    public float CastElapsed => castElapsed;
+
+    /// <summary>
+    /// CSkillRecord::FUN_141759b60 / FUN_141759d20 (skillrecord.cpp:274-312): while the record has move time left, the
+    /// step's share of <paramref name="rate"/> (units, x0.01 to meters) over m_fDuration; the step is added to m_fElapsed.
+    /// </summary>
+    float RecordStep(float dt, float rate)
+    {
+        if (!(castDuration > 0f && castElapsed < castDuration)) return 0f;
+        float step = dt;
+        if (castElapsed + step > castDuration) step = castDuration - castElapsed;
+        castElapsed += step;
+        if (castElapsed > castDuration) castElapsed = castDuration;
+        return rate * 0.01f * (step / castDuration);
+    }
+
+    /// <summary>
+    /// The controller by the motion's movetype (StateSkill::vfunc_4: 0 CLinearMotionController, 1 CArcMotionController,
+    /// 2 CBlinkMotionController, 3 CMoveMotionController, any other a blink) and its vfunc_5 (motioncontroller.cpp):
+    /// <see cref="motionMove"/> is what its vfunc_3 hands vfunc_68, in units.
+    /// </summary>
+    void MotionStep(float dt)
+    {
+        switch (castMove.MotionMoveType)
+        {
+            case 0: LinearStep(dt, false); break;
+            case 1: ArcStep(dt); break;
+            case 3: LinearStep(dt, true); break;
+            default: MotionBase(dt); break;     // CBlinkMotionController::vfunc_5: the base only, m_kMove stays zero
+        }
+    }
+
+    /// <summary>
+    /// CMotionController::vfunc_5 (@0x141488080): m_fSpeed is the record's step (keyMove, or movedistance when set); the
+    /// direction is the record's m_kStart without a movedistance, else the record rotation's forward
+    /// (GameObject::RotationToDirection) turned by moveangle about Z and, for a positive angle, tilted by it about
+    /// forward x Z.
+    /// STILL-OPEN: IsDashModel's equipment speed (FUN_1411e0f50) and the FUN_141489940 == 10 euler base are not ported.
+    /// </summary>
+    void MotionBase(float dt)
+    {
+        motionSpeed = RecordStep(dt, NearlyEqual(castMove.MoveDistance, 0f) ? castMove.KeyMove : castMove.MoveDistance);
+        motionDir = Unit(NearlyEqual(castMove.MoveDistance, 0f) ? castMove.Direction : TiltedForward());
+    }
+
+    /// <summary>The tilted base direction of CMotionController::vfunc_5 and CArcMotionController::vfunc_2: efd's
+    /// MakeZRotation and MakeRotation (row-major, M * v) on (sin z, -cos z, 0).</summary>
+    Vector3 TiltedForward()
+    {
+        const float r = 3.1415927f / 180f;
+        float z = castRotZ * r, a = castMove.MoveAngle * r;
+        var b = new Vector3(MathF.Sin(z), -MathF.Cos(z), 0f);
+        float cs = MathF.Cos(a), sn = MathF.Sin(a);
+        var d = new Vector3(cs * b.X + sn * b.Y, -sn * b.X + cs * b.Y, b.Z);
+        if (a > 0f) d = Rotate(-a, Unit(Vector3.Cross(d, Vector3.UnitZ)), d);
+        return d;
+    }
+
+    /// <summary>efd::Matrix3::MakeRotation(<paramref name="angle"/>, axis) times <paramref name="v"/>.</summary>
+    static Vector3 Rotate(float angle, Vector3 axis, Vector3 v)
+    {
+        float cs = MathF.Cos(angle), sn = MathF.Sin(angle), om = 1f - cs, x = axis.X, y = axis.Y, z = axis.Z;
+        return new Vector3(
+            (x * x * om + cs) * v.X + (x * y * om + z * sn) * v.Y + (x * z * om - y * sn) * v.Z,
+            (x * y * om - z * sn) * v.X + (y * y * om + cs) * v.Y + (y * z * om + x * sn) * v.Z,
+            (x * z * om + y * sn) * v.X + (y * z * om - x * sn) * v.Y + (z * z * om + cs) * v.Z);
+    }
+
+    /// <summary>
+    /// CLinearMotionController::vfunc_5 (@0x141488e80) and, with <paramref name="input"/>, CMoveMotionController::vfunc_5
+    /// (@0x141489250, along the move input instead): no move while the PC is in the air (vfunc_99: 100 ms, the move
+    /// controller 0) or jumping, or without a speed or direction; a step that would end over a ledge
+    /// (FUN_1416725c0(dir, speed * 100, 750, 0)) clears the record's move time instead.
+    /// </summary>
+    void LinearStep(float dt, bool input)
+    {
+        MotionBase(dt);
+        motionMove = Vector3.Zero;
+        if (pc.InAirFor(input ? 0 : 100) || pc.Jumping) return;
+        if (NearlyEqual(motionSpeed, 0f)) return;
+        if (input) motionDir = MoveDirection();
+        if (motionDir == Vector3.Zero) return;
+        float dist = motionSpeed * 100f;
+        if (!pc.LedgeAhead(motionDir, dist, 750f, 0f)) motionMove = motionDir * dist;
+        else castElapsed = castDuration = 0f;
+    }
+
+    /// <summary>
+    /// CArcMotionController::vfunc_2 (@0x141488520) at the state's entry: a 0.4 s quadratic bezier from the PC's place
+    /// to movedistance along the tilted forward, its control point halfway and 100 higher.
+    /// </summary>
+    void ArcStart()
+    {
+        arcElapsed = 0f;
+        arcStart = arcLast = pc.Position;
+        arcEnd = arcStart + TiltedForward() * castMove.MoveDistance;
+        arcCtrl = arcStart * 0.5f + arcEnd * 0.5f;
+        arcCtrl.Z += 100f;
+        arcHeading = Vector3.Zero;
+    }
+
+    /// <summary>
+    /// CArcMotionController::vfunc_5 (@0x141488ba0): the base step, then the record's elapsed again (FUN_141759d20, its
+    /// speed unused here), and the move from the last bezier point to the one at elapsed / 0.4 (vfunc_3: m_kHeading,
+    /// in meters there).
+    /// </summary>
+    void ArcStep(float dt)
+    {
+        MotionBase(dt);
+        arcElapsed += dt;
+        RecordStep(dt, 0f);
+        float t = Math.Clamp(arcElapsed / 0.4f, 0f, 1f);
+        var p = BezierPoint(arcStart, arcCtrl, arcEnd, t);
+        arcHeading = p - arcLast;
+        motionDir = Unit(arcHeading);
+        arcLast = p;
+        motionMove = arcHeading;
+    }
+
+    /// <summary>GetBezierPoint (util.cpp:1191): a straight line when the control point is an end, else the quadratic
+    /// bezier.</summary>
+    static Vector3 BezierPoint(Vector3 a, Vector3 c, Vector3 b, float t)
+    {
+        if (a == c || b == c) return a + (b - a) * t;
+        float u = 1f - t;
+        return a * (u * u) + c * (2f * t * u) + b * (t * t);
     }
 
     void MoveBy(Vector3 move, float dt)

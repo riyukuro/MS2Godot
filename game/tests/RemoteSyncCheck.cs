@@ -16,9 +16,10 @@ namespace Ms2Godot.Tests;
 /// - A jump record jumps it; it lands by itself with one more "land" on stone.
 /// - Spawned above the water, a remote PC lands with "land" on water and goes to the water idle (StateLand::vfunc_4).
 /// - A cast on the water PC (RemotePc.PlaySkill with a one-shot skill sequence, as RemoteLayer.Casts.cs builds it) enters
-///   StateSkill (PlayCastStartEffect's vfunc_59(0x10, .., 1)) and plays the cast sequence; a walk record without a skill id
-///   is dropped there (FUN_1417db550); at the sequence's end (EndOfSequence -> FUN_1417f0070) it goes to the water idle,
-///   whose sequence plays again.
+///   StateSkill (PlayCastStartEffect's vfunc_59(0x10, .., 1)) and leaves it on its first frame for StateSwim
+///   (StateSkill::vfunc_3: FUN_141675ed0, the hit report's entity is water).
+/// - The same cast on the stone PC after its jump plays the cast sequence; a walk record without a skill id is dropped
+///   there (FUN_1417db550); at the sequence's end (EndOfSequence -> FUN_1417f0070) it goes to StateIdle.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemoteSyncCheck : Node3D
@@ -59,6 +60,7 @@ public partial class RemoteSyncCheck : Node3D
         wet = Make("Wet", new Vector3(3000, 25, 0), wetFx);
         cast = "cast_" + CastSeq;
         wet.Anim.GetAnimationLibrary("").AddAnimation(cast, castAnim);
+        if (!stone.Anim.GetAnimationLibrary("").HasAnimation(cast)) stone.Anim.GetAnimationLibrary("").AddAnimation(cast, castAnim);
         var run = stone.Anims.Name(ActionAnims.Act.Run);
         var keys = run != null && stone.Anims.Kf.TryGetValue(run, out var kf) ? string.Join(",", kf.TextKeys.Select(k => $"{k.time:0.###}:{k.text}")) : "-";
         GD.Print($"remote sync: run sequence '{run}' text keys [{keys}]");
@@ -101,18 +103,13 @@ public partial class RemoteSyncCheck : Node3D
                 if (wet.States.Cur != RemotePcStates.StateIdle || wet.States.Sub != 7) fails.Add($"water: state {wet.States.Cur} sub {wet.States.Sub}");
                 if (wet.Anim.CurrentAnimation != wet.Anims.Name(ActionAnims.Act.WaterIdle)) fails.Add($"water idle sequence {wet.Anim.CurrentAnimation}");
                 wet.PlaySkill(cast, 1f, 10200001, false, wet.Position, 0f);
-                castStart = frame;
-                wet.States.StateChanged = s => { if (s != RemotePcStates.StateSkill && castEnd == 0) castEnd = frame; };
                 walkStart = stone.Body.GlobalPosition;
                 stoneFx.Clear();
                 stone.States.Push(Rec(2, 0x18, stone, new System.Numerics.Vector2(0, 1)));
                 break;
             case 62:
-                wet.States.Push(Rec(2, 0x18, wet, new System.Numerics.Vector2(0, 1)));
-                break;
-            case 70:
-                if (wet.States.Cur != RemotePcStates.StateSkill) fails.Add($"cast state {wet.States.Cur}");
-                if (wet.Anim.CurrentAnimation != cast) fails.Add($"cast sequence {wet.Anim.CurrentAnimation}, not {cast}");
+                if (wet.States.Cur != RemotePcStates.StateSwim) fails.Add($"water cast: state {wet.States.Cur}, not the swim");
+                GD.Print($"remote sync: cast on water left for state {wet.States.Cur}");
                 break;
             case 120:
             {
@@ -132,16 +129,26 @@ public partial class RemoteSyncCheck : Node3D
             {
                 if (jumpStates != 64) fails.Add($"jump states {jumpStates}");
                 if (!stoneFx.SequenceEqual(new[] { ("land", "stone") })) fails.Add($"jump landing {Fx(stoneFx)}");
+                stone.PlaySkill(cast, 1f, 10200001, false, stone.Position, 0f);
+                castStart = frame;
+                stone.States.StateChanged = s => { if (s != RemotePcStates.StateSkill && castEnd == 0) castEnd = frame; };
                 break;
             }
+            case 182:
+                stone.States.Push(Rec(2, 0x18, stone, new System.Numerics.Vector2(0, 1)));
+                break;
+            case 190:
+                if (stone.States.Cur != RemotePcStates.StateSkill) fails.Add($"cast state {stone.States.Cur}");
+                if (stone.Anim.CurrentAnimation != cast) fails.Add($"cast sequence {stone.Anim.CurrentAnimation}, not {cast}");
+                break;
             case 300:
             {
-                float len = (float)wet.Anim.GetAnimation(cast).Length;
+                float len = (float)stone.Anim.GetAnimation(cast).Length;
                 if (castEnd == 0) fails.Add($"cast never ended (sequence {len:0.00} s)");
                 else if (Mathf.Abs((castEnd - castStart) * Dt - len) > 0.1f) fails.Add($"cast ended after {(castEnd - castStart) * Dt:0.00} s, sequence {len:0.00} s");
-                if (wet.States.Cur != RemotePcStates.StateIdle || wet.States.Sub != 7) fails.Add($"after the cast: state {wet.States.Cur} sub {wet.States.Sub}");
-                if (wet.Anim.CurrentAnimation != wet.Anims.Name(ActionAnims.Act.WaterIdle)) fails.Add($"after the cast: sequence {wet.Anim.CurrentAnimation}");
-                GD.Print($"remote sync: cast {cast} ({len:0.00} s) ended after {(castEnd - castStart) * Dt:0.00} s in state {wet.States.Cur} sub {wet.States.Sub}");
+                if (stone.States.Cur != RemotePcStates.StateIdle) fails.Add($"after the cast: state {stone.States.Cur} sub {stone.States.Sub}");
+                if (stone.Anim.CurrentAnimation == cast) fails.Add($"after the cast: still the cast sequence");
+                GD.Print($"remote sync: cast {cast} ({len:0.00} s) ended after {(castEnd - castStart) * Dt:0.00} s in state {stone.States.Cur} sub {stone.States.Sub}, sequence {stone.Anim.CurrentAnimation}");
                 bool ok = fails.Count == 0;
                 GD.Print($"remote sync: {(ok ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
                 GetTree().Quit(ok ? 0 : 1);
