@@ -1064,8 +1064,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
 
     /// <summary>
     /// FUN_14140d3e0 (invenslot.cpp:1957) with the hint flag. Its first branches follow the head of DAT_143af2258, the open
-    /// dialogs that register there (UIDialog m_164: the shop, trade, item break, item lock and the like). Of them only the
-    /// trade dialog (0x4e83) is ported: mode 1 when the item can be traded (FUN_140633e40), else 0 for the hint and 1 for
+    /// dialogs that register there (UIDialog m_164: the shop, trade, item break, item lock and the like). Ported: the item
+    /// lock dialog (0x4f08: 10 when CanBeItemLocked, else 0 for the hint and 10 for the click), the shop and the bank (as
+    /// the trade dialog below), and the trade dialog (0x4e83): mode 1 when the item can be traded (FUN_140633e40), else 0 for the hint and 1 for
     /// the click (TryAddToTrade then says why). With no ported dialog at the head only the last part runs: 15 for a UGC
     /// item whose look state is 2 (CItem::FUN_140525fc0, CUgcItemLook::FUN_140893520), 6 an equipment item
     /// (CItemData::FUN_14053cbc0), 7 a quick slot item (FUN_14053e460), 12 a gem, else 0.
@@ -1080,7 +1081,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return ItemTradeRules.CanSellToShop(item, GemData, Now) ? 2 : hint ? 0 : 2;
         if (head == StoreDialogController.UiId)
             return BankAllowed(item) ? 3 : hint ? 0 : 3;
-        if (DialogHead() == ItemLockDialogController.UiId) return 10;
+        if (head == ItemLockDialogController.UiId)       // 0x4f08: CanBeItemLocked ? 10 : hint ? 0 : 10
+            return ItemLockDialogController.CanBeItemLocked(item.Record, item.Data) ? 10 : hint ? 0 : 10;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;

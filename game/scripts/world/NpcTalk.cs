@@ -116,8 +116,9 @@ public sealed partial class NpcTalk : Node
         live.Quests.ProgressUpdated += OnLiveQuestProgress;
     }
 
-    /// <summary>A talk ui's close sent NpcTalk 0 (SendNpcTalkMode0): the talk is over (m_nTalking = 0).</summary>
-    void OnTalkEndedByUi() { liveTalking = null; liveRequested = null; }
+    /// <summary>A talk ui's close sent NpcTalk 0 (SendNpcTalkMode0): the talk is over (m_nTalking = 0) and ResetTalk hides the
+    /// talk window.</summary>
+    void OnTalkEndedByUi() { liveTalking = null; liveRequested = null; Teardown(); }
 
     public override void _ExitTree()
     {
