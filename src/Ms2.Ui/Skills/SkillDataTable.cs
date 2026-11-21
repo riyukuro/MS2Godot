@@ -235,6 +235,9 @@ public sealed class SkillData
     /// </summary>
     public uint ComboInputSkill, ComboOutputSkill;
     public bool ComboSkill, ChargingSkill;
+    /// <summary>&lt;combo disableChargingAttackSkipFrame&gt; (skillleveldata.cpp:502): a released charging skill does not skip
+    /// to its charging_attack key (StateSkill::vfunc_8, stateskill.cpp:705).</summary>
+    public bool DisableChargingAttackSkipFrame;
     /// <summary>Unk_SkillBlockA4::FUN_140803040 @0x140803040 (skillleveldata.cpp:524): the output skill, 0 without an input skill.</summary>
     public uint ComboSwapSkill => ComboInputSkill == 0 ? 0 : ComboOutputSkill;
     public uint AutoTargetingType, UseDefaultSkillId;
@@ -278,6 +281,7 @@ public sealed class SkillData
             s.ComboOutputSkill = Xml.UInt(combo, "outputSkill");
             s.ComboSkill = Xml.Bool(combo, "comboSkill");
             s.ChargingSkill = Xml.Bool(combo, "chargingSkill");
+            s.DisableChargingAttackSkipFrame = Xml.Bool(combo, "disableChargingAttackSkipFrame");
         }
         if (basic.Element("stateAttr") is { } state)
         {

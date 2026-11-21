@@ -11,8 +11,9 @@ public sealed class SkillLoop
     public bool Active;
     /// <summary>m_bCharging: a key of the skill is held inside the loop; the next loopend plays the loop again.</summary>
     public bool Charging;
-    /// <summary>m_bLoop: sent with the mode 2 sync. Only the charging skill paths and EndOfSequence set it.
-    /// STILL-OPEN: the charging skill's charging_attack / charging_combo paths (stateskill.cpp:698-719, :947-957).</summary>
+    /// <summary>m_bLoop: sent with the mode 2 sync. Only the charging skill paths (<see cref="Release"/>,
+    /// <see cref="OnChargingAttack"/>, <see cref="OnAttackPoint"/>, <see cref="OnChargingCombo"/>) and EndOfSequence set it.
+    /// STILL-OPEN: EndOfSequence's set (stateskill.cpp:1061-1068) is not ported.</summary>
     public bool Loop;
     /// <summary>m_nRepeat: the rounds left that play without a held key (<see cref="StartSequence"/>).</summary>
     public int Repeat;
@@ -110,6 +111,62 @@ public sealed class SkillLoop
         ChargeTick = (uint)ClampedElapsedAfter16ms(now - LoopStartTick, LoopMs);
         if (LoopMs - 5u < ChargeTick) ChargeTick = LoopMs - 5u;
         return true;
+    }
+
+    /// <summary>
+    /// StateSkill::vfunc_8 @0x1417e6990 (stateskill.cpp:698-722), after the hold check: a charging skill (m_b111) outside
+    /// m_bLoop whose cast key (the record's m_nA4, <paramref name="keyHeld"/>) is up is released: m_bCharging off, no repeats
+    /// left; unless the skill sets disableChargingAttackSkipFrame the sequence skips to its "charging_attack" key
+    /// (<paramref name="chargingAttackKey"/>, FUN_141b6fe90 at speed 1: the sequence's length without the key), m_bLoop on, out
+    /// of the loop (m_b117) and the loop's start that key. True when released: the frame returns before SendChargeState (and
+    /// with disableChargingAttackSkipFrame every later frame too, m_bLoop staying off). <paramref name="seek"/>: the sequence
+    /// skips. STILL-OPEN: m_b112 (only FUN_1417ef4a0 reads it) is not kept.
+    /// </summary>
+    public bool Release(bool chargingSkill, bool keyHeld, bool disableSkipFrame, float chargingAttackKey, out bool seek)
+    {
+        seek = false;
+        if (!chargingSkill || Loop || keyHeld) return false;
+        Charging = false;
+        Repeat = 0;
+        if (disableSkipFrame) return true;
+        Loop = true;
+        InLoop = false;
+        LoopStart = chargingAttackKey;
+        seek = true;
+        return true;
+    }
+
+    /// <summary>TextKeyEvent's charging skill test (stateskill.cpp:947, :982, :992): m_b111, outside m_bLoop, no repeat left.</summary>
+    bool ChargeOpen(bool chargingSkill) => chargingSkill && !Loop && Repeat == 0;
+
+    /// <summary>TextKeyEvent "charging_attack" (stateskill.cpp:990-997): a charging skill's attack starts, m_bLoop on, out of the
+    /// loop.</summary>
+    public void OnChargingAttack(bool chargingSkill)
+    {
+        if (!ChargeOpen(chargingSkill)) return;
+        Loop = true;
+        InLoop = false;
+    }
+
+    /// <summary>TextKeyEvent at the current attack's point (stateskill.cpp:980-987), before FireAttacksAtPoint: a charging
+    /// skill's m_bLoop on.</summary>
+    public void OnAttackPoint(bool chargingSkill)
+    {
+        if (ChargeOpen(chargingSkill)) Loop = true;
+    }
+
+    /// <summary>
+    /// TextKeyEvent "charging_combo" (stateskill.cpp:947-957) with the cast key still held: the charge tick the time past
+    /// m_nChargingComboTick (<paramref name="comboTick"/>: the state's start tick plus the key's time at the state's speed in ms,
+    /// :769; <see cref="ClampedElapsedAfter16ms"/>), m_bLoop on, out of the loop.
+    /// STILL-OPEN: FUN_1417ef4a0, the chain to the next queued skill, and m_b112.
+    /// </summary>
+    public void OnChargingCombo(bool chargingSkill, bool keyHeld, uint now, uint comboTick)
+    {
+        if (!ChargeOpen(chargingSkill) || !keyHeld) return;
+        ChargeTick = (uint)ClampedElapsedAfter16ms(now, comboTick);
+        Loop = true;
+        InLoop = false;
     }
 
     /// <summary>EndOfSequence @0x1417e9130 (stateskill.cpp:1056-1060): the sequence's end does not end the state while

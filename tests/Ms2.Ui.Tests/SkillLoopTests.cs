@@ -95,6 +95,90 @@ public class SkillLoopTests
     }
 
     [Test]
+    public void AReleasedChargingSkillSkipsToItsChargingAttackAndSkipsTheSyncThatFrame()
+    {
+        // vfunc_8 (stateskill.cpp:698-722): m_b111 && !m_bLoop && !IsKeyDown(m_nA4) -> m_bCharging off, m_nRepeat 0; without
+        // disableChargingAttackSkipFrame m_bLoop on, m_b117 off, m_fLoopStart the charging_attack key; return (no SendChargeState)
+        var l = new SkillLoop();
+        l.StartSequence(3);
+        l.Charging = true;
+        l.InLoop = true;
+        Assert.That(l.Release(true, false, false, 0.75f, out bool seek), Is.True);
+        Assert.That((seek, l.Charging, l.Repeat, l.Loop, l.InLoop, l.LoopStart), Is.EqualTo((true, false, 0, true, false, 0.75f)));
+        // once m_bLoop is on the branch is passed and the sync runs
+        Assert.That((l.Release(true, false, false, 0.75f, out seek), seek), Is.EqualTo((false, false)));
+    }
+
+    [Test]
+    public void AHeldKeyOrANonChargingSkillIsNotReleased()
+    {
+        // vfunc_8 :698-701: only m_b111 with the cast key up
+        var l = new SkillLoop();
+        l.StartSequence(2);
+        Assert.That(l.Release(true, true, false, 0.75f, out _), Is.False);
+        Assert.That(l.Release(false, false, false, 0.75f, out _), Is.False);
+        Assert.That((l.Repeat, l.Loop), Is.EqualTo((2, false)));
+    }
+
+    [Test]
+    public void WithDisableChargingAttackSkipFrameTheReleaseOnlyStopsTheChargeAndEveryFrameSkipsTheSync()
+    {
+        // vfunc_8 :705: the skip is under !m_bDisableChargingAttackSkipFrame; the return is not, and m_bLoop stays off
+        var l = new SkillLoop();
+        l.StartSequence(2);
+        l.Charging = true;
+        Assert.That((l.Release(true, false, true, 0.75f, out bool seek), seek, l.Charging, l.Repeat, l.Loop),
+            Is.EqualTo((true, false, false, 0, false)));
+        Assert.That(l.Release(true, false, true, 0.75f, out _), Is.True);
+    }
+
+    [Test]
+    public void TheChargingTextKeysTurnTheLoopOnOnlyWithNoRepeatLeft()
+    {
+        // TextKeyEvent :980-987 (point: m_bLoop on), :990-997 (charging_attack: m_bLoop on, m_b117 off), both under
+        // m_b111 && !m_bLoop && m_nRepeat == 0
+        var l = new SkillLoop();
+        l.StartSequence(1);
+        l.InLoop = true;
+        l.OnAttackPoint(true);
+        l.OnChargingAttack(true);
+        Assert.That((l.Loop, l.InLoop), Is.EqualTo((false, true)));
+        l.StartSequence(0);
+        l.OnChargingAttack(false);
+        l.OnAttackPoint(false);
+        Assert.That(l.Loop, Is.False);
+        l.OnAttackPoint(true);
+        Assert.That((l.Loop, l.InLoop), Is.EqualTo((true, true)));
+        var a = new SkillLoop();
+        a.InLoop = true;
+        a.OnChargingAttack(true);
+        Assert.That((a.Loop, a.InLoop), Is.EqualTo((true, false)));
+    }
+
+    [Test]
+    public void TheChargingComboKeyWithTheKeyHeldTakesTheLateTimeAndTurnsTheLoopOn()
+    {
+        // TextKeyEvent :947-957: IsKeyDown(m_nA4) -> m_nChargeTick = ClampedElapsedAfter16ms(now, m_nChargingComboTick),
+        // m_bLoop on, m_b117 off
+        var l = new SkillLoop();
+        l.InLoop = true;
+        l.OnChargingCombo(true, false, 1100, 1000);
+        Assert.That((l.Loop, l.ChargeTick), Is.EqualTo((false, 0u)));
+        l.OnChargingCombo(true, true, 1040, 1000);
+        Assert.That((l.Loop, l.InLoop, l.ChargeTick), Is.EqualTo((true, false, 24u)));
+    }
+
+    [Test]
+    public void TheComboElementLoadsDisableChargingAttackSkipFrame()
+    {
+        // Unk_SkillBlockA4::Load (skillleveldata.cpp:502)
+        var e = System.Xml.Linq.XElement.Parse(
+            "<skill id=\"10200001\"><basic><combo chargingSkill=\"1\" disableChargingAttackSkipFrame=\"1\"/></basic></skill>");
+        var s = SkillData.Load(e, (_, _, _) => new System.Collections.Generic.List<System.Xml.Linq.XElement>());
+        Assert.That((s.ChargingSkill, s.DisableChargingAttackSkipFrame), Is.EqualTo((true, true)));
+    }
+
+    [Test]
     public void TheLoopAllocatesNothing()
     {
         var l = new SkillLoop();
@@ -107,6 +191,11 @@ public class SkillLoopTests
                 l.OnLoopStart(0.5f, (uint)i);
                 if (l.HoldCheckRuns(s)) l.Hold(true, true, false, true);
                 l.OnLoopEnd(1f, 1f, 1f, (uint)i + 20);
+                l.OnChargingCombo(true, true, (uint)i, 0);
+                l.OnAttackPoint(true);
+                l.OnChargingAttack(true);
+                l.Release(true, false, false, 0.75f, out _);
+                l.Loop = false;
             }
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }

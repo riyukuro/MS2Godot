@@ -21,6 +21,9 @@ public partial class HudScene
     // the sequence's "loopstart" / "loopend" times (FUN_141b6fe90 at speed 1), -1 without; the sequence time the text keys
     // were read up to
     float ownLoopStartKey = -1, ownLoopEndKey = -1;
+    // a charging skill's "charging_attack" / "charging_combo" times (-1 without) and m_nChargingComboTick (stateskill.cpp:769)
+    float ownChargingAttackKey = -1, ownChargingComboKey = -1;
+    uint ownChargingComboTick;
     double ownKeyPos = -1;
     SlotWorld ownHoldWorld;                        // the hold check's cast test world, taken once per state
     static readonly SerialIds serialIds = new();   // GenerateSerialId's function static
@@ -67,7 +70,7 @@ public partial class HudScene
         castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
         if (id == 0) id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
         if (id == 0) return null;
-        CastOwn(castKeyWorld, (uint)id, castKeyHeld);
+        CastOwn(castKeyWorld, (uint)id, castKeyHeld, dik);
         return true;
     }
 
@@ -84,7 +87,7 @@ public partial class HudScene
         var w = QuickSlotWorld();
         if (!QuickSlotEdit.UseSkill(w, skillId)) return;
         var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
-        CastOwn(w, skillId, held);
+        CastOwn(w, skillId, held, 0);
     }
     SlotWorld castKeyWorld;
     WeaponAction castKeyHeld;
@@ -100,8 +103,10 @@ public partial class HudScene
     /// IsUnrideOnUse ride-off (:2447-2470); the item kind and quick slot item checks with the binding confirm (:1167-1193);
     /// NotifyUseSKill and the DPS meter (:1206, :1210); a level with a sequence while riding, and a level without one
     /// (the ridee FUN_141706650 / FUN_141524a80 and StateSkill::FireFirstAttack, :1219-1226); FUN_141767990 (:1228).
+    /// <paramref name="key"/>: the DIK key of the press (kReq.m_n34, mypc.cpp:1690-1729), 0 for a clicked slot without a key;
+    /// the record keeps it (m_nA4, skillrecord.cpp:192) for the charging skill's release (<see cref="TickOwnSync"/>).
     /// </summary>
-    void CastOwn(SlotWorld w, uint skillId, WeaponAction held)
+    void CastOwn(SlotWorld w, uint skillId, WeaponAction held, int key)
     {
         if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return;
         var level = w.Jobs?.SkillLevel(skillId) ?? 1;
@@ -115,6 +120,7 @@ public partial class HudScene
             Position = new System.Numerics.Vector3(g.X, -g.Z, g.Y),
             Direction = new System.Numerics.Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0),
             RotZ = rotZ,
+            Key = key,
         };
         var sp = me.Velocity;
         castWorld.Jumping = me.State == Player.MoveState.Jump;
@@ -227,6 +233,10 @@ public partial class HudScene
         ownLoop.StartSequence(r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion].LoopCount : 0);
         ownLoopStartKey = me.Anims?.TextKey(ownSequence, "loopstart") ?? -1;
         ownLoopEndKey = me.Anims?.TextKey(ownSequence, "loopend") ?? -1;
+        ownChargingAttackKey = me.Anims?.TextKey(ownSequence, "charging_attack") ?? -1;
+        ownChargingComboKey = me.Anims?.TextKey(ownSequence, "charging_combo") ?? -1;
+        // :769: m_nStartTick (the enter's tick, :421) plus the key's time at the state's speed in ms (FUN_14028d260)
+        ownChargingComboTick = (uint)ownStateStartMs + (uint)(long)(ownChargingComboKey / SkillCast.MotionSpeedScale(r) * 1000.0f);
         ownKeyPos = -1;
         ownHoldWorld = null;
     }
@@ -244,9 +254,11 @@ public partial class HudScene
     /// <summary>
     /// Each frame: StateSkill::TextKeyEvent (stateskill.cpp:844-980) for the text keys the own sequence passed since the last
     /// frame (a key at a time after the last read one and not after now): "loopstart" (<see cref="SkillLoop.OnLoopStart"/>),
-    /// the current attack's point (FireAttacksAtPoint, <see cref="FireOwnPoint"/>), then "loopend" (<see cref="OwnLoopEnd"/>).
-    /// 0 B/frame until a point fires.
-    /// STILL-OPEN: the sequence's other text keys (move3, charging_attack, charging_combo, combo, inputcombo) are not read.
+    /// "charging_combo" (<see cref="SkillLoop.OnChargingCombo"/>), the current attack's point (the charging skill's m_bLoop,
+    /// <see cref="SkillLoop.OnAttackPoint"/>, then FireAttacksAtPoint, <see cref="FireOwnPoint"/>), "charging_attack"
+    /// (<see cref="SkillLoop.OnChargingAttack"/>), then "loopend" (<see cref="OwnLoopEnd"/>). 0 B/frame until a point fires.
+    /// STILL-OPEN: the sequence's other text keys (move0-3, combo, inputcombo) are not read; keys of different names passed in
+    /// one frame go in the order above, not by time.
     /// </summary>
     void TickOwnAttacks()
     {
@@ -257,13 +269,19 @@ public partial class HudScene
         ownKeyPos = pos;
         uint now = (uint)Time.GetTicksMsec();   // GetTickCountMs2
         if (ownLoopStartKey >= 0 && prev < ownLoopStartKey && ownLoopStartKey <= pos) ownLoop.OnLoopStart(ownLoopStartKey, now);
+        bool charging = ownCast.Skill.ChargingSkill;
+        if (ownChargingComboKey >= 0 && prev < ownChargingComboKey && ownChargingComboKey <= pos)
+            ownLoop.OnChargingCombo(charging, CastKeyDown(ownCast.Key), now, ownChargingComboTick);
         while (ownPointTime >= 0 && prev < ownPointTime && ownPointTime <= pos)
         {
             double was = ownPointTime;
             int attack = ownAttack;
+            ownLoop.OnAttackPoint(charging);
             FireOwnPoint(player);
             if (ownPointTime == was && ownAttack == attack) break;
         }
+        if (ownCast == null) return;
+        if (ownChargingAttackKey >= 0 && prev < ownChargingAttackKey && ownChargingAttackKey <= pos) ownLoop.OnChargingAttack(charging);
         if (ownLoopEndKey >= 0 && prev < ownLoopEndKey && ownLoopEndKey <= pos) OwnLoopEnd(player, now);
     }
 
@@ -334,9 +352,11 @@ public partial class HudScene
     /// origin id held (<see cref="OwnSkillKeyHeld"/>), the loop keys, the charging skill flag (m_b111 = the skill's
     /// chargingSkill, :766) and FUN_141765a70 (<see cref="CastGate.CanCast"/>, only asked while a key is held).
     /// 0 B/frame while nothing changed and no key is held.
+    /// Then the charging skill's release (:698-722, <see cref="SkillLoop.Release"/>): its cast key (the record's m_nA4,
+    /// <see cref="CastKeyDown"/>) up outside m_bLoop skips the sequence to "charging_attack" (at 1/frequency, the kf's time
+    /// here) and returns before the sync that frame.
     /// STILL-OPEN: the skill system's queued key (FUN_1417674a0(1), the Lapen input) does not count as held; mouse and pad
-    /// bindings are not read; the charging skill's key release branch (:697-722) is not ported; the record's rotation does
-    /// not turn during the state (FUN_1417edc20).
+    /// bindings are not read; the record's rotation does not turn during the state (FUN_1417edc20).
     /// </summary>
     void TickOwnSync()
     {
@@ -347,12 +367,35 @@ public partial class HudScene
             bool castable = held && !charging && CastGate.CanCast(OwnHoldWorld(), ownCast.Skill.Id);
             ownLoop.Hold(held, ownLoopStartKey >= 0 && ownLoopEndKey >= 0, charging, castable);
         }
+        // FUN_141b6fe90 without the key: the sequence's length
+        float chargingAttack = ownChargingAttackKey >= 0 ? ownChargingAttackKey : (float)(player.Anim?.CurrentAnimationLength ?? 0);
+        if (ownLoop.Release(ownCast.Skill.ChargingSkill, CastKeyDown(ownCast.Key), ownCast.Skill.DisableChargingAttackSkipFrame,
+                chargingAttack, out bool seek))
+        {
+            if (seek) SeekOwnRelease(chargingAttack);
+            return;
+        }
         var live = Net.LiveSession.Instance;
         if (live == null) return;
         var g = player.GlobalPosition;
         var req = SkillCast.SyncIfChanged(ownSync, ownCast, new System.Numerics.Vector3(g.X, -g.Z, g.Y), ownLoop.Charging, ownLoop.Loop);
         if (req != null) live.SendSync(req);
     }
+
+    /// <summary>
+    /// The release's skip (vfunc_8 :708-714): the sequence moved to the charging_attack key. The keys at that time are read
+    /// as not yet passed (an assumption: the client's SetOffset then Update lets the attack whose point is the key fire).
+    /// </summary>
+    void SeekOwnRelease(float t)
+    {
+        player.SeekSkillSequence(t);
+        ownKeyPos = Math.BitDecrement((double)t);
+    }
+
+    /// <summary>IsKeyDown(m_nA4) (stateskill.cpp:701, :949): the cast's DIK key is down; false for 0 (a clicked slot) and while
+    /// typing.</summary>
+    bool CastKeyDown(int dik) =>
+        dik != 0 && !UiFocus.IsTyping && GodotKeyOfDik(dik) is { } g && Input.IsPhysicalKeyPressed(g);
 
     /// <summary>vfunc_8 :651-660: a keyboard key CKeyTable::FUN_14142c6c0 lists for the skill (<see cref="KeyTable.IsKeyOfSkill"/>)
     /// is down (IsKeyDown). Not while typing.</summary>
