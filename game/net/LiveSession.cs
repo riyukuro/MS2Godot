@@ -87,6 +87,13 @@ public partial class LiveSession : Node
     {
         if (game != null) Send(packet);
     }
+    /// <summary>The item enchant dialog's model (UIItemEnchantDialog): the ItemEnchant packets (0x97) and the RequestItemEnchant sends (0x5E).
+    /// Find (the UI item of a uid) is set by the scene that opens the dialog.</summary>
+    public readonly Ms2.Ui.Items.ItemEnchantBook EnchantBook = new();
+    public void SendEnchant(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
     /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
@@ -1035,6 +1042,18 @@ public partial class LiveSession : Node
                     GD.Print($"live: item lock {m.GetType().Name}");
                 }
                 catch (Exception e) { GD.PushWarning($"live: item lock packet: {e.Message}"); }
+            }
+            else if (game.Is(p, Inbound.ItemEnchant))
+            {
+                try
+                {
+                    EnchantBook.Send = SendEnchant;
+                    EnchantBook.StoreItem = i => Items.Apply(new ItemMessage.Update(i.Uid, i));
+                    var m = ItemEnchantMessage.Read(p.Reader(), Items.Get);   // CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101)
+                    EnchantBook.Apply(m);
+                    GD.Print($"live: item enchant {m.GetType().Name}");
+                }
+                catch (Exception e) { GD.PushWarning($"live: item enchant packet: {e.Message}"); }
             }
             else if (game.Is(p, Inbound.StorageInventory))
             {
