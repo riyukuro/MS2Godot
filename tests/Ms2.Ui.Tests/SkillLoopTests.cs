@@ -179,6 +179,19 @@ public class SkillLoopTests
     }
 
     [Test]
+    public void ALongFrameAcrossTheLoopEndReachesTheLoopEndBeforeAPointAfterIt()
+    {
+        // the text keys reach TextKeyEvent in time order: a frame from 0.9 to 1.6 crossing loopend (1.0) and a point (1.2) gives
+        // the loopend first; the loop's seek back then keeps the point from firing (HudScene's TickOwnAttacks)
+        Assert.That(SkillLoop.NextTextKey(0.9, 1.6, 0.5, -1, 1.2, -1, 1.0), Is.EqualTo(1.0));
+        Assert.That(SkillLoop.NextTextKey(1.0, 1.6, 0.5, -1, 1.2, -1, 1.0), Is.EqualTo(1.2));
+        Assert.That(SkillLoop.NextTextKey(1.2, 1.6, 0.5, -1, 1.2, -1, 1.0), Is.EqualTo(-1));
+        // keys at one time give that time once; none past the frame's end
+        Assert.That(SkillLoop.NextTextKey(0, 0.6, 0.5, 0.5, 0.5, 0.7, -1), Is.EqualTo(0.5));
+        Assert.That(SkillLoop.NextTextKey(0.5, 0.6, 0.5, 0.5, 0.5, 0.7, -1), Is.EqualTo(-1));
+    }
+
+    [Test]
     public void TheLoopAllocatesNothing()
     {
         var l = new SkillLoop();
@@ -196,6 +209,7 @@ public class SkillLoopTests
                 l.OnChargingAttack(true);
                 l.Release(true, false, false, 0.75f, out _);
                 l.Loop = false;
+                SkillLoop.NextTextKey(0.9, 1.6, 0.5, -1, 1.2, -1, 1.0);
             }
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }

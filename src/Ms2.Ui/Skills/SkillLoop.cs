@@ -173,6 +173,29 @@ public sealed class SkillLoop
     /// charging or with a repeat left.</summary>
     public bool HoldsEnd => Charging || Repeat > 0;
 
+    /// <summary>
+    /// The sequence's text keys reach TextKeyEvent one at a time in time order (NiActorManager's text key callbacks): the
+    /// earliest of the skill state's keys (<paramref name="loopStart"/>, <paramref name="chargingCombo"/>, the current attack's
+    /// <paramref name="point"/>, <paramref name="chargingAttack"/>, <paramref name="loopEnd"/>; below 0 = none) after
+    /// <paramref name="after"/> and not after <paramref name="upTo"/>; -1 when none.
+    /// </summary>
+    public static double NextTextKey(double after, double upTo, double loopStart, double chargingCombo, double point,
+        double chargingAttack, double loopEnd)
+    {
+        double t = -1;
+        Earlier(ref t, loopStart, after, upTo);
+        Earlier(ref t, chargingCombo, after, upTo);
+        Earlier(ref t, point, after, upTo);
+        Earlier(ref t, chargingAttack, after, upTo);
+        Earlier(ref t, loopEnd, after, upTo);
+        return t;
+    }
+
+    static void Earlier(ref double t, double k, double after, double upTo)
+    {
+        if (k >= 0 && after < k && k <= upTo && (t < 0 || k < t)) t = k;
+    }
+
     /// <summary>StateSkill::ClampedElapsedAfter16ms @0x1417f1a10 (stateskill.cpp:1611): the time past the first 16 ms, at most
     /// 50; 0 when <paramref name="now"/> is not after <paramref name="start"/>.</summary>
     public static int ClampedElapsedAfter16ms(uint now, uint start)

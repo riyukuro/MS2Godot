@@ -256,9 +256,10 @@ public partial class HudScene
     /// frame (a key at a time after the last read one and not after now): "loopstart" (<see cref="SkillLoop.OnLoopStart"/>),
     /// "charging_combo" (<see cref="SkillLoop.OnChargingCombo"/>), the current attack's point (the charging skill's m_bLoop,
     /// <see cref="SkillLoop.OnAttackPoint"/>, then FireAttacksAtPoint, <see cref="FireOwnPoint"/>), "charging_attack"
-    /// (<see cref="SkillLoop.OnChargingAttack"/>), then "loopend" (<see cref="OwnLoopEnd"/>). 0 B/frame until a point fires.
-    /// STILL-OPEN: the sequence's other text keys (move0-3, combo, inputcombo) are not read; keys of different names passed in
-    /// one frame go in the order above, not by time.
+    /// (<see cref="SkillLoop.OnChargingAttack"/>), then "loopend" (<see cref="OwnLoopEnd"/>), in time order
+    /// (<see cref="SkillLoop.NextTextKey"/>; keys at one time in the order above); a loopend that seeks to the next round ends
+    /// the frame's keys. 0 B/frame until a point fires.
+    /// STILL-OPEN: the sequence's other text keys (move0-3, combo, inputcombo) are not read.
     /// </summary>
     void TickOwnAttacks()
     {
@@ -268,21 +269,30 @@ public partial class HudScene
         if (pos < 0) return;
         ownKeyPos = pos;
         uint now = (uint)Time.GetTicksMsec();   // GetTickCountMs2
-        if (ownLoopStartKey >= 0 && prev < ownLoopStartKey && ownLoopStartKey <= pos) ownLoop.OnLoopStart(ownLoopStartKey, now);
         bool charging = ownCast.Skill.ChargingSkill;
-        if (ownChargingComboKey >= 0 && prev < ownChargingComboKey && ownChargingComboKey <= pos)
-            ownLoop.OnChargingCombo(charging, CastKeyDown(ownCast.Key), now, ownChargingComboTick);
-        while (ownPointTime >= 0 && prev < ownPointTime && ownPointTime <= pos)
+        // the keys in time order: the earliest key after the last handled time, all kinds at that time, then on from it
+        double t;
+        while ((t = SkillLoop.NextTextKey(prev, pos, ownLoopStartKey, ownChargingComboKey, ownPointTime, ownChargingAttackKey,
+                    ownLoopEndKey)) >= 0)
         {
-            double was = ownPointTime;
-            int attack = ownAttack;
-            ownLoop.OnAttackPoint(charging);
-            FireOwnPoint(player);
-            if (ownPointTime == was && ownAttack == attack) break;
+            if (ownLoopStartKey == t) ownLoop.OnLoopStart(ownLoopStartKey, now);
+            if (ownChargingComboKey == t) ownLoop.OnChargingCombo(charging, CastKeyDown(ownCast.Key), now, ownChargingComboTick);
+            while (ownPointTime == t)
+            {
+                int attack = ownAttack;
+                ownLoop.OnAttackPoint(charging);
+                FireOwnPoint(player);
+                if (ownCast == null) return;
+                if (ownPointTime == t && ownAttack == attack) break;
+            }
+            if (ownChargingAttackKey == t) ownLoop.OnChargingAttack(charging);
+            if (ownLoopEndKey == t)
+            {
+                OwnLoopEnd(player, now);
+                if (ownKeyPos != pos) return;   // the next round's seek: the keys read on from there next frame
+            }
+            prev = t;
         }
-        if (ownCast == null) return;
-        if (ownChargingAttackKey >= 0 && prev < ownChargingAttackKey && ownChargingAttackKey <= pos) ownLoop.OnChargingAttack(charging);
-        if (ownLoopEndKey >= 0 && prev < ownLoopEndKey && ownLoopEndKey <= pos) OwnLoopEnd(player, now);
     }
 
     /// <summary>
@@ -341,7 +351,8 @@ public partial class HudScene
         double t = ownLoop.LoopStart + ownLoop.ChargeTick * 0.001;
         me.SeekSkillSequence(t);
         ownKeyPos = t;
-        ownLoop.OnLoopStart(ownLoopStartKey, now);
+        // the loopstart event (:844-868) only for a sequence with the key
+        if (ownLoopStartKey >= 0) ownLoop.OnLoopStart(ownLoopStartKey, now);
         ownPointTime = OwnPointTime(me);
     }
 
