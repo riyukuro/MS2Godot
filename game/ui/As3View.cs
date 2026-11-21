@@ -21,6 +21,8 @@ public partial class As3View : Node2D
     readonly HashSet<Entry> entries = new();
     readonly Dictionary<Node, Entry> byNode = new();          // each entry's holder and mask node
     readonly List<Node> detached = new();                     // nodes the sync took out of their parents (Sweep)
+    readonly HashSet<Entry> parked = new();                   // holders out of the tree whose objects wait under a deferred ancestor (Sweep)
+    readonly List<Entry> parkedScan = new();                  // Sweep's copy of parked (it frees while it walks)
     readonly HashSet<Entry> scriptMasked = new();             // synced objects with a script mask
     static readonly HashSet<AsDisplayObject> noMasks = new();
     HashSet<AsDisplayObject> masks = noMasks;                 // their mask objects (not drawn)
@@ -35,7 +37,17 @@ public partial class As3View : Node2D
     {
         // the caret is in the tree only on a focused field's holder, and goes with it; without a focus it is out of the
         // tree and goes with the view
-        if (what == NotificationPredelete && IsInstanceValid(caret) && caret.GetParent() == null) caret.Free();
+        if (what == NotificationPredelete)
+        {
+            if (IsInstanceValid(caret) && caret.GetParent() == null) caret.Free();
+            // a parked holder (or the mask node over it) is out of the tree, so it does not go with the view
+            foreach (var e in parked)
+            {
+                if (e.Mask != null && IsInstanceValid(e.Mask) && e.Mask.GetParent() == null) e.Mask.Free();
+                if (IsInstanceValid(e.Holder) && e.Holder.GetParent() == null) e.Holder.Free();
+            }
+            parked.Clear();
+        }
         else if (what == NotificationEnterTree) inTree.Add(this);
         else if (what == NotificationExitTree) inTree.Remove(this);
     }
@@ -174,20 +186,48 @@ public partial class As3View : Node2D
         var fe = focus?.Tag as Entry;
         caret.Update(focus, fe?.Holder, fe?.Content, caretTime);
         caretTime = 0;
-        if (SyncCheck) Check();
+        if (Checks) Check();
     }
 
     /// <summary>
     /// Frees the entries whose holders the sync took out of the view's nodes (a container's Apply or a button's state
     /// change detached them, and no other parent took them in): those objects left the display list. The nodes under a
-    /// freed holder go with it, and so do their entries.
+    /// freed holder go with it, and so do their entries. A holder whose object is still on the stage under a deferred
+    /// ancestor (<see cref="Waiting"/>: moved into a hidden container, which takes its children in only when shown) is
+    /// parked out of the tree with its nodes instead, and that container's first sync when shown takes it back as it is.
+    /// A parked holder that was not taken back is freed once its object is no longer waiting.
     /// </summary>
     void Sweep()
     {
-        if (detached.Count == 0) return;
+        if (detached.Count == 0 && parked.Count == 0) return;
         foreach (var n in detached)
-            if (byNode.TryGetValue(n, out var e) && entries.Contains(e) && !Attached(e.Holder)) Free(e);
+            if (byNode.TryGetValue(n, out var e) && entries.Contains(e) && !Attached(e.Holder))
+            {
+                if (Waiting(e.Obj)) parked.Add(e);
+                else Free(e);
+            }
         detached.Clear();
+        if (parked.Count == 0) return;
+        parkedScan.AddRange(parked);
+        foreach (var e in parkedScan)
+        {
+            if (!parked.Contains(e)) continue;                  // freed with a parked ancestor's holder
+            if (Attached(e.Holder)) parked.Remove(e);
+            else if (!Waiting(e.Obj)) Free(e);
+        }
+        parkedScan.Clear();
+    }
+
+    /// <summary>Whether an object is on this view's stage under a deferred ancestor (<see cref="Defers"/>), which syncs its children only when shown.</summary>
+    bool Waiting(AsDisplayObject o)
+    {
+        bool deferred = false;
+        for (var p = o.DrawnParent; p != null; p = p.DrawnParent)
+        {
+            if (p == Player.Stage) return deferred;
+            deferred |= Defers(p, IsClipMask(p));
+        }
+        return false;
     }
 
     bool Attached(Node n)
@@ -216,6 +256,7 @@ public partial class As3View : Node2D
     void Drop(Entry e)
     {
         entries.Remove(e);
+        parked.Remove(e);
         scriptMasked.Remove(e);
         byNode.Remove(e.Holder);
         applied.Remove(e.Holder);
@@ -270,10 +311,13 @@ public partial class As3View : Node2D
     /// </summary>
     static bool Defers(AsDisplayObject o, bool clipMask) => !o.IsVisible && !clipMask;
 
-    /// <summary>Whether the sync reaches the object: no ancestor below the stage defers it (<see cref="Defers"/>).</summary>
+    /// <summary>
+    /// Whether the sync reaches the object: no ancestor below the stage defers it (<see cref="Defers"/>). A button's state
+    /// has the button above it (<see cref="AsDisplayObject.DrawnParent"/>), as the sync walks it.
+    /// </summary>
     static bool Reached(AsDisplayObject o)
     {
-        for (var p = o.Parent; p != null; p = p.Parent) if (Defers(p, IsClipMask(p))) return false;
+        for (var p = o.DrawnParent; p != null; p = p.DrawnParent) if (Defers(p, IsClipMask(p))) return false;
         return true;
     }
 
@@ -492,7 +536,10 @@ public partial class As3View : Node2D
     // ---- MS2_PERF_SYNCCHECK ----------------------------------------------------------------------------------------
 
     /// <summary>MS2_PERF_SYNCCHECK: after every sync, a full sync checks that the marked one left nothing to change.</summary>
-    static readonly bool SyncCheck = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_SYNCCHECK"));
+    internal static readonly bool SyncCheck = !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_PERF_SYNCCHECK"));
+
+    /// <summary>MS2_PERF_SYNCCHECK: this view runs the check sync after each sync (off for a view whose own history is under test).</summary>
+    internal bool Checks = SyncCheck;
 
     /// <summary>The syncs that walked their view's script-masked objects again (a mark in the view's movie), over every view.</summary>
     public static long ScriptMaskWalks;
@@ -517,6 +564,7 @@ public partial class As3View : Node2D
             masks = all;
             Player.Stage.ClearMarks();
             SyncChildren(Player.Stage, this, null, null, null, true);
+            foreach (var e in parked) if (!Attached(e.Holder) && Waiting(e.Obj)) { e.Seen = gen; SeenBelow(e); }
             foreach (var e in entries) if (e.Seen != gen) Checked(true, "entry kept for an object not in the display list", e);
             Sweep();
             UpdateMasks();
@@ -1049,8 +1097,11 @@ public partial class GraphicsNode : Node2D
 {
     readonly AsGraphics g;
     public GraphicsNode(AsGraphics g) { this.g = g; }
+    /// <summary>MS2_PERF_SYNCCHECK: what the last draw drew (the sync check scene compares a view's history with a fresh build).</summary>
+    public string DrawnKey { get; private set; }
     public override void _Draw()
     {
+        if (As3View.SyncCheck) DrawnKey = string.Join(";", g.Ops.Select(o => $"{o.Op} {string.Join(",", o.V)} {o.Color:x} {o.Alpha}"));
         foreach (var (op, v, color, alpha) in g.Ops)
         {
             if (alpha <= 0) continue;
@@ -1094,6 +1145,9 @@ public partial class FieldNode : Node2D
 
     public FieldNode() { }
 
+    /// <summary>MS2_PERF_SYNCCHECK: what the last draw drew (the sync check scene compares a view's history with a fresh build).</summary>
+    public string DrawnKey { get; private set; }
+
     /// <summary>A redraw of the field is its face's.</summary>
     public override void _Draw() => face.QueueRedraw();
 
@@ -1128,6 +1182,7 @@ public partial class FieldNode : Node2D
             y += lineH;
         }
         face.DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        if (As3View.SyncCheck) DrawnKey = $"{string.Join("\n", lines)}|{col:x}|{size}|{px}|{align}|{box}";
         // the text is as tall as its lines less the last one's leading (DocView::Format); an auto-sized field grows to it
         float textHeight = lines.Count * lineH - (float)tf.Leading;
         var field = new Rect2((float)box.X, (float)box.Y, (float)box.W, (float)box.H);

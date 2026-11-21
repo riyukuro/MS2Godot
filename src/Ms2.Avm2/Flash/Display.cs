@@ -63,6 +63,8 @@ public class AsDisplayObject : AsEventDispatcher
     Marks marks = Marks.Own | Marks.Subtree | Marks.Deep;      // a new object is drawn in full the first time
     /// <summary>The object a mark goes up to when there is no parent: the button whose state this object is.</summary>
     internal AsDisplayObject MarkOwner;
+    /// <summary>The object above this one in the drawn tree: its parent, or the button whose state it is (<see cref="MarkOwner"/>).</summary>
+    public AsDisplayObject DrawnParent => Parent ?? MarkOwner;
 
     /// <summary>This object's own drawn state changed since the renderer last cleared the marks.</summary>
     public bool ChangedSelf => (marks & Marks.Own) != 0;

@@ -17,7 +17,10 @@ namespace Ms2Godot.Tests;
 /// as it was while hidden and redone in full when shown (moved, added and removed children). A masked object under a
 /// hidden sprite keeps its mask undrawn. A mask out of the display list that moves is followed. Another movie's marks
 /// do not walk this view's script-masked objects again; its own do. After every sync the full check sync (MS2_PERF_SYNCCHECK) must find
-/// nothing left to change. Quits with 0 when all hold, else 1.
+/// nothing left to change. History against fresh: a view taken through hide, change, show must leave the same drawn nodes
+/// as a view built in the final state (<see cref="HistoryVsFresh"/>; the check sync defers hidden parts the same way as
+/// the marked one, so it cannot see a change missed inside one). An object moved into a hidden sprite keeps its holder.
+/// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class As3ViewSyncCheck : Node
 {
@@ -25,7 +28,7 @@ public partial class As3ViewSyncCheck : Node
     FlashPlayer player;
     As3View view;
 
-    public override void _Ready()
+    public override async void _Ready()
     {
         var fails = new List<string>();
         void Is(bool ok, string what) { if (!ok) fails.Add(what); }
@@ -127,11 +130,147 @@ public partial class As3ViewSyncCheck : Node
         view.Sync();
         Is(As3View.ScriptMaskWalks == walks + 1, "this movie's mark did not walk its script masks");
 
+        await HistoryVsFresh(assets, Is);
+
         Is(As3View.CheckRuns > 0, "the check sync did not run");
         Is(As3View.CheckDiffs == 0, $"the check sync found {As3View.CheckDiffs} differences (see MS2_PERF_SYNCCHECK lines)");
         GD.Print($"as3view sync: {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
+
+    /// <summary>
+    /// Two movies with the same display list: one view syncs every step of a history (a hidden part changed in every way the
+    /// sync defers: moved, added and removed children, a Graphics redrawn with as many ops, a text field's text, colour, a
+    /// nested hidden sprite, an ancestor's blend mode; an object moved in from a shown sprite; then shown), the other is
+    /// built once in the final state. After a few frames (redraws and text builds run deferred) their node trees must be the
+    /// same where drawn. The history view runs without the check sync, which would fix what its marked sync missed.
+    /// </summary>
+    async System.Threading.Tasks.Task HistoryVsFresh(UiAssets assets, Action<bool, string> Is)
+    {
+        var (hrt, hp) = Movie();
+        var hv = new As3View(hp, assets) { AutoPlay = false, Checks = false };
+        AddChild(hv);
+        var hs = hp.Stage;
+        var a = Box("pA", hs, 0, 300, hrt);
+        var x = Box("pX", a, 5, 5, hrt);
+        var y = Box("pY", a, 5, 25, hrt);
+        var top = Box("pTop", hs, 100, 300, hrt);
+        var h = Box("pH", top, 0, 0, hrt);
+        var c = Box("pC", h, 0, 0, hrt);
+        var gone = Box("pGone", h, 0, 20, hrt);
+        var g = Box("pG", h, 20, 0, hrt);
+        var t = Text("pT", h, "before", hrt);
+        var n = Box("pN", h, 40, 0, hrt);
+        var nk = Box("pNk", n, 0, 10, hrt);
+        Box("pU", h, 60, 0, hrt);   // untouched: only the walk on show gives it the ancestor's new blend
+        await Frames(hv);
+        var xHolder = Holder(hv, "pX");
+        var yHolder = Holder(hv, "pY");
+
+        h.visible = false;
+        await Frames(hv);
+        c.x = 50;
+        Box("pAdded", h, 0, 40, hrt);
+        h.removeChild(gone);
+        g.graphics.clear(); g.graphics.beginFill(0x00ff00); g.graphics.drawRect(1, 2, 30, 40);
+        t.text = "after";
+        n.alpha = 0.5;
+        nk.visible = false;
+        top.blendMode = "add";
+        h.addChild(x);
+        h.addChild(y);
+        await Frames(hv);
+        Is(IsInstanceValid(xHolder) && !xHolder.IsQueuedForDeletion(), "the holder of an object moved into a hidden sprite was freed");
+        h.removeChild(y);
+        await Frames(hv);
+        Is(!IsInstanceValid(yHolder) || yHolder.IsQueuedForDeletion(), "a parked holder whose object left the stage was kept");
+        h.visible = true;
+        await Frames(hv);
+        Is(Holder(hv, "pX") == xHolder, "an object moved into a hidden sprite was built again when shown");
+        // a hidden sprite inside a hidden part, changed, then shown after its parent
+        n.visible = false;
+        await Frames(hv);
+        h.visible = false;
+        nk.visible = true;
+        nk.x = 7;
+        await Frames(hv);
+        h.visible = true;
+        await Frames(hv);
+        n.visible = true;
+        await Frames(hv);
+
+        var (frt, fp) = Movie();
+        var fv = new As3View(fp, assets) { AutoPlay = false };
+        AddChild(fv);
+        var fs = fp.Stage;
+        Box("pA", fs, 0, 300, frt);
+        var ftop = Box("pTop", fs, 100, 300, frt);
+        ftop.blendMode = "add";
+        var fh = Box("pH", ftop, 0, 0, frt);
+        Box("pC", fh, 50, 0, frt);
+        var fg = Box("pG", fh, 20, 0, frt);
+        fg.graphics.clear(); fg.graphics.beginFill(0x00ff00); fg.graphics.drawRect(1, 2, 30, 40);
+        Text("pT", fh, "after", frt);
+        var fn = Box("pN", fh, 40, 0, frt);
+        fn.alpha = 0.5;
+        Box("pNk", fn, 7, 10, frt);
+        Box("pU", fh, 60, 0, frt);
+        Box("pAdded", fh, 0, 40, frt);
+        Box("pX", fh, 5, 5, frt);
+        await Frames(fv);
+
+        var diffs = new List<string>();
+        Compare(hv, fv, "", diffs);
+        foreach (var d in diffs.Take(20)) GD.PrintErr($"as3view sync history vs fresh: {d}");
+        Is(diffs.Count == 0, $"history vs fresh: {diffs.Count} differences");
+        hv.QueueFree(); fv.QueueFree();
+    }
+
+    /// <summary>One explicit sync, then three frames (each frame's _Process syncs too; redraws and text builds run deferred).</summary>
+    async System.Threading.Tasks.Task Frames(As3View v)
+    {
+        v.Sync();
+        for (int i = 0; i < 3; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+    }
+
+    /// <summary>
+    /// The drawn state of two node trees: type, holder name, visibility, transform, colour, z, child order, and what each
+    /// Graphics and text node last drew. A hidden node's children are not compared (nothing under it is drawn).
+    /// </summary>
+    static void Compare(Node a, Node b, string path, List<string> diffs)
+    {
+        string at = path + "/" + Label(a);
+        if (a.GetType() != b.GetType()) { diffs.Add($"{at}: {a.GetType().Name} vs {b.GetType().Name}"); return; }
+        if (Label(a) != Label(b)) diffs.Add($"{at}: name vs {Label(b)}");
+        if (a is CanvasItem ca && b is CanvasItem cb)
+        {
+            if (ca.Visible != cb.Visible) diffs.Add($"{at}: visible {ca.Visible} vs {cb.Visible}");
+            if (ca.Modulate != cb.Modulate) diffs.Add($"{at}: modulate {ca.Modulate} vs {cb.Modulate}");
+            if (ca.ZIndex != cb.ZIndex) diffs.Add($"{at}: z {ca.ZIndex} vs {cb.ZIndex}");
+            if (ca.Material != cb.Material) diffs.Add($"{at}: material {ca.Material} vs {cb.Material}");
+            if (!ca.Visible) return;
+        }
+        if (a is Node2D na && b is Node2D nb && na.Transform != nb.Transform) diffs.Add($"{at}: transform {na.Transform} vs {nb.Transform}");
+        if (a is GraphicsNode ga && b is GraphicsNode gb && ga.DrawnKey != gb.DrawnKey) diffs.Add($"{at}: drew [{ga.DrawnKey}] vs [{gb.DrawnKey}]");
+        if (a is FieldNode fa && b is FieldNode fb && fa.DrawnKey != fb.DrawnKey) diffs.Add($"{at}: drew [{fa.DrawnKey}] vs [{fb.DrawnKey}]");
+        int na2 = a.GetChildCount(), nb2 = b.GetChildCount();
+        if (na2 != nb2) diffs.Add($"{at}: {na2} children vs {nb2}");
+        for (int i = 0; i < Math.Min(na2, nb2); i++) Compare(a.GetChild(i), b.GetChild(i), at, diffs);
+    }
+
+    /// <summary>A node's name, or its type when Godot named it (a content node: the generated name differs per view).</summary>
+    static string Label(Node n) { string s = n.Name; return s.StartsWith('@') ? n.GetType().Name : s; }
+
+    AsTextField Text(string name, AsContainer parent, string text, Runtime r)
+    {
+        var tf = (AsTextField)r.GetClass("flash.text.TextField").Construct();
+        tf.name = name;
+        tf.text = text;
+        parent.addChild(tf);
+        return tf;
+    }
+
+    static Node2D Holder(As3View v, string name) => v.FindChild(name, true, false) is Node2D n && !n.IsQueuedForDeletion() ? n : null;
 
     static (Runtime, FlashPlayer) Movie()
     {
