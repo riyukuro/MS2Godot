@@ -593,8 +593,10 @@ public partial class FieldContents : Node3D
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
             if (!pressed) return;
             if (talk != null && talk.Open) { talk.ActionKey(); return; }
-            // STILL-OPEN: the held item (MyPC::GetHeldItem) is not modelled, so no press is dropped for it
-            var target = actionKeys.OnPress(heldItem: false);
+            // ActivateCurrentAction (actionkeyobject.cpp:619-620): with an item held (GetHeldItem) the key does nothing
+            bool held = Ms2Godot.Net.LiveSession.Instance is { } hs && hs.HeldItem.Held;
+            var target = actionKeys.OnPress(heldItem: held);
+            if (held) return;
             if (target == Ms2.Ui.ActionKeyTarget.BillBoard && talk?.FindTalkable() != null) target = Ms2.Ui.ActionKeyTarget.Talk;
             switch (target)
             {

@@ -67,6 +67,7 @@ public enum Inbound : ushort {
     NpcControl = 0x58,
     InteractNpc = 0x59,
     InteractObject = 0x63,  // RecvOp::InteractObject (commonfiles/opcodes.h:107): CSceneStateGame::OnInteractObject
+    ResponseCube = 0x69,    // RecvOp::ResponseCube (commonfiles/opcodes.h:113): CSceneStateGame::OnResponseCube
     Buff = 0x47,
     UserMoveByPortal = 0x5F,
     StateFallDamage = 0x65,

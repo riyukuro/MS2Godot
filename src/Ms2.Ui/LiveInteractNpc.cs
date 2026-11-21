@@ -64,6 +64,8 @@ public sealed class LiveInteractNpc : ICastingEventListener
     public IReadOnlyList<InteractNpcEntry> All => npcs;
     public InteractNpcEntry Current => polled;
     public bool IsCasting => castingActive;
+    /// <summary>The local pc's held item (PC::GetHeldItem), shared with <see cref="LiveInteractObjects.Held"/>.</summary>
+    public HeldItem Held { get; set; }
     public int CastingNpc => castingActive ? castingNpc : 0;
 
     public InteractNpcEntry Find(int objectId)
@@ -208,7 +210,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
         castingFinished = false;
         string anim = string.IsNullOrEmpty(npc.Row.InteractCastingAnimation) ? DefaultCastingAnimation : npc.Row.InteractCastingAnimation;
         host.PlayPlayerAnim(anim, false);
-        // STILL-OPEN: PC::SendRequestCube when an item is held (stateinteractdata.cpp:602)
+        Held?.SendRequestCube(host.Send);     // GetHeldItem, then PC::SendRequestCube (stateinteractdata.cpp:604-605)
         host.StartCasting(this, npc.Row.InteractCastingTime, npc.Row.InteractShowCastingBar);
         return true;
     }

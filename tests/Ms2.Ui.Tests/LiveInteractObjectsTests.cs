@@ -29,6 +29,9 @@ public class LiveInteractObjectsTests
         public int FlushCalls;
         public void FlushPlayerState() => FlushCalls++;
         public bool PlayerRiding { get; set; }
+        public int LocalObjectId { get; set; } = 1234;
+        public readonly HashSet<int> MissingItems = new();
+        public bool ItemExists(int itemId) => !MissingItems.Contains(itemId);
         public float MasteryInteractionDistance { get; set; } = 300f;
 
         public readonly Dictionary<int, QuestMaskTable.QuestStatus> Quests = new();
@@ -658,6 +661,85 @@ public class InteractKeyTests
         Assert.That(oh.CastCancels, Is.EqualTo(0));
         Assert.That(objs.IsCasting, Is.True);
         Assert.That(nh.Sent, Is.Empty);
+    }
+}
+
+public class HeldItemTests
+{
+    static readonly Vec3 At = new(10, 0, 0);
+    static InteractObjectMessage Weapon(int pcId, int itemId) =>
+        new() { Mode = InteractObjectMessage.ModeWeapon, PcId = pcId, WeaponId = itemId };
+
+    [Test]
+    public void Mode15HoldsTheItemOnlyForTheLocalPcAndAKnownItem()
+    {
+        // SSG_INTERACT_WEAPON (scenestategame.cpp:6482-6490): FindPCById(pcId) -> PC::FUN_14165f1f0(itemId, 1); the hold
+        // returns without one when the item cannot be made (pc.cpp:3439-3440)
+        var host = new LiveInteractObjectsTests.Host();
+        var held = new HeldItem();
+        var live = LiveInteractObjectsTests.LeverOn(host, 0);
+        live.Held = held;
+        live.Apply(Weapon(999, 15000001));
+        Assert.That(held.Held, Is.False);
+        host.MissingItems.Add(15000002);
+        live.Apply(Weapon(host.LocalObjectId, 15000002));
+        Assert.That(held.Held, Is.False);
+        live.Apply(Weapon(host.LocalObjectId, 15000001));
+        Assert.That(held.Held, Is.True);
+        Assert.That(held.ItemId, Is.EqualTo(15000001));
+        Assert.That(host.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void SendRequestCubeNeedsAHeldItemAndLetsItGoFirst()
+    {
+        // PC::SendRequestCube (pc.cpp:1929-1937): nothing held returns; else FUN_14165f1f0(0, 0), then RequestCube 0x12
+        var held = new HeldItem();
+        var sent = new List<IOutPacket>();
+        Assert.That(held.SendRequestCube(sent.Add), Is.False);
+        Assert.That(sent, Is.Empty);
+        held.Hold(15000001, true);
+        bool heldWhenSent = true;
+        Assert.That(held.SendRequestCube(p => { heldWhenSent = held.Held; sent.Add(p); }), Is.True);
+        Assert.That(heldWhenSent, Is.False);
+        Assert.That(sent.Single(), Is.InstanceOf<HeldItemReleaseRequest>());
+        Assert.That(held.Held, Is.False);
+    }
+
+    [Test]
+    public void TimedObjectLetsTheHeldItemGoBeforeItsStart()
+    {
+        // StateInteraction::vfunc_4 sub 0x8a (stateinteractdata.cpp:264-265): GetHeldItem -> SendRequestCube before the
+        // nearest object's 0x0b
+        var host = new LiveInteractObjectsTests.Host();
+        var held = new HeldItem();
+        var live = LiveInteractObjectsTests.LeverOn(host, 1500);
+        live.Held = held;
+        held.Hold(15000001, true);
+        Assert.That(live.Use(At), Is.True);
+        Assert.That(host.Sent, Has.Count.EqualTo(2));
+        Assert.That(host.Sent[0], Is.InstanceOf<HeldItemReleaseRequest>());
+        Assert.That(host.Sent[1], Is.InstanceOf<InteractObjectStartRequest>());
+        Assert.That(held.Held, Is.False);
+    }
+
+    [Test]
+    public void NpcCastLetsTheHeldItemGoBeforeTheCastingBar()
+    {
+        // StateInteractionNpc::vfunc_4 (stateinteractdata.cpp:604-605): after PlayAnimation, before StartCasting
+        var nh = new LiveInteractNpcTests.Host();
+        var held = new HeldItem();
+        var npcs = new LiveInteractNpc(nh) { Held = held };
+        npcs.Add(7, LiveInteractNpcTests.Row(), talkable: true, new Vec3(100, 0, 0));
+        npcs.Poll(new Vec3(0, 0, 0));
+        held.Hold(15000001, true);
+        int castsWhenSent = -1;
+        nh.OnSend = () => castsWhenSent = nh.Casts;
+        Assert.That(npcs.Use(), Is.True);
+        Assert.That(nh.Sent.Single(), Is.InstanceOf<HeldItemReleaseRequest>());
+        Assert.That(castsWhenSent, Is.EqualTo(0));
+        Assert.That(nh.Casts, Is.EqualTo(1));
+        Assert.That(held.Held, Is.False);
     }
 }
 

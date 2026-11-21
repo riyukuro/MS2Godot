@@ -124,6 +124,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.ChannelNoticeSink = ChannelNotice;
             livePortals.CastingBar = CastingBar;
             livePortals.ItemRank = id => hudModel?.Tables?.Items?.Get(id)?.Rank ?? 0;
+            livePortals.ItemExists = id => hudModel?.Tables?.Items is not { } items || items.Get(id) != null;
             livePortals.CommonBoxSink = id => MessageBoxQueue.ShowCommon(id, 0, null, "");
         }
         sizeSource = GetViewport();

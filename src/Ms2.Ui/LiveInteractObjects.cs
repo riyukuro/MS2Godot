@@ -25,6 +25,10 @@ public interface IInteractHost
     int PlayerStateId { get; }
     /// <summary>MyPC::GetRidee() != null (actionkeyobject.cpp:1576).</summary>
     bool PlayerRiding { get; }
+    /// <summary>The local pc's object id (the own FieldAddUser object), -1 before it is added.</summary>
+    int LocalObjectId { get; }
+    /// <summary>CItem::FUN_140523c40(itemId, 1, 0) succeeds: the item id is in the item data (pc.cpp:3439).</summary>
+    bool ItemExists(int itemId);
     /// <summary>CGameEventValueManager::ShutdownInteractObjectId()->IsShutdown(fieldId, rowId) (interactobject.cpp:401).</summary>
     bool IsInteractObjectShutdown(int fieldId, int rowId);
     /// <summary>MyPC::FUN_14152e0c0 (mypc.cpp:3641): the ride's or the state controller's update before an instant interact
@@ -164,6 +168,8 @@ public sealed class LiveInteractObjects : ICastingEventListener
     public LiveInteractObject Current => polled;
     public bool IsGatheringCurrent => polledGathering;
     public bool IsCasting => castingActive;
+    /// <summary>The local pc's held item (PC::GetHeldItem), shared with the npc interaction; null: none is tracked.</summary>
+    public HeldItem Held { get; set; }
     public LiveInteractObject CastingTarget => castingTarget;
     public IReadOnlyDictionary<int, int> GatherCounts => gatherCounts;
 
@@ -265,7 +271,9 @@ public sealed class LiveInteractObjects : ICastingEventListener
                 ApplyNotice(m);
                 break;
             case InteractObjectMessage.ModeWeapon:
-                host.StillOpen($"InteractObject mode 15 (weapon {m.WeaponId} for pc {m.PcId}): the weapon hold is not ported");
+                // SSG_INTERACT_WEAPON (scenestategame.cpp:6482-6490): FindPCById(pcId), then PC::FUN_14165f1f0(weaponId, 1)
+                if (m.PcId == host.LocalObjectId && Held != null) Held.Hold(m.WeaponId, host.ItemExists(m.WeaponId));
+                else host.StillOpen($"InteractObject mode 15 (weapon {m.WeaponId} for pc {m.PcId}): another pc's held item is not shown");
                 break;
         }
     }
@@ -700,13 +708,14 @@ public sealed class LiveInteractObjects : ICastingEventListener
     /// row only, which InteractAction never passes). The cast's object is then the nearest reactable one
     /// (FUN_141bc6090(pos, 1)); none ends the state. A gathering object sends 0x0b for every usable kind 6 object in the
     /// mastery distance (none: the state stays, with no cast); any other kind sends 0x0b only when usable (vfunc_8), and
-    /// the casting bar starts either way. STILL-OPEN: CreateReactionEffect and the held item's SendRequestCube.
+    /// the casting bar starts either way. A held item is let go first (SendRequestCube, :264-265). STILL-OPEN: CreateReactionEffect.
     /// </summary>
     void EnterInteraction(LiveInteractObject obj, Vec3 playerPos)
     {
         CancelCast();
         var row = obj.Row;
         if (row.ReactAnis.Length > 0) host.PlayPlayerAnim(row.ReactAnis[rng.Next(row.ReactAnis.Length)], loop: false);
+        Held?.SendRequestCube(host.Send);     // GetHeldItem, then PC::SendRequestCube (stateinteractdata.cpp:264-265)
 
         var target = FindNearest(playerPos, skipDisabled: true);
         if (target == null)

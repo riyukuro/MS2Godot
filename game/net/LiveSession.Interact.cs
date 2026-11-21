@@ -28,18 +28,25 @@ public partial class LiveSession
     /// <summary>GetItemRank: an item's own rank from the item table; the HUD sets it with its tables.</summary>
     public Func<int, int> ItemRank;
     public int InteractSends { get; private set; }
+    /// <summary>Whether an item id is in the item data (CItem::FUN_140523c40); the HUD sets it with its tables. Unset:
+    /// every id is taken as an item.</summary>
+    public Func<int, bool> ItemExists;
+    /// <summary>The local pc's held item (PC::m_spItem1040): set by InteractObject mode 15, let go by SendRequestCube and
+    /// ResponseCube 0x12. A new field makes a new pc, so it starts empty.</summary>
+    public readonly HeldItem HeldItem = new();
 
     void NewFieldInteractObjects(int mapId)
     {
         InteractObjects?.CancelCast();
-        InteractNpcs ??= new LiveInteractNpc(new InteractNpcHost(this));
+        HeldItem.Release();
+        InteractNpcs ??= new LiveInteractNpc(new InteractNpcHost(this)) { Held = HeldItem };
         InteractNpcs.Clear();
         npcPolled = false;
         var packs = PackSet.Shared(Settings.DataDir);
         InteractObjectTable tbl = null;
         try { tbl = InteractObjectTable.Shared(packs); }
         catch (Exception e) { GD.Print($"live: interact object table unavailable ({e.Message})"); }
-        InteractObjects = new LiveInteractObjects(new InteractHost(this, mapId), tbl);
+        InteractObjects = new LiveInteractObjects(new InteractHost(this, mapId), tbl) { Held = HeldItem };
     }
 
     /// <summary>Binds the loaded field's xblock MS2InteractObject entities and applies any held 0x63 messages.</summary>
@@ -61,6 +68,16 @@ public partial class LiveSession
             GD.Print($"live: InteractObject mode 8 ({m.Entries?.Count ?? 0} states)");
         else if (m.Mode is InteractObjectMessage.ModeState or InteractObjectMessage.ModeAdd or InteractObjectMessage.ModeRemove or InteractObjectMessage.ModeResult or InteractObjectMessage.ModeMessage)
             GD.Print($"live: InteractObject mode {m.Mode} name '{m.Name}' kind {m.Kind} state {m.State} result {m.Result}");
+    }
+
+    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), mode 0x12 (:10176-10192): error 0 lets the
+    /// pc's held item go (FindPCById, then PC::FUN_14165f1f0(0, 0)). STILL-OPEN: the other modes, and the build notice
+    /// (ShowBuildNotice) an error shows to its character.</summary>
+    void OnResponseCube(ResponseCubeHeldItem m)
+    {
+        if (m == null) return;
+        if (m.Error == 0 && m.Id == selfObject) HeldItem.Release();
+        GD.Print($"live: ResponseCube 0x12 error {m.Error} id {m.Id}");
     }
 
     void OnInteractNpc(InteractNpcMessage m)
@@ -196,6 +213,8 @@ public partial class LiveSession
         public ushort Channel => (ushort)(s.entry?.Enter?.Channel ?? 0);
         public long NowMs => (long)Time.GetTicksMsec();
         public bool PlayerRiding => s.player != null && IsInstanceValid(s.player) && s.player.Mount != null;
+        public int LocalObjectId => s.selfObject;
+        public bool ItemExists(int itemId) => s.ItemExists?.Invoke(itemId) ?? true;
 
         public int PlayerStateId => s.InteractPlayerStateId();
 

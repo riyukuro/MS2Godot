@@ -27,7 +27,8 @@ public class LiveInteractNpcTests
         public bool LastShowBar;
         public ICastingEventListener Listener;
 
-        public void Send(IOutPacket packet) => Sent.Add(packet);
+        public Action OnSend;
+        public void Send(IOutPacket packet) { OnSend?.Invoke(); Sent.Add(packet); }
         public void StartCasting(ICastingEventListener listener, int durationMs, bool showBar)
         { Casts++; Listener = listener; LastDuration = durationMs; LastShowBar = showBar; }
         public void CancelCasting() => Cancels++;
