@@ -354,4 +354,66 @@ public class FieldObjectStatesTests
         }
         Assert.That(bytes, Is.EqualTo(0));
     }
+    static RequestFieldEnter FieldEnterPacket(int map, byte error = 0) => new(error, map, 0, 0, 0, 0, default, default, 0);
+
+    static FieldEntity LiftEntity(string id)
+    {
+        var raw = new XEntity { Id = id, ModelName = "MS2Liftable", Name = id, Props = { ["ItemStackCount"] = "1" } };
+        return new FieldEntity { Raw = raw, Flat = new FlatModel { Name = "MS2Liftable" } };
+    }
+
+    /// <summary>A field entered and loaded: its lift attached, a breakable marker, no hold.</summary>
+    static (Ms2.Net.FieldEntry, BreakableObjects, LiftableObjects) LoadedField(int map)
+    {
+        var entry = new Ms2.Net.FieldEntry();
+        var b = new BreakableObjects();
+        var l = new LiftableObjects();
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(map), false, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        b.AttachField(new List<FieldEntity>());
+        b.AddMarker("m");
+        l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
+        Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((false, false, 1)));
+        return (entry, b, l);
+    }
+
+    [Test]
+    public void TheLoginsFieldEnterHoldsTheUpdatesForItsEntities()
+    {
+        // the login's RequestFieldEnter takes the same OnRequestFieldEnter path (scenestategame.cpp:2335): the field load
+        // attaches its breakables and lifts, so the updates before it wait
+        var b = new BreakableObjects();
+        var l = new LiftableObjects();
+        Assert.That(FieldEnter.Take(new Ms2.Net.FieldEntry(), FieldEnterPacket(2000001), false, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That((b.Holding, l.Holding), Is.EqualTo((true, true)));
+    }
+
+    [Test]
+    public void ARefusedFieldEnterKeepsTheFieldsBreakablesAndLifts()
+    {
+        // a non-zero error only shows the message box; LoadMap does not run, so the field and its objects stay
+        var (entry, b, l) = LoadedField(2000001);
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062, 5), false, b, l), Is.EqualTo(FieldEnterResult.Refused));
+        Assert.That(entry.Current.MapId, Is.EqualTo(2000001));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Find("lift1") != null), Is.EqualTo((false, true, false, true)));
+        // the next update applies to the field's lift at once
+        l.Apply(List(new LiftableEntry("lift1", true, 3, 0)));
+        Assert.That((l.Find("lift1").Enabled, l.Find("lift1").Kind), Is.EqualTo((true, 3)));
+    }
+
+    [Test]
+    public void TheLoadingMapEnteredAgainKeepsItsObjectsAndANewMapResetsThem()
+    {
+        // LoadMap returns at once for the map that is still loading (worldservice_1.cpp:3295); another map tears the field
+        // down: markers and entity lifts go (:3526-3533), and the updates wait for the new field
+        var (entry, b, l) = LoadedField(2000001);
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000001), true, b, l), Is.EqualTo(FieldEnterResult.LoadingAlready));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((false, true, false, 1)));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), true, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((true, false, true, 0)));
+        // the same map entered again once its load is done is a new field load
+        b.AttachField(new List<FieldEntity>());
+        l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), false, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((true, true, 0)));
+    }
 }

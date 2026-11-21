@@ -684,7 +684,7 @@ public partial class LiveSession : Node
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
-        fieldEntry.Enter(entry.Field);
+        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, false, Breakables, Liftables);   // the login's field: its breakables and lifts wait for its entities
         NewFieldPortals(entry.Field.MapId);
         NewFieldInteractObjects(entry.Field.MapId);
         syncNumber = entry.Sync?.Number ?? 0;
@@ -798,8 +798,9 @@ public partial class LiveSession : Node
     /// </summary>
     void OnRequestFieldEnter(RequestFieldEnter f)
     {
-        int loading = moveClock.IsRunning ? fieldEntry.Current?.MapId ?? 0 : 0;   // the map whose ResponseFieldEnter is still to go
-        if (!fieldEntry.Enter(f))
+        // a refused entry or the loading map again keeps the field's breakables and lifts; a new field resets them
+        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, moveClock.IsRunning, Breakables, Liftables);
+        if (taken == Ms2.Ui.FieldEnterResult.Refused)
         {
             string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
             GD.Print($"live: RequestFieldEnter error {f.Error}");
@@ -808,7 +809,7 @@ public partial class LiveSession : Node
         }
         entry = entry with { Field = f };
         if (chosen != null) chosen.User.MapA = f.MapId;
-        if (loading != 0 && loading == f.MapId)
+        if (taken == Ms2.Ui.FieldEnterResult.LoadingAlready)
         {
             GD.Print($"live: RequestFieldEnter in game: map {f.MapId} is loading already, the load goes on (pos {f.Position} portal {f.Portal})");
             return;
@@ -936,7 +937,7 @@ public partial class LiveSession : Node
     {
         try
         {
-            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); pendingTriggers.Clear(); triggerField = null; Breakables.ClearMarkers(); Liftables.FieldLeft(); }   // a new field: no region skill or trigger object survives it
+            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)

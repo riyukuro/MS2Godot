@@ -427,3 +427,34 @@ public sealed class LiftableObjects
         Removed?.Invoke(name);
     }
 }
+
+/// <summary>What a RequestFieldEnter did to the field.</summary>
+public enum FieldEnterResult
+{
+    /// <summary>A non-zero error: only a message box; the current field and its objects stay (scenestategame.cpp:2335).</summary>
+    Refused,
+    /// <summary>The map whose load is still running was entered again: the load goes on, nothing is torn down.</summary>
+    LoadingAlready,
+    /// <summary>The entry is taken and a new field load starts (WorldService::LoadMap, worldservice_1.cpp:3319).</summary>
+    NewField,
+}
+
+/// <summary>
+/// CSceneStateGame::OnRequestFieldEnter (@0x14170f930, scenestategame.cpp:2335) as far as the field's breakables and lifts
+/// go: only a taken entry starts a new field, and only a new field tears down the old field's markers and entity lifts
+/// (LoadMap; worldservice_1.cpp:3526-3533) and holds the updates until the new field's entities are attached.
+/// </summary>
+public static class FieldEnter
+{
+    /// <summary>Takes <paramref name="f"/> into <paramref name="entry"/>. <paramref name="loading"/>: a field load is still
+    /// running (its entry is the current one).</summary>
+    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, bool loading, BreakableObjects breakables, LiftableObjects lifts)
+    {
+        int loadingMap = loading ? entry.Current?.MapId ?? 0 : 0;
+        if (!entry.Enter(f)) return FieldEnterResult.Refused;
+        if (loadingMap != 0 && loadingMap == f.MapId) return FieldEnterResult.LoadingAlready;
+        breakables.ClearMarkers();
+        lifts.FieldLeft();
+        return FieldEnterResult.NewField;
+    }
+}
