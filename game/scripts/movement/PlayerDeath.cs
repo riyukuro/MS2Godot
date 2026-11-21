@@ -9,8 +9,19 @@ public partial class Player
 {
     string deadSequence;    // the sequence StateDead::vfunc_4 picked: DEAD, or the revive-in-place MODEPVP_DEAD entry
 
-    /// <summary>True in StateDead or StateRevival: the move, jump and click-move input is not read.</summary>
-    public bool DeathHoldsMove => State is MoveState.Dead or MoveState.Revival;
+    /// <summary>
+    /// PC::vfunc_124 (pc.cpp:1199) refuses every state but death and revival (and observer 0x3f): set by the live session from
+    /// MyCharacter.DeathOnlyStates. A player the own FieldAddUser added dead (scenestategame.cpp:11185: FUN_14166ce50(1), no
+    /// vfunc_59) has the flag and no state: CStateManager starts at m_nCur 0 (statemanager.cpp:195), nothing registered there.
+    /// Here the body stays in the state it had and takes no other; the move, jump and click-move input is not read (MyPC's
+    /// input paths return while IsDead, mypc.cpp:1346, 2210, 4518). The server's Revival clears it.
+    /// STILL-OPEN: the client's state 0 plays no sequence and runs no vfunc_3 (no gravity); this body keeps its idle loop and
+    /// its gravity.
+    /// </summary>
+    public bool DeadFlag;
+
+    /// <summary>True in StateDead or StateRevival, or with <see cref="DeadFlag"/>: the move, jump and click-move input is not read.</summary>
+    public bool DeathHoldsMove => DeadFlag || State is MoveState.Dead or MoveState.Revival;
 
     /// <summary>
     /// MyPC::vfunc_137's vfunc_59(0xc) (mypc.cpp:1346-1348) -> StateDead::vfunc_4 (@0x1417c2530, statedead.cpp:104-171).

@@ -14,7 +14,9 @@ namespace Ms2Godot.Tests;
 ///   (ChangeState to the current state) does not restart the sequence;
 /// - revival: REVIVAL plays, the keys still do not move it, its end goes to idle, then the keys walk again;
 /// - the revive-in-place death plays MODEPVP_DEAD entry 1 (ShadowWorldAutoReviveDeadAction's default), and an entry past
-///   the list's end plays nothing (PCActionList::Name gives ""); another user state then leaves the death state for idle.
+///   the list's end plays nothing (PCActionList::Name gives ""); another user state then leaves the death state for idle;
+/// - the dead flag alone (a player added dead): the body stays idle, the keys neither walk nor jump it, the death state still
+///   enters (PC::vfunc_124); with the flag cleared the revival goes on to idle.
 /// With MS2_SHOT_DIR set and a window, saves dead.png and revival.png. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PlayerDeathCheck : Node3D
@@ -86,7 +88,7 @@ public partial class PlayerDeathCheck : Node3D
             {
                 case 5: Dead(); break;
                 case 30: Shot("dead.png"); Revival(); break;
-                case 60: Shot("revival.png"); AfterRevival(); InPlace(); Finish(); break;
+                case 60: Shot("revival.png"); AfterRevival(); InPlace(); FlagHold(); Finish(); break;
             }
         }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); Finish(); }
@@ -155,6 +157,28 @@ public partial class PlayerDeathCheck : Node3D
         Expect(pc.State == Player.MoveState.Idle, $"user state after death: {pc.State}");
         pc.EnterRevival();
         GD.Print($"player death: revive-in-place entry 1 '{entry ?? "-"}'");
+    }
+
+    void FlagHold()
+    {
+        int n = 0;
+        while (pc.State != Player.MoveState.Idle && n < 600) { Steps(1); n++; }
+        pc.DeadFlag = true;
+        var at = pc.GlobalPosition;
+        pc.Input2 = new Vector2(0, 1);
+        pc.JumpHeld = true;
+        Steps(40);
+        pc.JumpHeld = false;
+        pc.Input2 = Vector2.Zero;
+        Expect(pc.State == Player.MoveState.Idle && Flat(pc.GlobalPosition, at) < 0.01f, $"dead flag: {pc.State}, moved {Flat(pc.GlobalPosition, at):0.##}");
+        pc.EnterDead(false, 1);
+        Expect(pc.State == Player.MoveState.Dead, $"dead flag, death: {pc.State}");
+        pc.DeadFlag = false;
+        pc.EnterRevival();
+        n = 0;
+        while (pc.State == Player.MoveState.Revival && n < 600) { Steps(1); n++; }
+        Expect(pc.State == Player.MoveState.Idle, $"dead flag cleared, after revival: {pc.State}");
+        GD.Print($"player death: dead flag holds idle, death and revival pass");
     }
 
     void Finish()

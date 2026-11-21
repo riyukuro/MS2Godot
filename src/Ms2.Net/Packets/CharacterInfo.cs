@@ -302,6 +302,13 @@ public sealed class MyCharacter {
         0x3b, 0x3c, 0x3d, 0x3e, 0x3f, 0x40, 0x45, 0x46, 0x47,
     };
 
+    /// <summary>PC::vfunc_124 (pc.cpp:1199) refuses every state but death 0xc, revival 0x18 and observer 0x3f: the dead flag
+    /// is set, or the health is 0 with a max health above 0. A player the own FieldAddUser added dead stays in state 0 with the
+    /// flag (scenestategame.cpp:11185), no state of its own, until the server's Revival clears it.</summary>
+    public bool DeathOnlyStates {
+        get { long hp = Stats2[PlayerStat.Health], maxHp = Stats0[PlayerStat.Health]; return Dead || (maxHp > 0 && hp == 0); }
+    }
+
     /// <summary>
     /// MyPC::vfunc_59 (mypc.cpp:1239) -> PC::vfunc_59 (pc.cpp:1187): PC::vfunc_124 (pc.cpp:1199) lets the state through when
     /// the player is not dead and has health (or no max health, FUN_141670a30(4) = m_unk_1c0[0][4]), or for the death 0xc,
@@ -311,8 +318,7 @@ public sealed class MyCharacter {
     /// state 0x21 with m_spB10 set (the change goes to m_spB10) are not modelled; both are taken as a loaded player on foot.
     /// </summary>
     bool EnterState(int state) {
-        long hp = Stats2[PlayerStat.Health], maxHp = Stats0[PlayerStat.Health];
-        if (!((!Dead && (maxHp <= 0 || hp != 0)) || state == 0xc || state == 0x18 || state == 0x3f)) return false;
+        if (DeathOnlyStates && !(state == 0xc || state == 0x18 || state == 0x3f)) return false;
         if (!RegisteredStates.Contains(state)) return false;
         State = state;
         return true;

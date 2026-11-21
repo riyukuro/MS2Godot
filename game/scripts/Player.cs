@@ -432,6 +432,7 @@ public partial class Player : CharacterBody3D
 
     void Enter(MoveState s)
     {
+        if (DeadFlag && s is not (MoveState.Dead or MoveState.Revival)) return;   // PC::vfunc_124 (pc.cpp:1199), PlayerDeath
         var old = State;
         if (old == MoveState.Jump) { jumping = false; baseSpeed = jumpSavedSpeed; StateChangeOut?.Invoke(1, 6, new Vector3(GlobalPosition.X, -GlobalPosition.Z, GlobalPosition.Y)); }   // StateJump::vfunc_5 (statejump.cpp:157: SendStateChange(1, 6))
         if (old == MoveState.Ladder) { ladder = null; ClearHitReport(); }   // StateLadder::vfunc_5 clears the hit report

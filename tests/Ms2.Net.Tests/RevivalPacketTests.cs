@@ -162,6 +162,24 @@ public class RevivalPacketTests {
         Assert.That(died, Is.EqualTo(1));
     }
 
+    /// <summary>A FieldAddUser with no health sets the dead flag and no state (scenestategame.cpp:11185); PC::vfunc_124
+    /// (pc.cpp:1199) then refuses idle until Revival, and with health 0 and a max health until the health comes back.</summary>
+    [Test]
+    public void ADeadFieldAddUserHoldsStateZeroUntilRevivalAndHealth() {
+        var me = new MyCharacter();
+        me.Apply(new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } });
+        Assert.That((me.Dead, me.DeathOnlyStates, me.State), Is.EqualTo((true, true, 0)));
+        me.ApplyUserState(9, 1);
+        Assert.That(me.State, Is.EqualTo(0), "idle is refused while dead");
+        var lived = Living();
+        ZeroHealth(lived);
+        lived.Die(9);
+        lived.Revive(9, 0);
+        Assert.That((lived.Dead, lived.DeathOnlyStates, lived.State), Is.EqualTo((false, true, 0x18)), "revived with health 0 of 500");
+        lived.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 100 } }));
+        Assert.That(lived.DeathOnlyStates, Is.False);
+    }
+
     [Test]
     public void ACountAboveZeroAtDeathSetsTheFlagAndFieldAddUserCarriesTheRevivalState() {
         var me = Living();

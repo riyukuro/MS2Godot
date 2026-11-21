@@ -69,6 +69,12 @@ public partial class LiveSession : Node
         catch (Exception ex) { GD.PushWarning($"death state: {ex.Message}"); }
         player.EnterDead(inPlace, anim);
     }
+    /// <summary>The own body's <see cref="Player.DeadFlag"/> follows MyCharacter.DeathOnlyStates (PC::vfunc_124, pc.cpp:1199)
+    /// after each packet: the own FieldAddUser with no health, DeadUser, Revival and the health stat move it.</summary>
+    void SyncDeadFlag()
+    {
+        if (player != null && IsInstanceValid(player)) player.DeadFlag = Me.DeathOnlyStates;
+    }
     RemoteLayer remote;      // the other players and npcs, once the field is built
     DropLayer drops;         // the dropped items and meso, once the field is built
     /// <summary>The "get" action key is held (set by the HUD's key tracking); the drop layer asks it each frame.</summary>
@@ -911,7 +917,7 @@ public partial class LiveSession : Node
     void DropOwnPc()
     {
         DropOwnPcInvincible();
-        if (player != null && IsInstanceValid(player)) player.Live = false;
+        if (player != null && IsInstanceValid(player)) { player.Live = false; player.DeadFlag = false; }
         player = null;
         selfObject = -1;
         bindPending = false;
@@ -1041,6 +1047,7 @@ public partial class LiveSession : Node
         player.Live = true;
         player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
+        SyncDeadFlag();   // an own FieldAddUser with no health: the flag, no state (scenestategame.cpp:11185)
         player.StateSyncOut += records =>
         {
             if (game == null) return;
@@ -1069,7 +1076,7 @@ public partial class LiveSession : Node
     {
         TickTimeScale();   // before the game check: a ramp started in the game still ends when the link is gone
         if (game == null) { PumpLogin(); return; }
-        while (game != null && game.Incoming.TryDequeue(out var p)) Handle(p);
+        while (game != null && game.Incoming.TryDequeue(out var p)) { Handle(p); SyncDeadFlag(); }
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
         guide?.Tick();
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
@@ -1080,7 +1087,7 @@ public partial class LiveSession : Node
         TickCombatEffects();
         inGame ??= () => player != null && player.Live;   // IReconnectHost.InGame: the field was entered
         if (game.InGame != inGame) game.InGame = inGame;
-        if (game.IsClosed) { StopCombatEffects(); GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
+        if (game.IsClosed) { StopCombatEffects(); GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) { player.Live = false; player.DeadFlag = false; } }   // offline fall-return emulation comes back
     }
 
     /// <summary>One game server packet: the read loop's, and at the entry the ones that came before the field enter
@@ -1402,6 +1409,7 @@ public partial class LiveSession : Node
                 // state let in leaves them
                 if (u.ObjectId == selfObject && player != null && IsInstanceValid(player))
                 {
+                    SyncDeadFlag();
                     if (Me.State == 0xc) OwnDeathState();
                     else if (Me.State == 0x18) player.EnterRevival();
                     else player.LeaveDeath();
@@ -1424,7 +1432,7 @@ public partial class LiveSession : Node
                 var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
                 bool revived = Me.Revive(v.ObjectId, v.Flag);
                 // MyPC's vfunc_59(0x18) (scenestategame.cpp:7400), run for the own actor whatever the flag: StateRevival on the body
-                if (v.ObjectId == selfObject && player != null && IsInstanceValid(player)) player.EnterRevival();
+                if (v.ObjectId == selfObject && player != null && IsInstanceValid(player)) { SyncDeadFlag(); player.EnterRevival(); }
                 if (revived)
                 {
                     GD.Print("live: own player revived");
@@ -1792,7 +1800,7 @@ public partial class LiveSession : Node
         SendGuideStates();
         var active = game ?? login;
         StopCombatEffects();   // before the player goes, so the blink's end restores its alpha (as OnGameToLogin)
-        if (player != null && IsInstanceValid(player)) player.Live = false;
+        if (player != null && IsInstanceValid(player)) { player.Live = false; player.DeadFlag = false; }
         player = null;
         var g = game; game = null;
         var l = login; login = null;
