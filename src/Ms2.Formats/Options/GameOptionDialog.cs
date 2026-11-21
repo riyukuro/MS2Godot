@@ -1224,8 +1224,8 @@ public sealed class AgreementOptionPage : OptionPage
     /// red circles included). The host's HasTutorial hook is its first check (WorldService::HasTutorial, the field's tutorialType).
     /// The call at scene entry (SetFlagsAndRefresh, scenestategame.cpp:11161-11168) needs DAT_143ab0248 == 3 (China) and is not made
     /// on the Korean service. OpenLink (:3597) navigates UIWebBrowserBase 0x4e6a; the host opens
-    /// the PersonalInfoAgreementURL constant in the system browser (WebPage). STILL-OPEN: MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same 0xC0 after a RequestCube 0x18 packet that
-    /// Ms2.Net does not have yet (no layout guessed).</summary>
+    /// the PersonalInfoAgreementURL constant in the system browser (WebPage). MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same 0xC0 after
+    /// the RequestCube 0x18 packet (HouseSettingRequest; the host's SendHouseSetting). STILL-OPEN: its callers, the house visit question and the home option dialog, are not ported.</summary>
     public override void Save()
     {
         base.Save();

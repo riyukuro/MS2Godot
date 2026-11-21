@@ -19,3 +19,10 @@ public sealed record FurnishingRightsRequest(string Name) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x39); w.WriteUnicodeString(Name ?? ""); }
 }
+
+/// <summary>MyPC::SendHouseSetting (@0x141530720, mypc.cpp:4375-4384): RequestCube u8 0x18, u8 kind (0 public, 1 password, 2 private),
+/// the value (the password, else empty; WriteUnicodeString) and u8 flag. Not sent without the local home's map info (GetUGCMapInfo).</summary>
+public sealed record HouseSettingRequest(byte Kind, string Value, bool Flag) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x18); w.WriteByte(Kind); w.WriteUnicodeString(Value ?? ""); w.WriteByte((byte) (Flag ? 1 : 0)); }
+}

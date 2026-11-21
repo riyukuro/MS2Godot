@@ -1707,6 +1707,12 @@ public partial class LiveSession : Node
         if (game != null) Send(new PersonalInfoAgreement(group, flags));
     }
 
+    /// <summary>MyPC::SendHouseSetting's packet (mypc.cpp:4379-4384), while the game connection is up.</summary>
+    public void SendHouseSetting(byte kind, string value, bool flag)
+    {
+        if (game != null) Send(new HouseSettingRequest(kind, value, flag));
+    }
+
     /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
     public void SendRequestQuit()
     {

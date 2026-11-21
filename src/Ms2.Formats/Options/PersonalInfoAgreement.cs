@@ -48,3 +48,16 @@ public sealed class PersonalInfoAgreement
     /// <summary>@0x141261da0.</summary>
     public void CopyFrom(PersonalInfoAgreement o) { Agree = o.Agree; Flags = o.Flags; }
 }
+
+/// <summary>What MyPC::SendHouseSetting (@0x141530720, mypc.cpp:4385-4396) does to the agreement after its packet, with feature 0x117 on.</summary>
+public static class HouseSettingAgreement
+{
+    /// <summary>Kind 0, 1 or 2 sets group 1 to flag 8, 0x10 or 0x20 (FUN_141261e40(1, mask)) and returns the group to send (SendAgreement(mask)); any other kind changes nothing and returns 0.</summary>
+    public static int Apply(PersonalInfoAgreement agreement, int kind)
+    {
+        uint mask = kind switch { 0 => 8u, 1 => 0x10u, 2 => 0x20u, _ => 0u };
+        if (mask == 0) return 0;
+        agreement.SetGroup(1, mask);
+        return (int) mask;
+    }
+}

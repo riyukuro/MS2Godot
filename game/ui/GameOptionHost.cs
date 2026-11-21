@@ -140,6 +140,21 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     /// <summary>SetGamepadEnabled (@0x14125f670): the block's switch, the HUD followers and the character file.</summary>
     public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) => GameOptions.SetGamepadEnabled(stored, use, notify);
 
+    /// <summary>GetUGCMapInfo() != 0: the local home's map info is known. Unset, MyPC::SendHouseSetting returns at once, as the client does without it.
+    /// STILL-OPEN: the live session does not carry the home state yet (the same gap as ShopController's UgcHomeState).</summary>
+    public Func<bool> HasUgcMapInfo;
+
+    /// <summary>MyPC::SendHouseSetting (@0x141530720): the RequestCube 0x18 packet, then with feature 0x117 the agreement's group 1 takes the kind's flag and goes out as 0xC0.
+    /// The callers are the house visit question and the home option dialog (not ported).</summary>
+    public void SendHouseSetting(int kind, string value, bool flag)
+    {
+        if (HasUgcMapInfo == null || !HasUgcMapInfo()) return;
+        Net.LiveSession.Instance?.SendHouseSetting((byte) kind, value, flag);
+        if (!IsFeatureEnabled(0x117)) return;
+        int group = HouseSettingAgreement.Apply(Agreement, kind);
+        if (group != 0) SendAgreement(group);
+    }
+
     public void SendAgreement(int group) => Net.LiveSession.Instance?.SendPersonalInfoAgreement(group, (int)Agreement.Flags);
     /// <summary>The reminder the game menu's option entry and the system menu's option entry show (SetNotifyRedCircle7Flag,
     /// UISystemMenuDialog::SetRedCircle).</summary>
