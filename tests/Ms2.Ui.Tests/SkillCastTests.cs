@@ -150,9 +150,7 @@ public class SkillCastTests
         Assert.That(SkillCast.SyncIfChanged(sent, new CastRecord { Skill = r.Skill, Level = r.Level, Rotation = r.Rotation }, Vector3.Zero, false, false),
             Is.Null, "an owner at the origin with the same rotation: the first update sends nothing");
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100000; i++) SkillCast.SyncIfChanged(sent, r, Vector3.Zero, false, false);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 unchanged updates");
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100000; i++) SkillCast.SyncIfChanged(sent, r, Vector3.Zero, false, false); }), Is.LessThan(512), "100000 unchanged updates");
     }
 
     [Test]

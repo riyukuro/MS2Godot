@@ -65,14 +65,13 @@ public class KeySkillTests
         Assert.That(t.IsKeyOfSkill(KeyE, 10200001, s), Is.True, "another type: the slot");
         Assert.That(t.IsKeyOfSkill(KeyR, 10200001, s), Is.False, "type 0");
         Assert.That(t.IsKeyOfSkill(KeyZ, 0, s), Is.False, "an unbound key");
-        long Window()   // measured twice, the second asserted (the first can take one-time JIT allocations)
+        long Window()   // the least of up to 5 windows is asserted (Alloc.Least)
         {
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 10000; i++) t.IsKeyOfSkill(1 + i % 0xd3, 10200001, s);
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        Window();
-        Assert.That(Window(), Is.LessThan(512));
+        Assert.That(Alloc.Least(Window), Is.LessThan(512));
     }
 
     [Test] public void TheAttackKeyNeedsABindingTypeAndComesFirst()

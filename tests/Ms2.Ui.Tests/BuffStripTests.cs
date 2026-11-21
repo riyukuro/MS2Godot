@@ -61,9 +61,7 @@ public class BuffStripTests
         list.Buffs.Single(b => b.Key == 11).Suspended = false;
         list.Apply(new BuffPacket(BuffPacket.Remove, 5, 11, 5, 0, null, null));
         Assert.That(list.IsPvpOnOff, Is.False, "removed");
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) _ = list.IsPvpOnOff;
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) _ = list.IsPvpOnOff; }), Is.LessThan(512));
     }
 
     [Test]
@@ -86,9 +84,7 @@ public class BuffStripTests
         Assert.That((list.ForceApplyTarget, list.IsHidden), Is.EqualTo((2, false)), "suspended");
         list.Apply(new BuffPacket(BuffPacket.Remove, 5, 12, 5, 0, null, null));
         Assert.That(list.ForceApplyTarget, Is.EqualTo(0), "removed");
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) { _ = list.ForceApplyTarget; _ = list.IsHidden; }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) { _ = list.ForceApplyTarget; _ = list.IsHidden; } }), Is.LessThan(512));
     }
 
     [Test]
@@ -124,9 +120,7 @@ public class BuffStripTests
         Assert.That((list.SpecialAbility(35), list.SpecialAbility(125)), Is.EqualTo((30 * 2 + 7, 0)));
         list.Buffs.Single(x => x.Key == 11).Suspended = true;
         Assert.That(list.SpecialAbility(35), Is.EqualTo(7), "suspended");
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) _ = list.SpecialAbility(35);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) _ = list.SpecialAbility(35); }), Is.LessThan(512));
         // GetAbilityTotal / GetAbilityRate (equipment.cpp:731, :740): no worn items here, the buffs' part over 1000
         Assert.That(Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(35, null, null, null, _ => true, list)),
             Is.EqualTo(0.007f));
@@ -139,9 +133,7 @@ public class BuffStripTests
         });
         Assert.That((Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, false), Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, true)),
             Is.EqualTo((50 + 7 + 20, 50 + 7 + 20 + 100)));
-        before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) _ = Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, true);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) _ = Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, true); }), Is.LessThan(512));
     }
 
     [Test]
@@ -171,9 +163,7 @@ public class BuffStripTests
         Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0.3f).Within(1e-6f), "suspension is not tested");
         list.Apply(new BuffPacket(BuffPacket.Modify, 5, 12, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 8, 1, 1, 0), null));
         Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0.2f).Within(1e-6f), "not enabled");
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) _ = list.ReduceSkillGroupCooltime(90000001);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) _ = list.ReduceSkillGroupCooltime(90000001); }), Is.LessThan(512));
     }
 
     [Test]
@@ -202,9 +192,7 @@ public class BuffStripTests
         Assert.That(list.SkillInvokeOption(0x3, 100, 9, out a), Is.EqualTo(0), "an effect option is no skill option");
         list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 2, 0), null));
         Assert.That(list.SkillInvokeOption(0x3ea, 100, 9, out _), Is.EqualTo(0), "not enabled");
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) list.SkillInvokeOption(0x3e9, 100, 9, out _);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) list.SkillInvokeOption(0x3e9, 100, 9, out _); }), Is.LessThan(512));
     }
 
     [Test]

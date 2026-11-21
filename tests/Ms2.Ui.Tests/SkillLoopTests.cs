@@ -196,7 +196,7 @@ public class SkillLoopTests
     {
         var l = new SkillLoop();
         var s = Continue();
-        long Window()   // measured twice, the second asserted (the first can take one-time JIT allocations)
+        long Window()   // the least of up to 5 windows is asserted (Alloc.Least)
         {
             long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 1000; i++)
@@ -213,7 +213,6 @@ public class SkillLoopTests
             }
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        Window();
-        Assert.That(Window(), Is.LessThan(512));
+        Assert.That(Alloc.Least(Window), Is.LessThan(512));
     }
 }

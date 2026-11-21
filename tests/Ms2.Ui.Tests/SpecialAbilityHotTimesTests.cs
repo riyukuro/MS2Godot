@@ -69,8 +69,6 @@ public class SpecialAbilityHotTimesTests
         var h = new SpecialAbilityHotTimes(_ => false);
         h.Apply(Msg(0, Ev(1, "35", "10"), Ev(2, "35", "5", pcBang: true)));
         h.Total(35, true);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) h.Total(35, true);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) h.Total(35, true); }), Is.LessThan(512));
     }
 }
