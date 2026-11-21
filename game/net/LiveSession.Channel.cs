@@ -18,19 +18,37 @@ public partial class LiveSession
     ushort[] channelTabs = Array.Empty<ushort>();
     ushort[] classTable = new ushort[8];
 
+    /// <summary>UIServerListDialog::EnterGame @0x141ad2c50 (uiserverlistdialog.cpp:633-637): the channel to ask for is m_nChannel (the login's, <see cref="Ms2Godot.Flow.Session.Channel"/>),
+    /// else GetCurrentChannel; it becomes the current channel (DAT_1439f4a7c) at once, ServerEnter then replaces it (<see cref="NoteServerEnter"/> shows the notice when they differ). Returns it for the request.</summary>
+    short BeginEnterGame()
+    {
+        int n = Ms2Godot.Flow.Session.Channel;
+        if (n == 0) n = CurrentChannel;
+        serverChannel = n;
+        return (short)n;
+    }
+
     /// <summary>GetCurrentChannel @0x14092f640.</summary>
     public int CurrentChannel => serverChannel == 0 ? fallbackChannel : serverChannel;
 
     /// <summary>The channels of the current server (DynamicChannel kind 1, UIServerListDialog::SetChannels), in the order sent.</summary>
     public IReadOnlyList<ushort> ChannelTabs => channelTabs;
 
-    /// <summary>DAT_143add400, DynamicChannel kind 0's eight values (the per class table WorldService::FUN_141bd9870 reads).
-    /// STILL-OPEN: nothing here reads it.</summary>
+    /// <summary>DAT_143add400, DynamicChannel kind 0's eight values: the highest channel offered per channel group.</summary>
     public IReadOnlyList<ushort> ClassTable => classTable;
 
-    /// <summary>Raised after each DynamicChannel. STILL-OPEN: the client refreshes the open dialogs after it
-    /// (UIServerEventDispatcher vfunc_1); the system menu and minimap read the list when they open, nothing here refreshes an open one,
-    /// and UIServerListDialog's own set at EnterGame (uiserverlistdialog.cpp:618/633) is not ported.</summary>
+    /// <summary>WorldService::FUN_141bd9870 @0x141bd9870: DAT_143add400 at the field's channel group id (GetFieldChannelGroupId; 0 without field data).</summary>
+    public int ChannelLimit(int channelGroupId) => classTable[(uint)channelGroupId < (uint)classTable.Length ? channelGroupId : 0];
+
+    /// <summary>The ids UIServerListDialog::BuildChannelList lists for the current server (<see cref="Ms2.Ui.ChannelList"/>); empty before any DynamicChannel kind 1.</summary>
+    public List<int> ChannelIds(int channelGroupId)
+    {
+        int gm = Me.User?.GmGrade ?? 0;
+        return Ms2.Ui.ChannelList.Build(channelTabs.Select(t => (int)t), CurrentChannel, ChannelLimit(channelGroupId), gm);
+    }
+
+    /// <summary>Raised after each DynamicChannel (UIServerEventDispatcher::vfunc_1 @0x141347410: every listener's Notify; the system menu and the minimap rebuild their channel lists).
+    /// UIServerListDialog's own set at EnterGame is <see cref="BeginEnterGame"/>.</summary>
     public event Action ChannelsChanged;
 
     /// <summary>A notice by common string id and its {0} argument (-1: none), shown by the HUD (FUN_141275260 /
@@ -63,8 +81,8 @@ public partial class LiveSession
 
     /// <summary>
     /// WorldService::FUN_141bc80c0 @0x141bc80c0 (worldservice_1.cpp:4936): the change request. See <see cref="Ms2.Ui.ChannelChange"/>.
-    /// MyPC::SendFunctionCube's part here is the guide's saved steps; STILL-OPEN: its furniture state (state 0x29) and
-    /// its states send are not ported.
+    /// MyPC::SendFunctionCube's part here is the guide's saved steps; STILL-OPEN: its furniture part (state 0x29, StateUseFurniture: FunctionCube 5 with the furniture key) waits for the furniture
+    /// use state, which this client does not have yet (Home/UGC), so the player is never in it here.
     /// </summary>
     public bool RequestChannel(int channel)
     {

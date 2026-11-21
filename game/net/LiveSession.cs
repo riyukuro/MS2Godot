@@ -660,7 +660,7 @@ public partial class LiveSession : Node
         regionSkills.Clear(); RegionSkillLog.Clear();   // a new field: no region skill object survives it
         try
         {
-            var go = await GameClient.SelectAsync(login, chosen.User.CharacterId);
+            var go = await GameClient.SelectAsync(login, chosen.User.CharacterId, BeginEnterGame());
             (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host, requestGlobalFactor: !Factors.Applied);
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();

@@ -68,6 +68,26 @@ public sealed class MinimapController : UiController
     /// <summary>WorldService::FUN_141bc80c0(channel): asks to change channel; false keeps the current one selected.</summary>
     public Func<int, bool> ChangeChannel = _ => false;
 
+    /// <summary>The field's channel group name (string table 0x17), Notify's last argument; "" when the client country is 2.</summary>
+    public string ChannelGroupName = "";
+
+    /// <summary>UIMinimapDialog::Notify @0x141a38b60 (FUN_141a42800): the server event after a DynamicChannel; the movie's buildChannelList(rows, selected, s_word_ch, group).</summary>
+    public void Notify()
+    {
+        if (Host?.Entity == null) return;
+        var f = Model.Field;
+        string chPrefix = Model.Tables.Common("s_word_ch") ?? "";
+        var rows = new List<object>();
+        int selected = 0;
+        foreach (var id in f.Channels)
+        {
+            string label = (chPrefix.Length > 0 ? chPrefix + " " : "") + id;
+            if (id == f.Channel) selected = rows.Count;
+            rows.Add(new Dictionary<string, object> { ["id"] = id, ["label"] = label, ["labelDropdown"] = label });
+        }
+        Host.Invoke("buildChannelList", rows, selected, chPrefix, ChannelGroupName ?? "");
+    }
+
     /// <summary>UIMinimapDialog::ApplySelectedChannel @0x141a44ed0: the movie's setSelectedChannel with m_channel.</summary>
     public void ApplySelectedChannel()
     {

@@ -130,6 +130,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             livePortals.SystemNoticeSink = SystemNoticeText;
             livePortals.ChannelNoticeSink = ChannelNotice;
+            livePortals.ChannelsChanged += ChannelsChanged;
             livePortals.CastingBar = CastingBar;
             livePortals.ItemRank = id => hudModel?.Tables?.Items?.Get(id)?.Rank ?? 0;
             livePortals.ItemExists = id => hudModel?.Tables?.Items is not { } items || items.Get(id) != null;
@@ -179,7 +180,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchDamage = null;
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel && liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null;
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
         RevivalUnwatch();
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
@@ -439,13 +440,42 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>GetCurrentChannel: the live session's, else the offline server's one channel (1).</summary>
     static int LiveChannel() => Ms2Godot.Net.LiveSession.Instance is { } l && l.CurrentChannel != 0 ? l.CurrentChannel : 1;
 
-    /// <summary>The current server's channels (DynamicChannel kind 1), else just the current one.</summary>
-    static ChannelRow[] LiveChannels()
+    /// <summary>GetFieldChannelGroupId (@0x141bd98f0): the field's channel group id, 0 without field data.</summary>
+    int FieldChannelGroup()
+    {
+        try { return FieldData.FindByXBlock(assets.Packs, xblock)?.ChannelGroupId ?? 0; }
+        catch (Exception e) { GD.PushWarning("channel group: " + e.Message); return 0; }
+    }
+
+    /// <summary>UIServerListDialog::BuildChannelList's rows for the current server (DynamicChannel kind 1: ascending, those above the field's limit left out), else just the current one.</summary>
+    ChannelRow[] LiveChannels()
     {
         if (Ms2Godot.Net.LiveSession.Instance is not { } l || l.ChannelTabs.Count == 0) return new[] { new ChannelRow(LiveChannel()) };
-        var rows = new ChannelRow[l.ChannelTabs.Count];
-        for (int i = 0; i < rows.Length; i++) rows[i] = new ChannelRow(l.ChannelTabs[i]);
+        var ids = l.ChannelIds(FieldChannelGroup());
+        var rows = new ChannelRow[ids.Count];
+        for (int i = 0; i < rows.Length; i++) rows[i] = new ChannelRow(ids[i]);
         return rows;
+    }
+
+    /// <summary>The server event listeners' Notify (UIServerEventDispatcher::vfunc_1, after a DynamicChannel): the open system menu and the minimap rebuild their channel lists.</summary>
+    void ChannelsChanged()
+    {
+        if (systemMenu is { IsClosed: false } menu)
+        {
+            menu.CurrentChannel = LiveChannel();
+            menu.Channels = LiveChannels();
+            menu.Notify();
+        }
+        if (minimapSide != null)
+        {
+            var rows = LiveChannels();
+            var ids = new int[rows.Length];
+            for (int i = 0; i < ids.Length; i++) ids[i] = rows[i].Id;
+            minimapSide.Model.Field.Channel = LiveChannel();
+            minimapSide.Model.Field.Channels = ids.Length > 0 ? ids : new[] { LiveChannel() };
+            minimapSide.ChannelGroupName = menuGroup;
+            minimapSide.Notify();
+        }
     }
 
     /// <summary>WorldService::FUN_141bc80c0 for the dialogs' OnChangeChannel: false offline (there is no server to ask).</summary>
@@ -1030,6 +1060,7 @@ public partial class HudScene : Node, IUiStageHost
             PlayerImage = Ms2Godot.Net.ProfileImageService.Images.Path(selfId, live?.Me?.User?.Picture ?? "", true),
             LocalPlayer = LocalMinimapPlayer,
             ChangeChannel = ChangeChannel,
+            ChannelGroupName = menuGroup,
             PingAllowed = pingAllowed,
             Send = live != null ? live.SendMinimapPing : null,
             CharacterName = MinimapPingName,

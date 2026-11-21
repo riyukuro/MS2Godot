@@ -53,3 +53,23 @@ public static class ChannelChange
         return true;
     }
 }
+
+/// <summary>
+/// The channel rows UIServerListDialog::BuildChannelList @0x141ad3370 offers: the server's channels as an ATL::CRBMap keyed by
+/// id (so ascending and without repeats), minus those above the field's limit (WorldService::FUN_141bd9870 reads
+/// DAT_143add400, DynamicChannel kind 0's table, at the field's channel group id) for an account under GM level 50, the current channel always kept.
+/// </summary>
+public static class ChannelList
+{
+    public static List<int> Build(IEnumerable<int> ids, int selected, int limit, int gmLevel)
+    {
+        var map = new SortedSet<int>(ids);
+        var rows = new List<int>();
+        foreach (int id in map)
+        {
+            if (gmLevel < 50 && id != selected && id > limit) continue;
+            rows.Add(id);
+        }
+        return rows;
+    }
+}
