@@ -77,6 +77,12 @@ public sealed class FieldTracker {
     /// <summary>FindObjectById's test: an actor or an npc has the object id.</summary>
     public bool HasObject(int objectId) { lock (gate) return actors.ContainsKey(objectId) || npcs.ContainsKey(objectId); }
 
+    /// <summary>FUN_141bd1980: the character id of the player object (FindPCById), 0 for any other id.</summary>
+    public long CharacterIdOf(int objectId) { lock (gate) return actors.TryGetValue(objectId, out var a) ? a.Add?.User?.CharacterId ?? 0 : 0; }
+
+    /// <summary>FindNpcById's npc id for the object, 0 without an npc.</summary>
+    public int NpcIdOf(int objectId) { lock (gate) return npcs.TryGetValue(objectId, out var n) ? n.NpcId : 0; }
+
     public IReadOnlyList<Actor> Snapshot() { lock (gate) return actors.Values.Select(a => new Actor { ObjectId = a.ObjectId, Name = a.Name, Gender = a.Gender, IsSelf = a.IsSelf, Position = a.Position, YawDegrees = a.YawDegrees, Moves = a.Moves, Add = a.Add }).ToList(); }
 
     /// <summary>Stat packets the reader could not take (a body shorter than the count's branch reads).</summary>

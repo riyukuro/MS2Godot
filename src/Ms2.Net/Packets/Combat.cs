@@ -18,8 +18,9 @@ public sealed class SkillDamage {
     public long CasterUid, CastUid; public int OwnerId, SkillId; public short Level; public byte Motion, AttackPoint;
     public Vector3S Position, DirectionShort;
     public List<HitTarget> Targets = new();
-    // mode 3
-    public int TargetId; public Hit DotHit;
+    // mode 3 (OnDotDamage, scenestategame.cpp:5663): the attacker (OwnerId, the record's +0x2c), the object hit (TargetId, +0x28)
+    // and the buff on it (BuffId, CDotDamageRecord m_nEffectLevel: vfunc_1 looks it up in the hit object's buff list)
+    public int TargetId, BuffId; public Hit DotHit;
     // mode 5
     public int RegionId;
     // mode 0
@@ -48,7 +49,7 @@ public sealed class SkillDamage {
                 break;
             }
             case 3:
-                d.SkillId = r.ReadInt(); d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), r.ReadLong());
+                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), r.ReadLong());
                 d.Targets.Add(new HitTarget(d.TargetId, new[] { d.DotHit }, default, default));
                 break;
             case 5: {

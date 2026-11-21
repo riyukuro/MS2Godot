@@ -52,6 +52,8 @@ public sealed partial class RemoteLayer : Node3D
     readonly EquipApplier equip;
     readonly NpcLayer npcs;
     readonly NpcTable npcTable;
+    /// <summary>FindNpcById(id)->GetNpcClass (@0x1410934c0): the npc row's class (CNpcData m_nClass), 0 without an npc or row.</summary>
+    public int NpcClassOf(int objectId) => Tracker.NpcIdOf(objectId) is var id and not 0 && npcTable?.Find(id) is { } r ? r.Class : 0;
     readonly CombatLayer combat;
     readonly LiveNameTags tags;
     readonly LiveHpBars bars;

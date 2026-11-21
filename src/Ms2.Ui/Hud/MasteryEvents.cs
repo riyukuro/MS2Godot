@@ -37,7 +37,7 @@ public static class MasteryEvents
     /// <summary>
     /// The damage records of a SkillDamage (0x3D) that hit the own player, one total per target record (MyPC::vfunc_113
     /// posts NotifyDamagedMyPC for each). The client's path drops a mode 3 record whose caster is not a PCBase in the field
-    /// (OnDotDamage: FUN_141bd1200(nOwnerId) == 0, FindObjectById then DynamicCast&lt;PCBase&gt; — players, npcs and pets),
+    /// (OnDotDamage: FUN_141bd1200 of the object hit, the second int, == 0: FindObjectById then DynamicCast&lt;PCBase&gt; — players, npcs and pets),
     /// a mode 5 packet when the region skill object is gone (OnRegionSkillDamage: GetRegionSkillObject(nRegionId) == 0),
     /// and a mode 6 record whose own object (the record's id, the port's HitTarget) is not in the field (OnSplashDamage:
     /// FindObjectById(nOwnerId) == 0, a test per record); mode 1 has no such test. Mode 0 is a cast, not damage, and the
@@ -53,7 +53,7 @@ public static class MasteryEvents
             case 1:
                 break;
             case 3:
-                if (isPcBaseObject == null || !isPcBaseObject(d.OwnerId)) return totals;
+                if (isPcBaseObject == null || !isPcBaseObject(d.TargetId)) return totals;   // FUN_141bd1200 on the object hit
                 break;
             case 5:
                 if (isRegionSkill == null || !isRegionSkill(d.RegionId)) return totals;

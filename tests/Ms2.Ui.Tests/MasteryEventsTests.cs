@@ -32,8 +32,11 @@ public class MasteryEventsTests
         Assert.That(MasteryEvents.SelfRecords(splash, 6, _ => true, id => id == 5, _ => true), Is.Empty, "not the own object");
 
         var d3 = Damage(3, 77, 0, 5, -10);
-        Assert.That(MasteryEvents.SelfRecords(d3, 5, _ => false, _ => true, _ => true), Is.Empty, "mode 3: the owner PC is not in the field");
-        Assert.That(MasteryEvents.SelfRecords(d3, 5, id => id == 77, _ => true, _ => false), Is.EqualTo(new long[] { -10 }));
+        d3.TargetId = 5;
+        Assert.That(MasteryEvents.SelfRecords(d3, 5, _ => false, _ => true, _ => true), Is.Empty, "mode 3: the PC hit is not in the field");
+        Assert.That(MasteryEvents.SelfRecords(d3, 5, id => id == 77, _ => true, _ => true), Is.Empty,
+            "mode 3: OnDotDamage tests the object hit (the second int), not the attacker");
+        Assert.That(MasteryEvents.SelfRecords(d3, 5, id => id == 5, _ => true, _ => false), Is.EqualTo(new long[] { -10 }));
 
         var d5 = Damage(5, 77, 900, 5, -20);
         Assert.That(MasteryEvents.SelfRecords(d5, 5, _ => true, _ => true, _ => false), Is.Empty, "mode 5: the region skill object is gone");

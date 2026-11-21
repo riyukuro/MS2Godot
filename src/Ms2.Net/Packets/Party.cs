@@ -353,8 +353,12 @@ public sealed partial class PartyBook {
     /// <summary>IsLocalPlayerLeader (:530).</summary>
     public bool IsLeader(long characterId) => IsInParty && LeaderId == characterId;
 
-    /// <summary>ClearParty (:425), with ClearVote.</summary>
-    void Clear() { members.Clear(); PartyId = 0; LeaderId = 0; Vote = null; }
+    /// <summary>The battle record tallies (TSingleton&lt;CBattleRecordManager&gt;): ClearParty clears its party groups, the member
+    /// adds and removals add and remove the members' records.</summary>
+    public BattleRecordManager BattleRecords { get; set; }
+
+    /// <summary>ClearParty (:425), with ClearVote; ClearPartyGroups (:430).</summary>
+    void Clear() { members.Clear(); BattleRecords?.ClearPartyGroups(); PartyId = 0; LeaderId = 0; Vote = null; }
 
     /// <summary>vote (GetVote @0x14162c350): the running vote, null without one.</summary>
     public PartyVote Vote { get; private set; }
@@ -407,8 +411,10 @@ public sealed partial class PartyBook {
                 if (PartyId > 0) { Clear(); ClearRecruitment(); Closed?.Invoke(); }
                 PartyId = info.PartyId; LeaderId = info.LeaderId;
                 members.Clear();
-                foreach (var m in info.Members)
+                foreach (var m in info.Members) {
                     members.Add(new PartyMember { User = m.User, Offline = m.Offline, Index = members.Count, Leader = m.User.CharacterId == info.LeaderId });
+                    BattleRecords?.AddPartyMemberRecord(m.User.CharacterId);    // :1125
+                }
                 Matchmaking = info.Matchmaking; DungeonId = info.DungeonId;
                 if (IsInParty) Opened?.Invoke();
                 ApplyInfoRecruit(info.Recruit);
@@ -422,6 +428,7 @@ public sealed partial class PartyBook {
                 var m = new PartyMember { User = join.User, Index = members.Count };
                 members.Add(m);
                 if (windowOpen) MemberAdded?.Invoke(m); else Opened?.Invoke();
+                BattleRecords?.AddPartyMemberRecord(m.CharacterId);             // :1013
                 break;
             }
             case PartyLeave leave: {                        // :1020
@@ -462,6 +469,7 @@ public sealed partial class PartyBook {
                     if (members.Count == MaxMembers) return;
                     m = new PartyMember { User = on.User, Index = members.Count };
                     members.Add(m);
+                    BattleRecords?.AddPartyMemberRecord(m.CharacterId);         // :1170
                     MemberAdded?.Invoke(m);
                 }
                 break;
@@ -541,6 +549,7 @@ public sealed partial class PartyBook {
         if (index < 0 || index >= members.Count) return;
         var m = members[index];
         members.RemoveAt(index);
+        BattleRecords?.RemovePartyMemberRecord(m.CharacterId);                  // :949 and :953
         MemberRemoved?.Invoke(m);
         for (int i = index; i < members.Count; i++) members[i].Index = i;
     }

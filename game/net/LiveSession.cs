@@ -82,6 +82,17 @@ public partial class LiveSession : Node
     public readonly QuestBook Quests = new();
     /// <summary>CPartyManager's party from the party packets (0x53); live only.</summary>
     public readonly PartyBook Party = new();
+    /// <summary>TSingleton&lt;CBattleRecordManager&gt; (ms2.cpp:2031): the DPS meters' tallies, fed by the damage records, the exp and
+    /// meso packets, with the party's member records. STILL-OPEN: the chaos group's room test (the current dungeon room's
+    /// chaosDamageMeter) and pets (FindPetById) are not tracked, so the chaos group stays inactive and a pet's damage is lost.</summary>
+    public readonly BattleRecordManager BattleRecords = new();
+
+    public LiveSession()
+    {
+        Party.BattleRecords = BattleRecords;
+        BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
+        BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;
+    }
     /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
     public readonly Ms2.Ui.GroupChatBook GroupChats = new();
     /// <summary>The party window is loaded and open (FUN_141924630), for OnPartyMemberJoin's add-or-open; set by the HUD.</summary>
@@ -1102,6 +1113,8 @@ public partial class LiveSession : Node
                 Me.Apply(e);
                 // scenestategame.cpp:4145: an npc of the packet's id keeps the gain (CNpc::FUN_141094df0), else the own PC shows it
                 if (e.Mode == 0 && e.Gained > 0 && remote?.AddNpcExp(e.NpcId, e.Gained) != true) ExpGained?.Invoke(e.Gained, e.Type);
+                // :4174: the own character's exp tally for any mode 0 gain, whoever kept the number (with a local player)
+                if (e.Mode == 0 && e.Gained > 0 && selfObject > 0) BattleRecords.RecordExp(CharacterId, e.Gained);
                 GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
             }
             else if (game.Is(p, Inbound.ItemDrop)) { }   // CSceneStateGame::FUN_141717560 (scenestategame.cpp:3262) has an empty body: the client does nothing with it
@@ -1142,6 +1155,7 @@ public partial class LiveSession : Node
             {
                 var m = MesoUpdate.Read(p.Reader());
                 long delta = Me.Apply(m);
+                if (delta > 0 && selfObject > 0) BattleRecords.RecordMeso(CharacterId, delta);   // :7016, with a local player
                 GD.Print($"live: meso {m.Balance} ({delta:+#;-#;0}, kind {m.Kind})");
                 MesoChanged?.Invoke(delta, m.Kind);
             }
@@ -1518,6 +1532,9 @@ public partial class LiveSession : Node
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))
                     SelfDamaged?.Invoke(total);
+                // PCBase::vfunc_113 (RecordDamage) at the end of the hit object's vfunc_33/34/35, for every record
+                BattleRecords.Record(d, id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
+                    id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains);
             }
             else if (game.Is(p, Inbound.Mastery))
             {
