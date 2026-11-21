@@ -144,6 +144,37 @@ public class PartyDpsDialogTests
     }
 
     [Test]
+    public void TheHudCloseKeepsTheGroupAndAReopenShowsTheTallies()
+    {
+        var e = new Env();
+        var c = Dialog(e);
+        e.Records.RecordDamage(1, 99, new[] { new Hit(0, -300) });
+        e.Now = 31_000;
+        c.CloseKeepingTheGroup();                           // Ctrl+Q or Escape: vfunc_67, no StopGroup
+        Assert.That((c.Closing, e.Records.IsGroupActive(1)), Is.EqualTo((true, true)));
+        var again = Dialog(e);                              // OnLoadComplete: StartGroupIfInactive keeps the run
+        again.RebuildRanking();
+        Assert.That((e.Records.GroupStartTick(1), e.Records.GetRecord(1, 1).Amount(BattleRecord.Dealt)), Is.EqualTo((1_000u, 300L)));
+        Assert.That(Rt.ToString(Get(again.Host, again.Host.Entity, "m_timer", "m_timerText", "text")), Is.EqualTo("00:00:30"));
+    }
+
+    [Test]
+    public void TheRollOverShowsTheTitleBarAndTheTimer()
+    {
+        var e = new Env();
+        var c = Dialog(e);
+        var h = c.Host;
+        Assert.That(Rt.ToBoolean(Get(h, h.Entity, "m_timer", "visible")), Is.False, "configUI hides the timer");
+        double x = Rt.ToNumber(h.Get(h.Entity, "x")) + Rt.ToNumber(Get(h, h.Entity, "m_TopRank", "x")) + 20;
+        double y = Rt.ToNumber(h.Get(h.Entity, "y")) + Rt.ToNumber(Get(h, h.Entity, "m_TopRank", "y")) + 10;
+        h.Player.MouseMove(x, y);                           // the pointer over the meter: ROLL_OVER, onMouseRollOver
+        for (int i = 0; i < 30; i++) h.Player.Tick();
+        Assert.That((Rt.ToString(h.Get(h.Entity, "currentLabel")), Rt.ToBoolean(Get(h, h.Entity, "m_timer", "visible"))), Is.EqualTo(("show", true)));
+        Assert.That(Rt.ToNumber(Get(h, h.Entity, "m_titleBar", "alpha")), Is.EqualTo(1.0), "the title bar faded in");
+        Assert.That(Rt.ToString(Get(h, h.Entity, "m_titleBar", "m_titleText", "text")), Is.Not.Empty);
+    }
+
+    [Test]
     public void OutOfAPartyTheMeterCloses()
     {
         var e = new Env(2);

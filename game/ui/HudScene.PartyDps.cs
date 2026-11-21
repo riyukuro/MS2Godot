@@ -1,4 +1,5 @@
 using Godot;
+using Ms2.Avm2;
 using Ms2.Net.Packets;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
@@ -17,12 +18,15 @@ public partial class HudScene
     MovieDialog partyDpsMovie;
     BattleRecordManager shotRecords;                    // --uigen-open partydps: the offline records
     Action unwatchPartyDps;
+    bool leftCtrlDown;                                  // DIK 0x1d: the left Ctrl key only (TrackLeftCtrl)
+    /// <summary>The key that toggled the meter also goes to the casts (see <see cref="PartyDpsKeys"/>).</summary>
+    bool partyDpsCastThrough;
 
     bool PartyDpsOpen => partyDps != null && !partyDps.IsClosed && !partyDps.Closing;
 
     void TogglePartyDps()
     {
-        if (PartyDpsOpen) { partyDps.OnCallbackBeforeDialog("OnCloseDialog", Array.Empty<object>()); return; }   // ToggleDialog's close: vfunc_28's OnCloseDialog
+        if (PartyDpsOpen) { partyDps.CloseKeepingTheGroup(); return; }   // ToggleDialog's close: vfunc_67, the group keeps running
         OpenPartyDps();
     }
 
@@ -75,10 +79,27 @@ public partial class HudScene
         if (PartyDpsOpen) partyDps.Update(Time.GetTicksMsec());
     }
 
-    /// <summary>Ctrl+Q (the physical keys) toggles the meter in a party; Escape closes it.</summary>
+    /// <summary>The left Ctrl key's state from its own press and release events (the modifier flag takes either Ctrl).</summary>
+    void TrackLeftCtrl(InputEvent e)
+    {
+        if (e is InputEventKey { Keycode: Key.Ctrl, Location: KeyLocation.Left } k) leftCtrlDown = k.Pressed;
+    }
+
+    /// <summary>
+    /// Left Ctrl+Q (the physical keys; IsKeyDown(0x1d) and WasKeyPressed(0x10), uiscenegame.cpp:1313) toggles the meter in a
+    /// party; Escape closes it. The toggle is UISceneGamePlay::vfunc_13 (uiscenegame.cpp:1098), the UI scene's key handler,
+    /// while the quick slot keys read the keyboard on their own: CKeyTable's key tests go through
+    /// MS2InputService::WasKeyPressedGated (ms2inputservice.cpp:263), which for a key outside the modifier group
+    /// (0x92..0xa1) is the raw NiInputKeyboard KeyWasPressed (:973) with no Ctrl test, so a Q bound to a quick slot casts too.
+    /// </summary>
     bool PartyDpsKeys(InputEventKey k)
     {
-        if (k.PhysicalKeycode == Key.Q && k.CtrlPressed && !Ms2.Ui.InputBlock.Active && partyBook?.IsInParty == true) { TogglePartyDps(); return true; }
+        if (k.PhysicalKeycode == Key.Q && k.Pressed && !k.Echo && leftCtrlDown && k.CtrlPressed && !Ms2.Ui.InputBlock.Active && partyBook?.IsInParty == true)
+        {
+            TogglePartyDps();
+            partyDpsCastThrough = true;
+            return true;
+        }
         if (PartyDpsOpen && k.Keycode == Key.Escape) { TogglePartyDps(); return true; }
         return false;
     }
@@ -98,5 +119,10 @@ public partial class HudScene
         OpenPartyDps();
         for (int i = 1; i <= ids.Count; i++)            // object i is member i; object 0 a class 6 npc
             shotRecords.RecordDamage(i, 0, new[] { new Hit((byte)(i % 2), -12_345L * i * i), new Hit(2, 0) });
+        // The movie shows its title bar and timer only under the pointer (ROLL_OVER: onMouseRollOver plays "show"; configUI
+        // hides m_timer, ROLL_OUT plays "hide"): the shot has no mouse, so its pointer goes over the top row.
+        if (PartyDpsOpen && partyDps.Host is { Entity: { } en } h)
+            h.Player.MouseMove(Rt.ToNumber(h.Get(en, "x")) + Rt.ToNumber(h.Get(h.Get(en, "m_TopRank"), "x")) + 20,
+                Rt.ToNumber(h.Get(en, "y")) + Rt.ToNumber(h.Get(h.Get(en, "m_TopRank"), "y")) + 10);
     }
 }

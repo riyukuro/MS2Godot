@@ -124,26 +124,35 @@ public sealed class BattleRecordManager {
     /// active group the source's record takes the value count (slot 2), |total| (slot 0, and slot 7 on a class 6 npc), a hit per
     /// value of kind 0 and a hit and a critical per kind 1; the target's record takes |total| (slot 1). The total is signed.
     /// </summary>
-    public void RecordDamage(int source, int target, IReadOnlyList<Hit> hits) {
+    public void RecordDamage(int source, int target, Hit[] hits) {
+        if (!AnyGroupActive()) return;                  // no group takes it: the lookups are skipped
         long sourceId = CharacterIdOf(source);
         if (sourceId == 0 && PetOwnerOf(source) is var owner and not 0) sourceId = CharacterIdOf(owner);
         long targetId = CharacterIdOf(target);
         long total = 0;
-        foreach (var h in hits) total += h.Damage;
+        for (int i = 0; i < hits.Length; i++) total += hits[i].Damage;
         total = Math.Abs(total);
+        int? npcClass = null;                           // asked once, on the first group with the source's record
         foreach (var g in groups) {
             if (!g.IsActive) continue;
             if (g.GetRecord(sourceId) is { } rec) {
-                rec.Add(BattleRecord.Attacks, hits.Count);
+                rec.Add(BattleRecord.Attacks, hits.Length);
                 rec.Add(BattleRecord.Dealt, total);
-                if (NpcClassOf(target) == 6) rec.Add(BattleRecord.BossDealt, total);
-                foreach (var h in hits) {
-                    if (h.Flag == 0) rec.Add(BattleRecord.Hits, 1);
-                    else if (h.Flag == 1) { rec.Add(BattleRecord.Hits, 1); rec.Add(BattleRecord.Crits, 1); }
+                npcClass ??= NpcClassOf(target);
+                if (npcClass == 6) rec.Add(BattleRecord.BossDealt, total);
+                for (int i = 0; i < hits.Length; i++) {
+                    byte flag = hits[i].Flag;
+                    if (flag == 0) rec.Add(BattleRecord.Hits, 1);
+                    else if (flag == 1) { rec.Add(BattleRecord.Hits, 1); rec.Add(BattleRecord.Crits, 1); }
                 }
             }
             g.GetRecord(targetId)?.Add(BattleRecord.Taken, total);
         }
+    }
+
+    bool AnyGroupActive() {
+        foreach (var g in groups) if (g.IsActive) return true;
+        return false;
     }
 
     /// <summary>
@@ -154,23 +163,29 @@ public sealed class BattleRecordManager {
     /// object. Mode 6 (OnSplashDamage): no owner (0), so only damage taken. Modes 0, 4, 7 and 8 carry no damage record.
     /// </summary>
     public void Record(SkillDamage d, Func<int, bool> objectExists, Func<int, bool> isPcBaseObject, Func<int, bool> isRegionSkill) {
-        foreach (var (source, target, hits) in DamageRecords(d, objectExists, isPcBaseObject, isRegionSkill))
-            RecordDamage(source, target, hits);
+        if (!AnyGroupActive() || !RecordSource(d, isPcBaseObject, isRegionSkill, out int source)) return;
+        foreach (var t in d.Targets)
+            if (objectExists(t.TargetId)) RecordDamage(source, t.TargetId, t.Hits);
+    }
+
+    /// <summary>The attacker of a packet's records by its mode; false when the mode feeds none.</summary>
+    static bool RecordSource(SkillDamage d, Func<int, bool> isPcBaseObject, Func<int, bool> isRegionSkill, out int source) {
+        source = 0;
+        if (d == null || d.Raw != null) return false;
+        switch (d.Mode) {
+            case 1: source = d.OwnerId; return true;
+            case 3: source = d.OwnerId; return isPcBaseObject(d.TargetId);
+            case 5: source = d.OwnerId; return isRegionSkill(d.RegionId);
+            case 6: return true;
+            default: return false;
+        }
     }
 
     /// <summary>The (attacker, object hit, hits) of each record <see cref="Record"/> feeds.</summary>
     public static List<(int Source, int Target, Hit[] Hits)> DamageRecords(SkillDamage d, Func<int, bool> objectExists,
         Func<int, bool> isPcBaseObject, Func<int, bool> isRegionSkill) {
         var list = new List<(int, int, Hit[])>();
-        if (d == null || d.Raw != null) return list;
-        int source;
-        switch (d.Mode) {
-            case 1: source = d.OwnerId; break;
-            case 3: if (!isPcBaseObject(d.TargetId)) return list; source = d.OwnerId; break;
-            case 5: if (!isRegionSkill(d.RegionId)) return list; source = d.OwnerId; break;
-            case 6: source = 0; break;
-            default: return list;
-        }
+        if (!RecordSource(d, isPcBaseObject, isRegionSkill, out int source)) return list;
         foreach (var t in d.Targets)
             if (objectExists(t.TargetId)) list.Add((source, t.TargetId, t.Hits));
         return list;

@@ -164,4 +164,30 @@ public class BattleRecordTests {
         book.Apply(new PartyDisband(), 1, true);
         Assert.That(m.HasRecord(1, 1) || m.IsGroupActive(1), Is.False, "ClearParty: ClearPartyGroups");
     }
+
+    static long LeastBytes(Action calls) {
+        long least = long.MaxValue;                     // the least of up to 5 windows: tiering lands one-time allocations anywhere
+        for (int i = 0; i < 5 && least > 0; i++) {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            calls();
+            least = Math.Min(least, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+        return least;
+    }
+
+    [Test]
+    public void RecordingASkillDamageAllocatesNothing() {
+        var m = Manager();
+        m.AddPartyMemberRecord(1000);
+        var hits = new[] { new Hit(0, -5), new Hit(1, -7) };
+        var d = new SkillDamage { Mode = 1, OwnerId = 10, Targets = { new HitTarget(30, hits, default, default), new HitTarget(31, hits, default, default) } };
+        Func<int, bool> yes = _ => true;
+        void Calls() { for (int i = 0; i < 1000; i++) m.Record(d, yes, yes, yes); }
+        Calls();
+        Assert.That(LeastBytes(Calls), Is.Zero, "no group active");
+        m.StartGroup(1);
+        Calls();
+        Assert.That(LeastBytes(Calls), Is.Zero, "the party group active");
+        Assert.That(m.GetRecord(1, 1000).Amount(BattleRecord.Dealt), Is.GreaterThan(0));
+    }
 }

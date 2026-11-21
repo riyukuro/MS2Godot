@@ -86,6 +86,9 @@ public partial class LiveSession : Node
     /// meso packets, with the party's member records. STILL-OPEN: the chaos group's room test (the current dungeon room's
     /// chaosDamageMeter) and pets (FindPetById) are not tracked, so the chaos group stays inactive and a pet's damage is lost.</summary>
     public readonly BattleRecordManager BattleRecords = new();
+    // the battle records' lookups, made once rather than per SkillDamage packet
+    Func<int, bool> objectInField, isRegionSkill;
+    bool ObjectInField(int id) => remote?.Tracker.HasObject(id) ?? (id == selfObject);
 
     public LiveSession()
     {
@@ -1533,8 +1536,7 @@ public partial class LiveSession : Node
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))
                     SelfDamaged?.Invoke(total);
                 // PCBase::vfunc_113 (RecordDamage) at the end of the hit object's vfunc_33/34/35, for every record
-                BattleRecords.Record(d, id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
-                    id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains);
+                BattleRecords.Record(d, objectInField ??= ObjectInField, objectInField, isRegionSkill ??= regionSkills.Contains);
             }
             else if (game.Is(p, Inbound.Mastery))
             {

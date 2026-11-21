@@ -1511,6 +1511,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         var vp = GetViewport();   // taken before the dispatches, which can change the scene
         TrackPickupKey(e);
+        TrackLeftCtrl(e);
         // under a field move's loading screen no hotkey opens a dialog (Ms2.Ui.FieldMoveCover); the message box's keys are
         // its own layer's (MessageBoxLayer), which saw them first
         if (Ms2.Ui.FieldMoveCover.Up)
@@ -1519,7 +1520,12 @@ public partial class HudScene : Node, IUiStageHost
             return;
         }
         if (ChatKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
-        if (DialogKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
+        if (DialogKeys(e))
+        {
+            if (partyDpsCastThrough) { partyDpsCastThrough = false; CastKeys(e); }   // Ctrl+Q also casts Q (HudScene.PartyDps)
+            if (IsInstanceValid(vp)) vp.SetInputAsHandled();
+            return;
+        }
         if (CastKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();   // the attack and quick slot keys (HudScene.Cast)
     }
 
