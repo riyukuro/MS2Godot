@@ -58,6 +58,9 @@ public sealed class FameTable
         "lumiknight_kritiasexped", "greenhood_kritiasexped", "georg",
     };
 
+    /// <summary>Name_14021a6b0 (commonenum.cpp:772): the alliance's name key part for 1-9, else "none".</summary>
+    public static string AllianceName(int alliance) => alliance >= 1 && alliance <= AllianceNames.Length ? AllianceNames[alliance - 1] : "none";
+
     /// <summary>Parse_14021a330 (commonenum.cpp): the alliance name (any case) to 1-9, else 0.</summary>
     public static int Alliance(string name)
     {

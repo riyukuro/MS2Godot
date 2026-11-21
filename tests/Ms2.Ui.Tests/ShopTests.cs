@@ -878,6 +878,10 @@ public class ShopTests
         rec.FameGrade = 2;
         c.BuyProduct(1, 0);
         Assert.That((sent.Count, boxes.Count, notices.Count), Is.EqualTo((0, 0, 1)));
+        // the alliance is named by its s_quest_alliance_<name> string (questmasktable.cpp:556-558), not its number
+        string allianceName = model.Tables.Common("s_quest_alliance_darkwind");
+        Assert.That(allianceName, Is.Not.Empty);
+        Assert.That(notices[0], Does.Contain(allianceName));
         c.FameGradeOf = _ => 2;
 
         // 5. Championship gate: rank and member score

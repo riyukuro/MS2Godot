@@ -1565,7 +1565,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         if (FameGradeOf(alliance) >= grade) return true;
         if (notify)
         {
-            string allianceText = AllianceName?.Invoke(alliance) ?? Common($"s_quest_alliance_{alliance}");
+            string allianceText = AllianceName?.Invoke(alliance) ?? Common($"s_quest_alliance_{FameTable.AllianceName(alliance)}");   // GetAllianceName (questmasktable.cpp:556-558)
             string gradeText = StripTags(FameGradeName?.Invoke(alliance, grade) ?? Common($"s_fame_grade_{grade}"));
             SystemNotice?.Invoke(Common("s_err_lack_fame_alliance", allianceText, gradeText));
         }
