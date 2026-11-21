@@ -12,7 +12,7 @@ namespace Ms2.Ui.Hud;
 /// item bags, writes the movie's setEnchantInfo / setEnchantResult objects from it, handles the movie's callbacks and runs the
 /// confirm box chain (refund, enchanted ingredient, binding, protector, payback).
 /// <para>STILL-OPEN: GetEnchantableItemUids' limit and lock tests (FUN_14058e230, FUN_140525c60), the sale-rate text (saleDesc),
-/// the event bonus of the rate text, GetEnchantRatio (the "before" stat uses 0), the exp divisor and the fail stack limit,
+/// the event bonus of the rate text, GetEnchantRatio (the "before" stat is the unscaled base), the exp divisor and the fail stack limit,
 /// failDesc (the failure type is not in the Result event), the failure reward page (inventory 0x4e40), sounds, the protector
 /// rank / count warnings, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
 /// </summary>
@@ -277,14 +277,18 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         return t;
     }
 
-    /// <summary>One stat text: the item's option 0 value scaled by (extra + rate/1000), as GetEnchantStatText.</summary>
-    string StatText(Item item, int stat, float rate)
-    {
-        int b = item?.Record != null && item.Record.Options.Stat[0].TryGetValue(stat, out var v) ? v : 0;
-        long scaled = (long)((float)(long)b * rate);
-        if (scaled == 0) return ClientFormat.Format(Model.Tables.Common("s_word_stat_increase_near_zero"), Model.Tables.StatName(stat));
-        return ClientFormat.Format(Model.Tables.ItemOptions.StatValueText(stat), (int)scaled);
-    }
+    int BaseStat(Item item, int stat) =>
+        item?.Record != null && item.Record.Options.Stat[0].TryGetValue(stat, out var v) ? v : 0;
+
+    /// <summary>statName (WriteEnchantOptions @:1566, FormatEnchantStatText @:1544): the stat's value text formatted with the value
+    /// before the enchant; a zero value is formatted as 0 (the tooltip's near-zero sentence is not used here).</summary>
+    string StatValueText(int stat, long value) =>
+        ClientFormat.Format(Model.Tables.ItemOptions.StatValueText(stat), (int)value);
+
+    /// <summary>afterStat: the value after the enchant as a plain number (StringFormat("{0}", after)).</summary>
+    static string AfterNumber(long after) => after.ToString(CultureInfo.InvariantCulture);
+
+    static long Scaled(int b, float rate) => (long)((float)(long)b * rate);
 
     /// <summary>The setEnchantInfo object (UpdateEnchantInfo @0x1419c81a0).</summary>
     public object BuildInfo()
@@ -300,7 +304,10 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         m.Add(("frame", Frame()));
         var options = new List<object>();
         foreach (var kv in Book.Options)
-            options.Add(Host.Obj(("statName", StatText(item, kv.Key, 0f)), ("afterStat", StatText(item, kv.Key, kv.Value / 1000f))));
+            {
+            int b = BaseStat(item, kv.Key);
+            options.Add(Host.Obj(("statName", StatValueText(kv.Key, b)), ("afterStat", AfterNumber(Scaled(b, kv.Value / 1000f)))));
+        }
         m.Add(("options", options));
         Bind(SelectedSlot, item, SlotFlags);
         m.Add(("enchantItem", SelectedSlot));
@@ -366,7 +373,9 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 
     void UpdateEnchantInfo()
     {
-        Host.Invoke(Ani, "setEnchantInfo", BuildInfo());
+        // only the two exp modes fill, and an item that is not found leaves the movie's info as it is
+        if (Selected != null && Book.ExpMode is ItemEnchantBook.ExpOphelia or ItemEnchantBook.ExpPeachy)
+            Host.Invoke(Ani, "setEnchantInfo", BuildInfo());
         Host.Invoke(Ani, "playEnchant");
     }
 
@@ -411,21 +420,23 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
             Bind(ResultSlot, item, SlotFlags);
             m.Add(("binding", ResultSlot));
         }
-        m.Add(("diff", cur - prev));
-        m.Add(("prevLevel", Level(prev)));
-        m.Add(("curLevel", Level(cur)));
+        m.Add(("diff", prev != cur));
+        int rank = item?.Rarity ?? 0;
+        m.Add(("prevLevel", Level(prev, rank)));
+        m.Add(("curLevel", Level(cur, rank)));
         if (success)
         {
             var sel = Selected;
             var parts = new List<string>();
-            foreach (var kv in Book.Options) parts.Add(StatText(sel, kv.Key, kv.Value / 1000f));
+            foreach (var kv in Book.Options) parts.Add(StatValueText(kv.Key, Scaled(BaseStat(sel, kv.Key), kv.Value / 1000f)));
             m.Add(("enchantStat", string.Join(",", parts)));
         }
         else m.Add(("protect", Book.Protector0 != 0 || Book.Protector1 != 0 ? 1 : 0));
         Host.Invoke(Ani, "setEnchantResult", Host.Obj(m.ToArray()));
     }
 
-    static string Level(int n) => $"<font color='{(n > 0 ? "#ffd200" : "#ffffff")}'>+{n}</font>";
+    /// <summary>FormatLevelText: the level in the item's rank colour.</summary>
+    string Level(int n, int rank) => $"<font color='#{Model.Tables.Items.TextColor(rank):x}'>+{n}</font>";
 
     // ---- callbacks ---------------------------------------------------------------------------------------------------
 
@@ -478,15 +489,16 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         {
             case EnchantStep.AskRefund: AskRefund(); break;
             case EnchantStep.AskEnchantedIngredient: Confirm("s_itemenchant_over_enchanted_item", Book.ConfirmEnchantedIngredient); break;
-            case EnchantStep.AskBindingCharacter: Confirm("s_itemenchant_binding_character", Book.ConfirmBinding); break;
+            case EnchantStep.AskBindingCharacter: Confirm("s_itemenchant_binding_character", Book.ConfirmBinding, Model?.Player?.Name ?? ""); break;
             case EnchantStep.AskProtector: AskProtector(); break;
             case EnchantStep.AskPayback: AskPayback(); break;
         }
     }
 
-    void Confirm(string key, Action yes)
+    /// <summary>A confirm box; its yes does nothing once the dialog is closed.</summary>
+    void Confirm(string key, Action yes, params object[] args)
     {
-        var box = MessageBoxQueue.CreateWithCallback(T(key), 1, (b, _) => { if (b == 0) yes(); return true; });
+        var box = MessageBoxQueue.CreateWithCallback(Fmt(key, args), 1, (b, _) => { if (b == 0 && !closing) yes(); return true; });
         ShowData(box);
     }
 
@@ -508,7 +520,7 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         int v = Book.Protector0 != 0 ? 1 : Book.Protector1 != 0 ? 2 : 0;
         if (v == 0)
         {
-            var plain = MessageBoxQueue.CreateWithCallback(ProtectorText(), 1, (b, _) => { if (b == 0) Step(Book.ConfirmProtector(0)); return true; });
+            var plain = MessageBoxQueue.CreateWithCallback(ProtectorText(), 1, (b, _) => { if (b == 0 && !closing) Step(Book.ConfirmProtector(0)); return true; });
             ShowData(plain);
             return;
         }
@@ -519,11 +531,14 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         box.SetCheckbox0(Model.Tables.Common(0x961), false);
         box.Callback = (b, bx) =>
         {
-            if (b != 0) return true;
+            if (b != 0 || closing) return true;
             bool use = bx.Check0Selected;
             string key = !use ? "s_itemenchant_protector_dont_use_warn"
                 : v == 2 ? "s_itemenchant_super_protector_use_warn" : "s_itemenchant_protector_use_warn";
-            Confirm(key, () => Step(Book.ConfirmProtector(use ? v : 0)));
+            string pName = pItem != null ? Model.Tables.ItemName(pItem.ItemId) : "";
+            if (!use) Confirm(key, () => Step(Book.ConfirmProtector(0)));
+            else if (v == 2) Confirm(key, () => Step(Book.ConfirmProtector(v)), pName);
+            else Confirm(key, () => Step(Book.ConfirmProtector(v)), pName, pItem?.Count ?? 0);
             return true;
         };
         ShowData(box);

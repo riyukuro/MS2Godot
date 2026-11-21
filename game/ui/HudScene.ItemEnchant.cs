@@ -22,6 +22,7 @@ public partial class HudScene
     {
         if (!string.Equals(dialog, ItemEnchantDialogController.Bag, StringComparison.OrdinalIgnoreCase)) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        if (ItemEnchantOpen) return;
         live.EnchantBook.SetModeByName(argument);
         OpenItemEnchant();
     }

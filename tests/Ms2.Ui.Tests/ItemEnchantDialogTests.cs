@@ -283,6 +283,51 @@ public class ItemEnchantDialogTests
     }
 
     [Test]
+    public void TheInfoOptionsCarryTheValueTextAndAPlainNumberAfter()
+    {
+        var r = new Rig();
+        r.Add(5);   // option 0 stat 1 = 200
+        r.Select(5, r.Info(5, options: new Dictionary<int, int> { [1] = 100 }));
+        var o = r.C.BuildInfo();
+        var opts = r.Get(o, "options");
+        Assert.That(Rt.ToUint32(r.Get(opts, "length")), Is.EqualTo(1u));
+        // 200 scaled by 100 / 1000 = 20: only the number, never a sentence
+        Assert.That(Rt.ToString(r.Get(r.Get(opts, "0"), "afterStat")), Is.EqualTo("20"));
+        var expected = Ms2.Quest.ClientFormat.Format(r.Model.Tables.ItemOptions.StatValueText(1), 200);
+        Assert.That(Rt.ToString(r.Get(r.Get(opts, "0"), "statName")), Is.EqualTo(expected));
+        // a base that scales to zero is still the number 0
+        r.Select(5, r.Info(5, options: new Dictionary<int, int> { [1] = 1 }));
+        opts = r.Get(r.C.BuildInfo(), "options");
+        Assert.That(Rt.ToString(r.Get(r.Get(opts, "0"), "afterStat")), Is.EqualTo("0"));
+    }
+
+    [Test]
+    public void ClosingWithABoxUpMakesItsYesSendNothing()
+    {
+        var r = new Rig();
+        r.Add(5, charge: 50);
+        r.Select(5, r.Info(5)); r.Sent.Clear();
+        r.C.OnCallback("onEnchant", new object[0]);
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        r.C.Close(); r.Sent.Clear();
+        r.Boxes[0].Callback(0, r.Boxes[0]);
+        Assert.That(r.Sent.OfType<ItemEnchantRequest>(), Is.Empty);
+    }
+
+    [Test]
+    public void TheBindingBoxIsFormattedWithThePlayersName()
+    {
+        var r = new Rig(2);
+        r.Model.Player.Name = "Zed";
+        r.Add(5); r.Book.NeedsBindingBox = _ => true;
+        r.Select(5, r.Info(5, exp: 2));
+        r.C.OnCallback("onEnchant", new object[0]);
+        string raw = r.Model.Tables.Common("s_itemenchant_binding_character");
+        if (!raw.Contains("{0}")) Assert.Ignore("this data's binding text has no name");
+        Assert.That(r.Boxes.Single().Msg, Does.Contain("Zed").And.Not.Contain("{0}"));
+    }
+
+    [Test]
     public void AnInfoPacketForAnotherModeClosesTheDialog()
     {
         var r = new Rig();
