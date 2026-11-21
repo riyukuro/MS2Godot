@@ -149,6 +149,11 @@ public partial class RemoteSyncCheck : Node3D
                 if (stone.States.Cur != RemotePcStates.StateIdle) fails.Add($"after the cast: state {stone.States.Cur} sub {stone.States.Sub}");
                 if (stone.Anim.CurrentAnimation == cast) fails.Add($"after the cast: still the cast sequence");
                 GD.Print($"remote sync: cast {cast} ({len:0.00} s) ended after {(castEnd - castStart) * Dt:0.00} s in state {stone.States.Cur} sub {stone.States.Sub}, sequence {stone.Anim.CurrentAnimation}");
+                // LedgeAhead (skill controllers) on the shared ray: over the floor no ledge, 1500 on past the 1000 edge a ledge
+                bool overFloor = stone.LedgeAhead(new System.Numerics.Vector3(1, 0, 0), 100f, 100f, 50f);
+                bool pastEdge = stone.LedgeAhead(new System.Numerics.Vector3(0, 1, 0), 1500f, 100f, 50f);
+                if (overFloor || !pastEdge) fails.Add($"LedgeAhead over floor {overFloor} (want False), past the edge {pastEdge} (want True)");
+                GD.Print($"remote sync: LedgeAhead over floor {overFloor}, past edge {pastEdge}");
                 bool ok = fails.Count == 0;
                 GD.Print($"remote sync: {(ok ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
                 GetTree().Quit(ok ? 0 : 1);
