@@ -246,6 +246,8 @@ public sealed partial class RemoteLayer : Node3D
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;
+        // OnAddUser (scenestategame.cpp:11185-11186): no current health after the stats -> FUN_14166ce50(1), the dead flag
+        if (r.HpCur == 0) pc.States.SetDead(true);
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
         r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
@@ -356,6 +358,19 @@ public sealed partial class RemoteLayer : Node3D
                     sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test
                     RefreshWeapons(sb);
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
+                    break;
+                case UserStateEvent us:
+                    // OnUserState (scenestategame.cpp:5759-5771): vfunc_59(state) twice, or vfunc_137 after state 12
+                    if (users.TryGetValue(us.ObjectId, out var uu)) uu.Pc.States.UserState(us.State, uu.HpCur, uu.HpMax);
+                    break;
+                case UserDeadEvent ud:
+                    // OnDeadUser (scenestategame.cpp:6533-6544): vfunc_137. STILL-OPEN: the flag's FUN_141661ba0(1)
+                    if (users.TryGetValue(ud.ObjectId, out var du)) du.Pc.States.Die(du.HpCur);
+                    break;
+                case UserRevivalEvent rv:
+                    // OnRevival (scenestategame.cpp:7387-7398): FUN_14166ce50(0); the 0x18 state is the own player's only.
+                    // STILL-OPEN: FUN_141661ba0(flag) and the revival invincibility (FUN_141661370)
+                    if (users.TryGetValue(rv.ObjectId, out var vu)) vu.Pc.States.SetDead(false);
                     break;
                 case SkillDamageEvent dmg:
                     // FUN_141671c20 (pcbase.cpp:3922) calls vfunc_112 whenever the target has an entry, a miss (type 2) too

@@ -32,6 +32,12 @@ public sealed record NpcHpEvent(double Time, int ObjectId, long Current, long Ma
 public sealed record UserStatEvent(double Time, PcStat Stat) : ReplayEvent(Time);
 /// <summary>OnUserBattle (0x2F): a player's battle stance, SetEmotion's byte (1 in battle, 0 out).</summary>
 public sealed record UserBattleEvent(double Time, int ObjectId, byte Emotion) : ReplayEvent(Time);
+/// <summary>OnUserState (0x36, scenestategame.cpp:5759): a PC's state from the server (<see cref="RemotePcStates.UserState"/>).</summary>
+public sealed record UserStateEvent(double Time, int ObjectId, byte State) : ReplayEvent(Time);
+/// <summary>OnDeadUser (0xA6, scenestategame.cpp:6533): PC::vfunc_137 (<see cref="RemotePcStates.Die"/>).</summary>
+public sealed record UserDeadEvent(double Time, int ObjectId) : ReplayEvent(Time);
+/// <summary>OnRevival (0x34, scenestategame.cpp:7387): FUN_14166ce50(0), the dead flag cleared.</summary>
+public sealed record UserRevivalEvent(double Time, int ObjectId) : ReplayEvent(Time);
 /// <summary>OnBuff (0x47, scenestategame.cpp:7591) for a PC in the field: the owner header names it (FUN_141bd1200; an owner
 /// that is not here returns). The packet goes to that PC's AdditionalCliList (FUN_1416749a0).</summary>
 public sealed record UserBuffEvent(double Time, BuffPacket Buff) : ReplayEvent(Time);
@@ -162,6 +168,22 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.UserBattle: {
                 var b = UserBattle.Read(p.Reader());
                 Events.Enqueue(new UserBattleEvent(Time, b.ObjectId, b.Emotion));
+                break;
+            }
+            // FindPCById (OnUserState, OnDeadUser) / FUN_141bd1200 (OnRevival): an id nobody added returns
+            case Ms2.Net.Inbound.UserState: {
+                var u = UserState.Read(p.Reader());
+                if (HasActor(u.ObjectId)) Events.Enqueue(new UserStateEvent(Time, u.ObjectId, u.State));
+                break;
+            }
+            case Ms2.Net.Inbound.DeadUser: {
+                var d = DeadUser.Read(p.Reader());
+                if (HasActor(d.ObjectId)) Events.Enqueue(new UserDeadEvent(Time, d.ObjectId));
+                break;
+            }
+            case Ms2.Net.Inbound.Revival: {
+                var v = Revival.Read(p.Reader());
+                if (HasActor(v.ObjectId)) Events.Enqueue(new UserRevivalEvent(Time, v.ObjectId));
                 break;
             }
             case Ms2.Net.Inbound.Prestige: {

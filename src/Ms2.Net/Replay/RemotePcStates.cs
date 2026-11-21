@@ -262,6 +262,58 @@ public sealed class RemotePcStates
     /// </summary>
     public void Spawn() => ChangeState(StateFall);
 
+    // ---- the dead flag -----------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// PCBase m_unk_15c: PCBase::IsDead (@0x14166ce30, pcbase.cpp:1256), set by FUN_14166ce50 (pcbase.cpp:1262).
+    /// StateSkill::PlayCastStartEffect returns at once for a dead owner (stateskill.cpp:1822).
+    /// </summary>
+    public bool Dead { get; private set; }
+
+    /// <summary>
+    /// OnAddUser (scenestategame.cpp:11185-11186): after the stats (vfunc_91), a PC with no current health
+    /// (FUN_141670a00(4) == 0) takes FUN_14166ce50(1); OnRevival (scenestategame.cpp:7398) clears it for any actor.
+    /// </summary>
+    public void SetDead(bool dead) => Dead = dead;
+
+    /// <summary>
+    /// PC::vfunc_59 (@0x1416537d0, pc.cpp:1189-1194): PC::vfunc_124 (pc.cpp:1198-1205) lets the state through when the PC
+    /// is not dead and has health (or no max health, FUN_141670a30(4)), or for the death 0xc, revival 0x18 and observer
+    /// 0x3f states; then PCBase::vfunc_59 (pcbase.cpp:1098-1113) -> ChangeState. <paramref name="hp"/> and
+    /// <paramref name="hpMax"/> are the PC's current and maximum health. The PC is taken as loaded (m_unk_b4) and not
+    /// riding another's mount (m_spB10).
+    /// </summary>
+    public void ServerState(int state, long hp, long hpMax)
+    {
+        if (!((!Dead && (hpMax <= 0 || hp != 0)) || state == 0xc || state == 0x18 || state == 0x3f)) return;
+        ChangeState(state);
+    }
+
+    /// <summary>
+    /// CSceneStateGame::OnUserState (@0x141721940, scenestategame.cpp:5759-5771): vfunc_59(state); then state 12 runs
+    /// vfunc_137 (<see cref="Die"/>) and any other state runs vfunc_59(state) again. A PC that took state 12 is already
+    /// in it when vfunc_137 runs, so its dead flag is not set by it. Returns whether the dead flag was set.
+    /// </summary>
+    public bool UserState(int state, long hp, long hpMax)
+    {
+        ServerState(state, hp, hpMax);
+        if (state == 12) return Die(hp);
+        ServerState(state, hp, hpMax);
+        return false;
+    }
+
+    /// <summary>
+    /// PC::vfunc_137 (pc.cpp:4593-4607; OnUserState state 12 and OnDeadUser, scenestategame.cpp:6533-6544): not in the
+    /// death state (0xc) and with no current health <paramref name="hp"/>: FUN_14166ce50(1). Returns whether it ran.
+    /// STILL-OPEN: m_nFF4 / m_n10f0 and the PvP time scale (IsMode1 / IsMode10).
+    /// </summary>
+    public bool Die(long hp)
+    {
+        if (Cur == 0xc || hp != 0) return false;
+        Dead = true;
+        return true;
+    }
+
     // ---- the queue -------------------------------------------------------------------------------------------------
 
     /// <summary>

@@ -130,6 +130,23 @@ public class FieldTrackerTests {
     }
 
     [Test]
+    public void DeathPacketsRouteForAPcInTheField() {
+        // OnUserState / OnDeadUser (FindPCById) and OnRevival (FUN_141bd1200): an id that is not in the field returns
+        static byte[] IdByte(int id, byte b) { var w = new ByteWriter(); w.WriteInt(id); w.WriteByte(b); return Bytes(w); }
+        var t = new FieldTracker();
+        t.Inbound(Packet(Inbound.UserState, IdByte(77, 12)));
+        t.Inbound(Packet(Inbound.DeadUser, IdByte(77, 0)));
+        t.Inbound(Packet(Inbound.Revival, IdByte(77, 0)));
+        Assert.That(t.Events, Is.Empty);
+        AddUser(t, 77, 2);
+        t.Events.Clear();
+        t.Inbound(Packet(Inbound.UserState, IdByte(77, 12)));
+        t.Inbound(Packet(Inbound.DeadUser, IdByte(77, 1)));
+        t.Inbound(Packet(Inbound.Revival, IdByte(77, 0)));
+        Assert.That(t.Events, Is.EqualTo(new ReplayEvent[] { new UserStateEvent(0, 77, 12), new UserDeadEvent(0, 77), new UserRevivalEvent(0, 77) }));
+    }
+
+    [Test]
     public void UserBattleRoutesToTheStanceEvent() {
         var w = new ByteWriter();
         w.WriteInt(88); w.WriteByte(1);

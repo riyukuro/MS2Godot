@@ -891,4 +891,47 @@ public class RemotePcStatesTests {
         for (int i = 0; i < 600; i++) sm.Update(1 / 60f);
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
     }
+
+    [Test] public void UserStateTwelveEntersTheDeathStateWithoutTheFlag() {
+        // OnUserState (scenestategame.cpp:5759-5771): vfunc_59(12) first, so PC::vfunc_137 finds state 0xc and returns
+        var sm = new RemotePcStates(new Body());
+        sm.Spawn(); Run(sm, 0.1f);
+        Assert.That(sm.UserState(12, 0, 100), Is.False);
+        Assert.That(sm.Cur, Is.EqualTo(0xc));
+        Assert.That(sm.Dead, Is.False);
+    }
+
+    [Test] public void DeadUserSetsTheFlagOnlyWithNoHealthOutsideTheDeathState() {
+        // PC::vfunc_137 (pc.cpp:4593-4607): GetCurStateId() != 0xc and FUN_141670a00(4) == 0
+        var sm = new RemotePcStates(new Body());
+        sm.Spawn(); Run(sm, 0.1f);
+        Assert.That(sm.Die(5), Is.False);
+        Assert.That(sm.Dead, Is.False);
+        Assert.That(sm.Die(0), Is.True);
+        Assert.That(sm.Dead, Is.True);
+        var inDeath = new RemotePcStates(new Body());
+        inDeath.ChangeState(0xc);
+        Assert.That(inDeath.Die(0), Is.False);
+        Assert.That(inDeath.Dead, Is.False);
+    }
+
+    [Test] public void ADeadPcTakesOnlyTheDeathRevivalAndObserverStates() {
+        // PC::vfunc_124 (pc.cpp:1198-1205): dead, or alive with no health under a max, lets only 0xc / 0x18 / 0x3f through
+        var sm = new RemotePcStates(new Body());
+        sm.Spawn(); Run(sm, 0.1f);
+        sm.SetDead(true);
+        sm.UserState(RemotePcStates.StateWalk, 50, 100);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateLand));
+        sm.UserState(0x18, 50, 100);
+        Assert.That(sm.Cur, Is.EqualTo(0x18));
+        // OnRevival (scenestategame.cpp:7398): FUN_14166ce50(0), then states pass again
+        sm.SetDead(false);
+        sm.UserState(RemotePcStates.StateIdle, 50, 100);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        // alive with no health and a max: still held; no max health (FUN_141670a30(4) <= 0): let through
+        sm.UserState(RemotePcStates.StateWalk, 0, 100);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        sm.UserState(RemotePcStates.StateWalk, 0, 0);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateWalk));
+    }
 }
