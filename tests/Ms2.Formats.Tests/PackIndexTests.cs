@@ -18,7 +18,8 @@ public class PackIndexTests
         var store = new CacheStore(dir);
         var outcomes = new List<CacheStore.Outcome>();
         var (of, logged, hashOf) = (CacheStore.Of, CacheStore.Logged, CacheStore.HashOf);
-        var archives = PackIndex.Archives(data).ToList();
+        // an install can hold an index the client does not open (KMS2_DEV: empty XmlDebug): it lists nothing and has no map to read (EmptyArchiveTests)
+        var archives = PackIndex.Archives(data).Where(a => PackIndex.Opens(Path.Combine(data, a + ".m2h"))).ToList();
         Assert.That(archives, Does.Contain("Xml").And.Contain("Resource/Gfx"));
         using var cachedPacks = new PackSet(data);
         try

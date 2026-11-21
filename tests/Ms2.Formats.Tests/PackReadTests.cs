@@ -42,7 +42,9 @@ public class PackReadTests
         // (the fixture is NonParallelizable, so no other fixture reads meanwhile)
         long hits0 = PackSet.FastAesHits, misses0 = PackSet.FastAesMisses, fallbacks0 = PackSet.Fallbacks;
         int total = 0, skipped = 0;
-        var files = Directory.GetFiles(data, "*.m2d", SearchOption.AllDirectories);
+        // archives whose index the client does not open (empty XmlDebug on KMS2_DEV) have nothing to read
+        var files = Directory.GetFiles(data, "*.m2d", SearchOption.AllDirectories)
+            .Where(f => PackIndex.Opens(Path.ChangeExtension(f, ".m2h"))).ToArray();
         Assert.That(files, Is.Not.Empty);
         Array.Sort(files, StringComparer.Ordinal);
         // one task per archive: each has its own reader and its own seeded shuffle, so the sample does not depend on the schedule
