@@ -459,7 +459,33 @@ public sealed class GameTables
             () => files ??= packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase)
                 && n.IndexOf('/', 11) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList(),
             path => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null,
-            e => LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")), cache);
+            e => LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")), cache, SpecialAbilityTypes(packs));
+    }
+
+    /// <summary>
+    /// The &lt;SpecialAbility&gt; type names of the additional effects: GetSATypeByName @0x14081d2f0 over g_mapSANameToType,
+    /// which FUN_14081c880 (specialability.cpp:101) fills from the rows 1-0xce of LoadSpecialAbilityStringTable (:131,
+    /// table/specialAbilityStringTable.xml &lt;key id option valueType&gt;) by case-insensitive option name, a name's first row
+    /// kept (std::map insert). The resolver gives 0 for an unknown name and for a row whose valueType is 0 (the
+    /// m_bAllowAdditional test, additionalactionadditional.cpp:1240).
+    /// </summary>
+    internal static Func<string, int> SpecialAbilityTypes(PackSet packs)
+    {
+        const string table = "table/specialabilitystringtable.xml";
+        return SpecialAbilityTypes(packs.Exists("Xml", table) ? GameStrings.Parse(packs.Read("Xml", table)) : null);
+    }
+
+    internal static Func<string, int> SpecialAbilityTypes(XDocument doc)
+    {
+        var rows = new Dictionary<int, (string Option, int ValueType)>();
+        if (doc?.Root != null)
+            foreach (var e in doc.Root.Elements("key"))
+                if (int.TryParse((string)e.Attribute("id"), out int id) && id is > 0 and < 0xcf)
+                    rows[id] = ((string)e.Attribute("option") ?? "", Ms2.Ui.Skills.Xml.Int(e, "valueType"));
+        var byName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < 0xcf; i++)
+            byName.TryAdd(rows.TryGetValue(i, out var r) ? r.Option : "", i);
+        return name => byName.TryGetValue(name, out int t) && rows.TryGetValue(t, out var r) && r.ValueType != 0 ? t : 0;
     }
 
     /// <summary>One language's stringAdditionalDescription.xml as LoadLevelDescFiles reads it (see

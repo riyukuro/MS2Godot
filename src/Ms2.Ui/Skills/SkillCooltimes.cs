@@ -55,12 +55,17 @@ public sealed class SkillCooltimes
     /// the flat cooldown reduce; the HUD feeds the own buff list's <see cref="AdditionalBuffList.SkillInvokeOption"/>.</summary>
     public Func<uint, float> FlatReduce = _ => 0f;
     /// <summary>
-    /// DAT_143aea120 (the ability rate 0x23, skillslot.cpp:2350) plus PC::FUN_1416628b0(0x3e9, id) (pc.cpp:2173,
-    /// CEquipment::FUN_1411e1250): the cooldown reduce rate; the HUD feeds the rate of the own buff list's skill stat option
-    /// 0x3e9. STILL-OPEN: the ability rate 0x23 (CEquipment::GetAbilityRate, the equipment, buff, game rule and set item
-    /// abilities over 1000) is not summed, so 0.
+    /// PC::FUN_1416628b0(0x3e9, id) (pc.cpp:2173, CEquipment::FUN_1411e1250): the cooldown reduce rate of the skill stat
+    /// option 0x3e9; the HUD feeds the rate of the own buff list's <see cref="AdditionalBuffList.SkillInvokeOption"/>.
     /// </summary>
     public Func<uint, float> RateReduce = _ => 0f;
+    /// <summary>
+    /// DAT_143aea120 (skillslot.cpp:2350): CEquipment::GetAbilityRate(0x23) (equipment.cpp:731), the "skillCooldown" ability
+    /// total over 1000, added to the rate before <see cref="RateReduce"/>. The client samples it at each cast use
+    /// (CSkillSystem::FUN_141766cc0, skillslot.cpp:2343, from mypc.cpp:1208) and on equip and unequip (MyPC::vfunc_127 /
+    /// vfunc_128, mypc.cpp:4892, :4905); the HUD sets it at the same points from the worn items and the own buffs.
+    /// </summary>
+    public float AbilityRate;
 
     public int Count => cooltimes.Count;
 
@@ -126,7 +131,7 @@ public sealed class SkillCooltimes
             if (!s.IgnoreReduceCooldown)
             {
                 flat += FlatReduce(skillId);
-                rate += RateReduce(skillId);
+                rate += AbilityRate + RateReduce(skillId);
             }
             cool = (cool - flat) - cool * rate < 0f ? 0f : (cool - flat) - cool * rate;
         }

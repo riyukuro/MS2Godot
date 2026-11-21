@@ -235,6 +235,19 @@ public class SkillCooltimesTests
     }
 
     [Test]
+    public void TheAbilityRateAddsToTheRateUnlessTheSkillIgnoresTheReduce()
+    {
+        // FUN_1417664e0 (skillslot.cpp:2350): fRate += DAT_143aea120 + FUN_1416628b0(0x3e9, id), not with ignoreReduceCooldown
+        var (c, _) = Make();
+        c.AbilityRate = 0.25f;
+        c.RateReduce = _ => 0.25f;
+        c.Start(0, 106, 10f, 0f, false, 0);
+        Assert.That(c.Get((8UL << 32) | 106).End, Is.EqualTo(5000u), "10 - 10 * (0.25 + 0.25)");
+        c.Start(0, 113, 10f, 0f, false, 0);
+        Assert.That(c.Get((8UL << 32) | 113).End, Is.EqualTo(10000u), "ignoreReduceCooldown");
+    }
+
+    [Test]
     public void TheSkillsGroupIsItsKindsGroupIds()
     {
         // <kinds groupIDs> (m_nGroupIDs, skilloverlapcompare.cpp:850), the group an invoke effect's skillGroupID names

@@ -45,7 +45,7 @@ public class AdditionalCacheTests
                 foreach (var e in GameStrings.Parse(packs.Read("Xml", n)).Root?.Elements("additional") ?? Enumerable.Empty<XElement>())
                     if (uint.TryParse((string)e.Attribute("id"), out var id)) ids.Add(id);
             Assert.That(ids.Count, Is.GreaterThan(1000));
-            int levels = 0;
+            int levels = 0, specials = 0;
             foreach (var id in ids.Append(0u).Append(99999999u))
             {
                 var a = xml.Additional.GetAdditional(id);
@@ -65,11 +65,14 @@ public class AdditionalCacheTests
                     Assert.That((lb.SpecialEffectType, lb.SpecialEffectProbability, lb.SpecialEffectValues), Is.EqualTo((la.SpecialEffectType, la.SpecialEffectProbability, la.SpecialEffectValues)), $"effect {id} level {lv} special effect");
                     Assert.That((lb.InvokeSkillId, lb.InvokeSkillGroupId, lb.InvokeEffectId, lb.InvokeEffectGroupId, lb.InvokeTypes, lb.InvokeValues, lb.InvokeRates),
                         Is.EqualTo((la.InvokeSkillId, la.InvokeSkillGroupId, la.InvokeEffectId, la.InvokeEffectGroupId, la.InvokeTypes, la.InvokeValues, la.InvokeRates)), $"effect {id} level {lv} invoke effect");
+                    Assert.That(lb.SpecialAbilities, Is.EqualTo(la.SpecialAbilities), $"effect {id} level {lv} special abilities");
+                    if (la.SpecialAbilities != null) specials++;
                     foreach (var t in Tags)
                         Assert.That(cached.AdditionalDescription(id, lv, t), Is.EqualTo(xml.AdditionalDescription(id, lv, t)), $"effect {id} level {lv} {t}");
                 }
             }
             TestContext.Progress.WriteLine($"additional cache: {ids.Count} ids, {levels} levels compared");
+            Assert.That(specials, Is.GreaterThan(1000), "levels with special abilities");
         }
         finally
         {

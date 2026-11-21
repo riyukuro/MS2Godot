@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 6;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect
+    public const int Version = 7;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -138,6 +138,8 @@ public sealed class AdditionalCache
             WriteInts(w, l.InvokeTypes); WriteInts(w, l.InvokeValues);
             w.Write(l.InvokeRates?.Length ?? -1);
             if (l.InvokeRates != null) foreach (var f in l.InvokeRates) w.Write(f);
+            w.Write(l.SpecialAbilities?.Count ?? -1);
+            if (l.SpecialAbilities != null) foreach (var (k, v) in l.SpecialAbilities) { w.Write(k); w.Write(v); }
         }
     }
 
@@ -163,6 +165,15 @@ public sealed class AdditionalCache
         var a = new float[n];
         for (int i = 0; i < n; i++) a[i] = r.ReadSingle();
         return a;
+    }
+
+    static Dictionary<int, int> ReadAbilities(BinaryReader r)
+    {
+        int n = r.ReadInt32();
+        if (n < 0) return null;
+        var d = new Dictionary<int, int>(n);
+        for (int i = 0; i < n; i++) d[r.ReadInt32()] = r.ReadInt32();
+        return d;
     }
 
     static Dictionary<string, string> ReadValues(BinaryReader r)
@@ -253,7 +264,8 @@ public sealed class AdditionalCache
                 ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(),
                 SpecialEffectType = r.ReadInt32(), SpecialEffectProbability = r.ReadSingle(), SpecialEffectValues = ReadValues(r),
                 InvokeSkillId = r.ReadUInt32(), InvokeSkillGroupId = r.ReadUInt32(), InvokeEffectId = r.ReadUInt32(), InvokeEffectGroupId = r.ReadUInt32(),
-                InvokeTypes = ReadInts(r), InvokeValues = ReadInts(r), InvokeRates = ReadFloats(r), Parent = d,
+                InvokeTypes = ReadInts(r), InvokeValues = ReadInts(r), InvokeRates = ReadFloats(r),
+                SpecialAbilities = ReadAbilities(r), Parent = d,
             });
         return d;
     }

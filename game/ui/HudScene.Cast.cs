@@ -138,6 +138,7 @@ public partial class HudScene
         // StateSkill::FUN_1417ea570: the skill state and the mode 0 send
         bool sent = live?.SendCast(r, hudModel.IsFeatureEnabled(174)) ?? false;
         SkillCast.Casted(castWorld, r);
+        SampleAbilityRate();   // FUN_141766cc0 (skillslot.cpp:2350): DAT_143aea120, before the cooldown starts (mypc.cpp:2627)
         float delay = 0f;
         Ms2.Formats.Model.KfAnimation seq = null;
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;

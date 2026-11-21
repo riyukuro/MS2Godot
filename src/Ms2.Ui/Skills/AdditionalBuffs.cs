@@ -197,6 +197,20 @@ public sealed class AdditionalBuffList
     }
 
     /// <summary>
+    /// GetSpecialAbility @0x140970c70 (additionalcli_2.cpp:844), m_status.m_mapSA[<paramref name="type"/>] as FUN_140972a00
+    /// (:1058-1110) sums it: over the enabled, unsuspended effects with a level (FUN_14096d050), each level's
+    /// <see cref="AdditionalLevelData.SpecialAbilities"/> value of the type times the overlap count.
+    /// </summary>
+    public int SpecialAbility(int type)
+    {
+        int sum = 0;
+        foreach (var b in map.Values)
+            if (b.Enabled != 0 && !b.Suspended && b.LevelData?.SpecialAbilities is { } sa && sa.TryGetValue(type, out int v))
+                sum += v * b.OverlapCount;
+        return sum;
+    }
+
+    /// <summary>
     /// GetForceApplyTarget @0x140970b10 (additionalcli_2.cpp:593), m_nForceApplyTarget as FUN_140972a00 (:1096) sums it: the OR
     /// of the levels' forceApplyTarget over the enabled, unsuspended effects.
     /// </summary>

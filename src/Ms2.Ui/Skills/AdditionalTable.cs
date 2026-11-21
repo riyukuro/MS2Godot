@@ -39,6 +39,13 @@ public sealed class AdditionalLevelData
     public uint InvokeSkillId, InvokeSkillGroupId, InvokeEffectId, InvokeEffectGroupId;
     public int[] InvokeTypes, InvokeValues;
     public float[] InvokeRates;
+    /// <summary>
+    /// &lt;SpecialAbility&gt;&lt;v type value/&gt; (m_status.m_mapSA, :1227-1250): per &lt;v&gt; its type by name
+    /// (XmlValueByName, GetSATypeByName @0x14081d2f0); an unknown name or a type whose SpecialAbilityInfo value type is 0
+    /// (m_bAllowAdditional) is skipped, a value of 0 is not stored and a later row of the same type replaces the earlier one.
+    /// Null when the level has none.
+    /// </summary>
+    public Dictionary<int, int> SpecialAbilities;
 
     /// <summary>InvokeEffectProperty::FUN_140192ac0 @0x140192ac0 (additionalactionadditional.cpp:1924): a target and the three
     /// lists not empty.</summary>
@@ -65,7 +72,9 @@ public sealed class AdditionalLevelData
     /// false, or there is no icon.</summary>
     public bool ShowIcon(bool mine) => IconOnOff != 0 && !(IconOnOff == 2 && !mine) && Icon.Length > 0;
 
-    public static AdditionalLevelData Load(XElement e, AdditionalData parent)
+    /// <param name="saType">The special ability of a &lt;SpecialAbility&gt; type name, 0 for an unknown one or one not allowed
+    /// here; null = no special abilities are read.</param>
+    public static AdditionalLevelData Load(XElement e, AdditionalData parent, Func<string, int> saType = null)
     {
         var lv = new AdditionalLevelData
         {
@@ -92,6 +101,14 @@ public sealed class AdditionalLevelData
             lv.InvokeValues = TokenInts((string)invoke.Attribute("values"));
             lv.InvokeRates = TokenFloats((string)invoke.Attribute("rates"));
         }
+        if (saType != null && e.Element("SpecialAbility") is { } sa)
+            foreach (var v in sa.Elements("v"))
+            {
+                int type = saType((string)v.Attribute("type") ?? "");
+                if (type == 0) continue;
+                int value = Xml.Int(v, "value");
+                if (value != 0) (lv.SpecialAbilities ??= new Dictionary<int, int>())[type] = value;
+            }
         if (e.Element("SpecialEffect") is { } special)
         {
             lv.SpecialEffectType = Xml.Int(special, "type");
@@ -163,7 +180,7 @@ public sealed class AdditionalData
 
     /// <summary>Load: the &lt;level&gt; rows whose feature is enabled (IsElementFeatureEnabled, no locale test), in file order;
     /// null when none is left (Load returns false).</summary>
-    public static AdditionalData Load(XElement e, Func<XElement, bool> featureEnabled)
+    public static AdditionalData Load(XElement e, Func<XElement, bool> featureEnabled, Func<string, int> saType = null)
     {
         var d = new AdditionalData
         {
@@ -172,7 +189,7 @@ public sealed class AdditionalData
             IsDebuff = Xml.Bool(e, "isDebuff"),
         };
         foreach (var l in e.Elements("level"))
-            if (featureEnabled(l)) d.Levels.Add(AdditionalLevelData.Load(l, d));          // ReadLevel (:825)
+            if (featureEnabled(l)) d.Levels.Add(AdditionalLevelData.Load(l, d, saType));          // ReadLevel (:825)
         return d.Levels.Count > 0 ? d : null;
     }
 
@@ -203,6 +220,7 @@ public sealed class AdditionalTable
     readonly Func<IReadOnlyList<string>> names;
     readonly Func<string, XDocument> read;
     readonly Func<XElement, bool> featureEnabled;
+    readonly Func<string, int> saType;
     readonly Dictionary<uint, AdditionalData> data = new();
     readonly HashSet<string> loaded = new(StringComparer.Ordinal);
     readonly AdditionalCache cache;
@@ -214,9 +232,11 @@ public sealed class AdditionalTable
     /// <param name="read">Reads one entry.</param>
     /// <param name="featureEnabled">IsElementFeatureEnabled.</param>
     /// <param name="cache">The per-install cache; null or invalid = parse the XML.</param>
+    /// <param name="saType">The special ability of a type name (see <see cref="AdditionalLevelData.SpecialAbilities"/>).</param>
     public AdditionalTable(Func<IReadOnlyList<string>> names, Func<string, XDocument> read, Func<XElement, bool> featureEnabled,
-                           AdditionalCache cache = null)
+                           AdditionalCache cache = null, Func<string, int> saType = null)
     {
+        this.saType = saType;
         this.names = names;
         this.read = read;
         this.featureEnabled = featureEnabled;
@@ -236,7 +256,7 @@ public sealed class AdditionalTable
         if (!loaded.Add(name)) return;
         if (read(name)?.Root is not { } root || root.Name != "ms2") return;
         foreach (var e in root.Elements("additional"))
-            if (AdditionalData.Load(e, featureEnabled) is { } d) data[d.Id] = d;
+            if (AdditionalData.Load(e, featureEnabled, saType) is { } d) data[d.Id] = d;
     }
 
     /// <summary>GetAdditional: null for 0 or an unknown id.</summary>

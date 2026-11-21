@@ -1,3 +1,4 @@
+using Ms2.Ui.Skills;
 using Ms2.Net.Packets;
 
 namespace Ms2.Ui.Items;
@@ -175,4 +176,20 @@ public sealed class WornEquipment
         }
         return sum;
     }
+
+    /// <summary>
+    /// CEquipment::GetAbilityTotal @0x1411e1160 (equipment.cpp:740): the worn items' <see cref="Abilities"/> of
+    /// <paramref name="type"/> plus the own buffs' <see cref="AdditionalBuffList.SpecialAbility"/>. STILL-OPEN: the game rule
+    /// term (CGameRule::FUN_1404774a0, by the premium flag PC::FUN_141658f30) and the set items' term
+    /// (GetSetItems()->GetSpecialAbility) are not ported, so 0.
+    /// </summary>
+    public static int AbilityTotal(int type, PcInfo record, ItemDataTable items, ItemModelTable models, Func<Item, bool> canUse,
+                                   AdditionalBuffList buffs)
+    {
+        int n = Abilities(record, items, models, canUse) is { } worn && worn.TryGetValue(type, out int v) ? v : 0;
+        return n + (buffs?.SpecialAbility(type) ?? 0);
+    }
+
+    /// <summary>CEquipment::GetAbilityRate @0x1411e1110 (equipment.cpp:731): the ability total over 1000.</summary>
+    public static float AbilityRate(int total) => total / 1000.0f;
 }

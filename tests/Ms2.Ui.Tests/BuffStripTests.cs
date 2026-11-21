@@ -92,6 +92,47 @@ public class BuffStripTests
     }
 
     [Test]
+    public void SpecialAbilityNamesResolveThroughTheStringTable()
+    {
+        // FUN_14081c880 (specialability.cpp:101): rows 1-0xce by case-insensitive option, a name's first row kept; the
+        // m_bAllowAdditional test (additionalactionadditional.cpp:1240) is the row's valueType
+        var t = GameTables.SpecialAbilityTypes(System.Xml.Linq.XDocument.Parse("<ms2>"
+            + "<key id=\"35\" option=\"skillCooldown\" valueType=\"2\"/><key id=\"36\" option=\"SKILLCOOLDOWN\" valueType=\"2\"/>"
+            + "<key id=\"5\" option=\"off\" valueType=\"0\"/><key id=\"207\" option=\"past\" valueType=\"1\"/><key id=\"0\" option=\"zero\" valueType=\"1\"/></ms2>"));
+        Assert.That((t("skillcooldown"), t("off"), t("past"), t("zero"), t("nope"), t("")), Is.EqualTo((35, 0, 0, 0, 0, 0)));
+    }
+
+    [Test]
+    public void SpecialAbilitiesAreSummedTimesTheOverlapOverTheEnabledEffects()
+    {
+        // <SpecialAbility><v type value/> (additionalactionadditional.cpp:1227-1250): an unknown or not-allowed name skipped, a 0
+        // not stored, the last row of a type kept; GetSpecialAbility (additionalcli_2.cpp:844) after FUN_140972a00 (:1058-1110)
+        Func<string, int> sa = n => n == "skillCooldown" ? 35 : n == "pap" ? 125 : 0;
+        var a = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><SpecialAbility>"
+            + "<v type=\"skillCooldown\" value=\"50\"/><v type=\"skillCooldown\" value=\"30\"/><v type=\"bogus\" value=\"9\"/>"
+            + "<v type=\"pap\" value=\"0\"/></SpecialAbility></level>"), null, sa);
+        var b = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><SpecialAbility>"
+            + "<v type=\"skillCooldown\" value=\"7\"/></SpecialAbility></level>"), null, sa);
+        Assert.That(a.SpecialAbilities, Is.EqualTo(new Dictionary<int, int> { [35] = 30 }));
+        Assert.That(AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic/></level>"), null, sa).SpecialAbilities, Is.Null);
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? a : id == 8 ? b : Level(id, lv));
+        list.Apply(Add(10, 1));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 2, 0), 0));
+        Assert.That(list.SpecialAbility(35), Is.EqualTo(0), "not enabled");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 2, 1), null));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 12, 5, 0, new BuffState(0, 1000, 8, 1, 1, 1), 0));
+        Assert.That((list.SpecialAbility(35), list.SpecialAbility(125)), Is.EqualTo((30 * 2 + 7, 0)));
+        list.Buffs.Single(x => x.Key == 11).Suspended = true;
+        Assert.That(list.SpecialAbility(35), Is.EqualTo(7), "suspended");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) _ = list.SpecialAbility(35);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        // GetAbilityTotal / GetAbilityRate (equipment.cpp:731, :740): no worn items here, the buffs' part over 1000
+        Assert.That(Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(35, null, null, null, _ => true, list)),
+            Is.EqualTo(0.007f));
+    }
+
+    [Test]
     public void AGroupCooltimeReduceSumsTheOwnEnabledSpecialEffectsOfTheGroup()
     {
         // <SpecialEffect type probability values> (additionalactionadditional.cpp:1346-1353, CXmlData::ParseValues

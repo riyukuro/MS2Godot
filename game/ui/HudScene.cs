@@ -2773,6 +2773,10 @@ public partial class HudScene : Node, IUiStageHost
             buffs.SkillInvokeOption(0x3e9, id, live.SkillRows?.Invoke(id)?.GroupIds ?? 0, out var rate);
             return rate;
         };
+        // DAT_143aea120 on equip and unequip (MyPC::vfunc_127 / vfunc_128, mypc.cpp:4892, :4905); the cast sample is in Cast
+        Action onEquip = SampleAbilityRate;
+        live.Me.EquipChanged += onEquip;
+        SampleAbilityRate();
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;
@@ -2781,7 +2785,21 @@ public partial class HudScene : Node, IUiStageHost
         };
         foreach (var b in live.TakeBuffs()) onBuff(b);
         live.BuffReceived += onBuff;
-        unwatchBuffs = () => live.BuffReceived -= onBuff;
+        unwatchBuffs = () => { live.BuffReceived -= onBuff; live.Me.EquipChanged -= onEquip; };
+    }
+
+    /// <summary>
+    /// DAT_143aea120 = CEquipment::GetAbilityRate(0x23) (skillslot.cpp:2350, mypc.cpp:4892, :4905): the own "skillCooldown"
+    /// ability total over 1000 into the cooldowns' <see cref="Ms2.Ui.Skills.SkillCooltimes.AbilityRate"/>.
+    /// </summary>
+    void SampleAbilityRate()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live == null) return;
+        long now = live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var t = hudModel.Tables;
+        live.Cooltimes.AbilityRate = Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(0x23,
+            live.Me.ToPcInfo(now), t.Items, t.ItemModels, it => Ms2.Ui.Items.ItemLevels.Usable(it, now), ownBuffs));
     }
     Action unwatchQuickSlotState;
     Ms2.Ui.Skills.WeaponActionTable weaponActions;
