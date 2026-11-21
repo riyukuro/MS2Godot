@@ -42,6 +42,9 @@ public sealed class GuildBook
     public Func<string, bool> BannedWord;
     /// <summary>CBanTextChecker::CheckContentText: null when a text passes, else the message.</summary>
     public Func<string, string> CheckContent;
+    /// <summary>CBanTextChecker::CheckGuildGradeName: null when a grade name passes, else the message. The dialog's
+    /// OnChangeGrade skips the check without a checker; so does a null here.</summary>
+    public Func<string, string> CheckGradeName;
     /// <summary>The local player's level (PCBase vfunc_78), or null without a local player.</summary>
     public Func<int?> Level = () => null;
     /// <summary>The local player's name (CGuildManager::GetMyName), or null without a local player.</summary>
@@ -631,6 +634,22 @@ public sealed class GuildBook
         if (!ContentPasses(text)) return false;
         Send(new GuildMemoRequest(text));
         return true;
+    }
+
+    /// <summary>SendGuildMode67 (@0x1413b8c40): a grade's name and rights. CGuildGrade::IsValid (the grade 0..5, the rights
+    /// 0..4095), the grade at the index, the own name, in a guild, from the master, the index 0..5 and at most one past
+    /// GetMaxGradeIndex.</summary>
+    public void SetGrade(int index, GuildGrade grade)
+    {
+        if (grade == null || grade.Grade < 0 || grade.Grade >= 6 || grade.Permissions < 0 || grade.Permissions > 4095) return;
+        if (grade.Grade != index) return;
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return;
+        if (!InGuild) return;
+        if (!IsMaster(myName)) return;
+        if (index < 0 || index >= 6) return;
+        if (index > MaxGradeIndex + 1) return;
+        Send(new GuildGradeRequest(index, grade));
     }
 
     /// <summary>SendGuildMode68 (@0x1413b8e60): the guild's propensity — in a guild, not the one it has, with the invite

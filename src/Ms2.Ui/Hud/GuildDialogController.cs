@@ -10,10 +10,10 @@ namespace Ms2.Ui.Hud;
 /// The state is <see cref="GuildBook"/> (CGuildManager). Outside a guild: the Join page (the search by propensity or by
 /// name, the join requests and their cancel, this character's requests) and the Create page (the create box). In a guild:
 /// the Info and Member pages, the accept page (the requests sent to the guild), the leave and disband boxes, the member
-/// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag).
+/// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag) and the grade edit (OnChangeGrade).
 /// The pages are made on first use (EnsurePageCreated) and laid on the movie root.
 /// STILL-OPEN: the other in-guild pages (Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip,
-/// ChampionShipHistroy) and their callbacks (the grade edit OnChangeGrade, ranks, PvP, mail, house and mark), the character card of the master and expel boxes
+/// ChampionShipHistroy) and their callbacks (ranks, PvP, mail, house and mark), the character card of the master and expel boxes
 /// (CMsgBoxData::SetCharacterInfo), the master popup
 /// (OnSearchGuildMasterPopupMenu, 0x4e39) as an event, the block check of OnClickCreateGuild (CBlockManager
 /// FindBlockedAction(7)), the web guide button (UIDialog::BindWebGuideButton, uidialog.cpp:997), the championship icon
@@ -701,6 +701,31 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 expelTarget = target;
                 ShowBox(MessageBoxQueue.Create(0x14, ClientFormat.Format(Common(0x3e3), expelTarget), this, "expelMember"));
                 return true;
+            }
+            case "onchangegrade":                       // (:931) the client falls through to return 0
+            {
+                if (args.Length == 0 || args[0] is not AsArray grades || NoMovie) return false;
+                var errors = new System.Text.StringBuilder();
+                for (int i = 0; i < grades.Items.Count; i++)
+                {
+                    if (grades.Items[i] is not AsObject row) continue;               // FUN_1409e7dc0: an object or null
+                    string gradeName = Rt.ToString(Host.Get(row, "gradeName")) ?? "";
+                    int auth = (int)Rt.ToNumber(Host.Get(row, "gradeAuth"));          // Value::GetInt
+                    if (Book.GetGrade(i) is not { } old) continue;
+                    if (old.Name == gradeName && old.Permissions == auth) continue;
+                    if (Book.CheckGradeName?.Invoke(gradeName) is { } ban)
+                    {
+                        if (ban.Length != 0)
+                        {
+                            if (errors.Length != 0) errors.Append('\n');
+                            errors.Append(ClientFormat.Format(Common(0x423), old.Name, ban));
+                        }
+                        continue;
+                    }
+                    Book.SetGrade(i, new GuildGrade(old.Grade, gradeName, auth));
+                }
+                if (errors.Length != 0) ShowBox(MessageBoxQueue.Create(0, ClientFormat.Format(Common(0x422), errors.ToString()), null, ""));
+                return false;
             }
             case "onchagegradeerror":                   // the movie's spelling (:916); the client falls through to return 0
             {

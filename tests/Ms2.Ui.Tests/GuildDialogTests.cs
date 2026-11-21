@@ -101,6 +101,40 @@ public class GuildDialogTests
         Assert.That(c.OnCallback("onClickDonate", Array.Empty<object>()), Is.False, "no property is the client's return 0");
     }
 
+    [Test]
+    public void TheGradeEditSendsTheChangedGradesAndBoxesTheRefusedNames()
+    {
+        // OnChangeGrade (uiguilddialog.cpp:931): an unchanged grade is skipped, a refused name is a line of 0x423 in the
+        // box 0x422 (an empty refusal adds no line), a changed grade is SendGuildMode67; a row past the grades is skipped
+        var b = InGuild();
+        var sent = new List<IOutPacket>();
+        b.Send = sent.Add;
+        b.CheckGradeName = n => n == "Bad" ? "ban" : n == "Hush" ? "" : null;
+        var c = Load(b);
+        var boxes = new List<MessageBoxData>();
+        c.ShowBox = boxes.Add;
+        var h = c.Host;
+        AsArray Rows(params (string name, int auth)[] rows)
+        {
+            var a = new AsArray();
+            a.Items.AddRange(rows.Select(r => (object)h.Obj(("gradeName", r.name), ("gradeAuth", r.auth))));
+            return a;
+        }
+
+        Assert.That(c.OnCallback("OnChangeGrade", new object[] { Rows(("Master", 4095), ("Mem2", 8), ("Extra", 1)) }), Is.False);
+        Assert.That(sent, Is.EqualTo(new[] { new GuildGradeRequest(1, new GuildGrade(1, "Mem2", 8)) }));
+        Assert.That(boxes, Is.Empty);
+
+        c.OnCallback("OnChangeGrade", new object[] { Rows(("Bad", 4095), ("Hush", 8)) });
+        Assert.That(sent.Count, Is.EqualTo(1));
+        var t = tables;
+        Assert.That(boxes.Single().Msg, Is.EqualTo(ClientFormat.Format(t.Common(0x422), ClientFormat.Format(t.Common(0x423), "Master", "ban"))));
+
+        b.PlayerName = () => "Bo";                      // not the master: SendGuildMode67 sends nothing
+        c.OnCallback("OnChangeGrade", new object[] { Rows(("Master", 4095), ("Mem3", 8)) });
+        Assert.That(sent.Count, Is.EqualTo(1));
+    }
+
     static GuildJoinRequestForGuild Request(long id) => new() { Id = id, GuildId = 7, CharId = 13, Name = $"bo{id}", Job = 200, Level = 20 };
 
     [Test]

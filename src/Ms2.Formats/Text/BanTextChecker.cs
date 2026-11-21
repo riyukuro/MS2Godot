@@ -293,6 +293,12 @@ public sealed class BanTextChecker
     public int CheckGuildName(string name, int min, int max, out string message) =>
         Check(name, (Checks)0xd9, new Limit(min, max, true, false, false, false, true), out message);
 
+    /// <summary>CBanTextChecker::CheckGuildGradeName (commonstringtable.cpp:825): CheckTextWithLimit with the options (0xd9, true)
+    /// and the limit (1, 7, or 0xf in the NA region, spaces allowed, trim checked, the character check on, a wide character
+    /// counting once, punctuation allowed). The guild dialog's OnChangeGrade checks each changed grade name with it.</summary>
+    public int CheckGuildGradeName(string name, bool regionNa, out string message) =>
+        Check(name, (Checks)0xd9, new Limit(1, regionNa ? 0xf : 7, true, false, false, false, true), out message);
+
     /// <summary>CBanTextChecker::FUN_1402259b0 (commonstringtable.cpp:843): CheckTextWithLimit with the options (0xd8, true) and
     /// the limit (1, 300, no spaces, trim checked, the character check on, a wide character counting once, no punctuation),
     /// which 0xd8 (no limit bit) leaves unscanned: only the tables. The guild notice's check before its send (CGuildManager::FUN_1413b7c70, kind 1).</summary>

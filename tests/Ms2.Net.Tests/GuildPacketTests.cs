@@ -159,6 +159,8 @@ public class GuildPacketTests {
         Assert.That(Bytes(new GuildTextRequest(1, "hi")), Is.EqualTo(Cat(new byte[] { 0x40, 1 }, Str("hi"))));
         Assert.That(Bytes(new GuildMemoRequest("hi")), Is.EqualTo(Cat(new byte[] { 0xd }, Str("hi"))));
         Assert.That(Bytes(new GuildPropensityRequest(1, 0x204)), Is.EqualTo(new byte[] { 0x44, 1, 4, 2, 0, 0 }));
+        Assert.That(Bytes(new GuildGradeRequest(1, new GuildGrade(1, "Ab", 8))),
+            Is.EqualTo(Cat(new byte[] { 0x43, 1, 1 }, Str("Ab"), new byte[] { 8, 0, 0, 0 })));
     }
 
     [Test]

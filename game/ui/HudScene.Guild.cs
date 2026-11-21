@@ -46,6 +46,7 @@ public partial class HudScene
         book.RefuseInvite = () => GameOptions.AccountCommunity.DisableGuildRequest;    // m_refuseGuildInvite, flag 5
         var checker = CommunityChecker();
         book.CheckName = name => checker.CheckGuildName(name, t.GuildNameLengthMin, t.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
+        book.CheckGradeName = name => checker.CheckGuildGradeName(name, regionNa: false, out var msg) == 0 ? null : msg ?? "";
         book.CheckContent = text => checker.CheckContentText(text, out var msg) == 0 ? null : msg ?? "";
         // CheckName (uihelpers.cpp:873): FUN_140225210(name, message, 0), the long form
         book.BannedName = name => checker.CheckCharacterName(name, out _, shortForm: false) != 0;

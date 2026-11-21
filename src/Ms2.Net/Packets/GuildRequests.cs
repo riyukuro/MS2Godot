@@ -128,6 +128,16 @@ public sealed record GuildMemoRequest(string Text) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0xd); w.WriteUnicodeString(Text); }
 }
 
+/// <summary>SendGuildMode67 (@0x1413b8c40): one grade's name and rights (u8 0x43, u8 the index, then CGuildGrade::Write:
+/// u8 the grade, the name, i32 the rights).</summary>
+public sealed record GuildGradeRequest(int Index, GuildGrade Grade) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) {
+        w.WriteByte(0x43); w.WriteByte((byte)Index);
+        w.WriteByte((byte)Grade.Grade); w.WriteUnicodeString(Grade.Name); w.WriteInt(Grade.Permissions);
+    }
+}
+
 /// <summary>SendGuildMode68 (@0x1413b8e60): the guild's propensity (u8 0x44, u8 the focus, i32 the value). The client
 /// names the two CGuildManager f154 (the "listed in the search" flag of OnChageRegistSearch) and f158 (GetPropensity).</summary>
 public sealed record GuildPropensityRequest(int Focus, int Value) : IOutPacket {
