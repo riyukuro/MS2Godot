@@ -210,6 +210,19 @@ public class GameEventPacketTests
     }
 
     [Test]
+    public void BeautyShopSaleEventsKeepTheirSaleIdRateAndFlag()
+    {
+        // GameEventSaleBeautyShop::vfunc_4 (gameevent.cpp:787-805): id, sale event id, rate (1/10000), flag byte
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(1);
+            w.WriteUnicodeString("SaleBeautyShop"); w.WriteInt(31); w.WriteInt(7); w.WriteInt(2500); w.WriteByte(1);
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.BeautySaleEvents, Is.EqualTo(new[] { new BeautyShopSaleEvent(31, 7, 2500, 1) }));
+    }
+
+    [Test]
     public void ConstructionEventsKeepTheirListsInPacketOrder()
     {
         // GameEventMassiveConstructionEvent::vfunc_4 (gameevent.cpp:2926-2944): id, n x u32 field id, i32 channel,
