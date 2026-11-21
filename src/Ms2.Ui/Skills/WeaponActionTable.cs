@@ -45,8 +45,12 @@ public sealed class WeaponActionTable
     }
 
     /// <summary>FindAction @0x141b74b50 (:108): the first row with both hand kinds, null without one.</summary>
-    public WeaponAction FindAction(int rightHand, int leftHand) =>
-        actions.FirstOrDefault(a => a.RightHand == rightHand && a.LeftHand == leftHand);
+    public WeaponAction FindAction(int rightHand, int leftHand)
+    {
+        foreach (var a in actions)
+            if (a.RightHand == rightHand && a.LeftHand == leftHand) return a;
+        return null;
+    }
 
     /// <summary>IsAllowed @0x141b74c30 (:121): a right hand with an &lt;allowWeapon&gt; row takes only its listed left hands.</summary>
     public bool IsAllowed(int rightHand, int leftHand) =>

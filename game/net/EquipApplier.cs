@@ -459,7 +459,18 @@ public sealed class EquipApplier
     public static WeaponRig RigOf(Node3D visual) => visual != null && rigs.TryGetValue(visual, out var r) ? r : null;
 
     /// <summary>One rigid weapon mesh attached during Attach; a class so the list shares the canonical generic code.</summary>
-    sealed record WeaponHook(BoneAttachment3D Att, MeshInstance3D Mesh, string SheathedBone, Transform3D SheathedTargetLocal, Transform3D BaseLocal);
+    sealed class WeaponHook
+    {
+        public readonly BoneAttachment3D Att;
+        public readonly MeshInstance3D Mesh;
+        public readonly string SheathedBone;
+        public readonly Transform3D SheathedTargetLocal, BaseLocal;
+
+        public WeaponHook(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)
+        {
+            Att = att; Mesh = mesh; SheathedBone = sheathedBone; SheathedTargetLocal = sheathedTargetLocal; BaseLocal = baseLocal;
+        }
+    }
 
     internal sealed record WeaponBinding(
         BoneAttachment3D Attach,
