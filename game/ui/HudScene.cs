@@ -1486,6 +1486,7 @@ public partial class HudScene : Node, IUiStageHost
         if (StoreKeys(k)) return true;
         if (ItemLockKeys(k)) return true;
         if (ItemBreakKeys(k)) return true;
+        if (ItemMergeKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
@@ -2714,6 +2715,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             if (id == ItemLockDialogController.UiId) ToggleItemLock();
             else if (id == ItemBreakDialogController.UiId) ToggleItemBreak(false);
+            else if (id == ItemMergeOptionDialogController.UiId) ToggleItemMerge();
             else GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         };
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
