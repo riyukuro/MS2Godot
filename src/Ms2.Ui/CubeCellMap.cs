@@ -116,10 +116,38 @@ public sealed class CubeCellMap : ICubeCells
     {
         if (item == null) return false;
         if (!cubes.ContainsKey(key)) return false;
-        cubes.Remove(key);
-        entities.Remove(CubeCell.Unpack(key));
+        Remove(key);
         if (!itemExists(item.ItemId)) return false;
         return Create(key, item, itemExists);
+    }
+
+    /// <summary>
+    /// CSceneStateGame::OnLoadCubes mode 0 (@0x141728110, scenestategame.cpp:10857-10897): each loaded cube's cell
+    /// (FUN_1408a0400, then FUN_1408a15b0 to a world point and HasCubeAtPoint's FUN_1408a13d0 back to its key) first loses a
+    /// cube already there (FUN_1410c1910 with 0) unless FUN_1410b7da0 finds the cell among the map's 0xe34a6afd entities
+    /// (f2e0, STILL-OPEN here as in <see cref="Place"/>, so never); then FUN_1410c4850 places it as ResponseCube 0xa does
+    /// (<see cref="Place"/>). The number of cubes added.
+    /// STILL-OPEN: the floor state (FUN_1410c3f50: f1dc and GenerateFloorPhysX).
+    /// </summary>
+    public int Load(LoadCubes m, Func<int, bool> itemExists)
+    {
+        if (m == null) return 0;
+        int added = 0;
+        foreach (var c in m.Cubes)
+        {
+            var (x, y, z) = CubeCell.Unpack(c.Cell);
+            int key = CubeCell.Key(x, y, z);
+            if (HasCubeAtKey(key)) Remove(key);
+            if (Place(key, c.Item, itemExists)) added++;
+        }
+        return added;
+    }
+
+    /// <summary>FUN_1410c1910 (@0x1410c1910, :5190-5216): the cube at the key leaves f98, with its entity.</summary>
+    void Remove(int key)
+    {
+        cubes.Remove(key);
+        entities.Remove(CubeCell.Unpack(key));
     }
 
     /// <summary>CreateCube's checks (:2604-2617), then the cube with its item (spCube->item->CopyFrom(pInfo)) and its entity

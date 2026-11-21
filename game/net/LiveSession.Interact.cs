@@ -145,6 +145,18 @@ public partial class LiveSession
         GD.Print($"live: ResponseCube 0x{m.Mode:x} error {m.Error} id {m.Id}");
     }
 
+    /// <summary>LoadCubes (RecvOp 0x6A), CSceneStateGame::OnLoadCubes (@0x141728110, scenestategame.cpp:10857): mode 0's
+    /// house cubes go into the player's cube map through the 0xa place path (<see cref="Ms2.Ui.CubeCellMap.Load"/>).
+    /// STILL-OPEN: modes 1-3 (the plot states, owners and expiries, :10902-10944); the client asks for the house with
+    /// RequestLoadUgcMap (CSceneStateGame::vfunc_1 @0x14170d9f0, :1995), which ours does not send yet.</summary>
+    void OnLoadCubes(Ms2.Net.Wire.RawPacket p)
+    {
+        var m = LoadCubes.Read(p.Reader());
+        if (m == null) return;
+        int added = player != null && IsInstanceValid(player) ? player.Cubes.Cells.Load(m, id => ItemExists?.Invoke(id) ?? true) : 0;
+        GD.Print($"live: LoadCubes {m.Cubes.Count} cube(s), {added} added");
+    }
+
     /// <summary>GameEvent 0xB2 (GameEventManagerCli::Dispatch, gameeventmanagercli.cpp:77): the shutdown events are applied.
     /// Every entry is read with its type's layout; Truncated only for a name no class is registered under, where the client
     /// returns too (:144-147).</summary>

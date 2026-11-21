@@ -213,6 +213,23 @@ public class ConfirmPlacementTests
     }
 
     [Test]
+    public void ALoadedHouseCubeTakesTheReplaceBranch()
+    {
+        // OnLoadCubes mode 0 (scenestategame.cpp:10857-10897) fills the cell map through FUN_1410c4850; ConfirmPlacement
+        // (cubecraft_2.cpp:990-1031) over that cube sends a replace (0xf), not a place
+        var map = new CubeCellMap();
+        var o = new Owner { Map = map };
+        var c = Craft(2, 2, o, new CubeItemInfo { ItemId = ItemId, InstanceId = 5, Count = 1 });
+        c.ConstructionUnlocked = true;
+        c.Locks = new CubeLock();
+        int key = CubeCell.Key(c.Current.Cell);
+        var load = new LoadCubes(0, new[] { new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 0, key, Item: new CubeItemInfo { ItemId = 50100002, Count = 1 }) });
+        Assert.That(map.Load(load, _ => true), Is.EqualTo(1));
+        Assert.That(Confirm(c, out var sent), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That((sent.Mode, sent.CellKey), Is.EqualTo((CubePlaceRequest.ReplaceMode, key)));
+    }
+
+    [Test]
     public void ACubeFromAPlaceAnswerTakesTheReplaceAndSameItemBranches()
     {
         // OnResponseCube 0xa (scenestategame.cpp:9984-10011) through FUN_1410c4850 into the cell map; ConfirmPlacement's

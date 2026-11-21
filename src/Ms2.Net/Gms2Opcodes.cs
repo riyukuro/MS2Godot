@@ -103,6 +103,7 @@ static class Gms2Opcodes {
         [Inbound.InteractObject] = 0x65,
         [Inbound.GameEvent] = 0xB4,
         [Inbound.ResponseCube] = 0x6B,
+        [Inbound.LoadCubes] = 0x6C,
         [Inbound.Buff] = 0x48,
         [Inbound.UserMoveByPortal] = 0x60,
         [Inbound.StateFallDamage] = 0x67,

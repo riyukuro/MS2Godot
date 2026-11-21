@@ -165,4 +165,27 @@ public class CubeCellMapTests
         Assert.That(m.Neighbour((1, 1, 1), 0, 0, -1), Is.Null);
         Assert.That(m.EntityCount, Is.Zero);
     }
+
+    [Test]
+    public void ALoadedHouseCubeReplacesTheCubeInItsCell()
+    {
+        // OnLoadCubes mode 0 (scenestategame.cpp:10892-10897): a cube at the point is removed (FUN_1410c1910 with 0), then
+        // FUN_1410c4850 places the loaded one; a loaded item without data (FUN_1410b77e0) leaves the cell empty
+        var m = new CubeCellMap();
+        m.AddMapCube((1, 0, 0), new Vector3(150, 0, 0));
+        m.AddMapCube((2, 0, 0), new Vector3(300, 0, 0));
+        var load = new LoadCubes(0, new[]
+        {
+            new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 0, CubeCell.Key(1, 0, 0), Item: Item(Known, 11)),
+            new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 0, CubeCell.Key(2, 0, 0), Item: Item(Unknown)),
+            new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 0, unchecked((int)0x7f000000) | CubeCell.Key(-1, 3, 1), Item: Item(OtherKnown)),
+        });
+        Assert.That(m.Load(load, Exists), Is.EqualTo(2));
+        Assert.That(m.TryCubeItemAtKey(CubeCell.Key(1, 0, 0), out var a) && a.ItemId == Known && a.InstanceId == 11, Is.True);
+        Assert.That(m.EntityPosition((1, 0, 0)), Is.EqualTo(new Vector3(150, 0, 0)));
+        Assert.That(m.HasCubeAtKey(CubeCell.Key(2, 0, 0)), Is.False);
+        Assert.That(m.CubeAt(new Vector3(300, 0, 10)), Is.Null);
+        Assert.That(m.TryCubeItemAtKey(CubeCell.Key(-1, 3, 1), out var c) && c.ItemId == OtherKnown, Is.True);
+        Assert.That(m.Load(null, Exists), Is.Zero);
+    }
 }

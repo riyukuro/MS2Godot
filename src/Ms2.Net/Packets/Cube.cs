@@ -161,6 +161,46 @@ public sealed record ResponseCubePlace(byte Mode, byte Error, int CharacterId, i
     }
 }
 
+/// <summary>
+/// Inbound LoadCubes mode 0 (RecvOp 0x6A, commonfiles/opcodes.h:114), the house's cubes: CSceneStateGame::OnLoadCubes
+/// (@0x141728110, scenestategame.cpp:10857-10897). u8 mode; mode 0: u8 the floor state (FUN_1410c3f50), i32 n, then n
+/// cubes of i32 the packed cell (FUN_1408a0400), i64 owner, the CubeItemInfo (CubeItemInfo(CInPacket), ugcmapoptions.cpp:91),
+/// i32 group and i32 floor (Cube field50 / field54), u8 liftable (field4c), f32 rotation, i32 house (fieldD8), u8 notice flag;
+/// flag 1: the notice's text and u8 type (NoticeCubeInfo::Set). Null for another mode (1-3 are the plot states, owners and
+/// expiries, not read here). The client reads the cubes only without the launch option IsSkipLoadingUgcCube, which ours
+/// does not have.
+/// </summary>
+public sealed record LoadCubes(byte FloorState, IReadOnlyList<ResponseCubePlace> Cubes)
+{
+    public const byte ModeCubes = 0;
+
+    public static LoadCubes Read(ByteReader r)
+    {
+        if (r.ReadByte() != ModeCubes) return null;
+        byte state = r.ReadByte();
+        int n = r.ReadInt();
+        var cubes = new List<ResponseCubePlace>(Math.Max(0, Math.Min(n, 4096)));
+        for (int i = 0; i < n; i++)
+        {
+            int cell = r.ReadInt();
+            long owner = r.ReadLong();
+            var item = CubeItemInfo.Read(r);
+            int group = r.ReadInt();
+            int floor = r.ReadInt();
+            bool liftable = r.ReadByte() != 0;
+            float rotation = r.ReadFloat();
+            int house = r.ReadInt();
+            string text = null;
+            byte type = 0;
+            // :10882-10889: only a flag of 1 has a notice
+            if (r.ReadByte() == 1) { text = r.ReadUnicodeString(); type = r.ReadByte(); }
+            cubes.Add(new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 0, cell, owner, item, liftable, rotation, house, group, floor, text, type));
+        }
+        r.ExpectEnd("LoadCubes");
+        return new LoadCubes(state, cubes);
+    }
+}
+
 /// <summary>CubeItemInfo (ugcmapoptions.cpp): a cube's item id, instance id, count and its optional UGC look.</summary>
 public sealed class CubeItemInfo
 {

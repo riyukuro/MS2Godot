@@ -238,4 +238,31 @@ public class CubePacketTests
         }
         Assert.That(ResponseCubePlace.Read(Reader(w => { w.WriteByte(0x11); w.WriteByte(0); })), Is.Null);
     }
+
+    [Test]
+    public void LoadCubesModeZeroReadsEachCubeAndItsNotice()
+    {
+        // commonfiles/opcodes.h:114 RecvOp::LoadCubes = 0x006A; OnLoadCubes (scenestategame.cpp:10857-10897) mode 0:
+        // u8 state, i32 n, per cube i32 cell, i64 owner, CubeItemInfo, i32, i32, u8, f32, i32, u8 notice flag (1: text, u8 type)
+        Assert.That((ushort)Inbound.LoadCubes, Is.EqualTo(0x006A));
+        var m = LoadCubes.Read(Reader(w =>
+        {
+            w.WriteByte(0); w.WriteByte(2); w.WriteInt(2);
+            w.WriteInt(0x00ff0102); w.WriteLong(77);
+            w.WriteInt(50100001); w.WriteLong(9); w.WriteLong(1); w.WriteByte(0);
+            w.WriteInt(3); w.WriteInt(4); w.WriteByte(1); w.WriteFloat(90f); w.WriteInt(5); w.WriteByte(0);
+            w.WriteInt(0x00000003); w.WriteLong(78);
+            w.WriteInt(50100002); w.WriteLong(10); w.WriteLong(1); w.WriteByte(0);
+            w.WriteInt(0); w.WriteInt(0); w.WriteByte(0); w.WriteFloat(0f); w.WriteInt(0); w.WriteByte(1);
+            w.WriteUnicodeString("x"); w.WriteByte(6);
+        }));
+        Assert.That(m, Is.Not.Null);
+        Assert.That((m.FloorState, m.Cubes.Count), Is.EqualTo(((byte)2, 2)));
+        var a = m.Cubes[0];
+        Assert.That((a.Cell, a.Owner, a.Item.ItemId, a.Item.InstanceId, a.Group, a.Floor, a.Liftable, a.Rotation, a.House, a.NoticeText),
+            Is.EqualTo((0x00ff0102, 77L, 50100001, 9L, 3, 4, true, 90f, 5, (string)null)));
+        var b = m.Cubes[1];
+        Assert.That((b.Cell, b.Item.ItemId, b.NoticeText != null, b.NoticeType), Is.EqualTo((3, 50100002, true, (byte)6)));
+        Assert.That(LoadCubes.Read(Reader(w => { w.WriteByte(1); w.WriteInt(0); })), Is.Null);
+    }
 }

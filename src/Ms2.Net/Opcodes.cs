@@ -101,6 +101,7 @@ public enum Inbound : ushort {
     GameEvent = 0xB2,       // RecvOp::GameEvent (commonfiles/opcodes.h:185): GameEventManagerCli::Dispatch
     SetCraftMode = 0x68,    // RecvOp::SetCraftMode (commonfiles/opcodes.h:112): CSceneStateGame::OnSetCraftMode
     ResponseCube = 0x69,    // RecvOp::ResponseCube (commonfiles/opcodes.h:113): CSceneStateGame::OnResponseCube
+    LoadCubes = 0x6A,       // RecvOp::LoadCubes (commonfiles/opcodes.h:114): CSceneStateGame::OnLoadCubes
     Buff = 0x47,
     UserMoveByPortal = 0x5F,
     StateFallDamage = 0x65,
