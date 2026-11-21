@@ -143,6 +143,33 @@ public class SkillAttackFireTests
         Assert.That(SkillHit.FilterTarget(me, ally, 2, 0), Is.False, "a dead ally");
     }
 
+    /// <summary>PC::vfunc_122 @0x14165f5d0 (pc.cpp:3112) in a pk field: another PC of the same team is hostile unless it shares
+    /// the caster's nonzero party id or either has pvp on/off; the caster itself never is; npcs keep the team test.</summary>
+    [Test]
+    public void APkFieldMakesOtherPcsHostileOutsideTheParty()
+    {
+        var me = Owner;
+        var pc = Mob(5, 0, 0); pc.Kind = HitKind.Pc; pc.Team = me.Team;
+        Assert.That((SkillHit.FilterTarget(me, pc, 1, 0), SkillHit.FilterTarget(me, pc, 1, 0, pkMode: true)), Is.EqualTo((false, true)));
+        Assert.That(SkillHit.FilterTarget(me, pc, 2, 0, pkMode: true), Is.False, "hostile, so not friendly");
+        Assert.That(SkillHit.FilterTarget(me, me, 1, 0, pkMode: true), Is.False, "the caster itself");
+        me.PartyId = 9; pc.PartyId = 9;
+        Assert.That(SkillHit.FilterTarget(me, pc, 1, 0, pkMode: true), Is.False, "the same party");
+        me.PartyId = 0; pc.PartyId = 0;
+        Assert.That(SkillHit.FilterTarget(me, pc, 1, 0, pkMode: true), Is.True, "no party is no shared party");
+        pc.PvpOnOff = true;
+        Assert.That(SkillHit.FilterTarget(me, pc, 1, 0, pkMode: true), Is.False, "the target's pvp on/off");
+        pc.PvpOnOff = false; me.PvpOnOff = true;
+        Assert.That(SkillHit.FilterTarget(me, pc, 1, 0, pkMode: true), Is.False, "the caster's pvp on/off");
+        me.PvpOnOff = false;
+        var npc = Mob(6, 0, 0); npc.Team = me.Team;
+        Assert.That(SkillHit.FilterTarget(me, npc, 1, 0, pkMode: true), Is.False, "an npc of the caster's team");
+        var objects = new[] { me, pc };
+        var into = new List<HitCandidate>();
+        SkillHit.Query(objects, 1, 0, into, pkMode: true);
+        Assert.That(into.Select(o => o.Id), Is.EqualTo(new[] { pc.Id }));
+    }
+
     [Test]
     public void SerialIdsShareOneCounterAcrossObjects()
     {

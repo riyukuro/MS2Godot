@@ -2763,7 +2763,7 @@ public partial class HudScene : Node, IUiStageHost
             slotField = fd == null ? null : new Ms2.Ui.Skills.SlotField
             {
                 Id = fd.Id, MapType = fd.MapType, CheckFly = fd.CheckFly, CheckClimb = fd.CheckClimb,
-                UseEPSkill = fd.UseEPSkill, UsePet = fd.UsePet, SkillUseDisableMask = fd.SkillUseDisableMask,
+                UseEPSkill = fd.UseEPSkill, UsePet = fd.UsePet, SkillUseDisableMask = fd.SkillUseDisableMask, PkMode = fd.PkMode,
             };
         }
         var p = hudModel.Player;

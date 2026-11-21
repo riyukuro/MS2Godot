@@ -141,14 +141,15 @@ public partial class HudScene
         float delay = 0f;
         Ms2.Formats.Model.KfAnimation seq = null;
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
+        // FUN_141525ff0 (mypc.cpp:2557-2563) reads the motion data's sequence from the actor manager (FindSequenceID of
+        // m_strSeq), whether or not the skill state plays it
+        if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.Anims?.Sequence(motion.SequenceName, false) is { } seqKey)
+            me.Anims.Kf.TryGetValue(seqKey, out seq);
         if (r.Level.HasSequenceName)
         {
             // :1213-1216: a level with a sequence enters the skill state; the cooldown counts the old state's time off
             if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed))
-            {
                 StartOwnAttacks(me, r);
-                me.Anims.Kf.TryGetValue(me.SkillSequence, out seq);
-            }
             delay = elapsed;
         }
         // :1230: after the send, the cast's own cooldown (FUN_141525ff0) from the sequence's text keys
@@ -216,7 +217,8 @@ public partial class HudScene
             for (int i = 0; i < n; i++)
             {
                 var req = SkillAttackFire.Fire(ownCast, ownAttack, pos, rotZ, 0,
-                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds);
+                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds,
+                    (slotField?.PkMode ?? 0) != 0);
                 bool sent = req != null && (live?.SendDamage(req) ?? false);
                 GD.Print($"cast: skill {ownCast.Skill.Id} attack {ownAttack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
                 ownAttack++;

@@ -126,6 +126,8 @@ public sealed class SlotField
     public bool UseEPSkill = true, UsePet = true, CheckFly, CheckClimb = true;
     public int MapType, ShadowContinent;
     public uint SkillUseDisableMask;
+    /// <summary>CFieldData::GetPkMode (&lt;property pkMode&gt;): PCs are hostile to each other (PC::vfunc_122).</summary>
+    public int PkMode;
 }
 
 /// <summary>

@@ -204,6 +204,10 @@ public struct HitCandidate
     public bool CorpseHit;
     /// <summary>A pet with an owner (CPet::GetOwner).</summary>
     public bool PetOwned;
+    /// <summary>PC::FUN_141661bc0, m_nFF0: the party id (CPartyManager::GetPartyId, pc.cpp:4438), 0 with no party.</summary>
+    public long PartyId;
+    /// <summary>PC::FUN_1416749a0()-&gt;IsPvpOnOff.</summary>
+    public bool PvpOnOff;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>
@@ -250,18 +254,24 @@ public static class SkillHit
     /// The world query's filter FilterTarget @0x1409ff8d0 (basecollision.cpp:784): can <paramref name="self"/> target
     /// <paramref name="other"/>. Flags: 1 hostile, 2 friendly, 4 the hidden ones too, 8 owner-less pets; a set bit of
     /// <paramref name="npcKinds"/> (applyTargetIgnoreNpcRanks) drops an npc of that class. Hostile means the caster's team is 2 or
-    /// the teams differ (PCBase::vfunc_122 @0x1416781c0, pcbase.cpp:2784); a hostile target needs hp, or for an npc hp 0 with a
-    /// hittable corpse; a friendly one needs hp.
-    /// STILL-OPEN: the caster's GetForceApplyTarget extra flags (a buff state) are not ported.
+    /// the caster's vfunc_122 says so: PC::vfunc_122 @0x14165f5d0 (pc.cpp:3112) on a PC target with the field's
+    /// <paramref name="pkMode"/> is hostile unless it is the caster itself, shares the caster's nonzero party id, or either has
+    /// pvp on/off set; else (and for its HasPvPPoint xor, which this filter already checked) the teams differ (PCBase::vfunc_122
+    /// @0x1416781c0, pcbase.cpp:2784). A hostile target needs hp, or for an npc hp 0 with a hittable corpse; a friendly one
+    /// needs hp.
+    /// STILL-OPEN: the caster's GetForceApplyTarget extra flags (a buff state) are not ported; the candidates' party id and
+    /// pvp on/off (like Hidden and PvPPoint) have no feed.
     /// </summary>
-    public static bool FilterTarget(in HitCandidate self, in HitCandidate other, int flags, int npcKinds)
+    public static bool FilterTarget(in HitCandidate self, in HitCandidate other, int flags, int npcKinds, bool pkMode = false)
     {
         if (other.Team == 2) return false;
         if ((flags & 4) == 0 && other.Hidden) return false;
         if (other.Kind == HitKind.Pet) return (flags & 8) != 0 && !other.PetOwned;
         if (self.Kind == HitKind.Pc && other.Kind == HitKind.Pc && self.PvPPoint != other.PvPPoint) return false;
         if (npcKinds != 0 && other.Kind == HitKind.Npc && (npcKinds & (1 << other.NpcClass)) != 0) return false;
-        bool hostile = self.Team == 2 || self.Team != other.Team;
+        bool hostile = self.Team == 2 || (pkMode && self.Kind == HitKind.Pc && other.Kind == HitKind.Pc
+            ? self.Id != other.Id && !(self.PartyId != 0 && self.PartyId == other.PartyId) && !self.PvpOnOff && !other.PvpOnOff
+            : self.Team != other.Team);
         if ((flags & 1) != 0 && hostile)
         {
             if (other.Hp > 0) return true;
@@ -274,9 +284,9 @@ public static class SkillHit
     /// WorldService::FUN_141bd2ea0 (worldservice_1.cpp:6602) as CBaseCollision::Detect @0x1409fc6c0 (basecollision.cpp:221)
     /// calls it: the objects the caster (the <see cref="HitCandidate.IsOwner"/> one; none, nothing) may target by
     /// <see cref="FilterTarget"/>, the caster included when it passes. The objects here are PCs, npcs and pets only, so the
-    /// query's class 0x6200016 skip has nothing to drop.
+    /// query's class 0x6200016 skip has nothing to drop. <paramref name="pkMode"/> is the field's (CFieldData::GetPkMode).
     /// </summary>
-    public static void Query(ReadOnlySpan<HitCandidate> objects, int kind, int npcKinds, List<HitCandidate> into)
+    public static void Query(ReadOnlySpan<HitCandidate> objects, int kind, int npcKinds, List<HitCandidate> into, bool pkMode = false)
     {
         into.Clear();
         int owner = -1;
@@ -284,7 +294,7 @@ public static class SkillHit
             if (objects[i].IsOwner) { owner = i; break; }
         if (owner < 0) return;
         foreach (ref readonly var o in objects)
-            if (FilterTarget(objects[owner], o, kind, npcKinds)) into.Add(o);
+            if (FilterTarget(objects[owner], o, kind, npcKinds, pkMode)) into.Add(o);
     }
 
     /// <summary>

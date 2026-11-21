@@ -56,7 +56,8 @@ public static class SkillAttackFire
     /// The area pick first queries the objects the caster may target (<see cref="SkillHit.Query"/>, kind applyTarget, npc
     /// kinds applyTargetIgnoreNpcRanks: FUN_1417e95a0, stateskill.cpp:1176-1185) into <paramref name="queried"/>; an attack
     /// whose range is no shape 1-4 has no collision (CSkillCollisionManager::GetCached @0x141754580), so PickAttackTargets
-    /// returns before any record and the send goes without targets.
+    /// returns before any record and the send goes without targets. <paramref name="pkMode"/> is the field's pk mode
+    /// (PC::vfunc_122's hostility).
     /// The record keeps the attack as its m_nAttackIndex (FireCurrentAttack, stateskill.cpp:2264).
     /// STILL-OPEN: the castTarget kind (FUN_1417e95a0's m_n60, 0 here) and the context's extra kind flags.
     /// STILL-OPEN: class 10's direction (FUN_141489940: -UNIT_X through the record's full euler rotation), the magic models,
@@ -64,7 +65,8 @@ public static class SkillAttackFire
     /// own player (vfunc_108).
     /// </summary>
     public static SkillDamageRequest Fire(CastRecord r, int attack, Vector3 ownerPos, float ownerRotZ, float zOffset,
-        ReadOnlySpan<HitCandidate> objects, Func<int> rand, Func<long> serial, List<HitCandidate> queried, List<int> hits)
+        ReadOnlySpan<HitCandidate> objects, Func<int> rand, Func<long> serial, List<HitCandidate> queried, List<int> hits,
+        bool pkMode = false)
     {
         var a = AttackAt(r, attack);
         if (a == null) return null;
@@ -82,7 +84,7 @@ public static class SkillAttackFire
                 var rot = new Vector3(0, 0, ownerRotZ);
                 SkillHit.AreaPose(a, ownerPos, rot, out var pos, out var areaRot);
                 var shape = SkillHitShape.Pose(a.Range, zOffset, pos, areaRot);
-                SkillHit.Query(objects, a.Range.ApplyTarget, a.Range.IgnoreNpcRanks, queried);
+                SkillHit.Query(objects, a.Range.ApplyTarget, a.Range.IgnoreNpcRanks, queried, pkMode);
                 SkillHit.Detect(shape, pos, areaRot, a.Direction, a.Range.IncludeCaster != 0, false,
                     System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried), rand, hits);
                 picked = hits;
