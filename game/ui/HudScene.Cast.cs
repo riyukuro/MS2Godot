@@ -154,6 +154,7 @@ public partial class HudScene
             RotZ = rotZ,
             Key = key,
         };
+        SkillCast.OwnDead(w, Net.LiveSession.Instance?.Me);     // FUN_14176a380's 0xc on PCBase::IsDead
         var sp = me.Velocity;
         castWorld.Jumping = me.State == Player.MoveState.Jump;
         castWorld.Rising = sp.Y > 0;

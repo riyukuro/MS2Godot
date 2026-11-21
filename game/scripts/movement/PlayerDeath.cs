@@ -49,6 +49,18 @@ public partial class Player
         PlaySequence(name, 1f, true);
     }
 
+    /// <summary>
+    /// OnUserState's vfunc_59(state) (scenestategame.cpp:5766) for a state other than 0xc and 0x18 that PC::vfunc_124
+    /// (pc.cpp:1199) lets in: the death and revival states are left. The other user states have no body state here, so the
+    /// body goes to idle. Outside StateDead and StateRevival it does nothing.
+    /// </summary>
+    public void LeaveDeath()
+    {
+        if (State is not (MoveState.Dead or MoveState.Revival)) return;
+        deadSequence = null;
+        Enter(MoveState.Idle);
+    }
+
     /// <summary>StateDead::vfunc_3 (statedead.cpp): vfunc_68(zero, t), gravity only; StateRevival: the sequence's end.</summary>
     void DeathUpdate()
     {

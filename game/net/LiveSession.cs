@@ -1299,14 +1299,21 @@ public partial class LiveSession : Node
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
                 Me.ApplyUserState(u.ObjectId, u.State);
                 bool died = u.ObjectId == selfObject && u.State == 12 && Me.Dead;  // the dead branch runs each time, not only on the flip
-                // state 12 runs MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
                 // every state goes through vfunc_59, so ride, rope, climb and ladder from the server let go of the held item too
                 if (u.ObjectId == selfObject) HeldItem.UserState(u.State, Me.Dead, Send);
                 if (died)
                 {
                     GD.Print($"live: own player dead (state {u.State})");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1350)
-                    OwnDeathState();
+                }
+                // the body follows the state vfunc_59(state) left (scenestategame.cpp:5766, gated by PC::vfunc_124): state 12 enters
+                // StateDead with or without the dead flag (StateDead::vfunc_4, statedead.cpp:152), 0x18 StateRevival, and another
+                // state let in leaves them
+                if (u.ObjectId == selfObject && player != null && IsInstanceValid(player))
+                {
+                    if (Me.State == 0xc) OwnDeathState();
+                    else if (Me.State == 0x18) player.EnterRevival();
+                    else player.LeaveDeath();
                 }
             }
             else if (game.Is(p, Inbound.DeadUser))
@@ -1325,8 +1332,8 @@ public partial class LiveSession : Node
             {
                 var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
                 bool revived = Me.Revive(v.ObjectId, v.Flag);
-                // MyPC's vfunc_59(0x18) (scenestategame.cpp:7400): StateRevival on the body
-                if (v.ObjectId == selfObject && Me.State == 0x18 && player != null && IsInstanceValid(player)) player.EnterRevival();
+                // MyPC's vfunc_59(0x18) (scenestategame.cpp:7400), run for the own actor whatever the flag: StateRevival on the body
+                if (v.ObjectId == selfObject && player != null && IsInstanceValid(player)) player.EnterRevival();
                 if (revived)
                 {
                     GD.Print("live: own player revived");

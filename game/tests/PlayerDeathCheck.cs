@@ -14,7 +14,7 @@ namespace Ms2Godot.Tests;
 ///   (ChangeState to the current state) does not restart the sequence;
 /// - revival: REVIVAL plays, the keys still do not move it, its end goes to idle, then the keys walk again;
 /// - the revive-in-place death plays MODEPVP_DEAD entry 1 (ShadowWorldAutoReviveDeadAction's default), and an entry past
-///   the list's end plays nothing (PCActionList::Name gives "").
+///   the list's end plays nothing (PCActionList::Name gives ""); another user state then leaves the death state for idle.
 /// With MS2_SHOT_DIR set and a window, saves dead.png and revival.png. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PlayerDeathCheck : Node3D
@@ -151,6 +151,8 @@ public partial class PlayerDeathCheck : Node3D
         pc.EnterDead(true, 1);
         Expect(entry == null || pc.CurrentAnim == entry, $"revive-in-place death: '{pc.CurrentAnim}' (MODEPVP_DEAD 1 '{entry}')");
         Expect(pc.Anims.NameAt(Act.ModePvpDead, 99) == null, "MODEPVP_DEAD entry 99 resolved");
+        pc.LeaveDeath();        // another user state let in (OnUserState's vfunc_59)
+        Expect(pc.State == Player.MoveState.Idle, $"user state after death: {pc.State}");
         pc.EnterRevival();
         GD.Print($"player death: revive-in-place entry 1 '{entry ?? "-"}'");
     }

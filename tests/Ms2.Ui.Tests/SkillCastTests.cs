@@ -70,6 +70,24 @@ public class SkillCastTests
         Assert.That(SkillCast.AttackKeySkill(w, c, table.FindAction(52, 0), table, 0), Is.EqualTo(0u), "riding");
     }
 
+    /// <summary>A skill press while the own player is dead (DeadUser set the flag) gives no record, so nothing is sent: FUN_14176a380
+    /// refuses with 0xc on PCBase::IsDead. A world taken while alive is brought up to date at the request.</summary>
+    [Test]
+    public void APressWhileDeadGivesNoRecord()
+    {
+        var w = World(Skills(Attack));
+        var c = new CastWorld();
+        var me = new MyCharacter();
+        SkillCast.OwnDead(w, me);
+        Assert.That(SkillCast.Request(w, c, Req(100), _ => 100).Record, Is.Not.Null, "alive");
+        me.Dead = true;
+        SkillCast.OwnDead(w, me);
+        Assert.That(SkillCast.Request(w, c, Req(100), _ => 100), Is.EqualTo(new SkillCast.Result(null, 0xc, null)), "dead");
+        me.Dead = false;
+        SkillCast.OwnDead(w, me);
+        Assert.That(SkillCast.Request(w, c, Req(100), _ => 100).Record, Is.Not.Null, "revived");
+    }
+
     [Test]
     public void ARequestBuildsTheRecordTheCastSends()
     {

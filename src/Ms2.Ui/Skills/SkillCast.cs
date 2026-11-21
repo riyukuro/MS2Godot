@@ -196,6 +196,10 @@ public static class SkillCast
     /// <summary>The result of a request: the record, or the reason (0 with no record: a refusal the client shows no code for).</summary>
     public readonly record struct Result(CastRecord Record, int Why, string Notice);
 
+    /// <summary>The own player's PCBase::IsDead for FUN_14176a380's 0xc (<see cref="CastGate.Why"/>): the dead flag of DeadUser and
+    /// FieldAddUser, not the body's state. A world taken once per state is brought up to date at each request.</summary>
+    public static void OwnDead(SlotWorld w, MyCharacter me) => w.IsDead = me?.Dead ?? false;
+
     /// <summary>
     /// CSkillSystem::FUN_141764e30 @0x141764e30 (skillslot.cpp:2084): not learnt → notice s_err_not_learn_skill; the key's quick
     /// slot item (STILL-OPEN: the quick slot item path, the level check and s_err_not_enough_level; a key with an item uid gives
