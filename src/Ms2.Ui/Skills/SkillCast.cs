@@ -214,13 +214,23 @@ public static class SkillCast
     /// the end step, stateskill.cpp:2939, and at the chain, :3170): m_k50, the Skill packet's position (FUN_1417ebc00), is the
     /// owner's position now (vfunc_18, :2602); m_k5c and m_k68 are aimed again (vfunc_105, :2593) as the press aims them, the
     /// facing <paramref name="rotZ"/> (degrees) as the direction and the rotation (0, 0, <paramref name="rotZ"/>).
-    /// STILL-OPEN: the keep of the running record's aim in the skill state for the same skill (:2575-2591, SkillData +0x88
-    /// and +0x34) and the auto target (vfunc_101, :2598-2599) are not ported.
+    /// In the skill state (:2575-2591), a continue skill (kinds continue, +0x34) cast again under the running record
+    /// <paramref name="running"/> of the same skill keeps that record's direction and rotation instead, with stateAttr
+    /// moveType (+0x88) 0, or 2 with feature 0xca (<paramref name="feature0xca"/>); the position is still the owner's now.
+    /// STILL-OPEN: the auto target (vfunc_101, :2598-2599) is not ported.
     /// </summary>
-    public static void Aim(CastRecord r, Vector3 position, float rotZ)
+    public static void Aim(CastRecord r, Vector3 position, float rotZ, CastRecord running, bool feature0xca)
     {
-        float rad = rotZ * (MathF.PI / 180f);
         r.Position = position;
+        var d = r.Skill;
+        bool keep = d.MoveType == 0 || (feature0xca && d.MoveType == 2);
+        if (keep && running != null && running.Skill.Id == d.Id && d.Continue)
+        {
+            r.Direction = running.Direction;
+            r.Rotation = running.Rotation;
+            return;
+        }
+        float rad = rotZ * (MathF.PI / 180f);
         r.Direction = new Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0);
         r.Rotation = new Vector3(0, 0, rotZ);
     }

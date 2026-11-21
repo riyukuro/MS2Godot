@@ -69,8 +69,9 @@ public partial class HudScene
     /// compact pick (mypc.cpp:1682), then vfunc_102 (<see cref="RouteOwn"/>). Without bAuto the key pick takes only a key
     /// just pressed, which comes as an event here (<see cref="CastKeys"/>), so only the compact pick is polled. 0 B/frame
     /// while no tab is held.
-    /// STILL-OPEN: vfunc_104's cube mode, state 0x2f and scene 0x620000d refusals (:1671-1676) are not read; the idle poll runs
-    /// in the idle, walk, jump and fall states (the states without their own vfunc_8 here).
+    /// vfunc_104's refusals (:1671-1676) cannot hold here: cube (build) mode, the instrument state (0x2f) and the character
+    /// list scene (0x620000d, no HUD) are not ported. STILL-OPEN: the idle poll runs in the idle, walk, jump and fall states
+    /// (the states without their own vfunc_8 here).
     /// </summary>
     void TickCompact()
     {

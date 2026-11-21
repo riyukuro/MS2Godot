@@ -30,6 +30,10 @@ public class SkillCastTests
     // no sequence: the cast reuse window applies
     const string Instant = "<skill id=\"400\"><basic mainType=\"1\"/><level value=\"1\"/></skill>";
 
+    // continue skills (kinds continue): moveType 0 and 2
+    const string Continue0 = "<skill id=\"500\"><basic mainType=\"1\"><kinds continue=\"1\"/></basic><level value=\"1\"><motion sequenceName=\"Spin\"/></level></skill>";
+    const string Continue2 = "<skill id=\"501\"><basic mainType=\"1\"><kinds continue=\"1\"/><stateAttr moveType=\"2\"/></basic><level value=\"1\"><motion sequenceName=\"Spin\"/></level></skill>";
+
     static SlotWorld World(SkillTables t) => new()
     {
         Tables = t, Jobs = new JobSystem(t), Level = 10, Hp = 100, Sp = 10, Ep = 100, Field = new SlotField(),
@@ -97,12 +101,47 @@ public class SkillCastTests
         var w = World(Skills(Attack, JumpAttack));
         var c = new CastWorld { Aim = r => { r.Position = new Vector3(1, 2, 3); r.Direction = new Vector3(0, -1, 0); } };
         var r = SkillCast.Request(w, c, Req(100), _ => 100).Record;
-        SkillCast.Aim(r, new Vector3(40, 50, 60), 90);   // moved and turned after the press (PCBase::vfunc_100 at the end step)
+        SkillCast.Aim(r, new Vector3(40, 50, 60), 90, null, false);   // moved and turned after the press (PCBase::vfunc_100 at the end step)
         var p = SkillCast.Send(r, 6000, 0, holdAttackFeature: false);
         Assert.That(p.Position, Is.EqualTo(new Vector3(40, 50, 60)), "the position now");   // m_k50
         Assert.That(p.Direction.X, Is.EqualTo(1f).Within(1e-6f), "facing rotZ 90");
         Assert.That(p.Direction.Y, Is.EqualTo(0f).Within(1e-6f));
         Assert.That(p.Rotation, Is.EqualTo(new Vector3(0, 0, 90)));
+    }
+
+    [Test]
+    public void AContinueSkillAgainKeepsTheRunningRecordsAim()
+    {
+        // PCBase::vfunc_100 (pcbase.cpp:2575-2591) in the skill state
+        var w = World(Skills(Attack, JumpAttack, Continue0, Continue2));
+        var c = new CastWorld();
+        CastRecord Rec(uint id) => SkillCast.Request(w, c, Req(id), _ => (int)id).Record;
+        var running = Rec(500);
+        running.Direction = new Vector3(0, 1, 0);
+        running.Rotation = new Vector3(0, 0, 180);
+        var next = Rec(500);
+        SkillCast.Aim(next, new Vector3(40, 50, 60), 90, running, false);
+        Assert.That(next.Position, Is.EqualTo(new Vector3(40, 50, 60)), "the position is the owner's now");
+        Assert.That(next.Direction, Is.EqualTo(new Vector3(0, 1, 0)), "moveType 0: the running record's aim");
+        Assert.That(next.Rotation, Is.EqualTo(new Vector3(0, 0, 180)));
+
+        SkillCast.Aim(running, new Vector3(7, 8, 9), 90, running, false);   // the continue round, vfunc_100(m_spRecord, 1)
+        Assert.That(running.Rotation, Is.EqualTo(new Vector3(0, 0, 180)), "the round keeps its own aim");
+        Assert.That(running.Position, Is.EqualTo(new Vector3(7, 8, 9)), "at the position now");
+
+        var other = Rec(100);
+        SkillCast.Aim(other, new Vector3(40, 50, 60), 90, running, false);
+        Assert.That(other.Rotation, Is.EqualTo(new Vector3(0, 0, 90)), "another skill is aimed again");
+
+        var running2 = Rec(501);
+        running2.Rotation = new Vector3(0, 0, 180);
+        var next2 = Rec(501);
+        SkillCast.Aim(next2, Vector3.Zero, 90, running2, false);
+        Assert.That(next2.Rotation, Is.EqualTo(new Vector3(0, 0, 90)), "moveType 2 without feature 0xca: aimed again");
+        SkillCast.Aim(next2, Vector3.Zero, 90, running2, true);
+        Assert.That(next2.Rotation, Is.EqualTo(new Vector3(0, 0, 180)), "moveType 2 with feature 0xca: kept");
+        SkillCast.Aim(next2, Vector3.Zero, 90, null, true);
+        Assert.That(next2.Rotation, Is.EqualTo(new Vector3(0, 0, 90)), "no running record");
     }
 
     [Test]

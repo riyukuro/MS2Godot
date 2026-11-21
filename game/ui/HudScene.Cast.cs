@@ -358,12 +358,12 @@ public partial class HudScene
         return true;
     }
 
-    /// <summary>PCBase::vfunc_100 (pcbase.cpp:2561) on a next cast: <see cref="SkillCast.Aim"/> from where the player is and
-    /// faces now, not where it was at the press.</summary>
+    /// <summary>PCBase::vfunc_100 (pcbase.cpp:2561) on a next cast in the skill state: <see cref="SkillCast.Aim"/> from where
+    /// the player is and faces now, not where it was at the press (a continue skill again keeps the running record's aim).</summary>
     void AimOwn(CastRecord r)
     {
         var g = player.GlobalPosition;
-        SkillCast.Aim(r, new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ);
+        SkillCast.Aim(r, new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ, ownCast, hudModel.IsFeatureEnabled(0xca));
     }
 
     /// <summary>vfunc_104(1, 1, 1) at the end step: this frame's press, else the key held (<see cref="PollOwnKey"/>); the queued
@@ -628,13 +628,19 @@ public partial class HudScene
     /// m_nAttack 0 and m_bSentCharging off, the record marked (m_n98), then a skill still cooling without a charge use (and not a
     /// charging skill) queues the running record (SetChargeRecord), else the round goes (<see cref="SendOwnRound"/>); an
     /// unqueued round plays the loop again (<see cref="SeekOwnLoop"/>).
-    /// STILL-OPEN: the record's loop effect stop (m_n88), the re-aim (vfunc_100) and the turn to the record's rotation
-    /// (SetTargetYaw / vfunc_21, :883-896), and the weapon PC's sequence (FUN_141663be0).
+    /// A next round first aims the record again (vfunc_100(m_spRecord, 1), :880-881: a continue skill keeps its own aim, see
+    /// <see cref="SkillCast.Aim"/>, with the position now) and turns the owner to the record's rotation (SetTargetYaw /
+    /// vfunc_21, :893-894).
+    /// STILL-OPEN: the record's loop effect stop (m_n88), the camera mode 10 yaw (FUN_1417f4ea0, :885-889) and the weapon
+    /// PC's sequence (FUN_141663be0).
     /// </summary>
     void OwnLoopEnd(Player me, uint now)
     {
         // fEventTime: the key's own time here (only its being non-zero is read, by the hold check)
         if (!ownLoop.OnLoopEnd(ownLoopEndKey, ownLoopEndKey, SkillCast.MotionSpeedScale(ownCast), now)) return;
+        AimOwn(ownCast);
+        float rad = Mathf.DegToRad(ownCast.Rotation.Z);   // MS2 forward (sin z, -cos z) is godot (sin z, 0, cos z)
+        me.Face(new Vector3(Mathf.Sin(rad), 0, Mathf.Cos(rad)));
         ownAttack = 0;
         ownSync.ClearCharging();
         ownCast.Charged = true;
