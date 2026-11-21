@@ -81,7 +81,11 @@ public partial class HudScene
                     }
                     return;
                 case 6:
-                    if (live.Items.Get(p.Uid) is { } inv) ItemReader.ReadBodyInto(r, inv);
+                    if (live.Items.Get(p.Uid) is { } inv)
+                    {
+                        ItemReader.ReadBodyInto(r, inv);
+                        if (ItemRevertOpen) itemRevert.ShowReverted(InventoryController.ToItem(inv, items));
+                    }
                     return;
                 default:
                     if (ItemMergeOpen) itemMerge.OnPacket(p);

@@ -446,6 +446,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (mode == 3 && BankDeposit != null) { BankDeposit(item); return; }
         if (mode is 8 or 9 && BreakAdd != null) { BreakAdd(item); return; }              // cases 8, 9: the open break dialog lists it
         if (mode == 10 && LockSelect != null) { LockSelect(item); return; }       // case 10: the open lock dialog selects it
+        if (mode == 17 && RevertSelect != null) { RevertSelect(item); return; }    // case 17: the open merge revert dialog checks and shows it
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
@@ -548,6 +549,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             ShowBox(BindBox(item, BindOnUseKey, BindOnUseBox));
             return true;
         }
+        if (item.Data.FunctionName == "ItemMergeRevert" && RevertOpen != null) { RevertOpen(item); return true; }   // ItemMergeRevert @0x140d21480
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;
@@ -636,6 +638,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     public Action<Item> BankDeposit;
     /// <summary>InvenSlot::vfunc_14 case 10 (the item lock dialog at the head): the item goes to the lock bag when it is open. Null: raised, not sent.</summary>
     public Action<Item> LockSelect;
+    /// <summary>Mode 17: the open merge revert dialog's CheckItem, its pick, and the scroll's own handler (ItemMergeRevert).</summary>
+    public Func<Item, int> RevertCheck = _ => 0;
+    public Action<Item> RevertSelect, RevertOpen;
     /// <summary>InvenSlot::vfunc_18 with an ItemLockSlot as the source (invenslot.cpp:1245): the slot's item uid and this slot's item (null for an empty cell).</summary>
     public Action<long, Item> LockSlotDropped;
     /// <summary>CItemBreakManager::CanBreakItem (the use mode of the break dialogs, invenslot.cpp:1986).</summary>
@@ -1098,6 +1103,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return BreakCanBreak(item) ? 8 : hint ? 0 : 8;
         if (head == ItemLockDialogController.UiId)       // 0x4f08: CanBeItemLocked ? 10 : hint ? 0 : 10
             return ItemLockDialogController.CanBeItemLocked(item.Record, item.Data) ? 10 : hint ? 0 : 10;
+        if (head == ItemMergeRevertDialogController.UiId)    // 0x4f3d: CheckItem == 0 ? 17 : hint ? 0 : 17
+            return RevertCheck(item) == ItemMergeRevertDialogController.CheckOk ? 17 : hint ? 0 : 17;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;

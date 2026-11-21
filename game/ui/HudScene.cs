@@ -1494,6 +1494,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemBreakKeys(k)) return true;
         if (ItemMergeKeys(k)) return true;
         if (ItemEnchantKeys(k)) return true;
+        if (ItemMergeRevertKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
@@ -2731,10 +2732,15 @@ public partial class HudScene : Node, IUiStageHost
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;
         c.Shop = () => ShopOpen ? shop : null;
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : ItemEnchantOpen ? Ms2.Ui.Hud.ItemEnchantDialogController.UiId : 0;
+        // the client's head is the latest opened dialog (DAT_143af2258.GetHead(), invenslot.cpp:1961), no fixed order; the dialogs
+        // here are not told apart by open time, so the check order below is ours
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : ItemLockOpen ? Ms2.Ui.Hud.ItemLockDialogController.UiId : ItemBreakOpen ? Ms2.Ui.Hud.ItemBreakDialogController.UiId : ItemEnchantOpen ? Ms2.Ui.Hud.ItemEnchantDialogController.UiId : ItemRevertOpen ? Ms2.Ui.Hud.ItemMergeRevertDialogController.UiId : 0;
         c.BankAllowed = item => store?.Storable(item) ?? true;       // the open bank heads the right-click dialogs (0x4e47)
         c.BankDeposit = item => store?.DepositFromInventory(item);
         c.LockSelect = item => itemLock?.SelectFromInventory(item);
+        c.RevertCheck = item => itemRevert?.CheckItem(item) ?? 0;
+        c.RevertSelect = item => itemRevert?.UseFromInventory(item);
+        c.RevertOpen = OpenItemRevert;
         c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
         c.BreakCanBreak = item => itemBreak?.Mgr?.CanBreakItem(item) ?? false;
         c.BreakAdd = item => itemBreak?.AddFromInventory(item);

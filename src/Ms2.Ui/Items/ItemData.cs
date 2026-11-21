@@ -168,6 +168,13 @@ public sealed class ItemData
 
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
 
+    /// <summary>ItemFunctionArgs::FUN_1408d1f60 (unit_1408d1ec0_commandargumentaccessors.cpp:61): the word at the index as _wtoi, the default past the list.</summary>
+    public int FunctionArgInt(int index, int fallback) => index < FunctionArgs.Count ? Atoi(FunctionArgs[index]) : fallback;
+
+    /// <summary>CItemData::FUN_14053e410 (commonfiles/itemdata.cpp:1348): the merge revert kind, 2 for subtype 0x16 and for the
+    /// equip subtypes 0x32-0x38 and 0x50-0x53 (FUN_14053d460), else 1. STILL-OPEN: FUN_14053d460's type 0x17 branch (model group types 5 and 4).</summary>
+    public int MergeRevertKind => EquipSubtype is 0x16 or (>= 0x32 and <= 0x38) or (>= 0x50 and <= 0x53) ? 2 : 1;
+
     /// <summary>CMsTime(y, m, d, h, min, s) (mstime.cpp:43): _mkgmtime64 of the fields when each is in range, else 0.</summary>
     static long MsTimeFields(int y, int mo, int d, int h, int mi, int s)
     {
