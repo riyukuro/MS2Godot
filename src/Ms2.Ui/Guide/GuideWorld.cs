@@ -23,8 +23,8 @@ public class GuideWorld
     public virtual int SubSceneId => 0;
     /// <summary>GFxSceneService sub scene change (SequenceCamera's cinematic scene and back).</summary>
     public virtual void SetSubScene(int id) { }
-    /// <summary>CUIService::IsTextFieldFocused.</summary>
-    public virtual bool TextFocused => false;
+    /// <summary>CUIService::IsTextFieldFocused (<see cref="InputBlock.TextFieldFocused"/>).</summary>
+    public virtual bool TextFocused => InputBlock.TextFieldFocused();
     /// <summary>The keyboard's IsKeyDown(key, false, 0).</summary>
     public virtual bool IsKeyDown(int key) => false;
     /// <summary>CInputKeyHandler::IsActionKeyDown(action, false, 0).</summary>

@@ -184,13 +184,13 @@ public sealed class GroupMessengerController : UiController, IMessageBoxListener
 
     /// <summary>
     /// FUN_14194c6d0 (@0x14194c6d0, :1189): not minimized, the current name of Unk_MdNames (GetCurrentName) and either the input
-    /// focused or no text field focused. STILL-OPEN: CUIService::IsTextFieldFocused is not ported (taken as none).
+    /// focused or no text field focused (CUIService::IsTextFieldFocused, <see cref="InputBlock.TextFieldFocused"/>).
     /// </summary>
     bool TakesKeys()
     {
         if (minimized) return false;
         if (browser.Names.GetCurrentName() != Name) return false;
-        return true;
+        return InputActive || !InputBlock.TextFieldFocused();
     }
 
     /// <summary>FUN_14194cbb0 (@0x14194cbb0, :1248): focused, the line is sent (SendInput); else the input takes the focus with the

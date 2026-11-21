@@ -37,6 +37,8 @@ public class GuideTests
         public override IGuideEventPane Pane => pane;
         public override int GuideMode => Mode;
         public override void GuideLog(string text) => Log.Add(text);
+        public bool KeyHeld;
+        public override bool IsKeyDown(int key) => KeyHeld;
     }
 
     static GuideManager Make(World world, string xml)

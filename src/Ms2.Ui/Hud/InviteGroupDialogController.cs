@@ -34,8 +34,8 @@ public sealed class InviteGroupDialogController : UiController
     public Func<IEnumerable<BuddyInfo>> Buddies = Array.Empty<BuddyInfo>;
     /// <summary>GetMessageBoxLayer()->FUN_1419f8270() == 0: a message box is shown.</summary>
     public Func<bool> BoxShown = () => !MessageBoxQueue.IsIdle;
-    /// <summary>CUIService::IsTextFieldFocused. STILL-OPEN: not ported (taken as none), as for the group window.</summary>
-    public Func<bool> TextFieldFocused = () => false;
+    /// <summary>CUIService::IsTextFieldFocused (<see cref="InputBlock.TextFieldFocused"/>).</summary>
+    public Func<bool> TextFieldFocused = () => InputBlock.TextFieldFocused();
 
     /// <summary>SetGroupId (@0x14199fcf0).</summary>
     public void SetGroupId(int groupId) => GroupId = groupId;
