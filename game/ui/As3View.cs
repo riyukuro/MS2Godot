@@ -83,6 +83,7 @@ public partial class As3View : Node2D
     public As3View(FlashPlayer player, UiAssets assets)
     {
         Player = player; this.assets = assets;
+        FlashPlayer.SharedClipboard = SystemClipboard.Instance;
         player.Translate ??= key => assets.Str(key);
         player.ImageSize ??= url => ResolveImage(url) is { } t ? ((int)t.GetSize().X, (int)t.GetSize().Y) : null;
         // the runtime breaks lines and sizes fields with the advances of the game font the field draws in (unhinted, as
@@ -1005,7 +1006,7 @@ public partial class As3View : Node2D
     {
         >= Key.A and <= Key.Z => (uint)k,
         >= Key.Key0 and <= Key.Key9 => (uint)k,
-        Key.Enter or Key.KpEnter => 13, Key.Tab => 9, Key.Backspace => 8, Key.Escape => 27, Key.Space => 32, Key.Delete => 46,
+        Key.Enter or Key.KpEnter => 13, Key.Tab => 9, Key.Backspace => 8, Key.Escape => 27, Key.Space => 32, Key.Insert => 45, Key.Delete => 46,
         Key.Left => 37, Key.Up => 38, Key.Right => 39, Key.Down => 40, Key.Home => 36, Key.End => 35, Key.Pageup => 33, Key.Pagedown => 34,
         Key.Shift => 16, Key.Ctrl => 17, Key.Alt => 18,
         >= Key.F1 and <= Key.F12 => 112 + (uint)(k - Key.F1),
