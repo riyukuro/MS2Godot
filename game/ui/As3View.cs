@@ -48,8 +48,9 @@ public partial class As3View : Node2D
             }
             parked.Clear();
         }
-        else if (what == NotificationEnterTree) inTree.Add(this);
-        else if (what == NotificationExitTree) inTree.Remove(this);
+        else if (what == NotificationEnterTree) { inTree.Add(this); imeOwner ??= this; }
+        else if (what == NotificationExitTree) LeaveTree();
+        else if (what == (int)NotificationApplicationFocusIn || what == (int)NotificationApplicationFocusOut) ime.WindowFocusChanged();
     }
     /// <summary>Advance the movie's frames in _Process (off for scripted captures that tick by hand).</summary>
     public bool AutoPlay = true;
@@ -118,6 +119,7 @@ public partial class As3View : Node2D
     public override void _Process(double delta)
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+        if (imeOwner == this) SyncIme();
         Advance(delta);
         double ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         SpentMs += ms;
@@ -775,6 +777,45 @@ public partial class As3View : Node2D
     // its own movie in the client too) covers nothing.
 
     static readonly HashSet<As3View> inTree = new();
+
+    // the window's IME (Ms2.Ui.WindowIme): on while a shown view's focus is an input field, synced once a frame by one
+    // view in the tree
+    static readonly Ms2.Ui.WindowIme ime = new(on => DisplayServer.WindowSetImeActive(on));
+    static As3View imeOwner;
+    static readonly Func<bool> Typing = () => UiFocus.IsTyping;
+    static MouseButtonMask imeButtons;                      // the mouse buttons down at the last sync
+
+    static void SyncIme()
+    {
+        var b = Input.GetMouseButtonMask();
+        bool pressed = (b & ~imeButtons) != 0;
+        imeButtons = b;
+        ime.Sync(InputFieldFocused, Typing, pressed);
+    }
+
+    /// <summary>Whether a shown view that takes keys has an input field focused (a C# test first: the engine is asked
+    /// only about such a view).</summary>
+    static bool InputFieldFocused
+    {
+        get
+        {
+            foreach (var v in inTree)
+                if (Ms2.Ui.WindowIme.TakesText(v.Player?.Focus) && v.TakesKeys?.Invoke() != false
+                    && v.IsVisibleInTree() && v.IsProcessingUnhandledInput())
+                    return true;
+            return false;
+        }
+    }
+
+    void LeaveTree()
+    {
+        inTree.Remove(this);
+        if (imeOwner != this) return;
+        imeOwner = null;
+        foreach (var v in inTree) { imeOwner = v; break; }
+        if (imeOwner == null) ime.Sync(false, Typing);      // the last view goes: its field's IME with it
+    }
+
     long moves;                                             // the syncs that found the view moved on screen (a deep sync)
     long retestMarks = -1, retestMoves;                     // DisplayMarks and moves at the last retest
     /// <summary>The mouse retests all movie views made since the start, and the milliseconds they took (frame-time runs).</summary>
