@@ -94,9 +94,6 @@ public partial class LiveSession
             GD.Print($"live: InteractObject mode {m.Mode} name '{m.Name}' kind {m.Kind} state {m.State} result {m.Result}");
     }
 
-    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>).
-    /// STILL-OPEN: the other modes; the build notice (ShowBuildNotice) an error shows to its character; the cube map's
-    /// weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     /// <summary>
     /// CSceneStateGame::OnSetCraftMode (@0x141723410, scenestategame.cpp:7827-7851): the pc by id, nothing if it is missing or
     /// dead (:7832-7835), then PC::vfunc_135 with the cube mode, the craft mode and the item (0, 0 and none with mode 0).
@@ -110,6 +107,9 @@ public partial class LiveSession
         GD.Print($"live: SetCraftMode mode {m.CubeMode} craft {m.CraftMode} item {m.Item?.ItemId ?? 0}");
     }
 
+    /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>).
+    /// STILL-OPEN: the other modes; the build notice (ShowBuildNotice) an error shows to its character; the cube map's
+    /// weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     void OnResponseCube(ResponseCubeHeldItem m)
     {
         if (m == null) return;
