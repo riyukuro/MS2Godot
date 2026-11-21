@@ -18,6 +18,7 @@ public enum StatusEvent
     State = 9,
     Unknown10 = 10,
     Merat = 11,     // the merat balance
+    RedMerat = 13,  // the red merat balance (OnMeretUse's NotifyStatusChanged(0xd), scenestategame.cpp:7089)
     AdventureLevel = 0x11,  // Prestige kind 2 for the player (listener vfunc_oa0_30)
     AdventureExp = 0x12,    // Prestige kind 1 (vfunc_oa0_31)
 }
@@ -173,6 +174,8 @@ public static class Feature
         Mentoring = 0x91, MesoMarketToken = 0xf3;
     /// <summary>0x43: red merats (CFeatureManager::FUN_14036d650, featuremanager.cpp).</summary>
     public const int RedMerat = 0x43;
+    /// <summary>0xba: the merat spend line that follows the merat use chat lines (OnMeret, scenestategame.cpp:7044).</summary>
+    public const int MeratMessage = 0xba;
     /// <summary>0xbd: the adventure level bar's layer is hidden and shown with the field's (CUIService FUN_141adb4c0,
     /// uiservice.cpp:1818).</summary>
     public const int AdventureLevel = 0xbd;
