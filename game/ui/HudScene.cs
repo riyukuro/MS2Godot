@@ -75,6 +75,7 @@ public partial class HudScene : Node, IUiStageHost
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
     Vector2 dragFrom, dragTo;
     static DungeonRooms dungeonRooms;
+    bool damageShot;                        // --damageshot: hits, exp, meso and a quest item's gain on the own player
     bool questFixture;                      // --questlog-fixture: the shot's quest log lists made-up quest state (QuestShotState)
 
     public override void _Ready()
@@ -89,6 +90,7 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
         Ms2.Ui.InputBlock.TextFieldFocused = () => UiFocus.IsTyping;   // FUN_14116d7a0's mask 2 (Godot text controls only)
         questFixture = args.Contains("--questlog-fixture");
+        damageShot = args.Contains("--damageshot");
         partyFixture = args.Contains("--party-fixture");
         groupChatFixture = args.Contains("--groupchat-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
@@ -3357,12 +3359,34 @@ public partial class HudScene : Node, IUiStageHost
         if (dragShot != null && frames == 220) PlaceBeside(inventoryMovie, myInfoMovie);
         if (dragShot != null && frames >= 240 && frames <= 270) DragStep(frames - 240);
         if (partyMenuShot != 0 && frames >= 240 && frames <= 244) ShotPartyMenu(partyMenuShot, frames - 240);
+        if (damageShot && frames is 282 or 286 or 290) ShotDamage(frames);
+        if (damageShot && frames is 284 or 288 or 292)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(shotDir);
+            GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, $"damage_{frames}.png"));
+            GD.Print($"damage shot {frames}: {damageText?.Count} numbers");
+        }
         if (frameCase != null) { MeasureFrame(delta); return; }
         if (++frames == (worldMapShot is 3 or 4 ? 660 : 300))
         {
             DirAccess.MakeDirRecursiveAbsolute(shotDir);
             GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "hud.png"));
             GetTree().Quit();
+        }
+    }
+
+    /// <summary>The damage text shot's numbers on the own player: a hit and a critical, exp, meso, then quest exp (queued)
+    /// and the first type 3 (quest) item of the 3000000xx ids with its icon.</summary>
+    void ShotDamage(int frame)
+    {
+        if (damageText == null) return;
+        if (frame == 282) { damageText.OnPlayer(-1234, 0); damageText.OnExp(5280, 0); damageText.OnMeso(null, 750); }
+        if (frame == 286) { damageText.OnPlayer(-56789, 1); damageText.OnExp(320, 0xc20); damageText.OnExp(40, 0xc21); }
+        if (frame == 290)
+        {
+            var kinds = new Ms2Godot.Net.ItemKinds(assets.Packs);
+            for (int id = 30000001; id < 30000400; id++)
+                if (kinds.TypeOf(id) == 3) { GD.Print($"damage shot item {id} {kinds.IconPath(id)}"); damageText.OnItem(null, 3, kinds.IconPath(id)); break; }
         }
     }
 

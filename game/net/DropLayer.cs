@@ -52,6 +52,8 @@ public sealed partial class DropLayer : Node3D
     /// <summary>An actor's position by object id (the picker a drop flies to); null when it is gone.</summary>
     public Func<int, System.Numerics.Vector3?> ActorPosition = _ => null;
     public Action<Ms2.Net.Wire.IOutPacket> Send = _ => { };
+    /// <summary>A drop reached its picker (CDropItem::SetState(3), the hover's start): the drop's packet and the picker's object id.</summary>
+    public Action<FieldAddItem, int> Reached;
     /// <summary>The "get" action key is held.</summary>
     public Func<bool> GetKeyDown = () => false;
     public Func<int, int> TabOf = _ => 7;
@@ -218,7 +220,9 @@ public sealed partial class DropLayer : Node3D
             }
             System.Numerics.Vector3? picker = d.PickerId != 0 && d.Motion.State is DropMotion.FlyToPicker or DropMotion.Hover or DropMotion.Sink
                 ? ActorPosition(d.PickerId) : null;
+            int was = d.Motion.State;
             d.Motion.Advance(dt, picker);
+            if (was != DropMotion.Hover && d.Motion.State == DropMotion.Hover && d.PickerId != 0) Reached?.Invoke(d.Packet, d.PickerId);
             if (d.Motion.Done) { gone.Add(d); continue; }
             d.Root.Position = G(d.Motion.Position);
             var s = d.Motion.Spin;

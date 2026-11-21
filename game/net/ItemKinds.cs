@@ -68,6 +68,9 @@ public sealed class ItemKinds
         return x;
     }
 
+    /// <summary>CItemData::GetType of the item; 0 when it is not in the table.</summary>
+    public int TypeOf(int id) => Row(id)?.Type ?? 0;
+
     /// <summary>The icon path of the item's data (CItemData::GetIconPath itemdata.cpp:2070): property@slotIcon through <see cref="ItemIcon"/>; null for an unknown item.</summary>
     public string IconPath(int id) => Row(id) is { } r ? ItemIcon.Path(id, r.SlotIcon) : null;
 

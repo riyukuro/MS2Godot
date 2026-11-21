@@ -66,6 +66,10 @@ public static class DamageTextNames
 
     /// <summary>FUN_141912b20's show test: an item always, a meso when DisplayGetMeso, exp when DisplayGetExp.</summary>
     public static bool GainShows(int type, bool displayMeso, bool displayExp) => type == 2 || (type == 1 ? displayMeso : displayExp);
+
+    /// <summary>OnExpUp (scenestategame.cpp:4160): the exp types whose number waits in the gain queue (FUN_1419129d0)
+    /// instead of showing at once.</summary>
+    public static bool QuestExp(int type) => type is 0xc1f or 0xc20 or 0xc21 or 0xc22;
 }
 
 /// <summary>

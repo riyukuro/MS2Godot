@@ -30,6 +30,8 @@ public class DamageTextRulesTests
         Assert.That(DamageTextNames.GainShows(2, false, false), Is.True);
         Assert.That(DamageTextNames.GainShows(1, false, true), Is.False);
         Assert.That(DamageTextNames.GainShows(0, false, true), Is.True);
+        Assert.That(DamageTextNames.QuestExp(0xc1f) && DamageTextNames.QuestExp(0xc22), Is.True);
+        Assert.That(DamageTextNames.QuestExp(0xc1e) || DamageTextNames.QuestExp(0xc23) || DamageTextNames.QuestExp(0), Is.False);
     }
 
     [Test]
@@ -197,8 +199,8 @@ public class DamageTextRulesTests
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
         using var packs = new PackSet(d);
         var l = DamageTextLayout.From(FeatureElements.Constants(packs));
-        Assert.That(l.MaxList, Is.EqualTo(l.MaxShown + 10));
-        Assert.That(l.LineHeight, Is.GreaterThan(0));
-        TestContext.Out.WriteLine($"layout {l}");
+        // the constants table of KR Live and of the restore data: DamageGap 30, DamageRenderCount 3, DamageRenderTotalCount 25,
+        // DamageOtherScale 0.5, DamageOtherAlpha 0.3, DamageDistance 2500
+        Assert.That(l, Is.EqualTo(new DamageTextLayout(30, 3, 25, 35, 1000, 0.5f, 0.3f, 2500f)), $"layout {l}");
     }
 }

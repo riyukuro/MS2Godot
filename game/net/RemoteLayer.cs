@@ -81,6 +81,12 @@ public sealed partial class RemoteLayer : Node3D
         users.TryGetValue(objectId, out var r) && r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
             ? new System.Numerics.Vector3(r.Root.GlobalPosition.X, -r.Root.GlobalPosition.Z, r.Root.GlobalPosition.Y) : null;
 
+    /// <summary>WorldService::FindPCById: a shown player as a damage number's target; null when it is not a player here.</summary>
+    public Ui.DamageTarget DamageOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Damage : null;
+
+    /// <summary>WorldService::FindNpcById: whether an npc of the object id is here.</summary>
+    public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
+
     /// <summary>WorldService::FindPCById then GetEquipByUid (OnItemUpdate): whether the player is here, and its worn equip of the uid (null when none).</summary>
     public (bool PcKnown, Ms2.Net.Packets.EquipItem Equip) EquipOf(int objectId, long uid)
     {

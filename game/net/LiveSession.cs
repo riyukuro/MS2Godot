@@ -237,6 +237,13 @@ public partial class LiveSession : Node
     /// <summary>A damage number the field's skill damage records show (RemoteLayer, UIDamageText's show test passed): the
     /// number and the npc it is on (null when the target is not an npc).</summary>
     public event Action<Ms2.Ui.Hud.DamageNumber, FieldNpcs.Placed, Ui.DamageTarget> DamageNumbered;
+    /// <summary>OnExpUp's number for the own PC (scenestategame.cpp:4152): mode 0, a gain, no npc of the packet's npc id
+    /// (STILL-OPEN: CNpc::FUN_141094df0, the gain of an npc, is not ported); the gain and its exp type.</summary>
+    public event Action<long, int> ExpGained;
+    /// <summary>A drop reached a player who picked it (CDropItem::SetState(3), dropitem.cpp:671-695): the player (null for the
+    /// own PC), then the meso, or the count and icon path of a type 3 item; nothing for another picker or item.</summary>
+    public event Action<Ui.DamageTarget, long> MesoGained;
+    public event Action<Ui.DamageTarget, int, string> ItemGained;
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
     readonly HashSet<int> regionSkills = new();
@@ -726,6 +733,14 @@ public partial class LiveSession : Node
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
         dropLayer.Send = Send;
+        dropLayer.Reached = (item, picker) =>
+        {
+            // the picker must be a PC (kind 0x6200004)
+            Ui.DamageTarget pc = picker == selfObject ? null : remote?.DamageOf(picker);
+            if (picker != selfObject && pc == null) return;
+            if (item.IsMeso) MesoGained?.Invoke(pc, item.Amount);
+            else if (kinds.TypeOf(item.ItemId) == 3) ItemGained?.Invoke(pc, item.Amount, kinds.IconPath(item.ItemId));
+        };
         dropLayer.GetKeyDown = () => PickupKeyHeld;
         dropLayer.PickupBlocked = () => !DropPickup.PickupAllowed(Me.Dead, player != null && IsInstanceValid(player) && player.Mount is { } ride && ride.Data.DisablePickUp);
         dropLayer.PlayerPosition = () => ClientPositionOf(player);
@@ -941,6 +956,7 @@ public partial class LiveSession : Node
             {
                 var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
                 Me.Apply(e);
+                if (e.Mode == 0 && e.Gained > 0 && remote?.HasNpc(e.NpcId) != true) ExpGained?.Invoke(e.Gained, e.Type);
                 GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
             }
             else if (game.Is(p, Inbound.ItemDrop)) { }   // CSceneStateGame::FUN_141717560 (scenestategame.cpp:3262) has an empty body: the client does nothing with it
