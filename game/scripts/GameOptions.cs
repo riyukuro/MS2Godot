@@ -71,6 +71,19 @@ public static class GameOptions
     /// <summary>CGameOption +0x1b4, the stored personal info agreement. The server's answer is not read yet, so it starts empty.</summary>
     public static PersonalInfoAgreement Agreement { get; } = new();
 
+    /// <summary>The pad switch changed (SetGamepadEnabled @0x14125f670): the main player info's slots and the upper hud follow.</summary>
+    public static event Action<bool> GamepadEnabledChanged;
+
+    /// <summary>SetGamepadEnabled (gameoptionstruct.cpp:2589-2600): the block's switch, the followers, then the character file.
+    /// STILL-OPEN: the input service's pad polling and the no-pad notice (MS2InputService::SetGamePadEnabled, ms2inputservice.cpp:594-632)
+    /// are not ported, so <c>notify</c> has no effect.</summary>
+    public static void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify)
+    {
+        stored.Use = use;
+        GamepadEnabledChanged?.Invoke(use);
+        SaveCharacterSettings();
+    }
+
     static bool FeatureById(int id) => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Settings.DataDir is { } data
         && Ms2.Ui.LobbyFeatures.IsEnabledByName(PackSet.Shared(data), Ms2.Ui.FeatureTable.Names[id - 1]);
 

@@ -55,8 +55,10 @@ public sealed class UpperHudController : UiController
         }
         if (Model.IsFeatureEnabled(Feature.GamePad))
         {
-            Host.SetVisible(Host.Child("m_gamePadOn"), GamePadMode);          // SetGamePadMode
-            Host.SetVisible(Host.Child("m_gamePadOff"), !GamePadMode);
+            // OnGamePadOnClick / OnGamePadOffClick (uiupperhuddialog.cpp:525-534): the lit button turns the pad off, the other on
+            if (Host.Child("m_gamePadOn") is { } padOn) Listen(padOn, "buttonClick", () => GamePadClick?.Invoke(false));
+            if (Host.Child("m_gamePadOff") is { } padOff) Listen(padOff, "buttonClick", () => GamePadClick?.Invoke(true));
+            ShowGamePadMode();
         }
         if (Model.IsFeatureEnabled(Feature.VersionText) && Host.Child("m_version") is { } ver)
         {
@@ -85,6 +87,22 @@ public sealed class UpperHudController : UiController
 
     /// <summary>OnInputModeClick (@0x141356e20, uiupperhuddialog.cpp:519-522): CUIService::ToggleDialog(0x4f65), UIKeySettingSelectDialog.</summary>
     public event Action ToggleKeySettingSelect;
+
+    /// <summary>The pad button's click, with the mode it asks for.</summary>
+    public event Action<bool> GamePadClick;
+
+    void ShowGamePadMode()
+    {
+        Host.SetVisible(Host.Child("m_gamePadOn"), GamePadMode);
+        Host.SetVisible(Host.Child("m_gamePadOff"), !GamePadMode);
+    }
+
+    /// <summary>UIUpperHudDialog::SetGamePadMode (@0x1413574a0, uiupperhuddialog.cpp:630-638): returns without the pad feature (0xb5).</summary>
+    public void SetGamePadMode(bool mode)
+    {
+        GamePadMode = mode;
+        if (Model.IsFeatureEnabled(Feature.GamePad)) ShowGamePadMode();
+    }
 
     /// <summary>UIUpperHudDialog::SetInputMode (uiupperhuddialog.cpp:641-647, called from FUN_14125bd20): updates the visible keyboard/mouse mode indicator.</summary>
     public void SetMouseMode(bool mouseMode)

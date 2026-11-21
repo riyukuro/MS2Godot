@@ -59,6 +59,13 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         prevEp = Pc.EpCur;
     }
 
+    /// <summary>SetGamepadEnabled's call (gameoptionstruct.cpp:2594-2595): the slot mode follows the pad switch; nothing before the load (m_30 is null).</summary>
+    public void SetGamePadMode(bool use)
+    {
+        SlotExpand = use;
+        if (Host.Child("m_slot") != null) ChangeSkillSlot(use ? 1 : 0);
+    }
+
     /// <summary>ChangeSkillSlot (uimainplayerinfo.cpp:1121): m_30.changeSkillSlot(slot, showKey), then SyncSlotMode.</summary>
     void ChangeSkillSlot(int slot)
     {

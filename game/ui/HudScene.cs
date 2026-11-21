@@ -149,12 +149,20 @@ public partial class HudScene : Node, IUiStageHost
         Ms2Godot.Net.ProfileImageService.Images.Ready += ProfileImageReady;
     }
 
+    /// <summary>SetGamepadEnabled's HUD calls: MainPlayerInfo ChangeSkillSlot, then UpperHud SetGamePadMode.</summary>
+    void OnGamepadEnabled(bool use)
+    {
+        playerInfo?.SetGamePadMode(use);
+        upperHudSide?.SetGamePadMode(use);
+    }
+
     /// <summary>
     /// Leaving the tree: the size handler is dropped first, because restoring the window's content scale mode emits the root
     /// viewport's size_changed at once, while this scene and its field are already on their way out.
     /// </summary>
     public override void _ExitTree()
     {
+        GameOptions.GamepadEnabledChanged -= OnGamepadEnabled;
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
             if (livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
@@ -610,7 +618,10 @@ public partial class HudScene : Node, IUiStageHost
             int[] tokens = { 4, 5, 6, 7, 0xc, 0xd, 0xe, 0xf, 0x10 };
             for (int i = 0; i < tokens.Length; i++) model.Player.Tokens[tokens[i]] = w[5 + i];
         }
-        upperHudSide = new Ms2.Ui.Hud.UpperHudController { MouseMode = GameOptions.MouseControl.Value };
+        upperHudSide = new Ms2.Ui.Hud.UpperHudController { MouseMode = GameOptions.MouseControl.Value, GamePadMode = GameOptions.GamePad.Use };
+        upperHudSide.GamePadClick += use => GameOptions.SetGamepadEnabled(GameOptions.GamePad, use, use);
+        GameOptions.GamepadEnabledChanged -= OnGamepadEnabled;
+        GameOptions.GamepadEnabledChanged += OnGamepadEnabled;
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHudSide.ToggleFishingBook += ToggleFishingBook;
         upperHudSide.ToggleKeySettingSelect += ToggleKeySettingSelect;
@@ -2167,6 +2178,7 @@ public partial class HudScene : Node, IUiStageHost
         playerInfo = new Ms2.Ui.Hud.MainPlayerInfoController
         {
             SlotWorld = QuickSlotWorld,
+            SlotExpand = GameOptions.GamePad.Use,
             TooltipPlayer = () => { QuickSlotWorld(); return SkillTooltipPlayer(slotJobs); },
             Send = packet =>
             {

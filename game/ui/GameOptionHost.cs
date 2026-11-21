@@ -141,13 +141,8 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public GameOption.GamePad GamePad => GameOptions.GamePad;
     public PersonalInfoAgreement Agreement => GameOptions.Agreement;
 
-    /// <summary>SetGamepadEnabled (@0x14125f670): the block's switch and the character file. The input service, the main
-    /// player info's skill slots and the upper hud's gamepad mode do not follow it yet.</summary>
-    public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify)
-    {
-        stored.Use = use;
-        GameOptions.SaveCharacterSettings();
-    }
+    /// <summary>SetGamepadEnabled (@0x14125f670): the block's switch, the HUD followers and the character file.</summary>
+    public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) => GameOptions.SetGamepadEnabled(stored, use, notify);
 
     public void SendAgreement(int group) => Net.LiveSession.Instance?.SendPersonalInfoAgreement(group, (int)Agreement.Flags);
     public void RefreshAgreementReminders() { }

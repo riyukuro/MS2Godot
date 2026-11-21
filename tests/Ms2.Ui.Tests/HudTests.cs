@@ -283,6 +283,35 @@ public class HudTests
         Assert.That(toggles, Is.EqualTo(2));
     }
 
+    // UIUpperHudDialog::SetGamePadMode / OnGamePadOnClick / OnGamePadOffClick (uiupperhuddialog.cpp:525-534, 630-638)
+    [Test]
+    public void UpperHudGamePadButtonsFollowTheModeAndAskForTheOther()
+    {
+        var m = Model();
+        var c = new UpperHudController { GamePadMode = false };
+        var asked = new List<bool>();
+        c.GamePadClick += use => asked.Add(use);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        var on = h.Child("m_gamePadOn");
+        var off = h.Child("m_gamePadOff");
+        Assert.That(Rt.ToBoolean(h.Get(on, "visible")), Is.False);
+        Assert.That(Rt.ToBoolean(h.Get(off, "visible")), Is.True);
+
+        c.SetGamePadMode(true);
+        Assert.That(Rt.ToBoolean(h.Get(on, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(off, "visible")), Is.False);
+
+        var ev = h.RT.GetClass("flash.events.Event");
+        h.Player.Call(on, "dispatchEvent", new object[] { ev.Construct("buttonClick", false, false) });
+        h.Player.Call(off, "dispatchEvent", new object[] { ev.Construct("buttonClick", false, false) });
+        Assert.That(asked, Is.EqualTo(new[] { false, true }));
+
+        m.Features.Remove(Feature.GamePad);
+        c.SetGamePadMode(false);
+        Assert.That(Rt.ToBoolean(h.Get(on, "visible")), Is.True, "without the pad feature the mode is stored, the buttons stay");
+    }
+
     [Test]
     public void KeySettingSelectDialogSwitchesPresetsAndRespectsLock()
     {
