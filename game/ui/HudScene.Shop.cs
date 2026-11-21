@@ -57,6 +57,7 @@ public partial class HudScene
                 () => live.Guilds, () => live.Achieves, () => achieveTexts, () => live.Me,
                 () => live.Items.All, () => live.PlayingScoreUid, hudModel.Tables.Items, itemUse.Error);
             c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));
+            BindMeratQueue(live, c);
         }
         else
         {
@@ -92,12 +93,14 @@ public partial class HudScene
         void OnSystemShop(SystemShopPacket p) => SystemShopFlow.OnSystemShop(p, liveShop, key => hudModel.Tables.Common(key),
             () => { if (!ShopOpen) OpenLiveShop(); }, MessageBoxQueue.Show);
         live.ShopReceived += OnPacket;
+        live.MeretMarketReceived += liveShop.OnMeretMarket;
         live.SystemShopReceived += OnSystemShop;
         live.TalkUiOpen += OnOpen;
         live.TalkUiClose += OnClose;
         unwatchShop = () =>
         {
             live.ShopReceived -= OnPacket;
+            live.MeretMarketReceived -= liveShop.OnMeretMarket;
             live.SystemShopReceived -= OnSystemShop;
             live.TalkUiOpen -= OnOpen;
             live.TalkUiClose -= OnClose;

@@ -11,7 +11,7 @@ namespace Ms2.Ui.Shop;
 /// the tab bar, the category list, the product list and the restock bar. This feeds it Inbound 0x51 (commands 0, 1, 2, 4,
 /// 6, 7, 8, 9, 11, 12, 13, 14, 15), the tabs and category tree (CShopCategoryTable), the product rows, tooltips (vfunc_49),
 /// vfunc_28 callbacks, and the buy, buyback, sell, restock and new-items flows over Outbound 0x28 (<see cref="Send"/>).
-/// <para>STILL-OPEN: buying a star / merat item (UIMarketBillDialog 0x4f17), 3D preview avatar render target,
+/// <para>STILL-OPEN: the merat bill dialog's unported parts (see MarketBillDialogController), 3D preview avatar render target,
 /// search ban-word check (vfunc_80), give-point event, and live state sources for fame grade, guild championship
 /// season rank table, and guild NPC levels (their buy gates refuse as the client does when state is absent).</para>
 /// </summary>
@@ -1137,12 +1137,81 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
 
     /// <summary>FUN_1418fec90 (uicommon.cpp:912) for a ui currency: an item price s_common_payitem, else s_common_payment with the
     /// currency's icon (9 is the red merat's only with feature 0x43, else the merat's).</summary>
-    string CurrencyPriceText(int currency, long amount)
+    public string CurrencyPriceText(int currency, long amount)
     {
         if (currency == 2) return Common("s_common_payitem", Number(amount), 0u);
         var (icon, vspace) = currency == 9 && !Model.IsFeatureEnabled(Feature.RedMerat) ? CurrencyIcon(3, 0) : currency == 9
             ? ("export_common_icon_redmerat", -4) : CurrencyIcon(currency, 0);
         return icon.Length > 0 ? Common("s_common_payment", Number(amount), icon, vspace) : "";
+    }
+
+    /// <summary>The bill dialog of a star item is to be opened (OpenDialog 0x4f17 after SetParam).</summary>
+    public event Action<MarketBillParam> OpenMarketBill;
+    /// <summary>The merat market's queue of pending purchases (CMeratMarketMan).</summary>
+    public readonly MeratPurchaseQueue Purchases = new();
+
+    /// <summary>
+    /// BuyMeratItem (@0x141b05cd0, uishopdialog.cpp:2473): needs the star point event, a star item of group 0; a product at its
+    /// buy limit only notice 0xa17 (StartMeratItem for one not shown sold out is STILL-OPEN); not enough currency a notice; else one bill row (name, sale price, pay type, star point text)
+    /// with source kind 4 goes to the bill dialog; its buy callback queues the packet (CMeratMarketBuy::FUN_140d604c0: key,
+    /// option, quantity 1, price, star point, pay type; type 6 home fields and type 7/8 random rate not read here: the products'
+    /// source of them is STILL-OPEN) and starts the queue.
+    /// </summary>
+    public bool BuyMeratItem(int serial)
+    {
+        if (!HasStarEvent()) { ShowSimpleBox(Common("s_shop_no_star_point_event")); return false; }
+        var m = FindMeratItem(serial);
+        var prem = m?.Product;
+        if (prem == null || group != 0) return false;
+        long price = MeratSalePrice(prem);
+        if (MeratBuyLimitReached(prem)) { SystemNotice?.Invoke(Common(0xa17)); return false; }
+        int currency = MeratUiCurrency(prem);
+        if (!HasEnoughCurrency(currency, price, 0))
+        {
+            SystemNotice?.Invoke(Common(currency == 9 ? "s_err_lack_redmerat" : "s_err_lack_merat"));
+            return false;
+        }
+        var preview = m.Preview ??= Item.Create(Model.Tables.Items, prem.ItemId, prem.Grade);
+        var row = new MarketBillRow
+        {
+            ItemId = prem.ItemId, Name = MeratName(prem), Price = price, PrevPrice = price, PayType = currency,
+            StarPointText = StarPointText(prem), SerialId = prem.Id, Premium = prem,
+        };
+        var icon = new List<(string, object)>();
+        if (preview != null) ItemSlot.Build(icon, preview, Model.HasLocalPlayer, SlotFlags, Model, Model.ItemSlotSources);
+        row.Icon = icon;
+        var param = new MarketBillParam { Type = 3, DialogId = 0x4e3b, Currency = currency, ShopId = info.ShopId, SourceKind = 4 };
+        param.Rows.Add(row);
+        param.Buy = (pa, _) => QueueMeratBuys(pa, false, "", "");
+        param.GiftBuy = (pa, _, name, msg) => QueueMeratBuys(pa, true, name, msg);
+        OpenMarketBill?.Invoke(param);
+        return true;
+    }
+
+    /// <summary>OnBuySucceeded / OnBuyFailed (0x6C): the queue takes the answer; a bought product's buy count follows the answer.</summary>
+    public void OnMeretMarket(Ms2.Net.Packets.MeretMarketPacket p)
+    {
+        if (p?.Buy == null) return;
+        if (p.Succeeded && FindMeratItem(p.Buy.PremiumId)?.Product is { } prem) prem.BuyCount = p.BuyCount;   // OnBuySucceeded (meratmarketman.cpp:2647); the sold count is STILL-OPEN
+        Purchases.OnAnswer(p);
+    }
+
+    void QueueMeratBuys(MarketBillParam pa, bool gift, string name, string message)
+    {
+        foreach (var r in pa.Rows)
+        {
+            if (gift && !r.Checked) continue;
+            var prem = r.Premium;
+            if (prem == null) continue;
+            var buy = new Ms2.Net.Packets.MeretMarketBuy
+            {
+                Kind = pa.SourceKind, PremiumId = prem.Id, Quantity = 1, Option = r.Option, ShopId = pa.ShopId,
+                Price = r.Price, StarPoint = r.StarPointText.Length > 0, PayType = r.PayType,
+                Gift = gift ? 1 : 0, Receiver = gift ? name : "", Message = gift ? message : "",
+            };
+            Purchases.Queue(new MeratPurchaseQueue.Pending { Buy = buy, Name = r.Name, PayType = r.PayType }, pa.SourceKind);
+        }
+        Purchases.Start(pa.SourceKind);
     }
 
     /// <summary>GetStarPointText (uimeratmarketcommon.cpp:1047): with the star point event and a point price, the product's
@@ -1343,7 +1412,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
                 int index = ToInt(Arg(args, 1));
                 if (info.ShopType != 4 && IsPreviewHudOn()) PreviewProduct(serial, productType, false);
                 else if (productType != 1) BuyProduct(serial, index);
-                else Request?.Invoke("buyMerat", new object[] { serial, index });
+                else BuyMeratItem(serial);
                 return true;
             }
             case "onrightclick":

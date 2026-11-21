@@ -400,6 +400,10 @@ public partial class LiveSession : Node
     public event Action<ShopPacket> ShopReceived;
     /// <summary>The system shop open result (0xA1, CSceneStateGame::OnSystemShop); live only.</summary>
     public event Action<SystemShopPacket> SystemShopReceived;
+    /// <summary>A merat market buy answer (0x6C modes 0x1e / 0x1f, CMeratMarketMan::OnBuySucceeded / OnBuyFailed); live only.</summary>
+    public event Action<MeretMarketPacket> MeretMarketReceived;
+    /// <summary>SendMeretMarketMode30 (0x39, sub-mode 0x1e): one queued merat market purchase.</summary>
+    public void SendMeretMarketBuy(MeretMarketBuy buy) { if (game != null) Send(new MeretMarketBuyRequest(buy)); }
     /// <summary>An item merge packet (0x74, CSceneStateGame::OnItemFusion); the item body of modes 5/6 is left in the reader.</summary>
     public event Action<ItemMergePacket, Maple2.PacketLib.Tools.ByteReader> ItemMergeReceived;
     /// <summary>An item dismantle packet (0x96, CItemBreakManager::OnItemDismantlePacket).</summary>
@@ -1065,6 +1069,15 @@ public partial class LiveSession : Node
                 var sp = ShopPacket.Read(p.Reader());   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
                 GD.Print($"live: shop cmd {sp.Command}");
                 ShopReceived?.Invoke(sp);
+            }
+            else if (game.Is(p, Inbound.MeretMarket))
+            {
+                var mm = MeretMarketPacket.Read(p.Reader());
+                if (mm != null)
+                {
+                    GD.Print($"live: merat market buy mode 0x{mm.Mode:x}");
+                    MeretMarketReceived?.Invoke(mm);
+                }
             }
             else if (game.Is(p, Inbound.ItemMerge))
             {

@@ -1551,6 +1551,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemMergeKeys(k)) return true;
         if (ItemEnchantKeys(k)) return true;
         if (ItemMergeRevertKeys(k)) return true;
+        if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;

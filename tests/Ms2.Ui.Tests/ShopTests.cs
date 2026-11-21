@@ -178,6 +178,56 @@ public class ShopTests
         Assert.That(c.FindMeratItem(7001), Is.Null);
     }
 
+    [Test]
+    public void BuyingAStarItemOpensTheBillAndQueuesOnePacketPerRow()
+    {
+        Packs();
+        var model = NewModel();
+        var (h, c) = Load(model);
+        var ok = new PremiumProduct { Id = 7101, Type = 2, ItemId = 11400003, Grade = 1, Currency = 1, Price = 500, SalePrice = 400 };
+        var full = new PremiumProduct { Id = 7102, Type = 1, ItemId = 11300001, Currency = 1, Price = 100, SalePrice = 100, BuyLimit = 1, BuyLimitMax = 1, BuyCount = 1 };
+        c.ReadMeratStart(2);
+        c.ReadMeratItems(new[] { new ShopMeratItem { Product = ok, DisplayOrder = 1 }, new ShopMeratItem { Product = full, DisplayOrder = 2 } });
+        c.RefreshPremium();
+        var notices = new List<string>();
+        var sent = new List<MeretMarketBuy>();
+        var boxes = new List<(string, string)>();
+        c.SystemNotice = notices.Add;
+        c.Purchases.Send = sent.Add;
+        c.Purchases.ShowResult = (cap, msg, _) => boxes.Add((cap, msg));
+        c.Purchases.Text = id => "{0}|{1}|{2}";
+        MarketBillParam bill = null;
+        c.OpenMarketBill += b => bill = b;
+
+        Assert.That(c.BuyMeratItem(9999), Is.False, "no such star item");
+        Assert.That(c.BuyMeratItem(7102), Is.False, "the buy limit is reached: a notice only");
+        Assert.That(notices.Count, Is.EqualTo(1));
+        Assert.That(bill, Is.Null);
+
+        model.Player.Merats = 0;
+        notices.Clear();
+        Assert.That(c.BuyMeratItem(7101), Is.False, "too few merat");
+        Assert.That(notices.Count, Is.EqualTo(1));
+
+        model.Player.Merats = 1000;
+        Assert.That(c.BuyMeratItem(7101), Is.True);
+        Assert.That(bill, Is.Not.Null);
+        Assert.That((bill.Type, bill.DialogId, bill.SourceKind, bill.ShopId, bill.Rows.Count), Is.EqualTo((3, 0x4e3b, 4, c.Info.ShopId, 1)));
+        Assert.That((bill.Rows[0].SerialId, bill.Rows[0].Price, bill.Rows[0].PayType), Is.EqualTo((7101, 400L, 3)));
+
+        bill.Buy(bill, new Dictionary<int, long>());
+        Assert.That(sent.Count, Is.EqualTo(1));
+        Assert.That((sent[0].Kind, sent[0].PremiumId, sent[0].Quantity, sent[0].Price, sent[0].PayType, sent[0].Index, sent[0].Total, sent[0].Gift),
+            Is.EqualTo((4, 7101, 1, 400L, 3, 0, 1, 0)));
+        Assert.That(c.Purchases.Running, Is.True);
+
+        // the answer echoes the packet: the buy count follows it and the box lists the bought product
+        c.OnMeretMarket(MeretMarketPacket.Read(new Maple2.PacketLib.Tools.ByteReader(MeretMarketPacket.WriteSucceeded(sent[0], 1, 0, 0, 0))));
+        Assert.That(c.FindMeratItem(7101).Product.BuyCount, Is.EqualTo(1));
+        Assert.That(c.Purchases.Running, Is.False);
+        Assert.That(boxes.Count, Is.EqualTo(1));
+    }
+
     /// <summary>The product row's slot member for the serial (the list's data provider rows).</summary>
     static object RowMember(UiHost h, ShopController c, int serial, string name)
     {
