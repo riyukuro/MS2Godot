@@ -404,7 +404,7 @@ public sealed class RemotePc : IRemotePc
     /// current sequence; nothing when it is already playing or the body lacks it.</summary>
     bool PlayKey(string key, float rate)
     {
-        if (key == null || !Anim.HasAnimation(key)) return false;
+        if (key == null) return false;      // a key from ActionAnims is a loaded sequence
         if (key == currentName && Anim.IsPlaying()) { Anim.SpeedScale = rate; return true; }
         var tr = currentName == null ? null : Anims.Transition(currentName, key) ?? Anims.DefaultTransition;
         Anim.Play(key, tr?.Duration ?? 0);

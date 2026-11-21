@@ -43,7 +43,9 @@ public static class RevivalWiring
         e.NoticeById = id => notice(common(id) ?? "");
     }
 
-    /// <summary>MesoRevivalDailyMaxCount: Lua getMesoRevivalDailyMaxCount (MyPC::GetMesoRevivalRemainingCount, mypc.cpp:2169).</summary>
+    /// <summary>MesoRevivalDailyMaxCount: Lua getMesoRevivalDailyMaxCount (MyPC::GetMesoRevivalRemainingCount, mypc.cpp:2169),
+    /// whose body in Data/lua/Precompiled.m2d luapack64.o (source lines 333-335, the same chunk in both data sets) is
+    /// <c>return 3</c> with no branch.</summary>
     public const int MesoRevivalDailyMax = 3;
 
     static void ConnectPaid(RevivalEnvironment e, MyCharacter me, RevivalPaidInputs paid)

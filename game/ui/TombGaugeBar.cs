@@ -55,7 +55,17 @@ public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
 
     public TombGaugeBar() { }
 
-    public override void _EnterTree() => AddToGroup(IMovieLayer.Group);
+    /// <summary>The bars, woken by a tomb's build (<see cref="TombBuilt"/>).</summary>
+    public const string Group = "tomb_gauge_bars";
+
+    public override void _EnterTree() { AddToGroup(IMovieLayer.Group); AddToGroup(Group); }
+
+    /// <summary>The bar runs only while a tomb stands (the show comes from the tomb's build, PC::FUN_14165cac0); it stops once
+    /// the tomb is gone and the clip is hidden.</summary>
+    public override void _Ready() => SetProcess(Tomb() != null);
+
+    /// <summary>A tomb was built (PlayerTombstone._Ready): look at it on the next frame.</summary>
+    public void TombBuilt() => SetProcess(true);
 
     /// <summary><see cref="IMovieLayer"/>: the new viewport scale. STILL-OPEN: the built clip is only scaled.</summary>
     public void Resize(Vector2 window)
@@ -94,12 +104,12 @@ public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
         needsOpen = true;
     }
 
-    bool Hidden()
+    bool Hidden(Vector3? a)
     {
         if (!Dead()) return true;
         if (RevivalBlocked() || tomb == null || !IsInstanceValid(tomb)) return true;
         if (!keepAlive) return true;
-        if (anchor?.Invoke() == null) return true;
+        if (a == null) return true;
         var eye = field?.CameraEye ?? camera.GlobalPosition;
         return eye.DistanceTo(tomb.GlobalPosition) > distance;      // FUN_140f48e20 > m_54 (the tomb stands at the PC)
     }
@@ -120,11 +130,17 @@ public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
             tomb.PendingStage = null;
             if (tomb.State.State == Ms2.Ui.Hud.Tombstone.Break) keepAlive = false;     // FUN_14165d550: vfunc_3
         }
-        if (clip == null) return;
+        if (clip == null) { if (tomb == null) SetProcess(false); return; }
         camera ??= GetViewport().GetCamera3D();
         field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
-        if (camera == null || Hidden()) { if (clip.Visible) { clip.Visible = false; needsOpen = true; } return; }
-        var a = anchor().Value;
+        var anchorAt = camera == null ? null : anchor?.Invoke();       // the Eff_UI point, read once a frame
+        if (camera == null || Hidden(anchorAt))
+        {
+            if (clip.Visible) { clip.Visible = false; needsOpen = true; }
+            if (tomb == null) SetProcess(false);
+            return;
+        }
+        var a = anchorAt.Value;
         var at = new Vector3(tomb.GlobalPosition.X, a.Y, tomb.GlobalPosition.Z);   // vfunc_10: the tomb's x,y, the anchor's z
         if (camera.IsPositionBehind(at)) { clip.Visible = false; needsOpen = true; return; }
         clip.Visible = true;

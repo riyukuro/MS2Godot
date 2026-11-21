@@ -115,12 +115,16 @@ public sealed partial class PlayerTombstone : Node3D
     /// <summary>The playing sequence, for the checks.</summary>
     public string Current => player?.CurrentAnimation;
 
+    /// <summary>The tomb bars look at the new tomb (TombGaugeBar.TombBuilt).</summary>
+    public override void _Ready() => GetTree().CallGroup(Ms2Godot.Ui.TombGaugeBar.Group, Ms2Godot.Ui.TombGaugeBar.MethodName.TombBuilt);
+
     public override void _Process(double delta)
     {
+        // PC::vfunc_142 (pc.cpp:4612): the drop test, then the position, then CBreakableObject::Update
         bool pcDead = pc != null && IsInstanceValid(pc) && inDeath();
-        State.Update((long)Time.GetTicksMsec());
         if (!State.KeepFor(pcDead) || pc == null || !IsInstanceValid(pc)) { QueueFree(); return; }
         GlobalPosition = pc.GlobalPosition;
+        State.Update((long)Time.GetTicksMsec());
         if (State.Play != null) { Play(State.Play, State.PlayForce); State.Played(); }
         if (Visible != State.Visible) Visible = State.Visible;
     }

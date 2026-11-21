@@ -183,6 +183,7 @@ public partial class RemoteSyncCheck : Node3D
                 if (t == null || !IsInstanceValid(t)) fails.Add("death: no tomb");
                 else if (t.GlobalPosition.DistanceTo(stone.Body.GlobalPosition) > 1f) fails.Add($"death: tomb at {t.GlobalPosition}, body at {stone.Body.GlobalPosition}");
                 if (stoneDeath.Bar == null) fails.Add("death: no tomb bar");
+                else if (!stoneDeath.Bar.IsProcessing()) fails.Add("death: tomb bar not processing with a tomb");
                 if (wet.States.Cur != RemotePcStates.StateDead) fails.Add($"revive in place: state {wet.States.Cur}");
                 if (!wet.Visual.Visible) fails.Add("revive in place: body hidden");
                 var pvp = wet.Anims.NameAt(ActionAnims.Act.ModePvpDead, 1);
@@ -203,7 +204,9 @@ public partial class RemoteSyncCheck : Node3D
                 if (stone.States.Cur == RemotePcStates.StateDead) fails.Add("revival: still dead");
                 if (!stone.Visual.Visible) fails.Add("revival: body hidden");
                 if (stoneDeath.Tomb != null && IsInstanceValid(stoneDeath.Tomb)) fails.Add("revival: tomb kept");
-                GD.Print($"remote sync: after the idle record state {stone.States.Cur}, body shown {stone.Visual.Visible}");
+                bool barRuns = stoneDeath.Bar != null && IsInstanceValid(stoneDeath.Bar) && stoneDeath.Bar.IsProcessing();
+                if (barRuns) fails.Add("revival: tomb bar still processing without a tomb");
+                GD.Print($"remote sync: after the idle record state {stone.States.Cur}, body shown {stone.Visual.Visible}, bar processing {barRuns}");
                 stoneDeath.Free(); wetDeath.Free();
                 bool ok = fails.Count == 0;
                 GD.Print($"remote sync: {(ok ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");

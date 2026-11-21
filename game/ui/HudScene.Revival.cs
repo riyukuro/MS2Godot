@@ -37,6 +37,7 @@ public partial class HudScene
         if (revivalLive == null) return;
         revivalLive.Me.Died -= OnOwnDied;
         if (revivalLive.AutoReviveStarted == (Action<int>)OpenAutoRevive) revivalLive.AutoReviveStarted = null;
+        revivalLive.BuffsDisableRevival = () => false;
         revivalLive = null;
     }
 
