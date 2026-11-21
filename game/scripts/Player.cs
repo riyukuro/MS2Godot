@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
     public const string Group = "player";
     public Player() { AddToGroup(Group); }
 
-    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash }
+    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival }
 
     public Node3D Visual;                 // the character root (faces +Z)
     /// <summary>The body's gender (0 male, 1 female) and its model root node name, for the player's effect dummies.</summary>
@@ -273,6 +273,7 @@ public partial class Player : CharacterBody3D
         // under a field move's loading screen the client's MyPC is gone (Ms2.Ui.FieldMoveCover): no key, click or script moves it
         if (Ms2.Ui.FieldMoveCover.Up) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
         if (SkillHoldsMove()) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
+        if (DeathHoldsMove) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }    // StateDead / StateRevival (PlayerDeath)
         var rawInput = Input2 != Vector2.Zero ? Input2 : MouseInput;
         var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;
@@ -379,10 +380,15 @@ public partial class Player : CharacterBody3D
             case MoveState.Dash:
                 DashUpdate(input, upPressed, dt);
                 break;
+
+            case MoveState.Dead:
+            case MoveState.Revival:
+                DeathUpdate();
+                break;
         }
         prevRawInput = rawInput;
 
-        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb))
+        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Revival))
         {
             if (hasInput && State != MoveState.Dash) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
             var before = GlobalPosition;
@@ -567,7 +573,7 @@ public partial class Player : CharacterBody3D
     void Integrate(float dt)
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
-        if (State is MoveState.Idle or MoveState.Land) v = Vector3.Zero;
+        if (State is MoveState.Idle or MoveState.Land or MoveState.Dead) v = Vector3.Zero;
         if (jumping)
         {
             jumpTime += dt;

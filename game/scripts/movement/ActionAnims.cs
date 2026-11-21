@@ -22,7 +22,7 @@ public sealed class ActionAnims
         ClimbIdle = 17, ClimbLUp = 18, ClimbLCenter = 19, ClimbLDown = 20, ClimbRUp = 21, ClimbRCenter = 22,
         ClimbRDown = 23, ClimbUpLand = 24, ClimbUpTake = 25, ClimbDownLand = 26, ClimbDownTake = 27,
         Run = 28, Walk = 29, PoleUp = 34, PoleDown = 35, PoleIdle = 36, PoleTurn = 37, PoleTake = 38, SpecialJumpUp = 42, SpecialJumpDown = 43,
-        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, HoldIdle = 62, FallDamage = 63,
+        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, Revival = 51, Dead = 52, HoldIdle = 62, FallDamage = 63, ModePvpDead = 64,
     }
 
     static readonly string[] TypeNames =
@@ -35,7 +35,7 @@ public sealed class ActionAnims
         "POLE_DOWN", "POLE_IDLE", "POLE_TURN", "POLE_TAKE", "BORE", "STUN", "KNOCK_BACK", "SPECIAL_JUMP_UP",
         "SPECIAL_JUMP_DOWN", "REGEN", "TALK_UP", "TALK_IDLE", "LISTEN_IDLE", "WATER_IDLE", "WATER_SWIM", "WATER_DASH",
         "REVIVAL", "DEAD", "HIT", "UGC_CRAFT_IDLE", "CRAFT_IDLE", "CRAFT_RUN", "CRAFT_WALK", "CRAFT_JUMP_UP",
-        "CRAFT_JUMP_DOWN", "CRAFT_JUMP_LAND", "FITTING_IDLE", "HOLD_IDLE", "FALL_DAMAGE",
+        "CRAFT_JUMP_DOWN", "CRAFT_JUMP_LAND", "FITTING_IDLE", "HOLD_IDLE", "FALL_DAMAGE", "MODEPVP_DEAD",
     };
 
     // sequences that cycle; the rest play once and hold their last frame
@@ -92,6 +92,19 @@ public sealed class ActionAnims
     }
 
     public bool Has(Act a) => names.ContainsKey(a);
+
+    readonly Dictionary<Act, string[]> lists = new();
+
+    /// <summary>
+    /// PCBase::FUN_141679170(type, index) (@0x141679170, pcbase.cpp:3508) -> PCActionGroupCustom::Name (actioncontainer.cpp:335):
+    /// the action's <paramref name="index"/>-th sequence name, loaded as a one-shot; PCActionList::Name gives "" past the list's
+    /// end (actioncontainer.cpp:163-168), and so does a name the body lacks: null.
+    /// </summary>
+    public string NameAt(Act a, int index)
+    {
+        if (!lists.TryGetValue(a, out var list) || index < 0 || index >= list.Length || list[index].Length == 0) return null;
+        return Sequence(list[index].ToLowerInvariant(), false);
+    }
 
     // the body's actor file (female/female.kfm, male/male.kfm: the KFM whose model is the f_body / m_body we load) and its
     // sequence ids by the lower-case kf name, which is the AnimationPlayer key
@@ -162,19 +175,20 @@ public sealed class ActionAnims
                 if (list != null) aa.xmlKeys[el.Name.LocalName] = list;
             }
         }
-        var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var table = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
         var x = PackXml.Parse(packs.Read("Xml", "table/pcactiondata.xml"));
         var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");
         foreach (var v in group?.Elements("v") ?? Enumerable.Empty<XElement>())
-            table[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();
+            table[(string)v.Attribute("type")] = Array.ConvertAll(((string)v.Attribute("names") ?? "").Split(','), n => n.Trim());
 
         var lib = player.GetAnimationLibrary("");
         foreach (Act a in Enum.GetValues<Act>())
         {
             int id = (int)a;
-            if (id >= TypeNames.Length || !table.TryGetValue(TypeNames[id], out var seq) || seq.Length == 0) continue;
-            string key = seq.ToLowerInvariant();
-            if (a == Act.BattleIdle) { aa.names[a] = key; continue; }   // loaded on demand when battle stance turns on
+            if (id >= TypeNames.Length || !table.TryGetValue(TypeNames[id], out var list) || list[0].Length == 0) continue;
+            aa.lists[a] = list;
+            string key = list[0].ToLowerInvariant();
+            if (a is Act.BattleIdle or Act.ModePvpDead) { aa.names[a] = key; continue; }   // loaded on demand (battle stance, NameAt)
             if (!lib.HasAnimation(key))
             {
                 KfAnimation kf;

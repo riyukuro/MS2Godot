@@ -56,6 +56,7 @@ public partial class MouseMove : Node
     public override void _Process(double delta)
     {
         if (!Moving) { player.MouseInput = Vector2.Zero; return; }
+        if (player.DeathHoldsMove) { Stop(); return; }   // StateDead::vfunc_4: CPushControl::Reset (statedead.cpp:152)
         if (MoveInput.Read().Move != Vector2.Zero) { Stop(); return; }
         var d = target - player.GlobalPosition;
         d.Y = 0;

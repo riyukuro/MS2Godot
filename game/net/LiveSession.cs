@@ -50,6 +50,25 @@ public partial class LiveSession : Node
     public bool SelfInBattle { get; private set; }
     byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
     Player player;           // the own player, once the field is built
+
+    /// <summary>
+    /// MyPC::vfunc_137's vfunc_59(0xc) on the body (<see cref="Player.EnterDead"/>): StateDead::vfunc_4's revive-in-place case
+    /// for a field with HasAutoRevivalType1 plays MODEPVP_DEAD entry ShadowWorldAutoReviveDeadAction (clientconstants +0xd248,
+    /// default 1). STILL-OPEN: the PvP point case (the team as the entry) is not fed, no PvP info is kept.
+    /// </summary>
+    void OwnDeathState()
+    {
+        if (player == null || !IsInstanceValid(player) || Me.State != 0xc) return;
+        bool inPlace = false; int anim = 1;
+        try
+        {
+            var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
+            if (FieldId is int id) inPlace = FieldData.FindById(packs, id)?.HasAutoRevivalType1 == true;
+            if (inPlace) anim = FieldContents.Constants(packs).Int("ShadowWorldAutoReviveDeadAction", 1);
+        }
+        catch (Exception ex) { GD.PushWarning($"death state: {ex.Message}"); }
+        player.EnterDead(inPlace, anim);
+    }
     RemoteLayer remote;      // the other players and npcs, once the field is built
     DropLayer drops;         // the dropped items and meso, once the field is built
     /// <summary>The "get" action key is held (set by the HUD's key tracking); the drop layer asks it each frame.</summary>
@@ -1287,6 +1306,7 @@ public partial class LiveSession : Node
                 {
                     GD.Print($"live: own player dead (state {u.State})");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1350)
+                    OwnDeathState();
                 }
             }
             else if (game.Is(p, Inbound.DeadUser))
@@ -1299,12 +1319,15 @@ public partial class LiveSession : Node
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1349)
                 }
                 // MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
-                if (d.ObjectId == selfObject && Me.Dead) HeldItem.EnterState(HeldItemState.Dead, Send);
+                if (d.ObjectId == selfObject && Me.Dead) { HeldItem.EnterState(HeldItemState.Dead, Send); OwnDeathState(); }
             }
             else if (game.Is(p, Inbound.Revival))
             {
                 var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
-                if (Me.Revive(v.ObjectId, v.Flag))
+                bool revived = Me.Revive(v.ObjectId, v.Flag);
+                // MyPC's vfunc_59(0x18) (scenestategame.cpp:7400): StateRevival on the body
+                if (v.ObjectId == selfObject && Me.State == 0x18 && player != null && IsInstanceValid(player)) player.EnterRevival();
+                if (revived)
                 {
                     GD.Print("live: own player revived");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // OnRevival of the own player (scenestategame.cpp:7405)
