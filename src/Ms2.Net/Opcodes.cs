@@ -97,6 +97,7 @@ public enum Inbound : ushort {
     Job = 0x49,
     SkillPoint = 0x44,
     SkillBookTree = 0x10C,
+    SkillMacro = 0xD1,          // RecvOp::SkillMacro (commonfiles/opcodes.h:216): the compact skill control tabs
     ProxyGameObj = 0x7E,
     BadgeEquip = 0x7F,
     Taxi = 0x80,            // RecvOp Taxi (commonfiles/opcodes.h): CSceneStateGame::OnTaxi
@@ -161,6 +162,7 @@ public enum Outbound : ushort {
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
+    SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
     NpcTalk = 0x22,
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
     ItemMerge = 0x3F,       // SendOp::ItemMerge (commonfiles/opcodes.h:368): UIItemMergeOptionDialog::Request*

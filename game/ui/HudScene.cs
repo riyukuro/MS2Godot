@@ -112,6 +112,7 @@ public partial class HudScene : Node, IUiStageHost
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--ui-folder" && args[i + 1].Split(',') is [var acct, var chr])
             CharacterFolder.Shot = new CharacterFolder(long.Parse(acct), long.Parse(chr));   // the dialogs' saved positions
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillbook") skillShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
+        for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--skillcompact") skillCompactShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) { GD.PushError("Set MS2_DATA (the client's Data folder), or fill in local.cfg."); GetTree().Quit(2); return; }
         assets = new UiAssets(PackSet.Shared(dataDir));   // the field's pack set: its archives and the per-pack-set UI caches are shared
@@ -542,6 +543,7 @@ public partial class HudScene : Node, IUiStageHost
         if (CommunityQueryOpen) communityQuery.Close();
         if (CommunityOpen) community.Close();
         if (KeySettingSelectOpen) keySettingSelect.Close();
+        if (SkillCompactOpen) skillCompact.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -1472,6 +1474,7 @@ public partial class HudScene : Node, IUiStageHost
     bool DialogKeys(InputEvent e)
     {
         if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
+        if (SkillCompactKeys(k)) return true;
         if (k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }       // a DirectInput key code is a physical key
         if (k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }      // action 400006, DIK 50 (keytable.cpp:744)
         if (WorldMapOpen && k.Keycode == Key.Enter && worldMapSide.EnterKey()) return true;
@@ -2326,6 +2329,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == GuildDialogController.UiId) ToggleGuild();
         else if (id == 0x4e73) ToggleAchieve();
         else if (id == 0x4f2d) ToggleSkillBook();
+        else if (id == 0x4ef6) ToggleSkillCompact();    // entry 27 "compactkey" (gameeventmanagercli.cpp:692)
         else if (id == 0x4f67) ToggleAdventureLevel();
         else if (id == GameMenuController.CharacterAbilityUiId) ToggleCharacterAbility();
         else if (id == 0x4f1e) ToggleMastery();
@@ -3377,6 +3381,12 @@ public partial class HudScene : Node, IUiStageHost
             hudModel.Player.SubJob = skillShot[0];
             if (skillShot.Length > 1) hudModel.Player.Level = skillShot[1];
             ToggleSkillBook();
+        }
+        if (skillCompactShot != null && frames == 200)
+        {
+            hudModel.Player.SubJob = skillCompactShot[0];
+            if (skillCompactShot.Length > 1) hudModel.Player.Level = skillCompactShot[1];
+            ToggleSkillCompact();
         }
         if (shopShot != null && frames == 200)
         {

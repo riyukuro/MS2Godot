@@ -731,6 +731,13 @@ public sealed class GameTables
     /// <summary>CTitleTable's tags (Table/titleTag.xml), read on first use.</summary>
     public TitleTags TitleTags => titleTags ??= packs == null ? TitleTags.Empty
         : new TitleTags(Xml("table/titletag.xml"), e => FeatureElements.IsAvailable(packs, e));
+    Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
+    /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
+    /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>
+    public Ms2.Ui.Skills.SkillCompactControlTable SkillCompactControl => skillCompactControl ??= packs == null
+        ? Ms2.Ui.Skills.SkillCompactControlTable.Empty
+        : new Ms2.Ui.Skills.SkillCompactControlTable(Xml("table/skillcompactcontrol.xml"), e => FeatureElements.IsAvailable(packs, e),
+            LobbyFeatures.IsEnabled(packs, "CompactControl"));
     XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);

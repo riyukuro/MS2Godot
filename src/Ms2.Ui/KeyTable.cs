@@ -390,6 +390,16 @@ public sealed class KeyTable : IKeyTable
     static bool LocaleInList(string list) => list.Length == 0
         || list.Split(',').Any(l => string.Equals(l.Trim(), LobbyFeatures.LocaleName, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>GetKeyAction: the code bound to <paramref name="key"/> (0 for none or an unknown key).</summary>
+    public long GetKeyAction(int key) => keys.TryGetValue(key, out var k) ? k.Code : 0;
+
+    /// <summary>IsKeyRebindable @0x14142cc40 (keytable.cpp:1227): every key but 1, 0x1c, 0x82, 0x83 and 0xa3..0xa6.</summary>
+    public static bool IsKeyRebindable(int key) => key != 1 && key != 0x83 && key != 0x82 && key != 0x1c && !(key >= 0xa3 && key <= 0xa6);
+
+    /// <summary>@0x141430470 (keytable.cpp:2191): <paramref name="action"/> has a row in key setting category 12.</summary>
+    public bool IsListedInCategory12(long action) =>
+        settings.TryGetValue(12, out var l) && l.Any(s => s.Action == action);
+
     /// <summary>GetSettingList (:2226): the category's rows; null for none.</summary>
     public IReadOnlyList<KeySetting> GetSettingList(int category) => settings.TryGetValue(category, out var l) ? l : null;
 

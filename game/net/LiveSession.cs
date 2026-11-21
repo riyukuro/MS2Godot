@@ -141,6 +141,15 @@ public partial class LiveSession : Node
     public event Action SkillPointsChanged;
     /// <summary>RequestSkillBookTree mode 0 (UISkillBookTreeDialog::OnLoadComplete): a read request for the saved tabs.</summary>
     public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
+    /// <summary>A SkillMacro (0xD1) mode 0 packet, the compact skill control window's vfunc_79 (@0x140f9fee0).</summary>
+    public event Action<SkillMacroPacket> SkillMacro;
+    /// <summary>The compact tabs of the last SkillMacro mode 2 (CSkillSystem::FUN_141767ae0 @0x141767ae0, m_lstCompact), or of
+    /// the window's SetCompactConfigs; empty before either.</summary>
+    public IReadOnlyList<SkillMacroTab> CompactConfigs { get; set; } = Array.Empty<SkillMacroTab>();
+    /// <summary>SendOp::SkillMacro mode 0 (UISkillCompactControlDialog::OnLoadComplete @0x140fa06a0): a read request.</summary>
+    public void RequestSkillMacro() { if (game != null) Send(new SkillMacroRequest()); }
+    /// <summary>SendOp::SkillMacro mode 1 (SendSkillMacroMode1 @0x140fa1240, the window's close): every tab.</summary>
+    public void SaveSkillMacro(IReadOnlyList<SkillMacroTab> tabs) { if (game != null) Send(new SkillMacroSave(tabs)); }
     /// <summary>Raised after the local player's skill book changed (the Job packet's mode).</summary>
     public event Action<int> SkillBookChanged;
     /// <summary>
@@ -1397,6 +1406,13 @@ public partial class LiveSession : Node
                 SkillPoints.Apply(SkillPointPacket.Read(p.Reader()));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
                 SkillPointsChanged?.Invoke();
                 GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
+            }
+            else if (game.Is(p, Inbound.SkillMacro))
+            {
+                var m = SkillMacroPacket.Read(p.Reader());      // CSceneStateGame::OnSkillMacro @0x141737d60
+                GD.Print($"live: skill macro mode {m.Mode} ({m.Tabs.Count} tabs)");
+                if (m.Mode == 2) CompactConfigs = m.Tabs;       // CSkillSystem::FUN_141767ae0
+                else if (m.Mode == 0) SkillMacro?.Invoke(m);    // the open window's vfunc_79
             }
             else if (game.Is(p, Inbound.SkillBookTree))
             {
