@@ -16,7 +16,7 @@ public sealed record GameMenuDef(int Id, string Name, string Label, string Toolt
 public static class GameMenuActions
 {
     /// <summary>The pssbshop entry's handler, ToggleShopTab(9) (@0x14193d5c0, uigamemenudialog.cpp:2209).</summary>
-    public const string ToggleSystemShop = "FUN_14193d5c0";
+    public const string ToggleSystemShop = "ToggleSystemShop";
     /// <summary>The learning entry's handler.</summary>
     public const string OpenLearningQuest = "OpenLearningQuestDialog";
 }

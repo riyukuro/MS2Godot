@@ -11,6 +11,10 @@ namespace Ms2Godot.Ui;
 public partial class HudScene
 {
     /// <summary>ToggleShopTab(tab): same tab open closes it, otherwise closes the shop and the inventory and asks for the tab.</summary>
+    /// The guard is FUN_141adc7f0 / UIDialog::vfunc_73 on dialog 0x4e3b (uidialog.cpp:666): the guide's dialog limit refuses
+    /// with notice 2187 (<see cref="GuideRefusesOpen"/>); the dialog's controller is made at the line above, so the
+    /// "dialog missing returns 0" case cannot occur here. STILL-OPEN: the map's dialog limit (IsDialogLimited beyond the
+    /// guide), WorldService::HasTutorial and the dialog's own vfunc_75 have no state in this HUD and refuse nothing.
     void ToggleShopTab(int tab)
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
@@ -18,6 +22,7 @@ public partial class HudScene
         liveShop ??= CreateShopController(live);
         SystemShopFlow.ToggleShopTab(tab, liveShop, ShopOpen, () => shop.CloseShop(),
             () => { if (inventory?.IsClosed == false) inventory.Close(); },
-            live.SendShop, key => FieldAudio.Instance?.PlayUi(key));
+            live.SendShop, key => FieldAudio.Instance?.PlayUi(key),
+            () => !GuideRefusesOpen("ShopDialog"));
     }
 }
