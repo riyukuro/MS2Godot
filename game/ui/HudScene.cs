@@ -2172,6 +2172,7 @@ public partial class HudScene : Node, IUiStageHost
                 else GD.Print($"quick slot: offline, not sent: {packet}");
             },
             Notice = id => SystemNoticeText(hudModel.Tables.Common(id)),
+            NoticeBox = id => MessageBoxQueue.ShowMessageBox(hudModel.Tables.Common(id), 0, null, ""),
             NoticeText = key => SystemNoticeText(hudModel.Tables.Common(key)),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             PressKey = ClickedSlotKey,
@@ -2733,6 +2734,7 @@ public partial class HudScene : Node, IUiStageHost
     /// inventory and a new character's book of the HUD's job; the field data of the current map id (offline: the field of the
     /// HUD's xblock); the cooldowns the live session's (idle offline). The skill set has no feed yet and keeps its idle value; the buffs only feed the buff strip.
     /// </summary>
+    ClientConstants slotConstants;
     Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
@@ -2774,6 +2776,10 @@ public partial class HudScene : Node, IUiStageHost
             Inventory = live != null ? live.Items.All : (OfflineInventory() != null ? offlineBook.All : Array.Empty<Ms2.Net.Packets.EquipItem>()), TabOf = slotKinds.TabOf,
             Field = slotField,
         };
+        slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
+        world.SummonRideSkill = slotConstants.Int("SummonRideSkillID", world.SummonRideSkill);
+        world.GlideItemSkill = slotConstants.Int("GlideItemSkillID", world.GlideItemSkill);
+        world.SummonPetSkill = slotConstants.Int("SummonPetSkillID", world.SummonPetSkill);
         world.Weapon = weaponActions.HeldAction(Hand(5), Hand(4), hudModel.Tables.Items.Get, world.CanUse) is { } action
             ? (action.RightHand, action.LeftHand) : null;
         SlotCooldowns(world);

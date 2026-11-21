@@ -67,6 +67,54 @@ public static class QuickSlotEdit
         return true;
     }
 
+    /// <summary>FUN_140d73bc0(0x2e8, 0, 0, ""): the notice box of a ride item with a UGC mesh but no UGC id dropped on a slot.</summary>
+    public const int RideUgcNotice = 0x2e8;
+
+    /// <summary>
+    /// SkillSlot::vfunc_18 @0x14175d530 (client/ms2/skillslot.cpp:561-604), a bag slot (InvenSlot) dropped on a quick slot:
+    /// FindItemByUid of the slot's uid must find an item whose data passes FUN_14053e460
+    /// (<see cref="Items.ItemData.IsQuickSlotUsable"/>); its skill is FUN_141769320's (<see cref="ItemSkillId"/>);
+    /// - a ride item with a UGC mesh (HasCubeTextureMesh) and no UGC id (HasUgcId, item.cpp:1350) is refused with the
+    ///   <see cref="RideUgcNotice"/> box;
+    /// - else a lapenshard goes on as its skill alone (item id and uid 0), refused for a PC that has not equipped it
+    ///   (MyPC::FUN_14152f860) or whose lapenshard row's equip mask is not 1;
+    /// - then <see cref="Add"/> on the slot. The taken entry, else null (the slot keeps its entry; there is no swap).
+    /// </summary>
+    public static QuickSlotEntry? AddFromInventory(SlotWorld w, Func<int, bool> feature, Action<IOutPacket> send, Action<int> notice,
+        Action<int> noticeBox, long uid, int page, int slot)
+    {
+        var item = uid == 0 ? null : FindItem(w, i => i.Uid == uid);
+        if (item == null || w.ItemData(item.Id) is not { IsQuickSlotUsable: true } d) return null;
+        int skillId = ItemSkillId(w, d), itemId = item.Id;
+        long itemUid = uid;
+        bool usable = true;
+        if (d.IsRideItem)
+        {
+            if (d.HasCubeTextureMesh && item.Ugc is not { Uid: > 0 })
+            {
+                usable = false;
+                noticeBox?.Invoke(RideUgcNotice);
+            }
+        }
+        else if (d.IsLapenshard)
+        {
+            itemId = 0;
+            itemUid = 0;
+            if (w.HasPc)
+            {
+                if (!w.LapenshardEquipped(item.Id)) usable = false;
+                if (w.LapenshardEquipMask(item.Id) != 1) usable = false;
+            }
+        }
+        if (!usable || !Add(w, feature, send, notice, skillId, itemId, itemUid, page, slot)) return null;
+        return new QuickSlotEntry(skillId, itemId, itemUid);
+    }
+
+    /// <summary>FUN_141769320 @0x141769320 (skillslot.cpp:2865): a ride item's skill is SummonRideSkillID, a pet item's
+    /// SummonPetSkillID, a type 5 (skill) item's GlideItemSkillID, else the item's own skill.</summary>
+    public static int ItemSkillId(SlotWorld w, Items.ItemData d) =>
+        d.IsRideItem ? w.SummonRideSkill : d.IsPetItem ? w.SummonPetSkill : d.Type == 5 ? w.GlideItemSkill : d.SkillId;
+
     /// <summary>
     /// FUN_14092f4e0 @0x14092f4e0 (unit_14092f420_accountsessionstate.cpp:314), a clicked skill slot without a key: the bag's item
     /// of the skill first (Unk_Inventory::FUN_140a62d30, inventory.cpp:1310), else a skill the job knows (JobSystemCli vfunc_2,

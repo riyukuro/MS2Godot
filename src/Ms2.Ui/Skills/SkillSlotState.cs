@@ -72,6 +72,13 @@ public sealed class SlotWorld
     public (int Right, int Left)? Weapon;
     /// <summary>MyPC::GetLapenshardSkillLevel.</summary>
     public Func<uint, ushort> LapenshardLevel = _ => 0;
+    /// <summary>MyPC::FUN_14152f860 @0x14152f860 (mypc.cpp:4254): the item id is in the equipped lapenshard map (m_map16f8).</summary>
+    public Func<int, bool> LapenshardEquipped = _ => false;
+    /// <summary>CItemLapenshardTable::GetEquipMask of the item id; 0 without a row.</summary>
+    public Func<int, int> LapenshardEquipMask = _ => 0;
+    /// <summary>The client constants FUN_141769320 reads (Common::Constants, unit_1402ab440_constantsblocks.cpp:1181, :1183,
+    /// :1217): SummonRideSkillID (+0x9a90), GlideItemSkillID (+0x9a98) and SummonPetSkillID (+0xa284), the defaults theirs.</summary>
+    public int SummonRideSkill = 80000001, GlideItemSkill = 80010001, SummonPetSkill = 82100001;
     /// <summary>WorldService::FindPetByKind finds the player's pet near them.</summary>
     public bool PetNearby;
     /// <summary>FUN_14165f150 and the held item's FUN_14053dc90: the skill of the held item, 0 without one.</summary>

@@ -229,6 +229,50 @@ public class HudTests
         Assert.That(sent, Has.Count.EqualTo(2));
     }
 
+    sealed class Bag(Dictionary<string, long> cells) : IInvenSlotOwner
+    {
+        public readonly List<string> Refreshed = new();
+        public bool IsDragSlot(string name) => cells.ContainsKey(name);
+        public long? InvenSlotUid(string name) => cells.TryGetValue(name, out var u) ? u : null;
+        public Item FindItem(long uid) => null;
+        public bool CanEquipItem(Item item, int slot, int layer) => false;
+        public void RequestEquipItem(Item item, int slot, int layer) { }
+        public void RefreshSlot(string name) => Refreshed.Add(name);
+        public void SlotDropUnresolved(string name) { }
+    }
+
+    [Test]
+    public void ABagPotionDroppedOnAQuickSlotIsSentAndKept()
+    {
+        // SkillSlot::vfunc_18 (skillslot.cpp:561-604) from an InvenSlot: the bag item of the slot's uid, then FUN_14092f690
+        var m = Model();
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>() })));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var potion = ItemData.Load(20000001, System.Xml.Linq.XElement.Parse("<e><property type=\"2\" slotMax=\"100\"/></e>"));
+        var c = new MainPlayerInfoController
+        {
+            SlotWorld = () => new Ms2.Ui.Skills.SlotWorld
+            {
+                Tables = m.Tables.Skills, ItemData = id => id == 20000001 ? potion : null, HasPc = true,
+                Inventory = new[] { new EquipItem { Id = 20000001, Uid = 55 } },
+            },
+        };
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        Load(c, m);
+        var bag = new Bag(new() { ["InventoryDialog.0"] = 55, ["InventoryDialog.1"] = 0 });
+        string s4 = MainPlayerInfoController.SlotBag + ".4";
+
+        c.SlotDroppedOn(s4, "InventoryDialog.1", bag);                       // an empty cell: nothing
+        Assert.That(sent, Is.Empty);
+        c.SlotDroppedOn(s4, "InventoryDialog.0", bag);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 0, 20000001, 55, 4) }));
+        Assert.That(t.Entry(0, 4), Is.EqualTo(new QuickSlotEntry(0, 20000001, 55)));
+        Assert.That(bag.Refreshed, Is.EqualTo(new[] { "InventoryDialog.1", "InventoryDialog.0" }));
+    }
+
     [Test]
     public void PartyWindowShowsTheFixtureParty()
     {

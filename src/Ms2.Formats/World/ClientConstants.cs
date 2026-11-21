@@ -37,6 +37,10 @@ public sealed class ClientConstants
     /// <summary>A constant's text; null when it is not in the tables.</summary>
     public string String(string key) => values.TryGetValue(key, out var s) ? s : null;
 
+    /// <summary>An int constant (Value&lt;int&gt;, GetOr); <paramref name="def"/> when the tables do not set it or it is not an int.</summary>
+    public int Int(string key, int def) =>
+        values.TryGetValue(key, out var s) && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : def;
+
     public float Float(string key, float def) =>
         values.TryGetValue(key, out var s) && float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) ? f : def;
 

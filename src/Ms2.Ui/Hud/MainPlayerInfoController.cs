@@ -379,6 +379,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     public Action<Ms2.Net.Wire.IOutPacket> Send = _ => { };
     /// <summary>FUN_141275260(id, 1, 1): a system notice of a common string id.</summary>
     public Action<int> Notice = _ => { };
+    /// <summary>FUN_140d73bc0(id, 0, 0, ""): a notice box of a common string id.</summary>
+    public Action<int> NoticeBox = _ => { };
 
     /// <summary>The quick slot index of a name ("&lt;bag&gt;.&lt;i&gt;", i below 0x19), else -1.</summary>
     static int SlotIndex(string name) =>
@@ -399,9 +401,11 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// - another quick slot: <see cref="Skills.QuickSlotEdit.Add"/> of the source's entry on this slot; when taken the two
     ///   entries swap (the skill set's SetQuickSlotEntry pair is the same page here);
     /// - a book slot (<see cref="SkillBookTreeController.BookSkillId"/>, BookSlot::FUN_140a366a0): Add of the skill alone; when
-    ///   taken this slot holds it.
+    ///   taken this slot holds it;
+    /// - a bag slot (InvenSlot, <see cref="IInvenSlotOwner.InvenSlotUid"/>): <see cref="Skills.QuickSlotEdit.AddFromInventory"/>;
+    ///   when taken this slot holds its entry.
     /// Then the source and this slot are pushed again (vfunc_10).
-    /// STILL-OPEN: an inventory slot (the ride, lapenshard and FUN_141769320 skill checks) and a lapenshard ItemSlot source.
+    /// STILL-OPEN: a lapenshard ItemSlot source.
     /// </summary>
     public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
     {
@@ -425,6 +429,12 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
                 if (Skills.QuickSlotEdit.Add(World(), Model.IsFeatureEnabled, Send, Notice, skill, 0, 0, page, i))
                     t.SetEntry(page, i, new Ms2.Net.Packets.QuickSlotEntry(skill, 0, 0));
             }
+            else if (sourceOwner is IInvenSlotOwner bag && bag.InvenSlotUid(source) is long uid)
+            {
+                if (Skills.QuickSlotEdit.AddFromInventory(World(), Model.IsFeatureEnabled, Send, Notice, NoticeBox, uid, page, i) is { } e)
+                    t.SetEntry(page, i, e);
+            }
+            // STILL-OPEN: the lapenshard ItemSlot source (skillslot.cpp:612-640, FUN_140a6fef0) has no owner here.
         }
         sourceOwner?.RefreshSlot(source);
         RefreshSlot(name);
