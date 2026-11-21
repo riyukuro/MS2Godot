@@ -310,6 +310,18 @@ public static class ItemReader {
         return (obj, kind, it);
     }
 
+    /// <summary><see cref="ReadPutOn(ByteReader)"/> for a profile. GMS2 (upstream EquipPacket.EquipItem): the slot is a unicode name and the body is the GMS2 body. KMS2 is the untouched original.</summary>
+    public static (int ObjectId, byte Kind, EquipItem Item) ReadPutOn(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return ReadPutOn(r);
+        int obj = r.ReadInt();
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong() };
+        it.Slot = ParseSlotName(r.ReadUnicodeString());
+        it.Rarity = r.ReadInt();
+        byte kind = r.ReadByte();
+        ReadBody(r, it, it.Slot, gms2: true);
+        return (obj, kind, it);
+    }
+
     /// <summary>OnBadgeEquip mode 0 after the mode (scenestategame.cpp:11011-11022): i32 object id, i32 item id, i64 uid, i32
     /// rarity, u8 slot (SetSlot: the gem's BadgeSlot), then CItem::ReadFromStream (a gem item: the gem block).</summary>
     public static (int ObjectId, EquipItem Item) ReadBadgeEquip(ByteReader r) {

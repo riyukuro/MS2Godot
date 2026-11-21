@@ -1333,7 +1333,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.ItemPutOn))
             {
-                var o = ItemPutOn.Read(p.Reader());        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
+                var o = ItemPutOn.Read(p.Reader(), game.Profile);        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
                 bool ownEquipment = Me.Apply(o, WornLayer, ItemExists);
                 if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOn(o, WornLayer, ItemExists);
                 GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
@@ -1466,7 +1466,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Job))
             {
-                var j = JobPacket.Read(p.Reader());   // CSceneStateGame::OnJob (scenestategame.cpp:7449); no ExpectEnd: the client ignores trailing bytes
+                var j = JobPacket.Read(p.Reader(), game.Profile);   // CSceneStateGame::OnJob (scenestategame.cpp:7449); no ExpectEnd: the client ignores trailing bytes
                 bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
                 if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
                 if (selfJob && j.Mode is 0 or 2 or 7) guide?.OnJobChanged(Me.User?.Job ?? 0);   // NotifyStatusChanged(4) with the sub job (scenestategame.cpp:7463/7485/7506)
@@ -1618,7 +1618,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.SkillPoint))
             {
-                SkillPoints.Apply(SkillPointPacket.Read(p.Reader()));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
+                SkillPoints.Apply(SkillPointPacket.Read(p.Reader(), game.Profile));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
                 SkillPointsChanged?.Invoke();
                 GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
             }
@@ -1642,7 +1642,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(p);
             else if (game.Is(p, Inbound.LoadCubes)) OnLoadCubes(p);
             else if (game.Is(p, Inbound.SetCraftMode)) OnSetCraftMode(SetCraftMode.Read(p.Reader()));
-            else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader(), game.Profile));
             else if (game.Is(p, Inbound.ChatStamp)) OnChatStamp(ChatStampMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToLogin)) OnGameToLogin(GameToLogin.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));

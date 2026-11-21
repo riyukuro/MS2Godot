@@ -20,6 +20,9 @@ public readonly record struct EmoteEntry(int Id, ushort Level, bool Permanent, l
 ///   NotifyLearnEmotion(id) is posted;
 /// 3 (a learn result): u8; 1 shows common string 0x858, 0 shows 0x857.
 /// Other modes are read as null (OnEmote does nothing with them).
+/// GMS2 (the recordings, all 1180 lists; upstream EmotePacket): the entries are 16 bytes, i32 id, i32 level, i64 expiry, with no permanent
+/// flag, sort time or favorite flag, and a learned one is the same 16 bytes. STILL-OPEN: the GMS2 client's handler was not read, so the
+/// entry's permanent and favorite flags stay false and the sort time 0, and no recording carries mode 1 or 3.
 /// </summary>
 public abstract record EmoteMessage
 {
@@ -27,9 +30,12 @@ public abstract record EmoteMessage
     public sealed record Learn(EmoteEntry Entry) : EmoteMessage;
     public sealed record Result(byte Code) : EmoteMessage;
 
-    public static EmoteMessage Read(ByteReader r)
+    public static EmoteMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static EmoteMessage Read(ByteReader r, ProtocolProfile profile)
     {
         byte mode = r.ReadByte();
+        if (profile.IsGms2) return ReadGms2(r, mode);
         switch (mode)
         {
             case 0:
@@ -60,6 +66,30 @@ public abstract record EmoteMessage
                 return new Result(r.ReadByte());
         }
         return null;
+    }
+
+    static EmoteMessage ReadGms2(ByteReader r, byte mode)
+    {
+        switch (mode)
+        {
+            case 0:
+            {
+                uint n = (uint)r.ReadInt();
+                var list = new List<EmoteEntry>();
+                for (uint i = 0; i < n; i++) list.Add(ReadGms2Entry(r));
+                return new List(list);
+            }
+            case 1: return new Learn(ReadGms2Entry(r));
+            case 3: return new Result(r.ReadByte());
+        }
+        return null;
+    }
+
+    static EmoteEntry ReadGms2Entry(ByteReader r)
+    {
+        int id = r.ReadInt();
+        ushort level = (ushort)r.ReadInt();
+        return new EmoteEntry(id, level, false, r.ReadLong(), 0, false);
     }
 }
 

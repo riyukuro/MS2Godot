@@ -22,10 +22,13 @@ public sealed class JobPacket {
 
     public static bool CarriesBook(int mode) => mode is 0 or 1 or 2 or 7 or 8 or 9 or 10 or 11;
 
-    public static JobPacket Read(ByteReader r) {
+    public static JobPacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>The packet for a profile: the same frame, the skill book in the profile's layout (<see cref="SkillBook.Read(ByteReader, ProtocolProfile)"/>).</summary>
+    public static JobPacket Read(ByteReader r, ProtocolProfile profile) {
         int obj = r.ReadInt();
         int mode = r.ReadByte();
-        if (CarriesBook(mode)) return new JobPacket { ObjectId = obj, Mode = mode, Book = SkillBook.Read(r) };
+        if (CarriesBook(mode)) return new JobPacket { ObjectId = obj, Mode = mode, Book = SkillBook.Read(r, profile) };
         if (mode == 3) {
             int err = r.ReadByte();
             return new JobPacket { ObjectId = obj, Mode = mode, Error = err, ErrorValue = err == 18 ? r.ReadInt() : 0 };

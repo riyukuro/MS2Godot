@@ -48,6 +48,43 @@ public class EmotePacketTests
     }
 
     [Test]
+    public void Gms2ListEntriesAreSixteenBytes()
+    {
+        // GMS2 (recordings, upstream EmotePacket.Load): count; i32 id, i32 level, i64 expiry
+        byte[] Frame() { var w = new ByteWriter(); w.WriteByte(0); w.WriteInt(2); w.WriteInt(90200011); w.WriteInt(1); w.WriteLong(0); w.WriteInt(90200022); w.WriteInt(3); w.WriteLong(1700000000); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+        var r = new ByteReader(Frame());
+        var m = EmoteMessage.Read(r, ProtocolProfile.Gms2) as EmoteMessage.List;
+        Assert.That(m.Entries, Has.Count.EqualTo(2));
+        Assert.That(m.Entries[0], Is.EqualTo(new EmoteEntry(90200011, 1, false, 0, 0, false)));
+        Assert.That(m.Entries[1], Is.EqualTo(new EmoteEntry(90200022, 3, false, 1700000000, 0, false)));
+        Assert.That(r.Available, Is.EqualTo(0));
+        // the KMS reader runs past the end of the same frame
+        Assert.Catch<Exception>(() => EmoteMessage.Read(new ByteReader(Frame())));
+    }
+
+    [Test]
+    public void Gms2LearnIsOneSixteenByteEntry()
+    {
+        var w = new ByteWriter(); w.WriteByte(1); w.WriteInt(90200033); w.WriteInt(2); w.WriteLong(99);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        Assert.That((EmoteMessage.Read(r, ProtocolProfile.Gms2) as EmoteMessage.Learn).Entry, Is.EqualTo(new EmoteEntry(90200033, 2, false, 99, 0, false)));
+        Assert.That(r.Available, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void EveryRecordedGms2EmotePacketDecodes()
+    {
+        var all = Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.Emote));
+        Assert.That(all, Is.Not.Empty);
+        foreach (var (file, data) in all)
+        {
+            var r = new ByteReader(data);
+            Assert.That(EmoteMessage.Read(r, ProtocolProfile.Gms2), Is.Not.Null, file);
+            Assert.That(r.Available, Is.EqualTo(0), file);
+        }
+    }
+
+    [Test]
     public void LearnModeHasNoFlags()
     {
         // OnEmote mode 1 (:2555-2561): i32 id, i32 level, i64, i64; AddEmotion(.., false, false, 1)

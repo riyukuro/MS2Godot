@@ -6,6 +6,8 @@ namespace Ms2.Net.Packets;
 /// <summary>
 /// Inbound 0x44 (SkillPoint), CSceneStateGame::OnSkillPoint @0x14172f210 (scenestategame.cpp:4241): i32 (DAT_143ab2954), i32
 /// source count of { i32 source, i32 count of { i16 rank (read unsigned), i32 points } }, then i32 (MyPC SetScore, m_n179c).
+/// GMS2 (all 1862 recorded packets; upstream SkillPoint.WriteTo): the same, without the trailing i32, which is 0 in all 614 KMS recordings
+/// (build 2520 and up); Extra stays 0. STILL-OPEN: the GMS2 client's OnSkillPoint was not read.
 /// </summary>
 public sealed class SkillPointPacket {
     public int First { get; init; }
@@ -15,7 +17,9 @@ public sealed class SkillPointPacket {
     /// <summary>The last i32: the points every rank's total adds (MyPC::GetRemainingSkillPoints, mypc.cpp:3965).</summary>
     public int Extra { get; init; }
 
-    public static SkillPointPacket Read(ByteReader r) {
+    public static SkillPointPacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static SkillPointPacket Read(ByteReader r, ProtocolProfile profile) {
         int first = r.ReadInt();
         uint groups = (uint)r.ReadInt();
         var list = new List<(int, IReadOnlyList<(int, int)>)>();
@@ -29,7 +33,7 @@ public sealed class SkillPointPacket {
             }
             list.Add((source, e));
         }
-        return new SkillPointPacket { First = first, Sources = list, Extra = r.ReadInt() };
+        return new SkillPointPacket { First = first, Sources = list, Extra = profile.IsGms2 ? 0 : r.ReadInt() };
     }
 
     public static byte[] Write(int first, IEnumerable<(int Source, IEnumerable<(int Rank, int Points)> Entries)> sources, int extra) {

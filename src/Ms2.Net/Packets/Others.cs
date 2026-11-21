@@ -114,6 +114,7 @@ public sealed record StateSkill(byte Type, int ActorId, long CastUid, int SkillI
 /// <summary>Inbound 0x25 (OnItemPutOn): another player (or this one) wears an item.</summary>
 public sealed record ItemPutOn(int ObjectId, byte Kind, EquipItem Item) {
     public static ItemPutOn Read(ByteReader r) { var (o, k, it) = ItemReader.ReadPutOn(r); r.ExpectEnd("ItemPutOn"); return new ItemPutOn(o, k, it); }
+    public static ItemPutOn Read(ByteReader r, ProtocolProfile profile) { var (o, k, it) = ItemReader.ReadPutOn(r, profile); r.ExpectEnd("ItemPutOn"); return new ItemPutOn(o, k, it); }
 }
 
 /// <summary>
