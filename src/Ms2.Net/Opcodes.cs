@@ -65,6 +65,14 @@ public enum Inbound : ushort {
     ExpUp = 0x37,
     LevelUp = 0x38,
     Meso = 0x39,
+    Meret = 0x3A,               // RecvOp Meret (opcodes.h): CSceneStateGame::OnMeret (scenestategame.cpp:7025)
+    CurrencyToken = 0x3B,       // RecvOp CurrencyToken: CSceneStateGame::OnCurrencyToken (scenestategame.cpp:7094)
+    MeretUse = 0x117,           // RecvOp MeretUse: CSceneStateGame::OnMeretUse (scenestategame.cpp:7053)
+    UiText = 0x94,              // RecvOp UiText: CSceneStateGame::FUN_141731190 (scenestategame.cpp:7878)
+    NewsNotification = 0x9F,    // RecvOp NewsNotification: CSceneStateGame::OnNewsNotification (scenestategame.cpp:3789)
+    PlaySystemSound = 0xC3,     // RecvOp PlaySystemSound: CSceneStateGame::OnPlaySystemSound (scenestategame.cpp:4389)
+    NoticeDialog = 0xCF,        // RecvOp NoticeDialog: UINoticeDialog::OnNoticeDialog (uinoticedialog.cpp:224)
+    SmartPush = 0xD7,           // RecvOp SmartPush: CSceneStateGame::OnSmartPush (scenestategame.cpp:7335)
     SkillUse = 0x3C,
     SkillDamage = 0x3D,
     SkillSync = 0x3E,

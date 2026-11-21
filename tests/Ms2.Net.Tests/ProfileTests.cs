@@ -57,6 +57,14 @@ public class ProfileTests {
         Assert.That(p.Number(Inbound.MeretMarket), Is.EqualTo((ushort) 0x6E));
         Assert.That(p.Number(Outbound.MeretMarket), Is.EqualTo((ushort) 0x3A));
         Assert.That(p.TryInbound(0x60, out var op) && op == Inbound.UserMoveByPortal);
+        Assert.That(p.Number(Inbound.Meret), Is.EqualTo((ushort) 0x3B));
+        Assert.That(p.Number(Inbound.CurrencyToken), Is.EqualTo((ushort) 0x3C));
+        Assert.That(p.Number(Inbound.MeretUse), Is.EqualTo((ushort) 0x119));
+        Assert.That(p.Number(Inbound.UiText), Is.EqualTo((ushort) 0x96));
+        Assert.That(p.Number(Inbound.NewsNotification), Is.EqualTo((ushort) 0xA1));
+        Assert.That(p.Number(Inbound.PlaySystemSound), Is.EqualTo((ushort) 0xC5));
+        Assert.That(p.Number(Inbound.NoticeDialog), Is.EqualTo((ushort) 0xD1));
+        Assert.That(p.Number(Inbound.SmartPush), Is.EqualTo((ushort) 0xD9));
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
         Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));
