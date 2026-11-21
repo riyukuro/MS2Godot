@@ -17,6 +17,7 @@ public enum Inbound : ushort {
     CharMaxCount = 0xB8,
     MoveResult = 0x0D,
     LoginToGame = 0x0E,
+    GameToLogin = 0x0F,     // RecvOp (opcodes.h:23): CNetworkService::OnGameToLogin
     GameToGame = 0x10,      // RecvOp (opcodes.h:24): CNetworkService::OnGameToGame
     ResponseTimeSync = 0x11,
     RequestHeartbeat = 0x12,
@@ -118,6 +119,7 @@ public enum Outbound : ushort {
     BadgeEquip = 0x47,
     RequestTimeSync = 0x0B,
     ResponseClientTickSync = 0x0C,
+    RequestQuit = 0x0D,         // SendOp::RequestQuit (commonfiles/opcodes.h:319): CNetworkService::SendRequestQuit / SendRequestQuitAndDisconnect
     ResponseFieldEnter = 0x10,
     RequestMoveField = 0x6C,    // SendOp::RequestMoveField (commonfiles/opcodes.h): MyPC::SendRequestMoveFieldMode0/3
     UserSync = 0x12,

@@ -66,6 +66,19 @@ public sealed record ResponseClientTickSync(int ServerTick, int ClientTick) : IO
     public static ResponseClientTickSync Read(ByteReader r) { var p = new ResponseClientTickSync(r.ReadInt(), r.ReadInt()); r.ExpectEnd("ResponseClientTickSync"); return p; }
 }
 
+/// <summary>
+/// Outbound 0x0D (SendOp::RequestQuit, commonfiles/opcodes.h:319): u8 mode.
+/// Mode 0 = CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505, return to character select);
+/// Mode 1 = CNetworkService::SendRequestQuitAndDisconnect (@0x1415388a0, networkservice.cpp:507-512, disconnect and exit).
+/// </summary>
+public sealed record RequestQuit(byte Mode) : IOutPacket {
+    public const byte SelectCharacter = 0;
+    public const byte Disconnect = 1;
+    public Outbound Op => Outbound.RequestQuit;
+    public void Write(ByteWriter w) => w.WriteByte(Mode);
+    public static RequestQuit Read(ByteReader r) { var p = new RequestQuit(r.ReadByte()); r.ExpectEnd("RequestQuit"); return p; }
+}
+
 // ---- inbound ----
 
 /// <summary>Inbound 0x0A. The first fields are common to every outcome; the tail differs (restricted accounts carry ban times) and is kept raw.</summary>
@@ -80,6 +93,23 @@ public sealed record LoginResult(byte State, int Const1, string Message, long Ac
 /// <summary>Inbound 0x0D: u8 migration error, 0 is ok.</summary>
 public sealed record MoveResult(byte Error) {
     public static MoveResult Read(ByteReader r) { var p = new MoveResult(r.ReadByte()); r.ExpectEnd("MoveResult"); return p; }
+}
+
+/// <summary>
+/// Inbound 0x0F (RecvOp::GameToLogin, commonfiles/opcodes.h:23; CNetworkService::OnGameToLogin @0x14153bc00,
+/// networkservice.cpp:928-940): u8 result; on 0, u32 ip (4 bytes), u16 port, i32 token1, i32 token2. An error reads
+/// nothing more (:939).
+/// </summary>
+public sealed record GameToLogin(byte Error, byte[] Ip, ushort Port, int Token1, int Token2) {
+    public bool Ok => Error == 0;
+    public System.Net.IPAddress Address => Ip == null ? null : new System.Net.IPAddress(Ip);
+    public ulong Token => (uint) Token1 | (ulong) (uint) Token2 << 32;
+    public static GameToLogin Read(ByteReader r) {
+        byte err = r.ReadByte();
+        if (err != 0) return new GameToLogin(err, null, 0, 0, 0);
+        var p = new GameToLogin(0, r.ReadBytes(4), r.ReadUShort(), r.ReadInt(), r.ReadInt());
+        r.ExpectEnd("GameToLogin"); return p;
+    }
 }
 
 /// <summary>

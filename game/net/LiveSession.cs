@@ -1220,6 +1220,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.GameEvent)) OnGameEvent(GameEventMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(ResponseCubeHeldItem.Read(p.Reader()));
             else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.GameToLogin)) OnGameToLogin(GameToLogin.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
             else if (game.Is(p, Inbound.DynamicChannel)) OnDynamicChannel(DynamicChannelMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.EnterUgcMap))
@@ -1334,6 +1335,52 @@ public partial class LiveSession : Node
     public void SendUgc(Ms2.Net.Wire.IOutPacket packet)
     {
         if (game != null) Send(packet);
+    }
+
+    /// <summary>Raised when Inbound GameToLogin (0x0F, networkservice.cpp:928) succeeds and the game socket is torn down.</summary>
+    public event Action<GameToLogin> GameToLoginReceived;
+
+    /// <summary>CNetworkService::OnGameToLogin (@0x14153bc00, networkservice.cpp:928-940): error shows FieldMoveError; ok tears down the field session.</summary>
+    void OnGameToLogin(GameToLogin m)
+    {
+        if (!m.Ok)
+        {
+            GD.Print($"live: GameToLogin error {m.Error}");
+            Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(m.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
+            return;
+        }
+        GD.Print($"live: GameToLogin to {m.Address}:{m.Port}");
+        if (player != null && IsInstanceValid(player)) player.Live = false;
+        player = null;
+        selfObject = -1;
+        bindPending = false;
+        var old = game;
+        game = null;
+        old?.Dispose();
+        GameToLoginReceived?.Invoke(m);
+    }
+
+    /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
+    public void SendRequestQuit()
+    {
+        SendGuideStates();
+        if (game != null) Send(new RequestQuit(RequestQuit.SelectCharacter));
+    }
+
+    /// <summary>CNetworkService::SendRequestQuitAndDisconnect (@0x1415388a0, networkservice.cpp:507-512): flushes guide state, sends RequestQuit(1), and closes the active connection.</summary>
+    public void SendRequestQuitAndDisconnect()
+    {
+        SendGuideStates();
+        var active = game ?? login;
+        if (active != null && !active.IsClosed)
+        {
+            try { active.SendAsync(new RequestQuit(RequestQuit.Disconnect)).Wait(250); }
+            catch (Exception ex) { GD.PushWarning("live: RequestQuit send failed: " + ex.Message); }
+        }
+        if (player != null && IsInstanceValid(player)) player.Live = false;
+        player = null;
+        var g = game; game = null; g?.Dispose();
+        var l = login; login = null; l?.Dispose();
     }
 
     /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>

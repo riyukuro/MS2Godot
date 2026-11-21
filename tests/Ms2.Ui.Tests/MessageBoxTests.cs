@@ -117,6 +117,48 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void WindowCloseConfirmsOutsideLoginAndQuitsOnYes()
+    {
+        // WindowService WM_CLOSE (windowservice.cpp:772-784): Login and Logo quit directly; Lobby/Create/Game confirm
+        Assert.That(QuitFlow.ConfirmOnWindowClose(QuitFlow.LoginSceneId), Is.False);
+        Assert.That(QuitFlow.ConfirmOnWindowClose(QuitFlow.LogoSceneId), Is.False);
+        Assert.That(QuitFlow.ConfirmOnWindowClose(QuitFlow.LobbySceneId), Is.True);
+        Assert.That(QuitFlow.ConfirmOnWindowClose(QuitFlow.CreateSceneId), Is.True);
+        Assert.That(QuitFlow.ConfirmOnWindowClose(QuitFlow.GameSceneId), Is.True);
+
+        var (h, c) = Load();
+        int restores = 0, directQuits = 0, boxQuits = 0;
+        c.GameExit += () => boxQuits++;
+
+        // In-game WM_CLOSE restores display mode and opens the "gameexit" confirm box instead of quitting immediately
+        bool closed = QuitFlow.HandleWindowClose(QuitFlow.GameSceneId, _ => "Quit now?", true, () => restores++, () => directQuits++);
+        Assert.That(closed, Is.False);
+        Assert.That(restores, Is.EqualTo(1));
+        Assert.That(directQuits, Is.EqualTo(0));
+        Assert.That(c.CurrentBox?.Extra, Is.EqualTo(QuitFlow.ExitTag));
+        Assert.That(c.CurrentBox?.Type, Is.EqualTo(QuitFlow.ExitBoxType));
+
+        // Repeated WM_CLOSE while the exit box is already shown does not stack a second exit box
+        Assert.That(QuitFlow.HandleWindowClose(QuitFlow.GameSceneId, _ => "Quit now?", true, () => restores++, () => directQuits++), Is.False);
+        Assert.That(MessageBoxQueue.Count, Is.EqualTo(0));
+
+        // Clicking No closes the box and stays in game
+        Click(h, "m_button1");
+        Assert.That(boxQuits, Is.EqualTo(0));
+        Assert.That(c.IsIdle, Is.True);
+
+        // WM_CLOSE again, then clicking Yes fires GameExit (SendRequestQuitAndDisconnect + exit)
+        Assert.That(QuitFlow.HandleWindowClose(QuitFlow.GameSceneId, _ => "Quit now?", true, () => restores++, () => directQuits++), Is.False);
+        Click(h, "m_button0");
+        Assert.That(boxQuits, Is.EqualTo(1));
+
+        // Login scene WM_CLOSE restores display mode and quits directly without a confirm box
+        bool loginClosed = QuitFlow.HandleWindowClose(QuitFlow.LoginSceneId, _ => "Quit now?", true, () => restores++, () => directQuits++);
+        Assert.That(loginClosed, Is.True);
+        Assert.That(directQuits, Is.EqualTo(1));
+    }
+
+    [Test]
     public void ListenerAnswerClosesAndTheQueuedBoxReturns()
     {
         var (h, c) = Load();

@@ -134,11 +134,8 @@ public partial class LoginScene : Control
 
     /// <summary>OnGameExit (FUN_1418fc760, uichatballoon.cpp:467): FUN_140d73bc0(0x288 s_msg_game_over, 0x17, 0, "gameexit");
     /// the message box layer's yes answer quits (GameFlow).</summary>
-    void ShowGameExitBox()
-    {
-        var common = new GameStrings(assets.Packs, assets.Language).Common();
-        MessageBoxQueue.ShowMessageBox(common("s_msg_game_over") ?? "", 0x17, null, "gameexit");
-    }
+    void ShowGameExitBox() =>
+        Ms2.Ui.Hud.QuitFlow.ShowExitConfirm(new GameStrings(assets.Packs, assets.Language).Common());
 
     /// <summary>
     /// The login background as it is when the character select opens over it: the login dialog gone (the client

@@ -173,6 +173,7 @@ public partial class CharacterListScene : LobbyFieldScene
         controller.CreateCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnCreatePC);
         controller.DeleteCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC);
         controller.ServerList += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnSceneLobbyServer);
+        controller.GameExit += () => Ms2.Ui.Hud.QuitFlow.ShowExitConfirm(new GameStrings(assets.Packs, assets.Language).Common());
         controller.Swapped += (a, b) =>
         {
             var list = Flow.Session.List();

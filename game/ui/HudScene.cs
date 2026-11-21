@@ -388,7 +388,7 @@ public partial class HudScene : Node, IUiStageHost
     public static event Action SystemMenuSelectCharacter;
     /// <summary>OnGameExit (FUN_1418fc760, uichatballoon.cpp:467): FUN_140d73bc0(0x288 s_msg_game_over, 0x17, 0, "gameexit").</summary>
     static void ShowGameExitBox(Func<string, string> common) =>
-        MessageBoxQueue.ShowMessageBox(common("s_msg_game_over") ?? "", 0x17, null, "gameexit");
+        Ms2.Ui.Hud.QuitFlow.ShowExitConfirm(common);
 
     /// <summary>A scripted click on the shown box's button <paramref name="n"/>.</summary>
     public void ClickMessageBox(int n) => MessageBoxLayer.Instance?.Click(n);
@@ -894,7 +894,7 @@ public partial class HudScene : Node, IUiStageHost
             ChatLine = ChatLog.AddSystemLine,
             MessageBox = (t, tag) => MessageBoxQueue.ShowMessageBox(t, 0, null, tag),
             SystemSound = key => GD.Print($"notice: system sound {key} is not played"),
-            ForcedQuit = () => GD.Print("notice: forced quit (SendRequestQuitAndDisconnect is not ported)"),
+            ForcedQuit = () => { live.SendRequestQuitAndDisconnect(); Ms2Godot.Flow.GameFlow.ReturnToLogin(); },
             MaintenanceExit = () => GD.Print("notice: the maintenance exit call is not ported"),   // FUN_140d86260()->vfunc_58(0x289, 0)
         };
     }

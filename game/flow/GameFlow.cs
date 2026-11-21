@@ -40,6 +40,12 @@ public partial class GameFlow : Node
     int loadingFrames = -1;
     string shotDir;
     bool boxScript;
+    Action onSelectCharacter;
+    Action onGameExit;
+    Action<GameToLogin> onGameToLogin;
+
+    /// <summary>Returns the flow to the login scene (e.g. forced-quit notice, scenestategame.cpp:9268).</summary>
+    public static void ReturnToLogin() => instance?.Go(State.Login);
 
     public static void Start(SceneTree tree)
     {
@@ -66,14 +72,30 @@ public partial class GameFlow : Node
         Ui.LauncherScene.Connect += OnLauncherConnect;
 
 
-        // the system menu's entries that leave the field (Ui.HudScene, uisystemmenudialog): OnSelectCharacter sends RequestQuit, whose answer
-        // returns to character select; offline that is the lobby at once (the request packet is not ported)
-        Ui.HudScene.SystemMenuSelectCharacter += () => { if (Current == State.Game) Go(State.Lobby); };
-        // OnGameExit: the HUD's message box 0x288 (s_msg_game_over, tag "gameexit"); its yes answer quits
-        // (UIMessageBox::HandleGameexitButton: SendRequestQuitAndDisconnect is not ported, PostQuitMessage(0))
-        Ui.MessageBoxLayer.GameExit += () => GetTree().Quit(0);
+        // Intercept OS window close so WM_CLOSE can show the confirm box outside Login (windowservice.cpp:772-784).
+        GetTree().AutoAcceptQuit = false;
+
+        // UISystemMenuDialog::OnSelectCharacter (@0x141b14600, uisystemmenudialog.cpp:461-464): sends RequestQuit(0)
+        // when live (OnGameToLogin returns to Lobby); offline returns to Lobby immediately.
+        onSelectCharacter = () =>
+        {
+            if (Current != State.Game) return;
+            if (Net.LiveSession.Instance is { } live) live.SendRequestQuit();
+            else Go(State.Lobby);
+        };
+        Ui.HudScene.SystemMenuSelectCharacter += onSelectCharacter;
+
+        // UIMessageBox::HandleGameexitButton(0) (@0x1419fb480, uimessagebox.cpp:1225-1237):
+        // SendRequestQuitAndDisconnect (RequestQuit(1) + close socket), restore display mode, then exit.
+        onGameExit = QuitNow;
+        Ui.MessageBoxLayer.GameExit += onGameExit;
 
         Net.LiveSession.Attach(this);
+        if (Net.LiveSession.Instance is { } liveSession)
+        {
+            onGameToLogin = m => { if (m.Ok && Current == State.Game) Go(State.Lobby); };
+            liveSession.GameToLoginReceived += onGameToLogin;
+        }
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
         string liveLogin = Net.LiveSession.EnvironmentLogin;
@@ -83,10 +105,39 @@ public partial class GameFlow : Node
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }
     }
 
-    /// <summary>The client restores the desktop's display mode on WM_CLOSE and WM_DESTROY (windowservice.cpp:772-790).</summary>
+    static int SceneIdFor(State state) => state switch
+    {
+        State.Login => Ms2.Ui.Hud.QuitFlow.LoginSceneId,
+        State.Lobby => Ms2.Ui.Hud.QuitFlow.LobbySceneId,
+        State.Create => Ms2.Ui.Hud.QuitFlow.CreateSceneId,
+        State.Loading => Ms2.Ui.Hud.QuitFlow.LoadingSceneId,
+        _ => Ms2.Ui.Hud.QuitFlow.GameSceneId,
+    };
+
+    void QuitNow()
+    {
+        Net.LiveSession.Instance?.SendRequestQuitAndDisconnect();
+        DisplayNative.RestoreDisplayMode();
+        GetTree().Quit(0);
+    }
+
+    /// <summary>WindowService WM_CLOSE and WM_DESTROY (windowservice.cpp:772-791): restore display mode; outside Login
+    /// show the "gameexit" confirm box instead of exiting immediately.</summary>
     public override void _Notification(int what)
     {
-        if (what == NotificationWMCloseRequest || what == NotificationPredelete) DisplayNative.RestoreDisplayMode();
+        if (what == NotificationWMCloseRequest)
+        {
+            Ms2.Ui.Hud.QuitFlow.HandleWindowClose(
+                SceneIdFor(Current),
+                CommonStrings(),
+                Ui.MessageBoxLayer.Instance != null,
+                DisplayNative.RestoreDisplayMode,
+                QuitNow);
+        }
+        else if (what == NotificationPredelete)
+        {
+            DisplayNative.RestoreDisplayMode();
+        }
     }
 
     public override void _ExitTree()
@@ -102,6 +153,9 @@ public partial class GameFlow : Node
         Ui.LauncherScene.SinglePlayer -= OnLauncherSinglePlayer;
         Ui.LauncherScene.Connect -= OnLauncherConnect;
         Net.LiveSession.ClearServer();
+        if (onSelectCharacter != null) { Ui.HudScene.SystemMenuSelectCharacter -= onSelectCharacter; onSelectCharacter = null; }
+        if (onGameExit != null) { Ui.MessageBoxLayer.GameExit -= onGameExit; onGameExit = null; }
+        if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.GameToLoginReceived -= onGameToLogin; onGameToLogin = null; }
         Session.GameScene = null;
         if (instance == this) instance = null;
     }
