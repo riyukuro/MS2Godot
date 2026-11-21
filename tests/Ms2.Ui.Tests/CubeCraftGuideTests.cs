@@ -36,14 +36,22 @@ public class CubeCraftGuideTests
         return c;
     }
 
-    [Test]
-    public void TheGuideYawSnapsUpWithoutASignBranch()
+    [TestCase(0f, 0f)]
+    [TestCase(1f, 90f)]
+    [TestCase(45f, 90f)]
+    [TestCase(91f, 180f)]
+    [TestCase(200f, 270f)]
+    [TestCase(270f, 270f)]
+    [TestCase(271f, 360f)]
+    [TestCase(300f, 360f)]
+    [TestCase(-30f, 360f)]
+    [TestCase(-100f, 270f)]
+    [TestCase(-150f, 270f)]
+    [TestCase(-179f, 270f)]
+    [TestCase(-200f, 180f)]
+    public void TheGuideYawSnapsUpTheTargetYawHeldInZeroTo360(float target, float guide)
     {
-        Assert.That(CubeCraftState.GuideYawOf(0f), Is.EqualTo(0f));
-        Assert.That(CubeCraftState.GuideYawOf(1f), Is.EqualTo(90f));
-        Assert.That(CubeCraftState.GuideYawOf(-100f), Is.EqualTo(0f));
-        Assert.That(CubeCraftState.GuideYawOf(-179f), Is.EqualTo(-90f));
-        Assert.That(CubeCraftState.GuideYawOf(200f), Is.EqualTo(270f));
+        Assert.That(CubeCraftState.GuideYawOf(target), Is.EqualTo(guide));
     }
 
     [Test]
@@ -68,7 +76,7 @@ public class CubeCraftGuideTests
         c.ModelAttached();
         Assert.That(c.Current.HasGuide, Is.True);
         Assert.That(c.Current.Cell, Is.EqualTo(new Vector3(0f, -150f, 0f)));
-        Assert.That(c.Current.GuideYaw, Is.EqualTo(0f));
+        Assert.That(c.Current.GuideYaw, Is.EqualTo(360f)); // -10 is held as 350
     }
 
     [Test]

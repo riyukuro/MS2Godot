@@ -155,6 +155,18 @@ public class ConfirmPlacementTests
         Assert.That(r.Available, Is.Zero);
     }
 
+    [TestCase(-150f, 270f)]
+    [TestCase(-100f, 270f)]
+    [TestCase(-30f, 0f)]
+    [TestCase(30f, 90f)]
+    [TestCase(150f, 180f)]
+    public void ANegativeTargetYawSendsTheYawOfItsZeroTo360Angle(float target, float sent)
+    {
+        var c = Craft(2, 2, new Owner { TargetYaw = target });
+        Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That(send.Yaw, Is.EqualTo(sent));
+    }
+
     [TestCase(0f, 0f)]
     [TestCase(90f, 90f)]
     [TestCase(180f, 180f)]

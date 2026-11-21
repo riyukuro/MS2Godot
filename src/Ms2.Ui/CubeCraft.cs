@@ -113,8 +113,10 @@ public sealed class CubeCraftState
     }
 
     /// <summary>FUN_1410aa6f0 (:922-925): the target yaw (PCBase::GetTargetYaw, m_f934) snapped up to 90 degrees,
-    /// (float)(int)((z + 89) / 90) * 90 with no sign branch, so it truncates toward 0; then m_fYaw (0) added.</summary>
-    public static float GuideYawOf(float targetYaw) => (float)(int)((targetYaw + 89f) / 90f) * 90f + 0f;
+    /// (float)(int)((z + 89) / 90) * 90 with no sign branch; then m_fYaw (0) added. The client keeps m_f934 in [0, 360)
+    /// (TurnTowardTargetYaw runs NormalizeDegrees on it, pcbase.cpp:1395; FUN_14166dad0 adds 360 to a negative angle,
+    /// :1492), so the owner's yaw, which may be negative, goes through <see cref="NormalizeDegrees"/> first.</summary>
+    public static float GuideYawOf(float targetYaw) => (float)(int)((NormalizeDegrees(targetYaw) + 89f) / 90f) * 90f + 0f;
 
     /// <summary>
     /// Unk_PCCubeCraft::Update (@0x1410ac9b0, cubecraft_2.cpp:1530-1590), from MyPC::vfunc_53 while in cube mode
