@@ -59,8 +59,9 @@ public sealed class OwnTagMagics
         if (attack == null || tags == null || paths == null) return 0;
         if (attack.BrokenOffence == 0 || attack.AttackMethodType == 1 || (skill?.MagicControlEnable ?? 0) == 2) return 0;
         int n = 0;
-        foreach (var t in tags)
+        for (int i = 0; i < tags.Count; i++)
         {
+            var t = tags[i];
             var d = paths.Get(attack.MagicPathId, t.Hit);
             if (d == null) continue;
             live.Add(new Magic
@@ -108,7 +109,9 @@ public sealed class OwnTagMagics
         return true;
     }
 
-    /// <summary>FUN_141464d00's fill then FUN_141462490's registration.</summary>
+    /// <summary>FUN_141464d00's fill then FUN_141462490's registration, one attempt. In the exe an owner that is not the local
+    /// player makes FUN_141464410 return before m_n1CC is set, so the fill is tried again each tick; here the owner is always the
+    /// local player (<see cref="MagicOwner.LocalPlayer"/> false only in the checks), so the magic is dropped instead.</summary>
     static bool Register(Magic m, in MagicOwner owner, TombTagPass pass)
     {
         if (owner.Dead || owner.Stunned || !owner.LocalPlayer) return false;

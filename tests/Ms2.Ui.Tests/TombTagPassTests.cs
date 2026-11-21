@@ -83,6 +83,21 @@ public class TombTagPassTests
     }
 
     [Test]
+    public void APkFieldsTombIsHostileAndSkipped()
+    {
+        var hits = new List<TombHit>();
+        int Run(int pkMode)
+        {
+            var pass = new TombTagPass();
+            pass.Register(Tag(), Box(Vector3.Zero));
+            var t = new TombTarget(9, TombTagPass.HostileInField(pkMode), Tomb(), new Vector3(0, -100, 0), Vector3.Zero);
+            return pass.Run(new[] { t }, hits);
+        }
+        Assert.That(Run(1), Is.EqualTo(0), "pk field: PC::vfunc_122 is hostile, the tomb is skipped");
+        Assert.That(Run(0), Is.EqualTo(1), "no pk: the teams are the same, the Tombstone request goes out");
+    }
+
+    [Test]
     public void TheOwnTombABusyTombNoArrowOrAMissSendNothing()
     {
         var hits = new List<TombHit>();
@@ -93,7 +108,7 @@ public class TombTagPassTests
             return pass.Run(new[] { t }, hits);
         }
         var at = new Vector3(0, -100, 0);
-        Assert.That(Run(new TombTarget(9, true, Tomb(), at, Vector3.Zero), Vector3.Zero), Is.EqualTo(0), "IsOwnedBy the local player");
+        Assert.That(Run(new TombTarget(9, true, Tomb(), at, Vector3.Zero), Vector3.Zero), Is.EqualTo(0), "hostile (slot 122)");
         Assert.That(Run(new TombTarget(9, false, Tomb(arrow: false), at, Vector3.Zero), Vector3.Zero), Is.EqualTo(0), "no reactionArrow");
         var hit = Tomb();
         hit.Apply(1, 5, 0);                         // the server's hit: state 6 for 1000 ms

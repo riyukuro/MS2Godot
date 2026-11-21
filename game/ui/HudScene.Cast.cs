@@ -893,6 +893,7 @@ public partial class HudScene
         unwatchOwnSkill?.Invoke();
         if (Net.LiveSession.Instance is not { } live) return;
         live.SkillRows = id => hudModel?.Tables.Skills.GetSkillData(id);
+        _ = hudModel?.Tables.MagicPaths;   // read now, not in the frame of the first own attack (LoadMagicPath runs at the table load)
         Action<long, int> on = (uid, state) =>
         {
             if (state != 0x10 || ownCast == null || player == null || (object)player.SkillSequence != ownSequence) return;

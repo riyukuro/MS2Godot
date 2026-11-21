@@ -586,15 +586,27 @@ public sealed partial class RemoteLayer : Node3D
     public readonly Ms2.Ui.Hud.TombTagPass TombTags = new();
     Ms2.Ui.Hud.TombTarget[] tombTargets = new Ms2.Ui.Hud.TombTarget[8];
     readonly List<Ms2.Ui.Hud.TombHit> tombHits = new();
+    int? tombPkField;
+    int tombPkMode;
 
     /// <summary>
     /// WorldService::FUN_141bc3560's tomb loop (worldservice_1.cpp:9319-9375), run from the world tick only while an area is
     /// registered: every other PC's standing tomb, at its node's place in client space (z up, unrotated: PC::FUN_14165cac0 places
-    /// it at the PC); each hit sends the Tombstone request (0x2A). The local player owns none of these (its own tomb is not here).
+    /// it at the PC); each hit sends the Tombstone request (0x2A). A tomb is skipped while its PC is hostile to the local player
+    /// (TombTagPass.HostileInField of the field's pkMode, read once per field).
     /// STILL-OPEN: PlayHitSound of the tomb's SoundMaterial.
     /// </summary>
     void RunTombTags()
     {
+        int? fieldId = LiveSession.Instance?.FieldId;
+        if (fieldId != tombPkField)
+        {
+            tombPkField = fieldId;
+            tombPkMode = 0;
+            try { if (fieldId is int fid) tombPkMode = FieldData.FindById(packs, fid)?.PkMode ?? 0; }
+            catch (Exception ex) { GD.PushWarning($"tomb tags field data: {ex.Message}"); }
+        }
+        bool hostile = Ms2.Ui.Hud.TombTagPass.HostileInField(tombPkMode);
         int n = 0;
         foreach (var (id, r) in users)
         {
@@ -602,7 +614,7 @@ public sealed partial class RemoteLayer : Node3D
             if (tomb == null || !IsInstanceValid(tomb) || !tomb.IsInsideTree() || tomb.State == null) continue;
             if (n == tombTargets.Length) Array.Resize(ref tombTargets, n * 2);
             var g = tomb.GlobalPosition;
-            tombTargets[n++] = new Ms2.Ui.Hud.TombTarget(id, false, tomb.State, new System.Numerics.Vector3(g.X, -g.Z, g.Y), System.Numerics.Vector3.Zero);
+            tombTargets[n++] = new Ms2.Ui.Hud.TombTarget(id, hostile, tomb.State, new System.Numerics.Vector3(g.X, -g.Z, g.Y), System.Numerics.Vector3.Zero);
         }
         int hits = TombTags.Run(new ReadOnlySpan<Ms2.Ui.Hud.TombTarget>(tombTargets, 0, n), tombHits);
         Array.Clear(tombTargets, 0, n);

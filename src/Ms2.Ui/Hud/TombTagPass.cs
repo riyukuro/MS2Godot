@@ -18,9 +18,9 @@ public sealed class TagRecord
     public Action Hit;
 }
 
-/// <summary>Another PC's standing tomb, as the pass sees it: the PC's object id, whether the local player owns it
-/// (GameObject::IsOwnedBy, vfunc 122) and the tomb at its position and rotation.</summary>
-public readonly record struct TombTarget(int ObjectId, bool OwnedByLocal, Tombstone Tomb, Vector3 Position, Vector3 RotDegrees);
+/// <summary>Another PC's standing tomb, as the pass sees it: the PC's object id, whether it is hostile to the local player
+/// (slot 122, see <see cref="TombTagPass.HostileInField"/>) and the tomb at its position and rotation.</summary>
+public readonly record struct TombTarget(int ObjectId, bool Hostile, Tombstone Tomb, Vector3 Position, Vector3 RotDegrees);
 
 /// <summary>A tomb the pass hit: the packet it sent and the hit sound FUN_140ade030(1, 1) plays.</summary>
 public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Vector3 Position);
@@ -33,10 +33,12 @@ public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Ve
 /// area. The one caller is CMagic::FUN_141462490 (magicdata.cpp:1594): the attack's flag or brokenOffence set, the delay due
 /// (m_n1D0 0) and the owner, or the rider of the owner's ridee, the local player.</item>
 /// <item>The pass (:9319-9375), with any area registered: each PC whose sensor is its tomb (PC::FUN_14165ca50: the tomb only
-/// while FUN_140addea0 holds, hittable and idle) and that the local player does not own; with reactionArrow (FUN_140adf310)
+/// while FUN_140addea0 holds, hittable and idle) and that is not hostile to the local player (slot 122 at +0x3d0, :9333:
+/// PC::vfunc_122, <see cref="HostileInField"/>); with reactionArrow (FUN_140adf310)
 /// the first area whose record has not entered this tomb and that intersects the tomb's box (CBaseCollision::Intersect of the
 /// area and GetBox) is the hit: the record keeps the tomb's entity id, the hitter is 1 (the area level read there is dead),
-/// FUN_140ade030(1, 1) plays the hit sound (VolumeMyPcToBreakableObject) and starts the hit timer, the Tombstone packet
+/// FUN_140ade030(1, 1) plays the hit sound (VolumeMyPcToBreakableObject) and starts the hit timer (not ported: the tomb's
+/// state is the server's, and FUN_140addea0 does not read that timer for IsTombStone), the Tombstone packet
 /// (0x2A: object id, hitter) goes out, then the record's FUN_1417591b0.</item>
 /// </list>
 /// m_3f0 is a tree keyed by the record pointer, so its order is the heap's; here it is the registration order.
@@ -61,6 +63,15 @@ public sealed class TombTagPass
         return true;
     }
 
+    /// <summary>
+    /// The local player's slot 122 test on another PC in a field of <paramref name="pkMode"/>: PC::vfunc_122 @0x14165f5d0
+    /// (pc.cpp:3112) is hostile in a pk field, else PCBase::vfunc_122 (pcbase.cpp:2784) compares the teams, which here are the
+    /// same; the rule SkillHit.FilterTarget uses for PCs.
+    /// STILL-OPEN: the pk field's exceptions (the same guild id, FUN_141661bc0; either side's pvp on/off) and the team
+    /// compare are not fed, as in LiveNameTags.
+    /// </summary>
+    public static bool HostileInField(int pkMode) => pkMode != 0;
+
     /// <summary>The pass over <paramref name="tombs"/>: each hit goes to <paramref name="hits"/> (cleared first); the areas are
     /// emptied. Returns the number of hits.</summary>
     public int Run(ReadOnlySpan<TombTarget> tombs, List<TombHit> hits)
@@ -70,7 +81,7 @@ public sealed class TombTagPass
         foreach (var t in tombs)
         {
             var tomb = t.Tomb;
-            if (tomb == null || !tomb.CanBeHit || t.OwnedByLocal || !tomb.ReactionArrow) continue;
+            if (tomb == null || !tomb.CanBeHit || t.Hostile || !tomb.ReactionArrow) continue;
             var box = tomb.Box(t.Position, t.RotDegrees);
             foreach (var (tag, area) in areas)
             {
