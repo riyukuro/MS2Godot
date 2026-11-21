@@ -15,7 +15,8 @@ namespace Ms2Godot.Tests;
 /// of its own over black, and compares the centre pixel with the value the client's opacity gives:
 /// the NiAlphaController alpha, the vertex alpha (EMISSIVE + LIGHTING_E, AMB_DIFF + E_A_D), the test on the opacity, ONE / ONE
 /// unweighted, the z write of a blended mesh, DRAW_BOTH, the blink's node alpha (NodeFade), the glow pass's opacity, the closest-point alpha sort, and an
-/// effect mesh's unsaturated colour (EffectInstance).
+/// effect mesh's unsaturated colour (EffectInstance). Each view converts through Ms2Bloom.GammaOut(), as the game's views without
+/// bloom do.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class AlphaRenderCheck : Node
@@ -63,7 +64,7 @@ public partial class AlphaRenderCheck : Node
         var vp = new SubViewport { Size = new Vector2I(Size, Size), OwnWorld3D = true, RenderTargetUpdateMode = SubViewport.UpdateMode.Always, Msaa3D = Viewport.Msaa.Disabled };
         vp.AddChild(new WorldEnvironment { Environment = new Godot.Environment { BackgroundMode = Godot.Environment.BGMode.Color, BackgroundColor = Colors.Black } });
         AddChild(vp);
-        vp.AddChild(new Camera3D { Name = "Cam", CullMask = mask, Current = true, Fov = 40 });
+        vp.AddChild(new Camera3D { Name = "Cam", CullMask = mask, Current = true, Fov = 40, Compositor = Ms2Bloom.GammaOut() });   // the game's gamma conversion for views without bloom
         return vp;
     }
 
@@ -302,6 +303,15 @@ public partial class AlphaRenderCheck : Node
             var err = check(c);
             GD.Print($"alpha_render: {name} {L(c)} {(err == null ? "ok" : "FAIL")}");
             if (err != null) fails.Add($"{name}: {err}");
+        }
+        // each view converts through the game's Ms2Bloom.GammaOut(), not GammaGuard's environment fallback (an error per view)
+        foreach (var (name, vp, _) in cases)
+        {
+            var cam = vp.GetNodeOrNull<Camera3D>("Cam");
+            bool own = false;
+            if (cam?.Compositor?.CompositorEffects is { } effects)
+                foreach (var e in effects) own |= e is Ms2Bloom { Ready: true, Failed: false };
+            if (!own) fails.Add($"{name}: the view has no working Ms2Bloom conversion (GammaGuard falls back)");
         }
         foreach (var f in fails) GD.PrintErr("FAIL " + f);
         GD.Print(fails.Count == 0 ? "alpha_render: ALL OK" : $"alpha_render: {fails.Count} FAILED");
