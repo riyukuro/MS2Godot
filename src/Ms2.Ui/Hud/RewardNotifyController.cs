@@ -93,6 +93,17 @@ public sealed class RewardNotifyController : UiController
     public void ShowLearnEmotion(string emotionName, string icon) =>
         AppendReward(Host.Obj(("type", "icon"), ("msg", Fmt(0x85b, emotionName)), ("icon", icon), ("grade", 1)));
 
+    /// <summary>The skill data of an id (SkillDataTableCli::GetSkillData); null uses the model's table.</summary>
+    public Func<uint, Ms2.Ui.Skills.SkillData> Skill;
+
+    /// <summary>OnNotifyLearnEmotion (@0x141abea10) to FUN_141abffa0: the skill data of the id; nothing unless it is an emotion;
+    /// the toast carries the skill's name and icon.</summary>
+    public void OnLearnEmotion(int emotionId)
+    {
+        if ((Skill ?? Model.Tables.Skills.GetSkillData)((uint)emotionId) is not { IsEmotion: true } d) return;
+        ShowLearnEmotion(Model.Tables.SkillName((uint)emotionId), d.Icon);
+    }
+
     /// <summary>FUN_141ac0210 (@0x141ac0210), one learned skill: msg 0x804, skillType, skillIconPath; the caller plays PC_SkillGet once.</summary>
     public void ShowLearnSkill(string skillName, bool skillType, string icon) =>
         AppendReward(Host.Obj(("type", "learn_skill"), ("msg", Fmt(0x804, skillName)), ("skillType", skillType ? 1 : 0), ("skillIconPath", icon)));

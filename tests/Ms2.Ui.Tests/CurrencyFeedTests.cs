@@ -111,6 +111,16 @@ public class CurrencyFeedTests
     }
 
     [Test]
+    public void TokenReceivePostsNotifyChangedTokenMoneyWithTypeAndDelta()
+    {
+        var (feed, _, _) = Make();
+        var got = new System.Collections.Generic.List<(int, long)>();
+        feed.TokenMoneyNotice = (type, delta) => got.Add((type, delta));
+        feed.OnCurrencyToken(new CurrencyTokenUpdate(6, 1050, 1000, 0, 0));
+        Assert.That(got, Is.EqualTo(new[] { (6, 1000L) }));
+    }
+
+    [Test]
     public void TokenGainAddsATakeLineOfKindSeven()
     {
         var (feed, _, seen) = Make();

@@ -161,4 +161,22 @@ public class RewardNotifyTests
         Assert.That(msg, Does.Contain("1234567"));
         Assert.That(msg, Does.Not.Contain("1,234,567"));
     }
+
+    [Test]
+    public void LearnEmotionToastsOnlyAnEmotionSkill()
+    {
+        var (_, c, _) = Load();
+        c.Skill = id => id switch
+        {
+            7 => new Ms2.Ui.Skills.SkillData { Id = 7, MainType = 14, Icon = "emote.png" },
+            8 => new Ms2.Ui.Skills.SkillData { Id = 8, MainType = 3, Icon = "other.png" },
+            _ => null,
+        };
+        c.Block = true;
+        c.OnLearnEmotion(0);
+        c.OnLearnEmotion(8);
+        Assert.That(c.Pending, Is.EqualTo(0));
+        c.OnLearnEmotion(7);
+        Assert.That(c.Pending, Is.EqualTo(1));
+    }
 }

@@ -21,6 +21,9 @@ public sealed class CurrencyFeed(UiModel model)
     public Action<long> MeratRedNotice;
     /// <summary>NotifyChangedTokenMoney: the token pocket redraws its amounts.</summary>
     public Action TokenChanged;
+    /// <summary>The NotifyChangedTokenMoney posted after the take line (scenestategame.cpp:7114): the token type and the delta
+    /// (the notice's kind at +0x18 and count at +0x28); UIRewardNotify::OnNotifyChangedTokenMoney shows its toast.</summary>
+    public Action<int, long> TokenMoneyNotice;
     /// <summary>Unk_SSGFormatMsg(0x2f6, 1, 1, ...): a centre notice.</summary>
     public Action<string> Notice;
 
@@ -88,6 +91,7 @@ public sealed class CurrencyFeed(UiModel model)
         }
         model.Notify(StatusEvent.TokenMoney);
         TokenChanged?.Invoke();
+        TokenMoneyNotice?.Invoke(m.Type, m.Delta);
         if (m.Overflow != 0)
         {
             string name = model.Tables.ItemName(TokenCurrency.ItemId(m.Type, 99)) ?? "";

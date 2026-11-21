@@ -2181,6 +2181,7 @@ public partial class HudScene : Node, IUiStageHost
         Notice = SystemNoticeText,
         MeratNotice = v => EnsureRewardNotify().ShowMeratNotice(v),
         MeratRedNotice = v => EnsureRewardNotify().ShowMeratRedNotice(v),
+        TokenMoneyNotice = (type, delta) => EnsureRewardNotify().NotifyChangedTokenMoney(type, delta),
     };
 
     /// <summary>The upper HUD runs on its own model: the balances the feed stored on the HUD player go to it and its status event follows
@@ -2229,11 +2230,14 @@ public partial class HudScene : Node, IUiStageHost
         Action<Ms2.Net.Packets.CurrencyTokenUpdate> onToken = currencyFeed.OnCurrencyToken;
         Action<Ms2.Net.Packets.SystemSound> onSound = m => { if (m.Key.Length > 0) FieldAudio.Instance?.PlayUi(m.Key); };
         Action<Ms2.Net.Packets.SmartPushMessage> onPush = OnSmartPush;
+        // NotifyLearnEmotion (scenestategame.cpp:2561) reaches UIRewardNotify::OnNotifyLearnEmotion
+        Action<int> onEmotion = id => EnsureRewardNotify().OnLearnEmotion(id);
+        live.Emotions.Learned += onEmotion;
         live.MeretReceived += onMeret; live.MeretUseReceived += onMeretUse; live.CurrencyTokenReceived += onToken;
         live.SystemSoundReceived += onSound; live.SmartPushReceived += onPush;
         unwatchMeso = () =>
         {
-            live.MesoChanged -= onMeso; live.ItemDropNoticed -= onDrop;
+            live.MesoChanged -= onMeso; live.ItemDropNoticed -= onDrop; live.Emotions.Learned -= onEmotion;
             live.MeretReceived -= onMeret; live.MeretUseReceived -= onMeretUse; live.CurrencyTokenReceived -= onToken;
             live.SystemSoundReceived -= onSound; live.SmartPushReceived -= onPush;
         };
@@ -3291,6 +3295,9 @@ public partial class HudScene : Node, IUiStageHost
         };
         skillBook = c; skillBookMovie = m;
         uiRoot.AddChild(m);
+        // UISkillBookTreeDialog::OnLoadInit (uiskillbookautodistributedialog.cpp:538) tells a loaded reward notify it opened, vfunc_67 (:514) that it closed
+        rewardNotify?.NotifySkillBookDialog(true);
+        c.Unloaded += () => rewardNotify?.NotifySkillBookDialog(false);
     }
 
     // ---- MS2_PERF: the timing run (PerfLog) -------------------------------------------------------------------------
