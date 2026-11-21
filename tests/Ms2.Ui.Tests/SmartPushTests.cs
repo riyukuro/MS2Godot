@@ -8,11 +8,14 @@ namespace Ms2.Ui.Tests;
 public class SmartPushTests
 {
     const string Xml = "<ms2>" +
-        "<push id='1' content='a' actionType='additionalEffect' actionValue='70000001' requireMerat='0' imgPath='x.png'/>" +
-        "<push id='2' content='b' actionType='AUTOINTERACTION' actionValue='5' requireMerat='300' requireItem='20300001:tag,1,4'/>" +
+        "<push id='1' content='SafeRiding' actionType='additionalEffect' actionValue='70000001' requireMerat='0' imgPath='x.png'/>" +
+        "<push id='2' content='AutoMining' actionType='AUTOINTERACTION' actionValue='5' requireMerat='300' requireItem='20300001:tag,1,4'/>" +
         "<push id='3' content='c' actionType='other' requireItem='1,2'/>" +
         "<push id='4' content='d' actionType='additionalEffect' feature='Off'/>" +
-        "<push id='1' content='again' actionType='additionalEffect' actionValue='70000002'/>" +
+        "<push id='5' content='SafeWaterRidingToggle' actionType='additionalEffect' actionValue='70000005'/>" +
+        "<push id='6' content='AutoFishing' actionType='additionalEffect' actionValue='70000006'/>" +
+        "<push id='7' content='NoSuchClass' actionType='additionalEffect' actionValue='70000007'/>" +
+        "<push id='1' content='AutoPlayInstrument' actionType='additionalEffect' actionValue='70000002'/>" +
         "</ms2>";
 
     static SmartPushTable Table() => new(XDocument.Parse(Xml), e => (string)e.Attribute("feature") == null);
@@ -21,7 +24,7 @@ public class SmartPushTests
     public void TableParsesRowsLikeCSmartPushTableLoad()
     {
         var t = Table();
-        Assert.That(t.Count, Is.EqualTo(2), "id 3 (two item parts) and id 4 (unavailable) are dropped");
+        Assert.That(t.Count, Is.EqualTo(5), "id 3 (two item parts) and id 4 (unavailable) are dropped");
         Assert.That(t.Get(1).ActionValue, Is.EqualTo(70000002), "a later row replaces an earlier one (SetAt)");
         var p = t.Get(2);
         Assert.That((p.ActionType, p.ActionValue, p.RequireMerat), Is.EqualTo((2, 5, 300)), "Parse_140219650 is case-insensitive");
@@ -33,7 +36,7 @@ public class SmartPushTests
     {
         var n = new List<string>(); var b = new List<MessageBoxData>(); var s = new List<(int, int, bool)>();
         notices = n; boxes = b; sent = s;
-        var strings = new Dictionary<string, string> { ["s_smartpush_active"] = "{0} active", ["s_err_lack_merat_ask"] = "Charge?" };
+        var strings = new Dictionary<string, string> { ["s_smartpush_active"] = "{0} active", ["s_mastery_autointeraction_result"] = "gain {0} {1}", ["s_err_lack_merat_ask"] = "Charge?" };
         return new SmartPushNotices(Table(), k => strings[k], (id, lv) => $"effect{id}L{lv}")
         {
             SystemNotice = n.Add, ShowBox = b.Add, SendAnswer = (i, c, a) => s.Add((i, c, a)),
@@ -41,13 +44,42 @@ public class SmartPushTests
     }
 
     [Test]
-    public void PositionalPushSaysItsEffectIsActiveAtLevelOne()
+    public void PositionalPushIsDispatchedOnItsContentClass()
     {
         var p = Make(out var notices, out _, out _);
-        p.OnPositional(1, 0);      // vfunc_4 (smartpush.cpp:309): type 1 -> s_smartpush_active with the effect's level 1 name
-        p.OnPositional(2, 0);      // autoInteraction: nothing
-        p.OnPositional(99, 0);     // no such push: nothing (FUN_140dd86a0 Lookup fails)
+        p.OnPositional(1, 0);      // AutoPlayInstrument: CSmartPush::vfunc_4 (smartpush.cpp:309), s_smartpush_active with the level 1 name
+        p.OnPositional(5, 0);      // SafeWaterRidingToggle::vfunc_4 (:1089) is empty
+        p.OnPositional(7, 0);      // content with no class: CreatePushes (smartpushmanager.cpp:79) makes no push
+        p.OnPositional(99, 0);     // no such push (FUN_140dd86a0 Lookup fails)
         Assert.That(notices, Is.EqualTo(new[] { "effect70000002L1 active" }));
+    }
+
+    [Test]
+    public void AutoFishingRunsTheBaseNoticeThenItsResult()
+    {
+        var p = Make(out var notices, out _, out _);
+        int ran = 0;
+        p.AutoFishingResult = () => ran++;
+        p.OnPositional(6, 0);      // :492 CSmartPush::vfunc_4 first, then mode 9 and the option save
+        Assert.That(notices, Is.EqualTo(new[] { "effect70000006L1 active" }));
+        Assert.That(ran, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AutoInteractionSaysTheResultAndAddsToTheGatherCount()
+    {
+        var p = Make(out var notices, out _, out _);
+        var mastery = new List<string>();
+        p.OnPositional(2, 3);                                  // no recipe source: silent
+        Assert.That(p.GatherCounts, Is.Empty);
+        p.RecipeOf = content => content == "AutoMining" ? 11 : 0;
+        p.RecipeName = r => "recipe" + r;
+        p.MasteryNotice = mastery.Add;
+        p.OnPositional(2, 3);                                  // :1096: s_mastery_autointeraction_result(value, name), count += value
+        p.OnPositional(2, 4);
+        Assert.That(mastery, Is.EqualTo(new[] { "gain 3 recipe11", "gain 4 recipe11" }));
+        Assert.That(p.GatherCounts[11], Is.EqualTo(7));
+        Assert.That(notices, Is.Empty, "not the system notice kind 1");
     }
 
     [Test]

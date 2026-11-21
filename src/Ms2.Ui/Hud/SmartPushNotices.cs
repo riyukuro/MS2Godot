@@ -34,12 +34,60 @@ public sealed class SmartPushNotices
         effectName = additionalEffectName;
     }
 
-    /// <summary>FUN_140dd86a0 then CSmartPush::vfunc_4: an additionalEffect push (type 1) says its effect, at level 1, is
-    /// active ("s_smartpush_active" with the effect's name); an unknown id or another type shows nothing.</summary>
+    /// <summary>The push classes CSmartPushManager::CreatePushes finds by "CSmartPush{content}" (smartpushmanager.cpp:79), the
+    /// types registered in smartpush.cpp. Any other content has no class: no push.</summary>
+    enum PushClass { None, Base, AutoFishing, Toggle, AutoInteraction }
+
+    static PushClass ClassOf(string content) => content switch
+    {
+        "AutoPlayInstrument" or "SafeRiding" or "SafeWaterRiding" => PushClass.Base,      // vfunc_4 is CSmartPush's (:309)
+        "AutoFishing" => PushClass.AutoFishing,                                          // :492
+        "SafeWaterRidingToggle" => PushClass.Toggle,                                     // :1089, empty
+        "AutoGathering" or "AutoMining" or "AutoBreeding" or "AutoFarming"
+            or "AutoGatheringBuff" or "AutoMiningBuff" or "AutoBreedingBuff" or "AutoFarmingBuff" => PushClass.AutoInteraction,   // :1096
+        _ => PushClass.None,
+    };
+
+    /// <summary>The mastery recipe id of the nearby object (CSmartPushAutoInteraction::vfunc_14, from the content). STILL-OPEN: the
+    /// field's nearby gathering / cube object and the best buff item are not asked here; null leaves AutoInteraction pushes silent.</summary>
+    public Func<string, int> RecipeOf;
+    /// <summary>CStringTable::FUN_141811980(0x2f, recipe): the recipe's name.</summary>
+    public Func<int, string> RecipeName;
+    /// <summary>ShowSystemNotice(text, 3, 1): the mastery result line. STILL-OPEN: the kind 3 styling is not ported.</summary>
+    public Action<string> MasteryNotice;
+    /// <summary>CSmartPushAutoFishing::vfunc_4's tail: SendFishingMode9 when the fishing manager has a rod out, then the option
+    /// saved. STILL-OPEN: the fishing manager and the character options are not wired.</summary>
+    public Action AutoFishingResult;
+
+    /// <summary>g_143ab3150: the gather count per recipe id, which AutoInteraction results add to.</summary>
+    public Dictionary<int, int> GatherCounts { get; } = new();
+
+    /// <summary>FUN_140dd86a0 (smartpushmanager.cpp:133) then the push's vfunc_4. The push exists only when the content has a class
+    /// (CreatePushes), and the class decides: the base (:309) says an additionalEffect row's effect, at level 1, is active
+    /// ("s_smartpush_active" with its name); the toggle shows nothing; AutoInteraction (:1096) says
+    /// s_mastery_autointeraction_result with the value and the recipe's name and adds the value to the recipe's gather count;
+    /// AutoFishing runs the base notice, then <see cref="AutoFishingResult"/>.</summary>
     public void OnPositional(int id, int value)
     {
         var d = table.Get(id);
-        if (d == null || d.ActionType != SmartPushTable.ActionAdditionalEffect) return;
+        if (d == null) return;
+        switch (ClassOf(d.Content))
+        {
+            case PushClass.Base: BaseResult(d); break;
+            case PushClass.AutoFishing: BaseResult(d); AutoFishingResult?.Invoke(); break;
+            case PushClass.AutoInteraction:
+                if (RecipeOf == null) break;
+                int recipe = RecipeOf(d.Content);
+                MasteryNotice?.Invoke(ClientFormat.Format(common("s_mastery_autointeraction_result"), value, RecipeName?.Invoke(recipe) ?? ""));
+                GatherCounts.TryGetValue(recipe, out int used);
+                GatherCounts[recipe] = used + value;
+                break;
+        }
+    }
+
+    void BaseResult(SmartPushTable.Data d)
+    {
+        if (d.ActionType != SmartPushTable.ActionAdditionalEffect) return;
         string name = effectName?.Invoke(d.ActionValue, 1) ?? "";
         SystemNotice?.Invoke(ClientFormat.Format(common("s_smartpush_active"), name));
     }
