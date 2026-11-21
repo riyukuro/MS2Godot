@@ -79,10 +79,6 @@ public sealed class ChatEmoticonState
         return new ChatStickerListRequest(groups.Where(g => now > g.Expire).Select(g => g.Id).ToList());
     }
 
-    /// <summary>SetEmoticonFavorite (uimessenger.cpp:1477) request; null (nothing sent) when the emoticon is not usable.</summary>
-    public ChatStickerFavoriteRequest FavoriteRequest(uint id, bool favorite) =>
-        IsEmoticonUsable(id) ? new ChatStickerFavoriteRequest((int)id, favorite) : null;
-
     /// <summary>
     /// DispatchPacket (@0x140a3a700): the handler of the message's type.
     /// 0 (@0x140a38fa0): m_ids and m_groups replaced, the dialog cleared and refreshed.

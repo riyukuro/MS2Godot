@@ -1017,6 +1017,79 @@ public sealed class MessengerController : UiController
     /// <summary>ASData::PopFloat / PopInt of the argument at that place, truncated; 0 when missing.</summary>
     static int ArgInt(object[] args, int i) => i < args.Length ? (int)Rt.ToNumber(args[i]) : 0;
 
+    // ---- chat emoticons (uimessenger.cpp:1265-1500, :1689) -------------------------------------------------------------
+
+    ChatEmoticons.ChatEmoticon FindEmoticon(uint id) => Model?.Tables.ChatEmoticonData.GetEmoticon(id);
+
+    /// <summary>
+    /// OnChatEmoticonSelected (@0x141a0f5d0, :1265): a pick for another window closes this window's preview; an unknown
+    /// emoticon, no emoticon state or one the player cannot use does nothing; else the preview of it is shown and the window
+    /// goes on top.
+    /// </summary>
+    public void OnChatEmoticonSelected(string target, uint id)
+    {
+        if (target != Name) { CloseEmoticonPreview(); return; }
+        var emo = FindEmoticon(id);
+        if (emo == null) return;
+        var cli = Browser.ChatEmoticons;
+        if (cli == null || !cli.IsEmoticonUsable(emo.Id)) return;
+        ShowEmoticonPreview(new[] { emo });
+        Host.Invoke("setTopMostLayer");       // UIDialog::SetTopMostLayer (@0x1419235d0)
+    }
+
+    /// <summary>
+    /// TypeEmoticon (@0x141a10010, :1440): the emoticon's img tag line is submitted. When the input holds a slash command of
+    /// the whisper chat type (4) with a target, the line starts with "command target "; without such a prefix the target
+    /// of <paramref name="type"/> is selected first. STILL-OPEN: FUN_140988d60 (the split) is read as a split at spaces
+    /// without empty parts, as the command line parser here does.
+    /// </summary>
+    public void TypeEmoticon(int type, uint id)
+    {
+        var emo = FindEmoticon(id);
+        if (emo == null) return;
+        string size = emo.Width != 0 || emo.Height != 0 ? $"width='{emo.Width}' height='{emo.Height}'" : "";
+        string line = $"<img src='img://emoticon:{emo.Id}' vspace='{emo.VSpace}' {size} />";
+        string prefix = "";
+        if (textInput != null)
+        {
+            string input = UserCommands.Trim(Rt.ToString(Host.Get(textInput, "text")));
+            if (input.Length > 0 && input[0] == '/')
+            {
+                int pos = 0;
+                string command = UserCommands.Tokenize(input, " ", ref pos);
+                string target = UserCommands.Tokenize(input, " ", ref pos);
+                if (command.Length > 0 && target.Length > 0 && (Commands.Find(command)?.ChatType ?? UserCommands.NoChatType) == 4)
+                    prefix = command + " " + target + " ";
+            }
+        }
+        if (prefix.Length == 0) SelectSubject(type);
+        line = prefix + line;
+        SubmitLine(line, line);
+    }
+
+    /// <summary>ShowEmoticonPreview (@0x141a13510, :1689): openChatEmoticonPreview with the emoticons' id, image path, size
+    /// and favorite flag; nothing for none or without the emoticon state.</summary>
+    void ShowEmoticonPreview(IReadOnlyList<ChatEmoticons.ChatEmoticon> emoticons)
+    {
+        if (emoticons.Count == 0) return;
+        var cli = Browser.ChatEmoticons;
+        if (cli == null || Host?.Entity == null) return;
+        var arr = new List<object>();
+        foreach (var e in emoticons)
+            arr.Add(new Dictionary<string, object>
+            {
+                ["id"] = e.Id, ["imgPath"] = e.ImagePath, ["width"] = e.Width, ["height"] = e.Height,
+                ["favorite"] = cli.IsEmoticonFavorite(e.Id),
+            });
+        Host.Invoke("openChatEmoticonPreview", new Dictionary<string, object> { ["emoticonDatas"] = arr });
+    }
+
+    /// <summary>CloseEmoticonPreview (@0x141a13940).</summary>
+    public void CloseEmoticonPreview()
+    {
+        if (Host?.Entity != null) Host.Invoke("closeChatEmoticonPreview");
+    }
+
     /// <summary>FUN_141a0f180 (:1217) -> UIDialog::FUN_141926620 (uidialog.cpp:1056): the align type and offsets from the
     /// window's quarter of the stage.</summary>
     void UpdateAlignAndOffset()

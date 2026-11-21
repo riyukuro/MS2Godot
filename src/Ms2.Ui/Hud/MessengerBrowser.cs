@@ -511,6 +511,8 @@ public sealed class MessengerBrowser
     public Action OpenSuperChatDialog;
     /// <summary>CUIService::ToggleDialog(0x4e7a), the dynamic action dialog (uimessenger.cpp:4052-4055); null does nothing.</summary>
     public Action ToggleDynamicAction;
+    /// <summary>The local player's CChatEmoticonCli (GetMyCharacter()->GetChatEmoticon()); null = none (the client's asserts return).</summary>
+    public ChatEmoticons.ChatEmoticonState ChatEmoticons;
     /// <summary>WorldService::ResetIdleTimer.</summary>
     public Action ResetIdleTimer;
     /// <summary>FUN_141276e00 (:882)'s CBanTextChecker FUN_140225210 of a whisper target; nonzero = refused. STILL-OPEN:
