@@ -57,7 +57,7 @@ public sealed record StorageSortRequest : IOutPacket {
 /// The client side of the bank's sends: each method runs the client's checks in its order and sends only when they pass.
 /// Nothing in the book or the inventory changes here; the server's StorageInventory packets do that.
 /// STILL-OPEN: Unk_Inventory::FUN_140a661e0 is a constant 1 in the client (no check); CItem::FUN_14052a580 (the item's binding
-/// against the character, <see cref="CanMove"/>) is unread and defaults to allowed; the transfer-binding boxes of
+/// against the character, <see cref="CanMove"/>) is unread and defaults to refused, so a withdraw cannot be sent unchecked; the transfer-binding boxes of
 /// StoreSlot::vfunc_26 and the count-input boxes (ShowUseStoreCountInput / ShowSwapStoreCountInput) are not ported, so an item
 /// they would ask about is not sent.
 /// </summary>
@@ -76,7 +76,7 @@ public sealed class StorageSender {
     /// <summary>The local player exists and is not dead (FUN_141b11490's second half).</summary>
     public Func<bool> PlayerAlive = () => true;
     /// <summary>CItem::FUN_14052a580(DAT_143ab2828), see the class note.</summary>
-    public Func<EquipItem, bool> CanMove = _ => true;
+    public Func<EquipItem, bool> CanMove = _ => false;   // unread check: a withdraw is refused until a real check is wired
     /// <summary>CItemData::IsScoreItem and the instrument manager's playing score uid (FUN_140c8dab0).</summary>
     public Func<int, bool> IsScoreItem = _ => false;
     public Func<long> PlayingScoreUid = () => 0;

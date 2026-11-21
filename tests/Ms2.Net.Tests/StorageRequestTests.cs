@@ -21,7 +21,7 @@ public class StorageRequestTests {
         public Rig() {
             S = new StorageSender(Book) {
                 Send = Sent.Add, Notify = Notices.Add, InventoryMeso = () => InvMeso,
-                FindInventoryItem = u => Inv.TryGetValue(u, out var i) ? i : null, DepositMax = 500, WithdrawMax = 400,
+                FindInventoryItem = u => Inv.TryGetValue(u, out var i) ? i : null, DepositMax = 500, WithdrawMax = 400, CanMove = _ => true,
             };
         }
     }
@@ -67,6 +67,14 @@ public class StorageRequestTests {
         Assert.That(r.S.Withdraw(20, 6, 2), Is.True);
         Assert.That(Bytes(r.Sent[0]), Is.EqualTo(Bytes(new StorageWithdrawRequest(0, 20, 6, 2))));
         Assert.That(r.Book.Find(20), Is.Not.Null);
+    }
+
+    [Test] public void WithdrawWithoutAMovabilityCheckSendsNothing() {
+        var r = new Rig();
+        r.Book.TryAdd(new EquipItem { Id = 5, Uid = 20, Amount = 2, InventorySlot = 1 });
+        r.S.CanMove = new StorageSender(r.Book).CanMove;           // the default
+        Assert.That(r.S.Withdraw(20, 6, 2), Is.False);
+        Assert.That(r.Sent, Is.Empty);
     }
 
     [Test] public void MovingASlotOntoItselfOrAnEmptySlotSendsNothing() {
